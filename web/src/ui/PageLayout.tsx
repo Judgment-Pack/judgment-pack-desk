@@ -1,10 +1,12 @@
+import { Link } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { OverflowTooltip } from './Tooltip'
 import styles from './PageLayout.module.css'
 
 /** Full-width page chrome, independent of the reading measure below it. */
-export function PageHeader({ title, context, meta, actions, description, navigation, variant = 'context' }: {
+export function PageHeader({ title, titleHref, context, meta, actions, description, navigation, variant = 'context' }: {
   title: string
+  titleHref?: string
   context?: string
   meta?: ReactNode
   actions?: ReactNode
@@ -15,7 +17,7 @@ export function PageHeader({ title, context, meta, actions, description, navigat
   // Route chrome is not a second banner landmark; the shell owns that role.
   return <header role="presentation" data-page-header className={variant === 'title' ? styles.documentHeader : styles.header}>
     <div className={variant === 'title' ? styles.documentHeading : styles.heading}>
-    <h1 className={styles.title}>{title}{context && <>
+    <h1 className={styles.title}>{titleHref ? <Link className={styles.titleLink} to={titleHref}>{title}</Link> : title}{context && <>
       <span className={styles.separator} aria-hidden="true">/</span>
       <OverflowTooltip><span className={styles.context}>{context}</span></OverflowTooltip>
     </>}{meta !== undefined && <span className={styles.meta}>{meta}</span>}</h1>

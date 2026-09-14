@@ -10,6 +10,7 @@ import { useShellState } from '../shell/paneState'
 import { Button, ButtonLink } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { Select } from '../ui/Select'
+import { PacksNavigation } from './PacksNavigation'
 import { PageHeader } from '../ui/PageLayout'
 import { OverflowTooltip } from '../ui/Tooltip'
 import { PackPreview, PackPreviewHint } from './PackPreview'
@@ -78,6 +79,7 @@ export function PacksPane({ active = true }: { active?: boolean }) {
   return <article className={styles.pane} data-layout={active ? 'page' : undefined} aria-label="Pack collection">
     <PageHeader title="Packs" meta={isSuccess ? packs.length === total
       ? total : `${packs.length} of ${total}` : undefined}
+      navigation={<PacksNavigation current="packs" />}
       actions={<ButtonLink to="/create-pack" variant="primary">Create pack</ButtonLink>} />
     <div className={styles.controls} role="group" aria-label="Pack list controls">
       <Input className={styles.search} type="search" aria-label="Search packs" value={filter}

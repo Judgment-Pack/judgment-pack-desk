@@ -2,9 +2,12 @@ import { Link, useParams } from 'react-router-dom'
 import { CoverageReport } from '../components/CoverageReport'
 import { MatrixRowList } from '../components/MatrixRowList'
 import { Empty, ErrorBox, Loading, Pill, Section, statusTone } from '../components/primitives'
-import { usePackMatrix } from '../mcp/queries'
-import type { PackTestEntry } from '../mcp/types'
+import { recordActivity } from '../shell/consoleLog'
+import { useMcp } from '../mcp/McpProvider'
+import { usePackMatrix, usePacks } from '../mcp/queries'
+import type { PackTest, PackTestEntry } from '../mcp/types'
 import { PageHeader, PageBody } from '../ui/PageLayout'
+import { PacksNavigation } from '../packs/PacksNavigation'
 import { Button } from '../ui/Button'
 import { PackNavigation, TestNavigation } from '../packs/PackWorkspace'
 
@@ -23,25 +26,45 @@ import { PackNavigation, TestNavigation } from '../packs/PackWorkspace'
  */
 export function MatrixView() {
   const { packId } = useParams<{ packId?: string }>()
-  const { data, error, isPending, isFetching, refetch } = usePackMatrix(packId)
-
-  if (isPending) return <Loading what={packId ? `the ${packId} matrix` : "the project's matrices"} />
-  if (error) {
-    return <ErrorBox title={packId ? `Could not run the ${packId} matrix` : 'Could not run the matrices'} error={error} />
+  const { status } = useMcp()
+  const inventory = usePacks()
+  const { data, error, isFetching, refetch } = usePackMatrix(packId, false)
+  const run = () => {
+    if (status !== 'ready' || isFetching) return
+    recordActivity('Pack tests started.')
+    void refetch().then(result => recordActivity(result.error ? 'Pack tests failed.' : `Pack tests completed: ${result.data?.status ?? 'no result'}.`))
   }
-  if (!data) return null
-
-  const packs = data.packs ?? []
-
-  return (
-    <article className="detail" data-measure="full" data-layout="page">
-      <PageHeader title={packId ? 'Packs' : 'Project'} context={packId ?? 'Matrix & coverage'}
-        actions={<Button onClick={() => void refetch()} disabled={isFetching}>{isFetching ? 'Running…' : 'Run tests'}</Button>} />
-      {packId && <PackNavigation packId={packId} current="test" />}
-      <PageBody width="full">
+  const configured = (inventory.data?.packs ?? []).filter(pack => pack.matrix && (!packId || pack.id === packId))
+  return <article className="detail" data-measure="full" data-layout="page">
+    <PageHeader title="Packs" context={packId} titleHref={packId ? '/packs' : undefined}
+      navigation={packId ? <PackNavigation packId={packId} current="test" /> : <PacksNavigation current="tests" />}
+      actions={<Button onClick={run} disabled={status !== 'ready' || isFetching}>
+        {isFetching ? 'Running…' : packId ? 'Run tests' : 'Run all tests'}
+      </Button>} />
+    <PageBody width="full">
       {packId && <TestNavigation packId={packId} saved hasMatrix />}
+      {isFetching && <Loading what="test results" />}
+      {error ? <ErrorBox title="Could not run pack tests" error={error} /> : data ? <MatrixResults data={data} packId={packId} /> : <>
+        <h2 className="section-title">{packId ? 'Saved cases' : 'All pack tests'}</h2>
+        <p className="quiet">Run saved cases to check expected outcomes and find coverage gaps.</p>
+        {inventory.error ? <ErrorBox title="Could not list packs" error={inventory.error} />
+          : inventory.isPending ? <Loading what="packs with saved cases" />
+          : configured.length ? <ul className="cards">
+            {configured.map(pack => <li key={pack.id} className="card">
+              <Link to={`/packs/${encodeURIComponent(pack.id)}/matrix`}>{pack.id}</Link>
+              <p className="quiet">Saved cases configured · No results loaded</p>
+            </li>)}
+          </ul> : <Empty>No saved test cases are configured{packId ? ' for this pack' : ''}.</Empty>}
+      </>}
+    </PageBody>
+  </article>
+}
+
+function MatrixResults({ data, packId }: { data: PackTest; packId?: string }) {
+  const packs = data.packs ?? []
+  return <>
       <header className="detail-head">
-        <h2>{packId ? `${packId} matrix` : 'Project matrix'}</h2>
+        <h2 className="section-title">{packId ? 'Saved cases' : 'All pack tests'}</h2>
         <p className="ids">
           <Pill tone={statusTone(data.status)}>{data.status}</Pill>
           <span>
@@ -51,7 +74,7 @@ export function MatrixView() {
           {data.summary.mismatched > 0 && (
             <Pill tone="danger">{data.summary.mismatched} mismatched</Pill>
           )}
-          {isFetching && <span className="quiet">re-running…</span>}
+          <span className="quiet">Last run</span>
         </p>
         <p className="meta">
           {data.configPath && <code>{data.configPath}</code>}
@@ -82,9 +105,7 @@ export function MatrixView() {
           <strong>What this reports.</strong> {data.label}
         </p>
       )}
-      </PageBody>
-    </article>
-  )
+  </>
 }
 
 function PackMatrixEntry({ entry }: { entry: PackTestEntry }) {

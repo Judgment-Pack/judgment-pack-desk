@@ -16,7 +16,7 @@ const EMPTY_PROJECT = stubClient({
 describe('the desk, connected', () => {
   it('says so and shows no banner when the tool listing was read', async () => {
     renderConnected(<App />, connected({ client: EMPTY_PROJECT.client, known: true }))
-    await screen.findByRole('heading', { name: 'This project' })
+    await screen.findByRole('heading', { name: /^Packs/ })
     expect(screen.queryByText(/tool listing could not be read/)).toBeNull()
   })
 

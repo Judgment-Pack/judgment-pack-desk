@@ -1,0 +1,10 @@
+.explorer { min-width: 0; display: grid; gap: var(--space-4); }
+.explorer p { margin: 0; overflow-wrap: anywhere; }
+.explorer h2, .details h2 { margin: 0 0 var(--space-3); font-size: var(--text-heading); font-weight: 600; }
+.ruler { position: absolute; width: 1rem; height: 0; visibility: hidden; pointer-events: none; }
+.canvas { height: clamp(24rem, 58vh, 42rem); min-width: 0; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.nodeContent { display: grid; gap: var(--space-2); font-size: var(--text-sm); }
+.details { padding: var(--density-gutter); display: grid; gap: var(--space-4); min-width: 0; overflow-wrap: anywhere; }
+.details dl { display: grid; gap: var(--space-3); margin: 0; }
+.details dt { color: var(--ink-soft); font-size: var(--text-xs); }
+.details dd { margin: var(--space-1) 0 0; }

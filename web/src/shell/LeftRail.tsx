@@ -1,66 +1,24 @@
 import { Tooltip } from '../ui/Tooltip'
 import { type ReactElement } from 'react'
-/**
- * The rail: the primary action, what the project contains, and Admin.
- *
- * **The rail must never call `useConfiguredGraphs()`.** That hook falls back to
- * `useGraphMatrix(undefined, !graphInventorySupported)` — a whole-project
- * `experimental_test_graphs` walk — on any runtime that does not advertise
- * `experimental_list_graphs`. Today only `ProjectHome` pays that; hoisting it
- * into the shell would fire it on `/author`, on `/packs/:id/evaluate` and on
- * every other route, on every navigation. So the rail reads
- * `useGraphInventory()` — which is itself disabled unless the tool is
- * advertised — and otherwise renders the Graphs entry unconditionally and
- * quiet. There is a test, and a mutation row.
- *
- * **The shell derives no verdict.** No status colour, no rollup count, no
- * "N failing" pill. A red pill in a nav rail is a gate the runtime never
- * issued.
- *
- * **The rail holds navigation only.** It used to list the project's packs,
- * capped at thirty, with the selected one expanded into three child links —
- * a list that stops being a list at the point a project gets big enough to
- * need one. The list moved into main's left pane, where it can be filtered,
- * sorted and scrolled; Packs is one destination here, carrying a count.
- *
- * The structure is a typed array, so adding an entry is visible in review.
- * There is no Recents, no Favourites and no Starred: each is per-viewer
- * retained state, and each arrives as its own two-line change if it ever
- * should.
- */
+/** Primary navigation stays about destinations. Tests and pack flows live
+ * inside Packs; project file editing is available from the project menu.
+ * The shell never runs tests or fetches graph inventory to draw navigation. */
 import { Dialog, DropdownMenu, Separator, VisuallyHidden } from 'radix-ui'
-import { useRef, type ReactNode, type RefObject } from 'react'
-import { NavLink, useMatch, useNavigate } from 'react-router-dom'
-import { useGraphInventory, usePacks } from '../mcp/queries'
+import { useRef, type RefObject } from 'react'
+import { Link, NavLink, useLocation, useMatch, useNavigate } from 'react-router-dom'
+import { usePacks } from '../mcp/queries'
 import { ADMIN_SECTIONS } from '../routes/adminSections'
-import { useAuthorDirty } from './authorBridge'
 import {
   IconChevronLeft,
   IconChevronRight,
   IconClose,
   IconGear,
-  IconGraph,
   IconHelp,
-  IconMatrix,
   IconPack,
-  IconPencil,
   IconPlus
 } from './icons'
 import type { LeftRailMode } from './paneState'
 import { SettingsNavigationTarget } from './SettingsNavigation'
-
-interface RailItem {
-  to: string
-  label: string
-  icon: ReactNode
-}
-
-/** The middle group, in the order the rail draws it. */
-const RAIL_ITEMS: readonly RailItem[] = [
-  { to: '/matrix', label: 'Matrix and coverage', icon: <IconMatrix /> },
-  { to: '/graphs', label: 'Graphs', icon: <IconGraph /> },
-  { to: '/author', label: 'Author', icon: <IconPencil /> }
-]
 
 export function LeftRail({
   mode,
@@ -158,9 +116,7 @@ function RailBody({
    */
   onNavigate?: () => void
 }) {
-  const graphs = useGraphInventory()
   const icons = mode === 'icons'
-  const dirty = useAuthorDirty()
   const navigate = useNavigate()
   const toggleRef = useRef<HTMLButtonElement | null>(null)
 
@@ -181,27 +137,6 @@ function RailBody({
 
 
       <PacksGroup icons={icons} onNavigate={onNavigate} />
-
-      <Separator.Root className="desk-rule-h" decorative />
-
-      {RAIL_ITEMS.map((item) => (
-        <Labelled key={item.to} icons={icons} label={item.label}>
-          <NavLink
-            className="desk-nav-item"
-            to={item.to}
-            aria-label={item.label}
-            onClick={onNavigate}
-          >
-            {item.icon}
-            {!icons && <span className="desk-nav-label">{item.label}</span>}
-            {item.to === '/author' && dirty && (
-              <span className="desk-dirty" aria-label="unsaved changes" role="img" />
-            )}
-          </NavLink>
-        </Labelled>
-      ))}
-
-      {!icons && graphs.error && <p className="desk-pane-empty">The graph listing did not answer — {graphs.error.message}</p>}
 
       <div className="desk-spacer" />
       <Separator.Root className="desk-rule-h" decorative />
@@ -299,21 +234,24 @@ function Labelled({
  */
 function PacksGroup({ icons, onNavigate }: { icons: boolean; onNavigate?: () => void }) {
   const { data, error } = usePacks()
+  const { pathname } = useLocation()
+  const active = /^\/(packs(?:\/|$)|matrix$|graphs(?:\/|$))/.test(pathname)
   const count = error === null && data !== undefined ? (data.packs ?? []).length : undefined
 
   return (
     <>
       <Labelled icons={icons} label="Packs">
-        <NavLink
+        <Link
           className="desk-nav-item"
           to="/packs"
+          aria-current={active ? 'page' : undefined}
           aria-label={count === undefined ? 'Packs' : `Packs, ${count}`}
           onClick={onNavigate}
         >
           <IconPack />
           {!icons && <span className="desk-nav-label">Packs</span>}
           {!icons && count !== undefined && <span className="desk-nav-count">{count}</span>}
-        </NavLink>
+        </Link>
       </Labelled>
       {!icons && error && (
         <p className="desk-pane-empty">The pack listing did not answer — {error.message}</p>

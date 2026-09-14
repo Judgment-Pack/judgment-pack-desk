@@ -600,3 +600,28 @@ return, and Save and return. Focus returns to the editor on cancellation and to
 the reading action after exiting. The dialog never dismisses unsaved work merely
 because a write was attempted; verified read-back and the current buffer determine
 whether Save and return can finish.
+
+## Packs workspace and pack flows
+
+The primary sidebar carries Create pack, Packs, Admin and Help & About. All packs,
+Tests and Pack flows are contextual collection tabs, using `PacksNavigation` and
+the existing neutral navigation tokens. Opening a document replaces the collection
+tabs with document tabs. `/` opens Packs. Existing matrix, graph and author URLs
+remain reachable without reserving pack IDs.
+
+Project files belongs in the header's project menu. That trigger carries the
+shared unsaved-change indicator so advanced file editing remains visible while
+dirty. Source editors retain their existing write and navigation guards.
+
+Flow diagrams reuse `RelationshipMap`, measured spacing, responsive node widths,
+`ExpandableText`, and `InspectionRow`. A node opens contextual details and an
+Open pack link; a connection opens its destinations and source details. The
+Inspector publishes only the selected item. Pointer, keyboard and drawer
+navigation must all work. Diagram browsing never depends on test results.
+
+Tests are explicit commands, including detailed traces. Opening a page, changing
+trace options, reconnecting or invalidating files must not execute a suite.
+Completed results are snapshots within one connection. A revision mismatch
+withdraws the joined result diagram and refreshes the document; running tests
+again remains the user's action. The existing Console records command progress
+without retaining facts or evidence payloads.

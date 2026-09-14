@@ -201,7 +201,7 @@ describe('the shell at 800px, where the rail is a drawer', () => {
     // including the case where they were already on that route.
     viewport(800)
     renderShell()
-    for (const name of ['Matrix and coverage', 'Author', 'Admin', 'Back to app', 'Help & About']) {
+    for (const name of ['Admin', 'Back to app', 'Help & About']) {
       fireEvent.click(screen.getByRole('button', { name: 'Project navigation' }))
       await screen.findByRole('navigation', { name: 'Project' })
       fireEvent.click(screen.getByRole('link', { name }))
@@ -231,7 +231,7 @@ describe('the shell at 800px, where the rail is a drawer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Project navigation' }))
     await screen.findByRole('navigation', { name: 'Project' })
     expect(screen.getByRole('button', { name: 'Create a pack' })).toBeTruthy()
-    for (const name of ['Matrix and coverage', 'Graphs', 'Author', 'Admin', 'Help & About']) {
+    for (const name of ['Admin', 'Help & About']) {
       expect(screen.getByRole('link', { name })).toBeTruthy()
     }
     expect(await screen.findByRole('link', { name: /^Packs/ })).toBeTruthy()

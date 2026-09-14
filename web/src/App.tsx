@@ -9,7 +9,6 @@ import { PackEvaluate } from './routes/PackEvaluate'
 import { PackView } from './routes/PackView'
 import { PacksIndex } from './routes/PacksIndex'
 import { PacksLayout } from './routes/PacksLayout'
-import { ProjectHome } from './routes/ProjectHome'
 import { AppShell } from './shell/AppShell'
 import { BlockedNotice, ConnectionNotices, useBlockingError } from './shell/ConnectionNotices'
 
@@ -27,7 +26,7 @@ export function App() {
         <BlockedNotice error={blocking} />
       ) : (
         <Routes>
-          <Route path="/" element={<ProjectHome />} />
+          <Route path="/" element={<Navigate to="/packs" replace />} />
           <Route path="/matrix" element={<MatrixView />} />
           <Route path="/author" element={<AuthorView />} />
           <Route path="/graphs" element={<GraphView />} />
