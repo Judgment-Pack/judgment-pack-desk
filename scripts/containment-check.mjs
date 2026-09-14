@@ -393,6 +393,7 @@ const routesFor = (pack, graph) => [
   '/',
   '/packs',
   '/create-pack',
+  '/create-pack/research',
   pack,
   `${pack}?view=logic&layout=map`,
   `${pack}?view=document`,
