@@ -36,7 +36,7 @@ export function PaneDivider({ label, controls, value, min, max, onChange, onRese
     else return
     event.preventDefault()
   }
-  return <Tooltip disabled={dragging} side="left" content="Drag to resize. Arrow keys adjust width; Shift moves faster. Double-click to reset."><div className={styles.divider} data-dragging={dragging || undefined}
+  return <Tooltip disabled={dragging || keyboardFocus} openOnFocus={false} side="left" content="Drag to resize. Arrow keys adjust width; Shift moves faster. Double-click to reset."><div className={styles.divider} data-dragging={dragging || undefined}
     data-keyboard-focus={keyboardFocus || undefined} role="separator" tabIndex={0}
     aria-label={label} aria-controls={controls} aria-orientation="vertical"
     aria-valuemin={min} aria-valuemax={max} aria-valuenow={value} aria-valuetext={`${value} pixels wide`}

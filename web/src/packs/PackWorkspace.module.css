@@ -1,5 +1,6 @@
 .navigation, .subnavigation { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-5); }
 .navigation { padding: 0 var(--density-gutter); }
+.count { color: var(--ink-faint); font-size: var(--text-xs); font-weight: 400; }
 .subnavigation { border-bottom: 1px solid var(--border); margin-bottom: var(--space-5); }
 .navigation a, .subnavigation a { padding: var(--space-2) 0; color: var(--ink-soft); font-size: var(--text-control); text-decoration: none; border-bottom: 2px solid var(--border); border-bottom-color: transparent; }
 .navigation a:hover, .subnavigation a:hover, .navigation a[aria-current], .subnavigation a[aria-current] { color: var(--ink); }

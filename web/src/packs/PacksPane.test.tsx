@@ -114,10 +114,10 @@ describe('the packs pane', () => {
     expect(names()[0]).toContain('a-pack')
 
     fireEvent.keyDown(screen.getByLabelText('Sort packs'), { key: 'Enter' })
-    const options = await screen.findAllByRole('option')
+    const options = await screen.findAllByRole('menuitemradio')
     // ID ascending and descending, and nothing else: `list_packs` reports no
     // date and no size, so any other order would be the desk inventing one.
-    expect(options.map((option) => option.textContent)).toEqual(['Pack ID: A–Z', 'Pack ID: Z–A'])
+    expect(options.map((option) => option.textContent?.replace('✓', '').trim())).toEqual(['Pack ID: A–Z', 'Pack ID: Z–A'])
     fireEvent.click(options[1]!)
     await waitFor(() => expect(names()[0]).toContain('c-pack'))
   })

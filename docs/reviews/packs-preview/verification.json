@@ -1,0 +1,115 @@
+{
+  "checks": [
+    "Single-row header, separate preview/document state, full metadata, keyboard browsing, focus return, explicit sorting and preview resize limits",
+    "Malformed-pack warning on a narrow list and opening a document from the preview drawer",
+    "Eight viewport/theme/density combinations, narrow drawers, 153 virtualized rows, long IDs/descriptions, no horizontal overflow and empty search"
+  ],
+  "geometry": [
+    {
+      "width": 1512,
+      "height": 900,
+      "documentWidth": 1512,
+      "documentHeight": 900,
+      "listWidth": 771,
+      "listScrollWidth": 771,
+      "paneWidth": 419,
+      "paneScrollWidth": 419,
+      "theme": "dark",
+      "density": "comfortable",
+      "dock": true
+    },
+    {
+      "width": 1400,
+      "height": 800,
+      "documentWidth": 1400,
+      "documentHeight": 800,
+      "listWidth": 667,
+      "listScrollWidth": 667,
+      "paneWidth": 419,
+      "paneScrollWidth": 419,
+      "theme": "light",
+      "density": "compact",
+      "dock": true
+    },
+    {
+      "width": 1300,
+      "height": 800,
+      "documentWidth": 1300,
+      "documentHeight": 800,
+      "listWidth": 657,
+      "listScrollWidth": 657,
+      "paneWidth": 321,
+      "paneScrollWidth": 321,
+      "theme": "dark",
+      "density": "comfortable",
+      "dock": true
+    },
+    {
+      "width": 1100,
+      "height": 800,
+      "documentWidth": 1100,
+      "documentHeight": 800,
+      "listWidth": 779,
+      "listScrollWidth": 779,
+      "paneWidth": 334,
+      "paneScrollWidth": 334,
+      "theme": "light",
+      "density": "comfortable",
+      "dock": false
+    },
+    {
+      "width": 1024,
+      "height": 768,
+      "documentWidth": 1024,
+      "documentHeight": 768,
+      "listWidth": 711,
+      "listScrollWidth": 711,
+      "paneWidth": 334,
+      "paneScrollWidth": 334,
+      "theme": "dark",
+      "density": "compact",
+      "dock": false
+    },
+    {
+      "width": 600,
+      "height": 700,
+      "documentWidth": 600,
+      "documentHeight": 700,
+      "listWidth": 519,
+      "listScrollWidth": 519,
+      "paneWidth": 334,
+      "paneScrollWidth": 334,
+      "theme": "light",
+      "density": "compact",
+      "dock": false
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "documentWidth": 390,
+      "documentHeight": 844,
+      "listWidth": 317,
+      "listScrollWidth": 317,
+      "paneWidth": 306,
+      "paneScrollWidth": 306,
+      "theme": "dark",
+      "density": "comfortable",
+      "dock": false
+    },
+    {
+      "width": 320,
+      "height": 640,
+      "documentWidth": 320,
+      "documentHeight": 640,
+      "listWidth": 247,
+      "listScrollWidth": 247,
+      "paneWidth": 246,
+      "paneScrollWidth": 246,
+      "theme": "light",
+      "density": "compact",
+      "dock": false
+    }
+  ],
+  "commands": [],
+  "errors": []
+}

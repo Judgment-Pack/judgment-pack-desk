@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { VisuallyHidden } from 'radix-ui'
 import type { ReactNode } from 'react'
 import { OverflowTooltip } from './Tooltip'
 import styles from './PageLayout.module.css'
@@ -12,8 +13,13 @@ export function PageHeader({ title, titleHref, context, meta, actions, descripti
   actions?: ReactNode
   description?: ReactNode
   navigation?: ReactNode
-  variant?: 'context' | 'title'
+  variant?: 'context' | 'title' | 'collection'
 }) {
+  if (variant === 'collection') return <header role="presentation" data-page-header className={styles.collectionHeader}>
+    <VisuallyHidden.Root asChild><h1>{title}</h1></VisuallyHidden.Root>
+    {navigation}
+    {actions && <div className={styles.actions}>{actions}</div>}
+  </header>
   // Route chrome is not a second banner landmark; the shell owns that role.
   return <header role="presentation" data-page-header className={variant === 'title' ? styles.documentHeader : styles.header}>
     <div className={variant === 'title' ? styles.documentHeading : styles.heading}>

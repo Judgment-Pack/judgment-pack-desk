@@ -1,3 +1,4 @@
+import { InspectorPresentationContext, type InspectorPresentation } from './InspectorPresentation'
 /**
  * The frame: header, rail, main, inspector, console, strip.
  *
@@ -110,6 +111,20 @@ function ShellFrame({
   children: ReactNode
 }) {
   const shell = useShellState()
+  const [presentation, setPresentation] = useState<InspectorPresentation | null>(null)
+  const registerPresentation = useCallback((next: InspectorPresentation) => {
+    setPresentation(next)
+    return () => setPresentation(current => current === next ? null : current)
+  }, [])
+  const inspectorOpen = presentation?.open ?? shell.inspector.open
+  const openInspector = useCallback(() => {
+    if (presentation) presentation.onOpenChange(true)
+    else shell.openInspector()
+  }, [presentation, shell.openInspector])
+  const toggleInspector = useCallback(() => {
+    if (presentation) presentation.onOpenChange(!presentation.open)
+    else shell.toggleInspector()
+  }, [presentation, shell.toggleInspector])
   const settingsPage = useMatch('/admin') !== null
   const { config, declaredPanes } = useEffectiveConfig()
   const [railDrawerOpen, setRailDrawerOpen] = useState(false)
@@ -171,7 +186,8 @@ function ShellFrame({
   // Measure the whole workspace so opening the inspector cannot change the
   // input to this decision and cause a dock/drawer feedback loop.
   const inspectorLayout = inspectorGeometry(workspaceBox?.width,
-    shell.inspectorWidth ?? config.panes.inspector.width, minimumMainWidth, defaultInspectorIsDrawer)
+    presentation?.width ?? shell.inspectorWidth ?? config.panes.inspector.width,
+    Math.max(minimumMainWidth, presentation?.minimumMainWidth ?? 0), defaultInspectorIsDrawer, presentation?.maximumWidth)
   const inspectorWidth = inspectorLayout.width
   const inspectorIsDrawer = inspectorLayout.drawer
   // Publish the rendered width, including drawer/CSS caps, rather than the
@@ -194,30 +210,50 @@ function ShellFrame({
       // Keep the actual route gesture through the dock/drawer remount.
       if (!document.activeElement.closest('#desk-inspector')) inspectionGestureRef.current = document.activeElement
     }
-    shell.openInspector()
-  }, [shell.openInspector])
+    openInspector()
+  }, [openInspector])
+  const closeInspector = useCallback(() => {
+    if (!inspectorOpen) return
+    toggleInspector()
+    const gesture = inspectionGestureRef.current
+    if (gesture?.isConnected && gesture.getClientRects().length) gesture.focus()
+    else inspectorOpenerRef.current?.focus()
+  }, [inspectorOpen, toggleInspector])
+  useEffect(() => {
+    if (!presentation?.closeOnEscape || !inspectorOpen) return
+    const close = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      // Menus, drawers and the splitter own Escape while they have focus.
+      if (event.target instanceof Element && event.target.closest('[role="menu"], [role="listbox"], [role="dialog"], [role="separator"]')) return
+      event.preventDefault()
+      closeInspector()
+    }
+    document.addEventListener('keydown', close)
+    return () => document.removeEventListener('keydown', close)
+  }, [presentation?.closeOnEscape, inspectorOpen, closeInspector])
   const slot = useMemo<InspectorSlot>(
     () => ({
-      open: shell.inspector.open,
-      size: shell.inspector.open ? (inspectorBox?.width ?? 0) : 0,
+      open: inspectorOpen,
+      size: inspectorOpen ? (inspectorBox?.width ?? 0) : 0,
       tab: inspectorTab,
       setTab: setInspectorTab,
       target: inspectorTarget,
       claim,
       reveal,
+      close: closeInspector,
       requestWorkingWidth
     }),
-    [shell.inspector.open, inspectorBox, inspectorTab, inspectorTarget, claim, reveal, requestWorkingWidth]
+    [inspectorOpen, inspectorBox, inspectorTab, inspectorTarget, claim, reveal, closeInspector, requestWorkingWidth]
   )
 
   useEffect(
     () =>
       installShortcuts({
         toggleRail: railIsDrawer ? () => setRailDrawerOpen((open) => !open) : shell.toggleRail,
-        toggleInspector: shell.toggleInspector,
+        toggleInspector,
         toggleConsole: shell.toggleConsole
       }),
-    [railIsDrawer, shell.toggleRail, shell.toggleInspector, shell.toggleConsole]
+    [railIsDrawer, shell.toggleRail, toggleInspector, shell.toggleConsole]
   )
 
   // Rail and console use configuration; Inspector uses its bounded viewer
@@ -232,11 +268,12 @@ function ShellFrame({
         ? 'var(--rail-w)'
         : 'var(--rail-w-icon)',
     '--inspector-current':
-      shell.inspector.open && !inspectorIsDrawer ? 'var(--inspector-w)' : '0px',
+      inspectorOpen && !inspectorIsDrawer ? 'var(--inspector-w)' : '0px',
     '--console-current': shell.console.open ? 'var(--console-h)' : '0px'
   } as CSSProperties
 
   return (
+    <InspectorPresentationContext.Provider value={registerPresentation}>
     <InspectorSlotContext.Provider value={slot}>
       <SettingsNavigationProvider>
         <div className="desk" style={style} data-rail-drawer={railIsDrawer || undefined}>
@@ -245,10 +282,10 @@ function ShellFrame({
           </a>
 
           <HeaderBar
-            inspectorOpen={shell.inspector.open}
+            inspectorOpen={inspectorOpen}
             inspectorIsDrawer={inspectorIsDrawer}
             consoleOpen={shell.console.open}
-            onToggleInspector={() => { inspectionGestureRef.current = null; shell.toggleInspector() }}
+            onToggleInspector={() => { inspectionGestureRef.current = null; toggleInspector() }}
             onToggleConsole={shell.toggleConsole}
             inspectorOpenerRef={inspectorOpenerRef}
             railIsDrawer={railIsDrawer}
@@ -271,16 +308,17 @@ function ShellFrame({
               <div className="desk-measure">{children}</div>
             </main>
 
-            {shell.inspector.open && !inspectorIsDrawer && <PaneDivider label="Inspector" controls="desk-inspector"
+            {inspectorOpen && !inspectorIsDrawer && <PaneDivider label="Inspector" controls="desk-inspector"
               value={inspectorWidth} min={inspectorLayout.min} max={inspectorLayout.max}
-              onChange={shell.resizeInspector} onReset={shell.resetInspectorWidth}
-              onCollapse={() => { inspectorOpenerRef.current?.focus(); shell.toggleInspector() }} />}
+              onChange={presentation?.onResize ?? shell.resizeInspector} onReset={presentation?.onReset ?? shell.resetInspectorWidth}
+              onCollapse={() => { inspectorOpenerRef.current?.focus(); toggleInspector() }} />}
 
             <RightPane
-              open={shell.inspector.open}
-              onClose={shell.toggleInspector}
+              title={presentation?.title}
+              open={inspectorOpen}
+              onClose={closeInspector}
               asDrawer={inspectorIsDrawer}
-              declaredWidth={declaredPanes.inspectorWidth || minimumMainWidth > 0 || shell.inspectorWidth !== undefined ? inspectorWidth : undefined}
+              declaredWidth={presentation || declaredPanes.inspectorWidth || minimumMainWidth > 0 || shell.inspectorWidth !== undefined ? inspectorWidth : undefined}
               publishTarget={publishTarget}
               publishPane={publishPane}
               openerRef={inspectorOpenerRef}
@@ -299,5 +337,6 @@ function ShellFrame({
         </div>
       </SettingsNavigationProvider>
     </InspectorSlotContext.Provider>
+    </InspectorPresentationContext.Provider>
   )
 }

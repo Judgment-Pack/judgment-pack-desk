@@ -596,10 +596,11 @@ and Cmd+B is Firefox's bookmarks sidebar; the Ctrl spelling works everywhere.
 `Mod+J` (Downloads) and `Alt+<digit>` (Firefox tab switching) are deliberately
 not bound, and `F6` is left to the browser.
 
-A pane is not a dialog, so `Escape` does not close one — with one exception,
-stated rather than hidden: below 1100px the Inspector renders as a drawer, and a
-drawer *is* a dialog, so Escape closes it there. Swapping to the drawer remounts
-the subtree, so inspector-local state resets at that breakpoint.
+Escape closes a transient pack preview or a modal drawer. A docked document
+Inspector stays open. On the focused splitter, Escape resets width instead of
+closing the pane. The shell uses a drawer below 1100px or when the route's main
+working area and minimum Inspector width cannot fit. Swapping to the drawer
+remounts its subtree, so inspector-local disclosure state resets at that point.
 
 **What is remembered is what somebody chose.** A layout that came from the
 configuration file or from the built-in defaults is not written down: it is
@@ -919,34 +920,38 @@ would be a lie about both.
 
 ### The Packs collection
 
-`/packs` is a full-width collection with the shared compact page header, a
-result count, and Create pack. Search matches the project ID and supplied
-description. Sorting names its actual key: Pack ID A–Z or Z–A; the inventory
-reports no modification date, so no recent-change ordering is invented.
+`/packs` uses one compact header: All packs with its count, Tests and Pack flows,
+with Create pack on the right. Search and the compact Sort menu sit beneath it.
+Search matches the project ID and supplied description. Sorting names its actual
+key: Pack ID A–Z or Z–A; no modification date is invented.
 
-Each 40px comfortable / 32px compact row has a native pack link, version and a
-separate Preview button. Optional descriptions stay on one line; narrow layouts
-move version and description into preview. All rows are reachable through the
-existing windowing, without a second Show all step. Arrow keys, Home and End
-work across the complete list for both links and Preview buttons. A viewport
+Each 40px comfortable / 32px compact row has an aligned name, description, version
+and trailing preview icon. Narrow panes move description and version into
+preview. Text uses single-line ellipsis and overflow-only Radix tooltips. The
+existing windowing keeps every row reachable without a Show all step; a viewport
 that cannot be measured renders every row.
 
-Preview publishes the inventory's description, document ID, version and paths
-through the shared Inspector slot. It sends no additional runtime request and
-runs no evaluation. The Inspector remains closed by default; saved and explicitly
-configured pane choices are honored. A manually opened empty Inspector explains
-how to preview a pack. Opening the document from a modal preview dismisses the
-drawer so the main page is visible.
+Click or Enter opens the pack. Space toggles preview for a focused row; arrow
+keys, Home and End move through the list and update an open preview. Escape
+closes preview and restores focus. The preview icon also works on touch screens.
 
-The layout retains the collection while a pack is open: search, sorting, preview
-selection and list scroll survive Back, and its portal is released while the
-pack document owns the Inspector. Filtering resets scroll and suppresses preview
-metadata for an item outside the results.
+Preview shows the full supplied description, version and saved-case availability.
+Paths and document IDs live under Technical details. It sends no additional
+runtime request and runs no evaluation. Its 360px default width is independently
+resizable from 320px to 420px, preserving 720px for the list or using the existing
+drawer. It starts closed even if the document Inspector is configured open.
+Opening preview never changes the document Inspector's saved open state or width.
 
-A listing failure replaces stale rows and previews, exposes Retry, and never
-claims zero packs. Empty projects and unmatched searches have distinct states.
-An empty version is shown as unavailable in preview, never a bare v; any refusal
-detail supplied by the runtime remains visible in the row and in preview.
+The collection retains search, sort, selection, preview state and list scroll
+while a pack is open. The document uses its own Inspector state; Back restores
+the collection's preview. Reloading starts with preview closed. Filtering out a
+selected pack or losing the inventory clears preview rather than showing stale
+metadata. A user who opens the pane without choosing a pack sees a muted hint.
+
+Listing failures replace stale rows and offer Retry. Empty projects and unmatched
+searches have distinct states. Missing versions stay unavailable. Runtime refusal
+text appears in the description column and preview; a warning marker with its
+accessible explanation remains when a narrow pane hides that column.
 
 ### Checks and layers
 
