@@ -315,7 +315,8 @@ function render(node: JsonNode, out: string[]): void {
       if (magnitude > MAX_INTEGER || magnitude < -MAX_INTEGER) {
         throw new CanonError(`integer ${node.literal} is outside ±(2^53−1)`)
       }
-      out.push(node.literal)
+      // As the gateway writes an integer it parsed: `-0` is 0.
+      out.push(magnitude.toString())
       return
     }
     case 'boolean':

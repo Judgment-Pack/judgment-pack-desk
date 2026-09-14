@@ -8,7 +8,7 @@
  */
 import type { HostTool, McpToolResult } from '../assistant/engine'
 import type { ResearchConfig } from '../config/deskConfig'
-import { GatewayError, acquire as acquireDefault, type Acquired } from './gatewayClient'
+import { GatewayError, OverBudget, acquire as acquireDefault, type Acquired } from './gatewayClient'
 import type { Ledger } from './ledger'
 import { READ_DIALECTS, SEARCH_DIALECTS, type ReadDocument } from './providers'
 
@@ -27,7 +27,7 @@ export interface Spent {
 }
 
 /** How much of a page one read answer carries; the rest is paged by offset. */
-export const READ_WINDOW = 12_000
+export const READ_WINDOW = 20_000
 /** The most hits one search asks for. */
 export const MAX_SEARCH_RESULTS = 10
 
@@ -40,8 +40,8 @@ export interface ResearchDeps {
   ledger: Ledger
   budget: Budget
   spent: Spent
-  /** The gateway call; injected so tests run against fixtures. */
-  acquire?: (session: string, source: string, args: unknown, signal?: AbortSignal) => Promise<Acquired>
+  /** The gateway call; injected so tests run against fixtures. The limit is the bytes it may still take. */
+  acquire?: (session: string, source: string, args: unknown, limit: number, signal?: AbortSignal) => Promise<Acquired>
   /** A milestone for the Console; never a prompt, a credential or page text. */
   log: (text: string) => void
   now?: () => number
@@ -70,7 +70,26 @@ function overBudget(deps: ResearchDeps, kind: 'searches' | 'reads'): string | nu
   return null
 }
 
+/**
+ * The bytes a call may still retrieve. Reserved before the call and settled
+ * after it, so two calls in flight cannot both pass one remaining-bytes check:
+ * the reservation is the whole of what is left, and the second call finds
+ * nothing left until the first has settled.
+ */
+function reserve(deps: ResearchDeps): { limit: number; settle(used: number): void } | null {
+  const remaining = deps.budget.bytes - deps.spent.bytes
+  if (remaining <= 0) return null
+  deps.spent.bytes += remaining
+  return {
+    limit: remaining,
+    settle(used) {
+      deps.spent.bytes -= remaining - Math.min(used, remaining)
+    }
+  }
+}
+
 function failureOf(cause: unknown): string {
+  if (cause instanceof OverBudget) return cause.message
   if (cause instanceof GatewayError) return `the gateway refused: ${cause.message}`
   if ((cause as Error)?.name === 'AbortError') return 'the run was stopped'
   return (cause as Error)?.message ?? String(cause)
@@ -122,19 +141,22 @@ export function researchTools(deps: ResearchDeps): HostTool[] {
       const spent = overBudget(deps, 'searches')
       if (spent) return text(spent, undefined, true)
       const max = Math.min(MAX_SEARCH_RESULTS, Math.max(1, Number(args.max_results) || 5))
+      const reserved = reserve(deps)
+      if (reserved === null) return text(`the budget of ${deps.budget.bytes} retrieved bytes for this run is spent; work from what was retrieved`, undefined, true)
       const record = ledger.open('search', { source: searchSource.source, dialect: searchSource.dialect, query })
       deps.spent.searches += 1
       deps.log(`search ${record.id}: asking ${searchSource.source} (${searchSource.dialect})`)
       let acquired: Acquired
       try {
-        acquired = await call(ledger.session, searchSource.source, searchDialect.request(query, { maxResults: max }), signal)
+        acquired = await call(ledger.session, searchSource.source, searchDialect.request(query, { maxResults: max }), reserved.limit, signal)
       } catch (cause) {
+        reserved.settle(cause instanceof OverBudget ? reserved.limit : 0)
         const failure = failureOf(cause)
         ledger.settle(record.id, { failure })
         deps.log(`search ${record.id}: failed — ${failure}`)
         return text(`search failed: ${failure}`, undefined, true)
       }
-      deps.spent.bytes += acquired.text.length
+      reserved.settle(acquired.bytes)
       let hits
       try {
         hits = searchDialect.hits(acquired.result)
@@ -219,19 +241,22 @@ export function researchTools(deps: ResearchDeps): HostTool[] {
       }
       const spent = overBudget(deps, 'reads')
       if (spent) return text(spent, undefined, true)
+      const reserved = reserve(deps)
+      if (reserved === null) return text(`the budget of ${deps.budget.bytes} retrieved bytes for this run is spent; work from what was retrieved`, undefined, true)
       const record = ledger.open('page', { source: readSource.source, dialect: readSource.dialect, url })
       deps.spent.reads += 1
       deps.log(`read ${record.id}: asking ${readSource.source} (${readSource.dialect}) for ${url}`)
       let acquired: Acquired
       try {
-        acquired = await call(ledger.session, readSource.source, readDialect.request(url), signal)
+        acquired = await call(ledger.session, readSource.source, readDialect.request(url), reserved.limit, signal)
       } catch (cause) {
+        reserved.settle(cause instanceof OverBudget ? reserved.limit : 0)
         const failure = failureOf(cause)
         ledger.settle(record.id, { failure })
         deps.log(`read ${record.id}: failed — ${failure}`)
         return text(`read failed: ${failure}`, undefined, true)
       }
-      deps.spent.bytes += acquired.text.length
+      reserved.settle(acquired.bytes)
       let document: ReadDocument
       try {
         document = readDialect.document(acquired.result)

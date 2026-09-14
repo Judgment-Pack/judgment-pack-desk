@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { GatewayError, acquire, newResearchSession, registry, seal } from './gatewayClient'
+import { GatewayError, OverBudget, acquire, newResearchSession, readBounded, registry, seal } from './gatewayClient'
 
 function stub(handler: (input: string, init: RequestInit) => Response | Promise<Response>) {
   const calls: { input: string; init: RequestInit }[] = []
@@ -21,7 +21,7 @@ describe('the gateway client', () => {
           headers: { 'content-type': 'application/json' }
         })
     )
-    const answer = await acquire('s1', 'read', { path: '/', body: { url: 'https://x' } })
+    const answer = await acquire('s1', 'read', { path: '/', body: { url: 'https://x' } }, 1 << 20)
     expect(calls).toHaveLength(1)
     expect(calls[0]!.input).toBe('/api/research/gateway/acquire')
     expect(calls[0]!.init.method).toBe('POST')
@@ -36,19 +36,37 @@ describe('the gateway client', () => {
   })
   it('reports a refusal with the gateway’s own sentence, or the status line', async () => {
     stub(() => new Response('{"error":"source failed: adapter-http: the endpoint answered 401 Unauthorized"}', { status: 502 }))
-    await expect(acquire('s1', 'read', {})).rejects.toMatchObject({ status: 502, message: expect.stringContaining('401 Unauthorized') })
+    await expect(acquire('s1', 'read', {}, 1 << 20)).rejects.toMatchObject({ status: 502, message: expect.stringContaining('401 Unauthorized') })
     stub(() => new Response('{"error":"no research gateway is configured","code":"research-unconfigured"}', { status: 409 }))
-    await expect(acquire('s1', 'read', {})).rejects.toMatchObject({ code: 'research-unconfigured' })
+    await expect(acquire('s1', 'read', {}, 1 << 20)).rejects.toMatchObject({ code: 'research-unconfigured' })
     stub(() => new Response('gateway down', { status: 503, statusText: 'Service Unavailable' }))
-    await expect(acquire('s1', 'read', {})).rejects.toMatchObject({ message: 'the gateway answered 503 Service Unavailable' })
+    await expect(acquire('s1', 'read', {}, 1 << 20)).rejects.toMatchObject({ message: 'the gateway answered 503 Service Unavailable' })
     stub(() => new Response('{"result":1}', { status: 200 }))
-    await expect(acquire('s1', 'read', {})).rejects.toThrow(GatewayError)
+    await expect(acquire('s1', 'read', {}, 1 << 20)).rejects.toThrow(GatewayError)
   })
   it('refuses an answer that is not UTF-8, or not one JSON document', async () => {
-    stub(() => new Response(new Uint8Array([0x7b, 0xff, 0x7d]), { status: 200 }))
-    await expect(acquire('s1', 'read', {})).rejects.toThrow()
+    // An invalid byte inside a string of an otherwise valid envelope: a
+    // decoder that replaced it would hand back a document that parses.
+    const envelope = new Uint8Array([...new TextEncoder().encode('{"result":"a'), 0xff, ...new TextEncoder().encode('b","receipt":{}}')])
+    stub(() => new Response(envelope, { status: 200 }))
+    await expect(acquire('s1', 'read', {}, 1 << 20)).rejects.toThrow(/invalid|decode|UTF/i)
     stub(() => new Response('{"result":{},"receipt":{}} trailing', { status: 200 }))
-    await expect(acquire('s1', 'read', {})).rejects.toThrow(/trailing/)
+    await expect(acquire('s1', 'read', {}, 1 << 20)).rejects.toThrow(/trailing/)
+  })
+  it('cuts an answer at the bytes the caller may still take, and reads nothing more of it', async () => {
+    let pulled = 0
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1
+        controller.enqueue(new Uint8Array(1024).fill(0x20))
+      }
+    })
+    stub(() => new Response(body, { status: 200 }))
+    await expect(acquire('s1', 'read', {}, 4096)).rejects.toMatchObject({ name: 'OverBudget', limit: 4096 })
+    // Five pulls at most: four within the limit and the one that crossed it.
+    expect(pulled).toBeLessThanOrEqual(6)
+    expect(Array.from(await readBounded(new Response('abc'), 3))).toEqual([97, 98, 99])
+    await expect(readBounded(new Response('abcd'), 3)).rejects.toThrow(OverBudget)
   })
   it('seals and fetches the registry on their own routes', async () => {
     const calls = stub((input) =>

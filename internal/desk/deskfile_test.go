@@ -67,6 +67,16 @@ type fixtureVerdict struct {
 	// accepted fixture that decodes to a gateway must say which, so the corpus
 	// proves where the chassis would forward and not only that it may.
 	ResearchGateway string `json:"researchGateway"`
+	// Research is every other decoded research value, compared where the
+	// verdict states it: the authority and the pinned key, each source as
+	// "name/dialect", and the limits with the defaults applied.
+	Research *struct {
+		Authority string           `json:"authority"`
+		Signer    string           `json:"signer"`
+		Search    *string          `json:"search"`
+		Read      *string          `json:"read"`
+		Limits    map[string]int64 `json:"limits"`
+	} `json:"research"`
 }
 
 func fixtureVerdicts(t *testing.T) map[string]fixtureVerdict {
@@ -156,6 +166,35 @@ func TestSharedFixturesDecodeAsTheVerdictSays(t *testing.T) {
 				}
 				if gatewayURL != verdict.ResearchGateway {
 					t.Errorf("research.gateway.url %q, want %q", gatewayURL, verdict.ResearchGateway)
+				}
+				if verdict.Research != nil {
+					if decoded.Research == nil {
+						t.Fatalf("expected.json states research values for a file that decoded none")
+					}
+					authority, signer := "", ""
+					if decoded.Research.gateway != nil {
+						authority, signer = decoded.Research.gateway.authority, decoded.Research.gateway.signerPublic
+					}
+					if authority != verdict.Research.Authority || signer != verdict.Research.Signer {
+						t.Errorf("research gateway authority/signer %q/%q, want %q/%q", authority, signer, verdict.Research.Authority, verdict.Research.Signer)
+					}
+					spell := func(source *researchSource) *string {
+						if source == nil {
+							return nil
+						}
+						s := source.source + "/" + source.dialect
+						return &s
+					}
+					for name, got := range map[string][2]*string{"search": {spell(decoded.Research.search), verdict.Research.Search}, "read": {spell(decoded.Research.read), verdict.Research.Read}} {
+						if (got[0] == nil) != (got[1] == nil) || (got[0] != nil && *got[0] != *got[1]) {
+							t.Errorf("research source %s decoded to %v, want %v", name, got[0], got[1])
+						}
+					}
+					for name, want := range verdict.Research.Limits {
+						if decoded.Research.limits[name] != want {
+							t.Errorf("research.limits.%s %d, want %d", name, decoded.Research.limits[name], want)
+						}
+					}
 				}
 				// The migrations, in the decoder's own words. A sentence
 				// changed on one side of the shared decoder and not the other

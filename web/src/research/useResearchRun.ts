@@ -176,6 +176,9 @@ export function useResearchRun(): ResearchRunBinding {
         return settings.current.authorPrompt
       },
       maxRevisions: MAX_REVISIONS,
+      get seconds() {
+        return settings.current.research.limits.seconds
+      },
       log
     })
     // One run per page mount: the ledger and the budget are the run's.

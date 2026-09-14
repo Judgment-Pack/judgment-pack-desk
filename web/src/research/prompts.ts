@@ -31,6 +31,10 @@ export const REPAIR_INSTRUCTIONS = `REPAIR
 
 The candidate below was checked against test cases whose expected results were established from the cited sources, independently of the candidate. Repair the candidate so that every case agrees with its expectation, without changing any case or any expectation: an expectation is the reviewer's reading of the source, and if you believe it is wrong, say so in unknowns and leave the candidate as it is on that point. Keep every citation traceable; you may research further and cite more. Answer as before: a short summary of what you changed and why, then the one fenced JSON block with the whole corrected document and your unknowns.`
 
+export const CONTINUE_INSTRUCTIONS = `CONTINUE
+
+Your previous turn ended before you wrote the proposal: the turn's step budget was spent on research. Everything you read and cited is listed below with its excerpt ids, and it is still recorded; do not read it again. Finish now: cite anything essential that is not yet cited, then write the short summary and the one fenced JSON block with the whole document. Do not start new lines of research.`
+
 export const CONVERSATION_INSTRUCTIONS = `CONVERSATION
 
 The person has written to you during this run. Answer them in prose. If their message asks for a change to the pack, make it and return the whole updated document; if it only asks a question, answer it and return the current document unchanged. Always end with the one fenced JSON block.`

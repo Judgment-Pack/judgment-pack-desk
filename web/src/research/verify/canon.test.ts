@@ -46,6 +46,9 @@ describe('the parser is strict where a browser is lenient', () => {
     expect(() => parseJsonText('"\ud800"')).toThrow(/surrogate/)
     expect(() => parseJsonText('"a\nb"')).toThrow(/control/)
   })
+  it('writes negative zero as zero, as the gateway does', () => {
+    expect(new TextDecoder().decode(canonicalText('{"n":-0}'))).toBe('{"n":0}')
+  })
   it('orders by code point, not by UTF-16 code unit', () => {
     // U+FF5E (one code unit) sorts after U+1F600 (a surrogate pair) by code
     // point, and before it by code unit.

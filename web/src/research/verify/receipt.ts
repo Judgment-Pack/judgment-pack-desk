@@ -5,6 +5,7 @@
  * file pinned and never one a gateway handed the page.
  */
 import { CanonError, bytesToHex, canonicalize, hexToBytes, memberOf, type JsonNode } from './canon'
+import { verifyEd25519Pure } from './ed25519'
 
 export const RECEIPT_PREFIX_2 = 'judgment-pack-gateway/receipt/2:'
 export const RECEIPT_PREFIX_3 = 'judgment-pack-gateway/receipt/3:'
@@ -54,27 +55,57 @@ export async function keyIdOf(publicKeyHex: string): Promise<string> {
   return (await sha256Hex(hexToBytes(publicKeyHex))).slice(0, 32)
 }
 
+/**
+ * Whether this WebCrypto speaks Ed25519, decided once: Chrome before 137,
+ * among others, does not, and the pure implementation is what verifies then.
+ * A refusal is remembered, so a browser without the algorithm does not ask
+ * again on every receipt; a browser with it is used for every one.
+ */
+let webCryptoEd25519: Promise<boolean> | null = null
+function webCryptoSpeaksEd25519(): Promise<boolean> {
+  webCryptoEd25519 ??= (async () => {
+    try {
+      // A well-formed key is what decides: an import that succeeds means the
+      // algorithm is there, whatever this key is.
+      await crypto.subtle.importKey('raw', new Uint8Array(32) as BufferSource, { name: 'Ed25519' }, false, ['verify'])
+      return true
+    } catch (cause) {
+      // A malformed-key refusal from an implementation that has the
+      // algorithm reads as DataError; NotSupportedError, or an implementation
+      // that throws anything else at the name, means there is none.
+      return (cause as { name?: string })?.name === 'DataError'
+    }
+  })()
+  return webCryptoEd25519
+}
+
+/** For tests: forget what was decided about WebCrypto. */
+export function resetEd25519ProbeForTesting(): void {
+  webCryptoEd25519 = null
+}
+
 /** Ed25519 over `message`, under the raw 32-byte public key given in hex. */
 export async function verifyEd25519(
   publicKeyHex: string,
   message: Uint8Array,
   signatureHex: string
 ): Promise<boolean> {
-  let key: CryptoKey
-  try {
-    key = await crypto.subtle.importKey('raw', hexToBytes(publicKeyHex) as BufferSource, { name: 'Ed25519' }, false, [
-      'verify'
-    ])
-  } catch {
-    return false
-  }
+  let publicKey: Uint8Array
   let signature: Uint8Array
   try {
+    publicKey = hexToBytes(publicKeyHex)
     signature = hexToBytes(signatureHex)
   } catch {
     return false
   }
-  if (signature.length !== 64) return false
+  if (publicKey.length !== 32 || signature.length !== 64) return false
+  if (!(await webCryptoSpeaksEd25519())) return verifyEd25519Pure(publicKey, message, signature)
+  let key: CryptoKey
+  try {
+    key = await crypto.subtle.importKey('raw', publicKey as BufferSource, { name: 'Ed25519' }, false, ['verify'])
+  } catch {
+    return false
+  }
   try {
     return await crypto.subtle.verify({ name: 'Ed25519' }, key, signature as BufferSource, message as BufferSource)
   } catch {

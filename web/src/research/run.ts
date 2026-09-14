@@ -19,7 +19,7 @@
 import type { AssistantEvent, CallTool, HostTool } from '../assistant/engine'
 import { checkCandidate, digestOf, jsonIdentity, type AuthoringCase, type CandidateCheck } from './checkCandidate'
 import type { Ledger, SourceRecord } from './ledger'
-import { CASES_INSTRUCTIONS, CONVERSATION_INSTRUCTIONS, REPAIR_INSTRUCTIONS, RESEARCH_INSTRUCTIONS } from './prompts'
+import { CASES_INSTRUCTIONS, CONTINUE_INSTRUCTIONS, CONVERSATION_INSTRUCTIONS, REPAIR_INSTRUCTIONS, RESEARCH_INSTRUCTIONS } from './prompts'
 import { memberOf, parseJsonText, stringMember, type JsonNode } from './verify/canon'
 import { verifySession, type Finding, type HeldReceipt, type SessionVerdict } from './verify/session'
 
@@ -66,6 +66,8 @@ export interface RunState {
   unknowns: string[]
   citations: Citation[]
   verdicts: Record<string, SessionVerdict>
+  /** The registry text each session's verdict was reached with. */
+  registries: Record<string, string>
   revisionsUsed: number
   /** The gateway sessions this run opened, in order. */
   sessions: string[]
@@ -92,9 +94,17 @@ export interface RunPorts {
   newSession(): string
   authorPrompt: string
   maxRevisions: number
+  /** The seconds a run may take from its start, after which it is stopped as over budget. */
+  seconds: number
   log(text: string): void
   now?: () => Date
 }
+
+/** How many times a turn that spent its steps before proposing is continued. */
+export const MAX_CONTINUATIONS = 3
+
+/** The engine's own sentence for a final turn with no proposal fence in it. */
+const NO_FENCE = /exactly one fenced JSON block.*carried 0/
 
 export const INITIAL_STATE: RunState = {
   phase: 'idle',
@@ -110,6 +120,7 @@ export const INITIAL_STATE: RunState = {
   unknowns: [],
   citations: [],
   verdicts: {},
+  registries: {},
   revisionsUsed: 0,
   sessions: []
 }
@@ -126,6 +137,14 @@ const EXCERPT_ID = /^src-\d+#e\d+$/
 
 function foldSpace(text: string): string {
   return text.replace(/\s+/g, ' ').trim()
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === 'object') {
+    Object.freeze(value)
+    for (const member of Object.values(value as Record<string, unknown>)) deepFreeze(member)
+  }
+  return value
 }
 
 /** The candidate's `sources[]`, each traced to a recorded excerpt or not. */
@@ -149,8 +168,12 @@ export function traceCitations(document: unknown, ledger: Ledger): Citation[] {
     if (quoted === null || foldSpace(quoted) !== foldSpace(excerpt.text)) {
       return { sourceId, location, excerptId: location, url, traced: false, reason: 'citation.excerpt is not the recorded excerpt text' }
     }
-    if (record?.document && url !== null && url !== record.document.url && url !== record.request.url) {
+    if (url === null) return { sourceId, location, excerptId: location, url, traced: false, reason: 'locator.value is not a string URL' }
+    if (!record?.document || (url !== record.document.url && url !== record.request.url)) {
       return { sourceId, location, excerptId: location, url, traced: false, reason: 'locator.value is not the URL the excerpt was read from' }
+    }
+    if (record.verification.state !== 'verified') {
+      return { sourceId, location, excerptId: location, url, traced: false, reason: `the receipt for ${record.id} is ${record.verification.state === 'failed' ? 'failed' : 'unchecked'}, so its excerpt is withheld` }
     }
     return { sourceId, location, excerptId: location, url, traced: true, reason: '' }
   })
@@ -181,16 +204,25 @@ export function admitCases(
     if (!EXCERPT_ID.test(source) || !ledger.excerpt(source)) {
       return dropped.push({ id, reason: `expectationSource ${JSON.stringify(source)} is not an excerpt recorded in this run` })
     }
+    if (!ledger.verifiedExcerpt(source)) {
+      return dropped.push({ id, reason: `expectationSource ${source} is from a source whose receipt did not verify, so it grounds nothing` })
+    }
     seen.add(id)
-    admitted.push({
-      id,
-      facts: row.facts,
-      ...(row.evidenceAvailability !== undefined ? { evidenceAvailability: row.evidenceAvailability } : {}),
-      expectedDisposition: row.expectedDisposition,
-      ...(row.expectedHandoffTarget !== undefined ? { expectedHandoffTarget: row.expectedHandoffTarget } : {}),
-      expectationSource: source,
-      rationale: typeof row.rationale === 'string' ? row.rationale : ''
-    })
+    // An owned, frozen copy: the reviewer's objects stay the reviewer's, and
+    // an established case cannot be reached through them afterwards.
+    admitted.push(
+      deepFreeze(
+        structuredClone({
+          id,
+          facts: row.facts,
+          ...(row.evidenceAvailability !== undefined ? { evidenceAvailability: row.evidenceAvailability } : {}),
+          expectedDisposition: row.expectedDisposition,
+          ...(row.expectedHandoffTarget !== undefined ? { expectedHandoffTarget: row.expectedHandoffTarget } : {}),
+          expectationSource: source,
+          rationale: typeof row.rationale === 'string' ? row.rationale : ''
+        })
+      )
+    )
   })
   return { admitted, dropped }
 }
@@ -199,6 +231,8 @@ export class AuthoringRun {
   private state: RunState = INITIAL_STATE
   private listeners = new Set<() => void>()
   private controller: AbortController | null = null
+  private deadline: ReturnType<typeof setTimeout> | null = null
+  private outOfTime = false
 
   constructor(private readonly ports: RunPorts) {}
 
@@ -231,9 +265,29 @@ export class AuthoringRun {
     this.controller?.abort()
   }
 
+  /**
+   * The time budget, armed once at start: when it fires, whatever is in
+   * flight is cancelled through the same signal Stop uses, and the outcome is
+   * reported as `budget` rather than `stopped`.
+   */
+  private arm(): void {
+    this.outOfTime = false
+    if (this.deadline !== null) clearTimeout(this.deadline)
+    this.deadline = setTimeout(() => {
+      this.outOfTime = true
+      this.controller?.abort()
+    }, this.ports.seconds * 1000)
+  }
+
+  private disarm(): void {
+    if (this.deadline !== null) clearTimeout(this.deadline)
+    this.deadline = null
+  }
+
   /** Begin: the brief, the URLs to read first, and the research turn. */
   start(brief: string, seedUrls: string[]): void {
     if (this.running) return
+    this.arm()
     this.state = { ...INITIAL_STATE, brief, seedUrls, phase: 'research', status: 'running', detail: 'Researching sources and drafting.' }
     this.addTurn({ role: 'user', kind: 'brief', text: brief + (seedUrls.length ? `\n\nRead first:\n${seedUrls.join('\n')}` : '') })
     void this.drive(async (signal) => {
@@ -249,7 +303,7 @@ export class AuthoringRun {
     this.set({ status: 'running', phase: 'conversation', detail: 'Answering.' })
     void this.drive(async (signal) => {
       const before = this.latest()?.digest
-      await this.engineTurn(signal, 'conversation', this.conversationPrompt(message), this.ports.researchTools)
+      await this.continuingTurn(signal, 'conversation', this.conversationPrompt(message), this.ports.researchTools)
       if (this.latest()?.digest !== before) await this.casesAndCheck(signal)
       else {
         const check = this.latest()?.check
@@ -270,12 +324,17 @@ export class AuthoringRun {
       await work(controller.signal)
     } catch (cause) {
       if ((cause as Error)?.name === 'AbortError' || cause instanceof Stopped) {
-        this.set({ status: 'stopped', detail: 'Stopped. The last completed stage is kept.' })
+        if (this.outOfTime) {
+          this.set({ status: 'budget', detail: `The time budget of ${this.ports.seconds} seconds is spent. The last completed stage is kept.` })
+        } else {
+          this.set({ status: 'stopped', detail: 'Stopped. The last completed stage is kept.' })
+        }
       } else {
         this.set({ status: 'failed', detail: (cause as Error)?.message ?? String(cause) })
       }
     } finally {
       if (this.controller === controller) this.controller = null
+      if (!this.running) this.disarm()
     }
   }
 
@@ -402,7 +461,42 @@ export class AuthoringRun {
   private async researchTurn(signal: AbortSignal): Promise<void> {
     this.set({ phase: 'research', detail: 'Researching sources and drafting.' })
     this.ports.log('research: drafting from sources')
-    await this.engineTurn(signal, 'research', this.researchPrompt(), this.ports.researchTools)
+    await this.continuingTurn(signal, 'research', this.researchPrompt(), this.ports.researchTools)
+  }
+
+  /** What a continuation is handed: every source read and every excerpt, by id. */
+  private readSoFar(): string {
+    const lines = this.ports.ledger.sources.map((record) => {
+      const head = record.kind === 'search' ? `${record.id}: search ${JSON.stringify(record.request.query ?? '')}` : `${record.id}: ${record.document?.title ?? ''} — ${record.request.url ?? ''}`
+      const excerpts = record.excerpts.map((excerpt) => `  ${excerpt.id}: ${JSON.stringify(excerpt.text)}`)
+      return [head + (record.failure ? ` (failed: ${record.failure})` : ''), ...excerpts].join('\n')
+    })
+    return `SOURCES ALREADY READ AND CITED\n${lines.join('\n') || '(none)'}`
+  }
+
+  /**
+   * An engine turn that may be continued: a turn whose steps ran out before
+   * the proposal is not a failure of the task, only of the budget the engine
+   * gives one run, so it is resumed with what was read so far, a bounded
+   * number of times, before it is reported as failed.
+   */
+  private async continuingTurn(
+    signal: AbortSignal,
+    producedBy: Candidate['producedBy'],
+    prompt: string,
+    hostTools: HostTool[]
+  ): Promise<{ document: unknown; unknowns: string[] } | null> {
+    let attempt = prompt
+    for (let continuation = 0; ; continuation += 1) {
+      try {
+        return await this.engineTurn(signal, producedBy, attempt, hostTools)
+      } catch (cause) {
+        if (!(cause instanceof Error) || !NO_FENCE.test(cause.message) || continuation >= MAX_CONTINUATIONS) throw cause
+        this.addTurn({ role: 'assistant', kind: 'note', text: `The turn's step budget was spent before a proposal was written; continuing (${continuation + 1} of ${MAX_CONTINUATIONS}).` })
+        this.ports.log(`continue: turn ${continuation + 1} of ${MAX_CONTINUATIONS}`)
+        attempt = [prompt, CONTINUE_INSTRUCTIONS, this.readSoFar()].join('\n\n')
+      }
+    }
   }
 
   /** Establish cases where none are, then check, and repair until the budget. */
@@ -420,7 +514,9 @@ export class AuthoringRun {
       }
       if (proposal?.unknowns.length) this.addTurn({ role: 'assistant', kind: 'unknowns', text: proposal.unknowns.map((line) => `• ${line}`).join('\n') })
       if (admitted.length === 0) {
-        this.set({ status: 'needs-input', phase: 'review', detail: 'No test case could be grounded in a cited excerpt. Cite the requirements, or say what the cases should be.' })
+        // Where nothing grounded a case because the sources did not verify,
+        // that is the sentence, not the absence of cases.
+        this.set({ status: 'needs-input', phase: 'review', detail: this.withheld() ?? 'No test case could be grounded in a cited excerpt. Cite the requirements, or say what the cases should be.' })
         return
       }
       this.ports.log(`cases: ${admitted.length} established, ${dropped.length} dropped`)
@@ -437,6 +533,15 @@ export class AuthoringRun {
       const passed = check.valid && check.cases.length > 0 && check.cases.every((row) => row.passed)
       this.ports.log(`check: revision ${current.revision} — ${check.valid ? 'valid' : 'invalid'}, ${check.cases.filter((c) => c.passed).length}/${check.cases.length} agree`)
       if (passed) {
+        // Agreement is not enough where what the draft rests on did not
+        // verify: a source whose receipt failed, or a citation the run cannot
+        // trace, withholds `ready` -- the draft is shown, and what stands in
+        // its way is said.
+        const withheld = this.withheld()
+        if (withheld !== null) {
+          this.set({ phase: 'review', status: 'needs-input', detail: withheld })
+          return
+        }
         this.set({ phase: 'review', status: 'ready', detail: 'Every established case agrees. Review the draft, its sources and the unknowns before creating the pack.' })
         return
       }
@@ -447,7 +552,7 @@ export class AuthoringRun {
       this.set({ phase: 'repair', revisionsUsed: this.state.revisionsUsed + 1, detail: 'Repairing the candidate against the established cases.' })
       this.ports.log(`repair: revision ${this.state.revisionsUsed} of ${this.ports.maxRevisions}`)
       try {
-        await this.engineTurn(signal, 'repair', this.repairPrompt(), this.ports.researchTools)
+        await this.continuingTurn(signal, 'repair', this.repairPrompt(), this.ports.researchTools)
       } catch (cause) {
         if (cause instanceof Stalled) {
           this.set({ phase: 'review', status: 'stalled', detail: 'The assistant repeated an earlier candidate. Review the disagreements, or send a message to steer it.' })
@@ -458,21 +563,39 @@ export class AuthoringRun {
     }
   }
 
+  /** Why the candidate is not ready even where its cases agree, or null. */
+  private withheld(): string | null {
+    const failed = this.ports.ledger.sources.filter((record) => record.verification.state === 'failed' && record.excerpts.length > 0)
+    if (failed.length > 0) {
+      return `${failed.length} cited source(s) failed receipt verification (${failed.map((r) => r.id).join(', ')}), so their excerpts are withheld and the draft is not ready.`
+    }
+    const untraced = this.state.citations.filter((citation) => !citation.traced)
+    if (untraced.length > 0) {
+      return `${untraced.length} citation(s) in the draft could not be traced to a verified excerpt (${untraced.map((c) => c.sourceId).join(', ')}). Ask the assistant to cite from what it read, or review the sources.`
+    }
+    if (this.state.citations.length === 0) {
+      return 'The draft cites no source. A pack with no traced citation is an assumption; ask the assistant to cite what it read.'
+    }
+    return null
+  }
+
   // ---- verification ----------------------------------------------------------
 
   /** Seal the session the turn acquired under, fetch the registry, verify, and mark every record. */
   private async verifyAcquisitions(session: string, signal: AbortSignal): Promise<void> {
     const ledger = this.ports.ledger
-    const records = ledger.sources.filter((record) => record.acquisition?.session === session)
-    if (records.length === 0) return
+    // The records this desk opened under the session, in the order it opened
+    // them: membership and position come from the desk's own ledger, never
+    // from the receipts, which are the thing being verified. A record with
+    // no answer holds no receipt and is a hole the seal's count will show.
+    const records = ledger.under(session).filter((record) => record.response !== null)
+    if (ledger.under(session).length === 0) return
     if (!this.ports.gateway) {
       for (const record of records) ledger.verified(record.id, { state: 'failed', at: this.stamp(), findings: [{ sessionId: session, callIndex: null, status: 'no-pinned-key' }] })
       return
     }
     const stamp = this.stamp()
-    const held: HeldReceipt[] = [...records]
-      .sort((a, b) => a.acquisition!.callIndex - b.acquisition!.callIndex)
-      .map((record) => ({ receipt: record.response!.receipt, result: record.response!.result }))
+    const held: HeldReceipt[] = records.map((record) => ({ receipt: record.response!.receipt, result: record.response!.result }))
     let registryText = ''
     try {
       await this.ports.seal(session, signal)
@@ -491,13 +614,16 @@ export class AuthoringRun {
       receipts: held,
       registryText
     })
-    this.set({ verdicts: { ...this.state.verdicts, [session]: verdict } })
+    this.set({ verdicts: { ...this.state.verdicts, [session]: verdict }, registries: { ...this.state.registries, [session]: registryText } })
     this.ports.log(`verify: ${session} — ${verdict.ok ? 'verified' : 'FAILED'} (${verdict.findings.map((f) => f.status).join(', ')})`)
-    for (const record of records) {
-      const own = verdict.findings.filter((f) => f.callIndex === record.acquisition!.callIndex || f.callIndex === null)
-      const ok = verdict.ok
-      ledger.verified(record.id, ok ? { state: 'verified', at: stamp, keyId: verdict.keyId } : { state: 'failed', at: stamp, findings: own })
-    }
+    records.forEach((record, position) => {
+      const own = verdict.findings.filter((f) => f.callIndex === position || f.callIndex === null || f.file === `${position}.json`)
+      ledger.verified(record.id, verdict.ok ? { state: 'verified', at: stamp, keyId: verdict.keyId } : { state: 'failed', at: stamp, findings: own })
+    })
+    // Citations traced before the verdict were traced against unchecked
+    // receipts; they are traced again now that the verdict is in.
+    const latest = this.latest()
+    if (latest) this.set({ citations: traceCitations(latest.document, ledger) })
   }
 }
 
@@ -523,7 +649,13 @@ export function factPaths(document: unknown): string[] {
   return [...paths].sort()
 }
 
-/** The research record written beside a created pack: every source, receipt and excerpt. */
+/**
+ * The research record written beside a created pack: every source, its
+ * receipt and result **as the acquire response carried them**, every
+ * excerpt, the verdict per session and the registry text it was reached
+ * with, so the saved verification claim can be checked again by anyone
+ * holding the gateway's public key -- and the record says which key id.
+ */
 export function researchRecord(state: RunState, ledger: Ledger, packDigest: string): unknown {
   const sourceOf = (record: SourceRecord) => ({
     id: record.id,
@@ -531,6 +663,7 @@ export function researchRecord(state: RunState, ledger: Ledger, packDigest: stri
     requestedAt: record.requestedAt,
     request: record.request,
     ...(record.failure ? { failure: record.failure } : {}),
+    ...(record.response ? { acquireResponse: record.response.text } : {}),
     ...(record.acquisition
       ? {
           receipt: {
@@ -569,6 +702,7 @@ export function researchRecord(state: RunState, ledger: Ledger, packDigest: stri
     seedUrls: state.seedUrls,
     sessions: state.sessions,
     verdicts: state.verdicts,
+    registries: state.registries,
     citations: state.citations,
     cases: state.cases,
     droppedCases: state.droppedCases,

@@ -143,7 +143,8 @@ function actionMalformed(node: JsonNode | undefined): boolean {
     const sessionId = c?.get('sessionId')
     const signature = c?.get('signature')
     if (!c || !isString(sessionId) || !SESSION_TOKEN.test(sessionId.value) || sessionId.value === '.' || sessionId.value === '..') return true
-    if (!isInteger(c.get('callIndex')) || c.get('callIndex')!.kind !== 'number' || (c.get('callIndex') as { literal: string }).literal.startsWith('-')) return true
+    const index = c.get('callIndex')
+    if (!isInteger(index) || BigInt(index.literal) < 0n) return true
     if (!isString(signature) || !SIGNATURE_3.test(signature.value)) return true
   }
   const tool = a.get('tool') === undefined ? undefined : membersOf(a.get('tool')!)
@@ -164,10 +165,18 @@ function actionMalformed(node: JsonNode | undefined): boolean {
 function shapeOf(receipt: JsonNode): '2' | '3' | 'malformed' | 'unsupported-version' {
   const r = membersOf(receipt)
   if (!r) return 'malformed'
+  // Order 1 first, whole: a receipt outside the canonical domain -- a
+  // number with a fraction anywhere in it -- is malformed before its
+  // version or key is looked at.
+  try {
+    canonicalize(receipt)
+  } catch {
+    return 'malformed'
+  }
   const signature = r.get('signature')
   if (!isString(signature) || !HEX.test(signature.value) || signature.value.length === 0) return 'malformed'
   const callIndex = r.get('callIndex')
-  if (!isInteger(callIndex) || callIndex.literal.startsWith('-')) return 'malformed'
+  if (!isInteger(callIndex) || BigInt(callIndex.literal) < 0n) return 'malformed'
   if (!isDigest(r.get('resultDigest'))) return 'malformed'
   const version = r.get('receiptVersion')
   if (!isString(version)) return 'malformed'
@@ -236,7 +245,7 @@ export async function verifySession(input: SessionInput): Promise<SessionVerdict
       continue
     }
     const r = membersOf(receipt)!
-    const callIndex = Number((r.get('callIndex') as { literal: string }).literal)
+    const callIndex = Number(BigInt((r.get('callIndex') as { literal: string }).literal))
     if ((r.get('keyId') as { value: string }).value !== keyId) {
       say(callIndex, 'key-mismatch')
       continue

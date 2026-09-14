@@ -47,6 +47,11 @@ export interface SourceRecord {
   /** `src-<n>`, in the order the run asked. */
   id: string
   kind: 'search' | 'page'
+  /**
+   * The gateway session this record was opened under, as the desk chose it
+   * -- never read off a receipt, which is the thing under verification.
+   */
+  session: string
   requestedAt: string
   request: { source: string; dialect: string; query?: string; url?: string }
   /** The acquire response, as received, or null where the call failed. */
@@ -141,11 +146,25 @@ export class Ledger {
     return undefined
   }
 
+  /** An excerpt whose source's receipt has verified, and no other. */
+  verifiedExcerpt(id: string): Excerpt | undefined {
+    const excerpt = this.excerpt(id)
+    if (!excerpt) return undefined
+    const record = this.byId(excerpt.sourceId)
+    return record?.verification.state === 'verified' ? excerpt : undefined
+  }
+
+  /** The records opened under one session, in the order they were opened. */
+  under(session: string): SourceRecord[] {
+    return this.records.filter((record) => record.session === session)
+  }
+
   /** Open a record for a call about to be made; filled in by `settle`. */
   open(kind: SourceRecord['kind'], request: SourceRecord['request'], now = new Date()): SourceRecord {
     const record: SourceRecord = {
       id: `src-${this.records.length + 1}`,
       kind,
+      session: this.currentSession,
       requestedAt: now.toISOString(),
       request,
       response: null,

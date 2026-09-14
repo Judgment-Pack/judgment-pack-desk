@@ -148,6 +148,7 @@ var researchLimitDefaults = map[string]int64{"searches": 8, "reads": 12, "bytes"
 var (
 	publicKeyHex       = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	researchSourceName = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,128}$`)
+	authorityLabel     = regexp.MustCompile(`^[\x21-\x7e]{1,128}$`)
 )
 
 // keysAreNeverInConfiguration is the sentence a key-shaped member is refused
@@ -670,10 +671,15 @@ func decodeResearch(value any) (*researchConfig, []deskProblem) {
 			} else {
 				g.url = trimmed
 			}
+			// One predicate, spelled the same on both sides: printable ASCII
+			// with no space, which is what a gateway's authority label is.
+			// Trimming would be two whitespace vocabularies, Go's and the
+			// browser's, and the label is compared byte for byte to every
+			// receipt.
 			authority, ok := inner["authority"].(string)
-			if !ok || strings.TrimSpace(authority) == "" {
+			if !ok || !authorityLabel.MatchString(authority) {
 				problems = append(problems, deskProblem{Key: "research.gateway.authority",
-					Reason: fmt.Sprintf("must be a non-empty string; found %s", describe(inner["authority"]))})
+					Reason: fmt.Sprintf("must be the gateway's authority label as it was started with: printable ASCII with no space; found %s", describe(inner["authority"]))})
 			} else {
 				g.authority = authority
 			}
@@ -853,7 +859,7 @@ func acceptableIssuer(issuer string) bool {
 		return true
 	}
 	return parsed.Scheme == "http" &&
-		(parsed.Hostname() == "localhost" || parsed.Hostname() == "127.0.0.1")
+		(strings.EqualFold(parsed.Hostname(), "localhost") || parsed.Hostname() == "127.0.0.1")
 }
 
 // decodeAssistant reads the slot, and is the only section that yields a value.
@@ -1140,7 +1146,7 @@ func endpointURLProblem(raw string) string {
 		return ""
 	}
 	if parsed.Scheme == "http" &&
-		(parsed.Hostname() == "localhost" || parsed.Hostname() == "127.0.0.1") {
+		(strings.EqualFold(parsed.Hostname(), "localhost") || parsed.Hostname() == "127.0.0.1") {
 		return ""
 	}
 	return fmt.Sprintf(

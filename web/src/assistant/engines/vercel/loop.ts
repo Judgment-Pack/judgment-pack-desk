@@ -487,7 +487,12 @@ export function runVercel(
     const said = slot.truncated(reason)
     if (said !== null) await channel.push(said)
   }
-  const offered = new Set(session.tools.map((tool) => tool.name))
+  // Both the runtime's and the desk's: an SDK refusal of a host tool's input
+  // is the host tool's to report, never a call for the gate. A host tool
+  // named like a runtime tool would shadow it in the SDK's set, so a
+  // collision ends the run before the model is shown either.
+  const offered = new Set([...session.tools, ...session.hostTools].map((tool) => tool.name))
+  const collision = session.hostTools.find((tool) => session.tools.some((served) => served.name === tool.name))
   // What the model asked for, before the SDK's refinement touched it.
   //
   // One queue and not a map, because the refinement hook below is registered for
@@ -923,6 +928,9 @@ export function runVercel(
    * slot itself says `other` once it carries no members, so this cannot spin.
    */
   const drive = async (): Promise<void> => {
+    // A host tool named like a runtime tool would shadow it in the SDK's
+    // set: reported as this run's error, before the model is shown either.
+    if (collision !== undefined) throw new Error(`host tool ${collision.name} is named like a tool the runtime serves; nothing was run`)
     // **Said before the model is asked anything, and pushed rather than
     // delivered.** These are a property of the session and not of an attempt:
     // counting them as delivered would spend the one retry a tier refusal

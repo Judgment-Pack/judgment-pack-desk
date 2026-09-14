@@ -40,6 +40,8 @@ export interface FakeGateway {
   /** Every receipt minted, by session, for a test that tampers. */
   receipts: Map<string, string[]>
   sealsText: string[]
+  /** Sign an object again under the seed, as a receipt (prefix by its version) or a seal (no receiptVersion). */
+  resign(object: Record<string, unknown>): Promise<string>
 }
 
 export function fakeGateway(authority = 'gateway:test'): FakeGateway {
@@ -91,7 +93,7 @@ export function fakeGateway(authority = 'gateway:test'): FakeGateway {
       const text = `{"result":${new TextDecoder().decode(resultCanon)},"receipt":${receiptText},"salts":{"args":"00","statement":"11"}}`
       const parsed = parseJsonText(text)
       const member = (name: string): JsonNode => (parsed.kind === 'object' ? parsed.members.find((m) => m.name === name)!.value : parsed)
-      return { text, result: member('result'), receipt: member('receipt'), salts: { args: '00', statement: '11' } }
+      return { text, bytes: new TextEncoder().encode(text).byteLength, result: member('result'), receipt: member('receipt'), salts: { args: '00', statement: '11' } }
     },
     async seal(session) {
       const count = (receipts.get(session) ?? []).length
@@ -105,6 +107,18 @@ export function fakeGateway(authority = 'gateway:test'): FakeGateway {
     },
     async registry() {
       return seals.map((line) => line + '\n').join('')
+    },
+    async resign(object) {
+      const { signature: _dropped, ...unsigned } = object
+      const isReceipt = typeof unsigned.receiptVersion === 'string'
+      const prefix = isReceipt ? RECEIPT_PREFIX_3 : SEAL_PREFIX
+      const covered = canonicalText(
+        JSON.stringify(isReceipt ? unsigned : { finalCount: unsigned.finalCount, keyId: unsigned.keyId, sealedAt: unsigned.sealedAt, sessionId: unsigned.sessionId })
+      )
+      const input = new Uint8Array(prefix.length + covered.length)
+      input.set(new TextEncoder().encode(prefix), 0)
+      input.set(covered, prefix.length)
+      return new TextDecoder().decode(canonicalText(JSON.stringify({ ...unsigned, signature: signHex(input) })))
     }
   }
 }

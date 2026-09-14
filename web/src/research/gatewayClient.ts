@@ -31,23 +31,71 @@ export class GatewayError extends Error {
 export interface Acquired {
   /** The response text, as received: what the ledger keeps. */
   text: string
+  /** Its length in bytes on the wire, which is what a byte budget counts. */
+  bytes: number
   result: JsonNode
   receipt: JsonNode
   /** The commitments' salts, `args` always and `statement` where committed. */
   salts: Record<string, string>
 }
 
-async function bodyText(response: Response): Promise<string> {
-  const bytes = new Uint8Array(await response.arrayBuffer())
-  return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+/** What a registry or a refusal may be, in bytes: neither is a page. */
+export const MAX_REGISTRY_BYTES = 4 << 20
+export const MAX_REFUSAL_BYTES = 64 << 10
+
+/** An answer past the bytes the caller may still take, cut at the wire. */
+export class OverBudget extends Error {
+  constructor(readonly limit: number) {
+    super(`the answer is past the ${limit} bytes this run may still retrieve; it was cut off and nothing of it is kept`)
+    this.name = 'OverBudget'
+  }
+}
+
+/**
+ * Read a body **counting bytes as they arrive and stopping at the limit**,
+ * rather than taking the whole answer and measuring it afterwards: a budget
+ * that is checked before a request and not during it bounds nothing about
+ * what the request brings back. The stream is cancelled past the limit, so
+ * the rest is never allocated.
+ */
+export async function readBounded(response: Response, limit: number): Promise<Uint8Array> {
+  if (response.body === null) return new Uint8Array()
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      total += value.byteLength
+      if (total > limit) {
+        await reader.cancel().catch(() => {})
+        throw new OverBudget(limit)
+      }
+      chunks.push(value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  const out = new Uint8Array(total)
+  let at = 0
+  for (const chunk of chunks) {
+    out.set(chunk, at)
+    at += chunk.byteLength
+  }
+  return out
+}
+
+async function bodyText(response: Response, limit: number): Promise<string> {
+  return new TextDecoder('utf-8', { fatal: true }).decode(await readBounded(response, limit))
 }
 
 async function refusal(response: Response): Promise<GatewayError> {
   let text = ''
   try {
-    text = await bodyText(response)
+    text = await bodyText(response, MAX_REFUSAL_BYTES)
   } catch {
-    return new GatewayError(response.status, `the gateway answered ${response.status} with text that is not UTF-8`)
+    return new GatewayError(response.status, `the gateway answered ${response.status} with text that is not UTF-8, or past ${MAX_REFUSAL_BYTES} bytes`)
   }
   try {
     const parsed = JSON.parse(text) as { error?: unknown; code?: unknown }
@@ -60,11 +108,16 @@ async function refusal(response: Response): Promise<GatewayError> {
   return new GatewayError(response.status, `the gateway answered ${response.status} ${response.statusText}`)
 }
 
-/** One `/acquire`: the source named, the canonical arguments as given. */
+/**
+ * One `/acquire`: the source named, the canonical arguments as given, and
+ * the bytes the caller may still take, past which the answer is cut at the
+ * wire and refused as `OverBudget`.
+ */
 export async function acquire(
   session: string,
   source: string,
   args: unknown,
+  limit: number,
   signal?: AbortSignal
 ): Promise<Acquired> {
   const response = await deskFetch(chassisUrl(`${RELAY}/acquire`), {
@@ -74,7 +127,8 @@ export async function acquire(
     signal
   })
   if (!response.ok) throw await refusal(response)
-  const text = await bodyText(response)
+  const raw = await readBounded(response, limit)
+  const text = new TextDecoder('utf-8', { fatal: true }).decode(raw)
   const parsed = parseJsonText(text)
   const result = memberOf(parsed, 'result')
   const receipt = memberOf(parsed, 'receipt')
@@ -88,7 +142,7 @@ export async function acquire(
       if (member.value.kind === 'string') saltMap[member.name] = member.value.value
     }
   }
-  return { text, result, receipt, salts: saltMap }
+  return { text, bytes: raw.byteLength, result, receipt, salts: saltMap }
 }
 
 /** One `/seal`: the session's final count, sealed under the gateway's key. */
@@ -100,14 +154,14 @@ export async function seal(session: string, signal?: AbortSignal): Promise<JsonN
     signal
   })
   if (!response.ok) throw await refusal(response)
-  return parseJsonText(await bodyText(response))
+  return parseJsonText(await bodyText(response, MAX_REFUSAL_BYTES))
 }
 
 /** The registry, one seal per line, fetched from the key holder. */
 export async function registry(signal?: AbortSignal): Promise<string> {
   const response = await deskFetch(chassisUrl(`${RELAY}/registry`), { method: 'GET', signal })
   if (!response.ok) throw await refusal(response)
-  return bodyText(response)
+  return bodyText(response, MAX_REGISTRY_BYTES)
 }
 
 /** A flat session token (gateway SPEC.md §3a) for one authoring run. */

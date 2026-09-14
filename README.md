@@ -4243,8 +4243,11 @@ still wins, the runtime still validates the exact bytes, and the two writes
 are the same — with two companions written beside the pack before the project
 entry names them, `<id>.matrix.json` (every established case as a rows
 document, each citing the receipt its expectation came from) and
-`<id>.research.json` (every source, receipt, excerpt and verification state,
-with the digest of the pack it describes).
+`<id>.research.json` (every source with the acquire response as the gateway
+answered it — receipt and result — every excerpt, the verdict per session and
+the registry text it was reached with, so the saved verification claim can be
+checked again by anyone holding the gateway's public key, and the digest of
+the pack it describes).
 
 **Where each thing is decided.** The desk owns the conversation, the research
 plan, the source ledger, the citation trace, the revision and review budgets,
@@ -4294,7 +4297,18 @@ until then, **verified** where everything held, and **failed** with the
 verifier's findings otherwise; a gateway whose registry could not be fetched
 marks the session's sources failed rather than leaving them unchecked, and a
 desk with no pinned key marks them failed too. The gateway's own `/verify` is
-never consulted. A verified receipt establishes that the gateway signed these
+never consulted. **A failed verification withholds, it does not decorate**: an
+excerpt from a source whose receipt failed grounds no test case, a citation to
+it does not trace, and the draft is not `ready` while any cited source failed
+or any citation is untraced — the draft is shown, and what stands in its way
+is the sentence on the Review tab. What is verified is held in the order the
+desk opened the calls, under the session the desk chose: membership and
+position come from the desk's own ledger, never from the receipts, which are
+the thing under verification, so an answer relabelled to another session or
+handed back out of order is a `misfiled` finding rather than a reordering.
+Ed25519 comes from WebCrypto where the browser has it and from a verifier in
+this repository where it does not (Chrome before 137), both answering to the
+same corpus vectors. A verified receipt establishes that the gateway signed these
 bytes and sealed the session — integrity and lineage within the gateway's
 stated bounds — and nothing about whether a page is true, current, legally
 authoritative, or came from the site its URL names: `peerIdentity` names the
@@ -4314,7 +4328,13 @@ the desk's own connection; a repair turn is told it may not change a case,
 and one that repeats an earlier candidate stalls the run rather than looping.
 The budgets — searches, reads, bytes and seconds from the configuration,
 revisions from the desk — end a run visibly as `budget`, distinct from
-`needs-input`, `stalled`, `stopped` and `failed`. Stop ends the run at its
+`needs-input`, `stalled`, `stopped` and `failed`. Bytes are counted on the
+wire as an answer arrives and the answer is cut past what the run may still
+take, with the remainder reserved for a call while it is in flight so two
+calls cannot both pass one check; seconds are armed when the run starts and
+cancel whatever is in flight when they run out. A turn that spends the
+engine's step budget on research before writing its proposal is continued,
+up to three times, with what it read and cited handed back to it by id. Stop ends the run at its
 last completed stage, cancelling the engine, any host tool in flight and any
 check; leaving the page stops it too, and nothing about a run is persisted.
 

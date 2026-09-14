@@ -2143,6 +2143,16 @@ describe('host tools: the desk’s own, executed on the page', () => {
     expect(rest.filter((event) => event.type === 'proposal' || event.type === 'tool_result')).toEqual([])
   })
 
+  it('refuses a host tool named like a runtime tool, before the model is asked', async () => {
+    const { call, seen } = scriptedCall([turn({ text: PROPOSAL_TEXT })])
+    const events = await drain(
+      vercel.start(session(call, { hostTools: [searchTool(async () => ({ content: [] })), { ...searchTool(async () => ({ content: [] })), name: 'validate' }] }))
+    )
+    expect(seen).toHaveLength(0)
+    expect(events.map((event) => event.type)).toEqual(['error', 'end'])
+    expect((events[0] as { message: string }).message).toContain('named like a tool the runtime serves')
+  })
+
   it('offers no host tool where the session hands none', async () => {
     const { call, seen } = scriptedCall([turn({ text: PROPOSAL_TEXT })])
     await drain(vercel.start(session(call)))

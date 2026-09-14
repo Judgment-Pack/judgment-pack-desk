@@ -6,6 +6,7 @@ import { Ledger } from './ledger'
 import { AuthoringRun, admitCases, factPaths, matrixDocument, researchRecord, traceCitations, type RunPorts, type RunState, type TurnRequest } from './run'
 import { researchTools } from './tools'
 import { TEST_PUBLIC_KEY, fakeGateway } from './__fixtures__/fakeGateway'
+import { parseJsonText } from './verify/canon'
 
 const answers = JSON.parse(readFileSync(join(import.meta.dirname, '__fixtures__', 'provider-answers.json'), 'utf8')) as Record<string, unknown>
 const PUBLIC_KEY = TEST_PUBLIC_KEY
@@ -81,7 +82,7 @@ function fakeRuntime(): { callTool: CallTool; calls: string[] } {
   return { callTool, calls }
 }
 
-function harness(scripts: Script[], overrides: Partial<RunPorts> = {}) {
+function harness(scripts: Script[], overrides: Partial<RunPorts> = {}, tamper: (acquired: import('./gatewayClient').Acquired) => import('./gatewayClient').Acquired = (a) => a) {
   const ledger = new Ledger('unset')
   const gateway = fakeGateway()
   const logged: string[] = []
@@ -95,7 +96,7 @@ function harness(scripts: Script[], overrides: Partial<RunPorts> = {}) {
     budget: { searches: 8, reads: 12, bytes: 8_388_608, seconds: 600 },
     spent: { searches: 0, reads: 0, bytes: 0, startedAt: Date.now() },
     log: (line) => logged.push(line),
-    acquire: async (session, source, args) => gateway.acquire(session, source, (answers[source === 'search' ? 'tavilySearch' : 'jinaReader'] as { body: unknown }).body, args)
+    acquire: async (session, source, args) => tamper(await gateway.acquire(session, source, (answers[source === 'search' ? 'tavilySearch' : 'jinaReader'] as { body: unknown }).body, args))
   })
   const runtime = fakeRuntime()
   let turns = 0
@@ -121,6 +122,7 @@ function harness(scripts: Script[], overrides: Partial<RunPorts> = {}) {
     newSession: () => `s${++sessions}`,
     authorPrompt: 'AUTHOR PROMPT',
     maxRevisions: 2,
+    seconds: 600,
     log: (line) => logged.push(line),
     ...overrides
   }
@@ -202,9 +204,19 @@ describe('the authoring run', () => {
     expect(matrix.matrixVersion).toBe('3')
     expect(matrix.cases).toHaveLength(3)
     expect(matrix.cases[0]!.cites).toEqual([{ sessionId: 's1', callIndex: 0, signature: expect.stringMatching(/^[0-9a-f]{128}$/) }])
-    const record = researchRecord(state, ledger, 'abc') as { sources: { id: string; receipt?: unknown; verification: unknown }[]; packSha256: string }
+    const record = researchRecord(state, ledger, 'abc') as {
+      sources: { id: string; receipt?: unknown; verification: unknown; acquireResponse?: string }[]
+      packSha256: string
+      registries: Record<string, string>
+      verdicts: Record<string, { ok: boolean }>
+    }
     expect(record.packSha256).toBe('abc')
     expect(record.sources[0]).toMatchObject({ id: 'src-1', verification: { state: 'verified' } })
+    // Enough to check the claim again: the acquire response as received and
+    // the registry the verdict was reached with.
+    expect(record.sources[0]!.acquireResponse).toContain('"receipt":')
+    expect(record.registries.s1).toContain('"finalCount":1')
+    expect(record.verdicts.s1!.ok).toBe(true)
   })
 
   it('repairs a candidate that disagrees, never rewriting a case, and stops at the budget', async () => {
@@ -274,6 +286,47 @@ describe('the authoring run', () => {
     expect((await settled(failed.run)).detail).toBe('the endpoint answered 429')
   })
 
+  it('continues a turn whose steps ran out before the proposal, with what was read', async () => {
+    let attempts = 0
+    const spent: Script = async (request, signal, onEvent) => {
+      attempts += 1
+      if (attempts === 1) {
+        // Reads and cites, then runs out of steps: the engine's own sentence.
+        const read = request.hostTools.find((tool) => tool.name === 'read_source')!
+        await read.execute({ url: PAGE_URL }, signal)
+        const cite = request.hostTools.find((tool) => tool.name === 'cite_excerpt')!
+        await cite.execute({ source_id: 'src-1', quote: "We don't count any hours you work above 30 hours/week." }, signal)
+        onEvent({ type: 'error', message: 'the final message must carry exactly one fenced JSON block holding the proposal; this one carried 0' })
+        onEvent({ type: 'end' })
+        return
+      }
+      expect(request.prompt).toContain('CONTINUE')
+      expect(request.prompt).toContain('SOURCES ALREADY READ AND CITED')
+      expect(request.prompt).toContain('src-1#e1')
+      onEvent({ type: 'proposal', document: PACK, unknowns: [] })
+      onEvent({ type: 'end' })
+    }
+    const { run, ledger, sealed } = harness([spent, spent, casesTurn])
+    run.start('brief', [PAGE_URL])
+    const state = await settled(run)
+    expect(state.status, state.detail).toBe('ready')
+    expect(attempts).toBe(2)
+    expect(state.turns.some((t) => t.kind === 'note' && t.text.includes('continuing (1 of 3)'))).toBe(true)
+    // The source read in the spent turn was verified with that turn's session, and kept.
+    expect(ledger.byId('src-1')!.verification.state).toBe('verified')
+    expect(sealed).toEqual(['s1'])
+    // A turn that keeps running out is reported as failed after the bound.
+    const always: Script = async (_request, _signal, onEvent) => {
+      onEvent({ type: 'error', message: 'the final message must carry exactly one fenced JSON block holding the proposal; this one carried 0' })
+      onEvent({ type: 'end' })
+    }
+    const stuck = harness([always])
+    stuck.run.start('brief', [])
+    const failed = await settled(stuck.run)
+    expect(failed.status).toBe('failed')
+    expect(failed.turns.filter((t) => t.kind === 'note')).toHaveLength(3)
+  })
+
   it('needs input where no case could be grounded', async () => {
     const noCases: Script = async (_request, _signal, onEvent) => {
       onEvent({ type: 'proposal', document: { cases: [] }, unknowns: ['Which excerpt states the threshold?'] })
@@ -316,6 +369,85 @@ describe('the authoring run', () => {
     expect(runtime.calls.length).toBeGreaterThan(before)
   })
 
+  it('withholds ready where a cited source’s receipt failed, and where a citation cannot be traced', async () => {
+    // The reader's text is changed after the gateway signed it: the page
+    // reads the changed text, cites it, and the verifier catches the artifact.
+    const swapped = harness([researchTurn(), casesTurn], {}, (acquired) => {
+      const text = acquired.text.replace('1,560 hours', '1,500 hours')
+      const parsed = parseJsonText(text)
+      const member = (name: string) => (parsed.kind === 'object' ? parsed.members.find((m) => m.name === name)!.value : parsed)
+      return { ...acquired, text, result: member('result') }
+    })
+    swapped.run.start('brief', [PAGE_URL])
+    const state = await settled(swapped.run)
+    expect(state.status).toBe('needs-input')
+    expect(state.detail).toContain('failed receipt verification')
+    expect(swapped.ledger.byId('src-1')!.verification).toMatchObject({ state: 'failed', findings: [{ status: 'artifact-mismatch', callIndex: 0 }] })
+    expect(state.cases).toEqual([])
+    expect(state.droppedCases.filter((d) => d.id !== 'ungrounded').every((d) => d.reason.includes('did not verify'))).toBe(true)
+    expect(state.droppedCases).toHaveLength(4)
+    expect(state.citations[0]).toMatchObject({ traced: false, reason: expect.stringContaining('failed') })
+    // A draft citing nothing is not ready either.
+    const uncited = harness([researchTurn({ ...PACK, sources: [], rules: [{ ...PACK.rules[0]!, sourceRefs: [] }] }), casesTurn])
+    uncited.run.start('brief', [PAGE_URL])
+    const state2 = await settled(uncited.run)
+    expect(state2.status).toBe('needs-input')
+    expect(state2.detail).toContain('cites no source')
+  })
+
+  it('holds receipts in the order it opened them, so a reordered or relabelled answer fails', async () => {
+    // The gateway answers the second read with the first read's receipt and
+    // vice versa: each receipt is genuine, but neither is at the position the
+    // desk asked for, and the verifier says so.
+    const answers: import('./gatewayClient').Acquired[] = []
+    const scripted: Script = async (request, signal, onEvent) => {
+      const read = request.hostTools.find((tool) => tool.name === 'read_source')!
+      await read.execute({ url: PAGE_URL }, signal)
+      await read.execute({ url: PAGE_URL + '?second' }, signal)
+      onEvent({ type: 'proposal', document: PACK, unknowns: [] })
+      onEvent({ type: 'end' })
+    }
+    const { run, ledger } = harness([scripted, casesTurn], {}, (acquired) => {
+      answers.push(acquired)
+      // Hand the first call the second receipt when it exists: swap by
+      // returning the previous answer for the second call and the second for
+      // the first is impossible in one pass, so swap the receipt members.
+      if (answers.length === 2) {
+        const [first, second] = answers
+        return { ...second!, receipt: first!.receipt, result: first!.result }
+      }
+      return acquired
+    })
+    run.start('brief', [PAGE_URL])
+    await settled(run)
+    expect(ledger.byId('src-2')!.verification.state).toBe('failed')
+    expect(ledger.byId('src-1')!.verification.state).toBe('failed')
+  })
+
+  it('stops a run at its time budget and reports it as budget, not stopped', async () => {
+    const slow: Script = (_request, signal) =>
+      new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new DOMException('stopped', 'AbortError'))))
+    const { run } = harness([slow], { seconds: 0.05 })
+    run.start('brief', [])
+    const state = await settled(run)
+    expect(state.status).toBe('budget')
+    expect(state.detail).toContain('time budget')
+  })
+
+  it('keeps an admitted case its own: the reviewer’s object can no longer reach it', async () => {
+    const proposal = structuredClone(CASES)
+    const mutating: Script = async (_request, _signal, onEvent) => {
+      onEvent({ type: 'proposal', document: proposal, unknowns: [] })
+      onEvent({ type: 'end' })
+    }
+    const { run } = harness([researchTurn(), mutating])
+    run.start('brief', [PAGE_URL])
+    const state = await settled(run)
+    ;(proposal.cases[0]!.expectedDisposition as { outcomeId: string }).outcomeId = 'changed'
+    expect((state.cases[0]!.expectedDisposition as { outcomeId: string }).outcomeId).toBe('meets')
+    expect(Object.isFrozen(state.cases[0]!.facts)).toBe(true)
+  })
+
   it('marks sources failed where the registry cannot be fetched, or the key is not pinned', async () => {
     const { run, ledger } = harness([researchTurn(), casesTurn], {
       registry: async () => {
@@ -341,12 +473,17 @@ describe('citation tracing and case admission', () => {
       document: { url: 'https://a.example/p', title: 'P', text: 'A claim of $50 or less is approved.', pageDates: {} }
     })
     ledger.cite('src-1', 'A claim of $50 or less')
-    const doc = (citation: unknown, value = 'https://a.example/p') => ({ sources: [{ id: 'p', locator: { kind: 'uri', value }, citation }] })
+    const doc = (citation: unknown, value: unknown = 'https://a.example/p') => ({ sources: [{ id: 'p', locator: { kind: 'uri', value }, citation }] })
+    // Unchecked: nothing traces until the receipt has verified.
+    expect(traceCitations(doc({ location: 'src-1#e1', excerpt: 'A claim of $50 or less' }), ledger)[0]!.reason).toContain('unchecked')
+    ledger.verified('src-1', { state: 'verified', at: 't', keyId: 'k' })
     expect(traceCitations(doc({ location: 'src-1#e1', excerpt: 'A claim   of $50 or less' }), ledger)[0]!.traced).toBe(true)
     expect(traceCitations(doc({ location: 'src-1#e1', excerpt: 'something else' }), ledger)[0]!.reason).toContain('not the recorded excerpt text')
     expect(traceCitations(doc({ location: 'src-1#e2', excerpt: 'x' }), ledger)[0]!.reason).toContain('no excerpt src-1#e2')
     expect(traceCitations(doc({ location: 'section 4', excerpt: 'x' }), ledger)[0]!.reason).toContain('no excerpt id')
     expect(traceCitations(doc({ location: 'src-1#e1', excerpt: 'A claim of $50 or less' }, 'https://b.example/'), ledger)[0]!.reason).toContain('not the URL')
+    expect(traceCitations(doc({ location: 'src-1#e1', excerpt: 'A claim of $50 or less' }, 42), ledger)[0]!.reason).toContain('not a string URL')
+    expect(traceCitations({ sources: [{ id: 'p', citation: { location: 'src-1#e1', excerpt: 'A claim of $50 or less' } }] }, ledger)[0]!.traced).toBe(false)
     expect(traceCitations({ sources: 'no' }, ledger)).toEqual([])
     expect(factPaths(PACK)).toEqual(['/work/hours'])
   })

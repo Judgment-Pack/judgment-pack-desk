@@ -342,27 +342,94 @@
     "keys": [],
     "engine": "vercel",
     "thinking": "off",
-    "researchGateway": "http://127.0.0.1:8787"
+    "researchGateway": "http://127.0.0.1:8787",
+    "research": {
+      "authority": "gateway:local",
+      "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b",
+      "search": null,
+      "read": null,
+      "limits": {
+        "searches": 8,
+        "reads": 12,
+        "bytes": 8388608,
+        "seconds": 600
+      }
+    }
+  },
+  "accepted-research-gateway-uppercase-localhost": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "researchGateway": "http://LOCALHOST:8787",
+    "research": {
+      "authority": "gateway:local",
+      "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b",
+      "search": null,
+      "read": null,
+      "limits": {
+        "searches": 8,
+        "reads": 12,
+        "bytes": 8388608,
+        "seconds": 600
+      }
+    }
   },
   "accepted-research-https-gateway": {
     "accepted": true,
     "keys": [],
     "engine": "vercel",
     "thinking": "off",
-    "researchGateway": "https://gateway.example.invalid/engine"
+    "researchGateway": "https://gateway.example.invalid/engine",
+    "research": {
+      "authority": "gateway:local",
+      "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b",
+      "search": null,
+      "read": null,
+      "limits": {
+        "searches": 8,
+        "reads": 12,
+        "bytes": 8388608,
+        "seconds": 600
+      }
+    }
   },
   "accepted-research-in-full": {
     "accepted": true,
     "keys": [],
     "engine": "vercel",
     "thinking": "off",
-    "researchGateway": "http://127.0.0.1:8787"
+    "researchGateway": "http://127.0.0.1:8787",
+    "research": {
+      "authority": "gateway:local",
+      "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b",
+      "search": "search/tavily-search",
+      "read": "read/jina-reader",
+      "limits": {
+        "searches": 4,
+        "reads": 6,
+        "bytes": 1048576,
+        "seconds": 120
+      }
+    }
   },
   "accepted-research-null-gateway": {
     "accepted": true,
     "keys": [],
     "engine": "vercel",
-    "thinking": "off"
+    "thinking": "off",
+    "research": {
+      "authority": "",
+      "signer": "",
+      "search": null,
+      "read": null,
+      "limits": {
+        "searches": 8,
+        "reads": 12,
+        "bytes": 8388608,
+        "seconds": 600
+      }
+    }
   },
   "accepted-storage-nested-dir": {
     "accepted": true,
@@ -942,7 +1009,19 @@
       "project.dir"
     ]
   },
+  "refused-research-gateway-authority-bom": {
+    "accepted": false,
+    "keys": [
+      "research.gateway.authority"
+    ]
+  },
   "refused-research-gateway-authority-empty": {
+    "accepted": false,
+    "keys": [
+      "research.gateway.authority"
+    ]
+  },
+  "refused-research-gateway-authority-space": {
     "accepted": false,
     "keys": [
       "research.gateway.authority"

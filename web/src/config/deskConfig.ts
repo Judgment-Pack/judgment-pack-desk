@@ -1180,6 +1180,8 @@ function idBase(value: unknown, problems: ConfigProblem[]): string | undefined {
 
 /** 64 lowercase hex characters: the 32 raw bytes of an Ed25519 public key. */
 const PUBLIC_KEY_HEX = /^[0-9a-f]{64}$/
+/** A gateway authority label: printable ASCII, no space, as `gateway serve` took it. */
+const AUTHORITY_LABEL = /^[\x21-\x7e]{1,128}$/
 
 /**
  * The gateway object, or null.
@@ -1213,11 +1215,14 @@ function researchGatewayValue(
       })
     }
   }
-  const authority = typeof gateway.authority === 'string' ? gateway.authority : undefined
-  if (authority === undefined || authority.trim() === '') {
+  // One predicate, spelled the same as the chassis': printable ASCII with
+  // no space. Trimming would be two whitespace vocabularies, and the label
+  // is compared byte for byte to every receipt.
+  const authority = typeof gateway.authority === 'string' && AUTHORITY_LABEL.test(gateway.authority) ? gateway.authority : undefined
+  if (authority === undefined) {
     problems.push({
       key: 'research.gateway.authority',
-      reason: `must be a non-empty string; found ${describe(gateway.authority)}`
+      reason: `must be the gateway's authority label as it was started with: printable ASCII with no space; found ${describe(gateway.authority)}`
     })
   }
   let publicKey = ''

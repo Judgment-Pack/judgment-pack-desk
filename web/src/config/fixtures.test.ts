@@ -68,6 +68,14 @@ interface Verdict {
    * traffic is a value both decoders must agree on, not only a verdict.
    */
   researchGateway?: string
+  /** Every other research value, compared where the verdict states it. */
+  research?: {
+    authority: string
+    signer: string
+    search: string | null
+    read: string | null
+    limits: Record<string, number>
+  }
 }
 
 const expected = JSON.parse(
@@ -113,6 +121,19 @@ describe('the shared desk-configuration fixtures', () => {
         expect(research.gateway?.url ?? '', `${name}: research.gateway.url`).toBe(
           verdict.researchGateway ?? ''
         )
+        if (verdict.research !== undefined) {
+          const spell = (source: { source: string; dialect: string } | null) => (source === null ? null : `${source.source}/${source.dialect}`)
+          expect(
+            {
+              authority: research.gateway?.authority ?? '',
+              signer: research.gateway?.signer.public ?? '',
+              search: spell(research.sources.search),
+              read: spell(research.sources.read),
+              limits: research.limits
+            },
+            `${name}: research values`
+          ).toEqual(verdict.research)
+        }
         // The migrations, in the decoder's own words. A sentence changed on
         // one side of the shared decoder and not the other fails on both.
         expect(decoded.notices, `${name}: notices`).toEqual(verdict.notices ?? [])

@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { parseJsonText, stringMember, type JsonNode } from './canon'
 import { verifySession, type Finding, type HeldReceipt } from './session'
+import { fakeGateway } from '../__fixtures__/fakeGateway'
 
 const FIXTURES = join(import.meta.dirname, 'fixtures')
 const PUBLIC_KEY = readFileSync(join(FIXTURES, 'TEST-PUBLIC-KEY'), 'utf8').trim()
@@ -165,6 +166,49 @@ describe('the verifier catches what a held session can be tampered with', () => 
     })
     expect(verdict.ok).toBe(false)
     expect(statusesOf(verdict.findings)).toContain('action-unchecked')
+  })
+  it('drops a seal naming a foreign key id even where the signature is the real key’s, and takes the first loadable seal', async () => {
+    const gateway = fakeGateway(store.authority)
+    const first = await gateway.acquire('t1', 'read', { n: 1 })
+    await gateway.seal('t1')
+    const genuine = gateway.sealsText[0]!
+    // The same seal, its keyId renamed and re-signed under the real key: the
+    // signature verifies, and the key id rule alone has to drop it.
+    const foreign = await gateway.resign({ ...JSON.parse(genuine), keyId: 'ab'.repeat(16) })
+    const held = [{ receipt: first.receipt, result: first.result }]
+    const foreignOnly = await verifySession({ sessionId: 't1', authority: store.authority, publicKeyHex: PUBLIC_KEY, receipts: held, registryText: foreign + '\n' })
+    expect(statusesOf(foreignOnly.findings)).toEqual(['ok', 'unregistered-session'])
+    // Two loadable seals: the first decides, whatever the second counts.
+    const second = await gateway.resign({ ...JSON.parse(genuine), finalCount: 7 })
+    const firstWins = await verifySession({ sessionId: 't1', authority: store.authority, publicKeyHex: PUBLIC_KEY, receipts: held, registryText: genuine + '\n' + second + '\n' })
+    expect(firstWins.ok).toBe(true)
+    const secondFirst = await verifySession({ sessionId: 't1', authority: store.authority, publicKeyHex: PUBLIC_KEY, receipts: held, registryText: second + '\n' + genuine + '\n' })
+    expect(statusesOf(secondFirst.findings)).toEqual(['ok', 'tail-rollback'])
+  })
+  it('breaks the chain on a genuine receipt whose prevSignature names another, same version', async () => {
+    const gateway = fakeGateway(store.authority)
+    const a = await gateway.acquire('c1', 'read', { n: 1 })
+    const b = await gateway.acquire('c1', 'read', { n: 2 })
+    // Receipt 1 re-signed with a prevSignature that is not receipt 0's: every
+    // receipt verifies on its own, the version is one, and only the link
+    // between them is wrong.
+    const relinked = await gateway.resign({ ...JSON.parse(store.files['receipts/s1/0.json']!.trim().length ? gateway.receipts.get('c1')![1]! : '{}'), prevSignature: 'ab'.repeat(64) })
+    await gateway.seal('c1')
+    const verdict = await verifySession({
+      sessionId: 'c1',
+      authority: store.authority,
+      publicKeyHex: PUBLIC_KEY,
+      receipts: [{ receipt: a.receipt, result: a.result }, { receipt: parseJsonText(relinked), result: b.result }],
+      registryText: await gateway.registry()
+    })
+    expect(statusesOf(verdict.findings)).toEqual(['ok', 'ok', 'chain-broken'])
+  })
+  it('reports a receipt outside the canonical domain as malformed before its key is looked at', async () => {
+    const input = base()
+    const text = store.files['receipts/s1/1.json']!.replace('"keyId":"ddb406e95cad582adc111a7d6fbff25d"', '"extra":1.5,"keyId":"ab"')
+    input.receipts[1] = { ...input.receipts[1]!, receipt: parseJsonText(text) }
+    const verdict = await verifySession(input)
+    expect(verdict.findings[1]).toMatchObject({ status: 'malformed', file: '1.json' })
   })
   it('holds nothing, verifies nothing', async () => {
     const verdict = await verifySession({ ...base(), receipts: [] })
