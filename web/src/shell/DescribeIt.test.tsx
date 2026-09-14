@@ -183,7 +183,7 @@ function config(assistant: unknown): EffectiveConfig {
  * count rather than an impression.
  */
 function serve(
-  options: { keyPresent?: boolean; hang?: boolean; refuse?: boolean; files?: string[] } = {}
+  options: { keyPresent?: boolean; keyReply?: () => Promise<Response>; hang?: boolean; refuse?: boolean; files?: string[] } = {}
 ) {
   const sent: Sent[] = []
   const model = scriptedModel({ api: 'openai-compatible', answerAs: 'stream' })
@@ -208,6 +208,7 @@ function serve(
       return model.fetch(url, init)
     }
     if (url.startsWith('/api/assistant/key')) {
+      if (options.keyReply) return options.keyReply()
       const present = options.keyPresent ?? true
       return ok({ present, fingerprint: present ? 'sk-a…wxyz' : '' })
     }
@@ -479,6 +480,21 @@ describe('where there is no assistant to run', () => {
     draw()
     expect(await screen.findByText(/no key is stored on this machine/)).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Propose' })).toBeNull()
+  })
+
+  it('distinguishes loading and failure from absence, then recovers by retrying', async () => {
+    let reject!: (reason: Error) => void
+    const pending = new Promise<Response>((_, fail) => { reject = fail })
+    serve({ keyReply: () => pending })
+    draw()
+    expect(screen.getByText('Checking saved API key…')).toBeTruthy()
+    expect(screen.queryByText(/no key is stored on this machine/)).toBeNull()
+    await act(async () => { reject(new TypeError('Connection interrupted')) })
+    expect(await screen.findByText(/Could not check the saved API key/)).toBeTruthy()
+    expect(screen.queryByText(/no key is stored on this machine/)).toBeNull()
+    serve({ keyPresent: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Retry key status' }))
+    expect(await screen.findByText('Describe it instead')).toBeTruthy()
   })
 
   it('will not run against a configuration this desk could not read', async () => {

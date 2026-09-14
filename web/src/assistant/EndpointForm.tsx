@@ -383,6 +383,7 @@ export function EndpointForm({
             state={key.data}
             answered={key.isSuccess}
             failed={key.error}
+            onRetry={() => { void key.refetch() }}
             binding={binding}
             field={keyInput}
             replacing={replacingKey}

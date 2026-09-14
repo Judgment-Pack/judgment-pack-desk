@@ -136,7 +136,9 @@ const ENDPOINT_KEYS = ['url', 'kind', 'model', 'models', 'tools'] as const
  * one reason — no model chosen. Folding it into `state` would make "configured"
  * mean two things and force every consumer to invent the difference back.
  */
-const SLOT_KEYS = ['state', 'endpoint', 'unusable', 'keyPresent', 'engine', 'thinking'] as const
+// Key presence and the read lifecycle are separate facts. Retry re-reads metadata;
+// it never returns, replaces or stores the credential.
+const SLOT_KEYS = ['state', 'endpoint', 'unusable', 'keyPresent', 'keyStatus', 'retryKey', 'engine', 'thinking'] as const
 
 const assistantKeysAreExact: Exactly<keyof AssistantConfig, (typeof ASSISTANT_KEYS)[number]> = true
 const endpointKeysAreExact: Exactly<

@@ -28,6 +28,7 @@ export function KeyField({
   state,
   answered,
   failed,
+  onRetry,
   binding,
   field,
   onTyped,
@@ -46,6 +47,7 @@ export function KeyField({
   state: AssistantKeyState | undefined
   answered: boolean
   failed: Error | null
+  onRetry: () => void
   binding: KeyBinding
   field: RefObject<HTMLInputElement | null>
   /** Whether anything at all has been typed. Never what. */
@@ -98,6 +100,7 @@ export function KeyField({
       )}
 
       {(read.present || !answered || failed !== null) && <p className="quiet">{keySays(read, answered, failed)}</p>}
+      {failed !== null && <Button variant="quiet" onClick={onRetry}>Retry key status</Button>}
       {(binding === 'rebind' || binding === 'no-endpoint') && (
         <p className="quiet">{bindingSays(binding, read, destination)}</p>
       )}
