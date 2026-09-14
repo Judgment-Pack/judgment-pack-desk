@@ -845,24 +845,16 @@ describe('arriving at an address that names a member', () => {
 
 describe('the guided reading workspace', () => {
   beforeEach(() => chassis(PACK_TEXT, DIGEST))
-  it('opens overview information in the Inspector without executing an outcome', async () => {
+  it('keeps Overview brief and sends detailed reading to Logic', async () => {
     const { router, calls } = draw(SERVED, {}, '/packs/vendor-onboarding', { inspector: true })
     const overview = await screen.findByRole('region', { name: 'Pack overview' })
-    for (const [name, pointer] of [
-      ['View conditions', '/applicability'],
-      ['View evidence needed', '/evidenceRequirements'],
-      ['View outcome: Approve', '/outcomes/0'],
-      ['View outcome: Decline', '/outcomes/1'],
-      ['View source references', '/sources']
-    ]) {
-      const control = Array.from(overview.querySelectorAll('button')).find(button => button.getAttribute('aria-label') === name)!
-      fireEvent.click(control)
-      await waitFor(() => expect(new URLSearchParams(router.state.location.search).get('at')).toBe(pointer))
-      expect(control.getAttribute('aria-current')).toBe('true')
-      expect(overview.querySelectorAll('[aria-current="true"]')).toHaveLength(1)
-    }
-    expect(slotTarget!.querySelectorAll('pre')).toHaveLength(1)
-    expect(slotTarget!.querySelector('pre')!.closest('details')?.open).toBe(false)
+    expect(within(overview).getByText('Approve')).toBeTruthy()
+    expect(within(overview).getByText('Decline')).toBeTruthy()
+    expect(within(overview).queryByText('Fallback outcome')).toBeNull()
+    expect(within(overview).queryByText('Handoff target')).toBeNull()
+    expect(within(overview).queryByRole('button', { name: 'View conditions' })).toBeNull()
+    fireEvent.click(within(overview).getByRole('button', { name: 'View source references' }))
+    await waitFor(() => expect(new URLSearchParams(router.state.location.search).get('at')).toBe('/sources'))
     expect([...new Set(calls.map(call => call.name))].sort()).toEqual(['get_pack', 'list_packs', 'validate'])
     expect(screen.getByRole('link', { name: 'View logic' }).getAttribute('href')).toBe('/packs/vendor-onboarding?view=logic')
   })
@@ -873,6 +865,16 @@ describe('the guided reading workspace', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Map' }))
     await waitFor(() => expect(new URLSearchParams(router.state.location.search).get('layout')).toBe('map'))
     expect(new URLSearchParams(router.state.location.search).get('at')).toBe('/rules/1')
+    expect(revealed).toHaveLength(1)
+  })
+  it('shows a condition in the Inspector only when its main definition is unavailable', async () => {
+    const { revealed } = draw(SERVED, {}, '/packs/vendor-onboarding?view=logic&layout=list&at=/rules/1', { inspector: true })
+    await screen.findByRole('radio', { name: 'List' })
+    await waitFor(() => expect(slotTarget!.querySelector('[data-condition-tree]')).toBeNull())
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Find pack item' }), { target: { value: 'no-matching-rule' } })
+    await waitFor(() => expect(slotTarget!.querySelector('[data-condition-tree]')).not.toBeNull())
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Find pack item' }), { target: { value: '' } })
+    await waitFor(() => expect(slotTarget!.querySelector('[data-condition-tree]')).toBeNull())
     expect(revealed).toHaveLength(1)
   })
   it('opens on an overview and keeps detailed members in their named sections', async () => {

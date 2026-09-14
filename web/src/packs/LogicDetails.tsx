@@ -11,7 +11,7 @@ export function LogicDetails({ document, group, item, conditions = true }: {
 }) {
   const value = item.value
   if (group === 'applicability') return value === undefined ? <p className={styles.note}>No scope restriction is set.</p>
-    : <ConditionTree readOnly arrayLayout="inline" condition={value} at={item.pointer} />
+    : <ConditionTree readOnly structured condition={value} at={item.pointer} />
   if (item.pointer === '/fallbackOutcome') return <div className={styles.content}>
     <p>{value === undefined ? 'No fallback outcome' : outcomeLabel(document, value)}</p>
     <p className={styles.note}>Used only when no rule contributes an outcome and nothing blocks the result.</p>
@@ -19,7 +19,7 @@ export function LogicDetails({ document, group, item, conditions = true }: {
   if (value === undefined) return <p className={styles.note}>Not declared.</p>
   if (!isRecord(value)) return <pre className={styles.raw}>{JSON.stringify(value, null, 2)}</pre>
   if (group === 'rules' || group === 'exceptions') return <div className={styles.content}>
-    {conditions ? <ConditionTree readOnly arrayLayout="inline" condition={value.when} at={`${item.pointer}/when`} />
+    {conditions ? <ConditionTree readOnly structured condition={value.when} at={`${item.pointer}/when`} />
       : <p className={styles.note}>{isRecord(value.when) ? valueLabel('op', text(value.when.op)) : 'Condition'} · conditions hidden</p>}
     <dl className={styles.facts}>
       <div><dt>{group === 'rules' ? 'Contributes outcome' : 'Effect'}</dt><dd>{item.effect}</dd></div>

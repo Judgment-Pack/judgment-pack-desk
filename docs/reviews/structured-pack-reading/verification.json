@@ -1,0 +1,29 @@
+{
+  "passed": true,
+  "results": [
+    "All essential values visible without inspection",
+    "1480px with Inspector at minimum and maximum width: readable names, structured values and no repeated conditions",
+    "Sticky toolbar/header, restored List position, search highlight and jump, direct keyboard inspection",
+    "dark comfortable 1700px List contains full conditions",
+    "dark comfortable 1100px List contains full conditions",
+    "dark comfortable 640px List contains full conditions",
+    "dark comfortable 360px List contains full conditions",
+    "dark compact 1700px List contains full conditions",
+    "dark compact 1100px List contains full conditions",
+    "dark compact 640px List contains full conditions",
+    "dark compact 360px List contains full conditions",
+    "light comfortable 1700px List contains full conditions",
+    "light comfortable 1100px List contains full conditions",
+    "light comfortable 640px List contains full conditions",
+    "light comfortable 360px List contains full conditions",
+    "light compact 1700px List contains full conditions",
+    "light compact 1100px List contains full conditions",
+    "light compact 640px List contains full conditions",
+    "light compact 360px List contains full conditions",
+    "Overview shows authored context and a brief summary, without repeating result configuration",
+    "80 rules, 12 nested long conditions, grouping and expansion without overlap",
+    "Jump to searches, dismisses, restores target focus and expands grouped map targets",
+    "Display preferences persist; search reveals conditions; 200% text remains contained"
+  ],
+  "errors": []
+}

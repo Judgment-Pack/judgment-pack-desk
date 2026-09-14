@@ -11,10 +11,10 @@ import { initialLogicDisplay, initialLogicMode, rememberLogicDisplay, rememberLo
 
 // Browser verification exercises real node measurement, pan and keyboard input.
 vi.mock('../components/RelationshipMap', () => ({
-  RelationshipMap: ({ nodes, onInspect, focusRequest }: Parameters<typeof RelationshipMap>[0]) => <div data-focus-node={focusRequest?.id}>{nodes.map(node =>
+  RelationshipMap: ({ nodes, onSelect, focusRequest }: Parameters<typeof RelationshipMap>[0]) => <div data-focus-node={focusRequest?.id}>{nodes.map(node =>
     <div key={node.id} data-map-node={node.id} data-search-match={node.matched || undefined}>
       <button aria-label={node.id} aria-current={node.selected || undefined}
-        onClick={() => onInspect(node.id)}>{node.title}</button>{node.content}{node.observation && <p>{node.observation}</p>}
+        onClick={() => onSelect(node.id)}>{node.title}</button>{node.content}{node.observation && <p>{node.observation}</p>}
     </div>)}</div>
 }))
 
@@ -30,16 +30,17 @@ const doc = { ...base, applicability: { op: 'fact', path: '/case/type', operator
   evidenceRequirements: [{ id: 'confirmation', description: 'Written confirmation.', required: true, kind: 'attestation' }],
   escalation: { triggers: ['unknown', 'conflict'], target: { kind: 'human-role', name: 'Compliance' } }
 } as PackDocument
-const outline = vi.fn(), select = vi.fn()
+const inspect = vi.fn(), select = vi.fn()
 function Example({ document = doc, mode: initial = 'list', trace }: { document?: PackDocument; mode?: LogicMode; trace?: TraceEntry[] }) {
   const [at, setAt] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [mode, setMode] = useState(initial)
+  const [display, setDisplay] = useState(initialLogicDisplay)
   // A stable model is owned by the route in production.
   const [model] = useState(() => projectLogic(document))
   return <PackLogic model={model} at={at} groupId={null}
     select={pointer => { select(pointer); setAt(pointer) }} mode={mode} onMode={setMode}
-    query={query} onQuery={setQuery} openOutline={outline}
+    query={query} onQuery={setQuery} inspect={inspect} display={display} onDisplay={setDisplay}
     viewport={{ x: 0, y: 24, zoom: 1 }} onViewport={() => {}} listScroll={{ current: 0 }} trace={trace} />
 }
 
@@ -68,7 +69,7 @@ it('selects each real map item directly without a group or Outline step', async 
     expect(button.getAttribute('aria-current')).toBe('true')
     expect(select).toHaveBeenLastCalledWith(id)
   }
-  expect(outline).not.toHaveBeenCalled()
+  expect(inspect).not.toHaveBeenCalled()
   expect(screen.getByText('true')).toBeTruthy()
   expect(screen.getByText('false')).toBeTruthy()
 })
@@ -94,7 +95,7 @@ it('highlights map matches immediately and jumps without opening the Inspector',
   expect(document.querySelector('[data-focus-node]')?.getAttribute('data-focus-node')).toBe('/rules/0')
   fireEvent.click(screen.getByRole('button', { name: 'Next match' }))
   expect(document.querySelector('[data-focus-node]')?.getAttribute('data-focus-node')).toBe('/rules/1')
-  expect(outline).not.toHaveBeenCalled()
+  expect(inspect).not.toHaveBeenCalled()
 })
 
 it('expands a large outcome group on the main canvas', async () => {
@@ -103,12 +104,12 @@ it('expands a large outcome group on the main canvas', async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'rules:"proceed"' }))
   expect(await screen.findByRole('button', { name: '/rules/79' })).toBeTruthy()
   expect(screen.getAllByText('/case/correctionApplied')).toHaveLength(80)
-  expect(outline).not.toHaveBeenCalled()
+  expect(inspect).not.toHaveBeenCalled()
 })
 
 it('keeps invalid definitions readable in List when Map is unavailable', () => {
   render(<PackLogic model={projectLogic(doc)} at={null} groupId={null} select={select}
-    mode="map" onMode={vi.fn()} query="" onQuery={vi.fn()} openOutline={outline}
+    mode="map" onMode={vi.fn()} query="" onQuery={vi.fn()} inspect={inspect} display={initialLogicDisplay()} onDisplay={vi.fn()}
     viewport={{ x: 0, y: 0, zoom: 1 }} onViewport={vi.fn()} listScroll={{ current: 0 }} mapUnavailable="Validation needed" />)
   expect(screen.getByText('Validation needed')).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Read List' })).toBeTruthy()

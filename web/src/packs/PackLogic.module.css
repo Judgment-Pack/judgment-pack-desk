@@ -10,7 +10,7 @@
 .listGroup h2 { font-size: var(--text-body); margin: 0 0 var(--space-2); font-weight: 600; }
 .rules { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); margin-top: var(--space-3); }
 .items { display: grid; gap: var(--space-2); }
-.listGroup[data-group='evidenceRequirements'] .items { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.listGroup[data-group='evidenceRequirements'] .items { grid-template-columns: minmax(0, 1fr); }
 .listGroup[data-group='outcomes'] .items, .listGroup[data-group='resolution'] .items { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .item { min-width: 0; scroll-margin-top: var(--space-7); }
 .rules .item { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-2); }
@@ -25,6 +25,9 @@
 .groupPreview { font-size: var(--text-xs); color: var(--ink-soft); }
 .groupPreview ul { padding-inline-start: var(--space-4); margin: 0; }
 .groupPreview p { margin: var(--space-2) 0 0; }
-@container (max-width: 44rem) { .context, .rules { grid-template-columns: minmax(0, 1fr); } }
+@container (max-width: 54rem) { .context, .rules { grid-template-columns: minmax(0, 1fr); } }
 @container (max-width: 28rem) { .listGroup[data-group] .items { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 480px) { .toolbar { top: calc(-1 * var(--space-4)); } }
+.jumpSearch { width: 100%; }
+.jumpItems { display: grid; gap: var(--space-3); margin-top: var(--space-3); }
+.jumpItems h3 { font-size: var(--text-xs); color: var(--ink-soft); margin: 0 0 var(--space-1); }

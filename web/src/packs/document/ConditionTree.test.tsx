@@ -5,7 +5,7 @@
  * a page rather than by whoever authored the pack. So the assertions here are
  * about words that must be present verbatim and words that must be absent.
  */
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { MemoryRouter } from 'react-router-dom'
@@ -27,6 +27,34 @@ it('preserves long array operands exactly and gives Inspector copies no document
 })
 
 afterEach(cleanup)
+
+it('structures values as complete ordered entries without losing types, paths or nested logic', () => {
+  const values = ['5000', 5000, false, null, ['nested', true], { exact: 'value' }]
+  const condition = { op: 'all', conditions: [
+    { op: 'fact', path: '/case/type', operator: 'in', value: values },
+    { op: 'not', condition: { op: 'literal', value: false } },
+    { op: 'future', detail: 'Preserve me' }
+  ] }
+  const { container } = render(<ConditionTree structured readOnly condition={condition} at="/applicability" />)
+  expect(screen.getByText('Case type')).toBeTruthy()
+  expect(screen.getByText('/case/type')).toBeTruthy()
+  expect(screen.getByText('is one of')).toBeTruthy()
+  const list = screen.getByRole('list', { name: 'Exact values' })
+  expect(within(list).getAllByRole('listitem').map(item => JSON.parse(item.textContent!))).toEqual(values)
+  expect(screen.getByText('All conditions')).toBeTruthy()
+  expect(screen.getByText('Not')).toBeTruthy()
+  expect(container.textContent).toContain('Preserve me')
+  expect(container.querySelector('[data-pointer], [tabindex]')).toBeNull()
+})
+
+it('makes an empty set distinct from an absent operand', () => {
+  const { rerender } = render(<ConditionTree structured readOnly condition={{ op: 'fact', path: '/x', operator: 'in', value: [] }} at="/applicability" />)
+  expect(screen.getByText('0 values')).toBeTruthy()
+  expect(screen.getByText('[]')).toBeTruthy()
+  rerender(<ConditionTree structured readOnly condition={{ op: 'fact', path: '/x', operator: 'in' }} at="/applicability" />)
+  expect(screen.queryByText('[]')).toBeNull()
+  expect(screen.getByText('Value not declared')).toBeTruthy()
+})
 
 const full = JSON.parse(
   readFileSync(join(import.meta.dirname, '..', '__fixtures__', 'full.pack.json'), 'utf8')
