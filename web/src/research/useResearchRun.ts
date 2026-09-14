@@ -88,7 +88,9 @@ export function useResearchRun(): ResearchRunBinding {
                         ? 'The runtime connection is not ready.'
                         : !mcp.validateSupported
                           ? 'This runtime does not serve validate, so a draft cannot be checked.'
-                          : ''
+                          : !mcp.expectationValidationSupported
+                            ? 'Update the runtime to a build that validates test expectations before starting research.'
+                            : ''
 
   const ledgerRef = useRef<Ledger | null>(null)
   if (ledgerRef.current === null) ledgerRef.current = new Ledger(newResearchSession())

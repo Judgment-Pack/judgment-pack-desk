@@ -1,11 +1,15 @@
 import { readFileSync } from 'node:fs'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { AssistantEvent, CallTool, McpToolResult } from '../assistant/engine'
 import { Ledger } from './ledger'
-import { AuthoringRun, admitCases, factPaths, matrixDocument, researchRecord, traceCitations, type RunPorts, type RunState, type TurnRequest } from './run'
+import { AuthoringRun, admitCases, canCreateResearchDraft, factPaths, matrixDocument, researchRecord, traceCitations, type RunPorts, type RunState, type TurnRequest } from './run'
 import { researchTools } from './tools'
 import { TEST_PUBLIC_KEY, fakeGateway } from './__fixtures__/fakeGateway'
+import { fixtureExpectations } from './__fixtures__/expectationRuntime'
+import { EXPECTATION_TOOL } from './expectations'
 import { parseJsonText } from './verify/canon'
 
 const answers = JSON.parse(readFileSync(join(import.meta.dirname, '__fixtures__', 'provider-answers.json'), 'utf8')) as Record<string, unknown>
@@ -49,7 +53,7 @@ const PACK = {
 const CASES = {
   cases: [
     { id: 'meets-hours', facts: { work: { hours: '1560' } }, expectedDisposition: { kind: 'outcome', outcomeId: 'meets', reasons: [], handoff: { state: 'none' } }, expectationSource: 'src-1#e1', rationale: 'at the threshold' },
-    { id: 'under-hours', facts: { work: { hours: '1559' } }, expectedDisposition: { kind: 'outcome', outcomeId: 'does-not-meet', reasons: ['no-match'], handoff: { state: 'none' } }, expectationSource: 'src-1#e1', rationale: 'just under' },
+    { id: 'under-hours', facts: { work: { hours: '1559' } }, expectedDisposition: { kind: 'outcome', outcomeId: 'does-not-meet', reasons: [], handoff: { state: 'none' } }, expectationSource: 'src-1#e1', rationale: 'just under' },
     { id: 'hours-missing', facts: {}, expectedDisposition: { kind: 'unresolved', reasons: ['unknown'], handoff: { state: 'requested', triggeredBy: ['unknown'] } }, expectationSource: 'src-1#e1', rationale: 'missing fact escalates' },
     { id: 'ungrounded', facts: {}, expectedDisposition: { kind: 'outcome', outcomeId: 'meets', reasons: [], handoff: { state: 'none' } }, expectationSource: 'src-9#e9', rationale: 'no excerpt' }
   ]
@@ -62,6 +66,7 @@ function fakeRuntime(): { callTool: CallTool; calls: string[] } {
   const calls: string[] = []
   const callTool: CallTool = async (name, args): Promise<McpToolResult> => {
     calls.push(name)
+    if (name === EXPECTATION_TOOL) return fixtureExpectations(args)
     if (name === 'validate') return { structuredContent: { status: 'valid', diagnostics: [] } }
     if (name === 'experimental_evaluate') {
       if (args.rehearsal !== true) throw new Error('rehearsal not set')
@@ -74,7 +79,7 @@ function fakeRuntime(): { callTool: CallTool; calls: string[] } {
           ? { kind: 'unresolved', reasons: ['unknown'], handoff: { state: 'requested', triggeredBy: ['unknown'] } }
           : Number(hours) >= threshold
             ? { kind: 'outcome', outcomeId: 'meets', reasons: [], handoff: { state: 'none' } }
-            : { kind: 'outcome', outcomeId: 'does-not-meet', reasons: ['no-match'], handoff: { state: 'none' } }
+            : { kind: 'outcome', outcomeId: 'does-not-meet', reasons: [], handoff: { state: 'none' } }
       return { structuredContent: { status: 'evaluated', rehearsal: true, disposition } }
     }
     throw new Error(`unexpected tool ${name}`)
@@ -197,7 +202,7 @@ describe('the authoring run', () => {
     // The citation traced to the recorded excerpt.
     expect(state.citations).toEqual([{ sourceId: 'ircc-fswp', location: 'src-1#e1', excerptId: 'src-1#e1', url: PAGE_URL, traced: true, reason: '' }])
     // The runtime was asked, in rehearsal, once per case after one validate.
-    expect(runtime.calls).toEqual(['validate', 'experimental_evaluate', 'experimental_evaluate', 'experimental_evaluate'])
+    expect(runtime.calls).toEqual([EXPECTATION_TOOL, EXPECTATION_TOOL, 'validate', 'experimental_evaluate', 'experimental_evaluate', 'experimental_evaluate'])
     expect(logged.some((line) => line.startsWith('verify: s1 — verified'))).toBe(true)
     // What a created pack carries beside it.
     const matrix = matrixDocument(state, ledger) as { matrixVersion: string; cases: { id: string; cites?: unknown[] }[] }
@@ -518,3 +523,194 @@ describe('citation tracing and case admission', () => {
     expect(admitCases(null, ledger, []).dropped[0]!.reason).toContain('without a cases array')
   })
 })
+
+const INVALID_CASES = structuredClone(CASES)
+INVALID_CASES.cases[2]!.expectedDisposition.reasons = []
+const blockedCasesTurn: Script = async (_request, _signal, event) => {
+  event({ type: 'proposal', document: INVALID_CASES, unknowns: [] })
+  event({ type: 'end' })
+}
+const correctionTurn = (expectedDisposition: unknown = CASES.cases[2]!.expectedDisposition, unknowns: string[] = []): Script => async (request, _signal, event) => {
+  expect(request.reviewer).toBe(true)
+  expect(request.hostTools).toEqual([])
+  expect(request.prompt).toContain('SOURCE EXCERPT')
+  expect(request.prompt).not.toContain('LATEST CHECK')
+  expect(request.prompt).not.toContain('"rules":')
+  event({ type: 'proposal', document: { expectedDisposition, rationale: 'A missing fact retains unknown and the declared handoff trigger.' }, unknowns })
+  event({ type: 'end' })
+}
+
+async function blockedRun(scripts: Script[] = [], overrides: Partial<RunPorts> = {}) {
+  const h = harness([researchTurn(), blockedCasesTurn, ...scripts], overrides)
+  h.run.start('brief', [PAGE_URL])
+  const state = await settled(h.run)
+  expect(state.status, state.detail).toBe('needs-input')
+  expect(state.expectationIssues).toHaveLength(1)
+  return h
+}
+
+describe('invalid expectation review', () => {
+  it('keeps the invalid case visible and never tests, repairs or marks the smaller suite ready', async () => {
+    const answer: Script = async (_request, _signal, event) => {
+      event({ type: 'proposal', document: PACK, unknowns: [] })
+      event({ type: 'end' })
+    }
+    const { run, runtime } = await blockedRun([answer])
+    const state = run.getSnapshot()
+    expect(state.cases).toHaveLength(2)
+    expect(state.expectationIssues[0]!.original).toEqual(INVALID_CASES.cases[2])
+    expect(state.droppedCases).toHaveLength(1) // Only the separately ungrounded case.
+    expect(state.candidates[0]!.check).toBeUndefined()
+    expect(state.revisionsUsed).toBe(0)
+    expect(runtime.calls).toEqual([EXPECTATION_TOOL])
+    expect(canCreateResearchDraft(state)).toBe(false)
+    run.send('Is this ready?')
+    expect((await settled(run)).status).toBe('needs-input')
+    expect(runtime.calls).toEqual([EXPECTATION_TOOL])
+  })
+
+  it('proposes without applying, then requires the displayed approval to retest every case on unchanged bytes', async () => {
+    const { run, runtime, ledger } = await blockedRun([correctionTurn()])
+    const before = structuredClone(run.getSnapshot().candidates[0])!
+    run.proposeExpectationCorrection('hours-missing')
+    let state = await settled(run)
+    const issue = state.expectationIssues[0]!
+    expect(issue.proposal?.candidateDigest).toBe(before.digest)
+    expect(issue.resolved).toBeUndefined()
+    expect(state.cases).toHaveLength(2)
+    expect(runtime.calls).not.toContain('experimental_evaluate')
+    run.approveExpectationCorrection(issue.id, 'stale-token')
+    expect(run.getSnapshot()).toBe(state)
+    run.approveExpectationCorrection(issue.id, issue.proposal!.token)
+    state = await settled(run)
+    expect(state.status, state.detail).toBe('ready')
+    expect(canCreateResearchDraft(state)).toBe(true)
+    expect(state.candidates).toHaveLength(1)
+    expect(state.candidates[0]).toMatchObject(before)
+    expect(state.revisionsUsed).toBe(0)
+    expect(state.cases).toHaveLength(3)
+    expect(state.candidates[0]!.check?.cases).toHaveLength(3)
+    expect(runtime.calls.filter(name => name === 'experimental_evaluate')).toHaveLength(3)
+    const resolved = state.expectationIssues[0]!.resolved!
+    expect(resolved.replacement).toEqual(CASES.cases[2])
+    expect(state.expectationIssues[0]!.original).toEqual(INVALID_CASES.cases[2])
+    expect(resolved.approvedAt).toBeTruthy()
+    expect(researchRecord(state, ledger, before.digest)).toMatchObject({ expectationIssues: state.expectationIssues })
+    run.approveExpectationCorrection(issue.id, issue.proposal!.token)
+    expect(run.getSnapshot()).toBe(state) // Cannot apply twice.
+    // No status, partial report, stale digest or missing id can bypass Create.
+    const check = state.candidates[0]!.check!
+    for (const changed of [{ ...check, documentDigest: 'stale' }, { ...check, cases: check.cases.slice(1) }, { ...check, cases: check.cases.map(row => ({ ...row, id: 'other' })) }]) {
+      expect(canCreateResearchDraft({ ...state, candidates: [{ ...state.candidates[0]!, check: changed }] })).toBe(false)
+    }
+    expect(canCreateResearchDraft({ ...state, expectationIssues: [issue] })).toBe(false)
+  })
+
+  it.each([
+    [INVALID_CASES.cases[2]!.expectedDisposition, []],
+    [CASES.cases[2]!.expectedDisposition, ['The source does not settle this expectation.']]
+  ])('keeps invalid or undetermined corrections blocked', async (disposition, unknowns) => {
+    const { run } = await blockedRun([correctionTurn(disposition, unknowns as string[])])
+    run.proposeExpectationCorrection('hours-missing')
+    const state = await settled(run)
+    expect(state.status).toBe('needs-input')
+    expect(state.expectationIssues[0]!.proposal).toBeUndefined()
+    expect(state.expectationIssues[0]!.proposalError).toBeTruthy()
+    expect(state.cases).toHaveLength(2)
+  })
+
+  it('invalidates a proposed correction when conversation changes the draft', async () => {
+    const changed: Script = async (_request, _signal, event) => {
+      event({ type: 'proposal', document: { ...PACK, title: 'Changed title' }, unknowns: [] })
+      event({ type: 'end' })
+    }
+    const { run } = await blockedRun([correctionTurn(), changed])
+    run.proposeExpectationCorrection('hours-missing')
+    const proposal = (await settled(run)).expectationIssues[0]!.proposal!
+    run.send('Change the title')
+    const state = await settled(run)
+    expect(state.expectationIssues[0]!.proposal).toBeUndefined()
+    expect(state.expectationIssues[0]!.proposalError).toContain('draft changed')
+    run.approveExpectationCorrection('hours-missing', proposal.token)
+    expect(run.getSnapshot()).toBe(state)
+  })
+
+  it('requires the source still to be verified at approval', async () => {
+    const { run, ledger } = await blockedRun([correctionTurn()])
+    run.proposeExpectationCorrection('hours-missing')
+    const proposal = (await settled(run)).expectationIssues[0]!.proposal!
+    ledger.verified('src-1', { state: 'failed', at: new Date().toISOString(), findings: [] })
+    run.approveExpectationCorrection('hours-missing', proposal.token)
+    const state = await settled(run)
+    expect(state.detail).toContain('no longer verified')
+    expect(state.cases).toHaveLength(2)
+    expect(state.expectationIssues[0]!.resolved).toBeUndefined()
+  })
+
+  it('reports a valid corrected expectation that disagrees without automatically repairing the pack', async () => {
+    const { run } = await blockedRun([correctionTurn({ kind: 'unresolved', reasons: ['unknown'], handoff: { state: 'none' } })])
+    run.proposeExpectationCorrection('hours-missing')
+    const proposal = (await settled(run)).expectationIssues[0]!.proposal!
+    run.approveExpectationCorrection('hours-missing', proposal.token)
+    const state = await settled(run)
+    expect(state.status).toBe('needs-input')
+    expect(state.detail).toContain('unchanged draft disagrees')
+    expect(state.candidates).toHaveLength(1)
+    expect(state.candidates[0]!.check?.cases.filter(row => row.passed)).toHaveLength(2)
+    expect(state.cases).toHaveLength(3)
+    expect(state.revisionsUsed).toBe(0)
+    expect(canCreateResearchDraft(state)).toBe(false)
+  })
+
+  it('does not apply a correction when approval validation is stopped', async () => {
+    const native = fakeRuntime()
+    let checkingApproval = false
+    const { run } = await blockedRun([correctionTurn()], { callTool: (name, args) => checkingApproval && name === EXPECTATION_TOOL ? new Promise(() => {}) : native.callTool(name, args) })
+    run.proposeExpectationCorrection('hours-missing')
+    const proposal = (await settled(run)).expectationIssues[0]!.proposal!
+    checkingApproval = true
+    run.approveExpectationCorrection('hours-missing', proposal.token)
+    run.stop()
+    const state = await settled(run)
+    expect(state.status).toBe('stopped')
+    expect(state.cases).toHaveLength(2)
+    expect(state.expectationIssues[0]!.resolved).toBeUndefined()
+  })
+})
+
+
+it.runIf(Boolean(process.env.JPACK_EXPECTATION_BINARY))('replays admission, explicit correction and all cases through the native runtime', async () => {
+  const execute = promisify(execFile)
+  const callTool: CallTool = async (name, args) => {
+    // One isolated stdio runtime per call, with no project or audit configured.
+    const { spawn } = await import('node:child_process')
+    return new Promise((resolve, reject) => {
+      const child = spawn(process.env.JPACK_EXPECTATION_BINARY!, ['mcp'], { stdio: ['pipe', 'pipe', 'pipe'] })
+      let output = ''
+      let errors = ''
+      child.stdout.on('data', chunk => { output += chunk })
+      child.stderr.on('data', chunk => { errors += chunk })
+      child.on('error', reject)
+      child.on('close', code => {
+        if (code !== 0) { reject(new Error(errors)); return }
+        try { resolve(JSON.parse(output).result as McpToolResult) } catch (error) { reject(error) }
+      })
+      child.stdin.end(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }) + '\n')
+    })
+  }
+  const { stdout: version } = await execute(process.env.JPACK_EXPECTATION_BINARY!, ['version'])
+  expect(version).toContain('0.2.0-draft')
+  const { run } = await blockedRun([correctionTurn()], { callTool })
+  const before = run.getSnapshot().candidates[0]!
+  run.proposeExpectationCorrection('hours-missing')
+  const issue = (await settled(run)).expectationIssues[0]!
+  run.approveExpectationCorrection(issue.id, issue.proposal!.token)
+  const state = await settled(run)
+  expect(state.status, state.detail + JSON.stringify(state.candidates[0]?.check)).toBe('ready')
+  expect(canCreateResearchDraft(state)).toBe(true)
+  expect(state.candidates).toHaveLength(1)
+  expect(state.candidates[0]!.text).toBe(before.text)
+  expect(state.candidates[0]!.check?.cases.map(row => [row.id, row.passed])).toEqual([
+    ['meets-hours', true], ['under-hours', true], ['hours-missing', true]
+  ])
+}, 15000)

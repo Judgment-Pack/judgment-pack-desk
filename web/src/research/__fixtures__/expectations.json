@@ -1,0 +1,292 @@
+[
+  {
+    "name": "outcome",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"allow\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
+    "result": {
+      "status": "valid",
+      "canonical": "{\"handoff\":{\"state\":\"none\"},\"kind\":\"outcome\",\"outcomeId\":\"allow\",\"reasons\":[]}"
+    }
+  },
+  {
+    "name": "unknown without handoff",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"none\"}}",
+    "result": {
+      "status": "valid",
+      "canonical": "{\"handoff\":{\"state\":\"none\"},\"kind\":\"unresolved\",\"reasons\":[\"unknown\"]}"
+    }
+  },
+  {
+    "name": "requested handoff",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"requested\",\"triggeredBy\":[\"unknown\"]}}",
+    "result": {
+      "status": "valid",
+      "canonical": "{\"handoff\":{\"state\":\"requested\",\"triggeredBy\":[\"unknown\"]},\"kind\":\"unresolved\",\"reasons\":[\"unknown\"]}"
+    }
+  },
+  {
+    "name": "set order is immaterial",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\",\"conflict\"],\"handoff\":{\"state\":\"none\"}}",
+    "result": {
+      "status": "valid",
+      "canonical": "{\"handoff\":{\"state\":\"none\"},\"kind\":\"unresolved\",\"reasons\":[\"conflict\",\"unknown\"]}"
+    }
+  },
+  {
+    "name": "not applicable",
+    "text": "{\"kind\":\"not-applicable\",\"reasons\":[\"not-applicable\"],\"handoff\":{\"state\":\"none\"}}",
+    "result": {
+      "status": "valid",
+      "canonical": "{\"handoff\":{\"state\":\"none\"},\"kind\":\"not-applicable\",\"reasons\":[\"not-applicable\"]}"
+    }
+  },
+  {
+    "name": "reasonless unresolved",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
+    "result": {
+      "status": "invalid",
+      "code": "JPS-EXPECTATION-INVALID",
+      "message": "\u00a78.3: reasons is empty if and only if kind is \"outcome\""
+    }
+  },
+  {
+    "name": "unknown kind",
+    "text": "{\"kind\":\"pending\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"none\"}}",
+    "result": {
+      "status": "invalid",
+      "code": "JPS-EXPECTATION-INVALID",
+      "message": "\u00a78.3: kind must be \"outcome\", \"not-applicable\", or \"unresolved\"; got \"pending\""
+    }
+  },
+  {
+    "name": "unknown reason",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"guess\"],\"handoff\":{\"state\":\"none\"}}",
+    "result": {
+      "status": "invalid",
+      "code": "JPS-EXPECTATION-INVALID",
+      "message": "\u00a78.3: \"guess\" is not a reason the disposition admits"
+    }
+  },
+  {
+    "name": "outcome retaining reasons",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"allow\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"none\"}}",
+    "result": {
+      "status": "invalid",
+      "code": "JPS-EXPECTATION-INVALID",
+      "message": "\u00a78.3: reasons is empty if and only if kind is \"outcome\""
+    }
+  },
+  {
+    "name": "unresolved with outcome",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"none\"},\"outcomeId\":\"allow\"}",
+    "result": {
+      "status": "invalid",
+      "code": "JPS-EXPECTATION-INVALID",
+      "message": "\u00a78.3: outcomeId must be present if and only if kind is outcome"
+    }
+  },
+  {
+    "name": "unresolved with empty outcome",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"none\"},\"outcomeId\":\"\"}",
+    "result": {
+      "status": "invalid",
+      "code": "JPS-EXPECTATION-INVALID",
+      "message": "\u00a78.3: outcomeId must be present if and only if kind is outcome"
+    }
+  },
+  {
+    "name": "unresolved with null outcome",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"none\"},\"outcomeId\":null}",
+    "result": {
+      "status": "invalid",
+      "code": "JPS-EXPECTATION-INVALID",
+      "message": "\u00a78.3: outcomeId must be present if and only if kind is outcome"
+    }
+  },
+  {
+    "name": "not applicable wrong reason",
+    "text": "{\"kind\":\"not-applicable\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"none\"}}",
+    "result": {
+      "status": "invalid",
+      "code": "JPS-EXPECTATION-INVALID",
+      "message": "\u00a78.3: the reason set of a not-applicable result is exactly {\"not-applicable\"}"
+    }
+  },
+  {
+    "name": "handoff trigger outside reasons",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"requested\",\"triggeredBy\":[\"conflict\"]}}",
+    "result": {
+      "status": "invalid",
+      "code": "JPS-EXPECTATION-INVALID",
+      "message": "\u00a78.3: handoff.triggeredBy must be a subset of reasons; \"conflict\" is not a retained reason"
+    }
+  },
+  {
+    "name": "handoff with empty triggers",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"requested\",\"triggeredBy\":[]}}",
+    "result": {
+      "status": "invalid",
+      "code": "JPS-EXPECTATION-INVALID",
+      "message": "\u00a78.3: handoff.triggeredBy is present, and non-empty, if and only if state is \"requested\""
+    }
+  },
+  {
+    "name": "handoff none with null triggers",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"none\",\"triggeredBy\":null}}",
+    "result": {
+      "status": "invalid",
+      "code": "JPS-EXPECTATION-INVALID",
+      "message": "\u00a78.3: handoff.triggeredBy must be present if and only if state is requested"
+    }
+  },
+  {
+    "name": "handoff none with empty triggers",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"none\",\"triggeredBy\":[]}}",
+    "result": {
+      "status": "invalid",
+      "code": "JPS-EXPECTATION-INVALID",
+      "message": "\u00a78.3: handoff.triggeredBy must be present if and only if state is requested"
+    }
+  },
+  {
+    "name": "unknown member",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"allow\",\"reasons\":[],\"handoff\":{\"state\":\"none\"},\"extra\":true}",
+    "result": {
+      "status": "invalid",
+      "code": "JPS-EXPECTATION-INVALID",
+      "message": "the disposition carries a member this runtime does not know: \"extra\""
+    }
+  },
+  {
+    "name": "wrong case member",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"allow\",\"reasons\":[],\"handoff\":{\"state\":\"none\"},\"Kind\":\"outcome\"}",
+    "result": {
+      "status": "invalid",
+      "code": "JPS-EXPECTATION-INVALID",
+      "message": "the disposition carries a member this runtime does not know: \"Kind\". The member is spelled \"kind\", and a spelling that differs from it only in case is refused rather than read as it"
+    }
+  },
+  {
+    "name": "missing kind",
+    "text": "{\"outcomeId\":\"allow\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
+    "result": {
+      "status": "invalid",
+      "code": "JPS-EXPECTATION-INVALID",
+      "message": "\u00a78.3: kind must be present and non-null"
+    }
+  },
+  {
+    "name": "null kind",
+    "text": "{\"kind\":null,\"outcomeId\":\"allow\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
+    "result": {
+      "status": "invalid",
+      "code": "JPS-EXPECTATION-INVALID",
+      "message": "\u00a78.3: kind must be present and non-null"
+    }
+  },
+  {
+    "name": "missing reasons",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"allow\",\"handoff\":{\"state\":\"none\"}}",
+    "result": {
+      "status": "invalid",
+      "code": "JPS-EXPECTATION-INVALID",
+      "message": "\u00a78.3: reasons must be present and non-null"
+    }
+  },
+  {
+    "name": "null reasons",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"allow\",\"reasons\":null,\"handoff\":{\"state\":\"none\"}}",
+    "result": {
+      "status": "invalid",
+      "code": "JPS-EXPECTATION-INVALID",
+      "message": "\u00a78.3: reasons must be present and non-null"
+    }
+  },
+  {
+    "name": "missing handoff",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"allow\",\"reasons\":[]}",
+    "result": {
+      "status": "invalid",
+      "code": "JPS-EXPECTATION-INVALID",
+      "message": "\u00a78.3: handoff must be present and non-null"
+    }
+  },
+  {
+    "name": "null handoff",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"allow\",\"reasons\":[],\"handoff\":null}",
+    "result": {
+      "status": "invalid",
+      "code": "JPS-EXPECTATION-INVALID",
+      "message": "\u00a78.3: handoff must be present and non-null"
+    }
+  },
+  {
+    "name": "missing outcomeId",
+    "text": "{\"kind\":\"outcome\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
+    "result": {
+      "status": "invalid",
+      "code": "JPS-EXPECTATION-INVALID",
+      "message": "\u00a78.3: outcomeId must be present if and only if kind is outcome"
+    }
+  },
+  {
+    "name": "null outcomeId",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":null,\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
+    "result": {
+      "status": "invalid",
+      "code": "JPS-EXPECTATION-INVALID",
+      "message": "\u00a78.3: outcomeId must not be null"
+    }
+  },
+  {
+    "name": "duplicate kind",
+    "text": "{\"kind\":\"outcome\",\"kind\":\"unresolved\"}",
+    "result": {
+      "status": "invalid",
+      "code": "JPS-EXPECTATION-INVALID",
+      "message": "Object member name is duplicated."
+    }
+  },
+  {
+    "name": "unpaired surrogate",
+    "text": "{\"kind\":\"\\ud800\"}",
+    "result": {
+      "status": "invalid",
+      "code": "JPS-EXPECTATION-INVALID",
+      "message": "Input contains an unpaired surrogate escape at byte offset 9. RFC 8785 \u00a73.2.2.2 makes such a value invalid rather than replaceable, and this decoder refuses it rather than substituting U+FFFD."
+    }
+  },
+  {
+    "name": "malformed JSON",
+    "text": "{",
+    "result": {
+      "status": "invalid",
+      "code": "JPS-EXPECTATION-INVALID",
+      "message": "Input is not valid JSON at line 1, column 2 (byte offset 1): EOF."
+    }
+  },
+  {
+    "name": "meets",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"meets\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
+    "result": {
+      "status": "valid",
+      "canonical": "{\"handoff\":{\"state\":\"none\"},\"kind\":\"outcome\",\"outcomeId\":\"meets\",\"reasons\":[]}"
+    }
+  },
+  {
+    "name": "does-not-meet",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"does-not-meet\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
+    "result": {
+      "status": "valid",
+      "canonical": "{\"handoff\":{\"state\":\"none\"},\"kind\":\"outcome\",\"outcomeId\":\"does-not-meet\",\"reasons\":[]}"
+    }
+  },
+  {
+    "name": "reasonless requested unresolved",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[],\"handoff\":{\"state\":\"requested\",\"triggeredBy\":[\"unknown\"]}}",
+    "result": {
+      "status": "invalid",
+      "code": "JPS-EXPECTATION-INVALID",
+      "message": "\u00a78.3: reasons is empty if and only if kind is \"outcome\""
+    }
+  }
+]
