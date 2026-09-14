@@ -90,6 +90,23 @@ describe('the shell state provider', () => {
     renderProvider()
     expect(screen.getByTestId('key-resolved').textContent).toBe('true')
   })
+
+  it('keeps the chosen rail while applying arriving configuration to untouched panes', () => {
+    const { rerender } = renderProvider()
+    act(() => screen.getByRole('button', { name: 'toggle the rail' }).click())
+    expect(screen.getByTestId('rail-mode').textContent).toBe('icons')
+    expect(screen.getByTestId('inspector-open').textContent).toBe('false')
+
+    rerender(<ShellStateProvider projectIdentity={ROOT}
+      panes={{ ...DESK_DEFAULTS.panes, inspector: { ...DESK_DEFAULTS.panes.inspector, open: true } }}
+      viewport={{ railIsDrawer: false, inspectorIsDrawer: false }}>
+      <Panel />
+    </ShellStateProvider>)
+
+    expect(screen.getByTestId('rail-mode').textContent).toBe('icons')
+    expect(screen.getByTestId('inspector-open').textContent).toBe('true')
+    expect(screen.getByTestId('console-open').textContent).toBe('false')
+  })
 })
 
 describe('the provisional key is not read either', () => {
