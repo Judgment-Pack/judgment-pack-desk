@@ -173,7 +173,7 @@ function ProjectChip() {
         <IconChevronDown />
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content className="desk-menu" align="start" sideOffset={6}>
+        <DropdownMenu.Content className="desk-menu desk-header-menu" align="start" sideOffset={6} collisionPadding={16}>
           <DropdownMenu.Label className="desk-menu-note">
             This is a label, not a switcher. The chassis opens one project directory at startup
             and holds it for the life of the process; to work on another, start a desk there.

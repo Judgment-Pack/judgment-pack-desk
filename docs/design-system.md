@@ -252,6 +252,12 @@ The bottom status strip is the shell's persistent connection indicator; the
 header does not duplicate it. The Admin popover adds diagnostics and connection
 notices continue to surface failures in the main area.
 
+Project and account dropdowns share a 22rem preferred width, clamped to Radix's
+available viewport width with 16px collision padding. Long paths and prose wrap;
+menu height is capped to the available space and scrolls vertically when needed.
+The local account trigger shows the avatar, display name and chevron without a
+redundant local badge. Identity information remains available inside the menu.
+
 Use `RetainedPanel` for settings sections: mount on first visit, hide inactive
 sections from layout and accessibility, and retain their drafts and stale-write
 revision guards. `DraftScope` aggregates only dirty flags and uses the existing

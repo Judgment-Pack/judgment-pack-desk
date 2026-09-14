@@ -244,7 +244,7 @@ describe('the desk reading jpack-desk.json', () => {
     serveConfig(LIVE_ANSWER)
     renderDesk()
     expect(await screen.findByText('desk operator')).toBeTruthy()
-    expect(screen.getByText('local')).toBeTruthy()
+    expect(screen.queryByText('local')).toBeNull()
   })
 
   it('opens the console because the file said so', async () => {
