@@ -1,0 +1,54 @@
+{
+  "tavilySearch": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "bodyEncoding": "json",
+    "body": {
+      "query": "federal skilled worker eligibility",
+      "results": [
+        {
+          "title": "Express Entry: Federal Skilled Worker Program",
+          "url": "https://www.canada.ca/en/immigration-refugees-citizenship/services/immigrate-canada/express-entry/eligibility/federal-skilled-workers.html",
+          "content": "Minimum requirements: skilled work experience, language ability, education.",
+          "score": "0.98",
+          "published_date": "2024-12-13"
+        },
+        {
+          "title": "Immigration and Refugee Protection Regulations",
+          "url": "https://laws-lois.justice.gc.ca/eng/regulations/SOR-2002-227/",
+          "content": "Federal Skilled Worker Class, sections 75 to 85.",
+          "score": "0.91"
+        }
+      ],
+      "response_time": "1.2"
+    }
+  },
+  "jinaReader": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "bodyEncoding": "json",
+    "body": {
+      "code": 200,
+      "status": 20000,
+      "data": {
+        "title": "Express Entry: Federal Skilled Worker Program",
+        "url": "https://www.canada.ca/en/immigration-refugees-citizenship/services/immigrate-canada/express-entry/eligibility/federal-skilled-workers.html",
+        "content": "## Minimum requirements\n\nYou must meet all the minimum requirements in these areas:\n\n*   skilled work experience\n*   language ability\n*   education\n\n### Skilled work experience\n\nYour work experience must be at least 1 year continuous full-time or the equal amount in part-time work (1,560 hours).\n\nWe don't count any hours you work above 30 hours/week.\n\n### Language ability\n\nYou must meet the minimum score of Canadian Language Benchmark (CLB) 7 in all 4 abilities.\n\n### Proof of funds\n\nYou must show that you have enough money to support yourself and your family after you get to Canada unless you are currently authorized to work in Canada and have a valid job offer.\n",
+        "publishedTime": "Mon, 22 Jun 2026 10:00:00 GMT",
+        "metadata": {
+          "lang": "en",
+          "dcterms.issued": "2024-12-13",
+          "dcterms.modified": "2026-06-22"
+        },
+        "httpStatus": 200,
+        "usage": {
+          "tokens": 3205
+        }
+      }
+    }
+  }
+}

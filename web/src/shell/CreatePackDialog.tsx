@@ -84,6 +84,8 @@ import { isRecord } from '../packs/document/MisshapenMember'
 import { useHeldText } from '../packs/edit/heldText'
 import type { PackDocument } from '../mcp/types'
 import { useInspectorPortal, useInspectorSlot } from './InspectorSlot'
+import type { ResearchHandover } from '../routes/ResearchAuthoringPage'
+import { ButtonLink } from '../ui/Button'
 import { recordActivity } from './consoleLog'
 import flow from './CreatePackFlow.module.css'
 
@@ -122,6 +124,8 @@ const STALE_PROJECT_FILE = 'jpack.json changed while creating — reload and try
 const PACK_FILE_TAKEN = 'Something is already there under that name — try another.'
 const ORPHANED =
   'The pack was created but could not be registered. Nothing else was changed.'
+const COMPANIONS_ORPHANED =
+  'The pack file was written, but its test cases or research record could not be written beside it, so nothing names the pack yet. Fix the cause and create it again under another name, or register the file by hand.'
 const NO_TEMPLATE = 'There is no template to start from here.'
 const TEMPLATE_UNUSABLE = 'This template could not be used.'
 const NO_VALIDATE =
@@ -196,8 +200,20 @@ export function CreatePackDialog({
    */
   const describe = useDescribeIt()
 
+  /**
+   * A draft handed over from Research and draft, in the router's location
+   * state: a reviewed document with its test cases and research record. It is
+   * a proposal-shaped source — the name field still wins, the runtime still
+   * validates the shaped bytes, and the two writes are the same — with two
+   * companion files written beside the pack before the project entry names
+   * them. Read once, at mount: a handover is one press of Create there.
+   */
+  const [handover] = useState<ResearchHandover | undefined>(() => {
+    const state = (location.state as { research?: ResearchHandover } | null)?.research
+    return state && typeof state === 'object' && state.document !== undefined ? state : undefined
+  })
   const [step, setStep] = useState(0)
-  const [method, setMethod] = useState<'manual' | 'ai'>('manual')
+  const [method, setMethod] = useState<'manual' | 'ai'>(handover ? 'ai' : 'manual')
   const [draft, setDraft] = useState<string | undefined>()
   const [unknowns, setUnknowns] = useState<readonly string[]>([])
   const [reviewedUnknowns, setReviewedUnknowns] = useState(false)
@@ -211,8 +227,8 @@ export function CreatePackDialog({
     <p>After creating, use Test to explore inputs and read how the pack reaches an outcome. The bottom Activity tab records operation progress.</p>
   </aside> : null)
 
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
+  const [name, setName] = useState(handover?.name ?? '')
+  const [description, setDescription] = useState(handover?.description ?? '')
   const [choice, setChoice] = useState<string | undefined>(undefined)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<{ lead: string; reason?: string } | undefined>(undefined)
@@ -374,7 +390,9 @@ export function CreatePackDialog({
    * once, and this is that value rather than a second reading of an engine's
    * event.
    */
-  const source: Source | undefined = draft !== undefined ? { kind: 'draft', text: draft } : usingProposal
+  const source: Source | undefined = draft !== undefined ? { kind: 'draft', text: draft } : handover !== undefined
+    ? { kind: 'proposal', document: handover.document }
+    : usingProposal
     ? describe.proposal === undefined
       ? undefined
       : { kind: 'proposal', document: describe.proposal.document }
@@ -679,6 +697,28 @@ export function CreatePackDialog({
         return
       }
 
+      // (1b) A handed-over draft's companions, beside the pack and before the
+      // entry names them: the rows document every established case became,
+      // and the research record — every source, receipt, excerpt and
+      // verification state — with the digest the chassis reported for the
+      // pack it describes. A companion that could not be written leaves the
+      // pack on disk and nothing naming it, and the dialog says exactly that.
+      let matrixPath: string | undefined
+      if (handover !== undefined) {
+        const base = landed.path.replace(/\.pack\.json$/, '')
+        matrixPath = `${base}.matrix.json`
+        const researchPath = `${base}.research.json`
+        const research = { ...(handover.research as Record<string, unknown>), packSha256: landed.sha256 }
+        try {
+          await writeFile({ path: matrixPath, content: JSON.stringify(handover.matrix, null, 2) + '\n', baseSha256: '' })
+          await writeFile({ path: researchPath, content: JSON.stringify(research, null, 2) + '\n', baseSha256: '' })
+        } catch (cause) {
+          setFailure({ lead: COMPANIONS_ORPHANED, reason: refusalDetail(cause) })
+          invalidate([['desk-files']])
+          return
+        }
+      }
+
       // (2) The entry, naming the file that was actually written, against the
       // digest the read in (0a) returned.
       try {
@@ -686,7 +726,9 @@ export function CreatePackDialog({
           path: PROJECT_FILE,
           content: serialiseProjectConfig(
             read.content,
-            withPack(current, slug, packEntryFor(landed.path, description))
+            withPack(current, slug, matrixPath === undefined
+              ? packEntryFor(landed.path, description)
+              : { ...packEntryFor(landed.path, description), matrix: matrixPath })
           ),
           baseSha256: read.sha256
         })
@@ -770,7 +812,7 @@ export function CreatePackDialog({
             ? packFromProposal(source.document, { name, description, slug, idBase })
             : shapeTemplate(source.text, { name, description, slug, idBase }))
           if (source.kind === 'proposal') {
-            setUnknowns(describe.proposal?.unknowns ?? [])
+            setUnknowns(handover?.unknowns ?? describe.proposal?.unknowns ?? [])
             describe.discard()
           }
           setStep(1)
@@ -809,7 +851,10 @@ export function CreatePackDialog({
             </Field>
             {method === 'manual' ? <Field label="Starting template" error={templateProblem}>
               {(wiring) => <Select {...wiring} value={selected} onValueChange={setChoice} disabled={draft !== undefined} options={options} placeholder={templatesPending ? TEMPLATES_PENDING : 'Choose a template'} />}
-            </Field> : draft === undefined ? <DescribeIt state={describe} blockingElsewhere={Boolean(createWhy)} expanded /> : null}
+            </Field> : draft === undefined ? handover !== undefined ? <p className={flow.hint} role="status">This draft came from Research and draft: {Array.isArray((handover.matrix as { cases?: unknown[] })?.cases) ? (handover.matrix as { cases: unknown[] }).cases.length : 0} test case(s) and its research record will be written beside the pack.</p> : <>
+              <DescribeIt state={describe} blockingElsewhere={Boolean(createWhy)} expanded />
+              <p className={flow.hint}>Or research first: <ButtonLink to="/create-pack/research" variant="inline">Research and draft with sources</ButtonLink> lets the assistant search and read official pages through the gateway, cite them, and test the draft before you create it.</p>
+            </> : null}
             </FieldGroup>
             {draft !== undefined && <p className={flow.hint}>Your draft is retained. Edit its name, description, and other fields in Build → Full document.</p>}
           </>}

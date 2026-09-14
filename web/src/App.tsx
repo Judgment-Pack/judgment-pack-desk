@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { CreatePackPage } from './routes/CreatePackPage'
+import { ResearchAuthoringPage } from './routes/ResearchAuthoringPage'
 import { AdminView } from './routes/AdminView'
 import { AuthorView } from './routes/AuthorView'
 import { GraphView } from './routes/GraphView'
@@ -36,6 +37,7 @@ export function App() {
               Matrix stay outside it: neither was drawn beside a pane, and
               nesting them would hand them one they never asked for. */}
           <Route path="/create-pack" element={<CreatePackPage />} />
+          <Route path="/create-pack/research" element={<ResearchAuthoringPage />} />
           <Route path="/packs" element={<PacksLayout />}>
             <Route index element={<PacksIndex />} />
             <Route path=":packId" element={<PackView />} />

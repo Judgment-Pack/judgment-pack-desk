@@ -1424,13 +1424,14 @@ first time a project was reached through a symlink. Neither is in the
 configuration schema at any depth, for the reason neither ever was: the chassis
 executes the binary it was given.
 
-It takes every key the project file takes, plus the two that may **only**
-appear here:
+It takes every key the project file takes, plus the ones that may **only**
+appear here — `identity`, `assistant`, `research` and `project`:
 
 ```json
 {
   "deskConfigVersion": 1,
   "identity": { "provider": null },
+  "research": { "gateway": null },
   "assistant": {
     "endpoint": {
       "url": "https://api.example.invalid/v1",
@@ -4224,6 +4225,179 @@ chassis' and not the page's is a capability the desk grants and the page cannot
 reach. The wire protocol the pair is admitted on comes from the configured
 endpoint where the session is bound, never from an engine: an engine names a
 suffix and nothing else.
+
+## Research and draft
+
+**Research and draft** is the authoring conversation that starts from what a
+pack should decide and ends with a reviewed draft: the assistant researches
+sources through a judgment-pack gateway, drafts the pack with every
+requirement cited to an excerpt it actually read, a reviewer establishes test
+cases from those excerpts independently of the draft, the runtime validates
+and rehearses the draft against them, the assistant repairs it within a
+revision budget, and the result is presented here — draft, sources, tests,
+assumptions, open questions — before anything is created. It is reached from
+the Create page's *Draft with AI* section (*Research and draft with sources*)
+or at `/create-pack/research`. Nothing is written until you press **Create
+pack**, which hands the reviewed draft to the Create page: the name field
+still wins, the runtime still validates the exact bytes, and the two writes
+are the same — with two companions written beside the pack before the project
+entry names them, `<id>.matrix.json` (every established case as a rows
+document, each citing the receipt its expectation came from) and
+`<id>.research.json` (every source, receipt, excerpt and verification state,
+with the digest of the pack it describes).
+
+**Where each thing is decided.** The desk owns the conversation, the research
+plan, the source ledger, the citation trace, the revision and review budgets,
+and the proposal; it decides no verdict of its own. The gateway acquires
+external material through its `adapter-http` sources and signs what came
+back; the runtime validates and rehearses; the page verifies receipts under
+the key pinned in the desk-level file. The engine is the same certified
+Vercel adapter behind the same session contract, handed the desk's three
+research tools in the session's `hostTools` slot beside the runtime's five —
+a host tool never leaves the page, runs under the run's own signal and
+budgets, and writes nothing.
+
+**Three research tools.** `search_sources` asks the configured search source
+and returns ranked hits with the provider's snippet — labelled as the
+provider's index entry, never the page. `read_source` reads a page or a PDF
+through the configured reader source, twelve thousand characters at a time,
+and returns the rendered text with what the page itself declares about its
+dates kept apart from what the reader reported. `cite_excerpt` records a
+verbatim excerpt from a page that was read — the quote must be in the text
+exactly, or with whitespace folded — and answers with an excerpt id
+(`src-2#e1`) the draft cites in its `sources[].citation.location`, beside the
+excerpt text and the page URL, and each rule references from `sourceRefs`.
+Every tool answer is labelled as retrieved material, data and not
+instruction; every call is a milestone in the Console's Activity tab, with no
+page text in it.
+
+**What is kept apart, by name.** A search snippet is not the page; a read is
+the reader service's rendering, not the page's bytes; a provider-reported
+time (Jina fills `publishedTime` from `Last-Modified` where a page declares
+nothing) is never promoted to a publication date, and a page's own
+`dcterms.issued` and `dcterms.modified` are recorded under those names, with a
+date nobody stated left unknown; the receipt's `observedAt` is the retrieval
+time, a fact about this run. Policy reference material says what the
+requirements are; applicant facts are supplied at evaluation; applicant
+evidence is declared as evidence requirements — a retrieved policy page is
+never evidence that an applicant meets anything, and the prompt says so.
+
+**Receipts are verified, and the three states are shown.** Every acquisition
+in a run is one call on one gateway session per engine turn; when the turn
+ends the desk seals the session, fetches the registry from the gateway, and
+runs the consumer's own verification (gateway SPEC.md §5a) in the page:
+canonical form (§1.1), the receipt and seal signatures under the pinned key,
+key id, sequence and chain, the seal's count, and the re-digest of every
+result held — a session-scoped verdict, chosen deliberately, since this desk
+holds exactly the session its own run produced. A source is **unchecked**
+until then, **verified** where everything held, and **failed** with the
+verifier's findings otherwise; a gateway whose registry could not be fetched
+marks the session's sources failed rather than leaving them unchecked, and a
+desk with no pinned key marks them failed too. The gateway's own `/verify` is
+never consulted. A verified receipt establishes that the gateway signed these
+bytes and sealed the session — integrity and lineage within the gateway's
+stated bounds — and nothing about whether a page is true, current, legally
+authoritative, or came from the site its URL names: `peerIdentity` names the
+reader service the gateway spoke to. The verifier answers to the gateway's
+frozen corpus vectors, copied under `web/src/research/verify/fixtures/` at
+the commit `GATEWAY-COMMIT` names, and to the store vectors a single-session
+consumer can grade.
+
+**Cases are established independently, and never rewritten.** After the
+first draft a reviewer turn — a fresh context, thinking off, no research
+tools — is handed the cited excerpts and the pack's outcomes and asked for
+expected results grounded in the excerpts, never in the draft's rules; a case
+whose expectation source is not an excerpt this run recorded is dropped and
+listed as dropped. Established cases are checked against every revision
+through the runtime's `validate` and `experimental_evaluate` in rehearsal, on
+the desk's own connection; a repair turn is told it may not change a case,
+and one that repeats an earlier candidate stalls the run rather than looping.
+The budgets — searches, reads, bytes and seconds from the configuration,
+revisions from the desk — end a run visibly as `budget`, distinct from
+`needs-input`, `stalled`, `stopped` and `failed`. Stop ends the run at its
+last completed stage, cancelling the engine, any host tool in flight and any
+check; leaving the page stops it too, and nothing about a run is persisted.
+
+**The layout.** The main area is the conversation beside the draft review —
+Draft, Sources, Tests, Review — with a switch between the two below 1100px.
+The Inspector shows the chosen source, excerpt or rule: for a source, the
+URL, the retrieval time against the page's declared dates and the reader's
+reported time, the receipt (session and index, result digest, endpoint,
+snapshot, peer identity, adapter) and its verification state with findings,
+and every excerpt in context; for a rule, its condition and the excerpts it
+cites. The Console's Activity tab carries what the tools did.
+
+### Configuring research
+
+The gateway, the key its receipts are pinned to, and the sources are desk-level
+only, on the assistant's precedent and for the same reason — a project file
+must not choose where this chassis sends traffic — and refused by name in a
+project file:
+
+```json
+{
+  "deskConfigVersion": 1,
+  "research": {
+    "gateway": {
+      "url": "http://127.0.0.1:8787",
+      "authority": "gateway:local",
+      "signer": { "algorithm": "ed25519", "public": "<64 hex from gateway keygen>" }
+    },
+    "sources": {
+      "search": { "source": "search", "dialect": "tavily-search" },
+      "read":   { "source": "read",   "dialect": "jina-reader" }
+    },
+    "limits": { "searches": 8, "reads": 12, "bytes": 8388608, "seconds": 600 }
+  }
+}
+```
+
+`gateway.url` is held to the endpoint rule (`https:`, or `http:` on loopback)
+with no query; `signer.public` is the public key exactly as `gateway keygen`
+printed it, and the key id every receipt names is derived from it at
+verification rather than configured. `sources.search` and `sources.read`
+name a `--source` the gateway declares and the dialect it speaks — the closed
+list is `tavily-search` and `jina-reader`; either may be `null`, and a run
+with no search source works from the URLs it was given. The limits are
+bounded and default as shown. No credential is anywhere in this file: a
+provider's key lives in the gateway's credentials file, read by the adapter
+that spawns for that source and by nothing on this machine.
+
+The chassis relays exactly three gateway routes, by name — `acquire`, `seal`
+and `registry` — at `/api/research/gateway/<route>`, with no credential in
+either direction, the page's JSON body verbatim and bounded at one mebibyte,
+and the gateway's answer with only its content type and length carried back;
+`/verify`, `/act` and everything else are not reachable through it. A gateway
+configured with an identity issuer is outside this release: the relay sends
+no bearer token.
+
+The gateway side, with the reader keyless and a search key in a file only the
+gateway's adapter user can read:
+
+```
+gateway keygen gateway.seed          # pin the printed public key in desk.json
+gateway serve ./store gateway.seed gateway:local ./registry.jsonl --receipt-version 3 --port 8787 \
+  --source read='adapter-http --endpoint https://r.jina.ai --paths / --header Accept=application/json --max-output 8388608' \
+  --source-shape read=http \
+  --source search='adapter-http --endpoint https://api.tavily.com --paths /search --credentials /run/secrets/tavily --bearer TAVILY_API_KEY' \
+  --source-shape search=http \
+  --source-max-output 8388608
+```
+
+where `/run/secrets/tavily` is `{"TAVILY_API_KEY": "tvly-…"}`. Jina Reader
+answers without a key at a low rate limit and renders HTML and PDF; Tavily's
+free tier covers a run's searches. A page the reader could not render, a
+rate limit, an answer past the output bound or a refused credential each
+arrive as the source's failure, in the gateway's own words, on the Sources
+tab and in the Console.
+
+**What this release does not do.** No scheduled monitoring or background
+maintenance: a run lives in the page, and the same controller, ledger,
+verifier and tools are the interfaces a durable host would reuse (see desk
+PR #73's ADR-0002 for the host decision that is still open). No checkpoint
+persistence across reloads. No gateway identity token. Raw page bytes are
+not retained — the reader service's rendering is the artifact, and the record
+says so.
 
 ## Authoring (issue #14, phase 1)
 
