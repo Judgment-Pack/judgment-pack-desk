@@ -1,0 +1,65 @@
+{
+  "ran": "2026-09-14T19:11:40Z",
+  "desk": "feat/research-authoring @ 8fdc9ae (pre-fix bundle: d7a7dd4 + the round-1 fixes that were in the tree)",
+  "gateway": "judgment-pack-gateway main after #117 (adapter-http), serve --receipt-version 3, source read=adapter-http --endpoint https://r.jina.ai (keyless)",
+  "model": "gemini-3.8-flash through the desk's model relay",
+  "browser": "Google Chrome 130.0.6723.116 headless via playwright-core (Ed25519 verified by the desk's own verifier: this Chrome has no WebCrypto Ed25519)",
+  "runtime": "jpack 0.21.0",
+  "brief": "Preliminary screening against the FSWP published minimum requirements; invitation, admissibility and final approval named out of scope",
+  "seedUrls": [
+    "https://www.canada.ca/en/immigration-refugees-citizenship/services/immigrate-canada/express-entry/eligibility/federal-skilled-workers.html",
+    "https://www.canada.ca/en/immigration-refugees-citizenship/services/immigrate-canada/express-entry/documents/proof-funds.html"
+  ],
+  "session": "desk-20260914T191140-5f58e1f01842",
+  "receipt0": {
+    "resultDigest": "sha256:5d8bc15a847ef2e350982f927662ae3b46f30511c9f1ee6ae96f1bccf96a083c",
+    "keyId": "bfe64896692956c8cd02e320fb521932",
+    "authority": "gateway:local",
+    "servedAt": "2026-09-14T19:11:43Z",
+    "signature": "d0892b33c95b3c8f3f7dfa5cfa1977f7c1a9ba8301ee6a7bc7bcad49cc513ba8c8297e88d174aafa0be682a67c5be96dd23fb6ab97208b8aff13589298eca705"
+  },
+  "acquisition": {
+    "adapter": {
+      "digest": "sha256:ede5b80950dd50bc7508cfa914d9bf8db884c8dad9123e3af061a1ca58a5f5d0",
+      "name": "adapter-http",
+      "version": "0"
+    },
+    "endpoint": "https://r.jina.ai/",
+    "observedAt": "2026-09-14T19:11:43Z",
+    "peerIdentity": "tls:sha256:6f6ba435ba44644d58039b092fa153d570d75d46d302c9703cd59b18fd325ade",
+    "schema": null,
+    "shape": "http",
+    "snapshot": null,
+    "statement": "sha256:c7c49a75e7dffd4e8e4b8909bdbec661d0ed8b8b55db237018658f8668182914",
+    "upstreamToken": null
+  },
+  "seal": {
+    "finalCount": 1,
+    "keyId": "bfe64896692956c8cd02e320fb521932",
+    "sealedAt": "2026-09-14T19:13:56Z",
+    "sessionId": "desk-20260914T191140-5f58e1f01842",
+    "signature": "a4b10b901a14870d58ed8156af34e08e77a6b35e2f0586476687b40b307320e0b42703dbbf4088903abada9877408cca2bf6848cd790d1be016759ebc23d810d"
+  },
+  "verification": "verified in the page under the pinned key bfe64896692956c8cd02e320fb521932: signature, chain, seal and re-digest",
+  "sources": 1,
+  "excerpts": 8,
+  "citationsTraced": "8 of 8",
+  "cases": 16,
+  "revisions": [
+    {
+      "revision": 1,
+      "producedBy": "research",
+      "agree": "0/16"
+    },
+    {
+      "revision": 2,
+      "producedBy": "repair",
+      "agree": "15/16"
+    }
+  ],
+  "outcome": "stalled: the assistant repeated revision 2 rather than change a case it judged a specification error (an unresolved expectation with reasons: [], which \u00a78.3 cannot produce); the disagreement is shown for the person to decide",
+  "elapsedSeconds": 587,
+  "modelCalls": 59,
+  "continuations": 1,
+  "bound": "one page read (the proof-of-funds URL was not read in this run; the model cited the FSWP page's own proof-of-funds section instead); no search source configured on this machine, so search_sources was not exercised live"
+}
