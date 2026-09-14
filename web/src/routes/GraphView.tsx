@@ -73,7 +73,7 @@ export function GraphView() {
       {graphId && !tests && <FlowExplorer key={graphId} graphId={graphId} />}
       {tests && <section aria-label="Flow tests">
         {!graphId && <ButtonLink variant="quiet" to="/graphs">Back to pack flows</ButtonLink>}
-        <h2>{graphId ? 'Flow tests' : 'All flow tests'}</h2>
+        <h2 className="section-title">{graphId ? 'Flow tests' : 'All flow tests'}</h2>
         {graphTracesSupported && <label className="checkbox trace-ask">
           <input type="checkbox" checked={includeTraces} disabled={isFetching}
             onChange={event => setIncludeTraces(event.target.checked)} />

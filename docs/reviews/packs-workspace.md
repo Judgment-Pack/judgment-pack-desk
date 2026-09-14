@@ -18,12 +18,13 @@ claims about Linear's internal component implementation.
 
 ## Upstream compatibility
 
-Verified upstream main branches on 2026-09-14 in isolated clones:
+Verified upstream main branches on 2026-09-14 in isolated clones, then checked the
+shared checkouts again before merging:
 
 | Repository | Revision | Relevant contract |
 | --- | --- | --- |
 | Runtime | `0c8a4b6` — 0.21.0 | ADR-0029 read-only graph inventory/documents, ADR-0030 revision binding, ADR-0031 opt-in node traces, ADR-0032 handoff-target assertions |
-| Gateway | `bd4f1fd` | Engine image pins runtime 0.21.0; source acquisition and receipt verification remain gateway responsibilities |
+| Gateway | `6acb471` | Engine image pins runtime 0.21.0; latest update verifies agreement between Postgres historical and live facts and updates the platform binding. Source acquisition and receipt verification remain gateway responsibilities |
 | Specification | `ea1648c` | Core 0.2.0-draft; graph RFC 0002 and lineage RFC 0014 remain Draft proposals, not new Core requirements |
 
 The runtime used by the browser check is built from that verified main revision.
@@ -46,4 +47,7 @@ The production frontend build/typecheck and all 3,118 component tests passed.
 The browser run covered six viewport/theme/density combinations from 360 to 1700px,
 with zero page errors and exactly one test-suite call, following the explicit
 Run tests command. Browsing, inspection, file changes and reconnects do not run
-suites. The full 435-row route/pane containment gate is recorded separately.
+suites. The route/pane containment gate passed all 435 configurations across 15
+routes and nine viewport widths, with zero containment failures and unchanged
+fixture contents. A final browser run and 43 focused component tests also passed
+after applying the existing compact heading style to the Tests views.

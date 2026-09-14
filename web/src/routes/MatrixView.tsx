@@ -45,7 +45,7 @@ export function MatrixView() {
       {packId && <TestNavigation packId={packId} saved hasMatrix />}
       {isFetching && <Loading what="test results" />}
       {error ? <ErrorBox title="Could not run pack tests" error={error} /> : data ? <MatrixResults data={data} packId={packId} /> : <>
-        <h2>{packId ? 'Saved cases' : 'All pack tests'}</h2>
+        <h2 className="section-title">{packId ? 'Saved cases' : 'All pack tests'}</h2>
         <p className="quiet">Run saved cases to check expected outcomes and find coverage gaps.</p>
         {inventory.error ? <ErrorBox title="Could not list packs" error={inventory.error} />
           : inventory.isPending ? <Loading what="packs with saved cases" />
@@ -64,7 +64,7 @@ function MatrixResults({ data, packId }: { data: PackTest; packId?: string }) {
   const packs = data.packs ?? []
   return <>
       <header className="detail-head">
-        <h2>{packId ? 'Saved cases' : 'All pack tests'}</h2>
+        <h2 className="section-title">{packId ? 'Saved cases' : 'All pack tests'}</h2>
         <p className="ids">
           <Pill tone={statusTone(data.status)}>{data.status}</Pill>
           <span>
