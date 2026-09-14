@@ -12,6 +12,24 @@
   background: var(--bg);
 }
 .heading { display: contents; }
+.collectionHeader {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-page-header);
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 var(--space-4);
+  min-height: var(--space-7);
+  padding-inline: var(--density-gutter);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.collectionHeader > nav { padding: 0; min-width: 0; }
+.collectionHeader > nav a { min-height: var(--space-7); display: inline-flex; align-items: center; gap: var(--space-2); }
+.collectionHeader > .actions { padding-block: var(--space-2); }
 .header:has(> nav) { flex-wrap: wrap; row-gap: 0; padding-bottom: 0; }
 .header > nav { flex-basis: 100%; padding-inline: 0; }
 .header, .documentHeader { flex: 0 0 auto; }

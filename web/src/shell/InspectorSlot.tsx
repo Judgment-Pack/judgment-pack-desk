@@ -64,6 +64,8 @@ export interface InspectorSlot {
    * one border.
    */
   reveal: () => void
+  /** Close the current presentation, preserving unrelated pane preferences. */
+  close?: () => void
   /** Reserve readable main-area width; the shell chooses drawer versus dock. */
   requestWorkingWidth?: (pixels: number) => () => void
 }

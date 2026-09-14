@@ -14,6 +14,10 @@
  */
 import type { ReactNode } from 'react'
 
+export function IconPreview() {
+  return <Glyph><path d="M1 8s2.5-4.5 7-4.5S15 8 15 8s-2.5 4.5-7 4.5S1 8 1 8Z" /><circle cx="8" cy="8" r="2" /></Glyph>
+}
+
 function Glyph({ children }: { children: ReactNode }) {
   return (
     <svg

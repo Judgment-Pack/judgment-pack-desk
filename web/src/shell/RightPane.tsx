@@ -38,6 +38,7 @@ import { IconClose } from './icons'
 const EMPTY_STATE = 'Select a row, a node or a file to inspect it here.'
 
 export function RightPane({
+  title = 'Inspector',
   open,
   onClose,
   asDrawer,
@@ -49,6 +50,7 @@ export function RightPane({
   showEmpty,
   children
 }: {
+  title?: string
   open: boolean
   onClose: () => void
   asDrawer: boolean
@@ -87,11 +89,11 @@ export function RightPane({
   const body = (
     <>
       <div className="desk-pane-head">
-        <span>Inspector</span>
-        <Tooltip content="Close Inspector" openOnFocus={false} side="left"><button
+        <span>{title}</span>
+        <Tooltip content={`Close ${title}`} openOnFocus={false} side="left"><button
           type="button"
           className="desk-icon-button"
-          aria-label="Close inspector"
+          aria-label={`Close ${title.toLowerCase()}`}
           onClick={onClose}
         >
           <IconClose />
@@ -118,7 +120,7 @@ export function RightPane({
             ref={publishPane}
             className="desk-drawer desk-drawer-right"
             id="desk-inspector"
-            aria-label="Inspector"
+            aria-label={title}
             style={
               declaredWidth === undefined
                 ? undefined
@@ -132,7 +134,7 @@ export function RightPane({
             }}
           >
             <VisuallyHidden.Root>
-              <Dialog.Title>Inspector</Dialog.Title>
+              <Dialog.Title>{title}</Dialog.Title>
             </VisuallyHidden.Root>
             {body}
           </Dialog.Content>
@@ -145,7 +147,7 @@ export function RightPane({
     <aside
       ref={publishPane}
       className="desk-inspector"
-      aria-label="Inspector"
+      aria-label={title}
       id="desk-inspector"
       hidden={!open}
     >

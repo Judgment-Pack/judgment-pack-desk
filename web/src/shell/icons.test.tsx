@@ -34,7 +34,8 @@ describe('the desk icons', () => {
       'IconPanelLeft',
       'IconPanelRight',
       'IconPencil',
-      'IconPlus'
+      'IconPlus',
+      'IconPreview'
     ])
   })
 

@@ -36,7 +36,7 @@ export function MatrixView() {
   }
   const configured = (inventory.data?.packs ?? []).filter(pack => pack.matrix && (!packId || pack.id === packId))
   return <article className="detail" data-measure="full" data-layout="page">
-    <PageHeader title="Packs" context={packId} titleHref={packId ? '/packs' : undefined}
+    <PageHeader variant={packId ? 'context' : 'collection'} title="Packs" context={packId} titleHref={packId ? '/packs' : undefined}
       navigation={packId ? <PackNavigation packId={packId} current="test" /> : <PacksNavigation current="tests" />}
       actions={<Button onClick={run} disabled={status !== 'ready' || isFetching}>
         {isFetching ? 'Running…' : packId ? 'Run tests' : 'Run all tests'}

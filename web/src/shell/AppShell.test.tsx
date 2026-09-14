@@ -160,7 +160,7 @@ describe('the shell frame', () => {
     expect(screen.getAllByRole('banner')).toHaveLength(1)
     expect(screen.getAllByRole('navigation', { name: 'Project' })).toHaveLength(1)
     expect(screen.getAllByRole('main')).toHaveLength(1)
-    expect(screen.getAllByRole('complementary', { name: 'Inspector' })).toHaveLength(1)
+    expect(screen.getAllByRole('complementary', { name: 'Pack preview' })).toHaveLength(1)
     expect(screen.getAllByRole('region', { name: 'Console' })).toHaveLength(1)
     expect(screen.getAllByRole('contentinfo')).toHaveLength(1)
     // Every navigation landmark is named, so collection tabs are

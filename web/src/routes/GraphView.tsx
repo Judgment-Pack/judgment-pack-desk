@@ -53,7 +53,7 @@ export function GraphView() {
   }
 
   return <article className="detail" data-measure="full" data-layout="page">
-    <PageHeader title={graphId ? 'Pack flows' : 'Packs'} context={graphId} titleHref={graphId ? '/graphs' : undefined}
+    <PageHeader variant={graphId ? 'context' : 'collection'} title={graphId ? 'Pack flows' : 'Packs'} context={graphId} titleHref={graphId ? '/graphs' : undefined}
       actions={<Button onClick={run} disabled={status !== 'ready' || isFetching}>
         {isFetching ? 'Running…' : graphId ? 'Run tests' : 'Run all flow tests'}
       </Button>}

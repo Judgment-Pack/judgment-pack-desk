@@ -39,7 +39,7 @@ it('previews inventory metadata without navigation or additional runtime calls',
   expect(stub.calls.map(call => call.name)).toEqual(['list_packs'])
   fireEvent.click(screen.getByRole('button', { name: 'Preview zeta' }))
   await within(target).findByRole('heading', { name: 'zeta' })
-  expect(within(target).getByText('Unavailable')).toBeTruthy()
+  expect(within(target).getAllByText('Unavailable')).toHaveLength(2)
   expect(within(target).getByText('The file could not be read.')).toBeTruthy()
 })
 
@@ -47,7 +47,7 @@ it('retains search, ordering and scroll when returning from a pack, and releases
   const { router, target } = setup()
   await screen.findByRole('link', { name: /alpha/ })
   fireEvent.keyDown(screen.getByLabelText('Sort packs'), { key: 'Enter' })
-  fireEvent.click(await screen.findByRole('option', { name: 'Pack ID: Z–A' }))
+  fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Pack ID: Z–A' }))
   fireEvent.change(screen.getByRole('searchbox', { name: 'Search packs' }), { target: { value: 'Vendor' } })
   expect(within(screen.getByRole('navigation', { name: 'Packs' })).getAllByRole('link')).toHaveLength(1)
   const list = document.querySelector('[data-pack-list]') as HTMLElement
@@ -62,7 +62,9 @@ it('retains search, ordering and scroll when returning from a pack, and releases
   await act(async () => { await router.navigate(-1) })
   expect(screen.getByRole('article', { name: 'Pack collection' }).getAttribute('data-layout')).toBe('page')
   expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('Vendor')
-  expect(screen.getByLabelText('Sort packs').textContent).toContain('Pack ID: Z–A')
+  fireEvent.keyDown(screen.getByLabelText('Sort packs'), { key: 'Enter' })
+  expect((await screen.findByRole('menuitemradio', { name: 'Pack ID: Z–A' })).getAttribute('aria-checked')).toBe('true')
+  fireEvent.keyDown(screen.getByRole('menuitemradio', { name: 'Pack ID: Z–A' }), { key: 'Escape' })
   expect((document.querySelector('[data-pack-list]') as HTMLElement).scrollTop).toBe(80)
   await within(target).findByRole('heading', { name: 'alpha' })
 })
