@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "smoke": "tsx scripts/smoke.ts",
+    "authoring:proof": "node --import tsx scripts/authoring-proof.ts",
     "conformance:record": "node scripts/record-conformance.mjs record",
     "conformance:verify": "node scripts/record-conformance.mjs verify"
   },

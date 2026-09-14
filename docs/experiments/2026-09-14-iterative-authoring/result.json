@@ -1,0 +1,58 @@
+{
+  "proofVersion": 1,
+  "model": "Scripted responses through the installed Vercel adapter; not a live-model quality benchmark.",
+  "runtime": "jpack 0.21.0 sha256:2a93c1894516fe17af49784ba13f0cf26174a0c244adbb949c8e0b2717e9ba45",
+  "revisions": [
+    {
+      "revision": 1,
+      "digest": "a59bd0c07047acc39ed9cb0be06efdfad176efe2d8c56960d88fcc14d590b5c9",
+      "valid": false,
+      "passed": 0,
+      "failed": []
+    },
+    {
+      "revision": 2,
+      "digest": "deaa96ee4a3a34e964d888809d85799c14991268f06d09d92d458bb1c116a1b0",
+      "valid": true,
+      "passed": 3,
+      "failed": [
+        "boundary-50",
+        "no-receipt",
+        "boundary-1000"
+      ]
+    },
+    {
+      "revision": 3,
+      "digest": "c4d4035f6018fe980eacca1a8146c5cfb1346e6f8d04a5b0da695c5c873f2c48",
+      "valid": true,
+      "passed": 4,
+      "failed": [
+        "no-receipt",
+        "boundary-1000"
+      ]
+    },
+    {
+      "revision": 4,
+      "digest": "506d51ce5349b130e5e1f87bae17be2cb47c2b347f48838a4728bfc72471d60a",
+      "valid": true,
+      "passed": 5,
+      "failed": [
+        "boundary-1000"
+      ]
+    },
+    {
+      "revision": 5,
+      "digest": "396fde43c64278d644673c1a73a8028ddbb2420ecbc094b21273eec7c9c576b8",
+      "valid": true,
+      "passed": 7,
+      "failed": []
+    }
+  ],
+  "modelCalls": 34,
+  "toolCalls": 66,
+  "rehearsalRewrites": 24,
+  "restoredFromDisk": true,
+  "finalStatus": "ready",
+  "finalTestCases": 7,
+  "projectFilesUnchanged": true
+}
