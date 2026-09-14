@@ -18,7 +18,7 @@
  * on it, a deep link reaches it, and the phase-2 form field is already
  * addressed by it.
  */
-import type { ReactNode } from 'react'
+import { createContext, useContext, type ReactNode } from 'react'
 import type { Condition } from '../../mcp/types'
 import { conditionKind } from '../edit/conditionOps'
 import { Block } from './Block'
@@ -26,11 +26,12 @@ import { ReadOnlyBlocks } from './Block'
 import { valueLabel } from '../terminology'
 import styles from './PackDocument.module.css'
 
-export function ConditionTree({ condition, at, readOnly = false }: { condition: unknown; at: string; readOnly?: boolean }) {
+const ArrayLayout = createContext<'stacked' | 'inline'>('stacked')
+export function ConditionTree({ condition, at, readOnly = false, arrayLayout = 'stacked' }: { condition: unknown; at: string; readOnly?: boolean; arrayLayout?: 'stacked' | 'inline' }) {
   return (
     <div className={styles.tree}>
       <ReadOnlyBlocks.Provider value={readOnly}>
-        <ConditionNode condition={condition} at={at} depth={0} />
+        <ArrayLayout.Provider value={arrayLayout}><ConditionNode condition={condition} at={at} depth={0} /></ArrayLayout.Provider>
       </ReadOnlyBlocks.Provider>
     </div>
   )
@@ -135,8 +136,9 @@ function ConditionNode({
 
 /** Break between complete array entries first. Quotes, types and order stay exact. */
 function Operand({ value }: { value: unknown }) {
+  const layout = useContext(ArrayLayout)
   if (!Array.isArray(value)) return <>{JSON.stringify(value)}</>
-  const expanded = value.length > 3 || JSON.stringify(value).length > 80
+  const expanded = layout === 'stacked' && (value.length > 3 || JSON.stringify(value).length > 80)
   return <span className={expanded ? styles.arrayExpanded : undefined}>[
     {value.map((entry, index) => <span className={styles.arrayEntry} key={index}>
       {JSON.stringify(entry)}{index < value.length - 1 ? ',' : ''}<wbr />

@@ -73,6 +73,7 @@ export function LogicInspector({ model, at, groupId, pane, query, onSelect, onOu
     </section>}
     {pointer === '/fallbackOutcome' && <section className={styles.group}><h3>{PACK_TERMS.fallbackOutcome.label} <InfoHelp title={PACK_TERMS.fallbackOutcome.label}>{TERM_HELP.fallbackOutcome}</InfoHelp></h3><p>{outcomeLabel(model.document, value)}</p><p className={styles.meta}>A fallback does not itself request a handoff.</p></section>}
     {isRecord(value) && typeof value.description === 'string' && <Disclosure className={styles.group} title="Author description"><p>{value.description}</p></Disclosure>}
+    {isRecord(value) && typeof value.rationale === 'string' && <section className={styles.group}><h3>Reasoning</h3><p>{value.rationale}</p></section>}
     {group && !selected && <section className={styles.group}>{group.items.map(item => row(group, item))}{!group.items.length && <p>None declared.</p>}</section>}
     {condition === undefined && pointer !== '/fallbackOutcome' && !group && <Definition value={value} />}
     <Disclosure className={styles.group} title="Technical details">

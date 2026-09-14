@@ -401,19 +401,10 @@ export function PackView() {
   const changeMode = (nextMode: LogicMode) => {
     rememberLogicMode(nextMode); logic.setPreferred(nextMode)
     const next = new URLSearchParams(params); next.set('view', 'logic'); next.set('layout', nextMode)
-    if (nextMode === 'list') logic.setPane('detail')
     retainInspectorOnNavigation.current = true
     setParams(next, { replace: true })
   }
   const openOutline = () => { logic.setPane('outline'); setRightTab('inspector'); slot.reveal() }
-  const inspectGroup = (id: string) => {
-    if (!model?.groups.some(group => group.id === id)) return
-    setSelectionNotice(''); logic.setPane('detail'); setRightTab('inspector')
-    if (groupId === id) { slot.reveal(); return }
-    const next = new URLSearchParams(params)
-    next.set('view', 'logic'); next.set('group', id); next.delete('at')
-    setParams(next, { replace: true })
-  }
   const runRequested = params.get('run')
   const run = explanation.data?.id === runRequested ? explanation.data : undefined
   const matchingRun = traceMatches(run, packId, shownText)
@@ -1186,7 +1177,7 @@ export function PackView() {
                       <Button variant="quiet" onClick={() => { const next = new URLSearchParams(params); next.delete('run'); retainInspectorOnNavigation.current = true; setParams(next, { replace: true }) }}>Structure only</Button>
                       <ButtonLink variant="quiet" to={`/packs/${encodeURIComponent(packId ?? '')}/evaluate`}>Back to Tests</ButtonLink>
                     </div>}
-                    <PackLogic model={model} at={at} groupId={groupId} select={select} inspectGroup={inspectGroup} mode={mode} onMode={changeMode}
+                    <PackLogic model={model} at={at} groupId={groupId} select={select} mode={mode} onMode={changeMode}
                       query={logic.query} onQuery={logic.setQuery} openOutline={openOutline}
                       viewport={logic.viewport} onViewport={logic.setViewport} listScroll={logic.listScroll}
                       trace={runTrace} mapUnavailable={!formAvailable ? 'The document cannot be interpreted unambiguously.'
