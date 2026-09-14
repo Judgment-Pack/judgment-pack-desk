@@ -66,6 +66,14 @@ describe('the gateway client', () => {
     // Five pulls at most: four within the limit and the one that crossed it.
     expect(pulled).toBeLessThanOrEqual(6)
     expect(Array.from(await readBounded(new Response('abc'), 3))).toEqual([97, 98, 99])
+    // A source whose cancel never settles does not hold the refusal.
+    const stuck = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(new Uint8Array(2))
+      },
+      cancel: () => new Promise<void>(() => {})
+    })
+    await expect(readBounded(new Response(stuck), 1)).rejects.toThrow(OverBudget)
     await expect(readBounded(new Response('abcd'), 3)).rejects.toThrow(OverBudget)
   })
   it('seals and fetches the registry on their own routes', async () => {

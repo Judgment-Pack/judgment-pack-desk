@@ -305,11 +305,7 @@ export class AuthoringRun {
       const before = this.latest()?.digest
       await this.continuingTurn(signal, 'conversation', this.conversationPrompt(message), this.ports.researchTools)
       if (this.latest()?.digest !== before) await this.casesAndCheck(signal)
-      else {
-        const check = this.latest()?.check
-        const passing = check !== undefined && check.valid && check.cases.length > 0 && check.cases.every((c) => c.passed)
-        this.set({ status: passing ? 'ready' : 'needs-input', phase: 'review', detail: passing ? this.state.detail : 'Answered. The candidate still has disagreements or no established cases.' })
-      }
+      else this.settleReview('Answered. The candidate still has disagreements or no established cases.')
     })
   }
 
@@ -467,9 +463,10 @@ export class AuthoringRun {
   /** What a continuation is handed: every source read and every excerpt, by id. */
   private readSoFar(): string {
     const lines = this.ports.ledger.sources.map((record) => {
-      const head = record.kind === 'search' ? `${record.id}: search ${JSON.stringify(record.request.query ?? '')}` : `${record.id}: ${record.document?.title ?? ''} — ${record.request.url ?? ''}`
+      const head = record.kind === 'search' ? `${record.id}: search ${JSON.stringify(record.request.query ?? '')}` : `${record.id}: ${record.document?.title ?? ''} — ${record.request.url ?? ''}` + (record.document ? ` (${record.document.text.length} characters retrieved; re-open with read_source source_id ${record.id})` : '')
+      const hits = (record.hits ?? []).map((hit) => `  hit ${hit.rank}: ${hit.title} — ${hit.url}`)
       const excerpts = record.excerpts.map((excerpt) => `  ${excerpt.id}: ${JSON.stringify(excerpt.text)}`)
-      return [head + (record.failure ? ` (failed: ${record.failure})` : ''), ...excerpts].join('\n')
+      return [head + (record.failure ? ` (failed: ${record.failure})` : ''), ...hits, ...excerpts].join('\n')
     })
     return `SOURCES ALREADY READ AND CITED\n${lines.join('\n') || '(none)'}`
   }
@@ -537,12 +534,7 @@ export class AuthoringRun {
         // verify: a source whose receipt failed, or a citation the run cannot
         // trace, withholds `ready` -- the draft is shown, and what stands in
         // its way is said.
-        const withheld = this.withheld()
-        if (withheld !== null) {
-          this.set({ phase: 'review', status: 'needs-input', detail: withheld })
-          return
-        }
-        this.set({ phase: 'review', status: 'ready', detail: 'Every established case agrees. Review the draft, its sources and the unknowns before creating the pack.' })
+        this.settleReview('')
         return
       }
       if (this.state.revisionsUsed >= this.ports.maxRevisions) {
@@ -561,6 +553,30 @@ export class AuthoringRun {
         throw cause
       }
     }
+  }
+
+  /**
+   * The one place readiness is decided: the latest check must pass **and**
+   * nothing may be withheld. Every path that rests at review comes here --
+   * a passed check, an unchanged answer to a message, a continuation -- so
+   * no path reaches `ready` around the sources it rests on.
+   */
+  private settleReview(notPassing: string): void {
+    const check = this.latest()?.check
+    const passing = check !== undefined && check.valid && check.cases.length > 0 && check.cases.every((c) => c.passed)
+    if (!passing) {
+      this.set({ phase: 'review', status: 'needs-input', detail: notPassing })
+      return
+    }
+    // Sources may have been verified, or failed, since the last trace.
+    const latest = this.latest()
+    if (latest) this.set({ citations: traceCitations(latest.document, this.ports.ledger) })
+    const withheld = this.withheld()
+    if (withheld !== null) {
+      this.set({ phase: 'review', status: 'needs-input', detail: withheld })
+      return
+    }
+    this.set({ phase: 'review', status: 'ready', detail: 'Every established case agrees. Review the draft, its sources and the unknowns before creating the pack.' })
   }
 
   /** Why the candidate is not ready even where its cases agree, or null. */

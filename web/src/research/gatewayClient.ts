@@ -69,7 +69,10 @@ export async function readBounded(response: Response, limit: number): Promise<Ui
       if (done) break
       total += value.byteLength
       if (total > limit) {
-        await reader.cancel().catch(() => {})
+        // Cancellation is started and not waited for: a source whose cancel
+        // never settles would otherwise hold the refusal, and the refusal is
+        // the point.
+        void reader.cancel().catch(() => {})
         throw new OverBudget(limit)
       }
       chunks.push(value)

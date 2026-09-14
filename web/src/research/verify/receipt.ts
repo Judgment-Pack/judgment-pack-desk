@@ -5,7 +5,7 @@
  * file pinned and never one a gateway handed the page.
  */
 import { CanonError, bytesToHex, canonicalize, hexToBytes, memberOf, type JsonNode } from './canon'
-import { verifyEd25519Pure } from './ed25519'
+import { isSmallOrderPoint, verifyEd25519Pure } from './ed25519'
 
 export const RECEIPT_PREFIX_2 = 'judgment-pack-gateway/receipt/2:'
 export const RECEIPT_PREFIX_3 = 'judgment-pack-gateway/receipt/3:'
@@ -62,18 +62,25 @@ export async function keyIdOf(publicKeyHex: string): Promise<string> {
  * again on every receipt; a browser with it is used for every one.
  */
 let webCryptoEd25519: Promise<boolean> | null = null
+
+/**
+ * A known-good vector (RFC 8032 §7.1, test 1: the empty message under the
+ * first seed), so the probe establishes that verification *works* here and
+ * not merely that a key imports.
+ */
+const PROBE_PUBLIC = 'd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a'
+const PROBE_SIGNATURE =
+  'e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b'
+
 function webCryptoSpeaksEd25519(): Promise<boolean> {
   webCryptoEd25519 ??= (async () => {
     try {
-      // A well-formed key is what decides: an import that succeeds means the
-      // algorithm is there, whatever this key is.
-      await crypto.subtle.importKey('raw', new Uint8Array(32) as BufferSource, { name: 'Ed25519' }, false, ['verify'])
-      return true
-    } catch (cause) {
-      // A malformed-key refusal from an implementation that has the
-      // algorithm reads as DataError; NotSupportedError, or an implementation
-      // that throws anything else at the name, means there is none.
-      return (cause as { name?: string })?.name === 'DataError'
+      const key = await crypto.subtle.importKey('raw', hexToBytes(PROBE_PUBLIC) as BufferSource, { name: 'Ed25519' }, false, ['verify'])
+      return (await crypto.subtle.verify({ name: 'Ed25519' }, key, hexToBytes(PROBE_SIGNATURE) as BufferSource, new Uint8Array() as BufferSource)) === true
+    } catch {
+      // No algorithm, a partial implementation, or anything else thrown at
+      // the name: the verifier in this repository is what verifies then.
+      return false
     }
   })()
   return webCryptoEd25519
@@ -99,6 +106,10 @@ export async function verifyEd25519(
     return false
   }
   if (publicKey.length !== 32 || signature.length !== 64) return false
+  // A small-order key or R is refused before either backend is asked: the
+  // identity as a key would verify every message under S = 0, and neither
+  // WebCrypto nor Go's verifier refuses it on its own.
+  if (isSmallOrderPoint(publicKey) || isSmallOrderPoint(signature.subarray(0, 32))) return false
   if (!(await webCryptoSpeaksEd25519())) return verifyEd25519Pure(publicKey, message, signature)
   let key: CryptoKey
   try {

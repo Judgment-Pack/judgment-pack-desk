@@ -303,6 +303,11 @@ describe('the authoring run', () => {
       expect(request.prompt).toContain('CONTINUE')
       expect(request.prompt).toContain('SOURCES ALREADY READ AND CITED')
       expect(request.prompt).toContain('src-1#e1')
+      expect(request.prompt).toContain('re-open with read_source source_id src-1')
+      // A cached re-read costs no budget and makes no gateway call.
+      const read = request.hostTools.find((tool) => tool.name === 'read_source')!
+      const again = await read.execute({ source_id: 'src-1', offset: 0 }, signal)
+      expect(again.isError).toBeUndefined()
       onEvent({ type: 'proposal', document: PACK, unknowns: [] })
       onEvent({ type: 'end' })
     }
@@ -393,6 +398,23 @@ describe('the authoring run', () => {
     const state2 = await settled(uncited.run)
     expect(state2.status).toBe('needs-input')
     expect(state2.detail).toContain('cites no source')
+  })
+
+  it('keeps a withheld candidate withheld through an unchanged answer to a message', async () => {
+    const answerOnly: Script = async (_request, _signal, onEvent) => {
+      onEvent({ type: 'message', text: 'It is fine.' })
+      onEvent({ type: 'proposal', document: { ...PACK, sources: [], rules: [{ ...PACK.rules[0]!, sourceRefs: [] }] }, unknowns: [] })
+      onEvent({ type: 'end' })
+    }
+    const uncited = { ...PACK, sources: [], rules: [{ ...PACK.rules[0]!, sourceRefs: [] }] }
+    const { run } = harness([researchTurn(uncited), casesTurn, answerOnly])
+    run.start('brief', [PAGE_URL])
+    let state = await settled(run)
+    expect(state.status).toBe('needs-input')
+    run.send('Is it ready?')
+    state = await settled(run)
+    expect(state.status).toBe('needs-input')
+    expect(state.detail).toContain('cites no source')
   })
 
   it('holds receipts in the order it opened them, so a reordered or relabelled answer fails', async () => {

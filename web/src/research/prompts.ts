@@ -33,7 +33,7 @@ The candidate below was checked against test cases whose expected results were e
 
 export const CONTINUE_INSTRUCTIONS = `CONTINUE
 
-Your previous turn ended before you wrote the proposal: the turn's step budget was spent on research. Everything you read and cited is listed below with its excerpt ids, and it is still recorded; do not read it again. Finish now: cite anything essential that is not yet cited, then write the short summary and the one fenced JSON block with the whole document. Do not start new lines of research.`
+Your previous turn ended before you wrote the proposal: the turn's step budget was spent on research. Everything you read and cited is listed below with its excerpt ids, and it is still recorded. A page already read can be re-opened with read_source giving its source_id and an offset: that is served from what was already retrieved and costs no budget. Do not read new URLs or search. Finish now: re-open a page only where a requirement you rely on is not yet cited, cite it with cite_excerpt, then write the short summary and the one fenced JSON block with the whole document.`
 
 export const CONVERSATION_INSTRUCTIONS = `CONVERSATION
 

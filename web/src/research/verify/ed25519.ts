@@ -138,6 +138,25 @@ function basePoint(): Point {
   return base
 }
 
+/** Whether `[8]P` is the identity: a point of order 1, 2, 4 or 8. */
+function smallOrder(p: Point): boolean {
+  const eight = double(double(double(p)))
+  const zi = inverse(eight.z)
+  return mod(eight.x * zi) === 0n && mod(eight.y * zi) === 1n
+}
+
+/**
+ * Whether a 32-byte encoding is a canonical point of small order: the
+ * identity among them, under which every message verifies for `S = 0`. Go's
+ * verifier accepts such a key; this desk refuses it as a pinned key and as an
+ * `R`, before either backend is asked, since a key that verifies everything
+ * verifies nothing.
+ */
+export function isSmallOrderPoint(bytes: Uint8Array): boolean {
+  const point = decodePoint(bytes)
+  return point !== null && smallOrder(point)
+}
+
 function equal(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false
   let diff = 0
@@ -151,6 +170,7 @@ export async function verifyEd25519Pure(publicKey: Uint8Array, message: Uint8Arr
   const a = decodePoint(publicKey)
   const r = decodePoint(signature.subarray(0, 32))
   if (a === null || r === null) return false
+  if (smallOrder(a) || smallOrder(r)) return false
   const s = bytesToBigIntLE(signature.subarray(32, 64))
   if (s >= L) return false
   const input = new Uint8Array(64 + message.length)
