@@ -2933,8 +2933,8 @@ function usePacks() { useExampleListing(); return readPacks() }'
 
   # 3. Opening the creation page must dismiss the modal navigation drawer.
   mutate web "opening creation leaves the rail drawer standing over it" "$LR" \
-    "onClick={() => { navigate(store?.canCreate && ready ? chatHref(store.create()) : '/create-pack'); onNavigate?.() }}" \
-    "onClick={() => { navigate(store?.canCreate && ready ? chatHref(store.create()) : '/create-pack') }}"
+    "onClick={() => { if (store?.canCreate && ready) openNewChat(navigate, store.startChat()); else navigate('/create-pack'); onNavigate?.() }}" \
+    "onClick={() => { if (store?.canCreate && ready) openNewChat(navigate, store.startChat()); else navigate('/create-pack') }}"
   mutate web "the dialog never says it created anything" "$X" \
     '      onCreated?.()' \
     ''
