@@ -5,12 +5,14 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { AssistantEvent, CallTool, McpToolResult } from '../assistant/engine'
 import { Ledger } from './ledger'
-import { AuthoringRun, admitCases, canCreateResearchDraft, factPaths, matrixDocument, researchRecord, traceCitations, type RunPorts, type RunState, type TurnRequest } from './run'
+import { AuthoringRun, admitCases, canCreateResearchDraft, factPaths, matrixDocument, researchRecord, traceCitations, type Candidate, type RunPorts, type RunState, type TurnRequest } from './run'
+import { digestOf, type AuthoringCase, type CandidateCheck } from './checkCandidate'
 import { researchTools } from './tools'
 import { TEST_PUBLIC_KEY, fakeGateway } from './__fixtures__/fakeGateway'
 import { fixtureExpectations } from './__fixtures__/expectationRuntime'
 import { EXPECTATION_TOOL } from './expectations'
 import { parseJsonText } from './verify/canon'
+import { canRetryExpectationValidation } from './run'
 
 const answers = JSON.parse(readFileSync(join(import.meta.dirname, '__fixtures__', 'provider-answers.json'), 'utf8')) as Record<string, unknown>
 const PUBLIC_KEY = TEST_PUBLIC_KEY
@@ -87,6 +89,36 @@ function fakeRuntime(): { callTool: CallTool; calls: string[] } {
   return { callTool, calls }
 }
 
+/**
+ * Resolve one of the record's own digest-legend keys against the record, in the
+ * language the legend states it is in: JSON Pointer, `*` for any array index.
+ *
+ * The legend is machine-readable, so it is only worth what it corresponds to. A
+ * key that resolves to nothing names a member the record does not have, which is
+ * worse than the source comment the legend replaced -- a wrong legend is read as
+ * authority. `reached` is false when a segment is missing; a `*` over an empty
+ * array reaches nothing legitimately and returns no values.
+ */
+function legendPath(record: unknown, pointer: string): { reached: boolean; values: unknown[] } {
+  let nodes: unknown[] = [record]
+  for (const segment of pointer.split('/').slice(1)) {
+    const next: unknown[] = []
+    for (const node of nodes) {
+      if (segment === '*') {
+        if (!Array.isArray(node)) return { reached: false, values: [] }
+        next.push(...node)
+      } else {
+        if (typeof node !== 'object' || node === null || !(segment in node)) return { reached: false, values: [] }
+        next.push((node as Record<string, unknown>)[segment])
+      }
+    }
+    nodes = next
+  }
+  return { reached: true, values: nodes }
+}
+
+const LEGEND_KEYS = ['/packSha256', '/checkedCandidateSha256', '/expectationIssues/*/proposal/candidateDigest']
+
 function harness(scripts: Script[], overrides: Partial<RunPorts> = {}, tamper: (acquired: import('./gatewayClient').Acquired) => import('./gatewayClient').Acquired = (a) => a) {
   const ledger = new Ledger('unset')
   const gateway = fakeGateway()
@@ -141,6 +173,15 @@ async function settled(run: AuthoringRun, timeout = 5000): Promise<RunState> {
     const state = run.getSnapshot()
     if (state.status !== 'running' && state.status !== 'idle') return state
     if (Date.now() - started > timeout) throw new Error(`still ${state.status} in ${state.phase}`)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+}
+
+/** Wait for something the run does while it is still running. */
+async function until(reached: () => boolean, what: string, timeout = 5000): Promise<void> {
+  const started = Date.now()
+  while (!reached()) {
+    if (Date.now() - started > timeout) throw new Error(`never reached: ${what}`)
     await new Promise((resolve) => setTimeout(resolve, 5))
   }
 }
@@ -214,10 +255,23 @@ describe('the authoring run', () => {
     const record = researchRecord(state, ledger, 'abc') as {
       sources: { id: string; receipt?: unknown; verification: unknown; acquireResponse?: string }[]
       packSha256: string
+      digests: { pathSyntax: string; means: Record<string, string> }
       registries: Record<string, string>
       verdicts: Record<string, { ok: boolean }>
     }
     expect(record.packSha256).toBe('abc')
+    // An ordinary run names its digests too. The legend is the record saying
+    // what its own digests are of, and a run with nothing to correct is the
+    // common case -- one that shipped a record without the legend would leave
+    // the reader exactly where the source comment left them.
+    expect(record.digests.pathSyntax).toContain('JSON Pointer')
+    expect(Object.keys(record.digests.means)).toEqual(LEGEND_KEYS)
+    // And the legend is resolved against this record, not against itself: a
+    // member renamed out from under it fails here rather than shipping a legend
+    // that names something the record does not have.
+    for (const key of LEGEND_KEYS) expect(legendPath(record, key).reached, key).toBe(true)
+    expect(legendPath(record, '/packSha256').values).toEqual(['abc'])
+    expect(legendPath(record, '/expectationIssues/*/proposal/candidateDigest').values).toEqual([]) // Nothing was corrected.
     expect(record.sources[0]).toMatchObject({ id: 'src-1', verification: { state: 'verified' } })
     // Enough to check the claim again: the acquire response as received and
     // the registry the verdict was reached with.
@@ -667,6 +721,33 @@ describe('invalid expectation review', () => {
     expect(state.expectationIssues[0]!.original).toEqual(INVALID_CASES.cases[2])
     expect(resolved.approvedAt).toBeTruthy()
     expect(researchRecord(state, ledger, before.digest)).toMatchObject({ expectationIssues: state.expectationIssues })
+    // The record names its own digests, so the candidate a correction was
+    // proposed against is never read as a second claim about the written pack.
+    const record = researchRecord(state, ledger, before.digest) as { digests: { means: Record<string, string> }; matrixFocus: string }
+    expect(Object.keys(record.digests.means)).toEqual(LEGEND_KEYS)
+    expect(record.digests.means['/expectationIssues/*/proposal/candidateDigest']).toContain('proposed against')
+    expect(record.digests.means['/checkedCandidateSha256']).toContain('checked against')
+    expect(record.digests.means['/packSha256']).toContain('Create wrote')
+    // On a corrected run every legend key reaches a digest actually in this
+    // record. A legend is only worth the correspondence it holds.
+    for (const key of LEGEND_KEYS) {
+      const { reached, values } = legendPath(record, key)
+      expect(reached, key).toBe(true)
+      expect(values, key).toEqual([expect.stringMatching(/^[0-9a-f]{64}$/)])
+    }
+    // The corrected row is registered under the reason the correction gave, not
+    // the superseded one it replaced, and keeps its source tag.
+    const registered = (matrixDocument(state, ledger) as { cases: { id: string; focus: string }[] }).cases
+    expect(registered.find(row => row.id === 'hours-missing')!.focus).toBe(`${resolved.rationale} [src-1#e1]`)
+    expect(registered.find(row => row.id === 'hours-missing')!.focus).not.toContain(CASES.cases[2]!.rationale)
+    expect(registered.find(row => row.id === 'meets-hours')!.focus).toBe(`${CASES.cases[0]!.rationale} [src-1#e1]`)
+    // The two companions spell a corrected row's reason differently on purpose,
+    // so the record says which one the matrix carries, and the sentence is held
+    // against the matrix rather than left as prose: the reason it points at is
+    // the reason the registered row is under.
+    expect(record.matrixFocus).toContain('/expectationIssues/*/resolved/rationale')
+    const [pointed] = legendPath(record, '/expectationIssues/*/resolved/rationale').values as string[]
+    expect(registered.find(row => row.id === 'hours-missing')!.focus).toBe(`${pointed} [src-1#e1]`)
     run.approveExpectationCorrection(issue.id, issue.proposal!.token)
     expect(run.getSnapshot()).toBe(state) // Cannot apply twice.
     // No status, partial report, stale digest or missing id can bypass Create.
@@ -699,6 +780,155 @@ describe('invalid expectation review', () => {
     expect(state.expectationIssues[0]!.proposal).toBeUndefined()
     expect(state.expectationIssues[0]!.proposalError).toBeTruthy()
     expect(state.cases).toHaveLength(2)
+  })
+
+  it('holds the screened proposal when validation fails, and retries it without a second reviewer turn', async () => {
+    // Validation failing on transport says nothing about the question the
+    // reviewer answered, and that turn is the most expensive in the run. The
+    // failure is still closed: no case, no drop and no unknown is established
+    // until the runtime has returned a canonical for every admitted row.
+    const native = fakeRuntime()
+    let drop = true
+    // The reviewer's open question is part of what the proposal answered, and a
+    // hold that kept the cases but dropped it would report a settled suite the
+    // reviewer did not settle.
+    const openQuestion = 'The page does not say whether part-time weeks count toward the hours.'
+    const casesWithUnknowns: Script = async (request, signal, onEvent) =>
+      casesTurn(request, signal, event => onEvent(event.type === 'proposal' ? { ...event, unknowns: [openQuestion] } : event))
+    const { run, requests } = harness([researchTurn(), casesWithUnknowns], {
+      callTool: async (name, args) => {
+        if (name === EXPECTATION_TOOL && drop) {
+          drop = false
+          throw new Error('the runtime connection dropped')
+        }
+        return native.callTool(name, args)
+      }
+    })
+    run.start('brief', [PAGE_URL])
+    let state = await settled(run)
+    expect(state.status).toBe('failed')
+    expect(state.detail).toContain('connection dropped')
+    expect(state.cases).toEqual([])
+    expect(state.expectationIssues).toEqual([])
+    expect(state.droppedCases).toEqual([])
+    expect(state.heldProposal?.admitted.map(row => row.id)).toEqual(['meets-hours', 'under-hours', 'hours-missing'])
+    expect(state.heldProposal?.dropped.map(row => row.id)).toEqual(['ungrounded'])
+    expect(state.heldProposal?.unknowns).toEqual([openQuestion])
+    expect(state.heldProposal?.candidateDigest).toBe(state.candidates[0]!.digest)
+    expect(canRetryExpectationValidation(state)).toBe(true)
+    run.retryExpectationValidation()
+    // In flight, the hold is still there and the retry is not offered again:
+    // sending the same proposal twice is not a retry of it.
+    expect(run.getSnapshot().status).toBe('running')
+    expect(run.getSnapshot().heldProposal).not.toBeNull()
+    expect(canRetryExpectationValidation(run.getSnapshot())).toBe(false)
+    state = await settled(run)
+    expect(state.status, state.detail).toBe('ready')
+    expect(state.cases.map(row => row.id)).toEqual(['meets-hours', 'under-hours', 'hours-missing'])
+    expect(state.droppedCases.map(row => row.id)).toEqual(['ungrounded'])
+    // One reviewer turn for the whole run: the retry judged what was held.
+    expect(requests.filter(request => request.reviewer)).toHaveLength(1)
+    // The transcript carries the person's action and the reviewer's open
+    // question, in the order they happened.
+    expect(state.turns.map(turn => [turn.role, turn.kind])).toEqual([
+      ['user', 'brief'],
+      ['assistant', 'message'],
+      ['assistant', 'unknowns'],
+      ['assistant', 'message'],
+      ['user', 'note'],
+      ['assistant', 'note'],
+      ['assistant', 'unknowns']
+    ])
+    expect(state.turns[4]!.text).toBe('Sent the held case proposal back for validation.')
+    expect(state.turns.at(-1)!.text).toBe(`• ${openQuestion}`)
+    // Answered is not held: nothing offers a retry of a settled question.
+    expect(state.heldProposal).toBeNull()
+    expect(canRetryExpectationValidation(state)).toBe(false)
+    const answered = run.getSnapshot()
+    run.retryExpectationValidation()
+    expect(run.getSnapshot()).toBe(answered)
+  })
+
+  it('asks a fresh reviewer where the draft moved on under a held proposal', async () => {
+    // A suite is proposed from the draft's own outcomes and fact paths, so a
+    // hold taken against other bytes is not an answer for these -- holding must
+    // not quietly become a mismatched suite for a draft nobody proposed it for.
+    const native = fakeRuntime()
+    let drop = true
+    const changed: Script = async (_request, _signal, event) => {
+      event({ type: 'proposal', document: { ...PACK, title: 'Changed title' }, unknowns: [] })
+      event({ type: 'end' })
+    }
+    const reviewerFails: Script = async (_request, _signal, event) => {
+      event({ type: 'error', message: 'the endpoint answered 429' })
+      event({ type: 'end' })
+    }
+    const { run, requests } = harness([researchTurn(), casesTurn, changed, reviewerFails], {
+      callTool: async (name, args) => {
+        if (name === EXPECTATION_TOOL && drop) {
+          drop = false
+          throw new Error('the runtime connection dropped')
+        }
+        return native.callTool(name, args)
+      }
+    })
+    run.start('brief', [PAGE_URL])
+    let state = await settled(run)
+    expect(state.status).toBe('failed')
+    const held = state.heldProposal!
+    run.send('Call it Changed title')
+    state = await settled(run)
+    // The changed draft sent a second reviewer turn, which failed in its turn:
+    // the hold is still the earlier draft's, and it is not a retry for this one.
+    expect(requests.filter(request => request.reviewer)).toHaveLength(2)
+    expect(state.status).toBe('failed')
+    expect(state.detail).toBe('the endpoint answered 429')
+    expect(state.cases).toEqual([])
+    expect(state.heldProposal).toEqual(held)
+    expect(state.candidates.at(-1)!.digest).not.toBe(held.candidateDigest)
+    expect(canRetryExpectationValidation(state)).toBe(false)
+    const stale = run.getSnapshot()
+    run.retryExpectationValidation()
+    expect(run.getSnapshot()).toBe(stale)
+  })
+
+  it('repairs a draft that disagrees after a retried validation, as the run it resumes would have', async () => {
+    // The retry resumes the run validation interrupted: what follows a
+    // successful validation is the check and the revision budget `start()`
+    // would have spent. A retry that declined to repair would settle at
+    // needs-input with a revision still in hand, over a draft the run was
+    // entitled to fix.
+    const wrong = { ...PACK, rules: [{ ...PACK.rules[0]!, when: { ...PACK.rules[0]!.when, value: '1600' } }] }
+    const native = fakeRuntime()
+    let drop = true
+    const repairTurn: Script = async (request, _signal, onEvent) => {
+      expect(request.prompt).toContain('REPAIR')
+      onEvent({ type: 'message', text: 'repaired to the threshold the excerpt states' })
+      onEvent({ type: 'proposal', document: PACK, unknowns: [] })
+      onEvent({ type: 'end' })
+    }
+    const { run, requests } = harness([researchTurn(wrong), casesTurn, repairTurn], {
+      callTool: async (name, args) => {
+        if (name === EXPECTATION_TOOL && drop) {
+          drop = false
+          throw new Error('the runtime connection dropped')
+        }
+        return native.callTool(name, args)
+      }
+    })
+    run.start('brief', [PAGE_URL])
+    let state = await settled(run)
+    expect(state.status).toBe('failed')
+    expect(state.revisionsUsed).toBe(0)
+    run.retryExpectationValidation()
+    state = await settled(run)
+    expect(state.status, state.detail).toBe('ready')
+    // The disagreement the retried validation uncovered was repaired, not
+    // reported: one revision spent, a second candidate, still one reviewer.
+    expect(state.revisionsUsed).toBe(1)
+    expect(state.candidates).toHaveLength(2)
+    expect(requests.filter(request => request.reviewer)).toHaveLength(1)
+    expect(state.candidates.at(-1)!.check?.cases.every(row => row.passed)).toBe(true)
   })
 
   it('invalidates a proposed correction when conversation changes the draft', async () => {
@@ -919,6 +1149,163 @@ describe('invalid expectation review', () => {
   })
 })
 
+
+/**
+ * The correction flow's backup guards, each held in the position it exists for.
+ *
+ * Every one of these refuses a state another, tested guard already prevents, so
+ * driving the controller through its public methods reaches none of them and a
+ * green suite says nothing about whether they work. These tests write the
+ * controller's state directly to put each guard in front of the state it
+ * refuses -- the one thing a refactor that removed the primary guard would need
+ * somebody to have written down.
+ */
+describe('the correction flow\'s backup guards', () => {
+  /**
+   * The controller's own state, written as no public call can write it. The
+   * field reached for is private, so a rename would leave this writing a
+   * property nobody reads and every test below passing on a fixture that never
+   * landed -- which is the failure these tests exist to refuse. Both ends are
+   * asserted here: the field was there to write, and what the run reports is
+   * what was written.
+   */
+  function writeState(run: AuthoringRun, patch: Partial<RunState>): void {
+    const inner = run as unknown as { state: RunState }
+    expect(inner.state, 'AuthoringRun.state').toBeDefined()
+    inner.state = { ...inner.state, ...patch }
+    expect(run.getSnapshot()).toBe(inner.state)
+  }
+
+  async function proposed(overrides: Partial<RunPorts> = {}) {
+    const harnessed = await blockedRun([correctionTurn()], overrides)
+    harnessed.run.proposeExpectationCorrection('hours-missing')
+    const proposal = (await settled(harnessed.run)).expectationIssues[0]!.proposal!
+    return { ...harnessed, proposal }
+  }
+
+  it('refuses an approval whose proposal was read against another candidate', async () => {
+    const { run, proposal } = await proposed()
+    // A later candidate with the proposal still standing beside it. Taking one
+    // through a turn clears every pending proposal, which is what keeps the
+    // digest comparison from firing, so the candidate is appended by hand.
+    const text = JSON.stringify({ ...PACK, title: 'A later draft' }, null, 2)
+    const later: Candidate = { revision: 2, document: JSON.parse(text), text, digest: await digestOf(text), producedBy: 'conversation' }
+    writeState(run, { candidates: [...run.getSnapshot().candidates, later] })
+    const before = run.getSnapshot()
+    run.approveExpectationCorrection('hours-missing', proposal.token)
+    // Nothing was armed and nothing was set: the approval never started, so the
+    // correction cannot be applied to a draft nobody read it against.
+    expect(run.getSnapshot()).toBe(before)
+    expect(before.expectationIssues[0]!.resolved).toBeUndefined()
+  })
+
+  it('does not apply a correction whose validation answered after the run was stopped', async () => {
+    const native = fakeRuntime()
+    const held: { release: (() => void) | null } = { release: null }
+    let approving = false
+    const { run, proposal } = await proposed({
+      // Hold the validation's answer so the abort can be placed in the window
+      // this guard covers: after the validation resolved, before the correction
+      // is applied. The held promise is resolved with a value already in hand,
+      // so releasing it queues `withAbort`'s own reaction first and the test's
+      // stop next -- after the abort listener is dropped, before the approval
+      // resumes. `withAbort` no longer refuses it, and nothing else would.
+      callTool: (name, args) => {
+        if (!approving || name !== EXPECTATION_TOOL) return native.callTool(name, args)
+        return new Promise<McpToolResult>(resolve => {
+          void native.callTool(name, args).then(answer => { held.release = () => resolve(answer) })
+        })
+      }
+    })
+    approving = true
+    run.approveExpectationCorrection('hours-missing', proposal.token)
+    await until(() => held.release !== null, 'the approval validating the correction')
+    held.release!()
+    // One microtask on: `withAbort` has taken the value and dropped its abort
+    // listener, and the approval has not resumed yet. An abort placed a hop too
+    // early is refused by `withAbort` instead, which ends the run the same way
+    // and would quietly stop testing anything -- the mutation row `a correction
+    // is applied after the run was stopped` is what says so if that drifts.
+    void Promise.resolve().then(() => run.stop())
+    const state = await settled(run)
+    expect(state.status).toBe('stopped')
+    expect(state.cases).toHaveLength(2)
+    expect(state.expectationIssues[0]!.resolved).toBeUndefined()
+  })
+
+  it('refuses an approval whose case id is already established', async () => {
+    const { run, proposal } = await proposed()
+    // The id the open issue names, established as a case: admission drops an id
+    // that is already established and an invalid expectation is kept as an issue
+    // rather than a case, so the two never meet without this.
+    writeState(run, { cases: [...run.getSnapshot().cases, CASES.cases[2] as AuthoringCase] })
+    run.approveExpectationCorrection('hours-missing', proposal.token)
+    const state = await settled(run)
+    expect(state.status).toBe('failed')
+    expect(state.detail).toContain('already established')
+    expect(state.cases.filter(row => row.id === 'hours-missing')).toHaveLength(1)
+    expect(state.expectationIssues[0]!.resolved).toBeUndefined()
+  })
+
+  it('drops a check taken before the corrected case joined the suite', async () => {
+    const native = fakeRuntime()
+    const held: { stop: (() => void) | null } = { stop: null }
+    let rechecking = false
+    const { run, proposal } = await proposed({
+      // The desk's own runtime call goes through `withAbort`, so a call in
+      // flight when the person stops rejects; the fixture does it by hand.
+      callTool: (name, args) => rechecking && name === 'validate'
+        ? new Promise<McpToolResult>((_resolve, reject) => { held.stop = () => reject(new DOMException('stopped', 'AbortError')) })
+        : native.callTool(name, args)
+    })
+    const candidate = run.getSnapshot().candidates[0]!
+    // A check over exactly the ids the suite has *after* the approval, on these
+    // bytes: the shape whose survival would let Create read results the
+    // corrected case never had. No run reaches it -- a run blocked on an
+    // expectation never checked its draft at all.
+    const stale: CandidateCheck = {
+      documentDigest: candidate.digest,
+      valid: true,
+      diagnostics: [],
+      cases: ['meets-hours', 'under-hours', 'hours-missing'].map(id => ({ id, passed: true, expected: null, actual: null }))
+    }
+    writeState(run, { candidates: [{ ...candidate, check: stale }] })
+    // Both of this test's assertions also hold on a candidate that never
+    // carried a check, so the injection is stated as a precondition: without
+    // this line the test could pass having tested nothing.
+    expect(run.getSnapshot().candidates[0]!.check).toBe(stale)
+    rechecking = true
+    run.approveExpectationCorrection('hours-missing', proposal.token)
+    // Stop the recheck before it can write a fresh check: what is left is what
+    // the approval itself wrote.
+    await until(() => held.stop !== null, 'the recheck validating the draft')
+    run.stop()
+    held.stop!()
+    const state = await settled(run)
+    expect(state.status).toBe('stopped')
+    expect(state.cases).toHaveLength(3)
+    expect(state.candidates[0]!.check).toBeUndefined()
+    expect(canCreateResearchDraft({ ...state, status: 'ready' })).toBe(false)
+  })
+
+  it('never settles a run at ready while an expectation is open', async () => {
+    const unchanged: Script = async (_request, _signal, event) => {
+      event({ type: 'proposal', document: PACK, unknowns: [] })
+      event({ type: 'end' })
+    }
+    const { run } = harness([researchTurn(), casesTurn, unchanged])
+    run.start('brief', [PAGE_URL])
+    expect((await settled(run)).status).toBe('ready')
+    // A passing check beside an open issue: `casesAndCheck` returns at its own
+    // copy of this refusal long before a check exists, so the pair is written.
+    writeState(run, { expectationIssues: [{ id: 'hours-missing', original: INVALID_CASES.cases[2] as AuthoringCase, message: 'reasons must not be empty' }] })
+    run.send('Is this ready?')
+    const state = await settled(run)
+    expect(state.status).toBe('needs-input')
+    expect(state.detail).toContain('1 invalid expectation')
+    expect(canCreateResearchDraft(state)).toBe(false)
+  })
+})
 
 it.runIf(Boolean(process.env.JPACK_EXPECTATION_BINARY))('replays admission, explicit correction and all cases through the native runtime', async () => {
   const execute = promisify(execFile)

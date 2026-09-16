@@ -50,7 +50,8 @@ function fakeRun() {
     running: false,
     start: (brief: string, urls: string[]) => calls.push(`start:${brief}:${urls.join(',')}`),
     send: (text: string) => calls.push(`send:${text}`),
-    stop: () => calls.push('stop')
+    stop: () => calls.push('stop'),
+    retryExpectationValidation: () => calls.push('retry')
   } as unknown as NonNullable<ResearchRunBinding['run']>
 }
 
@@ -168,6 +169,23 @@ describe('Research and draft', () => {
     expect(handed?.name).toBe('FSWP screening')
     expect(handed?.matrix.cases).toHaveLength(1)
     expect(handed?.research.sources).toHaveLength(2)
+  })
+
+  it('sends the held proposal back for validation without a new reviewer turn', () => {
+    binding.run = fakeRun()
+    binding.ledger = new Ledger('s1')
+    const document = { title: 'T', decision: { question: 'Q' }, outcomes: [], rules: [] }
+    binding.state = {
+      ...INITIAL_STATE,
+      phase: 'cases',
+      status: 'failed',
+      detail: 'Expectations could not be validated: the runtime connection dropped',
+      candidates: [{ revision: 1, document, text: '{}', digest: 'd', producedBy: 'research' }],
+      heldProposal: { candidateDigest: 'd', admitted: [{ id: 'c', facts: {}, expectedDisposition: null, expectationSource: 'src-1#e1', rationale: '' }], dropped: [], unknowns: [] }
+    }
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry validation' }))
+    expect(calls).toEqual(['retry'])
   })
 
   it('withholds Create while cases disagree, and offers the narrow switch', () => {

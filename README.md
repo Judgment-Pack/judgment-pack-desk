@@ -4355,6 +4355,19 @@ and Create pause rather than silently omitting it from a smaller passing suite.
 A runtime limit finding means the expectation was not admitted, not that its
 meaning violates Core, and it is shown as that rather than as a §8.3 defect.
 
+**A failed validation does not cost the reviewer turn.** The screened
+proposal — the admitted cases, the drops and the reviewer's unknowns — is held
+before validation is attempted, so a transport failure, a refusal or an
+unreadable report ends the run without also discarding the answer to the most
+expensive question the run asks. **Retry validation** puts that same proposal
+back to the runtime as it stands: no second reviewer, no smaller suite. It is
+offered only while the hold matches the draft on screen, since a suite proposed
+from other bytes is a question for a reviewer and not a retry. A hold is not an
+established case: nothing reaches the cases, the matrix or the record until the
+runtime has returned a canonical for it. The retry is the person's action and
+the conversation says so, and the run it resumes carries on into the same check
+and the same revision budget the interrupted one would have spent.
+
 **Invalid expectations require explicit review.** **Suggest correction** asks
 a fresh reviewer for a complete expectation and rationale using the original
 case, verified source and declared outcomes/handoff. It does not receive actual
@@ -4367,6 +4380,12 @@ again, preserves the case id, inputs and source, and records the original value,
 approved value, rationale and time. A changed draft clears a pending proposal.
 All cases then rerun against unchanged draft bytes. A remaining disagreement
 stays visible for judgment; approval does not automatically repair the pack.
+The two cells of a case draw `outcomeId ?? kind`, and a §8.3 correction can
+differ in `reasons`, in `handoff` and in the handoff target alone, so a
+disagreeing row also discloses both halves of what was compared — each
+disposition, with the target beside it where the case asserts one. A refused
+case shows its named refusal instead: the evaluation did not complete, so
+there is no pair.
 Local disposition validity does not establish that a particular pack produces
 it or that policy supports it. No partial assertions are inferred.
 

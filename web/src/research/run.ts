@@ -63,6 +63,20 @@ export interface ExpectationIssue {
   resolved?: { replacement: AuthoringCase; approvedAt: string; rationale: string }
 }
 
+/**
+ * A reviewer's screened case proposal, held while its expectations are put to
+ * the runtime. It is bound to the candidate it was proposed against, because a
+ * suite is proposed from that draft's outcomes and fact paths and a draft that
+ * has moved on gets a fresh reviewer, as establishment has always answered a
+ * changed draft.
+ */
+export interface HeldProposal {
+  candidateDigest: string
+  admitted: AuthoringCase[]
+  dropped: { id: string; reason: string }[]
+  unknowns: string[]
+}
+
 export interface RunState {
   phase: Phase
   status: Status
@@ -74,6 +88,8 @@ export interface RunState {
   candidates: Candidate[]
   cases: AuthoringCase[]
   droppedCases: { id: string; reason: string }[]
+  /** A screened proposal awaiting validation, never an established case. */
+  heldProposal: HeldProposal | null
   expectationIssues: ExpectationIssue[]
   unknowns: string[]
   citations: Citation[]
@@ -131,6 +147,7 @@ export const INITIAL_STATE: RunState = {
   candidates: [],
   cases: [],
   droppedCases: [],
+  heldProposal: null,
   expectationIssues: [],
   unknowns: [],
   citations: [],
@@ -373,6 +390,10 @@ export class AuthoringRun {
   approveExpectationCorrection(id: string, token: string): void {
     const issue = this.state.expectationIssues.find(item => item.id === id && !item.resolved)
     const proposal = issue?.proposal
+    // The digest comparison is a backup, and a passing suite is not evidence it
+    // is reachable: every new candidate already clears the pending proposals, so
+    // no sequence of public calls leaves one standing beside a draft it was not
+    // read against. `run.test.ts` writes that state directly to hold it here.
     if (this.running || !issue || !proposal || proposal.token !== token || proposal.candidateDigest !== this.latest()?.digest) return
     this.arm()
     this.set({ phase: 'review', status: 'running', detail: `Validating the approved correction for ${id}.` })
@@ -385,9 +406,14 @@ export class AuthoringRun {
       // is refused here rather than applied and left to stall the run.
       const contradiction = targetContradiction(finding.canonical, issue.original.expectedHandoffTarget)
       if (contradiction) throw new Error(`The correction was not applied: ${contradiction}`)
+      // Nothing is applied on a closed run. A backup for a window that holds
+      // only microtasks -- a validation that answers after Stop -- so a suite
+      // that never lands in it is no evidence this is dead code.
       this.check(signal)
       const replacement = deepFreeze(structuredClone({ ...issue.original, expectedDisposition: proposal.expectedDisposition }))
-      // No established case can be silently replaced by this approval.
+      // No established case can be silently replaced by this approval. A backup:
+      // admitted ids are unique and an id kept as an issue is never also a case,
+      // so no run produces the collision it refuses.
       if (this.state.cases.some(row => row.id === id)) throw new Error('A case with this id is already established; the correction was not applied.')
       // The approval and the retest it promises are one step. Applied first and
       // then interrupted -- a Stop, a spent budget, a transport failure -- it
@@ -403,6 +429,9 @@ export class AuthoringRun {
       // so at an approval there is no check to strip or to put back.
       const before = { cases: this.state.cases, candidates: this.state.candidates, expectationIssues: this.state.expectationIssues, readiness: this.state.readiness }
       this.set({ cases: [...this.state.cases, replacement],
+        // Every check goes, so nothing downstream reads one taken before this
+        // case joined the suite. A backup too: a run blocked on an expectation
+        // never checked its draft, so today there is no check here to drop.
         candidates: this.state.candidates.map(({ check: _check, ...candidate }) => candidate),
         expectationIssues: this.state.expectationIssues.map(item => item.id === id ? { ...item, resolved: { replacement, approvedAt: this.stamp(), rationale: proposal.rationale } } : item) })
       try {
@@ -415,6 +444,29 @@ export class AuthoringRun {
       // Written where the approval completed, so the transcript records no
       // approval the run then took back.
       this.addTurn({ role: 'user', kind: 'note', text: `Approved the corrected expectation for ${id}: ${proposal.rationale}` })
+    })
+  }
+
+  /**
+   * Put the held proposal to the runtime again, where validation itself is what
+   * ended the run. No reviewer turn, no smaller suite: the same admitted cases,
+   * the same drops, the same unknowns, judged again.
+   */
+  retryExpectationValidation(): void {
+    if (this.running || !canRetryExpectationValidation(this.state)) return
+    this.arm()
+    // A person sent these cases back, and what follows establishes them. The
+    // record is the transcript, so the action that changed what got established
+    // says so in it, as a message and an approved correction do.
+    this.addTurn({ role: 'user', kind: 'note', text: 'Sent the held case proposal back for validation.' })
+    this.set({ phase: 'cases', status: 'running', detail: 'Validating the held case proposal again.' })
+    void this.drive(async signal => {
+      // Repair stays on, spelled out rather than taken from the default: this
+      // resumes the run validation interrupted, so a draft that then disagrees
+      // with the established cases is repaired against the same budget `start()`
+      // would have spent on it. Declining to repair here would settle at
+      // needs-input with revisions still in hand.
+      await this.casesAndCheck(signal, true)
     })
   }
 
@@ -630,15 +682,43 @@ export class AuthoringRun {
     }
   }
 
+  /**
+   * The reviewer turn that proposes the suite, screened and held before a word
+   * of it is put to the runtime.
+   *
+   * Held is not established. Nothing reaches `state.cases`, the matrix or the
+   * record until the runtime returns a canonical for it, so a run that fails
+   * here still reports no result -- what holding buys is the turn, not the
+   * verdict.
+   */
+  private async proposeCases(signal: AbortSignal, candidate: Candidate): Promise<HeldProposal> {
+    this.set({ phase: 'cases', detail: 'Establishing test cases from the sources.' })
+    this.ports.log('cases: a reviewer establishes expectations from the excerpts')
+    const proposal = await this.engineTurn(signal, 'research', this.casesPrompt(candidate.document), [], true)
+    const { admitted, dropped } = admitCases(proposal?.document, this.ports.ledger, this.state.cases)
+    const held: HeldProposal = { candidateDigest: candidate.digest, admitted, dropped, unknowns: proposal?.unknowns ?? [] }
+    this.set({ heldProposal: held })
+    return held
+  }
+
   /** Establish cases where none are, then check, and repair until the budget. */
   private async casesAndCheck(signal: AbortSignal, repair = true): Promise<void> {
     const candidate = this.latest()
     if (!candidate) throw new Error('no candidate to check')
     if (this.state.cases.length === 0 && this.state.expectationIssues.length === 0) {
-      this.set({ phase: 'cases', detail: 'Establishing test cases from the sources.' })
-      this.ports.log('cases: a reviewer establishes expectations from the excerpts')
-      const proposal = await this.engineTurn(signal, 'research', this.casesPrompt(candidate.document), [], true)
-      const { admitted, dropped } = admitCases(proposal?.document, this.ports.ledger, this.state.cases)
+      // A proposal already screened and held is validated as it stands. The
+      // reviewer turn is the most expensive turn in the run and validation
+      // failing on transport is no answer to the question it asked, so it is
+      // not asked again -- but a changed draft is a different question, and a
+      // proposal held against other bytes is not reused for it.
+      //
+      // Nor is a hold screened again: `admitCases` turns on ledger
+      // verification, and a verified record cannot become unverified, since
+      // every turn opens its own session and only ever marks records under it.
+      // A change to how sessions are allocated would have to re-screen here.
+      const kept = this.state.heldProposal
+      const held = kept !== null && kept.candidateDigest === candidate.digest ? kept : await this.proposeCases(signal, candidate)
+      const { admitted, dropped } = held
       const checked = await validateExpectations(admitted.map(row => row.expectedDisposition), this.ports.callTool, signal)
       const issues: ExpectationIssue[] = []
       const cases: AuthoringCase[] = []
@@ -656,11 +736,14 @@ export class AuthoringRun {
         // byte-identical to the assertion that was checked.
         cases.push(deepFreeze(structuredClone({ ...row, expectedDisposition: JSON.parse(finding.canonical) })))
       })
-      this.set({ cases, expectationIssues: issues, droppedCases: dropped })
+      // The proposal has been answered, so nothing is held any more: what is
+      // kept from here is an established case or a blocked issue, and a stale
+      // hold would offer a retry of a question that is already settled.
+      this.set({ cases, expectationIssues: issues, droppedCases: dropped, heldProposal: null })
       if (dropped.length) {
         this.addTurn({ role: 'assistant', kind: 'note', text: `Dropped ${dropped.length} proposed case(s): ${dropped.map((d) => `${d.id} (${d.reason})`).join('; ')}` })
       }
-      if (proposal?.unknowns.length) this.addTurn({ role: 'assistant', kind: 'unknowns', text: proposal.unknowns.map((line) => `• ${line}`).join('\n') })
+      if (held.unknowns.length) this.addTurn({ role: 'assistant', kind: 'unknowns', text: held.unknowns.map((line) => `• ${line}`).join('\n') })
       if (admitted.length === 0) {
         // Where nothing grounded a case because the sources did not verify,
         // that is the sentence, not the absence of cases.
@@ -739,6 +822,10 @@ export class AuthoringRun {
    * citations it names are the ones on hand.
    */
   private settleReview(notPassing: string): void {
+    // The same refusal `casesAndCheck` makes before it checks anything, kept
+    // here as a backup: no path rests at `ready` with an expectation open. It
+    // fires only where a passing check and an open issue coexist, which no run
+    // produces -- so nothing failing without it means nothing.
     if (this.unresolvedExpectations()) {
       this.set({ phase: 'review', status: 'needs-input', detail: this.unresolvedExpectations()!, readiness: '' })
       return
@@ -903,6 +990,34 @@ export function researchRecord(state: RunState, ledger: Ledger, packDigest: stri
     // is not edited on the way through.
     checkedCandidateSha256: state.candidates.at(-1)?.digest ?? '',
     shapedOnCreate: ['title', 'id', 'version', 'description'],
+    // Three digests of two different things, and a reader who compares the
+    // wrong two learns nothing. A resolved issue's `proposal.candidateDigest`
+    // is the candidate that correction was proposed against -- a fact about a
+    // moment in the run, not a third claim about the pack -- and the record
+    // has to say so itself, because the record is what leaves here.
+    //
+    // One path language for all three, stated in the record, so every key can
+    // be resolved the same way rather than two of them reading as member names
+    // and the third as a path expression in no language. A legend is
+    // machine-readable, and a legend naming a member the record has since
+    // renamed is worse than the source comment it replaced -- so run.test.ts
+    // resolves every key here against a real record, on an ordinary run and a
+    // corrected one, and drift fails a named test.
+    digests: {
+      pathSyntax: 'JSON Pointer into this record, with * standing for any array index',
+      means: {
+        '/packSha256': 'sha256 of the pack bytes Create wrote',
+        '/checkedCandidateSha256': 'sha256 of the research candidate text these cases were checked against',
+        '/expectationIssues/*/proposal/candidateDigest': 'sha256 of the research candidate text that correction was proposed against'
+      }
+    },
+    // The matrix Create writes beside this record spells a corrected row's
+    // reason the other way round, and both spellings are deliberate: the matrix
+    // registers the row under the reason still standing, while the case kept
+    // here is the case as it was authored. A reader holding the two companions
+    // should be told that, not left to notice it.
+    matrixFocus:
+      'For a corrected row the matrix registers cases[].focus under the approved correction rationale, which this record carries at /expectationIssues/*/resolved/rationale; /cases/*/rationale here keeps the rationale the case was authored with.',
     brief: state.brief,
     seedUrls: state.seedUrls,
     sessions: state.sessions,
@@ -925,6 +1040,14 @@ export function matrixDocument(state: RunState, ledger: Ledger): unknown {
     cases: state.cases.map((row) => {
       const excerpt = ledger.excerpt(row.expectationSource)
       const record = excerpt ? ledger.byId(excerpt.sourceId) : undefined
+      // A corrected case was established for the reason the approved correction
+      // gave; the rationale it carries from authoring argued the expectation
+      // that correction replaced. `focus` is the line a reader of the
+      // registered matrix meets beside the row, so it carries the reason that
+      // is still standing -- under the same source tag, which the correction
+      // preserved.
+      const corrected = state.expectationIssues.find((item) => item.id === row.id && item.resolved)
+      const focus = corrected?.resolved?.rationale ?? row.rationale
       const cites =
         record?.acquisition && record.verification.state === 'verified'
           ? [{ sessionId: record.acquisition.session, callIndex: record.acquisition.callIndex, signature: record.acquisition.signature }]
@@ -936,7 +1059,7 @@ export function matrixDocument(state: RunState, ledger: Ledger): unknown {
         ...(row.evidenceAvailability !== undefined ? { evidenceAvailability: row.evidenceAvailability } : {}),
         expectedDisposition: row.expectedDisposition,
         ...(row.expectedHandoffTarget !== undefined ? { expectedHandoffTarget: row.expectedHandoffTarget } : {}),
-        focus: `${row.rationale} [${row.expectationSource}]`,
+        focus: `${focus} [${row.expectationSource}]`,
         ...(cites.length ? { cites } : {})
       }
     })
@@ -966,6 +1089,26 @@ export function targetContradiction(canonical: string, target: unknown): string 
   const handoff = (JSON.parse(canonical) as { handoff?: { state?: unknown } }).handoff
   if (handoff?.state === 'requested') return null
   return 'The case expects a handoff target beside a disposition that requests no handoff. No evaluation reports a target for a handoff of "none", so the pair could never pass.'
+}
+
+/**
+ * Whether the held proposal can be put to the runtime again as it stands.
+ *
+ * A proposal is held only between the turn that proposed it and the
+ * establishment that consumes it, so a run at rest still holding one is a run
+ * that failed, stopped or spent its budget inside validation. The digest is the
+ * binding: a hold left over from an earlier draft answers a question the
+ * current one no longer asks, and that needs a reviewer, not a retry.
+ *
+ * `running` is the one status excluded: the hold is live while validation is in
+ * flight, and sending it again there would put the same proposal twice. An
+ * `idle` run cannot hold one -- `start()` resets through `INITIAL_STATE`, whose
+ * hold is null -- so there is no clause for it.
+ */
+export function canRetryExpectationValidation(state: RunState): boolean {
+  const held = state.heldProposal
+  return held !== null && state.status !== 'running' &&
+    held.candidateDigest === state.candidates.at(-1)?.digest
 }
 
 /** A complete check is bound to the current candidate and every established case. */
