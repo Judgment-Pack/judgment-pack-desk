@@ -13,7 +13,7 @@
  * writes" mean nothing.
  */
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -1162,13 +1162,56 @@ function researchHandover(): ResearchHandover {
   }
 }
 
-function renderHandover(handover = researchHandover(), validationStatus: 'valid' | 'invalid' = 'valid') {
-  const stub = stubClient({
+function handoverStub(validationStatus: 'valid' | 'invalid' = 'valid') {
+  return stubClient({
     list_examples: () => ({ text: EXAMPLES }), get_example: () => ({ text: TEMPLATE }), get_schema: () => ({ text: SCHEMA }),
     validate: () => ({ text: JSON.stringify({ status: validationStatus, layers: ['carrier', 'structural', 'semantic'].map(name => ({ name, status: validationStatus === 'valid' ? 'passed' : 'failed' })), diagnostics: [] }) })
   })
+}
+
+function renderHandover(handover = researchHandover(), validationStatus: 'valid' | 'invalid' = 'valid') {
+  const stub = handoverStub(validationStatus)
   const rendered = renderDialog(stub, { ...FULL_CAPS, validateSupported: true }, effectiveConfig(undefined), { research: handover, presentation: 'page' })
   return { ...rendered, stub, handover }
+}
+
+/**
+ * The same dialog, on the route it really has, with a page behind
+ * `/packs/:slug` for a create to land on.
+ *
+ * `renderDialog` mounts one `path: '*'` route, so the dialog survives the push
+ * and a Back moves history underneath a component that is never built again.
+ * The handover is read at mount, and that read is what a Back has to meet: two
+ * routes make Back do what it does in the desk — leave the pack's page, build
+ * the create page again, on whatever state the entry it returns to still
+ * carries. The entry has a search and a fragment because a real one can.
+ */
+function renderHandoverRouted(state: Record<string, unknown>) {
+  const stub = handoverStub()
+  const router = createMemoryRouter(
+    [
+      {
+        path: '/create-pack',
+        element: (
+          <Mounted
+            stub={stub}
+            overrides={{ ...FULL_CAPS, validateSupported: true }}
+            deskConfig={effectiveConfig(undefined)}
+            presentation="page"
+            onClose={() => {}}
+          />
+        )
+      },
+      { path: '/packs/:slug', element: <div>the pack page</div> }
+    ],
+    { initialEntries: [{ pathname: '/create-pack', search: '?via=research', hash: '#draft', state }] }
+  )
+  render(
+    <QueryClientProvider client={testQueryClient()}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
+  )
+  return { router, stub }
 }
 
 async function reviewHandedDraft() {
@@ -1212,6 +1255,49 @@ describe('creating a reviewed research handover', () => {
     const config = JSON.parse(sent[3]!.body.content as string)
     expect(config.packs['reviewed-pack']).toMatchObject({ path: sent[0]!.path, matrix: sent[1]!.path })
     await waitFor(() => expect(seen).toContain('/packs/reviewed-pack'))
+  })
+
+  it('takes the handover off the create entry, so Back does not offer it again', async () => {
+    // Back after a Create returned to an entry that still carried the handover,
+    // and the dialog reads it at mount, so the create page came back offering
+    // the same reviewed document. The same-name refusal holds, so the second
+    // pack takes a rename — and then one run's matrix rows and research record
+    // are registered against two packs. One press of Create is one pack.
+    serveProject({ project: PROJECT })
+    const { router } = renderHandoverRouted({ research: researchHandover() })
+    await reviewHandedDraft()
+    fireEvent.click(createButton())
+    await waitFor(() => expect(router.state.location.pathname).toBe('/packs/reviewed-pack'))
+    await act(async () => { await router.navigate(-1) })
+    expect(await screen.findByRole('radiogroup', { name: 'Creation method' })).toBeTruthy()
+    expect(screen.queryByLabelText('Reviewed draft')).toBeNull()
+    // And back until history runs out. One entry is not the claim: were the
+    // spent entry pushed rather than replaced, the entry underneath it would
+    // still carry the handover, and any later mount on that entry — a Forward,
+    // a reload, a trip to a pack and back — reads it again. That deeper entry
+    // is judged on its state rather than on a second render, because Back from
+    // one `/create-pack` entry to another matches the same route and builds no
+    // new page: the state is what a mount would find there.
+    for (let back = 0; back < 3; back += 1) {
+      await act(async () => { await router.navigate(-1) })
+      expect((router.state.location.state as { research?: unknown } | null)?.research).toBeUndefined()
+    }
+  })
+
+  it('spends the handover and nothing else: the entry keeps its other state, its search and its fragment', async () => {
+    // The create route is reachable with state this dialog does not own, and
+    // the entry has a URL of its own. Spending the handover is no licence to
+    // discard either — a stranger's state going out with it is the same defect
+    // one turn quieter.
+    serveProject({ project: PROJECT })
+    const { router } = renderHandoverRouted({ research: researchHandover(), from: 'the research page' })
+    await reviewHandedDraft()
+    fireEvent.click(createButton())
+    await waitFor(() => expect(router.state.location.pathname).toBe('/packs/reviewed-pack'))
+    await act(async () => { await router.navigate(-1) })
+    const entry = router.state.location
+    expect(`${entry.pathname}${entry.search}${entry.hash}`).toBe('/create-pack?via=research#draft')
+    expect(entry.state).toEqual({ from: 'the research page' })
   })
 
   it('reads the reviewed draft at Build and writes exactly those bytes, with the checked digest beside the saved one', async () => {
