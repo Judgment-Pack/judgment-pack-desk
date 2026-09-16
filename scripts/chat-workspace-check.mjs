@@ -28,8 +28,9 @@ try {
   page = await context.newPage()
   page.on('pageerror',error => errors.push(error.message.replaceAll(secret,'[redacted]')))
   await page.goto(`${origin}/launch?secret=${secret}`)
-  await page.getByRole('button',{ name: 'Create a pack', exact: true }).click()
   await page.getByRole('heading',{ name: 'What should this pack decide?' }).waitFor()
+  assert(new URL(page.url()).pathname.startsWith('/chats/'),'Launch opens a new chat without visiting Packs first')
+  results.push('Launch opens the chat landing page directly')
   const first = new URL(page.url()).pathname
   const message = page.getByRole('textbox',{ name: 'Message the assistant' })
   await message.fill('Keep this unfinished decision brief when I configure Assistant or switch chats.')

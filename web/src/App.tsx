@@ -28,7 +28,7 @@ export function App() {
         <BlockedNotice error={blocking} />
       ) : (
         <Routes>
-          <Route path="/" element={<Navigate to="/packs" replace />} />
+          <Route path="/" element={<Navigate to="/create-pack" replace />} />
           <Route path="/matrix" element={<MatrixView />} />
           <Route path="/author" element={<AuthorView />} />
           <Route path="/graphs" element={<GraphView />} />
