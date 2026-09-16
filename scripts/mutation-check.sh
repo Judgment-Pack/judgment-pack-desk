@@ -2705,6 +2705,57 @@ function usePacks() { useExampleListing(); return readPacks() }'
     return () => observer.disconnect()' \
     ''
 
+  # **The record names its own digests.** A resolved issue's proposal digest is
+  # the candidate a correction was proposed against, and it sits beside two
+  # digests of the pack line. Unnamed, a reader compares it with `packSha256`
+  # and reads a disagreement into a record that never claimed one.
+  mutate web "the correction's digest goes back to being unnamed" "$RR" \
+    "        '/checkedCandidateSha256': 'sha256 of the research candidate text these cases were checked against',
+        '/expectationIssues/*/proposal/candidateDigest': 'sha256 of the research candidate text that correction was proposed against'" \
+    "        '/checkedCandidateSha256': 'sha256 of the research candidate text these cases were checked against'"
+
+  # **An ordinary run names its digests too.** A legend written only where the
+  # run had a correction to resolve leaves the common case -- nothing corrected
+  # -- with an unnamed `packSha256` beside an unnamed `checkedCandidateSha256`,
+  # which is the pair the legend exists to keep apart.
+  mutate web "the legend is written only for a run that had a correction" "$RR" \
+    "    digests: {
+      pathSyntax: 'JSON Pointer into this record, with * standing for any array index',
+      means: {
+        '/packSha256': 'sha256 of the pack bytes Create wrote',
+        '/checkedCandidateSha256': 'sha256 of the research candidate text these cases were checked against',
+        '/expectationIssues/*/proposal/candidateDigest': 'sha256 of the research candidate text that correction was proposed against'
+      }
+    }," \
+    "    ...(state.expectationIssues.length ? { digests: { pathSyntax: 'JSON Pointer into this record, with * standing for any array index', means: { '/packSha256': 'sha256 of the pack bytes Create wrote', '/checkedCandidateSha256': 'sha256 of the research candidate text these cases were checked against', '/expectationIssues/*/proposal/candidateDigest': 'sha256 of the research candidate text that correction was proposed against' } } } : {}),"
+
+  # **The legend is resolved against the record, not against itself.** Pinning
+  # the key set only proves the legend still equals the legend. A member renamed
+  # out from under it ships a record whose legend names something that is not
+  # there -- and a legend is machine-readable, so it is read as authority.
+  mutate web "the record renames a digest the legend still names" "$RR" \
+    "    checkedCandidateSha256: state.candidates.at(-1)?.digest ?? ''," \
+    "    candidateCheckedSha256: state.candidates.at(-1)?.digest ?? '',"
+
+  # **The two companions spell a corrected row's reason differently, on
+  # purpose.** The record keeps the case as it was authored and the matrix
+  # registers the row under the correction. Unless the record says which is
+  # which, a reader holding both files finds the difference by tripping over it,
+  # which is the comparison the digest legend beside it exists to prevent.
+  mutate web "the record stops saying which reason the matrix carries" "$RR" \
+    "    matrixFocus:
+      'For a corrected row the matrix registers cases[].focus under the approved correction rationale, which this record carries at /expectationIssues/*/resolved/rationale; /cases/*/rationale here keeps the rationale the case was authored with.',
+" \
+    ""
+
+  # **A corrected row is registered under the reason still standing.** The
+  # rationale the case carries from authoring argued the expectation the
+  # correction replaced, so writing it into `focus` puts the superseded reason
+  # beside the corrected assertion for every later reader of the matrix.
+  mutate web "the registered row keeps the superseded rationale" "$RR" \
+    '      const focus = corrected?.resolved?.rationale ?? row.rationale' \
+    '      const focus = corrected ? row.rationale : row.rationale'
+
   # 4. Admin printed a decoded number with nothing said about what bounds it,
   # what the frame does to it, or what is actually on screen.
   #
@@ -7397,6 +7448,51 @@ export function assistantTransport(id: string): Transport {
   mutate web "any 401 ends the session on the desk's own fetch" "$FC" \
     "  if (refusalCode(answered) !== 'unauthorized') return answered" \
     ''
+
+  # **A disabled Create carries its reason on the step it is pressed from.**
+  # The name is asked about at Basics and the button is at Review, and a name
+  # can stop being usable in between: a companion write that failed leaves the
+  # pack file on disk, the failure refetches the listing, and the name that
+  # wrote that file collides with it. Under the mutation Create is dark at
+  # Review with the explanation two steps back, beside a field the draft has
+  # disabled — which is the state the orphaned-Create advice was written for.
+  mutate web "the name's problem is never said where Create is pressed" "$X" \
+    '  const createWhyHere = step === 0 ? createWhy : (createWhy ?? nameProblem)' \
+    '  const createWhyHere = createWhy'
+  # **The document's own refusal is the nearer answer.** A document the runtime
+  # will not call a pack is refused at any name; the collision is what is left
+  # to say once that clears. Under the mutation the collision takes the help id
+  # and the button describes itself by it, so the refusal that is actually
+  # holding Create is the one sentence nothing points at.
+  mutate web "the name's problem outranks the runtime's refusal" "$X" \
+    '  const createWhyHere = step === 0 ? createWhy : (createWhy ?? nameProblem)' \
+    '  const createWhyHere = step === 0 ? createWhy : (nameProblem ?? createWhy)'
+  # **Basics keeps `createWhy` exactly.** The Name field is on screen there
+  # carrying its own error, and under the mutation the same sentence is also
+  # rendered under the form — one problem said twice on one screen, which is
+  # what the step guard exists to prevent.
+  mutate web "Basics says the name's problem twice" "$X" \
+    '  const createWhyHere = step === 0 ? createWhy : (createWhy ?? nameProblem)' \
+    '  const createWhyHere = createWhy ?? nameProblem'
+  # **The help id lands on one element.** Structure check carries it only while
+  # the document's own refusal is the reason Create is off. Read off `createWhy`
+  # instead, `undefined === undefined` is true whenever neither is a refusal, so
+  # that paragraph takes the id and the hint below takes it too — a button
+  # describing itself by two elements at once.
+  mutate web "two elements carry Create's help id" "$X" \
+    '            <p id={createWhyHere === proposalRefusal ? createHelpId : undefined} role="status">' \
+    '            <p id={createWhy === proposalRefusal ? createHelpId : undefined} role="status">'
+  # **A companion failure hands the name back.** The pack file it left on disk
+  # is a file at the name that wrote it, so the advice is to give it another
+  # one — and that is only followable if the field it is asked at is open. Under
+  # the mutation the shaped draft keeps the field disabled and the page stays at
+  # Review, which is the state the old advice sent people out of the desk to
+  # escape.
+  mutate web "a companion failure keeps the name locked" "$X" \
+    "          setDraft(undefined)
+          setStep(0)
+          invalidate([['desk-files']])" \
+    "          invalidate([['desk-files']])"
 fi
 
 restore

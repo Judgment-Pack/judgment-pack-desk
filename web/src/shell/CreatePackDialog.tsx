@@ -128,8 +128,14 @@ const COMPANION_PATH_TAKEN =
   'The test cases and research record would be written beside the pack, and one of those two names is taken. Nothing was written; try another name.'
 const ORPHANED =
   'The pack was created but could not be registered. Nothing else was changed.'
+// The advice names a move this page makes. "Create it again under another
+// name" was not one: the Name field is disabled once a draft has been shaped,
+// so the sentence sent a person at a control they could not type in. The
+// failure now hands that field back on the step it is asked on — see (1b) —
+// and another name is the move that works, because the file left on disk is
+// the file at the name that wrote it.
 const COMPANIONS_ORPHANED =
-  'The pack file was written, but its test cases or research record could not be written beside it, so nothing names the pack yet. Fix the cause and create it again under another name, or register the file by hand.'
+  'The pack file was written, but its test cases or research record could not be written beside it, so nothing names the pack yet. Give it another name and create it again, or register the file by hand.'
 const NO_TEMPLATE = 'There is no template to start from here.'
 const TEMPLATE_UNUSABLE = 'This template could not be used.'
 const NO_VALIDATE =
@@ -568,6 +574,29 @@ export function CreatePackDialog({
   const createWhy = describe.blocking !== '' ? describe.blocking : proposalRefusal
 
   /**
+   * The same question at a step that does not carry the Name field.
+   *
+   * `nameProblem` is rendered once, beside the field at Basics, and Create is
+   * pressed at Review. A name can stop being usable *between* the two: a
+   * companion write that failed leaves the pack file on disk, the failure
+   * refetches the listing, and the name that wrote that file now collides with
+   * it — so Create goes dark two steps away from the only thing on screen that
+   * says why.
+   *
+   * **The document's own refusal keeps first place.** It is a refusal at any
+   * name, Structure check is where it is read, and the collision is what is
+   * left to say once it clears. **Basics keeps `createWhy` exactly**: the
+   * field is on screen there with `error={nameProblem}` on it, and a second
+   * copy under the form is the same sentence twice.
+   *
+   * The dialog presentation reads this too. It has no steps — every `setStep`
+   * is inside the page branch — so `step` is 0 there and this is `createWhy`
+   * byte for byte; reading it anyway is what keeps a step added to that
+   * presentation later from quietly reintroducing the defect.
+   */
+  const createWhyHere = step === 0 ? createWhy : (createWhy ?? nameProblem)
+
+  /**
    * The report behind a refusal, where the refusal is the runtime's.
    *
    * Only where the check answered about the bytes that would be written and
@@ -766,6 +795,23 @@ export function CreatePackDialog({
           await writeFile({ path: researchPath, content: JSON.stringify(research, null, 2) + '\n', baseSha256: '' })
         } catch (cause) {
           setFailure({ lead: COMPANIONS_ORPHANED, reason: `${written.join(' and ')} ${written.length === 1 ? 'is' : 'are'} on disk and unregistered. ${refusalDetail(cause) ?? ''}`.trim() })
+          // **The name is handed back, on the step it is asked on.** The pack
+          // file this press left behind is a file at the name that wrote it,
+          // so the name is the one thing that has to change to get out of
+          // here — and it is asked at Basics, behind a field the shaped draft
+          // disables. Dropping that shaped draft re-opens the field and puts
+          // the person in front of it, with the refetched listing below
+          // reporting the residue as the collision it now is.
+          //
+          // **The reviewed document is not what is dropped.** It is held in
+          // `handover` and the draft is only the shaping of it, so Continue
+          // re-shapes the same bytes under the new slug by the same call that
+          // shaped them the first time — and the shaped bytes are validated
+          // again before Create is offered, so what the runtime checked is
+          // still what gets written. The four members that move are the four
+          // the research record already names as shaped on create.
+          setDraft(undefined)
+          setStep(0)
           invalidate([['desk-files']])
           return
         }
@@ -976,19 +1022,19 @@ export function CreatePackDialog({
           {step === 2 && isRecord(preview) && <PackOverview document={preview as unknown as PackDocument} />}
           {step > 0 && <section className={flow.summary} aria-label="Draft validation">
             <h3>Structure check</h3>
-            <p id={createWhy === proposalRefusal ? createHelpId : undefined} role="status">{proposalRefusal ?? 'The runtime validated this draft. This does not mean its rules have passed tests.'}</p>
+            <p id={createWhyHere === proposalRefusal ? createHelpId : undefined} role="status">{proposalRefusal ?? 'The runtime validated this draft. This does not mean its rules have passed tests.'}</p>
             {refused !== undefined && <DiagnosticList diagnostics={anchor(refused, new Set())} label="What the runtime said about this document" />}
             {refused !== undefined && truncationNote(refused) !== undefined && <p>{truncationNote(refused)}</p>}
             {held.drafts.size > 0 && <p>Finish or clear the incomplete field values before continuing.</p>}
           </section>}
           {(failure ?? blocked) && <Alert reason={(failure ?? blocked)!.reason}>{(failure ?? blocked)!.lead}</Alert>}
           {busy && <p role="status">Creating and registering the pack. Stay on this page until it finishes.</p>}
-          {createWhy && (step === 0 || createWhy !== proposalRefusal) && <p id={createHelpId} className={flow.hint}>{createWhy}</p>}
+          {createWhyHere && (step === 0 || createWhyHere !== proposalRefusal) && <p id={createHelpId} className={flow.hint}>{createWhyHere}</p>}
           <div className={flow.actions}>
             <Button variant="quiet" disabled={busy} onClick={() => close(false)}>Cancel</Button>
             <div>
               {step > 0 && <Button disabled={busy} onClick={() => setStep(step - 1)}>Back</Button>}
-              <Button variant="primary" type="submit" disabled={step === 2 ? !ready : step === 0 ? slug === undefined || taken !== undefined || source === undefined || describe.blocking !== '' || (method === 'ai' && source?.kind !== 'proposal' && draft === undefined) : held.drafts.size > 0} aria-describedby={step === 2 && createWhy ? createHelpId : undefined}>
+              <Button variant="primary" type="submit" disabled={step === 2 ? !ready : step === 0 ? slug === undefined || taken !== undefined || source === undefined || describe.blocking !== '' || (method === 'ai' && source?.kind !== 'proposal' && draft === undefined) : held.drafts.size > 0} aria-describedby={step === 2 && createWhyHere ? createHelpId : undefined}>
                 {busy ? 'Creating…' : step === 2 ? 'Create pack' : step === 1 ? 'Review pack' : 'Continue'}
               </Button>
             </div>
@@ -1064,7 +1110,7 @@ export function CreatePackDialog({
         </Field>
 
         {renamed && <p className="quiet">{RENAMED}</p>}
-        {proposalRefusal !== undefined && <p id={createWhy === proposalRefusal ? createHelpId : undefined} className="quiet">{proposalRefusal}</p>}
+        {proposalRefusal !== undefined && <p id={createWhyHere === proposalRefusal ? createHelpId : undefined} className="quiet">{proposalRefusal}</p>}
         {/*
           **Every diagnostic the runtime returned, as it wrote them.** Not the
           first, and not reworded: a runtime reporting independent errors at two
@@ -1094,14 +1140,14 @@ export function CreatePackDialog({
           <Alert reason={(failure ?? blocked)!.reason}>{(failure ?? blocked)!.lead}</Alert>
         )}
 
-        {createWhy && createWhy !== proposalRefusal && <p id={createHelpId} className="quiet">{createWhy}</p>}
+        {createWhyHere && createWhyHere !== proposalRefusal && <p id={createHelpId} className="quiet">{createWhyHere}</p>}
         <DialogActions>
           <DialogClose asChild>
             <Button variant="secondary" disabled={busy}>
               Cancel
             </Button>
           </DialogClose>
-          <Button variant="primary" type="submit" disabled={!ready} aria-describedby={createWhy ? createHelpId : undefined}>
+          <Button variant="primary" type="submit" disabled={!ready} aria-describedby={createWhyHere ? createHelpId : undefined}>
             Create pack
           </Button>
         </DialogActions>
