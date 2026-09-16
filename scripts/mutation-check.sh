@@ -6688,6 +6688,23 @@ export function assistantTransport(id: string): Transport {
     '        cases.push(deepFreeze(structuredClone({ ...row, expectedDisposition: JSON.parse(finding.canonical) })))' \
     '        cases.push(row)'
 
+  # **The record names its own digests.** A resolved issue's proposal digest is
+  # the candidate a correction was proposed against, and it sits beside two
+  # digests of the pack line. Unnamed, a reader compares it with `packSha256`
+  # and reads a disagreement into a record that never claimed one.
+  mutate web "the correction's digest goes back to being unnamed" "$RR" \
+    "      checkedCandidateSha256: 'sha256 of the research candidate text these cases were checked against',
+      'expectationIssues[].proposal.candidateDigest': 'sha256 of the research candidate text that correction was proposed against'" \
+    "      checkedCandidateSha256: 'sha256 of the research candidate text these cases were checked against'"
+
+  # **A corrected row is registered under the reason still standing.** The
+  # rationale the case carries from authoring argued the expectation the
+  # correction replaced, so writing it into `focus` puts the superseded reason
+  # beside the corrected assertion for every later reader of the matrix.
+  mutate web "the registered row keeps the superseded rationale" "$RR" \
+    '      const focus = corrected?.resolved?.rationale ?? row.rationale' \
+    '      const focus = corrected ? row.rationale : row.rationale'
+
   # **A limit is not a Core violation.** The runtime reports one when it did not
   # admit the input at all; presenting it as a §8.3 defect sends a reviewer to
   # correct a meaning the specification never refused.

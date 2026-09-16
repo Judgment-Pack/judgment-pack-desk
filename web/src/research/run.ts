@@ -846,6 +846,16 @@ export function researchRecord(state: RunState, ledger: Ledger, packDigest: stri
     // is not edited on the way through.
     checkedCandidateSha256: state.candidates.at(-1)?.digest ?? '',
     shapedOnCreate: ['title', 'id', 'version', 'description'],
+    // Three digests of two different things, and a reader who compares the
+    // wrong two learns nothing. A resolved issue's `proposal.candidateDigest`
+    // is the candidate that correction was proposed against -- a fact about a
+    // moment in the run, not a third claim about the pack -- and the record
+    // has to say so itself, because the record is what leaves here.
+    digests: {
+      packSha256: 'sha256 of the pack bytes Create wrote',
+      checkedCandidateSha256: 'sha256 of the research candidate text these cases were checked against',
+      'expectationIssues[].proposal.candidateDigest': 'sha256 of the research candidate text that correction was proposed against'
+    },
     brief: state.brief,
     seedUrls: state.seedUrls,
     sessions: state.sessions,
@@ -868,6 +878,14 @@ export function matrixDocument(state: RunState, ledger: Ledger): unknown {
     cases: state.cases.map((row) => {
       const excerpt = ledger.excerpt(row.expectationSource)
       const record = excerpt ? ledger.byId(excerpt.sourceId) : undefined
+      // A corrected case was established for the reason the approved correction
+      // gave; the rationale it carries from authoring argued the expectation
+      // that correction replaced. `focus` is the line a reader of the
+      // registered matrix meets beside the row, so it carries the reason that
+      // is still standing -- under the same source tag, which the correction
+      // preserved.
+      const corrected = state.expectationIssues.find((item) => item.id === row.id && item.resolved)
+      const focus = corrected?.resolved?.rationale ?? row.rationale
       const cites =
         record?.acquisition && record.verification.state === 'verified'
           ? [{ sessionId: record.acquisition.session, callIndex: record.acquisition.callIndex, signature: record.acquisition.signature }]
@@ -879,7 +897,7 @@ export function matrixDocument(state: RunState, ledger: Ledger): unknown {
         ...(row.evidenceAvailability !== undefined ? { evidenceAvailability: row.evidenceAvailability } : {}),
         expectedDisposition: row.expectedDisposition,
         ...(row.expectedHandoffTarget !== undefined ? { expectedHandoffTarget: row.expectedHandoffTarget } : {}),
-        focus: `${row.rationale} [${row.expectationSource}]`,
+        focus: `${focus} [${row.expectationSource}]`,
         ...(cites.length ? { cites } : {})
       }
     })

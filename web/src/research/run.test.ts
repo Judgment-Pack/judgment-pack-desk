@@ -598,6 +598,19 @@ describe('invalid expectation review', () => {
     expect(state.expectationIssues[0]!.original).toEqual(INVALID_CASES.cases[2])
     expect(resolved.approvedAt).toBeTruthy()
     expect(researchRecord(state, ledger, before.digest)).toMatchObject({ expectationIssues: state.expectationIssues })
+    // The record names its own digests, so the candidate a correction was
+    // proposed against is never read as a second claim about the written pack.
+    const record = researchRecord(state, ledger, before.digest) as { digests: Record<string, string> }
+    expect(Object.keys(record.digests)).toEqual(['packSha256', 'checkedCandidateSha256', 'expectationIssues[].proposal.candidateDigest'])
+    expect(record.digests['expectationIssues[].proposal.candidateDigest']).toContain('proposed against')
+    expect(record.digests.checkedCandidateSha256).toContain('checked against')
+    expect(record.digests.packSha256).toContain('Create wrote')
+    // The corrected row is registered under the reason the correction gave, not
+    // the superseded one it replaced, and keeps its source tag.
+    const registered = (matrixDocument(state, ledger) as { cases: { id: string; focus: string }[] }).cases
+    expect(registered.find(row => row.id === 'hours-missing')!.focus).toBe(`${resolved.rationale} [src-1#e1]`)
+    expect(registered.find(row => row.id === 'hours-missing')!.focus).not.toContain(CASES.cases[2]!.rationale)
+    expect(registered.find(row => row.id === 'meets-hours')!.focus).toBe(`${CASES.cases[0]!.rationale} [src-1#e1]`)
     run.approveExpectationCorrection(issue.id, issue.proposal!.token)
     expect(run.getSnapshot()).toBe(state) // Cannot apply twice.
     // No status, partial report, stale digest or missing id can bypass Create.
