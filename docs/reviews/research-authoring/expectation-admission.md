@@ -29,8 +29,12 @@ at admission, preserves it for review and leaves exact evaluation unchanged.
    complete passing check, no blocked expectation and traced citations.
 6. The research record retains original and approved values, the correction
    rationale and approval timestamp. The saved matrix contains the approved exact
-   assertion. This history is retained in the current run and saved research
-   record; browser-reload checkpoint/resume remains outside this change.
+   assertion, and registers a corrected row under the approved correction's
+   rationale, under the unchanged `[expectationSource]` tag; the record's `cases`
+   keep the rationale the case was authored with, and the record says which of
+   the two the matrix carries. This history is retained in the current run and
+   saved research record; browser-reload checkpoint/resume remains outside this
+   change.
 
 ## Round 1 review dispositions
 

@@ -88,6 +88,36 @@ function fakeRuntime(): { callTool: CallTool; calls: string[] } {
   return { callTool, calls }
 }
 
+/**
+ * Resolve one of the record's own digest-legend keys against the record, in the
+ * language the legend states it is in: JSON Pointer, `*` for any array index.
+ *
+ * The legend is machine-readable, so it is only worth what it corresponds to. A
+ * key that resolves to nothing names a member the record does not have, which is
+ * worse than the source comment the legend replaced -- a wrong legend is read as
+ * authority. `reached` is false when a segment is missing; a `*` over an empty
+ * array reaches nothing legitimately and returns no values.
+ */
+function legendPath(record: unknown, pointer: string): { reached: boolean; values: unknown[] } {
+  let nodes: unknown[] = [record]
+  for (const segment of pointer.split('/').slice(1)) {
+    const next: unknown[] = []
+    for (const node of nodes) {
+      if (segment === '*') {
+        if (!Array.isArray(node)) return { reached: false, values: [] }
+        next.push(...node)
+      } else {
+        if (typeof node !== 'object' || node === null || !(segment in node)) return { reached: false, values: [] }
+        next.push((node as Record<string, unknown>)[segment])
+      }
+    }
+    nodes = next
+  }
+  return { reached: true, values: nodes }
+}
+
+const LEGEND_KEYS = ['/packSha256', '/checkedCandidateSha256', '/expectationIssues/*/proposal/candidateDigest']
+
 function harness(scripts: Script[], overrides: Partial<RunPorts> = {}, tamper: (acquired: import('./gatewayClient').Acquired) => import('./gatewayClient').Acquired = (a) => a) {
   const ledger = new Ledger('unset')
   const gateway = fakeGateway()
@@ -224,10 +254,23 @@ describe('the authoring run', () => {
     const record = researchRecord(state, ledger, 'abc') as {
       sources: { id: string; receipt?: unknown; verification: unknown; acquireResponse?: string }[]
       packSha256: string
+      digests: { pathSyntax: string; means: Record<string, string> }
       registries: Record<string, string>
       verdicts: Record<string, { ok: boolean }>
     }
     expect(record.packSha256).toBe('abc')
+    // An ordinary run names its digests too. The legend is the record saying
+    // what its own digests are of, and a run with nothing to correct is the
+    // common case -- one that shipped a record without the legend would leave
+    // the reader exactly where the source comment left them.
+    expect(record.digests.pathSyntax).toContain('JSON Pointer')
+    expect(Object.keys(record.digests.means)).toEqual(LEGEND_KEYS)
+    // And the legend is resolved against this record, not against itself: a
+    // member renamed out from under it fails here rather than shipping a legend
+    // that names something the record does not have.
+    for (const key of LEGEND_KEYS) expect(legendPath(record, key).reached, key).toBe(true)
+    expect(legendPath(record, '/packSha256').values).toEqual(['abc'])
+    expect(legendPath(record, '/expectationIssues/*/proposal/candidateDigest').values).toEqual([]) // Nothing was corrected.
     expect(record.sources[0]).toMatchObject({ id: 'src-1', verification: { state: 'verified' } })
     // Enough to check the claim again: the acquire response as received and
     // the registry the verdict was reached with.
@@ -608,6 +651,33 @@ describe('invalid expectation review', () => {
     expect(state.expectationIssues[0]!.original).toEqual(INVALID_CASES.cases[2])
     expect(resolved.approvedAt).toBeTruthy()
     expect(researchRecord(state, ledger, before.digest)).toMatchObject({ expectationIssues: state.expectationIssues })
+    // The record names its own digests, so the candidate a correction was
+    // proposed against is never read as a second claim about the written pack.
+    const record = researchRecord(state, ledger, before.digest) as { digests: { means: Record<string, string> }; matrixFocus: string }
+    expect(Object.keys(record.digests.means)).toEqual(LEGEND_KEYS)
+    expect(record.digests.means['/expectationIssues/*/proposal/candidateDigest']).toContain('proposed against')
+    expect(record.digests.means['/checkedCandidateSha256']).toContain('checked against')
+    expect(record.digests.means['/packSha256']).toContain('Create wrote')
+    // On a corrected run every legend key reaches a digest actually in this
+    // record. A legend is only worth the correspondence it holds.
+    for (const key of LEGEND_KEYS) {
+      const { reached, values } = legendPath(record, key)
+      expect(reached, key).toBe(true)
+      expect(values, key).toEqual([expect.stringMatching(/^[0-9a-f]{64}$/)])
+    }
+    // The corrected row is registered under the reason the correction gave, not
+    // the superseded one it replaced, and keeps its source tag.
+    const registered = (matrixDocument(state, ledger) as { cases: { id: string; focus: string }[] }).cases
+    expect(registered.find(row => row.id === 'hours-missing')!.focus).toBe(`${resolved.rationale} [src-1#e1]`)
+    expect(registered.find(row => row.id === 'hours-missing')!.focus).not.toContain(CASES.cases[2]!.rationale)
+    expect(registered.find(row => row.id === 'meets-hours')!.focus).toBe(`${CASES.cases[0]!.rationale} [src-1#e1]`)
+    // The two companions spell a corrected row's reason differently on purpose,
+    // so the record says which one the matrix carries, and the sentence is held
+    // against the matrix rather than left as prose: the reason it points at is
+    // the reason the registered row is under.
+    expect(record.matrixFocus).toContain('/expectationIssues/*/resolved/rationale')
+    const [pointed] = legendPath(record, '/expectationIssues/*/resolved/rationale').values as string[]
+    expect(registered.find(row => row.id === 'hours-missing')!.focus).toBe(`${pointed} [src-1#e1]`)
     run.approveExpectationCorrection(issue.id, issue.proposal!.token)
     expect(run.getSnapshot()).toBe(state) // Cannot apply twice.
     // No status, partial report, stale digest or missing id can bypass Create.
