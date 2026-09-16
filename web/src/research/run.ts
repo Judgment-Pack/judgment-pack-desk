@@ -982,14 +982,6 @@ export function targetContradiction(canonical: string, target: unknown): string 
   return 'The case expects a handoff target beside a disposition that requests no handoff. No evaluation reports a target for a handoff of "none", so the pair could never pass.'
 }
 
-/** A complete check is bound to the current candidate and every established case. */
-function completeCurrentCheck(state: RunState): boolean {
-  const latest = state.candidates.at(-1)
-  const check = latest?.check
-  return check !== undefined && check.valid && check.documentDigest === latest?.digest && state.cases.length > 0 &&
-    check.cases.length === state.cases.length && check.cases.every((row, index) => row.passed && row.id === state.cases[index]?.id)
-}
-
 /**
  * Whether the held proposal can be put to the runtime again as it stands.
  *
@@ -1008,6 +1000,14 @@ export function canRetryExpectationValidation(state: RunState): boolean {
   const held = state.heldProposal
   return held !== null && state.status !== 'running' &&
     held.candidateDigest === state.candidates.at(-1)?.digest
+}
+
+/** A complete check is bound to the current candidate and every established case. */
+function completeCurrentCheck(state: RunState): boolean {
+  const latest = state.candidates.at(-1)
+  const check = latest?.check
+  return check !== undefined && check.valid && check.documentDigest === latest?.digest && state.cases.length > 0 &&
+    check.cases.length === state.cases.length && check.cases.every((row, index) => row.passed && row.id === state.cases[index]?.id)
 }
 
 /** Every intended, admitted case must have a current passing result before Create. */
