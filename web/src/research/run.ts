@@ -63,6 +63,20 @@ export interface ExpectationIssue {
   resolved?: { replacement: AuthoringCase; approvedAt: string; rationale: string }
 }
 
+/**
+ * A reviewer's screened case proposal, held while its expectations are put to
+ * the runtime. It is bound to the candidate it was proposed against, because a
+ * suite is proposed from that draft's outcomes and fact paths and a draft that
+ * has moved on gets a fresh reviewer, as establishment has always answered a
+ * changed draft.
+ */
+export interface HeldProposal {
+  candidateDigest: string
+  admitted: AuthoringCase[]
+  dropped: { id: string; reason: string }[]
+  unknowns: string[]
+}
+
 export interface RunState {
   phase: Phase
   status: Status
@@ -74,6 +88,8 @@ export interface RunState {
   candidates: Candidate[]
   cases: AuthoringCase[]
   droppedCases: { id: string; reason: string }[]
+  /** A screened proposal awaiting validation, never an established case. */
+  heldProposal: HeldProposal | null
   expectationIssues: ExpectationIssue[]
   unknowns: string[]
   citations: Citation[]
@@ -129,6 +145,7 @@ export const INITIAL_STATE: RunState = {
   candidates: [],
   cases: [],
   droppedCases: [],
+  heldProposal: null,
   expectationIssues: [],
   unknowns: [],
   citations: [],
@@ -392,6 +409,20 @@ export class AuthoringRun {
     })
   }
 
+  /**
+   * Put the held proposal to the runtime again, where validation itself is what
+   * ended the run. No reviewer turn, no smaller suite: the same admitted cases,
+   * the same drops, the same unknowns, judged again.
+   */
+  retryExpectationValidation(): void {
+    if (this.running || !canRetryExpectationValidation(this.state)) return
+    this.arm()
+    this.set({ phase: 'cases', status: 'running', detail: 'Validating the held case proposal again.' })
+    void this.drive(async signal => {
+      await this.casesAndCheck(signal)
+    })
+  }
+
   private latest(): Candidate | undefined {
     return this.state.candidates.at(-1)
   }
@@ -582,15 +613,38 @@ export class AuthoringRun {
     }
   }
 
+  /**
+   * The reviewer turn that proposes the suite, screened and held before a word
+   * of it is put to the runtime.
+   *
+   * Held is not established. Nothing reaches `state.cases`, the matrix or the
+   * record until the runtime returns a canonical for it, so a run that fails
+   * here still reports no result -- what holding buys is the turn, not the
+   * verdict.
+   */
+  private async proposeCases(signal: AbortSignal, candidate: Candidate): Promise<HeldProposal> {
+    this.set({ phase: 'cases', detail: 'Establishing test cases from the sources.' })
+    this.ports.log('cases: a reviewer establishes expectations from the excerpts')
+    const proposal = await this.engineTurn(signal, 'research', this.casesPrompt(candidate.document), [], true)
+    const { admitted, dropped } = admitCases(proposal?.document, this.ports.ledger, this.state.cases)
+    const held: HeldProposal = { candidateDigest: candidate.digest, admitted, dropped, unknowns: proposal?.unknowns ?? [] }
+    this.set({ heldProposal: held })
+    return held
+  }
+
   /** Establish cases where none are, then check, and repair until the budget. */
   private async casesAndCheck(signal: AbortSignal, repair = true): Promise<void> {
     const candidate = this.latest()
     if (!candidate) throw new Error('no candidate to check')
     if (this.state.cases.length === 0 && this.state.expectationIssues.length === 0) {
-      this.set({ phase: 'cases', detail: 'Establishing test cases from the sources.' })
-      this.ports.log('cases: a reviewer establishes expectations from the excerpts')
-      const proposal = await this.engineTurn(signal, 'research', this.casesPrompt(candidate.document), [], true)
-      const { admitted, dropped } = admitCases(proposal?.document, this.ports.ledger, this.state.cases)
+      // A proposal already screened and held is validated as it stands. The
+      // reviewer turn is the most expensive turn in the run and validation
+      // failing on transport is no answer to the question it asked, so it is
+      // not asked again -- but a changed draft is a different question, and a
+      // proposal held against other bytes is not reused for it.
+      const kept = this.state.heldProposal
+      const held = kept !== null && kept.candidateDigest === candidate.digest ? kept : await this.proposeCases(signal, candidate)
+      const { admitted, dropped } = held
       const checked = await validateExpectations(admitted.map(row => row.expectedDisposition), this.ports.callTool, signal)
       const issues: ExpectationIssue[] = []
       const cases: AuthoringCase[] = []
@@ -608,11 +662,14 @@ export class AuthoringRun {
         // byte-identical to the assertion that was checked.
         cases.push(deepFreeze(structuredClone({ ...row, expectedDisposition: JSON.parse(finding.canonical) })))
       })
-      this.set({ cases, expectationIssues: issues, droppedCases: dropped })
+      // The proposal has been answered, so nothing is held any more: what is
+      // kept from here is an established case or a blocked issue, and a stale
+      // hold would offer a retry of a question that is already settled.
+      this.set({ cases, expectationIssues: issues, droppedCases: dropped, heldProposal: null })
       if (dropped.length) {
         this.addTurn({ role: 'assistant', kind: 'note', text: `Dropped ${dropped.length} proposed case(s): ${dropped.map((d) => `${d.id} (${d.reason})`).join('; ')}` })
       }
-      if (proposal?.unknowns.length) this.addTurn({ role: 'assistant', kind: 'unknowns', text: proposal.unknowns.map((line) => `• ${line}`).join('\n') })
+      if (held.unknowns.length) this.addTurn({ role: 'assistant', kind: 'unknowns', text: held.unknowns.map((line) => `• ${line}`).join('\n') })
       if (admitted.length === 0) {
         // Where nothing grounded a case because the sources did not verify,
         // that is the sentence, not the absence of cases.
@@ -917,6 +974,21 @@ function completeCurrentCheck(state: RunState): boolean {
   const check = latest?.check
   return check !== undefined && check.valid && check.documentDigest === latest?.digest && state.cases.length > 0 &&
     check.cases.length === state.cases.length && check.cases.every((row, index) => row.passed && row.id === state.cases[index]?.id)
+}
+
+/**
+ * Whether the held proposal can be put to the runtime again as it stands.
+ *
+ * A proposal is held only between the turn that proposed it and the
+ * establishment that consumes it, so a run at rest still holding one is a run
+ * that failed, stopped or spent its budget inside validation. The digest is the
+ * binding: a hold left over from an earlier draft answers a question the
+ * current one no longer asks, and that needs a reviewer, not a retry.
+ */
+export function canRetryExpectationValidation(state: RunState): boolean {
+  const held = state.heldProposal
+  return held !== null && state.status !== 'running' && state.status !== 'idle' &&
+    held.candidateDigest === state.candidates.at(-1)?.digest
 }
 
 /** Every intended, admitted case must have a current passing result before Create. */

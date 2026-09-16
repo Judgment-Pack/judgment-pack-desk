@@ -6670,6 +6670,36 @@ export function assistantTransport(id: string): Transport {
     '    if (this.state.cases.length === 0 && this.state.expectationIssues.length === 0) {' \
     '    if (this.state.cases.length === 0) {'
 
+  # **A screened proposal is held before it is judged.** Validation failing on
+  # transport says nothing about the question the reviewer answered, and that
+  # turn is the most expensive in the run; unheld, the only way back is to alter
+  # the draft and buy a second reviewer for the same question.
+  mutate web "the reviewer's proposal is discarded before validation" "$RR" \
+    '    this.set({ heldProposal: held })' \
+    '    void held'
+
+  # **And it is released the moment it is answered.** A hold that outlives its
+  # own establishment offers a retry of a settled question, over cases already
+  # established and issues already blocked.
+  mutate web "the held proposal outlives the establishment that answered it" "$RR" \
+    '      this.set({ cases, expectationIssues: issues, droppedCases: dropped, heldProposal: null })' \
+    '      this.set({ cases, expectationIssues: issues, droppedCases: dropped })'
+
+  # **A hold answers the draft it was proposed against, and no other.** The
+  # suite comes from that draft's outcomes and fact paths, so reusing it for
+  # changed bytes silently establishes a suite nobody proposed for them --
+  # where establishment has always asked a fresh reviewer.
+  mutate web "a held proposal is reused for a draft it was never proposed for" "$RR" \
+    '      const held = kept !== null && kept.candidateDigest === candidate.digest ? kept : await this.proposeCases(signal, candidate)' \
+    '      const held = kept !== null ? kept : await this.proposeCases(signal, candidate)'
+
+  # The same binding on the action itself: a retry offered against a draft the
+  # hold predates would spend a reviewer turn under a control that says it will
+  # not, which is the cost this whole path exists to avoid.
+  mutate web "the retry is offered for a draft the hold predates" "$RR" \
+    '    held.candidateDigest === state.candidates.at(-1)?.digest' \
+    '    true'
+
   # **The exact expectation is the pair.** §8.3 keeps the configured target
   # outside the disposition and this runtime reports one exactly when a handoff
   # is requested, so a target beside "none" is a pair no evaluation can produce.

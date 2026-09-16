@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '../../ui/Button'
 import { TextArea } from '../../ui/TextArea'
-import type { RunState } from '../run'
+import { canRetryExpectationValidation, type RunState } from '../run'
 import styles from './ResearchAuthoring.module.css'
 
 /** What the run is doing, in one line, from its own state and never a synthesized narration. */
@@ -26,7 +26,7 @@ export function statusLine(state: RunState): string {
   }
 }
 
-export function Conversation({ state, onSend, onStop }: { state: RunState; onSend: (text: string) => void; onStop: () => void }) {
+export function Conversation({ state, onSend, onStop, onRetryValidation }: { state: RunState; onSend: (text: string) => void; onStop: () => void; onRetryValidation?: () => void }) {
   const [text, setText] = useState('')
   const thread = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -81,6 +81,14 @@ export function Conversation({ state, onSend, onStop }: { state: RunState; onSen
         <div className={styles.composerRow}>
           <span className={styles.hint}>Enter sends. Shift+Enter for a new line.</span>
           <span className={styles.grow} />
+          {/* The way back from a validation that failed on its own account:
+              the same proposal, judged again, without paying for the reviewer
+              turn that answered the question. */}
+          {canRetryExpectationValidation(state) && (
+            <Button disabled={running || !onRetryValidation} onClick={() => onRetryValidation?.()}>
+              Retry validation
+            </Button>
+          )}
           {running ? (
             <Button variant="secondary" onClick={onStop}>
               Stop
