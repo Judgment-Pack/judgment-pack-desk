@@ -703,6 +703,26 @@ describe('invalid expectation review', () => {
 
 
 
+
+  it('stores the canonical assertion the runtime returned, not the reviewer\'s spelling of it', async () => {
+    // Order carries no meaning in a §8.3 set, so the runtime answers with the
+    // canonical text. Storing the reviewer's spelling instead would leave the
+    // saved matrix row and the assertion that was checked two different texts
+    // for one set, and a stricter decoder later would refuse the saved one.
+    const unordered = { cases: [{ ...CASES.cases[2]!, expectedDisposition: { kind: 'unresolved', reasons: ['unknown', 'conflict'], handoff: { state: 'none' } } }] }
+    const unorderedTurn: Script = async (_request, _signal, event) => {
+      event({ type: 'proposal', document: unordered, unknowns: [] })
+      event({ type: 'end' })
+    }
+    const { run, ledger } = harness([researchTurn(), unorderedTurn])
+    run.start('brief', [PAGE_URL])
+    const state = await settled(run)
+    expect(state.cases).toHaveLength(1)
+    expect((state.cases[0]!.expectedDisposition as { reasons: string[] }).reasons).toEqual(['conflict', 'unknown'])
+    const matrix = matrixDocument(state, ledger) as { cases: { expectedDisposition: { reasons: string[] } }[] }
+    expect(matrix.cases[0]!.expectedDisposition.reasons).toEqual(['conflict', 'unknown'])
+  })
+
   it('refuses an approval carrying an earlier proposal\'s token', async () => {
     // The token identifies the proposal a person looked at. A second correction
     // replaces what is displayed, so the first token must no longer approve
