@@ -1013,6 +1013,9 @@ describe('invalid expectation review', () => {
     let state = await settled(run)
     expect(state.status).toBe('stopped')
     expect(state.cases).toHaveLength(2)
+    // The retest had moved the run to `check`; taken back, it rests at review
+    // again, where the open issue is -- not on a Tests view of nothing checked.
+    expect(state.phase).toBe('review')
     // A run blocked on an invalid expectation has never checked its draft --
     // issues are raised where the cases are established, before any check, and
     // no later turn raises one -- so the approval strips no check here and the
@@ -1270,7 +1273,7 @@ describe('the correction flow\'s backup guards', () => {
       cases: ['meets-hours', 'under-hours', 'hours-missing'].map(id => ({ id, passed: true, expected: null, actual: null }))
     }
     writeState(run, { candidates: [{ ...candidate, check: stale }] })
-    // Both of this test's assertions also hold on a candidate that never
+    // Every assertion in this test also holds on a candidate that never
     // carried a check, so the injection is stated as a precondition: without
     // this line the test could pass having tested nothing.
     expect(run.getSnapshot().candidates[0]!.check).toBe(stale)
@@ -1278,21 +1281,23 @@ describe('the correction flow\'s backup guards', () => {
     run.approveExpectationCorrection('hours-missing', proposal.token)
     // The approval's own write, read while its retest is still in flight: the
     // corrected case has joined the suite and the check taken before it did is
-    // gone, so nothing between here and the fresh check can read stale results.
+    // gone. This is the one point where a surviving check is observable -- the
+    // rollback below restores the candidate whole -- so these two lines, and
+    // nothing after them, are what the row "a stale check survives an approved
+    // correction" turns on.
     await until(() => held.stop !== null, 'the recheck validating the draft')
     const inFlight = run.getSnapshot()
     expect(inFlight.cases).toHaveLength(3)
     expect(inFlight.candidates[0]!.check).toBeUndefined()
     // Stop the recheck before it can write a fresh check. An approval does not
     // stand on an interrupted retest: it is rolled back whole, to the suite the
-    // run had before it, and the run says so; Create stays withheld either way.
+    // run had before it, and the run says so.
     run.stop()
     held.stop!()
     const state = await settled(run)
     expect(state.status).toBe('stopped')
     expect(state.detail).toContain('rolled back')
     expect(state.cases).toHaveLength(2)
-    expect(canCreateResearchDraft({ ...state, status: 'ready' })).toBe(false)
   })
 
   it('never settles a run at ready while an expectation is open', async () => {

@@ -484,7 +484,7 @@ export class AuthoringRun {
       // no test can discriminate it: an expectation issue is raised where the
       // cases are established, before any check, and no later turn raises one,
       // so at an approval there is no check to strip or to put back.
-      const before = { cases: this.state.cases, candidates: this.state.candidates, expectationIssues: this.state.expectationIssues, readiness: this.state.readiness }
+      const before = { phase: this.state.phase, cases: this.state.cases, candidates: this.state.candidates, expectationIssues: this.state.expectationIssues, readiness: this.state.readiness }
       this.set({ cases: [...this.state.cases, replacement],
         // Every check goes, so nothing downstream reads one taken before this
         // case joined the suite. A backup too: a run blocked on an expectation

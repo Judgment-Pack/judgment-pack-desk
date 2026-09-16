@@ -5197,6 +5197,14 @@ export function assistantTransport(id: string): Transport {
     '        this.undone = `The correction for ${id} was rolled back: its retest did not complete, so nothing was approved and the proposal is still on offer.`' \
     '        void 0'
 
+  # **Taken back whole means the phase too.** The retest moved the run to
+  # `check`; a rollback that restores the suite and leaves the phase rests a
+  # run with nothing checked on the Tests view, and a panel that follows the
+  # phase lands the person there.
+  mutate web "a rolled-back approval rests at the phase its retest reached" "$RR" \
+    '      const before = { phase: this.state.phase, cases: this.state.cases, candidates: this.state.candidates, expectationIssues: this.state.expectationIssues, readiness: this.state.readiness }' \
+    '      const before = { cases: this.state.cases, candidates: this.state.candidates, expectationIssues: this.state.expectationIssues, readiness: this.state.readiness }'
+
   # **Create asks about the candidate, not about the last action.** `ready` is
   # the status of whatever the person did last, so a Stop, a spent budget or a
   # failed follow-up turn withdrew Create from a draft that had passed
@@ -6955,7 +6963,9 @@ export function assistantTransport(id: string): Transport {
 
   # **A check taken before the corrected case joined the suite is not a check of
   # that suite.** A blocked run has no check to drop today, so this only matters
-  # where one survives -- and a surviving check is what Create reads.
+  # where one survives -- and the panels render the latest check ungated by
+  # status, so a survivor would show every case agreeing over a suite whose
+  # corrected case was never rehearsed.
   mutate web "a stale check survives an approved correction" "$RR" \
     '        candidates: this.state.candidates.map(({ check: _check, ...candidate }) => candidate),' \
     '        candidates: this.state.candidates,'
