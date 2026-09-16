@@ -194,6 +194,8 @@ describe('useAssistantSlot', () => {
       'assistant/AssistantSection.tsx',
       // Research and draft renders an assistant of its own: the same slot,
       // read for the same reasons, and the same three states shown.
+      'chat/ChatPanel.tsx',
+      'chat/ConfigureAI.tsx',
       'research/useResearchRun.ts',
       'shell/DescribeIt.tsx'
     ])

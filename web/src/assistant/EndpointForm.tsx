@@ -32,7 +32,7 @@
  */
 import { Digest } from '../ui/Digest'
 import { useQueryClient } from '@tanstack/react-query'
-import { useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import {
   ASSISTANT_TOOLS,
@@ -118,8 +118,10 @@ const UNAVAILABLE =
   'This desk could not read its own configuration. Nothing below is what it is configured for.'
 
 export function EndpointForm({
-  unavailable
+  unavailable,
+  onDirtyChange
 }: {
+  onDirtyChange?: (dirty: boolean) => void
   /**
    * Whether this desk could not read the file these fields are about.
    *
@@ -175,6 +177,7 @@ export function EndpointForm({
   // it could be a credential. It exists so that Save API key can say what it will
   // actually do rather than offering to store a key nobody entered.
   const [typed, setTyped] = useState(false)
+  useEffect(() => { onDirtyChange?.(dirty || typed || write.isPending || store.isPending) }, [dirty, typed, write.isPending, store.isPending, onDirtyChange])
   const [replacingKey, setReplacingKey] = useState(false)
   const [keySaved, setKeySaved] = useState(false)
   const testHintId = useId()

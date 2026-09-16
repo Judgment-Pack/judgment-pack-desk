@@ -46,6 +46,9 @@ export function markToDataUri(mark: string | null): string | undefined {
 }
 
 export function HeaderBar({
+  inspectorTitle = 'Inspector',
+  inspectorAvailable = true,
+  consoleOpenerRef,
   inspectorOpen,
   inspectorIsDrawer,
   consoleOpen,
@@ -57,6 +60,9 @@ export function HeaderBar({
   onOpenRail,
   railOpenerRef
 }: {
+  inspectorTitle?: string
+  inspectorAvailable?: boolean
+  consoleOpenerRef?: RefObject<HTMLButtonElement | null>
   inspectorOpen: boolean
   /** True below 1100px, where the Inspector is a drawer rather than a column. */
   inspectorIsDrawer: boolean
@@ -126,10 +132,10 @@ export function HeaderBar({
       <div className="desk-head-centre" />
 
       <div className="desk-head-right">
-        <Tooltip content={inspectorOpen ? "Close Inspector" : "Open Inspector"} shortcut={SHORTCUTS[1]?.keys} side="bottom"><Toggle.Root
+        {inspectorAvailable && <Tooltip content={`${inspectorOpen ? "Close" : "Open"} ${inspectorTitle}`} shortcut={SHORTCUTS[1]?.keys} side="bottom"><Toggle.Root
           ref={inspectorOpenerRef}
           className="desk-icon-button"
-          aria-label="Inspector"
+          aria-label={inspectorTitle}
           /* In column form the panel is always in the document — `hidden`, not
              absent — so the reference resolves whether it is open or shut.
              In drawer form it exists only while it is open. */
@@ -138,9 +144,10 @@ export function HeaderBar({
           onPressedChange={onToggleInspector}
         >
           <IconPanelRight />
-        </Toggle.Root></Tooltip>
+        </Toggle.Root></Tooltip>}
         <Tooltip content={consoleOpen ? "Close Console" : "Open Console"} shortcut={SHORTCUTS[2]?.keys} side="bottom"><Toggle.Root
           className="desk-icon-button"
+          ref={consoleOpenerRef}
           aria-label="Console"
           aria-controls="desk-console"
           pressed={consoleOpen}

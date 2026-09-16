@@ -394,6 +394,7 @@ const routesFor = (pack, graph) => [
   '/packs',
   '/create-pack',
   '/create-pack/research',
+  '/chats/containment-chat',
   pack,
   `${pack}?view=logic&layout=map`,
   `${pack}?view=document`,
@@ -407,6 +408,7 @@ const routesFor = (pack, graph) => [
   '/author',
   '/help'
 ]
+const configsFor = (width, route) => /^(\/create-pack|\/chats\/)/.test(route) ? CONFIGS(width).filter(config => !config.inspector) : CONFIGS(width)
 const ROUTE_COUNT = routesFor('/packs/x', '/graphs/y').length
 
 if (PLAN) {
@@ -600,7 +602,7 @@ async function setInspector(want) {
     await settle(600)
     return
   }
-  await page.click('header button[aria-label="Inspector"]')
+  await page.locator('header button[aria-controls="desk-inspector"], header button[aria-label="Inspector"], header button[aria-label="Assistant"], header button[aria-label="Pack preview"]').first().click()
   await settle(600)
 }
 async function setConsole(want) {
@@ -670,6 +672,13 @@ async function firstLink(route, pattern) {
   )
 }
 
+// Seed a real empty conversation, not the not-found page for a chat id.
+const historyResponse = await fetch(`${ORIGIN}/api/conversations`, { headers: { Authorization: `Bearer ${SECRET}` } })
+if (!historyResponse.ok) throw new Error('Could not read isolated chat history')
+const history = await historyResponse.json()
+const seeded = await fetch(`${ORIGIN}/api/conversations`, { method: 'PUT', headers: { Authorization: `Bearer ${SECRET}`, 'Content-Type': 'application/json', 'If-Match': history.sha256 }, body: JSON.stringify({ version: 1, chats: [{ id: 'containment-chat', title: 'Containment draft', pinned: false, archived: false, composer: 'Test decision', model: '', mode: 'draft', view: 'chat', updatedAt: new Date().toISOString() }] }) })
+if (!seeded.ok) throw new Error('Could not seed isolated chat history')
+
 const pack = await firstLink('/packs', /^\/packs\/[^/]+$/)
 if (pack === undefined) {
   console.error('the project listed no pack, and four of the routes are a pack')
@@ -706,7 +715,7 @@ if (unvisited.length > 0) {
   process.exit(2)
 }
 
-const INTENDED = ROUTES.length * WIDTHS.reduce((total, width) => total + CONFIGS(width).length, 0)
+const INTENDED = ROUTES.reduce((sum, route) => sum + WIDTHS.reduce((total, width) => total + configsFor(width, route).length, 0), 0)
 
 console.log(`\ncontainment check — ${LABEL}\n`)
 printPreludes()
@@ -727,7 +736,7 @@ for (const width of WIDTHS) {
         await settle(1200)
       }
       let first = true
-      for (const config of CONFIGS(width)) {
+      for (const config of configsFor(width, route)) {
         if (!first) problems = []
         first = false
         // The console is toggled while the Inspector is shut. Below the drawer

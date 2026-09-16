@@ -320,7 +320,7 @@
 
   .desk-inspector {
     grid-column: 2;
-    grid-row: 1;
+    grid-row: 1 / -1;
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -334,7 +334,7 @@
   .desk-inspector-slot { position: relative; flex: 1 1 auto; min-height: 0; min-width: 0; overflow: auto; }
 
   .desk-console {
-    grid-column: 1 / -1;
+    grid-column: 1;
     grid-row: 2;
     overflow: hidden;
     position: relative;
@@ -1003,4 +1003,9 @@
       transition-duration: 0s !important;
     }
   }
+
+  .desk-console-heading { display: flex; align-items: center; justify-content: space-between; flex: 0 0 auto; gap: var(--space-2); border-bottom: 1px solid var(--border); }
+  .desk-console-heading .desk-tablist { position: relative; border-bottom: 0; overflow-x: auto; }
+  .desk-console-actions { display: flex; gap: var(--space-1); padding-inline-end: var(--space-2); }
+  .desk-details-slot { min-width: 0; }
 }

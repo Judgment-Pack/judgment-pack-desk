@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { RouterProvider, createBrowserRouter } from 'react-router-dom'
+import { ChatProvider } from './chat/ChatProvider'
 import { App } from './App'
 import { DeskConfigProvider } from './config/DeskConfigProvider'
 import { IdentityProvider } from './identity/IdentityProvider'
@@ -42,7 +43,7 @@ const router = createBrowserRouter([
       <McpProvider>
         <DeskConfigProvider>
           <IdentityProvider>
-            <App />
+            <ChatProvider><App /></ChatProvider>
           </IdentityProvider>
         </DeskConfigProvider>
       </McpProvider>

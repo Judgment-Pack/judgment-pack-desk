@@ -1,0 +1,152 @@
+import { createRequire } from 'node:module'
+import { randomBytes } from 'node:crypto'
+import { cp, mkdtemp, readFile, writeFile, mkdir, rm } from 'node:fs/promises'
+import { spawn } from 'node:child_process'
+import assert from 'node:assert/strict'
+import { join, resolve } from 'node:path'
+import { tmpdir } from 'node:os'
+import { once } from 'node:events'
+
+// Uses a throwaway project/configuration. No model or external source is called.
+const root = resolve(new URL('..',import.meta.url).pathname)
+const [binary,fixture,output = '/tmp/jp-chat-artifacts'] = process.argv.slice(2)
+if (!binary || !fixture || !process.env.JPACK_BIN) throw new Error('Supply Desk, a project fixture and JPACK_BIN')
+const { chromium } = createRequire(`${root}/web/package.json`)('playwright-core')
+const work = await mkdtemp(join(tmpdir(),'jp-chat-browser-'))
+await cp(fixture,`${work}/project`,{ recursive: true }); await mkdir(`${work}/config`); await mkdir(output,{ recursive: true })
+const secret = randomBytes(24).toString('hex'), origin = 'http://127.0.0.1:8847'
+const server = spawn(binary,['--dev-token',secret,'--port','8847','--jpack',process.env.JPACK_BIN,`${work}/project`],{ env: { ...process.env, XDG_CONFIG_HOME: `${work}/config` }, stdio: 'ignore' })
+const api = (path,init = {}) => fetch(origin+path,{ ...init, headers: { Authorization:`Bearer ${secret}`, ...init.headers } })
+const results = [], errors = []
+let browser, page
+try {
+  let ready = false
+  for (let i=0; i<80; i++) { try { if ((await api('/api/conversations')).ok) { ready=true; break } } catch {} await new Promise(resolve => setTimeout(resolve,100)) }
+  assert(ready,'preview server started')
+  browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROME ?? '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox'] })
+  const context = await browser.newContext({ viewport: { width: 1440,height: 900 }, colorScheme: 'dark' })
+  page = await context.newPage()
+  page.on('pageerror',error => errors.push(error.message.replaceAll(secret,'[redacted]')))
+  await page.goto(`${origin}/launch?secret=${secret}`)
+  await page.getByRole('button',{ name: 'Create a pack', exact: true }).click()
+  await page.getByRole('heading',{ name: 'What should this pack decide?' }).waitFor()
+  const first = new URL(page.url()).pathname
+  const message = page.getByRole('textbox',{ name: 'Message the assistant' })
+  await message.fill('Keep this unfinished decision brief when I configure AI or switch chats.')
+  await page.getByRole('button',{ name:'Configure AI',exact:true }).click()
+  await page.getByRole('dialog',{ name:'Configure AI' }).waitFor()
+  await page.screenshot({ path:`${output}/configure-ai-dark.png` })
+  await page.getByRole('button',{ name:'Done',exact:true }).click()
+  assert((await message.inputValue()).startsWith('Keep this'))
+  await page.screenshot({ path:`${output}/landing-dark.png` })
+  await page.getByRole('button',{ name: 'Create a pack', exact:true }).click()
+  await page.waitForURL(url => url.pathname !== first && url.pathname.startsWith('/chats/'))
+  await page.waitForFunction(() => document.querySelector('textarea')?.value === '')
+  assert.equal(await message.inputValue(),'')
+  await page.getByText('Conversation saved locally',{exact:false}).waitFor()
+  await page.goto(origin+first)
+  await page.getByRole('textbox',{ name:'Message the assistant' }).waitFor()
+  assert((await page.getByRole('textbox',{ name:'Message the assistant' }).inputValue()).startsWith('Keep this'))
+  results.push('Unsent prompt survives configuration, new chat, navigation and reload')
+  await page.emulateMedia({ colorScheme:'light' }); await page.screenshot({ path:`${output}/landing-light.png` })
+  // Install a saved AI checkpoint to exercise real validation without model cost.
+  const previous = await (await api('/api/conversations')).json()
+  const pack = JSON.parse(await readFile(`${work}/project/sanctions-screening-0.1.0.pack.json`,'utf8'))
+  pack.title = 'Screening decision draft'
+  const text = JSON.stringify(pack,null,2), now = new Date().toISOString()
+  const state = { phase:'review',status:'ready',detail:'old status must not be trusted',brief:'Draft a screening decision',seedUrls:[],
+    turns:[{ role:'user',kind:'brief',text:'Draft a screening decision from the information I supplied.',at:now },{ role:'assistant',kind:'message',text:'Here is a draft with clear and hit as possible outcomes. Please review the condition and test its behavior before using it.',at:now }],
+    events:[],candidates:[{ revision:1,document:pack,text,digest:'not-trusted',producedBy:'conversation',check:{valid:true,documentDigest:'not-trusted',cases:[]} }],cases:[],droppedCases:[],expectationIssues:[],unknowns:[],citations:[],verdicts:{},registries:{},revisionsUsed:0,sessions:[] }
+  const saved = { id:'browser-draft',title:'Screening decision',pinned:false,archived:false,updatedAt:now,composer:'',model:'',mode:'draft',view:'chat',checkpoint:{ state,sources:[] } }
+  const response = await api('/api/conversations',{ method:'PUT',headers:{'If-Match':previous.sha256,'Content-Type':'application/json'},body:JSON.stringify({version:1,chats:[saved,...previous.content.chats]}) })
+  assert.equal(response.status,200)
+  await page.goto(`${origin}/chats/browser-draft`)
+  await page.getByRole('button',{name:'Recheck saved draft'}).click()
+  await page.getByText('Ready for review',{exact:true}).first().waitFor()
+  await page.getByRole('button',{name:'Open draft',exact:true}).first().click()
+  await page.getByRole('complementary',{name:'Assistant'}).waitFor()
+  const pane = page.getByRole('complementary',{name:'Assistant'}), main=page.locator('#main')
+  await page.screenshot({ path:`${output}/draft-light.png` })
+  // Open the bottom panel and resize without reducing the Assistant height.
+  const rightBefore = await pane.boundingBox()
+  await page.getByRole('banner').getByRole('button',{name:'Console',exact:true}).click()
+  const divider = page.getByRole('separator',{name:'Details and activity'})
+  await divider.focus(); const heightBefore=Number(await divider.getAttribute('aria-valuenow'))
+  await page.keyboard.press('ArrowUp')
+  assert.equal(Number(await divider.getAttribute('aria-valuenow')),heightBefore+8)
+  const rightAfter=await pane.boundingBox()
+  assert(Math.abs(rightBefore.height-rightAfter.height)<2,'Assistant stays full height')
+  const bounds=await divider.boundingBox()
+  await page.mouse.move(bounds.x+100,bounds.y+bounds.height/2); await page.mouse.down(); await page.mouse.move(bounds.x+100,bounds.y-40,{steps:4}); await page.mouse.up(); await page.mouse.move(15,15)
+  assert.equal(await divider.getAttribute('data-dragging'),null)
+  assert.equal(await page.evaluate(() => document.body.style.cursor),'')
+  const bottom=await page.locator('#desk-console').boundingBox(), right=await pane.boundingBox()
+  assert(bottom.x+bottom.width<=right.x+2,'Bottom panel ends before Assistant')
+  results.push('Bottom splitter supports keyboard/pointer, clears drag paint and preserves full-height Assistant')
+  await page.emulateMedia({colorScheme:'dark'}); await page.screenshot({path:`${output}/workspace-dark.png`})
+  await page.locator('#desk-console').getByRole('button',{name:'Close',exact:true}).click()
+  await main.getByRole('button',{name:'View logic',exact:true}).click()
+  await main.getByRole('button',{name:/^View details:/}).first().waitFor()
+  await main.getByRole('tab',{name:'Overview',exact:true}).click()
+  results.push('Unsaved drafts use the shared logic renderer without navigating to a missing pack')
+  for (const [width,height] of [[1100,800],[800,700],[390,720],[1440,460]]) {
+    await page.setViewportSize({width,height})
+    await page.screenshot({path:`${output}/workspace-${width}.png`})
+    assert(await page.evaluate(() => document.documentElement.scrollWidth<=innerWidth+1),`no page overflow at ${width}`)
+    results.push(`No page overflow at ${width}×${height}`)
+  }
+  for (const height of [460,220]) {
+    await page.setViewportSize({width:1440,height})
+    await page.getByRole('banner').getByRole('button',{name:'Console',exact:true}).click()
+    const actual = await page.locator('#desk-console').boundingBox()
+    const announced = Number(await divider.getAttribute('aria-valuenow'))
+    assert(Math.abs(actual.height-announced)<3, `splitter announces actual height at ${height}px`)
+    assert(await page.evaluate(() => document.documentElement.scrollHeight<=innerHeight+1), 'bottom panel stays inside short viewport')
+    await page.getByRole('banner').getByRole('button',{name:'Console',exact:true}).click()
+  }
+  results.push('Bottom panel remains contained and exposes accurate keyboard bounds at short heights')
+  await page.setViewportSize({width:1440,height:900})
+  await main.getByRole('button',{name:'Review and create',exact:true}).click()
+  await main.getByRole('textbox',{name:'Pack name',exact:true}).fill('Browser created screening')
+  await main.getByRole('button',{name:'Create pack',exact:true}).click()
+  await page.waitForURL(url => url.pathname === '/packs/browser-created-screening')
+  assert.equal(new URL(page.url()).searchParams.get('chat'),'browser-draft')
+  await pane.getByText('Here is a draft with clear and hit as possible outcomes. Please review the condition and test its behavior before using it.').waitFor()
+  results.push('Create writes and registers the pack, then retains the original conversation beside it')
+  await main.getByRole('link',{name:'Logic',exact:true}).click()
+  const selectable=main.getByRole('button',{name:/^View details:/}).first()
+  if(await selectable.count()) { await selectable.click(); await page.locator('#desk-console').waitFor({state:'visible'}); assert(await pane.isVisible()); results.push('Selecting pack detail opens bottom Details without hiding Assistant') }
+  await page.screenshot({path:`${output}/saved-pack-dark.png`})
+  await page.getByRole('button',{name:'View all chats',exact:true}).click()
+  await page.getByRole('dialog',{name:'Chats',exact:true}).waitFor()
+  await page.screenshot({path:`${output}/chat-history.png`})
+  const historyDialog = page.getByRole('dialog',{name:'Chats',exact:true})
+  await historyDialog.getByRole('button',{name:'Actions for Screening decision',exact:true}).click()
+  await page.getByRole('menuitem',{name:'Rename',exact:true}).click()
+  await historyDialog.getByRole('textbox',{name:'Chat name'}).fill('Reviewed screening')
+  await historyDialog.getByRole('button',{name:'Save',exact:true}).click()
+  await historyDialog.getByRole('button',{name:'Actions for Reviewed screening',exact:true}).click()
+  await page.getByRole('menuitem',{name:'Pin',exact:true}).click()
+  await historyDialog.getByText('Pinned · Reviewed screening',{exact:true}).waitFor()
+  await historyDialog.getByRole('button',{name:'Actions for Reviewed screening',exact:true}).click()
+  await page.getByRole('menuitem',{name:'Archive',exact:true}).click()
+  await historyDialog.getByText('Pinned · Reviewed screening',{exact:true}).waitFor({state:'hidden'})
+  await historyDialog.getByRole('checkbox',{name:'Include archived'}).check()
+  await historyDialog.getByText('Pinned · Reviewed screening',{exact:true}).waitFor()
+  const beforeDelete = page.url()
+  await historyDialog.getByRole('button',{name:'Actions for New chat',exact:true}).first().click()
+  await page.getByRole('menuitem',{name:'Delete chat…',exact:true}).click()
+  await historyDialog.getByRole('button',{name:'Delete chat',exact:true}).click()
+  assert.equal(page.url(),beforeDelete,'Deleting another conversation keeps the current pack open')
+  assert(await historyDialog.isVisible(),'Deleting another conversation keeps history open')
+  results.push('History supports rename, pin, archive and deletion without navigating away from an unrelated active chat')
+  assert.deepEqual(errors,[],'no uncaught browser errors')
+  await writeFile(`${output}/results.json`,JSON.stringify({results,errors},null,2))
+  console.log(JSON.stringify({passed:results.length,results,artifacts:output},null,2))
+} catch(error) {
+  await page?.screenshot({path:`${output}/failure.png`}).catch(()=>{})
+  await writeFile(`${output}/failure.txt`,String(error).replaceAll(secret,'[redacted]'))
+  throw error
+} finally {
+  await browser?.close(); server.kill('SIGTERM'); await Promise.race([once(server,'exit'),new Promise(resolve => setTimeout(resolve,3000))]); await rm(work,{recursive:true,force:true})
+}

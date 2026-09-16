@@ -16,6 +16,7 @@
  * proof; the research phase, the source ledger, the citation trace and the
  * conversation are this run's.
  */
+import { canonicalProposal } from '../assistant/useAssistantRun'
 import type { AssistantEvent, CallTool, HostTool } from '../assistant/engine'
 import { isCancelled } from '../assistant/engines/contract'
 import { checkCandidate, digestOf, jsonIdentity, type AuthoringCase, type CandidateCheck } from './checkCandidate'
@@ -66,6 +67,8 @@ export interface ExpectationIssue {
 export interface RunState {
   phase: Phase
   status: Status
+  /** A disk checkpoint is not a fresh check or approval. */
+  restored?: boolean
   detail: string
   brief: string
   seedUrls: string[]
@@ -93,6 +96,7 @@ export interface TurnRequest {
 }
 
 export interface RunPorts {
+  mode?: 'draft' | 'research'
   /** One engine run to completion; events arrive in order, `end` last. */
   turn(request: TurnRequest, signal: AbortSignal, onEvent: (event: AssistantEvent) => void): Promise<void>
   /** The desk's own runtime connection, for validate and rehearsal. */
@@ -296,12 +300,64 @@ export class AuthoringRun {
     this.deadline = null
   }
 
+  /** Load a validated checkpoint; no stored verdict, check or pending approval survives. */
+  async restore(saved: RunState): Promise<void> {
+    if (this.running || this.state.phase !== 'idle') throw new Error('Cannot replace an active conversation')
+    const candidates = await Promise.all(saved.candidates.map(async item => ({
+      revision: item.revision, text: item.text, document: deepFreeze(JSON.parse(item.text)) as unknown,
+      digest: await digestOf(item.text), producedBy: item.producedBy
+    })))
+    this.set({ ...INITIAL_STATE, brief: saved.brief, seedUrls: saved.seedUrls,
+      turns: saved.turns, candidates, cases: structuredClone(saved.cases),
+      expectationIssues: saved.expectationIssues.map(item => ({ id: item.id, original: structuredClone(item.original),
+        message: item.message, ...(item.resolved ? { resolved: structuredClone(item.resolved) } : {}) })),
+      unknowns: saved.unknowns, revisionsUsed: saved.revisionsUsed, sessions: saved.sessions,
+      phase: saved.turns.length ? 'review' : 'idle', status: saved.turns.length ? 'stopped' : 'idle',
+      restored: saved.turns.length > 0,
+      detail: saved.turns.length ? 'Saved conversation restored. Recheck the draft to verify sources and tests again. No model run was resumed.' : '' })
+  }
+
+  /** Explicit, model-free recovery. A reload cannot restart paid or repair work. */
+  recheck(): void {
+    if (this.running || !this.latest()) return
+    this.arm()
+    this.set({ status: 'running', phase: 'check', detail: 'Rechecking the saved draft.' })
+    void this.drive(async signal => {
+      await this.recheckRestored(signal)
+      if (this.ports.mode !== 'draft' && !this.state.cases.length && !this.state.expectationIssues.length) throw new Error('No saved cases can be rechecked. Send a message to continue research.')
+      await this.casesAndCheck(signal, false)
+    })
+  }
+
+  private async recheckRestored(signal: AbortSignal): Promise<void> {
+    if (!this.state.restored) return
+    if (this.ports.mode !== 'draft') {
+      for (const session of new Set(this.ports.ledger.sources.map(source => source.session))) await this.verifyAcquisitions(session, signal, false)
+      const saved = this.state.cases
+      const { admitted, dropped } = admitCases({ cases: saved }, this.ports.ledger, [])
+      if (dropped.length || admitted.length !== saved.length) throw new Error('Saved test cases could not be grounded again. Start a new research chat; the original history is preserved.')
+      const checked = await validateExpectations(admitted.map(row => row.expectedDisposition), this.ports.callTool, signal)
+      const cases: AuthoringCase[] = []
+      const issues = this.state.expectationIssues.map(item => ({ ...item, proposal: undefined }))
+      admitted.forEach((row, index) => {
+        const finding = checked[index]!
+        const problem = finding.status === 'invalid' ? findingSummary(finding) : targetContradiction(finding.canonical, row.expectedHandoffTarget)
+        if (problem) issues.push({ id: row.id, original: row, message: problem, proposal: undefined })
+        else cases.push(deepFreeze(structuredClone(row)))
+      })
+      this.set({ cases, expectationIssues: issues })
+      // Do not generate replacement cases on a model-free recovery action.
+
+    }
+    this.set({ restored: false })
+  }
+
   /** Begin: the brief, the URLs to read first, and the research turn. */
-  start(brief: string, seedUrls: string[]): void {
+  start(brief: string, seedUrls: string[], display = brief): void {
     if (this.running) return
     this.arm()
     this.state = { ...INITIAL_STATE, brief, seedUrls, phase: 'research', status: 'running', detail: 'Researching sources and drafting.' }
-    this.addTurn({ role: 'user', kind: 'brief', text: brief + (seedUrls.length ? `\n\nRead first:\n${seedUrls.join('\n')}` : '') })
+    this.addTurn({ role: 'user', kind: 'brief', text: display + (seedUrls.length ? `\n\nRead first:\n${seedUrls.join('\n')}` : '') })
     void this.drive(async (signal) => {
       await this.researchTurn(signal)
       await this.casesAndCheck(signal)
@@ -309,15 +365,16 @@ export class AuthoringRun {
   }
 
   /** A message from the person, at any rest state. */
-  send(message: string): void {
+  send(message: string, display = message): void {
     if (this.running || this.state.phase === 'idle') return
     this.arm()
-    this.addTurn({ role: 'user', kind: 'message', text: message })
+    this.addTurn({ role: 'user', kind: 'message', text: display })
     this.set({ status: 'running', phase: 'conversation', detail: 'Answering.' })
     void this.drive(async (signal) => {
+      if (this.state.restored) await this.recheckRestored(signal)
       const before = this.latest()?.digest
       await this.continuingTurn(signal, 'conversation', this.conversationPrompt(message), this.ports.researchTools)
-      if (this.latest()?.digest !== before) await this.casesAndCheck(signal)
+      if (this.latest()?.digest !== before || !this.latest()?.check) await this.casesAndCheck(signal)
       else this.settleReview('Answered. The candidate still has disagreements or no established cases.')
     })
   }
@@ -427,7 +484,7 @@ export class AuthoringRun {
     const { brief, seedUrls } = this.state
     return [
       this.ports.authorPrompt,
-      RESEARCH_INSTRUCTIONS,
+      this.ports.mode === 'draft' ? 'For a question or clarification, answer naturally without a JSON fence. When proposing a pack, return the required single JSON fence. Draft only from information supplied in this chat. Do not claim source research or behavioral testing. List open questions and assumptions.' : RESEARCH_INSTRUCTIONS,
       `THE BRIEF\n${brief}`,
       seedUrls.length ? `URLS TO READ FIRST\n${seedUrls.join('\n')}` : ''
     ]
@@ -454,7 +511,7 @@ export class AuthoringRun {
     const candidate = this.latest()!
     return [
       this.ports.authorPrompt,
-      RESEARCH_INSTRUCTIONS,
+      this.ports.mode === 'draft' ? 'For a question or clarification, answer naturally without a JSON fence. When proposing a pack, return the required single JSON fence. Draft only from information supplied in this chat. Do not claim source research or behavioral testing. List open questions and assumptions.' : RESEARCH_INSTRUCTIONS,
       REPAIR_INSTRUCTIONS,
       `CANDIDATE\n${candidate.text}`,
       `CHECK\n${JSON.stringify({ valid: candidate.check?.valid, diagnostics: candidate.check?.diagnostics, cases: candidate.check?.cases })}`,
@@ -467,7 +524,7 @@ export class AuthoringRun {
     const candidate = this.latest()
     return [
       this.ports.authorPrompt,
-      RESEARCH_INSTRUCTIONS,
+      this.ports.mode === 'draft' ? 'For a question or clarification, answer naturally without a JSON fence. When proposing a pack, return the required single JSON fence. Draft only from information supplied in this chat. Do not claim source research or behavioral testing. List open questions and assumptions.' : RESEARCH_INSTRUCTIONS,
       CONVERSATION_INSTRUCTIONS,
       candidate ? `CURRENT DOCUMENT\n${candidate.text}` : '',
       this.state.cases.length ? `ESTABLISHED CASES\n${JSON.stringify(this.state.cases)}` : '',
@@ -500,7 +557,10 @@ export class AuthoringRun {
     this.set({ sessions: [...this.state.sessions, session] })
     let proposal: { document: unknown; unknowns: string[] } | null = null
     let failure: string | null = null
-    await this.ports.turn({ prompt, hostTools, reviewer }, signal, (event) => {
+    let spoke = false
+    await this.ports.turn({ prompt, hostTools, reviewer }, signal, (incoming) => {
+      const event = incoming.type === 'proposal' ? canonicalProposal(incoming) : incoming
+      if (event.type === 'message' && event.text.trim()) spoke = true
       this.set({ events: [...this.state.events, event] })
       if (event.type === 'message') this.addTurn({ role: 'assistant', kind: 'message', text: event.text })
       if (event.type === 'proposal') proposal = { document: event.document, unknowns: event.unknowns }
@@ -509,6 +569,7 @@ export class AuthoringRun {
     this.check(signal)
     await this.verifyAcquisitions(session, signal)
     if (failure !== null) throw new Error(failure)
+    if (proposal === null && this.ports.mode === 'draft' && spoke && !reviewer) return null
     if (proposal === null) throw new Error('the assistant ended without a proposal')
     const taken = proposal as { document: unknown; unknowns: string[] }
     if (!reviewer) {
@@ -541,8 +602,8 @@ export class AuthoringRun {
   }
 
   private async researchTurn(signal: AbortSignal): Promise<void> {
-    this.set({ phase: 'research', detail: 'Researching sources and drafting.' })
-    this.ports.log('research: drafting from sources')
+    this.set({ phase: 'research', detail: this.ports.mode === 'draft' ? 'Drafting with your input.' : 'Researching sources and drafting.' })
+    this.ports.log(this.ports.mode === 'draft' ? 'draft: authoring from supplied information' : 'research: drafting from sources')
     await this.continuingTurn(signal, 'research', this.researchPrompt(), this.ports.researchTools)
   }
 
@@ -585,6 +646,17 @@ export class AuthoringRun {
   /** Establish cases where none are, then check, and repair until the budget. */
   private async casesAndCheck(signal: AbortSignal, repair = true): Promise<void> {
     const candidate = this.latest()
+    if (!candidate && this.ports.mode === 'draft') {
+      this.set({ phase: 'conversation', status: 'needs-input', detail: 'Continue the conversation to shape your pack.' })
+      return
+    }
+    if (candidate && this.ports.mode === 'draft') {
+      this.set({ phase: 'check', detail: 'Validating the draft through the runtime.' })
+      const check = await checkCandidate(candidate.text, [], this.ports.callTool, signal)
+      this.set({ candidates: this.state.candidates.map(item => item.digest === candidate.digest ? { ...item, check } : item) })
+      this.settleReview('The draft needs corrections before it can be created.')
+      return
+    }
     if (!candidate) throw new Error('no candidate to check')
     if (this.state.cases.length === 0 && this.state.expectationIssues.length === 0) {
       this.set({ phase: 'cases', detail: 'Establishing test cases from the sources.' })
@@ -683,6 +755,15 @@ export class AuthoringRun {
   }
 
   private settleReview(notPassing: string): void {
+    if (this.ports.mode === 'draft') {
+      const candidate = this.latest()
+      const valid = candidate?.check?.valid === true && candidate.check.documentDigest === candidate.digest
+      this.set({ phase: 'review', status: valid ? 'ready' : 'needs-input', detail: valid
+        ? 'Structure validated. Review the draft before creating it. No source research or behavioral tests have been run.'
+        : 'The draft needs corrections before it can be created.' })
+      return
+    }
+
     if (this.unresolvedExpectations()) {
       this.set({ phase: 'review', status: 'needs-input', detail: this.unresolvedExpectations()! })
       return
@@ -722,7 +803,7 @@ export class AuthoringRun {
   // ---- verification ----------------------------------------------------------
 
   /** Seal the session the turn acquired under, fetch the registry, verify, and mark every record. */
-  private async verifyAcquisitions(session: string, signal: AbortSignal): Promise<void> {
+  private async verifyAcquisitions(session: string, signal: AbortSignal, seal = true): Promise<void> {
     const ledger = this.ports.ledger
     // The records this desk opened under the session, in the order it opened
     // them: membership and position come from the desk's own ledger, never
@@ -738,7 +819,7 @@ export class AuthoringRun {
     const held: HeldReceipt[] = records.map((record) => ({ receipt: record.response!.receipt, result: record.response!.result }))
     let registryText = ''
     try {
-      await this.ports.seal(session, signal)
+      if (seal) await this.ports.seal(session, signal)
       registryText = await this.ports.registry(signal)
     } catch (cause) {
       if ((cause as Error)?.name === 'AbortError') throw cause

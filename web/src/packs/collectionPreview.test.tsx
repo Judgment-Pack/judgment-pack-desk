@@ -38,7 +38,7 @@ function setup(savedOpen = true) {
   return { router, stub, query }
 }
 
-it('keeps preview separate from a saved document Inspector and restores each on navigation', async () => {
+it('keeps preview separate from a saved document Assistant and restores each on navigation', async () => {
   const { router, stub } = setup()
   const row = await screen.findByRole('link', { name: /alpha.*A complete/ })
   expect(screen.queryByRole('complementary')).toBeNull()
@@ -48,7 +48,7 @@ it('keeps preview separate from a saved document Inspector and restores each on 
   expect(within(pane).getByText('Technical details').closest('details')?.open).toBe(false)
   fireEvent.click(within(pane).getByRole('link', { name: 'Open pack' }))
   await screen.findByRole('heading', { name: 'Pack document' })
-  await screen.findByRole('complementary', { name: 'Inspector' })
+  await screen.findByRole('complementary', { name: 'Assistant' })
   await waitFor(() => expect(document.querySelector('.desk')?.getAttribute('style')).toContain('--inspector-w: 600px'))
   await act(async () => { await router.navigate(-1) })
   pane = await screen.findByRole('complementary', { name: 'Pack preview' })
@@ -57,7 +57,7 @@ it('keeps preview separate from a saved document Inspector and restores each on 
   expect(row.closest('li')?.dataset.selected).toBe('true')
   fireEvent.click(within(pane).getByRole('button', { name: 'Close pack preview' }))
   await act(async () => { await router.navigate('/packs/alpha') })
-  await screen.findByRole('complementary', { name: 'Inspector' })
+  await screen.findByRole('complementary', { name: 'Assistant' })
   expect(JSON.parse(localStorage.getItem(key)!).inspector).toEqual({ open: true })
   expect(stub.calls.map(call => call.name)).toEqual(['list_packs'])
 })

@@ -45,6 +45,7 @@ export interface ShellState {
   inspector: { open: boolean }
   console: { open: boolean; tab: ConsoleTab }
   inspectorWidth?: number
+  consoleHeight?: number
 }
 
 export const BUILT_IN_SHELL_STATE: ShellState = {
@@ -54,6 +55,7 @@ export const BUILT_IN_SHELL_STATE: ShellState = {
 }
 
 const RECORD_VERSION = 2
+const validConsoleHeight = (height: unknown): height is number => typeof height === 'number' && Number.isInteger(height) && height >= 120 && height <= 1600
 
 /** One record's key. Exported so a test — and the menu's reset — can name it. */
 export function shellStateKey(projectKey: string): string {
@@ -155,6 +157,7 @@ export function readShellState(key: string): Partial<ShellState> | undefined {
 
   const restored: Partial<ShellState> = {}
   if (record.v === RECORD_VERSION && validInspectorWidth(record.inspectorWidth)) restored.inspectorWidth = record.inspectorWidth
+  if (validConsoleHeight(record.consoleHeight)) restored.consoleHeight = record.consoleHeight
   const left = record.left as { mode?: unknown } | undefined
   if (left && (left.mode === 'expanded' || left.mode === 'icons')) {
     restored.left = { mode: left.mode }
@@ -188,6 +191,7 @@ export interface TouchedPanes {
   inspector: boolean
   console: boolean
   inspectorWidth?: boolean
+  consoleHeight?: boolean
 }
 
 export const NOTHING_TOUCHED: TouchedPanes = { left: false, inspector: false, console: false }
@@ -217,7 +221,9 @@ export function writeShellState(key: string, state: ShellState, touched: Touched
   const inspector = touched.inspector ? state.inspector : kept.inspector
   const consoleSection = touched.console ? state.console : kept.console
   const width = touched.inspectorWidth ? state.inspectorWidth : kept.inspectorWidth
+  const height = touched.consoleHeight ? state.consoleHeight : kept.consoleHeight
   const record: Record<string, unknown> = { v: RECORD_VERSION }
+  if (validConsoleHeight(height)) record.consoleHeight = height
   if (left !== undefined) record.left = left
   if (inspector !== undefined) record.inspector = inspector
   if (consoleSection !== undefined) record.console = consoleSection
@@ -306,6 +312,7 @@ export function initialShellState(
     left: { mode: viewport.railIsDrawer ? 'icons' : merged.left.mode },
     inspector: { open: viewport.inspectorIsDrawer ? false : merged.inspector.open },
     console: merged.console,
+    ...(stored?.consoleHeight === undefined ? {} : { consoleHeight: stored.consoleHeight }),
     ...(stored?.inspectorWidth === undefined ? {} : { inspectorWidth: stored.inspectorWidth })
   }
 }
@@ -333,6 +340,9 @@ export interface ShellStateApi extends ShellState {
    */
   openInspector: () => void
   toggleConsole: () => void
+  openConsole: () => void
+  resizeConsole: (height: number) => void
+  resetConsoleHeight: () => void
   setConsoleTab: (tab: ConsoleTab) => void
   /** The key this project's record lives under, so a test can name it. */
   storageKey: string
@@ -357,6 +367,9 @@ const DEFAULT_API: ShellStateApi = {
   toggleInspector: () => {},
   openInspector: () => {},
   toggleConsole: () => {},
+  openConsole: () => {},
+  resizeConsole: () => {},
+  resetConsoleHeight: () => {},
   setConsoleTab: () => {},
   storageKey: shellStateKey('default'),
   keyResolved: false,
@@ -458,15 +471,16 @@ export function ShellStateProvider({
     if (seededFrom.current === signature) return
     seededFrom.current = signature
     const chosen = touched.current
-    if (keyResolved && widthOwner.current !== undefined && widthOwner.current !== storageKey) chosen.inspectorWidth = false
+    if (keyResolved && widthOwner.current !== undefined && widthOwner.current !== storageKey) { chosen.inspectorWidth = false; chosen.consoleHeight = false }
     if (keyResolved) widthOwner.current = storageKey
-    if (chosen.left && chosen.inspector && chosen.console && chosen.inspectorWidth) return
+    if (chosen.left && chosen.inspector && chosen.console && chosen.inspectorWidth && chosen.consoleHeight) return
     setState((previous) => {
       const seeded = initialShellState(storedForKey(), panes, viewport)
       return {
         left: chosen.left ? previous.left : seeded.left,
         inspector: chosen.inspector ? previous.inspector : seeded.inspector,
         console: chosen.console ? previous.console : seeded.console,
+        consoleHeight: chosen.consoleHeight ? previous.consoleHeight : seeded.consoleHeight,
         ...((chosen.inspectorWidth ? previous.inspectorWidth : seeded.inspectorWidth) === undefined ? {} : {
           inspectorWidth: chosen.inspectorWidth ? previous.inspectorWidth : seeded.inspectorWidth
         })
@@ -506,7 +520,7 @@ export function ShellStateProvider({
     const timer = setTimeout(() => {
       pending.current = undefined
       const chosen = touched.current
-      if (!chosen.left && !chosen.inspector && !chosen.console && !chosen.inspectorWidth) return
+      if (!chosen.left && !chosen.inspector && !chosen.console && !chosen.inspectorWidth && !chosen.consoleHeight) return
       writeShellState(storageKey, state, chosen)
     }, WRITE_DEBOUNCE_MS)
     pending.current = timer
@@ -584,6 +598,19 @@ export function ShellStateProvider({
       console: { ...previous.console, open: !previous.console.open }
     }))
   }, [])
+  const openConsole = useCallback(() => {
+    touched.current.console = true
+    setState(previous => previous.console.open ? previous : { ...previous, console: { ...previous.console, open: true } })
+  }, [])
+  const resizeConsole = useCallback((height: number) => {
+    if (!validConsoleHeight(height)) return
+    touched.current.consoleHeight = true
+    setState(previous => ({ ...previous, consoleHeight: height }))
+  }, [])
+  const resetConsoleHeight = useCallback(() => {
+    touched.current.consoleHeight = true
+    setState(previous => { const next = { ...previous }; delete next.consoleHeight; return next })
+  }, [])
   const setConsoleTab = useCallback((tab: ConsoleTab) => {
     touched.current.console = true
     setState((previous) => ({ ...previous, console: { ...previous.console, tab } }))
@@ -606,6 +633,9 @@ export function ShellStateProvider({
       toggleInspector,
       openInspector,
       toggleConsole,
+      openConsole,
+      resizeConsole,
+      resetConsoleHeight,
       setConsoleTab,
       storageKey,
       keyResolved,
@@ -619,6 +649,9 @@ export function ShellStateProvider({
       toggleInspector,
       openInspector,
       toggleConsole,
+      openConsole,
+      resizeConsole,
+      resetConsoleHeight,
       setConsoleTab,
       storageKey,
       keyResolved,

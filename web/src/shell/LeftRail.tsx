@@ -1,3 +1,5 @@
+import { RecentChats, chatHref } from '../chat/ChatHistory'
+import { useChats } from '../chat/ChatProvider'
 import { Tooltip } from '../ui/Tooltip'
 import { type ReactElement } from 'react'
 /** Primary navigation stays about destinations. Tests and pack flows live
@@ -116,6 +118,7 @@ function RailBody({
    */
   onNavigate?: () => void
 }) {
+  const { store, ready } = useChats()
   const icons = mode === 'icons'
   const navigate = useNavigate()
   const toggleRef = useRef<HTMLButtonElement | null>(null)
@@ -128,7 +131,7 @@ function RailBody({
           type="button"
           className="desk-create"
           aria-label="Create a pack"
-          onClick={() => { navigate('/create-pack'); onNavigate?.() }}
+          onClick={() => { navigate(store?.canCreate && ready ? chatHref(store.create()) : '/create-pack'); onNavigate?.() }}
         >
           <IconPlus />
           {!icons && <span className="desk-nav-label">Create pack</span>}
@@ -138,6 +141,7 @@ function RailBody({
 
       <PacksGroup icons={icons} onNavigate={onNavigate} />
 
+      {!icons && <RecentChats onNavigate={onNavigate} />}
       <div className="desk-spacer" />
       <Separator.Root className="desk-rule-h" decorative />
 

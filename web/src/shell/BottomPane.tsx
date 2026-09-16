@@ -1,21 +1,9 @@
-/**
- * The Console: what this session's own wire has done.
- *
- * Two channels carry real entries in phase A, because two channels have a real
- * feed. **Connection** is driven off `useMcp()` — status, epoch, reconnect
- * attempt — and **Files** off the chassis' own `desk/fileChanged`
- * notification. **Calls** and **Notices** exist as tabs and say they arrive
- * later; they render no rows at all, because a channel that invented plausible
- * traffic would be worse than an absent one.
- *
- * The pane spans the content area right of the rail — grid columns 2–3, never
- * under the rail — and the log list is `aria-live="off"`: a screen reader
- * should not be read a running commentary of a socket.
- */
+/** Selected details and real activity, beneath the main pane. */
 import { Tabs } from 'radix-ui'
 import { useEffect, useSyncExternalStore } from 'react'
 import { useMcp } from '../mcp/McpProvider'
 import { consoleSnapshot, recordConnection, subscribeConsole } from './consoleLog'
+import { Button } from '../ui/Button'
 import type { ConsoleTab } from './paneState'
 
 const LATER = 'This channel arrives later.'
@@ -23,11 +11,25 @@ const LATER = 'This channel arrives later.'
 export function BottomPane({
   open,
   tab,
-  onTabChange
+  onTabChange,
+  details = false,
+  showDetails = false,
+  onDetails,
+  publishTarget,
+  onClose,
+  onMaximize,
+  maximized = false
 }: {
   open: boolean
   tab: ConsoleTab
   onTabChange: (tab: ConsoleTab) => void
+  details?: boolean
+  showDetails?: boolean
+  onDetails?: () => void
+  publishTarget?: (target: HTMLDivElement | null) => void
+  onClose?: () => void
+  onMaximize?: () => void
+  maximized?: boolean
 }) {
   const { status, connectionEpoch, attempt } = useMcp()
   const entries = useSyncExternalStore(subscribeConsole, consoleSnapshot, consoleSnapshot)
@@ -51,10 +53,11 @@ export function BottomPane({
           height and a long log was clipped rather than scrolled. */}
       <Tabs.Root
         className="desk-console-tabs"
-        value={tab}
-        onValueChange={(next) => onTabChange(next as ConsoleTab)}
+        value={details && showDetails ? 'details' : tab}
+        onValueChange={(next) => next === 'details' ? onDetails?.() : onTabChange(next as ConsoleTab)}
       >
-        <Tabs.List className="desk-tablist" aria-label="Console channels">
+        <div className="desk-console-heading"><Tabs.List className="desk-tablist" aria-label="Console channels">
+          {details && <Tabs.Trigger className="desk-tab" value="details">Details</Tabs.Trigger>}
           <Tabs.Trigger className="desk-tab" value="connection">
             Connection
           </Tabs.Trigger>
@@ -68,6 +71,13 @@ export function BottomPane({
             Notices
           </Tabs.Trigger>
         </Tabs.List>
+        <div className="desk-console-actions">
+          {onMaximize && <Button variant="quiet" onClick={onMaximize} aria-label={maximized ? 'Restore panel height' : 'Expand panel'}>{maximized ? 'Restore' : 'Expand'}</Button>}
+          {onClose && <Button variant="quiet" onClick={onClose}>Close</Button>}
+        </div></div>
+        <Tabs.Content forceMount className="desk-console-body" value="details" hidden={!details || !showDetails}>
+          <div className="desk-details-slot" ref={publishTarget} />
+        </Tabs.Content>
         <Tabs.Content className="desk-console-body" value="connection">
           <LogList entries={connection} empty="Nothing recorded on this connection yet." />
         </Tabs.Content>

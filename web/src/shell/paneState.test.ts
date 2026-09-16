@@ -357,3 +357,17 @@ describe('initialShellState', () => {
     expect(narrow.console.open).toBe(true)
   })
 })
+
+describe('bottom panel height preference', () => {
+  it('restores only bounded integer heights and retains them when another pane changes', () => {
+    const key = shellStateKey('/height')
+    writeShellState(key,{ ...BUILT_IN_SHELL_STATE, consoleHeight: 360 },{ ...NOTHING_TOUCHED, consoleHeight: true })
+    expect(readShellState(key)?.consoleHeight).toBe(360)
+    writeShellState(key,{ ...BUILT_IN_SHELL_STATE, inspectorWidth: 400 },{ ...NOTHING_TOUCHED, inspectorWidth: true })
+    expect(readShellState(key)?.consoleHeight).toBe(360)
+    for (const height of [0, 119, 1601, 200.5, '240']) {
+      window.localStorage.setItem(key,JSON.stringify({ v: 2, consoleHeight: height }))
+      expect(readShellState(key)?.consoleHeight).toBeUndefined()
+    }
+  })
+})

@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { McpContext, type McpConnection } from '../mcp/McpProvider'
+import { DetailsSlotContext } from '../shell/DetailsSlot'
 import { InspectorSlotContext, type InspectorSlot } from '../shell/InspectorSlot'
 import { connected, stubClient, testQueryClient, type ToolHandler } from '../testing/harness'
 import { PackView } from './PackView'
@@ -145,12 +146,15 @@ function Slotted({
   // it re-renders the shell at the same address and hands the route a slot it
   // has not seen before.
   const [open, setOpen] = useState(inspector)
+  const details = recordingSlot(revealed, open, tab)
   return (
-    <InspectorSlotContext.Provider value={recordingSlot(revealed, open, tab)}>
+    <InspectorSlotContext.Provider value={{ ...details, target: null }}>
+      <DetailsSlotContext.Provider value={details}>
       <button type="button" onClick={() => setOpen(false)}>
         close the inspector
       </button>
       <PackView />
+      </DetailsSlotContext.Provider>
     </InspectorSlotContext.Provider>
   )
 }
@@ -636,14 +640,14 @@ describe('a check that ran over other bytes', () => {
     )
     // The JSON view has no h1: the document is the bytes.
     await screen.findByLabelText("The document's bytes")
-    await waitFor(() => expect(screen.getByText('This rule can never fire.')).toBeTruthy())
+    await waitFor(() => expect(within(slotTarget!).getByText('This rule can never fire.')).toBeTruthy())
     const raw = screen.getByLabelText("The document's bytes")
     fireEvent.change(raw, { target: { value: `${PACK_TEXT}\n` } })
     await waitFor(() =>
       expect(screen.getByText(/ran over bytes the editor has moved past/)).toBeTruthy()
     )
     expect(screen.getByText(/computed against other bytes/)).toBeTruthy()
-    expect(screen.queryByText('This rule can never fire.')).toBeNull()
+    expect(within(slotTarget!).queryByText('This rule can never fire.')).toBeNull()
     expect(screen.queryByText(/No other diagnostic names this member/)).toBeNull()
   })
 
@@ -681,7 +685,7 @@ describe('a document with no bytes in it', () => {
 describe('choosing a member with the pane closed', () => {
   beforeEach(() => chassis(PACK_TEXT, DIGEST))
 
-  it('opens the Inspector, because that is what selecting is for', async () => {
+  it('opens Details, because that is what selecting is for', async () => {
     // Otherwise the panel is filled behind a closed pane and the only thing
     // that changes on screen is the block's own border.
     const { revealed, container } = draw(SERVED)
@@ -720,10 +724,8 @@ describe('the Checks panel while the check is in flight', () => {
     )
     await screen.findByRole('heading', { level: 1 })
     await waitFor(() => expect(screen.getByText('Checking…')).toBeTruthy())
-    // Two tab sets now, one inside the other: the right pane's Inspector /
-    // Assistant, and the Inspector's own three panels inside it. The innermost
-    // panel is the one this case is about.
-    const panel = screen.getAllByRole('tabpanel').at(-1)!
+    // Diagnostics now occupy the Details slot, independently of Assistant.
+    const panel = slotTarget!
     expect(panel.textContent).toContain('The check has not answered yet.')
     expect(panel.textContent).not.toContain('No other diagnostic names this member.')
   })
@@ -748,7 +750,7 @@ describe('the Checks panel while the check is in flight', () => {
 })
 
 describe('arriving at an address that names a member', () => {
-  it('opens the Inspector once, in StrictMode, where production runs', async () => {
+  it('opens Details once, in StrictMode, where production runs', async () => {
     // Reveal was "if closed, toggle" — the same gesture read twice. StrictMode
     // runs an effect twice on purpose, so an arrival made two toggles out of
     // one arrival and left the pane exactly as it found it: closed. The link
@@ -858,7 +860,7 @@ describe('the guided reading workspace', () => {
     expect([...new Set(calls.map(call => call.name))].sort()).toEqual(['get_pack', 'list_packs', 'validate'])
     expect(screen.getByRole('link', { name: 'View logic' }).getAttribute('href')).toBe('/packs/vendor-onboarding?view=logic')
   })
-  it('preserves a closed inspector when switching representations with a selected item', async () => {
+  it('preserves a closed Details panel when switching representations with a selected item', async () => {
     const { revealed, router } = draw(SERVED, {}, '/packs/vendor-onboarding?view=logic&layout=list&at=/rules/1')
     await screen.findByRole('radio', { name: 'List' })
     await waitFor(() => expect(revealed).toHaveLength(1))
