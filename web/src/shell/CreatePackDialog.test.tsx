@@ -13,7 +13,7 @@
  * writes" mean nothing.
  */
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -122,8 +122,22 @@ function serveProject(
     packFileExists?: boolean
     /** Paths that answer a read as an existing file, for the pre-flight probes. */
     present?: string[]
+    /**
+     * Whether a write the chassis **accepted** joins the listing.
+     *
+     * Off by default, because most cases here never read the listing again. A
+     * failure that leaves something on disk does — it invalidates the listing
+     * on its way out — and the page's view of its own residue is the thing
+     * under test there. Only accepted writes join it: a refused write put
+     * nothing on disk, and a listing that reported one would let a case pass
+     * because a file the chassis rejected came back.
+     */
+    reflectWrites?: boolean
   } = {}
 ) {
+  // The listing answers off this array as it stands when it is asked, and the
+  // array is the caller's own: a case that says a file appeared while the page
+  // was standing on it pushes the path and invalidates `['desk-files']`.
   const files = options.files ?? ['jpack.json']
   const sent: Sent[] = []
   let reads = 0
@@ -185,6 +199,9 @@ function serveProject(
     if (options.gate) await options.gate()
     const chosen = options.answer?.(String(body.path), sent.length - 1)
     if (chosen) return refuse(chosen)
+    // Accepted, so it is on disk from here on — for the listing too, where a
+    // case asked for that.
+    if (options.reflectWrites && !files.includes(String(body.path))) files.push(String(body.path))
     return ok({
       // The chassis answers with the path it resolved the request to, which is
       // not always the one that was asked for.
@@ -287,7 +304,10 @@ function renderDialog(
       <RouterProvider router={router} />
     </QueryClientProvider>
   )
-  return { ...result, seen, closed, invalidated }
+  // The cache comes back with the render: a file appearing under the page is
+  // an invalidation this desk sends on `desk/fileChanged`, and a case that
+  // wants one has nowhere else to send it from.
+  return { ...result, seen, closed, invalidated, queryClient }
 }
 
 const createButton = () => screen.getByRole('button', { name: 'Create pack' }) as HTMLButtonElement
@@ -1162,13 +1182,56 @@ function researchHandover(): ResearchHandover {
   }
 }
 
-function renderHandover(handover = researchHandover(), validationStatus: 'valid' | 'invalid' = 'valid') {
-  const stub = stubClient({
+function handoverStub(validationStatus: 'valid' | 'invalid' = 'valid') {
+  return stubClient({
     list_examples: () => ({ text: EXAMPLES }), get_example: () => ({ text: TEMPLATE }), get_schema: () => ({ text: SCHEMA }),
     validate: () => ({ text: JSON.stringify({ status: validationStatus, layers: ['carrier', 'structural', 'semantic'].map(name => ({ name, status: validationStatus === 'valid' ? 'passed' : 'failed' })), diagnostics: [] }) })
   })
+}
+
+function renderHandover(handover = researchHandover(), validationStatus: 'valid' | 'invalid' = 'valid') {
+  const stub = handoverStub(validationStatus)
   const rendered = renderDialog(stub, { ...FULL_CAPS, validateSupported: true }, effectiveConfig(undefined), { research: handover, presentation: 'page' })
   return { ...rendered, stub, handover }
+}
+
+/**
+ * The same dialog, on the route it really has, with a page behind
+ * `/packs/:slug` for a create to land on.
+ *
+ * `renderDialog` mounts one `path: '*'` route, so the dialog survives the push
+ * and a Back moves history underneath a component that is never built again.
+ * The handover is read at mount, and that read is what a Back has to meet: two
+ * routes make Back do what it does in the desk — leave the pack's page, build
+ * the create page again, on whatever state the entry it returns to still
+ * carries. The entry has a search and a fragment because a real one can.
+ */
+function renderHandoverRouted(state: Record<string, unknown>) {
+  const stub = handoverStub()
+  const router = createMemoryRouter(
+    [
+      {
+        path: '/create-pack',
+        element: (
+          <Mounted
+            stub={stub}
+            overrides={{ ...FULL_CAPS, validateSupported: true }}
+            deskConfig={effectiveConfig(undefined)}
+            presentation="page"
+            onClose={() => {}}
+          />
+        )
+      },
+      { path: '/packs/:slug', element: <div>the pack page</div> }
+    ],
+    { initialEntries: [{ pathname: '/create-pack', search: '?via=research', hash: '#draft', state }] }
+  )
+  render(
+    <QueryClientProvider client={testQueryClient()}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
+  )
+  return { router, stub }
 }
 
 async function reviewHandedDraft() {
@@ -1177,6 +1240,18 @@ async function reviewHandedDraft() {
   fireEvent.click(next)
   fireEvent.click(await screen.findByRole('button', { name: 'Review pack' }))
   await waitFor(() => expect(createButton().disabled).toBe(false))
+}
+
+/**
+ * Something else wrote a file while this page was standing on it.
+ *
+ * The listing is `staleTime: Infinity`, and what refetches it is the
+ * invalidation `McpProvider` sends on every `desk/fileChanged` — a mounted
+ * query is an active one. This is that, from the cache the render returned.
+ */
+async function fileAppears(queryClient: QueryClient, files: string[], path: string) {
+  files.push(path)
+  await act(async () => { await queryClient.invalidateQueries({ queryKey: ['desk-files'] }) })
 }
 
 describe('creating a reviewed research handover', () => {
@@ -1212,6 +1287,49 @@ describe('creating a reviewed research handover', () => {
     const config = JSON.parse(sent[3]!.body.content as string)
     expect(config.packs['reviewed-pack']).toMatchObject({ path: sent[0]!.path, matrix: sent[1]!.path })
     await waitFor(() => expect(seen).toContain('/packs/reviewed-pack'))
+  })
+
+  it('takes the handover off the create entry, so Back does not offer it again', async () => {
+    // Back after a Create returned to an entry that still carried the handover,
+    // and the dialog reads it at mount, so the create page came back offering
+    // the same reviewed document. The same-name refusal holds, so the second
+    // pack takes a rename — and then one run's matrix rows and research record
+    // are registered against two packs. One press of Create is one pack.
+    serveProject({ project: PROJECT })
+    const { router } = renderHandoverRouted({ research: researchHandover() })
+    await reviewHandedDraft()
+    fireEvent.click(createButton())
+    await waitFor(() => expect(router.state.location.pathname).toBe('/packs/reviewed-pack'))
+    await act(async () => { await router.navigate(-1) })
+    expect(await screen.findByRole('radiogroup', { name: 'Creation method' })).toBeTruthy()
+    expect(screen.queryByLabelText('Reviewed draft')).toBeNull()
+    // And back until history runs out. One entry is not the claim: were the
+    // spent entry pushed rather than replaced, the entry underneath it would
+    // still carry the handover, and any later mount on that entry — a Forward,
+    // a reload, a trip to a pack and back — reads it again. That deeper entry
+    // is judged on its state rather than on a second render, because Back from
+    // one `/create-pack` entry to another matches the same route and builds no
+    // new page: the state is what a mount would find there.
+    for (let back = 0; back < 3; back += 1) {
+      await act(async () => { await router.navigate(-1) })
+      expect((router.state.location.state as { research?: unknown } | null)?.research).toBeUndefined()
+    }
+  })
+
+  it('spends the handover and nothing else: the entry keeps its other state, its search and its fragment', async () => {
+    // The create route is reachable with state this dialog does not own, and
+    // the entry has a URL of its own. Spending the handover is no licence to
+    // discard either — a stranger's state going out with it is the same defect
+    // one turn quieter.
+    serveProject({ project: PROJECT })
+    const { router } = renderHandoverRouted({ research: researchHandover(), from: 'the research page' })
+    await reviewHandedDraft()
+    fireEvent.click(createButton())
+    await waitFor(() => expect(router.state.location.pathname).toBe('/packs/reviewed-pack'))
+    await act(async () => { await router.navigate(-1) })
+    const entry = router.state.location
+    expect(`${entry.pathname}${entry.search}${entry.hash}`).toBe('/create-pack?via=research#draft')
+    expect(entry.state).toEqual({ from: 'the research page' })
   })
 
   it('reads the reviewed draft at Build and writes exactly those bytes, with the checked digest beside the saved one', async () => {
@@ -1269,5 +1387,129 @@ describe('creating a reviewed research handover', () => {
     expect(sent.map(row => row.path)).not.toContain('jpack.json')
     expect(sent).toHaveLength(companion === 'matrix' ? 2 : 3)
     expect(seen).not.toContain('/packs/reviewed-pack')
+  })
+
+  it('hands the name back after a companion failure, and writes the same reviewed draft under the new one', async () => {
+    // The advice says to give it another name and create it again, and this is
+    // that, done from the page: the failed press left the pack file on disk
+    // under the name that wrote it, so the failure drops the shaped draft and
+    // puts the field back in hand at Basics with the residue reported as the
+    // collision it now is. The handover itself is not lost — Continue reshapes
+    // the same reviewed document under the new slug, by the same call, and the
+    // runtime checks those bytes before Create is offered again.
+    const sent = serveProject({
+      project: PROJECT,
+      reflectWrites: true,
+      answer: path => path === 'packs/reviewed-pack.matrix.json' ? { status: 409, body: { code: 'stale', error: 'a companion already exists' } } : undefined
+    })
+    const { handover, stub } = renderHandover()
+    await reviewHandedDraft()
+    fireEvent.click(createButton())
+    expect(await screen.findByText(/test cases or research record could not be written/)).toBeTruthy()
+    expect(await screen.findByText(/Give it another name and create it again/)).toBeTruthy()
+    // Back at Basics, with the field open and the name it wrote under refused.
+    const field = await screen.findByLabelText('Name (required)') as HTMLInputElement
+    expect(field.disabled).toBe(false)
+    expect(field.value).toBe('Reviewed pack')
+    expect(await screen.findByText('There is already a file where this pack would be written.')).toBeTruthy()
+    const next = screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement
+    expect(next.disabled).toBe(true)
+
+    fireEvent.change(field, { target: { value: 'Reviewed pack two' } })
+    await waitFor(() => expect(next.disabled).toBe(false))
+    fireEvent.click(next)
+    fireEvent.click(await screen.findByRole('button', { name: 'Review pack' }))
+    await waitFor(() => expect(createButton().disabled).toBe(false))
+    fireEvent.click(createButton())
+    await waitFor(() => expect(sent).toHaveLength(6))
+    expect(sent.slice(2).map(row => row.path)).toEqual([
+      'packs/reviewed-pack-two.pack.json',
+      'packs/reviewed-pack-two.matrix.json',
+      'packs/reviewed-pack-two.research.json',
+      'jpack.json'
+    ])
+    // What was validated is what was written, at the new name as at the old:
+    // the bytes the runtime checked are the bytes that went to disk.
+    expect(stub.calls.some(call => call.name === 'validate' && call.args.document === sent[2]!.body.content)).toBe(true)
+    // And the reviewed document is the one that was written. Only the four
+    // members the research record names as shaped on create have moved.
+    const written = JSON.parse(sent[2]!.body.content as string)
+    const first = JSON.parse(sent[0]!.body.content as string)
+    const reviewed = handover.document as Record<string, unknown>
+    for (const member of Object.keys(reviewed)) {
+      if (['title', 'id', 'version', 'description'].includes(member)) continue
+      expect(written[member]).toEqual(reviewed[member])
+    }
+    expect(written.title).toBe('Reviewed pack two')
+    expect(written.id).toMatch(/reviewed-pack-two$/)
+    expect(written.id).not.toBe(first.id)
+    // The companions are the reviewed ones, bound to the pack that landed.
+    expect(JSON.parse(sent[3]!.body.content as string)).toEqual(handover.matrix)
+    expect(JSON.parse(sent[4]!.body.content as string).packSha256).toBe('cc')
+    // The entry names the pack that was registered, and nothing names the one
+    // the failed press left behind.
+    const config = JSON.parse(sent[5]!.body.content as string)
+    expect(config.packs['reviewed-pack-two']).toMatchObject({ path: sent[2]!.path, matrix: sent[3]!.path })
+    expect(config.packs['reviewed-pack']).toBeUndefined()
+  })
+
+  it('says at Review why Create is off when the name stops being usable under it', async () => {
+    // The name is asked about at Basics and Create is pressed at Review, and a
+    // name can stop being usable in between — here, something else writes the
+    // file this pack would be written to, and the listing that answers next
+    // carries it. Create goes dark two steps from the only sentence that says
+    // why, because `nameProblem` is rendered beside the field and nowhere else.
+    const files = ['jpack.json']
+    serveProject({ project: PROJECT, files })
+    const { queryClient } = renderHandover()
+    await reviewHandedDraft()
+    await fileAppears(queryClient, files, 'packs/reviewed-pack.pack.json')
+    const why = await screen.findByText('There is already a file where this pack would be written.')
+    await waitFor(() => expect(createButton().disabled).toBe(true))
+    expect(createButton().getAttribute('aria-describedby')).toBe(why.id)
+    expect(why.id).not.toBe('')
+    // On exactly one element. Structure check carries the help id only while
+    // the document's own refusal is the reason, and a second element wearing
+    // it is a button describing itself by two sentences at once.
+    expect(document.querySelectorAll(`[id="${why.id}"]`)).toHaveLength(1)
+  })
+
+  it('keeps the document’s own refusal in front of the name’s problem at Review', async () => {
+    // Both can be true at once, and they are not equally near: a document the
+    // runtime will not call a pack is refused at any name, and the collision is
+    // what is left to say once that clears (the case above).
+    const files = ['jpack.json']
+    serveProject({ project: PROJECT, files })
+    const { queryClient } = renderHandover(researchHandover(), 'invalid')
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue' }))
+    // The file lands while the draft is being read at Build, so the step that
+    // follows is rendered with both facts in hand.
+    await fileAppears(queryClient, files, 'packs/reviewed-pack.pack.json')
+    fireEvent.click(await screen.findByRole('button', { name: 'Review pack' }))
+    await screen.findByText(/runtime will not call this document a pack/)
+    const described = document.getElementById(createButton().getAttribute('aria-describedby') ?? '')
+    expect(described?.textContent).toMatch(/runtime will not call this document a pack/)
+    // And the collision really was in effect while that was said, rather than
+    // this being a case where only one of the two was ever true: it is on
+    // screen at the step that asks for the name.
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    expect(await screen.findByText('There is already a file where this pack would be written.')).toBeTruthy()
+  })
+})
+
+describe('the create page’s own steps', () => {
+  it('says a taken name once at Basics, beside the field that asks for it', async () => {
+    // The field carries its own error there, so Create's explanation stays
+    // `createWhy` on that step. A second copy under the form is one sentence
+    // said twice on one screen.
+    serveProject({ project: PROJECT })
+    renderDialog(FULL, FULL_CAPS, effectiveConfig(undefined), { presentation: 'page' })
+    await waitFor(() => expect(screen.getByLabelText('Starting template').textContent).toContain('minimal'))
+    fireEvent.change(screen.getByLabelText('Name (required)'), { target: { value: 'Sanctions screening' } })
+    const said = 'This project already has a pack called sanctions-screening.'
+    expect(await screen.findByText(said)).toBeTruthy()
+    expect(screen.getAllByText(said)).toHaveLength(1)
+    expect((screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement).disabled).toBe(true)
   })
 })

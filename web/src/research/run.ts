@@ -385,6 +385,10 @@ export class AuthoringRun {
   approveExpectationCorrection(id: string, token: string): void {
     const issue = this.state.expectationIssues.find(item => item.id === id && !item.resolved)
     const proposal = issue?.proposal
+    // The digest comparison is a backup, and a passing suite is not evidence it
+    // is reachable: every new candidate already clears the pending proposals, so
+    // no sequence of public calls leaves one standing beside a draft it was not
+    // read against. `run.test.ts` writes that state directly to hold it here.
     if (this.running || !issue || !proposal || proposal.token !== token || proposal.candidateDigest !== this.latest()?.digest) return
     this.arm()
     this.set({ phase: 'review', status: 'running', detail: `Validating the approved correction for ${id}.` })
@@ -397,11 +401,19 @@ export class AuthoringRun {
       // is refused here rather than applied and left to stall the run.
       const contradiction = targetContradiction(finding.canonical, issue.original.expectedHandoffTarget)
       if (contradiction) throw new Error(`The correction was not applied: ${contradiction}`)
+      // Nothing is applied on a closed run. A backup for a window that holds
+      // only microtasks -- a validation that answers after Stop -- so a suite
+      // that never lands in it is no evidence this is dead code.
       this.check(signal)
       const replacement = deepFreeze(structuredClone({ ...issue.original, expectedDisposition: proposal.expectedDisposition }))
-      // No established case can be silently replaced by this approval.
+      // No established case can be silently replaced by this approval. A backup:
+      // admitted ids are unique and an id kept as an issue is never also a case,
+      // so no run produces the collision it refuses.
       if (this.state.cases.some(row => row.id === id)) throw new Error('A case with this id is already established; the correction was not applied.')
       this.set({ cases: [...this.state.cases, replacement],
+        // Every check goes, so nothing downstream reads one taken before this
+        // case joined the suite. A backup too: a run blocked on an expectation
+        // never checked its draft, so today there is no check here to drop.
         candidates: this.state.candidates.map(({ check: _check, ...candidate }) => candidate),
         expectationIssues: this.state.expectationIssues.map(item => item.id === id ? { ...item, resolved: { replacement, approvedAt: this.stamp(), rationale: proposal.rationale } } : item) })
       this.addTurn({ role: 'user', kind: 'note', text: `Approved the corrected expectation for ${id}: ${proposal.rationale}` })
@@ -754,6 +766,10 @@ export class AuthoringRun {
   }
 
   private settleReview(notPassing: string): void {
+    // The same refusal `casesAndCheck` makes before it checks anything, kept
+    // here as a backup: no path rests at `ready` with an expectation open. It
+    // fires only where a passing check and an open issue coexist, which no run
+    // produces -- so nothing failing without it means nothing.
     if (this.unresolvedExpectations()) {
       this.set({ phase: 'review', status: 'needs-input', detail: this.unresolvedExpectations()! })
       return
@@ -917,6 +933,34 @@ export function researchRecord(state: RunState, ledger: Ledger, packDigest: stri
     // is not edited on the way through.
     checkedCandidateSha256: state.candidates.at(-1)?.digest ?? '',
     shapedOnCreate: ['title', 'id', 'version', 'description'],
+    // Three digests of two different things, and a reader who compares the
+    // wrong two learns nothing. A resolved issue's `proposal.candidateDigest`
+    // is the candidate that correction was proposed against -- a fact about a
+    // moment in the run, not a third claim about the pack -- and the record
+    // has to say so itself, because the record is what leaves here.
+    //
+    // One path language for all three, stated in the record, so every key can
+    // be resolved the same way rather than two of them reading as member names
+    // and the third as a path expression in no language. A legend is
+    // machine-readable, and a legend naming a member the record has since
+    // renamed is worse than the source comment it replaced -- so run.test.ts
+    // resolves every key here against a real record, on an ordinary run and a
+    // corrected one, and drift fails a named test.
+    digests: {
+      pathSyntax: 'JSON Pointer into this record, with * standing for any array index',
+      means: {
+        '/packSha256': 'sha256 of the pack bytes Create wrote',
+        '/checkedCandidateSha256': 'sha256 of the research candidate text these cases were checked against',
+        '/expectationIssues/*/proposal/candidateDigest': 'sha256 of the research candidate text that correction was proposed against'
+      }
+    },
+    // The matrix Create writes beside this record spells a corrected row's
+    // reason the other way round, and both spellings are deliberate: the matrix
+    // registers the row under the reason still standing, while the case kept
+    // here is the case as it was authored. A reader holding the two companions
+    // should be told that, not left to notice it.
+    matrixFocus:
+      'For a corrected row the matrix registers cases[].focus under the approved correction rationale, which this record carries at /expectationIssues/*/resolved/rationale; /cases/*/rationale here keeps the rationale the case was authored with.',
     brief: state.brief,
     seedUrls: state.seedUrls,
     sessions: state.sessions,
@@ -939,6 +983,14 @@ export function matrixDocument(state: RunState, ledger: Ledger): unknown {
     cases: state.cases.map((row) => {
       const excerpt = ledger.excerpt(row.expectationSource)
       const record = excerpt ? ledger.byId(excerpt.sourceId) : undefined
+      // A corrected case was established for the reason the approved correction
+      // gave; the rationale it carries from authoring argued the expectation
+      // that correction replaced. `focus` is the line a reader of the
+      // registered matrix meets beside the row, so it carries the reason that
+      // is still standing -- under the same source tag, which the correction
+      // preserved.
+      const corrected = state.expectationIssues.find((item) => item.id === row.id && item.resolved)
+      const focus = corrected?.resolved?.rationale ?? row.rationale
       const cites =
         record?.acquisition && record.verification.state === 'verified'
           ? [{ sessionId: record.acquisition.session, callIndex: record.acquisition.callIndex, signature: record.acquisition.signature }]
@@ -950,7 +1002,7 @@ export function matrixDocument(state: RunState, ledger: Ledger): unknown {
         ...(row.evidenceAvailability !== undefined ? { evidenceAvailability: row.evidenceAvailability } : {}),
         expectedDisposition: row.expectedDisposition,
         ...(row.expectedHandoffTarget !== undefined ? { expectedHandoffTarget: row.expectedHandoffTarget } : {}),
-        focus: `${row.rationale} [${row.expectationSource}]`,
+        focus: `${focus} [${row.expectationSource}]`,
         ...(cites.length ? { cites } : {})
       }
     })
