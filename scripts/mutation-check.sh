@@ -6693,9 +6693,43 @@ export function assistantTransport(id: string): Transport {
   # digests of the pack line. Unnamed, a reader compares it with `packSha256`
   # and reads a disagreement into a record that never claimed one.
   mutate web "the correction's digest goes back to being unnamed" "$RR" \
-    "      checkedCandidateSha256: 'sha256 of the research candidate text these cases were checked against',
-      'expectationIssues[].proposal.candidateDigest': 'sha256 of the research candidate text that correction was proposed against'" \
-    "      checkedCandidateSha256: 'sha256 of the research candidate text these cases were checked against'"
+    "        '/checkedCandidateSha256': 'sha256 of the research candidate text these cases were checked against',
+        '/expectationIssues/*/proposal/candidateDigest': 'sha256 of the research candidate text that correction was proposed against'" \
+    "        '/checkedCandidateSha256': 'sha256 of the research candidate text these cases were checked against'"
+
+  # **An ordinary run names its digests too.** A legend written only where the
+  # run had a correction to resolve leaves the common case -- nothing corrected
+  # -- with an unnamed `packSha256` beside an unnamed `checkedCandidateSha256`,
+  # which is the pair the legend exists to keep apart.
+  mutate web "the legend is written only for a run that had a correction" "$RR" \
+    "    digests: {
+      pathSyntax: 'JSON Pointer into this record, with * standing for any array index',
+      means: {
+        '/packSha256': 'sha256 of the pack bytes Create wrote',
+        '/checkedCandidateSha256': 'sha256 of the research candidate text these cases were checked against',
+        '/expectationIssues/*/proposal/candidateDigest': 'sha256 of the research candidate text that correction was proposed against'
+      }
+    }," \
+    "    ...(state.expectationIssues.length ? { digests: { pathSyntax: 'JSON Pointer into this record, with * standing for any array index', means: { '/packSha256': 'sha256 of the pack bytes Create wrote', '/checkedCandidateSha256': 'sha256 of the research candidate text these cases were checked against', '/expectationIssues/*/proposal/candidateDigest': 'sha256 of the research candidate text that correction was proposed against' } } } : {}),"
+
+  # **The legend is resolved against the record, not against itself.** Pinning
+  # the key set only proves the legend still equals the legend. A member renamed
+  # out from under it ships a record whose legend names something that is not
+  # there -- and a legend is machine-readable, so it is read as authority.
+  mutate web "the record renames a digest the legend still names" "$RR" \
+    "    checkedCandidateSha256: state.candidates.at(-1)?.digest ?? ''," \
+    "    candidateCheckedSha256: state.candidates.at(-1)?.digest ?? '',"
+
+  # **The two companions spell a corrected row's reason differently, on
+  # purpose.** The record keeps the case as it was authored and the matrix
+  # registers the row under the correction. Unless the record says which is
+  # which, a reader holding both files finds the difference by tripping over it,
+  # which is the comparison the digest legend beside it exists to prevent.
+  mutate web "the record stops saying which reason the matrix carries" "$RR" \
+    "    matrixFocus:
+      'For a corrected row the matrix registers cases[].focus under the approved correction rationale, which this record carries at /expectationIssues/*/resolved/rationale; /cases/*/rationale here keeps the rationale the case was authored with.',
+" \
+    ""
 
   # **A corrected row is registered under the reason still standing.** The
   # rationale the case carries from authoring argued the expectation the

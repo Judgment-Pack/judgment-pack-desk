@@ -851,11 +851,29 @@ export function researchRecord(state: RunState, ledger: Ledger, packDigest: stri
     // is the candidate that correction was proposed against -- a fact about a
     // moment in the run, not a third claim about the pack -- and the record
     // has to say so itself, because the record is what leaves here.
+    //
+    // One path language for all three, stated in the record, so every key can
+    // be resolved the same way rather than two of them reading as member names
+    // and the third as a path expression in no language. A legend is
+    // machine-readable, and a legend naming a member the record has since
+    // renamed is worse than the source comment it replaced -- so run.test.ts
+    // resolves every key here against a real record, on an ordinary run and a
+    // corrected one, and drift fails a named test.
     digests: {
-      packSha256: 'sha256 of the pack bytes Create wrote',
-      checkedCandidateSha256: 'sha256 of the research candidate text these cases were checked against',
-      'expectationIssues[].proposal.candidateDigest': 'sha256 of the research candidate text that correction was proposed against'
+      pathSyntax: 'JSON Pointer into this record, with * standing for any array index',
+      means: {
+        '/packSha256': 'sha256 of the pack bytes Create wrote',
+        '/checkedCandidateSha256': 'sha256 of the research candidate text these cases were checked against',
+        '/expectationIssues/*/proposal/candidateDigest': 'sha256 of the research candidate text that correction was proposed against'
+      }
     },
+    // The matrix Create writes beside this record spells a corrected row's
+    // reason the other way round, and both spellings are deliberate: the matrix
+    // registers the row under the reason still standing, while the case kept
+    // here is the case as it was authored. A reader holding the two companions
+    // should be told that, not left to notice it.
+    matrixFocus:
+      'For a corrected row the matrix registers cases[].focus under the approved correction rationale, which this record carries at /expectationIssues/*/resolved/rationale; /cases/*/rationale here keeps the rationale the case was authored with.',
     brief: state.brief,
     seedUrls: state.seedUrls,
     sessions: state.sessions,
