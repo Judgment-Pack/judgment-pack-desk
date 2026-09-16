@@ -424,6 +424,67 @@ describe('the authoring run', () => {
     expect(state.detail).toContain('cites no source')
   })
 
+  it('keeps Create offered for the same candidate through a later stop and a failed turn', async () => {
+    // `ready` is the status of the last action, and neither a Stop nor a failed
+    // follow-up turn touches the candidate, its cases or its citations. Reading
+    // the status withdrew Create from a draft that had passed everything, and
+    // said the cases disagreed, which was the one thing that was not true.
+    const hanging: Script = (_request, signal) =>
+      new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new DOMException('stopped', 'AbortError'))))
+    const failing: Script = async (_request, _signal, event) => {
+      event({ type: 'error', message: 'the provider refused the turn' })
+      event({ type: 'end' })
+    }
+    const { run } = harness([researchTurn(), casesTurn, hanging, failing])
+    run.start('brief', [PAGE_URL])
+    const ready = await settled(run)
+    expect(ready.status).toBe('ready')
+    const digest = ready.candidates.at(-1)!.digest
+    run.send('Anything else worth knowing?')
+    run.stop()
+    let state = await settled(run)
+    expect(state.status).toBe('stopped')
+    expect(state.candidates.at(-1)!.digest).toBe(digest)
+    expect(canCreateResearchDraft(state)).toBe(true)
+    run.send('And now?')
+    state = await settled(run)
+    expect(state.status).toBe('failed')
+    expect(state.candidates.at(-1)!.digest).toBe(digest)
+    expect(canCreateResearchDraft(state)).toBe(true)
+  })
+
+  it('withdraws Create where a later turn’s receipt fails, even with the draft and its citations unchanged', async () => {
+    // The one withheld reason the recorded readiness cannot carry: the failed
+    // source is not one the draft cites, so nothing in the candidate, the cases
+    // or the trace moves. The turn ends in an error, so no settle says it.
+    let acquisitions = 0
+    const readAgain: Script = async (request, signal, event) => {
+      const read = request.hostTools.find(tool => tool.name === 'read_source')!
+      await read.execute({ url: PAGE_URL + '?annex' }, signal)
+      const cite = request.hostTools.find(tool => tool.name === 'cite_excerpt')!
+      await cite.execute({ source_id: 'src-2', quote: "We don't count any hours you work above 30 hours/week." }, signal)
+      event({ type: 'error', message: 'the provider refused the turn' })
+      event({ type: 'end' })
+    }
+    const { run, ledger } = harness([researchTurn(), casesTurn, readAgain], {}, (acquired) => {
+      acquisitions += 1
+      if (acquisitions !== 2) return acquired
+      const text = acquired.text.replace('1,560 hours', '1,500 hours')
+      const parsed = parseJsonText(text)
+      const member = (name: string) => (parsed.kind === 'object' ? parsed.members.find((m) => m.name === name)!.value : parsed)
+      return { ...acquired, text, result: member('result') }
+    })
+    run.start('brief', [PAGE_URL])
+    expect((await settled(run)).status).toBe('ready')
+    run.send('Read the annex too.')
+    const state = await settled(run)
+    expect(state.status).toBe('failed')
+    expect(ledger.byId('src-1')!.verification.state).toBe('verified')
+    expect(ledger.byId('src-2')!.verification.state).toBe('failed')
+    expect(state.citations.every(citation => citation.traced)).toBe(true)
+    expect(canCreateResearchDraft(state)).toBe(false)
+  })
+
   it('holds receipts in the order it opened them, so a reordered or relabelled answer fails', async () => {
     // The gateway answers the second read with the first read's receipt and
     // vice versa: each receipt is genuine, but neither is at the position the
@@ -680,6 +741,45 @@ describe('invalid expectation review', () => {
     expect(state.status).toBe('stopped')
     expect(state.cases).toHaveLength(2)
     expect(state.expectationIssues[0]!.resolved).toBeUndefined()
+  })
+
+  it('rolls an approval back when its retest is stopped, and applies it when it is approved again', async () => {
+    // Applied before its retest, a Stop left the correction in place with the
+    // issue resolved and nothing checked: propose and approve both close on
+    // `resolved`, and an unchanged message re-checks nothing, so the bytes the
+    // person approved for could never be tested.
+    const native = fakeRuntime()
+    let stopDuringRetest = false
+    let stop = (): void => {}
+    const { run } = await blockedRun([correctionTurn()], {
+      // The retest's own first call. Stopping there and still answering puts
+      // the abort inside checkCandidate, after the correction was applied.
+      callTool: (name, args) => {
+        if (stopDuringRetest && name === 'validate') stop()
+        return native.callTool(name, args)
+      }
+    })
+    stop = () => run.stop()
+    run.proposeExpectationCorrection('hours-missing')
+    const issue = (await settled(run)).expectationIssues[0]!
+    stopDuringRetest = true
+    run.approveExpectationCorrection(issue.id, issue.proposal!.token)
+    let state = await settled(run)
+    expect(state.status).toBe('stopped')
+    expect(state.cases).toHaveLength(2)
+    expect(state.expectationIssues[0]!.resolved).toBeUndefined()
+    expect(state.turns.some(turn => turn.text.startsWith('Approved the corrected expectation'))).toBe(false)
+    // The proposal the person read is still the one on offer, and taking it
+    // again is the recovery.
+    expect(state.expectationIssues[0]!.proposal?.token).toBe(issue.proposal!.token)
+    stopDuringRetest = false
+    run.approveExpectationCorrection(issue.id, issue.proposal!.token)
+    state = await settled(run)
+    expect(state.status, state.detail).toBe('ready')
+    expect(state.cases).toHaveLength(3)
+    expect(state.candidates).toHaveLength(1)
+    expect(state.candidates[0]!.check?.cases).toHaveLength(3)
+    expect(canCreateResearchDraft(state)).toBe(true)
   })
 
   it('blocks a case whose handoff target contradicts its own disposition, and refuses a correction that would', async () => {

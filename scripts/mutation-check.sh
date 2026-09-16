@@ -6688,6 +6688,38 @@ export function assistantTransport(id: string): Transport {
     '        cases.push(deepFreeze(structuredClone({ ...row, expectedDisposition: JSON.parse(finding.canonical) })))' \
     '        cases.push(row)'
 
+  # **An approval and the retest it promises are one step.** Applied first, an
+  # interrupted retest left the correction in place with every check stripped
+  # and the issue resolved -- and a resolved issue closes both correction
+  # actions while an unchanged message re-checks nothing. The bytes the person
+  # approved for could never be tested again, and the run answered that the
+  # candidate still disagreed, which was neither true nor what had happened.
+  mutate web "an interrupted approval retest keeps the correction" "$RR" \
+    '      try {
+        await this.casesAndCheck(signal, false)
+      } catch (cause) {
+        this.set(before)
+        throw cause
+      }' \
+    '      await this.casesAndCheck(signal, false)'
+
+  # **Create asks about the candidate, not about the last action.** `ready` is
+  # the status of whatever the person did last, so a Stop, a spent budget or a
+  # failed follow-up turn withdrew Create from a draft that had passed
+  # everything -- and the panel explained it with the cases disagreeing, the one
+  # reason that was not true. The recorded key lapses when the draft moves.
+  mutate web "Create is withdrawn by the status of the last action" "$RR" \
+    "  return state.readiness !== '' && state.readiness === readinessKey(state) &&" \
+    "  return state.status === 'ready' &&"
+
+  # **A verdict is also an answer to withheld().** A cited source whose receipt
+  # failed withholds the draft even where no citation points at it, so nothing
+  # in the recorded key moves; a turn ending in an error or a Stop never reaches
+  # the settle that would say so, and Create would stand over the failure.
+  mutate web "a receipt failing after ready leaves Create standing" "$RR" \
+    "    if (this.state.readiness !== '' && this.withheld() !== null) this.set({ readiness: '' })" \
+    '    void 0'
+
   # **A limit is not a Core violation.** The runtime reports one when it did not
   # admit the input at all; presenting it as a §8.3 defect sends a reviewer to
   # correct a meaning the specification never refused.

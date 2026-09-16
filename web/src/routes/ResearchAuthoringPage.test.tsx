@@ -3,7 +3,7 @@ import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AssistantEvent } from '../assistant/engine'
 import { Ledger, type SourceRecord } from '../research/ledger'
-import { INITIAL_STATE, type RunState } from '../research/run'
+import { INITIAL_STATE, readinessKey, type RunState } from '../research/run'
 import type { ResearchRunBinding } from '../research/useResearchRun'
 
 /**
@@ -144,6 +144,8 @@ describe('Research and draft', () => {
       citations: [{ sourceId: 'ircc', location: 'src-1#e1', excerptId: 'src-1#e1', url: 'https://www.canada.ca/very/long/url/that/keeps/going/and/going/federal-skilled-workers.html', traced: true, reason: '' }],
       sessions: ['s1']
     }
+    // Create reads the readiness the run recorded at `ready`, not the status.
+    binding.state = { ...binding.state, readiness: readinessKey(binding.state) }
     const router = mount()
     expect(screen.getByText('I read the IRCC page.')).not.toBeNull()
     fireEvent.mouseDown(screen.getByRole('tab', { name: 'Sources (2)' }), { button: 0 })
