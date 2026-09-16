@@ -22,7 +22,8 @@ The right pane holds Assistant on these routes. Selected details move to a botto
 slot under main. Both resizers use PaneDivider; height and width use the existing
 layout-preference store. The main chat view has no redundant Assistant toggle.
 
-One operation may run per project. Navigation and chat switching do not cancel
+One operation may run per project in each window. Separate windows can
+produce conflicting history updates; If-Match refuses an overwrite. Navigation and chat switching do not cancel
 it. Closing/reloading the application stops browser-owned work; this is not a
 background job service or a heartbeat scheduler. Reload requires an explicit
 request to continue. Active work and unsaved persistence warn before unload.

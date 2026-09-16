@@ -252,7 +252,7 @@ if (BREAKPOINTS.length === 0) {
   process.exit(2)
 }
 
-const WIDTHS = [
+const ALL_WIDTHS = [
   ...new Set([
     1400,
     640,
@@ -260,8 +260,14 @@ const WIDTHS = [
   ])
 ].sort((a, b) => b - a)
 
+// Explicitly scoped reruns are labelled; the default still covers every width.
+const requestedWidths = process.env.CONTAINMENT_WIDTHS?.split(',').map(Number)
+if (requestedWidths && (!requestedWidths.length || requestedWidths.some(width => !ALL_WIDTHS.includes(width)))) throw new Error('CONTAINMENT_WIDTHS must select known breakpoint widths')
+const WIDTHS = requestedWidths ? ALL_WIDTHS.filter(width => requestedWidths.includes(width)) : ALL_WIDTHS
+
 /** The preludes, printed the same way by a plan and by a run. */
 function printPreludes() {
+  if (requestedWidths) console.log(`SCOPED RERUN: only ${WIDTHS.join(', ')}px; other widths are not sampled in this run.`)
   console.log('breakpoints read from the sheets:')
   for (const one of BREAKPOINTS) {
     console.log(`  ${one.where}  ${one.prelude}  →  ${one.kind}-width ${one.px}px`)
@@ -552,10 +558,18 @@ const MEASURE = (panes) => {
     if (Math.abs(strip.getBoundingClientRect().top - outer.bottom - 8) > 0.5) frameFailures.push('status strip gap is not 8px')
     const main = document.querySelector('.desk-main')
     const divider = document.querySelector('[role="separator"][aria-controls="desk-inspector"]')
-    if (divider && main && divider.getBoundingClientRect().bottom > main.getBoundingClientRect().bottom + .5) {
-      frameFailures.push('inspector divider extends below the upper panes')
+    const inspector = document.querySelector('.desk-inspector:not([hidden])')
+    if (divider && inspector) {
+      const edge = divider.getBoundingClientRect(), pane = inspector.getBoundingClientRect()
+      if (Math.abs(edge.top - pane.top) > .5 || Math.abs(edge.bottom - pane.bottom) > .5) {
+        frameFailures.push('right divider does not span its full-height pane')
+      }
     }
     const consolePane = document.querySelector('.desk-console:not([hidden])')
+    if (consolePane && inspector) {
+      if (consolePane.getBoundingClientRect().right > inspector.getBoundingClientRect().left + .5) frameFailures.push('bottom panel extends underneath the right pane')
+      if (Math.abs(inspector.getBoundingClientRect().bottom - (outer.bottom - 1)) > .5) frameFailures.push('right pane stops above the workspace bottom')
+    }
     const bottomPane = consolePane ?? main
     if (bottomPane === null || Math.abs(bottomPane.getBoundingClientRect().bottom - (outer.bottom - 1)) > 0.5) {
       frameFailures.push('bottom pane does not meet the shared frame edge')

@@ -69,7 +69,7 @@ export function PackQuestion({ document: doc }: { document?: PackDocument }) {
 }
 
 /** A short brief of declared content, not a computed disposition. */
-export function PackOverview({ document: doc, packId = '', onViewLogic, onViewSources }: { document: PackDocument; packId?: string; onViewLogic?: () => void; onViewSources?: () => void }) {
+export function PackOverview({ document: doc, packId = '', logicHref, onViewLogic, onViewSources }: { document: PackDocument; packId?: string; logicHref?: string; onViewLogic?: () => void; onViewSources?: () => void }) {
   const { at, select } = useDocumentSelection()
   const evidence = entries(doc.evidenceRequirements)
   const outcomes = entries(doc.outcomes)
@@ -89,7 +89,7 @@ export function PackOverview({ document: doc, packId = '', onViewLogic, onViewSo
     </section>
     <section className={styles.group}>
       <div className={styles.sectionHeading}><h2>At a glance</h2>
-        <>{onViewLogic ? <Button variant="quiet" onClick={onViewLogic}>View logic</Button> : packId ? <ButtonLink variant="quiet" to={`/packs/${encodeURIComponent(packId)}?view=logic`}>View logic</ButtonLink> : null}</>
+        <>{onViewLogic ? <Button variant="quiet" onClick={onViewLogic}>View logic</Button> : packId ? <ButtonLink variant="quiet" to={logicHref ?? `/packs/${encodeURIComponent(packId)}?view=logic`}>View logic</ButtonLink> : null}</>
       </div>
       <dl className={styles.metadata}>
         <div><dt>Evidence needed</dt><dd>{evidence.filter(x => isRecord(x) && x.required === true).length} required · {evidence.filter(x => isRecord(x) && x.required === false).length} optional</dd></div>

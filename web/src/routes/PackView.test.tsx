@@ -847,8 +847,8 @@ describe('arriving at an address that names a member', () => {
 
 describe('the guided reading workspace', () => {
   beforeEach(() => chassis(PACK_TEXT, DIGEST))
-  it('keeps Overview brief and sends detailed reading to Logic', async () => {
-    const { router, calls } = draw(SERVED, {}, '/packs/vendor-onboarding', { inspector: true })
+  it.each(['', '?chat=authoring-chat'])('keeps Overview brief and links to Logic without losing the conversation %s', async (search) => {
+    const { router, calls } = draw(SERVED, {}, `/packs/vendor-onboarding${search}`, { inspector: true })
     const overview = await screen.findByRole('region', { name: 'Pack overview' })
     expect(within(overview).getByText('Approve')).toBeTruthy()
     expect(within(overview).getByText('Decline')).toBeTruthy()
@@ -858,7 +858,7 @@ describe('the guided reading workspace', () => {
     fireEvent.click(within(overview).getByRole('button', { name: 'View source references' }))
     await waitFor(() => expect(new URLSearchParams(router.state.location.search).get('at')).toBe('/sources'))
     expect([...new Set(calls.map(call => call.name))].sort()).toEqual(['get_pack', 'list_packs', 'validate'])
-    expect(screen.getByRole('link', { name: 'View logic' }).getAttribute('href')).toBe('/packs/vendor-onboarding?view=logic')
+    expect(screen.getByRole('link', { name: 'View logic' }).getAttribute('href')).toBe(`/packs/vendor-onboarding?view=logic${search ? '&chat=authoring-chat' : ''}`)
   })
   it('preserves a closed Details panel when switching representations with a selected item', async () => {
     const { revealed, router } = draw(SERVED, {}, '/packs/vendor-onboarding?view=logic&layout=list&at=/rules/1')

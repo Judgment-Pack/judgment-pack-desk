@@ -13,7 +13,7 @@ chat beside it; creating a pack links that chat to the saved pack.
 - Left: Create pack, Packs, then recent chats. View all opens searchable history.
 - Main: conversation until the person chooses Open draft; then the draft, its
   sources, tests, and final review. Do not automatically move focus on generation.
-- Right: Assistant on authoring and pack routes. Conversation selection and New
+- Right: Assistant on authoring and pack document routes. Conversation selection and New
   chat live in its header. One pack may have multiple conversations.
 - Bottom: selected details and Activity, underneath main only. The Assistant
   stays full height. Both dividers use the same accessible separator component.
@@ -24,7 +24,7 @@ chat beside it; creating a pack links that chat to the saved pack.
 Create pack starts an unbound chat. New chat from a pack retains the explicitly
 shown pack context. Switching conversations restores the draft, text, model and
 view. It never submits, cancels, or changes a running task. One active operation
-per project is allowed initially, with an explicit Stop action. The first send
+per project in each window is allowed initially, with an explicit Stop action. The first send
 names a chat; rename, pin, archive and delete affect history, never pack files.
 
 ## Persistence and trust
@@ -74,6 +74,15 @@ small viewports, keyboard resizing, configuration recovery and creation gates.
 
 Browser checks use a copied runtime project, temporary private configuration,
 and an owned server process. They do not call a model or change the running Desk.
+
+Validation recorded for this branch: all 11 isolated browser scenarios passed.
+The full layout sweep exercised 508 configurations; 485 passed and 23 hit an
+obsolete assertion that the right divider must end above the bottom panel.
+The assertion now checks the full-height right pane, its matching divider,
+and the bottom panel staying beneath main only. All 124 desktop configurations
+were rerun and passed, including all 23 affected cases. The default gate still
+runs all breakpoint widths; an optional scoped rerun explicitly labels its
+limited coverage. The copied fixture remained unchanged.
 
 ## Screenshots
 

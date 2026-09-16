@@ -1192,7 +1192,7 @@ export function PackView() {
                   {(fetching || stale || unavailable || digestsDisagree || disagreement.length > 0 || Boolean(report?.diagnostics?.length) || (report?.status && report.status !== 'valid')) && <details className={styles.validation} open={Boolean(digestsDisagree || disagreement.length || report?.diagnostics?.length || (report?.status && report.status !== 'valid'))}>
                     <summary>Validation · {fetching ? 'checking' : stale ? 'out of date' : report?.status ?? 'unchecked'}</summary>{strip}
                   </details>}
-                  {section === 'overview' ? <PackOverview document={drawn} packId={packId} onViewLogic={() => { const next = new URLSearchParams(params); next.set('view', 'logic'); setParams(next) }} /> : model && <>
+                  {section === 'overview' ? <PackOverview document={drawn} packId={packId} logicHref={`/packs/${encodeURIComponent(packId ?? '')}?view=logic${params.get('chat') ? `&chat=${encodeURIComponent(params.get('chat')!)}` : ''}`} /> : model && <>
                     {runRequested && <div className={styles.runContext} role="status">
                       {run ? <><strong>{run.run.payload.disposition.kind}</strong>{run.run.payload.disposition.outcomeId ? ` · ${run.run.payload.disposition.outcomeId}` : ''} · Handoff: {run.run.payload.disposition.handoff.state}
                         <p>{matchingRun ? 'Recorded run on these exact pack bytes.' : 'Different or unbound revision. No trace overlay is shown.'}</p></> : <p>This recorded run is no longer available. Run the test again to inspect its trace.</p>}
