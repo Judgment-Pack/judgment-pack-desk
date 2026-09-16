@@ -87,6 +87,36 @@ function fakeRuntime(): { callTool: CallTool; calls: string[] } {
   return { callTool, calls }
 }
 
+/**
+ * Resolve one of the record's own digest-legend keys against the record, in the
+ * language the legend states it is in: JSON Pointer, `*` for any array index.
+ *
+ * The legend is machine-readable, so it is only worth what it corresponds to. A
+ * key that resolves to nothing names a member the record does not have, which is
+ * worse than the source comment the legend replaced -- a wrong legend is read as
+ * authority. `reached` is false when a segment is missing; a `*` over an empty
+ * array reaches nothing legitimately and returns no values.
+ */
+function legendPath(record: unknown, pointer: string): { reached: boolean; values: unknown[] } {
+  let nodes: unknown[] = [record]
+  for (const segment of pointer.split('/').slice(1)) {
+    const next: unknown[] = []
+    for (const node of nodes) {
+      if (segment === '*') {
+        if (!Array.isArray(node)) return { reached: false, values: [] }
+        next.push(...node)
+      } else {
+        if (typeof node !== 'object' || node === null || !(segment in node)) return { reached: false, values: [] }
+        next.push((node as Record<string, unknown>)[segment])
+      }
+    }
+    nodes = next
+  }
+  return { reached: true, values: nodes }
+}
+
+const LEGEND_KEYS = ['/packSha256', '/checkedCandidateSha256', '/expectationIssues/*/proposal/candidateDigest']
+
 function harness(scripts: Script[], overrides: Partial<RunPorts> = {}, tamper: (acquired: import('./gatewayClient').Acquired) => import('./gatewayClient').Acquired = (a) => a) {
   const ledger = new Ledger('unset')
   const gateway = fakeGateway()
@@ -144,36 +174,6 @@ async function settled(run: AuthoringRun, timeout = 5000): Promise<RunState> {
     await new Promise((resolve) => setTimeout(resolve, 5))
   }
 }
-
-/**
- * Resolve one of the record's own digest-legend keys against the record, in the
- * language the legend states it is in: JSON Pointer, `*` for any array index.
- *
- * The legend is machine-readable, so it is only worth what it corresponds to. A
- * key that resolves to nothing names a member the record does not have, which is
- * worse than the source comment the legend replaced -- a wrong legend is read as
- * authority. `reached` is false when a segment is missing; a `*` over an empty
- * array reaches nothing legitimately and returns no values.
- */
-function legendPath(record: unknown, pointer: string): { reached: boolean; values: unknown[] } {
-  let nodes: unknown[] = [record]
-  for (const segment of pointer.split('/').slice(1)) {
-    const next: unknown[] = []
-    for (const node of nodes) {
-      if (segment === '*') {
-        if (!Array.isArray(node)) return { reached: false, values: [] }
-        next.push(...node)
-      } else {
-        if (typeof node !== 'object' || node === null || !(segment in node)) return { reached: false, values: [] }
-        next.push((node as Record<string, unknown>)[segment])
-      }
-    }
-    nodes = next
-  }
-  return { reached: true, values: nodes }
-}
-
-const LEGEND_KEYS = ['/packSha256', '/checkedCandidateSha256', '/expectationIssues/*/proposal/candidateDigest']
 
 /** The model's research turn: reads the page through the tool, cites, proposes. */
 const researchTurn =
