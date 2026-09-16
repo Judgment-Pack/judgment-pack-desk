@@ -6699,6 +6699,17 @@ export function assistantTransport(id: string): Transport {
     '              const differs = result !== undefined && !result.passed && result.refused === undefined' \
     '              const differs = false'
 
+  # **A refusal is not a disagreement to disclose.** `checkCandidate` marks a
+  # refused case `passed: false`, and what it stores in `actual` is not a pair:
+  # `null` from the thrown branch, or the bare disposition of a rehearsal that
+  # never completed. Opening the disclosure over that prints
+  # `Runtime disposition: null` beside a real expectation — a runtime answer the
+  # runtime never gave, in the one place a person reads the comparison. The row
+  # above it is the other half of the same rule, and drops this clause silently.
+  mutate web "a refused row discloses a pair the runtime never gave" "$RDP" \
+    ' && result.refused === undefined' \
+    ''
+
   # **A limit is not a Core violation.** The runtime reports one when it did not
   # admit the input at all; presenting it as a §8.3 defect sends a reviewer to
   # correct a meaning the specification never refused.

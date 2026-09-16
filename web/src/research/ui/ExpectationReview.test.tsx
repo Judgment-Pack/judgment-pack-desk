@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { blockedExpectation, disagreeingCase, proposedExpectation, withheldButPassing } from '../__fixtures__/expectationReview'
 import { DraftTabs, ReviewPanel, TestsPanel } from './DraftPanels'
@@ -66,8 +66,12 @@ describe('expectation review UI', () => {
       }]
     }
     render(<TestsPanel state={state} onSelect={vi.fn()} onApproveCorrection={vi.fn()} onProposeCorrection={vi.fn()} />)
-    expect(screen.getAllByText(/Expected handoff target/)).toHaveLength(2)
-    expect(screen.getAllByText(new RegExp(JSON.stringify(target).slice(1, 20)))).not.toHaveLength(0)
+    // Scoped to the review panel: a disagreeing row's disclosure prints the
+    // same words about the pair the check compared, and an unscoped count here
+    // would read one surface's line as the other's.
+    const review = within(screen.getByLabelText('Expectation review'))
+    expect(review.getAllByText(/Expected handoff target/)).toHaveLength(2)
+    expect(review.getAllByText(new RegExp(JSON.stringify(target).slice(1, 20)))).not.toHaveLength(0)
   })
 
   it('discloses both halves of a disagreement, and discloses nothing where the case agrees', () => {
@@ -77,10 +81,22 @@ describe('expectation review UI', () => {
     render(<TestsPanel state={disagreeingCase} onSelect={vi.fn()} onApproveCorrection={vi.fn()} onProposeCorrection={vi.fn()} />)
     expect(screen.getByText('What blocked-unresolved disagrees about')).toBeTruthy()
     expect(screen.queryByText('What agreeing-case disagrees about')).toBeNull()
-    expect(screen.getByLabelText('Expected disposition').textContent).toContain('"unknown"')
-    expect(screen.getByLabelText('Runtime disposition').textContent).toContain('"no-match"')
-    expect(screen.getByLabelText('Runtime disposition').textContent).toContain('"requested"')
-    expect(screen.getByText(/Expected handoff target/).textContent).toContain('Screening officer')
-    expect(screen.getByText(/Runtime handoff target/).textContent).toContain('null')
+    const disclosure = within(screen.getByText('What blocked-unresolved disagrees about').closest('details')!)
+    expect(disclosure.getByLabelText('Expected disposition').textContent).toContain('"unknown"')
+    expect(disclosure.getByLabelText('Runtime disposition').textContent).toContain('"no-match"')
+    expect(disclosure.getByLabelText('Runtime disposition').textContent).toContain('"requested"')
+    expect(disclosure.getByText(/Expected handoff target/).textContent).toContain('Screening officer')
+    expect(disclosure.getByText(/Runtime handoff target/).textContent).toContain('null')
+  })
+
+  it('holds a refused case to its named refusal, and discloses no pair it never had', () => {
+    // `checkCandidate` marks a refusal `passed: false`, so the row badges
+    // `disagrees` — but its `actual` is not a pair: this fixture carries the
+    // bare disposition of a rehearsal that never completed. A disclosure over
+    // it would read `Runtime disposition: null` beside a real expectation, an
+    // answer the runtime never gave. The named refusal is what the row shows.
+    render(<TestsPanel state={disagreeingCase} onSelect={vi.fn()} onApproveCorrection={vi.fn()} onProposeCorrection={vi.fn()} />)
+    expect(screen.queryByText('What refused-case disagrees about')).toBeNull()
+    expect(screen.getByText('refused: no completed rehearsal: status refused')).toBeTruthy()
   })
 })

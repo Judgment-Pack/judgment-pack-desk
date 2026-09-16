@@ -59,6 +59,14 @@ export function SourcesPanel({ sources, selection, onSelect }: { sources: readon
  * `Expectation` uses. §8.3 keeps the handoff target outside the disposition and
  * the check compares the pair, so the target is printed beside the disposition
  * rather than left out of the only place a person can read it.
+ *
+ * No target line where the case asserted none, decided: `checkCandidate`
+ * records `handoffTarget` on both sides only where the row carries
+ * `expectedHandoffTarget`, so an absent line means "not compared" rather than
+ * "no target". Printing a target the runtime returned but nothing compared
+ * would put a value in a disclosure of a disagreement that is no part of the
+ * disagreement, and printing `null` would assert the runtime named none. This
+ * shows what was compared and nothing else.
  */
 function CheckedSide({ side, label }: { side: unknown; label: string }) {
   const pair = (side ?? {}) as { disposition?: unknown; handoffTarget?: unknown }
@@ -104,8 +112,13 @@ export function TestsPanel({ state, onSelect, ...actions }: ExpectationReviewAct
               const result = byId.get(row.id)
               const expected = (row.expectedDisposition as { kind?: string; outcomeId?: string }) ?? {}
               const actual = (result?.actual as { disposition?: { kind?: string; outcomeId?: string } } | null)?.disposition
-              // A refusal is not a comparison: the runtime never answered, and the
-              // named refusal in the row is the whole of what there is to show.
+              // A refusal is not a comparison: the evaluation did not complete, so
+              // what the check stored is not a pair — `null`, or the bare
+              // disposition of a rehearsal that never finished — and a disclosure
+              // over it would print `Runtime disposition: null` beside a real
+              // expectation, an answer the runtime never gave. The refusal named
+              // in the Runtime answered cell is the whole of what there is to show,
+              // and it is why the row's `disagrees` badge carries no disclosure.
               const differs = result !== undefined && !result.passed && result.refused === undefined
               return (
                 <Fragment key={row.id}>
