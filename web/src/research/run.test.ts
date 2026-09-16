@@ -815,10 +815,19 @@ describe('invalid expectation review', () => {
  * somebody to have written down.
  */
 describe('the correction flow\'s backup guards', () => {
-  /** The controller's own state, written as no public call can write it. */
+  /**
+   * The controller's own state, written as no public call can write it. The
+   * field reached for is private, so a rename would leave this writing a
+   * property nobody reads and every test below passing on a fixture that never
+   * landed -- which is the failure these tests exist to refuse. Both ends are
+   * asserted here: the field was there to write, and what the run reports is
+   * what was written.
+   */
   function writeState(run: AuthoringRun, patch: Partial<RunState>): void {
     const inner = run as unknown as { state: RunState }
+    expect(inner.state, 'AuthoringRun.state').toBeDefined()
     inner.state = { ...inner.state, ...patch }
+    expect(run.getSnapshot()).toBe(inner.state)
   }
 
   async function proposed(overrides: Partial<RunPorts> = {}) {
@@ -915,6 +924,10 @@ describe('the correction flow\'s backup guards', () => {
       cases: ['meets-hours', 'under-hours', 'hours-missing'].map(id => ({ id, passed: true, expected: null, actual: null }))
     }
     writeState(run, { candidates: [{ ...candidate, check: stale }] })
+    // Both of this test's assertions also hold on a candidate that never
+    // carried a check, so the injection is stated as a precondition: without
+    // this line the test could pass having tested nothing.
+    expect(run.getSnapshot().candidates[0]!.check).toBe(stale)
     rechecking = true
     run.approveExpectationCorrection('hours-missing', proposal.token)
     // Stop the recheck before it can write a fresh check: what is left is what
