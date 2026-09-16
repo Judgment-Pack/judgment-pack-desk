@@ -65,17 +65,26 @@ export function jsonIdentity(value: unknown): string {
 }
 
 function payload(result: McpToolResult, validation = false): Record<string, unknown> {
-  const value =
-    result.structuredContent ??
-    JSON.parse(
-      (result.content ?? [])
-        .filter((item) => item.type === 'text')
-        .map((item) => item.text ?? '')
-        .join('\n')
-    )
+  const text = (result.content ?? [])
+    .filter((item) => item.type === 'text')
+    .map((item) => item.text ?? '')
+    .join('\n')
+  let value: unknown
+  if (result.structuredContent !== undefined) value = result.structuredContent
+  else {
+    try {
+      value = JSON.parse(text)
+    } catch {
+      // A refusal is the runtime's own prose, not a report. Parsing it first
+      // turned "The project configuration jpack.json does not satisfy the
+      // schema" into a JSON syntax error on the Tests tab, and the person
+      // never read the sentence that said what to fix.
+      if (result.isError) throw new Error(`the runtime refused: ${text || 'no reason given'}`)
+      throw new Error('the runtime answered with something other than a report')
+    }
+  }
   if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('the runtime answered with something other than a report')
   if (result.isError && !(validation && (value as { status?: unknown }).status === 'invalid')) {
-    const text = (result.content ?? []).map((item) => item.text ?? '').join(' ')
     throw new Error(`the runtime refused: ${text || 'no reason given'}`)
   }
   return value as Record<string, unknown>

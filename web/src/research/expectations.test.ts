@@ -67,6 +67,22 @@ describe('runtime expectation admission', () => {
     expect(findingSummary(refused[0] as { message: string; admitted: boolean })).toContain('§8.3')
   })
 
+  it('reports a prose refusal in the runtime\'s own words, not as a JSON error', async () => {
+    // A live run against a project whose jpack.json the runtime would not load
+    // showed every case as "Unexpected token 'T' … is not valid JSON": the
+    // refusal was parsed before it was read as one, and the sentence saying what
+    // to fix never reached the Tests tab.
+    const refusal = 'The project configuration jpack.json does not satisfy the jpack.json schema: at \'/packs\': minProperties: got 0, want 1'
+    const tools = vi.fn(async (name) => {
+      if (name === 'validate') return { structuredContent: { status: 'valid' } }
+      return { isError: true, content: [{ type: 'text', text: refusal }] }
+    })
+    const row = { id: 'test', facts: {}, expectationSource: 'src-1#e1', rationale: 'fixture', expectedDisposition: unknown }
+    const checked = await checkCandidate(JSON.stringify({ specVersion: EVALUATOR_SPEC }), [row], tools, signal)
+    expect(checked.cases[0]).toMatchObject({ passed: false, refused: `the runtime refused: ${refusal}` })
+    expect(checked.cases[0]!.refused).not.toContain('JSON')
+  })
+
   it('rehearses the stored assertion, and asks the contract nothing a second time', async () => {
     const tools = vi.fn(async (name, args) => {
       if (name === EXPECTATION_TOOL) return fixtureExpectations(args)
