@@ -128,8 +128,13 @@ const COMPANION_PATH_TAKEN =
   'The test cases and research record would be written beside the pack, and one of those two names is taken. Nothing was written; try another name.'
 const ORPHANED =
   'The pack was created but could not be registered. Nothing else was changed.'
+// The advice names only what can be done from here. "Create it again under
+// another name" could not: the name field is disabled once a draft exists, and
+// the pack file this press left on disk collides with the name that wrote it —
+// so the second sentence sent a person at a field they cannot type in, to
+// escape a state the page had not told them it was in.
 const COMPANIONS_ORPHANED =
-  'The pack file was written, but its test cases or research record could not be written beside it, so nothing names the pack yet. Fix the cause and create it again under another name, or register the file by hand.'
+  'The pack file was written, but its test cases or research record could not be written beside it, so nothing names the pack yet. Remove what it left behind and start again, or register the file by hand.'
 const NO_TEMPLATE = 'There is no template to start from here.'
 const TEMPLATE_UNUSABLE = 'This template could not be used.'
 const NO_VALIDATE =
@@ -560,6 +565,19 @@ export function CreatePackDialog({
   const createWhy = describe.blocking !== '' ? describe.blocking : proposalRefusal
 
   /**
+   * The same question at a step that does not carry the Name field.
+   *
+   * `nameProblem` is rendered once, beside the field at Basics, and Create is
+   * pressed at Review. A name can stop being usable *between* the two: a
+   * companion write that failed leaves the pack file on disk, the failure
+   * refetches the listing, and the name that wrote that file now collides with
+   * it — so Create goes dark two steps away from the only thing on screen that
+   * says why. The document's own refusal keeps first place, because Structure
+   * check is where it is read and it is the nearer answer.
+   */
+  const createWhyHere = step === 0 ? createWhy : (createWhy ?? nameProblem)
+
+  /**
    * The report behind a refusal, where the refusal is the runtime's.
    *
    * Only where the check answered about the bytes that would be written and
@@ -946,19 +964,19 @@ export function CreatePackDialog({
           {step === 2 && isRecord(preview) && <PackOverview document={preview as unknown as PackDocument} />}
           {step > 0 && <section className={flow.summary} aria-label="Draft validation">
             <h3>Structure check</h3>
-            <p id={createWhy === proposalRefusal ? createHelpId : undefined} role="status">{proposalRefusal ?? 'The runtime validated this draft. This does not mean its rules have passed tests.'}</p>
+            <p id={createWhyHere === proposalRefusal ? createHelpId : undefined} role="status">{proposalRefusal ?? 'The runtime validated this draft. This does not mean its rules have passed tests.'}</p>
             {refused !== undefined && <DiagnosticList diagnostics={anchor(refused, new Set())} label="What the runtime said about this document" />}
             {refused !== undefined && truncationNote(refused) !== undefined && <p>{truncationNote(refused)}</p>}
             {held.drafts.size > 0 && <p>Finish or clear the incomplete field values before continuing.</p>}
           </section>}
           {(failure ?? blocked) && <Alert reason={(failure ?? blocked)!.reason}>{(failure ?? blocked)!.lead}</Alert>}
           {busy && <p role="status">Creating and registering the pack. Stay on this page until it finishes.</p>}
-          {createWhy && (step === 0 || createWhy !== proposalRefusal) && <p id={createHelpId} className={flow.hint}>{createWhy}</p>}
+          {createWhyHere && (step === 0 || createWhyHere !== proposalRefusal) && <p id={createHelpId} className={flow.hint}>{createWhyHere}</p>}
           <div className={flow.actions}>
             <Button variant="quiet" disabled={busy} onClick={() => close(false)}>Cancel</Button>
             <div>
               {step > 0 && <Button disabled={busy} onClick={() => setStep(step - 1)}>Back</Button>}
-              <Button variant="primary" type="submit" disabled={step === 2 ? !ready : step === 0 ? slug === undefined || taken !== undefined || source === undefined || describe.blocking !== '' || (method === 'ai' && source?.kind !== 'proposal' && draft === undefined) : held.drafts.size > 0} aria-describedby={step === 2 && createWhy ? createHelpId : undefined}>
+              <Button variant="primary" type="submit" disabled={step === 2 ? !ready : step === 0 ? slug === undefined || taken !== undefined || source === undefined || describe.blocking !== '' || (method === 'ai' && source?.kind !== 'proposal' && draft === undefined) : held.drafts.size > 0} aria-describedby={step === 2 && createWhyHere ? createHelpId : undefined}>
                 {busy ? 'Creating…' : step === 2 ? 'Create pack' : step === 1 ? 'Review pack' : 'Continue'}
               </Button>
             </div>

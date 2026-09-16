@@ -122,6 +122,15 @@ function serveProject(
     packFileExists?: boolean
     /** Paths that answer a read as an existing file, for the pre-flight probes. */
     present?: string[]
+    /**
+     * Whether a refetched listing reports the files this run has written.
+     *
+     * Off by default, because most cases here never read the listing again. A
+     * failure that leaves something on disk does — it invalidates the listing
+     * on its way out — and the page's view of its own residue is the thing
+     * under test there.
+     */
+    reflectWrites?: boolean
   } = {}
 ) {
   const files = options.files ?? ['jpack.json']
@@ -143,9 +152,12 @@ function serveProject(
     })
     if (text.includes('/api/files')) {
       if (options.listing) return refuse(options.listing)
+      const landed = options.reflectWrites
+        ? sent.map((row) => row.path).filter((path) => !files.includes(path))
+        : []
       return ok({
         root: '/p',
-        files: files.map((path) => ({ path, bytes: 1, sha256: 'aa' })),
+        files: [...files, ...landed].map((path) => ({ path, bytes: 1, sha256: 'aa' })),
         ...(options.partial ? { partial: options.partial } : {})
       })
     }
@@ -1355,5 +1367,28 @@ describe('creating a reviewed research handover', () => {
     expect(sent.map(row => row.path)).not.toContain('jpack.json')
     expect(sent).toHaveLength(companion === 'matrix' ? 2 : 3)
     expect(seen).not.toContain('/packs/reviewed-pack')
+  })
+
+  it('says at Review why Create is off once the failure has left the pack file on disk', async () => {
+    // The name is only asked about at Basics, and this is the one way it stops
+    // being usable after that: the failed press left the pack file behind, the
+    // refetched listing carries it, and the name that wrote it now collides
+    // with it. Create is dark and the only sentence explaining that is two
+    // steps back, beside a field this draft has disabled.
+    serveProject({
+      project: PROJECT,
+      reflectWrites: true,
+      answer: path => path.endsWith('.matrix.json') ? { status: 409, body: { code: 'stale', error: 'a companion already exists' } } : undefined
+    })
+    renderHandover()
+    await reviewHandedDraft()
+    fireEvent.click(createButton())
+    expect(await screen.findByText(/test cases or research record could not be written/)).toBeTruthy()
+    // And the advice does not send anyone at a rename this page cannot make.
+    expect(screen.queryByText(/under another name/)).toBeNull()
+    const why = await screen.findByText('There is already a file where this pack would be written.')
+    await waitFor(() => expect(createButton().disabled).toBe(true))
+    expect(createButton().getAttribute('aria-describedby')).toBe(why.id)
+    expect(why.id).not.toBe('')
   })
 })

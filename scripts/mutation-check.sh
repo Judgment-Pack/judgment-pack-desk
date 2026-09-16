@@ -7448,6 +7448,17 @@ export function assistantTransport(id: string): Transport {
   mutate web "any 401 ends the session on the desk's own fetch" "$FC" \
     "  if (refusalCode(answered) !== 'unauthorized') return answered" \
     ''
+
+  # **A disabled Create carries its reason on the step it is pressed from.**
+  # The name is asked about at Basics and the button is at Review, and a name
+  # can stop being usable in between: a companion write that failed leaves the
+  # pack file on disk, the failure refetches the listing, and the name that
+  # wrote that file collides with it. Under the mutation Create is dark at
+  # Review with the explanation two steps back, beside a field the draft has
+  # disabled — which is the state the orphaned-Create advice was written for.
+  mutate web "the name's problem is never said where Create is pressed" "$X" \
+    '  const createWhyHere = step === 0 ? createWhy : (createWhy ?? nameProblem)' \
+    '  const createWhyHere = createWhy'
 fi
 
 restore
