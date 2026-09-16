@@ -2184,6 +2184,20 @@ function usePacks() { useExampleListing(); return readPacks() }'
           baseSha256: read.sha256
         })' \
     '        void current'
+  # A handover is spent by the Create that lands it. Without the replace, the
+  # reviewed document stays on the create entry's router state and a Back
+  # presents it again — renamed, a second pack is registered carrying the first
+  # one's matrix rows and research record.
+  mutate web "the spent handover stays on the history entry" "$X" \
+    '      if (handover !== undefined) {
+        const rest: Record<string, unknown> = { ...(location.state as Record<string, unknown> | null) }
+        delete rest.research
+        navigate(`${location.pathname}${location.search}${location.hash}`, {
+          replace: true,
+          state: Object.keys(rest).length === 0 ? null : rest
+        })
+      }' \
+    ''
   mutate web "the registration writes a digest it did not read" "$X" \
     '          baseSha256: read.sha256' \
     "          baseSha256: ''"

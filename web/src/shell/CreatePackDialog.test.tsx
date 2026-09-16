@@ -13,7 +13,7 @@
  * writes" mean nothing.
  */
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -287,7 +287,7 @@ function renderDialog(
       <RouterProvider router={router} />
     </QueryClientProvider>
   )
-  return { ...result, seen, closed, invalidated }
+  return { ...result, seen, closed, invalidated, router }
 }
 
 const createButton = () => screen.getByRole('button', { name: 'Create pack' }) as HTMLButtonElement
@@ -1212,6 +1212,21 @@ describe('creating a reviewed research handover', () => {
     const config = JSON.parse(sent[3]!.body.content as string)
     expect(config.packs['reviewed-pack']).toMatchObject({ path: sent[0]!.path, matrix: sent[1]!.path })
     await waitFor(() => expect(seen).toContain('/packs/reviewed-pack'))
+  })
+
+  it('takes the handover off the create entry, so Back does not offer it again', async () => {
+    // Back after a Create returns to an entry that still carried the handover,
+    // and the dialog reads it at mount. The same-name refusal holds, so the
+    // second pack takes a rename — and then one run's matrix rows and research
+    // record are registered against two packs. One press of Create is one pack.
+    serveProject({ project: PROJECT })
+    const { router } = renderHandover()
+    await reviewHandedDraft()
+    fireEvent.click(createButton())
+    await waitFor(() => expect(router.state.location.pathname).toBe('/packs/reviewed-pack'))
+    await act(async () => { await router.navigate(-1) })
+    expect(router.state.location.pathname).toBe('/')
+    expect((router.state.location.state as { research?: unknown } | null)?.research).toBeUndefined()
   })
 
   it('reads the reviewed draft at Build and writes exactly those bytes, with the checked digest beside the saved one', async () => {
