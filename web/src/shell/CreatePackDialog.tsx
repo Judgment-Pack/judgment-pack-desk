@@ -216,7 +216,8 @@ export function CreatePackDialog({
    * a proposal-shaped source — the name field still wins, the runtime still
    * validates the shaped bytes, and the two writes are the same — with two
    * companion files written beside the pack before the project entry names
-   * them. Read once, at mount: a handover is one press of Create there.
+   * them. Read per mount, and spent when a Create lands: step (3) takes the
+   * handover off this history entry, so a handover is one press of Create.
    */
   const [handover] = useState<ResearchHandover | undefined>(() => {
     const state = (location.state as { research?: ResearchHandover } | null)?.research
@@ -795,6 +796,28 @@ export function CreatePackDialog({
         describe.discard()
         onCreated?.()
       } else close(false)
+      // The handover is spent, and the history entry has to say so. It rode in
+      // on this entry's router state and stays there through the push below, so
+      // a Back re-presents the same reviewed document: renamed, it writes a
+      // second pack carrying the first one's matrix rows and research record —
+      // one run's receipts and verified excerpts standing behind two packs as
+      // though each had earned its own. Replaced rather than dropped on the way
+      // out, because only the entry being left can still be rewritten.
+      //
+      // The entry rewritten is the one this mount rendered on — `location` as
+      // it was when Create was pressed, four awaited writes back. That it is
+      // still the entry on top is a premise, not a check: nothing on this page
+      // pushes, and the desk's other writers of a search or a fragment replace
+      // (`PackView`). Move history under a create in flight and this stamps
+      // the create page's URL over the entry that moved there instead.
+      if (handover !== undefined) {
+        const rest: Record<string, unknown> = { ...(location.state as Record<string, unknown> | null) }
+        delete rest.research
+        navigate(`${location.pathname}${location.search}${location.hash}`, {
+          replace: true,
+          state: Object.keys(rest).length === 0 ? null : rest
+        })
+      }
       navigate(`/packs/${slug}`)
       // Closing this dialog is not closing the thing it was inside. Below
       // 900px the rail is a modal drawer, and it stayed over the page this

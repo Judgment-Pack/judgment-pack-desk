@@ -2184,6 +2184,41 @@ function usePacks() { useExampleListing(); return readPacks() }'
           baseSha256: read.sha256
         })' \
     '        void current'
+  # A handover is spent by the Create that lands it. Without the replace, the
+  # reviewed document stays on the create entry's router state and a Back
+  # presents it again — renamed, a second pack is registered carrying the first
+  # one's matrix rows and research record.
+  mutate web "the spent handover stays on the history entry" "$X" \
+    '      if (handover !== undefined) {
+        const rest: Record<string, unknown> = { ...(location.state as Record<string, unknown> | null) }
+        delete rest.research
+        navigate(`${location.pathname}${location.search}${location.hash}`, {
+          replace: true,
+          state: Object.keys(rest).length === 0 ? null : rest
+        })
+      }' \
+    ''
+  # A push leaves the stripped entry on top of the one the handover rode in on,
+  # so a Forward, a reload, or a later trip back to that entry mounts the create
+  # page on the handover again. The flag is the safeguard, not the navigation.
+  mutate web "the spent entry is pushed rather than replaced" "$X" \
+    '          replace: true,' \
+    '          replace: false,'
+  # The create route is reachable with state this dialog does not own, and the
+  # entry has a URL of its own. Only the handover is spent: nulling the state
+  # outright is the same defect one turn quieter, and rewriting the entry to a
+  # bare pathname loses a search and a fragment nobody asked it to drop.
+  mutate web "the entry's other state goes out with the handover" "$X" \
+    '        const rest: Record<string, unknown> = { ...(location.state as Record<string, unknown> | null) }
+        delete rest.research
+        navigate(`${location.pathname}${location.search}${location.hash}`, {
+          replace: true,
+          state: Object.keys(rest).length === 0 ? null : rest
+        })' \
+    '        navigate(`${location.pathname}${location.search}${location.hash}`, { replace: true, state: null })'
+  mutate web "the replaced entry loses its search and its fragment" "$X" \
+    '        navigate(`${location.pathname}${location.search}${location.hash}`, {' \
+    '        navigate(location.pathname, {'
   mutate web "the registration writes a digest it did not read" "$X" \
     '          baseSha256: read.sha256' \
     "          baseSha256: ''"
@@ -6738,6 +6773,57 @@ export function assistantTransport(id: string): Transport {
   mutate web "the reviewer's spelling is stored instead of the canonical assertion" "$RR" \
     '        cases.push(deepFreeze(structuredClone({ ...row, expectedDisposition: JSON.parse(finding.canonical) })))' \
     '        cases.push(row)'
+
+  # ---- The correction flow's backup guards ---------------------------------
+  #
+  # Every row below breaks a guard that refuses a state another, tested guard
+  # already prevents, so nothing driving the controller's public methods reaches
+  # one and all five survived their own mutation. What holds them is the
+  # white-box suite in `run.test.ts`, which writes the controller's state
+  # directly to put each guard in front of exactly what it refuses.
+
+  # **Approval is bound to the draft the proposal was read against.** A new
+  # candidate clears every pending proposal, so in practice only the token
+  # decides; with the digest comparison gone, a proposal left standing beside a
+  # later draft applies to bytes nobody read it against.
+  mutate web "an approval applies to a draft its proposal never saw" "$RR" \
+    'proposal.candidateDigest !== this.latest()?.digest' \
+    'false'
+
+  # **Nothing is applied on a closed run.** The window is microtasks wide -- a
+  # validation that answers after Stop -- and without this the correction is
+  # written into a run already stopped, and reported as stopped.
+  mutate web "a correction is applied after the run was stopped" "$RR" \
+    '      this.check(signal)
+      const replacement = deepFreeze' \
+    '      const replacement = deepFreeze'
+
+  # **An established case is never rewritten.** Admitted ids are unique and an
+  # invalid expectation is kept as an issue rather than a case, so no run
+  # produces the collision; without the refusal the approval appends a second
+  # row under the same id and the suite carries two answers for one case.
+  mutate web "an approval rewrites an established case" "$RR" \
+    '      if (this.state.cases.some(row => row.id === id)) throw new Error('"'"'A case with this id is already established; the correction was not applied.'"'"')' \
+    '      void id'
+
+  # **A check taken before the corrected case joined the suite is not a check of
+  # that suite.** A blocked run has no check to drop today, so this only matters
+  # where one survives -- and a surviving check is what Create reads.
+  mutate web "a stale check survives an approved correction" "$RR" \
+    '        candidates: this.state.candidates.map(({ check: _check, ...candidate }) => candidate),' \
+    '        candidates: this.state.candidates,'
+
+  # **No path rests at ready with an expectation open.** `casesAndCheck` makes
+  # the same refusal before it checks anything, which is why nothing reaches the
+  # copy in `settleReview`; where a passing check and an open issue do coexist,
+  # it is the only thing between them and `ready`.
+  mutate web "a run settles at ready with an expectation still open" "$RR" \
+    '    if (this.unresolvedExpectations()) {
+      this.set({ phase: '"'"'review'"'"', status: '"'"'needs-input'"'"', detail: this.unresolvedExpectations()! })
+      return
+    }
+    const passing = completeCurrentCheck(this.state)' \
+    '    const passing = completeCurrentCheck(this.state)'
 
   # **A limit is not a Core violation.** The runtime reports one when it did not
   # admit the input at all; presenting it as a §8.3 defect sends a reviewer to
