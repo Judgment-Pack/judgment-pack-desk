@@ -60,7 +60,7 @@ export function SourcesPanel({ sources, selection, onSelect }: { sources: readon
  * the check compares the pair, so the target is printed beside the disposition
  * rather than left out of the only place a person can read it.
  *
- * No target line where the case asserted none, decided: `checkCandidate`
+ * Decided: no target line at all where the case asserted none. `checkCandidate`
  * records `handoffTarget` on both sides only where the row carries
  * `expectedHandoffTarget`, so an absent line means "not compared" rather than
  * "no target". Printing a target the runtime returned but nothing compared
