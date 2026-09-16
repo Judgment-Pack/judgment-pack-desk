@@ -4251,8 +4251,18 @@ document, each citing the receipt its expectation came from) and
 `<id>.research.json` (every source with the acquire response as the gateway
 answered it — receipt and result — every excerpt, the verdict per session and
 the registry text it was reached with, so the saved verification claim can be
-checked again by anyone holding the gateway's public key, and the digest of
-the pack it describes).
+checked again by anyone holding the gateway's public key, any approved
+expectation-correction history, and the digest of the pack it describes).
+The handed-over draft continues through Build and Review without starting
+another AI run, and Build shows it rather than editing it: the matrix and the
+record assert that these exact bytes were checked, and Create shapes only the
+four members every new pack gets (title, id, version, description), which the
+record names beside the digest of the candidate that was checked. Change the
+draft in Research, or create the pack and edit it afterwards. Both companion
+paths are probed before the pack is written, and a path another pack already
+declares as its matrix is refused there. Companions are written before project
+registration; if either companion cannot be written, the page names every file
+left behind and does not register the pack.
 
 **Where each thing is decided.** The desk owns the conversation, the research
 plan, the source ledger, the citation trace, the revision and review budgets,
@@ -4268,7 +4278,7 @@ budgets, and writes nothing.
 **Three research tools.** `search_sources` asks the configured search source
 and returns ranked hits with the provider's snippet — labelled as the
 provider's index entry, never the page. `read_source` reads a page or a PDF
-through the configured reader source, twelve thousand characters at a time,
+through the configured reader source, twenty thousand characters at a time,
 and returns the rendered text with what the page itself declares about its
 dates kept apart from what the reader reported. `cite_excerpt` records a
 verbatim excerpt from a page that was read — the quote must be in the text
@@ -4322,12 +4332,45 @@ frozen corpus vectors, copied under `web/src/research/verify/fixtures/` at
 the commit `GATEWAY-COMMIT` names, and to the store vectors a single-session
 consumer can grade.
 
-**Cases are established independently, and never rewritten.** After the
+**Cases are established independently.** After the
 first draft a reviewer turn — a fresh context, thinking off, no research
 tools — is handed the cited excerpts and the pack's outcomes and asked for
 expected results grounded in the excerpts, never in the draft's rules; a case
 whose expectation source is not an excerpt this run recorded is dropped and
-listed as dropped. Established cases are checked against every revision
+listed as dropped. Before establishing an exact expectation, Desk asks the
+runtime's `experimental_validate_expectations` tool to check its complete
+Core 0.2.0-draft §8.3 disposition — against the version the evaluator
+implements, never the version the draft happens to declare, since an
+expectation describes what an evaluator produces. The canonical text the
+runtime returns is what the case then carries, so a saved matrix row is
+byte-identical to the assertion that was checked. A case that also asserts an
+`expectedHandoffTarget` is held to the pair: a target beside a disposition that
+requests no handoff could never pass, whatever the pack says, and is blocked
+like any other impossible expectation. A missing capability or incomplete report
+blocks research — jpack 0.22.0 and later serve the tool, and an older runtime
+is named as the reason before a run starts; Desk carries no second
+disposition validator. An invalid
+expectation remains visible in Tests and in the case count. Testing, repair
+and Create pause rather than silently omitting it from a smaller passing suite.
+A runtime limit finding means the expectation was not admitted, not that its
+meaning violates Core, and it is shown as that rather than as a §8.3 defect.
+
+**Invalid expectations require explicit review.** **Suggest correction** asks
+a fresh reviewer for a complete expectation and rationale using the original
+case, verified source and declared outcomes/handoff. It does not receive actual
+test results, candidate rules, or the pack-authoring prompt: it reviews one
+expectation, and authoring guidance is not its brief. Tests shows the original
+and proposed values, including the handoff target the case asserts beside them;
+nothing changes until **Approve correction and retest**. Approval is bound to
+the displayed proposal and draft digest, checks the source and runtime validity
+again, preserves the case id, inputs and source, and records the original value,
+approved value, rationale and time. A changed draft clears a pending proposal.
+All cases then rerun against unchanged draft bytes. A remaining disagreement
+stays visible for judgment; approval does not automatically repair the pack.
+Local disposition validity does not establish that a particular pack produces
+it or that policy supports it. No partial assertions are inferred.
+
+Established cases are checked against every revision
 through the runtime's `validate` and `experimental_evaluate` in rehearsal, on
 the desk's own connection; a repair turn is told it may not change a case,
 and one that repeats an earlier candidate stalls the run rather than looping.

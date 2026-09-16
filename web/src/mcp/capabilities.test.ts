@@ -29,6 +29,11 @@ const TRACING = [
 ]
 
 describe('readCapabilities', () => {
+  it('requires the expectation validation tool explicitly', () => {
+    expect(readCapabilities(RELEASED).expectationValidationSupported).toBe(false)
+    expect(readCapabilities([...RELEASED, { name: 'experimental_validate_expectations' }]).expectationValidationSupported).toBe(true)
+  })
+
   it('records the graph surface against a runtime that advertises it', () => {
     expect(readCapabilities(SERVING)).toEqual({
       known: true,
@@ -43,7 +48,8 @@ describe('readCapabilities', () => {
       // one, and this fixture answers only the graph one.
       exampleSupported: false,
       schemaSupported: false,
-      validateSupported: true
+      validateSupported: true,
+      expectationValidationSupported: false
     })
   })
 
@@ -155,7 +161,8 @@ describe('readCapabilities', () => {
       graphTracesSupported: false,
       exampleSupported: false,
       schemaSupported: false,
-      validateSupported: false
+      validateSupported: false,
+      expectationValidationSupported: false
     })
     expect(UNKNOWN_CAPABILITIES.known).toBe(false)
   })

@@ -6,7 +6,8 @@ import { CodeBlock } from '../../ui/CodeBlock'
 import { Disclosure } from '../../ui/Disclosure'
 import { Tabs } from '../../ui/Tabs'
 import type { SourceRecord } from '../ledger'
-import type { RunState } from '../run'
+import { canCreateResearchDraft, type RunState } from '../run'
+import { ExpectationReview, type ExpectationReviewActions } from './ExpectationReview'
 import styles from './ResearchAuthoring.module.css'
 
 /** What the Inspector shows: a source, an excerpt within it, or a rule of the draft. */
@@ -53,15 +54,16 @@ export function SourcesPanel({ sources, selection, onSelect }: { sources: readon
   )
 }
 
-export function TestsPanel({ state, onSelect }: { state: RunState; onSelect: (next: Selection) => void }) {
+export function TestsPanel({ state, onSelect, ...actions }: ExpectationReviewActions & { state: RunState; onSelect: (next: Selection) => void }) {
   const latest = state.candidates.at(-1)
   const check = latest?.check
   const byId = new Map((check?.cases ?? []).map((row) => [row.id, row]))
-  if (state.cases.length === 0 && state.droppedCases.length === 0) {
+  if (state.cases.length === 0 && state.droppedCases.length === 0 && state.expectationIssues.length === 0) {
     return <p className={styles.empty}>No test cases yet. A reviewer establishes them from the cited excerpts once a draft exists.</p>
   }
   return (
     <div className={styles.panel}>
+      <ExpectationReview state={state} onSelect={onSelect} {...actions} />
       {check && (
         <p className={styles.detail}>
           Revision {latest?.revision}: {check.valid ? 'valid' : 'invalid'} to the runtime; {check.cases.filter((c) => c.passed).length} of {check.cases.length} cases agree with their expectations. Rehearsal only; no decision was recorded.
@@ -174,7 +176,7 @@ export function DraftPanel({ state, onSelect }: { state: RunState; onSelect: (ne
 export function ReviewPanel({ state, sources, onCreate, onSelect }: { state: RunState; sources: readonly SourceRecord[]; onCreate: () => void; onSelect: (next: Selection) => void }) {
   const latest = state.candidates.at(-1)
   const check = latest?.check
-  const passing = check !== undefined && check.valid && check.cases.length > 0 && check.cases.every((c) => c.passed)
+  const passing = canCreateResearchDraft(state)
   const verified = sources.filter((s) => s.verification.state === 'verified').length
   const failed = sources.filter((s) => s.verification.state === 'failed' || s.failure !== null).length
   const untraced = state.citations.filter((c) => !c.traced)
@@ -187,7 +189,7 @@ export function ReviewPanel({ state, sources, onCreate, onSelect }: { state: Run
           <dt>Revisions</dt>
           <dd>{state.candidates.length} ({state.revisionsUsed} repair{state.revisionsUsed === 1 ? '' : 's'})</dd>
           <dt>Test cases</dt>
-          <dd>{check ? `${check.cases.filter((c) => c.passed).length} of ${check.cases.length} agree` : 'not yet checked'}</dd>
+          <dd>{state.expectationIssues.some(issue => !issue.resolved) ? 'Blocked by invalid expectations' : check ? `${check.cases.filter((c) => c.passed).length} of ${state.cases.length} agree` : 'not yet checked'}</dd>
           <dt>Sources</dt>
           <dd>
             {sources.length} recorded; {verified} with verified receipts; {failed} failed or unverified
@@ -274,14 +276,17 @@ export function ReviewPanel({ state, sources, onCreate, onSelect }: { state: Run
   )
 }
 
-export function DraftTabs({ state, sources, selection, onSelect, onCreate }: { state: RunState; sources: readonly SourceRecord[]; selection: Selection; onSelect: (next: Selection) => void; onCreate: () => void }) {
+export function DraftTabs({ state, sources, selection, onSelect, onCreate, ...actions }: ExpectationReviewActions & { state: RunState; sources: readonly SourceRecord[]; selection: Selection; onSelect: (next: Selection) => void; onCreate: () => void }) {
   const [tab, setTab] = useState('draft')
+  const pending = state.expectationIssues.filter(issue => !issue.resolved).length
+  const total = state.cases.length + pending
   return (
     <section className={styles.pane} aria-label="Draft review" data-pane="draft">
       <header className={styles.paneHeader}>
         <span>Draft</span>
         <span className={styles.status}>{state.candidates.length === 0 ? 'no revision yet' : `revision ${state.candidates.at(-1)!.revision}`}</span>
       </header>
+      {pending > 0 && <div className={styles.panel} role="status"><span>{pending} invalid expectation{pending === 1 ? '' : 's'} · testing paused</span><div><Button variant="quiet" onClick={() => setTab('tests')}>Review expectations</Button></div></div>}
       <Tabs
         scrollable
         label="Draft views"
@@ -290,7 +295,7 @@ export function DraftTabs({ state, sources, selection, onSelect, onCreate }: { s
         tabs={[
           { value: 'draft', label: 'Draft', panel: <DraftPanel state={state} onSelect={onSelect} /> },
           { value: 'sources', label: `Sources${sources.length ? ` (${sources.length})` : ''}`, panel: <div className={styles.panel}><SourcesPanel sources={sources} selection={selection} onSelect={onSelect} /></div> },
-          { value: 'tests', label: `Tests${state.cases.length ? ` (${state.cases.length})` : ''}`, panel: <TestsPanel state={state} onSelect={onSelect} /> },
+          { value: 'tests', label: `Tests${total ? ` (${total})` : ''}`, panel: <TestsPanel state={state} onSelect={onSelect} {...actions} /> },
           { value: 'review', label: 'Review', panel: <ReviewPanel state={state} sources={sources} onCreate={onCreate} onSelect={onSelect} /> }
         ]}
       />

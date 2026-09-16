@@ -1883,6 +1883,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   ST=web/src/mcp/starters.ts
   DT=web/src/packs/documentText.ts
   CK=web/src/packs/checks.ts
+  RR=web/src/research/run.ts
+  RE=web/src/research/expectations.ts
   QR=web/src/mcp/queries.ts
   CAP=web/src/mcp/capabilities.ts
   OM=web/src/packs/document/OmittedMember.tsx
@@ -6658,6 +6660,48 @@ export function assistantTransport(id: string): Transport {
     '      preference.theme = value as ThemeChoice
     } else if (member === '"'"'density'"'"') {
       preference.density = value as Density'
+
+  # **A blocked expectation is never re-established around.** The all-invalid
+  # shape leaves no established case, and the second condition is the only thing
+  # that stops a later draft change from asking a fresh reviewer for a new,
+  # smaller suite — which is the reduced passing suite this whole flow exists to
+  # refuse. Nothing else notices: the issue simply leaves the state.
+  mutate web "case establishment runs again over a blocked expectation" "$RR" \
+    '    if (this.state.cases.length === 0 && this.state.expectationIssues.length === 0) {' \
+    '    if (this.state.cases.length === 0) {'
+
+  # **The exact expectation is the pair.** §8.3 keeps the configured target
+  # outside the disposition and this runtime reports one exactly when a handoff
+  # is requested, so a target beside "none" is a pair no evaluation can produce.
+  # Admitted, it spends the revision budget on a case that can never pass, and
+  # the target is not a member any prompt asks for or any panel showed.
+  mutate web "a handoff target that contradicts its own disposition is admitted" "$RR" \
+    '  if (target === undefined || target === null) return null' \
+    '  if (true) return null'
+
+  # **What the runtime compared is what is stored.** The canonical text the
+  # admission check returned is the assertion; storing the reviewer's spelling
+  # instead leaves the saved matrix row and the checked assertion two different
+  # texts for the same set, and a future tightening of the decoder would refuse
+  # the saved one.
+  mutate web "the reviewer's spelling is stored instead of the canonical assertion" "$RR" \
+    '        cases.push(deepFreeze(structuredClone({ ...row, expectedDisposition: JSON.parse(finding.canonical) })))' \
+    '        cases.push(row)'
+
+  # **A limit is not a Core violation.** The runtime reports one when it did not
+  # admit the input at all; presenting it as a §8.3 defect sends a reviewer to
+  # correct a meaning the specification never refused.
+  mutate web "a runtime limit reads as a Core defect" "$RE" \
+    "      return { status: 'invalid', message: row.message, admitted: row.code !== 'JPS-EXPECTATION-LIMIT' }" \
+    "      return { status: 'invalid', message: row.message, admitted: true }"
+
+  # **A handed-over draft is read at Build, not edited.** Its matrix and research
+  # record assert that those exact bytes were checked; an edit here leaves both
+  # describing a document that no longer exists, while the record's digest names
+  # the edited one and the registered matrix fails on the next run.
+  mutate web "a reviewed handover is editable at Build" "$X" \
+    '          {step === 1 && draft !== undefined && (handover !== undefined' \
+    '          {step === 1 && draft !== undefined && (false'
 
   # **A record exists because somebody chose something.** A bare `{"v":1}` is
   # not one this writer produces, so treating it as owned is the reset deleting
