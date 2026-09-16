@@ -368,6 +368,10 @@ export class AuthoringRun {
   approveExpectationCorrection(id: string, token: string): void {
     const issue = this.state.expectationIssues.find(item => item.id === id && !item.resolved)
     const proposal = issue?.proposal
+    // The digest comparison is a backup, and a passing suite is not evidence it
+    // is reachable: every new candidate already clears the pending proposals, so
+    // no sequence of public calls leaves one standing beside a draft it was not
+    // read against. `run.test.ts` writes that state directly to hold it here.
     if (this.running || !issue || !proposal || proposal.token !== token || proposal.candidateDigest !== this.latest()?.digest) return
     this.arm()
     this.set({ phase: 'review', status: 'running', detail: `Validating the approved correction for ${id}.` })
@@ -380,11 +384,19 @@ export class AuthoringRun {
       // is refused here rather than applied and left to stall the run.
       const contradiction = targetContradiction(finding.canonical, issue.original.expectedHandoffTarget)
       if (contradiction) throw new Error(`The correction was not applied: ${contradiction}`)
+      // Nothing is applied on a closed run. A backup for a window that holds
+      // only microtasks -- a validation that answers after Stop -- so a suite
+      // that never lands in it is no evidence this is dead code.
       this.check(signal)
       const replacement = deepFreeze(structuredClone({ ...issue.original, expectedDisposition: proposal.expectedDisposition }))
-      // No established case can be silently replaced by this approval.
+      // No established case can be silently replaced by this approval. A backup:
+      // admitted ids are unique and an id kept as an issue is never also a case,
+      // so no run produces the collision it refuses.
       if (this.state.cases.some(row => row.id === id)) throw new Error('A case with this id is already established; the correction was not applied.')
       this.set({ cases: [...this.state.cases, replacement],
+        // Every check goes, so nothing downstream reads one taken before this
+        // case joined the suite. A backup too: a run blocked on an expectation
+        // never checked its draft, so today there is no check here to drop.
         candidates: this.state.candidates.map(({ check: _check, ...candidate }) => candidate),
         expectationIssues: this.state.expectationIssues.map(item => item.id === id ? { ...item, resolved: { replacement, approvedAt: this.stamp(), rationale: proposal.rationale } } : item) })
       this.addTurn({ role: 'user', kind: 'note', text: `Approved the corrected expectation for ${id}: ${proposal.rationale}` })
@@ -683,6 +695,10 @@ export class AuthoringRun {
   }
 
   private settleReview(notPassing: string): void {
+    // The same refusal `casesAndCheck` makes before it checks anything, kept
+    // here as a backup: no path rests at `ready` with an expectation open. It
+    // fires only where a passing check and an open issue coexist, which no run
+    // produces -- so nothing failing without it means nothing.
     if (this.unresolvedExpectations()) {
       this.set({ phase: 'review', status: 'needs-input', detail: this.unresolvedExpectations()! })
       return
