@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import type { PackDocument } from '../../mcp/types'
 import { PackOverview } from '../../packs/PackWorkspace'
 import { Button } from '../../ui/Button'
@@ -54,6 +54,28 @@ export function SourcesPanel({ sources, selection, onSelect }: { sources: readon
   )
 }
 
+/**
+ * One side of what the check compared, in the shape the review panel's
+ * `Expectation` uses. §8.3 keeps the handoff target outside the disposition and
+ * the check compares the pair, so the target is printed beside the disposition
+ * rather than left out of the only place a person can read it.
+ *
+ * Decided: no target line at all where the case asserted none. `checkCandidate`
+ * records `handoffTarget` on both sides only where the row carries
+ * `expectedHandoffTarget`, so an absent line means "not compared" rather than
+ * "no target". Printing a target the runtime returned but nothing compared
+ * would put a value in a disclosure of a disagreement that is no part of the
+ * disagreement, and printing `null` would assert the runtime named none. This
+ * shows what was compared and nothing else.
+ */
+function CheckedSide({ side, label }: { side: unknown; label: string }) {
+  const pair = (side ?? {}) as { disposition?: unknown; handoffTarget?: unknown }
+  return <>
+    <CodeBlock text={JSON.stringify(pair.disposition ?? null, null, 2)} label={`${label} disposition`} />
+    {pair.handoffTarget !== undefined && <p className={styles.hint}>{label} handoff target: <code>{JSON.stringify(pair.handoffTarget)}</code></p>}
+  </>
+}
+
 export function TestsPanel({ state, onSelect, ...actions }: ExpectationReviewActions & { state: RunState; onSelect: (next: Selection) => void }) {
   const latest = state.candidates.at(-1)
   const check = latest?.check
@@ -90,29 +112,49 @@ export function TestsPanel({ state, onSelect, ...actions }: ExpectationReviewAct
               const result = byId.get(row.id)
               const expected = (row.expectedDisposition as { kind?: string; outcomeId?: string }) ?? {}
               const actual = (result?.actual as { disposition?: { kind?: string; outcomeId?: string } } | null)?.disposition
+              // A refusal is not a comparison: the evaluation did not complete, so
+              // what the check stored is not a pair — `null`, or the bare
+              // disposition of a rehearsal that never finished — and a disclosure
+              // over it would print `Runtime disposition: null` beside a real
+              // expectation, an answer the runtime never gave. The refusal named
+              // in the Runtime answered cell is the whole of what there is to show,
+              // and it is why the row's `disagrees` badge carries no disclosure.
+              const differs = result !== undefined && !result.passed && result.refused === undefined
               return (
-                <tr key={row.id}>
-                  <td>
-                    <div>{row.id}</div>
-                    <div className={styles.hint}>{row.rationale}</div>
-                  </td>
-                  <td>{expected.outcomeId ?? expected.kind ?? '—'}</td>
-                  <td>{result === undefined ? 'not yet checked' : result.refused ? `refused: ${result.refused}` : (actual?.outcomeId ?? actual?.kind ?? '—')}</td>
-                  <td>
-                    {result === undefined ? (
-                      <span className={styles.badge}>pending</span>
-                    ) : (
-                      <span className={styles.badge} data-state={result.passed ? 'passed' : 'disagrees'}>
-                        {result.passed ? 'agrees' : 'disagrees'}
-                      </span>
-                    )}
-                  </td>
-                  <td>
-                    <Button variant="inline" onClick={() => onSelect({ kind: 'excerpt', id: row.expectationSource })}>
-                      {row.expectationSource}
-                    </Button>
-                  </td>
-                </tr>
+                <Fragment key={row.id}>
+                  <tr>
+                    <td>
+                      <div>{row.id}</div>
+                      <div className={styles.hint}>{row.rationale}</div>
+                    </td>
+                    <td>{expected.outcomeId ?? expected.kind ?? '—'}</td>
+                    <td>{result === undefined ? 'not yet checked' : result.refused ? `refused: ${result.refused}` : (actual?.outcomeId ?? actual?.kind ?? '—')}</td>
+                    <td>
+                      {result === undefined ? (
+                        <span className={styles.badge}>pending</span>
+                      ) : (
+                        <span className={styles.badge} data-state={result.passed ? 'passed' : 'disagrees'}>
+                          {result.passed ? 'agrees' : 'disagrees'}
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      <Button variant="inline" onClick={() => onSelect({ kind: 'excerpt', id: row.expectationSource })}>
+                        {row.expectationSource}
+                      </Button>
+                    </td>
+                  </tr>
+                  {differs && (
+                    <tr>
+                      <td colSpan={5}>
+                        <Disclosure title={`What ${row.id} disagrees about`}>
+                          <CheckedSide side={result.expected} label="Expected" />
+                          <CheckedSide side={result.actual} label="Runtime" />
+                        </Disclosure>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               )
             })}
           </tbody>

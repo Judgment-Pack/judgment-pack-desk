@@ -26,6 +26,47 @@ export const withheldButPassing: RunState = {
     check: { documentDigest: 'fixture-digest', valid: true, diagnostics: [], cases: [{ id: 'valid-case', passed: true, expected: {}, actual: {} }] }
   }]
 }
+/**
+ * A checked draft whose one disagreeing case differs only in members the table
+ * does not draw: both sides render `unresolved`, and the whole of the
+ * difference lives in `reasons`, in `handoff` and in the target §8.3 keeps
+ * outside the disposition.
+ */
+const expectedSide = {
+  disposition: { kind: 'unresolved', reasons: ['unknown'], handoff: { state: 'none' } },
+  handoffTarget: { kind: 'human-role', name: 'Screening officer' }
+}
+const actualSide = {
+  disposition: { kind: 'unresolved', reasons: ['no-match'], handoff: { state: 'requested', triggeredBy: ['no-match'] } },
+  handoffTarget: null
+}
+const agreedSide = { disposition: { kind: 'outcome', outcomeId: 'approve', reasons: [], handoff: { state: 'none' } } }
+/**
+ * What `checkCandidate` stores for its second refusal branch: the runtime
+ * answered a disposition but no completed rehearsal, so `actual` is the bare
+ * disposition and not the `{ disposition, handoffTarget }` pair. A disclosure
+ * over it would read `Runtime disposition: null` beside a real expectation.
+ */
+const refusedSide = { kind: 'unresolved', reasons: ['no-match'], handoff: { state: 'none' } }
+export const disagreeingCase: RunState = {
+  ...INITIAL_STATE,
+  phase: 'review', status: 'needs-input', detail: 'The unchanged draft disagrees with the reviewed expectations.',
+  cases: [
+    { ...row, id: 'blocked-unresolved', expectedDisposition: expectedSide.disposition, expectedHandoffTarget: expectedSide.handoffTarget },
+    { ...row, id: 'agreeing-case', expectedDisposition: agreedSide.disposition },
+    { ...row, id: 'refused-case', expectedDisposition: expectedSide.disposition, expectedHandoffTarget: expectedSide.handoffTarget }
+  ],
+  candidates: [{
+    revision: 1, producedBy: 'research', document: null, text: '{}', digest: 'fixture-digest',
+    check: {
+      documentDigest: 'fixture-digest', valid: true, diagnostics: [], cases: [
+        { id: 'blocked-unresolved', passed: false, expected: expectedSide, actual: actualSide },
+        { id: 'agreeing-case', passed: true, expected: agreedSide, actual: agreedSide },
+        { id: 'refused-case', passed: false, expected: expectedSide, actual: refusedSide, refused: 'no completed rehearsal: status refused' }
+      ]
+    }
+  }]
+}
 export const proposedExpectation: RunState = {
   ...blockedExpectation,
   expectationIssues: [{ ...blockedExpectation.expectationIssues[0]!, proposal: {
