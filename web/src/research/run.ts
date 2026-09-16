@@ -102,6 +102,8 @@ export interface RunState {
   revisionsUsed: number
   /** The gateway sessions this run opened, in order. */
   sessions: string[]
+  /** What the last settle that reached `ready` was about, or empty. See `readinessKey`. */
+  readiness: string
 }
 
 export interface TurnRequest {
@@ -156,7 +158,8 @@ export const INITIAL_STATE: RunState = {
   verdicts: {},
   registries: {},
   revisionsUsed: 0,
-  sessions: []
+  sessions: [],
+  readiness: ''
 }
 
 class Stopped extends Error {
@@ -263,6 +266,8 @@ export class AuthoringRun {
   private controller: AbortController | null = null
   private deadline: ReturnType<typeof setTimeout> | null = null
   private outOfTime = false
+  /** What the action in flight took back, reported with whatever outcome it ends in. See `alsoUndone`. */
+  private undone: string | null = null
 
   constructor(private readonly ports: RunPorts) {}
 
@@ -467,14 +472,35 @@ export class AuthoringRun {
       // admitted ids are unique and an id kept as an issue is never also a case,
       // so no run produces the collision it refuses.
       if (this.state.cases.some(row => row.id === id)) throw new Error('A case with this id is already established; the correction was not applied.')
+      // The approval and the retest it promises are one step. Applied first and
+      // then interrupted -- a Stop, a spent budget, a transport failure -- it
+      // left the correction in place with every check stripped and the issue
+      // resolved, and a resolved issue closes both correction actions while an
+      // unchanged message re-checks nothing: the bytes the person approved for
+      // could never be tested again. So the retest rolls the approval back, and
+      // the proposal they approved is still there to approve again.
+      //
+      // `candidates` is here for symmetry with what the approval touches, and
+      // no test can discriminate it: an expectation issue is raised where the
+      // cases are established, before any check, and no later turn raises one,
+      // so at an approval there is no check to strip or to put back.
+      const before = { phase: this.state.phase, cases: this.state.cases, candidates: this.state.candidates, expectationIssues: this.state.expectationIssues, readiness: this.state.readiness }
       this.set({ cases: [...this.state.cases, replacement],
         // Every check goes, so nothing downstream reads one taken before this
         // case joined the suite. A backup too: a run blocked on an expectation
         // never checked its draft, so today there is no check here to drop.
         candidates: this.state.candidates.map(({ check: _check, ...candidate }) => candidate),
         expectationIssues: this.state.expectationIssues.map(item => item.id === id ? { ...item, resolved: { replacement, approvedAt: this.stamp(), rationale: proposal.rationale } } : item) })
+      try {
+        await this.casesAndCheck(signal, false)
+      } catch (cause) {
+        this.set(before)
+        this.undone = `The correction for ${id} was rolled back: its retest did not complete, so nothing was approved and the proposal is still on offer.`
+        throw cause
+      }
+      // Written where the approval completed, so the transcript records no
+      // approval the run then took back.
       this.addTurn({ role: 'user', kind: 'note', text: `Approved the corrected expectation for ${id}: ${proposal.rationale}` })
-      await this.casesAndCheck(signal, false)
     })
   }
 
@@ -513,17 +539,31 @@ export class AuthoringRun {
     } catch (cause) {
       if (isCancelled(cause) || cause instanceof Stopped) {
         if (this.outOfTime) {
-          this.set({ status: 'budget', detail: `The time budget of ${this.ports.seconds} seconds is spent. The last completed stage is kept.` })
+          this.set({ status: 'budget', detail: this.alsoUndone(`The time budget of ${this.ports.seconds} seconds is spent. The last completed stage is kept.`) })
         } else {
-          this.set({ status: 'stopped', detail: 'Stopped. The last completed stage is kept.' })
+          this.set({ status: 'stopped', detail: this.alsoUndone('Stopped. The last completed stage is kept.') })
         }
       } else {
-        this.set({ status: 'failed', detail: (cause as Error)?.message ?? String(cause) })
+        this.set({ status: 'failed', detail: this.alsoUndone((cause as Error)?.message ?? String(cause)) })
       }
     } finally {
+      this.undone = null
       if (this.controller === controller) this.controller = null
       if (!this.running) this.disarm()
     }
+  }
+
+  /**
+   * The outcome of an action, and what the action took back before it ended.
+   * "Stopped. The last completed stage is kept." reports the stop and explains
+   * neither an approval whose retest rolled it back nor a readiness a verdict
+   * withdrew -- and #82 is about exactly that, a reason that is not the real
+   * one. Whatever was taken back says so here, in the line the panel reads.
+   */
+  private alsoUndone(outcome: string): string {
+    if (this.undone === null) return outcome
+    const said = outcome.trim()
+    return `${/[.!?]$/.test(said) ? said : `${said}.`} ${this.undone}`
   }
 
   private check(signal: AbortSignal): void {
@@ -620,6 +660,14 @@ export class AuthoringRun {
     })
     this.check(signal)
     await this.verifyAcquisitions(session, signal)
+    // A verdict is also an answer to `withheld()`, and the only one the
+    // readiness key cannot carry: a cited source whose receipt failed withholds
+    // the draft even where no citation points at it. A turn that ends in an
+    // error or a Stop never reaches the settle that would say so, so the
+    // withdrawal happens where the verdict lands -- and says why, because the
+    // outcome of such a turn is the engine's error and not the verdict.
+    const withholds = this.state.readiness === '' ? null : this.withheld()
+    if (withholds !== null) { this.set({ readiness: '' }); this.undone = withholds }
     if (failure !== null) throw new Error(failure)
     if (proposal === null && this.ports.mode === 'draft' && spoke && !reviewer) return null
     if (proposal === null) throw new Error('the assistant ended without a proposal')
@@ -837,6 +885,14 @@ export class AuthoringRun {
     return count ? `${count} invalid expectation${count === 1 ? '' : 's'} must be corrected and approved before testing or creating the pack.` : null
   }
 
+  /**
+   * Readiness is decided here, and what is decided is also recorded, as the key
+   * of what it was decided about. `ready` is the status of the *last action*,
+   * and a Stop, a spent budget or a failed follow-up turn overwrites it without
+   * touching the candidate; Create asks about the candidate, so it reads the
+   * record instead, which stands only while the candidate, the cases and the
+   * citations it names are the ones on hand.
+   */
   private settleReview(notPassing: string): void {
     if (this.ports.mode === 'draft') {
       const candidate = this.latest()
@@ -852,12 +908,12 @@ export class AuthoringRun {
     // fires only where a passing check and an open issue coexist, which no run
     // produces -- so nothing failing without it means nothing.
     if (this.unresolvedExpectations()) {
-      this.set({ phase: 'review', status: 'needs-input', detail: this.unresolvedExpectations()! })
+      this.set({ phase: 'review', status: 'needs-input', detail: this.unresolvedExpectations()!, readiness: '' })
       return
     }
     const passing = completeCurrentCheck(this.state)
     if (!passing) {
-      this.set({ phase: 'review', status: 'needs-input', detail: notPassing })
+      this.set({ phase: 'review', status: 'needs-input', detail: notPassing, readiness: '' })
       return
     }
     // Sources may have been verified, or failed, since the last trace.
@@ -865,10 +921,11 @@ export class AuthoringRun {
     if (latest) this.set({ citations: traceCitations(latest.document, this.ports.ledger) })
     const withheld = this.withheld()
     if (withheld !== null) {
-      this.set({ phase: 'review', status: 'needs-input', detail: withheld })
+      this.set({ phase: 'review', status: 'needs-input', detail: withheld, readiness: '' })
       return
     }
-    this.set({ phase: 'review', status: 'ready', detail: 'Every established case agrees. Review the draft, its sources and the unknowns before creating the pack.' })
+    this.set({ phase: 'review', status: 'ready', detail: 'Every established case agrees. Review the draft, its sources and the unknowns before creating the pack.',
+      readiness: readinessKey(this.state) })
   }
 
   /** Why the candidate is not ready even where its cases agree, or null. */
@@ -1143,8 +1200,35 @@ function completeCurrentCheck(state: RunState): boolean {
     check.cases.length === state.cases.length && check.cases.every((row, index) => row.passed && row.id === state.cases[index]?.id)
 }
 
-/** Every intended, admitted case must have a current passing result before Create. */
+/**
+ * What a settle that reached `ready` was about: the candidate it was reached
+ * on, the cases that agreed, and the citation trace it was not withheld for.
+ * Readiness is recorded as this key and read back by comparison, so it lapses
+ * of its own accord the moment any of the three moves.
+ */
+export function readinessKey(state: RunState): string {
+  return JSON.stringify([
+    state.candidates.at(-1)?.digest ?? '',
+    state.cases.map(row => row.id),
+    state.citations.map(citation => [citation.sourceId, citation.location, citation.traced])
+  ])
+}
+
+/**
+ * Every intended, admitted case must have a current passing result before
+ * Create -- and the run must have settled at `ready` about this candidate.
+ * Not `status === 'ready'`: the status reports the last action, so a Stop, a
+ * spent budget or a failed follow-up turn withdrew a Create that the candidate
+ * on hand still earns, and the panel then explained it with the one reason
+ * that was not true.
+ */
 export function canCreateResearchDraft(state: RunState): boolean {
-  return state.status === 'ready' && !state.expectationIssues.some(issue => !issue.resolved) && completeCurrentCheck(state) &&
+  // Never mid-turn. `status === 'ready'` made that impossible by construction,
+  // and a rule that asks only about the candidate would answer yes while the
+  // turn that is about to move it is still in flight. Both callers check it
+  // already; the rule owns it, so the next caller inherits no trap.
+  if (state.status === 'running') return false
+  return state.readiness !== '' && state.readiness === readinessKey(state) &&
+    !state.expectationIssues.some(issue => !issue.resolved) && completeCurrentCheck(state) &&
     state.citations.length > 0 && state.citations.every(citation => citation.traced)
 }

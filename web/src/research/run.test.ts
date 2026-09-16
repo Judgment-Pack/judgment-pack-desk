@@ -478,6 +478,75 @@ describe('the authoring run', () => {
     expect(state.detail).toContain('cites no source')
   })
 
+  it('keeps Create offered for the same candidate through a later stop and a failed turn, and withholds it mid-turn', async () => {
+    // `ready` is the status of the last action, and neither a Stop nor a failed
+    // follow-up turn touches the candidate, its cases or its citations. Reading
+    // the status withdrew Create from a draft that had passed everything, and
+    // said the cases disagreed, which was the one thing that was not true.
+    // `running` is the one status the rule still keeps: a turn in flight is
+    // about to move the candidate the readiness was recorded about.
+    const hanging: Script = (_request, signal) =>
+      new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new DOMException('stopped', 'AbortError'))))
+    const failing: Script = async (_request, _signal, event) => {
+      event({ type: 'error', message: 'the provider refused the turn' })
+      event({ type: 'end' })
+    }
+    const { run } = harness([researchTurn(), casesTurn, hanging, failing])
+    run.start('brief', [PAGE_URL])
+    const ready = await settled(run)
+    expect(ready.status).toBe('ready')
+    const digest = ready.candidates.at(-1)!.digest
+    run.send('Anything else worth knowing?')
+    expect(run.getSnapshot().status).toBe('running')
+    expect(canCreateResearchDraft(run.getSnapshot())).toBe(false)
+    run.stop()
+    let state = await settled(run)
+    expect(state.status).toBe('stopped')
+    expect(state.candidates.at(-1)!.digest).toBe(digest)
+    expect(canCreateResearchDraft(state)).toBe(true)
+    run.send('And now?')
+    state = await settled(run)
+    expect(state.status).toBe('failed')
+    expect(state.candidates.at(-1)!.digest).toBe(digest)
+    expect(canCreateResearchDraft(state)).toBe(true)
+  })
+
+  it('withdraws Create where a later turn’s receipt fails, even with the draft and its citations unchanged', async () => {
+    // The one withheld reason the recorded readiness cannot carry: the failed
+    // source is not one the draft cites, so nothing in the candidate, the cases
+    // or the trace moves. The turn ends in an error, so no settle says it --
+    // and the outcome the person is shown is the engine's refusal, so the
+    // withdrawal has to say why it withdrew or nothing does.
+    let acquisitions = 0
+    const readAgain: Script = async (request, signal, event) => {
+      const read = request.hostTools.find(tool => tool.name === 'read_source')!
+      await read.execute({ url: PAGE_URL + '?annex' }, signal)
+      const cite = request.hostTools.find(tool => tool.name === 'cite_excerpt')!
+      await cite.execute({ source_id: 'src-2', quote: "We don't count any hours you work above 30 hours/week." }, signal)
+      event({ type: 'error', message: 'the provider refused the turn' })
+      event({ type: 'end' })
+    }
+    const { run, ledger } = harness([researchTurn(), casesTurn, readAgain], {}, (acquired) => {
+      acquisitions += 1
+      if (acquisitions !== 2) return acquired
+      const text = acquired.text.replace('1,560 hours', '1,500 hours')
+      const parsed = parseJsonText(text)
+      const member = (name: string) => (parsed.kind === 'object' ? parsed.members.find((m) => m.name === name)!.value : parsed)
+      return { ...acquired, text, result: member('result') }
+    })
+    run.start('brief', [PAGE_URL])
+    expect((await settled(run)).status).toBe('ready')
+    run.send('Read the annex too.')
+    const state = await settled(run)
+    expect(state.status).toBe('failed')
+    expect(ledger.byId('src-1')!.verification.state).toBe('verified')
+    expect(ledger.byId('src-2')!.verification.state).toBe('failed')
+    expect(state.citations.every(citation => citation.traced)).toBe(true)
+    expect(canCreateResearchDraft(state)).toBe(false)
+    expect(state.detail).toContain('the provider refused the turn')
+    expect(state.detail).toContain('failed receipt verification (src-2)')
+  })
+
   it('holds receipts in the order it opened them, so a reordered or relabelled answer fails', async () => {
     // The gateway answers the second read with the first read's receipt and
     // vice versa: each receipt is genuine, but neither is at the position the
@@ -690,6 +759,14 @@ describe('invalid expectation review', () => {
       expect(canCreateResearchDraft({ ...state, candidates: [{ ...state.candidates[0]!, check: changed }] })).toBe(false)
     }
     expect(canCreateResearchDraft({ ...state, expectationIssues: [issue] })).toBe(false)
+    // The recorded readiness is a key and is read back by comparison, so it
+    // stands only for the candidate, the cases and the trace it was recorded
+    // about. The trace is the one of the three no other rule here reads: move
+    // a citation and Create lapses, with nobody having cleared anything.
+    expect(state.readiness).not.toBe('')
+    expect(state.citations.length).toBeGreaterThan(0)
+    expect(canCreateResearchDraft({ ...state, citations: state.citations.map(citation => ({ ...citation, location: 'src-1#e9' })) })).toBe(false)
+    expect(canCreateResearchDraft({ ...state, citations: [...state.citations, ...state.citations] })).toBe(false)
   })
 
   it.each([
@@ -910,6 +987,58 @@ describe('invalid expectation review', () => {
     expect(state.status).toBe('stopped')
     expect(state.cases).toHaveLength(2)
     expect(state.expectationIssues[0]!.resolved).toBeUndefined()
+  })
+
+  it('rolls an approval back when its retest is stopped, and applies it when it is approved again', async () => {
+    // Applied before its retest, a Stop left the correction in place with the
+    // issue resolved and nothing checked: propose and approve both close on
+    // `resolved`, and an unchanged message re-checks nothing, so the bytes the
+    // person approved for could never be tested.
+    const native = fakeRuntime()
+    let stopDuringRetest = false
+    let stop = (): void => {}
+    const { run } = await blockedRun([correctionTurn()], {
+      // The retest's own first call. Stopping there and still answering puts
+      // the abort inside checkCandidate, after the correction was applied.
+      callTool: (name, args) => {
+        if (stopDuringRetest && name === 'validate') stop()
+        return native.callTool(name, args)
+      }
+    })
+    stop = () => run.stop()
+    run.proposeExpectationCorrection('hours-missing')
+    const issue = (await settled(run)).expectationIssues[0]!
+    stopDuringRetest = true
+    run.approveExpectationCorrection(issue.id, issue.proposal!.token)
+    let state = await settled(run)
+    expect(state.status).toBe('stopped')
+    expect(state.cases).toHaveLength(2)
+    // The retest had moved the run to `check`; taken back, it rests at review
+    // again, where the open issue is -- not on a Tests view of nothing checked.
+    expect(state.phase).toBe('review')
+    // A run blocked on an invalid expectation has never checked its draft --
+    // issues are raised where the cases are established, before any check, and
+    // no later turn raises one -- so the approval strips no check here and the
+    // rollback restores none. `candidates` is in the snapshot for the symmetry
+    // with what the approval touches, and is given no mutation row.
+    expect(state.candidates[0]!.check).toBeUndefined()
+    expect(state.expectationIssues[0]!.resolved).toBeUndefined()
+    expect(state.turns.some(turn => turn.text.startsWith('Approved the corrected expectation'))).toBe(false)
+    // And the outcome says what it took back. "Stopped. The last completed
+    // stage is kept." is true of the stop and no account of the approval.
+    expect(state.detail).toContain('rolled back')
+    expect(state.detail).toContain('its retest did not complete')
+    // The proposal the person read is still the one on offer, and taking it
+    // again is the recovery.
+    expect(state.expectationIssues[0]!.proposal?.token).toBe(issue.proposal!.token)
+    stopDuringRetest = false
+    run.approveExpectationCorrection(issue.id, issue.proposal!.token)
+    state = await settled(run)
+    expect(state.status, state.detail).toBe('ready')
+    expect(state.cases).toHaveLength(3)
+    expect(state.candidates).toHaveLength(1)
+    expect(state.candidates[0]!.check?.cases).toHaveLength(3)
+    expect(canCreateResearchDraft(state)).toBe(true)
   })
 
   it('blocks a case whose handoff target contradicts its own disposition, and refuses a correction that would', async () => {
@@ -1144,22 +1273,31 @@ describe('the correction flow\'s backup guards', () => {
       cases: ['meets-hours', 'under-hours', 'hours-missing'].map(id => ({ id, passed: true, expected: null, actual: null }))
     }
     writeState(run, { candidates: [{ ...candidate, check: stale }] })
-    // Both of this test's assertions also hold on a candidate that never
+    // Every assertion in this test also holds on a candidate that never
     // carried a check, so the injection is stated as a precondition: without
     // this line the test could pass having tested nothing.
     expect(run.getSnapshot().candidates[0]!.check).toBe(stale)
     rechecking = true
     run.approveExpectationCorrection('hours-missing', proposal.token)
-    // Stop the recheck before it can write a fresh check: what is left is what
-    // the approval itself wrote.
+    // The approval's own write, read while its retest is still in flight: the
+    // corrected case has joined the suite and the check taken before it did is
+    // gone. This is the one point where a surviving check is observable -- the
+    // rollback below restores the candidate whole -- so these two lines, and
+    // nothing after them, are what the row "a stale check survives an approved
+    // correction" turns on.
     await until(() => held.stop !== null, 'the recheck validating the draft')
+    const inFlight = run.getSnapshot()
+    expect(inFlight.cases).toHaveLength(3)
+    expect(inFlight.candidates[0]!.check).toBeUndefined()
+    // Stop the recheck before it can write a fresh check. An approval does not
+    // stand on an interrupted retest: it is rolled back whole, to the suite the
+    // run had before it, and the run says so.
     run.stop()
     held.stop!()
     const state = await settled(run)
     expect(state.status).toBe('stopped')
-    expect(state.cases).toHaveLength(3)
-    expect(state.candidates[0]!.check).toBeUndefined()
-    expect(canCreateResearchDraft({ ...state, status: 'ready' })).toBe(false)
+    expect(state.detail).toContain('rolled back')
+    expect(state.cases).toHaveLength(2)
   })
 
   it('never settles a run at ready while an expectation is open', async () => {
