@@ -3412,6 +3412,27 @@ function usePacks() { useExampleListing(); return readPacks() }'
     slot.reveal()' \
     '    if (at === null && groupId === null) return
     void slot'
+
+  # **A disagreement is shown, not just named.** The table draws
+  # `outcomeId ?? kind`, and §8.3 corrections differ mainly in `reasons`, in
+  # `handoff` and in the target the pack keeps outside the disposition — so a
+  # row reads `unresolved | unresolved | disagrees` with the whole difference
+  # invisible. Without the disclosure a person is asked for judgment about a
+  # difference no surface ever showed them.
+  mutate web "a disagreeing row hides what it disagrees about" "$RDP" \
+    '              const differs = result !== undefined && !result.passed && result.refused === undefined' \
+    '              const differs = false'
+
+  # **A refusal is not a disagreement to disclose.** `checkCandidate` marks a
+  # refused case `passed: false`, and what it stores in `actual` is not a pair:
+  # `null` from the thrown branch, or the bare disposition of a rehearsal that
+  # never completed. Opening the disclosure over that prints
+  # `Runtime disposition: null` beside a real expectation — a runtime answer the
+  # runtime never gave, in the one place a person reads the comparison. The row
+  # above it is the other half of the same rule, and drops this clause silently.
+  mutate web "a refused row discloses a pair the runtime never gave" "$RDP" \
+    ' && result.refused === undefined' \
+    ''
   # **Back is an arrival.** Recording only the keys that revealed meant an entry
   # without `?at` returned before writing anything down, so Back to the selected
   # entry before it looked like the rerender it is not.
@@ -6688,27 +6709,6 @@ export function assistantTransport(id: string): Transport {
   mutate web "the reviewer's spelling is stored instead of the canonical assertion" "$RR" \
     '        cases.push(deepFreeze(structuredClone({ ...row, expectedDisposition: JSON.parse(finding.canonical) })))' \
     '        cases.push(row)'
-
-  # **A disagreement is shown, not just named.** The table draws
-  # `outcomeId ?? kind`, and §8.3 corrections differ mainly in `reasons`, in
-  # `handoff` and in the target the pack keeps outside the disposition — so a
-  # row reads `unresolved | unresolved | disagrees` with the whole difference
-  # invisible. Without the disclosure a person is asked for judgment about a
-  # difference no surface ever showed them.
-  mutate web "a disagreeing row hides what it disagrees about" "$RDP" \
-    '              const differs = result !== undefined && !result.passed && result.refused === undefined' \
-    '              const differs = false'
-
-  # **A refusal is not a disagreement to disclose.** `checkCandidate` marks a
-  # refused case `passed: false`, and what it stores in `actual` is not a pair:
-  # `null` from the thrown branch, or the bare disposition of a rehearsal that
-  # never completed. Opening the disclosure over that prints
-  # `Runtime disposition: null` beside a real expectation — a runtime answer the
-  # runtime never gave, in the one place a person reads the comparison. The row
-  # above it is the other half of the same rule, and drops this clause silently.
-  mutate web "a refused row discloses a pair the runtime never gave" "$RDP" \
-    ' && result.refused === undefined' \
-    ''
 
   # **A limit is not a Core violation.** The runtime reports one when it did not
   # admit the input at all; presenting it as a §8.3 defect sends a reviewer to
