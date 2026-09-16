@@ -1,6 +1,9 @@
-import { Fragment, useState } from 'react'
+import { Fragment, useMemo, useRef, useState } from 'react'
 import type { PackDocument } from '../../mcp/types'
-import { PackOverview } from '../../packs/PackWorkspace'
+import { PackLogic } from '../../packs/PackLogic'
+import { projectLogic } from '../../packs/logicModel'
+import { initialLogicDisplay, type LogicMode } from '../../packs/logicState'
+import { PackOverview, PackQuestion } from '../../packs/PackWorkspace'
 import { Button } from '../../ui/Button'
 import { CodeBlock } from '../../ui/CodeBlock'
 import { Disclosure } from '../../ui/Disclosure'
@@ -11,7 +14,7 @@ import { ExpectationReview, type ExpectationReviewActions } from './ExpectationR
 import styles from './ResearchAuthoring.module.css'
 
 /** What the Inspector shows: a source, an excerpt within it, or a rule of the draft. */
-export type Selection = { kind: 'source'; id: string } | { kind: 'excerpt'; id: string } | { kind: 'rule'; id: string } | null
+export type Selection = { kind: 'source'; id: string } | { kind: 'excerpt'; id: string } | { kind: 'rule'; id: string } | { kind: 'logic'; id: string } | null
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -175,17 +178,15 @@ export function TestsPanel({ state, onSelect, ...actions }: ExpectationReviewAct
   )
 }
 
-export function DraftPanel({ state, onSelect }: { state: RunState; onSelect: (next: Selection) => void }) {
+export function DraftPanel({ state, onSelect, onViewLogic, onViewSources }: { state: RunState; onSelect: (next: Selection) => void; onViewLogic?: () => void; onViewSources?: () => void }) {
   const latest = state.candidates.at(-1)
   if (!latest) return <p className={styles.empty}>No draft yet.</p>
   const document = latest.document
-  const rules = isRecord(document) && Array.isArray(document.rules) ? (document.rules as Record<string, unknown>[]) : []
+  const rules = isRecord(document) && Array.isArray(document.rules) ? document.rules.filter(isRecord) : []
   return (
     <div className={styles.panel}>
-      <p className={styles.detail}>
-        Revision {latest.revision} · produced by {latest.producedBy} · sha256 {latest.digest.slice(0, 12)}…
-      </p>
-      {isRecord(document) && <PackOverview document={document as unknown as PackDocument} />}
+      {isRecord(document) && <PackQuestion document={document as unknown as PackDocument} />}
+      {isRecord(document) && <PackOverview document={document as unknown as PackDocument} onViewLogic={onViewLogic} onViewSources={onViewSources} />}
       {rules.length > 0 && (
         <section className={styles.section} aria-label="Rules and their sources">
           <h3>Rules and their sources</h3>
@@ -209,16 +210,17 @@ export function DraftPanel({ state, onSelect }: { state: RunState; onSelect: (ne
         </section>
       )}
       <Disclosure title="Full document (JSON)">
+        <p className={styles.detail}>Produced by {latest.producedBy} · sha256 {latest.digest}</p>
         <CodeBlock text={latest.text} label="Pack JSON" />
       </Disclosure>
     </div>
   )
 }
 
-export function ReviewPanel({ state, sources, onCreate, onSelect }: { state: RunState; sources: readonly SourceRecord[]; onCreate: () => void; onSelect: (next: Selection) => void }) {
+export function ReviewPanel({ state, sources, onCreate, onSelect, mode = 'research' }: { mode?: 'draft' | 'research'; state: RunState; sources: readonly SourceRecord[]; onCreate: () => void; onSelect: (next: Selection) => void }) {
   const latest = state.candidates.at(-1)
   const check = latest?.check
-  const passing = canCreateResearchDraft(state)
+  const passing = mode === 'research' ? canCreateResearchDraft(state) : state.status === 'ready' && !state.restored && check?.valid === true && check.documentDigest === latest?.digest
   const verified = sources.filter((s) => s.verification.state === 'verified').length
   const failed = sources.filter((s) => s.verification.state === 'failed' || s.failure !== null).length
   const untraced = state.citations.filter((c) => !c.traced)
@@ -302,15 +304,15 @@ export function ReviewPanel({ state, sources, onCreate, onSelect }: { state: Run
         <h3>Create</h3>
         <p className={styles.detail}>
           {passing
-            ? 'Creating hands this draft, its test cases and its research record to the Create page, where you name the pack and the runtime validates the bytes before anything is written.'
+            ? mode === 'research' ? 'Review the name and open questions, then create the pack with its checked cases and research record.' : 'The runtime validated the structure. Review the draft before creating. Source research and behavioral tests have not been run.'
             : 'Create is offered once every established case agrees with the runtime and the draft is valid.'}
         </p>
         <p className={styles.hint}>
-          A verified receipt establishes that the gateway signed these bytes and sealed the session; it does not establish that a page is true, current, legally authoritative, or that it came from the site its URL names.
+          {mode === 'research' && <>A verified receipt establishes that the gateway signed these bytes and sealed the session; it does not establish that a page is true, current, legally authoritative, or that it came from the site its URL names.</>}
         </p>
         <div>
           <Button variant="primary" disabled={!passing || state.status === 'running'} onClick={onCreate}>
-            Create pack from this draft
+            Review and create
           </Button>
         </div>
       </section>
@@ -318,14 +320,29 @@ export function ReviewPanel({ state, sources, onCreate, onSelect }: { state: Run
   )
 }
 
-export function DraftTabs({ state, sources, selection, onSelect, onCreate, ...actions }: ExpectationReviewActions & { state: RunState; sources: readonly SourceRecord[]; selection: Selection; onSelect: (next: Selection) => void; onCreate: () => void }) {
+function DraftLogic({ state, selection, onSelect }: { state: RunState; selection: Selection; onSelect: (next: Selection) => void }) {
+  const document = state.candidates.at(-1)?.document
+  const model = useMemo(() => document && isRecord(document) ? projectLogic(document as unknown as PackDocument) : null, [document])
+  const [mode, setMode] = useState<LogicMode>('list')
+  const [query, setQuery] = useState('')
+  const [display, setDisplay] = useState(initialLogicDisplay)
+  const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 })
+  const scroll = useRef(0)
+  if (!model) return <p className={styles.empty}>No draft yet.</p>
+  const select = (id: string) => onSelect({ kind: 'logic', id })
+  return <div className={styles.panel}><PackLogic model={model} at={selection?.kind === 'logic' ? selection.id : null} groupId={null}
+    select={select} inspect={select} mode={mode} onMode={setMode} query={query} onQuery={setQuery} display={display} onDisplay={setDisplay}
+    viewport={viewport} onViewport={setViewport} listScroll={scroll} /></div>
+}
+
+export function DraftTabs({ state, sources, selection, onSelect, onCreate, mode = 'research', ...actions }: ExpectationReviewActions & { mode?: 'draft' | 'research'; state: RunState; sources: readonly SourceRecord[]; selection: Selection; onSelect: (next: Selection) => void; onCreate: () => void }) {
   const [tab, setTab] = useState('draft')
   const pending = state.expectationIssues.filter(issue => !issue.resolved).length
   const total = state.cases.length + pending
   return (
     <section className={styles.pane} aria-label="Draft review" data-pane="draft">
       <header className={styles.paneHeader}>
-        <span>Draft</span>
+        <span>{typeof (state.candidates.at(-1)?.document as { title?: unknown })?.title === 'string' ? (state.candidates.at(-1)!.document as { title: string }).title : 'Draft'}</span>
         <span className={styles.status}>{state.candidates.length === 0 ? 'no revision yet' : `revision ${state.candidates.at(-1)!.revision}`}</span>
       </header>
       {pending > 0 && <div className={styles.panel} role="status"><span>{pending} invalid expectation{pending === 1 ? '' : 's'} · testing paused</span><div><Button variant="quiet" onClick={() => setTab('tests')}>Review expectations</Button></div></div>}
@@ -335,10 +352,11 @@ export function DraftTabs({ state, sources, selection, onSelect, onCreate, ...ac
         value={tab}
         onValueChange={setTab}
         tabs={[
-          { value: 'draft', label: 'Draft', panel: <DraftPanel state={state} onSelect={onSelect} /> },
+          { value: 'draft', label: 'Overview', panel: <DraftPanel state={state} onSelect={onSelect} onViewLogic={() => setTab('logic')} onViewSources={() => setTab('sources')} /> },
+          { value: 'logic', label: 'Logic', panel: <DraftLogic state={state} selection={selection} onSelect={onSelect} /> },
           { value: 'sources', label: `Sources${sources.length ? ` (${sources.length})` : ''}`, panel: <div className={styles.panel}><SourcesPanel sources={sources} selection={selection} onSelect={onSelect} /></div> },
           { value: 'tests', label: `Tests${total ? ` (${total})` : ''}`, panel: <TestsPanel state={state} onSelect={onSelect} {...actions} /> },
-          { value: 'review', label: 'Review', panel: <ReviewPanel state={state} sources={sources} onCreate={onCreate} onSelect={onSelect} /> }
+          { value: 'review', label: 'Review', panel: <ReviewPanel mode={mode} state={state} sources={sources} onCreate={onCreate} onSelect={onSelect} /> }
         ]}
       />
     </section>

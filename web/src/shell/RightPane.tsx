@@ -44,6 +44,7 @@ export function RightPane({
   asDrawer,
   declaredWidth,
   publishTarget,
+  publishHeaderTarget,
   publishPane,
   openerRef,
   restoreFocusRef,
@@ -66,6 +67,7 @@ export function RightPane({
   declaredWidth: number | undefined
   /** Called with the portal target on mount and with null on unmount. */
   publishTarget: (target: HTMLDivElement | null) => void
+  publishHeaderTarget?: (target: HTMLDivElement | null) => void
   /**
    * Called with the pane itself, on the same terms.
    *
@@ -90,6 +92,7 @@ export function RightPane({
     <>
       <div className="desk-pane-head">
         <span>{title}</span>
+        <div ref={publishHeaderTarget} className="desk-pane-head-slot" />
         <Tooltip content={`Close ${title}`} openOnFocus={false} side="left"><button
           type="button"
           className="desk-icon-button"

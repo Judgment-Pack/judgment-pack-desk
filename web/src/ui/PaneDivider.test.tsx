@@ -32,3 +32,27 @@ describe('keyboard-resizable inspector divider', () => {
     expect(collapse).toHaveBeenCalledOnce()
   })
 })
+
+describe('resizable details panel', () => {
+  it('uses up/down keys, clamps height, resets, and leaves left/right to other controls', () => {
+    const collapse = vi.fn()
+    function Example() {
+      const [height,setHeight] = useState(240)
+      return <PaneDivider orientation="horizontal" label="Details and activity" controls="details" value={height} min={120} max={480} onChange={setHeight} onReset={() => setHeight(240)} onCollapse={collapse} />
+    }
+    render(<Example />)
+    const divider = screen.getByRole('separator',{ name: 'Details and activity' })
+    expect(divider.getAttribute('aria-orientation')).toBe('horizontal')
+    fireEvent.keyDown(divider,{ key: 'ArrowUp', shiftKey: true })
+    expect(divider.getAttribute('aria-valuenow')).toBe('272')
+    fireEvent.keyDown(divider,{ key: 'ArrowLeft' })
+    expect(divider.getAttribute('aria-valuenow')).toBe('272')
+    fireEvent.keyDown(divider,{ key: 'Home' }); fireEvent.keyDown(divider,{ key: 'ArrowDown' })
+    expect(divider.getAttribute('aria-valuenow')).toBe('120')
+    fireEvent.keyDown(divider,{ key: 'End' }); fireEvent.keyDown(divider,{ key: 'ArrowUp' })
+    expect(divider.getAttribute('aria-valuenow')).toBe('480')
+    fireEvent.doubleClick(divider)
+    expect(divider.getAttribute('aria-valuetext')).toBe('240 pixels high')
+    fireEvent.keyDown(divider,{ key: 'Enter' }); expect(collapse).toHaveBeenCalledOnce()
+  })
+})

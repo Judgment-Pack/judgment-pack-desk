@@ -1,7 +1,7 @@
 .divider {
   position: absolute;
   grid-column: 2 / 3;
-  grid-row: 1 / 2;
+  grid-row: 1 / -1;
   inset-block: 0;
   inset-inline-start: calc(-0.5 * var(--space-3));
   width: var(--space-3);
@@ -25,3 +25,21 @@
 /* Paint the center line only. Outlining the invisible hit area creates two
    extra rails, and pointer focus must never leave a selected-looking border. */
 .divider[data-keyboard-focus]:not([data-dragging])::after { background: var(--accent); }
+
+.divider[data-orientation="horizontal"] {
+  grid-column: 1 / 2;
+  grid-row: 2 / 3;
+  inset-inline: 0;
+  inset-block-start: calc(-0.5 * var(--space-3));
+  inset-block-end: auto;
+  width: auto;
+  height: var(--space-3);
+  cursor: row-resize;
+}
+.divider[data-orientation="horizontal"]::after {
+  inset-inline: 0;
+  inset-block-start: calc(50% - 1px);
+  inset-block-end: auto;
+  width: auto;
+  height: 2px;
+}

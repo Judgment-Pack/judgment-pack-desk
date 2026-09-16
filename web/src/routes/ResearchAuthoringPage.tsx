@@ -97,7 +97,7 @@ export function ResearchAuthoringPage() {
   }
 
   return (
-    <div data-measure="wide" data-layout="page">
+    <div data-layout="page">
       <PageHeader
         title="Packs"
         context="Research and draft"

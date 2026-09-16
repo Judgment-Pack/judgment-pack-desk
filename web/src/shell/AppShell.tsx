@@ -32,6 +32,7 @@ import {
 } from 'react'
 import { useDeskConfigRead, useEffectiveConfig } from '../config/DeskConfigProvider'
 import { useFileListing } from '../files/queries'
+import { DetailsSlotContext, type DetailsSlot } from './DetailsSlot'
 import { BottomPane } from './BottomPane'
 import { HeaderBar } from './HeaderBar'
 import { InspectorSlotContext, type InspectorSlot } from './InspectorSlot'
@@ -111,6 +112,16 @@ function ShellFrame({
   children: ReactNode
 }) {
   const shell = useShellState()
+  const [detailsTarget, setDetailsTarget] = useState<HTMLDivElement | null>(null)
+  const [detailsClaims, setDetailsClaims] = useState(0)
+  const [showDetails, setShowDetails] = useState(false)
+  const [bottomMaximized, setBottomMaximized] = useState(false)
+  const detailsClaim = useCallback(() => {
+    setDetailsClaims(count => count + 1)
+    return () => setDetailsClaims(count => Math.max(0, count - 1))
+  }, [])
+  const revealDetails = useCallback(() => { setShowDetails(true); shell.openConsole() }, [shell.openConsole])
+  const detailsSlot = useMemo<DetailsSlot>(() => ({ target: detailsTarget, open: shell.console.open && showDetails, claim: detailsClaim, reveal: revealDetails }), [detailsTarget, shell.console.open, showDetails, detailsClaim, revealDetails])
   const [presentation, setPresentation] = useState<InspectorPresentation | null>(null)
   const registerPresentation = useCallback((next: InspectorPresentation) => {
     setPresentation(next)
@@ -126,6 +137,7 @@ function ShellFrame({
     else shell.toggleInspector()
   }, [presentation, shell.toggleInspector])
   const settingsPage = useMatch('/admin') !== null
+  const packPage = useMatch('/packs/:packId') !== null
   const { config, declaredPanes } = useEffectiveConfig()
   const [railDrawerOpen, setRailDrawerOpen] = useState(false)
 
@@ -140,6 +152,7 @@ function ShellFrame({
    */
   const railOpenerRef = useRef<HTMLButtonElement | null>(null)
   const inspectorOpenerRef = useRef<HTMLButtonElement | null>(null)
+  const consoleOpenerRef = useRef<HTMLButtonElement | null>(null)
   const inspectionGestureRef = useRef<HTMLElement | null>(null)
 
   /**
@@ -153,6 +166,7 @@ function ShellFrame({
    * a detached one.
    */
   const [inspectorTarget, setInspectorTarget] = useState<HTMLElement | null>(null)
+  const [inspectorHeaderTarget, setInspectorHeaderTarget] = useState<HTMLDivElement | null>(null)
   const [inspectorPane, setInspectorPane] = useState<HTMLElement | null>(null)
   const [inspectorTab, setInspectorTab] = useState<string | null>(null)
   /**
@@ -175,6 +189,10 @@ function ShellFrame({
   }, [])
   const [workspaceElement, setWorkspaceElement] = useState<HTMLDivElement | null>(null)
   const workspaceBox = useMeasuredBox(workspaceElement)
+  const bottomRoom = Math.max(0, (workspaceBox?.height || 700) - 2)
+  const bottomMax = Math.min(1600, Math.max(bottomRoom - 120, Math.min(80, bottomRoom)))
+  const bottomMin = Math.min(120, bottomMax)
+  const bottomHeight = bottomMaximized ? bottomMax : Math.max(bottomMin, Math.min(bottomMax, shell.consoleHeight ?? config.panes.console.height))
   const workingWidths = useRef(new Map<symbol, number>())
   const [minimumMainWidth, setMinimumMainWidth] = useState(0)
   const requestWorkingWidth = useCallback((pixels: number) => {
@@ -238,12 +256,13 @@ function ShellFrame({
       tab: inspectorTab,
       setTab: setInspectorTab,
       target: inspectorTarget,
+      headerTarget: inspectorHeaderTarget,
       claim,
       reveal,
       close: closeInspector,
       requestWorkingWidth
     }),
-    [inspectorOpen, inspectorBox, inspectorTab, inspectorTarget, claim, reveal, closeInspector, requestWorkingWidth]
+    [inspectorOpen, inspectorBox, inspectorTab, inspectorTarget, inspectorHeaderTarget, claim, reveal, closeInspector, requestWorkingWidth]
   )
 
   useEffect(
@@ -261,7 +280,7 @@ function ShellFrame({
   const style = {
     '--rail-w': `${config.panes.left.width}px`,
     '--inspector-w': `${inspectorWidth}px`,
-    '--console-h': `${config.panes.console.height}px`,
+    '--console-h': `${bottomHeight}px`,
     '--rail-current': railIsDrawer
       ? '0px'
       : settingsPage || shell.left.mode === 'expanded'
@@ -275,6 +294,7 @@ function ShellFrame({
   return (
     <InspectorPresentationContext.Provider value={registerPresentation}>
     <InspectorSlotContext.Provider value={slot}>
+    <DetailsSlotContext.Provider value={detailsSlot}>
       <SettingsNavigationProvider>
         <div className="desk" style={style} data-rail-drawer={railIsDrawer || undefined}>
           <a className="desk-skip" href="#main">
@@ -282,6 +302,9 @@ function ShellFrame({
           </a>
 
           <HeaderBar
+            inspectorAvailable={presentation?.available}
+            consoleOpenerRef={consoleOpenerRef}
+            inspectorTitle={presentation?.title ?? (packPage ? 'Assistant' : 'Inspector')}
             inspectorOpen={inspectorOpen}
             inspectorIsDrawer={inspectorIsDrawer}
             consoleOpen={shell.console.open}
@@ -308,34 +331,48 @@ function ShellFrame({
               <div className="desk-measure">{children}</div>
             </main>
 
-            {inspectorOpen && !inspectorIsDrawer && <PaneDivider label="Inspector" controls="desk-inspector"
+            {inspectorOpen && !inspectorIsDrawer && <PaneDivider label={presentation?.title ?? (packPage ? 'Assistant' : 'Inspector')} controls="desk-inspector"
               value={inspectorWidth} min={inspectorLayout.min} max={inspectorLayout.max}
               onChange={presentation?.onResize ?? shell.resizeInspector} onReset={presentation?.onReset ?? shell.resetInspectorWidth}
               onCollapse={() => { inspectorOpenerRef.current?.focus(); toggleInspector() }} />}
 
             <RightPane
-              title={presentation?.title}
+              title={presentation?.title ?? (packPage ? 'Assistant' : undefined)}
               open={inspectorOpen}
               onClose={closeInspector}
               asDrawer={inspectorIsDrawer}
               declaredWidth={presentation || declaredPanes.inspectorWidth || minimumMainWidth > 0 || shell.inspectorWidth !== undefined ? inspectorWidth : undefined}
               publishTarget={publishTarget}
+              publishHeaderTarget={setInspectorHeaderTarget}
               publishPane={publishPane}
               openerRef={inspectorOpenerRef}
               restoreFocusRef={inspectionGestureRef}
               showEmpty={inspectorClaims === 0}
             />
 
+            {shell.console.open && <PaneDivider orientation="horizontal" label="Details and activity" controls="desk-console"
+              value={bottomHeight} min={bottomMin} max={bottomMax}
+              onChange={height => { setBottomMaximized(false); shell.resizeConsole(height) }}
+              onReset={() => { setBottomMaximized(false); shell.resetConsoleHeight() }}
+              onCollapse={() => { consoleOpenerRef.current?.focus(); shell.toggleConsole() }} />}
             <BottomPane
               open={shell.console.open}
               tab={shell.console.tab}
-              onTabChange={shell.setConsoleTab}
+              onTabChange={tab => { setShowDetails(false); shell.setConsoleTab(tab) }}
+              details={detailsClaims > 0}
+              showDetails={showDetails}
+              onDetails={() => setShowDetails(true)}
+              publishTarget={setDetailsTarget}
+              onClose={() => { consoleOpenerRef.current?.focus(); shell.toggleConsole() }}
+              maximized={bottomMaximized}
+              onMaximize={() => setBottomMaximized(value => !value)}
             />
           </div>
 
           <StatusStrip consoleOpen={shell.console.open} onToggleConsole={shell.toggleConsole} />
         </div>
       </SettingsNavigationProvider>
+    </DetailsSlotContext.Provider>
     </InspectorSlotContext.Provider>
     </InspectorPresentationContext.Provider>
   )

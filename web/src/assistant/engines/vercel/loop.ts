@@ -49,6 +49,8 @@ import { dynamicTool, jsonSchema, stepCountIs, streamText } from 'ai'
 import {
   MAX_TURNS,
   SYSTEM,
+  CONVERSATION_SYSTEM,
+  hasProposalFence,
   eventIterator,
   extractProposal,
   proseOf,
@@ -620,7 +622,7 @@ export function runVercel(
     let streamed: unknown = null
     const result = streamText({
       model,
-      instructions: SYSTEM,
+      instructions: session.allowConversation ? CONVERSATION_SYSTEM : SYSTEM,
       tools,
       messages: [{ role: 'user', content: session.prompt }],
       stopWhen: stepCountIs(MAX_TURNS),
@@ -764,6 +766,11 @@ export function runVercel(
     // `result.text` mints a fresh promise on every read, so it is read here,
     // where it is awaited, and nowhere it would be left standing.
     const finalText = final !== '' ? final : await withAbort(() => Promise.resolve(result.text), gate.signal)
+    if (session.allowConversation && !hasProposalFence(finalText)) {
+      if (!finalText.trim()) throw new Error('The assistant returned an empty reply')
+      await deliver({ type: 'message', text: finalText.trim() })
+      return
+    }
     const proposal = extractProposal(finalText)
     // What the model said beside the document, as it said it.
     const prose = proseOf(finalText)

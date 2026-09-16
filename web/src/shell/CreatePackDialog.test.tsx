@@ -1289,6 +1289,37 @@ describe('creating a reviewed research handover', () => {
     await waitFor(() => expect(seen).toContain('/packs/reviewed-pack'))
   })
 
+  it('keeps a chat-owned research review on the saved chat destination without rewriting its old entry', async () => {
+    const sent = serveProject({ project: PROJECT })
+    const handover = researchHandover(), stub = handoverStub()
+    const visited: string[] = []
+    const onSaved = vi.fn(async () => {
+      // The chat owner can move to its saved pack while its persistence flush
+      // is still resolving. Its research was passed as a prop, not history.
+      await router.navigate('/packs/reviewed-pack?chat=research-chat', { replace: true })
+      visited.length = 0
+      return '/packs/reviewed-pack?chat=research-chat'
+    })
+    const router = createMemoryRouter([{ path: '*', element:
+      <McpContext.Provider value={connected({ client: stub.client, ...FULL_CAPS, validateSupported: true })}>
+        <DeskConfigFixture value={effectiveConfig(undefined)}>
+          <CreatePackDialog open presentation="review" onOpenChange={() => {}} onSaved={onSaved}
+            reviewDraft={{ ...handover, research: handover }} />
+        </DeskConfigFixture>
+      </McpContext.Provider>
+    }], { initialEntries: ['/chats/research-chat?view=draft'] })
+    router.subscribe(state => visited.push(`${state.location.pathname}${state.location.search}`))
+    render(<QueryClientProvider client={testQueryClient()}><RouterProvider router={router} /></QueryClientProvider>)
+    await waitFor(() => expect(createButton().disabled).toBe(false))
+    fireEvent.click(createButton())
+    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce())
+    await waitFor(() => expect(visited).toEqual(['/packs/reviewed-pack?chat=research-chat']))
+    expect(sent.map(write => write.path)).toEqual([
+      'packs/reviewed-pack.pack.json', 'packs/reviewed-pack.matrix.json',
+      'packs/reviewed-pack.research.json', 'jpack.json'
+    ])
+  })
+
   it('takes the handover off the create entry, so Back does not offer it again', async () => {
     // Back after a Create returned to an entry that still carried the handover,
     // and the dialog reads it at mount, so the create page came back offering
