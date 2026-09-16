@@ -7448,6 +7448,51 @@ export function assistantTransport(id: string): Transport {
   mutate web "any 401 ends the session on the desk's own fetch" "$FC" \
     "  if (refusalCode(answered) !== 'unauthorized') return answered" \
     ''
+
+  # **A disabled Create carries its reason on the step it is pressed from.**
+  # The name is asked about at Basics and the button is at Review, and a name
+  # can stop being usable in between: a companion write that failed leaves the
+  # pack file on disk, the failure refetches the listing, and the name that
+  # wrote that file collides with it. Under the mutation Create is dark at
+  # Review with the explanation two steps back, beside a field the draft has
+  # disabled — which is the state the orphaned-Create advice was written for.
+  mutate web "the name's problem is never said where Create is pressed" "$X" \
+    '  const createWhyHere = step === 0 ? createWhy : (createWhy ?? nameProblem)' \
+    '  const createWhyHere = createWhy'
+  # **The document's own refusal is the nearer answer.** A document the runtime
+  # will not call a pack is refused at any name; the collision is what is left
+  # to say once that clears. Under the mutation the collision takes the help id
+  # and the button describes itself by it, so the refusal that is actually
+  # holding Create is the one sentence nothing points at.
+  mutate web "the name's problem outranks the runtime's refusal" "$X" \
+    '  const createWhyHere = step === 0 ? createWhy : (createWhy ?? nameProblem)' \
+    '  const createWhyHere = step === 0 ? createWhy : (nameProblem ?? createWhy)'
+  # **Basics keeps `createWhy` exactly.** The Name field is on screen there
+  # carrying its own error, and under the mutation the same sentence is also
+  # rendered under the form — one problem said twice on one screen, which is
+  # what the step guard exists to prevent.
+  mutate web "Basics says the name's problem twice" "$X" \
+    '  const createWhyHere = step === 0 ? createWhy : (createWhy ?? nameProblem)' \
+    '  const createWhyHere = createWhy ?? nameProblem'
+  # **The help id lands on one element.** Structure check carries it only while
+  # the document's own refusal is the reason Create is off. Read off `createWhy`
+  # instead, `undefined === undefined` is true whenever neither is a refusal, so
+  # that paragraph takes the id and the hint below takes it too — a button
+  # describing itself by two elements at once.
+  mutate web "two elements carry Create's help id" "$X" \
+    '            <p id={createWhyHere === proposalRefusal ? createHelpId : undefined} role="status">' \
+    '            <p id={createWhy === proposalRefusal ? createHelpId : undefined} role="status">'
+  # **A companion failure hands the name back.** The pack file it left on disk
+  # is a file at the name that wrote it, so the advice is to give it another
+  # one — and that is only followable if the field it is asked at is open. Under
+  # the mutation the shaped draft keeps the field disabled and the page stays at
+  # Review, which is the state the old advice sent people out of the desk to
+  # escape.
+  mutate web "a companion failure keeps the name locked" "$X" \
+    "          setDraft(undefined)
+          setStep(0)
+          invalidate([['desk-files']])" \
+    "          invalidate([['desk-files']])"
 fi
 
 restore
