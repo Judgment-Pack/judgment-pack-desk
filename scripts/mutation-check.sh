@@ -3402,7 +3402,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # The standing primary action moved into the shared PackHeader. Tests also
   # remains a navigation entry; this row specifically preserves the action.
   mutate web "the primary Test pack link disappears" web/src/packs/PackWorkspace.tsx \
-    '      {current !== '"'"'test'"'"' && <ButtonLink variant="primary" to={`${base}/evaluate`}>Test pack</ButtonLink>}' \
+    '      {current !== '"'"'test'"'"' && <ButtonLink variant="primary" to={link(`${base}/evaluate`)}>Test pack</ButtonLink>}' \
     '      {null}'
 
   # Selecting with the pane closed.

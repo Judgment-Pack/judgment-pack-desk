@@ -1,0 +1,16 @@
+{
+  "results": [
+    "Unsent prompt survives configuration, new chat, navigation and reload",
+    "Bottom splitter supports keyboard/pointer, clears drag paint and preserves full-height Assistant",
+    "Unsaved drafts use the shared logic renderer without navigating to a missing pack",
+    "No page overflow at 1100×800",
+    "No page overflow at 800×700",
+    "No page overflow at 390×720",
+    "No page overflow at 1440×460",
+    "Bottom panel remains contained and exposes accurate keyboard bounds at short heights",
+    "Create writes and registers the pack, then retains the original conversation beside it",
+    "Selecting pack detail opens bottom Details without hiding Assistant",
+    "History supports rename, pin, archive and deletion without navigating away from an unrelated active chat"
+  ],
+  "errors": []
+}
