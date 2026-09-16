@@ -6700,6 +6700,35 @@ export function assistantTransport(id: string): Transport {
     '    held.candidateDigest === state.candidates.at(-1)?.digest' \
     '    true'
 
+  # **The reviewer's open questions are part of the answer being held.** The
+  # unknowns are the reviewer's own account of what the sources did not settle;
+  # a hold that kept the cases and dropped them re-establishes the same suite
+  # as a settled one, over questions the reviewer left open.
+  mutate web "the held proposal drops the reviewer's unknowns" "$RR" \
+    '    const held: HeldProposal = { candidateDigest: candidate.digest, admitted, dropped, unknowns: proposal?.unknowns ?? [] }' \
+    '    const held: HeldProposal = { candidateDigest: candidate.digest, admitted, dropped, unknowns: [] }'
+
+  # **A retry is offered while the run is at rest, and not while it is running.**
+  # The hold is live through validation, so a predicate that ignored the status
+  # would offer a retry of a proposal already in flight and put it twice.
+  mutate web "the retry is offered while validation is still in flight" "$RR" \
+    "  return held !== null && state.status !== 'running' &&" \
+    '  return held !== null &&'
+
+  # **The retry resumes the run it recovers, repair and all.** Declining to
+  # repair settles at needs-input over a draft the run still had the budget to
+  # fix, which is not what the interrupted path would have done.
+  mutate web "the retry declines to repair the draft it establishes over" "$RR" \
+    '      await this.casesAndCheck(signal, true)' \
+    '      await this.casesAndCheck(signal, false)'
+
+  # **A person-initiated establishment leaves a mark.** The retry changes what
+  # gets established; without its note the transcript of a retried run is
+  # indistinguishable from one that established on the first pass.
+  mutate web "a retry leaves no trace in the transcript" "$RR" \
+    "    this.addTurn({ role: 'user', kind: 'note', text: 'Sent the held case proposal back for validation.' })" \
+    '    void 0'
+
   # **The exact expectation is the pair.** §8.3 keeps the configured target
   # outside the disposition and this runtime reports one exactly when a handoff
   # is requested, so a target beside "none" is a pair no evaluation can produce.

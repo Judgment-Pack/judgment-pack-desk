@@ -417,9 +417,18 @@ export class AuthoringRun {
   retryExpectationValidation(): void {
     if (this.running || !canRetryExpectationValidation(this.state)) return
     this.arm()
+    // A person sent these cases back, and what follows establishes them. The
+    // record is the transcript, so the action that changed what got established
+    // says so in it, as a message and an approved correction do.
+    this.addTurn({ role: 'user', kind: 'note', text: 'Sent the held case proposal back for validation.' })
     this.set({ phase: 'cases', status: 'running', detail: 'Validating the held case proposal again.' })
     void this.drive(async signal => {
-      await this.casesAndCheck(signal)
+      // Repair stays on, spelled out rather than taken from the default: this
+      // resumes the run validation interrupted, so a draft that then disagrees
+      // with the established cases is repaired against the same budget `start()`
+      // would have spent on it. Declining to repair here would settle at
+      // needs-input with revisions still in hand.
+      await this.casesAndCheck(signal, true)
     })
   }
 
@@ -642,6 +651,11 @@ export class AuthoringRun {
       // failing on transport is no answer to the question it asked, so it is
       // not asked again -- but a changed draft is a different question, and a
       // proposal held against other bytes is not reused for it.
+      //
+      // Nor is a hold screened again: `admitCases` turns on ledger
+      // verification, and a verified record cannot become unverified, since
+      // every turn opens its own session and only ever marks records under it.
+      // A change to how sessions are allocated would have to re-screen here.
       const kept = this.state.heldProposal
       const held = kept !== null && kept.candidateDigest === candidate.digest ? kept : await this.proposeCases(signal, candidate)
       const { admitted, dropped } = held
@@ -984,10 +998,15 @@ function completeCurrentCheck(state: RunState): boolean {
  * that failed, stopped or spent its budget inside validation. The digest is the
  * binding: a hold left over from an earlier draft answers a question the
  * current one no longer asks, and that needs a reviewer, not a retry.
+ *
+ * `running` is the one status excluded: the hold is live while validation is in
+ * flight, and sending it again there would put the same proposal twice. An
+ * `idle` run cannot hold one -- `start()` resets through `INITIAL_STATE`, whose
+ * hold is null -- so there is no clause for it.
  */
 export function canRetryExpectationValidation(state: RunState): boolean {
   const held = state.heldProposal
-  return held !== null && state.status !== 'running' && state.status !== 'idle' &&
+  return held !== null && state.status !== 'running' &&
     held.candidateDigest === state.candidates.at(-1)?.digest
 }
 

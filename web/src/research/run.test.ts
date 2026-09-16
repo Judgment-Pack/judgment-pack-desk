@@ -799,7 +799,13 @@ describe('invalid expectation review', () => {
     // until the runtime has returned a canonical for every admitted row.
     const native = fakeRuntime()
     let drop = true
-    const { run, requests } = harness([researchTurn(), casesTurn], {
+    // The reviewer's open question is part of what the proposal answered, and a
+    // hold that kept the cases but dropped it would report a settled suite the
+    // reviewer did not settle.
+    const openQuestion = 'The page does not say whether part-time weeks count toward the hours.'
+    const casesWithUnknowns: Script = async (request, signal, onEvent) =>
+      casesTurn(request, signal, event => onEvent(event.type === 'proposal' ? { ...event, unknowns: [openQuestion] } : event))
+    const { run, requests } = harness([researchTurn(), casesWithUnknowns], {
       callTool: async (name, args) => {
         if (name === EXPECTATION_TOOL && drop) {
           drop = false
@@ -817,15 +823,34 @@ describe('invalid expectation review', () => {
     expect(state.droppedCases).toEqual([])
     expect(state.heldProposal?.admitted.map(row => row.id)).toEqual(['meets-hours', 'under-hours', 'hours-missing'])
     expect(state.heldProposal?.dropped.map(row => row.id)).toEqual(['ungrounded'])
+    expect(state.heldProposal?.unknowns).toEqual([openQuestion])
     expect(state.heldProposal?.candidateDigest).toBe(state.candidates[0]!.digest)
     expect(canRetryExpectationValidation(state)).toBe(true)
     run.retryExpectationValidation()
+    // In flight, the hold is still there and the retry is not offered again:
+    // sending the same proposal twice is not a retry of it.
+    expect(run.getSnapshot().status).toBe('running')
+    expect(run.getSnapshot().heldProposal).not.toBeNull()
+    expect(canRetryExpectationValidation(run.getSnapshot())).toBe(false)
     state = await settled(run)
     expect(state.status, state.detail).toBe('ready')
     expect(state.cases.map(row => row.id)).toEqual(['meets-hours', 'under-hours', 'hours-missing'])
     expect(state.droppedCases.map(row => row.id)).toEqual(['ungrounded'])
     // One reviewer turn for the whole run: the retry judged what was held.
     expect(requests.filter(request => request.reviewer)).toHaveLength(1)
+    // The transcript carries the person's action and the reviewer's open
+    // question, in the order they happened.
+    expect(state.turns.map(turn => [turn.role, turn.kind])).toEqual([
+      ['user', 'brief'],
+      ['assistant', 'message'],
+      ['assistant', 'unknowns'],
+      ['assistant', 'message'],
+      ['user', 'note'],
+      ['assistant', 'note'],
+      ['assistant', 'unknowns']
+    ])
+    expect(state.turns[4]!.text).toBe('Sent the held case proposal back for validation.')
+    expect(state.turns.at(-1)!.text).toBe(`• ${openQuestion}`)
     // Answered is not held: nothing offers a retry of a settled question.
     expect(state.heldProposal).toBeNull()
     expect(canRetryExpectationValidation(state)).toBe(false)
@@ -875,6 +900,45 @@ describe('invalid expectation review', () => {
     const stale = run.getSnapshot()
     run.retryExpectationValidation()
     expect(run.getSnapshot()).toBe(stale)
+  })
+
+  it('repairs a draft that disagrees after a retried validation, as the run it resumes would have', async () => {
+    // The retry resumes the run validation interrupted: what follows a
+    // successful validation is the check and the revision budget `start()`
+    // would have spent. A retry that declined to repair would settle at
+    // needs-input with a revision still in hand, over a draft the run was
+    // entitled to fix.
+    const wrong = { ...PACK, rules: [{ ...PACK.rules[0]!, when: { ...PACK.rules[0]!.when, value: '1600' } }] }
+    const native = fakeRuntime()
+    let drop = true
+    const repairTurn: Script = async (request, _signal, onEvent) => {
+      expect(request.prompt).toContain('REPAIR')
+      onEvent({ type: 'message', text: 'repaired to the threshold the excerpt states' })
+      onEvent({ type: 'proposal', document: PACK, unknowns: [] })
+      onEvent({ type: 'end' })
+    }
+    const { run, requests } = harness([researchTurn(wrong), casesTurn, repairTurn], {
+      callTool: async (name, args) => {
+        if (name === EXPECTATION_TOOL && drop) {
+          drop = false
+          throw new Error('the runtime connection dropped')
+        }
+        return native.callTool(name, args)
+      }
+    })
+    run.start('brief', [PAGE_URL])
+    let state = await settled(run)
+    expect(state.status).toBe('failed')
+    expect(state.revisionsUsed).toBe(0)
+    run.retryExpectationValidation()
+    state = await settled(run)
+    expect(state.status, state.detail).toBe('ready')
+    // The disagreement the retried validation uncovered was repaired, not
+    // reported: one revision spent, a second candidate, still one reviewer.
+    expect(state.revisionsUsed).toBe(1)
+    expect(state.candidates).toHaveLength(2)
+    expect(requests.filter(request => request.reviewer)).toHaveLength(1)
+    expect(state.candidates.at(-1)!.check?.cases.every(row => row.passed)).toBe(true)
   })
 })
 

@@ -4364,7 +4364,9 @@ back to the runtime as it stands: no second reviewer, no smaller suite. It is
 offered only while the hold matches the draft on screen, since a suite proposed
 from other bytes is a question for a reviewer and not a retry. A hold is not an
 established case: nothing reaches the cases, the matrix or the record until the
-runtime has returned a canonical for it.
+runtime has returned a canonical for it. The retry is the person's action and
+the conversation says so, and the run it resumes carries on into the same check
+and the same revision budget the interrupted one would have spent.
 
 **Invalid expectations require explicit review.** **Suggest correction** asks
 a fresh reviewer for a complete expectation and rationale using the original
