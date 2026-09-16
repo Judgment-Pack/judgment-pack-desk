@@ -46,7 +46,7 @@ export function PackAssistant({ packId, path, digest, draft, editing, identity, 
   // Standalone embeddings retain the existing assistant. The application
   // provides the project store above all routes.
   if (!store) return <AssistantPane draft={draft} editing={editing} identity={identity} busy={busy} diagnostics={diagnostics} />
-  if (!chat) return <p className={styles.blank}>{ready ? !store.canCreate ? 'Chat history is full. Export and delete an older chat from View all chats.' : 'Open Assistant to start a conversation about this pack.' : 'Loading conversations…'}</p>
+  if (!chat) return <p className={styles.blank}>{ready ? !store.canCreate ? 'Chat history is full. Export and delete an older chat from Chat history.' : 'Open Assistant to start a conversation about this pack.' : 'Loading chats…'}</p>
   const actions = proposed === undefined ? undefined : <Disclosure title="Review proposed changes">
     {diff && <ProposalDiffView diff={diff} onBaseline={unchanged} />}
     {!editing && <p className={styles.caption}>Choose Edit in the pack header, then ask for the change to apply it to your draft.</p>}
@@ -58,5 +58,5 @@ export function PackAssistant({ packId, path, digest, draft, editing, identity, 
     }}>{accepted === candidate?.digest ? 'Applied to draft' : 'Apply to draft'}</Button>
     <p className={styles.caption}>Review the changes in the main pane, then use Save. Applying a proposal is one undo step.</p>
   </Disclosure>
-  return <ChatPanel key={chat.id} chat={chat} proposalActions={actions} context={draft === undefined ? undefined : { text: draft, beforeSend: () => { setBaseline({ chatId: chat.id, bytes: draft, revision: candidate?.revision ?? 0, identity }); setAccepted('') } }} locked={Boolean(busy())} />
+  return <ChatPanel placement="pane" key={chat.id} chat={chat} proposalActions={actions} context={draft === undefined ? undefined : { text: draft, beforeSend: () => { setBaseline({ chatId: chat.id, bytes: draft, revision: candidate?.revision ?? 0, identity }); setAccepted('') } }} locked={Boolean(busy())} />
 }

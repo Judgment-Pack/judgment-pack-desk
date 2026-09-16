@@ -76,7 +76,7 @@ export function researchBlockedReason(state: {
       : slot.keyStatus === 'pending'
         ? 'Checking the saved API key…'
         : slot.keyStatus === 'error'
-          ? 'The saved API key could not be checked. Retry in Configure AI.'
+          ? 'The saved API key could not be checked. Retry in Configure Assistant.'
         : !slot.keyPresent
           ? 'No API key is stored for the assistant. Save one in Admin › Assistant.'
           : !state.modelPicked

@@ -1,6 +1,7 @@
 {
   "results": [
     "Unsent prompt survives configuration, new chat, navigation and reload",
+    "Assistant uses one title bar; history is in-pane, restores focus and retains the unsent message",
     "Bottom splitter supports keyboard/pointer, clears drag paint and preserves full-height Assistant",
     "Unsaved drafts use the shared logic renderer without navigating to a missing pack",
     "No page overflow at 1100×800",
@@ -10,7 +11,10 @@
     "Bottom panel remains contained and exposes accurate keyboard bounds at short heights",
     "Create writes and registers the pack, then retains the original conversation beside it",
     "Selecting pack detail opens bottom Details without hiding Assistant",
-    "History supports rename, pin, archive and deletion without navigating away from an unrelated active chat"
+    "History supports rename, pin, archive and deletion without navigating away from an unrelated active chat",
+    "New chat retains pack context; switching history restores the original chat in place",
+    "Narrow-screen history uses Escape to return to chat before closing Assistant",
+    "Project chat history is a page, with no modal or redundant Assistant"
   ],
   "errors": []
 }

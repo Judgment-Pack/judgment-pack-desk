@@ -765,6 +765,9 @@
     font-weight: 600;
   }
 
+  .desk-pane-head-slot { flex: 1; min-width: 0; }
+  .desk-pane-head-slot:empty { display: none; }
+
   /* The Packs entry's count. Absent, never zero, where the listing failed or
      has not answered — see LeftRail. */
   .desk-nav-count {

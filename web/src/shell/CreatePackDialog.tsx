@@ -907,7 +907,7 @@ export function CreatePackDialog({
               else setMethod('ai')
             }} segments={[
               { value: 'manual', label: 'Manual', disabled: draft !== undefined || describe.running },
-              { value: 'ai', label: 'Draft with AI', disabled: draft !== undefined || !describe.usable || !describe.advertised || describe.picked.model === '' }
+              { value: 'ai', label: 'Draft with Assistant', disabled: draft !== undefined || !describe.usable || !describe.advertised || describe.picked.model === '' }
             ]} /></div>
             {!describe.usable && <p className={flow.hint}>AI drafting is unavailable. Configure the assistant in Admin to enable it. {describe.unusableBecause}</p>}
             {describe.usable && !describe.advertised && <p className={flow.hint}>This runtime does not offer the authoring prompt required for AI drafting.</p>}

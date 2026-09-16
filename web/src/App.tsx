@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { ChatWorkspace } from './routes/ChatWorkspace'
+import { ChatHistoryPage } from './routes/ChatHistoryPage'
 
 import { AdminView } from './routes/AdminView'
 import { AuthorView } from './routes/AuthorView'
@@ -37,6 +38,7 @@ export function App() {
               Matrix stay outside it: neither was drawn beside a pane, and
               nesting them would hand them one they never asked for. */}
           <Route path="/create-pack" element={<ChatWorkspace />} />
+          <Route path="/chats" element={<ChatHistoryPage />} />
           <Route path="/chats/:chatId" element={<ChatWorkspace />} />
           <Route path="/create-pack/research" element={<Navigate to="/create-pack?mode=research" replace />} />
           <Route path="/packs" element={<PacksLayout />}>

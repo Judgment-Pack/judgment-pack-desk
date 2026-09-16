@@ -166,6 +166,7 @@ function ShellFrame({
    * a detached one.
    */
   const [inspectorTarget, setInspectorTarget] = useState<HTMLElement | null>(null)
+  const [inspectorHeaderTarget, setInspectorHeaderTarget] = useState<HTMLDivElement | null>(null)
   const [inspectorPane, setInspectorPane] = useState<HTMLElement | null>(null)
   const [inspectorTab, setInspectorTab] = useState<string | null>(null)
   /**
@@ -255,12 +256,13 @@ function ShellFrame({
       tab: inspectorTab,
       setTab: setInspectorTab,
       target: inspectorTarget,
+      headerTarget: inspectorHeaderTarget,
       claim,
       reveal,
       close: closeInspector,
       requestWorkingWidth
     }),
-    [inspectorOpen, inspectorBox, inspectorTab, inspectorTarget, claim, reveal, closeInspector, requestWorkingWidth]
+    [inspectorOpen, inspectorBox, inspectorTab, inspectorTarget, inspectorHeaderTarget, claim, reveal, closeInspector, requestWorkingWidth]
   )
 
   useEffect(
@@ -341,6 +343,7 @@ function ShellFrame({
               asDrawer={inspectorIsDrawer}
               declaredWidth={presentation || declaredPanes.inspectorWidth || minimumMainWidth > 0 || shell.inspectorWidth !== undefined ? inspectorWidth : undefined}
               publishTarget={publishTarget}
+              publishHeaderTarget={setInspectorHeaderTarget}
               publishPane={publishPane}
               openerRef={inspectorOpenerRef}
               restoreFocusRef={inspectionGestureRef}

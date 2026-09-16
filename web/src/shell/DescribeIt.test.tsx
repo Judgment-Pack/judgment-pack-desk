@@ -1407,7 +1407,7 @@ describe('AI handoff to the guided creation page', () => {
     injected = proposing(JSON.parse(TEMPLATE), ['Confirm the approval threshold with the policy owner.'])
     const { sent } = serve()
     const { setKey } = draw({ endpoint: ENDPOINT }, { page: true })
-    const ai = await screen.findByRole('radio', { name: 'Draft with AI' })
+    const ai = await screen.findByRole('radio', { name: 'Draft with Assistant' })
     await waitFor(() => expect((ai as HTMLButtonElement).disabled).toBe(false))
     fireEvent.click(ai)
     fireEvent.change(screen.getByLabelText('Name (required)'), { target: { value: 'Guided AI pack' } })

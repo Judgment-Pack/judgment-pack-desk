@@ -42,7 +42,7 @@ export function ChatWorkspace() {
   const chat = chats.find(chat => chat.id === chatId)
   useEffect(() => { if (chat?.pack) navigate(chatHref(chat), { replace: true }) }, [chat?.pack?.id, chat?.id, navigate])
   return <div data-measure="wide" data-layout="page">
-    {!ready || !chat ? <><PageHeader title="Create pack" /><div className={styles.blank} role="status">{error || (ready && chatId ? 'This chat is no longer in history.' : ready && !store?.canCreate ? 'Chat history is full. Export and delete an older chat from View all chats.' : 'Loading chat history…')}{error && <Button onClick={() => void store?.load()}>Retry</Button>}{ready && chatId && <Button onClick={() => navigate('/create-pack')}>New chat</Button>}</div></>
+    {!ready || !chat ? <><PageHeader title="Create pack" /><div className={styles.blank} role="status">{error || (ready && chatId ? 'This chat is no longer in history.' : ready && !store?.canCreate ? 'Chat history is full. Export and delete an older chat from Chat history.' : 'Loading chat history…')}{error && <Button onClick={() => void store?.load()}>Retry</Button>}{ready && chatId && <Button onClick={() => navigate('/create-pack')}>New chat</Button>}</div></>
       : <DraftWorkspace key={chat.id} chat={chat} />}
   </div>
 }
@@ -51,6 +51,7 @@ function DraftWorkspace({ chat }: { chat: Chat }) {
   const { store, bindings } = useChats()
   const binding = bindings.get(chat.id)
   const state = binding?.state ?? INITIAL_STATE
+  const [chatHeaderTarget, setChatHeaderTarget] = useState<HTMLDivElement | null>(null)
   const [selection, setSelection] = useState<Selection>(null)
   const [review, setReview] = useState(false)
   const [writing, setWriting] = useState(false)
@@ -76,7 +77,7 @@ function DraftWorkspace({ chat }: { chat: Chat }) {
     onOpenChange: setRightOpen, width, onResize: shell.resizeInspector, onReset: shell.resetInspectorWidth, minimumMainWidth: 480, maximumWidth: 640 }), [draft, narrow, rightOpen, width, shell.resizeInspector, shell.resetInspectorWidth])
   useInspectorPresentation(presentation)
   const openDraft = () => { setReview(false); setRightOpen(true); store?.update(chat.id, { view: 'draft' }) }
-  const portal = useInspectorPortal(draft && !narrow ? <ChatPanel chat={chat} locked={review || writing} /> : null)
+  const portal = useInspectorPortal(draft && !narrow ? <ChatPanel placement="pane" chat={chat} locked={review || writing} /> : null)
   const detailPortal = useDetailsPortal(binding?.ledger && selection ? <SourceInspector selection={selection} ledger={binding.ledger} state={state} onSelect={setSelection} /> : null)
   const select = (next: Selection) => { setSelection(next); if (next) details.reveal() }
   const candidate = latest?.document as { title?: unknown; description?: unknown; decision?: { question?: unknown } } | undefined
@@ -88,13 +89,14 @@ function DraftWorkspace({ chat }: { chat: Chat }) {
   } : undefined
   return <>
     <PageHeader title="Packs" titleHref="/packs" context={draft ? 'Draft' : 'Create pack'} actions={<>
+      {!draft && <div className={styles.headerControls} ref={setChatHeaderTarget} />}
       {draft && <Button variant="quiet" disabled={writing} onClick={() => { setReview(false); store?.update(chat.id,{ view: 'chat' }) }}>Chat</Button>}
       {draft && !narrow && !rightOpen && <Button onClick={() => setRightOpen(true)}>Show Assistant</Button>}
       {draft && !review && <Button variant="primary" disabled={!passing} onClick={() => setReview(true)}>Review and create</Button>}
     </>} />
     {portal}{detailPortal}
     <div className={styles.workspace}>
-      {!draft ? <ChatPanel chat={chat} landing onOpenDraft={openDraft} /> : review && latest ? <div className={styles.review}>
+      {!draft ? <ChatPanel chat={chat} headerTarget={chatHeaderTarget} landing onOpenDraft={openDraft} /> : review && latest ? <div className={styles.review}>
         <CreatePackDialog open presentation="review" onOpenChange={open => { if (!open && !writing) setReview(false) }}
           onWritingChange={writingChanged}
           canCreate={() => { const active = store?.getSnapshot().bindings.get(chat.id)?.state; return !!active && active.candidates.at(-1)?.digest === digest && draftReady(chat,active) }}
