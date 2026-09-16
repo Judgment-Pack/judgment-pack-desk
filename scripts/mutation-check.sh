@@ -4356,6 +4356,65 @@ function usePacks() { useExampleListing(); return readPacks() }'
   AQ=web/src/assistant/queries.ts
   CQ=web/src/config/queries.ts
 
+  # **A screened proposal is held before it is judged.** Validation failing on
+  # transport says nothing about the question the reviewer answered, and that
+  # turn is the most expensive in the run; unheld, the only way back is to alter
+  # the draft and buy a second reviewer for the same question.
+  mutate web "the reviewer's proposal is discarded before validation" "$RR" \
+    '    this.set({ heldProposal: held })' \
+    '    void held'
+
+  # **And it is released the moment it is answered.** A hold that outlives its
+  # own establishment offers a retry of a settled question, over cases already
+  # established and issues already blocked.
+  mutate web "the held proposal outlives the establishment that answered it" "$RR" \
+    '      this.set({ cases, expectationIssues: issues, droppedCases: dropped, heldProposal: null })' \
+    '      this.set({ cases, expectationIssues: issues, droppedCases: dropped })'
+
+  # **A hold answers the draft it was proposed against, and no other.** The
+  # suite comes from that draft's outcomes and fact paths, so reusing it for
+  # changed bytes silently establishes a suite nobody proposed for them --
+  # where establishment has always asked a fresh reviewer.
+  mutate web "a held proposal is reused for a draft it was never proposed for" "$RR" \
+    '      const held = kept !== null && kept.candidateDigest === candidate.digest ? kept : await this.proposeCases(signal, candidate)' \
+    '      const held = kept !== null ? kept : await this.proposeCases(signal, candidate)'
+
+  # The same binding on the action itself: a retry offered against a draft the
+  # hold predates would spend a reviewer turn under a control that says it will
+  # not, which is the cost this whole path exists to avoid.
+  mutate web "the retry is offered for a draft the hold predates" "$RR" \
+    '    held.candidateDigest === state.candidates.at(-1)?.digest' \
+    '    true'
+
+  # **The reviewer's open questions are part of the answer being held.** The
+  # unknowns are the reviewer's own account of what the sources did not settle;
+  # a hold that kept the cases and dropped them re-establishes the same suite
+  # as a settled one, over questions the reviewer left open.
+  mutate web "the held proposal drops the reviewer's unknowns" "$RR" \
+    '    const held: HeldProposal = { candidateDigest: candidate.digest, admitted, dropped, unknowns: proposal?.unknowns ?? [] }' \
+    '    const held: HeldProposal = { candidateDigest: candidate.digest, admitted, dropped, unknowns: [] }'
+
+  # **A retry is offered while the run is at rest, and not while it is running.**
+  # The hold is live through validation, so a predicate that ignored the status
+  # would offer a retry of a proposal already in flight and put it twice.
+  mutate web "the retry is offered while validation is still in flight" "$RR" \
+    "  return held !== null && state.status !== 'running' &&" \
+    '  return held !== null &&'
+
+  # **The retry resumes the run it recovers, repair and all.** Declining to
+  # repair settles at needs-input over a draft the run still had the budget to
+  # fix, which is not what the interrupted path would have done.
+  mutate web "the retry declines to repair the draft it establishes over" "$RR" \
+    '      await this.casesAndCheck(signal, true)' \
+    '      await this.casesAndCheck(signal, false)'
+
+  # **A person-initiated establishment leaves a mark.** The retry changes what
+  # gets established; without its note the transcript of a retried run is
+  # indistinguishable from one that established on the first pass.
+  mutate web "a retry leaves no trace in the transcript" "$RR" \
+    "    this.addTurn({ role: 'user', kind: 'note', text: 'Sent the held case proposal back for validation.' })" \
+    '    void 0'
+
   # **Two rows are gone from here**, and the reason is worth the space. They
   # broke a helper that chose the credential sentence at the schema walk, on
   # top of the recursive pre-scan that also produces it — so breaking either

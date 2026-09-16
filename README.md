@@ -4355,6 +4355,19 @@ and Create pause rather than silently omitting it from a smaller passing suite.
 A runtime limit finding means the expectation was not admitted, not that its
 meaning violates Core, and it is shown as that rather than as a §8.3 defect.
 
+**A failed validation does not cost the reviewer turn.** The screened
+proposal — the admitted cases, the drops and the reviewer's unknowns — is held
+before validation is attempted, so a transport failure, a refusal or an
+unreadable report ends the run without also discarding the answer to the most
+expensive question the run asks. **Retry validation** puts that same proposal
+back to the runtime as it stands: no second reviewer, no smaller suite. It is
+offered only while the hold matches the draft on screen, since a suite proposed
+from other bytes is a question for a reviewer and not a retry. A hold is not an
+established case: nothing reaches the cases, the matrix or the record until the
+runtime has returned a canonical for it. The retry is the person's action and
+the conversation says so, and the run it resumes carries on into the same check
+and the same revision budget the interrupted one would have spent.
+
 **Invalid expectations require explicit review.** **Suggest correction** asks
 a fresh reviewer for a complete expectation and rationale using the original
 case, verified source and declared outcomes/handoff. It does not receive actual

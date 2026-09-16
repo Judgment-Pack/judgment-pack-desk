@@ -5,7 +5,7 @@ import { useInspectorSlot } from '../shell/InspectorSlot'
 import { DropdownMenu, VisuallyHidden } from 'radix-ui'
 import { useAssistantSlot } from '../assistant/useAssistantSlot'
 import { describeEvent } from '../assistant/EventList'
-import { INITIAL_STATE } from '../research/run'
+import { canRetryExpectationValidation, INITIAL_STATE } from '../research/run'
 import { statusLine } from '../research/ui/Conversation'
 import { Button } from '../ui/Button'
 import { Select } from '../ui/Select'
@@ -117,6 +117,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
       {state.candidates.length > 0 && onOpenDraft && <div className={styles.artifact}><div><strong>{(state.candidates.at(-1)!.document as { title?: string })?.title ?? 'Pack draft'}</strong><small>Revision {state.candidates.at(-1)!.revision} · {state.status === 'ready' ? 'Ready for review' : 'Draft'}</small></div><Button onClick={onOpenDraft}>Open draft</Button></div>}
       {proposalActions}
       {state.restored && !savedCandidate && state.candidates.length > 0 && <Button disabled={running || Boolean(otherRun)} onClick={() => store?.perform(chat.id, active => active.run?.recheck(), false)}>Recheck saved draft</Button>}
+      {canRetryExpectationValidation(state) && <Button disabled={locked || Boolean(otherRun) || Boolean(blocked)} onClick={() => store?.perform(chat.id, active => active.run?.retryExpectationValidation())}>Retry validation</Button>}
     </div>
     <div className={styles.composerArea} onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault() }} onDrop={event => { if (event.dataTransfer.files.length) { event.preventDefault(); void attach(event.dataTransfer.files) } }}>
       {error && <div className={styles.notice} role="alert"><p>{error}</p><Button variant="quiet" onClick={() => store?.retrySave()}>Retry saving</Button></div>}

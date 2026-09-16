@@ -161,7 +161,7 @@ export function ResearchAuthoringPage() {
             )}
             <div className={styles.workspace} data-narrow={narrow}>
               <div data-pane="conversation" data-shown={!narrow || shown === 'conversation'} className={styles.pane} style={{ display: 'contents' }}>
-                <Conversation state={state} onSend={(text) => run?.send(text)} onStop={() => run?.stop()} />
+                <Conversation state={state} onSend={(text) => run?.send(text)} onStop={() => run?.stop()} onRetryValidation={() => run?.retryExpectationValidation()} />
               </div>
               <div data-pane="draft" data-shown={!narrow || shown === 'draft'} style={{ display: 'contents' }}>
                 <DraftTabs onProposeCorrection={id => run?.proposeExpectationCorrection(id)} onApproveCorrection={(id, token) => run?.approveExpectationCorrection(id, token)} state={state} sources={sources} selection={selection} onSelect={select} onCreate={create} />
