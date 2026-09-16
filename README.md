@@ -4347,7 +4347,9 @@ byte-identical to the assertion that was checked. A case that also asserts an
 `expectedHandoffTarget` is held to the pair: a target beside a disposition that
 requests no handoff could never pass, whatever the pack says, and is blocked
 like any other impossible expectation. A missing capability or incomplete report
-blocks research; Desk carries no second disposition validator. An invalid
+blocks research — jpack 0.22.0 and later serve the tool, and an older runtime
+is named as the reason before a run starts; Desk carries no second
+disposition validator. An invalid
 expectation remains visible in Tests and in the case count. Testing, repair
 and Create pause rather than silently omitting it from a smaller passing suite.
 A runtime limit finding means the expectation was not admitted, not that its

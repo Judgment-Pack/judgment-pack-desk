@@ -91,7 +91,7 @@ export function researchBlockedReason(state: {
                       : !mcp.validateSupported
                         ? 'This runtime does not serve validate, so a draft cannot be checked.'
                         : !mcp.expectationValidationSupported
-                          ? 'Update the runtime to a build that validates test expectations before research starts: it needs jpack with experimental_validate_expectations.'
+                          ? 'Update the runtime to jpack 0.22.0 or later, which serves experimental_validate_expectations; research cannot start on an older build.'
                           : ''
 }
 
