@@ -1,4 +1,5 @@
-import { RecentChats, chatHref } from '../chat/ChatHistory'
+import { RecentChats } from '../chat/ChatHistory'
+import { openNewChat } from '../chat/navigation'
 import { useChats } from '../chat/ChatProvider'
 import { Tooltip } from '../ui/Tooltip'
 import { type ReactElement } from 'react'
@@ -131,7 +132,7 @@ function RailBody({
           type="button"
           className="desk-create"
           aria-label="Create a pack"
-          onClick={() => { navigate(store?.canCreate && ready ? chatHref(store.create()) : '/create-pack'); onNavigate?.() }}
+          onClick={() => { if (store?.canCreate && ready) openNewChat(navigate, store.startChat()); else navigate('/create-pack'); onNavigate?.() }}
         >
           <IconPlus />
           {!icons && <span className="desk-nav-label">Create pack</span>}

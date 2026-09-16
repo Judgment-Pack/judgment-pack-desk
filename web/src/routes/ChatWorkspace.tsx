@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useBlocker, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useBlocker, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ChatPanel } from '../chat/ChatPanel'
 import { useChats } from '../chat/ChatProvider'
 import { chatHref } from '../chat/ChatHistory'
+import { homeChatId } from '../chat/navigation'
 import type { Chat } from '../chat/store'
 import { INITIAL_STATE, canCreateResearchDraft, matrixDocument, researchRecord } from '../research/run'
 import { DraftTabs, type Selection } from '../research/ui/DraftPanels'
@@ -25,24 +26,27 @@ export function draftReady(chat: Chat, state: typeof INITIAL_STATE): boolean {
 }
 
 export function ChatWorkspace() {
-  const { chatId } = useParams()
+  const { chatId: linkedChatId } = useParams()
+  const location = useLocation()
+  const home = location.pathname === '/'
+  const chatId = linkedChatId ?? (home ? homeChatId(location.state) : undefined)
   const [params] = useSearchParams()
-  const initialMode = params.get('mode') === 'research' ? 'research' : 'draft'
-  const { store, chats, ready, error } = useChats()
+  const initialMode = params.get('mode') === 'research' ? 'research' : undefined
+  const { store, chats, drafts, ready, error } = useChats()
   const navigate = useNavigate()
   const created = useRef<string | null>(null)
   useEffect(() => {
     if (!store || !ready) return
-    if (!chatId) {
+    if (!chatId || (home && ![...chats, ...drafts].some(chat => chat.id === chatId))) {
       if (!store.canCreate) return
-      if (!created.current) created.current = store.create(undefined, initialMode).id
-      navigate(`/chats/${created.current}`, { replace: true })
+      if (!created.current || ![...chats, ...drafts].some(chat => chat.id === created.current)) created.current = store.startChat(undefined, initialMode).id
+      navigate('/', { replace: true, state: { homeChatId: created.current } })
     } else { created.current = null; store.activate(chatId) }
-  }, [store, ready, chatId, navigate, initialMode])
-  const chat = chats.find(chat => chat.id === chatId)
+  }, [store, ready, chatId, navigate, initialMode, home, chats, drafts])
+  const chat = chats.find(chat => chat.id === chatId) ?? drafts.find(chat => chat.id === chatId)
   useEffect(() => { if (chat?.pack) navigate(chatHref(chat), { replace: true }) }, [chat?.pack?.id, chat?.id, navigate])
   return <div data-measure="wide" data-layout="page">
-    {!ready || !chat ? <><PageHeader title="Create pack" /><div className={styles.blank} role="status">{error || (ready && chatId ? 'This chat is no longer in history.' : ready && !store?.canCreate ? 'Chat history is full. Export and delete an older chat from Chat history.' : 'Loading chat history…')}{error && <Button onClick={() => void store?.load()}>Retry</Button>}{ready && chatId && <Button onClick={() => navigate('/create-pack')}>New chat</Button>}</div></>
+    {!ready || !chat ? <div className={styles.blank} role="status">{error || (ready && chatId && !home ? 'This chat is no longer in history.' : ready && !store?.canCreate ? 'Chat history is full. Export and delete an older chat from Chat history.' : 'Loading chat history…')}{error && <Button onClick={() => void store?.load()}>Retry</Button>}{ready && chatId && !home && <Button onClick={() => navigate('/')}>New chat</Button>}</div>
       : <DraftWorkspace key={chat.id} chat={chat} />}
   </div>
 }
@@ -88,12 +92,11 @@ function DraftWorkspace({ chat }: { chat: Chat }) {
     matrix: matrixDocument(state,binding.ledger), research: researchRecord(state,binding.ledger,'')
   } : undefined
   return <>
-    <PageHeader title="Packs" titleHref="/packs" context={draft ? 'Draft' : 'Create pack'} actions={<>
-      {!draft && <div className={styles.headerControls} ref={setChatHeaderTarget} />}
+    {!draft ? <header role="presentation" data-page-header className={styles.workspaceHeader}><div className={styles.headerControls} ref={setChatHeaderTarget} /></header> : <PageHeader title="Draft" actions={<>
       {draft && <Button variant="quiet" disabled={writing} onClick={() => { setReview(false); store?.update(chat.id,{ view: 'chat' }) }}>Chat</Button>}
       {draft && !narrow && !rightOpen && <Button onClick={() => setRightOpen(true)}>Show Assistant</Button>}
       {draft && !review && <Button variant="primary" disabled={!passing} onClick={() => setReview(true)}>Review and create</Button>}
-    </>} />
+    </>} />}
     {portal}{detailPortal}
     <div className={styles.workspace}>
       {!draft ? <ChatPanel chat={chat} headerTarget={chatHeaderTarget} landing onOpenDraft={openDraft} /> : review && latest ? <div className={styles.review}>

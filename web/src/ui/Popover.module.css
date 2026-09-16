@@ -17,3 +17,21 @@
   font-size: var(--text-body);
   font-weight: 600;
 }
+
+.content[data-variant='list'] {
+  display: flex;
+  flex-direction: column;
+  width: min(24rem, calc(100vw - 2 * var(--space-4)));
+  max-height: min(32rem, var(--radix-popover-content-available-height));
+  padding: 0;
+  overflow: hidden;
+}
+.content[data-variant='list'] > .title {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  border-bottom: 1px solid var(--border);
+}
+.content[data-size='small'] { width: min(20rem, calc(100vw - 2 * var(--space-4))); }

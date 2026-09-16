@@ -16,7 +16,7 @@ const EMPTY_PROJECT = stubClient({
 describe('the desk, connected', () => {
   it('opens the chat landing page without a warning when the tool listing was read', async () => {
     renderConnected(<App />, connected({ client: EMPTY_PROJECT.client, known: true }))
-    await screen.findByRole('heading', { name: 'Create pack' })
+    await screen.findByText('Loading chat history…')
     expect(screen.queryByText(/tool listing could not be read/)).toBeNull()
   })
 

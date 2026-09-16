@@ -17,21 +17,22 @@ import styles from './ChatWorkspace.module.css'
 export function PackAssistant({ packId, path, digest, draft, editing, identity, busy, diagnostics }: {
   packId: string; path?: string; digest?: string; draft?: string; editing: boolean; identity?: BufferIdentity; busy: () => string; diagnostics: { count: number; bytes: string } | undefined
 }) {
-  const { store, ready, chats, bindings } = useChats()
+  const { store, ready, chats, drafts, bindings } = useChats()
   const [params] = useSearchParams()
   const navigate = useNavigate()
   const slot = useInspectorSlot()
   const session = useEditing()
   const explicit = params.get('chat')
-  const chat = (explicit ? chats.find(chat => chat.id === explicit && chat.pack?.id === packId) : undefined)
-    ?? chats.filter(chat => chat.pack?.id === packId && !chat.archived).sort((a,b) => b.updatedAt.localeCompare(a.updatedAt))[0]
+  const available = [...chats, ...drafts]
+  const chat = (explicit ? available.find(chat => chat.id === explicit && chat.pack?.id === packId) : undefined)
+    ?? available.filter(chat => chat.pack?.id === packId && !chat.archived).sort((a,b) => b.updatedAt.localeCompare(a.updatedAt))[0]
   const creating = useRef(false)
   useEffect(() => {
     if (!store || !ready) return
     if (chat) { creating.current = false; store.activate(chat.id) }
     else if (slot.open && store.canCreate && !creating.current) {
       creating.current = true
-      const next = store.create({ id: packId, path: path ?? '', digest: digest ?? '' })
+      const next = store.startChat({ id: packId, path: path ?? '', digest: digest ?? '' })
       navigate(chatHref(next), { replace: true })
     }
   }, [store, ready, chat?.id, packId, path, digest, slot.open, navigate])

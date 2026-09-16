@@ -21,7 +21,7 @@ function view(identity = base, draft = original) {
   return <MemoryRouter><PackAssistant packId="p" editing draft={draft} identity={identity} busy={() => ''} diagnostics={undefined} /></MemoryRouter>
 }
 beforeEach(() => {
-  fake.snapshot = { store, ready: true, chats: [chat], bindings: new Map([['chat-one', snapshot(1)]]) }
+  fake.snapshot = { store, ready: true, chats: [chat], drafts: [], bindings: new Map([['chat-one', snapshot(1)]]) }
   fake.editing = { editing: true, pending: new Set(), write: vi.fn() }
 })
 it('does not offer an older candidate as the answer to a new clarification', () => {

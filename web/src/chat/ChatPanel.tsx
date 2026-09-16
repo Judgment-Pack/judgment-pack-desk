@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import { useInspectorSlot } from '../shell/InspectorSlot'
-import { DropdownMenu, VisuallyHidden } from 'radix-ui'
+import { VisuallyHidden } from 'radix-ui'
 import { useAssistantSlot } from '../assistant/useAssistantSlot'
 import { describeEvent } from '../assistant/EventList'
 import { canRetryExpectationValidation, INITIAL_STATE } from '../research/run'
@@ -11,9 +11,11 @@ import { Button } from '../ui/Button'
 import { Select } from '../ui/Select'
 import { TextArea } from '../ui/TextArea'
 import { Tooltip } from '../ui/Tooltip'
-import { IconPlus, IconGear } from '../shell/icons'
+import { IconPlus } from '../shell/icons'
 import { ConfigureAssistant } from './ConfigureAssistant'
-import { ChatToolbar, ChatHistoryList, chatHref } from './ChatHistory'
+import { AssistantOptions } from './AssistantOptions'
+import { ChatToolbar, chatHref } from './ChatHistory'
+import { openNewChat } from './navigation'
 import { useChats } from './ChatProvider'
 import type { Chat } from './store'
 import styles from './ChatWorkspace.module.css'
@@ -24,7 +26,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
   context?: { text: string; beforeSend?: () => void }
   proposalActions?: ReactNode; locked?: boolean
 }) {
-  const { store, bindings, error, saving, dirty } = useChats()
+  const { store, bindings, error, saving, dirty, drafts } = useChats()
   const binding = bindings.get(chat.id)
   const state = binding?.state ?? INITIAL_STATE
   const slot = useAssistantSlot()
@@ -32,19 +34,18 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
   const toolbarTarget = placement === 'pane' ? pane.headerTarget : headerTarget
   const [history, setHistory] = useState(false)
   const historyButton = useRef<HTMLButtonElement>(null)
-  const backToChat = () => { setHistory(false); requestAnimationFrame(() => historyButton.current?.focus()) }
+  const backToChat = () => setHistory(false)
   const navigate = useNavigate()
   const location = useLocation()
   const [configure, setConfigure] = useState(false)
   const configureButton = useRef<HTMLButtonElement>(null)
-  const settingsButton = useRef<HTMLButtonElement>(null)
-  const panel = useRef<HTMLElement>(null)
   const thread = useRef<HTMLDivElement>(null)
   const following = useRef(true)
   const [attachmentError, setAttachmentError] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
   const id = useId()
   const running = state.status === 'running'
+  const unsubmitted = drafts.some(draft => draft.id === chat.id)
   const otherRun = store?.running && store.running !== chat.id ? store.running : undefined
   const empty = state.turns.length === 0
   const savedCandidate = Boolean(chat.pack && chat.createdCandidateDigest && chat.createdCandidateDigest === state.candidates.at(-1)?.digest && (state.status === 'ready' || state.restored))
@@ -69,18 +70,6 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
   useEffect(() => {
     if (!history && following.current) thread.current?.scrollTo?.({ top: thread.current.scrollHeight })
   }, [state.turns.length, state.events.length, running, history])
-  useEffect(() => {
-    if (!history) return
-    // Consume history navigation before a narrow-screen drawer handles Escape.
-    // Menus live outside these targets and retain their own Escape behavior.
-    const escape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || event.defaultPrevented || !(event.target instanceof Node)) return
-      if (!panel.current?.contains(event.target) && !toolbarTarget?.contains(event.target)) return
-      event.preventDefault(); event.stopPropagation(); backToChat()
-    }
-    window.addEventListener('keydown', escape, true)
-    return () => window.removeEventListener('keydown', escape, true)
-  }, [history, toolbarTarget])
   const attach = async (files: FileList | null) => {
     if (!files || !store || locked || running) return
     setAttachmentError('')
@@ -93,7 +82,8 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
         if (text.includes('\0')) throw new Error(`${file.name} is not a text file.`)
         return `\n\nAttached text: ${file.name}\n\`\`\`text\n${text}\n\`\`\``
       }))
-      const current = store.getSnapshot().chats.find(item => item.id === chat.id)?.composer ?? ''
+      const snapshot = store.getSnapshot()
+      const current = [...snapshot.chats, ...snapshot.drafts].find(item => item.id === chat.id)?.composer ?? ''
       if (current.length + pieces.join('').length > 800_000) throw new Error('The message is too large. Remove some attached text before adding more.')
       store.update(chat.id, { composer: current + pieces.join('') })
     } catch (error) { setAttachmentError((error as Error).message) }
@@ -101,11 +91,10 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
   }
   const workingEvents = state.events.filter(event => ['tool_call', 'tool_result', 'guardrail', 'thinking_unavailable', 'error'].includes(event.type))
   const toolbar = <ChatToolbar chat={chat} history={history} historyRef={historyButton} onHistory={() => setHistory(true)} onBack={backToChat}
-    onNew={() => { if (!store?.canCreate) return; const next = store.create(chat.pack, chat.mode); setHistory(false); navigate(chatHref(next, location)) }} />
-  return <section ref={panel} className={styles.chat} data-landing={landing && empty && !history || undefined} aria-label="Assistant chat">
+    onNew={() => { if (!store?.canCreate) return; const next = store.startChat(chat.pack, chat.mode, true); setHistory(false); openNewChat(navigate, next, location) }} />
+  return <section className={styles.chat} data-landing={landing && empty || undefined} aria-label="Assistant chat">
     {toolbarTarget ? createPortal(toolbar, toolbarTarget) : placement === 'main' && headerTarget === undefined ? <header className={styles.chatHeader}>{toolbar}</header> : null}
-    {history && <ChatHistoryList packId={chat.pack?.id} activeId={chat.id} onNavigate={() => { setHistory(false); requestAnimationFrame(() => document.getElementById(`${id}-message`)?.focus()) }} />}
-    <div className={styles.conversation} hidden={history}>
+    <div className={styles.conversation}>
     <div className={styles.thread} ref={thread} onScroll={() => { const node = thread.current; if (node) following.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80 }}>
       {empty && <div className={styles.welcome}><h1>{chat.pack ? 'What would you like to change?' : 'What should this pack decide?'}</h1><p>{chat.pack ? `Ask about ${chat.pack.id}, test an idea, or propose a change.` : 'Describe the decision, the information it needs, and the possible outcomes.'}</p></div>}
       {state.turns.map((turn,index) => <article key={`${turn.at}-${index}`} className={styles.message} data-role={turn.role}>
@@ -134,20 +123,13 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
           <Tooltip content="Attach text files (.txt, .md, .json, .csv)"><button className="desk-icon-button" type="button" aria-label="Attach text files" disabled={running || locked} onClick={() => fileInput.current?.click()}><IconPlus /></button></Tooltip>
           <div className={styles.pick}><VisuallyHidden.Root asChild><label htmlFor={`${id}-mode`}>Authoring mode</label></VisuallyHidden.Root><Select id={`${id}-mode`} value={chat.mode} disabled={!empty || locked} onValueChange={mode => store?.update(chat.id, { mode: mode as Chat['mode'] })} options={[{ value: 'draft', label: 'Draft' }, { value: 'research', label: 'Research' }]} /></div>
           {(slot.endpoint?.models.length ?? 0) > 0 && <div className={styles.model}><VisuallyHidden.Root asChild><label htmlFor={`${id}-model`}>Model</label></VisuallyHidden.Root><Select id={`${id}-model`} value={binding?.model} disabled={running || locked} onValueChange={model => store?.update(chat.id, { model })} options={slot.endpoint!.models.map(model => ({ value: model, label: model }))} /></div>}
-          <DropdownMenu.Root><Tooltip content="Assistant settings and available tools"><DropdownMenu.Trigger ref={settingsButton} className="desk-icon-button" aria-label="Assistant settings"><IconGear /></DropdownMenu.Trigger></Tooltip>
-            <DropdownMenu.Portal><DropdownMenu.Content className="desk-menu" align="end" collisionPadding={12} onCloseAutoFocus={event => { if (configure) event.preventDefault() }}>
-              <DropdownMenu.Label className="desk-menu-label">Thinking: {slot.thinking}</DropdownMenu.Label>
-              <DropdownMenu.Label className="desk-menu-label">Available tools</DropdownMenu.Label>
-              {(slot.endpoint?.tools ?? []).map(tool => <DropdownMenu.Label key={tool} className="desk-menu-label">{tool}</DropdownMenu.Label>)}
-              <DropdownMenu.Item className="desk-menu-item" onSelect={() => { configureButton.current = settingsButton.current; setConfigure(true) }}>Configure Assistant…</DropdownMenu.Item>
-            </DropdownMenu.Content></DropdownMenu.Portal>
-          </DropdownMenu.Root>
+          <AssistantOptions thinking={slot.thinking} tools={slot.endpoint?.tools ?? []} />
           <span className={styles.grow} />
           {running ? <Button onClick={() => binding?.run?.stop()}>Stop</Button> : <Button variant="primary" disabled={needsConfig || !chat.composer.trim() || !binding || Boolean(otherRun) || locked || Boolean(blocked && !needsConfig)} onClick={send}>Send</Button>}
         </div>
       </div>
       {attachmentError && <p className={styles.caption} role="alert">{attachmentError}</p>}
-      <p className={styles.footnote}>{error ? 'Chat has unsaved changes' : saving || dirty ? 'Saving chat…' : 'Chat saved locally'} · {chat.pack ? 'Changes need your review and Save.' : 'No pack file is created until you choose Create pack.'}</p>
+      <p className={styles.footnote}>{unsubmitted ? 'Send a message to start a chat.' : error ? 'Chat has unsaved changes' : saving || dirty ? 'Saving chat…' : 'Chat saved locally'} · {chat.pack ? 'Changes need your review and Save.' : 'No pack file is created until you choose Create pack.'}</p>
     </div>
     </div>
     <ConfigureAssistant open={configure} onOpenChange={setConfigure} openerRef={configureButton} />

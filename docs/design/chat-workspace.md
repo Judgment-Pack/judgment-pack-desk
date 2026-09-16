@@ -1,6 +1,6 @@
 # Chat workspace
 
-Status: implemented on `feat/chat-workspace`; independent review required before merge.
+Status: chat workspace merged in #91; home and menu refinements follow in #99.
 Storage and engine decisions are recorded in [ADR 0002](../adr/0002-project-conversations-and-chat-workspace.md).
 
 The current Create page asks for metadata before the conversation, loses the run
@@ -14,14 +14,16 @@ chat beside it; creating a pack links that chat to the saved pack.
 - Main: conversation until the person chooses Open draft; then the draft, its
   sources, tests, and final review. Do not automatically move focus on generation.
 - Right: Assistant on authoring and pack document routes. New chat and Chat history are icon buttons in the pane title bar.
-  History replaces the chat body in-place; it never covers the pack with a modal. One pack may have multiple conversations.
+  History opens in a bounded, nonmodal popover; the conversation stays mounted underneath. One pack may have multiple conversations.
 - Bottom: selected details and Activity, underneath main only. The Assistant
   stays full height. Both dividers use the same accessible separator component.
 - Narrow screens: explicit Chat/Draft navigation; no forced three-column layout.
-- Missing configuration: retain the composer and open a Configure AI modal using
+- Missing configuration: retain the composer and explicitly open Configure Assistant using
   Admin's existing form. Include a link to the full Admin page.
 
-Create pack starts an unbound chat. New chat from a pack retains the explicitly
+Home stays at `/` and opens an unsubmitted composer. Merely visiting home,
+reloading, typing or choosing New chat creates no saved conversation. The first
+accepted Send promotes that draft into history, once. New chat from a pack retains the explicitly
 shown pack context. Switching conversations restores the draft, text, model and
 view. It never submits, cancels, or changes a running task. One active operation
 per project in each window is allowed initially, with an explicit Stop action. The first send
@@ -33,7 +35,10 @@ Conversation checkpoints live outside the project under the chassis' protected
 local configuration directory. The API is authenticated and origin checked,
 project scoped, size bounded, versioned and optimistic-concurrency checked.
 Files are owner-only, opened without following links, and replaced atomically.
-Browser storage holds layout preferences only, never transcripts or API keys.
+Completed conversation checkpoints never live in browser storage. An unsent home
+composer is cached in sessionStorage for this tab and project, so reload does not
+discard it. First Send or explicit New chat clears that cache. API keys remain
+in the protected key store.
 
 Persisted readiness, receipt verdicts, checks and approval tokens are not
 authority. Restoring a checkpoint must make creation unavailable until sources
@@ -93,8 +98,9 @@ Real browser renders using an isolated fixture, without a model call:
 ![Chat landing, light](chat-landing-light.png)
 ![Draft beside the same conversation](chat-workspace-dark.png)
 ![Pack details below main, Assistant stays visible](chat-pack-details-dark.png)
-![Chat history inside Assistant](chat-history-dark.png)
+![Chat history popover in Assistant](chat-history-dark.png)
 ![Full project chat history](chat-history-page.png)
+![Assistant settings](chat-assistant-settings-dark.png)
 ![Assistant on a narrow screen](chat-assistant-drawer.png)
 
 ## September 16 follow-up: naming and compact chat controls
@@ -114,14 +120,17 @@ Assistant. Sending without configuration also opened an unexpected setup modal.
 Provider names, model IDs, engine contracts and runtime research-session terms
 retain their technical meanings. No stored data or API was renamed.
 
-New chat and Chat history share the existing title bar with Close. Titles
-truncate without pushing those controls out of view. Both icons reuse the
+New chat and Chat history share the existing title bar with Close. The landing
+page has these icon actions without a breadcrumb or redundant New chat title. Both icons reuse the
 16px glyph system, neutral button states and Radix tooltip primitive. The
 main chat uses the same toolbar in its page header, without another divider.
-The history body is searchable, marks the current chat neutrally and retains
+The history popover is searchable, marks the current chat neutrally and retains
 rename/pin/archive/export/delete. Pack history defaults to that pack; project
 history has its own page. Returning from history preserves the composer and
-conversation DOM. Escape returns to chat, including inside a narrow-screen
+conversation DOM. It uses a 24rem width constrained by viewport gutters and a
+scrollable list below its search field. Assistant settings uses the same shared
+Popover primitive at 20rem, with labeled Thinking and Allowed tools sections.
+Escape returns to chat, including inside a narrow-screen
 Assistant drawer; a menu retains its own Escape handling.
 
 Setup appears only after an explicit Configure Assistant action. Its label and
@@ -139,3 +148,18 @@ References reviewed (these inform our adaptation, not an exact replica):
 - [Codex IDE extension](https://learn.chatgpt.com/docs/codex/ide): keep chat and
   review beside the current work. The installed extension also declares a New
   Chat command and an icon-based New Agent action.
+
+## Home lifecycle follow-up
+
+The home route remains `/`; its current conversation is retained in browser
+history state. Existing `/chats/:id` links still open saved conversations, and
+`/create-pack` resolves to home. Draft promotion keeps the same live worker,
+composer and run identity. A blocked Send never creates history. Opening a pack's
+Assistant uses the same deferred creation rule. Empty legacy history entries are
+hidden, without deleting stored records.
+
+The isolated browser check now covers 19 scenarios, including zero history
+writes across home visits, typing, setup, reload and repeated New chat actions.
+Store regression tests cover first accepted Send, subsequent sends, restoring an
+unsent draft and project isolation. The browser flow also checks popover width,
+focus restoration, history actions and Escape inside the narrow Assistant drawer.

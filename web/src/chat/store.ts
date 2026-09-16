@@ -11,7 +11,7 @@ export interface Chat {
 }
 interface Document { version: 1; chats: Chat[] }
 interface Reply { project: string; sha256: string; content: unknown }
-interface Snapshot { chats: Chat[]; ready: boolean; saving: boolean; error: string; active: string[]; bindings: ReadonlyMap<string, ResearchRunBinding>; dirty: boolean }
+interface Snapshot { chats: Chat[]; drafts: Chat[]; ready: boolean; saving: boolean; error: string; active: string[]; bindings: ReadonlyMap<string, ResearchRunBinding>; dirty: boolean }
 export interface ChatPersistence { read(): Promise<Reply>; write(document: Document, digest: string): Promise<Reply> }
 const persistence: ChatPersistence = {
   read: async () => answer<Reply>(await deskFetch('/api/conversations')),
@@ -41,7 +41,7 @@ function decode(value: unknown): Chat[] {
 
 /** One project, multiple chats, one explicit running operation. No framework objects on disk. */
 export class ChatStore {
-  private state: Snapshot = { chats: [], ready: false, saving: false, error: '', active: [], bindings: new Map(), dirty: false }
+  private state: Snapshot = { chats: [], drafts: [], ready: false, saving: false, error: '', active: [], bindings: new Map(), dirty: false }
   private listeners = new Set<() => void>()
   private leases = 0
   retain() { this.leases++; return () => { this.leases--; queueMicrotask(() => { if (!this.leases) this.dispose() }) } }
@@ -55,9 +55,9 @@ export class ChatStore {
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   getSnapshot = () => this.state
   private set(patch: Partial<Snapshot>) { this.state = { ...this.state, ...patch }; this.listeners.forEach(listener => listener()) }
-  private changed(chats: Chat[]) {
+  private changed(chats: Chat[], patch: Partial<Snapshot> = {}) {
     this.revision++
-    this.set({ chats, dirty: true })
+    this.set({ ...patch, chats, dirty: true })
     clearTimeout(this.timer)
     this.timer = setTimeout(() => { void this.flush() }, 600)
   }
@@ -97,6 +97,37 @@ export class ChatStore {
   }
   retrySave() { this.set({ error: '' }); void this.flush() }
   get canCreate() { return this.state.ready && this.state.chats.length < 256 }
+  private saveHomeDraft(chat?: Chat) {
+    try {
+      const key = `jpack.home-draft:${this.project}`
+      if (chat) sessionStorage.setItem(key, JSON.stringify(chat))
+      else sessionStorage.removeItem(key)
+    } catch { /* A draft still works when browser storage is unavailable. */ }
+  }
+  /** An unsubmitted composer is not a conversation or a private-history write. */
+  startChat(pack?: Chat['pack'], mode?: Chat['mode'], fresh = false): Chat {
+    if (!this.state.ready) throw new Error('Chat history is still loading')
+    const previous = this.state.drafts.find(chat => chat.pack?.id === pack?.id && (mode === undefined || chat.mode === mode))
+    if (previous && !fresh) { this.activate(previous.id); return previous }
+    if (previous) this.remove(previous.id)
+    let cached: Chat | undefined
+    if (!pack && !fresh) {
+      try {
+        const value = JSON.parse(sessionStorage.getItem(`jpack.home-draft:${this.project}`) ?? 'null')
+        if (value) {
+          const read = decode({ version: 1, chats: [value] })[0]!
+          if (!read.pack && !read.checkpoint && !read.archived && !read.pinned && read.title === 'New chat'
+            && !this.state.chats.some(chat => chat.id === read.id) && (mode === undefined || read.mode === mode)) cached = read
+        }
+      } catch { /* A stale browser draft must not block opening home. */ }
+    }
+    const chat: Chat = cached ?? { id: crypto.randomUUID(), title: 'New chat', pinned: false, archived: false,
+      updatedAt: new Date().toISOString(), composer: '', model: '', mode: mode ?? 'draft', view: 'chat', ...(pack ? { pack } : {}) }
+    this.set({ drafts: [chat, ...this.state.drafts] })
+    if (!pack) this.saveHomeDraft(chat)
+    this.activate(chat.id)
+    return chat
+  }
   create(pack?: Chat['pack'], mode: Chat['mode'] = 'draft'): Chat {
     if (!this.state.ready) throw new Error('Chat history is still loading')
     if (this.state.chats.length >= 256) throw new Error('Chat history is full. Export and delete an older chat first.')
@@ -105,12 +136,19 @@ export class ChatStore {
     return chat
   }
   update(id: string, patch: Partial<Omit<Chat, 'id' | 'updatedAt'>>) {
-    const previous = this.state.chats.find(chat => chat.id === id)
+    const draft = this.state.drafts.find(chat => chat.id === id)
+    const previous = draft ?? this.state.chats.find(chat => chat.id === id)
     if (!previous || Object.entries(patch).every(([key,value]) => previous[key as keyof Chat] === value)) return
+    if (draft) {
+      const next = { ...draft, ...patch, updatedAt: new Date().toISOString() }
+      this.set({ drafts: this.state.drafts.map(chat => chat.id === id ? next : chat) })
+      if (!next.pack) this.saveHomeDraft(next)
+      return
+    }
     this.changed(this.state.chats.map(chat => chat.id === id ? { ...chat, ...patch, updatedAt: new Date().toISOString() } : chat))
   }
   activate(id: string) {
-    if (this.state.active.includes(id) || !this.state.chats.some(chat => chat.id === id)) return
+    if (this.state.active.includes(id) || ![...this.state.chats, ...this.state.drafts].some(chat => chat.id === id)) return
     this.set({ active: [...this.state.active, id] })
   }
   report(id: string, binding: ResearchRunBinding) {
@@ -126,14 +164,22 @@ export class ChatStore {
   perform(id: string, action: (binding: ResearchRunBinding) => void, needsModel = true): boolean {
     const binding = this.state.bindings.get(id)
     if (!binding || (this.running && this.running !== id) || (needsModel && binding.blocked) || binding.run?.running) return false
+    const draft = this.state.drafts.find(chat => chat.id === id)
+    if (draft && needsModel) {
+      if (!this.canCreate) { this.problem('Chat history is full. Delete an older chat before sending.'); return false }
+      this.changed([draft, ...this.state.chats], { drafts: this.state.drafts.filter(chat => chat.id !== id) })
+      if (!draft.pack) this.saveHomeDraft()
+    }
     action(binding); return true
   }
   remove(id: string) {
     if (this.state.bindings.get(id)?.run?.running) throw new Error('Stop the running chat before deleting it')
     const bindings = new Map(this.state.bindings); bindings.delete(id)
     this.observed.delete(id)
-    this.set({ bindings, active: this.state.active.filter(active => active !== id) })
-    this.changed(this.state.chats.filter(chat => chat.id !== id))
+    const draft = this.state.drafts.find(chat => chat.id === id)
+    this.set({ bindings, active: this.state.active.filter(active => active !== id), drafts: this.state.drafts.filter(chat => chat.id !== id) })
+    if (draft && !draft.pack) this.saveHomeDraft()
+    if (!draft) this.changed(this.state.chats.filter(chat => chat.id !== id))
   }
   dispose() { clearTimeout(this.timer); this.state.bindings.forEach(binding => binding.run?.stop()) }
 }

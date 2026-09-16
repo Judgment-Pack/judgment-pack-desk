@@ -4,7 +4,7 @@ import { INITIAL_STATE } from '../research/run'
 import type { ResearchRunBinding } from '../research/useResearchRun'
 
 const stores: ChatStore[] = []
-afterEach(() => { stores.forEach(store => store.dispose()); stores.length = 0; vi.useRealTimers() })
+afterEach(() => { stores.forEach(store => store.dispose()); stores.length = 0; sessionStorage.clear(); vi.useRealTimers() })
 function setup(io?: Partial<ChatPersistence>) {
   const read = vi.fn(async () => ({ project: '/project', sha256: 'absent', content: { version: 1, chats: [] } }))
   const write = vi.fn(async (document: unknown) => ({ project: '/project', sha256: 'saved', content: document }))
@@ -12,6 +12,51 @@ function setup(io?: Partial<ChatPersistence>) {
   return { store, read, write }
 }
 describe('project conversation history', () => {
+  it('keeps home visits, typing and New chat out of history until the first accepted Send', async () => {
+    const { store, write } = setup(); await store.load()
+    const draft = store.startChat()
+    store.update(draft.id, { composer: 'A decision brief', model: 'model-a' })
+    expect(store.startChat().id).toBe(draft.id)
+    await store.flush()
+    expect(store.getSnapshot().chats).toHaveLength(0)
+    expect(store.getSnapshot().dirty).toBe(false)
+    expect(write).not.toHaveBeenCalled()
+
+    const restored = setup(); await restored.store.load()
+    expect(restored.store.startChat()).toMatchObject({ id: draft.id, composer: 'A decision brief', model: 'model-a' })
+    expect(restored.store.getSnapshot().chats).toHaveLength(0)
+
+    const run = { running: false, stop: vi.fn() }
+    const binding = { state: INITIAL_STATE, sources: [], blocked: 'Configure Assistant', model: 'model-a', researchConfigured: false, run, ledger: null } as unknown as ResearchRunBinding
+    store.report(draft.id, binding)
+    const send = vi.fn()
+    expect(store.perform(draft.id, send)).toBe(false)
+    expect(store.getSnapshot().chats).toHaveLength(0)
+    expect(send).not.toHaveBeenCalled()
+    store.report(draft.id, { ...binding, blocked: '' })
+    expect(store.perform(draft.id, send)).toBe(true)
+    expect(store.perform(draft.id, send)).toBe(true)
+    expect(store.getSnapshot().chats.map(chat => chat.id)).toEqual([draft.id])
+    expect(store.getSnapshot().drafts).toHaveLength(0)
+    await store.flush()
+    expect(write).toHaveBeenCalledOnce()
+    expect((write.mock.calls[0]![0] as { chats: unknown[] }).chats).toHaveLength(1)
+
+    const fresh = store.startChat(undefined, undefined, true)
+    expect(fresh.id).not.toBe(draft.id)
+    await store.flush()
+    expect(store.getSnapshot().chats).toHaveLength(1)
+    expect(write).toHaveBeenCalledOnce()
+  })
+
+  it('does not confuse a different project’s unsent home draft with this project', async () => {
+    const { store } = setup(); await store.load()
+    const draft = store.startChat(); store.update(draft.id, { composer: 'Private to this project' })
+    const other = new ChatStore('/other', { read: async () => ({ project: '/other', sha256: 'absent', content: { version: 1, chats: [] } }), write: vi.fn() })
+    stores.push(other); await other.load()
+    expect(other.startChat().composer).toBe('')
+    expect(other.getSnapshot().chats).toHaveLength(0)
+  })
   it('preserves composer and model separately for each chat and links creation without replacing history', async () => {
     const { store, write } = setup(); await store.load()
     const first = store.create(); store.update(first.id,{ composer: 'My unfinished prompt', model: 'model-a' })

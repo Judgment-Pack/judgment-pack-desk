@@ -1,7 +1,6 @@
 # ADR 0002: Project conversations and the chat workspace
 
-Status: proposed; implemented on a review branch. The private-storage endpoint
-and recovery boundary need independent review before merge.
+Status: accepted in #91; deferred home conversation creation refined in #99.
 
 ## Problem
 
@@ -45,6 +44,13 @@ the final comparison/rename; this is not a distributed transaction. A conflict
 keeps the local conversation dirty. Export it from history before reloading;
 retry never silently replaces another window's version. Archive does not free
 storage; export and delete do. No transcript is logged or stored in localStorage.
+
+An unsubmitted composer is separate from the conversation store. Home visits and
+New chat do not write a history record; the first accepted Send promotes the draft
+with the same worker identity. Only the unsent home composer and its model/mode
+preferences are cached in per-tab, project-scoped sessionStorage for reload
+recovery. Sending or explicitly starting fresh clears that cache. It contains no
+transcript, candidate checkpoint or API credential.
 
 A checkpoint excludes runtime checks, receipt verdicts, registries and pending
 approval tokens. Candidate documents are reconstructed from their exact text;
