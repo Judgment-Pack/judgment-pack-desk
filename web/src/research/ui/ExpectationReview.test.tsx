@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { blockedExpectation, proposedExpectation, withheldButPassing } from '../__fixtures__/expectationReview'
+import { blockedExpectation, disagreeingCase, proposedExpectation, withheldButPassing } from '../__fixtures__/expectationReview'
 import { DraftTabs, ReviewPanel, TestsPanel } from './DraftPanels'
 
 afterEach(cleanup)
@@ -68,5 +68,19 @@ describe('expectation review UI', () => {
     render(<TestsPanel state={state} onSelect={vi.fn()} onApproveCorrection={vi.fn()} onProposeCorrection={vi.fn()} />)
     expect(screen.getAllByText(/Expected handoff target/)).toHaveLength(2)
     expect(screen.getAllByText(new RegExp(JSON.stringify(target).slice(1, 20)))).not.toHaveLength(0)
+  })
+
+  it('discloses both halves of a disagreement, and discloses nothing where the case agrees', () => {
+    // The table draws outcomeId ?? kind, which is "unresolved" on both sides
+    // here: reasons, handoff and the target carry the whole difference the
+    // person is being asked to judge.
+    render(<TestsPanel state={disagreeingCase} onSelect={vi.fn()} onApproveCorrection={vi.fn()} onProposeCorrection={vi.fn()} />)
+    expect(screen.getByText('What blocked-unresolved disagrees about')).toBeTruthy()
+    expect(screen.queryByText('What agreeing-case disagrees about')).toBeNull()
+    expect(screen.getByLabelText('Expected disposition').textContent).toContain('"unknown"')
+    expect(screen.getByLabelText('Runtime disposition').textContent).toContain('"no-match"')
+    expect(screen.getByLabelText('Runtime disposition').textContent).toContain('"requested"')
+    expect(screen.getByText(/Expected handoff target/).textContent).toContain('Screening officer')
+    expect(screen.getByText(/Runtime handoff target/).textContent).toContain('null')
   })
 })

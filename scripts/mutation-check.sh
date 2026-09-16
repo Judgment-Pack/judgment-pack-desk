@@ -1885,6 +1885,7 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   CK=web/src/packs/checks.ts
   RR=web/src/research/run.ts
   RE=web/src/research/expectations.ts
+  RDP=web/src/research/ui/DraftPanels.tsx
   QR=web/src/mcp/queries.ts
   CAP=web/src/mcp/capabilities.ts
   OM=web/src/packs/document/OmittedMember.tsx
@@ -6687,6 +6688,16 @@ export function assistantTransport(id: string): Transport {
   mutate web "the reviewer's spelling is stored instead of the canonical assertion" "$RR" \
     '        cases.push(deepFreeze(structuredClone({ ...row, expectedDisposition: JSON.parse(finding.canonical) })))' \
     '        cases.push(row)'
+
+  # **A disagreement is shown, not just named.** The table draws
+  # `outcomeId ?? kind`, and §8.3 corrections differ mainly in `reasons`, in
+  # `handoff` and in the target the pack keeps outside the disposition — so a
+  # row reads `unresolved | unresolved | disagrees` with the whole difference
+  # invisible. Without the disclosure a person is asked for judgment about a
+  # difference no surface ever showed them.
+  mutate web "a disagreeing row hides what it disagrees about" "$RDP" \
+    '              const differs = result !== undefined && !result.passed && result.refused === undefined' \
+    '              const differs = false'
 
   # **A limit is not a Core violation.** The runtime reports one when it did not
   # admit the input at all; presenting it as a §8.3 defect sends a reviewer to
