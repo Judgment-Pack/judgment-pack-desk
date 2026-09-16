@@ -28,6 +28,7 @@ describe('the desk icons', () => {
       'IconGear',
       'IconGraph',
       'IconHelp',
+      'IconHistory',
       'IconMatrix',
       'IconPack',
       'IconPanelBottom',

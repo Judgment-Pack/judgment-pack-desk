@@ -181,7 +181,7 @@ describe('guided creation from the rail', () => {
     expect(screen.queryByRole('navigation', { name: 'Project' })).toBeNull()
     expect(screen.queryByRole('dialog')).toBeNull()
     expect((screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement).disabled).toBe(true)
-    expect((screen.getByRole('radio', { name: 'Draft with AI' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('radio', { name: 'Draft with Assistant' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('checks the edited draft and writes those exact bytes only after Review and Create', async () => {

@@ -4,6 +4,7 @@ import { createContext, useContext, useLayoutEffect } from 'react'
  * saved preferences. Releasing it restores the shell's normal Inspector. */
 export interface InspectorPresentation {
   title: string
+  available?: boolean
   open: boolean
   onOpenChange: (open: boolean) => void
   width: number

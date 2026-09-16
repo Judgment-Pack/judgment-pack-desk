@@ -45,6 +45,10 @@ export function IconPlus() {
   )
 }
 
+export function IconHistory() {
+  return <Glyph><path d="M2 5a6 6 0 1 1-.2 5M2 1.5V5h3.5M8 4.5V8l2.5 1.5" /></Glyph>
+}
+
 export function IconChevronLeft() {
   return (
     <Glyph>

@@ -18,6 +18,7 @@ import { useState, type ReactNode } from 'react'
 import { Link, RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { vi } from 'vitest'
 import { McpContext, type McpConnection } from '../../mcp/McpProvider'
+import { DetailsSlotContext } from '../../shell/DetailsSlot'
 import { InspectorSlotContext, type InspectorSlot } from '../../shell/InspectorSlot'
 import { connected, stubClient, testQueryClient, type ToolHandler } from '../../testing/harness'
 import { PackView } from '../../routes/PackView'
@@ -318,13 +319,16 @@ export function drawPack(
   const revealed: string[] = []
   const Mounted = ({ children }: { children?: ReactNode }) => {
     const [open] = useState(options.inspector === true)
+    const details = slotFor(open, options.tab ?? null, revealed)
     return (
       <McpContext.Provider
         value={connected({ client: stub.client, validateSupported: true, ...options.connection })}
       >
-        <InspectorSlotContext.Provider value={slotFor(open, options.tab ?? null, revealed)}>
+        <InspectorSlotContext.Provider value={{ ...details, target: null }}>
+          <DetailsSlotContext.Provider value={details}>
           {children}
           <PackView />
+          </DetailsSlotContext.Provider>
         </InspectorSlotContext.Provider>
       </McpContext.Provider>
     )

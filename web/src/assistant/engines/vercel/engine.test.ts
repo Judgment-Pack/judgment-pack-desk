@@ -2160,3 +2160,21 @@ describe('host tools: the desk’s own, executed on the page', () => {
     expect(offered).toEqual(['validate', 'experimental_evaluate'])
   })
 })
+
+
+describe('opt-in conversational authoring', () => {
+  it('allows a clarification without fabricating a proposal or running a critic', async () => {
+    const { call, seen } = scriptedCall([turn({ text: 'Which outcomes should this decision allow?' })])
+    const events = await drain(vercel.start(session(call, { allowConversation: true })))
+    expect(events).toEqual([{ type: 'message', text: 'Which outcomes should this decision allow?' }, { type: 'end' }])
+    expect(seen).toHaveLength(1)
+  })
+  it('retains explicit proposal extraction and refuses ambiguous proposals', async () => {
+    const valid = scriptedCall([turn({ text: PROPOSAL_TEXT })])
+    const events = await drain(vercel.start(session(valid.call, { allowConversation: true })))
+    expect(events.find(event => event.type === 'proposal')).toMatchObject({ document: { id: 'p' } })
+    const ambiguous = scriptedCall([turn({ text: PROPOSAL_TEXT + PROPOSAL_TEXT })])
+    const refused = await drain(vercel.start(session(ambiguous.call, { allowConversation: true })))
+    expect(refused.map(event => event.type)).toEqual(['error', 'end'])
+  })
+})

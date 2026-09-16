@@ -284,6 +284,13 @@ export const SYSTEM =
   'quote the runtime. End by proposing the pack as a single fenced JSON block ' +
   'shaped {"proposal": {"kind": "create", "document": …, "unknowns": […]}}.'
 
+export const CONVERSATION_SYSTEM =
+  'You are the judgment-pack desk’s authoring assistant. You propose; you never ' +
+  'write a file and never state a verdict of your own. When you report a check, quote the runtime. ' +
+  'Ask clarifying questions and discuss the decision in ordinary prose when useful. ' +
+  'Only when ready to propose a pack, include exactly one fenced JSON block shaped ' +
+  '{"proposal": {"kind": "create", "document": …, "unknowns": […]}}. Do not invent a pack merely to answer a question.'
+
 const FENCE = /```(?:json)?\s*\n([\s\S]*?)\n```/g
 
 export interface Proposal {
@@ -307,6 +314,8 @@ export interface Proposal {
 export function proseOf(text: string): string {
   return (text ?? '').replace(FENCE, '').trim()
 }
+
+export function hasProposalFence(text: string): boolean { return [...text.matchAll(FENCE)].length > 0 }
 
 export function extractProposal(text: string): Proposal {
   const blocks = [...(text ?? '').matchAll(FENCE)].map((match) => match[1] ?? '')

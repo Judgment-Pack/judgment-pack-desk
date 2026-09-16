@@ -151,7 +151,7 @@ describe('the shell frame', () => {
         <PackDocumentView document={MINIMAL} active={null} />
       </AppShell>
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Inspector' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Pack preview' }))
     fireEvent.click(screen.getByRole('button', { name: 'Console' }))
     await screen.findByRole('navigation', { name: 'Packs' })
     fireEvent.click(screen.getByRole('button', { name: /On this page/ }))

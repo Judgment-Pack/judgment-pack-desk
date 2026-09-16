@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
-import { CreatePackPage } from './routes/CreatePackPage'
-import { ResearchAuthoringPage } from './routes/ResearchAuthoringPage'
+import { ChatWorkspace } from './routes/ChatWorkspace'
+import { ChatHistoryPage } from './routes/ChatHistoryPage'
+
 import { AdminView } from './routes/AdminView'
 import { AuthorView } from './routes/AuthorView'
 import { GraphView } from './routes/GraphView'
@@ -36,8 +37,10 @@ export function App() {
               child — a different pack, and `?edit` when it lands. Evaluate and
               Matrix stay outside it: neither was drawn beside a pane, and
               nesting them would hand them one they never asked for. */}
-          <Route path="/create-pack" element={<CreatePackPage />} />
-          <Route path="/create-pack/research" element={<ResearchAuthoringPage />} />
+          <Route path="/create-pack" element={<ChatWorkspace />} />
+          <Route path="/chats" element={<ChatHistoryPage />} />
+          <Route path="/chats/:chatId" element={<ChatWorkspace />} />
+          <Route path="/create-pack/research" element={<Navigate to="/create-pack?mode=research" replace />} />
           <Route path="/packs" element={<PacksLayout />}>
             <Route index element={<PacksIndex />} />
             <Route path=":packId" element={<PackView />} />

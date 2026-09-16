@@ -57,7 +57,8 @@ import { agreesWithParse } from '../packs/documentText'
 import { CHECK_BEHIND_BUFFER, anchor, diagnosticsBytes, isStale, truncationNote } from '../packs/checks'
 import type { AnchoredDiagnostic } from '../packs/checks'
 import { CheckStrip } from '../packs/CheckStrip'
-import { AssistantPane } from '../assistant/AssistantPane'
+import { PackAssistant } from '../chat/PackAssistant'
+import { useDetailsPortal, useDetailsSlot } from '../shell/DetailsSlot'
 import { PackDocumentView } from '../packs/document/PackDocumentView'
 import { describe as describeShape, isRecord } from '../packs/document/MisshapenMember'
 import { SelectionContext } from '../packs/document/Block'
@@ -86,7 +87,6 @@ import { useInspectorPortal, useInspectorSlot } from '../shell/InspectorSlot'
 import { usePublishedDirty } from '../shell/authorBridge'
 import { useDirtyGuard } from '../shell/useDirtyGuard'
 import { useMeasuredBox } from '../shell/measured'
-import { Tabs } from '../ui/Tabs'
 import { PackLogic } from '../packs/PackLogic'
 import { LogicInspector } from '../packs/inspector/LogicInspector'
 import { matchingItems, projectLogic, selectedItem, text } from '../packs/logicModel'
@@ -145,7 +145,12 @@ export function PackView() {
    */
   const path = meta?.path ?? summary?.path
   const file = useFileContent(path)
-  const slot = useInspectorSlot()
+  const rightSlot = useInspectorSlot()
+  const detailsSlot = useDetailsSlot()
+  const askedChat = params.get('chat')
+  useEffect(() => { if (askedChat) rightSlot.reveal() }, [askedChat, rightSlot.reveal])
+  const [detailsTab, setDetailsTab] = useState<string | null>(rightSlot.tab)
+  const slot = { ...rightSlot, reveal: detailsSlot.reveal, tab: detailsTab, setTab: setDetailsTab }
 
   const editing = isEditing(params)
   const askedShape = editShape(params)
@@ -280,7 +285,6 @@ export function PackView() {
   const groupId = at === null ? params.get('group') : null
   const select = (pointer: string) => {
     setSelectionNotice('')
-    setRightTab('inspector')
     if (at === pointer && !params.has('group')) { slot.reveal(); return }
     const next = new URLSearchParams(params)
     next.delete('group')
@@ -895,68 +899,18 @@ export function PackView() {
       />
     )
 
-  /**
-   * The right pane's two tabs, on the pack routes only.
-   *
-   * **The selection is held here rather than in the shell slot.** `slot.tab`
-   * remembers an Inspector disclosure (References or Checks); pairing a
-   * second meaning onto it would make selecting a member change which pane is
-   * showing. This route does not remount at the 1100px breakpoint — the pane
-   * does, and the portal's contents are rendered from here — so state held in
-   * the route survives the swap the slot exists to survive.
-   *
-   * **Assistant is mounted only while it is the selected tab.** Radix keeps an
-   * unselected panel out of the DOM, and that is what this pane needs rather
-   * than merely tolerates: mounting it would open the assistant's MCP
-   * connection — one more `jpack mcp` — for every reader who opened a pack.
-   */
-  const [rightTab, setRightTab] = useState('inspector')
-  const inspector = useInspectorPortal(
-    inspectorNode === null ? null : (
-      <Tabs
-        scrollable
-        resetScrollKey={`${packId}:${at}:${groupId}`}
-        label="Right pane"
-        value={rightTab}
-        onValueChange={setRightTab}
-        tabs={[
-          { value: 'inspector', label: 'Inspector', panel:
-            !editing && (section === 'logic' || section === 'overview') && model && formAvailable ?
-              <LogicInspector model={model} at={at} groupId={groupId}
-                onSelect={select} mainContent={section === 'logic' && (mode === 'map' || !logic.query.trim()
-                  || model.groups.some(group => matchingItems(group, logic.query).some(item => item.pointer === selectedItem(model, at)?.item.pointer)))}
-                conditionsVisible={logic.display.conditions || Boolean(logic.query.trim())}
-                trace={runTrace} advanced={inspectorNode} /> : inspectorNode },
-          {
-            value: 'assistant',
-            label: 'Assistant',
-            // The bytes this page is about: the editor's buffer where a file
-            // has been read, the runtime's served copy before that. It is the
-            // same string Try it sends, and for the same reason — a pane over
-            // one revision beside a page over another is the failure the
-            // digest binding exists to prevent.
-            panel: (
-              <AssistantPane
-                draft={bufferText ?? servedText}
-                // The route's own condition for whether these bytes may be
-                // written: `?edit`, and a file behind them. It is the same
-                // predicate the JSON view is made read-only by, so the pane
-                // and the editor cannot disagree about what is editable.
-                editing={editing && onPath}
-                // Which document these bytes are, so a proposal made about one
-                // pack cannot be accepted onto another: this pane outlives a
-                // navigation between packs, because the route re-renders and
-                // the tab does not remount.
-                identity={onPath ? buffer.identity : undefined}
-                busy={busyDraft}
-                diagnostics={diagnosticsToFix}
-              />
-            )
-          }
-        ]}
-      />
-    )
-  )
+  const details = useDetailsPortal(inspectorNode === null ? null :
+    !editing && (section === 'logic' || section === 'overview') && model && formAvailable ?
+      <LogicInspector model={model} at={at} groupId={groupId}
+        onSelect={select} mainContent={section === 'logic' && (mode === 'map' || !logic.query.trim()
+          || model.groups.some(group => matchingItems(group, logic.query).some(item => item.pointer === selectedItem(model, at)?.item.pointer)))}
+        conditionsVisible={logic.display.conditions || Boolean(logic.query.trim())}
+        trace={runTrace} advanced={inspectorNode} /> : inspectorNode)
+  const inspector = useInspectorPortal(inspectorNode === null ? null :
+    <PackAssistant key={packId} packId={packId ?? ''} path={path} digest={file.data?.sha256}
+      draft={bufferText ?? servedText} editing={editing && onPath}
+      identity={onPath ? buffer.identity : undefined} busy={busyDraft} diagnostics={diagnosticsToFix} />)
+
 
   if (pack.isPending) return <Loading what={`pack ${packId}`} />
   /**
@@ -1041,7 +995,7 @@ export function PackView() {
   return (
     <SelectionContext.Provider value={{ at, select }}>
       <EditingContext.Provider value={session}>
-        {inspector}
+        {inspector}{details}
         <div data-layout="page">
         {editing ? <PackEditHeader
           title={text(drawn?.title, packId ?? 'Pack')}
@@ -1238,7 +1192,7 @@ export function PackView() {
                   {(fetching || stale || unavailable || digestsDisagree || disagreement.length > 0 || Boolean(report?.diagnostics?.length) || (report?.status && report.status !== 'valid')) && <details className={styles.validation} open={Boolean(digestsDisagree || disagreement.length || report?.diagnostics?.length || (report?.status && report.status !== 'valid'))}>
                     <summary>Validation · {fetching ? 'checking' : stale ? 'out of date' : report?.status ?? 'unchecked'}</summary>{strip}
                   </details>}
-                  {section === 'overview' ? <PackOverview document={drawn} packId={packId} /> : model && <>
+                  {section === 'overview' ? <PackOverview document={drawn} packId={packId} logicHref={`/packs/${encodeURIComponent(packId ?? '')}?view=logic${params.get('chat') ? `&chat=${encodeURIComponent(params.get('chat')!)}` : ''}`} /> : model && <>
                     {runRequested && <div className={styles.runContext} role="status">
                       {run ? <><strong>{run.run.payload.disposition.kind}</strong>{run.run.payload.disposition.outcomeId ? ` · ${run.run.payload.disposition.outcomeId}` : ''} · Handoff: {run.run.payload.disposition.handoff.state}
                         <p>{matchingRun ? 'Recorded run on these exact pack bytes.' : 'Different or unbound revision. No trace overlay is shown.'}</p></> : <p>This recorded run is no longer available. Run the test again to inspect its trace.</p>}

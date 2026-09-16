@@ -172,6 +172,8 @@ export interface AssistantSession {
    * will run; the critic then works from the desk's one fixed sentence alone.
    */
   testPrompt: string
+  /** Permit a prose-only clarification; proposals still require the same explicit fenced envelope. */
+  allowConversation?: boolean
   /** The allow-listed tools, exactly as `tools/list` served them. */
   tools: McpTool[]
   /** Bound through the ToolGate. */

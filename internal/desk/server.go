@@ -295,6 +295,8 @@ func New(cfg Config) (*Server, error) {
 	// into a project file, and the key must never reach the page. See
 	// assistant.go for the whole argument.
 	s.mux.HandleFunc("GET /api/desk-config", s.handleDeskConfig)
+	s.mux.HandleFunc("GET /api/conversations", s.handleConversations)
+	s.mux.HandleFunc("PUT /api/conversations", s.handleConversations)
 	// The one write to that file, and it replaces one member of it. It is
 	// under the same guard as everything else, takes no path, composes the
 	// bytes itself and decodes them before any of them reach the disk. See

@@ -1,0 +1,110 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useBlocker, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { ChatPanel } from '../chat/ChatPanel'
+import { useChats } from '../chat/ChatProvider'
+import { chatHref } from '../chat/ChatHistory'
+import type { Chat } from '../chat/store'
+import { INITIAL_STATE, canCreateResearchDraft, matrixDocument, researchRecord } from '../research/run'
+import { DraftTabs, type Selection } from '../research/ui/DraftPanels'
+import { SourceInspector } from '../research/ui/SourceInspector'
+import { useDetailsPortal, useDetailsSlot } from '../shell/DetailsSlot'
+import { useInspectorPortal } from '../shell/InspectorSlot'
+import { useInspectorPresentation } from '../shell/InspectorPresentation'
+import { useShellState } from '../shell/paneState'
+import { useMediaQuery } from '../shell/useMediaQuery'
+import { CreatePackDialog } from '../shell/CreatePackDialog'
+import { Button } from '../ui/Button'
+import { PageHeader } from '../ui/PageLayout'
+import styles from '../chat/ChatWorkspace.module.css'
+
+export function draftReady(chat: Chat, state: typeof INITIAL_STATE): boolean {
+  if (state.restored || state.status !== 'ready') return false
+  if (chat.mode === 'research') return canCreateResearchDraft(state)
+  const candidate = state.candidates.at(-1)
+  return Boolean(candidate?.check?.valid && candidate.check.documentDigest === candidate.digest)
+}
+
+export function ChatWorkspace() {
+  const { chatId } = useParams()
+  const [params] = useSearchParams()
+  const initialMode = params.get('mode') === 'research' ? 'research' : 'draft'
+  const { store, chats, ready, error } = useChats()
+  const navigate = useNavigate()
+  const created = useRef<string | null>(null)
+  useEffect(() => {
+    if (!store || !ready) return
+    if (!chatId) {
+      if (!store.canCreate) return
+      if (!created.current) created.current = store.create(undefined, initialMode).id
+      navigate(`/chats/${created.current}`, { replace: true })
+    } else { created.current = null; store.activate(chatId) }
+  }, [store, ready, chatId, navigate, initialMode])
+  const chat = chats.find(chat => chat.id === chatId)
+  useEffect(() => { if (chat?.pack) navigate(chatHref(chat), { replace: true }) }, [chat?.pack?.id, chat?.id, navigate])
+  return <div data-measure="wide" data-layout="page">
+    {!ready || !chat ? <><PageHeader title="Create pack" /><div className={styles.blank} role="status">{error || (ready && chatId ? 'This chat is no longer in history.' : ready && !store?.canCreate ? 'Chat history is full. Export and delete an older chat from Chat history.' : 'Loading chat history…')}{error && <Button onClick={() => void store?.load()}>Retry</Button>}{ready && chatId && <Button onClick={() => navigate('/create-pack')}>New chat</Button>}</div></>
+      : <DraftWorkspace key={chat.id} chat={chat} />}
+  </div>
+}
+
+function DraftWorkspace({ chat }: { chat: Chat }) {
+  const { store, bindings } = useChats()
+  const binding = bindings.get(chat.id)
+  const state = binding?.state ?? INITIAL_STATE
+  const [chatHeaderTarget, setChatHeaderTarget] = useState<HTMLDivElement | null>(null)
+  const [selection, setSelection] = useState<Selection>(null)
+  const [review, setReview] = useState(false)
+  const [writing, setWriting] = useState(false)
+  const writingRef = useRef(false)
+  const writingChanged = useCallback((value: boolean) => { writingRef.current = value; setWriting(value) }, [])
+  const blocker = useBlocker(() => writingRef.current)
+  useEffect(() => { if (blocker.state === 'blocked') blocker.reset() }, [blocker])
+  useEffect(() => {
+    if (!writing) return
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault()
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [writing])
+  const shell = useShellState()
+  const width = shell.inspectorWidth ?? 400
+  const [rightOpen, setRightOpen] = useState(true)
+  const narrow = useMediaQuery('(max-width: 1100px)')
+  const details = useDetailsSlot()
+  const draft = chat.view === 'draft'
+  const latest = state.candidates.at(-1)
+  const passing = draftReady(chat,state)
+  const presentation = useMemo(() => ({ title: 'Assistant', available: draft && !narrow, open: draft && !narrow && rightOpen,
+    onOpenChange: setRightOpen, width, onResize: shell.resizeInspector, onReset: shell.resetInspectorWidth, minimumMainWidth: 480, maximumWidth: 640 }), [draft, narrow, rightOpen, width, shell.resizeInspector, shell.resetInspectorWidth])
+  useInspectorPresentation(presentation)
+  const openDraft = () => { setReview(false); setRightOpen(true); store?.update(chat.id, { view: 'draft' }) }
+  const portal = useInspectorPortal(draft && !narrow ? <ChatPanel placement="pane" chat={chat} locked={review || writing} /> : null)
+  const detailPortal = useDetailsPortal(binding?.ledger && selection ? <SourceInspector selection={selection} ledger={binding.ledger} state={state} onSelect={setSelection} /> : null)
+  const select = (next: Selection) => { setSelection(next); if (next) details.reveal() }
+  const candidate = latest?.document as { title?: unknown; description?: unknown; decision?: { question?: unknown } } | undefined
+  const digest = latest?.digest
+  const research = latest && binding?.ledger && chat.mode === 'research' && passing ? {
+    document: latest.document, name: typeof candidate?.title === 'string' ? candidate.title : '',
+    description: typeof candidate?.description === 'string' ? candidate.description : '', unknowns: state.unknowns,
+    matrix: matrixDocument(state,binding.ledger), research: researchRecord(state,binding.ledger,'')
+  } : undefined
+  return <>
+    <PageHeader title="Packs" titleHref="/packs" context={draft ? 'Draft' : 'Create pack'} actions={<>
+      {!draft && <div className={styles.headerControls} ref={setChatHeaderTarget} />}
+      {draft && <Button variant="quiet" disabled={writing} onClick={() => { setReview(false); store?.update(chat.id,{ view: 'chat' }) }}>Chat</Button>}
+      {draft && !narrow && !rightOpen && <Button onClick={() => setRightOpen(true)}>Show Assistant</Button>}
+      {draft && !review && <Button variant="primary" disabled={!passing} onClick={() => setReview(true)}>Review and create</Button>}
+    </>} />
+    {portal}{detailPortal}
+    <div className={styles.workspace}>
+      {!draft ? <ChatPanel chat={chat} headerTarget={chatHeaderTarget} landing onOpenDraft={openDraft} /> : review && latest ? <div className={styles.review}>
+        <CreatePackDialog open presentation="review" onOpenChange={open => { if (!open && !writing) setReview(false) }}
+          onWritingChange={writingChanged}
+          canCreate={() => { const active = store?.getSnapshot().bindings.get(chat.id)?.state; return !!active && active.candidates.at(-1)?.digest === digest && draftReady(chat,active) }}
+          reviewDraft={{ document: latest.document, name: typeof candidate?.title === 'string' ? candidate.title : '', description: typeof candidate?.description === 'string' ? candidate.description : '', unknowns: state.unknowns, research }}
+          onSaved={async pack => { writingChanged(false); store?.update(chat.id,{ pack, view: 'chat', createdCandidateDigest: digest }); await store?.flush(); return chatHref({ ...chat, pack }) }} />
+      </div> : <DraftTabs state={state} mode={chat.mode} sources={binding?.sources ?? []} selection={selection} onSelect={select} onCreate={() => setReview(true)}
+        onProposeCorrection={id => store?.perform(chat.id, active => active.run?.proposeExpectationCorrection(id))}
+        onApproveCorrection={(id,token) => store?.perform(chat.id, active => active.run?.approveExpectationCorrection(id,token), false)} />}
+    </div>
+  </>
+}

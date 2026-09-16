@@ -21,7 +21,7 @@ export function CreatePackPage() {
     window.addEventListener('beforeunload', warn)
     return () => window.removeEventListener('beforeunload', warn)
   }, [dirty, writing])
-  return <div data-measure="wide" data-layout="page">
+  return <div data-layout="page">
     <CreatePackDialog open presentation="page"
       onDirtyChange={setDirty} onWritingChange={setWriting}
       onOpenChange={(open) => { if (!open) navigate('/packs') }}

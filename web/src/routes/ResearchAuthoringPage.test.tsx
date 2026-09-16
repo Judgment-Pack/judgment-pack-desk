@@ -109,7 +109,7 @@ describe('Research and draft', () => {
     mount()
     expect(screen.getAllByRole('status').map((node) => node.textContent).join(' ')).toContain('Researching sources and drafting.')
     expect(screen.getByText('Screen applicants.')).not.toBeNull()
-    expect(screen.getByRole('tab', { name: 'Draft' })).not.toBeNull()
+    expect(screen.getByRole('tab', { name: 'Overview' })).not.toBeNull()
     expect(screen.getByRole('tab', { name: 'Sources' })).not.toBeNull()
     expect(screen.getByRole('tab', { name: 'Tests' })).not.toBeNull()
     expect(screen.getByRole('tab', { name: 'Review' })).not.toBeNull()
@@ -163,7 +163,7 @@ describe('Research and draft', () => {
     fireEvent.change(screen.getByLabelText('Message the assistant'), { target: { value: 'Why 1,560?' } })
     fireEvent.click(screen.getByRole('button', { name: 'Send' }))
     expect(calls).toEqual(['send:Why 1,560?'])
-    fireEvent.click(screen.getByRole('button', { name: 'Create pack from this draft' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Review and create' }))
     const handed = (router.state.location.state as { research?: { name: string; matrix: { cases: unknown[] }; research: { sources: unknown[] } } } | null)?.research
     expect(router.state.location.pathname).toBe('/create-pack')
     expect(handed?.name).toBe('FSWP screening')

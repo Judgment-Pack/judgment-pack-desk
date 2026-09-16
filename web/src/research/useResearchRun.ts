@@ -61,6 +61,7 @@ function callToolThrough(client: NonNullable<ReturnType<typeof useMcp>['client']
  */
 export function researchBlockedReason(state: {
   slot: { state: string; endpoint: unknown; keyStatus: string; keyPresent: boolean }
+  mode?: 'draft' | 'research'
   modelPicked: boolean
   advertised: boolean
   authorPromptRead: boolean
@@ -74,6 +75,8 @@ export function researchBlockedReason(state: {
       ? 'No assistant endpoint is configured. Configure one in Admin › Assistant.'
       : slot.keyStatus === 'pending'
         ? 'Checking the saved API key…'
+        : slot.keyStatus === 'error'
+          ? 'The saved API key could not be checked. Retry in Configure Assistant.'
         : !slot.keyPresent
           ? 'No API key is stored for the assistant. Save one in Admin › Assistant.'
           : !state.modelPicked
@@ -82,23 +85,24 @@ export function researchBlockedReason(state: {
               ? 'This runtime does not offer the authoring prompt.'
               : !state.authorPromptRead
                 ? 'Reading the authoring prompt…'
-                : research.gateway === null
+                : state.mode !== 'draft' && research.gateway === null
                   ? 'No research gateway is configured. Add a research section to the desk-level desk.json.'
-                  : research.sources.search === null && research.sources.read === null
+                  : state.mode !== 'draft' && research.sources.search === null && research.sources.read === null
                     ? 'The research section names no search or read source.'
                     : mcp.status !== 'ready' || mcp.client === null
                       ? 'The runtime connection is not ready.'
                       : !mcp.validateSupported
                         ? 'This runtime does not serve validate, so a draft cannot be checked.'
-                        : !mcp.expectationValidationSupported
+                        : state.mode !== 'draft' && !mcp.expectationValidationSupported
                           ? 'Update the runtime to jpack 0.22.0 or later, which serves experimental_validate_expectations; research cannot start on an older build.'
                           : ''
 }
 
-export function useResearchRun(): ResearchRunBinding {
+export function useResearchRun(options?: { model?: string; mode?: 'draft' | 'research' }): ResearchRunBinding {
   const slot = useAssistantSlot()
   const listing = useFileListing()
-  const picked = usePickedModel(slot.endpoint?.models ?? EMPTY_MODELS, slot.endpoint?.model ?? null, listing.data?.root)
+  const defaultPicked = usePickedModel(slot.endpoint?.models ?? EMPTY_MODELS, slot.endpoint?.model ?? null, listing.data?.root)
+  const picked = { ...defaultPicked, model: options?.model && defaultPicked.models.includes(options.model) ? options.model : defaultPicked.model }
   const prompts = usePromptNames()
   const advertised = (prompts.data ?? []).includes(AUTHOR_PACK_PROMPT)
   const authorPrompt = usePromptText(AUTHOR_PACK_PROMPT, advertised)
@@ -114,6 +118,7 @@ export function useResearchRun(): ResearchRunBinding {
     advertised,
     authorPromptRead: authorPrompt.data !== undefined,
     research,
+    mode: options?.mode,
     mcp
   })
 
@@ -122,8 +127,8 @@ export function useResearchRun(): ResearchRunBinding {
   const ledger = ledgerRef.current
 
   // The settings a turn reads, as of the moment it starts.
-  const settings = useRef({ slot, picked, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp })
-  settings.current = { slot, picked, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp }
+  const settings = useRef({ slot, picked, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode })
+  settings.current = { slot, picked, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode }
 
   const run = useMemo(() => {
     const log = (text: string) => recordActivity(`research: ${text}`)
@@ -150,6 +155,7 @@ export function useResearchRun(): ResearchRunBinding {
           engine,
           {
             prompt: request.prompt,
+            ...(settings.current.mode === 'draft' && !request.reviewer ? { allowConversation: true } : {}),
             testPrompt: request.reviewer ? '' : testPrompt,
             tools: ready.tools,
             callTool: ready.callTool,
@@ -179,6 +185,7 @@ export function useResearchRun(): ResearchRunBinding {
       })
     return new AuthoringRun({
       turn,
+      get mode() { return settings.current.mode ?? 'research' },
       callTool: async (name, args) => {
         const client = settings.current.mcp.client
         if (client === null) throw new Error('the runtime connection is not ready')
@@ -188,7 +195,7 @@ export function useResearchRun(): ResearchRunBinding {
       },
       ledger,
       get researchTools() {
-        return toolsFor()
+        return settings.current.mode === 'draft' ? [] : toolsFor()
       },
       seal: async (session, signal) => {
         await seal(session, signal)

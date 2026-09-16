@@ -1935,9 +1935,9 @@ function usePacks() { useConfiguredGraphs(); return readPacks() }'
   # written, because the seed prefers a stored record over the configured one —
   # so a shell that persisted its own defaults would shadow the file for ever.
   mutate web "an unchosen layout is persisted anyway" web/src/shell/paneState.ts \
-    '      if (!chosen.left && !chosen.inspector && !chosen.console && !chosen.inspectorWidth) return
+    '      if (!chosen.left && !chosen.inspector && !chosen.console && !chosen.inspectorWidth && !chosen.consoleHeight) return
       writeShellState(storageKey, state, chosen)' \
-    '      writeShellState(storageKey, state, { left: true, inspector: true, console: true, inspectorWidth: true })'
+    '      writeShellState(storageKey, state, { left: true, inspector: true, console: true, inspectorWidth: true, consoleHeight: true })'
   mutate web "a throwing localStorage takes the shell down" "$P" \
     '  let raw: string | null = null
   try {
@@ -2190,7 +2190,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # presents it again — renamed, a second pack is registered carrying the first
   # one's matrix rows and research record.
   mutate web "the spent handover stays on the history entry" "$X" \
-    '      if (handover !== undefined) {
+    '      if (handover !== undefined && reviewDraft?.research === undefined) {
         const rest: Record<string, unknown> = { ...(location.state as Record<string, unknown> | null) }
         delete rest.research
         navigate(`${location.pathname}${location.search}${location.hash}`, {
@@ -2377,7 +2377,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
     "    '--rail-w': \`\${config.panes.left.width}px\`," \
     "    '--rail-w': '248px',"
   mutate web "the configured console height is decoded and never applied" "$N" \
-    "    '--console-h': \`\${config.panes.console.height}px\`," \
+    "    '--console-h': \`\${bottomHeight}px\`," \
     "    '--console-h': '240px',"
   mutate web "the inspector drawer is a width nobody configured" "$E" \
     "                : ({ '--drawer-w': \`\${declaredWidth}px\` } as CSSProperties)" \
@@ -2394,8 +2394,8 @@ function usePacks() { useExampleListing(); return readPacks() }'
   const inspector = state.inspector
   const consoleSection = state.console'
   mutate web "one moved pane suppresses the re-seed for every pane" web/src/shell/paneState.ts \
-    '    if (chosen.left && chosen.inspector && chosen.console && chosen.inspectorWidth) return' \
-    '    if (chosen.left || chosen.inspector || chosen.console || chosen.inspectorWidth) return'
+    '    if (chosen.left && chosen.inspector && chosen.console && chosen.inspectorWidth && chosen.consoleHeight) return' \
+    '    if (chosen.left || chosen.inspector || chosen.console || chosen.inspectorWidth || chosen.consoleHeight) return'
 
   # 5. The key came from the runtime's `configPath`, which a project with no
   # `jpack.json` does not have — so every configless project on one origin
@@ -2933,8 +2933,8 @@ function usePacks() { useExampleListing(); return readPacks() }'
 
   # 3. Opening the creation page must dismiss the modal navigation drawer.
   mutate web "opening creation leaves the rail drawer standing over it" "$LR" \
-    "onClick={() => { navigate('/create-pack'); onNavigate?.() }}" \
-    "onClick={() => { navigate('/create-pack') }}"
+    "onClick={() => { navigate(store?.canCreate && ready ? chatHref(store.create()) : '/create-pack'); onNavigate?.() }}" \
+    "onClick={() => { navigate(store?.canCreate && ready ? chatHref(store.create()) : '/create-pack') }}"
   mutate web "the dialog never says it created anything" "$X" \
     '      onCreated?.()' \
     ''
@@ -3489,7 +3489,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # The standing primary action moved into the shared PackHeader. Tests also
   # remains a navigation entry; this row specifically preserves the action.
   mutate web "the primary Test pack link disappears" web/src/packs/PackWorkspace.tsx \
-    '      {current !== '"'"'test'"'"' && <ButtonLink variant="primary" to={`${base}/evaluate`}>Test pack</ButtonLink>}' \
+    '      {current !== '"'"'test'"'"' && <ButtonLink variant="primary" to={link(`${base}/evaluate`)}>Test pack</ButtonLink>}' \
     '      {null}'
 
   # Selecting with the pane closed.

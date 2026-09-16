@@ -173,9 +173,15 @@ export function CreatePackDialog({
   openerRef,
   presentation = 'dialog',
   onDirtyChange,
-  onWritingChange
+  onWritingChange,
+  reviewDraft,
+  onSaved,
+  canCreate
 }: {
-  presentation?: 'dialog' | 'page'
+  presentation?: 'dialog' | 'page' | 'review'
+  reviewDraft?: { document: unknown; name: string; description: string; unknowns: string[]; research?: ResearchHandover }
+  onSaved?: (pack: { id: string; path: string; digest: string }) => string | void | Promise<string | void>
+  canCreate?: () => boolean
   onDirtyChange?: (dirty: boolean) => void
   onWritingChange?: (writing: boolean) => void
   open: boolean
@@ -226,26 +232,27 @@ export function CreatePackDialog({
    * handover off this history entry, so a handover is one press of Create.
    */
   const [handover] = useState<ResearchHandover | undefined>(() => {
+    if (reviewDraft?.research) return reviewDraft.research
     const state = (location.state as { research?: ResearchHandover } | null)?.research
     return state && typeof state === 'object' && state.document !== undefined ? state : undefined
   })
   const [step, setStep] = useState(0)
   const [method, setMethod] = useState<'manual' | 'ai'>(handover ? 'ai' : 'manual')
   const [draft, setDraft] = useState<string | undefined>()
-  const [unknowns, setUnknowns] = useState<readonly string[]>([])
+  const [unknowns, setUnknowns] = useState<readonly string[]>(reviewDraft?.unknowns ?? [])
   const [reviewedUnknowns, setReviewedUnknowns] = useState(false)
   const held = useHeldText(() => {})
   const inspector = useInspectorSlot()
   const guide = useInspectorPortal(presentation === 'page' ? <aside className={flow.guide}>
     <h2>Create a pack</h2>
     <p><strong>1. Basics</strong><br />Name the decision you want to make. Start with a runtime template, or ask your configured assistant for a draft.</p>
-    <p><strong>2. Build</strong><br />Write a clear decision question and possible outcomes. Add ordered rules, then the evidence and sources that support them.</p>
+    <p><strong>2. Build</strong><br />Write a clear decision question and possible outcomes. Add decision rules, then the evidence and sources that support them.</p>
     <p><strong>3. Review</strong><br />Read the draft and its validation report before creating the file. AI suggestions still need your review.</p>
     <p>After creating, use Test to explore inputs and read how the pack reaches an outcome. The bottom Activity tab records operation progress.</p>
   </aside> : null)
 
-  const [name, setName] = useState(handover?.name ?? '')
-  const [description, setDescription] = useState(handover?.description ?? '')
+  const [name, setName] = useState(reviewDraft?.name ?? handover?.name ?? '')
+  const [description, setDescription] = useState(reviewDraft?.description ?? handover?.description ?? '')
   const [choice, setChoice] = useState<string | undefined>(undefined)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<{ lead: string; reason?: string } | undefined>(undefined)
@@ -407,7 +414,7 @@ export function CreatePackDialog({
    * once, and this is that value rather than a second reading of an engine's
    * event.
    */
-  const source: Source | undefined = draft !== undefined ? { kind: 'draft', text: draft } : handover !== undefined
+  const source: Source | undefined = draft !== undefined ? { kind: 'draft', text: draft } : reviewDraft !== undefined ? { kind: 'proposal', document: reviewDraft.document } : handover !== undefined
     ? { kind: 'proposal', document: handover.document }
     : usingProposal
     ? describe.proposal === undefined
@@ -542,6 +549,7 @@ export function CreatePackDialog({
       : undefined
 
   const ready =
+    (canCreate?.() ?? true) &&
     slug !== undefined &&
     taken === undefined &&
     source !== undefined &&
@@ -748,6 +756,7 @@ export function CreatePackDialog({
       // Discarding it and registering the requested spelling is how an entry
       // ends up naming a path the runtime cleans to something else — the same
       // aliasing defect the collision check had, arriving from the other side.
+      if (canCreate && !canCreate()) { setFailure({ lead: 'The draft changed during review. Return to the conversation and review it again.' }); return }
       let landed: FileContent
       try {
         landed = await writeFile({ path, content, baseSha256: '', createParents: true })
@@ -834,11 +843,13 @@ export function CreatePackDialog({
         return
       }
 
+      const destination = await onSaved?.({ id: slug, path, digest: landed.sha256 })
+
       // (3) Everything that answered before this pack existed.
       invalidate([['desk-files'], ['desk-file', PROJECT_FILE], ['list_packs'], ['desk-config']])
       completed = true
       recordActivity('Pack created and registered.')
-      if (presentation === 'page') {
+      if (presentation === 'page' || presentation === 'review') {
         describe.discard()
         onCreated?.()
       } else close(false)
@@ -856,7 +867,9 @@ export function CreatePackDialog({
       // pushes, and the desk's other writers of a search or a fragment replace
       // (`PackView`). Move history under a create in flight and this stamps
       // the create page's URL over the entry that moved there instead.
-      if (handover !== undefined) {
+      // Chat-owned review data is consumed by the saved pack binding. Only
+      // a router-state handover owns an entry to rewrite here.
+      if (handover !== undefined && reviewDraft?.research === undefined) {
         const rest: Record<string, unknown> = { ...(location.state as Record<string, unknown> | null) }
         delete rest.research
         navigate(`${location.pathname}${location.search}${location.hash}`, {
@@ -864,11 +877,11 @@ export function CreatePackDialog({
           state: Object.keys(rest).length === 0 ? null : rest
         })
       }
-      navigate(`/packs/${slug}`)
+      navigate(destination ?? `/packs/${slug}`)
       // Closing this dialog is not closing the thing it was inside. Below
       // 900px the rail is a modal drawer, and it stayed over the page this
       // just navigated to.
-      if (presentation !== 'page') onCreated?.()
+      if (presentation === 'dialog') onCreated?.()
     } finally {
       if (!completed) recordActivity('Pack creation stopped. See the creation page for details.')
       setBusy(false)
@@ -903,7 +916,7 @@ export function CreatePackDialog({
   const page = `${location.pathname}${location.search}`
   const shownAt = useRef(page)
   useEffect(() => {
-    if (presentation === 'page') return
+    if (presentation !== 'dialog') return
     if (!open) {
       shownAt.current = page
       return
@@ -913,6 +926,23 @@ export function CreatePackDialog({
     if (busy) return
     closeNow.current(false)
   }, [page, open, busy, presentation])
+
+  if (presentation === 'review') return <form className={flow.flow} noValidate onSubmit={event => { event.preventDefault(); void create() }}>
+    <div className={flow.intro}><h2>Create this pack</h2><p className={flow.hint}>Choose its name and review the remaining questions. Your conversation stays with the pack.</p></div>
+    <FieldGroup>
+      <Field label="Pack name" error={nameProblem} hint={path ? `Save to ${path}` : undefined}>{wiring => <Input {...wiring} required value={name} disabled={busy} onChange={event => setName(event.target.value)} />}</Field>
+      <Field label="Description">{wiring => <TextArea {...wiring} rows={2} value={description} disabled={busy} onChange={event => setDescription(event.target.value)} />}</Field>
+    </FieldGroup>
+    {unknowns.length > 0 && <section className={flow.summary}>
+      <ProposalUnknowns unknowns={unknowns} />
+      <label><input type="checkbox" checked={reviewedUnknowns} disabled={busy} onChange={event => setReviewedUnknowns(event.target.checked)} /> I reviewed these open questions and assumptions.</label>
+    </section>}
+    <p className={flow.hint}>{handover ? `${caseCount(handover)} checked cases and the research record will be saved with this pack.` : 'The structure is validated. Source research and behavioral testing have not been performed.'}</p>
+    {createWhy && <p role="status">{createWhy}</p>}
+    {refused && <DiagnosticList diagnostics={anchor(refused, new Set())} label="Validation details" />}
+    {(failure ?? blocked) && <Alert reason={(failure ?? blocked)!.reason}>{(failure ?? blocked)!.lead}</Alert>}
+    <div className={flow.actions}><Button disabled={busy} onClick={() => close(false)}>Back to draft</Button><Button variant="primary" type="submit" disabled={!ready}>{busy ? 'Creating…' : 'Create pack'}</Button></div>
+  </form>
 
   if (presentation === 'page') {
     const next = () => {
@@ -948,7 +978,7 @@ export function CreatePackDialog({
               else setMethod('ai')
             }} segments={[
               { value: 'manual', label: 'Manual', disabled: draft !== undefined || describe.running },
-              { value: 'ai', label: 'Draft with AI', disabled: draft !== undefined || !describe.usable || !describe.advertised || describe.picked.model === '' }
+              { value: 'ai', label: 'Draft with Assistant', disabled: draft !== undefined || !describe.usable || !describe.advertised || describe.picked.model === '' }
             ]} /></div>
             {!describe.usable && <p className={flow.hint}>AI drafting is unavailable. Configure the assistant in Admin to enable it. {describe.unusableBecause}</p>}
             {describe.usable && !describe.advertised && <p className={flow.hint}>This runtime does not offer the authoring prompt required for AI drafting.</p>}

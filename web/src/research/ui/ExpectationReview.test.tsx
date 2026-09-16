@@ -36,7 +36,7 @@ describe('expectation review UI', () => {
     unmount()
     const create = vi.fn()
     render(<ReviewPanel state={{ ...proposedExpectation, status: 'ready' }} sources={[]} onSelect={vi.fn()} onCreate={create} />)
-    const button = screen.getByRole('button', { name: /Create pack/ }) as HTMLButtonElement
+    const button = screen.getByRole('button', { name: /Review and create/ }) as HTMLButtonElement
     expect(button.disabled).toBe(true)
     fireEvent.click(button)
     expect(create).not.toHaveBeenCalled()
@@ -49,7 +49,7 @@ describe('expectation review UI', () => {
     // must still not hand the draft to Create.
     const create = vi.fn()
     render(<ReviewPanel state={withheldButPassing} sources={[]} onSelect={vi.fn()} onCreate={create} />)
-    const button = screen.getByRole('button', { name: /Create pack/ }) as HTMLButtonElement
+    const button = screen.getByRole('button', { name: /Review and create/ }) as HTMLButtonElement
     expect(button.disabled).toBe(true)
     fireEvent.click(button)
     expect(create).not.toHaveBeenCalled()

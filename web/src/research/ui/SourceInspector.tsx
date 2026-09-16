@@ -1,3 +1,6 @@
+import { projectLogic } from '../../packs/logicModel'
+import { LogicInspector } from '../../packs/inspector/LogicInspector'
+import type { PackDocument } from '../../mcp/types'
 import { ConditionTree } from '../../packs/document/ConditionTree'
 import { Digest } from '../../ui/Digest'
 import { Disclosure } from '../../ui/Disclosure'
@@ -39,9 +42,13 @@ function context(text: string, start: number, end: number): { before: string; hi
   return { before: (from > 0 ? '…' : '') + text.slice(from, start), hit: text.slice(start, end), after: text.slice(end, to) + (to < text.length ? '…' : '') }
 }
 
-export function SourceInspector({ selection, ledger, state }: { selection: Selection; ledger: Ledger; state: RunState }) {
+export function SourceInspector({ selection, ledger, state, onSelect }: { selection: Selection; ledger: Ledger; state: RunState; onSelect?: (selection: Selection) => void }) {
   if (selection === null) {
     return <p className={styles.empty}>Choose a source, an excerpt or a rule to inspect it here.</p>
+  }
+  if (selection.kind === 'logic') {
+    const document = state.candidates.at(-1)?.document as PackDocument | undefined
+    return document ? <LogicInspector model={projectLogic(document)} at={selection.id} onSelect={id => onSelect?.({ kind: 'logic', id })} advanced={null} mainContent /> : null
   }
   if (selection.kind === 'rule') {
     const latest = state.candidates.at(-1)

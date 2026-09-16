@@ -46,6 +46,8 @@ export interface InspectorSlot {
   setTab: (tab: string | null) => void
   /** The portal target, or null before the shell has mounted it. */
   target: HTMLElement | null
+  /** Optional target for controls sharing the pane's existing title bar. */
+  headerTarget?: HTMLElement | null
   /**
    * Say that something is published into the slot, for as long as it is.
    *

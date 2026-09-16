@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import type { PackDocument } from '../mcp/types'
 import { isRecord } from './document/MisshapenMember'
@@ -20,14 +20,22 @@ export const PACK_GROUPS: Record<'rules' | 'evidence', readonly RootMember[]> = 
   evidence: ['evidenceRequirements', 'sources']
 }
 
+// A view change must not switch the active conversation for this pack.
+function usePackLink() {
+  const [params] = useSearchParams()
+  const chat = params.get('chat')
+  return (path: string) => chat ? `${path}${path.includes('?') ? '&' : '?'}chat=${encodeURIComponent(chat)}` : path
+}
+
 export function PackNavigation({ packId, current }: { packId: string; current: PackSection }) {
   const base = `/packs/${encodeURIComponent(packId)}`
+  const link = usePackLink()
   const active = current === 'rules' || current === 'evidence' ? 'logic' : current
   return <nav className={styles.navigation} aria-label="Pack sections">
     {([['overview', 'Overview'], ['logic', 'Logic'], ['test', 'Tests']] as const).map(([value, label]) =>
-      <Link key={value} to={value === 'test' ? `${base}/evaluate` : `${base}?view=${value}`}
+      <Link key={value} to={link(value === 'test' ? `${base}/evaluate` : `${base}?view=${value}`)}
         aria-current={active === value ? 'page' : undefined}>{label}</Link>)}
-    {current === 'document' && <Link to={`${base}?view=document`} aria-current="page">Full document</Link>}
+    {current === 'document' && <Link to={link(`${base}?view=document`)} aria-current="page">Full document</Link>}
   </nav>
 }
 
@@ -36,6 +44,7 @@ export function PackHeader({ packId, document: doc, current, actions, hasMatrix 
   packId: string; document?: PackDocument; current: PackSection; actions?: ReactNode; hasMatrix?: boolean; details?: ReactNode
 }) {
   const base = `/packs/${encodeURIComponent(packId)}`
+  const link = usePackLink()
   const narrow = useMediaQuery('(max-width: 599px)')
   return <PageHeader variant="title" title={text(doc?.title, packId)}
     navigation={<PackNavigation packId={packId} current={current} />}
@@ -47,9 +56,9 @@ export function PackHeader({ packId, document: doc, current, actions, hasMatrix 
           <div><dt>Pack ID</dt><dd>{text(doc?.id, packId)}</dd></div>
         </dl>
         {details}
-        <div className={styles.moreActions}><ButtonLink variant="quiet" to={`${base}?view=document`}>Full document</ButtonLink>{hasMatrix && <ButtonLink variant="quiet" to={`${base}/matrix`}>Saved cases</ButtonLink>}</div>
+        <div className={styles.moreActions}><ButtonLink variant="quiet" to={link(`${base}?view=document`)}>Full document</ButtonLink>{hasMatrix && <ButtonLink variant="quiet" to={link(`${base}/matrix`)}>Saved cases</ButtonLink>}</div>
       </Popover>
-      {current !== 'test' && <ButtonLink variant="primary" to={`${base}/evaluate`}>Test pack</ButtonLink>}
+      {current !== 'test' && <ButtonLink variant="primary" to={link(`${base}/evaluate`)}>Test pack</ButtonLink>}
     </div>} />
 }
 
@@ -60,7 +69,7 @@ export function PackQuestion({ document: doc }: { document?: PackDocument }) {
 }
 
 /** A short brief of declared content, not a computed disposition. */
-export function PackOverview({ document: doc, packId = '' }: { document: PackDocument; packId?: string }) {
+export function PackOverview({ document: doc, packId = '', logicHref, onViewLogic, onViewSources }: { document: PackDocument; packId?: string; logicHref?: string; onViewLogic?: () => void; onViewSources?: () => void }) {
   const { at, select } = useDocumentSelection()
   const evidence = entries(doc.evidenceRequirements)
   const outcomes = entries(doc.outcomes)
@@ -80,7 +89,7 @@ export function PackOverview({ document: doc, packId = '' }: { document: PackDoc
     </section>
     <section className={styles.group}>
       <div className={styles.sectionHeading}><h2>At a glance</h2>
-        <ButtonLink variant="quiet" to={`/packs/${encodeURIComponent(packId)}?view=logic`}>View logic</ButtonLink>
+        <>{onViewLogic ? <Button variant="quiet" onClick={onViewLogic}>View logic</Button> : packId ? <ButtonLink variant="quiet" to={logicHref ?? `/packs/${encodeURIComponent(packId)}?view=logic`}>View logic</ButtonLink> : null}</>
       </div>
       <dl className={styles.metadata}>
         <div><dt>Evidence needed</dt><dd>{evidence.filter(x => isRecord(x) && x.required === true).length} required · {evidence.filter(x => isRecord(x) && x.required === false).length} optional</dd></div>
@@ -89,7 +98,7 @@ export function PackOverview({ document: doc, packId = '' }: { document: PackDoc
     </section>
     <section>
       <InspectionRow label={PACK_TERMS.sources.label} value={entries(doc.sources).length} aria-label="View source references"
-        current={at === '/sources'} onClick={() => select('/sources')} />
+        current={at === '/sources'} onClick={() => onViewSources ? onViewSources() : select('/sources')} />
     </section>
   </section>
 }
@@ -98,8 +107,9 @@ export function TestNavigation({ packId, saved = false, hasMatrix }: {
   packId: string; saved?: boolean; hasMatrix: boolean
 }) {
   const base = `/packs/${encodeURIComponent(packId)}`
+  const link = usePackLink()
   return <nav className={styles.subnavigation} aria-label="Test modes">
-    <Link to={`${base}/evaluate`} aria-current={!saved ? 'page' : undefined}>Try inputs</Link>
-    {hasMatrix && <Link to={`${base}/matrix`} aria-current={saved ? 'page' : undefined}>Saved cases</Link>}
+    <Link to={link(`${base}/evaluate`)} aria-current={!saved ? 'page' : undefined}>Try inputs</Link>
+    {hasMatrix && <Link to={link(`${base}/matrix`)} aria-current={saved ? 'page' : undefined}>Saved cases</Link>}
   </nav>
 }
