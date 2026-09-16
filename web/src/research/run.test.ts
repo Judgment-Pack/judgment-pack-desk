@@ -201,8 +201,10 @@ describe('the authoring run', () => {
     expect(state.verdicts.s1?.ok).toBe(true)
     // The citation traced to the recorded excerpt.
     expect(state.citations).toEqual([{ sourceId: 'ircc-fswp', location: 'src-1#e1', excerptId: 'src-1#e1', url: PAGE_URL, traced: true, reason: '' }])
-    // The runtime was asked, in rehearsal, once per case after one validate.
-    expect(runtime.calls).toEqual([EXPECTATION_TOOL, EXPECTATION_TOOL, 'validate', 'experimental_evaluate', 'experimental_evaluate', 'experimental_evaluate'])
+    // The contract is asked once, at admission, and the case then carries the
+    // canonical answer; the runtime was asked, in rehearsal, once per case
+    // after one validate.
+    expect(runtime.calls).toEqual([EXPECTATION_TOOL, 'validate', 'experimental_evaluate', 'experimental_evaluate', 'experimental_evaluate'])
     expect(logged.some((line) => line.startsWith('verify: s1 — verified'))).toBe(true)
     // What a created pack carries beside it.
     const matrix = matrixDocument(state, ledger) as { matrixVersion: string; cases: { id: string; cites?: unknown[] }[] }
@@ -600,7 +602,10 @@ describe('invalid expectation review', () => {
     expect(run.getSnapshot()).toBe(state) // Cannot apply twice.
     // No status, partial report, stale digest or missing id can bypass Create.
     const check = state.candidates[0]!.check!
-    for (const changed of [{ ...check, documentDigest: 'stale' }, { ...check, cases: check.cases.slice(1) }, { ...check, cases: check.cases.map(row => ({ ...row, id: 'other' })) }]) {
+    // slice(1) shifts every id, so the id rule catches it; slice(0, -1) is the
+    // shape only the count rule catches -- a check taken before the approved
+    // case joined the suite, on the same bytes and the same digest.
+    for (const changed of [{ ...check, documentDigest: 'stale' }, { ...check, cases: check.cases.slice(1) }, { ...check, cases: check.cases.slice(0, -1) }, { ...check, cases: check.cases.map(row => ({ ...row, id: 'other' })) }]) {
       expect(canCreateResearchDraft({ ...state, candidates: [{ ...state.candidates[0]!, check: changed }] })).toBe(false)
     }
     expect(canCreateResearchDraft({ ...state, expectationIssues: [issue] })).toBe(false)
@@ -675,6 +680,96 @@ describe('invalid expectation review', () => {
     expect(state.status).toBe('stopped')
     expect(state.cases).toHaveLength(2)
     expect(state.expectationIssues[0]!.resolved).toBeUndefined()
+  })
+
+  it('blocks a case whose handoff target contradicts its own disposition, and refuses a correction that would', async () => {
+    // The exact expectation is the pair. No evaluation reports a target for a
+    // handoff of "none", so this pair could never pass, for any pack.
+    const targeted = structuredClone(CASES) as { cases: Record<string, unknown>[] }
+    targeted.cases[0] = { ...targeted.cases[0]!, expectedHandoffTarget: { kind: 'human-role', name: 'Screening officer' } }
+    const casesTurn: Script = async (_request, _signal, event) => {
+      event({ type: 'proposal', document: targeted, unknowns: [] })
+      event({ type: 'end' })
+    }
+    const { run, runtime } = harness([researchTurn(), casesTurn])
+    run.start('brief', [PAGE_URL])
+    const state = await settled(run)
+    expect(state.expectationIssues.map(issue => issue.id)).toEqual(['meets-hours'])
+    expect(state.expectationIssues[0]!.message).toContain('requests no handoff')
+    expect(state.cases.map(row => row.id)).toEqual(['under-hours', 'hours-missing'])
+    // Nothing was rehearsed: a blocked expectation stops before the pack is tested.
+    expect(runtime.calls).toEqual([EXPECTATION_TOOL])
+  })
+
+
+
+  it('refuses an approval carrying an earlier proposal\'s token', async () => {
+    // The token identifies the proposal a person looked at. A second correction
+    // replaces what is displayed, so the first token must no longer approve
+    // anything: what is applied is what was shown.
+    const { run } = await blockedRun([correctionTurn(), correctionTurn({ kind: 'unresolved', reasons: ['unknown'], handoff: { state: 'none' } })])
+    run.proposeExpectationCorrection('hours-missing')
+    const first = (await settled(run)).expectationIssues[0]!.proposal!
+    run.proposeExpectationCorrection('hours-missing')
+    const second = (await settled(run)).expectationIssues[0]!.proposal!
+    expect(second.token).not.toBe(first.token)
+    const state = run.getSnapshot()
+    run.approveExpectationCorrection('hours-missing', first.token)
+    expect(run.getSnapshot()).toBe(state)
+    expect(state.expectationIssues[0]!.resolved).toBeUndefined()
+  })
+
+  it('judges expectations against the evaluator, so a draft that declares the wrong version is repaired and not refused', async () => {
+    // An expectation describes a disposition an evaluator produces. Keying the
+    // check on the draft's own header turned a draft defect -- the version the
+    // runtime's own authoring prompt warns models get wrong -- into a failed run
+    // that threw away the reviewer's whole proposal.
+    const wrongVersion = { ...PACK, specVersion: '0.1.0-draft' }
+    const seen: Record<string, unknown>[] = []
+    const native = fakeRuntime()
+    const { run } = harness([researchTurn(wrongVersion), casesTurn], {
+      callTool: (name, args) => {
+        if (name === EXPECTATION_TOOL) seen.push(args)
+        return native.callTool(name, args)
+      }
+    })
+    run.start('brief', [PAGE_URL])
+    const state = await settled(run)
+    expect(seen.map(args => args.spec_version)).toEqual(['0.2.0-draft'])
+    expect(state.status, state.detail).toBe('ready')
+    expect(state.cases).toHaveLength(3)
+  })
+
+  it('never re-establishes cases over a blocked expectation, even when every proposal was invalid', async () => {
+    // The all-invalid shape leaves no established case, and a later draft change
+    // must not send the reviewer back to propose a fresh, smaller suite: that is
+    // the reduced suite this flow exists to refuse.
+    const onlyInvalid = { cases: [INVALID_CASES.cases[2]] }
+    const invalidOnlyTurn: Script = async (_request, _signal, event) => {
+      event({ type: 'proposal', document: onlyInvalid, unknowns: [] })
+      event({ type: 'end' })
+    }
+    const changed: Script = async (_request, _signal, event) => {
+      event({ type: 'proposal', document: { ...PACK, title: 'Changed title' }, unknowns: [] })
+      event({ type: 'end' })
+    }
+    const fresh: Script = async (_request, _signal, event) => {
+      event({ type: 'proposal', document: { cases: [CASES.cases[0], CASES.cases[1]] }, unknowns: [] })
+      event({ type: 'end' })
+    }
+    const { run, runtime } = harness([researchTurn(), invalidOnlyTurn, changed, fresh])
+    run.start('brief', [PAGE_URL])
+    const blocked = await settled(run)
+    expect(blocked.cases).toHaveLength(0)
+    expect(blocked.expectationIssues.map(issue => issue.id)).toEqual(['hours-missing'])
+    run.send('Change the title')
+    const state = await settled(run)
+    expect(state.expectationIssues.map(issue => issue.id)).toEqual(['hours-missing'])
+    expect(state.expectationIssues[0]!.resolved).toBeUndefined()
+    expect(state.cases).toHaveLength(0)
+    expect(state.status).toBe('needs-input')
+    expect(canCreateResearchDraft(state)).toBe(false)
+    expect(runtime.calls.filter(name => name === 'experimental_evaluate')).toEqual([])
   })
 })
 

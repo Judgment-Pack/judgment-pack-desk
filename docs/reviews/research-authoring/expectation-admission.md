@@ -32,6 +32,33 @@ at admission, preserves it for review and leaves exact evaluation unchanged.
    assertion. This history is retained in the current run and saved research
    record; browser-reload checkpoint/resume remains outside this change.
 
+## Round 1 review dispositions
+
+The cross-vendor review recorded on
+[runtime #150](https://github.com/Judgment-Pack/judgment-pack-runtime/pull/150#issuecomment-5689090073),
+and the dispositions recorded on this PR, changed the following here:
+
+- **The exact expectation is the pair.** A case that asserts an
+  `expectedHandoffTarget` beside a disposition requesting no handoff is blocked
+  at admission, an approved correction that would create that pair is refused,
+  and every place an expectation is displayed displays the target with it. The
+  target could otherwise survive a correction unseen and leave the case
+  unpassable.
+- **Expectations are judged against the evaluator's version**, not the version
+  the draft declares, and the canonical text is stored with the case, so a
+  check no longer revalidates it. A draft that declares the wrong version now
+  reaches `validate` and the repair loop, as it did before this feature.
+- **A handed-over draft is read at Build, not edited.** Its companions assert
+  that those exact bytes were checked, and the research record carries the
+  checked candidate's digest and the four members Create shapes.
+- **Both companion paths are probed before the pack is written**, including
+  against matrix paths other entries declare, so a name that is taken refuses
+  before anything lands rather than orphaning a pack.
+- **A runtime limit finding is not a Core defect**, and is not handed to a
+  reviewer as one.
+- **The correction turn carries no pack-authoring prompt**, and a suite larger
+  than one call is chunked rather than refused.
+
 ## Runtime boundary and compatibility
 
 Depends on [runtime PR #150](https://github.com/Judgment-Pack/judgment-pack-runtime/pull/150),

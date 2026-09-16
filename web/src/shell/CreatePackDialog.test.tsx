@@ -73,6 +73,16 @@ const PROJECT = `{
   }
 }
 `
+const PROJECT_CLAIMING_MATRIX = `{
+  "configVersion": "2",
+  "packs": {
+    "legacy": {
+      "path": "legacy.pack.json",
+      "matrix": "packs/reviewed-pack.matrix.json"
+    }
+  }
+}
+`
 const PROJECT_SHA = 'ab'.repeat(32)
 
 interface Sent {
@@ -110,6 +120,8 @@ function serveProject(
     canonical?: string
     /** Whether the candidate pack path already answers a read. */
     packFileExists?: boolean
+    /** Paths that answer a read as an existing file, for the pre-flight probes. */
+    present?: string[]
   } = {}
 ) {
   const files = options.files ?? ['jpack.json']
@@ -159,6 +171,8 @@ function serveProject(
       if (options.packFileExists && text.includes('.pack.json')) {
         return ok({ path: 'packs/x.pack.json', bytes: 2, sha256: 'dd', content: '{}' })
       }
+      const found = (options.present ?? []).find((path) => text.includes(encodeURIComponent(path)) || text.includes(`path=${path}`))
+      if (found !== undefined) return ok({ path: found, bytes: 2, sha256: 'dd', content: '{}' })
       return {
         ok: false,
         status: 404,
@@ -1141,7 +1155,9 @@ function researchHandover(): ResearchHandover {
   return {
     document: JSON.parse(TEMPLATE), name: 'Reviewed pack', description: 'A reviewed decision', unknowns: [],
     matrix: { matrixVersion: '3', cases: [replacement] },
-    research: { researchRecordVersion: '1', packSha256: 'before-create', cases: [replacement], sources: [],
+    research: { researchRecordVersion: '1', packSha256: 'before-create',
+      checkedCandidateSha256: 'digest-of-reviewed-candidate', shapedOnCreate: ['title', 'id', 'version', 'description'],
+      cases: [replacement], sources: [],
       expectationIssues: [{ ...issue, resolved: { replacement, rationale: issue.proposal!.rationale, approvedAt: '2026-09-14T20:00:00Z' } }] }
   }
 }
@@ -1198,12 +1214,58 @@ describe('creating a reviewed research handover', () => {
     await waitFor(() => expect(seen).toContain('/packs/reviewed-pack'))
   })
 
+  it('reads the reviewed draft at Build and writes exactly those bytes, with the checked digest beside the saved one', async () => {
+    const sent = serveProject({ project: PROJECT })
+    const { handover } = renderHandover()
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue' }))
+    // The reviewed bytes are what the matrix and the record describe, so Build
+    // shows them and does not offer to change them.
+    expect(await screen.findByLabelText('Reviewed draft')).toBeTruthy()
+    expect(screen.queryByRole('textbox', { name: /Full document/ })).toBeNull()
+    expect(screen.queryByRole('tab', { name: /Full document/ })).toBeNull()
+    expect(screen.getByText(/not edited here/)).toBeTruthy()
+    fireEvent.click(await screen.findByRole('button', { name: 'Review pack' }))
+    await waitFor(() => expect(createButton().disabled).toBe(false))
+    fireEvent.click(createButton())
+    await waitFor(() => expect(sent).toHaveLength(4))
+    // Every member of the reviewed document survives except the four Create
+    // shapes on its way to disk, and those four are named in the record.
+    const written = JSON.parse(sent[0]!.body.content as string)
+    const reviewed = handover.document as Record<string, unknown>
+    for (const member of Object.keys(reviewed)) {
+      if (['title', 'id', 'version', 'description'].includes(member)) continue
+      expect(written[member]).toEqual(reviewed[member])
+    }
+    const saved = JSON.parse(sent[2]!.body.content as string)
+    expect(saved.packSha256).toBe('cc')
+    expect(saved.checkedCandidateSha256).toBe('digest-of-reviewed-candidate')
+    expect(saved.shapedOnCreate).toEqual(['title', 'id', 'version', 'description'])
+  })
+
+  it.each([
+    { name: 'a file is already there', options: { present: ['packs/reviewed-pack.matrix.json'] }, reason: /already exists/ },
+    { name: 'another pack declares it', options: { project: PROJECT_CLAIMING_MATRIX }, reason: /already declared as another pack/ }
+  ])('writes nothing when the companion path is taken: $name', async ({ options, reason }) => {
+    // The pack write is the point of no return for its companions, and both of
+    // these are knowable before it. Finding out afterwards is an orphaned pack.
+    const sent = serveProject({ project: PROJECT, ...options })
+    renderHandover()
+    await reviewHandedDraft()
+    fireEvent.click(createButton())
+    expect(await screen.findByText(/one of those two names is taken/)).toBeTruthy()
+    expect(await screen.findByText(reason)).toBeTruthy()
+    expect(sent).toEqual([])
+  })
+
   it.each(['matrix', 'research'])('does not register the pack if the %s companion write fails', async companion => {
     const sent = serveProject({ project: PROJECT, answer: path => path.endsWith(`.${companion}.json`) ? { status: 409, body: { code: 'stale', error: 'a companion already exists' } } : undefined })
     const { seen } = renderHandover()
     await reviewHandedDraft()
     fireEvent.click(createButton())
     expect(await screen.findByText(/test cases or research record could not be written/)).toBeTruthy()
+    // Every file that landed is named, so a person knows what to clean up. When
+    // the research write is the one that failed, the matrix is on disk too.
+    expect(await screen.findByText(new RegExp(`packs/reviewed-pack.pack.json${companion === 'research' ? ' and packs/reviewed-pack.matrix.json' : ''} (is|are) on disk`))).toBeTruthy()
     expect(sent.map(row => row.path)).not.toContain('jpack.json')
     expect(sent).toHaveLength(companion === 'matrix' ? 2 : 3)
     expect(seen).not.toContain('/packs/reviewed-pack')

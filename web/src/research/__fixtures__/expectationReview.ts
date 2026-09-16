@@ -12,6 +12,20 @@ export const blockedExpectation: RunState = {
   candidates: [{ revision: 1, producedBy: 'research', document: null, text: '{}', digest: 'fixture-digest' }],
   expectationIssues: [{ id: row.id, original: row, message: '§8.3: reasons is empty if and only if kind is "outcome"' }]
 }
+/**
+ * A settled, complete, passing check on the current candidate, with the run
+ * withheld for a reason of its own. Create must still be refused: the pre-PR
+ * gate looked only at the latest check and would offer it.
+ */
+export const withheldButPassing: RunState = {
+  ...INITIAL_STATE,
+  phase: 'review', status: 'needs-input', detail: 'The draft cites no source.',
+  cases: [{ ...row, id: 'valid-case', expectedDisposition: { kind: 'unresolved', reasons: ['unknown'], handoff: { state: 'none' } } }],
+  candidates: [{
+    revision: 1, producedBy: 'research', document: null, text: '{}', digest: 'fixture-digest',
+    check: { documentDigest: 'fixture-digest', valid: true, diagnostics: [], cases: [{ id: 'valid-case', passed: true, expected: {}, actual: {} }] }
+  }]
+}
 export const proposedExpectation: RunState = {
   ...blockedExpectation,
   expectationIssues: [{ ...blockedExpectation.expectationIssues[0]!, proposal: {

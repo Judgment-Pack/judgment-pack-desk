@@ -117,6 +117,22 @@ export function existingPackPaths(config: ProjectConfig): string[] {
 }
 
 /**
+ * The matrix paths this project's entries already declare.
+ *
+ * A declared matrix is law for the runtime's own generators, and two packs
+ * sharing one matrix file is a silent way for one pack's rows to become
+ * another's. A path here may name no file yet, which is exactly why the claim
+ * and the file are asked separately.
+ */
+export function declaredMatrixPaths(config: ProjectConfig): string[] {
+  const packs = config.packs
+  if (!isPlainObject(packs)) return []
+  return Object.values(packs)
+    .map((entry) => (isPlainObject(entry) && typeof entry.matrix === 'string' ? entry.matrix : undefined))
+    .filter((path): path is string => path !== undefined)
+}
+
+/**
  * The configuration with one entry added, everything else in place.
  *
  * Key order survives: spreading assigns in insertion order, and an existing

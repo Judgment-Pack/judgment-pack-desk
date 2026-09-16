@@ -55,9 +55,11 @@ import {
   parseProjectConfig,
   serialiseProjectConfig,
   withPack,
+  declaredMatrixPaths,
   type ProjectConfig
 } from '../packs/jpackConfig'
 import { codeOf, refusalDetail, refusalLead } from '../packs/createRefusal'
+import { samePath } from '../packs/packPath'
 import { DescribeIt, useDescribeIt } from './DescribeIt'
 import {
   collisionIn,
@@ -122,6 +124,8 @@ const UNREADABLE_PROJECT_FILE =
   'This project’s jpack.json could not be read, so a new pack cannot be registered. Nothing was created.'
 const STALE_PROJECT_FILE = 'jpack.json changed while creating — reload and try again'
 const PACK_FILE_TAKEN = 'Something is already there under that name — try another.'
+const COMPANION_PATH_TAKEN =
+  'The test cases and research record would be written beside the pack, and one of those two names is taken. Nothing was written; try another name.'
 const ORPHANED =
   'The pack was created but could not be registered. Nothing else was changed.'
 const COMPANIONS_ORPHANED =
@@ -149,6 +153,12 @@ const DIALOG_DESCRIPTION =
  * refusal gets.
  */
 type Source = { kind: 'template'; text: string } | { kind: 'proposal'; document: unknown } | { kind: 'draft'; text: string }
+
+/** How many cases a handover's matrix carries, for the sentences that say so. */
+function caseCount(handover: ResearchHandover): number {
+  const cases = (handover.matrix as { cases?: unknown[] })?.cases
+  return Array.isArray(cases) ? cases.length : 0
+}
 
 export function CreatePackDialog({
   open,
@@ -648,6 +658,33 @@ export function CreatePackDialog({
         }
       }
 
+      // (0b') And the two files a handover writes beside the pack, on the same
+      // terms. The pack write is the point of no return for them: a companion
+      // path that is occupied, or that another entry already declares as its
+      // matrix, is knowable now and is an orphaned pack if it is found out
+      // after. Nothing derives these paths but this rule, so they are derived
+      // here from the same slug the pack path came from.
+      if (handover !== undefined) {
+        const base = path.replace(/\.pack\.json$/, '')
+        const claimed = declaredMatrixPaths(current)
+        for (const companion of [`${base}.matrix.json`, `${base}.research.json`]) {
+          if (claimed.some((declared) => samePath(declared, companion))) {
+            setFailure({ lead: COMPANION_PATH_TAKEN, reason: `${companion} is already declared as another pack's matrix.` })
+            return
+          }
+          try {
+            await readFile(companion)
+            setFailure({ lead: COMPANION_PATH_TAKEN, reason: `${companion} already exists.` })
+            return
+          } catch (cause) {
+            if (!(cause instanceof FileRequestError) || cause.status !== 404) {
+              setFailure({ lead: refusalLead(cause) ?? 'That location could not be used.', reason: refusalDetail(cause) })
+              return
+            }
+          }
+        }
+      }
+
       // (0c) The document itself, before anything is sent: a template that is
       // not a JSON object cannot become a pack, and finding that out after the
       // write would be an orphan for a reason known in advance.
@@ -709,11 +746,16 @@ export function CreatePackDialog({
         matrixPath = `${base}.matrix.json`
         const researchPath = `${base}.research.json`
         const research = { ...(handover.research as Record<string, unknown>), packSha256: landed.sha256 }
+        // Every file that landed is named if the next one does not: "the files
+        // left behind" is the whole of what a person can act on here, and the
+        // matrix is one of them once it is written.
+        const written = [landed.path]
         try {
           await writeFile({ path: matrixPath, content: JSON.stringify(handover.matrix, null, 2) + '\n', baseSha256: '' })
+          written.push(matrixPath)
           await writeFile({ path: researchPath, content: JSON.stringify(research, null, 2) + '\n', baseSha256: '' })
         } catch (cause) {
-          setFailure({ lead: COMPANIONS_ORPHANED, reason: refusalDetail(cause) })
+          setFailure({ lead: COMPANIONS_ORPHANED, reason: `${written.join(' and ')} ${written.length === 1 ? 'is' : 'are'} on disk and unregistered. ${refusalDetail(cause) ?? ''}`.trim() })
           invalidate([['desk-files']])
           return
         }
@@ -852,14 +894,28 @@ export function CreatePackDialog({
             </Field>
             {method === 'manual' ? <Field label="Starting template" error={templateProblem}>
               {(wiring) => <Select {...wiring} value={selected} onValueChange={setChoice} disabled={draft !== undefined} options={options} placeholder={templatesPending ? TEMPLATES_PENDING : 'Choose a template'} />}
-            </Field> : draft === undefined ? handover !== undefined ? <p className={flow.hint} role="status">This draft came from Research and draft: {Array.isArray((handover.matrix as { cases?: unknown[] })?.cases) ? (handover.matrix as { cases: unknown[] }).cases.length : 0} test case(s) and its research record will be written beside the pack.</p> : <>
+            </Field> : draft === undefined ? handover !== undefined ? <p className={flow.hint} role="status">This draft came from Research and draft: {caseCount(handover)} test case(s) and its research record will be written beside the pack. The draft itself is not edited here.</p> : <>
               <DescribeIt state={describe} blockingElsewhere={Boolean(createWhy)} expanded />
               <p className={flow.hint}>Or research first: <ButtonLink to="/create-pack/research" variant="inline">Research and draft with sources</ButtonLink> lets the assistant search and read official pages through the gateway, cite them, and test the draft before you create it.</p>
             </> : null}
             </FieldGroup>
             {draft !== undefined && <p className={flow.hint}>Your draft is retained. Edit its name, description, and other fields in Build → Full document.</p>}
           </>}
-          {step === 1 && draft !== undefined && <DraftPackEditor text={draft} onChange={(next) => { setDraft(next); setReviewedUnknowns(false) }} pending={held.drafts} hold={held.hold} />}
+          {/*
+            * A handed-over draft is read at Build, not edited. Its matrix and
+            * research record assert that these exact bytes were checked against
+            * source-grounded cases, and an edit here would leave those
+            * companions describing a document that no longer exists while the
+            * record's digest named the edited one. Editing a pack is what the
+            * pack editor is for, once the pack exists and carries its own
+            * history; changing what the draft says is what Research is for.
+            */}
+          {step === 1 && draft !== undefined && (handover !== undefined
+            ? <section className={flow.summary} aria-label="Reviewed draft">
+                <p className={flow.hint} role="status">This is the reviewed draft, as its {caseCount(handover)} test case(s) checked it. It is not edited here: go back to Research and draft to change what it says, or create the pack and edit it afterwards.</p>
+                {isRecord(preview) && <PackOverview document={preview as unknown as PackDocument} />}
+              </section>
+            : <DraftPackEditor text={draft} onChange={(next) => { setDraft(next); setReviewedUnknowns(false) }} pending={held.drafts} hold={held.hold} />)}
           {step === 2 && unknowns.length > 0 && <section className={flow.summary} aria-label="Assistant review">
             <ProposalUnknowns unknowns={unknowns} />
             <label><input type="checkbox" checked={reviewedUnknowns} onChange={(event) => setReviewedUnknowns(event.target.checked)} /> I reviewed these unknowns and updated the draft where needed.</label>

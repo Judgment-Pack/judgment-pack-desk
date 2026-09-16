@@ -19,7 +19,7 @@
 import type { AssistantEvent, CallTool, HostTool } from '../assistant/engine'
 import { isCancelled } from '../assistant/engines/contract'
 import { checkCandidate, digestOf, jsonIdentity, type AuthoringCase, type CandidateCheck } from './checkCandidate'
-import { expectationSpec, validateExpectations } from './expectations'
+import { findingSummary, validateExpectations } from './expectations'
 import type { Ledger, SourceRecord } from './ledger'
 import { CASES_INSTRUCTIONS, CONTINUE_INSTRUCTIONS, CONVERSATION_INSTRUCTIONS, REPAIR_INSTRUCTIONS, RESEARCH_INSTRUCTIONS } from './prompts'
 import { memberOf, parseJsonText, stringMember, type JsonNode } from './verify/canon'
@@ -106,7 +106,7 @@ export interface RunPorts {
   newSession(): string
   authorPrompt: string
   maxRevisions: number
-  /** The seconds a run may take from its start, after which it is stopped as over budget. */
+  /** The seconds any one action may take, after which it is stopped as over budget. */
   seconds: number
   log(text: string): void
   now?: () => Date
@@ -275,9 +275,12 @@ export class AuthoringRun {
   }
 
   /**
-   * The time budget, armed once at start: when it fires, whatever is in
+   * The time budget, armed for each action the person takes -- the run itself, a
+   * message, a correction request, an approval. When it fires, whatever is in
    * flight is cancelled through the same signal Stop uses, and the outcome is
-   * reported as `budget` rather than `stopped`.
+   * reported as `budget` rather than `stopped`. Per action rather than per run,
+   * because a conversation turn after a settled run had no bound at all, and a
+   * Stop after a spent budget was reported as the budget rather than as a stop.
    */
   private arm(): void {
     this.outOfTime = false
@@ -331,11 +334,13 @@ export class AuthoringRun {
       if (!excerpt) throw new Error('The expectation source is no longer verified. Restore its verification before reviewing the expectation.')
       const candidate = this.latest()!
       const document = candidate.document as Record<string, unknown>
-      const prompt = [this.ports.authorPrompt,
-        'CORRECT AN INVALID EXPECTATION. Preserve the case id, facts, evidence availability, source and intended behavior. Propose only a complete expectedDisposition and a rationale explaining the correction under JPS §8.3. Empty reasons is valid only for outcome; unresolved must retain its reason(s). Do not remove a case, change the pack, or weaken the assertion to fit a candidate. If the cited source and contract do not settle the correction, return unknowns and no correction. The person must approve any correction before it is used.',
+      // No authoring prompt here: this turn reviews one expectation against the
+      // source and the contract, and pack-authoring guidance is not its brief.
+      const prompt = ['CORRECT AN INVALID EXPECTATION. Preserve the case id, facts, evidence availability, source and intended behavior. Propose only a complete expectedDisposition and a rationale explaining the correction under JPS §8.3. Empty reasons is valid only for outcome; unresolved must retain its reason(s). Do not remove a case, change the pack, or weaken the assertion to fit a candidate. If the cited source and contract do not settle the correction, return unknowns and no correction. The person must approve any correction before it is used.',
         `CASE\n${JSON.stringify(issue.original)}`, `VALIDATOR FINDING\n${issue.message}`,
         `SOURCE EXCERPT\n${JSON.stringify(excerpt)}`, `DECLARED OUTCOMES\n${JSON.stringify(document.outcomes)}`,
         `HANDOFF CONFIGURATION\n${JSON.stringify(document.escalation ?? null)}`,
+        `EXPECTED HANDOFF TARGET (asserted with the disposition and unchanged by this correction)\n${JSON.stringify(issue.original.expectedHandoffTarget ?? null)}`,
         'Answer with prose and exactly one fenced JSON block: {"proposal":{"document":{"expectedDisposition":{...},"rationale":"..."},"unknowns":[]}}.'
       ].join('\n\n')
       const response = await this.engineTurn(signal, 'research', prompt, [], true)
@@ -344,8 +349,9 @@ export class AuthoringRun {
       let proposalError = response?.unknowns.length ? response.unknowns.join('\n') : ''
       if (!proposalError && (!value || typeof value.rationale !== 'string' || !value.rationale.trim())) proposalError = 'The reviewer did not explain a correction. The expectation remains blocked.'
       if (!proposalError && value) {
-        const [finding] = await validateExpectations(expectationSpec(this.latest()!.document), [value.expectedDisposition], this.ports.callTool, signal)
-        if (finding!.status === 'invalid') proposalError = finding!.message
+        const [finding] = await validateExpectations([value.expectedDisposition], this.ports.callTool, signal)
+        if (finding!.status === 'invalid') proposalError = findingSummary(finding!)
+        else if (targetContradiction(finding!.canonical, issue.original.expectedHandoffTarget)) proposalError = targetContradiction(finding!.canonical, issue.original.expectedHandoffTarget)!
         else {
           const rationale = (value.rationale as string).trim()
           proposal = deepFreeze({ expectedDisposition: JSON.parse(finding!.canonical), rationale, candidateDigest: candidate.digest,
@@ -367,8 +373,13 @@ export class AuthoringRun {
     this.set({ phase: 'review', status: 'running', detail: `Validating the approved correction for ${id}.` })
     void this.drive(async signal => {
       if (!this.ports.ledger.verifiedExcerpt(issue.original.expectationSource)) throw new Error('The expectation source is no longer verified; the correction was not applied.')
-      const [finding] = await validateExpectations(expectationSpec(this.latest()!.document), [proposal.expectedDisposition], this.ports.callTool, signal)
-      if (finding!.status !== 'valid') throw new Error(`The correction is no longer valid: ${finding!.message}`)
+      const [finding] = await validateExpectations([proposal.expectedDisposition], this.ports.callTool, signal)
+      if (finding!.status !== 'valid') throw new Error(`The correction is no longer valid: ${findingSummary(finding)}`)
+      // The exact expectation is the pair. A corrected disposition that no
+      // longer agrees with the target the case asserts could never pass, so it
+      // is refused here rather than applied and left to stall the run.
+      const contradiction = targetContradiction(finding.canonical, issue.original.expectedHandoffTarget)
+      if (contradiction) throw new Error(`The correction was not applied: ${contradiction}`)
       this.check(signal)
       const replacement = deepFreeze(structuredClone({ ...issue.original, expectedDisposition: proposal.expectedDisposition }))
       // No established case can be silently replaced by this approval.
@@ -580,13 +591,22 @@ export class AuthoringRun {
       this.ports.log('cases: a reviewer establishes expectations from the excerpts')
       const proposal = await this.engineTurn(signal, 'research', this.casesPrompt(candidate.document), [], true)
       const { admitted, dropped } = admitCases(proposal?.document, this.ports.ledger, this.state.cases)
-      const checked = await validateExpectations(expectationSpec(candidate.document), admitted.map(row => row.expectedDisposition), this.ports.callTool, signal)
+      const checked = await validateExpectations(admitted.map(row => row.expectedDisposition), this.ports.callTool, signal)
       const issues: ExpectationIssue[] = []
-      const cases = admitted.filter((row, index) => {
+      const cases: AuthoringCase[] = []
+      admitted.forEach((row, index) => {
         const finding = checked[index]!
-        if (finding.status === 'valid') return true
-        issues.push({ id: row.id, original: row, message: finding.message })
-        return false
+        if (finding.status === 'invalid') return void issues.push({ id: row.id, original: row, message: findingSummary(finding) })
+        // The exact expectation is the disposition and the target together. A
+        // target that contradicts its own disposition can never pass, whatever
+        // the pack says, so it is blocked for review rather than admitted and
+        // left to spend the repair budget.
+        const contradiction = targetContradiction(finding.canonical, row.expectedHandoffTarget)
+        if (contradiction) return void issues.push({ id: row.id, original: row, message: contradiction })
+        // What the runtime compared is what is stored: the canonical text, not
+        // the reviewer's spelling of the same set. The saved matrix row is then
+        // byte-identical to the assertion that was checked.
+        cases.push(deepFreeze(structuredClone({ ...row, expectedDisposition: JSON.parse(finding.canonical) })))
       })
       this.set({ cases, expectationIssues: issues, droppedCases: dropped })
       if (dropped.length) {
@@ -625,7 +645,12 @@ export class AuthoringRun {
         return
       }
       if (!repair) {
-        this.set({ phase: 'review', status: 'needs-input', detail: 'The unchanged draft disagrees with the reviewed expectations. Review the results or request a pack change.' })
+        // A run blocked on an expectation never checked its draft, so this is
+        // the first the person hears of either kind of failure. Saying the
+        // wrong one sends them to the cases when the pack is what is broken.
+        this.set({ phase: 'review', status: 'needs-input', detail: check.valid
+          ? 'The unchanged draft disagrees with the reviewed expectations. Review the results or request a pack change.'
+          : `The unchanged draft is not a valid pack: ${check.diagnostics.length} diagnostic${check.diagnostics.length === 1 ? '' : 's'}. Review them, or send a message to repair it.` })
         return
       }
       if (this.state.revisionsUsed >= this.ports.maxRevisions) {
@@ -813,6 +838,14 @@ export function researchRecord(state: RunState, ledger: Ledger, packDigest: stri
   return {
     researchRecordVersion: '1',
     packSha256: packDigest,
+    // The digest of the bytes these cases were actually checked against, beside
+    // the digest of the pack that was written. Create shapes four members of the
+    // reviewed draft on its way to disk -- title, id, version, description --
+    // so the two differ by construction, and a reader should be able to see
+    // that rather than infer it. Nothing else may differ: a handed-over draft
+    // is not edited on the way through.
+    checkedCandidateSha256: state.candidates.at(-1)?.digest ?? '',
+    shapedOnCreate: ['title', 'id', 'version', 'description'],
     brief: state.brief,
     seedUrls: state.seedUrls,
     sessions: state.sessions,
@@ -859,6 +892,24 @@ export function receiptsOf(record: SourceRecord): JsonNode | null {
 }
 
 export { parseJsonText, memberOf, stringMember }
+
+/**
+ * Why a handoff target and the disposition it is asserted with cannot both hold,
+ * or nothing where they can.
+ *
+ * §8.3 keeps the configured target outside the disposition, and this runtime
+ * reports one exactly when the disposition requests a handoff. So a row that
+ * asserts a target beside a handoff of "none" asserts a pair no evaluation can
+ * produce, for any pack and any escalation configuration. The other direction is
+ * pack-dependent -- a requested handoff has no target where the pack configures
+ * none -- and is left to the evaluation that can answer it.
+ */
+export function targetContradiction(canonical: string, target: unknown): string | null {
+  if (target === undefined || target === null) return null
+  const handoff = (JSON.parse(canonical) as { handoff?: { state?: unknown } }).handoff
+  if (handoff?.state === 'requested') return null
+  return 'The case expects a handoff target beside a disposition that requests no handoff. No evaluation reports a target for a handoff of "none", so the pair could never pass.'
+}
 
 /** A complete check is bound to the current candidate and every established case. */
 function completeCurrentCheck(state: RunState): boolean {

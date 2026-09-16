@@ -52,6 +52,49 @@ function callToolThrough(client: NonNullable<ReturnType<typeof useMcp>['client']
   return async (name, args) => (await client.callTool({ name, arguments: args })) as McpToolResult
 }
 
+/**
+ * Why research cannot start, in the person's words, or nothing.
+ *
+ * Pure and exported so each branch can be tested: these sentences are the only
+ * thing standing between a person and a run that would fail two model turns
+ * later, and the last of them is what an old runtime is told.
+ */
+export function researchBlockedReason(state: {
+  slot: { state: string; endpoint: unknown; keyStatus: string; keyPresent: boolean }
+  modelPicked: boolean
+  advertised: boolean
+  authorPromptRead: boolean
+  research: { gateway: unknown; sources: { search: unknown; read: unknown } }
+  mcp: { status: string; client: unknown; validateSupported: boolean; expectationValidationSupported: boolean }
+}): string {
+  const { slot, research, mcp } = state
+  return slot.state === 'unavailable'
+    ? 'The desk-level configuration could not be read, so no assistant is available.'
+    : slot.endpoint === null
+      ? 'No assistant endpoint is configured. Configure one in Admin › Assistant.'
+      : slot.keyStatus === 'pending'
+        ? 'Checking the saved API key…'
+        : !slot.keyPresent
+          ? 'No API key is stored for the assistant. Save one in Admin › Assistant.'
+          : !state.modelPicked
+            ? 'Choose an enabled model in Admin › Assistant.'
+            : !state.advertised
+              ? 'This runtime does not offer the authoring prompt.'
+              : !state.authorPromptRead
+                ? 'Reading the authoring prompt…'
+                : research.gateway === null
+                  ? 'No research gateway is configured. Add a research section to the desk-level desk.json.'
+                  : research.sources.search === null && research.sources.read === null
+                    ? 'The research section names no search or read source.'
+                    : mcp.status !== 'ready' || mcp.client === null
+                      ? 'The runtime connection is not ready.'
+                      : !mcp.validateSupported
+                        ? 'This runtime does not serve validate, so a draft cannot be checked.'
+                        : !mcp.expectationValidationSupported
+                          ? 'Update the runtime to a build that validates test expectations before research starts: it needs jpack with experimental_validate_expectations.'
+                          : ''
+}
+
 export function useResearchRun(): ResearchRunBinding {
   const slot = useAssistantSlot()
   const listing = useFileListing()
@@ -65,32 +108,14 @@ export function useResearchRun(): ResearchRunBinding {
   const research = config.research
   const mcp = useMcp()
 
-  const blocked =
-    slot.state === 'unavailable'
-      ? 'The desk-level configuration could not be read, so no assistant is available.'
-      : slot.endpoint === null
-        ? 'No assistant endpoint is configured. Configure one in Admin › Assistant.'
-        : slot.keyStatus === 'pending'
-          ? 'Checking the saved API key…'
-          : !slot.keyPresent
-            ? 'No API key is stored for the assistant. Save one in Admin › Assistant.'
-            : picked.model === ''
-              ? 'Choose an enabled model in Admin › Assistant.'
-              : !advertised
-                ? 'This runtime does not offer the authoring prompt.'
-                : authorPrompt.data === undefined
-                  ? 'Reading the authoring prompt…'
-                  : research.gateway === null
-                    ? 'No research gateway is configured. Add a research section to the desk-level desk.json.'
-                    : research.sources.search === null && research.sources.read === null
-                      ? 'The research section names no search or read source.'
-                      : mcp.status !== 'ready' || mcp.client === null
-                        ? 'The runtime connection is not ready.'
-                        : !mcp.validateSupported
-                          ? 'This runtime does not serve validate, so a draft cannot be checked.'
-                          : !mcp.expectationValidationSupported
-                            ? 'Update the runtime to a build that validates test expectations before starting research.'
-                            : ''
+  const blocked = researchBlockedReason({
+    slot: { state: slot.state, endpoint: slot.endpoint, keyStatus: slot.keyStatus, keyPresent: slot.keyPresent },
+    modelPicked: picked.model !== '',
+    advertised,
+    authorPromptRead: authorPrompt.data !== undefined,
+    research,
+    mcp
+  })
 
   const ledgerRef = useRef<Ledger | null>(null)
   if (ledgerRef.current === null) ledgerRef.current = new Ledger(newResearchSession())

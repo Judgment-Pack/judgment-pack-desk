@@ -4253,10 +4253,16 @@ answered it — receipt and result — every excerpt, the verdict per session an
 the registry text it was reached with, so the saved verification claim can be
 checked again by anyone holding the gateway's public key, any approved
 expectation-correction history, and the digest of the pack it describes).
-The handed-over draft can continue through Build and Review without starting
-another AI run. Companions are written before project registration; if either
-companion cannot be written, the page reports the files left behind and does
-not register the pack.
+The handed-over draft continues through Build and Review without starting
+another AI run, and Build shows it rather than editing it: the matrix and the
+record assert that these exact bytes were checked, and Create shapes only the
+four members every new pack gets (title, id, version, description), which the
+record names beside the digest of the candidate that was checked. Change the
+draft in Research, or create the pack and edit it afterwards. Both companion
+paths are probed before the pack is written, and a path another pack already
+declares as its matrix is refused there. Companions are written before project
+registration; if either companion cannot be written, the page names every file
+left behind and does not register the pack.
 
 **Where each thing is decided.** The desk owns the conversation, the research
 plan, the source ledger, the citation trace, the revision and review budgets,
@@ -4333,17 +4339,26 @@ expected results grounded in the excerpts, never in the draft's rules; a case
 whose expectation source is not an excerpt this run recorded is dropped and
 listed as dropped. Before establishing an exact expectation, Desk asks the
 runtime's `experimental_validate_expectations` tool to check its complete
-Core 0.2.0-draft §8.3 disposition. A missing capability or incomplete report
+Core 0.2.0-draft §8.3 disposition — against the version the evaluator
+implements, never the version the draft happens to declare, since an
+expectation describes what an evaluator produces. The canonical text the
+runtime returns is what the case then carries, so a saved matrix row is
+byte-identical to the assertion that was checked. A case that also asserts an
+`expectedHandoffTarget` is held to the pair: a target beside a disposition that
+requests no handoff could never pass, whatever the pack says, and is blocked
+like any other impossible expectation. A missing capability or incomplete report
 blocks research; Desk carries no second disposition validator. An invalid
 expectation remains visible in Tests and in the case count. Testing, repair
 and Create pause rather than silently omitting it from a smaller passing suite.
 A runtime limit finding means the expectation was not admitted, not that its
-meaning violates Core.
+meaning violates Core, and it is shown as that rather than as a §8.3 defect.
 
 **Invalid expectations require explicit review.** **Suggest correction** asks
 a fresh reviewer for a complete expectation and rationale using the original
 case, verified source and declared outcomes/handoff. It does not receive actual
-test results or candidate rules. Tests shows the original and proposed values;
+test results, candidate rules, or the pack-authoring prompt: it reviews one
+expectation, and authoring guidance is not its brief. Tests shows the original
+and proposed values, including the handoff target the case asserts beside them;
 nothing changes until **Approve correction and retest**. Approval is bound to
 the displayed proposal and draft digest, checks the source and runtime validity
 again, preserves the case id, inputs and source, and records the original value,
