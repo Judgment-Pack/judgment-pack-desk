@@ -245,6 +245,8 @@ export class AuthoringRun {
   private controller: AbortController | null = null
   private deadline: ReturnType<typeof setTimeout> | null = null
   private outOfTime = false
+  /** What the action in flight took back, reported with whatever outcome it ends in. See `alsoUndone`. */
+  private undone: string | null = null
 
   constructor(private readonly ports: RunPorts) {}
 
@@ -394,6 +396,11 @@ export class AuthoringRun {
       // unchanged message re-checks nothing: the bytes the person approved for
       // could never be tested again. So the retest rolls the approval back, and
       // the proposal they approved is still there to approve again.
+      //
+      // `candidates` is here for symmetry with what the approval touches, and
+      // no test can discriminate it: an expectation issue is raised where the
+      // cases are established, before any check, and no later turn raises one,
+      // so at an approval there is no check to strip or to put back.
       const before = { cases: this.state.cases, candidates: this.state.candidates, expectationIssues: this.state.expectationIssues, readiness: this.state.readiness }
       this.set({ cases: [...this.state.cases, replacement],
         candidates: this.state.candidates.map(({ check: _check, ...candidate }) => candidate),
@@ -402,6 +409,7 @@ export class AuthoringRun {
         await this.casesAndCheck(signal, false)
       } catch (cause) {
         this.set(before)
+        this.undone = `The correction for ${id} was rolled back: its retest did not complete, so nothing was approved and the proposal is still on offer.`
         throw cause
       }
       // Written where the approval completed, so the transcript records no
@@ -422,17 +430,31 @@ export class AuthoringRun {
     } catch (cause) {
       if (isCancelled(cause) || cause instanceof Stopped) {
         if (this.outOfTime) {
-          this.set({ status: 'budget', detail: `The time budget of ${this.ports.seconds} seconds is spent. The last completed stage is kept.` })
+          this.set({ status: 'budget', detail: this.alsoUndone(`The time budget of ${this.ports.seconds} seconds is spent. The last completed stage is kept.`) })
         } else {
-          this.set({ status: 'stopped', detail: 'Stopped. The last completed stage is kept.' })
+          this.set({ status: 'stopped', detail: this.alsoUndone('Stopped. The last completed stage is kept.') })
         }
       } else {
-        this.set({ status: 'failed', detail: (cause as Error)?.message ?? String(cause) })
+        this.set({ status: 'failed', detail: this.alsoUndone((cause as Error)?.message ?? String(cause)) })
       }
     } finally {
+      this.undone = null
       if (this.controller === controller) this.controller = null
       if (!this.running) this.disarm()
     }
+  }
+
+  /**
+   * The outcome of an action, and what the action took back before it ended.
+   * "Stopped. The last completed stage is kept." reports the stop and explains
+   * neither an approval whose retest rolled it back nor a readiness a verdict
+   * withdrew -- and #82 is about exactly that, a reason that is not the real
+   * one. Whatever was taken back says so here, in the line the panel reads.
+   */
+  private alsoUndone(outcome: string): string {
+    if (this.undone === null) return outcome
+    const said = outcome.trim()
+    return `${/[.!?]$/.test(said) ? said : `${said}.`} ${this.undone}`
   }
 
   private check(signal: AbortSignal): void {
@@ -529,9 +551,11 @@ export class AuthoringRun {
     // A verdict is also an answer to `withheld()`, and the only one the
     // readiness key cannot carry: a cited source whose receipt failed withholds
     // the draft even where no citation points at it. A turn that ends in an
-    // error or a Stop never reaches the settle that would say so, and an
-    // earlier readiness would stand over the failure.
-    if (this.state.readiness !== '' && this.withheld() !== null) this.set({ readiness: '' })
+    // error or a Stop never reaches the settle that would say so, so the
+    // withdrawal happens where the verdict lands -- and says why, because the
+    // outcome of such a turn is the engine's error and not the verdict.
+    const withholds = this.state.readiness === '' ? null : this.withheld()
+    if (withholds !== null) { this.set({ readiness: '' }); this.undone = withholds }
     if (failure !== null) throw new Error(failure)
     if (proposal === null) throw new Error('the assistant ended without a proposal')
     const taken = proposal as { document: unknown; unknowns: string[] }
@@ -975,6 +999,11 @@ export function readinessKey(state: RunState): string {
  * that was not true.
  */
 export function canCreateResearchDraft(state: RunState): boolean {
+  // Never mid-turn. `status === 'ready'` made that impossible by construction,
+  // and a rule that asks only about the candidate would answer yes while the
+  // turn that is about to move it is still in flight. Both callers check it
+  // already; the rule owns it, so the next caller inherits no trap.
+  if (state.status === 'running') return false
   return state.readiness !== '' && state.readiness === readinessKey(state) &&
     !state.expectationIssues.some(issue => !issue.resolved) && completeCurrentCheck(state) &&
     state.citations.length > 0 && state.citations.every(citation => citation.traced)

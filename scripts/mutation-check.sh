@@ -6699,9 +6699,18 @@ export function assistantTransport(id: string): Transport {
         await this.casesAndCheck(signal, false)
       } catch (cause) {
         this.set(before)
+        this.undone = `The correction for ${id} was rolled back: its retest did not complete, so nothing was approved and the proposal is still on offer.`
         throw cause
       }' \
     '      await this.casesAndCheck(signal, false)'
+
+  # **An outcome that reports the stop and not the rollback is the trap again.**
+  # "Stopped. The last completed stage is kept." is true of the stop and no
+  # account of a correction the run took back -- which is #82's complaint, a
+  # reason that is not the real one, in a new place.
+  mutate web "a rolled-back approval is not reported" "$RR" \
+    '        this.undone = `The correction for ${id} was rolled back: its retest did not complete, so nothing was approved and the proposal is still on offer.`' \
+    '        void 0'
 
   # **Create asks about the candidate, not about the last action.** `ready` is
   # the status of whatever the person did last, so a Stop, a spent budget or a
@@ -6712,13 +6721,38 @@ export function assistantTransport(id: string): Transport {
     "  return state.readiness !== '' && state.readiness === readinessKey(state) &&" \
     "  return state.status === 'ready' &&"
 
+  # **Readiness is a key, not a flag.** Recorded and only ever tested for being
+  # set, it would say a settle once reached ready and nothing about what it
+  # reached ready over. It is read back by comparison so it lapses of its own
+  # accord the moment the candidate, the cases or the trace move.
+  mutate web "readiness is asked whether it is set, not what it was set about" "$RR" \
+    "  return state.readiness !== '' && state.readiness === readinessKey(state) &&" \
+    "  return state.readiness !== '' &&"
+
+  # **Create never answers mid-turn.** Under `status === 'ready'` that was
+  # impossible by construction; a rule that asks only about the candidate
+  # answers yes while the turn that is about to move it is still in flight,
+  # and hands the next caller a trap the old rule made unreachable.
+  mutate web "Create is offered while a turn is in flight" "$RR" \
+    "  if (state.status === 'running') return false" \
+    '  void 0'
+
   # **A verdict is also an answer to withheld().** A cited source whose receipt
   # failed withholds the draft even where no citation points at it, so nothing
   # in the recorded key moves; a turn ending in an error or a Stop never reaches
   # the settle that would say so, and Create would stand over the failure.
   mutate web "a receipt failing after ready leaves Create standing" "$RR" \
-    "    if (this.state.readiness !== '' && this.withheld() !== null) this.set({ readiness: '' })" \
+    "    const withholds = this.state.readiness === '' ? null : this.withheld()
+    if (withholds !== null) { this.set({ readiness: '' }); this.undone = withholds }" \
     '    void 0'
+
+  # **And says which receipt.** The outcome of a turn that ends in an error is
+  # the engine's refusal; a readiness withdrawn silently beside it leaves the
+  # panel explaining a withheld draft with cases that in fact agree -- the
+  # sentence #82 names as the reason that is not the real one.
+  mutate web "a readiness withdrawn by a verdict is withdrawn silently" "$RR" \
+    "    if (withholds !== null) { this.set({ readiness: '' }); this.undone = withholds }" \
+    "    if (withholds !== null) { this.set({ readiness: '' }) }"
 
   # **A limit is not a Core violation.** The runtime reports one when it did not
   # admit the input at all; presenting it as a §8.3 defect sends a reviewer to
