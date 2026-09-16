@@ -1,0 +1,90 @@
+{
+  "ran": "2026-09-16T13:57:40Z",
+  "desk": "feat/expectation-admission @ 6517969 (the round 1 fixes and the refusal-display fix; chassis built from that head)",
+  "runtime": "jpack built from judgment-pack-runtime feat/expectation-admission @ 38c874a, the head #150 carries apart from an ADR status line (the release that will ship it is v0.22.0)",
+  "gateway": "judgment-pack-gateway main @ 9d1625c, serve --receipt-version 3, source read=adapter-http --endpoint https://r.jina.ai (keyless); no search source",
+  "model": "gemini-3.8-flash through the desk's model relay",
+  "browser": "Google Chrome 130.0.6723.116 headless via playwright-core (Ed25519 verified by the desk's own verifier)",
+  "budgetSeconds": 1200,
+  "brief": "Preliminary screening against the FSWP published minimum requirements; invitation rounds, CRS, admissibility and final approval named out of scope (the script's default brief)",
+  "seedUrls": [
+    "https://www.canada.ca/en/immigration-refugees-citizenship/services/immigrate-canada/express-entry/eligibility/federal-skilled-workers.html",
+    "https://www.canada.ca/en/immigration-refugees-citizenship/services/immigrate-canada/express-entry/documents/proof-funds.html"
+  ],
+  "session": "desk-20260916T135743-c13a3f39f1e2",
+  "receipt0": {
+    "argumentsCommitment": "sha256:3942754e0d404982971a557ed35eab662d1992fbfc91c31e660039a18c605380",
+    "authority": "gateway:local",
+    "callIndex": 0,
+    "caller": null,
+    "keyId": "0953e9b54c07cebb5286a1d71dd5efd7",
+    "kind": "acquisition",
+    "prevSignature": null,
+    "receiptVersion": "3",
+    "resultDigest": "sha256:a029cf62da76256aae2c81801899f8697de67f8d04a92ae56b01bcb920f73207",
+    "servedAt": "2026-09-16T13:57:53Z",
+    "sessionId": "desk-20260916T135743-c13a3f39f1e2",
+    "signature": "9d57121313b2f3ed225711e80a3a564686afb73c9d36742b1b7a7d77a975f53a723d9a1596b6036647c2c0345b256d7e8fb6ee6846377e4b39bf1839b810ca00",
+    "source": "read"
+  },
+  "acquisition": {
+    "adapter": {
+      "digest": "sha256:885139f016a691defceec64d3a89b7987e7c2486c72b32b4bcb2cfa30e651d03",
+      "name": "adapter-http",
+      "version": "0"
+    },
+    "endpoint": "https://r.jina.ai/",
+    "observedAt": "2026-09-16T13:57:53Z",
+    "peerIdentity": "tls:sha256:6f6ba435ba44644d58039b092fa153d570d75d46d302c9703cd59b18fd325ade",
+    "schema": null,
+    "shape": "http",
+    "snapshot": null,
+    "statement": "sha256:079a0c02e32cd86029be9afbd12eeea162d60a2e28b5140e9b515c4dd148d4f0",
+    "upstreamToken": null
+  },
+  "seal": {
+    "finalCount": 1,
+    "keyId": "0953e9b54c07cebb5286a1d71dd5efd7",
+    "sealedAt": "2026-09-16T14:01:28Z",
+    "sessionId": "desk-20260916T135743-c13a3f39f1e2",
+    "signature": "d97270f4ae3067a69fa132272cfb90cab8bae657b7c38a0371fcd0806c96dad375f8d1bcb58e36a11964d12f8a0714471b44340497e8732950afe4cf41c7e40a"
+  },
+  "verification": "verified in the page at 2026-09-16T14:01:28.907Z under the pinned key 0953e9b54c07cebb5286a1d71dd5efd7: signature, chain, seal and re-digest",
+  "sources": 1,
+  "excerpts": 6,
+  "citationsTraced": "4 of 4",
+  "cases": 10,
+  "expectationsBlockedAtAdmission": 0,
+  "revisions": [
+    {
+      "revision": 1,
+      "producedBy": "research",
+      "agree": "0/10"
+    },
+    {
+      "revision": 2,
+      "producedBy": "repair",
+      "agree": "10/10"
+    }
+  ],
+  "outcome": "ready: every established case agrees, the draft is valid, every citation traced; Create was offered (not pressed by the script)",
+  "elapsedSeconds": 366,
+  "modelCalls": 29,
+  "bound": "one page read (the proof-of-funds URL was not read; the model worked from the FSWP page's own sections); no search source configured; the correction path was not reached because no run produced an invalid expectation",
+  "earlierRuns": [
+    {
+      "ran": "2026-09-16T13:29:10Z",
+      "session": "desk-20260916T132910-3250384c509d",
+      "cases": 8,
+      "expectationsBlockedAtAdmission": 0,
+      "outcome": "budget at 603 s: every rehearsal refused, because the smoke's hand-written jpack.json declared no packs and the runtime holds a present project configuration to its schema even for an inline rehearsal; the refusal reached the Tests tab as a JSON syntax error, which was a desk defect (fixed in 6517969)"
+    },
+    {
+      "ran": "2026-09-16T13:46:39Z",
+      "session": "desk-20260916T134639-9487243575b8",
+      "cases": 11,
+      "expectationsBlockedAtAdmission": 0,
+      "outcome": "budget at 602 s inside the first repair, at 600 s rather than the 1200 s intended; all 11 rehearsals evaluated and answered not-applicable, the disagreement a repair turn exists to close"
+    }
+  ]
+}
