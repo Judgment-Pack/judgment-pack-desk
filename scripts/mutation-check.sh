@@ -2198,6 +2198,27 @@ function usePacks() { useExampleListing(); return readPacks() }'
         })
       }' \
     ''
+  # A push leaves the stripped entry on top of the one the handover rode in on,
+  # so a Forward, a reload, or a later trip back to that entry mounts the create
+  # page on the handover again. The flag is the safeguard, not the navigation.
+  mutate web "the spent entry is pushed rather than replaced" "$X" \
+    '          replace: true,' \
+    '          replace: false,'
+  # The create route is reachable with state this dialog does not own, and the
+  # entry has a URL of its own. Only the handover is spent: nulling the state
+  # outright is the same defect one turn quieter, and rewriting the entry to a
+  # bare pathname loses a search and a fragment nobody asked it to drop.
+  mutate web "the entry's other state goes out with the handover" "$X" \
+    '        const rest: Record<string, unknown> = { ...(location.state as Record<string, unknown> | null) }
+        delete rest.research
+        navigate(`${location.pathname}${location.search}${location.hash}`, {
+          replace: true,
+          state: Object.keys(rest).length === 0 ? null : rest
+        })' \
+    '        navigate(`${location.pathname}${location.search}${location.hash}`, { replace: true, state: null })'
+  mutate web "the replaced entry loses its search and its fragment" "$X" \
+    '        navigate(`${location.pathname}${location.search}${location.hash}`, {' \
+    '        navigate(location.pathname, {'
   mutate web "the registration writes a digest it did not read" "$X" \
     '          baseSha256: read.sha256' \
     "          baseSha256: ''"

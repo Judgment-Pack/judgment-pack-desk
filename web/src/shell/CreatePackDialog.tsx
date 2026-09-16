@@ -803,6 +803,13 @@ export function CreatePackDialog({
       // one run's receipts and verified excerpts standing behind two packs as
       // though each had earned its own. Replaced rather than dropped on the way
       // out, because only the entry being left can still be rewritten.
+      //
+      // The entry rewritten is the one this mount rendered on — `location` as
+      // it was when Create was pressed, four awaited writes back. That it is
+      // still the entry on top is a premise, not a check: nothing on this page
+      // pushes, and the desk's other writers of a search or a fragment replace
+      // (`PackView`). Move history under a create in flight and this stamps
+      // the create page's URL over the entry that moved there instead.
       if (handover !== undefined) {
         const rest: Record<string, unknown> = { ...(location.state as Record<string, unknown> | null) }
         delete rest.research
