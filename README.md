@@ -4367,6 +4367,12 @@ again, preserves the case id, inputs and source, and records the original value,
 approved value, rationale and time. A changed draft clears a pending proposal.
 All cases then rerun against unchanged draft bytes. A remaining disagreement
 stays visible for judgment; approval does not automatically repair the pack.
+The two cells of a case draw `outcomeId ?? kind`, and a §8.3 correction can
+differ in `reasons`, in `handoff` and in the handoff target alone, so a
+disagreeing row also discloses both halves of what was compared — each
+disposition, with the target beside it where the case asserts one. A refused
+case shows its named refusal instead: the evaluation did not complete, so
+there is no pair.
 Local disposition validity does not establish that a particular pack produces
 it or that policy supports it. No partial assertions are inferred.
 
