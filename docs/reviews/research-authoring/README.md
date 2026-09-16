@@ -1,5 +1,9 @@
 # Research and draft: live smoke
 
+This is the #76 record. The runs made after the expectation-admission fixes,
+the first of which reached `ready`, are recorded in
+[admission-smoke.md](admission-smoke.md).
+
 One run of `scripts/research-smoke.mjs` against a desk built from this branch,
 a judgment-pack gateway serving `read=adapter-http --endpoint https://r.jina.ai`
 (keyless), Gemini through the model relay, and jpack 0.21.0, in a headless

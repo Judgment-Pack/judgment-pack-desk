@@ -147,6 +147,11 @@ fresh live research/search smoke gap from PR #76.
 - Create-page suite: 48 passed, including the four new handover regression cases.
 - Browser-to-disk handover: both widths passed, no page overflow, all six saved
   matrix cases passed, and zero model calls.
+- Live smoke after the round 1 fixes, recorded in [admission-smoke.md](admission-smoke.md):
+  three real runs against the live IRCC page through the gateway, the model relay
+  and a runtime built from #150's head. The third reached `ready` at 10 of 10
+  after one repair; the admission check admitted 8, 11 and 10 expectations and
+  blocked none; the first run found, and `6517969` fixed, a refusal-display defect.
 - `scripts/needle-check.sh .`: **885 rows, zero invalid targets** after the
   separate repair in Desk PR #81. All 17 repaired mutations are caught by named
   assertions, and seven checker guard tests pass; see the
