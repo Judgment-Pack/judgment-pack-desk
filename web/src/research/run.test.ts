@@ -1276,15 +1276,22 @@ describe('the correction flow\'s backup guards', () => {
     expect(run.getSnapshot().candidates[0]!.check).toBe(stale)
     rechecking = true
     run.approveExpectationCorrection('hours-missing', proposal.token)
-    // Stop the recheck before it can write a fresh check: what is left is what
-    // the approval itself wrote.
+    // The approval's own write, read while its retest is still in flight: the
+    // corrected case has joined the suite and the check taken before it did is
+    // gone, so nothing between here and the fresh check can read stale results.
     await until(() => held.stop !== null, 'the recheck validating the draft')
+    const inFlight = run.getSnapshot()
+    expect(inFlight.cases).toHaveLength(3)
+    expect(inFlight.candidates[0]!.check).toBeUndefined()
+    // Stop the recheck before it can write a fresh check. An approval does not
+    // stand on an interrupted retest: it is rolled back whole, to the suite the
+    // run had before it, and the run says so; Create stays withheld either way.
     run.stop()
     held.stop!()
     const state = await settled(run)
     expect(state.status).toBe('stopped')
-    expect(state.cases).toHaveLength(3)
-    expect(state.candidates[0]!.check).toBeUndefined()
+    expect(state.detail).toContain('rolled back')
+    expect(state.cases).toHaveLength(2)
     expect(canCreateResearchDraft({ ...state, status: 'ready' })).toBe(false)
   })
 

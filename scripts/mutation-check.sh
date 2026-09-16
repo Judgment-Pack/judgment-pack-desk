@@ -6966,7 +6966,7 @@ export function assistantTransport(id: string): Transport {
   # it is the only thing between them and `ready`.
   mutate web "a run settles at ready with an expectation still open" "$RR" \
     '    if (this.unresolvedExpectations()) {
-      this.set({ phase: '"'"'review'"'"', status: '"'"'needs-input'"'"', detail: this.unresolvedExpectations()! })
+      this.set({ phase: '"'"'review'"'"', status: '"'"'needs-input'"'"', detail: this.unresolvedExpectations()!, readiness: '"'"''"'"' })
       return
     }
     const passing = completeCurrentCheck(this.state)' \
