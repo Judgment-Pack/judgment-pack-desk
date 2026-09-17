@@ -111,7 +111,7 @@ describe('the shell frame', () => {
     expect(await screen.findByRole('heading', { name: 'Organization', level: 2 })).toBeTruthy()
     expect(screen.getByRole('main')).toBe(main)
     fireEvent.click(screen.getByRole('link', { name: 'Back to app' }))
-    expect(await screen.findByRole('button', { name: 'New chat' })).toBeTruthy()
+    expect(await screen.findByRole('link', { name: /^Packs/ })).toBeTruthy()
     expect(screen.queryByRole('link', { name: 'Back to app' })).toBeNull()
   })
 
