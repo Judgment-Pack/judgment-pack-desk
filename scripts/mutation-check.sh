@@ -2931,10 +2931,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
             : undefined' \
     '          ? NO_TEMPLATE'
 
-  # 3. Opening the creation page must dismiss the modal navigation drawer.
-  mutate web "opening creation leaves the rail drawer standing over it" "$LR" \
-    "onClick={() => { if (store?.canCreate && ready) openNewChat(navigate, store.startChat()); else navigate('/create-pack'); onNavigate?.() }}" \
-    "onClick={() => { if (store?.canCreate && ready) openNewChat(navigate, store.startChat()); else navigate('/create-pack') }}"
+  # Retired: "opening creation leaves the rail drawer standing over it".
+  # The sidebar no longer offers chat/creation actions; New chat lives in the
+  # chat header. Remaining destination links retain their drawer-close checks.
   mutate web "the dialog never says it created anything" "$X" \
     '      onCreated?.()' \
     ''

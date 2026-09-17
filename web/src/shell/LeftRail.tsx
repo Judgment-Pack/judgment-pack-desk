@@ -1,6 +1,3 @@
-import { RecentChats } from '../chat/ChatHistory'
-import { openNewChat } from '../chat/navigation'
-import { useChats } from '../chat/ChatProvider'
 import { Tooltip } from '../ui/Tooltip'
 import { type ReactElement } from 'react'
 /** Primary navigation stays about destinations. Tests and pack flows live
@@ -8,7 +5,7 @@ import { type ReactElement } from 'react'
  * The shell never runs tests or fetches graph inventory to draw navigation. */
 import { Dialog, DropdownMenu, Separator, VisuallyHidden } from 'radix-ui'
 import { useRef, type RefObject } from 'react'
-import { Link, NavLink, useLocation, useMatch, useNavigate } from 'react-router-dom'
+import { Link, NavLink, useLocation, useMatch } from 'react-router-dom'
 import { usePacks } from '../mcp/queries'
 import { ADMIN_SECTIONS } from '../routes/adminSections'
 import {
@@ -17,8 +14,7 @@ import {
   IconClose,
   IconGear,
   IconHelp,
-  IconPack,
-  IconPlus
+  IconPack
 } from './icons'
 import type { LeftRailMode } from './paneState'
 import { SettingsNavigationTarget } from './SettingsNavigation'
@@ -119,30 +115,13 @@ function RailBody({
    */
   onNavigate?: () => void
 }) {
-  const { store, ready } = useChats()
   const icons = mode === 'icons'
-  const navigate = useNavigate()
   const toggleRef = useRef<HTMLButtonElement | null>(null)
-
 
   return (
     <>
-      <Labelled icons={icons} label="New chat">
-        <button
-          type="button"
-          className="desk-create"
-          aria-label="New chat"
-          onClick={() => { if (store?.canCreate && ready) openNewChat(navigate, store.startChat()); else navigate('/create-pack'); onNavigate?.() }}
-        >
-          <IconPlus />
-          {!icons && <span className="desk-nav-label">New chat</span>}
-        </button>
-      </Labelled>
-
-
       <PacksGroup icons={icons} onNavigate={onNavigate} />
 
-      {!icons && <RecentChats onNavigate={onNavigate} />}
       <div className="desk-spacer" />
       <Separator.Root className="desk-rule-h" decorative />
 

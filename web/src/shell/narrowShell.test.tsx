@@ -230,7 +230,9 @@ describe('the shell at 800px, where the rail is a drawer', () => {
     renderShell()
     fireEvent.click(screen.getByRole('button', { name: 'Project navigation' }))
     await screen.findByRole('navigation', { name: 'Project' })
-    expect(screen.getByRole('button', { name: 'New chat' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'New chat' })).toBeNull()
+    expect(screen.queryByRole('region', { name: 'Recent chats' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Chat history' })).toBeNull()
     for (const name of ['Admin', 'Help & About']) {
       expect(screen.getByRole('link', { name })).toBeTruthy()
     }

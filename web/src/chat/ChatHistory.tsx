@@ -1,7 +1,7 @@
 import { Fragment, useState, type RefObject } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { DropdownMenu } from 'radix-ui'
-import { Button, ButtonLink } from '../ui/Button'
+import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { OverflowTooltip, Tooltip } from '../ui/Tooltip'
 import { Popover } from '../ui/Popover'
@@ -28,19 +28,6 @@ export function ChatToolbar({ chat, history, onHistory, onBack, onNew, historyRe
       <ChatHistoryList packId={chat.pack?.id} activeId={chat.id} onNavigate={onBack} compact />
     </Popover>
   </div>
-}
-export function RecentChats({ onNavigate }: { onNavigate?: () => void }) {
-  const { store, chats, ready, bindings } = useChats()
-  const navigate = useNavigate()
-  const location = useLocation()
-  if (!store || !ready) return null
-  const recent = chats.filter(chat => !chat.archived && hasChatContent(chat)).sort((a,b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt.localeCompare(a.updatedAt)).slice(0,5)
-  return <section className={styles.recent} aria-label="Recent chats">
-    <span className={styles.caption}>Recent chats</span>
-    {recent.length === 0 && <p className={styles.caption}>Your chats appear here.</p>}
-    {recent.map(chat => <OverflowTooltip key={chat.id} content={chatTitle(chat)}><button className="desk-nav-item" type="button" aria-current={(location.pathname === `/chats/${chat.id}` || homeChatId(location.state) === chat.id || new URLSearchParams(location.search).get('chat') === chat.id) ? 'page' : undefined} onClick={() => { navigate(chatHref(chat, location)); onNavigate?.() }}><span className={styles.ellipsis}>{chatTitle(chat)}</span>{bindings.get(chat.id)?.state.status === 'running' && <span className={styles.caption}>Working</span>}</button></OverflowTooltip>)}
-    <ButtonLink variant="quiet" to="/chats" onClick={onNavigate}>Chat history</ButtonLink>
-  </section>
 }
 export function historyGroup(chat: Chat, now = new Date()): string {
   if (chat.pinned) return 'Pinned'

@@ -86,11 +86,9 @@ describe('the left rail', () => {
       get_schema: () => ({ text: '{}' })
     })
     renderRail(stub, { exampleSupported: true, schemaSupported: true })
-    await screen.findByRole('button', { name: 'New chat' })
+    await screen.findByRole('link', { name: /^Packs/ })
     expect(stub.calls.map((call) => call.name)).toEqual(['list_packs'])
 
-    fireEvent.click(screen.getByRole('button', { name: 'New chat' }))
-    expect(stub.calls.map((call) => call.name)).not.toContain('list_examples')
   })
 
   it('keeps secondary features out of the primary rail', async () => {
@@ -98,6 +96,9 @@ describe('the left rail', () => {
     renderRail(stub, { graphInventorySupported: true })
     await screen.findByRole('link', { name: /^Packs/ })
     for (const name of ['Author', 'Graphs', 'Matrix and coverage']) expect(screen.queryByRole('link', { name })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'New chat' })).toBeNull()
+    expect(screen.queryByRole('region', { name: 'Recent chats' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Chat history' })).toBeNull()
     expect(stub.calls.map(call => call.name)).toEqual(['list_packs'])
   })
 
