@@ -17,8 +17,9 @@
 .chat[data-landing] .thread { position: relative; flex: 0 1 auto; padding-bottom: 0; }
 .chat[data-landing] .composerArea { margin-bottom: auto; }
 .chat[data-landing] .thread { margin-top: auto; }
-.message { width: min(100%, var(--measure-form)); margin-inline: auto; font-size: var(--text-sm); line-height: 1.65; overflow-wrap: anywhere; }
-.message > div { white-space: pre-wrap; }
+.message { width: min(100%, var(--measure-form)); margin-inline: auto; font-size: var(--text-body); line-height: 1.65; overflow-wrap: anywhere; }
+.message > div { white-space: normal; }
+.message .userText { white-space: pre-wrap; }
 .message[data-role="user"] { border-radius: var(--radius); padding: var(--space-3); background: var(--accent-soft); }
 .caption { font-size: var(--text-xs); color: var(--ink-soft); }
 .runStatus, .work { width: min(100%, var(--measure-form)); margin-inline: auto; color: var(--ink-soft); font-size: var(--text-xs); }
@@ -32,7 +33,7 @@
 .composerArea { flex: 0 0 auto; padding: var(--space-3) var(--space-4); width: 100%; max-width: calc(var(--measure-form) + 2 * var(--space-4)); margin-inline: auto; }
 .composer { border: 1px solid var(--border-strong); background: var(--surface); border-radius: var(--radius-panel); padding: var(--space-2); }
 .composer:focus-within { border-color: var(--border-strong); }
-.messageInput { resize: vertical; min-height: 4rem; max-height: 30vh; width: 100%; background: transparent; border: none; box-shadow: none; }
+.composer .messageInput { resize: none; min-height: 3rem; max-height: 25vh; width: 100%; background: transparent; border: none; box-shadow: none; }
 .composerTools { display: flex; align-items: center; gap: var(--space-1); flex-wrap: wrap; }
 .pick { min-width: 0; max-width: 8rem; }
 .model { min-width: 0; max-width: 12rem; flex: 1 1 7rem; }
@@ -80,3 +81,28 @@
   .review { position: relative; padding: var(--space-3); }
   .welcome { text-align: left; }
 }
+/* Shared conversation surfaces use the desk's neutral selection and type scale. */
+.markdown > :first-child { margin-top: 0; }
+.markdown > :last-child { margin-bottom: 0; }
+.markdown p { margin-block: var(--space-2); }
+.markdown h1, .markdown h2, .markdown h3, .markdown h4 { font-size: var(--text-body); font-weight: 600; margin-block: var(--space-4) var(--space-2); }
+.markdown ul, .markdown ol { padding-left: var(--space-5); margin-block: var(--space-2); }
+.markdown li + li { margin-top: var(--space-1); }
+.markdown blockquote { border-inline-start: 2px solid var(--border-strong); padding-inline-start: var(--space-3); margin-inline: 0; color: var(--ink-soft); }
+.markdown a { color: var(--ink); text-decoration: underline var(--ink); text-underline-offset: 3px; }
+.markdown code { font-size: var(--text-xs); overflow-wrap: anywhere; }
+.messageTable { position: relative; max-width: 100%; overflow: auto; }
+.messageTable table { border-collapse: collapse; font-size: var(--text-sm); width: 100%; }
+.messageTable td, .messageTable th { text-align: left; padding: var(--space-2); border-bottom: 1px solid var(--border); }
+.messageActions { display: flex; align-items: center; gap: var(--space-2); color: var(--ink-soft); font-size: var(--text-xs); margin-top: var(--space-2); }
+.messageActions > button { font-size: var(--text-xs); }
+.work li { display: flex; justify-content: space-between; gap: var(--space-3); }
+.work p { line-height: 1.5; }
+.jump { display: flex; justify-content: center; flex: 0 0 auto; padding-top: var(--space-2); }
+.attachments { display: flex; flex-wrap: wrap; gap: var(--space-2); list-style: none; margin: 0 0 var(--space-2); padding: 0; }
+.attachments li { display: flex; align-items: center; max-width: 100%; min-width: 0; background: var(--accent-soft); border-radius: var(--radius-sm); }
+.attachments li > button:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+.reviewOption { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-3); font-size: var(--text-sm); }
+.reviewNotice { flex: 0 0 auto; margin: 0; padding: var(--space-2) var(--space-4); font-size: var(--text-xs); color: var(--ink-soft); }
+.history li.historyGroup { padding: var(--space-3) var(--space-2) var(--space-1); color: var(--ink-soft); font-size: var(--text-xs); font-weight: 500; }
+.history li.historyGroup:hover { background: transparent; }

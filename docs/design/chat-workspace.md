@@ -194,3 +194,71 @@ that existing modal stack. This is based on the trigger's owning surface, so
 route-owned portals cannot cause a click inside history to dismiss the drawer.
 Desktop history stays nonmodal. Escape dismisses actions, then history, then
 the drawer, restoring focus at each level.
+
+## Conversation and agent feedback sweep
+
+A question is a complete interaction. The assistant answers greetings and ordinary
+questions directly. It retrieves the runtime's authoring instructions through a
+host tool only when authoring is needed. Ordinary fenced code examples remain
+messages; a pack still requires the explicit proposal envelope. Research tools can
+be selected later in a conversation. A Chat draft can be upgraded to Research;
+once a research candidate exists, switching back cannot bypass its source and
+expectation checks.
+
+Message completion and draft readiness are distinct. Completed replies restore
+without a stopped banner. An interrupted response never restarts automatically.
+Saved candidates always lose check authority and need an explicit recheck before
+creation. Questions beside a saved draft do not automatically recheck it or spend
+a repair turn. A retry is an explicit action, with the original context and no
+second copy of the person's message.
+
+The transcript renders CommonMark/GFM, including source links, lists, tables and
+copyable code. Raw HTML is not executed, remote images are not fetched, and links
+are restricted to HTTP(S). Streaming prose is ephemeral: proposal fences are held
+back and never displayed as a candidate before extraction. Stop discards late
+responses. Interrupted prose is marked as interrupted rather than presented as a
+completed answer. Screen-reader announcements report completion rather than every
+streamed chunk.
+
+There is one transient task status. Tool calls and results are paired by invocation
+ID and appear as one step in a collapsed Work summary for the latest request.
+Provider schema compatibility notices stay in Activity; significant refusals and
+review feedback remain available. Model reasoning effort and optional adversarial
+review are separate settings. Available tools are read from the connected runtime
+and the current research configuration; configured tool names alone do not imply
+availability. Runtime structure checks always remain mandatory for candidates.
+
+Draft review has one entry action. Chat remains usable while the final review is
+open; a different candidate digest closes that review and requires another review.
+A proposal requested in View can be reviewed in Edit without regeneration, only if
+the exact path and bytes are unchanged. After the transition, the editor's normal
+generation/revision guards still reject stale applications. Applying remains an
+undoable buffer change, followed by explicit Save.
+
+Attachments are removable preview chips, kept separately from composer text and
+included as reference material on Send. Context identifies the current pack and
+lets the person inspect the bytes being supplied. Requests exceeding the local
+200,000-character context ceiling stop before a model call, with guidance to start
+a focused chat; nothing is silently truncated. This is a character budget, not an
+estimate of a provider's token capacity. Opening a chat, typing, pinning and changing
+models do not alter conversation recency. History groups pinned and recent chats,
+and identifies working or interrupted tasks. Scrolled-up readers can use Jump to
+latest. Headers and the bounded, growing composer remain outside the transcript.
+
+These choices apply Linear's public guidance on
+[agent interaction and ephemeral activity](https://linear.app/developers/agent-interaction)
+and [agent interface feedback](https://linear.app/developers/aig), alongside
+[Claude Code's focused conversation interface](https://code.claude.com/docs/en/vs-code#use-the-prompt-box).
+They are Desk's implementation decisions, not Linear pixel specifications.
+
+Additional verification: `scripts/chat-response-check.mjs` uses real Desk/runtime
+connections with deterministic model replies intercepted in the browser. It checks
+quiet greetings, Markdown, attachments, review continuity, Stop/retry, scrolling,
+endpoint refusal/recovery and narrow layouts without saving an API key or calling
+an external model. The unused SDK telemetry path is explicitly disabled in both
+model loops: SDK 7.0.93 leaves its tracing completion promise unclaimed in a
+browser on cancellation or refusal. No global rejection filter hides errors.
+
+Runs remain local to this browser window. Durable background scheduling, automatic
+history summarization, PDF/image attachments and multi-window write-conflict merging
+are separate work; the interface does not claim those capabilities.

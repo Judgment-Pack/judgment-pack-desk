@@ -79,12 +79,12 @@ function CheckedSide({ side, label }: { side: unknown; label: string }) {
   </>
 }
 
-export function TestsPanel({ state, onSelect, ...actions }: ExpectationReviewActions & { state: RunState; onSelect: (next: Selection) => void }) {
+export function TestsPanel({ state, onSelect, mode = 'research', ...actions }: ExpectationReviewActions & { mode?: 'draft' | 'research'; state: RunState; onSelect: (next: Selection) => void }) {
   const latest = state.candidates.at(-1)
   const check = latest?.check
   const byId = new Map((check?.cases ?? []).map((row) => [row.id, row]))
   if (state.cases.length === 0 && state.droppedCases.length === 0 && state.expectationIssues.length === 0) {
-    return <p className={styles.empty}>No test cases yet. A reviewer establishes them from the cited excerpts once a draft exists.</p>
+    return <p className={styles.empty}>{mode === 'draft' ? 'Tests have not been run. Chat drafts receive a structure check. After creating the pack, use Tests to check its decisions.' : 'No test cases yet. Research establishes cases from cited sources once a draft exists.'}</p>
   }
   return (
     <div className={styles.panel}>
@@ -217,7 +217,7 @@ export function DraftPanel({ state, onSelect, onViewLogic, onViewSources }: { st
   )
 }
 
-export function ReviewPanel({ state, sources, onCreate, onSelect, mode = 'research' }: { mode?: 'draft' | 'research'; state: RunState; sources: readonly SourceRecord[]; onCreate: () => void; onSelect: (next: Selection) => void }) {
+export function ReviewPanel({ state, sources, onCreate, onSelect, showCreateAction = true, mode = 'research' }: { showCreateAction?: boolean; mode?: 'draft' | 'research'; state: RunState; sources: readonly SourceRecord[]; onCreate: () => void; onSelect: (next: Selection) => void }) {
   const latest = state.candidates.at(-1)
   const check = latest?.check
   const passing = mode === 'research' ? canCreateResearchDraft(state) : state.status === 'ready' && !state.restored && check?.valid === true && check.documentDigest === latest?.digest
@@ -233,7 +233,7 @@ export function ReviewPanel({ state, sources, onCreate, onSelect, mode = 'resear
           <dt>Revisions</dt>
           <dd>{state.candidates.length} ({state.revisionsUsed} repair{state.revisionsUsed === 1 ? '' : 's'})</dd>
           <dt>Test cases</dt>
-          <dd>{state.expectationIssues.some(issue => !issue.resolved) ? 'Blocked by invalid expectations' : check ? `${check.cases.filter((c) => c.passed).length} of ${state.cases.length} agree` : 'not yet checked'}</dd>
+          <dd>{state.expectationIssues.some(issue => !issue.resolved) ? 'Blocked by invalid expectations' : check?.cases.length ? `${check.cases.filter((c) => c.passed).length} of ${check.cases.length} agree` : 'Not run'}</dd>
           <dt>Sources</dt>
           <dd>
             {sources.length} recorded; {verified} with verified receipts; {failed} failed or unverified
@@ -310,11 +310,11 @@ export function ReviewPanel({ state, sources, onCreate, onSelect, mode = 'resear
         <p className={styles.hint}>
           {mode === 'research' && <>A verified receipt establishes that the gateway signed these bytes and sealed the session; it does not establish that a page is true, current, legally authoritative, or that it came from the site its URL names.</>}
         </p>
-        <div>
+        {showCreateAction && <div>
           <Button variant="primary" disabled={!passing || state.status === 'running'} onClick={onCreate}>
             Review and create
           </Button>
-        </div>
+        </div>}
       </section>
     </div>
   )
@@ -335,7 +335,7 @@ function DraftLogic({ state, selection, onSelect }: { state: RunState; selection
     viewport={viewport} onViewport={setViewport} listScroll={scroll} /></div>
 }
 
-export function DraftTabs({ state, sources, selection, onSelect, onCreate, mode = 'research', ...actions }: ExpectationReviewActions & { mode?: 'draft' | 'research'; state: RunState; sources: readonly SourceRecord[]; selection: Selection; onSelect: (next: Selection) => void; onCreate: () => void }) {
+export function DraftTabs({ state, sources, selection, onSelect, onCreate, showCreateAction = true, mode = 'research', ...actions }: ExpectationReviewActions & { showCreateAction?: boolean; mode?: 'draft' | 'research'; state: RunState; sources: readonly SourceRecord[]; selection: Selection; onSelect: (next: Selection) => void; onCreate: () => void }) {
   const [tab, setTab] = useState('draft')
   const pending = state.expectationIssues.filter(issue => !issue.resolved).length
   const total = state.cases.length + pending
@@ -355,8 +355,8 @@ export function DraftTabs({ state, sources, selection, onSelect, onCreate, mode 
           { value: 'draft', label: 'Overview', panel: <DraftPanel state={state} onSelect={onSelect} onViewLogic={() => setTab('logic')} onViewSources={() => setTab('sources')} /> },
           { value: 'logic', label: 'Logic', panel: <DraftLogic state={state} selection={selection} onSelect={onSelect} /> },
           { value: 'sources', label: `Sources${sources.length ? ` (${sources.length})` : ''}`, panel: <div className={styles.panel}><SourcesPanel sources={sources} selection={selection} onSelect={onSelect} /></div> },
-          { value: 'tests', label: `Tests${total ? ` (${total})` : ''}`, panel: <TestsPanel state={state} onSelect={onSelect} {...actions} /> },
-          { value: 'review', label: 'Review', panel: <ReviewPanel mode={mode} state={state} sources={sources} onCreate={onCreate} onSelect={onSelect} /> }
+          { value: 'tests', label: `Tests${total ? ` (${total})` : ''}`, panel: <TestsPanel mode={mode} state={state} onSelect={onSelect} {...actions} /> },
+          { value: 'review', label: 'Review', panel: <ReviewPanel showCreateAction={showCreateAction} mode={mode} state={state} sources={sources} onCreate={onCreate} onSelect={onSelect} /> }
         ]}
       />
     </section>

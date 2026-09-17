@@ -58,6 +58,8 @@ function DraftWorkspace({ chat }: { chat: Chat }) {
   const [chatHeaderTarget, setChatHeaderTarget] = useState<HTMLDivElement | null>(null)
   const [selection, setSelection] = useState<Selection>(null)
   const [review, setReview] = useState(false)
+  const reviewDigest = useRef<string | undefined>(undefined)
+  const [reviewNotice, setReviewNotice] = useState('')
   const [writing, setWriting] = useState(false)
   const writingRef = useRef(false)
   const writingChanged = useCallback((value: boolean) => { writingRef.current = value; setWriting(value) }, [])
@@ -77,11 +79,15 @@ function DraftWorkspace({ chat }: { chat: Chat }) {
   const draft = chat.view === 'draft'
   const latest = state.candidates.at(-1)
   const passing = draftReady(chat,state)
+  const beginReview = () => { reviewDigest.current = latest?.digest; setReviewNotice(''); setReview(true) }
+  useEffect(() => {
+    if (review && latest?.digest !== reviewDigest.current) { setReview(false); setReviewNotice('The draft changed. Review the latest revision before creating it.') }
+  }, [review, latest?.digest])
   const presentation = useMemo(() => ({ title: 'Assistant', available: draft && !narrow, open: draft && !narrow && rightOpen,
     onOpenChange: setRightOpen, width, onResize: shell.resizeInspector, onReset: shell.resetInspectorWidth, minimumMainWidth: 480, maximumWidth: 640 }), [draft, narrow, rightOpen, width, shell.resizeInspector, shell.resetInspectorWidth])
   useInspectorPresentation(presentation)
   const openDraft = () => { setReview(false); setRightOpen(true); store?.update(chat.id, { view: 'draft' }) }
-  const portal = useInspectorPortal(draft && !narrow ? <ChatPanel placement="pane" chat={chat} locked={review || writing} /> : null)
+  const portal = useInspectorPortal(draft && !narrow ? <ChatPanel placement="pane" chat={chat} locked={writing} /> : null)
   const detailPortal = useDetailsPortal(binding?.ledger && selection ? <SourceInspector selection={selection} ledger={binding.ledger} state={state} onSelect={setSelection} /> : null)
   const select = (next: Selection) => { setSelection(next); if (next) details.reveal() }
   const candidate = latest?.document as { title?: unknown; description?: unknown; decision?: { question?: unknown } } | undefined
@@ -95,17 +101,18 @@ function DraftWorkspace({ chat }: { chat: Chat }) {
     {!draft ? <header role="presentation" data-page-header className={styles.workspaceHeader}><div className={styles.headerControls} ref={setChatHeaderTarget} /></header> : <PageHeader title="Draft" actions={<>
       {draft && <Button variant="quiet" disabled={writing} onClick={() => { setReview(false); store?.update(chat.id,{ view: 'chat' }) }}>Chat</Button>}
       {draft && !narrow && !rightOpen && <Button onClick={() => setRightOpen(true)}>Show Assistant</Button>}
-      {draft && !review && <Button variant="primary" disabled={!passing} onClick={() => setReview(true)}>Review and create</Button>}
+      {draft && !review && <Button variant="primary" disabled={!passing} onClick={beginReview}>Review and create</Button>}
     </>} />}
     {portal}{detailPortal}
+    {draft && reviewNotice && <p className={styles.reviewNotice} role="status">{reviewNotice}</p>}
     <div className={styles.workspace}>
       {!draft ? <ChatPanel chat={chat} headerTarget={chatHeaderTarget} landing onOpenDraft={openDraft} /> : review && latest ? <div className={styles.review}>
         <CreatePackDialog open presentation="review" onOpenChange={open => { if (!open && !writing) setReview(false) }}
           onWritingChange={writingChanged}
-          canCreate={() => { const active = store?.getSnapshot().bindings.get(chat.id)?.state; return !!active && active.candidates.at(-1)?.digest === digest && draftReady(chat,active) }}
+          canCreate={() => { const active = store?.getSnapshot().bindings.get(chat.id)?.state; return !!active && active.candidates.at(-1)?.digest === reviewDigest.current && draftReady(chat,active) }}
           reviewDraft={{ document: latest.document, name: typeof candidate?.title === 'string' ? candidate.title : '', description: typeof candidate?.description === 'string' ? candidate.description : '', unknowns: state.unknowns, research }}
           onSaved={async pack => { writingChanged(false); store?.update(chat.id,{ pack, view: 'chat', createdCandidateDigest: digest }); await store?.flush(); return chatHref({ ...chat, pack }) }} />
-      </div> : <DraftTabs state={state} mode={chat.mode} sources={binding?.sources ?? []} selection={selection} onSelect={select} onCreate={() => setReview(true)}
+      </div> : <DraftTabs state={state} mode={chat.mode} sources={binding?.sources ?? []} selection={selection} onSelect={select} onCreate={beginReview} showCreateAction={false}
         onProposeCorrection={id => store?.perform(chat.id, active => active.run?.proposeExpectationCorrection(id))}
         onApproveCorrection={(id,token) => store?.perform(chat.id, active => active.run?.approveExpectationCorrection(id,token), false)} />}
     </div>

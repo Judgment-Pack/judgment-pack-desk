@@ -174,6 +174,10 @@ export interface AssistantSession {
   testPrompt: string
   /** Permit a prose-only clarification; proposals still require the same explicit fenced envelope. */
   allowConversation?: boolean
+  /** Optional presentation events; adapters without them still deliver final messages. */
+  interactive?: boolean
+  /** Independent of reasoning effort; undefined preserves legacy authoring behavior. */
+  adversarialReview?: boolean
   /** The allow-listed tools, exactly as `tools/list` served them. */
   tools: McpTool[]
   /** Bound through the ToolGate. */
@@ -213,8 +217,9 @@ export type AssistantEvent =
    * where the model wrote nothing but the fence.
    */
   | { type: 'message'; text: string }
-  | { type: 'tool_call'; name: string; args: unknown }
-  | { type: 'tool_result'; name: string; isError: boolean; text: string; structured?: unknown }
+  | { type: 'message_progress'; text: string }
+  | { type: 'tool_call'; callId?: string; name: string; args: unknown }
+  | { type: 'tool_result'; callId?: string; name: string; isError: boolean; text: string; structured?: unknown }
   /**
    * `rewrote` and `refused` are the ToolGate's, on the wire. `narrowed` is the
    * desk's own report on the **contract it showed the model**: on a wire whose

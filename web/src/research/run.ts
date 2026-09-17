@@ -27,12 +27,14 @@ import { memberOf, parseJsonText, stringMember, type JsonNode } from './verify/c
 import { verifySession, type Finding, type HeldReceipt, type SessionVerdict } from './verify/session'
 
 export type Phase = 'idle' | 'research' | 'cases' | 'check' | 'repair' | 'conversation' | 'review'
-export type Status = 'idle' | 'running' | 'ready' | 'needs-input' | 'budget' | 'stalled' | 'stopped' | 'failed'
+export type Status = 'idle' | 'running' | 'complete' | 'ready' | 'needs-input' | 'budget' | 'stalled' | 'stopped' | 'failed'
 
 export interface Turn {
   role: 'user' | 'assistant'
   kind: 'brief' | 'message' | 'unknowns' | 'note'
   text: string
+  /** Full user input, including explicitly supplied context; display text stays readable. */
+  input?: string
   at: string
 }
 
@@ -84,6 +86,8 @@ export interface RunState {
   /** A disk checkpoint is not a fresh check or approval. */
   restored?: boolean
   detail: string
+  /** Ephemeral prose for the current engine step; never a trusted candidate. */
+  streaming?: string
   brief: string
   seedUrls: string[]
   turns: Turn[]
@@ -109,6 +113,7 @@ export interface TurnRequest {
   hostTools: HostTool[]
   /** A reviewer turn runs with thinking off: fresh, and no critic. */
   reviewer?: boolean
+  conversation?: boolean
 }
 
 export interface RunPorts {
@@ -282,6 +287,8 @@ export class AuthoringRun {
     return (this.ports.now?.() ?? new Date()).toISOString()
   }
 
+  private lastMessage: string | null = null
+
   private addTurn(turn: Omit<Turn, 'at'>): void {
     this.set({ turns: [...this.state.turns, { ...turn, at: this.stamp() }] })
   }
@@ -329,9 +336,14 @@ export class AuthoringRun {
       expectationIssues: saved.expectationIssues.map(item => ({ id: item.id, original: structuredClone(item.original),
         message: item.message, ...(item.resolved ? { resolved: structuredClone(item.resolved) } : {}) })),
       unknowns: saved.unknowns, revisionsUsed: saved.revisionsUsed, sessions: saved.sessions,
-      phase: saved.turns.length ? 'review' : 'idle', status: saved.turns.length ? 'stopped' : 'idle',
-      restored: saved.turns.length > 0,
-      detail: saved.turns.length ? 'Saved conversation restored. Recheck the draft to verify sources and tests again. No model run was resumed.' : '' })
+      phase: candidates.length ? 'review' : saved.turns.length ? 'conversation' : 'idle',
+      status: candidates.length ? 'needs-input' : !saved.turns.length ? 'idle'
+        : saved.status === 'running' || saved.status === 'stopped' || saved.status === 'failed' || saved.status === 'budget'
+          || saved.turns.at(-1)?.role === 'user' ? 'stopped' : 'complete',
+      restored: candidates.length > 0,
+      detail: candidates.length ? 'Saved draft. Recheck its sources and tests before creating it.'
+        : saved.status === 'running' || saved.status === 'stopped' || saved.status === 'failed' || saved.status === 'budget' || saved.turns.at(-1)?.role === 'user'
+          ? 'This response was interrupted. Send a message to continue; nothing restarted automatically.' : '' })
   }
 
   /** Explicit, model-free recovery. A reload cannot restart paid or repair work. */
@@ -373,8 +385,9 @@ export class AuthoringRun {
   start(brief: string, seedUrls: string[], display = brief): void {
     if (this.running) return
     this.arm()
-    this.state = { ...INITIAL_STATE, brief, seedUrls, phase: 'research', status: 'running', detail: 'Researching sources and drafting.' }
-    this.addTurn({ role: 'user', kind: 'brief', text: display + (seedUrls.length ? `\n\nRead first:\n${seedUrls.join('\n')}` : '') })
+    this.lastMessage = brief
+    this.state = { ...INITIAL_STATE, brief, seedUrls, phase: 'research', status: 'running', detail: 'Working…' }
+    this.addTurn({ role: 'user', kind: 'brief', text: display + (seedUrls.length ? `\n\nRead first:\n${seedUrls.join('\n')}` : ''), ...(brief !== display ? { input: brief } : {}) })
     void this.drive(async (signal) => {
       await this.researchTurn(signal)
       await this.casesAndCheck(signal)
@@ -382,18 +395,32 @@ export class AuthoringRun {
   }
 
   /** A message from the person, at any rest state. */
-  send(message: string, display = message): void {
+  send(message: string, display = message, retry = false): void {
     if (this.running || this.state.phase === 'idle') return
     this.arm()
-    this.addTurn({ role: 'user', kind: 'message', text: display })
-    this.set({ status: 'running', phase: 'conversation', detail: 'Answering.' })
+    const previous = { status: this.state.status, phase: this.state.phase, detail: this.state.detail }
+    this.lastMessage = message
+    if (!retry) this.addTurn({ role: 'user', kind: 'message', text: display, ...(message !== display ? { input: message } : {}) })
+    this.set({ status: 'running', phase: 'conversation', detail: 'Working…', events: [], streaming: '' })
     void this.drive(async (signal) => {
-      if (this.state.restored) await this.recheckRestored(signal)
       const before = this.latest()?.digest
-      await this.continuingTurn(signal, 'conversation', this.conversationPrompt(message), this.ports.researchTools)
-      if (this.latest()?.digest !== before || !this.latest()?.check) await this.casesAndCheck(signal)
-      else this.settleReview('Answered. The candidate still has disagreements or no established cases.')
+      const proposal = await this.continuingTurn(signal, 'conversation', this.conversationPrompt(message), this.ports.researchTools)
+      if (!this.latest()) this.set({ phase: 'conversation', status: 'complete', detail: '' })
+      else if (this.latest()?.digest !== before || proposal && this.ports.mode !== 'draft' && !this.latest()?.check?.cases.length) {
+        if (this.state.restored) await this.recheckRestored(signal)
+        await this.casesAndCheck(signal)
+      } else if (previous.status === 'ready') this.settleReview('The candidate needs review.')
+      else this.set(previous)
     })
+  }
+
+  get canRetryResponse(): boolean {
+    return this.lastMessage !== null && !this.latest() && ['failed', 'stopped', 'budget'].includes(this.state.status)
+  }
+
+  /** Explicit retry only, with the original context and no duplicate user turn. */
+  retryResponse(): void {
+    if (this.canRetryResponse && this.lastMessage !== null) this.send(this.lastMessage, '', true)
   }
 
   /** A fresh reviewer corrects only the expectation; the candidate and case inputs are fixed. */
@@ -511,6 +538,8 @@ export class AuthoringRun {
     try {
       await work(controller.signal)
     } catch (cause) {
+      if (this.state.streaming?.trim()) this.addTurn({ role: 'assistant', kind: 'message', text: `${this.state.streaming}\n\n_Response interrupted._` })
+      this.set({ streaming: '' })
       if (isCancelled(cause) || cause instanceof Stopped) {
         if (this.outOfTime) {
           this.set({ status: 'budget', detail: `The time budget of ${this.ports.seconds} seconds is spent. The last completed stage is kept.` })
@@ -535,8 +564,7 @@ export class AuthoringRun {
   private researchPrompt(): string {
     const { brief, seedUrls } = this.state
     return [
-      this.ports.authorPrompt,
-      this.ports.mode === 'draft' ? 'For a question or clarification, answer naturally without a JSON fence. When proposing a pack, return the required single JSON fence. Draft only from information supplied in this chat. Do not claim source research or behavioral testing. List open questions and assumptions.' : RESEARCH_INSTRUCTIONS,
+      CONVERSATION_INSTRUCTIONS,
       `THE BRIEF\n${brief}`,
       seedUrls.length ? `URLS TO READ FIRST\n${seedUrls.join('\n')}` : ''
     ]
@@ -575,8 +603,6 @@ export class AuthoringRun {
   private conversationPrompt(message: string): string {
     const candidate = this.latest()
     return [
-      this.ports.authorPrompt,
-      this.ports.mode === 'draft' ? 'For a question or clarification, answer naturally without a JSON fence. When proposing a pack, return the required single JSON fence. Draft only from information supplied in this chat. Do not claim source research or behavioral testing. List open questions and assumptions.' : RESEARCH_INSTRUCTIONS,
       CONVERSATION_INSTRUCTIONS,
       candidate ? `CURRENT DOCUMENT\n${candidate.text}` : '',
       this.state.cases.length ? `ESTABLISHED CASES\n${JSON.stringify(this.state.cases)}` : '',
@@ -591,7 +617,7 @@ export class AuthoringRun {
   private transcript(): string {
     const lines = this.state.turns
       .filter((turn) => turn.kind !== 'note')
-      .map((turn) => `${turn.role === 'user' ? 'PERSON' : 'ASSISTANT'}: ${turn.text}`)
+      .map((turn) => `${turn.role === 'user' ? 'PERSON' : 'ASSISTANT'}: ${turn.role === 'user' ? turn.input ?? turn.text : turn.text}`)
     return `TRANSCRIPT SO FAR\n${lines.join('\n\n')}`
   }
 
@@ -604,24 +630,38 @@ export class AuthoringRun {
     reviewer = false
   ): Promise<{ document: unknown; unknowns: string[] } | null> {
     this.check(signal)
+    if (prompt.length > 200_000) throw new Error('This conversation exceeds the 200,000-character context limit. Start a new chat with the relevant text, or attach a smaller excerpt. Nothing was sent to the model.')
     const session = this.ports.newSession()
     this.ports.ledger.openSession(session)
     this.set({ sessions: [...this.state.sessions, session] })
     let proposal: { document: unknown; unknowns: string[] } | null = null
     let failure: string | null = null
     let spoke = false
-    await this.ports.turn({ prompt, hostTools, reviewer }, signal, (incoming) => {
+    const instructions: HostTool = {
+      name: 'get_authoring_instructions',
+      description: 'Read the runtime contract before creating or changing a pack. Not needed for greetings, explanations or ordinary questions.',
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      execute: async () => ({ content: [{ type: 'text', text: this.ports.authorPrompt
+        ? [this.ports.authorPrompt, this.ports.mode === 'draft'
+          ? 'Draft only from information supplied by the person. Do not claim web research or behavioral tests. List assumptions and open questions.'
+          : RESEARCH_INSTRUCTIONS].join('\n\n')
+        : 'Pack authoring is unavailable until the runtime authoring prompt is available. You can still answer questions; do not invent a pack format.' }], isError: !this.ports.authorPrompt })
+    }
+    this.set({ streaming: '' })
+    await this.ports.turn({ prompt, hostTools: reviewer ? hostTools : [instructions, ...hostTools], reviewer, conversation: !reviewer && producedBy !== 'repair' }, signal, (incoming) => {
       const event = incoming.type === 'proposal' ? canonicalProposal(incoming) : incoming
       if (event.type === 'message' && event.text.trim()) spoke = true
-      this.set({ events: [...this.state.events, event] })
+      if (event.type === 'message_progress') { this.set({ streaming: event.text }); return }
+      this.set({ events: [...this.state.events, event], ...(event.type === 'message' ? { streaming: '' } : {}) })
       if (event.type === 'message') this.addTurn({ role: 'assistant', kind: 'message', text: event.text })
       if (event.type === 'proposal') proposal = { document: event.document, unknowns: event.unknowns }
       if (event.type === 'error') failure = event.message
     })
     this.check(signal)
+    this.set({ streaming: '' })
     await this.verifyAcquisitions(session, signal)
     if (failure !== null) throw new Error(failure)
-    if (proposal === null && this.ports.mode === 'draft' && spoke && !reviewer) return null
+    if (proposal === null && spoke && !reviewer && producedBy !== 'repair') return null
     if (proposal === null) throw new Error('the assistant ended without a proposal')
     const taken = proposal as { document: unknown; unknowns: string[] }
     if (!reviewer) {
@@ -654,7 +694,7 @@ export class AuthoringRun {
   }
 
   private async researchTurn(signal: AbortSignal): Promise<void> {
-    this.set({ phase: 'research', detail: this.ports.mode === 'draft' ? 'Drafting with your input.' : 'Researching sources and drafting.' })
+    this.set({ phase: 'conversation', detail: 'Working…' })
     this.ports.log(this.ports.mode === 'draft' ? 'draft: authoring from supplied information' : 'research: drafting from sources')
     await this.continuingTurn(signal, 'research', this.researchPrompt(), this.ports.researchTools)
   }
@@ -717,8 +757,8 @@ export class AuthoringRun {
   /** Establish cases where none are, then check, and repair until the budget. */
   private async casesAndCheck(signal: AbortSignal, repair = true): Promise<void> {
     const candidate = this.latest()
-    if (!candidate && this.ports.mode === 'draft') {
-      this.set({ phase: 'conversation', status: 'needs-input', detail: 'Continue the conversation to shape your pack.' })
+    if (!candidate) {
+      this.set({ phase: 'conversation', status: 'complete', detail: '' })
       return
     }
     if (candidate && this.ports.mode === 'draft') {

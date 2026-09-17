@@ -34,3 +34,8 @@ describe('why research cannot start', () => {
     expect(researchBlockedReason({ ...ready, ...override })).toContain(expected)
   })
 })
+it('lets ordinary chat answer when authoring and runtime checks are unavailable', () => {
+  expect(researchBlockedReason({ ...ready, mode: 'draft', advertised: false, authorPromptRead: false,
+    mcp: { status: 'failed', client: null, validateSupported: false, expectationValidationSupported: false } })).toBe('')
+  expect(researchBlockedReason({ ...ready, mode: 'draft', slot: { ...ready.slot, keyPresent: false } })).toContain('No API key')
+})

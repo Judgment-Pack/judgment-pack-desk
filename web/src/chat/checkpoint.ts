@@ -19,7 +19,7 @@ export function checkpoint(state: RunState, sources: readonly SourceRecord[]): C
   // Derived views, events and verdicts are deliberately omitted. Reconstruct
   // candidates from their bytes; source records from the original wire reply.
   return {
-    state: { ...state, events: [], verdicts: {}, registries: {}, citations: [],
+    state: { ...state, streaming: undefined, events: [], verdicts: {}, registries: {}, citations: [],
       candidates: state.candidates.map(({ check: _check, ...candidate }) => candidate),
       expectationIssues: state.expectationIssues.map(({ proposal: _proposal, ...issue }) => issue) },
     sources: sources.map(source => ({ session: source.session, kind: source.kind, request: source.request,
@@ -40,8 +40,8 @@ export function decodeCheckpoint(value: unknown): Checkpoint {
     || !Array.isArray(state.expectationIssues) || !Number.isInteger(state.revisionsUsed) || (state.revisionsUsed as number) < 0) return invalid()
   const turns: Turn[] = state.turns.map(turn => {
     if (!object(turn) || (turn.role !== 'user' && turn.role !== 'assistant') || typeof turn.text !== 'string'
-      || typeof turn.at !== 'string' || !['brief', 'message', 'unknowns', 'note'].includes(String(turn.kind))) return invalid()
-    return { role: turn.role, text: turn.text, at: turn.at, kind: turn.kind as Turn['kind'] }
+      || (turn.input !== undefined && typeof turn.input !== 'string') || typeof turn.at !== 'string' || !['brief', 'message', 'unknowns', 'note'].includes(String(turn.kind))) return invalid()
+    return { role: turn.role, text: turn.text, at: turn.at, kind: turn.kind as Turn['kind'], ...(typeof turn.input === 'string' ? { input: turn.input } : {}) }
   })
   const candidates = state.candidates.map((candidate, index) => {
     if (!object(candidate) || typeof candidate.text !== 'string') return invalid()
@@ -77,7 +77,7 @@ export function decodeCheckpoint(value: unknown): Checkpoint {
       request: { source: source.request.source, dialect: source.request.dialect,
         ...(source.request.url ? { url: source.request.url as string } : {}), ...(source.request.query ? { query: source.request.query as string } : {}) } }
   })
-  return { state: { ...INITIAL_STATE, brief: state.brief, seedUrls: state.seedUrls, turns, candidates,
+  return { state: { ...INITIAL_STATE, status: ['idle', 'running', 'complete', 'ready', 'needs-input', 'budget', 'stalled', 'stopped', 'failed'].includes(String(state.status)) ? state.status as RunState['status'] : 'idle', brief: state.brief, seedUrls: state.seedUrls, turns, candidates,
     cases: state.cases.map(readCase), expectationIssues: issues, unknowns: state.unknowns,
     revisionsUsed: state.revisionsUsed as number, sessions: state.sessions }, sources }
 }

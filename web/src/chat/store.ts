@@ -2,12 +2,16 @@ import { answer, deskFetch } from '../files/client'
 import { checkpoint, decodeCheckpoint, type Checkpoint } from './checkpoint'
 import type { ResearchRunBinding } from '../research/useResearchRun'
 
+export interface ChatAttachment { id: string; name: string; text: string }
 export interface Chat {
   id: string; title: string; pinned: boolean; archived: boolean; updatedAt: string
   composer: string; model: string; mode: 'draft' | 'research'; view: 'chat' | 'draft'
   pack?: { id: string; path: string; digest: string }
   checkpoint?: Checkpoint
   createdCandidateDigest?: string
+  attachments?: ChatAttachment[]
+  adversarialReview?: boolean
+  titleEdited?: boolean
 }
 interface Document { version: 1; chats: Chat[] }
 interface Reply { project: string; sha256: string; content: unknown }
@@ -31,9 +35,11 @@ function decode(value: unknown): Chat[] {
       || typeof chat.pinned !== 'boolean' || typeof chat.archived !== 'boolean'
       || typeof chat.updatedAt !== 'string' || !Number.isFinite(Date.parse(chat.updatedAt)) || !['draft', 'research'].includes(chat.mode) || !['chat', 'draft'].includes(chat.view)) throw new Error('Invalid saved chat. History has not been changed.')
     ids.add(chat.id)
+    if (chat.attachments !== undefined && (!Array.isArray(chat.attachments) || chat.attachments.length > 4
+      || chat.attachments.some(file => !file || typeof file.id !== 'string' || typeof file.name !== 'string' || typeof file.text !== 'string' || file.text.length > 200_000))) throw new Error('Invalid saved attachments')
     if (chat.pack && (typeof chat.pack.id !== 'string' || typeof chat.pack.path !== 'string' || typeof chat.pack.digest !== 'string')) throw new Error('Invalid saved pack context')
     return { id: chat.id, title: chat.title, composer: chat.composer, model: chat.model, pinned: chat.pinned, archived: chat.archived,
-      updatedAt: chat.updatedAt, mode: chat.mode, view: chat.view, ...(chat.pack ? { pack: chat.pack } : {}),
+      updatedAt: chat.updatedAt, mode: chat.mode, view: chat.view, attachments: chat.attachments ?? [], adversarialReview: chat.adversarialReview === true, titleEdited: chat.titleEdited === true, ...(chat.pack ? { pack: chat.pack } : {}),
       ...(chat.checkpoint ? { checkpoint: decodeCheckpoint(chat.checkpoint) } : {}),
       ...(typeof chat.createdCandidateDigest === 'string' ? { createdCandidateDigest: chat.createdCandidateDigest } : {}) }
   })
@@ -138,6 +144,7 @@ export class ChatStore {
   update(id: string, patch: Partial<Omit<Chat, 'id' | 'updatedAt'>>) {
     const draft = this.state.drafts.find(chat => chat.id === id)
     const previous = draft ?? this.state.chats.find(chat => chat.id === id)
+    if (previous?.mode === 'research' && patch.mode === 'draft' && (this.state.bindings.get(id)?.state.candidates.length || previous.checkpoint?.state.candidates.length)) return
     if (!previous || Object.entries(patch).every(([key,value]) => previous[key as keyof Chat] === value)) return
     if (draft) {
       const next = { ...draft, ...patch, updatedAt: new Date().toISOString() }
@@ -145,7 +152,7 @@ export class ChatStore {
       if (!next.pack) this.saveHomeDraft(next)
       return
     }
-    this.changed(this.state.chats.map(chat => chat.id === id ? { ...chat, ...patch, updatedAt: new Date().toISOString() } : chat))
+    this.changed(this.state.chats.map(chat => chat.id === id ? { ...chat, ...patch } : chat))
   }
   activate(id: string) {
     if (this.state.active.includes(id) || ![...this.state.chats, ...this.state.drafts].some(chat => chat.id === id)) return
@@ -157,7 +164,17 @@ export class ChatStore {
     const previous = this.observed.get(id)
     if (previous?.state === binding.state && previous?.sources === binding.sources) return
     this.observed.set(id, { state: binding.state, sources: binding.sources })
-    if (binding.state.phase !== 'idle') this.update(id, { checkpoint: checkpoint(binding.state, binding.sources) })
+    const prior = previous?.state as ResearchRunBinding['state'] | undefined
+    if (prior && previous?.sources === binding.sources && Object.entries(binding.state).every(([key, value]) => key === 'streaming' || key === 'events' || prior[key as keyof typeof prior] === value)) return
+    if (binding.state.phase !== 'idle') {
+      const chat = this.state.chats.find(item => item.id === id)
+      // Opening, restoring, typing, pinning and rendering do not change recency.
+      const last = binding.state.turns.at(-1)
+      const before = chat?.checkpoint?.state.turns.at(-1)
+      const changed = last && (!before || last.at !== before.at || last.text !== before.text)
+      this.update(id, { checkpoint: checkpoint(binding.state, binding.sources) })
+      if (changed && chat && !binding.state.restored) this.changed(this.state.chats.map(item => item.id === id ? { ...item, updatedAt: last.at } : item))
+    }
   }
   problem(message: string) { this.set({ error: message }) }
   get running(): string | undefined { return [...this.state.bindings].find(([,binding]) => binding.run?.running)?.[0] }

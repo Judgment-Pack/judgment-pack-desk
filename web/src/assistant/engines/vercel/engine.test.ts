@@ -1064,7 +1064,10 @@ describe('the unhandled rejection the SDK’s refusal path leaks', () => {
     // getters alike, a member that throws on being read stepped over, and
     // nothing claimed that is not a promise.
     let read = 0
+    let streamReads = 0
     const stand = Object.create({
+      get stream() { streamReads += 1; return new ReadableStream() },
+      get textStream() { streamReads += 1; return new ReadableStream() },
       get inherited() {
         read += 1
         return Promise.reject(new Error('claimed'))
@@ -1077,6 +1080,7 @@ describe('the unhandled rejection the SDK’s refusal path leaks', () => {
     stand.plain = 'not a promise'
     expect(claimPromises(stand)).toBe(2)
     expect(read).toBe(1)
+    expect(streamReads).toBe(0)
   })
 })
 
@@ -1641,16 +1645,9 @@ describe('the split signature this SDK truncates (vercel/ai#19663)', () => {
 })
 
 describe('what the author is told when the endpoint refuses', () => {
-  /**
-   * **The half of the SDK's refusal path this desk owns.**
-   *
-   * One `AI_NoOutputGeneratedError` still reaches a browser's console from
-   * inside the SDK's own transform flush, and it is not reachable from the
-   * result's object graph at any depth — measured on the live drive, three
-   * ways (see `claimPromises`). What this holds is that the console is not
-   * where a person finds out: the run says what happened, on its own stream,
-   * with the status and the endpoint's own sentence in it.
-   */
+  // Browser Stop/refusal regressions are also exercised by
+  // scripts/chat-response-check.mjs; a jsdom test cannot reproduce the SDK's
+  // non-Node telemetry path.
   it('reports the status and the endpoint’s own sentence, and ends once', async () => {
     const call: ModelCall = async () =>
       new Response(JSON.stringify({ error: { message: 'this endpoint refuses everything' } }), {
@@ -2177,4 +2174,52 @@ describe('opt-in conversational authoring', () => {
     const refused = await drain(vercel.start(session(ambiguous.call, { allowConversation: true })))
     expect(refused.map(event => event.type)).toEqual(['error', 'end'])
   })
+})
+
+describe('interactive conversation presentation', () => {
+  it('streams answer prose and preserves an ordinary fenced code example as a message', async () => {
+    const answer = 'Here is an example:\n\n```json\n{"case": "example"}\n```'
+    const scripted = scriptedCall([turn({ text: answer })])
+    const events = await drain(vercel.start(session(scripted.call, { allowConversation: true, interactive: true })))
+    expect(events.some(event => event.type === 'message_progress' && event.text.startsWith('Here is an example:'))).toBe(true)
+    expect(events.filter(event => event.type === 'message')).toEqual([{ type: 'message', text: answer }])
+    expect(events.some(event => event.type === 'proposal' || event.type === 'error')).toBe(false)
+    expect(scripted.seen).toHaveLength(1)
+  })
+
+  it('does not expose a partial proposal as message text', async () => {
+    const scripted = scriptedCall([turn({ text: 'Here is the draft.\n\n' + PROPOSAL_TEXT })])
+    const events = await drain(vercel.start(session(scripted.call, { allowConversation: true, interactive: true, adversarialReview: false })))
+    expect(events.filter(event => event.type === 'message_progress').every(event => !event.text.includes('"proposal"'))).toBe(true)
+    expect(events.some(event => event.type === 'proposal')).toBe(true)
+  })
+})
+it('correlates repeated tool calls in an interactive session', async () => {
+  const scripted = scriptedCall([turn({ tool: { name: 'validate', args: { pack: 'a' } } }), turn({ tool: { name: 'validate', args: { pack: 'b' } } }), turn({ text: 'Checked.' })])
+  const events = await drain(vercel.start(session(scripted.call, { interactive: true, allowConversation: true })))
+  const calls = events.filter(event => event.type === 'tool_call')
+  const results = events.filter(event => event.type === 'tool_result')
+  expect(calls).toHaveLength(2)
+  expect(calls[0]!.callId).toBeTruthy()
+  expect(calls[0]!.callId).not.toBe(calls[1]!.callId)
+  expect(results.map(event => event.callId)).toEqual(calls.map(event => event.callId))
+})
+it('does not let an empty progress reset consume the thinking fallback', async () => {
+  let calls = 0
+  const call: ModelCall = async () => ++calls === 1
+    ? new Response(JSON.stringify({ error: { message: 'Unsupported parameter: reasoning_effort' } }), { status: 400, headers: { 'content-type': 'application/json' } })
+    : new Response(turn({ text: 'Hello.' }), { headers: { 'content-type': 'text/event-stream' } })
+  const events = await drain(vercel.start(session(call, { interactive: true, allowConversation: true, thinking: normalize('on', 'openai-compatible') })))
+  expect(calls).toBe(2)
+  expect(events.some(event => event.type === 'message' && event.text === 'Hello.')).toBe(true)
+})
+it('separates adversarial review from requested thinking effort', async () => {
+  const plain = scriptedCall([turn({ text: PROPOSAL_TEXT })])
+  const events = await drain(vercel.start(session(plain.call, { thinking: normalize('on', 'openai-compatible'), adversarialReview: false })))
+  expect(plain.seen).toHaveLength(1)
+  expect(events.some(event => event.type === 'critique')).toBe(false)
+  const reviewed = scriptedCall([turn({ text: PROPOSAL_TEXT }), turn({ text: 'Reviewed.' })])
+  const checked = await drain(vercel.start(session(reviewed.call, { thinking: normalize('off', 'openai-compatible'), adversarialReview: true })))
+  expect(reviewed.seen).toHaveLength(2)
+  expect(checked.some(event => event.type === 'critique')).toBe(true)
 })

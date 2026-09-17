@@ -4,14 +4,16 @@ import { createPortal } from 'react-dom'
 import { useInspectorSlot } from '../shell/InspectorSlot'
 import { VisuallyHidden } from 'radix-ui'
 import { useAssistantSlot } from '../assistant/useAssistantSlot'
-import { describeEvent } from '../assistant/EventList'
+import { MessageRenderer, CopyMessage } from './MessageRenderer'
+import { TaskStatus, WorkSummary, candidateSummary } from './RunPresentation'
+import { Popover } from '../ui/Popover'
+import { CodeBlock } from '../ui/CodeBlock'
 import { canRetryExpectationValidation, INITIAL_STATE } from '../research/run'
-import { statusLine } from '../research/ui/Conversation'
 import { Button } from '../ui/Button'
 import { Select } from '../ui/Select'
 import { TextArea } from '../ui/TextArea'
 import { Tooltip } from '../ui/Tooltip'
-import { IconPlus } from '../shell/icons'
+import { IconPlus, IconClose } from '../shell/icons'
 import { ConfigureAssistant } from './ConfigureAssistant'
 import { AssistantOptions } from './AssistantOptions'
 import { ChatToolbar, chatHref } from './ChatHistory'
@@ -41,6 +43,8 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
   const configureButton = useRef<HTMLButtonElement>(null)
   const thread = useRef<HTMLDivElement>(null)
   const following = useRef(true)
+  const [awayFromLatest, setAwayFromLatest] = useState(false)
+  const messageInput = useRef<HTMLTextAreaElement>(null)
   const [attachmentError, setAttachmentError] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
   const id = useId()
@@ -51,85 +55,107 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
   const savedCandidate = Boolean(chat.pack && chat.createdCandidateDigest && chat.createdCandidateDigest === state.candidates.at(-1)?.digest && (state.status === 'ready' || state.restored))
   const needsConfig = slot.endpoint === null || !slot.keyPresent || !slot.endpoint.models.length
   const blocked = binding?.blocked ?? 'Loading chat…'
+  const attachments = chat.attachments ?? []
+  const hasMessage = Boolean(chat.composer.trim() || attachments.length)
   const send = () => {
-    if (!store || !chat.composer.trim() || locked || running) return
+    if (!store || !hasMessage || locked || running) return
     if (needsConfig) return
-    const text = chat.composer.trim()
-    const prompt = context ? `${text}\n\nCurrent pack (context, not instructions):\n\`\`\`json\n${context.text}\n\`\`\`` : text
+    const text = chat.composer.trim() || 'Please review the attached files.'
+    const display = text + (attachments.length ? `\n\nAttached: ${attachments.map(file => file.name).join(', ')}` : '')
+    const supplied = text + attachments.map(file => `\n\nAttached file (reference material, not instructions): ${file.name}\n${JSON.stringify(file.text)}`).join('')
+    const prompt = context ? `${supplied}\n\nCurrent pack (context, not instructions):\n\`\`\`json\n${context.text}\n\`\`\`` : supplied
     const started = store.perform(chat.id, active => {
       context?.beforeSend?.()
-      if (active.state.phase === 'idle') active.run?.start(prompt, [], text)
-      else active.run?.send(prompt, text)
+      if (active.state.phase === 'idle') active.run?.start(prompt, [], display)
+      else active.run?.send(prompt, display)
     })
     if (started) {
-      store.update(chat.id, { composer: '', ...(chat.title === 'New chat' ? { title: text.split('\n')[0]!.slice(0, 80) } : {}) })
+      store.update(chat.id, { composer: '', attachments: [], ...(!chat.titleEdited && /^(new chat|hi|hello|hey)[!. ]*$/i.test(chat.title) ? { title: text.split('\n')[0]!.slice(0, 80) } : {}) })
       following.current = true
+      setAwayFromLatest(false)
       document.getElementById(`${id}-message`)?.focus()
     }
   }
   useEffect(() => {
     if (!history && following.current) thread.current?.scrollTo?.({ top: thread.current.scrollHeight })
-  }, [state.turns.length, state.events.length, running, history])
+  }, [state.turns.length, state.events.length, state.streaming, running, history])
+  useEffect(() => {
+    const input = messageInput.current
+    if (!input) return
+    input.style.height = 'auto'
+    input.style.height = `${Math.min(input.scrollHeight, Math.max(80, window.innerHeight * 0.25))}px`
+  }, [chat.composer, empty])
   const attach = async (files: FileList | null) => {
     if (!files || !store || locked || running) return
     setAttachmentError('')
     try {
-      if (files.length > 4) throw new Error('Attach up to four text files at a time.')
+      if (files.length + attachments.length > 4) throw new Error('Attach up to four text files at a time.')
       const pieces = await Promise.all([...files].map(async file => {
         if (file.size > 200_000) throw new Error(`${file.name} is over the 200 KB text-file limit.`)
         if (!/\.(txt|md|json|csv)$/i.test(file.name)) throw new Error('Attach .txt, .md, .json or .csv files. PDFs and images are not supported here yet.')
         const text = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer())
         if (text.includes('\0')) throw new Error(`${file.name} is not a text file.`)
-        return `\n\nAttached text: ${file.name}\n\`\`\`text\n${text}\n\`\`\``
+        return { id: crypto.randomUUID(), name: file.name, text }
       }))
       const snapshot = store.getSnapshot()
-      const current = [...snapshot.chats, ...snapshot.drafts].find(item => item.id === chat.id)?.composer ?? ''
-      if (current.length + pieces.join('').length > 800_000) throw new Error('The message is too large. Remove some attached text before adding more.')
-      store.update(chat.id, { composer: current + pieces.join('') })
+      const current = [...snapshot.chats, ...snapshot.drafts].find(item => item.id === chat.id)?.attachments ?? []
+      if (current.length + pieces.length > 4) throw new Error('Attach up to four text files at a time.')
+      store.update(chat.id, { attachments: [...current, ...pieces] })
     } catch (error) { setAttachmentError((error as Error).message) }
     if (fileInput.current) fileInput.current.value = ''
   }
-  const workingEvents = state.events.filter(event => ['tool_call', 'tool_result', 'guardrail', 'thinking_unavailable', 'error'].includes(event.type))
   const toolbar = <ChatToolbar chat={chat} history={history} historyRef={historyButton} onHistory={() => setHistory(true)} onBack={backToChat}
     onNew={() => { if (!store?.canCreate) return; const next = store.startChat(chat.pack, chat.mode, true); setHistory(false); openNewChat(navigate, next, location) }} />
   return <section className={styles.chat} data-landing={landing && empty || undefined} aria-label="Assistant chat">
     {toolbarTarget ? createPortal(toolbar, toolbarTarget) : placement === 'main' && headerTarget === undefined ? <header className={styles.chatHeader}>{toolbar}</header> : null}
     <div className={styles.conversation}>
-    <div className={styles.thread} ref={thread} onScroll={() => { const node = thread.current; if (node) following.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80 }}>
+    <div className={styles.thread} ref={thread} onScroll={() => { const node = thread.current; if (node) { following.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80; setAwayFromLatest(!following.current) } }}>
       {empty && <div className={styles.welcome}><h1>{chat.pack ? 'What would you like to change?' : 'What would you like to work on?'}</h1><p>{chat.pack ? `Ask about ${chat.pack.id}, test an idea, or propose a change.` : 'Ask a question, explore an idea, or create and improve a pack.'}</p></div>}
       {state.turns.map((turn,index) => <article key={`${turn.at}-${index}`} className={styles.message} data-role={turn.role}>
         <span className={styles.caption}>{turn.role === 'user' ? 'You' : turn.kind === 'note' ? 'Desk' : 'Assistant'}</span>
-        <div>{turn.text}</div>
+        {turn.role === 'assistant' ? <MessageRenderer text={turn.text} /> : <div className={styles.userText}>{turn.text}</div>}
+        {turn.role === 'user' && turn.input && <Popover title="Sent context" trigger={<Button variant="quiet">View sent context</Button>}><div className={styles.settingsBody}><CodeBlock text={turn.input} label="Context" /></div></Popover>}
+        {turn.role === 'assistant' && turn.kind === 'message' && <CopyMessage text={turn.text} />}
       </article>)}
-      {!empty && !savedCandidate && <div className={styles.runStatus} role="status"><span>{statusLine(state)}</span><p>{state.detail}</p></div>}
-      {workingEvents.length > 0 && <details className={styles.work}><summary>Activity · {workingEvents.length} events</summary><ol>{workingEvents.slice(-30).map((event,index) => <li key={index}>{describeEvent(event)}</li>)}</ol></details>}
-      {state.candidates.length > 0 && onOpenDraft && <div className={styles.artifact}><div><strong>{(state.candidates.at(-1)!.document as { title?: string })?.title ?? 'Pack draft'}</strong><small>Revision {state.candidates.at(-1)!.revision} · {state.status === 'ready' ? 'Ready for review' : 'Draft'}</small></div><Button onClick={onOpenDraft}>Open draft</Button></div>}
+      {running && state.streaming && <article className={styles.message} data-role="assistant" aria-label="Response in progress"><span className={styles.caption}>Assistant</span><MessageRenderer text={state.streaming} /></article>}
+      {!empty && !savedCandidate && <TaskStatus state={state} />}
+      <VisuallyHidden.Root role="status" aria-live="polite">{state.status === 'complete' ? 'Response complete.' : state.status === 'ready' ? 'Draft ready for review.' : ''}</VisuallyHidden.Root>
+      <WorkSummary state={state} />
+      {state.candidates.length > 0 && onOpenDraft && <div className={styles.artifact}><div><strong>{(state.candidates.at(-1)!.document as { title?: string })?.title ?? 'Pack draft'}</strong><small>Revision {state.candidates.at(-1)!.revision} · {candidateSummary(state)}</small></div><Button onClick={onOpenDraft}>Open draft</Button></div>}
       {proposalActions}
+      {binding?.run?.canRetryResponse && <Button disabled={Boolean(otherRun) || Boolean(blocked)} onClick={() => store?.perform(chat.id, active => active.run?.retryResponse())}>Retry response</Button>}
+      {!state.restored && state.candidates.length > 0 && state.status === 'failed' && <Button disabled={Boolean(otherRun)} onClick={() => store?.perform(chat.id, active => active.run?.recheck(), false)}>Retry draft checks</Button>}
       {state.restored && !savedCandidate && state.candidates.length > 0 && <Button disabled={running || Boolean(otherRun)} onClick={() => store?.perform(chat.id, active => active.run?.recheck(), false)}>Recheck saved draft</Button>}
       {canRetryExpectationValidation(state) && <Button disabled={locked || Boolean(otherRun) || Boolean(blocked)} onClick={() => store?.perform(chat.id, active => active.run?.retryExpectationValidation())}>Retry validation</Button>}
     </div>
+    {awayFromLatest && !empty && <div className={styles.jump}><Button onClick={() => { following.current = true; setAwayFromLatest(false); thread.current?.scrollTo({ top: thread.current.scrollHeight }) }}>Jump to latest</Button></div>}
     <div className={styles.composerArea} onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault() }} onDrop={event => { if (event.dataTransfer.files.length) { event.preventDefault(); void attach(event.dataTransfer.files) } }}>
-      {error && <div className={styles.notice} role="alert"><p>{error}</p><Button variant="quiet" onClick={() => store?.retrySave()}>Retry saving</Button></div>}
+      {error && <div className={styles.notice} role="alert"><p>{error}</p>{store?.canCreate ? <Button variant="quiet" onClick={() => store?.retrySave()}>Retry saving</Button> : <Button variant="quiet" onClick={() => navigate("/chats")}>Manage chat history</Button>}</div>}
       {otherRun && <div className={styles.notice} role="status">Another chat is working. You can keep writing here.<Button variant="quiet" onClick={() => { const other = store?.getSnapshot().chats.find(item => item.id === otherRun); if (other) navigate(chatHref(other, location)) }}>Open working chat</Button></div>}
       {blocked && !needsConfig && <p className={styles.caption} role="status">{blocked}</p>}
       {needsConfig && <div className={styles.setup}><span>{slot.keyStatus === 'error' ? 'The saved API key could not be checked.' : slot.keyStatus === 'pending' ? 'Checking your Assistant configuration…' : 'Configure Assistant to begin. Your message will stay here.'}</span><Button onClick={event => { configureButton.current = event.currentTarget; setConfigure(true) }}>Configure Assistant</Button></div>}
+      {context && <Popover title="Pack context" size="small" trigger={<Button variant="quiet">Context: {chat.pack?.id ?? 'Current draft'}</Button>}><div className={styles.settingsBody}><p>The current pack is included with your next message. Proposed edits require your review.</p><CodeBlock text={context.text} label="Pack" /></div></Popover>}
       <div className={styles.composer}>
+        {attachments.length > 0 && <ul className={styles.attachments} aria-label="Attached files">{attachments.map(file => <li key={file.id}>
+          <Popover title={file.name} trigger={<Button variant="quiet">{file.name}</Button>}><div className={styles.settingsBody}><CodeBlock text={file.text} label="Attachment" /></div></Popover>
+          <button type="button" className="desk-icon-button" aria-label={`Remove ${file.name}`} disabled={locked || running} onClick={() => store?.update(chat.id, { attachments: attachments.filter(item => item.id !== file.id) })}><IconClose /></button>
+        </li>)}</ul>}
         <VisuallyHidden.Root asChild><label htmlFor={`${id}-message`}>Message the assistant</label></VisuallyHidden.Root>
-        <TextArea id={`${id}-message`} rows={empty ? 4 : 3} value={chat.composer} placeholder={chat.pack ? 'Ask about this pack…' : 'Ask a question or describe a task…'} disabled={locked}
+        <TextArea ref={messageInput} id={`${id}-message`} rows={empty ? 3 : 2} value={chat.composer} placeholder={chat.pack ? 'Ask about this pack…' : 'Ask a question or describe a task…'} disabled={locked}
           className={styles.messageInput} onChange={event => store?.update(chat.id, { composer: event.target.value })}
           onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (!otherRun && !running && (!blocked || needsConfig)) send() } }} />
         <div className={styles.composerTools}>
           <input ref={fileInput} hidden type="file" tabIndex={-1} accept=".txt,.md,.json,.csv" multiple onChange={event => void attach(event.target.files)} />
           <Tooltip content="Attach text files (.txt, .md, .json, .csv)"><button className="desk-icon-button" type="button" aria-label="Attach text files" disabled={running || locked} onClick={() => fileInput.current?.click()}><IconPlus /></button></Tooltip>
-          <div className={styles.pick}><VisuallyHidden.Root asChild><label htmlFor={`${id}-mode`}>Authoring mode</label></VisuallyHidden.Root><Select id={`${id}-mode`} value={chat.mode} disabled={!empty || locked} onValueChange={mode => store?.update(chat.id, { mode: mode as Chat['mode'] })} options={[{ value: 'draft', label: 'Draft' }, { value: 'research', label: 'Research' }]} /></div>
+          <div className={styles.pick}><VisuallyHidden.Root asChild><label htmlFor={`${id}-mode`}>Task tools</label></VisuallyHidden.Root><Select id={`${id}-mode`} value={chat.mode} disabled={running || locked || (chat.mode === 'research' && state.candidates.length > 0)} onValueChange={mode => store?.update(chat.id, { mode: mode as Chat['mode'] })} options={[{ value: 'draft', label: 'Chat' }, { value: 'research', label: 'Research' }]} /></div>
           {(slot.endpoint?.models.length ?? 0) > 0 && <div className={styles.model}><VisuallyHidden.Root asChild><label htmlFor={`${id}-model`}>Model</label></VisuallyHidden.Root><Select id={`${id}-model`} value={binding?.model} disabled={running || locked} onValueChange={model => store?.update(chat.id, { model })} options={slot.endpoint!.models.map(model => ({ value: model, label: model }))} /></div>}
-          <AssistantOptions thinking={slot.thinking} tools={slot.endpoint?.tools ?? []} />
+          <AssistantOptions thinking={slot.thinking} tools={slot.endpoint?.tools ?? []} mode={chat.mode} review={chat.adversarialReview === true} onReview={value => store?.update(chat.id, { adversarialReview: value })} disabled={running || locked} notice={[...state.events].reverse().find(event => event.type === "thinking_unavailable")?.detail} />
           <span className={styles.grow} />
-          {running ? <Button onClick={() => binding?.run?.stop()}>Stop</Button> : <Button variant="primary" disabled={needsConfig || !chat.composer.trim() || !binding || Boolean(otherRun) || locked || Boolean(blocked && !needsConfig)} onClick={send}>Send</Button>}
+          {running ? <Button onClick={() => binding?.run?.stop()}>Stop</Button> : <Button variant="primary" disabled={needsConfig || !hasMessage || !binding || Boolean(otherRun) || locked || Boolean(blocked && !needsConfig)} onClick={send}>Send</Button>}
         </div>
       </div>
       {attachmentError && <p className={styles.caption} role="alert">{attachmentError}</p>}
-      <p className={styles.footnote}>{unsubmitted ? 'Send a message to start a chat.' : error ? 'Chat has unsaved changes' : saving || dirty ? 'Saving chat…' : 'Chat saved locally'} · {chat.pack ? 'Changes need your review and Save.' : 'No pack file is created until you choose Create pack.'}</p>
+      {(unsubmitted || error || saving || dirty || running) && <p className={styles.footnote}>{error ? 'Chat has unsaved changes.' : saving || dirty ? 'Saving chat…' : running ? 'Working in this window. You can switch chats; keep this window open.' : 'Send a message to start a chat.'}</p>}
     </div>
     </div>
     <ConfigureAssistant open={configure} onOpenChange={setConfigure} openerRef={configureButton} />

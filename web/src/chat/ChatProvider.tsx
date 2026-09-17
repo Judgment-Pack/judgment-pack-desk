@@ -30,7 +30,7 @@ function ChatWorkers() {
   return <>{active.map(id => { const chat = chats.find(chat => chat.id === id) ?? drafts.find(chat => chat.id === id); return store && chat ? <ChatWorker key={id} store={store} chat={chat} /> : null })}</>
 }
 function ChatWorker({ store, chat }: { store: ChatStore; chat: Chat }) {
-  const binding = useResearchRun({ model: chat.model, mode: chat.mode })
+  const binding = useResearchRun({ model: chat.model, mode: chat.mode, adversarialReview: chat.adversarialReview })
   const initial = useRef(chat.checkpoint)
   const restoring = useRef(false)
   const [restored, setRestored] = useState(!initial.current)
