@@ -59,7 +59,7 @@ export function Conversation({ state, onSend, onStop, onRetryValidation }: { sta
         ))}
         {state.status !== 'idle' && state.status !== 'running' && state.detail !== '' && (
           <p className={styles.detail} role="status">
-            {state.detail}
+            {systemMessage(state.detail)}
           </p>
         )}
       </div>

@@ -6196,7 +6196,7 @@ export function assistantTransport(id: string): Transport {
   # Losing the slot used to hide the controls and leave the session running.
   mutate web 'the assistant going away only hides the controls' web/src/shell/DescribeIt.tsx \
     '    discardNow.current()
-    setLost(msg(SLOT_LOST))' \
+    setLost(SLOT_LOST)' \
     '    void SLOT_LOST'
 
   # The rail mounts this dialog above the route, so a Back leaves it standing
@@ -6955,7 +6955,7 @@ export function assistantTransport(id: string): Transport {
   # produces the collision; without the refusal the approval appends a second
   # row under the same id and the suite carries two answers for one case.
   mutate web "an approval rewrites an established case" "$RR" \
-    '      if (this.state.cases.some(row => row.id === id)) throw new Error('"'"'A case with this id is already established; the correction was not applied.'"'"')' \
+    '      if (this.state.cases.some(row => row.id === id)) throw new Error(sourceMessage("A case with this id is already established; the correction was not applied."))' \
     '      void id'
 
   # **A check taken before the corrected case joined the suite is not a check of
@@ -7179,12 +7179,12 @@ export function assistantTransport(id: string): Transport {
     '          <Button
             variant="secondary"
             disabled={blocked}
-            onClick={() => commit(chassis?.projectFile ?? null, msg(SET))}
+            onClick={() => commit(chassis?.projectFile ?? null, SET)}
           >' \
     '          <Button
             variant="primary"
             disabled={blocked}
-            onClick={() => commit(chassis?.projectFile ?? null, msg(SET))}
+            onClick={() => commit(chassis?.projectFile ?? null, SET)}
           >'
 
   # **Tracked capitals back on a section title.** Two label styles on one page,
@@ -7560,12 +7560,12 @@ export function assistantTransport(id: string): Transport {
     '      whenSessionEnds(() => {
         if (!hadSession.current) return
         discardNow.current()
-        setLost(msg(SLOT_LOST))
+        setLost(SLOT_LOST)
       }),' \
     '      whenSessionEnds(() => {
         if (true) return
         discardNow.current()
-        setLost(msg(SLOT_LOST))
+        setLost(SLOT_LOST)
       }),'
   # **`unauthorized` and no other code.** A 307 into the exchange answers a
   # marked `no-handoff`, and a classifier that read the mark alone turned that

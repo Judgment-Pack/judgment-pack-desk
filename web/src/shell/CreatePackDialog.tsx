@@ -968,10 +968,10 @@ export function CreatePackDialog({
       <PageBody width="form">
         <form noValidate className={flow.flow} onSubmit={(event) => { event.preventDefault(); if (step === 2) void create(); else next() }}>
           <ol className={flow.steps} aria-label={msg("Creation steps")}>
-            {['Basics', 'Build', 'Review'].map((label, index) => <li key={label} aria-current={step === index ? 'step' : undefined}>{index + 1}. {label}</li>)}
+            {[msg('Basics'), msg('Build'), msg('Review')].map((label, index) => <li key={label} aria-current={step === index ? 'step' : undefined}>{index + 1}. {label}</li>)}
           </ol>
-          <div className={flow.intro}><h2>{['Create a pack', 'Build your decision', 'Review your pack'][step]}</h2>
-            <p className={flow.hint}>{['Start manually or draft with your assistant.', 'Define the rules, outcomes, and supporting evidence.', 'Check the content and runtime validation before creating.'][step]}</p>
+          <div className={flow.intro}><h2>{[msg("Create a pack"), msg("Build your decision"), msg("Review your pack")][step]}</h2>
+            <p className={flow.hint}>{[msg("Start manually or draft with your assistant."), msg("Define the rules, outcomes, and supporting evidence."), msg("Check the content and runtime validation before creating.")][step]}</p>
           </div>
           {step === 0 && <>
             {handover === undefined && <><div><SegmentedControl label={msg("Creation method")} value={method} onValueChange={(next) => {

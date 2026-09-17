@@ -341,7 +341,7 @@ export function useDescribeIt(): DescribeItState {
     }
     if (!hadSession.current) return
     discardNow.current()
-    setLost(msg(SLOT_LOST))
+    setLost(SLOT_LOST)
   }, [usable])
 
   /**
@@ -359,7 +359,7 @@ export function useDescribeIt(): DescribeItState {
       whenSessionEnds(() => {
         if (!hadSession.current) return
         discardNow.current()
-        setLost(msg(SLOT_LOST))
+        setLost(SLOT_LOST)
       }),
     []
   )
@@ -460,7 +460,7 @@ export function useDescribeIt(): DescribeItState {
   const problem = promptFailed ?? outcome.failure
   const blocking =
     lost !== ''
-      ? lost
+      ? msg(SLOT_LOST)
       : discarded || submitted === null
         ? ''
         : running

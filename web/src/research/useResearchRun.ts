@@ -1,3 +1,4 @@
+import { sourceMessage } from '../i18n/source'
 /**
  * The page's binding of the authoring run to this desk: the assistant slot
  * for the engine, the runtime connection for checks, the research
@@ -137,7 +138,7 @@ export function useResearchRun(options?: { model?: string; mode?: 'draft' | 'res
     const turn = async (request: TurnRequest, signal: AbortSignal, deliver: (event: AssistantEvent) => void) => {
       const { slot, picked, testPrompt } = settings.current
       const endpoint = slot.endpoint
-      if (endpoint === null) throw new Error('no assistant endpoint is configured')
+      if (endpoint === null) throw new Error(sourceMessage("no assistant endpoint is configured"))
       // What the engine actually did, as it did it, on the Console: every
       // call and answer, every guardrail, every refusal -- the same line the
       // Assistant tab would show -- and never the model's prose or a page.
@@ -151,7 +152,7 @@ export function useResearchRun(options?: { model?: string; mode?: 'draft' | 'res
       const opened = settings.current.mcp.status === 'ready' && settings.current.mcp.client !== null
         ? openAssistantConnection({ allowed: endpoint.tools, onEvent, sessionId, signal }) : null
       try {
-        const ready = opened ? await opened.ready : { tools: [], callTool: async () => { throw new Error('Connect the runtime to use pack tools.') } }
+        const ready = opened ? await opened.ready : { tools: [], callTool: async () => { throw new Error(sourceMessage("Connect the runtime to use pack tools.")) } }
         const engine = await loadEngine(slot.engine)
         await runAssistantSession(
           engine,
@@ -192,7 +193,7 @@ export function useResearchRun(options?: { model?: string; mode?: 'draft' | 'res
       get mode() { return settings.current.mode ?? 'research' },
       callTool: async (name, args) => {
         const client = settings.current.mcp.client
-        if (client === null) throw new Error('the runtime connection is not ready')
+        if (client === null) throw new Error(sourceMessage("the runtime connection is not ready"))
         // The desk's own connection: rehearsal is written here, by the desk,
         // on every evaluation it asks for a candidate.
         return callToolThrough(client)(name, name === 'experimental_evaluate' ? { ...args, rehearsal: true } : args)

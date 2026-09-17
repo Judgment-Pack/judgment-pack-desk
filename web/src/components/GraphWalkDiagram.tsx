@@ -258,8 +258,7 @@ function DocumentWalk({
               {node.inCoverage ? (
                 gaps > 0 && (
                   <text className="diagram-node-coverage" x={point.x + 12} y={point.y + 77}>
-                    {gaps} unwitnessed
-                  </text>
+                    {msg("{{count}} unwitnessed", { count: gaps })}</text>
                 )
               ) : (
                 <text className="diagram-node-coverage" x={point.x + 12} y={point.y + 77}>
@@ -457,8 +456,7 @@ function CoverageWalk({
               </text>
               {gaps > 0 && (
                 <text className="diagram-node-gaps" x={AXIS_NODE_X + AXIS_NODE_WIDTH - 14} y={y + 44}>
-                  {gaps} unwitnessed
-                </text>
+                  {msg("{{count}} unwitnessed", { count: gaps })}</text>
               )}
             </g>
           )
@@ -503,7 +501,7 @@ function CoverageWalk({
           <ul className="edge-slots">
             {edges.map((index) => (
               <li key={index} className="edge-slot">
-                <code>edge {index}</code>
+                <code>{msg("Edge {{index}}", { index })}</code>
                 {['resolved', 'unresolved'].map((branch) => {
                   const probe = (entry.coverage ?? []).find(
                     (candidate) => candidate.probe === `edge:${index}:${branch}`

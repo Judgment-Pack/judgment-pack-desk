@@ -516,8 +516,8 @@ export function EndpointForm({
 
       {stale !== undefined && (
         <AlertPanel
-          heading="The configuration changed on disk. Nothing was written."
-          detailLabel="digests"
+          heading={msg("The configuration changed on disk. Nothing was written.")}
+          detailLabel={msg("digests")}
           detail={
             <>
               <span><Message text={"this page read<0/><1/>"} slots={[' ', <Digest value={stale.expectedSha256} />]} /></span>

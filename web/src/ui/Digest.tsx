@@ -10,7 +10,7 @@ export function Digest({ value, prefix = 'sha256 ' }: { value: string; prefix?: 
   const [copied, setCopied] = useState(false)
   const [failed, setFailed] = useState(false)
   useEffect(() => { setCopied(false); setFailed(false) }, [value])
-  if (!value) return <code>{prefix}(no file)</code>
+  if (!value) return <code>{prefix}{msg("(no file)")}</code>
   return <Popover title={msg("Full digest")} trigger={<Button className={styles.trigger} variant="quiet" aria-label={msg("Show full digest {{value0}}", { value0: value })}>
     <code>{prefix}{value.slice(0, 12)}{value.length > 12 ? '…' : ''}</code>
   </Button>}>

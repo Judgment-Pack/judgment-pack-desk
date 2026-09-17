@@ -73,13 +73,13 @@ export function BottomPane({
           <div className="desk-details-slot" ref={publishTarget} />
         </Tabs.Content>
         <Tabs.Content className="desk-console-body" value="connection">
-          <LogList entries={connection} empty="Nothing recorded on this connection yet." />
+          <LogList entries={connection} empty={msg("Nothing recorded on this connection yet.")} />
         </Tabs.Content>
         <Tabs.Content className="desk-console-body" value="calls">
-          <LogList entries={entries.filter((entry) => entry.channel === 'calls')} empty="No operations recorded yet." />
+          <LogList entries={entries.filter((entry) => entry.channel === 'calls')} empty={msg("No operations recorded yet.")} />
         </Tabs.Content>
         <Tabs.Content className="desk-console-body" value="files">
-          <LogList entries={files} empty="No file change has been reported yet." />
+          <LogList entries={files} empty={msg("No file change has been reported yet.")} />
         </Tabs.Content>
         <Tabs.Content className="desk-console-body" value="notices">
           <p className="desk-pane-empty">{msg(LATER)}</p>

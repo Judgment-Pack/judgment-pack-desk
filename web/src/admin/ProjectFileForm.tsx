@@ -224,8 +224,8 @@ export function ProjectFileForm<D>({
 
       {save.stale !== undefined && (
         <AlertPanel
-          heading="The file changed on disk — nothing was written."
-          detailLabel="digests"
+          heading={msg("The file changed on disk — nothing was written.")}
+          detailLabel={msg("digests")}
           detail={
             <>
               <span><Message text={"this page read<0/><1/>"} slots={[' ', <Digest value={save.stale.expectedSha256} />]} /></span>

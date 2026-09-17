@@ -1004,13 +1004,13 @@ export function PackView() {
           backRef={backButton}
           onBack={requestReturn}
           onSave={() => save()}
-          status={savePending ? "Saving…" : staleWrite ? "Save conflict — review the file changes below."
-            : saveFailure ? "Could not save — your changes are still in the editor."
-            : unaccounted ? "Save could not be confirmed. Reload the file to check."
-            : editor.outcome && !editor.verified ? "Save could not be verified. Review the details below."
-            : hasWork ? "Unsaved changes" : editor.verified ? "Saved" : "No changes to save"}
-          saveReason={savePending ? "Saving…" : !onPath ? "Waiting for the editable file."
-            : !dirty ? (unwritten ? "No completed changes to save." : (editor.verified ? "Saved" : "No changes to save")) : undefined}
+          status={savePending ? msg("Saving…") : staleWrite ? msg("Save conflict — review the file changes below.")
+            : saveFailure ? msg("Could not save — your changes are still in the editor.")
+            : unaccounted ? msg("Save could not be confirmed. Reload the file to check.")
+            : editor.outcome && !editor.verified ? msg("Save could not be verified. Review the details below.")
+            : hasWork ? msg("Unsaved changes") : editor.verified ? msg("Saved") : msg("No changes to save")}
+          saveReason={savePending ? msg("Saving…") : !onPath ? msg("Waiting for the editable file.")
+            : !dirty ? (unwritten ? msg("No completed changes to save.") : (editor.verified ? msg("Saved") : msg("No changes to save"))) : undefined}
           shape={shape}
           shapeAvailable={formAvailable}
           discardable={hasWork}
@@ -1065,7 +1065,7 @@ export function PackView() {
             */}
             {buffer.waiting !== undefined && (
               <AlertPanel
-                heading="This page is now about a different file"
+                heading={msg("This page is now about a different file")}
                 actions={
                   <Button variant="quiet" onClick={buffer.takeWaiting}>{msg("Open it and lose these changes")}</Button>
                 }
@@ -1081,7 +1081,7 @@ export function PackView() {
             */}
             {behindDisk && staleWrite === undefined && (
               <AlertPanel
-                heading="The file on disk has changed since this was loaded"
+                heading={msg("The file on disk has changed since this was loaded")}
                 actions={
                   <Button variant="quiet" onClick={reloadNow}>
                     {/*
@@ -1106,7 +1106,7 @@ export function PackView() {
             */}
             {unaccounted && staleWrite === undefined && (
               <AlertPanel
-                heading="This save finished, and this page has no account of it"
+                heading={msg("This save finished, and this page has no account of it")}
                 actions={
                   <Button variant="quiet" onClick={reloadNow}>
                     {hasWork ? msg("Reload, losing these changes") : msg("Reload")}

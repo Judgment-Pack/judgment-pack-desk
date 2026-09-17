@@ -1,6 +1,6 @@
 # Desk localization
 
-This work is in progress. The language plumbing and initial translations are implemented; the complete product copy and domain terminology have not yet been translated. Do not treat the presence of a language in the selector as release readiness. `npm --prefix web run i18n:check` reports the remaining catalogue gaps and must pass before this feature is ready to merge.
+Localization is available for testing while the catalogues are being completed. The language selector does not imply complete translation coverage. `npm --prefix web run i18n:check` reports remaining catalogue gaps; missing entries continue to fall back to English.
 
 ## Language choice
 
@@ -25,7 +25,8 @@ The preference covers replies, clarification questions, visible progress summari
 3. Add count messages to `src/i18n/plurals.json` with their English singular form. Provide each locale's applicable CLDR forms in the catalogue. Never build a plural by appending English `s`.
 4. Keep technical values outside translation functions, even if they resemble words. Display labels can differ from persisted keys and values. Do not pass pack text or assistant prose to `msg`.
 5. Memoized projections containing translated labels must depend on the locale. Pure document parsing and editor identity must not depend on it.
-6. Run `npm --prefix web run i18n:extract`, translate the new catalogue entries, then run `npm --prefix web run i18n:check`. The checker validates coverage and interpolation/element placeholders.
+6. Keep deferred Desk notices in their canonical English form with the dependency-free `sourceMessage` helper, and translate them with `systemMessage` when rendered. This preserves stored records and allows existing feedback to follow a language switch. Never mark source quotations, user content, or model prose as Desk notices.
+7. Run `npm --prefix web run i18n:extract`, translate the new catalogue entries, then run `npm --prefix web run i18n:check`. The checker validates coverage and interpolation/element placeholders.
 
 Do not substitute English values into missing catalogue entries to make coverage pass. Identical translations are legitimate for names such as JSON, but an untranslated paragraph is unfinished work. Translation drafts require terminology and contextual review, especially Cantonese, Portuguese variants, and decision-contract explanations.
 

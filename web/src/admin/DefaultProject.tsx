@@ -1,5 +1,6 @@
+import { sourceMessage } from '../i18n/source'
 import { Message } from '../i18n/Message'
-import { msg } from '../i18n'
+import { msg, useLocale } from '../i18n'
 /**
  * The Project card's one control: whether this desk opens **this** project
  * when it is launched without a directory.
@@ -54,10 +55,11 @@ const NO_DIGEST =
 
 const NOT_SAID = 'This desk has not said where its own configuration file is.'
 
-const SET = 'Saved. The next launch without a directory opens this project.'
-const CLEARED = 'Saved. This desk configures no default project.'
+const SET = sourceMessage('Saved. The next launch without a directory opens this project.')
+const CLEARED = sourceMessage('Saved. This desk configures no default project.')
 
 export function useDefaultProject(): { field: ReactNode; save: ReactNode } {
+  useLocale()
   const { config, desk } = useEffectiveConfig()
   const client = useQueryClient()
   const write = useUpdateProjectDefault()
@@ -94,12 +96,12 @@ export function useDefaultProject(): { field: ReactNode; save: ReactNode } {
       <CardField
         label={msg("Default project")}
         action={isThisProject ? (
-          <Button variant="secondary" disabled={blocked} onClick={() => commit(null, msg(CLEARED))}>{msg("Clear the default")}</Button>
+          <Button variant="secondary" disabled={blocked} onClick={() => commit(null, CLEARED)}>{msg("Clear the default")}</Button>
         ) : (
           <Button
             variant="secondary"
             disabled={blocked}
-            onClick={() => commit(chassis?.projectFile ?? null, msg(SET))}
+            onClick={() => commit(chassis?.projectFile ?? null, SET)}
           >{msg("Use this project as the default")}</Button>
         )}
         rule={
@@ -122,7 +124,7 @@ export function useDefaultProject(): { field: ReactNode; save: ReactNode } {
           <code>{configured}</code>
         )}{' '}
         {write.isPending && <span className="quiet">{msg("writing…")}</span>}
-        {said !== undefined && !write.isPending && <span className="quiet">{said}</span>}
+        {said !== undefined && !write.isPending && <span className="quiet">{msg(said)}</span>}
       </CardField>
     ),
     save: (
@@ -136,8 +138,8 @@ export function useDefaultProject(): { field: ReactNode; save: ReactNode } {
         )}
         {stale !== undefined && (
           <AlertPanel
-            heading="The configuration changed on disk. Nothing was written."
-            detailLabel="digests"
+            heading={msg("The configuration changed on disk. Nothing was written.")}
+            detailLabel={msg("digests")}
             detail={
               <>
                 <span><Message text={"this page read<0/><1/>"} slots={[' ', <Digest value={stale.expectedSha256} />]} /></span>

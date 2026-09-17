@@ -305,7 +305,7 @@ function MemberBlock({ unit, document: doc }: { unit: MemberUnit; document: Pack
     case 'metadata':
       return <MetadataBlock metadata={doc.metadata!} at="/metadata" />
     case 'extensions':
-      return <ExtensionsBlock extensions={doc.extensions} at="/extensions" heading="Extensions" />
+      return <ExtensionsBlock extensions={doc.extensions} at="/extensions" heading={msg("Extensions")} />
     default:
       return null
   }

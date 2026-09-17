@@ -124,12 +124,12 @@ export function PackEvaluate() {
       <TestNavigation packId={packId ?? ''} hasMatrix={Boolean(summary?.matrix || summary?.matrixPath)} />
       <details className={styles.notice}>
         <summary>{rehearsalSupported ? msg("Rehearsal · evaluates the loaded pack snapshot without appending an audit record.") : msg("Runtime behavior · this run may append an audit record.")}</summary>
-        <p className="note note-warn"><Message text={"<0/> This runs the runtime's<1/> tool, which may change or be removed without a compatibility promise. It authorizes nothing and executes nothing.<2/><3/>"} slots={[<strong>{msg("Experimental surface.")}</strong>, <code> experimental_evaluate</code>, ' ', rehearsalSupported ? (
+        <p className="note note-warn"><Message text={"<0/> This runs the runtime's<1/> tool, which may change or be removed without a compatibility promise. It authorizes nothing and executes nothing.<2/><3/>"} slots={[<strong>{msg("Experimental surface.")}</strong>, <code>{msg("experimental_evaluate")}</code>, ' ', rehearsalSupported ? (
             <>{msg("Every run here is declared a rehearsal (ADR-0028): the evaluation is identical, no audit record is appended, no reviewed set is consulted, and the payload carries the label.")}</>
           ) : capabilitiesKnown ? (
-            <><Message text={"This runtime predates the rehearsal declaration (jpack 0.18.0), so in a project whose <0/> declares an audit directory, each completed run appends one record to it."} slots={[<code>jpack.json</code>]} /></>
+            <><Message text={"This runtime predates the rehearsal declaration (jpack 0.18.0), so in a project whose <0/> declares an audit directory, each completed run appends one record to it."} slots={[<code>{msg("jpack.json")}</code>]} /></>
           ) : (
-            <><Message text={"This desk could not read the runtime's tool listing, so whether it accepts the rehearsal declaration is unknown rather than known to be no. Runs are sent without it, which means that in a project whose <0/> declares an audit directory, each completed run may append one record to it."} slots={[<code>jpack.json</code>]} /></>
+            <><Message text={"This desk could not read the runtime's tool listing, so whether it accepts the rehearsal declaration is unknown rather than known to be no. Runs are sent without it, which means that in a project whose <0/> declares an audit directory, each completed run may append one record to it."} slots={[<code>{msg("jpack.json")}</code>]} /></>
           )]} /></p>
       </details>
       <div className={styles.columns}>
@@ -154,7 +154,7 @@ export function PackEvaluate() {
           </label>
           {evidenceSupplied && (
             <>
-              <label htmlFor="evidence-editor"><Message text={"<0/> — requirement id to<1/><2/>, <3/>, or <4/>."} slots={[<strong>{msg("Evidence")}</strong>, ' ', <code>present</code>, <code>absent</code>, <code>unknown</code>]} /></label>
+              <label htmlFor="evidence-editor"><Message text={"<0/> — requirement id to<1/><2/>, <3/>, or <4/>."} slots={[<strong>{msg("Evidence")}</strong>, ' ', <code>{msg("present")}</code>, <code>{msg("absent")}</code>, <code>{msg("unknown")}</code>]} /></label>
               <TextArea
                 id="evidence-editor"
                 aria-invalid={Boolean(evidenceError)}

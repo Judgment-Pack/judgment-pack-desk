@@ -1,5 +1,5 @@
 import { Message } from '../i18n/Message'
-import { msg, useLocale, formatDate } from '../i18n'
+import { msg, useLocale, systemMessage, formatDate } from '../i18n'
 import { Fragment, useState, type RefObject } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { DropdownMenu } from 'radix-ui'
@@ -65,7 +65,7 @@ export function ChatHistoryList({ packId, activeId, onNavigate, compact = false 
     setTimeout(() => URL.revokeObjectURL(url), 0)
   }
   return <section className={styles.historyBody} data-compact={compact || undefined} aria-label={msg("Chat history")}>
-    {error && <div role="alert"><p>{error}</p><Button onClick={() => ready ? store?.retrySave() : void store?.load()}>{msg("Retry")}</Button></div>}
+    {error && <div role="alert"><p>{systemMessage(error)}</p><Button onClick={() => ready ? store?.retrySave() : void store?.load()}>{msg("Retry")}</Button></div>}
     {!ready && !error && <p role="status">{msg("Loading chat history…")}</p>}
     <div className={styles.historySearch}>
     <Input autoFocus aria-label={msg("Search chats")} value={query} onChange={event => setQuery(event.target.value)} placeholder={msg("Search chats…")} />

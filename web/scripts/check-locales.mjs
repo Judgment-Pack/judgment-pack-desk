@@ -30,7 +30,7 @@ function inspect(file) {
   }
   walk(ast, node => {
     let argument
-    if (node.type === 'CallExpression' && node.callee.name === 'msg') argument = node.arguments[0]
+    if (node.type === 'CallExpression' && ['msg', 'sourceMessage'].includes(node.callee.name)) argument = node.arguments[0]
     if (node.type === 'JSXOpeningElement' && node.name.name === 'Message') argument = node.attributes.find(a => a.name?.name === 'text')?.value
     if (!argument) return
     const key = value(argument)

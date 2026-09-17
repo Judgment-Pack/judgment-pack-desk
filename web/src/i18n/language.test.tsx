@@ -1,9 +1,11 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { initializeLanguage, i18n, LANGUAGE_KEY, language, languagePreference, languageReady, formatDate, formatNumber, msg, setLanguage, useLocale } from './index'
+import { initializeLanguage, i18n, LANGUAGE_KEY, language, languagePreference, languageReady, formatDate, formatNumber, msg, setLanguage, systemMessage, useLocale } from './index'
 import { Message } from './Message'
 import { currentLanguage } from './locales'
+import { sourceMessage } from './source'
+import { CodeBlock } from '../ui/CodeBlock'
 
 afterEach(async () => { cleanup(); vi.restoreAllMocks(); localStorage.clear(); setLanguage('en'); await languageReady(); localStorage.clear() })
 
@@ -95,6 +97,33 @@ describe('personal language preference', () => {
     await Promise.all([previous, languageReady()])
     expect(language()).toBe('es')
     expect(document.documentElement.lang).toBe('es')
+  })
+
+  it('localizes saved Desk notices at display time while keeping their original values', async () => {
+    const file = 'Save <script>source</script>.txt'
+    const source = sourceMessage('{{value0}} is not a text file.', { value0: file })
+    setLanguage('fr'); await languageReady()
+    expect(source).toBe(`${file} is not a text file.`)
+    expect(systemMessage(source)).toBe(`${file} n’est pas un fichier texte.`)
+    setLanguage('de'); await languageReady()
+    expect(systemMessage(source)).toBe(`${file} ist keine Textdatei.`)
+    expect(sourceMessage('{{value0}} is not a text file.', { value0: file })).toBe(source)
+    expect(systemMessage('Provider diagnostic: Save')).toBe('Provider diagnostic: Save')
+  })
+
+  it('updates existing copy feedback without changing the copied source', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', Object.assign(Object.create(navigator), { clipboard: { writeText } }))
+    render(<CodeBlock text={'{"outcomeId":"Save"}'} />)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Copy JSON' })) })
+    expect(screen.getByRole('status').textContent).toBe('Copied')
+    await act(async () => { setLanguage('fr'); await languageReady() })
+    expect(screen.getByRole('status').textContent).toBe('Copié')
+    await act(async () => { setLanguage('ja'); await languageReady() })
+    expect(screen.getByRole('status').textContent).toBe(msg('Copied'))
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('{"outcomeId":"Save"}')
+    expect(document.querySelector('pre code')?.textContent).toBe('{"outcomeId":"Save"}')
+    vi.unstubAllGlobals()
   })
 
 })
