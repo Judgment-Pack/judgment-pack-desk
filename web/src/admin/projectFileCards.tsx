@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../i18n'
 /**
  * The fields on the cards that write the project's own configuration file, and
  * nothing else about them.
@@ -63,6 +64,7 @@ interface OrganizationDraft {
 }
 
 export function OrganizationForm() {
+  useLocale()
   const { config } = useEffectiveConfig()
   const seed: OrganizationDraft = {
     name: config.organization.name ?? '',
@@ -78,8 +80,8 @@ export function OrganizationForm() {
   return (
     <ProjectFileForm state={state} placed={['organization.name', 'organization.mark']}>
       <Field
-        label="Name"
-        hint="Blank writes none, and the header then shows the desk's own name."
+        label={msg("Name")}
+        hint={msg("Blank writes none, and the header then shows the desk's own name.")}
         error={problemAt(save, 'organization.name')}
       >
         {(wiring) => (
@@ -91,7 +93,7 @@ export function OrganizationForm() {
           />
         )}
       </Field>
-      <Field label="Mark" hint={ORGANIZATION_MARK_SAYS} error={problemAt(save, 'organization.mark')}>
+      <Field label={msg("Mark")} hint={ORGANIZATION_MARK_SAYS} error={problemAt(save, 'organization.mark')}>
         {(wiring) => (
           <TextArea
             {...wiring}
@@ -121,9 +123,10 @@ export function OrganizationForm() {
  * the member back in the Storage form's draft.
  */
 export function StorageKind() {
+  useLocale()
   const { config } = useEffectiveConfig()
   return (
-    <CardField label="Kind" rule={STORAGE_KIND_SAYS}>
+    <CardField label={msg("Kind")} rule={STORAGE_KIND_SAYS}>
       <code>{config.storage.packs.kind}</code>
     </CardField>
   )
@@ -135,6 +138,7 @@ interface StorageDraft {
 }
 
 export function StorageForm({ dirSays }: { dirSays: string }) {
+  useLocale()
   const { config } = useEffectiveConfig()
   const packs = config.storage.packs
   const seed: StorageDraft = { dir: packs.dir, idBase: packs.idBase }
@@ -158,7 +162,7 @@ export function StorageForm({ dirSays }: { dirSays: string }) {
           for this member are several and specific, and each names itself when
           it is the one that is broken. */}
       <Field
-        label="Packs go to"
+        label={msg("Packs go to")}
         hint={`${dirSays} — ${NO_CONTROL_CHARACTERS}`}
         error={problemAt(save, 'storage.packs.dir')}
       >
@@ -172,7 +176,7 @@ export function StorageForm({ dirSays }: { dirSays: string }) {
         )}
       </Field>
       <Field
-        label="Id prefix"
+        label={msg("Id prefix")}
         hint={`${ID_BASE_SAYS} — ${NO_CONTROL_CHARACTERS}. ${ID_BASE_NORMALISES}`}
         error={problemAt(save, 'storage.packs.idBase')}
       >

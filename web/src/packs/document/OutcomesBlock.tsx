@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../../i18n'
 import { PACK_TERMS } from '../terminology'
 /**
  * The outcomes this pack can produce, as chips, with the fallback tagged.
@@ -25,6 +26,7 @@ export function OutcomesBlock({
   fallback: string | undefined
   at: string
 }) {
+  useLocale()
   const { editing } = useEditing()
   return (
     <Block pointer={at}>
@@ -37,7 +39,7 @@ export function OutcomesBlock({
             <li key={`misshapen-${index}`}>
               <MisshapenMember
                 pointer={`${at}/${index}`}
-                label={`Outcome ${index + 1}`}
+                label={msg("Outcome {{value0}}", { value0: index + 1 })}
                 expected="an object"
                 value={outcome}
               />
@@ -51,7 +53,7 @@ export function OutcomesBlock({
                 <>
                   <span className={styles.chipLabel}>{outcome.label}</span>
                   <code className={styles.id}>{outcome.id}</code>
-                  {fallback === outcome.id && <span className={styles.tag}>fallback</span>}
+                  {fallback === outcome.id && <span className={styles.tag}>{msg("fallback")}</span>}
                   {outcome.description !== undefined && (
                     <p className={styles.chipNote}>{outcome.description}</p>
                   )}
@@ -68,12 +70,13 @@ export function OutcomesBlock({
 }
 
 function OutcomeForm({ at, fallback }: { at: string; fallback: boolean }) {
+  useLocale()
   return (
     <>
-      <StringField pointer={`${at}/id`} label="id" />
-      <StringField pointer={`${at}/label`} label="label" />
-      <TextField pointer={`${at}/description`} label="description" rows={2} />
-      {fallback && <span className={styles.tag}>fallback</span>}
+      <StringField pointer={`${at}/id`} label={msg("id")} />
+      <StringField pointer={`${at}/label`} label={msg("label")} />
+      <TextField pointer={`${at}/description`} label={msg("description")} rows={2} />
+      {fallback && <span className={styles.tag}>{msg("fallback")}</span>}
     </>
   )
 }

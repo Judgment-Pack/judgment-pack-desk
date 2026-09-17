@@ -1,3 +1,6 @@
+import { msg } from '../../i18n'
+import { Message } from '../../i18n/Message'
+import { useLocale } from '../../i18n'
 /**
  * A member whose bytes are not the shape this page draws.
  *
@@ -36,6 +39,7 @@ export function MisshapenMember({
   /** Inside a card or a field, where a heading would be the wrong element. */
   compact?: boolean
 }) {
+  useLocale()
   return (
     <Block pointer={pointer}>
       {compact === true ? (
@@ -43,11 +47,7 @@ export function MisshapenMember({
       ) : (
         <h2 className={styles.heading}>{label}</h2>
       )}
-      <p className={styles.note}>
-        This member is not the shape this page draws: <code>{pointer}</code> holds{' '}
-        {describe(value)} and this page draws {expected}. Its bytes are below and in the JSON
-        view, which is where they can be changed.
-      </p>
+      <p className={styles.note}><Message text={"This member is not the shape this page draws: <0/> holds<1/><2/> and this page draws <3/>. Its bytes are below and in the JSON view, which is where they can be changed."} slots={[<code>{pointer}</code>, ' ', describe(value), expected]} /></p>
       <pre className={styles.raw}>
         <code>{JSON.stringify(value, null, 2) ?? String(value)}</code>
       </pre>
@@ -58,18 +58,18 @@ export function MisshapenMember({
 /** What is actually there, in a word. */
 export function describe(value: unknown): string {
   if (value === null) return 'null'
-  if (Array.isArray(value)) return 'a list'
+  if (Array.isArray(value)) return msg("a list")
   switch (typeof value) {
     case 'object':
-      return 'an object'
+      return msg("an object")
     case 'string':
-      return 'a string'
+      return msg("a string")
     case 'number':
-      return 'a number'
+      return msg("a number")
     case 'boolean':
-      return 'a true/false value'
+      return msg("a true/false value")
     default:
-      return 'nothing this page can read'
+      return msg("nothing this page can read")
   }
 }
 
@@ -99,13 +99,14 @@ export function Shaped({
   value: unknown
   children: ReactNode
 }) {
+  useLocale()
   const right = expects === 'list' ? Array.isArray(value) : isRecord(value)
   if (right) return <>{children}</>
   return (
     <MisshapenMember
       pointer={pointer}
       label={label}
-      expected={expects === 'list' ? 'a list' : 'an object'}
+      expected={expects === 'list' ? "a list" : "an object"}
       value={value}
       compact
     />

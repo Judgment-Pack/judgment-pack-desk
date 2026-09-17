@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../../i18n'
 /**
  * The pack route, standing up, with the chassis and the runtime both stubbed.
  *
@@ -318,6 +319,7 @@ export function drawPack(
   const stub = stubClient(handlers)
   const revealed: string[] = []
   const Mounted = ({ children }: { children?: ReactNode }) => {
+  useLocale()
     const [open] = useState(options.inspector === true)
     const details = slotFor(open, options.tab ?? null, revealed)
     return (
@@ -337,9 +339,9 @@ export function drawPack(
     [
       {
         path: '/packs/:packId',
-        element: <Mounted>{options.nav && <Link to="/elsewhere">go elsewhere</Link>}</Mounted>
+        element: <Mounted>{options.nav && <Link to="/elsewhere">{msg("go elsewhere")}</Link>}</Mounted>
       },
-      { path: '/elsewhere', element: <p>elsewhere</p> }
+      { path: '/elsewhere', element: <p>{msg("elsewhere")}</p> }
     ],
     { initialEntries: [options.path ?? '/packs/vendor-onboarding'] }
   )

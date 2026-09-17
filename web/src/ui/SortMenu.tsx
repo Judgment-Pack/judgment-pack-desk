@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { useLocale } from '../i18n'
 import { DropdownMenu } from 'radix-ui'
 import { IconCheck, IconChevronDown } from '../shell/icons'
 import { Button } from './Button'
@@ -11,8 +13,9 @@ export function SortMenu({ label, value, options, onValueChange }: {
   options: readonly SelectOption[]
   onValueChange: (value: string) => void
 }) {
+  useLocale()
   return <DropdownMenu.Root>
-    <DropdownMenu.Trigger asChild><Button variant="quiet" aria-label={label}>Sort <IconChevronDown /></Button></DropdownMenu.Trigger>
+    <DropdownMenu.Trigger asChild><Button variant="quiet" aria-label={label}><Message text={"Sort <0/>"} slots={[<IconChevronDown />]} /></Button></DropdownMenu.Trigger>
     <DropdownMenu.Portal>
       <DropdownMenu.Content className="desk-menu" align="end" sideOffset={6} collisionPadding={16} aria-label={label}>
         <DropdownMenu.RadioGroup value={value} onValueChange={onValueChange}>

@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../../i18n'
 import { PACK_TERMS, valueLabel } from '../terminology'
 /**
  * One rule, in the document's own order.
@@ -32,6 +33,7 @@ export function RuleCard({
     onKeyDown: (event: KeyboardEvent<HTMLElement>) => void
   }
 }) {
+  useLocale()
   const { editing } = useEditing()
   if (editing) {
     return (
@@ -71,7 +73,7 @@ export function RuleCard({
       )}
       {rule.when !== undefined && (
         <>
-          <p className={styles.fieldLabel}>when</p>
+          <p className={styles.fieldLabel}>{msg("when")}</p>
           <ConditionTree condition={rule.when} at={`${at}/when`} />
         </>
       )}
@@ -86,13 +88,13 @@ export function RuleCard({
       {rule.evidenceRequirementRefs !== undefined && (
         <Shaped
           pointer={`${at}/evidenceRequirementRefs`}
-          label="evidence"
+          label={msg("evidence")}
           expects="list"
           value={rule.evidenceRequirementRefs}
         >
       {Array.isArray(rule.evidenceRequirementRefs) && rule.evidenceRequirementRefs!.length > 0 && (
         <Block pointer={`${at}/evidenceRequirementRefs`} as="p" className={styles.refs}>
-          <span className={styles.fieldLabel}>evidence</span>
+          <span className={styles.fieldLabel}>{msg("evidence")}</span>
           {rule.evidenceRequirementRefs!.map((ref) => (
             <code key={ref} className={styles.id}>
               {ref}
@@ -105,13 +107,13 @@ export function RuleCard({
       {rule.sourceRefs !== undefined && (
         <Shaped
           pointer={`${at}/sourceRefs`}
-          label="sources"
+          label={msg("sources")}
           expects="list"
           value={rule.sourceRefs}
         >
       {Array.isArray(rule.sourceRefs) && rule.sourceRefs!.length > 0 && (
         <Block pointer={`${at}/sourceRefs`} as="p" className={styles.refs}>
-          <span className={styles.fieldLabel}>sources</span>
+          <span className={styles.fieldLabel}>{msg("sources")}</span>
           {rule.sourceRefs!.map((ref) => (
             <code key={ref} className={styles.id}>
               {ref}

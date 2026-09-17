@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 /**
  * One sentence about the check, in the tense of what has actually happened —
  * printed identically whether the document is being read or edited.
@@ -48,6 +50,7 @@ export function CheckStrip({
   /** The lock line, where the project's listing carries one. */
   children?: ReactNode
 }) {
+  useLocale()
   return (
     <div className={[styles.strip, !unavailable && !fetching && !stale && report?.status === 'valid' && !rootAnchored.length && !digestsDisagree && !disagreement.length ? styles.routine : ''].join(' ')}>
       <p className={styles.check}>
@@ -56,10 +59,10 @@ export function CheckStrip({
           // flight. `isPending` is about there being no data, which a disabled
           // query satisfies for ever.
           (fetching
-            ? 'Checking…'
+            ? msg("Checking…")
             : stale
               ? (behind ??
-                'This check ran over different bytes from the ones shown, so nothing it found is placed on this document.')
+                msg("This check ran over different bytes from the ones shown, so nothing it found is placed on this document."))
               : layersReached(report).text)}
       </p>
       {provenance !== undefined && <p className={styles.checkWhat}>{provenance}</p>}
@@ -75,22 +78,16 @@ export function CheckStrip({
           {rootAnchored.map((entry, index) => (
             <li key={`${entry.diagnostic.code}-${index}`}>
               <code>{entry.diagnostic.code}</code> {entry.diagnostic.message}{' '}
-              <code>{entry.named === '' ? 'the document' : entry.named}</code>
+              <code>{entry.named === '' ? msg("the document") : entry.named}</code>
             </li>
           ))}
         </ul>
       )}
       {digestsDisagree && (
-        <p className={styles.warning} role="status">
-          The runtime served bytes with a different digest from the file on disk. These are two
-          answers about one file, and they do not describe one revision.
-        </p>
+        <p className={styles.warning} role="status">{msg("The runtime served bytes with a different digest from the file on disk. These are two answers about one file, and they do not describe one revision.")}</p>
       )}
       {disagreement.length > 0 && (
-        <p className={styles.warning} role="status">
-          The desk will not edit around this file: {disagreement[0]!.reason} at{' '}
-          <code>{disagreement[0]!.pointer === '' ? 'the document' : disagreement[0]!.pointer}</code>.
-        </p>
+        <p className={styles.warning} role="status"><Message text={"The desk will not edit around this file: <0/> at<1/><2/>."} slots={[disagreement[0]!.reason, ' ', <code>{disagreement[0]!.pointer === '' ? msg("the document") : disagreement[0]!.pointer}</code>]} /></p>
       )}
       {children}
     </div>

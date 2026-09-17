@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 import { Link, useParams } from 'react-router-dom'
 import { CoverageReport } from '../components/CoverageReport'
 import { MatrixRowList } from '../components/MatrixRowList'
@@ -25,6 +27,7 @@ import { PackNavigation, TestNavigation } from '../packs/PackWorkspace'
  * payload says so in its own label, which is shown rather than summarized.
  */
 export function MatrixView() {
+  useLocale()
   const { packId } = useParams<{ packId?: string }>()
   const { status } = useMcp()
   const inventory = usePacks()
@@ -36,79 +39,71 @@ export function MatrixView() {
   }
   const configured = (inventory.data?.packs ?? []).filter(pack => pack.matrix && (!packId || pack.id === packId))
   return <article className="detail" data-measure="full" data-layout="page">
-    <PageHeader variant={packId ? 'context' : 'collection'} title="Packs" context={packId} titleHref={packId ? '/packs' : undefined}
+    <PageHeader variant={packId ? 'context' : 'collection'} title={msg("Packs")} context={packId} titleHref={packId ? "/packs" : undefined}
       navigation={packId ? <PackNavigation packId={packId} current="test" /> : <PacksNavigation current="tests" />}
       actions={<Button onClick={run} disabled={status !== 'ready' || isFetching}>
-        {isFetching ? 'Running…' : packId ? 'Run tests' : 'Run all tests'}
+        {isFetching ? msg("Running…") : packId ? msg("Run tests") : msg("Run all tests")}
       </Button>} />
     <PageBody width="full">
       {packId && <TestNavigation packId={packId} saved hasMatrix />}
-      {isFetching && <Loading what="test results" />}
-      {error ? <ErrorBox title="Could not run pack tests" error={error} /> : data ? <MatrixResults data={data} packId={packId} /> : <>
-        <h2 className="section-title">{packId ? 'Saved cases' : 'All pack tests'}</h2>
-        <p className="quiet">Run saved cases to check expected outcomes and find coverage gaps.</p>
-        {inventory.error ? <ErrorBox title="Could not list packs" error={inventory.error} />
-          : inventory.isPending ? <Loading what="packs with saved cases" />
+      {isFetching && <Loading what={msg("test results")} />}
+      {error ? <ErrorBox title={msg("Could not run pack tests")} error={error} /> : data ? <MatrixResults data={data} packId={packId} /> : <>
+        <h2 className="section-title">{packId ? msg("Saved cases") : msg("All pack tests")}</h2>
+        <p className="quiet">{msg("Run saved cases to check expected outcomes and find coverage gaps.")}</p>
+        {inventory.error ? <ErrorBox title={msg("Could not list packs")} error={inventory.error} />
+          : inventory.isPending ? <Loading what={msg("packs with saved cases")} />
           : configured.length ? <ul className="cards">
             {configured.map(pack => <li key={pack.id} className="card">
               <Link to={`/packs/${encodeURIComponent(pack.id)}/matrix`}>{pack.id}</Link>
-              <p className="quiet">Saved cases configured · No results loaded</p>
+              <p className="quiet">{msg("Saved cases configured · No results loaded")}</p>
             </li>)}
-          </ul> : <Empty>No saved test cases are configured{packId ? ' for this pack' : ''}.</Empty>}
+          </ul> : <Empty><Message text={"No saved test cases are configured<0/>."} slots={[packId ? msg(" for this pack") : '']} /></Empty>}
       </>}
     </PageBody>
   </article>
 }
 
 function MatrixResults({ data, packId }: { data: PackTest; packId?: string }) {
+  useLocale()
   const packs = data.packs ?? []
   return <>
       <header className="detail-head">
-        <h2 className="section-title">{packId ? 'Saved cases' : 'All pack tests'}</h2>
+        <h2 className="section-title">{packId ? msg("Saved cases") : msg("All pack tests")}</h2>
         <p className="ids">
           <Pill tone={statusTone(data.status)}>{data.status}</Pill>
-          <span>
-            {data.summary.passed} of {data.summary.total}{' '}
-            {data.summary.total === 1 ? 'row' : 'rows'} passed
-          </span>
+          <span><Message text={"<0/> of <1/><2/><3/> passed"} slots={[data.summary.passed, data.summary.total, ' ', data.summary.total === 1 ? msg("row") : msg("rows")]} /></span>
           {data.summary.mismatched > 0 && (
-            <Pill tone="danger">{data.summary.mismatched} mismatched</Pill>
+            <Pill tone="danger"><Message text={"<0/> mismatched"} slots={[data.summary.mismatched]} /></Pill>
           )}
-          <span className="quiet">Last run</span>
+          <span className="quiet">{msg("Last run")}</span>
         </p>
         <p className="meta">
           {data.configPath && <code>{data.configPath}</code>}
-          {data.configVersion && <span>configVersion {data.configVersion}</span>}
-          {data.evaluatorSpecVersion && <span>evaluator {data.evaluatorSpecVersion}</span>}
-          {data.experimental && <span>experimental surface</span>}
+          {data.configVersion && <span><Message text={"configVersion <0/>"} slots={[data.configVersion]} /></span>}
+          {data.evaluatorSpecVersion && <span><Message text={"evaluator <0/>"} slots={[data.evaluatorSpecVersion]} /></span>}
+          {data.experimental && <span>{msg("experimental surface")}</span>}
         </p>
         {data.status === 'skipped' && (
-          <p className="note note-warn">
-            No row ran. A run in which nothing ran is reported skipped and never
-            passed — a green gate over zero rows would say a project was tested
-            when nothing was.
-          </p>
+          <p className="note note-warn">{msg("No row ran. A run in which nothing ran is reported skipped and never passed — a green gate over zero rows would say a project was tested when nothing was.")}</p>
         )}
       </header>
 
       {packs.length === 0 ? (
-        <Empty>
-          This project declares no pack with a matrix. Add a <code>matrix</code> to
-          an entry in <code>jpack.json</code> to see its rows here.
-        </Empty>
+        <Empty><Message text={"This project declares no pack with a matrix. Add a <0/> to an entry in <1/> to see its rows here."} slots={[<code>matrix</code>, <code>jpack.json</code>]} /></Empty>
       ) : (
         packs.map((entry) => <PackMatrixEntry key={entry.id} entry={entry} />)
       )}
 
       {data.label && (
         <p className="note">
-          <strong>What this reports.</strong> {data.label}
+          <strong>{msg("What this reports.")}</strong> {data.label}
         </p>
       )}
   </>
 }
 
 function PackMatrixEntry({ entry }: { entry: PackTestEntry }) {
+  useLocale()
   const rows = entry.rows ?? []
   return (
     <section className="matrix-entry">
@@ -118,29 +113,23 @@ function PackMatrixEntry({ entry }: { entry: PackTestEntry }) {
         </h2>
         <Pill tone={statusTone(entry.status)}>{entry.status}</Pill>
         {entry.packVersion && <Pill tone="quiet">v{entry.packVersion}</Pill>}
-        <span className="quiet">
-          {entry.summary.passed}/{entry.summary.total} rows
-        </span>
+        <span className="quiet"><Message text={"<0/>/<1/> rows"} slots={[entry.summary.passed, entry.summary.total]} /></span>
       </header>
       <p className="meta">
         {entry.matrixPath && <code>{entry.matrixPath}</code>}
         {entry.origins?.map((origin) => (
-          <span key={origin.origin}>
-            {origin.rows} {origin.rows === 1 ? 'row' : 'rows'} from {origin.origin}
-          </span>
+          <span key={origin.origin}><Message text={"<0/> <1/> from <2/>"} slots={[origin.rows, origin.rows === 1 ? msg("row") : msg("rows"), origin.origin]} /></span>
         ))}
       </p>
       {entry.detail && <p className="note note-warn">{entry.detail}</p>}
 
-      <Section title="Coverage">
+      <Section title={msg("Coverage")}>
         <CoverageReport coverage={entry.coverage} />
       </Section>
 
-      <Section title="Rows" count={rows.length}>
+      <Section title={msg("Rows")} count={rows.length}>
         {rows.length === 0 ? (
-          <Empty>
-            No rows were reported for this pack{entry.detail ? ' — the note above says why' : ''}.
-          </Empty>
+          <Empty><Message text={"No rows were reported for this pack<0/>."} slots={[entry.detail ? msg(" — the note above says why") : '']} /></Empty>
         ) : (
           <MatrixRowList rows={rows} />
         )}

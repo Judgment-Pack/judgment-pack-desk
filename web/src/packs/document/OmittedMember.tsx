@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../../i18n'
 /**
  * The line a member the document does not declare gets.
  *
@@ -36,21 +37,20 @@ export function OmittedMember({
   /** What the absence means, where the document's own vocabulary says. */
   note?: string
 }) {
+  useLocale()
   const { editing, write } = useEditing()
   const starter = starterFor(pointer)
   return (
     <Block pointer={pointer} className={styles.omitted}>
       <h2 className={styles.heading}>{label}</h2>
       <p className={styles.omittedLine}>
-        <span className={styles.omittedTag}>not declared</span>
+        <span className={styles.omittedTag}>{msg("not declared")}</span>
         {note !== undefined && <span> {note}</span>}
         {editing && starter !== undefined && (
           <Button
             variant="quiet"
             onClick={() => write((current) => setRawJson(current, pointer, starter))}
-          >
-            Declare it
-          </Button>
+          >{msg("Declare it")}</Button>
         )}
       </p>
     </Block>

@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../../i18n'
 import { PACK_TERMS } from '../terminology'
 /**
  * The rules, in the document's own order — which is the order they apply in.
@@ -15,6 +16,7 @@ import styles from './PackDocument.module.css'
 import { MisshapenMember, isRecord } from './MisshapenMember'
 
 export function RulesBlock({ rules, at }: { rules: Rule[]; at: string }) {
+  useLocale()
   const { editing } = useEditing()
   const { move, announcement, onCardKey } = useCardOrder(at, rules.length)
   return (
@@ -29,7 +31,7 @@ export function RulesBlock({ rules, at }: { rules: Rule[]; at: string }) {
             <li key={`misshapen-${index}`}>
               <MisshapenMember
                 pointer={`${at}/${index}`}
-                label={`Rule ${index + 1}`}
+                label={msg("Rule {{value0}}", { value0: index + 1 })}
                 expected="an object"
                 value={rule}
               />

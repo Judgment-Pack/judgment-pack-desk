@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../../i18n'
 /**
  * One line, where the project keeps a reviewed set.
  *
@@ -21,11 +22,10 @@ import styles from './LockLine.module.css'
 export const LOCK_FILE = 'jpack.lock.json'
 
 export function LockLine({ paths }: { paths: readonly string[] }) {
+  useLocale()
   const listed = paths.some((path) => path === LOCK_FILE || path.endsWith(`/${LOCK_FILE}`))
   if (!listed) return null
   return (
-    <p className={styles.lock}>
-      This project keeps a reviewed set. Updating it is the project&rsquo;s own step.
-    </p>
+    <p className={styles.lock}>{msg("This project keeps a reviewed set. Updating it is the project’s own step.")}</p>
   )
 }

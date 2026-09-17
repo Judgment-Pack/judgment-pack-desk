@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../i18n'
 import type { Evaluation } from '../mcp/types'
 import { Section } from './primitives'
 
@@ -19,6 +20,7 @@ export function DispositionDiff({
   previous: Evaluation
   current: Evaluation
 }) {
+  useLocale()
   const rows: DiffRow[] = [
     scalarRow('Kind', previous.disposition?.kind, current.disposition?.kind),
     scalarRow('Outcome id', previous.disposition?.outcomeId, current.disposition?.outcomeId),
@@ -34,24 +36,18 @@ export function DispositionDiff({
   const changed = rows.filter((row) => row.changed)
 
   return (
-    <Section title="What changed" count={changed.length}>
+    <Section title={msg("What changed")} count={changed.length}>
       {changed.length === 0 ? (
-        <p className="note">
-          The disposition is unchanged from the previous run: same kind, outcome,
-          reasons, handoff and target.
-        </p>
+        <p className="note">{msg("The disposition is unchanged from the previous run: same kind, outcome, reasons, handoff and target.")}</p>
       ) : (
-        <p className="note">
-          Previous run on the left, this run on the right. Unchanged members are
-          listed too, so the diff never hides what held.
-        </p>
+        <p className="note">{msg("Previous run on the left, this run on the right. Unchanged members are listed too, so the diff never hides what held.")}</p>
       )}
       <table className="diff">
         <thead>
           <tr>
-            <th scope="col">Member</th>
-            <th scope="col">Previous</th>
-            <th scope="col">This run</th>
+            <th scope="col">{msg("Member")}</th>
+            <th scope="col">{msg("Previous")}</th>
+            <th scope="col">{msg("This run")}</th>
           </tr>
         </thead>
         <tbody>
@@ -101,7 +97,8 @@ function targetOf(payload: Evaluation): string | undefined {
 
 /** An absent member reads as absent, never as an empty cell that looks like a bug. */
 function Value({ text }: { text: string | undefined }) {
-  if (text === undefined) return <span className="quiet">absent</span>
-  if (text === '') return <span className="quiet">empty</span>
+  useLocale()
+  if (text === undefined) return <span className="quiet">{msg("absent")}</span>
+  if (text === '') return <span className="quiet">{msg("empty")}</span>
   return <code>{text}</code>
 }

@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 /**
  * **Models**: which of this endpoint's models this desk may run, and which one
  * a run opens on.
@@ -67,6 +69,7 @@ export function ModelChoice({
   /** The same, about `assistant.endpoint.model`. */
   setProblem: string | undefined
 }) {
+  useLocale()
   const [typed, setTyped] = useState('')
   const [search, setSearch] = useState('')
   const hintId = useId()
@@ -86,16 +89,16 @@ export function ModelChoice({
 
   return (
     <fieldset className={styles.choice}>
-      <legend className={styles.srOnly}>Models</legend>
-      <p id={hintId} className="quiet">{HOW}</p>
-      <Field label="Search models">
+      <legend className={styles.srOnly}>{msg("Models")}</legend>
+      <p id={hintId} className="quiet">{msg(HOW)}</p>
+      <Field label={msg("Search models")}>
         {(wiring) => <Input {...wiring} type="search" value={search}
           onChange={(event) => setSearch(event.target.value)} />}
       </Field>
-      <p className="quiet" role="status">{draft.models.length} enabled · {filtered.length} shown</p>
+      <p className="quiet" role="status"><Message text={"<0/> enabled · <1/> shown"} slots={[draft.models.length, filtered.length]} /></p>
       <div className={styles.list}>
         {filtered.length > 0 && <div className={styles.heading} aria-hidden="true">
-          <span>Enabled / Model</span><span>Default</span>
+          <span>{msg("Enabled / Model")}</span><span>{msg("Default")}</span>
         </div>}
         {filtered.map((row) => {
           const enabled = draft.models.includes(row.id)
@@ -118,26 +121,26 @@ export function ModelChoice({
                 <input
                   type="radio"
                   name="assistant-default-model"
-                  aria-label={`Default model: ${row.label}`}
+                  aria-label={msg("Default model: {{value0}}", { value0: row.label })}
                   aria-describedby={hintId}
                   checked={draft.model === row.id}
                   onChange={() => onChange(withDefaultModel(withModel(draft, row.id, true), row.id))}
                 />
-                <span className={styles.srOnly}>Default</span>
+                <span className={styles.srOnly}>{msg("Default")}</span>
               </label>
             </div>
           )
         })}
       </div>
       {filtered.length === 0 && <p className="quiet">
-        {query ? 'No models match your search.' : 'Test the connection to load models, or add a model below.'}
+        {query ? msg("No models match your search.") : msg("Test the connection to load models, or add a model below.")}
       </p>}
-      <p className="quiet">Choose a model that supports text and tools; a listing alone does not confirm those capabilities.</p>
+      <p className="quiet">{msg("Choose a model that supports text and tools; a listing alone does not confirm those capabilities.")}</p>
 
       {/* **Add sits with the field, above the hint**, because it is what the
           field is for: a control a line below its own input, under a sentence
           about the input, reads as a control about the sentence. */}
-      <Field label="Other model… (type an id)" hint={TYPED} error={adding}>
+      <Field label={msg("Other model… (type an id)")} hint={msg(TYPED)} error={adding}>
         {(wiring) => (
           <span className="model-add">
             <Input
@@ -154,9 +157,7 @@ export function ModelChoice({
                 add()
               }}
             />
-            <Button disabled={typed.trim() === '' || adding !== undefined} onClick={add}>
-              Add
-            </Button>
+            <Button disabled={typed.trim() === '' || adding !== undefined} onClick={add}>{msg("Add")}</Button>
           </span>
         )}
       </Field>

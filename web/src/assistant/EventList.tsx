@@ -1,3 +1,6 @@
+import { msg } from '../i18n'
+import { Message } from '../i18n/Message'
+import { useLocale } from '../i18n'
 /**
  * What the assistant did, as one line per thing it did.
  *
@@ -50,17 +53,15 @@ const COMPACT: ReadonlySet<AssistantEvent['type']> = new Set([
 export function describeEvent(event: AssistantEvent): string {
   switch (event.type) {
     case 'tool_call':
-      return `called ${event.name}(${Object.keys((event.args ?? {}) as object).join(', ')})`
+      return msg("called {{value0}}({{value1}})", { value0: event.name, value1: Object.keys((event.args ?? {}) as object).join(', ') })
     case 'tool_result':
-      return `${event.name} answered ${byteCount(event.text)} bytes${
-        event.isError ? ' (isError)' : ''
-      }${event.structured === undefined ? '' : ' with structured content'}`
+      return msg("{{value0}} answered {{value1}} bytes{{value2}}{{value3}}", { value0: event.name, value1: byteCount(event.text), value2: event.isError ? ' (isError)' : '', value3: event.structured === undefined ? '' : ' with structured content' })
     case 'guardrail':
       return `${event.action} ${event.tool}: ${event.detail}`
     case 'thinking_unavailable':
       return event.detail
     case 'reasoning':
-      return `${event.text.length} characters of reasoning`
+      return msg("{{value0}} characters of reasoning", { value0: event.text.length })
     case 'message_progress':
       return ''
     case 'message':
@@ -68,11 +69,11 @@ export function describeEvent(event: AssistantEvent): string {
     case 'critique':
       return event.text
     case 'proposal':
-      return `proposed a document with ${event.unknowns.length} unknown(s); nothing was written`
+      return msg("proposed a document with {{value0}} unknown(s); nothing was written", { value0: event.unknowns.length })
     case 'error':
       return event.message
     case 'end':
-      return 'the session ended'
+      return msg("the session ended")
   }
 }
 
@@ -103,6 +104,7 @@ export function EventList({
   label?: string
   compact?: boolean
 }) {
+  useLocale()
   /**
    * The events this list has a line for.
    *
@@ -145,9 +147,7 @@ export function EventList({
         </li>
       ))}
       {failure !== undefined && (
-        <li key="failure" className={styles.error}>
-          the session failed after it ended: {failure}
-        </li>
+        <li key="failure" className={styles.error}><Message text={"the session failed after it ended: <0/>"} slots={[failure]} /></li>
       )}
     </ol>
   )

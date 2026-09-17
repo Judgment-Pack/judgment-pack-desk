@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 import { Button } from '../ui/Button'
 /**
  * The three connection notices, with shared retry controls.
@@ -17,31 +19,19 @@ import { useMcp } from '../mcp/McpProvider'
 
 /** The two banners that sit above whatever is on screen. */
 export function ConnectionNotices() {
+  useLocale()
   const { status, everConnected, attempt, retryNow, known, capabilitiesError } = useMcp()
   return (
     <>
       {status === 'reconnecting' && everConnected && (
-        <p className="banner" role="status">
-          Lost the connection to the chassis. Reconnecting (attempt {attempt})…{' '}
-          <Button variant="secondary" onClick={retryNow}>
-            Retry connection
-          </Button>
-        </p>
+        <p className="banner" role="status"><Message text={"Lost the connection to the chassis. Reconnecting (attempt <0/>)…<1/><2/>"} slots={[attempt, ' ', <Button variant="secondary" onClick={retryNow}>{msg("Retry connection")}</Button>]} /></p>
       )}
       {/* Connected, and this page does not know what it is connected to. Every
           feature-detected capability is off while that holds, and saying so is
           the difference between a page with less on it and a page quietly
           claiming the runtime has less on it. */}
       {status === 'ready' && !known && (
-        <p className="banner" role="status">
-          The runtime's tool listing could not be read
-          {capabilitiesError ? ` — ${capabilitiesError.message}` : ''}. What this runtime can do
-          is unknown rather than known to be little, so the optional surfaces are left off and
-          nothing here should be read as the runtime lacking them.{' '}
-          <Button variant="secondary" onClick={retryNow}>
-            Retry connection
-          </Button>
-        </p>
+        <p className="banner" role="status"><Message text={"The runtime's tool listing could not be read<0/>. What this runtime can do is unknown rather than known to be little, so the optional surfaces are left off and nothing here should be read as the runtime lacking them.<1/><2/>"} slots={[capabilitiesError ? ` — ${capabilitiesError.message}` : '', ' ', <Button variant="secondary" onClick={retryNow}>{msg("Retry connection")}</Button>]} /></p>
       )}
     </>
   )
@@ -65,17 +55,13 @@ export function useBlockingError(): Error | null {
 }
 
 export function BlockedNotice({ error }: { error: Error }) {
+  useLocale()
   const { status, attempt, retryNow } = useMcp()
   return (
     <>
-      <ErrorBox title="Not connected to the runtime" error={error} />
+      <ErrorBox title={msg("Not connected to the runtime")} error={error} />
       {status === 'reconnecting' && (
-        <p className="note">
-          Retrying automatically (attempt {attempt}).{' '}
-          <Button variant="secondary" onClick={retryNow}>
-            Retry connection
-          </Button>
-        </p>
+        <p className="note"><Message text={"Retrying automatically (attempt <0/>).<1/><2/>"} slots={[attempt, ' ', <Button variant="secondary" onClick={retryNow}>{msg("Retry connection")}</Button>]} /></p>
       )}
     </>
   )

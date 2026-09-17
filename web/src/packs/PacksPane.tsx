@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 /** The full-width collection. The parent retains it while a pack is open. */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -22,11 +24,12 @@ function isSpelled(value: string | undefined): value is string {
   return typeof value === 'string' && value.trim() !== ''
 }
 const SORTS = [
-  { value: 'id-asc', label: 'Pack ID: A–Z' },
-  { value: 'id-desc', label: 'Pack ID: Z–A' }
+  { value: 'id-asc', get label() { return msg("Pack ID: A–Z") } },
+  { value: 'id-desc', get label() { return msg("Pack ID: Z–A") } }
 ]
 
 export function PacksPane({ active = true }: { active?: boolean }) {
+  const locale = useLocale()
   const { data, error, isPending, isSuccess, isFetching, refetch } = usePacks()
   const total = data?.packs?.length ?? 0
   const [filter, setFilter] = useState('')
@@ -50,10 +53,10 @@ export function PacksPane({ active = true }: { active?: boolean }) {
     previewOwner.current = shell.storageKey
   }, [shell.storageKey, shell.keyResolved])
   const presentation = useMemo(() => active ? {
-    title: 'Pack preview', open: previewOpen, onOpenChange: setPreviewOpen,
+    title: msg("Pack preview"), open: previewOpen, onOpenChange: setPreviewOpen,
     width: previewWidth, onResize: setPreviewWidth, onReset: resetPreviewWidth,
     minimumMainWidth: 720, maximumWidth: 420, closeOnEscape: true
-  } : null, [active, previewOpen, previewWidth, resetPreviewWidth])
+  } : null, [active, previewOpen, previewWidth, resetPreviewWidth, locale])
   useInspectorPresentation(presentation)
   const packs = useMemo(() => {
     const needle = filter.trim().toLowerCase()
@@ -98,29 +101,29 @@ export function PacksPane({ active = true }: { active?: boolean }) {
   }
   const clearFilter = () => { resetScroll(); setFilter('') }
 
-  return <article className={styles.pane} data-layout={active ? 'page' : undefined} aria-label="Pack collection">
-    <PageHeader title="Packs" variant="collection"
+  return <article className={styles.pane} data-layout={active ? 'page' : undefined} aria-label={msg("Pack collection")}>
+    <PageHeader title={msg("Packs")} variant="collection"
       navigation={<PacksNavigation current="packs" count={isSuccess ? total : undefined} />}
-      actions={<ButtonLink to="/create-pack" variant="primary">Create pack</ButtonLink>} />
-    <div className={styles.controls} role="group" aria-label="Pack list controls">
-      <Input className={styles.search} type="search" aria-label="Search packs" value={filter}
-        placeholder="Search packs…" onChange={event => { resetScroll(); setFilter(event.target.value) }} />
-      {filter && <Button variant="quiet" onClick={clearFilter}>Clear</Button>}
-      {filter && isSuccess && <span className={styles.matchCount} role="status">{packs.length} of {total}</span>}
+      actions={<ButtonLink to="/create-pack" variant="primary">{msg("Create pack")}</ButtonLink>} />
+    <div className={styles.controls} role="group" aria-label={msg("Pack list controls")}>
+      <Input className={styles.search} type="search" aria-label={msg("Search packs")} value={filter}
+        placeholder={msg("Search packs…")} onChange={event => { resetScroll(); setFilter(event.target.value) }} />
+      {filter && <Button variant="quiet" onClick={clearFilter}>{msg("Clear")}</Button>}
+      {filter && isSuccess && <span className={styles.matchCount} role="status"><Message text={"<0/> of <1/>"} slots={[packs.length, total]} /></span>}
       <div className={styles.sort}>
-        <SortMenu label="Sort packs" value={sort} onValueChange={value => { resetScroll(); setSort(value) }} options={SORTS} />
+        <SortMenu label={msg("Sort packs")} value={sort} onValueChange={value => { resetScroll(); setSort(value) }} options={SORTS} />
       </div>
     </div>
     {error ? <section className={styles.empty} role="alert">
-      <h2>Couldn’t load packs</h2><p>{error.message}</p>
-      <Button onClick={() => { void refetch() }} disabled={isFetching}>{isFetching ? 'Retrying…' : 'Retry'}</Button>
-    </section> : isPending ? <p className={styles.message} role="status">Loading packs…</p>
+      <h2>{msg("Couldn’t load packs")}</h2><p>{error.message}</p>
+      <Button onClick={() => { void refetch() }} disabled={isFetching}>{isFetching ? msg("Retrying…") : msg("Retry")}</Button>
+    </section> : isPending ? <p className={styles.message} role="status">{msg("Loading packs…")}</p>
     : packs.length === 0 ? <section className={styles.empty} role="status">
-      <h2>{total ? 'No matching packs' : 'No packs yet'}</h2>
-      <p>{total ? 'Try another pack ID or description.' : 'Create a pack to define a decision and its rules.'}</p>
-      {total ? <Button onClick={clearFilter}>Clear search</Button> : null}
-    </section> : <nav className={styles.collection} aria-label="Packs">
-      <div className={styles.columns} aria-hidden="true"><span>Pack</span><span className={styles.descriptionColumn}>Description</span><span>Version</span><span /></div>
+      <h2>{total ? msg("No matching packs") : msg("No packs yet")}</h2>
+      <p>{total ? msg("Try another pack ID or description.") : msg("Create a pack to define a decision and its rules.")}</p>
+      {total ? <Button onClick={clearFilter}>{msg("Clear search")}</Button> : null}
+    </section> : <nav className={styles.collection} aria-label={msg("Packs")}>
+      <div className={styles.columns} aria-hidden="true"><span>{msg("Pack")}</span><span className={styles.descriptionColumn}>{msg("Description")}</span><span>{msg("Version")}</span><span /></div>
       <div className={styles.list} data-pack-list ref={node => { list.current = node; window.ref(node) }}
         onScroll={event => { if (active) scrollPosition.current = event.currentTarget.scrollTop }}>
         <div style={{ height: window.padTop }} aria-hidden="true" />
@@ -158,10 +161,10 @@ export function PacksPane({ active = true }: { active?: boolean }) {
               <span className={isSpelled(pack.detail) ? styles.rowDetail : styles.description} data-overflow-text>
                 {isSpelled(pack.detail) ? pack.detail : isSpelled(pack.description) ? pack.description : ''}
               </span>
-              <span className={styles.version} data-overflow-text>{isSpelled(pack.packVersion) ? `v${pack.packVersion}` : '—'}</span>
+              <span className={styles.version} data-overflow-text>{isSpelled(pack.packVersion) ? msg("v{{value0}}", { value0: pack.packVersion }) : '—'}</span>
             </Link></OverflowTooltip>
-            <Tooltip content="Preview pack · Space"><Button variant="quiet" className={styles.preview} data-preview data-row={window.start + offset}
-              aria-label={`Preview ${pack.id}`} aria-pressed={previewOpen && preview?.id === pack.id}
+            <Tooltip content={msg("Preview pack · Space")}><Button variant="quiet" className={styles.preview} data-preview data-row={window.start + offset}
+              aria-label={msg("Preview {{value0}}", { value0: pack.id })} aria-pressed={previewOpen && preview?.id === pack.id}
               onClick={() => {
                 if (previewOpen && previewId === pack.id) { setPreviewOpen(false); slot.close?.() }
                 else showPreview(pack.id)

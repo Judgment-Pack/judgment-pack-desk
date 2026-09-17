@@ -152,6 +152,8 @@ interface AssistantEngine {
 }
 
 interface AssistantSession {
+  // Optional personal response language; does not change tool or pack contracts.
+  replyLanguage?: Language
   prompt: string                          // the runtime's prompt text, from prompts/get
   tools: McpTool[]                        // the five, exactly as tools/list served them
   callTool(name: string, args: unknown): Promise<McpToolResult>   // bound through the ToolGate

@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../i18n'
 import { InspectorPresentationContext, type InspectorPresentation } from './InspectorPresentation'
 /**
  * The frame: header, rail, main, inspector, console, strip.
@@ -64,6 +65,7 @@ import { INSPECTOR_DRAWER_BELOW, RAIL_DRAWER_BELOW, useMediaQuery } from './useM
  * not one per route.
  */
 export function AppShell({ children }: { children: ReactNode }) {
+  useLocale()
   const listing = useFileListing()
   const railIsDrawer = useMediaQuery(RAIL_DRAWER_BELOW)
   const inspectorIsDrawer = useMediaQuery(INSPECTOR_DRAWER_BELOW)
@@ -111,6 +113,7 @@ function ShellFrame({
   inspectorIsDrawer: boolean
   children: ReactNode
 }) {
+  useLocale()
   const shell = useShellState()
   const [detailsTarget, setDetailsTarget] = useState<HTMLDivElement | null>(null)
   const [detailsClaims, setDetailsClaims] = useState(0)
@@ -297,14 +300,12 @@ function ShellFrame({
     <DetailsSlotContext.Provider value={detailsSlot}>
       <SettingsNavigationProvider>
         <div className="desk" style={style} data-rail-drawer={railIsDrawer || undefined}>
-          <a className="desk-skip" href="#main">
-            Skip to main content
-          </a>
+          <a className="desk-skip" href="#main">{msg("Skip to main content")}</a>
 
           <HeaderBar
             inspectorAvailable={presentation?.available}
             consoleOpenerRef={consoleOpenerRef}
-            inspectorTitle={presentation?.title ?? (packPage ? 'Assistant' : 'Inspector')}
+            inspectorTitle={presentation?.title ?? (packPage ? "Assistant" : "Inspector")}
             inspectorOpen={inspectorOpen}
             inspectorIsDrawer={inspectorIsDrawer}
             consoleOpen={shell.console.open}
@@ -331,13 +332,13 @@ function ShellFrame({
               <div className="desk-measure">{children}</div>
             </main>
 
-            {inspectorOpen && !inspectorIsDrawer && <PaneDivider label={presentation?.title ?? (packPage ? 'Assistant' : 'Inspector')} controls="desk-inspector"
+            {inspectorOpen && !inspectorIsDrawer && <PaneDivider label={presentation?.title ?? (packPage ? msg("Assistant") : msg("Inspector"))} controls="desk-inspector"
               value={inspectorWidth} min={inspectorLayout.min} max={inspectorLayout.max}
               onChange={presentation?.onResize ?? shell.resizeInspector} onReset={presentation?.onReset ?? shell.resetInspectorWidth}
               onCollapse={() => { inspectorOpenerRef.current?.focus(); toggleInspector() }} />}
 
             <RightPane
-              title={presentation?.title ?? (packPage ? 'Assistant' : undefined)}
+              title={presentation?.title ?? (packPage ? msg("Assistant") : undefined)}
               open={inspectorOpen}
               onClose={closeInspector}
               asDrawer={inspectorIsDrawer}
@@ -350,7 +351,7 @@ function ShellFrame({
               showEmpty={inspectorClaims === 0}
             />
 
-            {shell.console.open && <PaneDivider orientation="horizontal" label="Details and activity" controls="desk-console"
+            {shell.console.open && <PaneDivider orientation="horizontal" label={msg("Details and activity")} controls="desk-console"
               value={bottomHeight} min={bottomMin} max={bottomMax}
               onChange={height => { setBottomMaximized(false); shell.resizeConsole(height) }}
               onReset={() => { setBottomMaximized(false); shell.resetConsoleHeight() }}

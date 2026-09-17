@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../../i18n'
 /**
  * The diagnostics that name this member.
  *
@@ -53,24 +54,22 @@ export function ChecksTab({
   /** Why there is no check at all, where there is none. */
   unavailable?: string
 }) {
+  useLocale()
   if (unavailable !== undefined) {
     return <p className={styles.empty}>{unavailable}</p>
   }
   return (
     <div className={styles.panel}>
       {stale && (
-        <p className={styles.stale}>
-          These diagnostics were computed against other bytes. Nothing below is anchored to what
-          is on screen.
-        </p>
+        <p className={styles.stale}>{msg("These diagnostics were computed against other bytes. Nothing below is anchored to what is on screen.")}</p>
       )}
       <DiagnosticList diagnostics={diagnostics} />
       {pending ? (
-        <p className={styles.empty}>The check has not answered yet.</p>
+        <p className={styles.empty}>{msg("The check has not answered yet.")}</p>
       ) : truncation !== undefined ? (
         <p className={styles.empty}>{truncation}</p>
       ) : stale ? null : (
-        <p className={styles.empty}>No other diagnostic names this member.</p>
+        <p className={styles.empty}>{msg("No other diagnostic names this member.")}</p>
       )}
       {checkedWhat !== undefined && <p className={styles.footer}>{checkedWhat}</p>}
     </div>

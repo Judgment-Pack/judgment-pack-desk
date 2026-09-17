@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../../i18n'
 import { PACK_TERMS, valueLabel } from '../terminology'
 /**
  * Where the pack sends a decision it will not make, and what triggers that.
@@ -18,6 +19,7 @@ import styles from './PackDocument.module.css'
 import { Shaped } from './MisshapenMember'
 
 export function EscalationBlock({ escalation, at }: { escalation: Escalation; at: string }) {
+  useLocale()
   const { editing } = useEditing()
   return (
     <Block pointer={at}>
@@ -27,7 +29,7 @@ export function EscalationBlock({ escalation, at }: { escalation: Escalation; at
         <>
           <StringListField
             pointer={`${at}/triggers`}
-            label="triggers"
+            label={msg("triggers")}
             candidates={ENUMS.triggers}
           />
           {/*
@@ -36,22 +38,22 @@ export function EscalationBlock({ escalation, at }: { escalation: Escalation; at
             object is absent, so the absence is stated and offered rather than
             drawn as two controls that take a keystroke and write nothing.
           */}
-          <AbsentObject pointer={`${at}/target`} label="target" what="a target">
+          <AbsentObject pointer={`${at}/target`} label={msg("target")} what="a target">
             <Block pointer={`${at}/target`} as="div">
               <EnumField
                 pointer={`${at}/target/kind`}
-                label="target kind"
+                label={msg("target kind")}
                 options={ENUMS.targetKind}
               />
-              <StringField pointer={`${at}/target/name`} label="target name" />
+              <StringField pointer={`${at}/target/name`} label={msg("target name")} />
             </Block>
           </AbsentObject>
-          <TextField pointer={`${at}/message`} label="message" rows={2} />
+          <TextField pointer={`${at}/message`} label={msg("message")} rows={2} />
         </>
       ) : (
         <dl className={styles.fields}>
           <div className={styles.field}>
-            <dt>Target</dt>
+            <dt>{msg("Target")}</dt>
             <dd>
               <Block pointer={`${at}/target`} as="span">
                 {escalation.target?.name}{' '}
@@ -60,12 +62,12 @@ export function EscalationBlock({ escalation, at }: { escalation: Escalation; at
             </dd>
           </div>
           <div className={styles.field}>
-            <dt>Triggers</dt>
+            <dt>{msg("Triggers")}</dt>
             <dd>
               {/* Five reason words in a list, or bytes that are not that. */}
               <Shaped
                 pointer={`${at}/triggers`}
-                label="triggers"
+                label={msg("triggers")}
                 expects="list"
                 value={escalation.triggers ?? []}
               >
@@ -83,7 +85,7 @@ export function EscalationBlock({ escalation, at }: { escalation: Escalation; at
           </div>
           {escalation.message !== undefined && (
             <div className={styles.field}>
-              <dt>Message</dt>
+              <dt>{msg("Message")}</dt>
               <dd>
                 <Block pointer={`${at}/message`} as="span">
                   {escalation.message}

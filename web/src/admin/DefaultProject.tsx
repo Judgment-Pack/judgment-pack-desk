@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg } from '../i18n'
 /**
  * The Project card's one control: whether this desk opens **this** project
  * when it is launched without a directory.
@@ -90,52 +92,43 @@ export function useDefaultProject(): { field: ReactNode; save: ReactNode } {
   return {
     field: (
       <CardField
-        label="Default project"
+        label={msg("Default project")}
         action={isThisProject ? (
-          <Button variant="secondary" disabled={blocked} onClick={() => commit(null, CLEARED)}>
-            Clear the default
-          </Button>
+          <Button variant="secondary" disabled={blocked} onClick={() => commit(null, msg(CLEARED))}>{msg("Clear the default")}</Button>
         ) : (
           <Button
             variant="secondary"
             disabled={blocked}
-            onClick={() => commit(chassis?.projectFile ?? null, SET)}
-          >
-            Use this project as the default
-          </Button>
+            onClick={() => commit(chassis?.projectFile ?? null, msg(SET))}
+          >{msg("Use this project as the default")}</Button>
         )}
         rule={
-          <>
-            Written to{' '}
-            {desk === undefined ? (
-              <span className="quiet">a file this desk has not named</span>
+          <><Message text={"Written to<0/><1/>, used on the next launch without a directory. This launch:<2/><3/>"} slots={[' ', desk === undefined ? (
+              <span className="quiet">{msg("a file this desk has not named")}</span>
             ) : (
               <code>{desk.path}</code>
-            )}
-            , used on the next launch without a directory. This launch:{' '}
-            {chassis === undefined ? (
-              <span className="quiet">the desk has not said</span>
+            ), ' ', chassis === undefined ? (
+              <span className="quiet">{msg("the desk has not said")}</span>
             ) : (
               <code>{chassis.projectDir}</code>
-            )}
-          </>
+            )]} /></>
         }
       >
         {configured === null ? (
-          'None'
+          msg("None")
         ) : isThisProject ? (
-          'this project'
+          msg("this project")
         ) : (
           <code>{configured}</code>
         )}{' '}
-        {write.isPending && <span className="quiet">writing…</span>}
+        {write.isPending && <span className="quiet">{msg("writing…")}</span>}
         {said !== undefined && !write.isPending && <span className="quiet">{said}</span>}
       </CardField>
     ),
     save: (
       <>
-        {digest === undefined && <p className="quiet">{NO_DIGEST}</p>}
-        {digest !== undefined && chassis === undefined && <p className="quiet">{NOT_SAID}</p>}
+        {digest === undefined && <p className="quiet">{msg(NO_DIGEST)}</p>}
+        {digest !== undefined && chassis === undefined && <p className="quiet">{msg(NOT_SAID)}</p>}
         {problem !== undefined && (
           <p className="partial-reason">
             {problem.key}: {problem.reason}
@@ -147,14 +140,8 @@ export function useDefaultProject(): { field: ReactNode; save: ReactNode } {
             detailLabel="digests"
             detail={
               <>
-                <span>
-                  this page read{' '}
-                  <Digest value={stale.expectedSha256} />
-                </span>
-                <span>
-                  on disk now{' '}
-                  <Digest value={stale.actualSha256} />
-                </span>
+                <span><Message text={"this page read<0/><1/>"} slots={[' ', <Digest value={stale.expectedSha256} />]} /></span>
+                <span><Message text={"on disk now<0/><1/>"} slots={[' ', <Digest value={stale.actualSha256} />]} /></span>
               </>
             }
             actions={
@@ -165,15 +152,13 @@ export function useDefaultProject(): { field: ReactNode; save: ReactNode } {
                   write.reset()
                   void client.refetchQueries({ queryKey: DESK_CONFIG_QUERY_KEY })
                 }}
-              >
-                Reload
-              </Button>
+              >{msg("Reload")}</Button>
             }
           >
-            <span>Reload reads the file again, so the next save states a true digest.</span>
+            <span>{msg("Reload reads the file again, so the next save states a true digest.")}</span>
           </AlertPanel>
         )}
-        {otherRefusal !== undefined && <Alert reason={otherRefusal}>Nothing was written.</Alert>}
+        {otherRefusal !== undefined && <Alert reason={otherRefusal}>{msg("Nothing was written.")}</Alert>}
       </>
     )
   }

@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../../i18n'
 /** Secondary draft controls. Save and exit belong to the pinned editor header. */
 import { Button } from '../../ui/Button'
 import { SegmentedControl } from '../../ui/SegmentedControl'
@@ -23,30 +24,31 @@ export function EditToolbar({
   onUndo: () => void
   onDiscard: () => void
 }) {
-  return <Toolbar label="Editing">
+  useLocale()
+  return <Toolbar label={msg("Editing")}>
     <ToolbarSlot>
-      <SegmentedControl label="Shape" value={shape}
+      <SegmentedControl label={msg("Shape")} value={shape}
         onValueChange={next => onShape(next === 'json' ? 'json' : 'form')}
         segments={[
-          { value: 'form', label: 'Form', disabled: !shapeAvailable,
+          { value: 'form', label: "Form", disabled: !shapeAvailable,
             description: shapeAvailable ? undefined : 'These bytes cannot be read as a document.' },
-          { value: 'json', label: 'JSON' }
+          { value: 'json', label: "JSON" }
         ]} />
     </ToolbarSlot>
     <ToolbarSeparator />
     <ToolbarItem>
-      <Button variant="quiet" onClick={onCheck} disabled={checking} aria-busy={checking}>Check</Button>
+      <Button variant="quiet" onClick={onCheck} disabled={checking} aria-busy={checking}>{msg("Check")}</Button>
     </ToolbarItem>
     <ToolbarItem>
-      <Button variant="quiet" onClick={onTryIt} aria-pressed={tryingIt}>Test draft</Button>
+      <Button variant="quiet" onClick={onTryIt} aria-pressed={tryingIt}>{msg("Test draft")}</Button>
     </ToolbarItem>
     <ToolbarSpacer />
     <ToolbarSlot>
       <ToolbarItem>
-        <Button variant="quiet" onClick={onUndo} disabled={!canUndo || saving}>Undo</Button>
+        <Button variant="quiet" onClick={onUndo} disabled={!canUndo || saving}>{msg("Undo")}</Button>
       </ToolbarItem>
       <ToolbarItem>
-        <Button variant="quiet" onClick={onDiscard} disabled={!discardable || saving}>Discard</Button>
+        <Button variant="quiet" onClick={onDiscard} disabled={!discardable || saving}>{msg("Discard")}</Button>
       </ToolbarItem>
     </ToolbarSlot>
   </Toolbar>

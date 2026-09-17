@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../../i18n'
 import { PACK_TERMS } from '../terminology'
 /**
  * One pack, read.
@@ -65,15 +66,15 @@ const ABSENCE_NOTE: Record<string, string> = {
   // all while the five identity members were drawn as one unit: the unit was
   // present because `title` was, so nothing ever said the description was not
   // there. An optional member's absence is a fact about the document.
-  description: 'the pack carries no description.',
-  applicability: 'the pack does not narrow its own scope.',
-  evidenceRequirements: 'the pack requires no evidence.',
-  sources: 'the pack cites nothing.',
-  exceptions: 'no rule is excepted.',
-  fallbackOutcome: 'no outcome is named as the fallback.',
-  escalation: 'the pack names nowhere to escalate.',
-  metadata: 'the document records no metadata.',
-  extensions: 'the document carries no extensions.'
+  get description() { return msg("the pack carries no description.") },
+  get applicability() { return msg("the pack does not narrow its own scope.") },
+  get evidenceRequirements() { return msg("the pack requires no evidence.") },
+  get sources() { return msg("the pack cites nothing.") },
+  get exceptions() { return msg("no rule is excepted.") },
+  get fallbackOutcome() { return msg("no outcome is named as the fallback.") },
+  get escalation() { return msg("the pack names nowhere to escalate.") },
+  get metadata() { return msg("the document records no metadata.") },
+  get extensions() { return msg("the document carries no extensions.") }
 }
 
 export function PackDocumentView({
@@ -91,6 +92,7 @@ export function PackDocumentView({
   members?: readonly RootMember[]
   outline?: boolean
 }) {
+  useLocale()
   const order = readingOrder(doc).filter((unit) => members === undefined || unit.members.some((member) => members.includes(member)))
   // The nav is not the page. Reading order is one unit per member, in the
   // document's own order; the outline collapses the identity members into one
@@ -207,9 +209,9 @@ const MEMBER_SHAPE: Record<string, 'list' | 'object' | 'string'> = {
 }
 
 const WORD: Record<'list' | 'object' | 'string', string> = {
-  list: 'a list',
-  object: 'an object',
-  string: 'a string'
+  get list() { return msg("a list") },
+  get object() { return msg("an object") },
+  get string() { return msg("a string") }
 }
 
 function isShape(value: unknown, shape: 'list' | 'object' | 'string'): boolean {
@@ -226,12 +228,13 @@ function isShape(value: unknown, shape: 'list' | 'object' | 'string'): boolean {
  * shown as one rather than silently dropped.
  */
 function FallbackOutcomeBlock({ fallback }: { fallback: string | undefined }) {
+  useLocale()
   const { editing, ids } = useEditing()
   return (
     <Block pointer="/fallbackOutcome">
       <h2 className={styles.heading}>{PACK_TERMS.fallbackOutcome.label}</h2>
       {editing ? (
-        <IdRefField pointer="/fallbackOutcome" label="fallback outcome" ids={ids.outcomes} optional />
+        <IdRefField pointer="/fallbackOutcome" label={msg("fallback outcome")} ids={ids.outcomes} optional />
       ) : (
         <p>
           <code className={styles.id}>{fallback}</code>
@@ -242,6 +245,7 @@ function FallbackOutcomeBlock({ fallback }: { fallback: string | undefined }) {
 }
 
 function MemberBlock({ unit, document: doc }: { unit: MemberUnit; document: PackDocument }) {
+  useLocale()
   if (!unitIsPresent(doc, unit)) {
     // Only an optional member reaches this: `readingOrder` leaves a missing
     // required one out of the list entirely, because its absence is a refusal

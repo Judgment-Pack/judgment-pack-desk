@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 import type { Disposition, Evaluation, HandoffTarget } from '../mcp/types'
 import { Fields, Json, Pill, Section, slug } from './primitives'
 import { TracePanel } from './TracePanel'
@@ -18,31 +20,27 @@ import { TracePanel } from './TracePanel'
  * payload spells it rather than restated.
  */
 export function EvaluationView({ payload }: { payload: Evaluation }) {
+  useLocale()
   return (
     <div className="evaluation">
       {payload.rehearsal && (
-        <p className="note">
-          <strong>Rehearsal.</strong> This run was declared not a decision
-          (ADR-0028): no audit record was appended and no reviewed set was
-          consulted, and the payload says so in band with{' '}
-          <code>"rehearsal": true</code>.
-        </p>
+        <p className="note"><Message text={"<0/> This run was declared not a decision (ADR-0028): no audit record was appended and no reviewed set was consulted, and the payload says so in band with<1/><2/>."} slots={[<strong>{msg("Rehearsal.")}</strong>, ' ', <code>"rehearsal": true</code>]} /></p>
       )}
       <DispositionPanel
         disposition={payload.disposition}
         handoffTarget={payload.handoffTarget}
       />
       {payload.draftPrototype && (
-        <Section title="Draft-RFC prototype">
+        <Section title={msg("Draft-RFC prototype")}>
           <div className="card card-warn">
             <p>{payload.draftPrototype.note}</p>
             <Fields
               items={[
-                ['RFC', payload.draftPrototype.rfc],
-                ['Status', payload.draftPrototype.status],
-                ['Operators', payload.draftPrototype.operators?.join(', ')],
+                [msg("RFC"), payload.draftPrototype.rfc],
+                [msg("Status"), payload.draftPrototype.status],
+                [msg("Operators"), payload.draftPrototype.operators?.join(', ')],
                 [
-                  'Pack valid under the named specVersion',
+                  msg("Pack valid under the named specVersion"),
                   String(payload.draftPrototype.packValidUnderSpecVersion)
                 ]
               ]}
@@ -68,14 +66,12 @@ function DispositionPanel({
   disposition: Disposition
   handoffTarget?: HandoffTarget
 }) {
+  useLocale()
   const reasons = disposition.reasons ?? []
   const triggeredBy = disposition.handoff?.triggeredBy ?? []
   return (
-    <Section title="Disposition">
-      <p className="note">
-        The portable JPS Core §8.3 disposition: the authoritative part of this
-        payload. It authorizes nothing and executes nothing.
-      </p>
+    <Section title={msg("Disposition")}>
+      <p className="note">{msg("The portable JPS Core §8.3 disposition: the authoritative part of this payload. It authorizes nothing and executes nothing.")}</p>
       <div className="disposition">
         <div className="disposition-main">
           <div className="card-head">
@@ -86,48 +82,40 @@ function DispositionPanel({
           </div>
           <Fields
             items={[
-              ['Kind', <code key="kind">{disposition.kind}</code>],
+              [msg("Kind"), <code key="kind">{disposition.kind}</code>],
               [
-                'Outcome id',
+                msg("Outcome id"),
                 disposition.outcomeId ? <code key="oid">{disposition.outcomeId}</code> : undefined
               ],
               [
-                'Reasons',
+                msg("Reasons"),
                 reasons.length ? (
                   <TokenList key="reasons" values={reasons} />
                 ) : (
-                  <span key="reasons" className="quiet">
-                    none
-                  </span>
+                  <span key="reasons" className="quiet">{msg("none")}</span>
                 )
               ],
               [
-                'Handoff state',
+                msg("Handoff state"),
                 <code key="handoff">{disposition.handoff?.state}</code>
               ],
               [
-                'Triggered by',
+                msg("Triggered by"),
                 triggeredBy.length ? <TokenList key="trig" values={triggeredBy} /> : undefined
               ]
             ]}
           />
         </div>
         <aside className="disposition-aside">
-          <h4>Handoff target</h4>
+          <h4>{msg("Handoff target")}</h4>
           {handoffTarget ? (
             <>
               <p className="target-name">{handoffTarget.name}</p>
               <Pill tone="quiet">{handoffTarget.kind}</Pill>
-              <p className="note">
-                Reported beside the disposition, not inside it: §8.3 keeps the
-                target outside. It is what the pack configures. No delivery is
-                observed.
-              </p>
+              <p className="note">{msg("Reported beside the disposition, not inside it: §8.3 keeps the target outside. It is what the pack configures. No delivery is observed.")}</p>
             </>
           ) : (
-            <p className="note">
-              The payload reports no handoff target beside this disposition.
-            </p>
+            <p className="note">{msg("The payload reports no handoff target beside this disposition.")}</p>
           )}
         </aside>
       </div>
@@ -142,45 +130,42 @@ function DispositionPanel({
  * does this panel.
  */
 function EnvelopePanel({ payload }: { payload: Evaluation }) {
+  useLocale()
   return (
-    <Section title="Envelope">
+    <Section title={msg("Envelope")}>
       {payload.experimental && (
-        <p className="note note-warn">
-          <strong>Experimental surface.</strong> The payload carries{' '}
-          <code>experimental: true</code>: this surface may change or be removed
-          without a compatibility promise.
-        </p>
+        <p className="note note-warn"><Message text={"<0/> The payload carries<1/><2/>: this surface may change or be removed without a compatibility promise."} slots={[<strong>{msg("Experimental surface.")}</strong>, ' ', <code>experimental: true</code>]} /></p>
       )}
       <div className="card">
         <Fields
           items={[
-            ['Status', <code key="status">{payload.status}</code>],
+            [msg("Status"), <code key="status">{payload.status}</code>],
             [
-              'Pack',
+              msg("Pack"),
               <span key="pack">
                 <code>{payload.packId}</code> <Pill tone="strong">v{payload.packVersion}</Pill>
               </span>
             ],
             [
-              'Pack declares specVersion',
+              msg("Pack declares specVersion"),
               <code key="spec">{payload.specVersion}</code>
             ],
             [
-              'Evaluator contract',
+              msg("Evaluator contract"),
               <code key="eval">{payload.evaluatorSpecVersion}</code>
             ],
             [
-              'Runtime',
+              msg("Runtime"),
               payload.tool ? (
                 <span key="tool">
                   <code>{payload.tool.name}</code> {payload.tool.version}
                 </span>
               ) : undefined
             ],
-            ['Command', <code key="cmd">{payload.command}</code>],
-            ['Output version', payload.outputVersion],
+            [msg("Command"), <code key="cmd">{payload.command}</code>],
+            [msg("Output version"), payload.outputVersion],
             [
-              'Bundled artifacts',
+              msg("Bundled artifacts"),
               payload.artifact ? (
                 <span key="artifact">
                   {payload.artifact.specVersion} · {payload.artifact.provenance} ·{' '}
@@ -189,16 +174,8 @@ function EnvelopePanel({ payload }: { payload: Evaluation }) {
               ) : undefined
             ],
             [
-              'Conformance claim',
-              <span key="claim">
-                stated in <code>{payload.conformanceClaimReference}</code>{' '}
-                <span className="quiet">
-                  — a locator for the repository file that makes the claim. This
-                  payload makes none, and whatever that file claims is about the
-                  runtime, not about this pack, these facts, or whether acting on
-                  the disposition is correct.
-                </span>
-              </span>
+              msg("Conformance claim"),
+              <span key="claim"><Message text={"stated in <0/><1/><2/>"} slots={[<code>{payload.conformanceClaimReference}</code>, ' ', <span className="quiet">{msg("— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.")}</span>]} /></span>
             ]
           ]}
         />
@@ -208,6 +185,7 @@ function EnvelopePanel({ payload }: { payload: Evaluation }) {
 }
 
 function TokenList({ values }: { values: string[] }) {
+  useLocale()
   return (
     <span className="refs">
       {values.map((value) => (
@@ -221,6 +199,7 @@ function TokenList({ values }: { values: string[] }) {
 
 /** The raw payload, for reading exactly what the runtime returned. */
 export function EvaluationRaw({ raw }: { raw: string }) {
+  useLocale()
   return <Json value={safeParse(raw)} />
 }
 

@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../../i18n'
 /**
  * The decision: the question as the page's h1, the intent as the standfirst.
  *
@@ -14,12 +15,13 @@ import { ExtensionsBlock } from './ExtensionsBlock'
 import styles from './PackDocument.module.css'
 
 export function DecisionBlock({ decision, at }: { decision: Decision; at: string }) {
+  useLocale()
   const { editing } = useEditing()
   if (editing) {
     return (
       <Block pointer={at} className={styles.decision}>
-        <TextField pointer={`${at}/question`} label="question" rows={2} />
-        <TextField pointer={`${at}/intent`} label="intent" rows={2} />
+        <TextField pointer={`${at}/question`} label={msg("question")} rows={2} />
+        <TextField pointer={`${at}/intent`} label={msg("intent")} rows={2} />
         <ExtensionsBlock extensions={decision.extensions} at={`${at}/extensions`} />
       </Block>
     )

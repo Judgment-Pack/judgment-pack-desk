@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../../i18n'
 import { PACK_TERMS } from '../terminology'
 /** The exceptions, in the document's own order. */
 import type { Exception } from '../../mcp/types'
@@ -9,6 +10,7 @@ import styles from './PackDocument.module.css'
 import { MisshapenMember, isRecord } from './MisshapenMember'
 
 export function ExceptionsBlock({ exceptions, at }: { exceptions: Exception[]; at: string }) {
+  useLocale()
   const { editing } = useEditing()
   const { move, announcement, onCardKey } = useCardOrder(at, exceptions.length)
   return (
@@ -21,7 +23,7 @@ export function ExceptionsBlock({ exceptions, at }: { exceptions: Exception[]; a
             <li key={`misshapen-${index}`}>
               <MisshapenMember
                 pointer={`${at}/${index}`}
-                label={`Exception ${index + 1}`}
+                label={msg("Exception {{value0}}", { value0: index + 1 })}
                 expected="an object"
                 value={exception}
               />

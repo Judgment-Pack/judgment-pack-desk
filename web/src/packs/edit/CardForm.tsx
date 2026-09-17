@@ -1,3 +1,5 @@
+import { Message } from '../../i18n/Message'
+import { msg, useLocale } from '../../i18n'
 /**
  * A rule and an exception, as the forms they become in place — and the
  * ordering that is part of what they say.
@@ -40,42 +42,44 @@ const ID_HINT = 'lowercase letters, digits and hyphens; starts with a letter.'
 
 /** One rule's card, as its form. */
 export function RuleForm({ at }: { at: string }) {
+  useLocale()
   const { ids } = useEditing()
   return (
     <div className={styles.form}>
-      <StringField pointer={`${at}/id`} label="id" hint={ID_HINT} />
-      <TextField pointer={`${at}/description`} label="description" />
+      <StringField pointer={`${at}/id`} label={msg("id")} hint={msg(ID_HINT)} />
+      <TextField pointer={`${at}/description`} label={msg("description")} />
       <WhenField at={at} />
       <div className={styles.row}>
-        <IdRefField pointer={`${at}/outcome`} label="outcome" ids={ids.outcomes} />
-        <EnumField pointer={`${at}/onUnknown`} label="on unknown" options={ENUMS.onUnknown} />
+        <IdRefField pointer={`${at}/outcome`} label={msg("outcome")} ids={ids.outcomes} />
+        <EnumField pointer={`${at}/onUnknown`} label={msg("on unknown")} options={ENUMS.onUnknown} />
       </div>
       <StringListField
         pointer={`${at}/evidenceRequirementRefs`}
-        label="evidence"
+        label={msg("evidence")}
         candidates={ids.evidence}
       />
-      <StringListField pointer={`${at}/sourceRefs`} label="sources" candidates={ids.sources} />
-      <TextField pointer={`${at}/rationale`} label="rationale" />
+      <StringListField pointer={`${at}/sourceRefs`} label={msg("sources")} candidates={ids.sources} />
+      <TextField pointer={`${at}/rationale`} label={msg("rationale")} />
     </div>
   )
 }
 
 /** One exception's card, as its form. */
 export function ExceptionForm({ at }: { at: string }) {
+  useLocale()
   const { ids } = useEditing()
   return (
     <div className={styles.form}>
-      <StringField pointer={`${at}/id`} label="id" hint={ID_HINT} />
-      <TextField pointer={`${at}/description`} label="description" />
+      <StringField pointer={`${at}/id`} label={msg("id")} hint={msg(ID_HINT)} />
+      <TextField pointer={`${at}/description`} label={msg("description")} />
       <WhenField at={at} />
       <div className={styles.row}>
-        <EnumField pointer={`${at}/effect`} label="effect" options={ENUMS.effect} />
-        <IdRefField pointer={`${at}/targetRule`} label="target rule" ids={ids.rules} optional />
-        <IdRefField pointer={`${at}/outcome`} label="outcome" ids={ids.outcomes} optional />
+        <EnumField pointer={`${at}/effect`} label={msg("effect")} options={ENUMS.effect} />
+        <IdRefField pointer={`${at}/targetRule`} label={msg("target rule")} ids={ids.rules} optional />
+        <IdRefField pointer={`${at}/outcome`} label={msg("outcome")} ids={ids.outcomes} optional />
       </div>
-      <EnumField pointer={`${at}/onUnknown`} label="on unknown" options={ENUMS.onUnknown} />
-      <StringListField pointer={`${at}/sourceRefs`} label="sources" candidates={ids.sources} />
+      <EnumField pointer={`${at}/onUnknown`} label={msg("on unknown")} options={ENUMS.onUnknown} />
+      <StringListField pointer={`${at}/sourceRefs`} label={msg("sources")} candidates={ids.sources} />
     </div>
   )
 }
@@ -89,29 +93,28 @@ export function ExceptionForm({ at }: { at: string }) {
  * nothing.
  */
 function WhenField({ at }: { at: string }) {
+  useLocale()
   const { buffer, write } = useEditing()
   const present = valueAt(buffer.index.value, `${at}/when`) !== undefined
   if (present) {
     return (
       <div className={styles.when}>
-        <p className={styles.whenLabel}>when</p>
+        <p className={styles.whenLabel}>{msg("when")}</p>
         <ConditionBuilder at={`${at}/when`} />
       </div>
     )
   }
   return (
     <div className={styles.when} id={`${at}/when`} data-pointer={`${at}/when`}>
-      <p className={styles.whenLabel}>when</p>
+      <p className={styles.whenLabel}>{msg("when")}</p>
       <p className={styles.absent}>
-        <span className={styles.absentTag}>not declared</span>
+        <span className={styles.absentTag}>{msg("not declared")}</span>
         <Button
           variant="quiet"
           onClick={() =>
             write((current) => setRawJson(current, `${at}/when`, JSON.stringify(NEW_NODE)))
           }
-        >
-          Write a condition
-        </Button>
+        >{msg("Write a condition")}</Button>
       </p>
     </div>
   )
@@ -185,33 +188,29 @@ export function MoveControls({
   /** The word for one of these — "rule", "exception". */
   what: string
 }) {
+  useLocale()
   return (
     <span className={styles.moves}>
-      <span className={styles.position}>
-        {index + 1} of {count}
-      </span>
+      <span className={styles.position}><Message text={"<0/> of <1/>"} slots={[index + 1, count]} /></span>
       <Button
         variant="quiet"
         disabled={index === 0}
-        aria-label={`Move this ${what} up`}
+        aria-label={msg("Move this {{value0}} up", { value0: what })}
         onClick={() => move(index, index - 1)}
-      >
-        Move up
-      </Button>
+      >{msg("Move up")}</Button>
       <Button
         variant="quiet"
         disabled={index === count - 1}
-        aria-label={`Move this ${what} down`}
+        aria-label={msg("Move this {{value0}} down", { value0: what })}
         onClick={() => move(index, index + 1)}
-      >
-        Move down
-      </Button>
+      >{msg("Move down")}</Button>
     </span>
   )
 }
 
 /** The live region the move speaks through, rendered once per list. */
 export function OrderAnnouncement({ text }: { text: string }) {
+  useLocale()
   return (
     <p role="status" aria-live="polite" className={styles.announcement}>
       {text}

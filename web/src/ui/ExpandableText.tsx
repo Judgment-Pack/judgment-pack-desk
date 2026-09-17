@@ -1,9 +1,11 @@
+import { msg, useLocale } from '../i18n'
 import { useId, useLayoutEffect, useRef, useState } from 'react'
 import { Button } from './Button'
 import styles from './ExpandableText.module.css'
 
 /** Long prose stays readable on touch and keyboard without enlarging pane chrome. */
 export function ExpandableText({ text, label }: { text: string; label: string }) {
+  useLocale()
   const ref = useRef<HTMLParagraphElement>(null)
   const id = useId()
   const [expanded, setExpanded] = useState(false)
@@ -20,6 +22,6 @@ export function ExpandableText({ text, label }: { text: string; label: string })
   return <div className={styles.root}>
     <p id={id} ref={ref} className={styles.text} data-expanded={expanded || undefined}>{text}</p>
     {(clipped || expanded) && <Button variant="inline" aria-expanded={expanded} aria-controls={id}
-      onClick={() => setExpanded(value => !value)}>{expanded ? 'Show less' : `Read full ${label}`}</Button>}
+      onClick={() => setExpanded(value => !value)}>{expanded ? msg("Show less") : msg("Read full {{value0}}", { value0: label })}</Button>}
   </div>
 }

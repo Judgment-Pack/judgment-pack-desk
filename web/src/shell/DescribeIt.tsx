@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 /**
  * **Describe it**: the third way to start a pack, beside the runtime's
  * templates.
@@ -339,7 +341,7 @@ export function useDescribeIt(): DescribeItState {
     }
     if (!hadSession.current) return
     discardNow.current()
-    setLost(SLOT_LOST)
+    setLost(msg(SLOT_LOST))
   }, [usable])
 
   /**
@@ -357,7 +359,7 @@ export function useDescribeIt(): DescribeItState {
       whenSessionEnds(() => {
         if (!hadSession.current) return
         discardNow.current()
-        setLost(SLOT_LOST)
+        setLost(msg(SLOT_LOST))
       }),
     []
   )
@@ -462,10 +464,10 @@ export function useDescribeIt(): DescribeItState {
       : discarded || submitted === null
         ? ''
         : running
-          ? STILL_RUNNING
+          ? msg(STILL_RUNNING)
           : proposal === undefined
             ? problem === ''
-              ? NOTHING_PROPOSED
+              ? msg(NOTHING_PROPOSED)
               : problem
             : ''
 
@@ -482,12 +484,12 @@ export function useDescribeIt(): DescribeItState {
     usable,
     unusableBecause:
       slot.state === 'unavailable'
-        ? UNREAD_CONFIGURATION
+        ? msg(UNREAD_CONFIGURATION)
         : slot.endpoint === null
-          ? NO_ASSISTANT
+          ? msg(NO_ASSISTANT)
           : slot.keyStatus === 'pending'
             ? CHECKING_KEY
-            : slot.keyStatus === 'error' ? UNREAD_KEY : NO_KEY,
+            : slot.keyStatus === 'error' ? UNREAD_KEY : msg(NO_KEY),
     retryKey: slot.state === 'configured' && slot.keyStatus === 'error' ? slot.retryKey : undefined,
     advertised,
     standing:
@@ -511,22 +513,24 @@ export function useDescribeIt(): DescribeItState {
 }
 
 export function DescribeIt({ state, expanded = false, blockingElsewhere = false }: { state: DescribeItState; expanded?: boolean; blockingElsewhere?: boolean }) {
+  useLocale()
   if (!state.usable) return (
     <div className={styles.quiet}>
       <p>{state.unusableBecause}</p>
-      {state.retryKey && <Button variant="quiet" onClick={state.retryKey}>Retry key status</Button>}
+      {state.retryKey && <Button variant="quiet" onClick={state.retryKey}>{msg("Retry key status")}</Button>}
     </div>
   )
   if (expanded) return <Section state={state} blockingElsewhere={blockingElsewhere} />
   return (
     <details className={styles.disclosure}>
-      <summary className={styles.summary}>Describe it instead</summary>
+      <summary className={styles.summary}>{msg("Describe it instead")}</summary>
       <Section state={state} blockingElsewhere={blockingElsewhere} />
     </details>
   )
 }
 
 function Section({ state, blockingElsewhere }: { state: DescribeItState; blockingElsewhere: boolean }) {
+  useLocale()
   const { proposal } = state
   return (
     <div className={styles.section}>
@@ -535,7 +539,7 @@ function Section({ state, blockingElsewhere }: { state: DescribeItState; blockin
         <ModelPicker picked={state.picked} id="describe-model" />
       </p>
       <label className={styles.label} htmlFor="describe-policy">
-        {DESCRIBE_LABEL}
+        {msg(DESCRIBE_LABEL)}
       </label>
       <TextArea
         id="describe-policy"
@@ -548,41 +552,31 @@ function Section({ state, blockingElsewhere }: { state: DescribeItState; blockin
         <Button
           disabled={state.running || state.typed.trim() === '' || !state.advertised}
           onClick={state.propose}
-        >
-          Propose
-        </Button>
-        <Button disabled={!state.running} onClick={state.stop}>
-          Stop
-        </Button>
+        >{msg("Propose")}</Button>
+        <Button disabled={!state.running} onClick={state.stop}>{msg("Stop")}</Button>
       </div>
-      <p className={styles.quiet}>
-        Nothing is written until you press Create. The name above gives the pack its id and its
-        file name, whatever the assistant proposes to call it.
-      </p>
+      <p className={styles.quiet}>{msg("Nothing is written until you press Create. The name above gives the pack its id and its file name, whatever the assistant proposes to call it.")}</p>
       {!state.advertised && (
-        <p className={styles.notice}>
-          This connection advertises no {AUTHOR_PACK_PROMPT} prompt, so there is nothing for the
-          assistant to run.
-        </p>
+        <p className={styles.notice}><Message text={"This connection advertises no <0/> prompt, so there is nothing for the assistant to run."} slots={[AUTHOR_PACK_PROMPT]} /></p>
       )}
       <EventList
         events={state.events}
         failure={state.failure}
-        label="What the assistant did"
+        label={msg("What the assistant did")}
         compact
       />
       {proposal !== undefined && (
-        <section className={styles.proposal} aria-label="The proposal">
+        <section className={styles.proposal} aria-label={msg("The proposal")}>
           <ProposalSummaryLine document={proposal.document} />
           <ProposalUnknowns unknowns={proposal.unknowns} />
           <RuntimeChecks events={state.events} />
           <RefutationReport events={state.events} />
           <details className={styles.disclosure}>
-            <summary className={styles.summary}>Show document</summary>
+            <summary className={styles.summary}>{msg("Show document")}</summary>
             <CodeArea
               value={JSON.stringify(proposal.document, null, 2)}
               readOnly
-              aria-label="The proposed document"
+              aria-label={msg("The proposed document")}
             />
           </details>
         </section>

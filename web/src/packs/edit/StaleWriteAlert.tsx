@@ -1,3 +1,5 @@
+import { Message } from '../../i18n/Message'
+import { msg, useLocale } from '../../i18n'
 /**
  * A write the chassis refused because the file on disk is not the file this
  * edit started from.
@@ -37,39 +39,27 @@ export function StaleWriteAlert({
   onReload: () => void
   onOverwrite: () => void
 }) {
+  useLocale()
   return (
     <AlertPanel
       heading="This file changed since you opened it. Nothing was written."
       detailLabel="digests"
       detail={
         <>
-          <span>
-            this edit started from{' '}
-            <Digest value={stale.expectedSha256} />
-          </span>
-          <span>
-            on disk now <Digest value={stale.actualSha256} />
-          </span>
+          <span><Message text={"this edit started from<0/><1/>"} slots={[' ', <Digest value={stale.expectedSha256} />]} /></span>
+          <span><Message text={"on disk now <0/>"} slots={[<Digest value={stale.actualSha256} />]} /></span>
         </>
       }
       actions={
         <>
-          <Button variant="primary" disabled={pending} onClick={onReload}>
-            Reload
-          </Button>
-          <Button variant="quiet" disabled={pending} onClick={onOverwrite}>
-            Overwrite anyway
-          </Button>
+          <Button variant="primary" disabled={pending} onClick={onReload}>{msg("Reload")}</Button>
+          <Button variant="quiet" disabled={pending} onClick={onOverwrite}>{msg("Overwrite anyway")}</Button>
         </>
       }
     >
-      <span className={styles.body}>
-        {stale.exists
-          ? 'Something else wrote to it while this edit was open.'
-          : 'The file is no longer on disk — something else deleted or moved it.'}{' '}
-        Your draft is intact. Reload takes the file on disk and discards these edits;
-        overwriting replaces it.
-      </span>
+      <span className={styles.body}><Message text={"<0/><1/>Your draft is intact. Reload takes the file on disk and discards these edits; overwriting replaces it."} slots={[stale.exists
+          ? msg("Something else wrote to it while this edit was open.")
+          : msg("The file is no longer on disk — something else deleted or moved it."), ' ']} /></span>
     </AlertPanel>
   )
 }

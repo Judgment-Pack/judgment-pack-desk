@@ -1,3 +1,5 @@
+import { Message } from '../../i18n/Message'
+import { msg, useLocale } from '../../i18n'
 import { Fragment, useMemo, useRef, useState } from 'react'
 import type { PackDocument } from '../../mcp/types'
 import { PackLogic } from '../../packs/PackLogic'
@@ -22,7 +24,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function verificationBadge(record: SourceRecord) {
   const state = record.failure !== null ? 'failed' : record.verification.state
-  const label = record.failure !== null ? 'retrieval failed' : record.verification.state === 'verified' ? 'receipt verified' : record.verification.state === 'failed' ? 'receipt failed' : 'receipt unchecked'
+  const label = record.failure !== null ? msg("retrieval failed") : record.verification.state === 'verified' ? msg("receipt verified") : record.verification.state === 'failed' ? msg("receipt failed") : msg("receipt unchecked")
   return (
     <span className={styles.badge} data-state={state}>
       {label}
@@ -31,23 +33,24 @@ function verificationBadge(record: SourceRecord) {
 }
 
 export function SourcesPanel({ sources, selection, onSelect }: { sources: readonly SourceRecord[]; selection: Selection; onSelect: (next: Selection) => void }) {
-  if (sources.length === 0) return <p className={styles.empty}>No sources yet. Searches and reads the assistant makes appear here, each with its receipt.</p>
+  useLocale()
+  if (sources.length === 0) return <p className={styles.empty}>{msg("No sources yet. Searches and reads the assistant makes appear here, each with its receipt.")}</p>
   return (
-    <ul className={styles.list} aria-label="Sources">
+    <ul className={styles.list} aria-label={msg("Sources")}>
       {sources.map((record) => {
         const current = selection?.kind === 'source' && selection.id === record.id
-        const title = record.kind === 'search' ? `Search: ${record.request.query ?? ''}` : record.document?.title || record.request.url || record.id
+        const title = record.kind === 'search' ? msg("Search: {{value0}}", { value0: record.request.query ?? '' }) : record.document?.title || record.request.url || record.id
         return (
           <li key={record.id} className={styles.row} data-current={current} aria-current={current ? 'true' : undefined}>
-            <button type="button" className={styles.rowButton} onClick={() => onSelect({ kind: 'source', id: record.id })} aria-label={`Inspect ${record.id}`}>
+            <button type="button" className={styles.rowButton} onClick={() => onSelect({ kind: 'source', id: record.id })} aria-label={msg("Inspect {{value0}}", { value0: record.id })}>
               <div className={styles.rowHead}>
                 <span className={styles.badge}>{record.id}</span>
                 <strong>{title}</strong>
                 {verificationBadge(record)}
-                {record.excerpts.length > 0 && <span className={styles.badge}>{record.excerpts.length} excerpt{record.excerpts.length === 1 ? '' : 's'}</span>}
+                {record.excerpts.length > 0 && <span className={styles.badge}><Message text={"<0/> excerpt<1/>"} slots={[record.excerpts.length, record.excerpts.length === 1 ? '' : msg("s")]} /></span>}
               </div>
               {record.kind === 'page' && <div className={styles.url}>{record.request.url}</div>}
-              {record.kind === 'search' && record.hits && <div className={styles.url}>{record.hits.length} hit(s) from {record.request.source}</div>}
+              {record.kind === 'search' && record.hits && <div className={styles.url}><Message text={"<0/> hit(s) from <1/>"} slots={[record.hits.length, record.request.source]} /></div>}
               {record.failure !== null && <div className={styles.url}>{record.failure}</div>}
             </button>
           </li>
@@ -72,42 +75,42 @@ export function SourcesPanel({ sources, selection, onSelect }: { sources: readon
  * shows what was compared and nothing else.
  */
 function CheckedSide({ side, label }: { side: unknown; label: string }) {
+  useLocale()
   const pair = (side ?? {}) as { disposition?: unknown; handoffTarget?: unknown }
   return <>
-    <CodeBlock text={JSON.stringify(pair.disposition ?? null, null, 2)} label={`${label} disposition`} />
-    {pair.handoffTarget !== undefined && <p className={styles.hint}>{label} handoff target: <code>{JSON.stringify(pair.handoffTarget)}</code></p>}
+    <CodeBlock text={JSON.stringify(pair.disposition ?? null, null, 2)} label={msg("{{value0}} disposition", { value0: label })} />
+    {pair.handoffTarget !== undefined && <p className={styles.hint}><Message text={"<0/> handoff target: <1/>"} slots={[label, <code>{JSON.stringify(pair.handoffTarget)}</code>]} /></p>}
   </>
 }
 
 export function TestsPanel({ state, onSelect, mode = 'research', ...actions }: ExpectationReviewActions & { mode?: 'draft' | 'research'; state: RunState; onSelect: (next: Selection) => void }) {
+  useLocale()
   const latest = state.candidates.at(-1)
   const check = latest?.check
   const byId = new Map((check?.cases ?? []).map((row) => [row.id, row]))
   if (state.cases.length === 0 && state.droppedCases.length === 0 && state.expectationIssues.length === 0) {
-    return <p className={styles.empty}>{mode === 'draft' ? 'Tests have not been run. Chat drafts receive a structure check. After creating the pack, use Tests to check its decisions.' : 'No test cases yet. Research establishes cases from cited sources once a draft exists.'}</p>
+    return <p className={styles.empty}>{mode === 'draft' ? msg("Tests have not been run. Chat drafts receive a structure check. After creating the pack, use Tests to check its decisions.") : msg("No test cases yet. Research establishes cases from cited sources once a draft exists.")}</p>
   }
   return (
     <div className={styles.panel}>
       <ExpectationReview state={state} onSelect={onSelect} {...actions} />
       {check && (
-        <p className={styles.detail}>
-          Revision {latest?.revision}: {check.valid ? 'valid' : 'invalid'} to the runtime; {check.cases.filter((c) => c.passed).length} of {check.cases.length} cases agree with their expectations. Rehearsal only; no decision was recorded.
-        </p>
+        <p className={styles.detail}><Message text={"Revision <0/>: <1/> to the runtime; <2/> of <3/> cases agree with their expectations. Rehearsal only; no decision was recorded."} slots={[latest?.revision, check.valid ? msg("valid") : msg("invalid"), check.cases.filter((c) => c.passed).length, check.cases.length]} /></p>
       )}
       {check && !check.valid && check.diagnostics.length > 0 && (
-        <Disclosure title={`${check.diagnostics.length} validation diagnostic(s)`}>
-          <CodeBlock text={JSON.stringify(check.diagnostics, null, 2)} label="Diagnostics" />
+        <Disclosure title={msg("{{value0}} validation diagnostic(s)", { value0: check.diagnostics.length })}>
+          <CodeBlock text={JSON.stringify(check.diagnostics, null, 2)} label={msg("Diagnostics")} />
         </Disclosure>
       )}
       <div className={styles.tableWrap}>
         <table className={styles.table}>
           <thead>
             <tr>
-              <th scope="col">Case</th>
-              <th scope="col">Expected</th>
-              <th scope="col">Runtime answered</th>
-              <th scope="col">Result</th>
-              <th scope="col">Expectation from</th>
+              <th scope="col">{msg("Case")}</th>
+              <th scope="col">{msg("Expected")}</th>
+              <th scope="col">{msg("Runtime answered")}</th>
+              <th scope="col">{msg("Result")}</th>
+              <th scope="col">{msg("Expectation from")}</th>
             </tr>
           </thead>
           <tbody>
@@ -131,13 +134,13 @@ export function TestsPanel({ state, onSelect, mode = 'research', ...actions }: E
                       <div className={styles.hint}>{row.rationale}</div>
                     </td>
                     <td>{expected.outcomeId ?? expected.kind ?? '—'}</td>
-                    <td>{result === undefined ? 'not yet checked' : result.refused ? `refused: ${result.refused}` : (actual?.outcomeId ?? actual?.kind ?? '—')}</td>
+                    <td>{result === undefined ? msg("not yet checked") : result.refused ? msg("refused: {{value0}}", { value0: result.refused }) : (actual?.outcomeId ?? actual?.kind ?? '—')}</td>
                     <td>
                       {result === undefined ? (
-                        <span className={styles.badge}>pending</span>
+                        <span className={styles.badge}>{msg("pending")}</span>
                       ) : (
                         <span className={styles.badge} data-state={result.passed ? 'passed' : 'disagrees'}>
-                          {result.passed ? 'agrees' : 'disagrees'}
+                          {result.passed ? msg("agrees") : msg("disagrees")}
                         </span>
                       )}
                     </td>
@@ -150,9 +153,9 @@ export function TestsPanel({ state, onSelect, mode = 'research', ...actions }: E
                   {differs && (
                     <tr>
                       <td colSpan={5}>
-                        <Disclosure title={`What ${row.id} disagrees about`}>
-                          <CheckedSide side={result.expected} label="Expected" />
-                          <CheckedSide side={result.actual} label="Runtime" />
+                        <Disclosure title={msg("What {{value0}} disagrees about", { value0: row.id })}>
+                          <CheckedSide side={result.expected} label={msg("Expected")} />
+                          <CheckedSide side={result.actual} label={msg("Runtime")} />
                         </Disclosure>
                       </td>
                     </tr>
@@ -164,7 +167,7 @@ export function TestsPanel({ state, onSelect, mode = 'research', ...actions }: E
         </table>
       </div>
       {state.droppedCases.length > 0 && (
-        <Disclosure title={`${state.droppedCases.length} proposed case(s) were not admitted`}>
+        <Disclosure title={msg("{{value0}} proposed case(s) were not admitted", { value0: state.droppedCases.length })}>
           <ul className={styles.unknowns}>
             {state.droppedCases.map((dropped) => (
               <li key={dropped.id}>
@@ -179,8 +182,9 @@ export function TestsPanel({ state, onSelect, mode = 'research', ...actions }: E
 }
 
 export function DraftPanel({ state, onSelect, onViewLogic, onViewSources }: { state: RunState; onSelect: (next: Selection) => void; onViewLogic?: () => void; onViewSources?: () => void }) {
+  useLocale()
   const latest = state.candidates.at(-1)
-  if (!latest) return <p className={styles.empty}>No draft yet.</p>
+  if (!latest) return <p className={styles.empty}>{msg("No draft yet.")}</p>
   const document = latest.document
   const rules = isRecord(document) && Array.isArray(document.rules) ? document.rules.filter(isRecord) : []
   return (
@@ -188,18 +192,18 @@ export function DraftPanel({ state, onSelect, onViewLogic, onViewSources }: { st
       {isRecord(document) && <PackQuestion document={document as unknown as PackDocument} />}
       {isRecord(document) && <PackOverview document={document as unknown as PackDocument} onViewLogic={onViewLogic} onViewSources={onViewSources} />}
       {rules.length > 0 && (
-        <section className={styles.section} aria-label="Rules and their sources">
-          <h3>Rules and their sources</h3>
+        <section className={styles.section} aria-label={msg("Rules and their sources")}>
+          <h3>{msg("Rules and their sources")}</h3>
           <ul className={styles.list}>
             {rules.map((rule, index) => {
               const id = typeof rule.id === 'string' ? rule.id : `#${index}`
               const refs = Array.isArray(rule.sourceRefs) ? (rule.sourceRefs as string[]) : []
               return (
                 <li key={id} className={styles.row}>
-                  <button type="button" className={styles.rowButton} onClick={() => onSelect({ kind: 'rule', id })} aria-label={`Inspect rule ${id}`}>
+                  <button type="button" className={styles.rowButton} onClick={() => onSelect({ kind: 'rule', id })} aria-label={msg("Inspect rule {{value0}}", { value0: id })}>
                     <div className={styles.rowHead}>
                       <strong>{id}</strong>
-                      <span className={styles.badge}>{refs.length === 0 ? 'no source' : `${refs.length} source ref${refs.length === 1 ? '' : 's'}`}</span>
+                      <span className={styles.badge}>{refs.length === 0 ? msg("no source") : msg("{{value0}} source ref{{value1}}", { value0: refs.length, value1: refs.length === 1 ? '' : 's' })}</span>
                     </div>
                     <div className={styles.url}>{typeof rule.description === 'string' ? rule.description : ''}</div>
                   </button>
@@ -209,15 +213,16 @@ export function DraftPanel({ state, onSelect, onViewLogic, onViewSources }: { st
           </ul>
         </section>
       )}
-      <Disclosure title="Full document (JSON)">
-        <p className={styles.detail}>Produced by {latest.producedBy} · sha256 {latest.digest}</p>
-        <CodeBlock text={latest.text} label="Pack JSON" />
+      <Disclosure title={msg("Full document (JSON)")}>
+        <p className={styles.detail}><Message text={"Produced by <0/> · sha256 <1/>"} slots={[latest.producedBy, latest.digest]} /></p>
+        <CodeBlock text={latest.text} label={msg("Pack JSON")} />
       </Disclosure>
     </div>
   )
 }
 
 export function ReviewPanel({ state, sources, onCreate, onSelect, showCreateAction = true, mode = 'research' }: { showCreateAction?: boolean; mode?: 'draft' | 'research'; state: RunState; sources: readonly SourceRecord[]; onCreate: () => void; onSelect: (next: Selection) => void }) {
+  useLocale()
   const latest = state.candidates.at(-1)
   const check = latest?.check
   const passing = mode === 'research' ? canCreateResearchDraft(state) : state.status === 'ready' && !state.restored && check?.valid === true && check.documentDigest === latest?.digest
@@ -227,26 +232,22 @@ export function ReviewPanel({ state, sources, onCreate, onSelect, showCreateActi
   return (
     <div className={styles.panel}>
       <section className={styles.section}>
-        <h3>Where this stands</h3>
-        <p className={styles.detail}>{state.detail || 'Not started.'}</p>
+        <h3>{msg("Where this stands")}</h3>
+        <p className={styles.detail}>{state.detail || msg("Not started.")}</p>
         <dl className={styles.facts}>
-          <dt>Revisions</dt>
-          <dd>{state.candidates.length} ({state.revisionsUsed} repair{state.revisionsUsed === 1 ? '' : 's'})</dd>
-          <dt>Test cases</dt>
-          <dd>{state.expectationIssues.some(issue => !issue.resolved) ? 'Blocked by invalid expectations' : check?.cases.length ? `${check.cases.filter((c) => c.passed).length} of ${check.cases.length} agree` : 'Not run'}</dd>
-          <dt>Sources</dt>
-          <dd>
-            {sources.length} recorded; {verified} with verified receipts; {failed} failed or unverified
-          </dd>
-          <dt>Citations</dt>
-          <dd>
-            {state.citations.length - untraced.length} of {state.citations.length} traced to a recorded excerpt
-          </dd>
+          <dt>{msg("Revisions")}</dt>
+          <dd><Message text={"<0/> (<1/> repair<2/>)"} slots={[state.candidates.length, state.revisionsUsed, state.revisionsUsed === 1 ? '' : msg("s")]} /></dd>
+          <dt>{msg("Test cases")}</dt>
+          <dd>{state.expectationIssues.some(issue => !issue.resolved) ? msg("Blocked by invalid expectations") : check?.cases.length ? msg("{{value0}} of {{value1}} agree", { value0: check.cases.filter((c) => c.passed).length, value1: check.cases.length }) : msg("Not run")}</dd>
+          <dt>{msg("Sources")}</dt>
+          <dd><Message text={"<0/> recorded; <1/> with verified receipts; <2/> failed or unverified"} slots={[sources.length, verified, failed]} /></dd>
+          <dt>{msg("Citations")}</dt>
+          <dd><Message text={"<0/> of <1/> traced to a recorded excerpt"} slots={[state.citations.length - untraced.length, state.citations.length]} /></dd>
         </dl>
       </section>
       {state.unknowns.length > 0 && (
         <section className={styles.section}>
-          <h3>Assumptions and open questions</h3>
+          <h3>{msg("Assumptions and open questions")}</h3>
           <ul className={styles.unknowns}>
             {state.unknowns.map((line, index) => (
               <li key={index}>{line}</li>
@@ -256,7 +257,7 @@ export function ReviewPanel({ state, sources, onCreate, onSelect, showCreateActi
       )}
       {untraced.length > 0 && (
         <section className={styles.section}>
-          <h3>Citations that could not be traced</h3>
+          <h3>{msg("Citations that could not be traced")}</h3>
           <ul className={styles.unknowns}>
             {untraced.map((citation) => (
               <li key={citation.sourceId}>
@@ -269,7 +270,7 @@ export function ReviewPanel({ state, sources, onCreate, onSelect, showCreateActi
       )}
       {state.citations.some((c) => c.traced) && (
         <section className={styles.section}>
-          <h3>Traced citations</h3>
+          <h3>{msg("Traced citations")}</h3>
           <ul className={styles.list}>
             {state.citations
               .filter((c) => c.traced)
@@ -289,31 +290,26 @@ export function ReviewPanel({ state, sources, onCreate, onSelect, showCreateActi
       )}
       {state.candidates.length > 1 && (
         <section className={styles.section}>
-          <h3>Revisions</h3>
+          <h3>{msg("Revisions")}</h3>
           <ul className={styles.unknowns}>
             {state.candidates.map((candidate) => (
-              <li key={candidate.revision}>
-                Revision {candidate.revision} ({candidate.producedBy}):{' '}
-                {candidate.check ? `${candidate.check.valid ? 'valid' : 'invalid'}, ${candidate.check.cases.filter((c) => c.passed).length}/${candidate.check.cases.length} agree` : 'not checked'}
-              </li>
+              <li key={candidate.revision}><Message text={"Revision <0/> (<1/>):<2/><3/>"} slots={[candidate.revision, candidate.producedBy, ' ', candidate.check ? `${candidate.check.valid ? 'valid' : 'invalid'}, ${candidate.check.cases.filter((c) => c.passed).length}/${candidate.check.cases.length} agree` : msg("not checked")]} /></li>
             ))}
           </ul>
         </section>
       )}
       <section className={styles.section}>
-        <h3>Create</h3>
+        <h3>{msg("Create")}</h3>
         <p className={styles.detail}>
           {passing
-            ? mode === 'research' ? 'Review the name and open questions, then create the pack with its checked cases and research record.' : 'The runtime validated the structure. Review the draft before creating. Source research and behavioral tests have not been run.'
-            : 'Create is offered once every established case agrees with the runtime and the draft is valid.'}
+            ? mode === 'research' ? msg("Review the name and open questions, then create the pack with its checked cases and research record.") : msg("The runtime validated the structure. Review the draft before creating. Source research and behavioral tests have not been run.")
+            : msg("Create is offered once every established case agrees with the runtime and the draft is valid.")}
         </p>
         <p className={styles.hint}>
-          {mode === 'research' && <>A verified receipt establishes that the gateway signed these bytes and sealed the session; it does not establish that a page is true, current, legally authoritative, or that it came from the site its URL names.</>}
+          {mode === 'research' && <>{msg("A verified receipt establishes that the gateway signed these bytes and sealed the session; it does not establish that a page is true, current, legally authoritative, or that it came from the site its URL names.")}</>}
         </p>
         {showCreateAction && <div>
-          <Button variant="primary" disabled={!passing || state.status === 'running'} onClick={onCreate}>
-            Review and create
-          </Button>
+          <Button variant="primary" disabled={!passing || state.status === 'running'} onClick={onCreate}>{msg("Review and create")}</Button>
         </div>}
       </section>
     </div>
@@ -321,14 +317,15 @@ export function ReviewPanel({ state, sources, onCreate, onSelect, showCreateActi
 }
 
 function DraftLogic({ state, selection, onSelect }: { state: RunState; selection: Selection; onSelect: (next: Selection) => void }) {
+  const locale = useLocale()
   const document = state.candidates.at(-1)?.document
-  const model = useMemo(() => document && isRecord(document) ? projectLogic(document as unknown as PackDocument) : null, [document])
+  const model = useMemo(() => document && isRecord(document) ? projectLogic(document as unknown as PackDocument) : null, [document, locale])
   const [mode, setMode] = useState<LogicMode>('list')
   const [query, setQuery] = useState('')
   const [display, setDisplay] = useState(initialLogicDisplay)
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 })
   const scroll = useRef(0)
-  if (!model) return <p className={styles.empty}>No draft yet.</p>
+  if (!model) return <p className={styles.empty}>{msg("No draft yet.")}</p>
   const select = (id: string) => onSelect({ kind: 'logic', id })
   return <div className={styles.panel}><PackLogic model={model} at={selection?.kind === 'logic' ? selection.id : null} groupId={null}
     select={select} inspect={select} mode={mode} onMode={setMode} query={query} onQuery={setQuery} display={display} onDisplay={setDisplay}
@@ -336,27 +333,28 @@ function DraftLogic({ state, selection, onSelect }: { state: RunState; selection
 }
 
 export function DraftTabs({ state, sources, selection, onSelect, onCreate, showCreateAction = true, mode = 'research', ...actions }: ExpectationReviewActions & { showCreateAction?: boolean; mode?: 'draft' | 'research'; state: RunState; sources: readonly SourceRecord[]; selection: Selection; onSelect: (next: Selection) => void; onCreate: () => void }) {
+  useLocale()
   const [tab, setTab] = useState('draft')
   const pending = state.expectationIssues.filter(issue => !issue.resolved).length
   const total = state.cases.length + pending
   return (
-    <section className={styles.pane} aria-label="Draft review" data-pane="draft">
+    <section className={styles.pane} aria-label={msg("Draft review")} data-pane="draft">
       <header className={styles.paneHeader}>
-        <span>{typeof (state.candidates.at(-1)?.document as { title?: unknown })?.title === 'string' ? (state.candidates.at(-1)!.document as { title: string }).title : 'Draft'}</span>
-        <span className={styles.status}>{state.candidates.length === 0 ? 'no revision yet' : `revision ${state.candidates.at(-1)!.revision}`}</span>
+        <span>{typeof (state.candidates.at(-1)?.document as { title?: unknown })?.title === 'string' ? (state.candidates.at(-1)!.document as { title: string }).title : msg("Draft")}</span>
+        <span className={styles.status}>{state.candidates.length === 0 ? msg("no revision yet") : msg("revision {{value0}}", { value0: state.candidates.at(-1)!.revision })}</span>
       </header>
-      {pending > 0 && <div className={styles.panel} role="status"><span>{pending} invalid expectation{pending === 1 ? '' : 's'} · testing paused</span><div><Button variant="quiet" onClick={() => setTab('tests')}>Review expectations</Button></div></div>}
+      {pending > 0 && <div className={styles.panel} role="status"><span><Message text={"<0/> invalid expectation<1/> · testing paused"} slots={[pending, pending === 1 ? '' : msg("s")]} /></span><div><Button variant="quiet" onClick={() => setTab('tests')}>{msg("Review expectations")}</Button></div></div>}
       <Tabs
         scrollable
-        label="Draft views"
+        label={msg("Draft views")}
         value={tab}
         onValueChange={setTab}
         tabs={[
-          { value: 'draft', label: 'Overview', panel: <DraftPanel state={state} onSelect={onSelect} onViewLogic={() => setTab('logic')} onViewSources={() => setTab('sources')} /> },
-          { value: 'logic', label: 'Logic', panel: <DraftLogic state={state} selection={selection} onSelect={onSelect} /> },
+          { value: 'draft', label: "Overview", panel: <DraftPanel state={state} onSelect={onSelect} onViewLogic={() => setTab('logic')} onViewSources={() => setTab('sources')} /> },
+          { value: 'logic', label: "Logic", panel: <DraftLogic state={state} selection={selection} onSelect={onSelect} /> },
           { value: 'sources', label: `Sources${sources.length ? ` (${sources.length})` : ''}`, panel: <div className={styles.panel}><SourcesPanel sources={sources} selection={selection} onSelect={onSelect} /></div> },
           { value: 'tests', label: `Tests${total ? ` (${total})` : ''}`, panel: <TestsPanel mode={mode} state={state} onSelect={onSelect} {...actions} /> },
-          { value: 'review', label: 'Review', panel: <ReviewPanel showCreateAction={showCreateAction} mode={mode} state={state} sources={sources} onCreate={onCreate} onSelect={onSelect} /> }
+          { value: 'review', label: "Review", panel: <ReviewPanel showCreateAction={showCreateAction} mode={mode} state={state} sources={sources} onCreate={onCreate} onSelect={onSelect} /> }
         ]}
       />
     </section>

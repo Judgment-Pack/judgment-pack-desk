@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { useLocale } from '../i18n'
 import type { ReactNode } from 'react'
 
 /** A titled block. A section with nothing in it renders nothing at all. */
@@ -10,6 +12,7 @@ export function Section({
   count?: number
   children: ReactNode
 }) {
+  useLocale()
   if (children === null || children === undefined || children === false) return null
   return (
     <section className="section">
@@ -25,6 +28,7 @@ export function Section({
 /** Pretty-printed JSON. Conditions are shown this way rather than paraphrased:
  *  a paraphrase of a policy condition is a claim about what it means. */
 export function Json({ value, label }: { value: unknown; label?: string }) {
+  useLocale()
   return (
     <figure className="json">
       {label && <figcaption>{label}</figcaption>}
@@ -42,6 +46,7 @@ export function Pill({
   children: ReactNode
   tone?: 'neutral' | 'strong' | 'quiet' | 'success' | 'skipped' | 'danger'
 }) {
+  useLocale()
   return <span className={`pill pill-${tone}`}>{children}</span>
 }
 
@@ -57,6 +62,7 @@ export function statusTone(status: string): 'success' | 'skipped' | 'danger' {
 }
 
 export function Fields({ items }: { items: [string, ReactNode][] }) {
+  useLocale()
   const present = items.filter(([, value]) => value !== undefined && value !== null && value !== '')
   if (present.length === 0) return null
   return (
@@ -72,10 +78,12 @@ export function Fields({ items }: { items: [string, ReactNode][] }) {
 }
 
 export function Empty({ children }: { children: ReactNode }) {
+  useLocale()
   return <p className="empty">{children}</p>
 }
 
 export function ErrorBox({ title, error }: { title: string; error: Error }) {
+  useLocale()
   return (
     <div className="error-box" role="alert">
       <strong>{title}</strong>
@@ -85,7 +93,8 @@ export function ErrorBox({ title, error }: { title: string; error: Error }) {
 }
 
 export function Loading({ what }: { what: string }) {
-  return <p className="loading">Loading {what}…</p>
+  useLocale()
+  return <p className="loading"><Message text={"Loading <0/>…"} slots={[what]} /></p>
 }
 
 /**

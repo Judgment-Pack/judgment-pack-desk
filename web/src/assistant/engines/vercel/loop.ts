@@ -1,3 +1,4 @@
+import { assistantLanguageInstructions } from '../../../i18n/assistantLanguage'
 /**
  * The `vercel` engine's loop: the Vercel AI SDK v7, behind the desk's contract.
  *
@@ -585,7 +586,7 @@ export function runVercel(
       // See claimPromises: the unused browser tracing path leaks on failure.
       telemetry: { isEnabled: false },
       model,
-      instructions: session.allowConversation ? CONVERSATION_SYSTEM : SYSTEM,
+      instructions: (session.allowConversation ? CONVERSATION_SYSTEM : SYSTEM) + assistantLanguageInstructions(session.replyLanguage),
       tools,
       messages: [{ role: 'user', content: session.prompt }],
       stopWhen: stepCountIs(MAX_TURNS),
@@ -770,7 +771,7 @@ export function runVercel(
         const critic = streamText({
           telemetry: { isEnabled: false },
           model,
-          instructions: CRITIC_SYSTEM,
+          instructions: CRITIC_SYSTEM + assistantLanguageInstructions(session.replyLanguage),
           tools,
           messages: [
             { role: 'user', content: criticMessage(session.testPrompt, proposal.document) }

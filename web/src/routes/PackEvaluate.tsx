@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 import { PACK_TERMS } from '../packs/terminology'
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -35,6 +37,7 @@ type ResultTab = 'reading' | 'raw'
  * collapsed into one empty box.
  */
 export function PackEvaluate() {
+  useLocale()
   const { packId } = useParams<{ packId: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -120,42 +123,22 @@ export function PackEvaluate() {
       <div className={styles.workspace}>
       <TestNavigation packId={packId ?? ''} hasMatrix={Boolean(summary?.matrix || summary?.matrixPath)} />
       <details className={styles.notice}>
-        <summary>{rehearsalSupported ? 'Rehearsal · evaluates the loaded pack snapshot without appending an audit record.' : 'Runtime behavior · this run may append an audit record.'}</summary>
-        <p className="note note-warn">
-          <strong>Experimental surface.</strong> This runs the runtime's
-          <code> experimental_evaluate</code> tool, which may change or be removed
-          without a compatibility promise. It authorizes nothing and executes
-          nothing.{' '}
-          {rehearsalSupported ? (
-            <>
-              Every run here is declared a rehearsal (ADR-0028): the evaluation
-              is identical, no audit record is appended, no reviewed set is
-              consulted, and the payload carries the label.
-            </>
+        <summary>{rehearsalSupported ? msg("Rehearsal · evaluates the loaded pack snapshot without appending an audit record.") : msg("Runtime behavior · this run may append an audit record.")}</summary>
+        <p className="note note-warn"><Message text={"<0/> This runs the runtime's<1/> tool, which may change or be removed without a compatibility promise. It authorizes nothing and executes nothing.<2/><3/>"} slots={[<strong>{msg("Experimental surface.")}</strong>, <code> experimental_evaluate</code>, ' ', rehearsalSupported ? (
+            <>{msg("Every run here is declared a rehearsal (ADR-0028): the evaluation is identical, no audit record is appended, no reviewed set is consulted, and the payload carries the label.")}</>
           ) : capabilitiesKnown ? (
-            <>
-              This runtime predates the rehearsal declaration (jpack 0.18.0), so
-              in a project whose <code>jpack.json</code> declares an audit
-              directory, each completed run appends one record to it.
-            </>
+            <><Message text={"This runtime predates the rehearsal declaration (jpack 0.18.0), so in a project whose <0/> declares an audit directory, each completed run appends one record to it."} slots={[<code>jpack.json</code>]} /></>
           ) : (
-            <>
-              This desk could not read the runtime's tool listing, so whether it
-              accepts the rehearsal declaration is unknown rather than known to
-              be no. Runs are sent without it, which means that in a project
-              whose <code>jpack.json</code> declares an audit directory, each
-              completed run may append one record to it.
-            </>
-          )}
-        </p>
+            <><Message text={"This desk could not read the runtime's tool listing, so whether it accepts the rehearsal declaration is unknown rather than known to be no. Runs are sent without it, which means that in a project whose <0/> declares an audit directory, each completed run may append one record to it."} slots={[<code>jpack.json</code>]} /></>
+          )]} /></p>
       </details>
       <div className={styles.columns}>
-      <section className={styles.inputs} aria-label="Test inputs">
-        <h2>Try inputs</h2>
-        <p className="quiet">Supply facts to explore an outcome. This is an exploratory run; a pass or fail requires saved expectations.</p>
+      <section className={styles.inputs} aria-label={msg("Test inputs")}>
+        <h2>{msg("Try inputs")}</h2>
+        <p className="quiet">{msg("Supply facts to explore an outcome. This is an exploratory run; a pass or fail requires saved expectations.")}</p>
         <PackReference summary={summary} />
         <FieldGroup>
-        <Field label="Facts" error={factsError} hint="JSON values at the fact paths used by the pack. Omitted values remain unknown.">
+        <Field label={msg("Facts")} error={factsError} hint={msg("JSON values at the fact paths used by the pack. Omitted values remain unknown.")}>
           {(wiring) => <TextArea {...wiring} rows={7} value={facts}
             spellCheck={false} onChange={(event) => setFacts(event.target.value)} />}
         </Field>
@@ -167,17 +150,11 @@ export function PackEvaluate() {
               checked={evidenceSupplied}
               onChange={(event) => setEvidenceSupplied(event.target.checked)}
             />
-            <span>
-              Supply an evidence document. Unchecked, the key is omitted entirely
-              and every declared requirement is unknown.
-            </span>
+            <span>{msg("Supply an evidence document. Unchecked, the key is omitted entirely and every declared requirement is unknown.")}</span>
           </label>
           {evidenceSupplied && (
             <>
-              <label htmlFor="evidence-editor">
-                <strong>Evidence</strong> — requirement id to{' '}
-                <code>present</code>, <code>absent</code>, or <code>unknown</code>.
-              </label>
+              <label htmlFor="evidence-editor"><Message text={"<0/> — requirement id to<1/><2/>, <3/>, or <4/>."} slots={[<strong>{msg("Evidence")}</strong>, ' ', <code>present</code>, <code>absent</code>, <code>unknown</code>]} /></label>
               <TextArea
                 id="evidence-editor"
                 aria-invalid={Boolean(evidenceError)}
@@ -188,7 +165,7 @@ export function PackEvaluate() {
                 onChange={(event) => setEvidence(event.target.value)}
               />
               <p id="evidence-status" className={evidenceError ? 'editor-status editor-status-bad' : 'editor-status'}>
-                {evidenceError ?? 'valid JSON'}
+                {evidenceError ?? msg("valid JSON")}
               </p>
             </>
           )}
@@ -198,48 +175,41 @@ export function PackEvaluate() {
         <div className={styles.actions}>
           <Button variant="primary" disabled={!runnable || evaluate.isPending} onClick={run}>
             {evaluate.isPending
-              ? 'Evaluating…'
+              ? msg("Evaluating…")
               : history.length === 0
-                ? 'Run evaluation'
-                : 'Re-evaluate'}
+                ? msg("Run evaluation")
+                : msg("Re-evaluate")}
           </Button>
           {drifted && (
-            <Button variant="quiet" onClick={revert}>
-              Restore last run inputs
-            </Button>
+            <Button variant="quiet" onClick={revert}>{msg("Restore last run inputs")}</Button>
           )}
-          {status !== 'ready' && <span className="quiet">waiting for the runtime connection</span>}
+          {status !== 'ready' && <span className="quiet">{msg("waiting for the runtime connection")}</span>}
         </div>
       </section>
-      <section className={styles.results} aria-label="Test results">
-      <h2>Result</h2>
-      {current && <Button onClick={explain} disabled={current.packBytes === undefined}>Explain on map</Button>}
-      {current && current.packBytes === undefined && <p className="quiet">This result has no captured pack revision, so a trace cannot be attached to the map.</p>}
-      {drifted && <p className={styles.stale} role="status">Inputs changed since this result. Run again to evaluate the current inputs.</p>}
-      {evaluate.isPending && <p role="status">Evaluating the submitted inputs…</p>}
+      <section className={styles.results} aria-label={msg("Test results")}>
+      <h2>{msg("Result")}</h2>
+      {current && <Button onClick={explain} disabled={current.packBytes === undefined}>{msg("Explain on map")}</Button>}
+      {current && current.packBytes === undefined && <p className="quiet">{msg("This result has no captured pack revision, so a trace cannot be attached to the map.")}</p>}
+      {drifted && <p className={styles.stale} role="status">{msg("Inputs changed since this result. Run again to evaluate the current inputs.")}</p>}
+      {evaluate.isPending && <p role="status">{msg("Evaluating the submitted inputs…")}</p>}
       {evaluate.error && <RefusalPanel error={evaluate.error} />}
 
       {current ? (
         <>
           <p className="meta">
-            <span>
-              run {history.length} of this page{drifted ? '; the editors have moved since' : ''}
-            </span>
+            <span><Message text={"run <0/> of this page<1/>"} slots={[history.length, drifted ? msg("; the editors have moved since") : '']} /></span>
           </p>
-          <Tabs label="Result view" value={tab} onValueChange={(next) => setTab(next as ResultTab)} tabs={[
-            { value: 'reading', label: 'Outcome & trace', panel: <>
+          <Tabs label={msg("Result view")} value={tab} onValueChange={(next) => setTab(next as ResultTab)} tabs={[
+            { value: 'reading', label: "Outcome & trace", panel: <>
               {previous && <DispositionDiff previous={previous.payload} current={current.payload} />}
               <EvaluationView payload={current.payload} />
             </> },
-            { value: 'raw', label: 'Raw response', panel: <EvaluationRaw raw={current.raw} /> }
+            { value: 'raw', label: "Raw response", panel: <EvaluationRaw raw={current.raw} /> }
           ]} />
         </>
       ) : (
         !evaluate.isPending && (
-          <Empty>
-            No evaluation yet. Supply a facts document and run one — the pack, the
-            facts, and the evidence are the whole input.
-          </Empty>
+          <Empty>{msg("No evaluation yet. Supply a facts document and run one — the pack, the facts, and the evidence are the whole input.")}</Empty>
         )
       )}
       </section>
@@ -258,6 +228,7 @@ export function PackEvaluate() {
  * so the pack escalates than invented so it decides.
  */
 function PackReference({ summary }: { summary?: PackSummary }) {
+  useLocale()
   if (!summary) return null
   const facts = summary.consultedFactPaths ?? []
   const evidence = summary.evidenceRequirements ?? []
@@ -266,7 +237,7 @@ function PackReference({ summary }: { summary?: PackSummary }) {
     <div className="card">
       {facts.length > 0 && (
         <p className="reference">
-          <span className="reference-label">Consulted fact paths</span>
+          <span className="reference-label">{msg("Consulted fact paths")}</span>
           {facts.map((path) => (
             <code key={path} className="id">
               {path}

@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 import { useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useFileListing } from '../files/queries'
@@ -19,6 +21,7 @@ export function AssistantOptions({ thinking, tools, mode = 'draft', review = fal
   thinking: ThinkingTier; tools: readonly string[]; mode?: 'draft' | 'research'; review?: boolean
   onReview?: (value: boolean) => void; disabled?: boolean; notice?: string
 }) {
+  useLocale()
   const [open, setOpen] = useState(false)
   const [configure, setConfigure] = useState(false)
   const mcp = useMcp()
@@ -35,23 +38,23 @@ export function AssistantOptions({ thinking, tools, mode = 'draft', review = fal
   const trigger = useRef<HTMLButtonElement>(null)
   const configureButton = useRef<HTMLButtonElement>(null)
   return <>
-    <Popover title="Assistant settings" variant="list" size="small" open={open} onOpenChange={setOpen}
-      triggerTooltip="Assistant settings" onEscapeKeyDown={event => event.stopPropagation()}
+    <Popover title={msg("Assistant settings")} variant="list" size="small" open={open} onOpenChange={setOpen}
+      triggerTooltip={msg("Assistant settings")} onEscapeKeyDown={event => event.stopPropagation()}
       onOpenAutoFocus={event => { event.preventDefault(); configureButton.current?.focus() }}
       onCloseAutoFocus={event => { if (configure) event.preventDefault() }}
-      trigger={<button ref={trigger} className="desk-icon-button" type="button" aria-label="Assistant settings"><IconGear /></button>}>
+      trigger={<button ref={trigger} className="desk-icon-button" type="button" aria-label={msg("Assistant settings")}><IconGear /></button>}>
       <div className={styles.settingsBody}>
-        <dl className={styles.setting}><dt>Thinking requested</dt><dd>{thinking === 'off' ? 'Off' : thinking === 'ultra' ? 'Ultra' : 'On'}</dd></dl>
-        <p className={styles.caption}>{notice || 'Reasoning support depends on the selected model.'}</p>
-        {onReview && <label className={styles.reviewOption}><input type="checkbox" checked={review} disabled={disabled || !reviewAvailable} onChange={event => onReview(event.target.checked)} /> Adversarial review</label>}
-        <p className={styles.caption}>{reviewAvailable ? 'Optional model review of proposed changes. Runtime validation remains required.' : 'Connect a runtime with test_pack to enable adversarial review.'}</p>
-        <section className={styles.toolSection} aria-label="Allowed tools">
-          <h3>Available tools <span>{available.length + host.length}</span></h3>
-          {available.length + host.length ? <ul>{[...available, ...host].map(tool => <li key={tool}><Tooltip content={tool}><span tabIndex={0}>{TOOL_LABELS[tool] ?? tool}</span></Tooltip></li>)}</ul> : <p>{mcp.status !== 'ready' ? 'Runtime tools are unavailable while disconnected. You can still chat.' : listed.isPending ? 'Checking runtime tools…' : 'No enabled tools are available.'}</p>}
-          <p className={styles.caption}>Authoring instructions are loaded when needed. Tool access follows Admin settings.</p>
+        <dl className={styles.setting}><dt>{msg("Thinking requested")}</dt><dd>{thinking === 'off' ? msg("Off") : thinking === 'ultra' ? msg("Ultra") : msg("On")}</dd></dl>
+        <p className={styles.caption}>{notice || msg("Reasoning support depends on the selected model.")}</p>
+        {onReview && <label className={styles.reviewOption}><Message text={"<0/> Adversarial review"} slots={[<input type="checkbox" checked={review} disabled={disabled || !reviewAvailable} onChange={event => onReview(event.target.checked)} />]} /></label>}
+        <p className={styles.caption}>{reviewAvailable ? msg("Optional model review of proposed changes. Runtime validation remains required.") : msg("Connect a runtime with test_pack to enable adversarial review.")}</p>
+        <section className={styles.toolSection} aria-label={msg("Allowed tools")}>
+          <h3><Message text={"Available tools <0/>"} slots={[<span>{available.length + host.length}</span>]} /></h3>
+          {available.length + host.length ? <ul>{[...available, ...host].map(tool => <li key={tool}><Tooltip content={tool}><span tabIndex={0}>{TOOL_LABELS[tool] ?? tool}</span></Tooltip></li>)}</ul> : <p>{mcp.status !== 'ready' ? msg("Runtime tools are unavailable while disconnected. You can still chat.") : listed.isPending ? msg("Checking runtime tools…") : msg("No enabled tools are available.")}</p>}
+          <p className={styles.caption}>{msg("Authoring instructions are loaded when needed. Tool access follows Admin settings.")}</p>
         </section>
       </div>
-      <div className={styles.settingsFooter}><Button ref={configureButton} variant="quiet" onClick={() => { setOpen(false); setConfigure(true) }}>Configure Assistant…</Button></div>
+      <div className={styles.settingsFooter}><Button ref={configureButton} variant="quiet" onClick={() => { setOpen(false); setConfigure(true) }}>{msg("Configure Assistant…")}</Button></div>
     </Popover>
     <ConfigureAssistant open={configure} onOpenChange={setConfigure} openerRef={trigger} />
   </>

@@ -1,3 +1,4 @@
+import { currentLanguage } from '../i18n/locales'
 /**
  * One assistant session: its own connection, its own gate, one event stream.
  *
@@ -611,5 +612,6 @@ export async function runAssistantSession(
   session: AssistantSession,
   onEvent: (event: AssistantEvent) => void
 ): Promise<void> {
-  for await (const event of engine.start(session)) onEvent(event)
+  const localizedSession = { ...session, replyLanguage: session.replyLanguage ?? currentLanguage() }
+  for await (const event of engine.start(localizedSession)) onEvent(event)
 }

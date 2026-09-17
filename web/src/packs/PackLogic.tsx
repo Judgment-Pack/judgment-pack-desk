@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 import { lazy, Suspense, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import type { Viewport } from '@xyflow/react'
 import type { TraceEntry } from '../mcp/types'
@@ -25,6 +27,7 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
   viewport: Viewport; onViewport: (v: Viewport) => void
   listScroll: MutableRefObject<number>; mapUnavailable?: string; trace?: readonly TraceEntry[]
 }) {
+  useLocale()
   const [ruler, setRuler] = useState<HTMLSpanElement | null>(null)
   const rem = useMeasuredBox(ruler)?.width || 16
   useInspectorWorkingWidth(mode === 'map' ? 51 * rem : 34 * rem)
@@ -33,7 +36,7 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
   const [focusRequest, setFocusRequest] = useState<{ id: string; sequence: number }>()
   const nextMatch = useRef(0)
   const [jump, setJump] = useState<string | null>(null)
-  useLayoutEffect(() => { setExpanded(new Set()); nextMatch.current = 0 }, [model])
+  useLayoutEffect(() => { setExpanded(new Set()); nextMatch.current = 0 }, [model.document])
   useLayoutEffect(() => { nextMatch.current = 0 }, [query])
   // PageBody owns List scrolling; a second scroll box would trap the toolbar.
   useLayoutEffect(() => {
@@ -78,8 +81,8 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
       action: aggregate ? 'Expand rules' : 'View details',
       content: aggregate ? <div className={styles.groupPreview}>
         <ul>{node.items.slice(0, 3).map(i => <li key={i.pointer}>{i.label}</li>)}</ul>
-        {node.items.length > 3 && <p>+ {node.items.length - 3} more rules</p>}
-        <p>Expand to read each rule’s conditions.</p>
+        {node.items.length > 3 && <p><Message text={"+ <0/> more rules"} slots={[node.items.length - 3]} /></p>}
+        <p>{msg("Expand to read each rule’s conditions.")}</p>
       </div> : <LogicDetails document={model.document} group={node.group.id} item={item} conditions={display.conditions || searching} /> }
   })
   const updateDisplay = (next: typeof display) => { onDisplay(next); rememberLogicDisplay(next) }
@@ -102,11 +105,11 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
     const observation = itemTrace(group, item, trace)
     return <article key={item.pointer} className={styles.item} data-logic-pointer={item.pointer}
       data-current={current?.item.pointer === item.pointer || undefined} data-search-match={searching && matchPointers.has(item.pointer) || undefined}>
-      <InspectionRow label={item.label} aria-label={`View details: ${item.label}`} current={current?.item.pointer === item.pointer}
+      <InspectionRow label={item.label} aria-label={msg("View details: {{value0}}", { value0: item.label })} current={current?.item.pointer === item.pointer}
         description={group.id === 'evidenceRequirements' ? evidenceSummary(item.value) : undefined}
         onClick={() => inspect(item.pointer)} />
       {group.id !== 'evidenceRequirements' && <div className={styles.itemBody}><LogicDetails document={model.document} group={group.id} item={item} conditions={display.conditions || searching} />
-      {observation && <p className={styles.trace}>Recorded condition: {observation}</p>}</div>}
+      {observation && <p className={styles.trace}><Message text={"Recorded condition: <0/>"} slots={[observation]} /></p>}</div>}
     </article>
   }
   const renderGroup = (id: string) => {
@@ -116,33 +119,33 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
     const singleton = id === 'applicability'
     return <section key={id} className={styles.listGroup} aria-label={group.label} data-group={id} data-current={groupId === id || undefined}>
       {!singleton && <h2>{group.label}{id !== 'resolution' ? ` · ${group.items.length}` : ''}</h2>}
-      {id === 'rules' && <p className={styles.note}>Rules contribute outcomes independently. Their order does not set priority.</p>}
+      {id === 'rules' && <p className={styles.note}>{msg("Rules contribute outcomes independently. Their order does not set priority.")}</p>}
       {items.length ? <div className={id === 'rules' || id === 'exceptions' ? styles.rules : styles.items}>{items.map(item => renderItem(group, item))}</div>
-        : <p className={styles.note}>None declared.</p>}
+        : <p className={styles.note}>{msg("None declared.")}</p>}
     </section>
   }
-  return <section ref={root} className={styles.logic} aria-label="Pack logic">
+  return <section ref={root} className={styles.logic} aria-label={msg("Pack logic")}>
     <span ref={setRuler} className={styles.ruler} aria-hidden="true" />
     <div className={styles.toolbar}>
-      <SegmentedControl label="Logic view" value={mode} onValueChange={v => onMode(v as LogicMode)} segments={[{ value: 'list', label: 'List' }, { value: 'map', label: 'Map' }]} />
+      <SegmentedControl label={msg("Logic view")} value={mode} onValueChange={v => onMode(v as LogicMode)} segments={[{ value: 'list', label: "List" }, { value: 'map', label: "Map" }]} />
       <form className={styles.search} onSubmit={e => { e.preventDefault(); requestMatch() }}>
-        <Input type="search" aria-label="Find pack item" value={query} onChange={e => onQuery(e.target.value)} placeholder={mode === 'map' ? 'Find in map…' : 'Filter items…'} />
+        <Input type="search" aria-label={msg("Find pack item")} value={query} onChange={e => onQuery(e.target.value)} placeholder={mode === 'map' ? msg("Find in map…") : msg("Filter items…")} />
       </form>
-      {searching && <Button variant="quiet" onClick={requestMatch} disabled={!matchPointers.size}>Next match</Button>}
-      <Popover title="Display options" trigger={<Button variant="quiet">Display</Button>}>
-        <label className={styles.option}><input type="checkbox" checked={display.conditions} onChange={e => updateDisplay({ ...display, conditions: e.target.checked })} />Show conditions</label>
-        <label className={styles.option}><input type="checkbox" checked={display.grouped} onChange={e => { setExpanded(new Set()); updateDisplay({ ...display, grouped: e.target.checked }) }} />Group map rules by outcome</label>
-        <p className={styles.note}>Display preferences are remembered. Search always reveals matching conditions.</p>
+      {searching && <Button variant="quiet" onClick={requestMatch} disabled={!matchPointers.size}>{msg("Next match")}</Button>}
+      <Popover title={msg("Display options")} trigger={<Button variant="quiet">{msg("Display")}</Button>}>
+        <label className={styles.option}><Message text={"<0/>Show conditions"} slots={[<input type="checkbox" checked={display.conditions} onChange={e => updateDisplay({ ...display, conditions: e.target.checked })} />]} /></label>
+        <label className={styles.option}><Message text={"<0/>Group map rules by outcome"} slots={[<input type="checkbox" checked={display.grouped} onChange={e => { setExpanded(new Set()); updateDisplay({ ...display, grouped: e.target.checked }) }} />]} /></label>
+        <p className={styles.note}>{msg("Display preferences are remembered. Search always reveals matching conditions.")}</p>
       </Popover>
       <PackJumpTo model={model} at={at} onJump={pointer => { onQuery(''); select(pointer); setJump(pointer) }} />
     </div>
-    {searching && <p className={styles.searchStatus} role="status">{matchPointers.size ? `${matchPointers.size} matching items` : `No items match “${query}”.`}</p>}
+    {searching && <p className={styles.searchStatus} role="status">{matchPointers.size ? msg("{{value0}} matching items", { value0: matchPointers.size }) : msg("No items match “{{value0}}”.", { value0: query })}</p>}
     <div className={styles.context}>{renderGroup('applicability')}{renderGroup('evidenceRequirements')}</div>
     {mode === 'map' ? mapUnavailable ? <div className={styles.unavailable} role="status">
-      <h2>Map unavailable</h2><p>{mapUnavailable}</p><Button onClick={() => onMode('list')}>Read List</Button>
+      <h2>{msg("Map unavailable")}</h2><p>{mapUnavailable}</p><Button onClick={() => onMode('list')}>{msg("Read List")}</Button>
     </div> : <>
-      <p className={styles.note}>Rules contribute outcomes independently. Connections show declared outcomes and special-case targets.</p>
-      <div className={styles.canvas} data-logic-canvas><Suspense fallback={<p role="status">Loading map…</p>}><RelationshipMap nodes={graphNodes} edges={graph.edges} unit={rem} viewport={viewport}
+      <p className={styles.note}>{msg("Rules contribute outcomes independently. Connections show declared outcomes and special-case targets.")}</p>
+      <div className={styles.canvas} data-logic-canvas><Suspense fallback={<p role="status">{msg("Loading map…")}</p>}><RelationshipMap nodes={graphNodes} edges={graph.edges} unit={rem} viewport={viewport}
         focusRequest={focusRequest} onViewportChange={onViewport} onSelect={id => {
           const node = graph.nodes.find(n => n.id === id)
           if (!node) return
@@ -153,7 +156,7 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
           if (node && node.items.length > 1) setExpanded(previous => new Set([...previous, id]))
           else inspect(id)
         }} /></Suspense></div>
-      <p className={styles.caption}>{trace ? 'Recorded observations on these pack bytes.' : 'Declared logic. No test results are shown.'} {model.groups.find(g => g.id === 'exceptions')!.items.length === 0 && 'No special cases.'}</p>
+      <p className={styles.caption}>{trace ? msg("Recorded observations on these pack bytes.") : msg("Declared logic. No test results are shown.")} {model.groups.find(g => g.id === 'exceptions')!.items.length === 0 && msg("No special cases.")}</p>
     </> : <>{renderGroup('rules')}{renderGroup('exceptions')}{renderGroup('outcomes')}</>}
     {renderGroup('resolution')}{renderGroup('sources')}
   </section>

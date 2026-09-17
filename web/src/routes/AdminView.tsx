@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../i18n'
 import { OverflowTooltip } from '../ui/Tooltip'
 /**
  * Admin: dedicated settings navigation, one open section, and the file itself in the
@@ -113,6 +114,7 @@ const DESK_ONLY = new Set(['assistant', 'identity-provider'])
 const PROJECT_FILE_SECTION = 'project'
 
 export function AdminView() {
+  useLocale()
   const navigation = useSettingsNavigation()
   const effective = useEffectiveConfig()
   const { config } = effective
@@ -172,16 +174,17 @@ export function AdminView() {
   return (
     <article className={`detail ${styles.admin}`} id={navigation.inSidebar ? open.id : undefined} data-measure="full" data-layout="page" data-navigation={navigation.inSidebar ? 'sidebar' : 'inline'} ref={top}>
       {pane}
-      <PageHeader title="Admin" context={open.title} actions={
-        <Popover title="Runtime details" trigger={<Button variant="quiet">Runtime details</Button>}>
+      <PageHeader title={msg("Admin")} context={open.title} actions={
+        <Popover title={msg("Runtime details")} trigger={<Button variant="quiet">{msg("Runtime details")}</Button>}>
           <AdminStatusLine runtime={runtimeSays(mcp)} binary={runtimeBinary(effective)}
-            copyText={effective.desk?.chassis === undefined ? undefined : `${runtimeSays(mcp)}\n${effective.desk.chassis.runtimeBin}`} />
+            copyText={effective.desk?.chassis === undefined ? undefined : `${runtimeSays(mcp)}
+${effective.desk.chassis.runtimeBin}`} />
         </Popover>
       } />
       <DraftScope>
         <PageBody width={navigation.inSidebar ? 'form' : 'wide'}>
           <div className={styles.split}>
-            {navigation.render(<nav className={styles.rail} data-sidebar={navigation.inSidebar || undefined} aria-label="Settings">
+            {navigation.render(<nav className={styles.rail} data-sidebar={navigation.inSidebar || undefined} aria-label={msg("Settings")}>
               {ADMIN_GROUPS.map((group) => (
                 <GroupRows
                   key={group.id}
@@ -227,7 +230,7 @@ export function AdminView() {
                   location={sectionLocation(effective, 'storage')}
                   status={sectionStatus(effective, 'storage')}
                   under={groupFor(effective, 'storage')}
-                  fields={<><h3 className={styles.subheading}>Project files</h3><StorageKind /></>}
+                  fields={<><h3 className={styles.subheading}>{msg("Project files")}</h3><StorageKind /></>}
                   save={<StorageForm dirSays={PACK_LOCATION_SAYS[packLocation]} />}
                 />
                 <ChatDataSettings />
@@ -250,9 +253,9 @@ export function AdminView() {
                   under={deskStatus(effective)}
                   fields={
                     <>
-                      <CardField label="Provider">
+                      <CardField label={msg("Provider")}>
                         {config.identity.provider === null ? (
-                          'None'
+                          msg("None")
                         ) : (
                           <>
                             <code>{config.identity.provider.issuer}</code>
@@ -264,9 +267,9 @@ export function AdminView() {
                       </CardField>
                       <p className={styles.explanation}>
                         {config.identity.provider === null
-                          ? 'You are using a local session. No identity provider is configured.'
-                          : 'This provider describes the identity displayed in the header. Sign-in is not available yet.'}
-                        {' '}<Link to="/help#security">About local access</Link>
+                          ? msg("You are using a local session. No identity provider is configured.")
+                          : msg("This provider describes the identity displayed in the header. Sign-in is not available yet.")}
+                        {' '}<Link to="/help#security">{msg("About local access")}</Link>
                       </p>
                     </>
                   }
@@ -300,6 +303,7 @@ function GroupRows({
   open: AdminSection
   stacked: boolean
 }) {
+  useLocale()
   return (
     <div className={styles.railGroup}>
       <p className={styles.railTitle} id={`rail-${group.id}`}>
@@ -344,6 +348,7 @@ function SectionRow({
   current: boolean
   bare: boolean
 }) {
+  useLocale()
   const summarise = SECTION_SUMMARY[section.id]
   const own = statusOfSection(effective, section.id)
   const group = groupStatusFor(effective, section.id)
@@ -486,7 +491,7 @@ function groupStatusFor(effective: EffectiveConfig, id: string): SourceStatus | 
  */
 function projectLocation(effective: EffectiveConfig) {
   const chassis = effective.desk?.chassis
-  if (chassis === undefined) return <span className="quiet">the desk has not said</span>
+  if (chassis === undefined) return <span className="quiet">{msg("the desk has not said")}</span>
   return <code>{chassis.projectFile}</code>
 }
 
@@ -508,14 +513,14 @@ function runtimeSays(mcp: ReturnType<typeof useMcp>): string {
 /** The binary the desk was launched with, as the chassis reported it. */
 function runtimeBinary(effective: EffectiveConfig) {
   const chassis = effective.desk?.chassis
-  if (chassis === undefined) return <span className="quiet">the desk has not said</span>
+  if (chassis === undefined) return <span className="quiet">{msg("the desk has not said")}</span>
   return <code>{chassis.runtimeBin}</code>
 }
 
 /** Where the desk-level file is, as the chassis said it — or that nothing asked. */
 function deskLocation(effective: EffectiveConfig) {
   if (effective.desk === undefined) {
-    return <span className="quiet">nothing has asked for it</span>
+    return <span className="quiet">{msg("nothing has asked for it")}</span>
   }
   return <code>{effective.desk.path}</code>
 }
@@ -602,12 +607,12 @@ function refused(problems: ConfigProblem[]): SourceStatus {
 type PackLocation = 'pending' | 'failed' | 'partial' | 'obstructed' | 'holds-files' | 'no-file-under-it'
 
 const PACK_LOCATION_SAYS: Record<PackLocation, string> = {
-  pending: 'the file listing has not answered yet',
-  failed: 'the file listing failed, so nothing is known about it',
-  partial: 'the file listing came back incomplete, so nothing is known about it',
-  obstructed: 'a file is there under that exact name — nothing can be created inside it',
-  'holds-files': 'holds files',
-  'no-file-under-it': 'no file is under it — the first pack asks for it to be created'
+  get pending() { return msg("the file listing has not answered yet") },
+  get failed() { return msg("the file listing failed, so nothing is known about it") },
+  get partial() { return msg("the file listing came back incomplete, so nothing is known about it") },
+  get obstructed() { return msg("a file is there under that exact name — nothing can be created inside it") },
+  get 'holds-files'() { return msg("holds files") },
+  get 'no-file-under-it'() { return msg("no file is under it — the first pack asks for it to be created") }
 }
 
 function packLocationState(

@@ -1,3 +1,4 @@
+import type { Language } from '../i18n/locales'
 /**
  * The engine contract, as ADR-0001 writes it.
  *
@@ -159,6 +160,8 @@ export interface ModelRequest {
 export type ModelCall = (suffix: string, request: ModelRequest) => Promise<Response>
 
 export interface AssistantSession {
+  /** Reply language captured for this turn; wire keys and source quotations remain exact. */
+  replyLanguage?: Language
   /** The runtime's prompt text, from `prompts/get`. */
   prompt: string
   /**

@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 /**
  * One pack: the document, the check under it, and the Inspector beside it —
  * read or edited, over one buffer.
@@ -119,6 +121,7 @@ const PANE_GAP = 16
 const LEAVING = 'This pack has unsaved changes. Leave without saving?'
 
 export function PackView() {
+  const locale = useLocale()
   const { packId } = useParams<{ packId: string }>()
   const location = useLocation()
   const { hash, key: locationKey } = location
@@ -332,11 +335,11 @@ export function PackView() {
   const whichBytes =
     bufferText !== undefined
       ? buffer.dirty
-        ? 'the bytes in the editor'
+        ? msg("the bytes in the editor")
         : behindDisk
-          ? `the bytes you loaded from ${path ?? 'the file on disk'}`
-          : `the bytes of ${path ?? 'the file on disk'}`
-      : 'the document the runtime served'
+          ? msg("the bytes you loaded from {{value0}}", { value0: path ?? 'the file on disk' })
+          : msg("the bytes of {{value0}}", { value0: path ?? 'the file on disk' })
+      : msg("the document the runtime served")
 
   // What is sent, and when. The first bytes go at once; every later change
   // waits for a pause, and `checkNow` closes the gap for the toolbar's Check
@@ -410,7 +413,7 @@ export function PackView() {
     ? 'document' : requested === 'logic' || requested === 'rules' ? 'logic'
       : requested === 'evidence' || requested === 'document' ? requested : 'overview'
 
-  const model = useMemo(() => drawn ? projectLogic(drawn) : undefined, [drawn])
+  const model = useMemo(() => drawn ? projectLogic(drawn) : undefined, [drawn, locale])
   useEffect(() => {
     if (!model || editing || (section !== 'logic' && section !== 'overview')) return
     const value = selectedItem(model, at)?.item.value
@@ -482,9 +485,9 @@ export function PackView() {
     unavailable !== undefined
       ? undefined
       : fetching
-        ? `checking against ${whichBytes}`
+        ? msg("checking against {{value0}}", { value0: whichBytes })
         : check.data !== undefined
-          ? `checked against ${whichBytes}`
+          ? msg("checked against {{value0}}", { value0: whichBytes })
           : undefined
 
   const report = stale ? undefined : check.data?.report
@@ -766,8 +769,8 @@ export function PackView() {
   const reloading = editor.reloading
   const savePending = editor.write.isPending
   const busyDraft = useCallback(() => {
-    if (saving.current !== undefined || savePending) return 'This draft is being saved.'
-    if (reloading) return 'This draft is being reloaded.'
+    if (saving.current !== undefined || savePending) return msg("This draft is being saved.")
+    if (reloading) return msg("This draft is being reloaded.")
     return ''
   }, [savePending, reloading])
 
@@ -829,7 +832,7 @@ export function PackView() {
   }
 
   usePublishedDirty(path ?? `pack:${packId ?? ''}`, hasWork)
-  useDirtyGuard(hasWork, LEAVING)
+  useDirtyGuard(hasWork, msg(LEAVING))
 
   /* Try it ----------------------------------------------------------------- */
 
@@ -926,7 +929,7 @@ export function PackView() {
    * has held this rule since it was written; this is the same rule.
    */
   if (pack.error && file.data === undefined) {
-    return <ErrorBox title={`Could not load pack ${packId}`} error={pack.error} />
+    return <ErrorBox title={msg("Could not load pack {{value0}}", { value0: packId })} error={pack.error} />
   }
   if (pack.data === undefined && file.data === undefined) return null
 
@@ -970,9 +973,7 @@ export function PackView() {
           returnLocation.current = { packId, search: location.search.replace(/^\?/, ''), hash }
           setParams(withEditing(params, true), { replace: true })
         }}
-      >
-        Edit
-      </Button>
+      >{msg("Edit")}</Button>
     </p>
   )
 
@@ -1003,13 +1004,13 @@ export function PackView() {
           backRef={backButton}
           onBack={requestReturn}
           onSave={() => save()}
-          status={savePending ? 'Saving…' : staleWrite ? 'Save conflict — review the file changes below.'
-            : saveFailure ? 'Could not save — your changes are still in the editor.'
-            : unaccounted ? 'Save could not be confirmed. Reload the file to check.'
-            : editor.outcome && !editor.verified ? 'Save could not be verified. Review the details below.'
-            : hasWork ? 'Unsaved changes' : editor.verified ? 'Saved' : 'No changes to save'}
-          saveReason={savePending ? 'Saving…' : !onPath ? 'Waiting for the editable file.'
-            : !dirty ? (unwritten ? 'No completed changes to save.' : (editor.verified ? 'Saved' : 'No changes to save')) : undefined}
+          status={savePending ? "Saving…" : staleWrite ? "Save conflict — review the file changes below."
+            : saveFailure ? "Could not save — your changes are still in the editor."
+            : unaccounted ? "Save could not be confirmed. Reload the file to check."
+            : editor.outcome && !editor.verified ? "Save could not be verified. Review the details below."
+            : hasWork ? "Unsaved changes" : editor.verified ? "Saved" : "No changes to save"}
+          saveReason={savePending ? "Saving…" : !onPath ? "Waiting for the editable file."
+            : !dirty ? (unwritten ? "No completed changes to save." : (editor.verified ? "Saved" : "No changes to save")) : undefined}
           shape={shape}
           shapeAvailable={formAvailable}
           discardable={hasWork}
@@ -1030,15 +1031,15 @@ export function PackView() {
           onUndo={buffer.undo}
           onDiscard={discardAll}
         /> : <PackHeader packId={packId ?? ''} document={drawn} current={section} actions={elsewhere} details={strip} hasMatrix={Boolean(summary?.matrix || summary?.matrixPath)} />}
-        <Dialog open={exitOpen} onOpenChange={setExitOpen} title="Save changes before leaving?"
-          description="Your changes have not been saved to the pack." openerRef={editing ? backButton : editButton}>
-          {unwritten > 0 && <p id={exitHelpId}>Finish or discard unfinished fields before saving and returning.</p>}
+        <Dialog open={exitOpen} onOpenChange={setExitOpen} title={msg("Save changes before leaving?")}
+          description={msg("Your changes have not been saved to the pack.")} openerRef={editing ? backButton : editButton}>
+          {unwritten > 0 && <p id={exitHelpId}>{msg("Finish or discard unfinished fields before saving and returning.")}</p>}
           <DialogActions>
-            <Button onClick={() => setExitOpen(false)}>Keep editing</Button>
-            <Button variant="danger" disabled={savePending} onClick={() => { discardAll(); returnToPack() }}>Discard and return</Button>
+            <Button onClick={() => setExitOpen(false)}>{msg("Keep editing")}</Button>
+            <Button variant="danger" disabled={savePending} onClick={() => { discardAll(); returnToPack() }}>{msg("Discard and return")}</Button>
             <Button variant="primary" disabled={!dirty || unwritten > 0 || savePending || !onPath}
               aria-describedby={unwritten > 0 ? exitHelpId : undefined}
-              onClick={() => { setExitOpen(false); save(false, true) }}>Save and return</Button>
+              onClick={() => { setExitOpen(false); save(false, true) }}>{msg("Save and return")}</Button>
           </DialogActions>
         </Dialog>
         <PageBody width={section === 'logic' ? 'full' : 'wide'}>
@@ -1051,7 +1052,7 @@ export function PackView() {
           <div className={styles.column}>
             {pack.error !== null && (
               <ErrorBox
-                title={`The runtime could not read ${path ?? 'this pack'}`}
+                title={msg("The runtime could not read {{value0}}", { value0: path ?? 'this pack' })}
                 error={pack.error}
               />
             )}
@@ -1066,17 +1067,10 @@ export function PackView() {
               <AlertPanel
                 heading="This page is now about a different file"
                 actions={
-                  <Button variant="quiet" onClick={buffer.takeWaiting}>
-                    Open it and lose these changes
-                  </Button>
+                  <Button variant="quiet" onClick={buffer.takeWaiting}>{msg("Open it and lose these changes")}</Button>
                 }
               >
-                <p>
-                  The editor is holding unsaved changes to{' '}
-                  <code>{buffer.base?.path ?? 'a file'}</code>, and this address now names{' '}
-                  <code>{buffer.waiting.path}</code>. Nothing has been replaced and nothing has
-                  been written.
-                </p>
+                <p><Message text={"The editor is holding unsaved changes to<0/><1/>, and this address now names<2/><3/>. Nothing has been replaced and nothing has been written."} slots={[' ', <code>{buffer.base?.path ?? msg("a file")}</code>, ' ', <code>{buffer.waiting.path}</code>]} /></p>
               </AlertPanel>
             )}
             {/*
@@ -1097,15 +1091,11 @@ export function PackView() {
                       unfinished field — the same reason Discard is enabled by
                       `hasWork` rather than by `dirty`.
                     */}
-                    {hasWork ? 'Reload, losing these changes' : 'Reload'}
+                    {hasWork ? msg("Reload, losing these changes") : msg("Reload")}
                   </Button>
                 }
               >
-                <p>
-                  What is on screen is the revision this editor loaded. Saving from here states
-                  the digest it started from, so the chassis will refuse the write rather than
-                  overwrite whatever landed since.
-                </p>
+                <p>{msg("What is on screen is the revision this editor loaded. Saving from here states the digest it started from, so the chassis will refuse the write rather than overwrite whatever landed since.")}</p>
               </AlertPanel>
             )}
             {/*
@@ -1119,15 +1109,11 @@ export function PackView() {
                 heading="This save finished, and this page has no account of it"
                 actions={
                   <Button variant="quiet" onClick={reloadNow}>
-                    {hasWork ? 'Reload, losing these changes' : 'Reload'}
+                    {hasWork ? msg("Reload, losing these changes") : msg("Reload")}
                   </Button>
                 }
               >
-                <p>
-                  The write went to the chassis and this page moved on before the answer came
-                  back — another pack, or a reload that landed first — so nothing here was moved
-                  onto what was written. The file on disk is what is true; reloading takes it.
-                </p>
+                <p>{msg("The write went to the chassis and this page moved on before the answer came back — another pack, or a reload that landed first — so nothing here was moved onto what was written. The file on disk is what is true; reloading takes it.")}</p>
               </AlertPanel>
             )}
             {staleWrite !== undefined && (
@@ -1139,11 +1125,11 @@ export function PackView() {
               />
             )}
             {saveFailure !== undefined && (
-              <ErrorBox title={`Could not save ${path ?? 'this pack'}`} error={saveFailure} />
+              <ErrorBox title={msg("Could not save {{value0}}", { value0: path ?? 'this pack' })} error={saveFailure} />
             )}
             {editor.reloadError !== undefined && (
               <ErrorBox
-                title={`Could not reload ${editor.reloadError.path}`}
+                title={msg("Could not reload {{value0}}", { value0: editor.reloadError.path })}
                 error={editor.reloadError.error}
               />
             )}
@@ -1156,21 +1142,11 @@ export function PackView() {
             {editor.outcome !== undefined && staleWrite === undefined && (
               <p className={editor.verified ? styles.saved : styles.warning} role="status">
                 {editor.verified ? (
-                  <>
-                    <strong>Saved, and verified.</strong> The chassis replaced the file and read
-                    it back off the disk: {editor.outcome.landed.bytes} bytes, sha256{' '}
-                    <code>{editor.outcome.landed.sha256.slice(0, 12)}…</code>, byte for byte what
-                    was sent.
-                  </>
+                  <><Message text={"<0/> The chassis replaced the file and read it back off the disk: <1/> bytes, sha256<2/><3/>, byte for byte what was sent."} slots={[<strong>{msg("Saved, and verified.")}</strong>, editor.outcome.landed.bytes, ' ', <code>{editor.outcome.landed.sha256.slice(0, 12)}…</code>]} /></>
                 ) : (
-                  <>
-                    <strong>Saved, and the read-back does not match.</strong> The write completed
-                    and the bytes now on disk are not the bytes that were sent.{' '}
-                    {bufferText === editor.outcome.submitted
-                      ? 'What is in this editor is what was sent'
-                      : 'This editor was not replaced, and holds neither of them'}
-                    ; reload before editing further.
-                  </>
+                  <><Message text={"<0/> The write completed and the bytes now on disk are not the bytes that were sent.<1/><2/>; reload before editing further."} slots={[<strong>{msg("Saved, and the read-back does not match.")}</strong>, ' ', bufferText === editor.outcome.submitted
+                      ? msg("What is in this editor is what was sent")
+                      : msg("This editor was not replaced, and holds neither of them")]} /></>
                 )}
               </p>
             )}
@@ -1191,21 +1167,20 @@ export function PackView() {
                 {section === 'overview' || section === 'logic' ? <>
                   {selectionNotice && <p role="status" className={styles.warning}>{selectionNotice}</p>}
                   {(fetching || stale || unavailable || digestsDisagree || disagreement.length > 0 || Boolean(report?.diagnostics?.length) || (report?.status && report.status !== 'valid')) && <details className={styles.validation} open={Boolean(digestsDisagree || disagreement.length || report?.diagnostics?.length || (report?.status && report.status !== 'valid'))}>
-                    <summary>Validation · {fetching ? 'checking' : stale ? 'out of date' : report?.status ?? 'unchecked'}</summary>{strip}
+                    <summary><Message text={"Validation · <0/>"} slots={[fetching ? msg("checking") : stale ? msg("out of date") : report?.status ?? "unchecked"]} /></summary>{strip}
                   </details>}
                   {section === 'overview' ? <PackOverview document={drawn} packId={packId} logicHref={`/packs/${encodeURIComponent(packId ?? '')}?view=logic${params.get('chat') ? `&chat=${encodeURIComponent(params.get('chat')!)}` : ''}`} /> : model && <>
                     {runRequested && <div className={styles.runContext} role="status">
-                      {run ? <><strong>{run.run.payload.disposition.kind}</strong>{run.run.payload.disposition.outcomeId ? ` · ${run.run.payload.disposition.outcomeId}` : ''} · Handoff: {run.run.payload.disposition.handoff.state}
-                        <p>{matchingRun ? 'Recorded run on these exact pack bytes.' : 'Different or unbound revision. No trace overlay is shown.'}</p></> : <p>This recorded run is no longer available. Run the test again to inspect its trace.</p>}
-                      <Button variant="quiet" onClick={() => { const next = new URLSearchParams(params); next.delete('run'); retainInspectorOnNavigation.current = true; setParams(next, { replace: true }) }}>Structure only</Button>
-                      <ButtonLink variant="quiet" to={`/packs/${encodeURIComponent(packId ?? '')}/evaluate`}>Back to Tests</ButtonLink>
+                      {run ? <><Message text={"<0/><1/> · Handoff: <2/><3/>"} slots={[<strong>{run.run.payload.disposition.kind}</strong>, run.run.payload.disposition.outcomeId ? ` · ${run.run.payload.disposition.outcomeId}` : '', run.run.payload.disposition.handoff.state, <p>{matchingRun ? msg("Recorded run on these exact pack bytes.") : msg("Different or unbound revision. No trace overlay is shown.")}</p>]} /></> : <p>{msg("This recorded run is no longer available. Run the test again to inspect its trace.")}</p>}
+                      <Button variant="quiet" onClick={() => { const next = new URLSearchParams(params); next.delete('run'); retainInspectorOnNavigation.current = true; setParams(next, { replace: true }) }}>{msg("Structure only")}</Button>
+                      <ButtonLink variant="quiet" to={`/packs/${encodeURIComponent(packId ?? '')}/evaluate`}>{msg("Back to Tests")}</ButtonLink>
                     </div>}
                     <PackLogic model={model} at={at} groupId={groupId} select={selectInMain} inspect={select} mode={mode} onMode={changeMode}
                       query={logic.query} onQuery={logic.setQuery} display={logic.display} onDisplay={logic.setDisplay}
                       viewport={logic.viewport} onViewport={logic.setViewport} listScroll={logic.listScroll}
-                      trace={runTrace} mapUnavailable={!formAvailable ? 'The document cannot be interpreted unambiguously.'
-                        : stale || !report ? 'A current validation is needed before displaying a complete map.'
-                        : report.status !== 'valid' ? 'This document is invalid or requires unsupported semantics. Inspect its definitions and validation details in List.' : undefined} />
+                      trace={runTrace} mapUnavailable={!formAvailable ? "The document cannot be interpreted unambiguously."
+                        : stale || !report ? "A current validation is needed before displaying a complete map."
+                        : report.status !== 'valid' ? "This document is invalid or requires unsupported semantics. Inspect its definitions and validation details in List." : undefined} />
                   </>}
                 </> : <PackDocumentView key={section} document={drawn} active={active}
                   members={section === 'evidence' ? PACK_GROUPS.evidence : undefined}
@@ -1243,24 +1218,22 @@ function formWithheld(
   // parse error to point at, so without this the form was simply gone and the
   // page said nothing about where it went.
   if (read.index.parseError === undefined && !isRecord(read.index.value)) {
-    return `These bytes are JSON, but not an object, so there is no document to draw a form over — ${describeShape(
+    return msg("These bytes are JSON, but not an object, so there is no document to draw a form over — {{value0}} is what they are.", { value0: describeShape(
       read.index.value
-    )} is what they are.`
+    ) })
   }
   if (read.index.parseError !== undefined) {
     const offset = /byte (\d+)/.exec(read.index.parseError)
     const where =
       offset === null ? '' : (() => {
         const { line, column } = positionOf(text, Number(offset[1]))
-        return ` — line ${line}, column ${column}`
+        return msg(" — line {{value0}}, column {{value1}}", { value0: line, value1: column })
       })()
-    return `These bytes are not a document this desk can edit as a form${where}. ${read.index.parseError}.`
+    return msg("These bytes are not a document this desk can edit as a form{{value0}}. {{value1}}.", { value0: where, value1: read.index.parseError })
   }
   const first = disagreement[0]
   if (first === undefined) return undefined
-  return `Form editing is withheld: ${first.reason}${
-    first.pointer === '' ? '' : ` at ${first.pointer}`
-  }.`
+  return msg("Form editing is withheld: {{value0}}{{value1}}.", { value0: first.reason, value1: first.pointer === '' ? '' : ` at ${first.pointer}` })
 }
 
 /**
@@ -1274,11 +1247,11 @@ function checkUnavailable(
   error: Error | null,
   bytes: string | undefined
 ): string | undefined {
-  if (error !== null) return `The check did not answer — ${error.message}`
-  if (!known) return 'The runtime has not said what it can do, so this document is unchecked.'
-  if (!validateSupported) return 'This runtime does not offer validate, so this document is unchecked.'
+  if (error !== null) return msg("The check did not answer — {{value0}}", { value0: error.message })
+  if (!known) return msg("The runtime has not said what it can do, so this document is unchecked.")
+  if (!validateSupported) return msg("This runtime does not offer validate, so this document is unchecked.")
   if (bytes === undefined || bytes === '') {
-    return 'There are no bytes to check yet, so this document is unchecked.'
+    return msg("There are no bytes to check yet, so this document is unchecked.")
   }
   return undefined
 }

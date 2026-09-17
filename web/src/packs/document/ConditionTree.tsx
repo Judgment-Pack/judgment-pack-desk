@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../../i18n'
 /**
  * A condition, rendered as an indented tree with shared operator labels.
  *
@@ -30,6 +31,7 @@ import reading from './ConditionTree.module.css'
 const ArrayLayout = createContext<'stacked' | 'inline'>('stacked')
 const Structured = createContext(false)
 export function ConditionTree({ condition, at, readOnly = false, arrayLayout = 'stacked', structured = false }: { condition: unknown; at: string; readOnly?: boolean; arrayLayout?: 'stacked' | 'inline'; structured?: boolean }) {
+  useLocale()
   return (
     <div className={structured ? reading.tree : styles.tree} data-condition-tree={structured ? 'structured' : 'document'}>
       <ReadOnlyBlocks.Provider value={readOnly}>
@@ -48,6 +50,7 @@ function ConditionNode({
   at: string
   depth: number
 }) {
+  useLocale()
   const structured = useContext(Structured)
   // **The one discrimination.** `edit/conditionOps.ts` decides what kind a node
   // is, and the builder reads it from there too: two spellings of "what makes a
@@ -72,7 +75,7 @@ function ConditionNode({
       <span className={reading.groupLabel}>{valueLabel('op', kind)}</span>
       <div className={reading.children}>{children.map((child, index) => <ConditionNode key={index} condition={child}
         at={kind === 'not' ? `${at}/condition` : `${at}/conditions/${index}`} depth={depth + 1} />)}
-        {!children.length && <span className={reading.comparison}>{Array.isArray(node.conditions) ? 'No conditions declared' : JSON.stringify(node.conditions) ?? 'Conditions not declared'}</span>}
+        {!children.length && <span className={reading.comparison}>{Array.isArray(node.conditions) ? msg("No conditions declared") : JSON.stringify(node.conditions) ?? msg("Conditions not declared")}</span>}
       </div>
     </Block>
   }
@@ -164,14 +167,15 @@ function ConditionNode({
 
 /** Break between complete array entries first. Quotes, types and order stay exact. */
 function Operand({ value }: { value: unknown }) {
+  useLocale()
   const layout = useContext(ArrayLayout)
   const structured = useContext(Structured)
   if (structured && Array.isArray(value)) return <>
-    <span className={reading.count}>{value.length} {value.length === 1 ? 'value' : 'values'}</span>
-    {value.length ? <span className={reading.values} role="list" aria-label="Exact values">{value.map((entry, index) =>
+    <span className={reading.count}>{value.length} {value.length === 1 ? msg("value") : msg("values")}</span>
+    {value.length ? <span className={reading.values} role="list" aria-label={msg("Exact values")}>{value.map((entry, index) =>
       <span role="listitem" key={index}><code>{JSON.stringify(entry)}</code></span>)}</span> : <code>[]</code>}
   </>
-  if (!Array.isArray(value)) return <>{JSON.stringify(value) ?? (structured ? 'Value not declared' : undefined)}</>
+  if (!Array.isArray(value)) return <>{JSON.stringify(value) ?? (structured ? msg("Value not declared") : undefined)}</>
   const expanded = layout === 'stacked' && (value.length > 3 || JSON.stringify(value).length > 80)
   return <span className={expanded ? styles.arrayExpanded : undefined}>[
     {value.map((entry, index) => <span className={styles.arrayEntry} key={index}>
@@ -189,6 +193,7 @@ function Row({
   depth: number
   children: ReactNode
 }) {
+  useLocale()
   const structured = useContext(Structured)
   return (
     <Block pointer={at} as="div" className={structured ? reading.row : styles.treeRow}>
@@ -204,5 +209,5 @@ function Row({
 function factLabel(path: string): string {
   const words = path.replace(/^\//, '').split('/').map(part => part.replace(/~1/g, '/').replace(/~0/g, '~'))
     .join(' ').replace(/([a-z0-9])([A-Z])/g, (_match, before: string, after: string) => `${before} ${after.toLowerCase()}`).replace(/[-_]/g, ' ')
-  return words ? words[0]!.toUpperCase() + words.slice(1) : 'Fact'
+  return words ? words[0]!.toUpperCase() + words.slice(1) : msg("Fact")
 }

@@ -911,6 +911,13 @@
     cursor: pointer;
   }
 
+  .desk-language-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+  }
+
   .desk-menu-item[data-highlighted] {
     background: var(--accent-soft);
     color: var(--ink);

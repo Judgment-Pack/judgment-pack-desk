@@ -1,3 +1,5 @@
+import { Message } from '../../i18n/Message'
+import { msg, useLocale } from '../../i18n'
 import { PACK_TERMS, valueLabel } from '../terminology'
 /** One exception: a rule's card plus the effect and the rule it targets. */
 import type { KeyboardEvent } from 'react'
@@ -24,6 +26,7 @@ export function ExceptionCard({
     onKeyDown: (event: KeyboardEvent<HTMLElement>) => void
   }
 }) {
+  useLocale()
   const { editing } = useEditing()
   if (editing) {
     return (
@@ -59,9 +62,7 @@ export function ExceptionCard({
           {valueLabel('effect', exception.effect)}
         </Block>
         {exception.targetRule !== undefined && (
-          <Block pointer={`${at}/targetRule`} as="span" className={styles.tagQuiet}>
-            targets {exception.targetRule}
-          </Block>
+          <Block pointer={`${at}/targetRule`} as="span" className={styles.tagQuiet}><Message text={"targets <0/>"} slots={[exception.targetRule]} /></Block>
         )}
       </p>
       {exception.description !== undefined && (
@@ -71,7 +72,7 @@ export function ExceptionCard({
       )}
       {exception.when !== undefined && (
         <>
-          <p className={styles.fieldLabel}>when</p>
+          <p className={styles.fieldLabel}>{msg("when")}</p>
           <ConditionTree condition={exception.when} at={`${at}/when`} />
         </>
       )}
@@ -88,13 +89,13 @@ export function ExceptionCard({
       {exception.sourceRefs !== undefined && (
         <Shaped
           pointer={`${at}/sourceRefs`}
-          label="sources"
+          label={msg("sources")}
           expects="list"
           value={exception.sourceRefs}
         >
       {Array.isArray(exception.sourceRefs) && exception.sourceRefs!.length > 0 && (
         <Block pointer={`${at}/sourceRefs`} as="p" className={styles.refs}>
-          <span className={styles.fieldLabel}>sources</span>
+          <span className={styles.fieldLabel}>{msg("sources")}</span>
           {exception.sourceRefs!.map((ref) => (
             <code key={ref} className={styles.id}>
               {ref}

@@ -1,3 +1,4 @@
+import { msg } from '../i18n'
 /**
  * Who the desk says is looking, and the boundary that keeps that harmless.
  *
@@ -40,7 +41,7 @@ export interface IdentityState {
   displayName: string
 }
 
-const LOCAL: IdentityState = { provider: null, displayName: 'local user' }
+const LOCAL: IdentityState = { provider: null, get displayName() { return msg("local user") } }
 
 const IdentityContext = createContext<IdentityState>(LOCAL)
 

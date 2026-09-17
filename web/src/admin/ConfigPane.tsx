@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../i18n'
 /**
  * What is in the file, in the **right pane** — Admin's read-only context.
  *
@@ -64,6 +65,7 @@ export function ConfigPane({
   /** The top-level member to quote, or the whole file where absent. */
   member?: string
 }) {
+  useLocale()
   // **One gate, and it is the card's.** A refused file's bytes are the thing
   // the refusal is about, and an unread file's are bytes this page never had.
   const quotable = showsContent(status) && text !== undefined
@@ -79,7 +81,7 @@ export function ConfigPane({
       </h2>
       <dl className={styles.head}>
         <div className={styles.row}>
-          <dt className={styles.key}>Location</dt>
+          <dt className={styles.key}>{msg("Location")}</dt>
           <dd className={styles.value}>{location}</dd>
         </div>
         {/* The empty string is the chassis saying "there is no file", which is
@@ -87,14 +89,14 @@ export function ConfigPane({
             Status row is what says which of those this is. */}
         {digest !== undefined && digest !== '' && (
           <div className={styles.row}>
-            <dt className={styles.key}>Digest</dt>
+            <dt className={styles.key}>{msg("Digest")}</dt>
             <dd className={styles.value}>
               <code>{digestSays(digest)}</code>
             </dd>
           </div>
         )}
         <div className={styles.row}>
-          <dt className={styles.key}>Status</dt>
+          <dt className={styles.key}>{msg("Status")}</dt>
           <dd className={styles.value}>
             <StatusLine status={status} />
           </dd>
@@ -105,7 +107,7 @@ export function ConfigPane({
           <code>{bytes}</code>
         </pre>
       )}
-      {quotable && bytes === undefined && <p className={styles.none}>{NO_BYTES_SAYS}</p>}
+      {quotable && bytes === undefined && <p className={styles.none}>{msg(NO_BYTES_SAYS)}</p>}
     </section>
   )
 }

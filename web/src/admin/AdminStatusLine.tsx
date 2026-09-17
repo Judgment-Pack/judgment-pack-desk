@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../i18n'
 import { useState, type ReactNode } from 'react'
 import { Button } from '../ui/Button'
 import styles from './AdminStatusLine.module.css'
@@ -13,12 +14,13 @@ export function AdminStatusLine({
   binary: ReactNode
   copyText?: string
 }) {
+  useLocale()
   const [copied, setCopied] = useState<string>()
   return (
     <>
     <dl className={styles.line}>
-      <Pair label="Runtime">{runtime}</Pair>
-      <Pair label="Binary">{binary}</Pair>
+      <Pair label={msg("Runtime")}>{runtime}</Pair>
+      <Pair label={msg("Binary")}>{binary}</Pair>
     </dl>
     {copyText !== undefined && <div className={styles.actions}>
       <span role="status">{copied}</span>
@@ -27,13 +29,14 @@ export function AdminStatusLine({
           await navigator.clipboard.writeText(copyText)
           setCopied('Copied')
         } catch { setCopied('Could not copy. Select the details to copy them.') }
-      }}>Copy details</Button>
+      }}>{msg("Copy details")}</Button>
     </div>}
     </>
   )
 }
 
 function Pair({ label, children }: { label: string; children: ReactNode }) {
+  useLocale()
   return (
     <div className={styles.pair}>
       <dt className={styles.key}>{label}</dt>

@@ -1,3 +1,5 @@
+import { Message } from '../../i18n/Message'
+import { msg, useLocale } from '../../i18n'
 /**
  * Running the draft in the editor, without saving it first.
  *
@@ -77,6 +79,7 @@ export function TryItPane({
   connected: boolean
   onClose: () => void
 }) {
+  useLocale()
   const evaluate = useEvaluate()
   const [source, setSource] = useState<'pack' | 'pack_id'>('pack')
   const [facts, setFacts] = useState('{}')
@@ -192,38 +195,34 @@ export function TryItPane({
 
 
   return (
-    <aside className={styles.pane} aria-label="Test draft">
+    <aside className={styles.pane} aria-label={msg("Test draft")}>
       <div className={styles.head}>
-        <h2 className={styles.heading}>Test draft</h2>
-        <Button variant="quiet" onClick={onClose}>
-          Close
-        </Button>
+        <h2 className={styles.heading}>{msg("Test draft")}</h2>
+        <Button variant="quiet" onClick={onClose}>{msg("Close")}</Button>
       </div>
 
       <SegmentedControl
-        label="What to run"
+        label={msg("What to run")}
         value={source}
         onValueChange={(next) => {
           setSource(next === 'pack' ? 'pack' : 'pack_id')
           setArmedFor(null)
         }}
         segments={[
-          { value: 'pack', label: 'these edits' },
-          { value: 'pack_id', label: 'the saved pack' }
+          { value: 'pack', label: "these edits" },
+          { value: 'pack_id', label: "the saved pack" }
         ]}
       />
 
       <p className={styles.honesty}>
         {source === 'pack'
           ? rehearsalSupported
-            ? 'Runs the unsaved draft, declared a rehearsal. Nothing is saved, nothing is recorded, and no reviewed set is consulted.'
-            : 'Runs the unsaved draft. Nothing is saved and no reviewed set is consulted — but this runtime does not take the rehearsal declaration, so in a project that declares an audit directory this run appends one record.'
-          : 'Runs the pack on disk, not these edits.'}
+            ? msg("Runs the unsaved draft, declared a rehearsal. Nothing is saved, nothing is recorded, and no reviewed set is consulted.")
+            : msg("Runs the unsaved draft. Nothing is saved and no reviewed set is consulted — but this runtime does not take the rehearsal declaration, so in a project that declares an audit directory this run appends one record.")
+          : msg("Runs the pack on disk, not these edits.")}
       </p>
 
-      <label className={styles.label} htmlFor="tryit-facts">
-        Facts
-      </label>
+      <label className={styles.label} htmlFor="tryit-facts">{msg("Facts")}</label>
       <TextArea
         id="tryit-facts"
         rows={6}
@@ -234,11 +233,11 @@ export function TryItPane({
           setArmedFor(null)
         }}
       />
-      <p className={styles.status}>{factsError ?? 'valid JSON'}</p>
+      <p className={styles.status}>{factsError ?? msg("valid JSON")}</p>
 
       {requirements.length > 0 && (
         <>
-          <p className={styles.label}>Evidence</p>
+          <p className={styles.label}>{msg("Evidence")}</p>
           <div className={styles.rows}>
             {requirements.map((id) => (
               <div className={styles.row} key={id}>
@@ -260,16 +259,12 @@ export function TryItPane({
 
       <div className={styles.actions}>
         <Button variant="primary" disabled={!runnable} onClick={run}>
-          {evaluate.isPending ? 'Running…' : armed ? 'Run and record it' : 'Run'}
+          {evaluate.isPending ? msg("Running…") : armed ? msg("Run and record it") : msg("Run")}
         </Button>
-        {!connected && <span className={styles.status}>waiting for the runtime connection</span>}
+        {!connected && <span className={styles.status}>{msg("waiting for the runtime connection")}</span>}
       </div>
       {armed && (
-        <p className={styles.confirm} role="status">
-          This runtime does not take the rehearsal declaration. In a project whose{' '}
-          <code>jpack.json</code> declares an audit directory, running this appends one record to
-          it. Press again to run it anyway.
-        </p>
+        <p className={styles.confirm} role="status"><Message text={"This runtime does not take the rehearsal declaration. In a project whose<0/><1/> declares an audit directory, running this appends one record to it. Press again to run it anyway."} slots={[' ', <code>jpack.json</code>]} /></p>
       )}
 
       {attempt !== null && (
@@ -278,32 +273,29 @@ export function TryItPane({
             {attempt.kind === 'success' && (
               <span className={styles.pill}>
                 {attempt.run.payload.rehearsal === true
-                  ? 'rehearsal'
-                  : 'recorded where audit is declared'}
+                  ? msg("rehearsal")
+                  : msg("recorded where audit is declared")}
               </span>
             )}
             <span className={styles.pill}>
               {attempt.sent.source === 'pack'
-                ? 'from the draft in the editor'
-                : 'from the pack on disk'}
+                ? msg("from the draft in the editor")
+                : msg("from the pack on disk")}
             </span>
           </p>
           {stale && (
-            <p className={styles.staleNote} role="status">
-              What would be sent has changed since this ran. This is the answer to what was sent,
-              and nothing here is about what is on screen now.
-            </p>
+            <p className={styles.staleNote} role="status">{msg("What would be sent has changed since this ran. This is the answer to what was sent, and nothing here is about what is on screen now.")}</p>
           )}
           {attempt.kind === 'success' ? (
             <>
               <EvaluationView payload={attempt.run.payload} />
               <p className={styles.foot}>
                 <code>{attempt.run.payload.packId}</code>
-                <span>packVersion {attempt.run.payload.packVersion}</span>
+                <span><Message text={"packVersion <0/>"} slots={[attempt.run.payload.packVersion]} /></span>
               </p>
             </>
           ) : (
-            <RefusalPanel error={attempt.error} title="The runtime refused this run" />
+            <RefusalPanel error={attempt.error} title={msg("The runtime refused this run")} />
           )}
         </div>
       )}

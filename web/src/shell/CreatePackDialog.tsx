@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 /**
  * Create a pack: a name, a description, and a template.
  *
@@ -198,6 +200,7 @@ export function CreatePackDialog({
   /** The control that opened this, so focus goes back to it on every exit. */
   openerRef?: RefObject<HTMLElement | null>
 }) {
+  const locale = useLocale()
   const createHelpId = useId()
   const { config } = useEffectiveConfig()
   const { dir, idBase } = config.storage.packs
@@ -244,11 +247,11 @@ export function CreatePackDialog({
   const held = useHeldText(() => {})
   const inspector = useInspectorSlot()
   const guide = useInspectorPortal(presentation === 'page' ? <aside className={flow.guide}>
-    <h2>Create a pack</h2>
-    <p><strong>1. Basics</strong><br />Name the decision you want to make. Start with a runtime template, or ask your configured assistant for a draft.</p>
-    <p><strong>2. Build</strong><br />Write a clear decision question and possible outcomes. Add decision rules, then the evidence and sources that support them.</p>
-    <p><strong>3. Review</strong><br />Read the draft and its validation report before creating the file. AI suggestions still need your review.</p>
-    <p>After creating, use Test to explore inputs and read how the pack reaches an outcome. The bottom Activity tab records operation progress.</p>
+    <h2>{msg("Create a pack")}</h2>
+    <p><Message text={"<0/><1/>Name the decision you want to make. Start with a runtime template, or ask your configured assistant for a draft."} slots={[<strong>{msg("1. Basics")}</strong>, <br />]} /></p>
+    <p><Message text={"<0/><1/>Write a clear decision question and possible outcomes. Add decision rules, then the evidence and sources that support them."} slots={[<strong>{msg("2. Build")}</strong>, <br />]} /></p>
+    <p><Message text={"<0/><1/>Read the draft and its validation report before creating the file. AI suggestions still need your review."} slots={[<strong>{msg("3. Review")}</strong>, <br />]} /></p>
+    <p>{msg("After creating, use Test to explore inputs and read how the pack reaches an outcome. The bottom Activity tab records operation progress.")}</p>
   </aside> : null)
 
   const [name, setName] = useState(reviewDraft?.name ?? handover?.name ?? '')
@@ -323,14 +326,14 @@ export function CreatePackDialog({
       ...(examplesState === 'settled'
         ? offered.map((entry) => ({ value: exampleValue(entry.name), label: entry.name }))
         : []),
-      ...(emptyState === 'ready' ? [{ value: SCHEMA_EMPTY, label: EMPTY_LABEL }] : []),
+      ...(emptyState === 'ready' ? [{ value: SCHEMA_EMPTY, label: msg(EMPTY_LABEL) }] : []),
       // Offered from the moment a run has finished, whether or not it produced
       // a document: a run that ended with nothing is a state this dialog has to
       // be able to *report*, and one whose option quietly never appeared would
       // leave a person staring at a template they did not choose.
-      ...(proposalOffered ? [{ value: PROPOSAL_SOURCE, label: PROPOSAL_LABEL }] : [])
+      ...(proposalOffered ? [{ value: PROPOSAL_SOURCE, label: msg(PROPOSAL_LABEL) }] : [])
     ],
-    [examplesState, emptyState, offered, proposalOffered]
+    [examplesState, emptyState, offered, proposalOffered, locale]
   )
 
   /**
@@ -471,18 +474,16 @@ export function CreatePackDialog({
     source?.kind !== 'proposal' && source?.kind !== 'draft'
       ? undefined
       : proposed === undefined || 'problem' in proposed
-        ? (proposed?.problem ?? CHECKING)
+        ? (proposed?.problem ?? msg(CHECKING))
         : !validateSupported
-          ? NO_VALIDATE
+          ? msg(NO_VALIDATE)
           : checked.isError
-            ? `The check on the proposed document was refused — ${checked.error.message}`
+            ? msg("The check on the proposed document was refused — {{value0}}", { value0: checked.error.message })
             : checked.data === undefined || checked.data.checkedBytes !== shapedText
-              ? CHECKING
+              ? msg(CHECKING)
               : checked.data.report.status === 'valid'
                 ? undefined
-                : `The runtime will not call this document a pack — ${
-                    layersReached(checked.data.report).text
-                  }`
+                : msg("The runtime will not call this document a pack — {{value0}}", { value0: layersReached(checked.data.report).text })
 
   /**
    * What to say under the Template field, and the four facts it is made of.
@@ -504,23 +505,23 @@ export function CreatePackDialog({
     ? undefined
     : examplesState === 'error'
       ? examples.error instanceof RuntimeRefusal && !examples.error.reported
-        ? 'The runtime refused to list its examples.'
-        : `The runtime refused to list its examples — ${examples.error?.message ?? ''}`
+        ? msg("The runtime refused to list its examples.")
+        : msg("The runtime refused to list its examples — {{value0}}", { value0: examples.error?.message ?? '' })
       : emptyState === 'error'
         ? schema.error instanceof RuntimeRefusal && !schema.error.reported
-          ? 'The runtime refused to serve its schema.'
-          : `The runtime refused to serve its schema — ${schema.error?.message ?? ''}`
+          ? msg("The runtime refused to serve its schema.")
+          : msg("The runtime refused to serve its schema — {{value0}}", { value0: schema.error?.message ?? '' })
         : options.length === 0
           ? known
-            ? NO_TEMPLATE
+            ? msg(NO_TEMPLATE)
             : undefined
           : templateError
             ? // The runtime's own sentence where it gave one. Where it refused
               // without saying why, this dialog says less rather than putting
               // the name of a tool call in front of somebody creating a pack.
               templateError instanceof RuntimeRefusal && !templateError.reported
-              ? 'This template could not be read.'
-              : `This template could not be read — ${templateError.message}`
+              ? msg("This template could not be read.")
+              : msg("This template could not be read — {{value0}}", { value0: templateError.message })
             : undefined
 
   const nameProblem = name.trim() === '' ? undefined : 'problem' in derived ? derived.problem : taken
@@ -543,9 +544,9 @@ export function CreatePackDialog({
   const partial = (listing.data?.partial ?? []).length > 0
 
   const blocked = listing.isError
-    ? { lead: UNREADABLE_PROJECT, reason: reasonOf(listing.error) }
+    ? { lead: msg(UNREADABLE_PROJECT), reason: reasonOf(listing.error) }
     : partial
-      ? { lead: PARTIAL_PROJECT, reason: (listing.data?.partial ?? []).join(', ') }
+      ? { lead: msg(PARTIAL_PROJECT), reason: (listing.data?.partial ?? []).join(', ') }
       : undefined
 
   const ready =
@@ -658,8 +659,8 @@ export function CreatePackDialog({
         const absent = cause instanceof FileRequestError && cause.status === 404
         setFailure(
           absent
-            ? { lead: NO_PROJECT_FILE }
-            : { lead: UNREADABLE_PROJECT_FILE, reason: reasonOf(cause) }
+            ? { lead: msg(NO_PROJECT_FILE) }
+            : { lead: msg(UNREADABLE_PROJECT_FILE), reason: reasonOf(cause) }
         )
         return
       }
@@ -684,7 +685,7 @@ export function CreatePackDialog({
       // for the second write.
       try {
         await readFile(path)
-        setFailure({ lead: PACK_FILE_TAKEN })
+        setFailure({ lead: msg(PACK_FILE_TAKEN) })
         return
       } catch (cause) {
         if (!(cause instanceof FileRequestError) || cause.status !== 404) {
@@ -707,12 +708,12 @@ export function CreatePackDialog({
         const claimed = declaredMatrixPaths(current)
         for (const companion of [`${base}.matrix.json`, `${base}.research.json`]) {
           if (claimed.some((declared) => samePath(declared, companion))) {
-            setFailure({ lead: COMPANION_PATH_TAKEN, reason: `${companion} is already declared as another pack's matrix.` })
+            setFailure({ lead: msg(COMPANION_PATH_TAKEN), reason: `${companion} is already declared as another pack's matrix.` })
             return
           }
           try {
             await readFile(companion)
-            setFailure({ lead: COMPANION_PATH_TAKEN, reason: `${companion} already exists.` })
+            setFailure({ lead: msg(COMPANION_PATH_TAKEN), reason: `${companion} already exists.` })
             return
           } catch (cause) {
             if (!(cause instanceof FileRequestError) || cause.status !== 404) {
@@ -736,7 +737,7 @@ export function CreatePackDialog({
       if (source.kind === 'proposal' || source.kind === 'draft') {
         const validated = checked.data
         if (validated === undefined || validated.checkedBytes !== shapedText) {
-          setFailure({ lead: PROPOSAL_UNUSABLE, reason: CHECKING })
+          setFailure({ lead: msg(PROPOSAL_UNUSABLE), reason: msg(CHECKING) })
           return
         }
         content = validated.checkedBytes
@@ -744,7 +745,7 @@ export function CreatePackDialog({
         try {
           content = shapeTemplate(source.text, { name, description, slug, idBase })
         } catch (cause) {
-          setFailure({ lead: TEMPLATE_UNUSABLE, reason: reasonOf(cause) })
+          setFailure({ lead: msg(TEMPLATE_UNUSABLE), reason: reasonOf(cause) })
           return
         }
       }
@@ -756,7 +757,7 @@ export function CreatePackDialog({
       // Discarding it and registering the requested spelling is how an entry
       // ends up naming a path the runtime cleans to something else — the same
       // aliasing defect the collision check had, arriving from the other side.
-      if (canCreate && !canCreate()) { setFailure({ lead: 'The draft changed during review. Return to the conversation and review it again.' }); return }
+      if (canCreate && !canCreate()) { setFailure({ lead: msg("The draft changed during review. Return to the conversation and review it again.") }); return }
       let landed: FileContent
       try {
         landed = await writeFile({ path, content, baseSha256: '', createParents: true })
@@ -794,7 +795,7 @@ export function CreatePackDialog({
           written.push(matrixPath)
           await writeFile({ path: researchPath, content: JSON.stringify(research, null, 2) + '\n', baseSha256: '' })
         } catch (cause) {
-          setFailure({ lead: COMPANIONS_ORPHANED, reason: `${written.join(' and ')} ${written.length === 1 ? 'is' : 'are'} on disk and unregistered. ${refusalDetail(cause) ?? ''}`.trim() })
+          setFailure({ lead: msg(COMPANIONS_ORPHANED), reason: `${written.join(' and ')} ${written.length === 1 ? 'is' : 'are'} on disk and unregistered. ${refusalDetail(cause) ?? ''}`.trim() })
           // **The name is handed back, on the step it is asked on.** The pack
           // file this press left behind is a file at the name that wrote it,
           // so the name is the one thing that has to change to get out of
@@ -832,12 +833,12 @@ export function CreatePackDialog({
         })
       } catch (cause) {
         setFailure({
-          lead: ORPHANED,
+          lead: msg(ORPHANED),
           // A conflict here is the one refusal with a fix worth naming —
           // reload and try again. Everything else keeps the chassis' own
           // words, because the lead already says what happened and the detail
           // is the only place the *why* survives.
-          reason: codeOf(cause) === 'stale' ? STALE_PROJECT_FILE : refusalDetail(cause)
+          reason: codeOf(cause) === 'stale' ? msg(STALE_PROJECT_FILE) : refusalDetail(cause)
         })
         invalidate([['desk-files'], ['desk-file', PROJECT_FILE]])
         return
@@ -928,20 +929,20 @@ export function CreatePackDialog({
   }, [page, open, busy, presentation])
 
   if (presentation === 'review') return <form className={flow.flow} noValidate onSubmit={event => { event.preventDefault(); void create() }}>
-    <div className={flow.intro}><h2>Create this pack</h2><p className={flow.hint}>Choose its name and review the remaining questions. Your conversation stays with the pack.</p></div>
+    <div className={flow.intro}><h2>{msg("Create this pack")}</h2><p className={flow.hint}>{msg("Choose its name and review the remaining questions. Your conversation stays with the pack.")}</p></div>
     <FieldGroup>
-      <Field label="Pack name" error={nameProblem} hint={path ? `Save to ${path}` : undefined}>{wiring => <Input {...wiring} required value={name} disabled={busy} onChange={event => setName(event.target.value)} />}</Field>
-      <Field label="Description">{wiring => <TextArea {...wiring} rows={2} value={description} disabled={busy} onChange={event => setDescription(event.target.value)} />}</Field>
+      <Field label={msg("Pack name")} error={nameProblem} hint={path ? msg("Save to {{value0}}", { value0: path }) : undefined}>{wiring => <Input {...wiring} required value={name} disabled={busy} onChange={event => setName(event.target.value)} />}</Field>
+      <Field label={msg("Description")}>{wiring => <TextArea {...wiring} rows={2} value={description} disabled={busy} onChange={event => setDescription(event.target.value)} />}</Field>
     </FieldGroup>
     {unknowns.length > 0 && <section className={flow.summary}>
       <ProposalUnknowns unknowns={unknowns} />
-      <label><input type="checkbox" checked={reviewedUnknowns} disabled={busy} onChange={event => setReviewedUnknowns(event.target.checked)} /> I reviewed these open questions and assumptions.</label>
+      <label><Message text={"<0/> I reviewed these open questions and assumptions."} slots={[<input type="checkbox" checked={reviewedUnknowns} disabled={busy} onChange={event => setReviewedUnknowns(event.target.checked)} />]} /></label>
     </section>}
-    <p className={flow.hint}>{handover ? `${caseCount(handover)} checked cases and the research record will be saved with this pack.` : 'The structure is validated. Source research and behavioral testing have not been performed.'}</p>
+    <p className={flow.hint}>{handover ? msg("{{value0}} checked cases and the research record will be saved with this pack.", { value0: caseCount(handover) }) : msg("The structure is validated. Source research and behavioral testing have not been performed.")}</p>
     {createWhy && <p role="status">{createWhy}</p>}
-    {refused && <DiagnosticList diagnostics={anchor(refused, new Set())} label="Validation details" />}
+    {refused && <DiagnosticList diagnostics={anchor(refused, new Set())} label={msg("Validation details")} />}
     {(failure ?? blocked) && <Alert reason={(failure ?? blocked)!.reason}>{(failure ?? blocked)!.lead}</Alert>}
-    <div className={flow.actions}><Button disabled={busy} onClick={() => close(false)}>Back to draft</Button><Button variant="primary" type="submit" disabled={!ready}>{busy ? 'Creating…' : 'Create pack'}</Button></div>
+    <div className={flow.actions}><Button disabled={busy} onClick={() => close(false)}>{msg("Back to draft")}</Button><Button variant="primary" type="submit" disabled={!ready}>{busy ? msg("Creating…") : msg("Create pack")}</Button></div>
   </form>
 
   if (presentation === 'page') {
@@ -957,48 +958,48 @@ export function CreatePackDialog({
             describe.discard()
           }
           setStep(1)
-        } catch (cause) { setFailure({ lead: TEMPLATE_UNUSABLE, reason: reasonOf(cause) }) }
+        } catch (cause) { setFailure({ lead: msg(TEMPLATE_UNUSABLE), reason: reasonOf(cause) }) }
       } else if (held.drafts.size === 0) setStep(2)
     }
     const preview = draft === undefined ? undefined : buffered(draft).index.value
     return <>
       {guide}
-      <PageHeader title="Packs" context="Create pack" actions={<Button onClick={() => inspector.reveal()}>Guide</Button>} />
+      <PageHeader title={msg("Packs")} context="Create pack" actions={<Button onClick={() => inspector.reveal()}>{msg("Guide")}</Button>} />
       <PageBody width="form">
         <form noValidate className={flow.flow} onSubmit={(event) => { event.preventDefault(); if (step === 2) void create(); else next() }}>
-          <ol className={flow.steps} aria-label="Creation steps">
+          <ol className={flow.steps} aria-label={msg("Creation steps")}>
             {['Basics', 'Build', 'Review'].map((label, index) => <li key={label} aria-current={step === index ? 'step' : undefined}>{index + 1}. {label}</li>)}
           </ol>
           <div className={flow.intro}><h2>{['Create a pack', 'Build your decision', 'Review your pack'][step]}</h2>
             <p className={flow.hint}>{['Start manually or draft with your assistant.', 'Define the rules, outcomes, and supporting evidence.', 'Check the content and runtime validation before creating.'][step]}</p>
           </div>
           {step === 0 && <>
-            {handover === undefined && <><div><SegmentedControl label="Creation method" value={method} onValueChange={(next) => {
+            {handover === undefined && <><div><SegmentedControl label={msg("Creation method")} value={method} onValueChange={(next) => {
               if (next === 'manual') { setMethod('manual'); describe.discard(); setChoice(undefined) }
               else setMethod('ai')
             }} segments={[
-              { value: 'manual', label: 'Manual', disabled: draft !== undefined || describe.running },
-              { value: 'ai', label: 'Draft with Assistant', disabled: draft !== undefined || !describe.usable || !describe.advertised || describe.picked.model === '' }
+              { value: 'manual', label: "Manual", disabled: draft !== undefined || describe.running },
+              { value: 'ai', label: "Draft with Assistant", disabled: draft !== undefined || !describe.usable || !describe.advertised || describe.picked.model === '' }
             ]} /></div>
-            {!describe.usable && <p className={flow.hint}>AI drafting is unavailable. Configure the assistant in Admin to enable it. {describe.unusableBecause}</p>}
-            {describe.usable && !describe.advertised && <p className={flow.hint}>This runtime does not offer the authoring prompt required for AI drafting.</p>}
-            {describe.usable && describe.advertised && describe.picked.model === '' && <p className={flow.hint}>Choose an enabled model in Admin → Assistant to use AI drafting.</p>}
+            {!describe.usable && <p className={flow.hint}><Message text={"AI drafting is unavailable. Configure the assistant in Admin to enable it. <0/>"} slots={[describe.unusableBecause]} /></p>}
+            {describe.usable && !describe.advertised && <p className={flow.hint}>{msg("This runtime does not offer the authoring prompt required for AI drafting.")}</p>}
+            {describe.usable && describe.advertised && describe.picked.model === '' && <p className={flow.hint}>{msg("Choose an enabled model in Admin → Assistant to use AI drafting.")}</p>}
             </>}
             <FieldGroup>
-            <Field label="Name (required)" hint={slug === undefined ? undefined : `id: ${slug}`} error={nameProblem}>
+            <Field label={msg("Name (required)")} hint={slug === undefined ? undefined : msg("id: {{value0}}", { value0: slug })} error={nameProblem}>
               {(wiring) => <Input {...wiring} autoFocus required value={name} disabled={draft !== undefined} onChange={(event) => setName(event.target.value)} />}
             </Field>
-            <Field label="Description" hint="What decision does this pack help someone make?">
+            <Field label={msg("Description")} hint={msg("What decision does this pack help someone make?")}>
               {(wiring) => <TextArea {...wiring} rows={3} value={description} disabled={draft !== undefined} onChange={(event) => setDescription(event.target.value)} />}
             </Field>
-            {method === 'manual' ? <Field label="Starting template" error={templateProblem}>
-              {(wiring) => <Select {...wiring} value={selected} onValueChange={setChoice} disabled={draft !== undefined} options={options} placeholder={templatesPending ? TEMPLATES_PENDING : 'Choose a template'} />}
-            </Field> : draft === undefined ? handover !== undefined ? <p className={flow.hint} role="status">This draft came from Research and draft: {caseCount(handover)} test case(s) and its research record will be written beside the pack. The draft itself is not edited here.</p> : <>
+            {method === 'manual' ? <Field label={msg("Starting template")} error={templateProblem}>
+              {(wiring) => <Select {...wiring} value={selected} onValueChange={setChoice} disabled={draft !== undefined} options={options} placeholder={templatesPending ? msg(TEMPLATES_PENDING) : msg("Choose a template")} />}
+            </Field> : draft === undefined ? handover !== undefined ? <p className={flow.hint} role="status"><Message text={"This draft came from Research and draft: <0/> test case(s) and its research record will be written beside the pack. The draft itself is not edited here."} slots={[caseCount(handover)]} /></p> : <>
               <DescribeIt state={describe} blockingElsewhere={Boolean(createWhy)} expanded />
-              <p className={flow.hint}>Or research first: <ButtonLink to="/create-pack/research" variant="inline">Research and draft with sources</ButtonLink> lets the assistant search and read official pages through the gateway, cite them, and test the draft before you create it.</p>
+              <p className={flow.hint}><Message text={"Or research first: <0/> lets the assistant search and read official pages through the gateway, cite them, and test the draft before you create it."} slots={[<ButtonLink to="/create-pack/research" variant="inline">{msg("Research and draft with sources")}</ButtonLink>]} /></p>
             </> : null}
             </FieldGroup>
-            {draft !== undefined && <p className={flow.hint}>Your draft is retained. Edit its name, description, and other fields in Build → Full document.</p>}
+            {draft !== undefined && <p className={flow.hint}>{msg("Your draft is retained. Edit its name, description, and other fields in Build → Full document.")}</p>}
           </>}
           {/*
             * A handed-over draft is read at Build, not edited. Its matrix and
@@ -1010,32 +1011,32 @@ export function CreatePackDialog({
             * history; changing what the draft says is what Research is for.
             */}
           {step === 1 && draft !== undefined && (handover !== undefined
-            ? <section className={flow.summary} aria-label="Reviewed draft">
-                <p className={flow.hint} role="status">This is the reviewed draft, as its {caseCount(handover)} test case(s) checked it. It is not edited here: go back to Research and draft to change what it says, or create the pack and edit it afterwards.</p>
+            ? <section className={flow.summary} aria-label={msg("Reviewed draft")}>
+                <p className={flow.hint} role="status"><Message text={"This is the reviewed draft, as its <0/> test case(s) checked it. It is not edited here: go back to Research and draft to change what it says, or create the pack and edit it afterwards."} slots={[caseCount(handover)]} /></p>
                 {isRecord(preview) && <PackOverview document={preview as unknown as PackDocument} />}
               </section>
             : <DraftPackEditor text={draft} onChange={(next) => { setDraft(next); setReviewedUnknowns(false) }} pending={held.drafts} hold={held.hold} />)}
-          {step === 2 && unknowns.length > 0 && <section className={flow.summary} aria-label="Assistant review">
+          {step === 2 && unknowns.length > 0 && <section className={flow.summary} aria-label={msg("Assistant review")}>
             <ProposalUnknowns unknowns={unknowns} />
-            <label><input type="checkbox" checked={reviewedUnknowns} onChange={(event) => setReviewedUnknowns(event.target.checked)} /> I reviewed these unknowns and updated the draft where needed.</label>
+            <label><Message text={"<0/> I reviewed these unknowns and updated the draft where needed."} slots={[<input type="checkbox" checked={reviewedUnknowns} onChange={(event) => setReviewedUnknowns(event.target.checked)} />]} /></label>
           </section>}
           {step === 2 && isRecord(preview) && <PackOverview document={preview as unknown as PackDocument} />}
-          {step > 0 && <section className={flow.summary} aria-label="Draft validation">
-            <h3>Structure check</h3>
-            <p id={createWhyHere === proposalRefusal ? createHelpId : undefined} role="status">{proposalRefusal ?? 'The runtime validated this draft. This does not mean its rules have passed tests.'}</p>
-            {refused !== undefined && <DiagnosticList diagnostics={anchor(refused, new Set())} label="What the runtime said about this document" />}
+          {step > 0 && <section className={flow.summary} aria-label={msg("Draft validation")}>
+            <h3>{msg("Structure check")}</h3>
+            <p id={createWhyHere === proposalRefusal ? createHelpId : undefined} role="status">{proposalRefusal ?? msg("The runtime validated this draft. This does not mean its rules have passed tests.")}</p>
+            {refused !== undefined && <DiagnosticList diagnostics={anchor(refused, new Set())} label={msg("What the runtime said about this document")} />}
             {refused !== undefined && truncationNote(refused) !== undefined && <p>{truncationNote(refused)}</p>}
-            {held.drafts.size > 0 && <p>Finish or clear the incomplete field values before continuing.</p>}
+            {held.drafts.size > 0 && <p>{msg("Finish or clear the incomplete field values before continuing.")}</p>}
           </section>}
           {(failure ?? blocked) && <Alert reason={(failure ?? blocked)!.reason}>{(failure ?? blocked)!.lead}</Alert>}
-          {busy && <p role="status">Creating and registering the pack. Stay on this page until it finishes.</p>}
+          {busy && <p role="status">{msg("Creating and registering the pack. Stay on this page until it finishes.")}</p>}
           {createWhyHere && (step === 0 || createWhyHere !== proposalRefusal) && <p id={createHelpId} className={flow.hint}>{createWhyHere}</p>}
           <div className={flow.actions}>
-            <Button variant="quiet" disabled={busy} onClick={() => close(false)}>Cancel</Button>
+            <Button variant="quiet" disabled={busy} onClick={() => close(false)}>{msg("Cancel")}</Button>
             <div>
-              {step > 0 && <Button disabled={busy} onClick={() => setStep(step - 1)}>Back</Button>}
+              {step > 0 && <Button disabled={busy} onClick={() => setStep(step - 1)}>{msg("Back")}</Button>}
               <Button variant="primary" type="submit" disabled={step === 2 ? !ready : step === 0 ? slug === undefined || taken !== undefined || source === undefined || describe.blocking !== '' || (method === 'ai' && source?.kind !== 'proposal' && draft === undefined) : held.drafts.size > 0} aria-describedby={step === 2 && createWhyHere ? createHelpId : undefined}>
-                {busy ? 'Creating…' : step === 2 ? 'Create pack' : step === 1 ? 'Review pack' : 'Continue'}
+                {busy ? msg("Creating…") : step === 2 ? msg("Create pack") : step === 1 ? msg("Review pack") : msg("Continue")}
               </Button>
             </div>
           </div>
@@ -1055,8 +1056,8 @@ export function CreatePackDialog({
         if (!next && busy) return
         close(next)
       }}
-      title="Create a pack"
-      description={DIALOG_DESCRIPTION}
+      title={msg("Create a pack")}
+      description={msg(DIALOG_DESCRIPTION)}
       openerRef={openerRef}
     >
       <form
@@ -1066,8 +1067,8 @@ export function CreatePackDialog({
         }}
       >
         <Field
-          label="Name (required)"
-          hint={slug === undefined ? undefined : `id: ${slug}`}
+          label={msg("Name (required)")}
+          hint={slug === undefined ? undefined : msg("id: {{value0}}", { value0: slug })}
           error={nameProblem}
         >
           {(wiring) => (
@@ -1081,7 +1082,7 @@ export function CreatePackDialog({
           )}
         </Field>
 
-        <Field label="Description">
+        <Field label={msg("Description")}>
           {(wiring) => (
             <TextArea
               {...wiring}
@@ -1097,19 +1098,19 @@ export function CreatePackDialog({
             shell derived without asking the runtime. The runtime reports the
             document's status on the page this opens, which is the thing
             entitled to. */}
-        <Field label="Template" error={templateProblem}>
+        <Field label={msg("Template")} error={templateProblem}>
           {(wiring) => (
             <Select
               {...wiring}
               value={selected}
               onValueChange={setChoice}
               options={options}
-              placeholder={templatesPending ? TEMPLATES_PENDING : '—'}
+              placeholder={templatesPending ? msg(TEMPLATES_PENDING) : '—'}
             />
           )}
         </Field>
 
-        {renamed && <p className="quiet">{RENAMED}</p>}
+        {renamed && <p className="quiet">{msg(RENAMED)}</p>}
         {proposalRefusal !== undefined && <p id={createWhyHere === proposalRefusal ? createHelpId : undefined} className="quiet">{proposalRefusal}</p>}
         {/*
           **Every diagnostic the runtime returned, as it wrote them.** Not the
@@ -1126,7 +1127,7 @@ export function CreatePackDialog({
           <>
             <DiagnosticList
               diagnostics={anchor(refused, new Set())}
-              label="What the runtime said about this document"
+              label={msg("What the runtime said about this document")}
             />
             {truncationNote(refused) !== undefined && (
               <p className="quiet">{truncationNote(refused)}</p>
@@ -1143,13 +1144,9 @@ export function CreatePackDialog({
         {createWhyHere && createWhyHere !== proposalRefusal && <p id={createHelpId} className="quiet">{createWhyHere}</p>}
         <DialogActions>
           <DialogClose asChild>
-            <Button variant="secondary" disabled={busy}>
-              Cancel
-            </Button>
+            <Button variant="secondary" disabled={busy}>{msg("Cancel")}</Button>
           </DialogClose>
-          <Button variant="primary" type="submit" disabled={!ready} aria-describedby={createWhyHere ? createHelpId : undefined}>
-            Create pack
-          </Button>
+          <Button variant="primary" type="submit" disabled={!ready} aria-describedby={createWhyHere ? createHelpId : undefined}>{msg("Create pack")}</Button>
         </DialogActions>
       </form>
     </Dialog>

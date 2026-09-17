@@ -1,3 +1,4 @@
+import { msg } from '../i18n'
 import { Tooltip } from './Tooltip'
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import styles from './PaneDivider.module.css'
@@ -10,7 +11,7 @@ export function PaneDivider({ label, controls, value, min, max, onChange, onRese
 }) {
   const horizontal = orientation === 'horizontal'
   const dimension = horizontal ? 'height' : 'width'
-  const help = `Drag to resize. Arrow keys adjust ${dimension}; Shift moves faster. Double-click to reset.`
+  const help = msg("Drag to resize. Arrow keys adjust {{value0}}; Shift moves faster. Double-click to reset.", { value0: dimension })
   const drag = useRef<{ id: number; x: number; value: number } | null>(null)
   const [dragging, setDragging] = useState(false)
   const [keyboardFocus, setKeyboardFocus] = useState(false)

@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 import { PageHeader, PageBody } from '../ui/PageLayout'
 import { Button } from '../ui/Button'
 import { OverflowTooltip } from '../ui/Tooltip'
@@ -37,6 +39,7 @@ import { useDirtyGuard } from '../shell/useDirtyGuard'
  *   file that disappears from underneath all keep the buffer or ask first.
  */
 export function AuthorView() {
+  useLocale()
   const listing = useFileListing()
   const [selected, setSelected] = useState<string | undefined>(undefined)
   const [dirty, setDirty] = useState(false)
@@ -80,47 +83,38 @@ export function AuthorView() {
 
   return (
     <article className="detail authoring" data-measure="full" data-layout="page">
-      <PageHeader title="Project files" />
+      <PageHeader title={msg("Project files")} />
       <PageBody width="full">
-      <p className="quiet">Edit configuration, inputs and source files in this project.</p>
+      <p className="quiet">{msg("Edit configuration, inputs and source files in this project.")}</p>
       {/* An error replaces the pane only when there is nothing behind it.
           TanStack keeps the previous listing after a failed refetch, and the
           file watcher refetches on every change — so treating any error as
           fatal would unmount an open editor, and its buffer with it, because
           something unrelated failed once. */}
       {listing.error && !listing.data ? (
-        <ErrorBox title="Could not list the project's files" error={listing.error} />
+        <ErrorBox title={msg("Could not list the project's files")} error={listing.error} />
       ) : listing.isPending ? (
-        <Loading what="the project's files" />
+        <Loading what={msg("the project's files")} />
       ) : (
         <div className="authoring-panes">
           {listing.error && (
-            <p className="note note-warn authoring-wide" role="status">
-              <strong>The file list could not be refreshed</strong> —{' '}
-              {listing.error.message}. What is shown is the last listing that
-              answered; your edit is untouched.
-            </p>
+            <p className="note note-warn authoring-wide" role="status"><Message text={"<0/> —<1/><2/>. What is shown is the last listing that answered; your edit is untouched."} slots={[<strong>{msg("The file list could not be refreshed")}</strong>, ' ', listing.error.message]} /></p>
           )}
-          <Section title="Files" count={files.length}>
+          <Section title={msg("Files")} count={files.length}>
             {partial.length > 0 && (
-              <p className="note note-warn" role="status">
-                <strong>This list is incomplete.</strong> The desk could not read
-                everything in the project:
-                <br />
-                {partial.map((problem) => (
+              <p className="note note-warn" role="status"><Message text={"<0/> The desk could not read everything in the project:<1/><2/>"} slots={[<strong>{msg("This list is incomplete.")}</strong>, <br />, partial.map((problem) => (
                   <code key={problem} className="partial-reason">
                     {problem}
                   </code>
-                ))}
-              </p>
+                ))]} /></p>
             )}
             {files.length === 0 && partial.length === 0 ? (
-              <Empty>This project directory contains no files.</Empty>
+              <Empty>{msg("This project directory contains no files.")}</Empty>
             ) : files.length === 0 ? (
               // Not "no files" — nothing readable. The difference is the whole
               // reason `partial` exists, and stating the definite version here
               // would report a permission error as an empty project.
-              <Empty>Nothing in this project could be read; see above.</Empty>
+              <Empty>{msg("Nothing in this project could be read; see above.")}</Empty>
             ) : (
               <ul className="file-list">
                 {files.map((file) => (
@@ -132,7 +126,7 @@ export function AuthorView() {
                       onClick={() => choose(file.path)}
                     >
                       <code>{file.path}</code>
-                      <span className="quiet">{file.bytes} bytes</span>
+                      <span className="quiet"><Message text={"<0/> bytes"} slots={[file.bytes]} /></span>
                     </button></OverflowTooltip>
                   </li>
                 ))}
@@ -143,8 +137,8 @@ export function AuthorView() {
           {selected ? (
             <FileEditor key={selected} path={selected} listed={listedNow} onDirty={setDirty} />
           ) : (
-            <Section title="Editor">
-              <Empty>Choose a file to edit.</Empty>
+            <Section title={msg("Editor")}>
+              <Empty>{msg("Choose a file to edit.")}</Empty>
             </Section>
           )}
         </div>
@@ -176,6 +170,7 @@ function FileEditor({
   listed: boolean
   onDirty: (dirty: boolean) => void
 }) {
+  useLocale()
   const loaded = useFileContent(path)
   // The base revision, the save and its proof — `files/useFileEditing.ts`,
   // which is this editor's own discipline lifted out so the pack editor holds
@@ -239,49 +234,37 @@ function FileEditor({
 
   if (loaded.error && base === undefined) {
     return (
-      <Section title="Editor">
-        <ErrorBox title={`Could not read ${path}`} error={loaded.error} />
+      <Section title={msg("Editor")}>
+        <ErrorBox title={msg("Could not read {{value0}}", { value0: path })} error={loaded.error} />
       </Section>
     )
   }
   if (base === undefined || buffer === undefined) {
     return (
-      <Section title="Editor">
+      <Section title={msg("Editor")}>
         <Loading what={path} />
       </Section>
     )
   }
 
   return (
-    <Section title="Editor">
+    <Section title={msg("Editor")}>
       <>
         <p className="meta">
           <code>{path}</code>
-          <span>{base.bytes} bytes</span>
+          <span><Message text={"<0/> bytes"} slots={[base.bytes]} /></span>
           <code>sha256 {base.sha256.slice(0, 12)}…</code>
-          {dirty ? <Pill tone="danger">unsaved changes</Pill> : <Pill tone="quiet">saved</Pill>}
+          {dirty ? <Pill tone="danger">{msg("unsaved changes")}</Pill> : <Pill tone="quiet">{msg("saved")}</Pill>}
         </p>
 
         {deleted && (
-          <p className="note note-warn" role="alert">
-            <strong>This file is no longer in the project.</strong> Something else
-            deleted or moved it. Your edit is still here and nothing has been written;
-            saving will recreate the file, and will be refused first because the bytes
-            this edit started from are gone.
-          </p>
+          <p className="note note-warn" role="alert"><Message text={"<0/> Something else deleted or moved it. Your edit is still here and nothing has been written; saving will recreate the file, and will be refused first because the bytes this edit started from are gone."} slots={[<strong>{msg("This file is no longer in the project.")}</strong>]} /></p>
         )}
         {changedOnDisk && !deleted && (
-          <p className="note note-warn">
-            <strong>This file changed on disk since you opened it.</strong> Your edit is
-            still against the bytes you loaded, and saving will be refused rather than
-            overwrite the change. Reload to start from what is there now — that discards
-            what is in the box.
-          </p>
+          <p className="note note-warn"><Message text={"<0/> Your edit is still against the bytes you loaded, and saving will be refused rather than overwrite the change. Reload to start from what is there now — that discards what is in the box."} slots={[<strong>{msg("This file changed on disk since you opened it.")}</strong>]} /></p>
         )}
 
-        <label className="editor-label" htmlFor="authoring-buffer">
-          File contents
-        </label>
+        <label className="editor-label" htmlFor="authoring-buffer">{msg("File contents")}</label>
         <textarea
           id="authoring-buffer"
           className="code-editor"
@@ -297,7 +280,7 @@ function FileEditor({
             disabled={!dirty || write.isPending}
             onClick={() => save(false)}
           >
-            {write.isPending ? 'Saving…' : 'Save'}
+            {write.isPending ? msg("Saving…") : msg("Save")}
           </Button>
           <Button
             variant="quiet"
@@ -310,9 +293,7 @@ function FileEditor({
               setBuffer(base.content)
               editing.reset()
             }}
-          >
-            Discard changes
-          </Button>
+          >{msg("Discard changes")}</Button>
           {/* Disabled while a write is in flight: the PUT cannot be cancelled,
               so reloading during one would replace the base with bytes that are
               about to be superseded by a save already on its way. */}
@@ -320,9 +301,7 @@ function FileEditor({
             variant="quiet"
             disabled={write.isPending}
             onClick={reload}
-          >
-            Reload from disk
-          </Button>
+          >{msg("Reload from disk")}</Button>
         </div>
 
         {stale && (
@@ -333,28 +312,17 @@ function FileEditor({
             onOverride={() => save(true)}
           />
         )}
-        {failure && <ErrorBox title={`Could not save ${path}`} error={failure} />}
+        {failure && <ErrorBox title={msg("Could not save {{value0}}", { value0: path })} error={failure} />}
         {reloadError && (
-          <ErrorBox title={`Could not reload ${reloadError.path}`} error={reloadError.error} />
+          <ErrorBox title={msg("Could not reload {{value0}}", { value0: reloadError.path })} error={reloadError.error} />
         )}
 
         {outcome && !stale && (
           <p className={verified ? 'note' : 'note note-warn'}>
             {verified ? (
-              <>
-                <strong>Saved, and verified.</strong> The chassis replaced the file and
-                read it back off the disk: {outcome.landed.bytes} bytes, sha256{' '}
-                <code>{outcome.landed.sha256.slice(0, 12)}…</code>, byte for byte what
-                was sent.
-                {outcome.landed.created ? ' The file did not exist before this save.' : ''}
-              </>
+              <><Message text={"<0/> The chassis replaced the file and read it back off the disk: <1/> bytes, sha256<2/><3/>, byte for byte what was sent.<4/>"} slots={[<strong>{msg("Saved, and verified.")}</strong>, outcome.landed.bytes, ' ', <code>{outcome.landed.sha256.slice(0, 12)}…</code>, outcome.landed.created ? msg(" The file did not exist before this save.") : '']} /></>
             ) : (
-              <>
-                <strong>Saved, and the read-back does not match.</strong> The write
-                completed and the bytes now on disk are not the bytes that were sent.
-                Reload before editing further — what is in this buffer is not what the
-                file holds.
-              </>
+              <><Message text={"<0/> The write completed and the bytes now on disk are not the bytes that were sent. Reload before editing further — what is in this buffer is not what the file holds."} slots={[<strong>{msg("Saved, and the read-back does not match.")}</strong>]} /></>
             )}
           </p>
         )}
@@ -382,39 +350,28 @@ function StaleNotice({
   onReload: () => void
   onOverride: () => void
 }) {
+  useLocale()
   return (
     <div className="note note-warn stale-write" role="alert">
-      <p>
-        <strong>Not saved: the file changed since you opened it.</strong>{' '}
-        {stale.exists
-          ? 'Something else wrote to it while this edit was open.'
-          : 'The file is no longer on disk — something else deleted or moved it.'}{' '}
-        Nothing has been written, and your edit is still in the box above.
-      </p>
+      <p><Message text={"<0/><1/><2/><3/>Nothing has been written, and your edit is still in the box above."} slots={[<strong>{msg("Not saved: the file changed since you opened it.")}</strong>, ' ', stale.exists
+          ? msg("Something else wrote to it while this edit was open.")
+          : msg("The file is no longer on disk — something else deleted or moved it."), ' ']} /></p>
       <p className="meta">
-        <span>
-          this edit started from <code>sha256 {shortDigest(stale.expectedSha256)}</code>
-        </span>
-        <span>
-          on disk now <code>sha256 {shortDigest(stale.actualSha256)}</code>
-        </span>
+        <span><Message text={"this edit started from <0/>"} slots={[<code>sha256 {shortDigest(stale.expectedSha256)}</code>]} /></span>
+        <span><Message text={"on disk now <0/>"} slots={[<code>sha256 {shortDigest(stale.actualSha256)}</code>]} /></span>
       </p>
       <div className="actions">
-        <Button disabled={pending} onClick={onReload}>
-          Reload from disk
-        </Button>
+        <Button disabled={pending} onClick={onReload}>{msg("Reload from disk")}</Button>
         <Button
           variant="danger"
           disabled={pending}
           onClick={onOverride}
-        >
-          Overwrite anyway
-        </Button>
+        >{msg("Overwrite anyway")}</Button>
       </div>
     </div>
   )
 }
 
 function shortDigest(digest: string): string {
-  return digest ? `${digest.slice(0, 12)}…` : '(no file)'
+  return digest ? `${digest.slice(0, 12)}…` : msg("(no file)")
 }

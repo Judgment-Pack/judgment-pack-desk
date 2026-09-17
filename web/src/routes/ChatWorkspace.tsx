@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../i18n'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useBlocker, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ChatPanel } from '../chat/ChatPanel'
@@ -26,6 +27,7 @@ export function draftReady(chat: Chat, state: typeof INITIAL_STATE): boolean {
 }
 
 export function ChatWorkspace() {
+  useLocale()
   const { chatId: linkedChatId } = useParams()
   const location = useLocation()
   const home = location.pathname === '/'
@@ -46,12 +48,13 @@ export function ChatWorkspace() {
   const chat = chats.find(chat => chat.id === chatId) ?? drafts.find(chat => chat.id === chatId)
   useEffect(() => { if (chat?.pack) navigate(chatHref(chat), { replace: true }) }, [chat?.pack?.id, chat?.id, navigate])
   return <div data-measure="wide" data-layout="page">
-    {!ready || !chat ? <div className={styles.blank} role="status">{error || (ready && chatId && !home ? 'This chat is no longer in history.' : ready && !store?.canCreate ? 'Chat history is full. Export and delete an older chat from Chat history.' : 'Loading chat history…')}{error && <Button onClick={() => void store?.load()}>Retry</Button>}{ready && chatId && !home && <Button onClick={() => navigate('/')}>New chat</Button>}</div>
+    {!ready || !chat ? <div className={styles.blank} role="status">{error || (ready && chatId && !home ? msg("This chat is no longer in history.") : ready && !store?.canCreate ? msg("Chat history is full. Export and delete an older chat from Chat history.") : msg("Loading chat history…"))}{error && <Button onClick={() => void store?.load()}>{msg("Retry")}</Button>}{ready && chatId && !home && <Button onClick={() => navigate('/')}>{msg("New chat")}</Button>}</div>
       : <DraftWorkspace key={chat.id} chat={chat} />}
   </div>
 }
 
 function DraftWorkspace({ chat }: { chat: Chat }) {
+  const locale = useLocale()
   const { store, bindings } = useChats()
   const binding = bindings.get(chat.id)
   const state = binding?.state ?? INITIAL_STATE
@@ -83,8 +86,8 @@ function DraftWorkspace({ chat }: { chat: Chat }) {
   useEffect(() => {
     if (review && latest?.digest !== reviewDigest.current) { setReview(false); setReviewNotice('The draft changed. Review the latest revision before creating it.') }
   }, [review, latest?.digest])
-  const presentation = useMemo(() => ({ title: 'Assistant', available: draft && !narrow, open: draft && !narrow && rightOpen,
-    onOpenChange: setRightOpen, width, onResize: shell.resizeInspector, onReset: shell.resetInspectorWidth, minimumMainWidth: 480, maximumWidth: 640 }), [draft, narrow, rightOpen, width, shell.resizeInspector, shell.resetInspectorWidth])
+  const presentation = useMemo(() => ({ title: msg("Assistant"), available: draft && !narrow, open: draft && !narrow && rightOpen,
+    onOpenChange: setRightOpen, width, onResize: shell.resizeInspector, onReset: shell.resetInspectorWidth, minimumMainWidth: 480, maximumWidth: 640 }), [draft, narrow, rightOpen, width, shell.resizeInspector, shell.resetInspectorWidth, locale])
   useInspectorPresentation(presentation)
   const openDraft = () => { setReview(false); setRightOpen(true); store?.update(chat.id, { view: 'draft' }) }
   const portal = useInspectorPortal(draft && !narrow ? <ChatPanel placement="pane" chat={chat} locked={writing} /> : null)
@@ -98,10 +101,10 @@ function DraftWorkspace({ chat }: { chat: Chat }) {
     matrix: matrixDocument(state,binding.ledger), research: researchRecord(state,binding.ledger,'')
   } : undefined
   return <>
-    {!draft ? <header role="presentation" data-page-header className={styles.workspaceHeader}><div className={styles.headerControls} ref={setChatHeaderTarget} /></header> : <PageHeader title="Draft" actions={<>
-      {draft && <Button variant="quiet" disabled={writing} onClick={() => { setReview(false); store?.update(chat.id,{ view: 'chat' }) }}>Chat</Button>}
-      {draft && !narrow && !rightOpen && <Button onClick={() => setRightOpen(true)}>Show Assistant</Button>}
-      {draft && !review && <Button variant="primary" disabled={!passing} onClick={beginReview}>Review and create</Button>}
+    {!draft ? <header role="presentation" data-page-header className={styles.workspaceHeader}><div className={styles.headerControls} ref={setChatHeaderTarget} /></header> : <PageHeader title={msg("Draft")} actions={<>
+      {draft && <Button variant="quiet" disabled={writing} onClick={() => { setReview(false); store?.update(chat.id,{ view: 'chat' }) }}>{msg("Chat")}</Button>}
+      {draft && !narrow && !rightOpen && <Button onClick={() => setRightOpen(true)}>{msg("Show Assistant")}</Button>}
+      {draft && !review && <Button variant="primary" disabled={!passing} onClick={beginReview}>{msg("Review and create")}</Button>}
     </>} />}
     {portal}{detailPortal}
     {draft && reviewNotice && <p className={styles.reviewNotice} role="status">{reviewNotice}</p>}

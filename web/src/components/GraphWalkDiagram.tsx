@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 import { edgeIndices, nodesInWalkOrder, parseDisposition, parseProbe } from '../mcp/canonical'
 import { edgeCarries, type GraphWalkShape, type WalkEdge } from '../mcp/graphDocument'
 import type { GraphSuiteEntry, GraphTestRow, MatrixProbe } from '../mcp/types'
@@ -51,6 +53,7 @@ export function GraphWalkDiagram({
   shape?: GraphWalkShape
   fallbackReason?: string
 }) {
+  useLocale()
   if (shape && shape.nodes.length > 0) {
     return <DocumentWalk entry={entry} row={row} shape={shape} />
   }
@@ -85,6 +88,7 @@ function DocumentWalk({
   row?: GraphTestRow
   shape: GraphWalkShape
 }) {
+  useLocale()
   const byNode = new Map((row?.nodes ?? []).map((node) => [node.node, node]))
   const perLayer = new Map<number, number>()
   for (const node of shape.nodes) perLayer.set(node.layer, (perLayer.get(node.layer) ?? 0) + 1)
@@ -166,7 +170,7 @@ function DocumentWalk({
           const carries = edgeCarries(edge)
           return (
             <g key={edge.index} className="diagram-edge">
-              <title>{`edge ${edge.index}: ${edge.from} → ${edge.to} carries ${carries}`}</title>
+              <title>{msg("edge {{value0}}: {{value1}} → {{value2}} carries {{value3}}", { value0: edge.index, value1: edge.from, value2: edge.to, value3: carries })}</title>
               <path
                 className="diagram-edge-line"
                 d={`M ${x1} ${y1} C ${x1} ${y1 + V_GAP / 2}, ${x2} ${y2 - V_GAP / 2}, ${x2} ${y2}`}
@@ -187,7 +191,7 @@ function DocumentWalk({
             drawn — and it is what marks the result node visibly. */}
         {resultNode && (
           <g className="diagram-edge diagram-edge-result">
-            <title>{`${resultNode.id} is the node this document declares as its result`}</title>
+            <title>{msg("{{value0}} is the node this document declares as its result", { value0: resultNode.id })}</title>
             <path
               className="diagram-edge-line"
               d={
@@ -202,7 +206,7 @@ function DocumentWalk({
               y={(at.get(resultNode.id)!.y + NODE_H + compositeY) / 2 - 3}
               textAnchor="middle"
             >
-              declared result
+              {msg('declared result')}
             </text>
           </g>
         )}
@@ -237,16 +241,16 @@ function DocumentWalk({
               </text>
               {node.isResult && (
                 <text className="diagram-node-badge" x={point.x + NODE_W - 12} y={point.y + 20}>
-                  result
+                  {msg('result')}
                 </text>
               )}
               <text className="diagram-node-pack" x={point.x + 12} y={point.y + 39}>
-                {node.pack ? `pack ${short(node.pack, 26)}` : 'this node names no pack'}
+                {node.pack ? msg("pack {{value0}}", { value0: short(node.pack, 26) }) : msg("this node names no pack")}
               </text>
               <text className="diagram-node-meta" x={point.x + 12} y={point.y + 58}>
                 {result
                   ? short(`${result.status} · ${describe(disposition)}`)
-                  : 'selected row reports no comparison'}
+                  : msg("selected row reports no comparison")}
               </text>
               {/* Its own line, not the row status' right margin: "selected row
                   reports no comparison" is wording that must survive whole, so
@@ -259,7 +263,7 @@ function DocumentWalk({
                 )
               ) : (
                 <text className="diagram-node-coverage" x={point.x + 12} y={point.y + 77}>
-                  not represented in coverage
+                  {msg('not represented in coverage')}
                 </text>
               )}
             </g>
@@ -279,46 +283,31 @@ function DocumentWalk({
             rx={8}
           />
           <text className="diagram-node-id" x={compositeX + 12} y={compositeY + 24}>
-            composite result
+            {msg('composite result')}
           </text>
           <text className="diagram-node-meta" x={compositeX + 12} y={compositeY + 46}>
-            {row ? short(describe(parseDisposition(row.actual))) : 'select a row to see its result'}
+            {row ? short(describe(parseDisposition(row.actual))) : msg("select a row to see its result")}
           </text>
         </g>
       </svg>
 
       {row && <RowVerdict row={row} />}
 
-      <p className="note">
-        Nodes and edges as the served graph document declares them — every arrow
-        is a dependency the document states, labelled with what that edge
-        carries. Colour on a node is the selected row's own reported comparison
-        and nothing else.
-      </p>
+      <p className="note">{msg("Nodes and edges as the served graph document declares them — every arrow is a dependency the document states, labelled with what that edge carries. Colour on a node is the selected row's own reported comparison and nothing else.")}</p>
 
       {/* What coverage does not name, said as exactly that. Why it does not is
           something neither payload states: a node the walk never admitted and a
           node whose probes the report omitted look identical from here, so no
           cause is given for what is only an absence. */}
       {shape.nodes.some((node) => !node.inCoverage) && (
-        <p className="note note-warn">
-          {shape.nodes
+        <p className="note note-warn"><Message text={"<0/><1/><2/> declared by the document and named by no probe in the coverage report. It is drawn because the document declares it, and nothing is claimed here about why coverage names no probe for it or about what its rows witness."} slots={[shape.nodes
             .filter((node) => !node.inCoverage)
             .map((node) => node.id)
-            .join(', ')}{' '}
-          {shape.nodes.filter((node) => !node.inCoverage).length === 1 ? 'is' : 'are'} declared by
-          the document and named by no probe in the coverage report. It is drawn
-          because the document declares it, and nothing is claimed here about why
-          coverage names no probe for it or about what its rows witness.
-        </p>
+            .join(', '), ' ', shape.nodes.filter((node) => !node.inCoverage).length === 1 ? msg("is") : msg("are")]} /></p>
       )}
 
       {shape.resultDangling && (
-        <p className="note note-warn">
-          The document declares <code>{shape.result}</code> as its result, and
-          declares no node by that name. No node is marked as the result rather
-          than one being chosen.
-        </p>
+        <p className="note note-warn"><Message text={"The document declares <0/> as its result, and declares no node by that name. No node is marked as the result rather than one being chosen."} slots={[<code>{shape.result}</code>]} /></p>
       )}
 
       <EdgeList edges={shape.edges} coverage={entry.coverage} />
@@ -339,19 +328,15 @@ function EdgeList({
   edges: WalkEdge[]
   coverage: MatrixProbe[] | undefined
 }) {
+  useLocale()
   if (edges.length === 0) {
     return (
-      <p className="note">
-        This document declares no edge: nothing feeds anything, and each node
-        stands alone.
-      </p>
+      <p className="note">{msg("This document declares no edge: nothing feeds anything, and each node stands alone.")}</p>
     )
   }
   return (
     <div className="diagram-edges">
-      <h4 className="coverage-group-title">
-        {edges.length} declared {edges.length === 1 ? 'edge' : 'edges'}
-      </h4>
+      <h4 className="coverage-group-title"><Message text={"<0/> declared <1/>"} slots={[edges.length, edges.length === 1 ? msg("edge") : msg("edges")]} /></h4>
       <ul className="edge-slots">
         {edges.map((edge) => (
           <li key={edge.index} className="edge-slot">
@@ -360,9 +345,7 @@ function EdgeList({
             </code>
             <span className="edge-carries">{edgeCarries(edge)}</span>
             {!edge.drawable && (
-              <span className="probe-status probe-status-missing">
-                names a node this document does not declare — not drawn
-              </span>
+              <span className="probe-status probe-status-missing">{msg("names a node this document does not declare — not drawn")}</span>
             )}
             {['resolved', 'unresolved'].map((branch) => {
               const probe = (coverage ?? []).find(
@@ -408,6 +391,7 @@ function CoverageWalk({
   row?: GraphTestRow
   fallbackReason?: string
 }) {
+  useLocale()
   const nodes = nodesInWalkOrder(entry.coverage)
   const edges = edgeIndices(entry.coverage)
 
@@ -415,11 +399,7 @@ function CoverageWalk({
     return (
       <>
         {fallbackReason && <p className="note note-warn">{fallbackReason}</p>}
-        <p className="empty">
-          The coverage report names no node, so this run reports nothing about the
-          graph's shape. A graph whose rows did not load reports its failure and no
-          structure.
-        </p>
+        <p className="empty">{msg("The coverage report names no node, so this run reports nothing about the graph's shape. A graph whose rows did not load reports its failure and no structure.")}</p>
       </>
     )
   }
@@ -435,7 +415,7 @@ function CoverageWalk({
         className="diagram"
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label={`The ${nodes.length} nodes represented in coverage for graph ${entry.id}, in the order the runtime evaluates them`}
+        aria-label={msg("The {{value0}} nodes represented in coverage for graph {{value1}}, in the order the runtime evaluates them", { value0: nodes.length, value1: entry.id })}
       >
         {/* The axis is evaluation order, which the payload states. It is not a
             dependency edge, which the payload does not. */}
@@ -473,7 +453,7 @@ function CoverageWalk({
               <text className="diagram-node-meta" x={AXIS_NODE_X + 14} y={y + 44}>
                 {result
                   ? `${result.status} · ${describe(disposition)}`
-                  : 'selected row reports no comparison'}
+                  : msg("selected row reports no comparison")}
               </text>
               {gaps > 0 && (
                 <text className="diagram-node-gaps" x={AXIS_NODE_X + AXIS_NODE_WIDTH - 14} y={y + 44}>
@@ -503,10 +483,10 @@ function CoverageWalk({
                 rx={8}
               />
               <text className="diagram-node-id" x={AXIS_NODE_X + 14} y={y + 24}>
-                composite result
+                {msg('composite result')}
               </text>
               <text className="diagram-node-meta" x={AXIS_NODE_X + 14} y={y + 44}>
-                {row ? describe(disposition) : 'select a row to see its result'}
+                {row ? describe(disposition) : msg("select a row to see its result")}
               </text>
             </g>
           )
@@ -515,18 +495,11 @@ function CoverageWalk({
 
       {row && <RowVerdict row={row} />}
 
-      <p className="note">
-        Nodes in the order the runtime evaluates them — those represented in the
-        coverage report, which can name no probe for a node the graph declares.
-        The wire does not carry which node feeds which, so no arrow is drawn
-        between two of them. See the README's upstream gaps.
-      </p>
+      <p className="note">{msg("Nodes in the order the runtime evaluates them — those represented in the coverage report, which can name no probe for a node the graph declares. The wire does not carry which node feeds which, so no arrow is drawn between two of them. See the README's upstream gaps.")}</p>
 
       {edges.length > 0 && (
         <div className="diagram-edges">
-          <h4 className="coverage-group-title">
-            {edges.length} edge {edges.length === 1 ? 'index' : 'indices'} represented in coverage
-          </h4>
+          <h4 className="coverage-group-title"><Message text={"<0/> edge <1/> represented in coverage"} slots={[edges.length, edges.length === 1 ? msg("index") : msg("indices")]} /></h4>
           <ul className="edge-slots">
             {edges.map((index) => (
               <li key={index} className="edge-slot">
@@ -551,12 +524,9 @@ function CoverageWalk({
 
 /** The row's verdict, said to be the row's — never painted onto the composite. */
 function RowVerdict({ row }: { row: GraphTestRow }) {
+  useLocale()
   return (
-    <p className="note">
-      Row <code>{row.id}</code>: <strong>{row.status}</strong> — that verdict
-      covers the composite headline and every node comparison the row reported,
-      together.
-    </p>
+    <p className="note"><Message text={"Row <0/>: <1/> — that verdict covers the composite headline and every node comparison the row reported, together."} slots={[<code>{row.id}</code>, <strong>{row.status}</strong>]} /></p>
   )
 }
 
@@ -568,12 +538,13 @@ function countMissing(coverage: MatrixProbe[] | undefined, node: string): number
 }
 
 function describe(disposition: ReturnType<typeof parseDisposition>): string {
-  if (!disposition) return 'no disposition reported'
+  if (!disposition) return msg("no disposition reported")
   return disposition.outcomeId ? `${disposition.kind} ${disposition.outcomeId}` : disposition.kind
 }
 
 /** Runtime explanations remain available without hover, including on touch. */
 function ProbeDetail({ branch, status, detail }: { branch: string; status: string; detail?: string }) {
+  useLocale()
   const label = `${branch}: ${status}`
   const className = `probe-status probe-status-${status}`
   return detail ? <details className={className}><summary>{label}</summary><p className="edge-detail">{detail}</p></details>

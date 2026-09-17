@@ -221,6 +221,7 @@ describe('the user control, identity NONE', () => {
     // their own suite: what is left as a plain item is the one action that
     // clears a preference, and the four that navigate or reset.
     expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
+      'Language',
       'Use the project’s default',
       'Reset panes',
       'Keyboard shortcuts',
