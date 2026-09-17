@@ -48,6 +48,8 @@
 .history { position: relative; list-style: none; padding: 0 var(--space-2) var(--space-2); margin: 0; display: flex; flex-direction: column; gap: var(--space-1); overflow: auto; overscroll-behavior: contain; min-height: 0; }
 .history li { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; min-width: 0; border-radius: var(--radius-sm); }
 .history li:hover, .history li[data-current] { background: var(--accent-soft); }
+.historyActions { margin-inline-end: var(--space-2); }
+.historyActions > svg { display: block; }
 .historyOpen { flex: 1; min-width: 0; display: grid; gap: var(--space-1); padding: var(--space-2); text-align: left; border: none; background: transparent; color: var(--ink); font: inherit; font-size: var(--text-sm); cursor: pointer; }
 .historyOpen span, .historyOpen small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .historyOpen small { color: var(--ink-soft); font-size: var(--text-xs); }

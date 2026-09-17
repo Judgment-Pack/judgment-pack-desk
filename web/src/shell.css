@@ -575,7 +575,12 @@
     cursor: pointer;
   }
 
-  .desk-icon-button:hover {
+  .desk-icon-button:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+
+  .desk-icon-button:hover:not(:disabled) {
     background: var(--bg);
     color: var(--ink);
   }

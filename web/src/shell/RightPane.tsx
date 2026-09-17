@@ -120,6 +120,7 @@ export function RightPane({
               portal is not in the document, and pointing at an id that is not
               there offers assistive technology a broken relationship. */}
           <Dialog.Content
+            data-modal-surface
             ref={publishPane}
             className="desk-drawer desk-drawer-right"
             id="desk-inspector"

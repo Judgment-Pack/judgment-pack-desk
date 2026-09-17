@@ -99,6 +99,8 @@ Real browser renders using an isolated fixture, without a model call:
 ![Draft beside the same conversation](chat-workspace-dark.png)
 ![Pack details below main, Assistant stays visible](chat-pack-details-dark.png)
 ![Chat history popover in Assistant](chat-history-dark.png)
+![Chat actions above history](chat-actions-dark.png)
+![Chat actions in the narrow Assistant drawer](chat-actions-narrow.png)
 ![Full project chat history](chat-history-page.png)
 ![Assistant settings](chat-assistant-settings-dark.png)
 ![Assistant on a narrow screen](chat-assistant-drawer.png)
@@ -158,8 +160,37 @@ composer and run identity. A blocked Send never creates history. Opening a pack'
 Assistant uses the same deferred creation rule. Empty legacy history entries are
 hidden, without deleting stored records.
 
-The isolated browser check now covers 19 scenarios, including zero history
+The isolated browser check now covers 20 scenarios, including zero history
 writes across home visits, typing, setup, reload and repeated New chat actions.
 Store regression tests cover first accepted Send, subsequent sends, restoring an
 unsent draft and project isolation. The browser flow also checks popover width,
 focus restoration, history actions and Escape inside the narrow Assistant drawer.
+
+## Follow-up: available actions and nested menus
+
+The landing invitation is “What would you like to work on?” with a neutral
+question/task composer. Pack creation is one suggested task, while a conversation
+inside an open pack retains explicit pack context. This follows the broad entry
+point shown in [Linear Agent](https://linear.app/docs/linear-agent), rather than
+asking everyone for pack metadata before a conversation.
+
+New chat keeps a stable toolbar position but is disabled when both the composer
+and conversation are empty. Whitespace does not enable it; draft text, messages
+or a generated candidate do. The history row uses the shared 16px More icon
+centered in its 28px control, with equal content and action gutters. Menus use a
+shared layer above dialogs and popovers and below tooltips, so an action menu
+opened inside history cannot lose its first item behind the parent. Radix still
+handles viewport collisions, keyboard opening, focus restoration and Escape.
+The actions tooltip is suppressed while its menu is open.
+
+These are Desk adaptations of Linear’s [2026 design refresh](https://linear.app/now/behind-the-latest-design-refresh): predictable action placement, quieter
+secondary controls and restrained borders. Linear’s public articles do not
+specify a private token scale or require our exact disabled-button behavior.
+Browser checks hit-test all nested menu items, verify icon centering, and cover
+the same action menu inside the narrow Assistant drawer.
+
+On narrow screens, a popover opened within the modal Assistant drawer joins
+that existing modal stack. This is based on the trigger's owning surface, so
+route-owned portals cannot cause a click inside history to dismiss the drawer.
+Desktop history stays nonmodal. Escape dismisses actions, then history, then
+the drawer, restoring focus at each level.

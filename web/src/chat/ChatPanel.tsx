@@ -96,7 +96,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
     {toolbarTarget ? createPortal(toolbar, toolbarTarget) : placement === 'main' && headerTarget === undefined ? <header className={styles.chatHeader}>{toolbar}</header> : null}
     <div className={styles.conversation}>
     <div className={styles.thread} ref={thread} onScroll={() => { const node = thread.current; if (node) following.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80 }}>
-      {empty && <div className={styles.welcome}><h1>{chat.pack ? 'What would you like to change?' : 'What should this pack decide?'}</h1><p>{chat.pack ? `Ask about ${chat.pack.id}, test an idea, or propose a change.` : 'Describe the decision, the information it needs, and the possible outcomes.'}</p></div>}
+      {empty && <div className={styles.welcome}><h1>{chat.pack ? 'What would you like to change?' : 'What would you like to work on?'}</h1><p>{chat.pack ? `Ask about ${chat.pack.id}, test an idea, or propose a change.` : 'Ask a question, explore an idea, or create and improve a pack.'}</p></div>}
       {state.turns.map((turn,index) => <article key={`${turn.at}-${index}`} className={styles.message} data-role={turn.role}>
         <span className={styles.caption}>{turn.role === 'user' ? 'You' : turn.kind === 'note' ? 'Desk' : 'Assistant'}</span>
         <div>{turn.text}</div>
@@ -115,7 +115,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
       {needsConfig && <div className={styles.setup}><span>{slot.keyStatus === 'error' ? 'The saved API key could not be checked.' : slot.keyStatus === 'pending' ? 'Checking your Assistant configuration…' : 'Configure Assistant to begin. Your message will stay here.'}</span><Button onClick={event => { configureButton.current = event.currentTarget; setConfigure(true) }}>Configure Assistant</Button></div>}
       <div className={styles.composer}>
         <VisuallyHidden.Root asChild><label htmlFor={`${id}-message`}>Message the assistant</label></VisuallyHidden.Root>
-        <TextArea id={`${id}-message`} rows={empty ? 4 : 3} value={chat.composer} placeholder={chat.pack ? 'Ask about this pack…' : 'Describe a decision, or drop a text file…'} disabled={locked}
+        <TextArea id={`${id}-message`} rows={empty ? 4 : 3} value={chat.composer} placeholder={chat.pack ? 'Ask about this pack…' : 'Ask a question or describe a task…'} disabled={locked}
           className={styles.messageInput} onChange={event => store?.update(chat.id, { composer: event.target.value })}
           onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (!otherRun && !running && (!blocked || needsConfig)) send() } }} />
         <div className={styles.composerTools}>
