@@ -624,11 +624,13 @@ whether Save and return can finish.
 
 ## Packs workspace and pack flows
 
-The primary sidebar carries Create pack, Packs, Admin and Help & About. All packs,
-Tests and Pack flows are contextual collection tabs, using `PacksNavigation` and
-the existing neutral navigation tokens. Opening a document replaces the collection
-tabs with document tabs. `/` opens Packs. Existing matrix, graph and author URLs
-remain reachable without reserving pack IDs.
+The primary sidebar carries Packs, Admin and Help & About. New chat and Chat
+history belong in the chat header, with no duplicate recent-chat list in the
+sidebar. All packs, Tests and Pack flows are contextual collection tabs, using
+`PacksNavigation` and the existing neutral navigation tokens. Opening a document
+replaces the collection tabs with document tabs. `/` opens the chat landing page,
+and `/packs` opens Packs. Existing matrix, graph and author URLs remain reachable
+without reserving pack IDs.
 
 Project files belongs in the header's project menu. That trigger carries the
 shared unsaved-change indicator so advanced file editing remains visible while

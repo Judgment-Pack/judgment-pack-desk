@@ -1,14 +1,4 @@
-/**
- * Creating a pack from the rail, in the composition the rail actually is.
- *
- * `CreatePackDialog.test.tsx` mounts the dialog on its own, which is right for
- * everything the dialog decides — and blind to the two things only the
- * composition can show. Below 900px the rail is a **modal drawer**, and the
- * dialog is mounted inside it: closing the dialog is not closing the drawer,
- * and the drawer is what sits over the page the create navigated to. And the
- * button that opens the dialog lives here, so focus restoration is a fact about
- * these two files together and about neither of them alone.
- */
+/** Legacy guided creation retains its validation and navigation guards when opened directly. */
 import { QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { RouterProvider, Routes, Route, createMemoryRouter } from 'react-router-dom'
@@ -119,7 +109,7 @@ function renderDesk() {
         )
       }
     ],
-    { initialEntries: ['/'] }
+    { initialEntries: ['/create-pack'] }
   )
   router.subscribe((state) => seen.push(state.location.pathname))
   return {
@@ -131,16 +121,6 @@ function renderDesk() {
       </QueryClientProvider>
     )
   }
-}
-
-/** Open the drawer, then the dialog inside it, and hand back the opener. */
-async function openCreate(): Promise<HTMLElement> {
-  fireEvent.click(screen.getByRole('button', { name: 'Project navigation' }))
-  await screen.findByRole('navigation', { name: 'Project' })
-  const opener = screen.getByRole('button', { name: 'New chat' })
-  fireEvent.click(opener)
-  await screen.findByRole('heading', { name: 'Create a pack' })
-  return opener
 }
 
 let sent: Sent[] = []
@@ -172,11 +152,11 @@ async function review() {
   await screen.findByRole('heading', { name: 'Review your pack' })
 }
 
-describe('guided creation from the rail', () => {
-  it('opens the creation page and dismisses the mobile navigation drawer', async () => {
+describe('guided creation within the shell', () => {
+  it('opens the legacy creation page directly without a mobile navigation overlay', async () => {
     viewport(800)
     const { router } = renderDesk()
-    await openCreate()
+    await screen.findByRole('heading', { name: 'Create a pack' })
     expect(router.state.location.pathname).toBe('/create-pack')
     expect(screen.queryByRole('navigation', { name: 'Project' })).toBeNull()
     expect(screen.queryByRole('dialog')).toBeNull()
@@ -187,7 +167,7 @@ describe('guided creation from the rail', () => {
   it('checks the edited draft and writes those exact bytes only after Review and Create', async () => {
     viewport(800)
     const { router } = renderDesk()
-    await openCreate()
+    await screen.findByRole('heading', { name: 'Create a pack' })
     await nameAndBuild()
     fireEvent.mouseDown(screen.getByRole('tab', { name: 'JSON' }), { button: 0 })
     const editor = await screen.findByLabelText('Draft document')
@@ -208,7 +188,7 @@ describe('guided creation from the rail', () => {
 
   it('keeps invalid drafts editable and refuses creation until the runtime validates them', async () => {
     validationStatus = 'invalid'
-    viewport(800); renderDesk(); await openCreate(); await nameAndBuild(); await review()
+    viewport(800); renderDesk(); await screen.findByRole('heading', { name: 'Create a pack' }); await nameAndBuild(); await review()
     await screen.findByText(/will not call this document a pack/)
     expect((screen.getByRole('button', { name: 'Create pack' }) as HTMLButtonElement).disabled).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: 'Back' }))
@@ -219,7 +199,7 @@ describe('guided creation from the rail', () => {
   it('retains the draft when a dirty navigation is declined and discards it when confirmed', async () => {
     viewport(800)
     const { router } = renderDesk()
-    await openCreate(); await nameAndBuild()
+    await screen.findByRole('heading', { name: 'Create a pack' }); await nameAndBuild()
     await act(async () => { await router.navigate('/packs') })
     await waitFor(() => expect(window.confirm).toHaveBeenCalled())
     expect(router.state.location.pathname).toBe('/create-pack')
@@ -233,7 +213,7 @@ describe('guided creation from the rail', () => {
   it('cancels an untouched creation page without a discard prompt', async () => {
     viewport(800)
     const { router } = renderDesk()
-    await openCreate()
+    await screen.findByRole('heading', { name: 'Create a pack' })
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     await waitFor(() => expect(router.state.location.pathname).toBe('/packs'))
     expect(window.confirm).not.toHaveBeenCalled()
@@ -243,7 +223,6 @@ describe('guided creation from the rail', () => {
     viewport(1400)
     const { router } = renderDesk()
     const rail = screen.getByRole('navigation', { name: 'Project' })
-    fireEvent.click(screen.getByRole('button', { name: 'New chat' }))
     await screen.findByRole('heading', { name: 'Create a pack' })
     expect(router.state.location.pathname).toBe('/create-pack')
     expect(document.activeElement).toBe(screen.getByLabelText('Name (required)'))
