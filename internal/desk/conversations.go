@@ -1,8 +1,8 @@
 package desk
 
 // Conversations are private UI checkpoints, not runtime inputs or authority.
-// They share credential custody's pinned owner-only directory, but never its
-// secret file. The server chooses the name from its pinned project identity.
+// They use a separate owner-only data root, with explicit legacy migration.
+// The server chooses the name from its pinned project identity.
 import (
 	"encoding/json"
 	"errors"
@@ -36,10 +36,9 @@ func validateConversations(data []byte) error {
 	}
 	return nil
 }
-func (s *Server) readConversations() (conversationReply, error) {
+func (s *Server) readConversationFile(root *os.Root, name string) (conversationReply, error) {
 	reply := conversationReply{Project: s.projectDir, SHA256: "absent", Content: json.RawMessage(`{"version":1,"chats":[]}`)}
-	name := s.conversationName()
-	info, err := s.assistant.root.Lstat(name)
+	info, err := root.Lstat(name)
 	if errors.Is(err, os.ErrNotExist) {
 		return reply, nil
 	}
@@ -52,7 +51,7 @@ func (s *Server) readConversations() (conversationReply, error) {
 	if err = ownedByUs(name, info); err != nil {
 		return reply, withCode(CodeForbidden, err)
 	}
-	file, err := s.assistant.root.OpenFile(name, os.O_RDONLY|openNoFollow|openNonBlocking, 0)
+	file, err := root.OpenFile(name, os.O_RDONLY|openNoFollow|openNonBlocking, 0)
 	if err != nil {
 		return reply, err
 	}
@@ -86,12 +85,32 @@ func (s *Server) handleConversations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
+	s.writes.Lock()
+	defer s.writes.Unlock()
+	lock, err := s.privateDataLock(true)
+	if err != nil {
+		storageFailure(w, err)
+		return
+	}
+	defer lock.Close()
+	store, err := s.openChatData()
+	if err != nil {
+		storageFailure(w, err)
+		return
+	}
+	defer store.root.Close()
+	root := store.root
+	recordName, err := resolveConversationName(root, s.projectDir)
+	if err != nil {
+		storageFailure(w, err)
+		return
+	}
 	fail := func(err error) {
 		code := codeOf(err)
 		writeJSONCoded(w, statusForRefusal(err), code, "Chat history could not be saved or read: "+err.Error())
 	}
 	if r.Method == http.MethodGet {
-		reply, err := s.readConversations()
+		reply, err := s.readConversationFile(root, recordName)
 		if err != nil {
 			fail(err)
 			return
@@ -113,10 +132,8 @@ func (s *Server) handleConversations(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, err.Error())
 		return
 	}
-	s.writes.Lock()
-	defer s.writes.Unlock()
 	matches := func() error {
-		current, err := s.readConversations()
+		current, err := s.readConversationFile(root, recordName)
 		if err != nil {
 			return err
 		}
@@ -129,12 +146,12 @@ func (s *Server) handleConversations(w http.ResponseWriter, r *http.Request) {
 		fail(err)
 		return
 	}
-	stage, name, err := s.assistant.stageConfig()
+	stage, name, err := newDataStage(root)
 	if err != nil {
 		fail(err)
 		return
 	}
-	defer s.assistant.root.Remove(name)
+	defer root.Remove(name)
 	defer stage.Close()
 	if _, err = stage.Write(data); err != nil {
 		fail(err)
@@ -158,15 +175,15 @@ func (s *Server) handleConversations(w http.ResponseWriter, r *http.Request) {
 		fail(err)
 		return
 	}
-	if err = s.assistant.root.Rename(name, s.conversationName()); err != nil {
+	if err = root.Rename(name, recordName); err != nil {
 		fail(err)
 		return
 	}
-	if dir, err := s.assistant.root.Open("."); err == nil {
+	if dir, err := root.Open("."); err == nil {
 		_ = dir.Sync()
 		_ = dir.Close()
 	}
-	reply, err := s.readConversations()
+	reply, err := s.readConversationFile(root, recordName)
 	if err != nil {
 		fail(err)
 		return

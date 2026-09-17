@@ -460,7 +460,7 @@ describe('Admin, with no overview', () => {
       expect(rowTitles(container), where).toEqual([
         'Project',
         'Organization',
-        'Storage',
+        'Storage & data',
         'Assistant',
         'Identity provider'
       ])
@@ -1052,11 +1052,11 @@ describe('one section at a time', () => {
   it('a row opens its section, and the one that was open closes', () => {
     const { container } = renderAdmin(everythingConfigured())
     expect(screen.getByRole('heading', { level: 2, name: 'Project' })).toBeTruthy()
-    expect(screen.queryByRole('heading', { level: 2, name: 'Storage' })).toBeNull()
+    expect(screen.queryByRole('heading', { level: 2, name: 'Storage & data' })).toBeNull()
     fireEvent.click(
       rowsIn(container).find((row) => row.getAttribute('href') === '/admin#storage')!
     )
-    expect(screen.getByRole('heading', { level: 2, name: 'Storage' })).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 2, name: 'Storage & data' })).toBeTruthy()
     expect(screen.getByLabelText('Packs go to')).toBeTruthy()
     expect(screen.queryByRole('heading', { level: 2, name: 'Project' })).toBeNull()
     expect(currentRows(container)).toEqual(['/admin#storage'])
@@ -1101,7 +1101,7 @@ describe('one section at a time', () => {
     const { container } = renderAdmin(everythingConfigured(), '/admin#storage')
     const before = page(container).innerHTML
     fireEvent.keyDown(document.body, { key: 'Escape' })
-    expect(screen.getByRole('heading', { level: 2, name: 'Storage' })).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 2, name: 'Storage & data' })).toBeTruthy()
     expect(currentRows(container)).toEqual(['/admin#storage'])
     expect(page(container).innerHTML).toBe(before)
 
@@ -1110,7 +1110,7 @@ describe('one section at a time', () => {
     dialog.setAttribute('role', 'dialog')
     document.body.append(dialog)
     fireEvent.keyDown(dialog, { key: 'Escape' })
-    expect(screen.getByRole('heading', { level: 2, name: 'Storage' })).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 2, name: 'Storage & data' })).toBeTruthy()
     dialog.remove()
   })
 

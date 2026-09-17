@@ -30,17 +30,19 @@ request to continue. Active work and unsaved persistence warn before unload.
 ### Persistence
 
 Authenticated, origin-checked GET/PUT `/api/conversations` stores version-1 JSON
-under the existing pinned, owner-only local configuration root. The filename is
-chosen from SHA-256 of the resolved project root. The file is not in the project,
-not a pack, and not a source of runtime authority. There is no caller-supplied
-filesystem path. API credentials stay in the existing key store.
+in personal private data. [ADR 0003](0003-private-chat-data-and-recovery.md)
+supersedes the original configuration-root placement: existing installations stay
+in place until explicitly moved, while new installations separate data from keys.
+Project paths choose default history filenames; explicit bindings support project
+relocation. None of these records grants runtime authority.
 
 Limits are 16 MiB per project and 256 chats, including archived chats. Server
 validation bounds the opaque envelope; the UI validates individual records
 before rendering them. Unsafe file types/ownership/permissions are refused.
 Writes use If-Match, an exclusive temporary file, fsync, compare-before-rename,
-atomic replacement and read-back. As with desk.json, a separate process can race
-the final comparison/rename; this is not a distributed transaction. A conflict
+atomic replacement and read-back. Cooperating Desk processes serialize private-data operations with an OS file
+lock. Uncooperative filesystem writers remain outside that guarantee; this is
+not a distributed transaction. A conflict
 keeps the local conversation dirty. Export it from history before reloading;
 retry never silently replaces another window's version. Archive does not free
 storage; export and delete do. No transcript is logged or stored in localStorage.

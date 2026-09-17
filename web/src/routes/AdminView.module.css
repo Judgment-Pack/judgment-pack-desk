@@ -231,3 +231,5 @@
   white-space: nowrap;
 }
 .rail[data-sidebar] .rowStatus[data-state='read'] { display: none; }
+
+.subheading { margin: 0 0 var(--density-gap); font-size: var(--text-control); font-weight: 600; color: var(--ink); }

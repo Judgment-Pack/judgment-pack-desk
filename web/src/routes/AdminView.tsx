@@ -55,6 +55,7 @@ import { OverflowTooltip } from '../ui/Tooltip'
  */
 import { useEffect, useRef, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { ChatDataSettings } from '../admin/ChatDataSettings'
 import { AssistantSection } from '../assistant/AssistantSection'
 import { AdminStatusLine } from '../admin/AdminStatusLine'
 import { PageHeader, PageBody } from '../ui/PageLayout'
@@ -226,9 +227,10 @@ export function AdminView() {
                   location={sectionLocation(effective, 'storage')}
                   status={sectionStatus(effective, 'storage')}
                   under={groupFor(effective, 'storage')}
-                  fields={<StorageKind />}
+                  fields={<><h3 className={styles.subheading}>Project files</h3><StorageKind /></>}
                   save={<StorageForm dirSays={PACK_LOCATION_SAYS[packLocation]} />}
                 />
+                <ChatDataSettings />
               </RetainedPanel>
               <RetainedPanel active={open.id === 'assistant'}>
                 <AssistantSection

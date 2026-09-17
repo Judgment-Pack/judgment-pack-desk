@@ -788,6 +788,13 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	work, err := s.privateDataFileLock(".data-work.lock", false)
+	if err != nil {
+		storageFailure(w, err)
+		return
+	}
+	defer work.Close()
+
 	// A bound, not a queue: taken without waiting, and refused where there is
 	// nothing to take.
 	select {

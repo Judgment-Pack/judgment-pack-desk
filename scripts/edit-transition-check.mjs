@@ -26,7 +26,7 @@ await writeFile(`${work}/project/jpack.json`, JSON.stringify({ configVersion: '3
 // Explicit, disposable test credential. No credentials are read from logs,
 // process arguments, or the user's configuration/session.
 const secret = randomBytes(24).toString('hex')
-const server = spawn(binary, ['--dev-token', secret, '--port', '8816', '--jpack', process.env.JPACK_BIN ?? 'jpack', `${work}/project`], { env: { ...process.env, XDG_CONFIG_HOME: `${work}/config` }, stdio: 'ignore' })
+const server = spawn(binary, ['--dev-token', secret, '--port', '8816', '--jpack', process.env.JPACK_BIN ?? 'jpack', `${work}/project`], { env: { ...process.env, XDG_CONFIG_HOME: `${work}/config`, XDG_DATA_HOME: `${work}/data` }, stdio: 'ignore' })
 let launchError
 server.on('error', error => { launchError = error })
 let browser
