@@ -50,7 +50,7 @@ func TestConversationHistoryCustodyAndCompare(t *testing.T) {
 	if status != 200 || landed.SHA256 != digestOf([]byte(data)) || string(landed.Content) != data {
 		t.Fatalf("write: %d %+v", status, landed)
 	}
-	info, err := os.Stat(filepath.Join(s.configDir, s.conversationName()))
+	info, err := os.Stat(filepath.Join(s.defaultChatDataPath(), s.conversationName()))
 	if err != nil {
 		t.Fatal(err)
 	}

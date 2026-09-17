@@ -7,6 +7,7 @@ export function SettingsSection({
   description,
   children,
   footer,
+  variant = 'card',
   level = 3
 }: {
   title: string
@@ -14,11 +15,12 @@ export function SettingsSection({
   children: ReactNode
   footer?: ReactNode
   level?: 2 | 3
+  variant?: 'card' | 'plain'
 }) {
   const titleId = useId()
   const Heading = level === 2 ? 'h2' : 'h3'
   return (
-    <section className={styles.section} aria-labelledby={titleId}>
+    <section className={styles.section} data-variant={variant} aria-labelledby={titleId}>
       <header className={styles.head}>
         <Heading id={titleId}>{title}</Heading>
         {description !== undefined && <p>{description}</p>}

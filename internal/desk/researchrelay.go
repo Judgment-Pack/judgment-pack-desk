@@ -183,6 +183,13 @@ func (s *Server) handleResearchRelay(w http.ResponseWriter, r *http.Request) {
 			"the configured gateway is not an address a request can be sent to")
 		return
 	}
+	work, err := s.privateDataFileLock(".data-work.lock", false)
+	if err != nil {
+		storageFailure(w, err)
+		return
+	}
+	defer work.Close()
+
 	select {
 	case s.researchSlots <- struct{}{}:
 		defer func() { <-s.researchSlots }()

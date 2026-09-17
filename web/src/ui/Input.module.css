@@ -35,3 +35,18 @@
   color: var(--ink-faint);
   cursor: not-allowed;
 }
+
+/* Native file selection retains its keyboard behavior and shares field tokens. */
+.input[type='file'] { padding-left: 0; }
+.input::file-selector-button {
+  height: 100%;
+  margin-right: var(--density-gap);
+  padding-inline: var(--space-3);
+  border-width: 0;
+  border-right: 1px solid var(--border);
+  background: var(--code-surface);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+.input:disabled::file-selector-button { color: var(--ink-faint); cursor: not-allowed; }

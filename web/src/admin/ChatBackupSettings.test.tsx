@@ -1,0 +1,67 @@
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { ChatBackupSettings } from './ChatBackupSettings'
+import { ProjectHistorySettings } from './ProjectHistorySettings'
+import type { ChatStorageStatus } from './chatStorage'
+const fetch = vi.hoisted(() => vi.fn())
+vi.mock('../files/client', async original => ({ ...await original<typeof import('../files/client')>(), deskFetch: fetch }))
+const status: ChatStorageStatus = { path: '/private/current', recommendedPath: '/private/data', revision: 'original', legacy: false, projectCount: 1, bytes: 5000, projectBytes: 1000, scope: 'personal', maxMoveBytes: 1024 ** 3, maxBackupBytes: 128 * 1024 ** 2 }
+beforeEach(() => { fetch.mockReset() })
+afterEach(cleanup)
+it('requires a file and separate destination before restoring and reloads only on success', async () => {
+ const reload = vi.fn(); let finish!: (value: Response) => void
+ fetch.mockImplementation(() => new Promise<Response>(resolve => { finish = resolve }))
+ render(<ChatBackupSettings status={status} blocked={false} onRestored={reload} />)
+ fireEvent.click(screen.getByRole('button', { name: 'Restore backup…' }))
+ expect((screen.getByRole('button', { name: 'Restore and reload' }) as HTMLButtonElement).disabled).toBe(true)
+ const file = new File(['backup'], 'data.zip', { type: 'application/zip' })
+ fireEvent.change(screen.getByLabelText('Chat backup'), { target: { files: [file] } })
+ fireEvent.change(screen.getByLabelText('Restore into'), { target: { value: '/private/restored' } })
+ fireEvent.click(screen.getByRole('button', { name: 'Restore and reload' }))
+ expect(fetch).toHaveBeenCalledTimes(1)
+ const [url,init] = fetch.mock.calls[0]
+ expect(url).toBe('/api/storage/restore')
+ expect([...init.body.keys()]).toEqual(['settings', 'backup'])
+ expect(JSON.parse(init.body.get('settings'))).toEqual({ path: '/private/restored', revision: 'original' })
+ expect((init.body.get('backup') as File).name).toBe(file.name)
+ expect(reload).not.toHaveBeenCalled()
+ finish(Response.json({ ...status, path: '/private/restored' }))
+ await waitFor(() => expect(reload).toHaveBeenCalledTimes(1))
+})
+it('keeps the restore dialog and selected path after the backend rejects the backup', async () => {
+ const reload = vi.fn(); fetch.mockResolvedValue(Response.json({ error: 'Backup checksum mismatch.' }, { status: 400 }))
+ render(<ChatBackupSettings status={status} blocked={false} onRestored={reload} />)
+ fireEvent.click(screen.getByRole('button', { name: 'Restore backup…' }))
+ fireEvent.change(screen.getByLabelText('Chat backup'), { target: { files: [new File(['broken'], 'backup.zip')] } })
+ fireEvent.change(screen.getByLabelText('Restore into'), { target: { value: '/private/new' } })
+ fireEvent.click(screen.getByRole('button', { name: 'Restore and reload' }))
+ await screen.findByText('Backup checksum mismatch.')
+ expect((screen.getByLabelText('Restore into') as HTMLInputElement).value).toBe('/private/new')
+ expect(screen.getByRole('dialog')).toBeTruthy()
+ expect(reload).not.toHaveBeenCalled()
+})
+it('requires a history preview and sends both revisions before linking a relocated project', async () => {
+ const reload = vi.fn()
+ fetch.mockImplementation(async () => Response.json({ previousProject: '/old/project', project: '/new/project', chatCount: 2, sourceRevision: 'source', bindingsRevision: 'bindings' }))
+ render(<ProjectHistorySettings blocked={false} onLinked={reload} />)
+ fireEvent.click(screen.getByRole('button', { name: 'Recover project history…' }))
+ fireEvent.change(screen.getByLabelText('Previous project folder'), { target: { value: '/old/project' } })
+ fireEvent.click(screen.getByRole('button', { name: 'Find history' }))
+ await screen.findByText('2 saved chats found.')
+ expect(reload).not.toHaveBeenCalled()
+ fireEvent.click(screen.getByRole('button', { name: 'Link history and reload' }))
+ await waitFor(() => expect(reload).toHaveBeenCalledTimes(1))
+ expect(fetch.mock.calls[1][0]).toBe('/api/storage/project-history/relink')
+ expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({ previousProject: '/old/project', sourceRevision: 'source', bindingsRevision: 'bindings' })
+})
+it('invalidates the project history preview when the original folder changes', async () => {
+ fetch.mockImplementation(async () => Response.json({ previousProject: '/old/project', project: '/new/project', chatCount: 2, sourceRevision: 'source', bindingsRevision: 'bindings' }))
+ render(<ProjectHistorySettings blocked={false} onLinked={vi.fn()} />)
+ fireEvent.click(screen.getByRole('button', { name: 'Recover project history…' }))
+ fireEvent.change(screen.getByLabelText('Previous project folder'), { target: { value: '/old/project' } })
+ fireEvent.click(screen.getByRole('button', { name: 'Find history' }))
+ await screen.findByText('2 saved chats found.')
+ fireEvent.change(screen.getByLabelText('Previous project folder'), { target: { value: '/different' } })
+ expect(screen.queryByRole('button', { name: 'Link history and reload' })).toBeNull()
+ expect(screen.getByRole('button', { name: 'Find history' })).toBeTruthy()
+})

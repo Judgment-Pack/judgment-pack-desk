@@ -20,6 +20,26 @@ the one relayed answer the desk *renders*, so that an endpoint cannot hand the
 machine-held credential to the browser as a model id. See
 [Where the assistant key lives](#where-the-assistant-key-lives).
 
+
+## Personal chat storage and recovery
+
+**Admin → Storage & data** keeps project pack settings separate from private chat
+history. Change location copies and verifies saved chats, keeps the original
+folder for recovery, and leaves API keys in protected settings. New installations
+use a platform data directory; existing histories move only when requested.
+
+Download chat backup exports saved conversations, candidate checkpoints and
+retained source text. Restore backup validates a ZIP into an empty private folder,
+then switches the active store and reloads Desk. It does not merge histories or
+include credential-store files or project files. Recover project history explicitly links chats
+when a project folder moves. Unsent browser drafts remain outside backups.
+
+See [private data and recovery](docs/adr/0003-private-chat-data-and-recovery.md) for
+limits, concurrency and recovery behavior, and the proposed
+[document connections boundary](docs/adr/0004-document-connections-boundary.md) for
+PDF/Drive integration dependencies. Personal local storage does not enable shared
+organization storage, scheduled backups, or a document provider.
+
 ## What it shows
 
 **A Packs workspace.** `/` opens `/packs`. The main sidebar keeps Create pack,

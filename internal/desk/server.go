@@ -297,6 +297,12 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("GET /api/desk-config", s.handleDeskConfig)
 	s.mux.HandleFunc("GET /api/conversations", s.handleConversations)
 	s.mux.HandleFunc("PUT /api/conversations", s.handleConversations)
+	s.mux.HandleFunc("GET /api/storage", s.handleStorage)
+	s.mux.HandleFunc("POST /api/storage/move", s.handleStorageMove)
+	s.mux.HandleFunc("POST /api/storage/project-history/preview", s.handleProjectHistory)
+	s.mux.HandleFunc("POST /api/storage/project-history/relink", s.handleProjectHistory)
+	s.mux.HandleFunc("GET /api/storage/backup", s.handleStorageBackup)
+	s.mux.HandleFunc("POST /api/storage/restore", s.handleStorageRestore)
 	// The one write to that file, and it replaces one member of it. It is
 	// under the same guard as everything else, takes no path, composes the
 	// bytes itself and decodes them before any of them reach the disk. See

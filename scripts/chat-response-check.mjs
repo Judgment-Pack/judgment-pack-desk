@@ -15,7 +15,7 @@ const work = await mkdtemp('/tmp/jp-chat-response-')
 await cp(fixture, `${work}/project`, { recursive: true })
 await mkdir(`${work}/config`); await mkdir(output, { recursive: true })
 const secret = randomBytes(24).toString('hex'), origin = 'http://127.0.0.1:8849'
-const server = spawn(binary, ['--dev-token', secret, '--port', '8849', '--jpack', process.env.JPACK_BIN, `${work}/project`], { env: { ...process.env, XDG_CONFIG_HOME: `${work}/config` }, stdio: 'ignore' })
+const server = spawn(binary, ['--dev-token', secret, '--port', '8849', '--jpack', process.env.JPACK_BIN, `${work}/project`], { env: { ...process.env, XDG_CONFIG_HOME: `${work}/config`, XDG_DATA_HOME: `${work}/data` }, stdio: 'ignore' })
 const api = (path, init = {}) => fetch(origin + path, { ...init, headers: { Authorization: `Bearer ${secret}`, ...init.headers } })
 const results = [], errors = [], requests = []
 let browser, page

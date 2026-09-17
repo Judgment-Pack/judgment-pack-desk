@@ -38,7 +38,7 @@ const config = JSON.parse(await readFile(`${work}/project/jpack.json`, 'utf8'))
 config.packs.triage = { path: 'packs/triage.pack.json' }; config.packs.large = { path: 'packs/large.pack.json' }
 await writeFile(`${work}/project/jpack.json`, JSON.stringify(config))
 const secret = randomBytes(24).toString('hex')
-const server = spawn(binary, ['--dev-token', secret, '--port', '8821', '--jpack', runtime, `${work}/project`], { env: { ...process.env, XDG_CONFIG_HOME: `${work}/config` }, stdio: 'ignore' })
+const server = spawn(binary, ['--dev-token', secret, '--port', '8821', '--jpack', runtime, `${work}/project`], { env: { ...process.env, XDG_CONFIG_HOME: `${work}/config`, XDG_DATA_HOME: `${work}/data` }, stdio: 'ignore' })
 let browser
 const results = [], errors = []
 try {

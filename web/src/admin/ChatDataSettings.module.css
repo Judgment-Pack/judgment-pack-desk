@@ -1,0 +1,4 @@
+.details { display: grid; gap: var(--density-gap); min-width: 0; }
+.caption { margin: 0; color: var(--ink-faint); font-size: var(--text-sm); overflow-wrap: anywhere; }
+.caption code { font-size: inherit; }
+.actions { display: flex; flex-wrap: wrap; gap: var(--density-gap); margin-top: var(--density-gap); }
