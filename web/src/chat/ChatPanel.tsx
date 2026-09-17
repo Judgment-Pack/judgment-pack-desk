@@ -13,7 +13,9 @@ import { Button } from '../ui/Button'
 import { Select } from '../ui/Select'
 import { TextArea } from '../ui/TextArea'
 import { Tooltip } from '../ui/Tooltip'
-import { IconPlus, IconClose } from '../shell/icons'
+import { IconPlus } from '../shell/icons'
+import { AttachmentList } from './AttachmentList'
+import { TEXT_ATTACHMENT_ACCEPT, useChatAttachments } from './useChatAttachments'
 import { ConfigureAssistant } from './ConfigureAssistant'
 import { AssistantOptions } from './AssistantOptions'
 import { ChatToolbar, chatHref } from './ChatHistory'
@@ -45,10 +47,10 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
   const following = useRef(true)
   const [awayFromLatest, setAwayFromLatest] = useState(false)
   const messageInput = useRef<HTMLTextAreaElement>(null)
-  const [attachmentError, setAttachmentError] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
   const id = useId()
   const running = state.status === 'running'
+  const upload = useChatAttachments(store, chat.id, locked || running)
   const unsubmitted = drafts.some(draft => draft.id === chat.id)
   const otherRun = store?.running && store.running !== chat.id ? store.running : undefined
   const empty = state.turns.length === 0
@@ -58,7 +60,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
   const attachments = chat.attachments ?? []
   const hasMessage = Boolean(chat.composer.trim() || attachments.length)
   const send = () => {
-    if (!store || !hasMessage || locked || running) return
+    if (!store || !hasMessage || locked || running || upload.isReading()) return
     if (needsConfig) return
     const text = chat.composer.trim() || 'Please review the attached files.'
     const display = text + (attachments.length ? `\n\nAttached: ${attachments.map(file => file.name).join(', ')}` : '')
@@ -85,25 +87,6 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
     input.style.height = 'auto'
     input.style.height = `${Math.min(input.scrollHeight, Math.max(80, window.innerHeight * 0.25))}px`
   }, [chat.composer, empty])
-  const attach = async (files: FileList | null) => {
-    if (!files || !store || locked || running) return
-    setAttachmentError('')
-    try {
-      if (files.length + attachments.length > 4) throw new Error('Attach up to four text files at a time.')
-      const pieces = await Promise.all([...files].map(async file => {
-        if (file.size > 200_000) throw new Error(`${file.name} is over the 200 KB text-file limit.`)
-        if (!/\.(txt|md|json|csv)$/i.test(file.name)) throw new Error('Attach .txt, .md, .json or .csv files. PDFs and images are not supported here yet.')
-        const text = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer())
-        if (text.includes('\0')) throw new Error(`${file.name} is not a text file.`)
-        return { id: crypto.randomUUID(), name: file.name, text }
-      }))
-      const snapshot = store.getSnapshot()
-      const current = [...snapshot.chats, ...snapshot.drafts].find(item => item.id === chat.id)?.attachments ?? []
-      if (current.length + pieces.length > 4) throw new Error('Attach up to four text files at a time.')
-      store.update(chat.id, { attachments: [...current, ...pieces] })
-    } catch (error) { setAttachmentError((error as Error).message) }
-    if (fileInput.current) fileInput.current.value = ''
-  }
   const toolbar = <ChatToolbar chat={chat} history={history} historyRef={historyButton} onHistory={() => setHistory(true)} onBack={backToChat}
     onNew={() => { if (!store?.canCreate) return; const next = store.startChat(chat.pack, chat.mode, true); setHistory(false); openNewChat(navigate, next, location) }} />
   return <section className={styles.chat} data-landing={landing && empty || undefined} aria-label="Assistant chat">
@@ -129,32 +112,30 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
       {canRetryExpectationValidation(state) && <Button disabled={locked || Boolean(otherRun) || Boolean(blocked)} onClick={() => store?.perform(chat.id, active => active.run?.retryExpectationValidation())}>Retry validation</Button>}
     </div>
     {awayFromLatest && !empty && <div className={styles.jump}><Button onClick={() => { following.current = true; setAwayFromLatest(false); thread.current?.scrollTo({ top: thread.current.scrollHeight }) }}>Jump to latest</Button></div>}
-    <div className={styles.composerArea} onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault() }} onDrop={event => { if (event.dataTransfer.files.length) { event.preventDefault(); void attach(event.dataTransfer.files) } }}>
+    <div className={styles.composerArea} onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault() }} onDrop={event => { if (event.dataTransfer.files.length) { event.preventDefault(); void upload.attach([...event.dataTransfer.files]) } }}>
       {error && <div className={styles.notice} role="alert"><p>{error}</p>{store?.canCreate ? <Button variant="quiet" onClick={() => store?.retrySave()}>Retry saving</Button> : <Button variant="quiet" onClick={() => navigate("/chats")}>Manage chat history</Button>}</div>}
       {otherRun && <div className={styles.notice} role="status">Another chat is working. You can keep writing here.<Button variant="quiet" onClick={() => { const other = store?.getSnapshot().chats.find(item => item.id === otherRun); if (other) navigate(chatHref(other, location)) }}>Open working chat</Button></div>}
       {blocked && !needsConfig && <p className={styles.caption} role="status">{blocked}</p>}
       {needsConfig && <div className={styles.setup}><span>{slot.keyStatus === 'error' ? 'The saved API key could not be checked.' : slot.keyStatus === 'pending' ? 'Checking your Assistant configuration…' : 'Configure Assistant to begin. Your message will stay here.'}</span><Button onClick={event => { configureButton.current = event.currentTarget; setConfigure(true) }}>Configure Assistant</Button></div>}
       {context && <Popover title="Pack context" size="small" trigger={<Button variant="quiet">Context: {chat.pack?.id ?? 'Current draft'}</Button>}><div className={styles.settingsBody}><p>The current pack is included with your next message. Proposed edits require your review.</p><CodeBlock text={context.text} label="Pack" /></div></Popover>}
       <div className={styles.composer}>
-        {attachments.length > 0 && <ul className={styles.attachments} aria-label="Attached files">{attachments.map(file => <li key={file.id}>
-          <Popover title={file.name} trigger={<Button variant="quiet">{file.name}</Button>}><div className={styles.settingsBody}><CodeBlock text={file.text} label="Attachment" /></div></Popover>
-          <button type="button" className="desk-icon-button" aria-label={`Remove ${file.name}`} disabled={locked || running} onClick={() => store?.update(chat.id, { attachments: attachments.filter(item => item.id !== file.id) })}><IconClose /></button>
-        </li>)}</ul>}
+        <AttachmentList files={attachments} disabled={locked || running} onRemove={id => store?.update(chat.id, { attachments: attachments.filter(item => item.id !== id) })} />
+        {upload.reading && <div className={styles.attachmentProgress}><span role="status">Reading files…</span><Button variant="quiet" onClick={upload.cancel}>Cancel</Button></div>}
         <VisuallyHidden.Root asChild><label htmlFor={`${id}-message`}>Message the assistant</label></VisuallyHidden.Root>
         <TextArea ref={messageInput} id={`${id}-message`} rows={empty ? 3 : 2} value={chat.composer} placeholder={chat.pack ? 'Ask about this pack…' : 'Ask a question or describe a task…'} disabled={locked}
           className={styles.messageInput} onChange={event => store?.update(chat.id, { composer: event.target.value })}
           onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (!otherRun && !running && (!blocked || needsConfig)) send() } }} />
         <div className={styles.composerTools}>
-          <input ref={fileInput} hidden type="file" tabIndex={-1} accept=".txt,.md,.json,.csv" multiple onChange={event => void attach(event.target.files)} />
-          <Tooltip content="Attach text files (.txt, .md, .json, .csv)"><button className="desk-icon-button" type="button" aria-label="Attach text files" disabled={running || locked} onClick={() => fileInput.current?.click()}><IconPlus /></button></Tooltip>
+          <input ref={fileInput} hidden type="file" tabIndex={-1} accept={TEXT_ATTACHMENT_ACCEPT} multiple onChange={event => { void upload.attach([...(event.target.files ?? [])]); event.target.value = '' }} />
+          <Tooltip content="Attach text files (.txt, .md, .json, .csv)"><button className="desk-icon-button" type="button" aria-label="Attach text files" disabled={running || locked || upload.reading} onClick={() => fileInput.current?.click()}><IconPlus /></button></Tooltip>
           <div className={styles.pick}><VisuallyHidden.Root asChild><label htmlFor={`${id}-mode`}>Task tools</label></VisuallyHidden.Root><Select id={`${id}-mode`} value={chat.mode} disabled={running || locked || (chat.mode === 'research' && state.candidates.length > 0)} onValueChange={mode => store?.update(chat.id, { mode: mode as Chat['mode'] })} options={[{ value: 'draft', label: 'Chat' }, { value: 'research', label: 'Research' }]} /></div>
           {(slot.endpoint?.models.length ?? 0) > 0 && <div className={styles.model}><VisuallyHidden.Root asChild><label htmlFor={`${id}-model`}>Model</label></VisuallyHidden.Root><Select id={`${id}-model`} value={binding?.model} disabled={running || locked} onValueChange={model => store?.update(chat.id, { model })} options={slot.endpoint!.models.map(model => ({ value: model, label: model }))} /></div>}
           <AssistantOptions thinking={slot.thinking} tools={slot.endpoint?.tools ?? []} mode={chat.mode} review={chat.adversarialReview === true} onReview={value => store?.update(chat.id, { adversarialReview: value })} disabled={running || locked} notice={[...state.events].reverse().find(event => event.type === "thinking_unavailable")?.detail} />
           <span className={styles.grow} />
-          {running ? <Button onClick={() => binding?.run?.stop()}>Stop</Button> : <Button variant="primary" disabled={needsConfig || !hasMessage || !binding || Boolean(otherRun) || locked || Boolean(blocked && !needsConfig)} onClick={send}>Send</Button>}
+          {running ? <Button onClick={() => binding?.run?.stop()}>Stop</Button> : <Button variant="primary" disabled={needsConfig || !hasMessage || !binding || Boolean(otherRun) || locked || upload.reading || Boolean(blocked && !needsConfig)} onClick={send}>Send</Button>}
         </div>
       </div>
-      {attachmentError && <p className={styles.caption} role="alert">{attachmentError}</p>}
+      {upload.error && <p className={styles.caption} role="alert">{upload.error}</p>}
       {(unsubmitted || error || saving || dirty || running) && <p className={styles.footnote}>{error ? 'Chat has unsaved changes.' : saving || dirty ? 'Saving chat…' : running ? 'Working in this window. You can switch chats; keep this window open.' : 'Send a message to start a chat.'}</p>}
     </div>
     </div>

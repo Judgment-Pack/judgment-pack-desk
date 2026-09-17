@@ -86,10 +86,10 @@ describe('the left rail', () => {
       get_schema: () => ({ text: '{}' })
     })
     renderRail(stub, { exampleSupported: true, schemaSupported: true })
-    await screen.findByRole('button', { name: 'Create a pack' })
+    await screen.findByRole('button', { name: 'New chat' })
     expect(stub.calls.map((call) => call.name)).toEqual(['list_packs'])
 
-    fireEvent.click(screen.getByRole('button', { name: 'Create a pack' }))
+    fireEvent.click(screen.getByRole('button', { name: 'New chat' }))
     expect(stub.calls.map((call) => call.name)).not.toContain('list_examples')
   })
 

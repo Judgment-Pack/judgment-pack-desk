@@ -10,7 +10,9 @@ chat beside it; creating a pack links that chat to the saved pack.
 
 ## Regions and transitions
 
-- Left: Create pack, Packs, then recent chats. Chat history opens the project history page.
+- Left: New chat, Packs, then recent chats. Chat history opens the project history page.
+  Packs retains its Create pack action, which opens the same chat workspace.
+  The navigation does not open a manual creation wizard.
 - Main: conversation until the person chooses Open draft; then the draft, its
   sources, tests, and final review. Do not automatically move focus on generation.
 - Right: Assistant on authoring and pack document routes. New chat and Chat history are icon buttons in the pane title bar.
@@ -262,3 +264,12 @@ browser on cancellation or refusal. No global rejection filter hides errors.
 Runs remain local to this browser window. Durable background scheduling, automatic
 history summarization, PDF/image attachments and multi-window write-conflict merging
 are separate work; the interface does not claim those capabilities.
+
+Attachment ingestion and attachment presentation are separate shared components.
+Local UTF-8 text files retain the four-file/200 KB-per-file limits and can be
+previewed or removed without editing the prompt. Reading a batch blocks Send
+(including Enter), offers Cancel, and discards late results after leaving the
+chat. A rejected batch adds no partial context. Pending local reads are not saved
+as completed attachments. Gateway-backed PDF and connected-source choices will
+use the adapter contract when available; unsupported choices are not advertised
+in the composer.
