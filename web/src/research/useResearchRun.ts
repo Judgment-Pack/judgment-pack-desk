@@ -81,24 +81,25 @@ export function researchBlockedReason(state: {
           ? 'No API key is stored for the assistant. Save one in Admin › Assistant.'
           : !state.modelPicked
             ? 'Choose an enabled model in Admin › Assistant.'
+            : state.mode === 'draft' ? ''
             : !state.advertised
               ? 'This runtime does not offer the authoring prompt.'
               : !state.authorPromptRead
                 ? 'Reading the authoring prompt…'
-                : state.mode !== 'draft' && research.gateway === null
+                : research.gateway === null
                   ? 'No research gateway is configured. Add a research section to the desk-level desk.json.'
-                  : state.mode !== 'draft' && research.sources.search === null && research.sources.read === null
+                  : research.sources.search === null && research.sources.read === null
                     ? 'The research section names no search or read source.'
                     : mcp.status !== 'ready' || mcp.client === null
                       ? 'The runtime connection is not ready.'
                       : !mcp.validateSupported
                         ? 'This runtime does not serve validate, so a draft cannot be checked.'
-                        : state.mode !== 'draft' && !mcp.expectationValidationSupported
+                        : !mcp.expectationValidationSupported
                           ? 'Update the runtime to jpack 0.22.0 or later, which serves experimental_validate_expectations; research cannot start on an older build.'
                           : ''
 }
 
-export function useResearchRun(options?: { model?: string; mode?: 'draft' | 'research' }): ResearchRunBinding {
+export function useResearchRun(options?: { model?: string; mode?: 'draft' | 'research'; adversarialReview?: boolean }): ResearchRunBinding {
   const slot = useAssistantSlot()
   const listing = useFileListing()
   const defaultPicked = usePickedModel(slot.endpoint?.models ?? EMPTY_MODELS, slot.endpoint?.model ?? null, listing.data?.root)
@@ -107,7 +108,7 @@ export function useResearchRun(options?: { model?: string; mode?: 'draft' | 'res
   const advertised = (prompts.data ?? []).includes(AUTHOR_PACK_PROMPT)
   const authorPrompt = usePromptText(AUTHOR_PACK_PROMPT, advertised)
   const advertisesTest = (prompts.data ?? []).includes(TEST_PACK_PROMPT)
-  const testPrompt = usePromptText(TEST_PACK_PROMPT, slot.thinking !== 'off' && advertisesTest)
+  const testPrompt = usePromptText(TEST_PACK_PROMPT, (slot.thinking !== 'off' || options?.adversarialReview === true) && advertisesTest)
   const { config } = useEffectiveConfig()
   const research = config.research
   const mcp = useMcp()
@@ -127,8 +128,8 @@ export function useResearchRun(options?: { model?: string; mode?: 'draft' | 'res
   const ledger = ledgerRef.current
 
   // The settings a turn reads, as of the moment it starts.
-  const settings = useRef({ slot, picked, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode })
-  settings.current = { slot, picked, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode }
+  const settings = useRef({ slot, picked, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview })
+  settings.current = { slot, picked, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview }
 
   const run = useMemo(() => {
     const log = (text: string) => recordActivity(`research: ${text}`)
@@ -147,15 +148,18 @@ export function useResearchRun(options?: { model?: string; mode?: 'draft' | 'res
         deliver(event)
       }
       const sessionId = await sessionBearer()
-      const opened = openAssistantConnection({ allowed: endpoint.tools, onEvent, sessionId, signal })
+      const opened = settings.current.mcp.status === 'ready' && settings.current.mcp.client !== null
+        ? openAssistantConnection({ allowed: endpoint.tools, onEvent, sessionId, signal }) : null
       try {
-        const ready = await opened.ready
+        const ready = opened ? await opened.ready : { tools: [], callTool: async () => { throw new Error('Connect the runtime to use pack tools.') } }
         const engine = await loadEngine(slot.engine)
         await runAssistantSession(
           engine,
           {
             prompt: request.prompt,
-            ...(settings.current.mode === 'draft' && !request.reviewer ? { allowConversation: true } : {}),
+            ...(request.conversation ? { allowConversation: true } : {}),
+            interactive: true,
+            adversarialReview: !request.reviewer && settings.current.adversarialReview === true,
             testPrompt: request.reviewer ? '' : testPrompt,
             tools: ready.tools,
             callTool: ready.callTool,
@@ -167,7 +171,7 @@ export function useResearchRun(options?: { model?: string; mode?: 'draft' | 'res
           onEvent
         )
       } finally {
-        await opened.close()
+        await opened?.close()
       }
     }
     // The tools and the pinned key are read when a turn needs them rather

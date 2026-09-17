@@ -45,6 +45,10 @@ export function IconPlus() {
   )
 }
 
+export function IconMore() {
+  return <Glyph><circle cx="3" cy="8" r=".8" fill="currentColor" stroke="none" /><circle cx="8" cy="8" r=".8" fill="currentColor" stroke="none" /><circle cx="13" cy="8" r=".8" fill="currentColor" stroke="none" /></Glyph>
+}
+
 export function IconHistory() {
   return <Glyph><path d="M2 5a6 6 0 1 1-.2 5M2 1.5V5h3.5M8 4.5V8l2.5 1.5" /></Glyph>
 }

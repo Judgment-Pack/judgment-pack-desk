@@ -6,7 +6,7 @@ import { ChatStore, type Chat } from './store'
 
 const Context = createContext<ChatStore | null>(null)
 export const useChatStore = () => useContext(Context)
-const EMPTY = { chats: [], ready: false, saving: false, error: '', active: [], bindings: new Map(), dirty: false } as ReturnType<ChatStore['getSnapshot']>
+const EMPTY = { chats: [], drafts: [], ready: false, saving: false, error: '', active: [], bindings: new Map(), dirty: false } as ReturnType<ChatStore['getSnapshot']>
 const noop = () => () => {}
 export function useChats() {
   const store = useChatStore()
@@ -20,17 +20,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   return <Context.Provider value={store}><ChatWorkers />{children}</Context.Provider>
 }
 function ChatWorkers() {
-  const { store, active, chats, dirty } = useChats()
+  const { store, active, chats, drafts, dirty } = useChats()
   useEffect(() => {
     const leave = (event: BeforeUnloadEvent) => { if (dirty || store?.running) event.preventDefault() }
     const visibility = () => { if (document.visibilityState === 'hidden') void store?.flush() }
     window.addEventListener('beforeunload', leave); document.addEventListener('visibilitychange', visibility)
     return () => { window.removeEventListener('beforeunload', leave); document.removeEventListener('visibilitychange', visibility) }
   }, [store, dirty])
-  return <>{active.map(id => { const chat = chats.find(chat => chat.id === id); return store && chat ? <ChatWorker key={id} store={store} chat={chat} /> : null })}</>
+  return <>{active.map(id => { const chat = chats.find(chat => chat.id === id) ?? drafts.find(chat => chat.id === id); return store && chat ? <ChatWorker key={id} store={store} chat={chat} /> : null })}</>
 }
 function ChatWorker({ store, chat }: { store: ChatStore; chat: Chat }) {
-  const binding = useResearchRun({ model: chat.model, mode: chat.mode })
+  const binding = useResearchRun({ model: chat.model, mode: chat.mode, adversarialReview: chat.adversarialReview })
   const initial = useRef(chat.checkpoint)
   const restoring = useRef(false)
   const [restored, setRestored] = useState(!initial.current)

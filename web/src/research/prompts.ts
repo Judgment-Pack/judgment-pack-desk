@@ -37,4 +37,4 @@ Your previous turn ended before you wrote the proposal: the turn's step budget w
 
 export const CONVERSATION_INSTRUCTIONS = `CONVERSATION
 
-The person has written to you during this run. Answer them in prose. If their message asks for a change to the pack, make it and return the whole updated document; if it only asks a question, answer it and return the current document unchanged. Always end with the one fenced JSON block.`
+Answer the current request directly in prose. A question, greeting or explanation does not need a proposal, tools, or repeated checks. Do not return the current document unchanged. If asked to create or change a pack, read get_authoring_instructions, then propose the complete updated document in the required envelope. Keep established test expectations fixed; disagreements need human review.`

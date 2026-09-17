@@ -30,6 +30,7 @@ describe('the desk icons', () => {
       'IconHelp',
       'IconHistory',
       'IconMatrix',
+      'IconMore',
       'IconPack',
       'IconPanelBottom',
       'IconPanelLeft',

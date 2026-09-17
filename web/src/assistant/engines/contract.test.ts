@@ -292,3 +292,11 @@ describe('the schema an engine may show the model', () => {
     expect(() => servedSchema({ name: 'a_new_tool' })).toThrow('without an input schema')
   })
 })
+
+it('does not misclassify an ordinary code example as a pack proposal', async () => {
+  const { hasProposalFence, streamingProse } = await import('./contract')
+  expect(hasProposalFence('```json\n{"x":1}\n```')).toBe(false)
+  expect(hasProposalFence('```json\n{"proposal":{"document":{}}}\n```')).toBe(true)
+  expect(streamingProse('Answer.\n\n``')).toBe('Answer.')
+  expect(streamingProse('Answer.\n\n```json\n{"proposal":')).toBe('Answer.')
+})

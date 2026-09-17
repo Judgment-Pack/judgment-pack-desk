@@ -25,9 +25,10 @@
   /* Shared stacking order for page chrome and portaled controls. */
   --z-page-header: 10;
   --z-drawer: 40;
-  --z-menu: 50;
   --z-dialog: 60;
   --z-popover: 65;
+  /* Menus can open inside a popover or dialog. */
+  --z-menu: 66;
   --z-tooltip: 70;
 
   /* Surfaces, from the page up. `--surface-raised` is what sits *over* a

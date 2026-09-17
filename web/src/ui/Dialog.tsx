@@ -59,6 +59,7 @@ export function Dialog({
       <RadixDialog.Portal>
         <RadixDialog.Overlay className={styles.overlay} />
         <RadixDialog.Content
+          data-modal-surface
           className={styles.content}
           onCloseAutoFocus={
             openerRef === undefined

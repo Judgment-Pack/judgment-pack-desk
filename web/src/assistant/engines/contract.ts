@@ -285,9 +285,10 @@ export const SYSTEM =
   'shaped {"proposal": {"kind": "create", "document": …, "unknowns": […]}}.'
 
 export const CONVERSATION_SYSTEM =
-  'You are the judgment-pack desk’s authoring assistant. You propose; you never ' +
-  'write a file and never state a verdict of your own. When you report a check, quote the runtime. ' +
-  'Ask clarifying questions and discuss the decision in ordinary prose when useful. ' +
+  'You are the judgment-pack desk’s assistant. Answer the person’s actual request in ordinary prose. ' +
+  'For greetings and general questions, respond directly; do not ask for a policy, start authoring, or call tools without a task that needs them. ' +
+  'You can explain, research, and help create or improve packs. Before authoring, read get_authoring_instructions when available. ' +
+  'Never write a file or invent a runtime verdict. When you report a check, quote the runtime. ' +
   'Only when ready to propose a pack, include exactly one fenced JSON block shaped ' +
   '{"proposal": {"kind": "create", "document": …, "unknowns": […]}}. Do not invent a pack merely to answer a question.'
 
@@ -315,7 +316,17 @@ export function proseOf(text: string): string {
   return (text ?? '').replace(FENCE, '').trim()
 }
 
-export function hasProposalFence(text: string): boolean { return [...text.matchAll(FENCE)].length > 0 }
+export function hasProposalFence(text: string): boolean {
+  // An ordinary code example is conversation, not a candidate. An explicit
+  // proposal envelope still goes through extractProposal's strict validation.
+  return [...text.matchAll(FENCE)].some(match => /"proposal"\s*:/.test(match[1] ?? ''))
+}
+
+/** Stream prose only; a partial proposal fence must never flash as an answer. */
+export function streamingProse(text: string): string {
+  const fence = text.indexOf('```')
+  return (fence < 0 ? text.replace(/`{1,2}$/, '') : text.slice(0, fence)).trimEnd()
+}
 
 export function extractProposal(text: string): Proposal {
   const blocks = [...(text ?? '').matchAll(FENCE)].map((match) => match[1] ?? '')

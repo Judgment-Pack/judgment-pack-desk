@@ -11,6 +11,8 @@ export function statusLine(state: RunState): string {
       return 'Not started'
     case 'running':
       return state.detail || `Running (${state.phase})`
+    case 'complete':
+      return 'Response complete'
     case 'ready':
       return 'Ready for review'
     case 'needs-input':

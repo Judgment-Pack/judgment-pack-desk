@@ -677,6 +677,8 @@ const SESSION_KEYS = [
   'prompt',
   'testPrompt',
   'allowConversation',
+  'interactive',
+  'adversarialReview',
   'tools',
   'callTool',
   'hostTools',

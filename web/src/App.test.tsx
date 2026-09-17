@@ -5,7 +5,7 @@ import { connected, renderConnected, stubClient } from './testing/harness'
 
 afterEach(cleanup)
 
-/** A project with nothing in it: the home page renders, and says so. */
+/** An empty project still starts at the chat landing page. */
 const EMPTY_PROJECT = stubClient({
   list_packs: () => ({ text: JSON.stringify({ status: 'valid', packs: [] }) }),
   experimental_test_graphs: () => ({
@@ -14,10 +14,15 @@ const EMPTY_PROJECT = stubClient({
 })
 
 describe('the desk, connected', () => {
-  it('says so and shows no banner when the tool listing was read', async () => {
+  it('opens the chat landing page without a warning when the tool listing was read', async () => {
     renderConnected(<App />, connected({ client: EMPTY_PROJECT.client, known: true }))
-    await screen.findByRole('heading', { name: /^Packs/ })
+    await screen.findByText('Loading chat history…')
     expect(screen.queryByText(/tool listing could not be read/)).toBeNull()
+  })
+
+  it('keeps the pack collection available at its own URL', async () => {
+    renderConnected(<App />, connected({ client: EMPTY_PROJECT.client, known: true }), { path: '/packs' })
+    await screen.findByRole('heading', { name: /^Packs/ })
   })
 
   it('says the tool listing could not be read rather than impersonating an older runtime', async () => {

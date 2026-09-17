@@ -20,10 +20,9 @@
  *    compiling.
  * 2. **The refusal path leaks unhandled rejections.** `AI_NoOutputGeneratedError`
  *    reaches the page from a promise the result exposed and nobody claimed. It
- *    is closed at the cause rather than at the symptom: every promise-valued
- *    member of the result is claimed the moment the result exists, enumerated
- *    from the object rather than from a list. Nothing on this page is
- *    suppressed — see `claimPromises`.
+ *    is handled by claiming result promises and disabling the unused browser
+ *    telemetry path that leaves its completion promise unclaimed. Nothing on
+ *    this page is suppressed — see `claimPromises`.
  * 3. **The SDK reads the answer it asked for.** An endpoint that answers whole
  *    to a request that asked to stream ends the run with no output at all. That
  *    is closed one layer down, in `relay.ts`.
@@ -50,6 +49,7 @@ import {
   MAX_TURNS,
   SYSTEM,
   CONVERSATION_SYSTEM,
+  streamingProse,
   hasProposalFence,
   eventIterator,
   extractProposal,
@@ -302,63 +302,18 @@ function outcome(result: McpToolResult): { text: string; isError: boolean; struc
 }
 
 /**
- * Claim every promise the SDK's result exposes, the moment it exists.
+ * Claim the SDK result's promise-valued members before consuming its stream.
+ * Reading a result getter creates a promise that can reject on a failed call.
+ * Enumerate own properties and prototype getters so new SDK result fields do
+ * not silently become unclaimed. Stream getters are excluded: reading those
+ * creates unused tee/transform branches rather than promises.
  *
- * ADR-0001 records that this SDK's refusal path "leaks unhandled
- * `AI_NoOutputGeneratedError` rejections the caller cannot claim" and asks the
- * page for an `unhandledrejection` guard. **The guard was the wrong layer.** A
- * listener on the page suppresses every rejection that merely *has* that error
- * name — an unrelated operation elsewhere in the page, during this run, would
- * have been hidden from the browser's own diagnostics — and it treats the
- * symptom rather than the cause.
- *
- * The cause is reachable. `streamText`'s result exposes its output as
- * promise-valued members, and reading one mints a promise that rejects when the
- * call fails; a member read and left unclaimed is a rejection nobody can catch.
- * Measured on the desk's own refusal path: reading `result.text` and not
- * claiming it produces exactly one unhandled `AI_NoOutputGeneratedError`, and
- * claiming every promise-valued member produces none.
- *
- * **Enumerated from the object rather than from a list somebody wrote**, own
- * properties and prototype getters alike, because the list is the SDK's and it
- * changes between releases — `content`, `finalStep`, `output`, `reasoning`,
- * `responseMessages`, `totalUsage` and eighteen more at the pinned version. A
- * member that throws on being read (`elementStream`, without an output
- * specification) is not a promise to claim and is stepped over.
- *
- * Nothing here suppresses anything: every rejection this page makes, including
- * any this engine mishandles, still reaches the console as a real page error.
- *
- * **And one of them still does — measured, and not reachable from here.** In a
- * real browser, an endpoint that answers 400 leaves exactly one unhandled
- * `AI_NoOutputGeneratedError` on the page, constructed inside the SDK's own
- * transform `flush` and never handled late (no `rejectionhandled` follows it).
- * Three things were tried and each was measured on the live drive:
- *
- * - claiming the result's promises **again** after the stream is consumed —
- *   still leaks;
- * - claiming the result's object graph **recursively**, own properties and
- *   prototype getters, to depth four — still leaks. So the rejecting promise is
- *   not reachable from the result at any depth: the SDK creates it inside a
- *   transform and hands it to nothing;
- * - reproducing it under Node with the same loop shape — tools, `prepareStep`,
- *   the refinement hook, an abort signal — and `process.on('unhandledRejection')`
- *   sees nothing at all. jsdom therefore cannot see it either, which is why the
- *   conformance session says so and why the live drive is where it was found.
- *
- * It is **the SDK's refusal path and not this chunk's**: it reproduces at tier
- * `off` against an endpoint that refuses every request, which is what the desk
- * shipped before the tier existed. The closest upstream report is
- * `vercel/ai#8084` ("Unable to catch NoOutputGeneratedError"), closed against
- * 5.0.x; this is the same class on 7.0.93 and no open issue matches it.
- *
- * The session is unaffected and, more to the point, **the author is told**: the
- * run puts the status and the endpoint's own sentence on its own stream, which
- * `engine.test.ts` asserts, so what reaches the console is noise beside a
- * failure the tab has already reported. Recorded here rather than papered over —
- * the `unhandledrejection` listener ADR-0001 suggests is keyed on an error
- * *name* and would suppress every rejection carrying it, including one this
- * desk should hear about.
+ * A separate browser-only leak in SDK 7.0.93 was traced to telemetry:
+ * streamText passes `_totalUsage.promise.then(...)` into
+ * openTelemetryChannelSpanContext, whose non-Node return leaves it unclaimed.
+ * Both calls below explicitly disable that unused telemetry path. This fixes
+ * Stop and endpoint-refusal errors at their source; no page-wide rejection
+ * listener suppresses errors. The real-browser response check covers both.
  */
 export function claimPromises(result: object): number {
   const names = new Set<string>()
@@ -371,7 +326,9 @@ export function claimPromises(result: object): number {
   }
   let claimed = 0
   for (const name of names) {
-    if (name === 'constructor') continue
+    // Stream getters create a new tee/transform, not a promise. Opening an
+    // unconsumed stream just to inspect it adds a branch with no consumer.
+    if (name === 'constructor' || name === 'stream' || name.endsWith('Stream')) continue
     let value: unknown
     try {
       value = (result as Record<string, unknown>)[name]
@@ -520,7 +477,7 @@ export function runVercel(
      * nothing can be started again, and one that delivered anything cannot.
      */
     const deliver = async (event: AssistantEvent): Promise<void> => {
-      produced.count += 1
+      if (event.type !== 'message_progress' || event.text !== '') produced.count += 1
       await channel.push(event)
     }
     /**
@@ -545,7 +502,8 @@ export function runVercel(
         string,
         unknown
       >
-      await deliver({ type: 'tool_call', name, args })
+      const correlation = session.interactive ? { callId: crypto.randomUUID() } : {}
+      await deliver({ type: 'tool_call', ...correlation, name, args })
       let answer: McpToolResult
       try {
         answer = await callTool(name, args)
@@ -560,12 +518,13 @@ export function runVercel(
         const text =
           `refused: ${(cause as Error).message}. This assistant proposes; it never ` +
           `writes a file and never calls a tool it was not offered.`
-        await deliver({ type: 'tool_result', name, isError: true, text })
+        await deliver({ type: 'tool_result', ...correlation, name, isError: true, text })
         return { content: [{ type: 'text', text }], isError: true }
       }
       const said = outcome(answer)
       await deliver({
         type: 'tool_result',
+        ...correlation,
         name,
         isError: said.isError,
         text: said.text,
@@ -582,7 +541,8 @@ export function runVercel(
       // answer earns. It is never a check the critic counts — the runtime's
       // verdicts are the runtime's — and it never reaches the recorder.
       const args = (input ?? {}) as Record<string, unknown>
-      await deliver({ type: 'tool_call', name: tool.name, args })
+      const correlation = session.interactive ? { callId: crypto.randomUUID() } : {}
+      await deliver({ type: 'tool_call', ...correlation, name: tool.name, args })
       let answer: McpToolResult
       try {
         answer = await withAbort(() => tool.execute(args, gate.signal), gate.signal)
@@ -592,12 +552,13 @@ export function runVercel(
           return { content: [{ type: 'text', text }], isError: true }
         }
         const text = `refused: ${(cause as Error).message}`
-        await deliver({ type: 'tool_result', name: tool.name, isError: true, text })
+        await deliver({ type: 'tool_result', ...correlation, name: tool.name, isError: true, text })
         return { content: [{ type: 'text', text }], isError: true }
       }
       const said = outcome(answer)
       await deliver({
         type: 'tool_result',
+        ...correlation,
         name: tool.name,
         isError: said.isError,
         text: said.text,
@@ -621,6 +582,8 @@ export function runVercel(
 
     let streamed: unknown = null
     const result = streamText({
+      // See claimPromises: the unused browser tracing path leaks on failure.
+      telemetry: { isEnabled: false },
       model,
       instructions: session.allowConversation ? CONVERSATION_SYSTEM : SYSTEM,
       tools,
@@ -688,6 +651,7 @@ export function runVercel(
         ledger.boundary()
         steps += 1
         final = ''
+        if (session.interactive) await deliver({ type: 'message_progress', text: '' })
         continue
       }
       if (part.type === 'error') {
@@ -756,7 +720,10 @@ export function runVercel(
         })
         continue
       }
-      if (part.type === 'text-delta') final += (part as { text?: string }).text ?? ''
+      if (part.type === 'text-delta') {
+        final += (part as { text?: string }).text ?? ''
+        if (session.interactive) await deliver({ type: 'message_progress', text: streamingProse(final) })
+      }
     }
     if (streamed !== null) throw streamed
     // The last turn's own accounting.
@@ -787,11 +754,12 @@ export function runVercel(
     let critique = null as ReturnType<CritiqueRecorder['critique']> | null
     // **No runtime prompt, no critic.** The instructions are the runtime's; this
     // desk adds one sentence and has none of its own to fall back on.
-    const cannot = slot.runsRefutation() ? criticCannotRun(session.testPrompt) : null
+    const review = session.adversarialReview ?? slot.runsRefutation()
+    const cannot = review ? criticCannotRun(session.testPrompt) : null
     if (cannot !== null) {
       critique = cannot
       await deliver(critiqueEvent(cannot))
-    } else if (slot.runsRefutation()) {
+    } else if (review) {
       const recorder = openCritique()
       recording = recorder
       // A fresh conversation: its history carries none of the loop's blocks.
@@ -800,6 +768,7 @@ export function runVercel(
       let criticReasoning = ''
       try {
         const critic = streamText({
+          telemetry: { isEnabled: false },
           model,
           instructions: CRITIC_SYSTEM,
           tools,

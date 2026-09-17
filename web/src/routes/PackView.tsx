@@ -909,6 +909,7 @@ export function PackView() {
   const inspector = useInspectorPortal(inspectorNode === null ? null :
     <PackAssistant key={packId} packId={packId ?? ''} path={path} digest={file.data?.sha256}
       draft={bufferText ?? servedText} editing={editing && onPath}
+      onEdit={() => { returnLocation.current = { packId, search: location.search.replace(/^\?/, ''), hash }; setParams(withEditing(params, true), { replace: true }) }}
       identity={onPath ? buffer.identity : undefined} busy={busyDraft} diagnostics={diagnosticsToFix} />)
 
 

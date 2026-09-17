@@ -21,7 +21,7 @@ function view(identity = base, draft = original) {
   return <MemoryRouter><PackAssistant packId="p" editing draft={draft} identity={identity} busy={() => ''} diagnostics={undefined} /></MemoryRouter>
 }
 beforeEach(() => {
-  fake.snapshot = { store, ready: true, chats: [chat], bindings: new Map([['chat-one', snapshot(1)]]) }
+  fake.snapshot = { store, ready: true, chats: [chat], drafts: [], bindings: new Map([['chat-one', snapshot(1)]]) }
   fake.editing = { editing: true, pending: new Set(), write: vi.fn() }
 })
 it('does not offer an older candidate as the answer to a new clarification', () => {
@@ -43,4 +43,22 @@ it('offers only a new candidate and refuses it when the buffer revision changes'
   rendered.rerender(view({ ...base, revision: 3 }))
   expect(screen.getByRole('button', { name: 'Apply to draft' }).hasAttribute('disabled')).toBe(true)
   expect(fake.editing.write).not.toHaveBeenCalled()
+})
+it('carries a view-mode proposal into Edit only when path and bytes still match', () => {
+  fake.editing.editing = false
+  const props = { packId: 'p', path: 'packs/p.json', draft: original, busy: () => '', diagnostics: undefined }
+  const rendered = render(<MemoryRouter><PackAssistant {...props} editing={false} /></MemoryRouter>)
+  fireEvent.click(screen.getByRole('button', { name: 'Send request' }))
+  fake.snapshot.bindings = new Map([['chat-one', snapshot(2)]])
+  rendered.rerender(<MemoryRouter><PackAssistant {...props} editing={false} /></MemoryRouter>)
+  fireEvent.click(screen.getByText('Review proposed changes'))
+  expect(screen.getByRole('button', { name: 'Apply to draft' }).hasAttribute('disabled')).toBe(true)
+  fake.editing.editing = true
+  rendered.rerender(<MemoryRouter><PackAssistant {...props} editing identity={{ ...base, generation: 4 }} /></MemoryRouter>)
+  expect(screen.getByRole('button', { name: 'Apply to draft' }).hasAttribute('disabled')).toBe(false)
+  // A clarification keeps this unaccepted proposal available.
+  fireEvent.click(screen.getByRole('button', { name: 'Send request' }))
+  expect(screen.getByRole('button', { name: 'Apply to draft' }).hasAttribute('disabled')).toBe(false)
+  rendered.rerender(<MemoryRouter><PackAssistant {...props} editing identity={{ ...base, generation: 4, revision: 2 }} /></MemoryRouter>)
+  expect(screen.getByRole('button', { name: 'Apply to draft' }).hasAttribute('disabled')).toBe(true)
 })

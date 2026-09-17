@@ -61,6 +61,8 @@ export function describeEvent(event: AssistantEvent): string {
       return event.detail
     case 'reasoning':
       return `${event.text.length} characters of reasoning`
+    case 'message_progress':
+      return ''
     case 'message':
       return event.text
     case 'critique':
@@ -114,7 +116,7 @@ export function EventList({
   const reported = events
     .map((event, index) => ({ event, index }))
     .filter(({ event }) =>
-      compact ? COMPACT.has(event.type) : event.type !== 'reasoning' || event.done
+      event.type !== 'message_progress' && (compact ? COMPACT.has(event.type) : event.type !== 'reasoning' || event.done)
     )
   if (reported.length === 0 && failure === undefined) return null
   return (
