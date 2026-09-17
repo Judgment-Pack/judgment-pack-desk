@@ -137,7 +137,7 @@ function renderDesk() {
 async function openCreate(): Promise<HTMLElement> {
   fireEvent.click(screen.getByRole('button', { name: 'Project navigation' }))
   await screen.findByRole('navigation', { name: 'Project' })
-  const opener = screen.getByRole('button', { name: 'Create a pack' })
+  const opener = screen.getByRole('button', { name: 'New chat' })
   fireEvent.click(opener)
   await screen.findByRole('heading', { name: 'Create a pack' })
   return opener
@@ -243,7 +243,7 @@ describe('guided creation from the rail', () => {
     viewport(1400)
     const { router } = renderDesk()
     const rail = screen.getByRole('navigation', { name: 'Project' })
-    fireEvent.click(screen.getByRole('button', { name: 'Create a pack' }))
+    fireEvent.click(screen.getByRole('button', { name: 'New chat' }))
     await screen.findByRole('heading', { name: 'Create a pack' })
     expect(router.state.location.pathname).toBe('/create-pack')
     expect(document.activeElement).toBe(screen.getByLabelText('Name (required)'))

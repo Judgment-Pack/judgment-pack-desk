@@ -127,15 +127,15 @@ function RailBody({
 
   return (
     <>
-      <Labelled icons={icons} label="Create a pack">
+      <Labelled icons={icons} label="New chat">
         <button
           type="button"
           className="desk-create"
-          aria-label="Create a pack"
+          aria-label="New chat"
           onClick={() => { if (store?.canCreate && ready) openNewChat(navigate, store.startChat()); else navigate('/create-pack'); onNavigate?.() }}
         >
           <IconPlus />
-          {!icons && <span className="desk-nav-label">Create pack</span>}
+          {!icons && <span className="desk-nav-label">New chat</span>}
         </button>
       </Labelled>
 

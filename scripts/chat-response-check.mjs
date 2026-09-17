@@ -84,6 +84,30 @@ try {
   assert.equal(await message().inputValue(), 'Keep this prompt')
   results.push('Attachment chip previews and removes the file without modifying the prompt')
 
+  // A slow local read must not race Send, and cancel must ignore late bytes.
+  await page.evaluate(() => {
+    const read = File.prototype.arrayBuffer
+    File.prototype.arrayBuffer = function () {
+      if (this.name !== 'slow.txt') return read.call(this)
+      return new Promise(resolve => { window.finishAttachment = () => resolve(new TextEncoder().encode('Late file content').buffer) })
+    }
+  })
+  const beforeUpload = requests.length
+  await page.locator('input[type=file]').setInputFiles({ name: 'slow.txt', mimeType: 'text/plain', buffer: Buffer.from('Late file content') })
+  await chat.getByRole('status').filter({ hasText: 'Reading files…' }).waitFor()
+  assert(await chat.getByRole('button', { name: 'Send', exact: true }).isDisabled())
+  await message().press('Enter')
+  assert.equal(requests.length, beforeUpload)
+  await chat.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await page.evaluate(() => window.finishAttachment())
+  assert.equal(await chat.getByRole('button', { name: 'Remove slow.txt' }).count(), 0)
+  assert.equal(await message().inputValue(), 'Keep this prompt')
+  assert(await chat.getByRole('button', { name: 'Send', exact: true }).isEnabled())
+  await page.locator('input[type=file]').setInputFiles({ name: 'unsupported.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF') })
+  await chat.getByRole('alert').filter({ hasText: 'PDF and connected sources are not available yet.' }).waitFor()
+  assert.equal(requests.length, beforeUpload)
+  results.push('Reading blocks Send and Enter; cancel ignores late bytes; unsupported files give an honest error without losing the prompt')
+
   responseText = `Here is a draft.\n\n\`\`\`json\n${JSON.stringify({ proposal: { document: pack, unknowns: [] } })}\n\`\`\``
   await send('Create the supplied screening pack')
   await chat.getByText('Structure checked · Tests not run', { exact: false }).waitFor()
@@ -105,7 +129,7 @@ try {
   await page.screenshot({ path: `${output}/review-with-chat.png` })
   results.push('One review action; questions stay enabled; a new revision invalidates the previous Create review')
 
-  await page.getByRole('button', { name: 'New chat', exact: true }).click()
+  await page.locator('.desk-pane-head').getByRole('button', { name: 'New chat', exact: true }).click()
   await page.getByRole('heading', { name: 'What would you like to work on?' }).waitFor()
   responseText = 'This response must not appear after Stop'; delay = 1500
   await send('Wait while I check something')
