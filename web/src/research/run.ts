@@ -894,7 +894,7 @@ export class AuthoringRun {
         // wrong one sends them to the cases when the pack is what is broken.
         this.set({ phase: 'review', status: 'needs-input', detail: check.valid
           ? sourceMessage("The unchanged draft disagrees with the reviewed expectations. Review the results or request a pack change.")
-          : sourceMessage("The unchanged draft is not a valid pack: {{value0}} diagnostic{{value1}}. Review them, or send a message to repair it.", { value0: check.diagnostics.length, value1: check.diagnostics.length === 1 ? '' : 's' }) })
+          : sourceMessage("The unchanged draft is not a valid pack: {{count}} diagnostics. Review them, or send a message to repair it.", { count: check.diagnostics.length }) })
         return
       }
       if (this.state.revisionsUsed >= this.ports.maxRevisions) {
@@ -923,7 +923,7 @@ export class AuthoringRun {
    */
   private unresolvedExpectations(): string | null {
     const count = this.state.expectationIssues.filter(issue => !issue.resolved).length
-    return count ? `${count} invalid expectation${count === 1 ? '' : 's'} must be corrected and approved before testing or creating the pack.` : null
+    return count ? sourceMessage("{{count}} invalid expectations must be corrected and approved before testing or creating the pack.", { count }) : null
   }
 
   /**

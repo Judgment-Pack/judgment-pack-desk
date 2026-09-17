@@ -483,7 +483,7 @@ export function AssistantPane({
         <ModelPicker picked={picked} id="assistant-model" />
       </p>
       {ran !== undefined && (
-        <p className={styles.status}><Message text={"Running the runtime’s <0/> prompt<1/>."} slots={[ran, ran === FIX_PACK_PROMPT ? `, over ${diagnosticCount} diagnostic${diagnosticCount === 1 ? '' : 's'}` : '']} /></p>
+        <p className={styles.status}>{ran === FIX_PACK_PROMPT ? msg('Running the runtime’s {{prompt}} prompt over {{count}} diagnostics.', { prompt: ran, count: diagnosticCount }) : msg('Running the runtime’s {{prompt}} prompt.', { prompt: ran })}</p>
       )}
 
       <label className={styles.label} htmlFor="assistant-policy">{msg("What should this pack decide?")}</label>

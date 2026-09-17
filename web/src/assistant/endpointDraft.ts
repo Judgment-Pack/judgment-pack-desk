@@ -1,3 +1,4 @@
+import { sourceMessage } from '../i18n/source'
 /**
  * The Admin form's draft, and the object it writes.
  *
@@ -56,7 +57,7 @@ export interface EndpointDraft {
  * `openai-compatible` is a spelling and not a name.
  */
 export const KIND_LABEL: Readonly<Record<EndpointKind, string>> = {
-  'openai-compatible': 'OpenAI-compatible',
+  'openai-compatible': sourceMessage('OpenAI-compatible'),
   anthropic: 'Anthropic',
   gemini: 'Google Gemini'
 }
@@ -256,9 +257,9 @@ export function assistantWithoutEndpoint(draft: EndpointDraft): unknown {
  * because `ultra` is a spelling and not an amount.
  */
 export const TIER_LABEL: Readonly<Record<ThinkingTier, string>> = {
-  off: 'off',
-  on: 'standard',
-  ultra: 'deep'
+  off: sourceMessage('off'),
+  on: sourceMessage('standard'),
+  ultra: sourceMessage('deep')
 }
 
 /** The tier options, in the order the closed list declares them. */

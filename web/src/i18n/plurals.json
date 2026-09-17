@@ -1,4 +1,17 @@
 {
   "Work · {{count}} steps": "Work · {{count}} step",
-  "{{count}} required evidence items": "{{count}} required evidence item"
+  "{{count}} required evidence items": "{{count}} required evidence item",
+  "{{count}} members unchanged: {{members}}": "{{count}} member unchanged: {{members}}",
+  "{{count}} elements unchanged, in the same place.": "{{count}} element unchanged, in the same place.",
+  "{{count}} expectations did not pass runtime expectation validation. Testing is paused until each correction is reviewed and approved.": "{{count}} expectation did not pass runtime expectation validation. Testing is paused until each correction is reviewed and approved.",
+  "{{count}} excerpts": "{{count}} excerpt",
+  "{{count}} source references": "{{count}} source reference",
+  "{{revisions}} ({{count}} repairs)": "{{revisions}} ({{count}} repair)",
+  "{{count}} invalid expectations · testing paused": "{{count}} invalid expectation · testing paused",
+  "{{count}} invalid expectations must be corrected and approved before testing or creating the pack.": "{{count}} invalid expectation must be corrected and approved before testing or creating the pack.",
+  "The unchanged draft is not a valid pack: {{count}} diagnostics. Review them, or send a message to repair it.": "The unchanged draft is not a valid pack: {{count}} diagnostic. Review them, or send a message to repair it.",
+  "Connected · {{count}} models available": "Connected · {{count}} model available",
+  "{{count}} diagnostics": "{{count}} diagnostic",
+  "The {{layers}} layers did not run.": "The {{layers}} layer did not run.",
+  "Running the runtime’s {{prompt}} prompt over {{count}} diagnostics.": "Running the runtime’s {{prompt}} prompt over {{count}} diagnostic."
 }

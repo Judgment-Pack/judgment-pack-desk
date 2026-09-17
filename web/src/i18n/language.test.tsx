@@ -5,6 +5,8 @@ import { initializeLanguage, i18n, LANGUAGE_KEY, language, languagePreference, l
 import { Message } from './Message'
 import { currentLanguage } from './locales'
 import { sourceMessage } from './source'
+import { layersReached } from '../packs/checks'
+import { checkLine } from '../assistant/endpointCheck'
 import { CodeBlock } from '../ui/CodeBlock'
 
 afterEach(async () => { cleanup(); vi.restoreAllMocks(); localStorage.clear(); setLanguage('en'); await languageReady(); localStorage.clear() })
@@ -124,6 +126,42 @@ describe('personal language preference', () => {
     expect(writeText).toHaveBeenCalledExactlyOnceWith('{"outcomeId":"Save"}')
     expect(document.querySelector('pre code')?.textContent).toBe('{"outcomeId":"Save"}')
     vi.unstubAllGlobals()
+  })
+
+  it('localizes persisted count messages with the new locale’s grammar', async () => {
+    const key = '{{count}} excerpts'
+    const savedOne = sourceMessage(key, { count: 1 })
+    const savedZero = sourceMessage(key, { count: 0 })
+    expect(savedOne).toBe('1 excerpt')
+    expect(savedZero).toBe('0 excerpts')
+    setLanguage('fr'); await languageReady()
+    expect(systemMessage(savedOne)).toBe('1 extrait')
+    expect(systemMessage(savedZero)).toBe('0 extrait')
+    setLanguage('de'); await languageReady()
+    expect(systemMessage(savedZero)).toBe('0 Auszüge')
+    setLanguage('ja'); await languageReady()
+    expect(systemMessage(savedOne)).toBe('抜粋 1 件')
+    expect(sourceMessage(key, { count: 1 })).toBe(savedOne)
+  })
+
+  it('translates validation narration but preserves the runtime’s exact layer and status names', async () => {
+    const report = { status: 'unsupported', layers: [{ name: 'carrier', status: 'passed' }], diagnostics: [] }
+    setLanguage('fr'); await languageReady()
+    const text = layersReached(report, msg).text
+    expect(text).toContain('unsupported — carrier passed, 0 diagnostic.')
+    expect(text).toContain('Les couches structural et semantic n’ont pas été exécutées.')
+    expect(layersReached(report).text).toContain('structural and semantic layers did not run')
+  })
+
+  it('translates connection feedback without changing the probe or its quoted refusal', async () => {
+    const probe = { reachable: true, status: 200, latencyMs: 10, diagnostic: '' }
+    const answer = { of: 'gemini\nhttps://example.test', asking: false, probe, rows: [] }
+    setLanguage('fr'); await languageReady()
+    expect(checkLine(answer, msg).says).toBe('Connecté · aucun modèle indiqué par le point de terminaison')
+    expect(checkLine({ ...answer, listingRefusal: 'Provider message: unauthorized' }, msg).quoted).toBe('Provider message: unauthorized')
+    setLanguage('ja'); await languageReady()
+    expect(checkLine(answer, msg).says).toBe('接続済み · エンドポイントからモデルの一覧なし')
+    expect(answer.probe).toBe(probe)
   })
 
 })

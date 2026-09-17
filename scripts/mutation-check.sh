@@ -2232,7 +2232,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '        read = { path: PROJECT_FILE, bytes: 0, sha256: '"'"''"'"', content: '"'"'{}'"'"' }
         current = parseProjectConfig(read.content)'
   mutate web 'a 409 on jpack.json is reported as an ordinary failure' web/src/shell/CreatePackDialog.tsx \
-    '          reason: codeOf(cause) === '"'"'stale'"'"' ? msg(STALE_PROJECT_FILE) : refusalDetail(cause)' \
+    '          reason: codeOf(cause) === '"'"'stale'"'"' ? sourceMessage(STALE_PROJECT_FILE) : refusalDetail(cause)' \
     '          reason: refusalDetail(cause)'
   # Repaired, and narrowed: the `role="alert"` half moved into the `Alert`
   # primitive when the dialog stopped rendering bare markup, and it is held
@@ -2241,7 +2241,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # all, rather than set in state and shown to nobody.
   mutate web "the create dialog renders no failure at all" "$X" \
     '        {(failure ?? blocked) && (
-          <Alert reason={(failure ?? blocked)!.reason}>{(failure ?? blocked)!.lead}</Alert>
+          <Alert reason={(failure ?? blocked)!.reason ? systemMessage((failure ?? blocked)!.reason!) : undefined}>{systemMessage((failure ?? blocked)!.lead)}</Alert>
         )}' \
     ''
   mutate web "the registration replaces the file rather than amending it" "$JC" \
@@ -2803,8 +2803,8 @@ function usePacks() { useExampleListing(); return readPacks() }'
         const absent = cause instanceof FileRequestError && cause.status === 404
         setFailure(
           absent
-            ? { lead: msg(NO_PROJECT_FILE) }
-            : { lead: msg(UNREADABLE_PROJECT_FILE), reason: reasonOf(cause) }
+            ? { lead: sourceMessage(NO_PROJECT_FILE) }
+            : { lead: sourceMessage(UNREADABLE_PROJECT_FILE), reason: reasonOf(cause) }
         )
         return
       }' \
@@ -2819,7 +2819,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '        try {
           content = shapeTemplate(source.text, { name, description, slug, idBase })
         } catch (cause) {
-          setFailure({ lead: msg(TEMPLATE_UNUSABLE), reason: reasonOf(cause) })
+          setFailure({ lead: sourceMessage(TEMPLATE_UNUSABLE), reason: reasonOf(cause) })
           return
         }' \
     '        content = shapeTemplate(source.text, { name, description, slug, idBase })'
@@ -2843,7 +2843,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
 
   # What a refusal says.
   mutate web "a taken pack file is reported in an editor's words" "$X" \
-    "          lead: refusalLead(cause) ?? 'The pack could not be created.'," \
+    "          lead: refusalLead(cause) ?? sourceMessage('The pack could not be created.')," \
     "          lead: 'The pack could not be created.',"
   mutate web "the amended configuration is left in the cache as it was" "$X" \
     "      invalidate([['desk-files'], ['desk-file', PROJECT_FILE], ['list_packs'], ['desk-config']])" \
@@ -2970,7 +2970,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
   const left = [...a]'
   mutate web 'the candidate path is never asked about directly' web/src/shell/CreatePackDialog.tsx \
     '        await readFile(path)
-        setFailure({ lead: msg(PACK_FILE_TAKEN) })
+        setFailure({ lead: sourceMessage(PACK_FILE_TAKEN) })
         return' \
     '        void path'
 
@@ -3011,7 +3011,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '        <Field label={msg("Template")} error={templateProblem} hint="checks report it incomplete until you fill it in">'
 
   mutate web "the chassis sentence is put in front of whoever typed a name" "$X" \
-    '          lead: refusalLead(cause) ?? '"'"'The pack could not be created.'"'"',' \
+    '          lead: refusalLead(cause) ?? sourceMessage('"'"'The pack could not be created.'"'"'),' \
     "          lead: 'The pack could not be created.',"
   mutate web "a code this desk does not know invents a sentence" "$CR" \
     '  return code === undefined ? undefined : CREATE_REFUSALS[code]' \
@@ -3198,11 +3198,11 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # layer that did run.
   mutate web "the layer sentence drops the status and every row but the failure" "$CK" \
     '  const spelled = rows
-    .map((row) => `${row.name ?? '"'"'an unnamed layer'"'"'} ${row.status ?? '"'"'with no status'"'"'}`)
+    .map((row) => `${row.name ?? msg('"'"'an unnamed layer'"'"')} ${row.status ?? msg('"'"'with no status'"'"')}`)
     .join('"'"', '"'"')' \
     '  const spelled = rows
     .filter((row) => row.status !== '"'"'passed'"'"')
-    .map((row) => `${row.name ?? '"'"'an unnamed layer'"'"'}`)
+    .map((row) => `${row.name ?? msg('"'"'an unnamed layer'"'"')}`)
     .join('"'"', '"'"')'
   mutate web "a truncated list still claims nothing else was found" "$CK" \
     "  if (report?.diagnosticsTruncated !== true) return undefined" \
@@ -4488,7 +4488,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '  if (!probe.reachable) {' \
     '  if (false) {'
   mutate web "a status of zero is painted as an answer" "$ECK" \
-    "    const answered = probe.status === 0 ? 'no answer arrived' : \`answered \${probe.status}\`" \
+    "    const answered = probe.status === 0 ? msg('no answer arrived') : msg('answered {{status}}', { status: probe.status })" \
     "    const answered = \`answered \${probe.status}\`"
   # A read that has not answered is not "no key": it is a page that has not
   # been told.
@@ -4594,7 +4594,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '  if (!state.present) return msg("No key stored")' \
     '  if (!state.present || state.configuredOrigin === '"'"''"'"') return msg("No key stored")'
   mutate web "a diagnostic is rendered as the bare word" "$ECK" \
-    '        : `Not connected · ${answered} · ${DIAGNOSTIC_SAYS[probe.diagnostic] ?? probe.diagnostic}`' \
+    '        : msg('"'"'Not connected · {{answered}} · {{diagnostic}}'"'"', { answered, diagnostic: DIAGNOSTIC_SAYS[probe.diagnostic] ? msg(DIAGNOSTIC_SAYS[probe.diagnostic]!) : probe.diagnostic })' \
     '        : `Not connected · ${answered} · ${probe.diagnostic}`'
 
   # ---- The Admin form: what it writes, and what it will not ---------------
@@ -4837,7 +4837,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # A picker offering a fourth tier offers a configuration the decoder refuses
   # by name — and the two states it cannot express are the desk's to report.
   mutate web "the tier picker offers a value outside the union" "$EF" \
-    '              options={TIER_OPTIONS}' \
+    '              options={TIER_OPTIONS.map(option => ({ ...option, label: systemMessage(option.label) }))}' \
     "              options={[...TIER_OPTIONS, { value: 'always', label: 'always' }]}"
   # **Deliberately not added: a second row for the key field being cleared
   # before the request.** "the field is cleared only once the store has
@@ -6190,7 +6190,7 @@ export function assistantTransport(id: string): Transport {
   mutate web 'a document the runtime refused is treated as valid' web/src/shell/CreatePackDialog.tsx \
     '              : checked.data.report.status === '"'"'valid'"'"'
                 ? undefined
-                : msg("The runtime will not call this document a pack — {{value0}}", { value0: layersReached(checked.data.report).text })' \
+                : msg("The runtime will not call this document a pack — {{value0}}", { value0: layersReached(checked.data.report, msg).text })' \
     '              : undefined'
 
   # Losing the slot used to hide the controls and leave the session running.
@@ -7375,7 +7375,7 @@ export function assistantTransport(id: string): Transport {
   # — the project it happens to be open on — is a value nobody wrote that a
   # reader cannot tell from one that is in the file.
   mutate web "an Admin row composes a summary the decoder did not say" "$SSUM" \
-    "  organization: ({ config }) => config.organization.name ?? 'none'," \
+    "  organization: ({ config }) => config.organization.name ?? msg('none')," \
     "  organization: ({ config }) => config.organization.name ?? 'this project',"
 
   # **The claim outliving the route.** Admin publishes the file into the
@@ -7441,7 +7441,7 @@ export function assistantTransport(id: string): Transport {
   # answered, a row that picked one of the other two would be answering for the
   # desk. This makes it claim the default where nothing has said so.
   mutate web "the Project row's summary composed from something the decoder did not say" "$SSUM" \
-    '    if (chassis === undefined) return NOT_SAID' \
+    '    if (chassis === undefined) return msg(NOT_SAID)' \
     '    if (chassis === undefined) return IS_DEFAULT'
   mutate web "the Inspector claim is never released, so Admin's pane outlives it" "$ISLOT" \
     '    if (!publishing) return

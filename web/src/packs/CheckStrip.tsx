@@ -63,7 +63,7 @@ export function CheckStrip({
             : stale
               ? (behind ??
                 msg("This check ran over different bytes from the ones shown, so nothing it found is placed on this document."))
-              : layersReached(report).text)}
+              : layersReached(report, msg).text)}
       </p>
       {provenance !== undefined && <p className={styles.checkWhat}>{provenance}</p>}
       {/*

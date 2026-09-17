@@ -133,9 +133,7 @@ function DocumentWalk({
         style={{ maxWidth: Math.min(width, 760) }}
         role="img"
         aria-label={
-          `The ${shape.nodes.length} ${shape.nodes.length === 1 ? 'node' : 'nodes'} and ` +
-          `${shape.edges.length} ${shape.edges.length === 1 ? 'edge' : 'edges'} the served graph ` +
-          `document declares for graph ${entry.id}, drawn as a layered walk`
+          msg('Graph {{graph}}: the served graph document declares {{nodes}} nodes and {{edges}} edges, drawn as a layered walk.', { graph: entry.id, nodes: shape.nodes.length, edges: shape.edges.length })
         }
       >
         <defs>
@@ -223,10 +221,10 @@ function DocumentWalk({
               className={`diagram-node diagram-node-${status}${node.isResult ? ' diagram-node-result' : ''}`}
             >
               <title>
-                {`${node.id}${node.pack ? ` · pack ${node.pack}` : ''} · ` +
+                {`${node.id}${node.pack ? ` · ${msg('pack {{value0}}', { value0: node.pack })}` : ''} · ` +
                   (result
                     ? `${result.status} · ${describe(disposition)}`
-                    : 'the selected row reports no comparison for this node')}
+                    : msg('the selected row reports no comparison for this node'))}
               </title>
               <rect
                 className="diagram-box"
@@ -299,10 +297,7 @@ function DocumentWalk({
           node whose probes the report omitted look identical from here, so no
           cause is given for what is only an absence. */}
       {shape.nodes.some((node) => !node.inCoverage) && (
-        <p className="note note-warn"><Message text={"<0/><1/><2/> declared by the document and named by no probe in the coverage report. It is drawn because the document declares it, and nothing is claimed here about why coverage names no probe for it or about what its rows witness."} slots={[shape.nodes
-            .filter((node) => !node.inCoverage)
-            .map((node) => node.id)
-            .join(', '), ' ', shape.nodes.filter((node) => !node.inCoverage).length === 1 ? msg("is") : msg("are")]} /></p>
+        <p className="note note-warn"><Message text={"Declared by the document and named by no probe in the coverage report: <0/>. The diagram shows the declaration only; no cause or coverage result is inferred."} slots={[shape.nodes.filter((node) => !node.inCoverage).map((node) => node.id).join(', ')]} /></p>
       )}
 
       {shape.resultDangling && (

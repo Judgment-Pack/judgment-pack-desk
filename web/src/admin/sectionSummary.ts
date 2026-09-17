@@ -20,6 +20,7 @@
  * `adminSections.ts` without a summary is a missing key a test can name rather
  * than a row that silently renders nothing.
  */
+import { msg } from '../i18n'
 import type { EffectiveConfig } from '../config/deskConfig'
 
 /** The separator between the parts of a summary that has more than one. */
@@ -53,26 +54,26 @@ export const SECTION_SUMMARY: Record<
   // and anything this page normalised would be a second spelling rule.
   project: ({ config, desk }) => {
     const chassis = desk?.chassis
-    if (chassis === undefined) return NOT_SAID
-    return config.project.file === chassis.projectFile ? IS_DEFAULT : NOT_DEFAULT
+    if (chassis === undefined) return msg(NOT_SAID)
+    return config.project.file === chassis.projectFile ? msg(IS_DEFAULT) : msg(NOT_DEFAULT)
   },
-  organization: ({ config }) => config.organization.name ?? 'none',
+  organization: ({ config }) => config.organization.name ?? msg('none'),
   // The kind is the decoder's answer and not the word `filesystem` written
   // here: the union has one member today and this row must say what the file
   // says on the day it has two.
   storage: ({ config }) => [config.storage.packs.kind, config.storage.packs.dir].join(JOIN),
   assistant: ({ config }) => {
     const endpoint = config.assistant.endpoint
-    if (endpoint === null) return 'none'
+    if (endpoint === null) return msg('none')
     // The wire, the model and the tier — the three the assistant slot actually
     // has. The URL is deliberately not here: it is the one part of the endpoint
     // that is long, and it is in the file the pane is showing.
     return [
       endpoint.kind,
-      endpoint.model ?? 'no model',
-      `thinking ${config.assistant.thinking}`
+      endpoint.model ?? msg('no model'),
+      msg('thinking {{level}}', { level: config.assistant.thinking === 'off' ? msg('off') : config.assistant.thinking === 'on' ? msg('on') : msg('ultra') })
     ].join(JOIN)
   },
   'identity-provider': ({ config }) =>
-    config.identity.provider === null ? 'None' : config.identity.provider.issuer
+    config.identity.provider === null ? msg('None') : config.identity.provider.issuer
 }

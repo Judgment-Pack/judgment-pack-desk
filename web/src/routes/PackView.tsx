@@ -891,7 +891,7 @@ export function PackView() {
         baseSha256={onPath ? buffer.base?.sha256 : undefined}
         dirty={dirty}
         anchored={anchored}
-        truncation={truncationNote(report)}
+        truncation={truncationNote(report, msg)}
         stale={stale}
         pending={fetching}
         checkedWhat={provenance}

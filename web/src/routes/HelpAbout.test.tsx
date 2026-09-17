@@ -112,7 +112,7 @@ describe('Help & About', () => {
 
   it('states the one place Escape does close a pane', () => {
     renderHelp(stubClient(PACKS))
-    expect(screen.getByText(/below 1100px the Inspector is rendered as a drawer/)).toBeTruthy()
+    expect(screen.getByText(/closes the Inspector when it appears as a drawer below 1100px/)).toBeTruthy()
   })
 
   it('renders the runtime’s author_pack text verbatim where it is advertised', async () => {

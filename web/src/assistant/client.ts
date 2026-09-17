@@ -1,3 +1,4 @@
+import { sourceMessage } from '../i18n/source'
 /**
  * The assistant slot's four chassis calls.
  *
@@ -106,14 +107,14 @@ export type ProbeDiagnostic = (typeof PROBE_DIAGNOSTICS)[number]
  * did not define.
  */
 export const DIAGNOSTIC_SAYS: Record<string, string> = {
-  unauthorized: 'the endpoint did not accept the key',
-  forbidden: 'the endpoint refused this request',
-  'not-found': 'nothing is at that address',
-  timeout: 'no answer within ten seconds',
-  tls: 'the secure connection could not be established',
-  refused: 'nothing is listening there',
-  dns: 'that host name did not resolve',
-  'unexpected-status': 'the endpoint answered something unexpected'
+  unauthorized: sourceMessage('the endpoint did not accept the key'),
+  forbidden: sourceMessage('the endpoint refused this request'),
+  'not-found': sourceMessage('nothing is at that address'),
+  timeout: sourceMessage('no answer within ten seconds'),
+  tls: sourceMessage('the secure connection could not be established'),
+  refused: sourceMessage('nothing is listening there'),
+  dns: sourceMessage('that host name did not resolve'),
+  'unexpected-status': sourceMessage('the endpoint answered something unexpected')
 }
 
 /** What one reachability check established. */

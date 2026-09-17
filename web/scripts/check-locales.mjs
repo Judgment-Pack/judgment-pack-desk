@@ -71,11 +71,16 @@ for (const file of fs.readdirSync(localeRoot).filter(file => file.endsWith('.jso
   const catalogue = JSON.parse(fs.readFileSync(path.join(localeRoot, file), 'utf8'))
   const missing = sourceKeys.filter(key => typeof catalogue[key] !== 'string' || !catalogue[key].trim())
   const language = file.replace('.json', '')
+  const pluralKeys = []
   for (const base of Object.keys(plurals)) for (const category of new Intl.PluralRules(language).resolvedOptions().pluralCategories) {
     const key = `${base}_${category}`
+    pluralKeys.push([key, base])
     if (!catalogue[key]?.trim() && !missing.includes(key)) missing.push(key)
   }
-  const invalid = sourceKeys.filter(key => catalogue[key] && tokens(catalogue[key]) !== tokens(prior[key]))
+  const invalid = [...new Set([
+    ...sourceKeys.filter(key => catalogue[key] && tokens(catalogue[key]) !== tokens(prior[key])),
+    ...pluralKeys.filter(([key, base]) => catalogue[key] && tokens(catalogue[key]) !== tokens(base)).map(([key]) => key)
+  ])]
   console.log(`${file}: ${sourceKeys.length - missing.length}/${sourceKeys.length} translated; ${invalid.length} placeholder errors`)
   if (missing.length || invalid.length) issues.push(`${file}: ${missing.length} missing, ${invalid.length} invalid`)
 }

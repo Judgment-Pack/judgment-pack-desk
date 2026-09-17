@@ -31,7 +31,7 @@ export function ExpectationReview({ state, onSelect, onProposeCorrection, onAppr
   const pending = state.expectationIssues.filter(issue => !issue.resolved)
   return <section className={styles.section} aria-label={msg("Expectation review")}>
     <h3>{pending.length ? msg("Blocked expectations") : msg("Reviewed corrections")}</h3>
-    {pending.length > 0 && <p className={styles.detail} role="status"><Message text={"<0/> expectation<1/> did not pass runtime expectation validation. Testing is paused until each correction is reviewed and approved."} slots={[pending.length, pending.length === 1 ? '' : msg("s")]} /></p>}
+    {pending.length > 0 && <p className={styles.detail} role="status">{msg("{{count}} expectations did not pass runtime expectation validation. Testing is paused until each correction is reviewed and approved.", { count: pending.length })}</p>}
     {state.expectationIssues.map(issue => <article className={styles.row} key={issue.id} aria-label={msg("Expectation {{value0}}", { value0: issue.id })}>
       <div className={styles.rowHead}><strong>{issue.id}</strong><span className={styles.badge}>{issue.resolved ? msg("Correction approved") : msg("Blocked expectation")}</span></div>
       <p className={styles.detail}>{issue.message}</p>

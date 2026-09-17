@@ -1,5 +1,5 @@
 import { Message } from '../i18n/Message'
-import { msg, useLocale } from '../i18n'
+import { systemMessage, msg, useLocale } from '../i18n'
 /**
  * Admin › Assistant, as one form: the provider, the key, the endpoint, the
  * model, the tools and the tier — and the writes that put them somewhere.
@@ -380,7 +380,7 @@ export function EndpointForm({
                 {...wiring}
                 value={draft.kind}
                 onValueChange={(value) => edit(withKind(draft, value as EndpointKind))}
-                options={KIND_OPTIONS}
+                options={KIND_OPTIONS.map(option => ({ ...option, label: systemMessage(option.label) }))}
               />
             )}
           </Field>
@@ -481,7 +481,7 @@ export function EndpointForm({
                 onValueChange={(value) =>
                   edit({ ...draft, thinking: value as EndpointDraft['thinking'] })
                 }
-                options={TIER_OPTIONS}
+                options={TIER_OPTIONS.map(option => ({ ...option, label: systemMessage(option.label) }))}
               />
             )}
           </Field>
@@ -626,7 +626,7 @@ function ToolChoice({
  */
 function CheckReading({ answer }: { answer: CheckAnswer }) {
   useLocale()
-  const line = checkLine(answer)
+  const line = checkLine(answer, msg)
   if (line.says === '') return null
   return (
     <span className="quiet">

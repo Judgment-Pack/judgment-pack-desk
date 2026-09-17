@@ -1414,7 +1414,7 @@ describe('creating a reviewed research handover', () => {
     expect(await screen.findByText(/test cases or research record could not be written/)).toBeTruthy()
     // Every file that landed is named, so a person knows what to clean up. When
     // the research write is the one that failed, the matrix is on disk too.
-    expect(await screen.findByText(new RegExp(`packs/reviewed-pack.pack.json${companion === 'research' ? ' and packs/reviewed-pack.matrix.json' : ''} (is|are) on disk`))).toBeTruthy()
+    expect(await screen.findByText(`Files on disk but not registered: packs/reviewed-pack.pack.json${companion === 'research' ? ', packs/reviewed-pack.matrix.json' : ''}. a companion already exists`)).toBeTruthy()
     expect(sent.map(row => row.path)).not.toContain('jpack.json')
     expect(sent).toHaveLength(companion === 'matrix' ? 2 : 3)
     expect(seen).not.toContain('/packs/reviewed-pack')
