@@ -143,6 +143,7 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
     const box = await message().boundingBox()
     assert(box && box.x >= 0 && box.x + box.width <= width + 1 && box.y + box.height <= height + 1)
+    assert.equal(await chat.getByRole('combobox', { name: 'Model', exact: true }).locator('span').first().evaluate(node => getComputedStyle(node).whiteSpace), 'nowrap', 'Model names stay on one line in a narrow composer')
     await page.screenshot({ path: `${output}/chat-${width}x${height}.png` })
   }
   await page.emulateMedia({ colorScheme: 'light' })
