@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 import { useMemo, useState } from 'react'
 import type { PackDocument } from '../mcp/types'
 import { CodeArea } from '../ui/CodeArea'
@@ -15,6 +17,7 @@ export function DraftPackEditor({ text, onChange, pending, hold }: {
   pending: ReadonlyMap<string, PendingText>
   hold: (pointer: string, draft: PendingText | null) => void
 }) {
+  useLocale()
   const [tab, setTab] = useState('rules')
   const read = useMemo(() => buffered(text), [text])
   const doc = read.index.value
@@ -24,15 +27,15 @@ export function DraftPackEditor({ text, onChange, pending, hold }: {
     write: (edit) => onChange(edit(read).text),
     diagnosticsAt: () => [], ids: declaredIds(doc ?? {})
   }}>
-    <Tabs label="Build your pack" value={form ? tab : 'json'} onValueChange={setTab} tabs={[
+    <Tabs label={msg("Build your pack")} value={form ? tab : 'json'} onValueChange={setTab} tabs={[
       ...(form ? [
-        { value: 'rules', label: 'Rules & outcomes', panel: <PackDocumentView key="rules" document={doc as unknown as PackDocument} active={null} members={PACK_GROUPS.rules} outline={false} /> },
-        { value: 'evidence', label: 'Evidence & sources', panel: <PackDocumentView key="evidence" document={doc as unknown as PackDocument} active={null} members={PACK_GROUPS.evidence} outline={false} /> },
-        { value: 'document', label: 'Full document', panel: <PackDocumentView key="document" document={doc as unknown as PackDocument} active={null} /> }
+        { value: 'rules', label: "Rules & outcomes", panel: <PackDocumentView key="rules" document={doc as unknown as PackDocument} active={null} members={PACK_GROUPS.rules} outline={false} /> },
+        { value: 'evidence', label: "Evidence & sources", panel: <PackDocumentView key="evidence" document={doc as unknown as PackDocument} active={null} members={PACK_GROUPS.evidence} outline={false} /> },
+        { value: 'document', label: "Full document", panel: <PackDocumentView key="document" document={doc as unknown as PackDocument} active={null} /> }
       ] : []),
-      { value: 'json', label: 'JSON', panel: <>
-        {!form && <p role="status">The draft needs JSON editing before it can be shown as a form. {read.index.parseError}</p>}
-        <label htmlFor="create-draft-json">Draft document</label>
+      { value: 'json', label: "JSON", panel: <>
+        {!form && <p role="status"><Message text={"The draft needs JSON editing before it can be shown as a form. <0/>"} slots={[read.index.parseError]} /></p>}
+        <label htmlFor="create-draft-json">{msg("Draft document")}</label>
         <CodeArea id="create-draft-json" value={text} onChange={(event) => onChange(event.target.value)} />
       </> }
     ]} />

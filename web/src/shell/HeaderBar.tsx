@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../i18n'
 import { SHORTCUTS } from './shortcuts'
 import { Tooltip } from '../ui/Tooltip'
 /**
@@ -77,6 +78,7 @@ export function HeaderBar({
   onOpenRail: () => void
   railOpenerRef?: RefObject<HTMLButtonElement | null>
 }) {
+  useLocale()
   const { config } = useEffectiveConfig()
   const name = config.organization.name ?? DESK_FALLBACK_NAME
   const mark = markToDataUri(config.organization.mark)
@@ -89,11 +91,11 @@ export function HeaderBar({
             so without this the entire left menu was reachable by Mod+B alone
             — on a width whose likeliest device has no keyboard at all. */}
         {railIsDrawer && (
-          <Tooltip content="Open navigation" shortcut={SHORTCUTS[0]?.keys} side="bottom"><button
+          <Tooltip content={msg("Open navigation")} shortcut={SHORTCUTS[0]?.keys} side="bottom"><button
             type="button"
             ref={railOpenerRef}
             className="desk-icon-button"
-            aria-label="Project navigation"
+            aria-label={msg("Project navigation")}
             aria-expanded={railDrawerOpen}
             /* Only while the drawer is actually in the document. A closed
                `Dialog` unmounts its portal, so an unconditional IDREF here
@@ -145,10 +147,10 @@ export function HeaderBar({
         >
           <IconPanelRight />
         </Toggle.Root></Tooltip>}
-        <Tooltip content={consoleOpen ? "Close Console" : "Open Console"} shortcut={SHORTCUTS[2]?.keys} side="bottom"><Toggle.Root
+        <Tooltip content={consoleOpen ? msg("Close Console") : msg("Open Console")} shortcut={SHORTCUTS[2]?.keys} side="bottom"><Toggle.Root
           className="desk-icon-button"
           ref={consoleOpenerRef}
-          aria-label="Console"
+          aria-label={msg("Console")}
           aria-controls="desk-console"
           pressed={consoleOpen}
           onPressedChange={onToggleConsole}
@@ -165,25 +167,24 @@ export function HeaderBar({
 /** Project context and advanced file access. Opening another project still
  * requires starting Desk in that directory; this menu does not switch roots. */
 function ProjectChip() {
+  useLocale()
   const dirty = useAuthorDirty()
   const { data } = usePacks()
   const configPath = data?.configPath
-  const label = configPath ? basename(configPath) : 'this project'
+  const label = configPath ? basename(configPath) : msg("this project")
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger className="desk-chip">
         <span className="desk-chip-name">{label}</span>
-        {dirty && <span className="desk-dirty" aria-label="unsaved changes" role="img" />}
+        {dirty && <span className="desk-dirty" aria-label={msg("unsaved changes")} role="img" />}
         <IconChevronDown />
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content className="desk-menu desk-header-menu" align="start" sideOffset={6} collisionPadding={16}>
           <DropdownMenu.Item asChild className="desk-menu-item">
-            <Link to="/author">Project files</Link>
+            <Link to="/author">{msg("Project files")}</Link>
           </DropdownMenu.Item>
-          <DropdownMenu.Label className="desk-menu-note">
-            To open another project, start Desk in that project’s folder.
-          </DropdownMenu.Label>
+          <DropdownMenu.Label className="desk-menu-note">{msg("To open another project, start Desk in that project’s folder.")}</DropdownMenu.Label>
           {configPath && (
             <DropdownMenu.Label className="desk-menu-note">
               <code>{configPath}</code>

@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 /**
  * The proposal, drawn as what it would do to the draft.
  *
@@ -43,30 +45,26 @@ export function ProposalDiffView({
    */
   onBaseline?: boolean
 }) {
+  useLocale()
   const moved = diff.entries.filter((entry) => entry.status !== 'unchanged')
   const kept = diff.entries.filter((entry) => entry.status === 'unchanged')
   return (
-    <section className={styles.diff} aria-label="The proposal as a diff">
+    <section className={styles.diff} aria-label={msg("The proposal as a diff")}>
       <p className={styles.honesty}>
         {diff.against !== 'the draft'
-          ? `There was nothing to compare with — ${diff.reason} — so every member below is new.`
+          ? msg("There was nothing to compare with — {{value0}} — so every member below is new.", { value0: diff.reason })
           : onBaseline
-            ? 'Compared with the draft on this page, member by member.'
-            : 'Compared with the draft this proposal was given, member by member — the draft on this page has changed since.'}
+            ? msg("Compared with the draft on this page, member by member.")
+            : msg("Compared with the draft this proposal was given, member by member — the draft on this page has changed since.")}
       </p>
       {moved.length === 0 && (
-        <p className={styles.honesty}>
-          The proposal is the draft. Nothing in it would change a member.
-        </p>
+        <p className={styles.honesty}>{msg("The proposal is the draft. Nothing in it would change a member.")}</p>
       )}
       {moved.map((entry) => (
         <Entry key={entry.key} entry={entry} />
       ))}
       {kept.length > 0 && (
-        <p className={styles.honesty}>
-          {kept.length} member{kept.length === 1 ? '' : 's'} unchanged:{' '}
-          {kept.map((entry) => entry.label).join(', ')}
-        </p>
+        <p className={styles.honesty}><Message text={"<0/> member<1/> unchanged:<2/><3/>"} slots={[kept.length, kept.length === 1 ? '' : msg("s"), ' ', kept.map((entry) => entry.label).join(', ')]} /></p>
       )}
     </section>
   )
@@ -74,16 +72,17 @@ export function ProposalDiffView({
 
 /** One member or one element: what it is, and both of its texts. */
 function Entry({ entry }: { entry: DiffEntry }) {
+  useLocale()
   const children = entry.children ?? []
   const shown = children.filter((child) => child.status !== 'unchanged' || child.moved === true)
   const kept = children.length - shown.length
-  const where = entry.pointer === '' ? 'the whole document' : entry.pointer
+  const where = entry.pointer === '' ? msg("the whole document") : entry.pointer
   return (
     <div className={styles.entry}>
       <p className={styles.entryHead}>
         <span className={styles[entry.status]}>{SAYS[entry.status]}</span>{' '}
         <code>{where}</code>
-        {entry.moved === true && ' — moved, with the same value'}
+        {entry.moved === true && msg(" — moved, with the same value")}
       </p>
       {/*
         An array member compared element by element prints its elements rather
@@ -97,7 +96,7 @@ function Entry({ entry }: { entry: DiffEntry }) {
               value={entry.before}
               readOnly
               rows={rowsFor(entry.before)}
-              aria-label={`${where}, in the draft`}
+              aria-label={msg("{{value0}}, in the draft", { value0: where })}
             />
           )}
           {entry.after !== undefined && entry.status !== 'removed' && (
@@ -105,7 +104,7 @@ function Entry({ entry }: { entry: DiffEntry }) {
               value={entry.after}
               readOnly
               rows={rowsFor(entry.after)}
-              aria-label={`${where}, proposed`}
+              aria-label={msg("{{value0}}, proposed", { value0: where })}
             />
           )}
         </>
@@ -115,9 +114,7 @@ function Entry({ entry }: { entry: DiffEntry }) {
             <Entry key={child.key} entry={child} />
           ))}
           {kept > 0 && (
-            <p className={styles.honesty}>
-              {kept} element{kept === 1 ? '' : 's'} unchanged, in the same place.
-            </p>
+            <p className={styles.honesty}><Message text={"<0/> element<1/> unchanged, in the same place."} slots={[kept, kept === 1 ? '' : msg("s")]} /></p>
           )}
         </>
       )}

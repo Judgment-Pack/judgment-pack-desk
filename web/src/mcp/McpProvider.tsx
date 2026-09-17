@@ -1,3 +1,4 @@
+import { msg } from '../i18n'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import type { Notification } from '@modelcontextprotocol/sdk/types.js'
 import { useQueryClient } from '@tanstack/react-query'
@@ -26,10 +27,10 @@ export type ConnectionStatus = 'connecting' | 'ready' | 'reconnecting' | 'failed
  * socket are free to disagree about whether it is up.
  */
 export function connectionSays(status: ConnectionStatus): string {
-  if (status === 'ready') return 'connected'
-  if (status === 'connecting') return 'connecting'
-  if (status === 'reconnecting') return 'reconnecting'
-  return 'not connected'
+  if (status === 'ready') return msg('connected')
+  if (status === 'connecting') return msg('connecting')
+  if (status === 'reconnecting') return msg('reconnecting')
+  return msg("not connected")
 }
 
 export interface McpConnection extends RuntimeCapabilities {
@@ -313,7 +314,7 @@ export function McpProvider({ children }: { children: ReactNode }) {
       client.onclose = () => {
         if (disposed || live !== client) return
         live = null
-        scheduleRetry(new Error('the desk connection closed — the chassis may have restarted'))
+        scheduleRetry(new Error(msg("the desk connection closed — the chassis may have restarted")))
       }
 
       const reconnecting = attempt > 0

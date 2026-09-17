@@ -1,3 +1,5 @@
+import { Message } from '../../i18n/Message'
+import { msg, useLocale } from '../../i18n'
 import { projectLogic } from '../../packs/logicModel'
 import { LogicInspector } from '../../packs/inspector/LogicInspector'
 import type { PackDocument } from '../../mcp/types'
@@ -10,25 +12,24 @@ import type { Selection } from './DraftPanels'
 import styles from './ResearchAuthoring.module.css'
 
 function Verification({ record }: { record: SourceRecord }) {
+  useLocale()
   const v = record.verification
   if (v.state === 'unchecked') {
-    return <p className={styles.detail}>Receipt unchecked: the session is not sealed and verified yet.</p>
+    return <p className={styles.detail}>{msg("Receipt unchecked: the session is not sealed and verified yet.")}</p>
   }
   if (v.state === 'verified') {
     return (
-      <p className={styles.detail}>
-        Receipt verified at {v.at} under the pinned key {v.keyId}: signature, chain, seal and re-digest all hold. This establishes byte lineage within the gateway's bounds, not truth, currency or origin.
-      </p>
+      <p className={styles.detail}><Message text={"Receipt verified at <0/> under the pinned key <1/>: signature, chain, seal and re-digest all hold. This establishes byte lineage within the gateway's bounds, not truth, currency or origin."} slots={[v.at, v.keyId]} /></p>
     )
   }
   return (
     <div className={styles.section}>
-      <p className={styles.detail}>Receipt verification failed at {v.at}. The findings, as the verifier reported them:</p>
+      <p className={styles.detail}><Message text={"Receipt verification failed at <0/>. The findings, as the verifier reported them:"} slots={[v.at]} /></p>
       <ul className={styles.unknowns}>
         {v.findings.map((finding, index) => (
           <li key={index}>
             {finding.status}
-            {finding.callIndex !== null ? ` (receipt ${finding.callIndex})` : ' (session)'}
+            {finding.callIndex !== null ? msg(" (receipt {{value0}})", { value0: finding.callIndex }) : msg(" (session)")}
           </li>
         ))}
       </ul>
@@ -43,8 +44,9 @@ function context(text: string, start: number, end: number): { before: string; hi
 }
 
 export function SourceInspector({ selection, ledger, state, onSelect }: { selection: Selection; ledger: Ledger; state: RunState; onSelect?: (selection: Selection) => void }) {
+  useLocale()
   if (selection === null) {
-    return <p className={styles.empty}>Choose a source, an excerpt or a rule to inspect it here.</p>
+    return <p className={styles.empty}>{msg("Choose a source, an excerpt or a rule to inspect it here.")}</p>
   }
   if (selection.kind === 'logic') {
     const document = state.candidates.at(-1)?.document as PackDocument | undefined
@@ -54,31 +56,31 @@ export function SourceInspector({ selection, ledger, state, onSelect }: { select
     const latest = state.candidates.at(-1)
     const rules = ((latest?.document as { rules?: unknown })?.rules ?? []) as Record<string, unknown>[]
     const rule = rules.find((r) => r.id === selection.id)
-    if (!rule) return <p className={styles.empty}>Rule {selection.id} is not in the current draft.</p>
+    if (!rule) return <p className={styles.empty}><Message text={"Rule <0/> is not in the current draft."} slots={[selection.id]} /></p>
     const refs = Array.isArray(rule.sourceRefs) ? (rule.sourceRefs as string[]) : []
     const citations = state.citations.filter((c) => refs.includes(c.sourceId))
     return (
       <div className={styles.inspector}>
         <section className={styles.section}>
-          <h3>Rule {selection.id}</h3>
+          <h3><Message text={"Rule <0/>"} slots={[selection.id]} /></h3>
           <p className={styles.detail}>{typeof rule.description === 'string' ? rule.description : ''}</p>
           <ConditionTree readOnly structured condition={rule.when} at={`/rules/${selection.id}/when`} />
           <dl className={styles.facts}>
-            <dt>Outcome</dt>
+            <dt>{msg("Outcome")}</dt>
             <dd>{String(rule.outcome ?? '—')}</dd>
-            <dt>On unknown</dt>
+            <dt>{msg("On unknown")}</dt>
             <dd>{String(rule.onUnknown ?? '—')}</dd>
           </dl>
         </section>
         <section className={styles.section}>
-          <h4>Sources this rule cites</h4>
-          {refs.length === 0 && <p className={styles.detail}>None. This rule is an assumption unless a source is added.</p>}
+          <h4>{msg("Sources this rule cites")}</h4>
+          {refs.length === 0 && <p className={styles.detail}>{msg("None. This rule is an assumption unless a source is added.")}</p>}
           {citations.map((citation) => {
             const excerpt = citation.excerptId ? ledger.excerpt(citation.excerptId) : undefined
             return (
               <div key={citation.sourceId} className={styles.section}>
                 <p className={styles.detail}>
-                  <strong>{citation.sourceId}</strong> · {citation.traced ? 'traced' : `not traced: ${citation.reason}`}
+                  <strong>{citation.sourceId}</strong> · {citation.traced ? msg("traced") : msg("not traced: {{value0}}", { value0: citation.reason })}
                 </p>
                 {excerpt && <blockquote className={styles.excerpt}>{excerpt.text}</blockquote>}
                 {citation.url && <div className={styles.url}>{citation.url}</div>}
@@ -91,16 +93,16 @@ export function SourceInspector({ selection, ledger, state, onSelect }: { select
   }
   const excerpt = selection.kind === 'excerpt' ? ledger.excerpt(selection.id) : undefined
   const record = selection.kind === 'source' ? ledger.byId(selection.id) : excerpt ? ledger.byId(excerpt.sourceId) : undefined
-  if (!record) return <p className={styles.empty}>Nothing recorded under {selection.id}.</p>
+  if (!record) return <p className={styles.empty}><Message text={"Nothing recorded under <0/>."} slots={[selection.id]} /></p>
   const document = record.document
   return (
     <div className={styles.inspector}>
       <section className={styles.section}>
         <h3>
-          {record.id} · {record.kind === 'search' ? 'search' : 'page'}
+          {record.id} · {record.kind === 'search' ? msg("search") : msg("page")}
         </h3>
-        {record.kind === 'search' && <p className={styles.detail}>Query: {record.request.query}</p>}
-        {document && <p className={styles.detail}>{document.title || '(untitled)'}</p>}
+        {record.kind === 'search' && <p className={styles.detail}><Message text={"Query: <0/>"} slots={[record.request.query]} /></p>}
+        {document && <p className={styles.detail}>{document.title || msg("(untitled)")}</p>}
         {record.request.url && (
           <p className={styles.url}>
             <a href={record.request.url} target="_blank" rel="noreferrer noopener">
@@ -108,14 +110,12 @@ export function SourceInspector({ selection, ledger, state, onSelect }: { select
             </a>
           </p>
         )}
-        {record.failure !== null && <p className={styles.detail}>Retrieval failed: {record.failure}</p>}
+        {record.failure !== null && <p className={styles.detail}><Message text={"Retrieval failed: <0/>"} slots={[record.failure]} /></p>}
       </section>
       {excerpt && document && (
         <section className={styles.section}>
-          <h4>Excerpt {excerpt.id}</h4>
-          <p className={styles.hint}>
-            Characters {excerpt.start}–{excerpt.end} of the rendered text, shown in context.
-          </p>
+          <h4><Message text={"Excerpt <0/>"} slots={[excerpt.id]} /></h4>
+          <p className={styles.hint}><Message text={"Characters <0/>–<1/> of the rendered text, shown in context."} slots={[excerpt.start, excerpt.end]} /></p>
           {(() => {
             const c = context(document.text, excerpt.start, excerpt.end)
             return (
@@ -130,85 +130,82 @@ export function SourceInspector({ selection, ledger, state, onSelect }: { select
       )}
       {document && (
         <section className={styles.section}>
-          <h4>Dates</h4>
+          <h4>{msg("Dates")}</h4>
           <dl className={styles.facts}>
-            <dt>Retrieved</dt>
-            <dd>{record.acquisition?.observedAt || record.requestedAt} (the gateway's adapter read it then)</dd>
-            <dt>Page declares issued</dt>
-            <dd>{document.pageDates.issued ?? 'unknown'}</dd>
-            <dt>Page declares modified</dt>
-            <dd>{document.pageDates.modified ?? 'unknown'}</dd>
-            <dt>Reader reported</dt>
-            <dd>{document.providerReportedTime ?? 'nothing'}{document.providerReportedTime ? ' (may be the server’s Last-Modified; not a publication date)' : ''}</dd>
+            <dt>{msg("Retrieved")}</dt>
+            <dd><Message text={"<0/> (the gateway's adapter read it then)"} slots={[record.acquisition?.observedAt || record.requestedAt]} /></dd>
+            <dt>{msg("Page declares issued")}</dt>
+            <dd>{document.pageDates.issued ?? msg("unknown")}</dd>
+            <dt>{msg("Page declares modified")}</dt>
+            <dd>{document.pageDates.modified ?? msg("unknown")}</dd>
+            <dt>{msg("Reader reported")}</dt>
+            <dd>{document.providerReportedTime ?? msg("nothing")}{document.providerReportedTime ? msg(" (may be the server’s Last-Modified; not a publication date)") : ''}</dd>
             {document.httpStatus !== undefined && (
               <>
-                <dt>HTTP at the page</dt>
+                <dt>{msg("HTTP at the page")}</dt>
                 <dd>{document.httpStatus}</dd>
               </>
             )}
-            <dt>Rendered text</dt>
-            <dd>{document.text.length} characters{document.pages ? `, ${document.pages} pages` : ''}</dd>
+            <dt>{msg("Rendered text")}</dt>
+            <dd><Message text={"<0/> characters<1/>"} slots={[document.text.length, document.pages ? `, ${document.pages} pages` : '']} /></dd>
           </dl>
         </section>
       )}
       {record.hits && (
         <section className={styles.section}>
-          <h4>Hits (provider snippets, not pages)</h4>
+          <h4>{msg("Hits (provider snippets, not pages)")}</h4>
           <ol className={styles.unknowns}>
             {record.hits.map((hit) => (
               <li key={hit.rank}>
-                <strong>{hit.title || '(untitled)'}</strong>
+                <strong>{hit.title || msg("(untitled)")}</strong>
                 <div className={styles.url}>{hit.url}</div>
                 <div className={styles.hint}>{hit.snippet}</div>
-                {hit.providerDate && <div className={styles.hint}>provider-reported date: {hit.providerDate}</div>}
+                {hit.providerDate && <div className={styles.hint}><Message text={"provider-reported date: <0/>"} slots={[hit.providerDate]} /></div>}
               </li>
             ))}
           </ol>
         </section>
       )}
       <section className={styles.section}>
-        <h4>Receipt</h4>
+        <h4>{msg("Receipt")}</h4>
         {record.acquisition ? (
           <>
             <Verification record={record} />
             <dl className={styles.facts}>
-              <dt>Session</dt>
+              <dt>{msg("Session")}</dt>
               <dd className={styles.mono}>{record.acquisition.session} / {record.acquisition.callIndex}</dd>
-              <dt>Result digest</dt>
+              <dt>{msg("Result digest")}</dt>
               <dd>
                 <Digest value={record.acquisition.resultDigest.replace(/^sha256:/, '')} />
               </dd>
-              <dt>Endpoint</dt>
-              <dd className={styles.mono}>{record.acquisition.endpoint ?? 'null'}</dd>
-              <dt>Snapshot</dt>
-              <dd className={styles.mono}>{record.acquisition.snapshot ?? 'null'}</dd>
-              <dt>Peer identity</dt>
-              <dd className={styles.mono}>{record.acquisition.peerIdentity ?? 'null'}</dd>
-              <dt>Adapter</dt>
+              <dt>{msg("Endpoint")}</dt>
+              <dd className={styles.mono}>{record.acquisition.endpoint ?? msg("null")}</dd>
+              <dt>{msg("Snapshot")}</dt>
+              <dd className={styles.mono}>{record.acquisition.snapshot ?? msg("null")}</dd>
+              <dt>{msg("Peer identity")}</dt>
+              <dd className={styles.mono}>{record.acquisition.peerIdentity ?? msg("null")}</dd>
+              <dt>{msg("Adapter")}</dt>
               <dd className={styles.mono}>
-                {record.acquisition.adapter ? `${record.acquisition.adapter.name} ${record.acquisition.adapter.version} ${record.acquisition.adapter.digest}` : 'null'}
+                {record.acquisition.adapter ? `${record.acquisition.adapter.name} ${record.acquisition.adapter.version} ${record.acquisition.adapter.digest}` : msg("null")}
               </dd>
             </dl>
           </>
         ) : (
-          <p className={styles.detail}>No receipt: the acquisition did not complete.</p>
+          <p className={styles.detail}>{msg("No receipt: the acquisition did not complete.")}</p>
         )}
       </section>
       {record.excerpts.length > 0 && (
         <section className={styles.section}>
-          <h4>Excerpts recorded from this source</h4>
+          <h4>{msg("Excerpts recorded from this source")}</h4>
           <ul className={styles.unknowns}>
             {record.excerpts.map((item) => (
-              <li key={item.id}>
-                <span className={styles.badge}>{item.id}</span> characters {item.start}–{item.end}
-                <blockquote className={styles.excerpt}>{item.text}</blockquote>
-              </li>
+              <li key={item.id}><Message text={"<0/> characters <1/>–<2/><3/>"} slots={[<span className={styles.badge}>{item.id}</span>, item.start, item.end, <blockquote className={styles.excerpt}>{item.text}</blockquote>]} /></li>
             ))}
           </ul>
         </section>
       )}
       {record.response && (
-        <Disclosure title="Receipt and result, as received">
+        <Disclosure title={msg("Receipt and result, as received")}>
           <pre className={styles.excerpt}>{record.response.text.length > 20_000 ? record.response.text.slice(0, 20_000) + '\n… (truncated for display)' : record.response.text}</pre>
         </Disclosure>
       )}

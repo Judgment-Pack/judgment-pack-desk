@@ -1,3 +1,5 @@
+import { Message } from '../../i18n/Message'
+import { msg, useLocale } from '../../i18n'
 /**
  * The buffer as the bytes it is.
  *
@@ -41,6 +43,7 @@ export function RawJsonEditor({
   readOnly?: boolean
   onChange: (next: string) => void
 }) {
+  useLocale()
   return (
     <div className={styles.raw}>
       {problem !== undefined && (
@@ -49,25 +52,20 @@ export function RawJsonEditor({
         </p>
       )}
       {readOnly === true && (
-        <p className={styles.problem} role="status">
-          These are the bytes the runtime served. The file itself has not been read, so there is
-          nothing here to save.
-        </p>
+        <p className={styles.problem} role="status">{msg("These are the bytes the runtime served. The file itself has not been read, so there is nothing here to save.")}</p>
       )}
-      <label className={styles.label} htmlFor="pack-raw">
-        The document&rsquo;s bytes
-      </label>
+      <label className={styles.label} htmlFor="pack-raw">{msg("The document’s bytes")}</label>
       <CodeArea
         id="pack-raw"
-        aria-label="The document's bytes"
+        aria-label={msg("The document's bytes")}
         value={text}
         readOnly={readOnly}
         onChange={(event) => onChange(event.target.value)}
       />
       <p className={styles.foot}>
         {path !== undefined && <code>{path}</code>}
-        <span>{byteLength(text)} bytes</span>
-        <span>{dirty ? 'unsaved' : 'saved'}</span>
+        <span><Message text={"<0/> bytes"} slots={[byteLength(text)]} /></span>
+        <span>{dirty ? msg("unsaved") : msg("saved")}</span>
       </p>
     </div>
   )

@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../../i18n'
 /**
  * An `extensions` object, at the root or inside one of the eight members that
  * may carry one.
@@ -22,6 +23,7 @@ export function ExtensionsBlock({
   /** A heading where this is a member's own block; omitted inside a card. */
   heading?: string
 }) {
+  useLocale()
   if (extensions === undefined) return null
   // `Object.entries(null)` throws, and `Object.entries("ab")` is two members
   // nobody wrote. Extensions are a namespaced object or they are not extensions.
@@ -29,7 +31,7 @@ export function ExtensionsBlock({
     return (
       <MisshapenMember
         pointer={at}
-        label={heading ?? 'extensions'}
+        label={heading ?? msg("extensions")}
         expected="an object"
         value={extensions}
         compact={heading === undefined}
@@ -39,7 +41,7 @@ export function ExtensionsBlock({
   return (
     <Block pointer={at} className={styles.extensions}>
       {heading !== undefined && <h2 className={styles.heading}>{heading}</h2>}
-      {heading === undefined && <p className={styles.fieldLabel}>extensions</p>}
+      {heading === undefined && <p className={styles.fieldLabel}>{msg("extensions")}</p>}
       <ul className={styles.extensionList}>
         {Object.entries(extensions).map(([name, value]) => (
           <li key={name}>

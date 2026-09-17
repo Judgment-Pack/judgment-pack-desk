@@ -1,3 +1,5 @@
+import { Message } from '../../i18n/Message'
+import { msg, useLocale } from '../../i18n'
 /**
  * What the selected member refers to, and what refers back to it.
  *
@@ -17,8 +19,9 @@ export function ReferencesTab({
   references: readonly Reference[]
   packId: string
 }) {
+  useLocale()
   if (references.length === 0) {
-    return <p className={styles.empty}>This member names nothing, and nothing names it.</p>
+    return <p className={styles.empty}>{msg("This member names nothing, and nothing names it.")}</p>
   }
   return (
     <ul className={styles.references}>
@@ -34,10 +37,7 @@ export function ReferencesTab({
             // and offers each place to go and look.
             <>
               <code className={styles.id}>{reference.id}</code>
-              <span className={styles.unresolved}>
-                {' '}
-                is declared {reference.candidates.length} times — this document does not say which
-              </span>
+              <span className={styles.unresolved}><Message text={"<0/>is declared <1/> times — this document does not say which"} slots={[' ', reference.candidates.length]} /></span>
               {reference.candidates.map((candidate) => (
                 <span key={candidate}>
                   {' '}

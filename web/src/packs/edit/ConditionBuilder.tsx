@@ -1,3 +1,5 @@
+import { Message } from '../../i18n/Message'
+import { msg, useLocale } from '../../i18n'
 /**
  * A condition, edited as the tree it is.
  *
@@ -55,6 +57,7 @@ import { valueLabel } from '../terminology'
 import styles from './ConditionBuilder.module.css'
 
 export function ConditionBuilder({ at }: { at: string }) {
+  useLocale()
   return (
     <div className={styles.tree}>
       <ConditionNode at={at} depth={0} removable={false} />
@@ -72,6 +75,7 @@ function ConditionNode({
   /** False for the member itself: taking that out is the card's edit, not the tree's. */
   removable: boolean
 }) {
+  useLocale()
   const { buffer, write, ids } = useEditing()
   const node = valueAt(buffer.index.value, at)
   const kind = conditionKind(node)
@@ -91,13 +95,11 @@ function ConditionNode({
     return (
       <Block pointer={at} as="div" className={styles.node}>
         <p className={styles.absent}>
-          <span className={styles.absentTag}>not declared</span>
+          <span className={styles.absentTag}>{msg("not declared")}</span>
           <Button
             variant="quiet"
             onClick={() => write((current) => setRawJson(current, at, JSON.stringify(NEW_NODE)))}
-          >
-            Write a condition
-          </Button>
+          >{msg("Write a condition")}</Button>
         </p>
       </Block>
     )
@@ -109,10 +111,7 @@ function ConditionNode({
         <p className={styles.unknown}>
           <code>{JSON.stringify(node)}</code>
         </p>
-        <p className={styles.unknownNote}>
-          This desk has no controls for this condition. It is shown as the bytes it is, and the
-          JSON view edits it.
-        </p>
+        <p className={styles.unknownNote}>{msg("This desk has no controls for this condition. It is shown as the bytes it is, and the JSON view edits it.")}</p>
       </Block>
     )
   }
@@ -124,9 +123,7 @@ function ConditionNode({
     <Block pointer={at} as="div" className={styles.node}>
       <div role="group" aria-label={label} className={styles.frame} data-depth={depth}>
         <div className={styles.head}>
-          <label className={styles.kindLabel} htmlFor={`${at}-kind`}>
-            Condition type
-          </label>
+          <label className={styles.kindLabel} htmlFor={`${at}-kind`}>{msg("Condition type")}</label>
           <Select
             id={`${at}-kind`}
             value={kind}
@@ -135,40 +132,34 @@ function ConditionNode({
           />
           {(kind === 'all' || kind === 'any') && (
             <>
-              <Button variant="quiet" onClick={() => write((current) => addChild(current, at))}>
-                Add
-              </Button>
+              <Button variant="quiet" onClick={() => write((current) => addChild(current, at))}>{msg("Add")}</Button>
               {depth > 0 && (
                 <Button
                   variant="quiet"
                   aria-expanded={!collapsed}
                   onClick={() => setCollapsed((was) => !was)}
                 >
-                  {collapsed ? `collapsed · ${children} conditions` : 'Collapse'}
+                  {collapsed ? msg("collapsed · {{value0}} conditions", { value0: children }) : msg("Collapse")}
                 </Button>
               )}
             </>
           )}
-          <Button variant="quiet" onClick={() => write((current) => wrapInGroup(current, at, 'all'))}>
-            Wrap
-          </Button>
+          <Button variant="quiet" onClick={() => write((current) => wrapInGroup(current, at, 'all'))}>{msg("Wrap")}</Button>
           {removable && (
-            <Button variant="quiet" onClick={() => write((current) => removeNode(current, at))}>
-              Remove
-            </Button>
+            <Button variant="quiet" onClick={() => write((current) => removeNode(current, at))}>{msg("Remove")}</Button>
           )}
         </div>
 
         {kind === 'literal' && (
-          <PointerField pointer={`${at}/value`} label="value">
+          <PointerField pointer={`${at}/value`} label={msg("value")}>
             {(wiring) => (
               <Select
                 {...wiring}
                 value={literalText(valueAt(buffer.index.value, `${at}/value`))}
-                placeholder="not declared"
+                placeholder={msg("not declared")}
                 options={[
-                  { value: 'true', label: 'true' },
-                  { value: 'false', label: 'false' }
+                  { value: 'true', label: "true" },
+                  { value: 'false', label: "false" }
                 ]}
                 onValueChange={(next) =>
                   write((current) => setRawJson(current, `${at}/value`, next))
@@ -179,12 +170,12 @@ function ConditionNode({
         )}
 
         {kind === 'evidence-present' && (
-          <PointerField pointer={`${at}/evidenceRequirement`} label="evidence requirement">
+          <PointerField pointer={`${at}/evidenceRequirement`} label={msg("evidence requirement")}>
             {(wiring) => (
               <Select
                 {...wiring}
                 value={stringAt(buffer, `${at}/evidenceRequirement`)}
-                placeholder="not declared"
+                placeholder={msg("not declared")}
                 options={withHeld(ids.evidence, stringAt(buffer, `${at}/evidenceRequirement`))}
                 onValueChange={(next) =>
                   write((current) => setRawJson(current, `${at}/evidenceRequirement`, JSON.stringify(next)))
@@ -205,9 +196,7 @@ function ConditionNode({
         {(kind === 'all' || kind === 'any') && !collapsed && (
           <div className={styles.children}>
             {children === 0 && (
-              <p className={styles.empty}>
-                This group holds no conditions. <em>Add</em> writes one.
-              </p>
+              <p className={styles.empty}><Message text={"This group holds no conditions. <0/> writes one."} slots={[<em>{msg("Add")}</em>]} /></p>
             )}
             {Array.from({ length: children }, (_, index) => (
               <ConditionNode
@@ -233,13 +222,14 @@ function ConditionNode({
  * consults yet is the ordinary case for a new rule.
  */
 function FactNode({ at }: { at: string }) {
+  useLocale()
   const { buffer, write, ids } = useEditing()
   const operator = stringAt(buffer, `${at}/operator`)
   const control = operandControl(operator)
   const path = stringAt(buffer, `${at}/path`)
   return (
     <div className={styles.fact}>
-      <PointerField pointer={`${at}/path`} label="path">
+      <PointerField pointer={`${at}/path`} label={msg("path")}>
         {(wiring) => (
           <SuggestInput
             {...wiring}
@@ -254,12 +244,12 @@ function FactNode({ at }: { at: string }) {
           />
         )}
       </PointerField>
-      <PointerField pointer={`${at}/operator`} label="operator">
+      <PointerField pointer={`${at}/operator`} label={msg("operator")}>
         {(wiring) => (
           <Select
             {...wiring}
             value={operator}
-            placeholder="not declared"
+            placeholder={msg("not declared")}
             options={withHeld(ENUMS.factOperator, operator).map(option => ({ ...option, label: valueLabel('operator', option.value) }))}
             onValueChange={(next) => write((current) => setOperator(current, at, next))}
           />
@@ -269,13 +259,13 @@ function FactNode({ at }: { at: string }) {
       {control === 'list' && (
         <JsonOperand
           at={`${at}/value`}
-          label="value"
+          label={msg("value")}
           rows={3}
-          hint="a list. One entry is the fewest this operator reads."
+          hint={msg("a list. One entry is the fewest this operator reads.")}
         />
       )}
       {control === 'json' && (
-        <JsonOperand at={`${at}/value`} label="value" rows={1} hint="any JSON value." />
+        <JsonOperand at={`${at}/value`} label={msg("value")} rows={1} hint={msg("any JSON value.")} />
       )}
     </div>
   )
@@ -291,6 +281,7 @@ function FactNode({ at }: { at: string }) {
  * and the check says what the runtime thinks of it.
  */
 function DecimalOperand({ at }: { at: string }) {
+  useLocale()
   const { buffer, write } = useEditing()
   const held = valueAt(buffer.index.value, at)
   const raw = bytesAt(buffer, at)
@@ -299,11 +290,11 @@ function DecimalOperand({ at }: { at: string }) {
   return (
     <PointerField
       pointer={at}
-      label="value"
+      label={msg("value")}
       hint={
         shaped
-          ? 'a decimal string.'
-          : `a decimal string. The document holds ${raw ?? 'nothing'} here.`
+          ? msg("a decimal string.")
+          : msg("a decimal string. The document holds {{value0}} here.", { value0: raw ?? 'nothing' })
       }
     >
       {(wiring) => (
@@ -341,6 +332,7 @@ function JsonOperand({
   rows: number
   hint: ReactNode
 }) {
+  useLocale()
   const { buffer, write, pending: drafts, hold } = useEditing()
   const held = bytesAt(buffer, at) ?? ''
   const draft = drafts.get(at)
@@ -372,9 +364,7 @@ function JsonOperand({
       label={label}
       hint={
         pending ? (
-          <>
-            Not written yet — this is not JSON. The document still holds <code>{held}</code>.
-          </>
+          <><Message text={"Not written yet — this is not JSON. The document still holds <0/>."} slots={[<code>{held}</code>]} /></>
         ) : (
           hint
         )

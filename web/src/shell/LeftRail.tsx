@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 import { Tooltip } from '../ui/Tooltip'
 import { type ReactElement } from 'react'
 /** Primary navigation stays about destinations. Tests and pack flows live
@@ -39,13 +41,14 @@ export function LeftRail({
    */
   openerRef?: RefObject<HTMLButtonElement | null>
 }) {
+  useLocale()
   const settings = useMatch('/admin') !== null
   const body = (onNavigate?: () => void) => settings ? (
     <div className="desk-settings" onClick={(event) => {
       if ((event.target as HTMLElement).closest('a')) onNavigate?.()
     }}>
       <NavLink to="/packs" className="desk-nav-item">
-        <IconChevronLeft /><span>Back to app</span>
+        <IconChevronLeft /><span>{msg("Back to app")}</span>
       </NavLink>
       <SettingsNavigationTarget onNavigate={onNavigate} />
     </div>
@@ -64,14 +67,14 @@ export function LeftRail({
             }}
           >
             <VisuallyHidden.Root>
-              <Dialog.Title>Project navigation</Dialog.Title>
+              <Dialog.Title>{msg("Project navigation")}</Dialog.Title>
             </VisuallyHidden.Root>
             {/* A visible way out. Escape closed it and the overlay closed it,
                 and neither is something a viewer can see — on the width whose
                 likeliest device has no keyboard at all. */}
             <div className="desk-drawer-head">
               <Dialog.Close asChild>
-                <button type="button" className="desk-icon-button" aria-label="Close navigation">
+                <button type="button" className="desk-icon-button" aria-label={msg("Close navigation")}>
                   <IconClose />
                 </button>
               </Dialog.Close>
@@ -80,7 +83,7 @@ export function LeftRail({
                 form offered no `navigation` at all, so the desk below 900px
                 had one fewer landmark than the README's region table says it
                 has — and the difference was the breakpoint, not the state. */}
-            <nav aria-label="Project">
+            <nav aria-label={msg("Project")}>
               {body(() => onDrawerOpenChange(false))}
             </nav>
           </Dialog.Content>
@@ -89,7 +92,7 @@ export function LeftRail({
     )
   }
   return (
-    <nav className="desk-rail" id="desk-rail" aria-label="Project" data-mode={mode}>
+    <nav className="desk-rail" id="desk-rail" aria-label={msg("Project")} data-mode={mode}>
       {body()}
     </nav>
   )
@@ -115,6 +118,7 @@ function RailBody({
    */
   onNavigate?: () => void
 }) {
+  useLocale()
   const icons = mode === 'icons'
   const toggleRef = useRef<HTMLButtonElement | null>(null)
 
@@ -126,14 +130,14 @@ function RailBody({
       <Separator.Root className="desk-rule-h" decorative />
 
       <div className="desk-admin-row">
-        <Labelled icons={icons} label="Admin">
-          <NavLink className="desk-nav-item" to="/admin" aria-label="Admin" onClick={onNavigate}>
+        <Labelled icons={icons} label={msg("Admin")}>
+          <NavLink className="desk-nav-item" to="/admin" aria-label={msg("Admin")} onClick={onNavigate}>
             <IconGear />
-            {!icons && <span className="desk-nav-label">Admin</span>}
+            {!icons && <span className="desk-nav-label">{msg("Admin")}</span>}
           </NavLink>
         </Labelled>
         <DropdownMenu.Root>
-          <DropdownMenu.Trigger className="desk-icon-button" aria-label="Admin sections">
+          <DropdownMenu.Trigger className="desk-icon-button" aria-label={msg("Admin sections")}>
             <IconChevronRight />
           </DropdownMenu.Trigger>
           <DropdownMenu.Portal>
@@ -150,15 +154,15 @@ function RailBody({
         </DropdownMenu.Root>
       </div>
 
-      <Labelled icons={icons} label="Help & About">
-        <NavLink className="desk-nav-item" to="/help" aria-label="Help & About" onClick={onNavigate}>
+      <Labelled icons={icons} label={msg("Help & About")}>
+        <NavLink className="desk-nav-item" to="/help" aria-label={msg("Help & About")} onClick={onNavigate}>
           <IconHelp />
-          {!icons && <span className="desk-nav-label">Help &amp; About</span>}
+          {!icons && <span className="desk-nav-label">{msg("Help & About")}</span>}
         </NavLink>
       </Labelled>
 
       {showCollapse && (
-        <Tooltip content="Expand navigation" disabled={!icons} side="right"><button
+        <Tooltip content={msg("Expand navigation")} disabled={!icons} side="right"><button
           type="button"
           ref={toggleRef}
           className="desk-nav-item"
@@ -173,8 +177,8 @@ function RailBody({
           }}
         >
           {icons ? <IconChevronRight /> : <IconChevronLeft />}
-          {!icons && <span className="desk-nav-label">Collapse navigation</span>}
-          {icons && <VisuallyHidden.Root>Expand navigation</VisuallyHidden.Root>}
+          {!icons && <span className="desk-nav-label">{msg("Collapse navigation")}</span>}
+          {icons && <VisuallyHidden.Root>{msg("Expand navigation")}</VisuallyHidden.Root>}
         </button></Tooltip>
       )}
     </>
@@ -196,6 +200,7 @@ function Labelled({
   label: string
   children: ReactElement
 }) {
+  useLocale()
   if (!icons) return <>{children}</>
   return (
     <Tooltip content={label} side="right">{children}</Tooltip>
@@ -217,6 +222,7 @@ function Labelled({
  * reader gets. The name says it instead.
  */
 function PacksGroup({ icons, onNavigate }: { icons: boolean; onNavigate?: () => void }) {
+  useLocale()
   const { data, error } = usePacks()
   const { pathname } = useLocation()
   const active = /^\/(packs(?:\/|$)|matrix$|graphs(?:\/|$))/.test(pathname)
@@ -224,21 +230,21 @@ function PacksGroup({ icons, onNavigate }: { icons: boolean; onNavigate?: () => 
 
   return (
     <>
-      <Labelled icons={icons} label="Packs">
+      <Labelled icons={icons} label={msg("Packs")}>
         <Link
           className="desk-nav-item"
           to="/packs"
           aria-current={active ? 'page' : undefined}
-          aria-label={count === undefined ? 'Packs' : `Packs, ${count}`}
+          aria-label={count === undefined ? msg("Packs") : msg("Packs, {{value0}}", { value0: count })}
           onClick={onNavigate}
         >
           <IconPack />
-          {!icons && <span className="desk-nav-label">Packs</span>}
+          {!icons && <span className="desk-nav-label">{msg("Packs")}</span>}
           {!icons && count !== undefined && <span className="desk-nav-count">{count}</span>}
         </Link>
       </Labelled>
       {!icons && error && (
-        <p className="desk-pane-empty">The pack listing did not answer — {error.message}</p>
+        <p className="desk-pane-empty"><Message text={"The pack listing did not answer — <0/>"} slots={[error.message]} /></p>
       )}
     </>
   )

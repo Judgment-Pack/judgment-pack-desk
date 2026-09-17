@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 /**
  * Admin › Assistant, as one form: the provider, the key, the endpoint, the
  * model, the tools and the tier — and the writes that put them somewhere.
@@ -133,6 +135,7 @@ export function EndpointForm({
    */
   unavailable: boolean
 }) {
+  useLocale()
   const { config, desk } = useEffectiveConfig()
   const client = useQueryClient()
   const write = useUpdateAssistantConfig()
@@ -288,7 +291,7 @@ export function EndpointForm({
   const here = configured !== null && identityOf(draft) === identityOf(configured)
   const editingKey = typed || replacingKey
   const mayTest = connected && here && !editingKey && !busy && !checking && !unavailable
-  const whyNotTest = editingKey ? KEY_NOT_SAVED : !here && configured !== null ? NOT_SAVED : NOTHING_TO_TEST
+  const whyNotTest = editingKey ? msg(KEY_NOT_SAVED) : !here && configured !== null ? msg(NOT_SAVED) : msg(NOTHING_TO_TEST)
   const canSaveKey = typed && !blocked && !busy && !checking && !unavailable && key.isSuccess
 
   const settingsChanged = configured === null ||
@@ -297,11 +300,11 @@ export function EndpointForm({
 
   const save = () => {
     if (!settingsChanged || blocked || busy || checking || unavailable || editingKey) return
-    commit(assistantWrite(draft), (answer) => (answer.created ? CREATED : SAVED))
+    commit(assistantWrite(draft), (answer) => (answer.created ? msg(CREATED) : msg(SAVED)))
   }
   const removeEndpoint = () => {
     check.reset()
-    commit(assistantWithoutEndpoint(draft), () => REMOVED)
+    commit(assistantWithoutEndpoint(draft), () => msg(REMOVED))
   }
 
   // Save the endpoint before binding a key to it. A successful endpoint write
@@ -314,7 +317,7 @@ export function EndpointForm({
     if (here) storeKey(value)
     else commit(
       assistantWrite(draft),
-      (answer) => (answer.created ? CREATED : SAVED),
+      (answer) => (answer.created ? msg(CREATED) : msg(SAVED)),
       () => storeKey(value)
     )
   }
@@ -327,7 +330,7 @@ export function EndpointForm({
         else save()
       }}
     >
-      {unavailable && <p className="quiet">{UNAVAILABLE}</p>}
+      {unavailable && <p className="quiet">{msg(UNAVAILABLE)}</p>}
       {/* Disabled as a whole while a write is in flight — a field edited between
           the request and its answer would be a value the author believes was
           saved and was not — and while the file these fields are about could not
@@ -335,26 +338,26 @@ export function EndpointForm({
           anybody configured. */}
       <fieldset disabled={busy || checking || unavailable}>
         <p className={styles.setup}>
-          <strong>Assistant setup</strong>{' '}
-          {unavailable ? 'Configuration unavailable.' : key.isError ? 'Could not read key status.'
-            : !key.isSuccess ? 'Reading key status…'
-            : remove.isPending ? 'Removing the API key…'
-            : busy ? 'Saving changes…'
-            : checking ? 'Checking the connection…'
-            : editingKey ? 'Save your API key to continue.'
-            : !connected ? 'Save an API key for this endpoint.'
-            : !here ? 'Save the endpoint changes before testing.'
-            : check.answer === undefined ? 'Key saved. Test the connection next.'
-            : check.answer.refusedToAsk !== undefined ? 'Choose and save a model before testing this provider.'
+          <strong>{msg("Assistant setup")}</strong>{' '}
+          {unavailable ? msg("Configuration unavailable.") : key.isError ? msg("Could not read key status.")
+            : !key.isSuccess ? msg("Reading key status…")
+            : remove.isPending ? msg("Removing the API key…")
+            : busy ? msg("Saving changes…")
+            : checking ? msg("Checking the connection…")
+            : editingKey ? msg("Save your API key to continue.")
+            : !connected ? msg("Save an API key for this endpoint.")
+            : !here ? msg("Save the endpoint changes before testing.")
+            : check.answer === undefined ? msg("Key saved. Test the connection next.")
+            : check.answer.refusedToAsk !== undefined ? msg("Choose and save a model before testing this provider.")
             : check.answer.probeRefusal !== undefined || check.answer.probe?.reachable === false
-              ? 'Connection test failed. Review the result below.'
-            : draft.model === '' ? 'Enable a model and choose its default.'
-            : dirty ? 'Save your model and assistant settings.'
-            : 'Assistant settings saved.'}
+              ? msg("Connection test failed. Review the result below.")
+            : draft.model === '' ? msg("Enable a model and choose its default.")
+            : dirty ? msg("Save your model and assistant settings.")
+            : msg("Assistant settings saved.")}
         </p>
         <SettingsSection
-          title="Connection"
-          description="Choose a provider and securely save its API key."
+          title={msg("Connection")}
+          description={msg("Choose a provider and securely save its API key.")}
           footer={
             <div className={styles.connection}>
               <Button
@@ -362,16 +365,16 @@ export function EndpointForm({
                 aria-describedby={testHintId}
                 onClick={() => { if (mayTest) check.run() }}
               >
-                {checking ? 'Testing connection…' : 'Test connection'}
+                {checking ? msg("Testing connection…") : msg("Test connection")}
               </Button>
               <span id={testHintId} role="status" className="quiet">
                 {check.answer !== undefined ? <CheckReading answer={check.answer} />
-                  : !mayTest ? whyNotTest : 'Connection not tested.'}
+                  : !mayTest ? whyNotTest : msg("Connection not tested.")}
               </span>
             </div>
           }
         >
-          <Field label="Provider" error={problemFor('assistant.endpoint.kind')}>
+          <Field label={msg("Provider")} error={problemFor('assistant.endpoint.kind')}>
             {(wiring) => (
               <Select
                 {...wiring}
@@ -410,7 +413,7 @@ export function EndpointForm({
               check.reset()
             }}
             onStore={saveKey}
-            saved={keySaved ? KEY_SAVED : undefined}
+            saved={keySaved ? msg(KEY_SAVED) : undefined}
             storeProblem={storeProblem}
             onRemove={() => {
               setRemoveProblem(undefined)
@@ -429,10 +432,10 @@ export function EndpointForm({
             open={advancedOpen || urlProblem !== undefined || problemFor('assistant.endpoint.url') !== undefined}
             onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
           >
-            <summary>Advanced settings</summary>
+            <summary>{msg("Advanced settings")}</summary>
             <Field
-              label="Endpoint URL"
-              hint="Leave the default unless you use a proxy or your own server."
+              label={msg("Endpoint URL")}
+              hint={msg("Leave the default unless you use a proxy or your own server.")}
               error={urlProblem ?? problemFor('assistant.endpoint.url')}
             >
               {(wiring) => (
@@ -445,13 +448,11 @@ export function EndpointForm({
               )}
             </Field>
 
-            <Button variant="quiet" onClick={() => edit({ ...draft, url: PREFILLED_URL[draft.kind] })}>
-              Reset to default
-            </Button>
+            <Button variant="quiet" onClick={() => edit({ ...draft, url: PREFILLED_URL[draft.kind] })}>{msg("Reset to default")}</Button>
           </details>
         </SettingsSection>
 
-        <SettingsSection title="Models">
+        <SettingsSection title={msg("Models")}>
           <ModelChoice
             draft={draft}
             // **The rows of the last press, and nothing before one.** Until
@@ -465,12 +466,12 @@ export function EndpointForm({
           />
         </SettingsSection>
 
-        <SettingsSection title="Behavior" description="Choose the tools and reasoning available to the assistant.">
+        <SettingsSection title={msg("Behavior")} description={msg("Choose the tools and reasoning available to the assistant.")}>
           <ToolChoice draft={draft} onChange={edit} problem={problemFor('assistant.endpoint.tools')} />
 
           <Field
-            label="Thinking"
-            hint="How much reasoning the model may do before answering."
+            label={msg("Thinking")}
+            hint={msg("How much reasoning the model may do before answering.")}
             error={problemFor('assistant.thinking')}
           >
             {(wiring) => (
@@ -487,35 +488,31 @@ export function EndpointForm({
         </SettingsSection>
 
         <div className={styles.saveActions}>
-          {busy && <span className="quiet">Saving…</span>}
-          {editingKey && !busy && <span className="quiet">Save or cancel the API key changes first.</span>}
-          {dirty && saved === undefined && !busy && !editingKey && <span className="quiet">Unsaved settings</span>}
+          {busy && <span className="quiet">{msg("Saving…")}</span>}
+          {editingKey && !busy && <span className="quiet">{msg("Save or cancel the API key changes first.")}</span>}
+          {dirty && saved === undefined && !busy && !editingKey && <span className="quiet">{msg("Unsaved settings")}</span>}
           {saved !== undefined && !busy && <span className="quiet" role="status">{saved}</span>}
-          <Button variant={binding === 'bound' && !replacingKey ? 'primary' : 'secondary'} type="submit" disabled={!settingsChanged || blocked || busy || checking || editingKey}>
-            Save settings
-          </Button>
+          <Button variant={binding === 'bound' && !replacingKey ? 'primary' : 'secondary'} type="submit" disabled={!settingsChanged || blocked || busy || checking || editingKey}>{msg("Save settings")}</Button>
         </div>
 
         {configured !== null && (
-          <section className={styles.dangerSection} aria-label="Remove endpoint">
-            <h3>Remove endpoint</h3>
-            <p>Disconnect this provider from the assistant.</p>
+          <section className={styles.dangerSection} aria-label={msg("Remove endpoint")}>
+            <h3>{msg("Remove endpoint")}</h3>
+            <p>{msg("Disconnect this provider from the assistant.")}</p>
             {!removing ? (
-              <Button variant="danger" disabled={digest === undefined || busy} onClick={() => setRemoving(true)}>
-                Remove endpoint
-              </Button>
+              <Button variant="danger" disabled={digest === undefined || busy} onClick={() => setRemoving(true)}>{msg("Remove endpoint")}</Button>
             ) : (
               <div className={styles.removal}>
-                <p>{REMOVAL_MEANS}</p>
-                <Button variant="secondary" disabled={busy} onClick={() => setRemoving(false)}>Keep it</Button>{' '}
-                <Button variant="danger" disabled={busy} onClick={removeEndpoint}>Remove it</Button>
+                <p>{msg(REMOVAL_MEANS)}</p>
+                <Button variant="secondary" disabled={busy} onClick={() => setRemoving(false)}>{msg("Keep it")}</Button>{' '}
+                <Button variant="danger" disabled={busy} onClick={removeEndpoint}>{msg("Remove it")}</Button>
               </div>
             )}
           </section>
         )}
       </fieldset>
 
-      {digest === undefined && <p className="quiet">{NO_DIGEST}</p>}
+      {digest === undefined && <p className="quiet">{msg(NO_DIGEST)}</p>}
 
       {stale !== undefined && (
         <AlertPanel
@@ -523,13 +520,8 @@ export function EndpointForm({
           detailLabel="digests"
           detail={
             <>
-              <span>
-                this page read{' '}
-                <Digest value={stale.expectedSha256} />
-              </span>
-              <span>
-                on disk now <Digest value={stale.actualSha256} />
-              </span>
+              <span><Message text={"this page read<0/><1/>"} slots={[' ', <Digest value={stale.expectedSha256} />]} /></span>
+              <span><Message text={"on disk now <0/>"} slots={[<Digest value={stale.actualSha256} />]} /></span>
             </>
           }
           actions={
@@ -540,21 +532,16 @@ export function EndpointForm({
                 write.reset()
                 void client.refetchQueries({ queryKey: DESK_CONFIG_QUERY_KEY })
               }}
-            >
-              Reload
-            </Button>
+            >{msg("Reload")}</Button>
           }
         >
-          <span>
-            Everything typed here is still here. Reload reads the file again and keeps these
-            fields, so the next Save states a digest that is true.
-          </span>
+          <span>{msg("Everything typed here is still here. Reload reads the file again and keeps these fields, so the next Save states a digest that is true.")}</span>
         </AlertPanel>
       )}
 
       {unplaced.length > 0 && (
         <div role="alert">
-          <p>This configuration was refused, and nothing was written.</p>
+          <p>{msg("This configuration was refused, and nothing was written.")}</p>
           {unplaced.map((problem) => (
             <code key={`${problem.key}:${problem.reason}`} className="partial-reason">
               {problem.key === '' ? problem.reason : `${problem.key}: ${problem.reason}`}
@@ -564,7 +551,7 @@ export function EndpointForm({
       )}
 
       {otherRefusal !== undefined && (
-        <Alert reason={otherRefusal}>Nothing was written.</Alert>
+        <Alert reason={otherRefusal}>{msg("Nothing was written.")}</Alert>
       )}
     </form>
   )
@@ -608,9 +595,10 @@ function ToolChoice({
   onChange: (next: EndpointDraft) => void
   problem: string | undefined
 }) {
+  useLocale()
   return (
     <fieldset className={styles.tools}>
-      <legend>Tools the assistant may use</legend>
+      <legend>{msg("Tools the assistant may use")}</legend>
       {ASSISTANT_TOOLS.map((tool) => (
         <label key={tool} className="checkbox">
           <input
@@ -621,7 +609,7 @@ function ToolChoice({
           <code>{tool}</code>
         </label>
       ))}
-      <p className="quiet">All read-only. Untick one to hide it from the assistant.</p>
+      <p className="quiet">{msg("All read-only. Untick one to hide it from the assistant.")}</p>
       {problem !== undefined && <p className="partial-reason">{problem}</p>}
     </fieldset>
   )
@@ -637,6 +625,7 @@ function ToolChoice({
  * assembled here; a refusal from elsewhere is quoted rather than narrated.
  */
 function CheckReading({ answer }: { answer: CheckAnswer }) {
+  useLocale()
   const line = checkLine(answer)
   if (line.says === '') return null
   return (

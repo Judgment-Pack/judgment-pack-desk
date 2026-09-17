@@ -9,13 +9,15 @@
  */
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { assistantTransport, bindModelCall, openAssistantConnection, suffixProblem } from './session'
+import { assistantTransport, bindModelCall, openAssistantConnection, runAssistantSession, suffixProblem } from './session'
 import { NoSession, giveThisPageASessionForTesting } from '../mcp/session'
 
 /** A session id of the shape the chassis mints, for the tests below. */
 const A_SESSION = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6'
 import { scriptedRuntime } from './conformance/scriptedServer'
-import type { AssistantEvent } from './engine'
+import type { AssistantEvent, AssistantSession, Engine } from './engine'
+import { normalize } from './thinking'
+import { rememberLanguage } from '../i18n/locales'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -729,5 +731,36 @@ describe('the assistant’s own connection', () => {
     ])
     await connection.close()
     await runtime.close()
+  })
+})
+
+
+describe('session response language', () => {
+  it('captures the language once and preserves an explicit session choice', async () => {
+    const seen: AssistantSession[] = []
+    const engine: Engine = {
+      id: 'vercel',
+      async *start(input) {
+        seen.push(input)
+        rememberLanguage('de')
+        yield { type: 'end' }
+      }
+    }
+    const input: AssistantSession = {
+      prompt: 'source guidance', testPrompt: '', tools: [], hostTools: [],
+      model: { family: 'gemini', model: 'model-id', call: async () => new Response('{}') },
+      callTool: async () => ({ content: [] }),
+      thinking: normalize('off', 'gemini'), signal: new AbortController().signal
+    }
+    try {
+      rememberLanguage('fr')
+      await runAssistantSession(engine, input, () => {})
+      expect(seen[0]?.replyLanguage).toBe('fr')
+      expect(input.replyLanguage).toBeUndefined()
+      expect(seen[0]?.model).toBe(input.model)
+      expect(seen[0]?.tools).toBe(input.tools)
+      await runAssistantSession(engine, { ...input, replyLanguage: 'ja' }, () => {})
+      expect(seen[1]?.replyLanguage).toBe('ja')
+    } finally { rememberLanguage('en') }
   })
 })

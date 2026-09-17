@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../i18n'
 /**
  * Admin › Assistant: the endpoint this desk is configured for, and the one key
  * it keeps — as one of Admin's cards.
@@ -49,6 +50,7 @@ export function AssistantSection({
   /** The heading level, where the page's outline is not the card's nesting. */
   level?: 2 | 3
 }) {
+  useLocale()
   const { desk } = useEffectiveConfig()
   // **The same reading the tab and Describe it take.** A read that did not
   // produce a file establishes nothing about what is in it, and this section is
@@ -70,7 +72,7 @@ export function AssistantSection({
       level={level}
       location={
         desk === undefined ? (
-          <span className="quiet">nothing has asked for it</span>
+          <span className="quiet">{msg("nothing has asked for it")}</span>
         ) : (
           <code>{desk.path}</code>
         )

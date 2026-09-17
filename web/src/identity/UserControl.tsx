@@ -1,3 +1,5 @@
+import { msg, useLocale } from '../i18n'
+import { LanguageMenu } from '../i18n/LanguageMenu'
 /**
  * The header's user control.
  *
@@ -81,10 +83,10 @@ export const PROVIDER_PHASE_NOTE = 'provider configured · sign-in arrives in ph
  * key may be something this shell never wrote, which it leaves alone.
  */
 export const RESET_SAYS: Record<ResetOutcome, string> = {
-  cleared: 'Cleared — the panes are back on their defaults.',
-  refused: 'this browser did not clear the record — the layout is unchanged',
-  unresolved: 'nothing was cleared: this desk has not been told which project it is open on',
-  foreign: 'nothing was cleared: what is stored there is not a record this shell wrote'
+  get cleared() { return msg("Cleared — the panes are back on their defaults.") },
+  get refused() { return msg("this browser did not clear the record — the layout is unchanged") },
+  get unresolved() { return msg("nothing was cleared: this desk has not been told which project it is open on") },
+  get foreign() { return msg("nothing was cleared: what is stored there is not a record this shell wrote") }
 }
 
 /**
@@ -127,8 +129,8 @@ export const PROJECT_DEFAULT_UNKNOWN = 'The project’s default has not been rea
  * only discover by pressing it, and it is named only once it is known.
  */
 export function projectDefaultSays(appearance: AppearanceConfig | undefined): string {
-  if (appearance === undefined) return PROJECT_DEFAULT_UNKNOWN
-  return `Project default: ${appearance.theme}, ${appearance.density}`
+  if (appearance === undefined) return msg(PROJECT_DEFAULT_UNKNOWN)
+  return msg("Project default: {{value0}}, {{value1}}", { value0: appearanceLabel(appearance.theme), value1: appearanceLabel(appearance.density) })
 }
 
 /**
@@ -140,10 +142,10 @@ export function projectDefaultSays(appearance: AppearanceConfig | undefined): st
  * this is, or what is under that key may be something this desk never wrote.
  */
 export const RESTORED_SAYS: Record<ResetOutcome, string> = {
-  cleared: 'Cleared — this project’s default is in force again.',
-  refused: 'this browser did not clear the record — your choice is unchanged',
-  unresolved: 'nothing was cleared: this desk has not been told which project it is open on',
-  foreign: 'nothing was cleared: what is stored there is not a record this desk wrote'
+  get cleared() { return msg("Cleared — this project’s default is in force again.") },
+  get refused() { return msg("this browser did not clear the record — your choice is unchanged") },
+  get unresolved() { return msg("nothing was cleared: this desk has not been told which project it is open on") },
+  get foreign() { return msg("nothing was cleared: what is stored there is not a record this desk wrote") }
 }
 
 /** Up to two initials, from whatever the name happens to be. */
@@ -155,6 +157,7 @@ export function monogram(name: string): string {
 }
 
 export function UserControl() {
+  useLocale()
   const { provider, displayName } = useIdentity()
   // Where a provider is configured and carries no label, the name falls back
   // to the issuer's host — something the desk read out of the file. It does
@@ -170,7 +173,7 @@ export function UserControl() {
 
   return (
     <DropdownMenu.Root>
-      <DropdownMenu.Trigger className="desk-user" aria-label="Account and desk settings">
+      <DropdownMenu.Trigger className="desk-user" aria-label={msg("Account and desk settings")}>
         <Avatar.Root className="desk-avatar">
           <Avatar.Fallback delayMs={0}>{monogram(name)}</Avatar.Fallback>
         </Avatar.Root>
@@ -183,21 +186,22 @@ export function UserControl() {
       <DropdownMenu.Portal>
         <DropdownMenu.Content className="desk-menu desk-header-menu" align="end" sideOffset={6} collisionPadding={16}>
           <DropdownMenu.Label className="desk-menu-note">
-            {provider === null ? NONE_MENU_SENTENCE : PROVIDER_PHASE_NOTE}
+            {provider === null ? msg(NONE_MENU_SENTENCE) : msg(PROVIDER_PHASE_NOTE)}
           </DropdownMenu.Label>
-          <DropdownMenu.Label className="desk-menu-note">{SESSION_SENTENCE}</DropdownMenu.Label>
+          <DropdownMenu.Label className="desk-menu-note">{msg(SESSION_SENTENCE)}</DropdownMenu.Label>
           <DropdownMenu.Separator className="desk-rule-h" />
+          <LanguageMenu />
           <AppearanceItems />
           <DropdownMenu.Separator className="desk-rule-h" />
           <ResetPanesItem />
           <DropdownMenu.Item asChild className="desk-menu-item">
-            <Link to="/help#shortcuts">Keyboard shortcuts</Link>
+            <Link to="/help#shortcuts">{msg("Keyboard shortcuts")}</Link>
           </DropdownMenu.Item>
           <DropdownMenu.Item asChild className="desk-menu-item">
-            <Link to="/admin">Admin</Link>
+            <Link to="/admin">{msg("Admin")}</Link>
           </DropdownMenu.Item>
           <DropdownMenu.Item asChild className="desk-menu-item">
-            <Link to="/help">About</Link>
+            <Link to="/help">{msg("About")}</Link>
           </DropdownMenu.Item>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
@@ -223,6 +227,7 @@ export function UserControl() {
  * level up would greet whoever opened the menu next.
  */
 function ResetPanesItem() {
+  useLocale()
   const shell = useShellState()
   const [reset, setReset] = useState<ResetOutcome | undefined>(undefined)
   return (
@@ -237,9 +242,7 @@ function ResetPanesItem() {
           event.preventDefault()
           setReset(shell.resetPanes())
         }}
-      >
-        Reset panes
-      </DropdownMenu.Item>
+      >{msg("Reset panes")}</DropdownMenu.Item>
       {reset !== undefined && (
         <DropdownMenu.Label className="desk-menu-note">{RESET_SAYS[reset]}</DropdownMenu.Label>
       )}
@@ -275,13 +278,14 @@ function ResetPanesItem() {
  * so it is held here, inside the portal that unmounts with the content.
  */
 function AppearanceItems() {
+  useLocale()
   const appearance = useAppearance()
   const [restored, setRestored] = useState<ResetOutcome | undefined>(undefined)
   return (
     <>
-      <DropdownMenu.Label className="desk-menu-heading">Theme</DropdownMenu.Label>
+      <DropdownMenu.Label className="desk-menu-heading">{msg("Theme")}</DropdownMenu.Label>
       <DropdownMenu.RadioGroup
-        aria-label="Theme"
+        aria-label={msg("Theme")}
         value={appearance.theme}
         onValueChange={(value) => appearance.setTheme(value as ThemeChoice)}
       >
@@ -289,10 +293,10 @@ function AppearanceItems() {
           <AppearanceChoice key={choice} value={choice} />
         ))}
       </DropdownMenu.RadioGroup>
-      <DropdownMenu.Label className="desk-menu-note">{THEME_SAYS}</DropdownMenu.Label>
-      <DropdownMenu.Label className="desk-menu-heading">Density</DropdownMenu.Label>
+      <DropdownMenu.Label className="desk-menu-note">{msg(THEME_SAYS)}</DropdownMenu.Label>
+      <DropdownMenu.Label className="desk-menu-heading">{msg("Density")}</DropdownMenu.Label>
       <DropdownMenu.RadioGroup
-        aria-label="Density"
+        aria-label={msg("Density")}
         value={appearance.density}
         onValueChange={(value) => appearance.setDensity(value as Density)}
       >
@@ -300,7 +304,7 @@ function AppearanceItems() {
           <AppearanceChoice key={choice} value={choice} />
         ))}
       </DropdownMenu.RadioGroup>
-      <DropdownMenu.Label className="desk-menu-note">{DENSITY_SAYS}</DropdownMenu.Label>
+      <DropdownMenu.Label className="desk-menu-note">{msg(DENSITY_SAYS)}</DropdownMenu.Label>
       <DropdownMenu.Label className="desk-menu-note">
         {projectDefaultSays(appearance.projectDefault)}
       </DropdownMenu.Label>
@@ -314,9 +318,7 @@ function AppearanceItems() {
           event.preventDefault()
           setRestored(appearance.restoreProjectDefault())
         }}
-      >
-        Use the project’s default
-      </DropdownMenu.Item>
+      >{msg("Use the project’s default")}</DropdownMenu.Item>
       {restored !== undefined && (
         <DropdownMenu.Label className="desk-menu-note">{RESTORED_SAYS[restored]}</DropdownMenu.Label>
       )}
@@ -324,8 +326,20 @@ function AppearanceItems() {
   )
 }
 
-/** One choice, spelled as the file spells it. */
+/** Labels are localized; persisted appearance values remain canonical. */
+function appearanceLabel(value: string): string {
+  switch (value) {
+    case 'light': return msg('light')
+    case 'dark': return msg('dark')
+    case 'system': return msg('system')
+    case 'compact': return msg('compact')
+    case 'comfortable': return msg('comfortable')
+    default: return value
+  }
+}
+
 function AppearanceChoice({ value }: { value: string }) {
+  useLocale()
   return (
     <DropdownMenu.RadioItem
       className="desk-menu-item desk-menu-choice"
@@ -335,7 +349,7 @@ function AppearanceChoice({ value }: { value: string }) {
       <DropdownMenu.ItemIndicator className="desk-menu-tick">
         <IconCheck />
       </DropdownMenu.ItemIndicator>
-      {value}
+      {appearanceLabel(value)}
     </DropdownMenu.RadioItem>
   )
 }

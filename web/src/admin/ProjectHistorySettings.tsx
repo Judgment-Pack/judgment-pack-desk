@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 import { useRef, useState } from 'react'
 import { answer, deskFetch } from '../files/client'
 import { Button } from '../ui/Button'
@@ -7,6 +9,7 @@ import { Input } from '../ui/Input'
 import styles from './ChatDataSettings.module.css'
 interface Preview { previousProject: string; project: string; chatCount: number; sourceRevision: string; bindingsRevision: string }
 export function ProjectHistorySettings({ blocked, onLinked }: { blocked: boolean; onLinked: () => void }) {
+  useLocale()
   const [open, setOpen] = useState(false)
   const [path, setPath] = useState('')
   const [preview, setPreview] = useState<Preview | null>(null)
@@ -18,7 +21,7 @@ export function ProjectHistorySettings({ blocked, onLinked }: { blocked: boolean
     setBusy(true); setError('')
     try {
       const data = await answer<Preview>(await deskFetch(`/api/storage/project-history/${preview ? 'relink' : 'preview'}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: "POST", headers: { 'Content-Type': "application/json" },
         body: JSON.stringify({ previousProject: path.trim(), sourceRevision: preview?.sourceRevision ?? '', bindingsRevision: preview?.bindingsRevision ?? '' })
       }))
       if (preview) { onLinked(); return }
@@ -27,22 +30,22 @@ export function ProjectHistorySettings({ blocked, onLinked }: { blocked: boolean
     setBusy(false)
   }
   return <>
-    <Button ref={opener} variant="quiet" disabled={blocked} onClick={() => { setOpen(true); setPath(''); setPreview(null); setError('') }}>Recover project history…</Button>
-    <Dialog open={open} onOpenChange={value => { if (!busy) setOpen(value) }} title="Recover project history" openerRef={opener}
-      description="If this project moved to a different folder, link it to its previous chat history. No histories are combined.">
+    <Button ref={opener} variant="quiet" disabled={blocked} onClick={() => { setOpen(true); setPath(''); setPreview(null); setError('') }}>{msg("Recover project history…")}</Button>
+    <Dialog open={open} onOpenChange={value => { if (!busy) setOpen(value) }} title={msg("Recover project history")} openerRef={opener}
+      description={msg("If this project moved to a different folder, link it to its previous chat history. No histories are combined.")}>
       <form onSubmit={event => { event.preventDefault(); void submit() }}>
         <FieldGroup>
-          <Field label="Previous project folder" hint="Enter the absolute folder path used before the move. The old folder does not need to exist.">
+          <Field label={msg("Previous project folder")} hint={msg("Enter the absolute folder path used before the move. The old folder does not need to exist.")}>
             {wiring => <Input {...wiring} value={path} autoComplete="off" spellCheck={false} disabled={busy} onChange={event => { setPath(event.target.value); setPreview(null) }} />}
           </Field>
           {preview && <div className={styles.details}>
-            <p>{preview.chatCount} saved {preview.chatCount === 1 ? 'chat' : 'chats'} found.</p>
-            <p className={styles.caption}>Link these chats to <code>{preview.project}</code>? Opening the old project location will use the same history. If this is a separate copy of the project, keep a separate history.</p>
+            <p><Message text={"<0/> saved <1/> found."} slots={[preview.chatCount, preview.chatCount === 1 ? msg("chat") : msg("chats")]} /></p>
+            <p className={styles.caption}><Message text={"Link these chats to <0/>? Opening the old project location will use the same history. If this is a separate copy of the project, keep a separate history."} slots={[<code>{preview.project}</code>]} /></p>
           </div>}
           {error && <p role="alert">{error}</p>}
         </FieldGroup>
-        <DialogActions><Button disabled={busy} onClick={() => setOpen(false)}>Cancel</Button>
-          <Button type="submit" variant="primary" disabled={blocked || busy || !path.trim()}>{busy ? 'Working…' : preview ? 'Link history and reload' : 'Find history'}</Button></DialogActions>
+        <DialogActions><Button disabled={busy} onClick={() => setOpen(false)}>{msg("Cancel")}</Button>
+          <Button type="submit" variant="primary" disabled={blocked || busy || !path.trim()}>{busy ? msg("Working…") : preview ? msg("Link history and reload") : msg("Find history")}</Button></DialogActions>
       </form>
     </Dialog>
   </>

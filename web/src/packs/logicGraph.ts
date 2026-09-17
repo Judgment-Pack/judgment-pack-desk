@@ -1,3 +1,4 @@
+import { msg } from '../i18n'
 import type { RelationshipEdge } from '../components/RelationshipMap'
 import { isRecord } from './document/MisshapenMember'
 import type { LogicGroup, LogicItem, LogicProjection } from './logicModel'
@@ -36,7 +37,7 @@ export function projectLogicGraph(model: LogicProjection, grouped = false, expan
       seen.add(key)
       const items = aggregate ? bucket : [item]
       const nodeId = aggregate ? id : item.pointer
-      nodes.push({ id: nodeId, group, items, title: aggregate ? `${item.effect} · ${items.length} rules` : item.label,
+      nodes.push({ id: nodeId, group, items, title: aggregate ? msg('{{outcome}} · {{count}} rules', { outcome: item.effect, count: items.length }) : item.label,
         column: group === exceptions ? 0 : group === rules ? ruleColumn : ruleColumn + 1 })
       items.forEach(child => itemNodes.set(child.pointer, nodeId))
     }
@@ -52,7 +53,7 @@ export function projectLogicGraph(model: LogicProjection, grouped = false, expan
     const source = itemNodes.get(item.pointer)!, target = itemNodes.get(targetItem.pointer)!
     const id = JSON.stringify([source, target])
     if (!edges.some(e => e.id === id)) edges.push({ id, source, target,
-      label: suppressed ? 'Excludes' : group === exceptions ? 'Forces' : 'Contributes' })
+      label: suppressed ? msg('Excludes') : group === exceptions ? msg('Forces') : msg('Contributes') })
   }
   return { nodes, edges }
 }

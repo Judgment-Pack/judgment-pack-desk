@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
@@ -33,6 +35,7 @@ import type {
 
 /** Browsing reads declarations. Tests run only after an explicit command. */
 export function GraphView() {
+  useLocale()
   const { graphId } = useParams<{ graphId?: string }>()
   const [search, setSearch] = useSearchParams()
   const tests = search.get('view') === 'tests'
@@ -53,50 +56,46 @@ export function GraphView() {
   }
 
   return <article className="detail" data-measure="full" data-layout="page">
-    <PageHeader variant={graphId ? 'context' : 'collection'} title={graphId ? 'Pack flows' : 'Packs'} context={graphId} titleHref={graphId ? '/graphs' : undefined}
+    <PageHeader variant={graphId ? 'context' : 'collection'} title={graphId ? msg("Pack flows") : msg("Packs")} context={graphId} titleHref={graphId ? "/graphs" : undefined}
       actions={<Button onClick={run} disabled={status !== 'ready' || isFetching}>
-        {isFetching ? 'Running…' : graphId ? 'Run tests' : 'Run all flow tests'}
+        {isFetching ? msg("Running…") : graphId ? msg("Run tests") : msg("Run all flow tests")}
       </Button>}
-      navigation={graphId ? <nav className={workspace.navigation} aria-label="Pack flow sections">
-        <Link to={`/graphs/${encodeURIComponent(graphId)}`} aria-current={!tests ? 'page' : undefined}>Diagram</Link>
-        <Link to={`/graphs/${encodeURIComponent(graphId)}?view=tests`} aria-current={tests ? 'page' : undefined}>Tests</Link>
+      navigation={graphId ? <nav className={workspace.navigation} aria-label={msg("Pack flow sections")}>
+        <Link to={`/graphs/${encodeURIComponent(graphId)}`} aria-current={!tests ? 'page' : undefined}>{msg("Diagram")}</Link>
+        <Link to={`/graphs/${encodeURIComponent(graphId)}?view=tests`} aria-current={tests ? 'page' : undefined}>{msg("Tests")}</Link>
       </nav> : <PacksNavigation current="flows" />} />
     <PageBody width="full">
-      {!graphId && <p className="quiet">Connect packs and see how their results feed into the next decision.</p>}
+      {!graphId && <p className="quiet">{msg("Connect packs and see how their results feed into the next decision.")}</p>}
       {!graphId && graphInventorySupported && (inventory.error
-        ? <ErrorBox title="Could not list pack flows" error={inventory.error} />
-        : inventory.isPending ? <Loading what="pack flows" />
+        ? <ErrorBox title={msg("Could not list pack flows")} error={inventory.error} />
+        : inventory.isPending ? <Loading what={msg("pack flows")} />
         : listing && !tests && <ConfiguredGraphs inventory={listing} />)}
-      {!graphId && !graphInventorySupported && <p className="note">
-        This runtime cannot list pack flows without running their tests. Choose Run all flow tests to discover their test results, or connect a newer runtime to browse their diagrams.
-      </p>}
+      {!graphId && !graphInventorySupported && <p className="note">{msg("This runtime cannot list pack flows without running their tests. Choose Run all flow tests to discover their test results, or connect a newer runtime to browse their diagrams.")}</p>}
       {graphId && !tests && <FlowExplorer key={graphId} graphId={graphId} />}
-      {tests && <section aria-label="Flow tests">
-        {!graphId && <ButtonLink variant="quiet" to="/graphs">Back to pack flows</ButtonLink>}
-        <h2 className="section-title">{graphId ? 'Flow tests' : 'All flow tests'}</h2>
+      {tests && <section aria-label={msg("Flow tests")}>
+        {!graphId && <ButtonLink variant="quiet" to="/graphs">{msg("Back to pack flows")}</ButtonLink>}
+        <h2 className="section-title">{graphId ? msg("Flow tests") : msg("All flow tests")}</h2>
         {graphTracesSupported && <label className="checkbox trace-ask">
           <input type="checkbox" checked={includeTraces} disabled={isFetching}
             onChange={event => setIncludeTraces(event.target.checked)} />
-          <span>Include detailed traces</span>
+          <span>{msg("Include detailed traces")}</span>
         </label>}
-        {isFetching && <Loading what="flow test results" />}
-        {error && asked && <p className="note note-warn">
-          This run requested detailed traces. {retainedUntraced
-            ? 'Turn off detailed traces to view the previous untraced result.'
-            : 'Turn off detailed traces and run tests to try without them.'}
-        </p>}
-        {error ? <ErrorBox title="Could not run flow tests" error={error} />
-          : !data ? !isFetching && <Empty>Run tests to check saved cases and coverage. Opening this view does not run tests.</Empty>
+        {isFetching && <Loading what={msg("flow test results")} />}
+        {error && asked && <p className="note note-warn"><Message text={"This run requested detailed traces. <0/>"} slots={[retainedUntraced
+            ? msg("Turn off detailed traces to view the previous untraced result.")
+            : msg("Turn off detailed traces and run tests to try without them.")]} /></p>}
+        {error ? <ErrorBox title={msg("Could not run flow tests")} error={error} />
+          : !data ? !isFetching && <Empty>{msg("Run tests to check saved cases and coverage. Opening this view does not run tests.")}</Empty>
           : <>
             <p className="ids"><Pill tone={statusTone(data.status)}>{data.status}</Pill>
-              <span>{data.summary.passed} of {data.summary.total} cases passed</span>
-              <span className="quiet">Last run{asked ? ' · detailed traces' : ''}</span>
+              <span><Message text={"<0/> of <1/> cases passed"} slots={[data.summary.passed, data.summary.total]} /></span>
+              <span className="quiet"><Message text={"Last run<0/>"} slots={[asked ? msg(" · detailed traces") : '']} /></span>
             </p>
-            {(data.graphs ?? []).length === 0 ? <Empty>No flow test results were reported.</Empty>
+            {(data.graphs ?? []).length === 0 ? <Empty>{msg("No flow test results were reported.")}</Empty>
               : data.graphs!.map(entry => <GraphEntry key={entry.id} entry={entry} matrixSettled={!isFetching} />)}
             {data.label && <p className="note">{data.label}</p>}
           </>}
-        <p className="quiet">Pack flows use the runtime’s experimental graph format. Test results describe the supplied cases.</p>
+        <p className="quiet">{msg("Pack flows use the runtime’s experimental graph format. Test results describe the supplied cases.")}</p>
       </section>}
     </PageBody>
   </article>
@@ -114,17 +113,18 @@ export function GraphView() {
  * would read as an honest empty graph.
  */
 function ConfiguredGraphs({ inventory, only }: { inventory: GraphInventory; only?: string }) {
+  useLocale()
   const all = inventory.graphs ?? []
   const rows = only ? all.filter((row) => row.id === only) : all
   return (
-    <Section title="Pack flows" count={rows.length}>
+    <Section title={msg("Pack flows")} count={rows.length}>
       <>
         {inventory.note && <p className="note">{inventory.note}</p>}
         {rows.length === 0 ? (
           <Empty>
             {only
-              ? `The project's configuration declares no graph with the id ${only}.`
-              : 'No pack flows are configured.'}
+              ? msg("The project's configuration declares no graph with the id {{value0}}.", { value0: only })
+              : msg("No pack flows are configured.")}
           </Empty>
         ) : (
           <ul className="cards">
@@ -139,6 +139,7 @@ function ConfiguredGraphs({ inventory, only }: { inventory: GraphInventory; only
 }
 
 function ConfiguredGraph({ row }: { row: GraphSummary }) {
+  useLocale()
   const lastRun = useLatestFlowResult(row.id)
   return (
     <li className="card">
@@ -147,26 +148,24 @@ function ConfiguredGraph({ row }: { row: GraphSummary }) {
           <Link to={`/graphs/${encodeURIComponent(row.id)}`}>{row.id}</Link>
         </h3>
         {row.graphVersion && <Pill tone="quiet">v{row.graphVersion}</Pill>}
-        {row.resultNode && <Pill tone="neutral">result {row.resultNode}</Pill>}
-        {!row.rowsDeclared && <span className="quiet">No saved test cases</span>}
+        {row.resultNode && <Pill tone="neutral"><Message text={"result <0/>"} slots={[row.resultNode]} /></Pill>}
+        {!row.rowsDeclared && <span className="quiet">{msg("No saved test cases")}</span>}
       </div>
       {row.description && <p>{row.description}</p>}
       <p className="quiet">
-        {row.nodeCount !== undefined && <>{row.nodeCount} steps · </>}
-        {row.edgeCount !== undefined && <>{row.edgeCount} connections · </>}
-        {lastRun ? `Last completed run: ${lastRun.status}` : 'Not tested in this session'}
+        {row.nodeCount !== undefined && <><Message text={"<0/> steps · "} slots={[row.nodeCount]} /></>}
+        {row.edgeCount !== undefined && <><Message text={"<0/> connections · "} slots={[row.edgeCount]} /></>}
+        {lastRun ? msg("Last completed run: {{value0}}", { value0: lastRun.status }) : msg("Not tested in this session")}
       </p>
-      <details className="disclosure"><summary>Technical details</summary><p className="meta">
+      <details className="disclosure"><summary>{msg("Technical details")}</summary><p className="meta">
         {row.path && <code>{row.path}</code>}
         {row.rowsPath && <code>{row.rowsPath}</code>}
-        {row.graphId && <span>graph id {row.graphId}</span>}
-        {row.formatVersion && <span>format {row.formatVersion}</span>}
+        {row.graphId && <span><Message text={"graph id <0/>"} slots={[row.graphId]} /></span>}
+        {row.formatVersion && <span><Message text={"format <0/>"} slots={[row.formatVersion]} /></span>}
         <span>
           {row.nodeCount === undefined || row.edgeCount === undefined
-            ? 'node and edge counts not read'
-            : `${row.nodeCount} ${row.nodeCount === 1 ? 'node' : 'nodes'}, ${row.edgeCount} ${
-                row.edgeCount === 1 ? 'edge' : 'edges'
-              }`}
+            ? msg("node and edge counts not read")
+            : `${row.nodeCount} ${row.nodeCount === 1 ? 'node' : 'nodes'}, ${row.edgeCount} ${row.edgeCount === 1 ? 'edge' : 'edges'}`}
         </span>
       </p>
       </details>
@@ -222,6 +221,7 @@ function GraphEntry({
   entry: GraphSuiteEntry
   matrixSettled: boolean
 }) {
+  useLocale()
   const rows = entry.rows ?? []
   // Selection is derived, not just stored: the requested row where it still
   // exists, else the first row there is. A refetch that drops the requested
@@ -276,18 +276,16 @@ function GraphEntry({
         </h2>
         <Pill tone={statusTone(entry.status)}>{entry.status}</Pill>
         {entry.graphVersion && <Pill tone="quiet">v{entry.graphVersion}</Pill>}
-        <span className="quiet">
-          {entry.summary.passed}/{entry.summary.total} rows
-        </span>
+        <span className="quiet"><Message text={"<0/>/<1/> rows"} slots={[entry.summary.passed, entry.summary.total]} /></span>
       </header>
       <p className="meta">
         {entry.path && <code>{entry.path}</code>}
         {entry.rowsPath && <code>{entry.rowsPath}</code>}
-        {entry.graphId && <span>graph id {entry.graphId}</span>}
+        {entry.graphId && <span><Message text={"graph id <0/>"} slots={[entry.graphId]} /></span>}
       </p>
       {entry.detail && <p className="note note-warn">{entry.detail}</p>}
 
-      <Section title="The walk">
+      <Section title={msg("The walk")}>
         <>
           <BindingNotice
             binding={binding}
@@ -295,7 +293,7 @@ function GraphEntry({
             servedDigest={servedDigest}
           />
           {rows.length > 0 && (
-            <div className="row-picker" role="group" aria-label="Choose a row to see on the diagram">
+            <div className="row-picker" role="group" aria-label={msg("Choose a row to see on the diagram")}>
               {rows.map((candidate) => (
                 <button
                   key={candidate.id}
@@ -309,21 +307,17 @@ function GraphEntry({
             </div>
           )}
           {inFlight ? (
-            <Loading what="the served graph document" />
+            <Loading what={msg("the served graph document")} />
           ) : (
             <>
               {shape && served.data && (
                 <p className="meta">
-                  <span>
-                    drawn from the served document{' '}
-                    {served.data.meta.graphId || entry.id}
-                    {served.data.meta.graphVersion ? ` v${served.data.meta.graphVersion}` : ''}
-                  </span>
+                  <span><Message text={"drawn from the served document<0/><1/><2/>"} slots={[' ', served.data.meta.graphId || entry.id, served.data.meta.graphVersion ? ` v${served.data.meta.graphVersion}` : '']} /></span>
                   {served.data.meta.formatVersion && (
-                    <span>format {served.data.meta.formatVersion}</span>
+                    <span><Message text={"format <0/>"} slots={[served.data.meta.formatVersion]} /></span>
                   )}
                   {served.data.meta.bytes !== undefined && (
-                    <span>{served.data.meta.bytes} bytes</span>
+                    <span><Message text={"<0/> bytes"} slots={[served.data.meta.bytes]} /></span>
                   )}
                   {served.data.meta.sha256 && (
                     <code>sha256 {served.data.meta.sha256.slice(0, 12)}…</code>
@@ -348,15 +342,13 @@ function GraphEntry({
         </>
       </Section>
 
-      <Section title="Coverage">
+      <Section title={msg("Coverage")}>
         <CoverageReport coverage={entry.coverage} groupByNode />
       </Section>
 
-      <Section title="Rows" count={rows.length}>
+      <Section title={msg("Rows")} count={rows.length}>
         {rows.length === 0 ? (
-          <Empty>
-            No rows were reported for this graph{entry.detail ? ' — the note above says why' : ''}.
-          </Empty>
+          <Empty><Message text={"No rows were reported for this graph<0/>."} slots={[entry.detail ? msg(" — the note above says why") : '']} /></Empty>
         ) : (
           <ul className="rows">
             {rows.map((candidate) => (
@@ -391,33 +383,21 @@ function BindingNotice({
   runDigest?: string
   servedDigest?: string
 }) {
+  useLocale()
   if (binding === 'unstated') return null
   if (binding === 'bound') {
     return (
-      <p className="note">
-        <strong>One revision.</strong> The matrix run reports the same document digest{' '}
-        <code>{shortDigest(runDigest)}</code> the runtime served beside these bytes, so the walk
-        drawn here and the rows below are about one revision of the graph file. It binds bytes; it
-        is not a verdict on the revision.
-      </p>
+      <p className="note"><Message text={"<0/> The matrix run reports the same document digest<1/><2/> the runtime served beside these bytes, so the walk drawn here and the rows below are about one revision of the graph file. It binds bytes; it is not a verdict on the revision."} slots={[<strong>{msg("One revision.")}</strong>, ' ', <code>{shortDigest(runDigest)}</code>]} /></p>
     )
   }
   return (
-    <p className="note note-warn">
-      <strong>Two revisions, not joined.</strong> The matrix run ran over{' '}
-      <code>{shortDigest(runDigest)}</code> and the runtime served{' '}
-      <code>{shortDigest(servedDigest)}</code>, so the graph file was edited between the two calls
-      and the rows below describe a different revision from the document. The walk is not drawn
-      from that document, because combining one revision's rows with another revision's arrows
-      would be a picture neither answer supports. The document has been requested again. Run tests to compare the current revision. Neither
-      revision is being called wrong: this says only that the two are not one file.
-    </p>
+    <p className="note note-warn"><Message text={"<0/> The matrix run ran over<1/><2/> and the runtime served<3/><4/>, so the graph file was edited between the two calls and the rows below describe a different revision from the document. The walk is not drawn from that document, because combining one revision's rows with another revision's arrows would be a picture neither answer supports. The document has been requested again. Run tests to compare the current revision. Neither revision is being called wrong: this says only that the two are not one file."} slots={[<strong>{msg("Two revisions, not joined.")}</strong>, ' ', <code>{shortDigest(runDigest)}</code>, ' ', <code>{shortDigest(servedDigest)}</code>]} /></p>
   )
 }
 
 /** A digest short enough to read, labelled with the algorithm that produced it. */
 function shortDigest(digest: string | undefined): string {
-  return digest ? `sha256 ${digest.slice(0, 12)}…` : 'no digest'
+  return digest ? `sha256 ${digest.slice(0, 12)}…` : msg("no digest")
 }
 
 /**
@@ -475,6 +455,7 @@ function useDigestRefetch({
  * moved on a node three hops back changes nothing any headline can see.
  */
 function GraphRowItem({ row }: { row: GraphTestRow }) {
+  useLocale()
   const assertion = describeTargetAssertion(row)
   return (
     <li className={`row row-${row.status}`}>
@@ -483,40 +464,27 @@ function GraphRowItem({ row }: { row: GraphTestRow }) {
         <Pill tone={statusTone(row.status)}>{row.status}</Pill>
         {assertion && <Pill tone="quiet">{assertion}</Pill>}
         {row.nodes?.length ? (
-          <Pill tone="quiet">
-            {row.nodes.length} reported node {row.nodes.length === 1 ? 'comparison' : 'comparisons'}
-          </Pill>
+          <Pill tone="quiet"><Message text={"<0/> reported node <1/>"} slots={[row.nodes.length, row.nodes.length === 1 ? msg("comparison") : msg("comparisons")]} /></Pill>
         ) : null}
       </div>
 
       {row.expectedErrorClass ? (
-        <p className="row-refusal">
-          expected a refused walk: <code>{row.expectedErrorClass}</code>
-          {row.expectedErrorPhase && (
-            <>
-              {' '}
-              in <code>{row.expectedErrorPhase}</code>
-            </>
-          )}
-          {' · actual: '}
-          {row.actualErrorClass ? (
+        <p className="row-refusal"><Message text={"expected a refused walk: <0/><1/><2/><3/>"} slots={[<code>{row.expectedErrorClass}</code>, row.expectedErrorPhase && (
+            <><Message text={"<0/>in <1/>"} slots={[' ', <code>{row.expectedErrorPhase}</code>]} /></>
+          ), " · actual: ", row.actualErrorClass ? (
             <>
               <code>{row.actualErrorClass}</code>
               {row.actualErrorPhase && (
-                <>
-                  {' '}
-                  in <code>{row.actualErrorPhase}</code>
-                </>
+                <><Message text={"<0/>in <1/>"} slots={[' ', <code>{row.actualErrorPhase}</code>]} /></>
               )}
             </>
           ) : (
-            'a composite result was produced'
-          )}
-        </p>
+            msg("a composite result was produced")
+          )]} /></p>
       ) : (
         <div className="row-compare">
-          <GraphSide label="expected headline" text={row.expected} differs={row.expected !== row.actual} />
-          <GraphSide label="actual headline" text={row.actual} differs={row.expected !== row.actual} />
+          <GraphSide label={msg("expected headline")} text={row.expected} differs={row.expected !== row.actual} />
+          <GraphSide label={msg("actual headline")} text={row.actual} differs={row.expected !== row.actual} />
         </div>
       )}
 
@@ -557,6 +525,7 @@ function GraphRowItem({ row }: { row: GraphTestRow }) {
  * empty trace says it is empty.
  */
 function GraphNodeItem({ node }: { node: GraphTestNode }) {
+  useLocale()
   const assertion = describeTargetAssertion(node)
   return (
     <li className={`row-node row-${node.status}`}>
@@ -580,11 +549,9 @@ function GraphNodeItem({ node }: { node: GraphTestNode }) {
       {node.trace !== undefined && (
         <TracePanel
           trace={node.trace}
-          title={`Trace of ${node.node}`}
+          title={msg("Trace of {{value0}}", { value0: node.node })}
           context={
-            'This trace is the evaluator’s own walk order; the node comparisons ' +
-            'above it are listed lexicographically by node name. Two orders, and ' +
-            'neither is read off the other.'
+            "This trace is the evaluator’s own walk order; the node comparisons above it are listed lexicographically by node name. Two orders, and neither is read off the other."
           }
           emptyWhat="This node's evaluation"
         />
@@ -594,6 +561,7 @@ function GraphNodeItem({ node }: { node: GraphTestNode }) {
 }
 
 function GraphSide({ label, text, differs }: { label: string; text: string; differs: boolean }) {
+  useLocale()
   return (
     <div className={`row-side${differs ? ' row-side-differs' : ''}`}>
       <span className="row-side-label">{label}</span>
@@ -604,7 +572,7 @@ function GraphSide({ label, text, differs }: { label: string; text: string; diff
 
 function summarize(text: string): string {
   const disposition = parseDisposition(text)
-  if (!disposition) return text || '(none)'
+  if (!disposition) return text || msg("(none)")
   const reasons = disposition.reasons ?? []
   return (
     [disposition.kind, disposition.outcomeId].filter(Boolean).join(' ') +

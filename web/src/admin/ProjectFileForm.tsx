@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 /**
  * The shape every project-file card's Save has, held in one place.
  *
@@ -174,6 +176,7 @@ export function ProjectFileForm<D>({
   placed: readonly string[]
   children: ReactNode
 }) {
+  useLocale()
   const { save, changed } = state
   useUnsavedChanges(changed)
   const unplaced = save.problems.filter((problem) => !placed.includes(problem.key))
@@ -204,8 +207,8 @@ export function ProjectFileForm<D>({
       <fieldset disabled={save.pending || !save.ready}>
         {children}
         <p className="actions">
-          {save.pending && <span className="quiet">writing…</span>}
-          {save.reloading && <span className="quiet">reading…</span>}
+          {save.pending && <span className="quiet">{msg("writing…")}</span>}
+          {save.reloading && <span className="quiet">{msg("reading…")}</span>}
           {save.said !== undefined && !save.pending && (
             <span className="quiet">{save.said}</span>
           )}
@@ -213,9 +216,7 @@ export function ProjectFileForm<D>({
             variant="primary"
             type="submit"
             disabled={!changed || save.pending || save.reloading}
-          >
-            Save
-          </Button>
+          >{msg("Save")}</Button>
         </p>
       </fieldset>
 
@@ -227,14 +228,8 @@ export function ProjectFileForm<D>({
           detailLabel="digests"
           detail={
             <>
-              <span>
-                this page read{' '}
-                <Digest value={save.stale.expectedSha256} />
-              </span>
-              <span>
-                on disk now{' '}
-                <Digest value={save.stale.actualSha256} />
-              </span>
+              <span><Message text={"this page read<0/><1/>"} slots={[' ', <Digest value={save.stale.expectedSha256} />]} /></span>
+              <span><Message text={"on disk now<0/><1/>"} slots={[' ', <Digest value={save.stale.actualSha256} />]} /></span>
             </>
           }
           actions={
@@ -242,21 +237,16 @@ export function ProjectFileForm<D>({
               variant="primary"
               disabled={save.pending || save.reloading}
               onClick={() => save.reload()}
-            >
-              Reload
-            </Button>
+            >{msg("Reload")}</Button>
           }
         >
-          <span>
-            Everything typed here is still here. Reload reads the file again, so the next Save
-            states a digest that is true.
-          </span>
+          <span>{msg("Everything typed here is still here. Reload reads the file again, so the next Save states a digest that is true.")}</span>
         </AlertPanel>
       )}
 
       {unplaced.length > 0 && (
         <div role="alert">
-          <p>This value was refused, and nothing was written.</p>
+          <p>{msg("This value was refused, and nothing was written.")}</p>
           {unplaced.map((problem) => (
             <code key={`${problem.key}:${problem.reason}`} className="partial-reason">
               {problem.key === '' ? problem.reason : `${problem.key}: ${problem.reason}`}
@@ -265,7 +255,7 @@ export function ProjectFileForm<D>({
         </div>
       )}
 
-      {save.refusal !== undefined && <Alert reason={save.refusal}>Nothing was written.</Alert>}
+      {save.refusal !== undefined && <Alert reason={save.refusal}>{msg("Nothing was written.")}</Alert>}
     </form>
   )
 }

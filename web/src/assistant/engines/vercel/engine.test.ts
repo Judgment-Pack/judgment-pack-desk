@@ -1,3 +1,4 @@
+import { LANGUAGES } from '../../../i18n/locales'
 /**
  * The `vercel` engine's own promises, each measured where it is kept.
  *
@@ -2222,4 +2223,24 @@ it('separates adversarial review from requested thinking effort', async () => {
   const checked = await drain(vercel.start(session(reviewed.call, { thinking: normalize('off', 'openai-compatible'), adversarialReview: true })))
   expect(reviewed.seen).toHaveLength(2)
   expect(checked.some(event => event.type === 'critique')).toBe(true)
+})
+
+describe('response language at the model boundary', () => {
+  it.each(LANGUAGES)('passes $id to both author and adversarial reviewer while keeping protocol values', async locale => {
+    const requests: string[] = []
+    const call: ModelCall = async (_suffix, request) => {
+      requests.push(request.body)
+      return new Response(turn({ text: request.body.includes(REFUTATION_MARKER) ? 'Review complete.' : PROPOSAL_TEXT }),
+        { status: 200, headers: { 'content-type': 'text/event-stream' } })
+    }
+    const events = await drain(vercel.start(session(call, { replyLanguage: locale.id, thinking: normalize('on', 'openai-compatible') })))
+    expect(requests.length).toBe(2)
+    for (const body of requests) {
+      expect(body).toContain(locale.instruction)
+      expect(body).toContain('Never translate tool names, JSON/schema keys')
+      expect(body).toContain('unless the user explicitly requests another language')
+    }
+    const proposal = events.find(event => event.type === 'proposal')
+    expect(proposal?.document).toEqual({ id: 'p' })
+  })
 })

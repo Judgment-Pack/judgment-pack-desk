@@ -1,3 +1,5 @@
+import { Message } from '../../i18n/Message'
+import { msg, useLocale } from '../../i18n'
 /** Compact, portaled table of contents. Absent members remain reachable;
  * choosing a link preserves the route query and replaces its fragment. */
 import { Link, useLocation } from 'react-router-dom'
@@ -20,6 +22,7 @@ export function MemberOutline({
   entries: readonly OutlineEntry[]
   active: string | null
 }) {
+  useLocale()
   // The current search, carried through. A `to` object naming only a hash
   // clears the query, and the two ways of choosing what to inspect — an
   // outline entry and a block — would then produce different addresses for the
@@ -28,8 +31,8 @@ export function MemberOutline({
   const current = entries.find(entry => entry.pointer === active)?.label
   return (
     <div className={styles.outline}>
-      <Popover title="On this page" trigger={<Button variant="inline">On this page{current ? ` · ${current}` : ''} ▾</Button>}>
-      <nav aria-label="Members">
+      <Popover title={msg("On this page")} trigger={<Button variant="inline"><Message text={"On this page<0/> ▾"} slots={[current ? ` · ${current}` : '']} /></Button>}>
+      <nav aria-label={msg("Members")}>
       <ul className={styles.outlineList}>
         {entries.map((entry) => (
           <li key={entry.id} className={styles.outlineItem}>
@@ -56,7 +59,7 @@ export function MemberOutline({
                   <span className={styles.outlineCount}> {entry.count}</span>
                 )
               ) : (
-                <span className={styles.outlineAbsent}> — not declared</span>
+                <span className={styles.outlineAbsent}>{msg(" — not declared")}</span>
               )}
             </Link></PopoverClose>
           </li>

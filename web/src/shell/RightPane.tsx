@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../i18n'
 import { Tooltip } from '../ui/Tooltip'
 /**
  * The Inspector.
@@ -88,21 +89,22 @@ export function RightPane({
   showEmpty: boolean
   children?: ReactNode
 }) {
+  useLocale()
   const body = (
     <>
       <div className="desk-pane-head">
         <span>{title}</span>
         <div ref={publishHeaderTarget} className="desk-pane-head-slot" />
-        <Tooltip content={`Close ${title}`} openOnFocus={false} side="left"><button
+        <Tooltip content={msg("Close {{value0}}", { value0: title })} openOnFocus={false} side="left"><button
           type="button"
           className="desk-icon-button"
-          aria-label={`Close ${title.toLowerCase()}`}
+          aria-label={msg("Close {{value0}}", { value0: title.toLowerCase() })}
           onClick={onClose}
         >
           <IconClose />
         </button></Tooltip>
       </div>
-      {showEmpty && <p className="desk-pane-empty">{EMPTY_STATE}</p>}
+      {showEmpty && <p className="desk-pane-empty">{msg(EMPTY_STATE)}</p>}
       {/* Always mounted, so a route's portal target never disappears under
           it — including while nothing is published. */}
       <div ref={publishTarget} className="desk-inspector-slot" />

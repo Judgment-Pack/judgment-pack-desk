@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../i18n'
 /**
  * A block-level announcement: a heading, what happened, what can be done, and
  * the detail behind a disclosure.
@@ -30,13 +31,14 @@ export function AlertPanel({
   detail?: ReactNode
   actions?: ReactNode
 }) {
+  useLocale()
   return (
     <div role="alert" className={styles.panel}>
       <p className={styles.heading}>{heading}</p>
       <div className={styles.body}>{children}</div>
       {detail !== undefined && (
         <details className={styles.details}>
-          <summary className={styles.summary}>{detailLabel ?? 'details'}</summary>
+          <summary className={styles.summary}>{detailLabel ?? msg("details")}</summary>
           <div className={styles.detail}>{detail}</div>
         </details>
       )}

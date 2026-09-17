@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 /**
  * A proposal, reported: what it is, what it left open, and what the runtime
  * said about it.
@@ -51,14 +53,15 @@ export function summariseProposal(document: unknown): ProposalSummary {
 
 /** The one line a proposal is introduced by. */
 export function ProposalSummaryLine({ document }: { document: unknown }) {
+  useLocale()
   const summary = summariseProposal(document)
   const some = (count: number | undefined, one: string, many: string) =>
     count === undefined ? `no ${many} member` : `${count} ${count === 1 ? one : many}`
   return (
     <p className={styles.honesty}>
-      <strong>{summary.title ?? 'a document with no title'}</strong>
+      <strong>{summary.title ?? msg("a document with no title")}</strong>
       {' — '}
-      <code>{summary.id ?? 'no id'}</code>
+      <code>{summary.id ?? msg("no id")}</code>
       {' · '}
       {some(summary.rules, 'rule', 'rules')}
       {' · '}
@@ -69,11 +72,12 @@ export function ProposalSummaryLine({ document }: { document: unknown }) {
 
 /** What the assistant said it did not know, listed as it wrote them. */
 export function ProposalUnknowns({ unknowns }: { unknowns: readonly string[] }) {
+  useLocale()
   return (
     <>
-      <p className={styles.label}>Unknowns the assistant declared</p>
+      <p className={styles.label}>{msg("Unknowns the assistant declared")}</p>
       {unknowns.length === 0 ? (
-        <p className={styles.honesty}>It declared none.</p>
+        <p className={styles.honesty}>{msg("It declared none.")}</p>
       ) : (
         <ul className={styles.unknowns}>
           {unknowns.map((unknown) => (
@@ -100,6 +104,7 @@ export function ProposalUnknowns({ unknowns }: { unknowns: readonly string[] }) 
  * rendered.
  */
 export function RefutationReport({ events }: { events: readonly AssistantEvent[] }) {
+  useLocale()
   const critique = [...events]
     .reverse()
     .find(
@@ -108,15 +113,15 @@ export function RefutationReport({ events }: { events: readonly AssistantEvent[]
   if (critique === undefined) return null
   return (
     <div>
-      <p className={styles.label}>The refutation pass</p>
+      <p className={styles.label}>{msg("The refutation pass")}</p>
       {critique.checks.length === 0 ? (
         <p className={styles.honesty}>{critique.text}</p>
       ) : (
         <>
           <p className={critique.refuted ? styles.notice : styles.honesty}>
             {critique.refuted
-              ? 'The runtime refuted this proposal.'
-              : 'The runtime did not refute this proposal.'}{' '}
+              ? msg("The runtime refuted this proposal.")
+              : msg("The runtime did not refute this proposal.")}{' '}
             {critique.text}
           </p>
           <ul className={styles.unknowns}>
@@ -142,6 +147,7 @@ export function RefutationReport({ events }: { events: readonly AssistantEvent[]
  * every call that was made.
  */
 export function RuntimeChecks({ events }: { events: readonly AssistantEvent[] }) {
+  useLocale()
   const results = events.filter(
     (event): event is Extract<AssistantEvent, { type: 'tool_result' }> =>
       event.type === 'tool_result'
@@ -153,10 +159,8 @@ export function RuntimeChecks({ events }: { events: readonly AssistantEvent[] })
         if (result === undefined) return null
         return (
           <div key={name}>
-            <p className={styles.label}>
-              {name} — the runtime’s answer, quoted{result.isError ? ' (isError)' : ''}
-            </p>
-            <CodeArea value={result.text} readOnly aria-label={`${name}, as the runtime wrote it`} />
+            <p className={styles.label}><Message text={"<0/> — the runtime’s answer, quoted<1/>"} slots={[name, result.isError ? msg(" (isError)") : '']} /></p>
+            <CodeArea value={result.text} readOnly aria-label={msg("{{value0}}, as the runtime wrote it", { value0: name })} />
           </div>
         )
       })}

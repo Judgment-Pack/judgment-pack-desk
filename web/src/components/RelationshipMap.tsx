@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../i18n'
 import { Tooltip } from '../ui/Tooltip'
 import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { ReactFlow, Handle, Position, MarkerType, type Node, type NodeProps, type Viewport, type NodeChange, type ReactFlowInstance } from '@xyflow/react'
@@ -12,10 +13,11 @@ export interface RelationshipNode {
 export interface RelationshipEdge { id: string; source: string; target: string; label?: string }
 type ReadNode = Node<Omit<RelationshipNode, 'id' | 'column'> & { inspect: () => void; width?: number }, 'relationship'>
 function ReadingNode({ data, selected }: NodeProps<ReadNode>) {
+  useLocale()
   return <div className={[styles.node, selected ? styles.selected : '', data.matched ? styles.matched : ''].join(' ')} style={data.width === undefined ? undefined : { width: data.width }}>
     <Handle type="target" position={Position.Left} className={styles.handle} />
     <strong className={styles.title}>{data.title}</strong>
-    {data.matched && <span className={styles.match}>Search match</span>}
+    {data.matched && <span className={styles.match}>{msg("Search match")}</span>}
     <div className={styles.content}>{data.content}</div>
     {data.observation && <span className={styles.observation}>{data.observation}</span>}
     <Button variant="quiet" className={styles.action} aria-label={`${data.action}: ${data.title}`}
@@ -49,6 +51,7 @@ export function RelationshipMap({ nodes, edges, unit, viewport, onViewportChange
   ariaLabel?: string; onEdgeInspect?: (id: string) => void
   focusRequest?: { id: string; sequence: number }
 }) {
+  useLocale()
   const [sizes, setSizes] = useState<Record<string, { width: number; height: number }>>({})
   const [instance, setInstance] = useState<ReactFlowInstance<ReadNode> | null>(null)
   const root = useRef<HTMLDivElement>(null)
@@ -61,9 +64,9 @@ export function RelationshipMap({ nodes, edges, unit, viewport, onViewportChange
   })), [nodes, positions, onInspect, nodeWidth])
   const flowEdges = useMemo(() => edges.map(e => ({ ...e, type: 'smoothstep',
     ariaLabel: `Connection: ${e.source} to ${e.target}`,
-    markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--ink-faint)' },
-    labelStyle: { fill: 'var(--ink-soft)', fontSize: .75 * unit },
-    labelBgStyle: { fill: 'var(--bg)' },
+    markerEnd: { type: MarkerType.ArrowClosed, color: "var(--ink-faint)" },
+    labelStyle: { fill: "var(--ink-soft)", fontSize: .75 * unit },
+    labelBgStyle: { fill: "var(--bg)" },
   })), [edges, unit])
   const onNodesChange = (changes: NodeChange<ReadNode>[]) => {
     const dimensions = changes.filter(c => c.type === 'dimensions' && c.dimensions)
@@ -121,11 +124,11 @@ export function RelationshipMap({ nodes, edges, unit, viewport, onViewportChange
       edgesFocusable={Boolean(onEdgeInspect)} elementsSelectable={false} nodesFocusable
       deleteKeyCode={null} selectionKeyCode={null} panOnScroll zoomOnScroll={false}
       minZoom={0.5} maxZoom={2} preventScrolling={false}
-      ariaLabelConfig={{ 'node.a11yDescription.default': 'Press Enter or Space to select. Use View details for supporting information or Expand rules to read a group.' }} />
-    <div className={styles.controls} aria-label="Map zoom">
-      <Tooltip content="Zoom out"><Button aria-label="Zoom out" onClick={() => onViewportChange({ ...viewport, zoom: Math.max(.5, viewport.zoom - .25) })}>−</Button></Tooltip>
-      <Tooltip content="Reset map view"><Button aria-label="Reset map view" onClick={() => onViewportChange({ x: 0, y: 24, zoom: 1 })}>{Math.round(viewport.zoom * 100)}%</Button></Tooltip>
-      <Tooltip content="Zoom in"><Button aria-label="Zoom in" onClick={() => onViewportChange({ ...viewport, zoom: Math.min(2, viewport.zoom + .25) })}>+</Button></Tooltip>
+      ariaLabelConfig={{ 'node.a11yDescription.default': "Press Enter or Space to select. Use View details for supporting information or Expand rules to read a group." }} />
+    <div className={styles.controls} aria-label={msg("Map zoom")}>
+      <Tooltip content={msg("Zoom out")}><Button aria-label={msg("Zoom out")} onClick={() => onViewportChange({ ...viewport, zoom: Math.max(.5, viewport.zoom - .25) })}>−</Button></Tooltip>
+      <Tooltip content={msg("Reset map view")}><Button aria-label={msg("Reset map view")} onClick={() => onViewportChange({ x: 0, y: 24, zoom: 1 })}>{Math.round(viewport.zoom * 100)}%</Button></Tooltip>
+      <Tooltip content={msg("Zoom in")}><Button aria-label={msg("Zoom in")} onClick={() => onViewportChange({ ...viewport, zoom: Math.min(2, viewport.zoom + .25) })}>+</Button></Tooltip>
     </div>
   </div>
 }

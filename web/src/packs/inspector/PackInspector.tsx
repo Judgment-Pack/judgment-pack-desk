@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../../i18n'
 /** Pointer-addressed Inspector details. Pane state remembers the last disclosure;
  * the selected document member remains in the route across drawer remounts. */
 import type { PackDocument, PackFileMeta } from '../../mcp/types'
@@ -60,23 +61,19 @@ export function PackInspector({
   onTabChange: (tab: string) => void
   supplemental?: boolean
 }) {
+  useLocale()
   if (doc === undefined) {
     // **No fallback to the served pack.** The page is over the bytes the editor
     // holds, and where those are not a document there is no member to inspect —
     // showing the runtime's last good answer here would put members and
     // references on screen that the file no longer carries.
     return (
-      <p className={styles.empty}>
-        The bytes in the editor are not a document this desk can read, so there is no member to
-        inspect. The JSON view holds them.
-      </p>
+      <p className={styles.empty}>{msg("The bytes in the editor are not a document this desk can read, so there is no member to inspect. The JSON view holds them.")}</p>
     )
   }
   if (at === null) {
     return (
-      <p className={styles.empty}>
-        Select a member of the document to inspect it here.
-      </p>
+      <p className={styles.empty}>{msg("Select a member of the document to inspect it here.")}</p>
     )
   }
   const references = referencesFor(doc, at)
@@ -84,7 +81,7 @@ export function PackInspector({
   const attention = stale || pending || unavailable !== undefined || truncation !== undefined || diagnostics.length > 0
   const value = subtreeAt(doc, at)
   const heading = isRecord(value) ? [value.label, value.title, value.id].find(candidate => typeof candidate === 'string') : undefined
-  const key = at.split('/').filter(Boolean).at(-1) ?? 'Document'
+  const key = at.split('/').filter(Boolean).at(-1) ?? msg("Document")
   const name = fieldLabel(key, key.replace(/([a-z])([A-Z])/g, '$1 $2'))
 
   return <div className={supplemental ? styles.supplemental : styles.inspector}>
@@ -92,11 +89,11 @@ export function PackInspector({
     <MemberTab pointer={at} subtree={subtreeAt(doc, at)} meta={meta}
       fileSha256={fileSha256} baseSha256={baseSha256} fileBytes={fileBytes}
       dirty={dirty} metadataOnly={supplemental} />
-    <Disclosure title={`References · ${references.length}`} className={styles.disclosure} open={tab === 'references'}
+    <Disclosure title={msg("References · {{value0}}", { value0: references.length })} className={styles.disclosure} open={tab === 'references'}
       onToggle={event => { if (event.currentTarget.open) onTabChange('references'); else if (tab === 'references') onTabChange('member') }}>
       <ReferencesTab references={references} packId={packId} />
     </Disclosure>
-    <Disclosure title={`Checks${pending ? ' · Checking…' : attention ? ' · Attention' : ` · ${diagnostics.length}`}`} className={styles.disclosure} open={tab === 'checks' || attention}
+    <Disclosure title={msg("Checks{{value0}}", { value0: pending ? ' · Checking…' : attention ? ' · Attention' : ` · ${diagnostics.length}` })} className={styles.disclosure} open={tab === 'checks' || attention}
       onToggle={event => { if (event.currentTarget.open && !attention) onTabChange('checks'); else if (!event.currentTarget.open && tab === 'checks') onTabChange('member') }}>
       <ChecksTab diagnostics={diagnostics} truncation={truncation} stale={stale}
         pending={pending} checkedWhat={checkedWhat} unavailable={unavailable} />

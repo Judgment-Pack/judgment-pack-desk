@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../../i18n'
 import { PACK_TERMS } from '../terminology'
 /**
  * The identity members: what this document is, above the question it answers.
@@ -18,8 +19,9 @@ import { Block } from './Block'
 import styles from './PackDocument.module.css'
 
 export function TitleBlock({ document: doc }: { document: PackDocument }) {
+  useLocale()
   const { editing } = useEditing()
-  if (editing) return <StringField pointer="/title" label="title" />
+  if (editing) return <StringField pointer="/title" label={msg("title")} />
   return (
     <Block pointer="/title" className={styles.identity}>
       <p className={styles.eyebrow}>
@@ -30,8 +32,9 @@ export function TitleBlock({ document: doc }: { document: PackDocument }) {
 }
 
 export function VersionBlock({ document: doc }: { document: PackDocument }) {
+  useLocale()
   const { editing } = useEditing()
-  if (editing) return <StringField pointer="/version" label="version" />
+  if (editing) return <StringField pointer="/version" label={msg("version")} />
   return (
     <Block pointer="/version" className={styles.identity}>
       <p className={styles.eyebrow}>
@@ -42,6 +45,7 @@ export function VersionBlock({ document: doc }: { document: PackDocument }) {
 }
 
 export function SpecVersionBlock({ document: doc }: { document: PackDocument }) {
+  useLocale()
   const { editing } = useEditing()
   // Editable, and deliberately a plain field rather than a list to choose
   // from. The runtime refuses a version it does not bundle, by name, at this
@@ -58,8 +62,9 @@ export function SpecVersionBlock({ document: doc }: { document: PackDocument }) 
 }
 
 export function IdBlock({ document: doc }: { document: PackDocument }) {
+  useLocale()
   const { editing } = useEditing()
-  if (editing) return <StringField pointer="/id" label="id" />
+  if (editing) return <StringField pointer="/id" label={msg("id")} />
   return (
     <Block pointer="/id" className={styles.identity}>
       <p className={styles.identityId}>
@@ -70,8 +75,9 @@ export function IdBlock({ document: doc }: { document: PackDocument }) {
 }
 
 export function DescriptionBlock({ document: doc }: { document: PackDocument }) {
+  useLocale()
   const { editing } = useEditing()
-  if (editing) return <TextField pointer="/description" label="description" />
+  if (editing) return <TextField pointer="/description" label={msg("description")} />
   return (
     <Block pointer="/description" className={styles.identity}>
       <p className={styles.identityDescription}>{doc.description}</p>

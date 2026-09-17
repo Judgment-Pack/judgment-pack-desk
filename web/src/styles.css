@@ -1610,3 +1610,10 @@ fieldset {
   flex: 1 1 auto;
   min-width: 0;
 }
+
+/* Keep Hangul readable even when the host has no Korean fonts. Fontsource's
+   Unicode subsets load only the glyph ranges used on screen, from Desk itself. */
+:root:lang(ko) {
+  --sans: "Inter Variable", "Noto Sans KR Variable", ui-sans-serif, system-ui, sans-serif;
+}
+.desk-menu span:lang(ko) { font-family: "Noto Sans KR Variable", sans-serif; }

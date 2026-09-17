@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 /** API key entry, explicit saving, replacement, and confirmed removal. */
 import { useState, type ReactNode, type RefObject } from 'react'
 import { Button } from '../ui/Button'
@@ -64,6 +66,7 @@ export function KeyField({
   onRemove: () => void
   removeProblem: string | undefined
 }) {
+  useLocale()
   const read = state ?? NOTHING_READ
   const [confirmingRemoval, setConfirmingRemoval] = useState(false)
   // The field is offered wherever a key is wanted: none stored, stored for
@@ -79,7 +82,7 @@ export function KeyField({
   return (
     <div className={styles.keyField}>
       {entry && (
-        <Field label="API key" hint={WHERE_IT_LIVES}>
+        <Field label={msg("API key")} hint={msg(WHERE_IT_LIVES)}>
           {(wiring) => (
             <Input
               {...wiring}
@@ -100,7 +103,7 @@ export function KeyField({
       )}
 
       {(read.present || !answered || failed !== null) && <p className="quiet">{keySays(read, answered, failed)}</p>}
-      {failed !== null && <Button variant="quiet" onClick={onRetry}>Retry key status</Button>}
+      {failed !== null && <Button variant="quiet" onClick={onRetry}>{msg("Retry key status")}</Button>}
       {(binding === 'rebind' || binding === 'no-endpoint') && (
         <p className="quiet">{bindingSays(binding, read, destination)}</p>
       )}
@@ -109,42 +112,36 @@ export function KeyField({
         {entry && (
           <>
             <Button variant="primary" disabled={saveDisabled} onClick={onStore}>
-              {saving ? 'Saving API key…' : 'Save API key'}
+              {saving ? msg("Saving API key…") : msg("Save API key")}
             </Button>
-            {(replacing || typed) && <Button variant="quiet" onClick={onCancel}>Cancel</Button>}
+            {(replacing || typed) && <Button variant="quiet" onClick={onCancel}>{msg("Cancel")}</Button>}
           </>
         )}
-        {!entry && <Button variant="quiet" onClick={onReplace}>Replace key</Button>}
+        {!entry && <Button variant="quiet" onClick={onReplace}>{msg("Replace key")}</Button>}
         {read.present && !confirmingRemoval && (
-          <Button variant="danger" onClick={() => setConfirmingRemoval(true)}>
-            Remove key
-          </Button>
+          <Button variant="danger" onClick={() => setConfirmingRemoval(true)}>{msg("Remove key")}</Button>
         )}
         {!read.present && answered && failed === null && <span className="quiet">{keySays(read, answered, failed)}</span>}
       </div>
       {saved !== undefined && <p className="quiet" role="status">{saved}</p>}
-      {entry && typed && !saving && <p className="quiet">API key changes are not saved.</p>}
+      {entry && typed && !saving && <p className="quiet">{msg("API key changes are not saved.")}</p>}
       {confirmingRemoval && read.present && (
         <div className={styles.removal}>
-          <p>Removing the key prevents assistant requests until you save another key.</p>
+          <p>{msg("Removing the key prevents assistant requests until you save another key.")}</p>
           <Button variant="danger" onClick={() => {
             onCancel()
             setConfirmingRemoval(false)
             onRemove()
-          }}>Confirm removal</Button>{' '}
-          <Button variant="quiet" onClick={() => setConfirmingRemoval(false)}>Keep key</Button>
+          }}>{msg("Confirm removal")}</Button>{' '}
+          <Button variant="quiet" onClick={() => setConfirmingRemoval(false)}>{msg("Keep key")}</Button>
         </div>
       )}
 
       {storeProblem !== undefined && (
-        <p className="quiet" role="alert">
-          not stored: <code className="partial-reason">{storeProblem}</code>
-        </p>
+        <p className="quiet" role="alert"><Message text={"not stored: <0/>"} slots={[<code className="partial-reason">{storeProblem}</code>]} /></p>
       )}
       {removeProblem !== undefined && (
-        <p className="quiet" role="alert">
-          not removed: <code className="partial-reason">{removeProblem}</code>
-        </p>
+        <p className="quiet" role="alert"><Message text={"not removed: <0/>"} slots={[<code className="partial-reason">{removeProblem}</code>]} /></p>
       )}
     </div>
   )
@@ -162,14 +159,14 @@ export function keySays(
   answered: boolean,
   failed: Error | null
 ): string {
-  if (failed !== null) return `this desk could not say — ${failed.message}`
-  if (!answered) return 'Not read yet'
-  if (!state.present) return 'No key stored'
+  if (failed !== null) return msg("this desk could not say — {{value0}}", { value0: failed.message })
+  if (!answered) return msg("Not read yet")
+  if (!state.present) return msg("No key stored")
   const provider = providerName(state.kind)
   if (state.fingerprint === '') {
-    return `Stored — too short to show any of it without showing all of it, for ${provider}`
+    return msg("Stored — too short to show any of it without showing all of it, for {{value0}}", { value0: provider })
   }
-  return `Stored — ${state.fingerprint}, for ${provider}`
+  return msg("Stored — {{value0}}, for {{value1}}", { value0: state.fingerprint, value1: provider })
 }
 
 /**
@@ -186,22 +183,15 @@ export function bindingSays(
   destination: string | undefined
 ): ReactNode {
   if (binding === 'no-endpoint') {
-    return <>Save API key saves the endpoint first: a key is kept bound to the endpoint it is for.</>
+    return <>{msg("Save API key saves the endpoint first: a key is kept bound to the endpoint it is for.")}</>
   }
   if (binding === 'none') {
     return (
-      <>
-        No key is stored for <code>{destination}</code>.
-      </>
+      <><Message text={"No key is stored for <0/>."} slots={[<code>{destination}</code>]} /></>
     )
   }
   return (
-    <>
-      Entered for <code>{state.origin}</code> over <code>{providerName(state.kind)}</code>. This
-      desk is configured for <code>{destination}</code> over{' '}
-      <code>{providerName(state.configuredKind)}</code>, so nothing will be sent — enter the key
-      for <code>{destination}</code>.
-    </>
+    <><Message text={"Entered for <0/> over <1/>. This desk is configured for <2/> over<3/><4/>, so nothing will be sent — enter the key for <5/>."} slots={[<code>{state.origin}</code>, <code>{providerName(state.kind)}</code>, <code>{destination}</code>, ' ', <code>{providerName(state.configuredKind)}</code>, <code>{destination}</code>]} /></>
   )
 }
 

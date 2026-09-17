@@ -1,3 +1,4 @@
+import { msg } from '../i18n'
 /** Settings navigation. Storage & data combines project file settings with
  * explicitly personal chat storage; each section states its own scope. */
 export interface AdminSection {
@@ -13,7 +14,7 @@ export interface AdminGroup extends AdminSection {
 export const ADMIN_GROUPS: readonly AdminGroup[] = [
   {
     id: 'this-project',
-    title: 'This project',
+    get title() { return msg("This project") },
     sections: [
       // **First, and it is the file rather than a member of it.** Admin has no
       // overview any more, so the two rows the group header used to carry —
@@ -22,20 +23,20 @@ export const ADMIN_GROUPS: readonly AdminGroup[] = [
       // the one control that is about the *project* rather than about a
       // member: whether this desk opens it when it is launched with no
       // directory.
-      { id: 'project', title: 'Project' },
-      { id: 'organization', title: 'Organization' },
+      { id: 'project', get title() { return msg("Project") } },
+      { id: 'organization', get title() { return msg("Organization") } },
       // After Organization, because it is about where this project's packs live.
-      { id: 'storage', title: 'Storage & data' }
+      { id: 'storage', get title() { return msg("Storage & data") } }
     ]
   },
   {
     id: 'this-desk',
-    title: 'This desk',
+    get title() { return msg("This desk") },
     sections: [
-      { id: 'assistant', title: 'Assistant' },
+      { id: 'assistant', get title() { return msg("Assistant") } },
       // After Assistant, because it is the other desk-level slot and is built
       // on the same one-nullable-field pattern.
-      { id: 'identity-provider', title: 'Identity provider' }
+      { id: 'identity-provider', get title() { return msg("Identity provider") } }
     ]
   }
 ]

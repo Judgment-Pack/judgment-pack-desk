@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 import { parseProbe } from '../mcp/canonical'
 import type { MatrixProbe } from '../mcp/types'
 import { Empty } from './primitives'
@@ -17,11 +19,11 @@ import { Empty } from './primitives'
  */
 
 const FAMILY_LABELS: Record<string, string> = {
-  outcome: 'Declared outcomes',
-  reason: 'Resolution reasons',
-  boundary: 'Boundary probes',
-  edge: 'Graph edges',
-  other: 'Other probes'
+  get outcome() { return msg("Declared outcomes") },
+  get reason() { return msg("Resolution reasons") },
+  get boundary() { return msg("Boundary probes") },
+  get edge() { return msg("Graph edges") },
+  get other() { return msg("Other probes") }
 }
 
 /** Families in the order the report reads best: what a pack declares, then
@@ -41,13 +43,10 @@ export function CoverageReport({
   coverage: MatrixProbe[] | undefined
   groupByNode?: boolean
 }) {
+  useLocale()
   if (!coverage || coverage.length === 0) {
     return (
-      <Empty>
-        No coverage was reported. An absent report is not an empty one — where
-        the runtime said why, the entry's own status and detail above say it,
-        and nothing is invented here in their place.
-      </Empty>
+      <Empty>{msg("No coverage was reported. An absent report is not an empty one — where the runtime said why, the entry's own status and detail above say it, and nothing is invented here in their place.")}</Empty>
     )
   }
 
@@ -58,19 +57,9 @@ export function CoverageReport({
     <>
       <p className={missing.length > 0 ? 'note note-warn' : 'note'}>
         {missing.length === 0 ? (
-          <>
-            Every one of the {coverage.length} derived{' '}
-            {coverage.length === 1 ? 'probe is' : 'probes are'} witnessed by a row.
-          </>
+          <><Message text={"Every one of the <0/> derived<1/><2/> witnessed by a row."} slots={[coverage.length, ' ', coverage.length === 1 ? msg("probe is") : msg("probes are")]} /></>
         ) : (
-          <>
-            <strong>
-              {missing.length} of {coverage.length}{' '}
-              {coverage.length === 1 ? 'probe is' : 'probes are'} unwitnessed.
-            </strong>{' '}
-            No row states what the pack does in {missing.length === 1 ? 'this case' : 'these cases'}.
-            Coverage informs and never gates, so the run's status does not reflect this.
-          </>
+          <><Message text={"<0/><1/>No row states what the pack does in <2/>. Coverage informs and never gates, so the run's status does not reflect this."} slots={[<strong><Message text={"<0/> of <1/><2/><3/> unwitnessed."} slots={[missing.length, coverage.length, ' ', coverage.length === 1 ? msg("probe is") : msg("probes are")]} /></strong>, ' ', missing.length === 1 ? msg("this case") : msg("these cases")]} /></>
         )}
       </p>
 
@@ -79,9 +68,7 @@ export function CoverageReport({
       )}
       {covered.length > 0 && (
         <details className="coverage-covered">
-          <summary>
-            {covered.length} witnessed {covered.length === 1 ? 'probe' : 'probes'}
-          </summary>
+          <summary><Message text={"<0/> witnessed <1/>"} slots={[covered.length, covered.length === 1 ? msg("probe") : msg("probes")]} /></summary>
           <ProbeGroups probes={covered} tone="covered" groupByNode={groupByNode} />
         </details>
       )}
@@ -98,6 +85,7 @@ function ProbeGroups({
   tone: 'missing' | 'covered'
   groupByNode: boolean
 }) {
+  useLocale()
   if (groupByNode) {
     // A graph's probes are namespaced per node, and the report emits the nodes
     // in the walk's evaluation order. Grouping keeps that order rather than
@@ -105,7 +93,7 @@ function ProbeGroups({
     const order: string[] = []
     const byNode = new Map<string, MatrixProbe[]>()
     for (const probe of probes) {
-      const key = parseProbe(probe.probe).node ?? 'the graph'
+      const key = parseProbe(probe.probe).node ?? msg("the graph")
       if (!byNode.has(key)) {
         byNode.set(key, [])
         order.push(key)
@@ -117,7 +105,7 @@ function ProbeGroups({
         {order.map((node) => (
           <div key={node} className="coverage-group">
             <h4 className="coverage-group-title">
-              {node === 'the graph' ? 'The graph' : <code>{node}</code>}
+              {node === 'the graph' ? msg("The graph") : <code>{node}</code>}
             </h4>
             <ProbeList probes={byNode.get(node)!} tone={tone} />
           </div>
@@ -140,6 +128,7 @@ function ProbeGroups({
 }
 
 function ProbeList({ probes, tone }: { probes: MatrixProbe[]; tone: 'missing' | 'covered' }) {
+  useLocale()
   return (
     <ul className={`probes probes-${tone}`}>
       {probes.map((probe) => {

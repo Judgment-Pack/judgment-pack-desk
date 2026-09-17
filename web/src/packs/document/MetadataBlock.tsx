@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../../i18n'
 /**
  * The metadata — and `metadata.reviews`, which the view this replaces dropped
  * entirely.
@@ -24,24 +25,25 @@ import styles from './PackDocument.module.css'
 import { MisshapenMember, Shaped, isRecord } from './MisshapenMember'
 
 export function MetadataBlock({ metadata, at }: { metadata: PackMetadata; at: string }) {
+  useLocale()
   const reviews = metadata.reviews ?? []
   const { editing } = useEditing()
   if (editing) {
     return (
       <Block pointer={at}>
-        <h2 className={styles.heading}>Metadata</h2>
-        <StringsField pointer={`${at}/authors`} label="authors" what="an author" />
+        <h2 className={styles.heading}>{msg("Metadata")}</h2>
+        <StringsField pointer={`${at}/authors`} label={msg("authors")} what="an author" />
         <StringField
           pointer={`${at}/createdAt`}
-          label="created"
-          hint="an RFC 3339 date-time, for example 2026-01-31T09:00:00Z."
+          label={msg("created")}
+          hint={msg("an RFC 3339 date-time, for example 2026-01-31T09:00:00Z.")}
         />
-        <StringField pointer={`${at}/license`} label="license" />
+        <StringField pointer={`${at}/license`} label={msg("license")} />
         <StringsField
           pointer={`${at}/requiredExtensions`}
-          label="required extensions"
+          label={msg("required extensions")}
           what="an extension name"
-          hint="namespaced extension names this pack cannot be evaluated without."
+          hint={msg("namespaced extension names this pack cannot be evaluated without.")}
         />
         <Reviews reviews={reviews} metadata={metadata} at={at} />
         <ExtensionsBlock extensions={metadata.extensions} at={`${at}/extensions`} />
@@ -50,15 +52,15 @@ export function MetadataBlock({ metadata, at }: { metadata: PackMetadata; at: st
   }
   return (
     <Block pointer={at}>
-      <h2 className={styles.heading}>Metadata</h2>
+      <h2 className={styles.heading}>{msg("Metadata")}</h2>
       <dl className={styles.fields}>
         {metadata.authors !== undefined && (
           <div className={styles.field}>
-            <dt>Authors</dt>
+            <dt>{msg("Authors")}</dt>
             <dd>
               <Shaped
                 pointer={`${at}/authors`}
-                label="authors"
+                label={msg("authors")}
                 expects="list"
                 value={metadata.authors}
               >
@@ -71,7 +73,7 @@ export function MetadataBlock({ metadata, at }: { metadata: PackMetadata; at: st
         )}
         {metadata.createdAt !== undefined && (
           <div className={styles.field}>
-            <dt>Created</dt>
+            <dt>{msg("Created")}</dt>
             <dd>
               <Block pointer={`${at}/createdAt`} as="span">
                 {metadata.createdAt}
@@ -81,7 +83,7 @@ export function MetadataBlock({ metadata, at }: { metadata: PackMetadata; at: st
         )}
         {metadata.license !== undefined && (
           <div className={styles.field}>
-            <dt>License</dt>
+            <dt>{msg("License")}</dt>
             <dd>
               <Block pointer={`${at}/license`} as="span">
                 {metadata.license}
@@ -91,11 +93,11 @@ export function MetadataBlock({ metadata, at }: { metadata: PackMetadata; at: st
         )}
         {metadata.requiredExtensions !== undefined && (
           <div className={styles.field}>
-            <dt>Required extensions</dt>
+            <dt>{msg("Required extensions")}</dt>
             <dd>
               <Shaped
                 pointer={`${at}/requiredExtensions`}
-                label="required extensions"
+                label={msg("required extensions")}
                 expects="list"
                 value={metadata.requiredExtensions}
               >
@@ -130,12 +132,13 @@ function Reviews({
   metadata: PackMetadata
   at: string
 }) {
+  useLocale()
   if (metadata.reviews === undefined) return null
   if (!Array.isArray(metadata.reviews)) {
     return (
       <MisshapenMember
         pointer={`${at}/reviews`}
-        label="reviews"
+        label={msg("reviews")}
         expected="a list"
         value={metadata.reviews}
         compact
@@ -144,18 +147,15 @@ function Reviews({
   }
   return (
     <Block pointer={`${at}/reviews`}>
-      <h3 className={styles.subheading}>Reviews</h3>
-      <p className={styles.note}>
-        Recorded in the document. This page does not write one: it has no reviewer identity, so a
-        review written here would be signed by nobody.
-      </p>
+      <h3 className={styles.subheading}>{msg("Reviews")}</h3>
+      <p className={styles.note}>{msg("Recorded in the document. This page does not write one: it has no reviewer identity, so a review written here would be signed by nobody.")}</p>
       <ul className={styles.cards}>
         {reviews.map((review, index) =>
           !isRecord(review) ? (
             <li key={`misshapen-${index}`}>
               <MisshapenMember
                 pointer={`${at}/reviews/${index}`}
-                label={`Review ${index + 1}`}
+                label={msg("Review {{value0}}", { value0: index + 1 })}
                 expected="an object"
                 value={review}
                 compact

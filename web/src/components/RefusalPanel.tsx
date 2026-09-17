@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 /**
  * A refused evaluation, rendered as the runtime's answer.
  *
@@ -31,16 +33,17 @@ export function RefusalPanel({
   /** What the box calls it, where the surface's words differ. */
   title?: string
 }) {
+  useLocale()
   const envelope = error instanceof ToolRefusal ? error.envelope : undefined
   const evaluationError = envelope?.evaluationError
   return (
-    <Section title="Refused">
+    <Section title={msg("Refused")}>
       <ErrorBox title={title} error={error} />
       {evaluationError && (
         <p className="meta">
-          <Pill tone="strong">class: {evaluationError.class}</Pill>
-          <Pill>phase: {evaluationError.phase}</Pill>
-          <Pill tone="quiet">evaluator {evaluationError.evaluatorSpecVersion}</Pill>
+          <Pill tone="strong"><Message text={"class: <0/>"} slots={[evaluationError.class]} /></Pill>
+          <Pill><Message text={"phase: <0/>"} slots={[evaluationError.phase]} /></Pill>
+          <Pill tone="quiet"><Message text={"evaluator <0/>"} slots={[evaluationError.evaluatorSpecVersion]} /></Pill>
         </p>
       )}
       {envelope?.diagnostics?.length ? (
@@ -57,7 +60,7 @@ export function RefusalPanel({
           ))}
         </ul>
       ) : null}
-      <p className="note">A refusal carries no disposition. Nothing above is an answer.</p>
+      <p className="note">{msg("A refusal carries no disposition. Nothing above is an answer.")}</p>
     </Section>
   )
 }

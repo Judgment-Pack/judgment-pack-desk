@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../i18n'
 /**
  * The model this run uses, on the run.
  *
@@ -24,10 +25,11 @@ export function ModelPicker({
   id: string
   className?: string
 }) {
+  useLocale()
   if (picked.models.length === 0) return null
   return (
     <span className={className}>
-      <label htmlFor={id}>Model</label>{' '}
+      <label htmlFor={id}>{msg("Model")}</label>{' '}
       <Select
         id={id}
         value={picked.model}

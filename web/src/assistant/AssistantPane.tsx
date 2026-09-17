@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 /**
  * The Assistant tab: type what the pack should decide, and watch the runtime
  * be consulted about it.
@@ -171,6 +173,7 @@ export function AssistantPane({
    */
   diagnostics?: { count: number; bytes: string }
 } = {}) {
+  useLocale()
   const helpId = useId()
   const slot = useAssistantSlot()
   // The editing session is the only way bytes change on this desk, and `write`
@@ -427,18 +430,18 @@ export function AssistantPane({
         {/* Configuration, key-read status and model readiness are separate.
             A pending or failed read establishes no absence on disk. */}
         {slot.state === 'unavailable'
-          ? 'This desk could not read its own configuration, so it cannot say what assistant is configured. Admin › Assistant names the problem.'
+          ? msg("This desk could not read its own configuration, so it cannot say what assistant is configured. Admin › Assistant names the problem.")
           : slot.endpoint === null
-            ? 'No assistant is configured on this desk. Configure an endpoint in Admin › Assistant.'
+            ? msg("No assistant is configured on this desk. Configure an endpoint in Admin › Assistant.")
             : slot.keyStatus === 'pending'
               ? CHECKING_KEY
               : slot.keyStatus === 'error'
                 ? UNREAD_KEY
                 : !slot.keyPresent
-                  ? 'An endpoint is configured and no key is stored on this machine. Add one in Admin › Assistant.'
-                  : 'An endpoint is configured and no model is chosen for it. Pick one in Admin › Assistant.'}
+                  ? msg("An endpoint is configured and no key is stored on this machine. Add one in Admin › Assistant.")
+                  : msg("An endpoint is configured and no model is chosen for it. Pick one in Admin › Assistant.")}
         {slot.state === 'configured' && slot.keyStatus === 'error' && (
-          <p><Button variant="quiet" onClick={slot.retryKey}>Retry key status</Button></p>
+          <p><Button variant="quiet" onClick={slot.retryKey}>{msg("Retry key status")}</Button></p>
         )}
       </div>
     )
@@ -473,25 +476,17 @@ export function AssistantPane({
         {/* **The model this run would use, which is the picked one.** A line
             naming the file's default beside a picker showing something else
             would be the page reporting a configuration rather than a run. */}
-        {run.engineId} · {picked.model === '' ? 'no model' : picked.model} ·{' '}
+        {run.engineId} · {picked.model === '' ? msg("no model") : picked.model} ·{' '}
         {thinkingLine(slot.thinking, stateFromEvents(slot.thinking, run.events))}
       </p>
       <p className={styles.status}>
         <ModelPicker picked={picked} id="assistant-model" />
       </p>
       {ran !== undefined && (
-        <p className={styles.status}>
-          Running the runtime’s {ran} prompt
-          {ran === FIX_PACK_PROMPT ? `, over ${diagnosticCount} diagnostic${
-            diagnosticCount === 1 ? '' : 's'
-          }` : ''}
-          .
-        </p>
+        <p className={styles.status}><Message text={"Running the runtime’s <0/> prompt<1/>."} slots={[ran, ran === FIX_PACK_PROMPT ? `, over ${diagnosticCount} diagnostic${diagnosticCount === 1 ? '' : 's'}` : '']} /></p>
       )}
 
-      <label className={styles.label} htmlFor="assistant-policy">
-        What should this pack decide?
-      </label>
+      <label className={styles.label} htmlFor="assistant-policy">{msg("What should this pack decide?")}</label>
       <TextArea
         id="assistant-policy"
         rows={4}
@@ -510,9 +505,7 @@ export function AssistantPane({
               args: { policy: typed }
             })
           }
-        >
-          Run
-        </Button>
+        >{msg("Run")}</Button>
         {/*
           **Fix is the same session with the runtime's other prompt.** Same
           engine, same gate, same proposal path — what changes is which of the
@@ -531,26 +524,17 @@ export function AssistantPane({
               args: { diagnostics: diagnostics.bytes }
             })
           }}
-        >
-          Fix
-        </Button>
-        <Button disabled={!running} onClick={stop}>
-          Stop
-        </Button>
+        >{msg("Fix")}</Button>
+        <Button disabled={!running} onClick={stop}>{msg("Stop")}</Button>
       </div>
       {fixWhy(diagnosticCount, canFix, prompts.isSuccess) && <p id={`${helpId}-fix`} className={styles.honesty}>
         {fixWhy(diagnosticCount, canFix, prompts.isSuccess)}
       </p>}
       {!advertised && prompts.isSuccess && (
-        <p className={styles.notice}>
-          This runtime advertises no {AUTHOR_PACK_PROMPT} prompt, so there is nothing for the
-          assistant to run.
-        </p>
+        <p className={styles.notice}><Message text={"This runtime advertises no <0/> prompt, so there is nothing for the assistant to run."} slots={[AUTHOR_PACK_PROMPT]} /></p>
       )}
       {prompt.error !== null && submitted !== null && (
-        <p className={styles.notice}>
-          The runtime’s {submitted.name} prompt could not be read: {prompt.error.message}
-        </p>
+        <p className={styles.notice}><Message text={"The runtime’s <0/> prompt could not be read: <1/>"} slots={[submitted.name, prompt.error.message]} /></p>
       )}
       {/*
         **Which of the two ways the desk has no testing prompt.** The engine
@@ -558,42 +542,28 @@ export function AssistantPane({
         session runs either way — without a critic.
       */}
       {testPrompt.error !== null && (
-        <p className={styles.notice}>
-          The runtime’s {TEST_PACK_PROMPT} prompt could not be read, so the refutation pass did
-          not run: {testPrompt.error.message}
-        </p>
+        <p className={styles.notice}><Message text={"The runtime’s <0/> prompt could not be read, so the refutation pass did not run: <1/>"} slots={[TEST_PACK_PROMPT, testPrompt.error.message]} /></p>
       )}
 
       <EventList events={run.events} failure={run.failure} />
 
       {proposal !== undefined && disposition === 'rejected' && (
-        <p className={styles.honesty}>
-          The proposal was rejected. Nothing was written, and what the assistant did is still
-          above.
-        </p>
+        <p className={styles.honesty}>{msg("The proposal was rejected. Nothing was written, and what the assistant did is still above.")}</p>
       )}
 
       {proposal !== undefined && disposition !== 'rejected' && (
-        <section className={styles.proposal} aria-label="The proposal">
-          <p className={styles.heading}>
-            Proposal — {sentDraft ? 'an update to the draft it was given' : 'a new document'}
-          </p>
-          <p className={styles.honesty}>
-            Nothing has been written. This is a document to accept or reject, and the checks below
-            are the runtime’s own words.
-          </p>
+        <section className={styles.proposal} aria-label={msg("The proposal")}>
+          <p className={styles.heading}><Message text={"Proposal — <0/>"} slots={[sentDraft ? msg("an update to the draft it was given") : msg("a new document")]} /></p>
+          <p className={styles.honesty}>{msg("Nothing has been written. This is a document to accept or reject, and the checks below are the runtime’s own words.")}</p>
           {outcome.failure !== '' && (
-            <p className={styles.notice}>
-              This session did not stand behind what it proposed: {outcome.failure}. It cannot be
-              accepted into the draft.
-            </p>
+            <p className={styles.notice}><Message text={"This session did not stand behind what it proposed: <0/>. It cannot be accepted into the draft."} slots={[outcome.failure]} /></p>
           )}
           {diff !== undefined && <ProposalDiffView diff={diff} onBaseline={onBaseline} />}
-          <p className={styles.label}>The whole proposed document</p>
+          <p className={styles.label}>{msg("The whole proposed document")}</p>
           <CodeArea
             value={JSON.stringify(proposal.document, null, 2)}
             readOnly
-            aria-label="The proposed document"
+            aria-label={msg("The proposed document")}
           />
           <ProposalUnknowns unknowns={proposal.unknowns} />
           <RuntimeChecks events={run.events} />
@@ -610,23 +580,15 @@ export function AssistantPane({
                 disabled={!accept.enabled}
                 aria-describedby={accept.why ? `${helpId}-accept` : undefined}
                 onClick={acceptIntoDraft}
-              >
-                Accept into draft
-              </Button>
+              >{msg("Accept into draft")}</Button>
             ) : (
-              <p className={styles.honesty}>Open Edit to accept.</p>
+              <p className={styles.honesty}>{msg("Open Edit to accept.")}</p>
             )}
-            <Button disabled={disposition !== 'open' || running} onClick={() => setRejected(true)}>
-              Reject
-            </Button>
+            <Button disabled={disposition !== 'open' || running} onClick={() => setRejected(true)}>{msg("Reject")}</Button>
           </div>
           {editing && accept.why && <p id={`${helpId}-accept`} className={styles.honesty}>{accept.why}</p>}
           {disposition === 'accepted' && (
-            <p className={styles.honesty}>
-              Accepted into the draft. <strong>Nothing has been saved.</strong> The check runs
-              again over the new bytes, Undo takes the whole accept back in one step, and Save is
-              yours to press.
-            </p>
+            <p className={styles.honesty}><Message text={"Accepted into the draft. <0/> The check runs again over the new bytes, Undo takes the whole accept back in one step, and Save is yours to press."} slots={[<strong>{msg("Nothing has been saved.")}</strong>]} /></p>
           )}
         </section>
       )}

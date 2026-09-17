@@ -1,3 +1,4 @@
+import { msg } from '../i18n'
 import type { NavigateFunction } from 'react-router-dom'
 import type { Chat } from './store'
 
@@ -25,5 +26,5 @@ export function hasChatContent(chat: Chat): boolean {
 }
 
 export function chatTitle(chat: Chat): string {
-  return chat.title === 'New chat' && chat.composer.trim() ? chat.composer.trim().split('\n')[0]!.slice(0, 120) : chat.title
+  return chat.title === 'New chat' && chat.composer.trim() ? chat.composer.trim().split('\n')[0]!.slice(0, 120) : chat.title === 'New chat' ? msg('New chat') : chat.title
 }

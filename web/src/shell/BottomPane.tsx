@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../i18n'
 /** Selected details and real activity, beneath the main pane. */
 import { Tabs } from 'radix-ui'
 import { useEffect, useSyncExternalStore } from 'react'
@@ -31,13 +32,14 @@ export function BottomPane({
   onMaximize?: () => void
   maximized?: boolean
 }) {
+  useLocale()
   const { status, connectionEpoch, attempt } = useMcp()
   const entries = useSyncExternalStore(subscribeConsole, consoleSnapshot, consoleSnapshot)
 
   // One line per transition. The store drops an identical consecutive line,
   // which is what makes StrictMode's mount → cleanup → mount free here.
   useEffect(() => {
-    const suffix = attempt > 0 ? ` (attempt ${attempt})` : ''
+    const suffix = attempt > 0 ? msg(" (attempt {{value0}})", { value0: attempt }) : ''
     recordConnection(`${status} · connection ${connectionEpoch}${suffix}`)
   }, [status, connectionEpoch, attempt])
 
@@ -45,7 +47,7 @@ export function BottomPane({
   const files = entries.filter((entry) => entry.channel === 'files')
 
   return (
-    <section className="desk-console" aria-label="Console" id="desk-console" hidden={!open}>
+    <section className="desk-console" aria-label={msg("Console")} id="desk-console" hidden={!open}>
       {/* A flex column of its own, and the class is load-bearing. `.desk-console`
           is a fixed-height flex column with `overflow: hidden`; this element sat
           between it and `.desk-console-body` as an ordinary block, so the body's
@@ -56,24 +58,16 @@ export function BottomPane({
         value={details && showDetails ? 'details' : tab}
         onValueChange={(next) => next === 'details' ? onDetails?.() : onTabChange(next as ConsoleTab)}
       >
-        <div className="desk-console-heading"><Tabs.List className="desk-tablist" aria-label="Console channels">
-          {details && <Tabs.Trigger className="desk-tab" value="details">Details</Tabs.Trigger>}
-          <Tabs.Trigger className="desk-tab" value="connection">
-            Connection
-          </Tabs.Trigger>
-          <Tabs.Trigger className="desk-tab" value="calls">
-            Activity
-          </Tabs.Trigger>
-          <Tabs.Trigger className="desk-tab" value="files">
-            Files
-          </Tabs.Trigger>
-          <Tabs.Trigger className="desk-tab" value="notices">
-            Notices
-          </Tabs.Trigger>
+        <div className="desk-console-heading"><Tabs.List className="desk-tablist" aria-label={msg("Console channels")}>
+          {details && <Tabs.Trigger className="desk-tab" value="details">{msg("Details")}</Tabs.Trigger>}
+          <Tabs.Trigger className="desk-tab" value="connection">{msg("Connection")}</Tabs.Trigger>
+          <Tabs.Trigger className="desk-tab" value="calls">{msg("Activity")}</Tabs.Trigger>
+          <Tabs.Trigger className="desk-tab" value="files">{msg("Files")}</Tabs.Trigger>
+          <Tabs.Trigger className="desk-tab" value="notices">{msg("Notices")}</Tabs.Trigger>
         </Tabs.List>
         <div className="desk-console-actions">
-          {onMaximize && <Button variant="quiet" onClick={onMaximize} aria-label={maximized ? 'Restore panel height' : 'Expand panel'}>{maximized ? 'Restore' : 'Expand'}</Button>}
-          {onClose && <Button variant="quiet" onClick={onClose}>Close</Button>}
+          {onMaximize && <Button variant="quiet" onClick={onMaximize} aria-label={maximized ? msg("Restore panel height") : msg("Expand panel")}>{maximized ? msg("Restore") : msg("Expand")}</Button>}
+          {onClose && <Button variant="quiet" onClick={onClose}>{msg("Close")}</Button>}
         </div></div>
         <Tabs.Content forceMount className="desk-console-body" value="details" hidden={!details || !showDetails}>
           <div className="desk-details-slot" ref={publishTarget} />
@@ -88,7 +82,7 @@ export function BottomPane({
           <LogList entries={files} empty="No file change has been reported yet." />
         </Tabs.Content>
         <Tabs.Content className="desk-console-body" value="notices">
-          <p className="desk-pane-empty">{LATER}</p>
+          <p className="desk-pane-empty">{msg(LATER)}</p>
         </Tabs.Content>
       </Tabs.Root>
     </section>
@@ -102,6 +96,7 @@ function LogList({
   entries: { seq: number; at: number; text: string }[]
   empty: string
 }) {
+  useLocale()
   if (entries.length === 0) return <p className="desk-pane-empty">{empty}</p>
   return (
     <ul className="desk-log" aria-live="off">

@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../../i18n'
 import { PACK_TERMS } from '../terminology'
 /** What the pack cites. A locator is shown as the document spells it. */
 import type { Source } from '../../mcp/types'
@@ -10,6 +11,7 @@ import styles from './PackDocument.module.css'
 import { MisshapenMember, Shaped, isRecord } from './MisshapenMember'
 
 export function SourcesBlock({ sources, at }: { sources: Source[]; at: string }) {
+  useLocale()
   const { editing } = useEditing()
   return (
     <Block pointer={at}>
@@ -22,7 +24,7 @@ export function SourcesBlock({ sources, at }: { sources: Source[]; at: string })
             <li key={`misshapen-${index}`}>
               <MisshapenMember
                 pointer={`${at}/${index}`}
-                label={`Source ${index + 1}`}
+                label={msg("Source {{value0}}", { value0: index + 1 })}
                 expected="an object"
                 value={source}
               />
@@ -46,6 +48,7 @@ export function SourcesBlock({ sources, at }: { sources: Source[]; at: string })
 }
 
 function SourceReading({ at, source }: { at: string; source: Source }) {
+  useLocale()
   return (
     <>
       <p className={styles.cardHead}>
@@ -55,24 +58,24 @@ function SourceReading({ at, source }: { at: string; source: Source }) {
       <dl className={styles.fields}>
         {source.publisher !== undefined && (
           <div className={styles.field}>
-            <dt>Publisher</dt>
+            <dt>{msg("Publisher")}</dt>
             <dd>{source.publisher}</dd>
           </div>
         )}
         {source.publishedAt !== undefined && (
           <div className={styles.field}>
-            <dt>Published</dt>
+            <dt>{msg("Published")}</dt>
             <dd>{source.publishedAt}</dd>
           </div>
         )}
         {source.locator !== undefined && (
           <div className={styles.field}>
-            <dt>Locator</dt>
+            <dt>{msg("Locator")}</dt>
             <dd>
               {/* `"locator": null` is valid JSON, and `.value` on it is a crash. */}
               <Shaped
                 pointer={`${at}/locator`}
-                label="locator"
+                label={msg("locator")}
                 expects="object"
                 value={source.locator}
               >
@@ -86,7 +89,7 @@ function SourceReading({ at, source }: { at: string; source: Source }) {
         )}
         {source.rights !== undefined && (
           <div className={styles.field}>
-            <dt>Rights</dt>
+            <dt>{msg("Rights")}</dt>
             <dd>{source.rights}</dd>
           </div>
         )}
@@ -94,7 +97,7 @@ function SourceReading({ at, source }: { at: string; source: Source }) {
       {source.citation !== undefined && (
         <Shaped
           pointer={`${at}/citation`}
-          label="citation"
+          label={msg("citation")}
           expects="object"
           value={source.citation}
         >
@@ -121,27 +124,28 @@ function SourceReading({ at, source }: { at: string; source: Source }) {
  * the schema's own members, empty, and the fields appear once it is.
  */
 function SourceForm({ at }: { at: string }) {
+  useLocale()
   return (
     <>
-      <StringField pointer={`${at}/id`} label="id" />
-      <StringField pointer={`${at}/title`} label="title" />
-      <StringField pointer={`${at}/publisher`} label="publisher" />
-      <StringField pointer={`${at}/publishedAt`} label="published" hint="a date." />
-      <AbsentObject pointer={`${at}/locator`} label="locator" what="a locator">
+      <StringField pointer={`${at}/id`} label={msg("id")} />
+      <StringField pointer={`${at}/title`} label={msg("title")} />
+      <StringField pointer={`${at}/publisher`} label={msg("publisher")} />
+      <StringField pointer={`${at}/publishedAt`} label={msg("published")} hint={msg("a date.")} />
+      <AbsentObject pointer={`${at}/locator`} label={msg("locator")} what="a locator">
         <Block pointer={`${at}/locator`} as="div">
           <EnumField
             pointer={`${at}/locator/kind`}
-            label="locator kind"
+            label={msg("locator kind")}
             options={ENUMS.locatorKind}
           />
-          <StringField pointer={`${at}/locator/value`} label="locator" />
+          <StringField pointer={`${at}/locator/value`} label={msg("locator")} />
         </Block>
       </AbsentObject>
-      <StringField pointer={`${at}/rights`} label="rights" />
-      <AbsentObject pointer={`${at}/citation`} label="citation" what="a citation">
+      <StringField pointer={`${at}/rights`} label={msg("rights")} />
+      <AbsentObject pointer={`${at}/citation`} label={msg("citation")} what="a citation">
         <Block pointer={`${at}/citation`} as="div">
-          <StringField pointer={`${at}/citation/location`} label="citation location" />
-          <TextField pointer={`${at}/citation/excerpt`} label="citation excerpt" rows={2} />
+          <StringField pointer={`${at}/citation/location`} label={msg("citation location")} />
+          <TextField pointer={`${at}/citation/excerpt`} label={msg("citation excerpt")} rows={2} />
         </Block>
       </AbsentObject>
     </>

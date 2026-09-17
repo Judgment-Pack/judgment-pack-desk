@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 import { Tooltip } from '../ui/Tooltip'
 /**
  * The 28px strip: the console's collapsed face, and today's footer sentence.
@@ -65,6 +67,7 @@ export function StatusStrip({
   consoleOpen: boolean
   onToggleConsole: () => void
 }) {
+  useLocale()
   const { status, server } = useMcp()
   const { problems, readFailure, desk } = useEffectiveConfig()
   // **Either file, one cue.** The strip's job is to stop a mistyped key
@@ -80,21 +83,19 @@ export function StatusStrip({
             so naming it off its presence said "connected to" while the socket
             was down. */}
         {status === 'ready' && server ? (
-          <span className="desk-strip-connection">
-            connected to <code>{server.name}</code> {server.version}
-          </span>
+          <span className="desk-strip-connection"><Message text={"connected to <0/> <1/>"} slots={[<code>{server.name}</code>, server.version]} /></span>
         ) : (
           <span className="desk-strip-connection">{connectionSays(status)}</span>
         )}
-        {refused && <ConfigCue full={CONFIG_REFUSED_CUE} short={CONFIG_REFUSED_SHORT} />}
+        {refused && <ConfigCue full={msg(CONFIG_REFUSED_CUE)} short={msg(CONFIG_REFUSED_SHORT)} />}
         {!refused && unread && (
-          <ConfigCue full={CONFIG_UNREAD_CUE} short={CONFIG_UNREAD_SHORT} />
+          <ConfigCue full={msg(CONFIG_UNREAD_CUE)} short={msg(CONFIG_UNREAD_SHORT)} />
         )}
       </span>
-      <Tooltip content={consoleOpen ? "Collapse Console" : "Expand Console"}><button
+      <Tooltip content={consoleOpen ? msg("Collapse Console") : msg("Expand Console")}><button
         type="button"
         className="desk-icon-button"
-        aria-label={consoleOpen ? 'Collapse console' : 'Expand console'}
+        aria-label={consoleOpen ? msg("Collapse console") : msg("Expand console")}
         aria-expanded={consoleOpen}
         aria-controls="desk-console"
         onClick={onToggleConsole}
@@ -115,6 +116,7 @@ export function StatusStrip({
  * are `aria-hidden` so the short one never reaches the accessible name.
  */
 function ConfigCue({ full, short }: { full: string; short: string }) {
+  useLocale()
   return (
     <Link className="desk-strip-warn" to="/admin" aria-label={full}>
       <span className="desk-strip-warn-full" aria-hidden="true">

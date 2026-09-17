@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 import { parseDisposition } from '../mcp/canonical'
 import type { Disposition, MatrixRow } from '../mcp/types'
 import { Pill, statusTone } from './primitives'
@@ -25,6 +27,7 @@ import { TargetPair, describeTargetAssertion } from './TargetPair'
  *   the row's own status is the only verdict shown.
  */
 export function MatrixRowList({ rows }: { rows: MatrixRow[] }) {
+  useLocale()
   return (
     <ul className="rows">
       {rows.map((row) => (
@@ -35,6 +38,7 @@ export function MatrixRowList({ rows }: { rows: MatrixRow[] }) {
 }
 
 function MatrixRowItem({ row }: { row: MatrixRow }) {
+  useLocale()
   const dispositionsAgree = row.expected === row.actual
   const expectsRefusal = Boolean(row.expectedErrorClass)
   const assertion = describeTargetAssertion(row)
@@ -44,7 +48,7 @@ function MatrixRowItem({ row }: { row: MatrixRow }) {
       <div className="row-head">
         <code className="row-id">{row.id}</code>
         <Pill tone={statusTone(row.status)}>{row.status}</Pill>
-        {row.origin && <Pill tone="quiet">origin {row.origin}</Pill>}
+        {row.origin && <Pill tone="quiet"><Message text={"origin <0/>"} slots={[row.origin]} /></Pill>}
         {assertion && <Pill tone="quiet">{assertion}</Pill>}
       </div>
 
@@ -52,8 +56,8 @@ function MatrixRowItem({ row }: { row: MatrixRow }) {
         <RefusalComparison row={row} />
       ) : (
         <div className="row-compare">
-          <DispositionSide label="expected" text={row.expected} differs={!dispositionsAgree} />
-          <DispositionSide label="actual" text={row.actual} differs={!dispositionsAgree} />
+          <DispositionSide label={msg("expected")} text={row.expected} differs={!dispositionsAgree} />
+          <DispositionSide label={msg("actual")} text={row.actual} differs={!dispositionsAgree} />
         </div>
       )}
 
@@ -66,41 +70,28 @@ function MatrixRowItem({ row }: { row: MatrixRow }) {
 
 /** A row that expected a refusal carries no disposition, so none is shown. */
 function RefusalComparison({ row }: { row: MatrixRow }) {
+  useLocale()
   return (
     <div className="row-compare">
       <div className="row-side">
-        <span className="row-side-label">expected</span>
-        <p className="row-refusal">
-          a refused evaluation: <code>{row.expectedErrorClass}</code>
-          {row.expectedErrorPhase && (
-            <>
-              {' '}
-              in <code>{row.expectedErrorPhase}</code>
-            </>
-          )}
-        </p>
+        <span className="row-side-label">{msg("expected")}</span>
+        <p className="row-refusal"><Message text={"a refused evaluation: <0/><1/>"} slots={[<code>{row.expectedErrorClass}</code>, row.expectedErrorPhase && (
+            <><Message text={"<0/>in <1/>"} slots={[' ', <code>{row.expectedErrorPhase}</code>]} /></>
+          )]} /></p>
       </div>
       <div
-        className={`row-side${
-          row.actualErrorClass === row.expectedErrorClass &&
+        className={`row-side${row.actualErrorClass === row.expectedErrorClass &&
           (!row.expectedErrorPhase || row.actualErrorPhase === row.expectedErrorPhase)
             ? ''
-            : ' row-side-differs'
-        }`}
+            : ' row-side-differs'}`}
       >
-        <span className="row-side-label">actual</span>
+        <span className="row-side-label">{msg("actual")}</span>
         {row.actualErrorClass ? (
-          <p className="row-refusal">
-            a refused evaluation: <code>{row.actualErrorClass}</code>
-            {row.actualErrorPhase && (
-              <>
-                {' '}
-                in <code>{row.actualErrorPhase}</code>
-              </>
-            )}
-          </p>
+          <p className="row-refusal"><Message text={"a refused evaluation: <0/><1/>"} slots={[<code>{row.actualErrorClass}</code>, row.actualErrorPhase && (
+              <><Message text={"<0/>in <1/>"} slots={[' ', <code>{row.actualErrorPhase}</code>]} /></>
+            )]} /></p>
         ) : (
-          <p className="row-refusal">a disposition was produced where a refusal was expected</p>
+          <p className="row-refusal">{msg("a disposition was produced where a refusal was expected")}</p>
         )}
       </div>
     </div>
@@ -116,38 +107,30 @@ function DispositionSide({
   text: string
   differs: boolean
 }) {
+  useLocale()
   const parsed = parseDisposition(text)
   return (
     <div className={`row-side${differs ? ' row-side-differs' : ''}`}>
       <span className="row-side-label">{label}</span>
-      {parsed ? <DispositionSummary disposition={parsed} /> : <code className="row-raw">{text || '(none)'}</code>}
+      {parsed ? <DispositionSummary disposition={parsed} /> : <code className="row-raw">{text || msg("(none)")}</code>}
     </div>
   )
 }
 
 /** The members a §8.3 disposition carries, and no others. */
 function DispositionSummary({ disposition }: { disposition: Disposition }) {
+  useLocale()
   const reasons = disposition.reasons ?? []
   const handoff = disposition.handoff
   return (
     <div className="row-disposition">
       <span className={`kind kind-${disposition.kind}`}>{disposition.kind}</span>
       {disposition.outcomeId && <code className="row-outcome">{disposition.outcomeId}</code>}
-      <span className="row-members">
-        reasons{' '}
-        {reasons.length === 0 ? <span className="quiet">none</span> : <code>{reasons.join(', ')}</code>}
-        {handoff && (
-          <>
-            {' · '}handoff <code>{handoff.state}</code>
-            {handoff.triggeredBy?.length ? (
-              <>
-                {' '}
-                by <code>{handoff.triggeredBy.join(', ')}</code>
-              </>
-            ) : null}
-          </>
-        )}
-      </span>
+      <span className="row-members"><Message text={"reasons<0/><1/><2/>"} slots={[' ', reasons.length === 0 ? <span className="quiet">{msg("none")}</span> : <code>{reasons.join(', ')}</code>, handoff && (
+          <><Message text={"<0/>handoff <1/><2/>"} slots={[' · ', <code>{handoff.state}</code>, handoff.triggeredBy?.length ? (
+              <><Message text={"<0/>by <1/>"} slots={[' ', <code>{handoff.triggeredBy.join(', ')}</code>]} /></>
+            ) : null]} /></>
+        )]} /></span>
     </div>
   )
 }

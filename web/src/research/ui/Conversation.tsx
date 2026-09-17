@@ -1,3 +1,4 @@
+import { msg, useLocale, systemMessage } from '../../i18n'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '../../ui/Button'
 import { TextArea } from '../../ui/TextArea'
@@ -8,27 +9,28 @@ import styles from './ResearchAuthoring.module.css'
 export function statusLine(state: RunState): string {
   switch (state.status) {
     case 'idle':
-      return 'Not started'
+      return msg("Not started")
     case 'running':
-      return state.detail || `Running (${state.phase})`
+      return systemMessage(state.detail) || msg("Running ({{value0}})", { value0: state.phase })
     case 'complete':
-      return 'Response complete'
+      return msg("Response complete")
     case 'ready':
-      return 'Ready for review'
+      return msg("Ready for review")
     case 'needs-input':
-      return 'Needs your input'
+      return msg("Needs your input")
     case 'budget':
-      return 'Revision budget spent'
+      return msg("Revision budget spent")
     case 'stalled':
-      return 'Stalled'
+      return msg("Stalled")
     case 'stopped':
-      return 'Stopped'
+      return msg("Stopped")
     case 'failed':
-      return 'Failed'
+      return msg("Failed")
   }
 }
 
 export function Conversation({ state, onSend, onStop, onRetryValidation }: { state: RunState; onSend: (text: string) => void; onStop: () => void; onRetryValidation?: () => void }) {
+  useLocale()
   const [text, setText] = useState('')
   const thread = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -38,9 +40,9 @@ export function Conversation({ state, onSend, onStop, onRetryValidation }: { sta
   const running = state.status === 'running'
   const canSend = !running && state.status !== 'idle' && text.trim() !== ''
   return (
-    <section className={styles.pane} aria-label="Conversation" data-pane="conversation">
+    <section className={styles.pane} aria-label={msg("Conversation")} data-pane="conversation">
       <header className={styles.paneHeader}>
-        <span>Conversation</span>
+        <span>{msg("Conversation")}</span>
         <span className={styles.status} role="status" aria-live="polite">
           {statusLine(state)}
         </span>
@@ -49,8 +51,8 @@ export function Conversation({ state, onSend, onStop, onRetryValidation }: { sta
         {state.turns.map((turn, index) => (
           <article key={`${turn.at}-${index}`} className={styles.turn} data-role={turn.role} data-kind={turn.kind}>
             <span className={styles.turnMeta}>
-              {turn.role === 'user' ? 'You' : 'Assistant'}
-              {turn.kind === 'unknowns' ? ' · open questions and assumptions' : turn.kind === 'note' ? ' · note from the desk' : ''}
+              {turn.role === 'user' ? msg("You") : msg("Assistant")}
+              {turn.kind === 'unknowns' ? msg(" · open questions and assumptions") : turn.kind === 'note' ? msg(" · note from the desk") : ''}
             </span>
             {turn.text}
           </article>
@@ -62,14 +64,12 @@ export function Conversation({ state, onSend, onStop, onRetryValidation }: { sta
         )}
       </div>
       <div className={styles.composer}>
-        <label htmlFor="research-message" className="sr-only">
-          Message the assistant
-        </label>
+        <label htmlFor="research-message" className="sr-only">{msg("Message the assistant")}</label>
         <TextArea
           id="research-message"
           rows={2}
           value={text}
-          placeholder={running ? 'The assistant is working…' : 'Ask a question or request a change…'}
+          placeholder={running ? msg("The assistant is working…") : msg("Ask a question or request a change…")}
           disabled={running || state.status === 'idle'}
           onChange={(event) => setText(event.target.value)}
           onKeyDown={(event) => {
@@ -81,20 +81,16 @@ export function Conversation({ state, onSend, onStop, onRetryValidation }: { sta
           }}
         />
         <div className={styles.composerRow}>
-          <span className={styles.hint}>Enter sends. Shift+Enter for a new line.</span>
+          <span className={styles.hint}>{msg("Enter sends. Shift+Enter for a new line.")}</span>
           <span className={styles.grow} />
           {/* The way back from a validation that failed on its own account:
               the same proposal, judged again, without paying for the reviewer
               turn that answered the question. */}
           {canRetryExpectationValidation(state) && (
-            <Button disabled={running || !onRetryValidation} onClick={() => onRetryValidation?.()}>
-              Retry validation
-            </Button>
+            <Button disabled={running || !onRetryValidation} onClick={() => onRetryValidation?.()}>{msg("Retry validation")}</Button>
           )}
           {running ? (
-            <Button variant="secondary" onClick={onStop}>
-              Stop
-            </Button>
+            <Button variant="secondary" onClick={onStop}>{msg("Stop")}</Button>
           ) : (
             <Button
               variant="primary"
@@ -103,9 +99,7 @@ export function Conversation({ state, onSend, onStop, onRetryValidation }: { sta
                 onSend(text.trim())
                 setText('')
               }}
-            >
-              Send
-            </Button>
+            >{msg("Send")}</Button>
           )}
         </div>
       </div>

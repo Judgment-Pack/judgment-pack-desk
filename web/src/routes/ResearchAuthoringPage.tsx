@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../i18n'
 /**
  * Research and draft: the authoring conversation that researches sources
  * through the gateway, drafts a pack with traceable citations, establishes
@@ -48,6 +49,7 @@ function urlsOf(text: string): string[] {
 }
 
 export function ResearchAuthoringPage() {
+  useLocale()
   const { run, state, ledger, sources, blocked, model } = useResearchRun()
   const [brief, setBrief] = useState('')
   const [urls, setUrls] = useState('')
@@ -99,16 +101,14 @@ export function ResearchAuthoringPage() {
   return (
     <div data-layout="page">
       <PageHeader
-        title="Packs"
+        title={msg("Packs")}
         context="Research and draft"
         meta={state.phase === 'idle' ? (model ? `model ${model}` : undefined) : statusLine(state)}
         actions={
           state.phase === 'idle' ? undefined : running ? (
-            <Button onClick={() => run?.stop()}>Stop</Button>
+            <Button onClick={() => run?.stop()}>{msg("Stop")}</Button>
           ) : (
-            <Button variant="primary" disabled={!passing} onClick={create}>
-              Create pack
-            </Button>
+            <Button variant="primary" disabled={!passing} onClick={create}>{msg("Create pack")}</Button>
           )
         }
       />
@@ -123,25 +123,21 @@ export function ResearchAuthoringPage() {
               start()
             }}
           >
-            <h1>What decision should this pack help make?</h1>
-            <p>
-              Describe one decision and its scope. The assistant researches official sources through the configured gateway, drafts the pack with every requirement cited to an excerpt it read, has a reviewer establish test cases from those excerpts, checks the draft through the runtime, and presents it here for your review. Nothing is written until you create the pack.
-            </p>
+            <h1>{msg("What decision should this pack help make?")}</h1>
+            <p>{msg("Describe one decision and its scope. The assistant researches official sources through the configured gateway, drafts the pack with every requirement cited to an excerpt it read, has a reviewer establish test cases from those excerpts, checks the draft through the runtime, and presents it here for your review. Nothing is written until you create the pack.")}</p>
             {blocked !== '' && (
               <p className={styles.detail} role="status">
                 {blocked}
               </p>
             )}
-            <Field label="The decision (required)" hint="For example: screen applicants against the Federal Skilled Worker Program's published minimum requirements, before any invitation, admissibility or final approval.">
+            <Field label={msg("The decision (required)")} hint={msg("For example: screen applicants against the Federal Skilled Worker Program's published minimum requirements, before any invitation, admissibility or final approval.")}>
               {(wiring) => <TextArea {...wiring} rows={5} value={brief} onChange={(event) => setBrief(event.target.value)} />}
             </Field>
-            <Field label="Read these first (optional)" hint="One URL per line. Official pages and PDFs are read before any search.">
+            <Field label={msg("Read these first (optional)")} hint={msg("One URL per line. Official pages and PDFs are read before any search.")}>
               {(wiring) => <TextArea {...wiring} rows={3} value={urls} onChange={(event) => setUrls(event.target.value)} />}
             </Field>
             <div>
-              <Button variant="primary" type="submit" disabled={blocked !== '' || brief.trim() === ''}>
-                Start research
-              </Button>
+              <Button variant="primary" type="submit" disabled={blocked !== '' || brief.trim() === ''}>{msg("Start research")}</Button>
             </div>
           </form>
         ) : (
@@ -149,12 +145,12 @@ export function ResearchAuthoringPage() {
             {narrow && (
               <div className={styles.switch}>
                 <SegmentedControl
-                  label="Workspace view"
+                  label={msg("Workspace view")}
                   value={shown}
                   onValueChange={(next) => setShown(next as 'conversation' | 'draft')}
                   segments={[
-                    { value: 'conversation', label: 'Conversation' },
-                    { value: 'draft', label: 'Draft' }
+                    { value: 'conversation', label: "Conversation" },
+                    { value: 'draft', label: "Draft" }
                   ]}
                 />
               </div>

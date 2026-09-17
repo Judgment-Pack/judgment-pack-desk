@@ -1,3 +1,5 @@
+import { Message } from '../../i18n/Message'
+import { msg, useLocale } from '../../i18n'
 /**
  * The controls a member's card becomes, one per shape the schema declares.
  *
@@ -66,6 +68,7 @@ export function StringField({
   label: string
   hint?: ReactNode
 }) {
+  useLocale()
   const { buffer, write } = useEditing()
   const value = stringAt(buffer.index.value, pointer)
   return (
@@ -96,6 +99,7 @@ export function TextField({
   hint?: ReactNode
   rows?: number
 }) {
+  useLocale()
   const { buffer, write } = useEditing()
   const value = stringAt(buffer.index.value, pointer)
   return (
@@ -144,6 +148,7 @@ export function EnumField({
   optional?: boolean
   hint?: ReactNode
 }) {
+  useLocale()
   const { buffer, write } = useEditing()
   const value = stringAt(buffer.index.value, pointer)
   const declared = value !== '' && !options.includes(value) ? [value] : []
@@ -153,9 +158,9 @@ export function EnumField({
         <Select
           {...wiring}
           value={value}
-          placeholder="not declared"
+          placeholder={msg("not declared")}
           options={[
-            ...(optional === true ? [{ value: NOT_DECLARED, label: 'not declared' }] : []),
+            ...(optional === true ? [{ value: NOT_DECLARED, label: "not declared" }] : []),
             ...declared.map((word) => ({ value: word, label: word })),
             ...options.map((word) => ({ value: word, label: valueLabel(pointer.split('/').at(-1) ?? '', word) }))
           ]}
@@ -190,6 +195,7 @@ export function IdRefField({
   optional?: boolean
   hint?: ReactNode
 }) {
+  useLocale()
   const { buffer, write } = useEditing()
   const value = stringAt(buffer.index.value, pointer)
   const dangling = value !== '' && !ids.includes(value) ? [value] : []
@@ -199,9 +205,9 @@ export function IdRefField({
         <Select
           {...wiring}
           value={value}
-          placeholder="not declared"
+          placeholder={msg("not declared")}
           options={[
-            ...(optional === true ? [{ value: NOT_DECLARED, label: 'not declared' }] : []),
+            ...(optional === true ? [{ value: NOT_DECLARED, label: "not declared" }] : []),
             ...ids.map((id) => ({ value: id, label: id })),
             ...dangling.map((id) => ({ value: id, label: `${id} — not declared here` }))
           ]}
@@ -240,6 +246,7 @@ export function StringListField({
   candidates: readonly string[]
   hint?: ReactNode
 }) {
+  useLocale()
   const { buffer, write } = useEditing()
   const chosen = listAt(buffer.index.value, pointer)
   const offered = [...candidates, ...chosen.filter((entry) => !candidates.includes(entry))]
@@ -248,7 +255,7 @@ export function StringListField({
       {(wiring) => (
         <div className={styles.list} id={wiring.id} aria-describedby={wiring['aria-describedby']}>
           {offered.length === 0 && (
-            <p className={styles.listEmpty}>The document declares nothing to reference here.</p>
+            <p className={styles.listEmpty}>{msg("The document declares nothing to reference here.")}</p>
           )}
           {offered.map((entry) => (
             <label className={styles.listRow} key={entry}>
@@ -297,6 +304,7 @@ export function StringsField({
   what: string
   hint?: ReactNode
 }) {
+  useLocale()
   const { buffer, write } = useEditing()
   const held = valueAt(buffer.index.value, pointer)
   const entries = Array.isArray(held) ? held : []
@@ -308,7 +316,7 @@ export function StringsField({
       {(wiring) => (
         <div className={styles.list} id={wiring.id} aria-describedby={wiring['aria-describedby']}>
           {strings.length === 0 && (
-            <p className={styles.listEmpty}>The document declares none.</p>
+            <p className={styles.listEmpty}>{msg("The document declares none.")}</p>
           )}
           {strings.map((entry, index) => (
             <div className={styles.listRow} key={`${pointer}/${index}`}>
@@ -325,14 +333,10 @@ export function StringsField({
               <Button
                 variant="quiet"
                 onClick={() => put(strings.filter((_, at) => at !== index))}
-              >
-                Remove
-              </Button>
+              >{msg("Remove")}</Button>
             </div>
           ))}
-          <Button variant="quiet" onClick={() => put([...strings, ''])}>
-            Add {what}
-          </Button>
+          <Button variant="quiet" onClick={() => put([...strings, ''])}><Message text={"Add <0/>"} slots={[what]} /></Button>
         </div>
       )}
     </PointerField>
@@ -349,6 +353,7 @@ export function BooleanField({
   label: string
   hint?: ReactNode
 }) {
+  useLocale()
   const { buffer, write } = useEditing()
   const value = valueAt(buffer.index.value, pointer)
   return (
@@ -362,8 +367,8 @@ export function BooleanField({
               write((current) => setBoolean(current, pointer, next === 'true'))
             }
             segments={[
-              { value: 'true', label: 'true' },
-              { value: 'false', label: 'false' }
+              { value: 'true', label: "true" },
+              { value: 'false', label: "false" }
             ]}
           />
         </div>
@@ -399,6 +404,7 @@ export function AbsentObject({
   what: string
   children: ReactNode
 }) {
+  useLocale()
   const { buffer, write } = useEditing()
   const held = valueAt(buffer.index.value, pointer)
   if (held !== undefined && (typeof held !== 'object' || held === null || Array.isArray(held))) {
@@ -416,12 +422,10 @@ export function AbsentObject({
       >
         <p className={styles.absentLabel}>{label}</p>
         <p className={styles.absentLine}>
-          <span className={styles.absentTag}>not the shape this form edits</span>
+          <span className={styles.absentTag}>{msg("not the shape this form edits")}</span>
           <code>{JSON.stringify(held)}</code>
         </p>
-        <p className={styles.absentLine}>
-          The JSON view holds these bytes, which is where they can be changed.
-        </p>
+        <p className={styles.absentLine}>{msg("The JSON view holds these bytes, which is where they can be changed.")}</p>
       </div>
     )
   }
@@ -436,14 +440,12 @@ export function AbsentObject({
     >
       <p className={styles.absentLabel}>{label}</p>
       <p className={styles.absentLine}>
-        <span className={styles.absentTag}>not declared</span>
+        <span className={styles.absentTag}>{msg("not declared")}</span>
         {starter !== undefined && (
           <Button
             variant="quiet"
             onClick={() => write((current) => setRawJson(current, pointer, starter))}
-          >
-            Write {what}
-          </Button>
+          ><Message text={"Write <0/>"} slots={[what]} /></Button>
         )}
       </p>
     </div>

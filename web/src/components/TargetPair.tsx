@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../i18n'
 /**
  * One reported handoff-target assertion, expected beside actual.
  *
@@ -38,11 +39,12 @@ import { NO_HANDOFF_TARGET, describeHandoffTarget } from '../mcp/canonical'
  * said to be not reported rather than shown as no target.
  */
 export function TargetSide({ label, member }: { label: string; member: string | undefined }) {
+  useLocale()
   return (
     <div className="row-side">
       <span className="row-side-label">{label}</span>
       <p className="target-name">
-        {member === undefined ? '(not reported)' : describeHandoffTarget(member)}
+        {member === undefined ? msg("(not reported)") : describeHandoffTarget(member)}
       </p>
     </div>
   )
@@ -97,6 +99,7 @@ export function TargetPair({
   expectedLabel?: string
   actualLabel?: string
 }) {
+  useLocale()
   const pair = handoffTargetPair(of)
   if (!pair) return null
   return (
@@ -120,6 +123,6 @@ export function describeTargetAssertion(carrier: HandoffTargetCarrier): string |
   const pair = handoffTargetPair(carrier)
   if (!pair) return undefined
   return pair.expected === NO_HANDOFF_TARGET
-    ? 'asserts no handoff target'
-    : 'asserts a handoff-target state'
+    ? msg("asserts no handoff target")
+    : msg("asserts a handoff-target state")
 }

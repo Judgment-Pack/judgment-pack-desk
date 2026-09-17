@@ -1,3 +1,4 @@
+import { msg, useLocale } from '../i18n'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useEditing } from '../packs/edit/editingContext'
@@ -17,6 +18,7 @@ import styles from './ChatWorkspace.module.css'
 export function PackAssistant({ packId, path, digest, draft, editing, identity, busy, diagnostics, onEdit }: {
   packId: string; path?: string; digest?: string; draft?: string; editing: boolean; identity?: BufferIdentity; busy: () => string; diagnostics: { count: number; bytes: string } | undefined; onEdit?: () => void
 }) {
+  useLocale()
   const { store, ready, chats, drafts, bindings } = useChats()
   const [params] = useSearchParams()
   const navigate = useNavigate()
@@ -52,17 +54,17 @@ export function PackAssistant({ packId, path, digest, draft, editing, identity, 
   // Standalone embeddings retain the existing assistant. The application
   // provides the project store above all routes.
   if (!store) return <AssistantPane draft={draft} editing={editing} identity={identity} busy={busy} diagnostics={diagnostics} />
-  if (!chat) return <p className={styles.blank}>{ready ? !store.canCreate ? 'Chat history is full. Export and delete an older chat from Chat history.' : 'Open Assistant to start a conversation about this pack.' : 'Loading chats…'}</p>
-  const actions = proposed === undefined ? undefined : <Disclosure title="Review proposed changes">
+  if (!chat) return <p className={styles.blank}>{ready ? !store.canCreate ? msg("Chat history is full. Export and delete an older chat from Chat history.") : msg("Open Assistant to start a conversation about this pack.") : msg("Loading chats…")}</p>
+  const actions = proposed === undefined ? undefined : <Disclosure title={msg("Review proposed changes")}>
     {diff && <ProposalDiffView diff={diff} onBaseline={unchanged} />}
-    {!editing && <><p className={styles.caption}>Open Edit to review and apply this proposal. Your pack is unchanged until Save.</p>{onEdit && <Button onClick={onEdit}>Review in Edit</Button>}</>}
-    {editing && !unchanged && <p className={styles.caption}>The document changed since this request. Send another message against the current draft.</p>}
+    {!editing && <><p className={styles.caption}>{msg("Open Edit to review and apply this proposal. Your pack is unchanged until Save.")}</p>{onEdit && <Button onClick={onEdit}>{msg("Review in Edit")}</Button>}</>}
+    {editing && !unchanged && <p className={styles.caption}>{msg("The document changed since this request. Send another message against the current draft.")}</p>}
     <Button disabled={!eligible || accepted === candidate?.digest} onClick={() => {
       if (!eligible || proposed === undefined || !candidate) return
       session.write(current => current.text === baseline?.bytes ? applyProposal(current,proposed) : current, { coalesceKey: `chat-accept:${chat.id}:${candidate.digest}` })
       setAccepted(candidate.digest)
-    }}>{accepted === candidate?.digest ? 'Applied to draft' : 'Apply to draft'}</Button>
-    <p className={styles.caption}>Review the changes in the main pane, then use Save. Applying a proposal is one undo step.</p>
+    }}>{accepted === candidate?.digest ? msg("Applied to draft") : msg("Apply to draft")}</Button>
+    <p className={styles.caption}>{msg("Review the changes in the main pane, then use Save. Applying a proposal is one undo step.")}</p>
   </Disclosure>
   return <ChatPanel placement="pane" key={chat.id} chat={chat} proposalActions={actions} context={draft === undefined ? undefined : { text: draft, beforeSend: () => { if (baseline?.chatId === chat.id && baseline.bytes === draft && (unchanged || baseline.fromView && !editing)) return; setBaseline({ chatId: chat.id, bytes: draft, revision: candidate?.revision ?? 0, identity, fromView: !editing, path }); setAccepted('') } }} locked={Boolean(busy())} />
 }

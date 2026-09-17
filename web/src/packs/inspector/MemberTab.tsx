@@ -1,3 +1,4 @@
+import { msg, useLocale, formatNumber } from '../../i18n'
 import { Disclosure } from '../../ui/Disclosure'
 /**
  * The selected member's own JSON subtree, and where the bytes came from.
@@ -55,6 +56,7 @@ export function MemberTab({
   /** The Logic Inspector already renders this member. */
   metadataOnly?: boolean
 }) {
+  useLocale()
   // **All three, and each of them defined.** An absent base was read as
   // agreement, so a page whose editor holds no revision of this file at all —
   // the read has not answered, or it failed — printed "matches the file the
@@ -76,20 +78,20 @@ export function MemberTab({
         <code>{pointer}</code>
       </p>}
       {!metadataOnly && (subtree === undefined ? (
-        <p className={styles.empty}>The document declares no member at this pointer.</p>
+        <p className={styles.empty}>{msg("The document declares no member at this pointer.")}</p>
       ) : (
         <>
           <MemberValue value={subtree} />
-          {(subtree === null || typeof subtree !== 'object') && <Disclosure title="Exact value JSON" className={styles.disclosure}><CodeBlock text={JSON.stringify(subtree, null, 2)} />
+          {(subtree === null || typeof subtree !== 'object') && <Disclosure title={msg("Exact value JSON")} className={styles.disclosure}><CodeBlock text={JSON.stringify(subtree, null, 2)} />
           </Disclosure>}
         </>
       ))}
 
-      <Disclosure title="File details" className={styles.disclosure}>
+      <Disclosure title={msg("File details")} className={styles.disclosure}>
       <dl className={styles.provenance}>
         {meta.path !== undefined && (
           <div className={styles.row}>
-            <dt>path</dt>
+            <dt>{msg("path")}</dt>
             <dd>
               <code>{meta.path}</code>
             </dd>
@@ -97,13 +99,13 @@ export function MemberTab({
         )}
         {meta.bytes !== undefined && (
           <div className={styles.row}>
-            <dt>bytes</dt>
-            <dd>{meta.bytes.toLocaleString()}</dd>
+            <dt>{msg("bytes")}</dt>
+            <dd>{formatNumber(meta.bytes)}</dd>
           </div>
         )}
         {meta.sha256 !== undefined && (
           <div className={styles.row}>
-            <dt>sha256</dt>
+            <dt>{msg("sha256")}</dt>
             <dd>
               <code>{meta.sha256}</code>
             </dd>
@@ -111,26 +113,21 @@ export function MemberTab({
         )}
         {fileBytes !== undefined && fileBytes !== meta.bytes && (
           <div className={styles.row}>
-            <dt>file bytes</dt>
-            <dd>{fileBytes.toLocaleString()}</dd>
+            <dt>{msg("file bytes")}</dt>
+            <dd>{formatNumber(fileBytes)}</dd>
           </div>
         )}
       </dl>
-      {bound && <p className={styles.bound}>matches the file the editor holds</p>}
+      {bound && <p className={styles.bound}>{msg("matches the file the editor holds")}</p>}
       </Disclosure>
       {dirty === true && (
-        <p className={styles.unbound}>
-          These figures are the file on disk. The editor holds changes that are not in it.
-        </p>
+        <p className={styles.unbound}>{msg("These figures are the file on disk. The editor holds changes that are not in it.")}</p>
       )}
       {dirty !== true &&
         baseSha256 !== undefined &&
         fileSha256 !== undefined &&
         baseSha256 !== fileSha256 && (
-        <p className={styles.unbound}>
-          These figures are the file on disk. The editor is showing the revision it loaded,
-          which is not that one.
-        </p>
+        <p className={styles.unbound}>{msg("These figures are the file on disk. The editor is showing the revision it loaded, which is not that one.")}</p>
       )}
     </div>
   )

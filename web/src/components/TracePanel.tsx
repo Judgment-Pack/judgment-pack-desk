@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 /**
  * One evaluation trace, rendered as the staged walk it is.
  *
@@ -69,16 +71,13 @@ export function TracePanel({
   context?: string
   emptyWhat?: string
 }) {
+  useLocale()
   const entries = trace ?? []
   return (
     <Section title={title} count={entries.length}>
-      <p className="note">
-        Informative: what the evaluator walked, in order. It decides nothing —
-        the disposition above is the answer.
-        {context ? ` ${context}` : ''}
-      </p>
+      <p className="note"><Message text={"Informative: what the evaluator walked, in order. It decides nothing — the disposition above is the answer.<0/>"} slots={[context ? ` ${context}` : '']} /></p>
       {entries.length === 0 ? (
-        <p className="empty">{emptyWhat} carries no trace entries.</p>
+        <p className="empty"><Message text={"<0/> carries no trace entries."} slots={[emptyWhat]} /></p>
       ) : (
         <div className="trace">
           {stagesOf(entries).map((stage) => (
@@ -98,6 +97,7 @@ export function TracePanel({
 }
 
 function TraceRow({ entry }: { entry: TraceEntry }) {
+  useLocale()
   return (
     <li className={entry.skipped ? 'trace-entry trace-entry-skipped' : 'trace-entry'}>
       <span
@@ -109,14 +109,14 @@ function TraceRow({ entry }: { entry: TraceEntry }) {
         {entry.id ? (
           <code className="id">{entry.id}</code>
         ) : (
-          <em className="quiet">unnamed {entry.stage} condition</em>
+          <em className="quiet"><Message text={"unnamed <0/> condition"} slots={[entry.stage]} /></em>
         )}
       </span>
       <span className="trace-badges">
         {entry.effect && <Pill>{valueLabel('effect', entry.effect)}</Pill>}
         {entry.outcome && <Pill tone="strong">→ {entry.outcome}</Pill>}
-        {entry.skipped && <Pill>Not evaluated</Pill>}
-        {entry.suppressed && <Pill>Excluded by a special case</Pill>}
+        {entry.skipped && <Pill>{msg("Not evaluated")}</Pill>}
+        {entry.suppressed && <Pill>{msg("Excluded by a special case")}</Pill>}
         {entry.onUnknown && <Pill tone="quiet">{PACK_TERMS.onUnknown.label}: {valueLabel('onUnknown', entry.onUnknown)}</Pill>}
       </span>
     </li>

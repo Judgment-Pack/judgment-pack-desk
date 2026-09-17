@@ -1,3 +1,4 @@
+import { initializeLanguage, languageReady } from './i18n'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -8,12 +9,16 @@ import { DeskConfigProvider } from './config/DeskConfigProvider'
 import { IdentityProvider } from './identity/IdentityProvider'
 import { McpProvider } from './mcp/McpProvider'
 // Establish element defaults before the shell's component styles.
+import '@fontsource-variable/noto-sans-kr/wght.css'
 import './styles.css'
 import './shell.css'
 
 // The runtime is a local subprocess reading local files, and the chassis tells
 // us when those files change. Refetching on window focus or on an interval
 // would only add calls that the file watcher already covers.
+const releaseLanguage = initializeLanguage()
+if (import.meta.hot) import.meta.hot.dispose(releaseLanguage)
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -51,10 +56,10 @@ const router = createBrowserRouter([
   }
 ])
 
-createRoot(container).render(
+void languageReady().then(() => createRoot(container).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
     </QueryClientProvider>
   </StrictMode>
-)
+))

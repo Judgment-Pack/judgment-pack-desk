@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 /**
  * Help & About: what this desk is, what it is connected to, and the runtime's
  * own authoring guidance.
@@ -27,6 +29,7 @@ import { useHashTarget } from '../shell/useHashTarget'
 const REPO = 'https://github.com/Judgment-Pack/judgment-pack-desk'
 
 export function HelpAbout() {
+  useLocale()
   const mcp = useMcp()
   const { status, server, known } = mcp
   const { desk } = useEffectiveConfig()
@@ -41,61 +44,32 @@ export function HelpAbout() {
   return (
     <article className="detail" data-measure="form">
       <header className="detail-head">
-        <h1>Help &amp; About</h1>
-        <p className="quiet">
-          A local web desk for a Judgment Pack project. The browser is the MCP client; the Go
-          program is a chassis with no per-feature endpoints that parses none of the traffic it
-          carries.
-        </p>
+        <h1>{msg("Help & About")}</h1>
+        <p className="quiet">{msg("A local web desk for a Judgment Pack project. The browser is the MCP client; the Go program is a chassis with no per-feature endpoints that parses none of the traffic it carries.")}</p>
       </header>
 
-      <Section title="This connection">
-        <p>
-          {/* **The verdict is the status; the name is the metadata.** `server`
-              is retained across a reconnect, so naming the runtime off its
-              presence said "connected" while the socket was down. */}
-          Runtime:{' '}
-          {status === 'ready' && server ? (
+      <Section title={msg("This connection")}>
+        <p><Message text={"Runtime:<0/><1/><2/>Runtime binary:<3/><4/><5/>Tool listing: <6/><7/><8/>"} slots={[' ', status === 'ready' && server ? (
             <>
               <code>{server.name}</code> {server.version}
             </>
           ) : (
             connectionSays(status)
-          )}
-          <br />
-          {/* The binary the chassis was launched with. It is **not** in the
-              configuration schema at any depth — the chassis executes what it
-              was given, so a config-supplied path would be a way to run code
-              on this machine by editing a file — and it is reported here
-              rather than composed anywhere. */}
-          Runtime binary:{' '}
-          {desk?.chassis === undefined ? (
-            'the desk has not said'
+          ), <br />, ' ', desk?.chassis === undefined ? (
+            msg("the desk has not said")
           ) : (
             <code>{desk.chassis.runtimeBin}</code>
-          )}
-          <br />
-          Tool listing: {known ? 'read' : 'not read — every capability below is unknown, not absent'}
-          <br />
-          {data?.configPath && (
-            <>
-              Project configuration: <code>{data.configPath}</code>
-              <br />
-            </>
-          )}
-        </p>
+          ), <br />, known ? msg("read") : msg("not read — every capability below is unknown, not absent"), <br />, data?.configPath && (
+            <><Message text={"Project configuration: <0/><1/>"} slots={[<code>{data.configPath}</code>, <br />]} /></>
+          )]} /></p>
         <details className="disclosure">
-          <summary>Connection capabilities</summary>
-          <Json label="This connection, and what this runtime advertises" value={connectionSummary(mcp)} />
+          <summary>{msg("Connection capabilities")}</summary>
+          <Json label={msg("This connection, and what this runtime advertises")} value={connectionSummary(mcp)} />
         </details>
-        <p className="quiet">
-          Where a pack's evaluation reports a <code>conformanceClaimReference</code>, the desk
-          renders it as what it is — a locator for the file that states the runtime's claim — and
-          not as a claim the payload itself makes.
-        </p>
+        <p className="quiet"><Message text={"Where a pack's evaluation reports a <0/>, the desk renders it as what it is — a locator for the file that states the runtime's claim — and not as a claim the payload itself makes."} slots={[<code>conformanceClaimReference</code>]} /></p>
       </Section>
 
-      <Section title="Keyboard shortcuts">
+      <Section title={msg("Keyboard shortcuts")}>
         <ul id="shortcuts">
           {SHORTCUTS.map((shortcut) => (
             <li key={shortcut.keys}>
@@ -103,39 +77,17 @@ export function HelpAbout() {
             </li>
           ))}
         </ul>
-        <p className="quiet">
-          <code>Mod</code> is Ctrl or Cmd. On macOS the browser claims Cmd+Alt+I and Cmd+Alt+J for
-          its own developer tools before the page sees them, and Cmd+B is Firefox's bookmarks
-          sidebar — use the Ctrl spelling there, or the buttons. Every shortcut has a visible
-          button, so a chord the browser eats costs a click and not a feature. Shortcuts are
-          suppressed while you are typing in a field or in the authoring editor.
-        </p>
-        <p className="quiet">
-          Below 900px the rail is an overlay drawer and draws no collapse toggle of its own, so its
-          button moves to the header: <strong>Project navigation</strong>, at the left, next to the
-          organization mark. A control inside a closed drawer opens nothing.
-        </p>
-        <p className="quiet">
-          A pane is not a dialog, so <code>Escape</code> does not close one — with one exception,
-          stated rather than hidden: below 1100px the Inspector is rendered as a drawer, and a
-          drawer <em>is</em> a dialog, so Escape closes it there.
-        </p>
+        <p className="quiet"><Message text={"<0/> is Ctrl or Cmd. On macOS the browser claims Cmd+Alt+I and Cmd+Alt+J for its own developer tools before the page sees them, and Cmd+B is Firefox's bookmarks sidebar — use the Ctrl spelling there, or the buttons. Every shortcut has a visible button, so a chord the browser eats costs a click and not a feature. Shortcuts are suppressed while you are typing in a field or in the authoring editor."} slots={[<code>Mod</code>]} /></p>
+        <p className="quiet"><Message text={"Below 900px the rail is an overlay drawer and draws no collapse toggle of its own, so its button moves to the header: <0/>, at the left, next to the organization mark. A control inside a closed drawer opens nothing."} slots={[<strong>{msg("Project navigation")}</strong>]} /></p>
+        <p className="quiet"><Message text={"A pane is not a dialog, so <0/> does not close one — with one exception, stated rather than hidden: below 1100px the Inspector is rendered as a drawer, and a drawer <1/> a dialog, so Escape closes it there."} slots={[<code>Escape</code>, <em>{msg("is")}</em>]} /></p>
       </Section>
 
-      <Section title="Authoring method">
-        <p className="quiet">
-          The runtime carries this guidance; the desk renders it and stops. <strong>The desk
-          holds no model key, calls no model, and executes no prompt.</strong> Copy it into
-          whatever agent you run.
-        </p>
+      <Section title={msg("Authoring method")}>
+        <p className="quiet"><Message text={"The runtime carries this guidance; the desk renders it and stops. <0/> Copy it into whatever agent you run."} slots={[<strong>{msg("The desk holds no model key, calls no model, and executes no prompt.")}</strong>]} /></p>
         {!advertised ? (
-          <p className="empty" id="authoring-method">
-            This runtime advertises no <code>{AUTHOR_PACK_PROMPT}</code> prompt.
-          </p>
+          <p className="empty" id="authoring-method"><Message text={"This runtime advertises no <0/> prompt."} slots={[<code>{AUTHOR_PACK_PROMPT}</code>]} /></p>
         ) : authorPack.error ? (
-          <p className="note note-warn" role="status" id="authoring-method">
-            The prompt could not be read — {authorPack.error.message}
-          </p>
+          <p className="note note-warn" role="status" id="authoring-method"><Message text={"The prompt could not be read — <0/>"} slots={[authorPack.error.message]} /></p>
         ) : authorPack.data ? (
           <figure className="json" id="authoring-method">
             <figcaption>
@@ -147,36 +99,20 @@ export function HelpAbout() {
             </pre>
           </figure>
         ) : (
-          <p className="loading" id="authoring-method">
-            Loading the runtime's authoring prompt…
-          </p>
+          <p className="loading" id="authoring-method">{msg("Loading the runtime's authoring prompt…")}</p>
         )}
       </Section>
 
-      <Section title="Security">
+      <Section title={msg("Security")}>
         <p className="quiet" id="security">{SESSION_SENTENCE}</p>
-        <p className="quiet">
-          The desk is authorized by three things and not by who you are: the loopback bind, that
-          session, and an origin check on every relay and file-API request. A configured identity
-          provider changes what the header displays and nothing about who may reach the desk.
-        </p>
+        <p className="quiet">{msg("The desk is authorized by three things and not by who you are: the loopback bind, that session, and an origin check on every relay and file-API request. A configured identity provider changes what the header displays and nothing about who may reach the desk.")}</p>
       </Section>
 
-      <Section title="Where to read more">
+      <Section title={msg("Where to read more")}>
         <ul>
-          <li>
-            <a href={REPO}>{REPO}</a> — the desk, its README and its layout
-          </li>
-          <li>
-            <a href={`${REPO}/blob/main/README.md`}>README</a> — the security model, the file API,
-            and how the relay works
-          </li>
-          <li>
-            <a href="https://github.com/Judgment-Pack/judgment-pack-runtime">
-              judgment-pack-runtime
-            </a>{' '}
-            — the evaluator, its ADRs, and the conformance claim this desk only ever renders
-          </li>
+          <li><Message text={"<0/> — the desk, its README and its layout"} slots={[<a href={REPO}>{REPO}</a>]} /></li>
+          <li><Message text={"<0/> — the security model, the file API, and how the relay works"} slots={[<a href={`${REPO}/blob/main/README.md`}>{msg("README")}</a>]} /></li>
+          <li><Message text={"<0/><1/>— the evaluator, its ADRs, and the conformance claim this desk only ever renders"} slots={[<a href="https://github.com/Judgment-Pack/judgment-pack-runtime">{msg("judgment-pack-runtime")}</a>, ' ']} /></li>
         </ul>
       </Section>
     </article>

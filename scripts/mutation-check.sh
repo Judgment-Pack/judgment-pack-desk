@@ -1964,15 +1964,15 @@ function usePacks() { useConfiguredGraphs(); return readPacks() }'
     inspector: { open: viewport.inspectorIsDrawer ? false : merged.inspector.open },' \
     '    left: merged.left,
     inspector: merged.inspector,'
-  mutate web "the strip stops naming the runtime" "$S" \
-    '            connected to <code>{server.name}</code> {server.version}' \
-    '            connected to <code>{server.name}</code>'
+  mutate web 'the strip stops naming the runtime' web/src/shell/StatusStrip.tsx \
+    '<Message text={"connected to <0/> <1/>"} slots={[<code>{server.name}</code>, server.version]} />' \
+    '<Message text={"connected to <0/>"} slots={[<code>{server.name}</code>]} />'
   # A refused configuration is the built-in defaults — correct, and until this
   # cue it was indistinguishable from having no configuration file at all
   # anywhere except /admin.
-  mutate web "a refused configuration is silent outside Admin" "$S" \
-    '        {refused && <ConfigCue full={CONFIG_REFUSED_CUE} short={CONFIG_REFUSED_SHORT} />}' \
-    '        {false && <ConfigCue full={CONFIG_REFUSED_CUE} short={CONFIG_REFUSED_SHORT} />}'
+  mutate web 'a refused configuration is silent outside Admin' web/src/shell/StatusStrip.tsx \
+    '        {refused && <ConfigCue full={msg(CONFIG_REFUSED_CUE)} short={msg(CONFIG_REFUSED_SHORT)} />}' \
+    '        {false && <ConfigCue full={msg(CONFIG_REFUSED_CUE)} short={msg(CONFIG_REFUSED_SHORT)} />}'
   mutate web "main remounts on a pane change" "$N" \
     '      <main id="main" tabIndex={-1} className="desk-main">' \
     '      <main id="main" key={String(shell.console.open)} tabIndex={-1} className="desk-main">'
@@ -2004,14 +2004,14 @@ function usePacks() { useConfiguredGraphs(); return readPacks() }'
   mutate web "the header invents an organization name" "$H" \
     "  const name = config.organization.name ?? DESK_FALLBACK_NAME" \
     "  const name = config.organization.name ?? 'Acme Co.'"
-  mutate web "the NONE menu offers a Sign out" "$U" \
-    "          <DropdownMenu.Item asChild className=\"desk-menu-item\">
-            <Link to=\"/help\">About</Link>
-          </DropdownMenu.Item>" \
-    "          <DropdownMenu.Item asChild className=\"desk-menu-item\">
-            <Link to=\"/help\">About</Link>
+  mutate web 'the NONE menu offers a Sign out' web/src/identity/UserControl.tsx \
+    '          <DropdownMenu.Item asChild className="desk-menu-item">
+            <Link to="/help">{msg("About")}</Link>
+          </DropdownMenu.Item>' \
+    '          <DropdownMenu.Item asChild className="desk-menu-item">
+            <Link to="/help">{msg("About")}</Link>
           </DropdownMenu.Item>
-          <DropdownMenu.Item className=\"desk-menu-item\">Sign out</DropdownMenu.Item>"
+          <DropdownMenu.Item className="desk-menu-item">Sign out</DropdownMenu.Item>'
   # Below 900px the rail is a Dialog drawer and renders no collapse toggle, so
   # the header's opener is the only pointer affordance there is. Without it the
   # whole left menu is reachable by Mod+B alone, on the width whose likeliest
@@ -2019,8 +2019,8 @@ function usePacks() { useConfiguredGraphs(); return readPacks() }'
   mutate web "the rail drawer has no opener" "$H" \
     '        {railIsDrawer && (' \
     '        {false && ('
-  mutate web "the rail drawer carries no landmark" "$L" \
-    '            <nav aria-label="Project">
+  mutate web 'the rail drawer carries no landmark' web/src/shell/LeftRail.tsx \
+    '            <nav aria-label={msg("Project")}>
               {body(() => onDrawerOpenChange(false))}
             </nav>' \
     '            {body(() => onDrawerOpenChange(false))}'
@@ -2231,8 +2231,8 @@ function usePacks() { useExampleListing(); return readPacks() }'
         current = parseProjectConfig(read.content)' \
     '        read = { path: PROJECT_FILE, bytes: 0, sha256: '"'"''"'"', content: '"'"'{}'"'"' }
         current = parseProjectConfig(read.content)'
-  mutate web "a 409 on jpack.json is reported as an ordinary failure" "$X" \
-    "          reason: codeOf(cause) === 'stale' ? STALE_PROJECT_FILE : refusalDetail(cause)" \
+  mutate web 'a 409 on jpack.json is reported as an ordinary failure' web/src/shell/CreatePackDialog.tsx \
+    '          reason: codeOf(cause) === '"'"'stale'"'"' ? msg(STALE_PROJECT_FILE) : refusalDetail(cause)' \
     '          reason: refusalDetail(cause)'
   # Repaired, and narrowed: the `role="alert"` half moved into the `Alert`
   # primitive when the dialog stopped rendering bare markup, and it is held
@@ -2336,11 +2336,11 @@ function usePacks() { useExampleListing(); return readPacks() }'
     "  return trimmed.endsWith('/') || trimmed.endsWith('#') ? trimmed : \`\${trimmed}/\`" \
     '  return trimmed'
 
-  mutate web "deleted and changed are no longer distinguished" "$A" \
-    "        {stale.exists
-          ? 'Something else wrote to it while this edit was open.'
-          : 'The file is no longer on disk — something else deleted or moved it.'}{' '}" \
-    "        {'Something else wrote to it while this edit was open.'}{' '}"
+  mutate web 'deleted and changed are no longer distinguished' web/src/routes/AuthorView.tsx \
+    'stale.exists
+          ? msg("Something else wrote to it while this edit was open.")
+          : msg("The file is no longer on disk — something else deleted or moved it.")' \
+    '"Something else wrote to it while this edit was open."'
 
   # ---- Codex round 1 -----------------------------------------------------
   # One row per safeguard the review's findings put in. Each names the defect
@@ -2487,10 +2487,10 @@ function usePacks() { useExampleListing(); return readPacks() }'
               else openerRef.current?.focus()
             }}' \
     ''
-  mutate web "the rail drawer has no visible way out" "$L" \
+  mutate web 'the rail drawer has no visible way out' web/src/shell/LeftRail.tsx \
     '            <div className="desk-drawer-head">
               <Dialog.Close asChild>
-                <button type="button" className="desk-icon-button" aria-label="Close navigation">
+                <button type="button" className="desk-icon-button" aria-label={msg("Close navigation")}>
                   <IconClose />
                 </button>
               </Dialog.Close>
@@ -2798,13 +2798,13 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "a file another entry already claims is written over" "$X" \
     '        paths: existingPackPaths(current),' \
     '        paths: [],'
-  mutate web "an unreadable jpack.json is discovered after the pack is written" "$X" \
+  mutate web 'an unreadable jpack.json is discovered after the pack is written' web/src/shell/CreatePackDialog.tsx \
     '      } catch (cause) {
         const absent = cause instanceof FileRequestError && cause.status === 404
         setFailure(
           absent
-            ? { lead: NO_PROJECT_FILE }
-            : { lead: UNREADABLE_PROJECT_FILE, reason: reasonOf(cause) }
+            ? { lead: msg(NO_PROJECT_FILE) }
+            : { lead: msg(UNREADABLE_PROJECT_FILE), reason: reasonOf(cause) }
         )
         return
       }' \
@@ -2815,11 +2815,11 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # bytes or a proposal's snapshot — so the guarded call is a branch now. The
   # row is the same claim about the same guard: the shaping runs unguarded and
   # a document that cannot be shaped is discovered after the write.)
-  mutate web "a template that is not a document is sent anyway" "$X" \
+  mutate web 'a template that is not a document is sent anyway' web/src/shell/CreatePackDialog.tsx \
     '        try {
           content = shapeTemplate(source.text, { name, description, slug, idBase })
         } catch (cause) {
-          setFailure({ lead: TEMPLATE_UNUSABLE, reason: reasonOf(cause) })
+          setFailure({ lead: msg(TEMPLATE_UNUSABLE), reason: reasonOf(cause) })
           return
         }' \
     '        content = shapeTemplate(source.text, { name, description, slug, idBase })'
@@ -2919,17 +2919,17 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "a pending template listing is an empty one again" "$X" \
     "  const templatesPending = examplesState === 'pending' || emptyState === 'pending'" \
     '  const templatesPending = false'
-  mutate web "Empty is offered before a schema has produced a skeleton" "$X" \
-    "      ...(emptyState === 'ready' ? [{ value: SCHEMA_EMPTY, label: EMPTY_LABEL }] : [])" \
-    '      ...(schemaSupported ? [{ value: SCHEMA_EMPTY, label: EMPTY_LABEL }] : [])'
+  mutate web 'Empty is offered before a schema has produced a skeleton' web/src/shell/CreatePackDialog.tsx \
+    '      ...(emptyState === '"'"'ready'"'"' ? [{ value: SCHEMA_EMPTY, label: msg(EMPTY_LABEL) }] : [])' \
+    '      ...(schemaSupported ? [{ value: SCHEMA_EMPTY, label: msg(EMPTY_LABEL) }] : [])'
   mutate web "a refused example listing is dropped on the floor" "$X" \
     "    : examplesState === 'error'" \
     '    : false'
-  mutate web "absence is claimed from a capability listing that never answered" "$X" \
+  mutate web 'absence is claimed from a capability listing that never answered' web/src/shell/CreatePackDialog.tsx \
     '          ? known
-            ? NO_TEMPLATE
+            ? msg(NO_TEMPLATE)
             : undefined' \
-    '          ? NO_TEMPLATE'
+    '          ? msg(NO_TEMPLATE)'
 
   # Retired: "opening creation leaves the rail drawer standing over it".
   # The sidebar no longer offers chat/creation actions; New chat lives in the
@@ -2968,9 +2968,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
   const left = [...a]' \
     '  if (a !== b) return false
   const left = [...a]'
-  mutate web "the candidate path is never asked about directly" "$X" \
+  mutate web 'the candidate path is never asked about directly' web/src/shell/CreatePackDialog.tsx \
     '        await readFile(path)
-        setFailure({ lead: PACK_FILE_TAKEN })
+        setFailure({ lead: msg(PACK_FILE_TAKEN) })
         return' \
     '        void path'
 
@@ -3006,9 +3006,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
     'const exampleValue = (name: string) => name'
 
   # 11. A disclaimer, and a verdict the shell derived without asking.
-  mutate web "the dialog states a verdict about the pack it is creating" "$X" \
-    '        <Field label="Template" error={templateProblem}>' \
-    '        <Field label="Template" error={templateProblem} hint="checks report it incomplete until you fill it in">'
+  mutate web 'the dialog states a verdict about the pack it is creating' web/src/shell/CreatePackDialog.tsx \
+    '        <Field label={msg("Template")} error={templateProblem}>' \
+    '        <Field label={msg("Template")} error={templateProblem} hint="checks report it incomplete until you fill it in">'
 
   mutate web "the chassis sentence is put in front of whoever typed a name" "$X" \
     '          lead: refusalLead(cause) ?? '"'"'The pack could not be created.'"'"',' \
@@ -3021,9 +3021,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '      undefined'
 
   # 14. "Name" with no required and no description.
-  mutate web "the required field is not marked required" "$X" \
-    '          label="Name (required)"' \
-    '          label="Name"'
+  mutate web 'the required field is not marked required' web/src/shell/CreatePackDialog.tsx \
+    '          label={msg("Name (required)")}' \
+    'label={msg("Name")}'
 
   # 15. NFKD does not decompose these, so they were deleted.
   mutate web "a letter with no decomposition is dropped rather than carried" "$NP" \
@@ -3282,14 +3282,14 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '    order.splice(anchor + 1, 0, unit)' \
     '    void anchor
     order.push(unit)'
-  mutate web "the condition tree loses the operand type" web/src/packs/document/ConditionTree.tsx \
-    '  if (!Array.isArray(value)) return <>{JSON.stringify(value) ?? (structured ? '"'"'Value not declared'"'"' : undefined)}</>' \
+  mutate web 'the condition tree loses the operand type' web/src/packs/document/ConditionTree.tsx \
+    '  if (!Array.isArray(value)) return <>{JSON.stringify(value) ?? (structured ? msg("Value not declared") : undefined)}</>' \
     '  if (!Array.isArray(value)) return <>{String(value)}</>'
 
   # 12. The pane's empty state used to stand beside every published panel.
-  mutate web "the empty state stands beside a published panel" "$RP" \
-    '      {showEmpty && <p className="desk-pane-empty">{EMPTY_STATE}</p>}' \
-    '      <p className="desk-pane-empty">{EMPTY_STATE}</p>'
+  mutate web 'the empty state stands beside a published panel' web/src/shell/RightPane.tsx \
+    '      {showEmpty && <p className="desk-pane-empty">{msg(EMPTY_STATE)}</p>}' \
+    '      <p className="desk-pane-empty">{msg(EMPTY_STATE)}</p>'
 
   # 14. jsdom lays nothing out, so a measured height of zero must render every
   # row — otherwise every test of the pane asserts against an empty list.
@@ -3444,14 +3444,14 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '        pending={false}'
   # "checked against the bytes of x" printed under "this document is unchecked"
   # is one of the two lying, and the reader cannot tell which.
-  mutate web "a check that never ran is still said to have run" "$PV" \
+  mutate web 'a check that never ran is still said to have run' web/src/routes/PackView.tsx \
     '  const provenance =
     unavailable !== undefined
       ? undefined
       : fetching
-        ? `checking against ${whichBytes}`
+        ? msg("checking against {{value0}}", { value0: whichBytes })
         : check.data !== undefined
-          ? `checked against ${whichBytes}`
+          ? msg("checked against {{value0}}", { value0: whichBytes })
           : undefined' \
     '  const provenance = `checked against ${whichBytes}`'
   mutate web "the panel invents provenance it was not given" "$CTB" \
@@ -3473,9 +3473,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '  const report = check.data?.report'
   # A disabled query reports `isPending` for ever, so an empty buffer said
   # "Checking…" about a check that was never going to start.
-  mutate web "an empty document is reported as being checked" "$PV" \
+  mutate web 'an empty document is reported as being checked' web/src/routes/PackView.tsx \
     '  if (bytes === undefined || bytes === '"'"''"'"') {
-    return '"'"'There are no bytes to check yet, so this document is unchecked.'"'"'
+    return msg("There are no bytes to check yet, so this document is unchecked.")
   }' \
     '  void bytes'
 
@@ -3487,8 +3487,8 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # The two other views on this pack, which nothing else links to.
   # The standing primary action moved into the shared PackHeader. Tests also
   # remains a navigation entry; this row specifically preserves the action.
-  mutate web "the primary Test pack link disappears" web/src/packs/PackWorkspace.tsx \
-    '      {current !== '"'"'test'"'"' && <ButtonLink variant="primary" to={link(`${base}/evaluate`)}>Test pack</ButtonLink>}' \
+  mutate web 'the primary Test pack link disappears' web/src/packs/PackWorkspace.tsx \
+    '      {current !== '"'"'test'"'"' && <ButtonLink variant="primary" to={link(`${base}/evaluate`)}>{msg("Test pack")}</ButtonLink>}' \
     '      {null}'
 
   # Selecting with the pane closed.
@@ -3581,14 +3581,14 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # The document renders an addressed block for an omitted member, so an outline
   # entry that could not reach it was the only line in this nav naming something
   # you could not go to. This is that shape, restored.
-  mutate web "an omitted member is the one outline entry you cannot follow" "$MO" \
-    "            <PopoverClose><Link
+  mutate web 'an omitted member is the one outline entry you cannot follow' web/src/packs/document/MemberOutline.tsx \
+    '            <PopoverClose><Link
               className={entry.present ? styles.outlineLink : styles.outlineAbsentLink}
-              to={{ search, hash: \`#\${entry.pointer}\` }}
+              to={{ search, hash: `#${entry.pointer}` }}
               // Choosing what to inspect is not a navigation, and the block
               // beside it replaces. Two paths to one act, one history entry.
               replace
-              aria-current={active === entry.pointer ? 'true' : undefined}
+              aria-current={active === entry.pointer ? '"'"'true'"'"' : undefined}
             >
               {entry.label}
               {entry.present ? (
@@ -3596,15 +3596,15 @@ function usePacks() { useExampleListing(); return readPacks() }'
                   <span className={styles.outlineCount}> {entry.count}</span>
                 )
               ) : (
-                <span className={styles.outlineAbsent}> — not declared</span>
+                <span className={styles.outlineAbsent}>{msg(" — not declared")}</span>
               )}
-            </Link></PopoverClose>" \
-    "            {entry.present ? (
+            </Link></PopoverClose>' \
+    '            {entry.present ? (
               <Link
                 className={styles.outlineLink}
-                to={{ search, hash: \`#\${entry.pointer}\` }}
+                to={{ search, hash: `#${entry.pointer}` }}
                 replace
-                aria-current={active === entry.pointer ? 'true' : undefined}
+                aria-current={active === entry.pointer ? '"'"'true'"'"' : undefined}
               >
                 {entry.label}
                 {entry.count !== undefined && (
@@ -3614,9 +3614,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
             ) : (
               <span className={styles.outlineLink}>
                 {entry.label}
-                <span className={styles.outlineAbsent}> — not declared</span>
+                <span className={styles.outlineAbsent}>{msg(" — not declared")}</span>
               </span>
-            )}"
+            )}'
 
   # A version the listing did not answer with.
   # A row the keyboard asks for that is not rendered is focused in the render
@@ -3678,9 +3678,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '    if (typeof value === '"'"'object'"'"' && value !== null && part in value) {'
 
   # The rail's count, in the place assistive technology reads it.
-  mutate web "the rail count is invisible to a screen reader" "$RL" \
-    "          aria-label={count === undefined ? 'Packs' : \`Packs, \${count}\`}" \
-    '          aria-label="Packs"'
+  mutate web 'the rail count is invisible to a screen reader' web/src/shell/LeftRail.tsx \
+    '          aria-label={count === undefined ? msg("Packs") : msg("Packs, {{value0}}", { value0: count })}' \
+    '          aria-label={msg("Packs")}'
 
   # 8. The widened convention rule, and a module outside src/ui to break it on.
   mutate web "a module outside src/ui may spell a colour" "$CV" \
@@ -3901,9 +3901,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '          <Button variant="primary" disabled={pending} onClick={onOverwrite}>'
 
   # The desk computes no lock state, and says nothing where it knows nothing.
-  mutate web "the lock line states a verdict about the reviewed set" "$LL" \
-    '      This project keeps a reviewed set. Updating it is the project&rsquo;s own step.' \
-    '      This pack is in the reviewed set, and the set is up to date.'
+  mutate web 'the lock line states a verdict about the reviewed set' web/src/packs/edit/LockLine.tsx \
+    '{msg("This project keeps a reviewed set. Updating it is the project’s own step.")}' \
+    '{msg("This pack is in the reviewed set, and the set is up to date.")}'
   mutate web "the lock line shows with no lock file listed" "$LL" \
     '  const listed = paths.some((path) => path === LOCK_FILE || path.endsWith(`/${LOCK_FILE}`))' \
     '  const listed = paths.length >= 0'
@@ -3956,11 +3956,11 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "a field over an absent object is drawn as writable" "$FLD" \
     '  if (held !== undefined) return <>{children}</>' \
     '  if (held !== NOT_DECLARED) return <>{children}</>'
-  mutate web "the blank option is the empty string ui/Select says is never offered" "$FLD" \
-    "            ...(optional === true ? [{ value: NOT_DECLARED, label: 'not declared' }] : []),
-            ...declared.map((word) => ({ value: word, label: word }))," \
-    "            ...(optional === true ? [{ value: '', label: 'not declared' }] : []),
-            ...declared.map((word) => ({ value: word, label: word })),"
+  mutate web 'the blank option is the empty string ui/Select says is never offered' web/src/packs/edit/fields.tsx \
+    '            ...(optional === true ? [{ value: NOT_DECLARED, label: "not declared" }] : []),
+            ...declared.map((word) => ({ value: word, label: word })),' \
+    '            ...(optional === true ? [{ value: '"'"''"'"', label: "not declared" }] : []),
+            ...declared.map((word) => ({ value: word, label: word })),'
 
   # A node the document does not carry is not a kind this desk has never seen.
   mutate web "a removed condition is called a kind this desk does not know" "$CB" \
@@ -4018,9 +4018,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '  const armed = armedFor !== null'
 
   # Both digests, whole, for a reader comparing against sha256sum.
-  mutate web "the stale-write alert carries only the twelve characters it prints" "$SWA" \
-    '            <Digest value={stale.expectedSha256} />' \
-    '            <Digest value={stale.expectedSha256.slice(0, 12)} />'
+  mutate web 'the stale-write alert carries only the twelve characters it prints' web/src/packs/edit/StaleWriteAlert.tsx \
+    '<Digest value={stale.expectedSha256} />' \
+    '<Digest value={stale.expectedSha256.slice(0, 12)} />'
 
   # A pattern is not something to read aloud.
   mutate web "the id hint prints the pattern at the author" "$CF" \
@@ -4186,9 +4186,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
           ownerOf(read, pointer) === draft.owner' \
     '          (bytesAt(read, pointer) ?? '"'"''"'"') === draft.from' \
   # What the page says the editor holds after a save that landed other bytes.
-  mutate web "the editor is said to hold what was sent, whatever it holds" "$PV" \
-    '                    {bufferText === editor.outcome.submitted' \
-    '                    {true'
+  mutate web 'the editor is said to hold what was sent, whatever it holds' web/src/routes/PackView.tsx \
+    'bufferText === editor.outcome.submitted' \
+    true
 
   # ---- the fourth reading: what happens before the next render -------------
   # A refused reload used to reset the mutation and drop the verdict *before*
@@ -4288,13 +4288,13 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "a refusal leaves the answer before it on screen" "$TIP" \
     '        onError: (error: Error) => setAttempt({ kind: '"'"'refusal'"'"', error, sent })' \
     '        onError: () => {}'
-  mutate web "an answer is labelled from the toggle rather than from the run" "$TIP" \
+  mutate web 'an answer is labelled from the toggle rather than from the run' web/src/packs/edit/TryItPane.tsx \
     '              {attempt.sent.source === '"'"'pack'"'"'
-                ? '"'"'from the draft in the editor'"'"'
-                : '"'"'from the pack on disk'"'"'}' \
+                ? msg("from the draft in the editor")
+                : msg("from the pack on disk")}' \
     '              {source === '"'"'pack'"'"'
-                ? '"'"'from the draft in the editor'"'"'
-                : '"'"'from the pack on disk'"'"'}'
+                ? msg("from the draft in the editor")
+                : msg("from the pack on disk")}'
   mutate web "only the bytes make an answer stale" "$TIP" \
     '    (attempt.sent.source !== source ||
       attempt.sent.facts !== facts ||
@@ -4311,12 +4311,12 @@ function usePacks() { useExampleListing(); return readPacks() }'
         <ConditionTree condition={applicability} at={at} />
       )}' \
     '      <ConditionTree condition={applicability} at={at} />'
-  mutate web "the fallback outcome is a code element in a form" "$PDV" \
+  mutate web 'the fallback outcome is a code element in a form' web/src/packs/document/PackDocumentView.tsx \
     '      {editing ? (
-        <IdRefField pointer="/fallbackOutcome" label="fallback outcome" ids={ids.outcomes} optional />
+        <IdRefField pointer="/fallbackOutcome" label={msg("fallback outcome")} ids={ids.outcomes} optional />
       ) : (' \
     '      {false ? (
-        <IdRefField pointer="/fallbackOutcome" label="fallback outcome" ids={ids.outcomes} optional />
+        <IdRefField pointer="/fallbackOutcome" label={msg("fallback outcome")} ids={ids.outcomes} optional />
       ) : ('
   mutate web "every metadata member is render-only, not only the reviews" "$MDB" \
     '  if (editing) {' \
@@ -4492,9 +4492,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
     "    const answered = \`answered \${probe.status}\`"
   # A read that has not answered is not "no key": it is a page that has not
   # been told.
-  mutate web "an unanswered read is reported as no key" "$KF" \
-    "  if (!answered) return 'Not read yet'" \
-    "  if (!answered) return 'No key stored'"
+  mutate web 'an unanswered read is reported as no key' web/src/assistant/KeyField.tsx \
+    '  if (!answered) return msg("Not read yet")' \
+    '  if (!answered) return '"'"'No key stored'"'"''
   # If the probe named a URL, anything holding the token could point the desk
   # — and the key it holds — at a host of its choosing.
   mutate web "the probe names its own destination" "$AC" \
@@ -4590,9 +4590,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # so. **Retargeted rather than retired**: the sentence it used to break sat on
   # a row of facts the card no longer carries, and the claim moved with the
   # words — `keySays` reads `present` and nothing about the endpoint beside it.
-  mutate web "no endpoint is reported as no key" "$KF" \
-    "  if (!state.present) return 'No key stored'" \
-    "  if (!state.present || state.configuredOrigin === '') return 'No key stored'"
+  mutate web 'no endpoint is reported as no key' web/src/assistant/KeyField.tsx \
+    '  if (!state.present) return msg("No key stored")' \
+    '  if (!state.present || state.configuredOrigin === '"'"''"'"') return msg("No key stored")'
   mutate web "a diagnostic is rendered as the bare word" "$ECK" \
     '        : `Not connected · ${answered} · ${DIAGNOSTIC_SAYS[probe.diagnostic] ?? probe.diagnostic}`' \
     '        : `Not connected · ${answered} · ${probe.diagnostic}`'
@@ -6068,9 +6068,9 @@ export function assistantTransport(id: string): Transport {
   # notice saying the file could not be read. The row of facts that carried the
   # sentence is gone with the rest of them; the sentence is on the form, above
   # the fields it is about, and this is the line that renders it.
-  mutate web "Admin claims no endpoint from a file it could not read" "$AF" \
-    '      {unavailable && <p className="quiet">{UNAVAILABLE}</p>}' \
-    '      {false && <p className="quiet">{UNAVAILABLE}</p>}'
+  mutate web 'Admin claims no endpoint from a file it could not read' web/src/assistant/EndpointForm.tsx \
+    '      {unavailable && <p className="quiet">{msg(UNAVAILABLE)}</p>}' \
+    '      {false && <p className="quiet">{msg(UNAVAILABLE)}</p>}'
   # And the fields with it: they are the built-in defaults there, and typing
   # into them would compose a write over a file nobody has seen.
   mutate web "the form is editable over a file this desk could not read" "$EF" \
@@ -6082,11 +6082,11 @@ export function assistantTransport(id: string): Transport {
   mutate web "the tab describes an unreadable configuration as having no assistant" "$AP" \
     "        {slot.state === 'unavailable'" \
     '        {false'
-  mutate web "an unreadable configuration is described as having no assistant" "$DI" \
-    "      slot.state === 'unavailable'
-        ? UNREAD_CONFIGURATION" \
-    "      false
-        ? UNREAD_CONFIGURATION"
+  mutate web 'an unreadable configuration is described as having no assistant' web/src/shell/DescribeIt.tsx \
+    '      slot.state === '"'"'unavailable'"'"'
+        ? msg(UNREAD_CONFIGURATION)' \
+    '      false
+        ? msg(UNREAD_CONFIGURATION)'
 
   # Closing the dialog ends the session, and it has to end it **through the run
   # hook**: an unmount alone aborts the iterator and closes the socket without
@@ -6187,18 +6187,16 @@ export function assistantTransport(id: string): Transport {
 
   # And the reading of the answer: a report that is not `valid` is a refusal,
   # not a formality.
-  mutate web "a document the runtime refused is treated as valid" "$X" \
+  mutate web 'a document the runtime refused is treated as valid' web/src/shell/CreatePackDialog.tsx \
     '              : checked.data.report.status === '"'"'valid'"'"'
                 ? undefined
-                : `The runtime will not call this document a pack — ${
-                    layersReached(checked.data.report).text
-                  }`' \
+                : msg("The runtime will not call this document a pack — {{value0}}", { value0: layersReached(checked.data.report).text })' \
     '              : undefined'
 
   # Losing the slot used to hide the controls and leave the session running.
-  mutate web "the assistant going away only hides the controls" "$DI" \
+  mutate web 'the assistant going away only hides the controls' web/src/shell/DescribeIt.tsx \
     '    discardNow.current()
-    setLost(SLOT_LOST)' \
+    setLost(msg(SLOT_LOST))' \
     '    void SLOT_LOST'
 
   # The rail mounts this dialog above the route, so a Back leaves it standing
@@ -6508,9 +6506,9 @@ export function assistantTransport(id: string): Transport {
   # **Retargeted.** The fallback itself is gone — where the chassis has not
   # answered the row says so — so the mutation is now the constant *restored*,
   # which is the same claim over the stronger code.
-  mutate web "the constant fallback restored (a location the page composed)" "$ADV" \
+  mutate web 'the constant fallback restored (a location the page composed)' web/src/routes/AdminView.tsx \
     '  const chassis = effective.desk?.chassis
-  if (chassis === undefined) return <span className="quiet">the desk has not said</span>
+  if (chassis === undefined) return <span className="quiet">{msg("the desk has not said")}</span>
   return <code>{chassis.projectFile}</code>' \
     '  return <code>{effective.path}</code>'
 
@@ -6706,10 +6704,10 @@ export function assistantTransport(id: string): Transport {
   # editable. The break is the declaration, which is what the page renders from
   # and what the rail's section menu links to — a section declared and not
   # rendered is a menu entry pointing at a heading that is not there.
-  mutate web "the Runtime card back" "$AS" \
-    "      { id: 'project', title: 'Project' }," \
-    "      { id: 'project', title: 'Project' },
-      { id: 'runtime', title: 'Runtime' },"
+  mutate web 'the Runtime card back' web/src/routes/adminSections.ts \
+    '      { id: '"'"'project'"'"', get title() { return msg("Project") } },' \
+    '      { id: '"'"'project'"'"', get title() { return msg("Project") } },
+      { id: '"'"'runtime'"'"', title: '"'"'Runtime'"'"' },'
 
   # **A removed control's write path is removed with it.** The Panes card is
   # gone — the dimensions are the shell's, and the reset of this browser's own
@@ -7039,9 +7037,9 @@ export function assistantTransport(id: string): Transport {
     "  if (status !== 'ready' || server === null) return says" \
     '  if (server === null) return says'
   # The one producer, broken where it is produced: three surfaces read it.
-  mutate web "one connection word, whatever the socket is doing" "$M" \
-    "  if (status === 'ready') return 'connected'" \
-    "  return 'connected'"
+  mutate web 'one connection word, whatever the socket is doing' web/src/mcp/McpProvider.tsx \
+    '  if (status === '"'"'ready'"'"') return msg('"'"'connected'"'"')' \
+    '  return msg('"'"'connected'"'"')'
 
   # ---- Chunk 6e: a dark palette, and a consumer for density ----------------
   #
@@ -7158,35 +7156,35 @@ export function assistantTransport(id: string): Transport {
   # control beside three that do not, and no stylesheet is missing — there is
   # no stylesheet at all. The test names the class each button came out
   # carrying, which is a fact a `css: false` run still has.
-  mutate web "a bare button back on Admin (Test connection)" "$AF" \
+  mutate web 'a bare button back on Admin (Test connection)' web/src/assistant/EndpointForm.tsx \
     '              <Button
                 disabled={!mayTest}
                 aria-describedby={testHintId}
                 onClick={() => { if (mayTest) check.run() }}
               >
-                {checking ? '\''Testing connection…'\'' : '\''Test connection'\''}
+                {checking ? msg("Testing connection…") : msg("Test connection")}
               </Button>' \
     '              <button type="button"
                 disabled={!mayTest}
                 aria-describedby={testHintId}
                 onClick={() => { if (mayTest) check.run() }}
               >
-                {checking ? '\''Testing connection…'\'' : '\''Test connection'\''}
+                {checking ? msg("Testing connection…") : msg("Test connection")}
               </button>'
 
   # **The nomination back to primary.** A filled accent button in a group's
   # head, above the two Saves that are the writes — the loudest control on the
   # page pointing at the thing it is least about.
-  mutate web "the default-project nomination back to primary" "$DP" \
+  mutate web 'the default-project nomination back to primary' web/src/admin/DefaultProject.tsx \
     '          <Button
             variant="secondary"
             disabled={blocked}
-            onClick={() => commit(chassis?.projectFile ?? null, SET)}
+            onClick={() => commit(chassis?.projectFile ?? null, msg(SET))}
           >' \
     '          <Button
             variant="primary"
             disabled={blocked}
-            onClick={() => commit(chassis?.projectFile ?? null, SET)}
+            onClick={() => commit(chassis?.projectFile ?? null, msg(SET))}
           >'
 
   # **Tracked capitals back on a section title.** Two label styles on one page,
@@ -7558,16 +7556,16 @@ export function assistantTransport(id: string): Transport {
     }'
   # **The dialog's proposal goes with the session.** Stopping the run leaves
   # `offered` true and Create willing to write it.
-  mutate web "the Describe-it proposal survives the session's end" "$DI" \
+  mutate web 'the Describe-it proposal survives the session'"'"'s end' web/src/shell/DescribeIt.tsx \
     '      whenSessionEnds(() => {
         if (!hadSession.current) return
         discardNow.current()
-        setLost(SLOT_LOST)
+        setLost(msg(SLOT_LOST))
       }),' \
     '      whenSessionEnds(() => {
         if (true) return
         discardNow.current()
-        setLost(SLOT_LOST)
+        setLost(msg(SLOT_LOST))
       }),'
   # **`unauthorized` and no other code.** A 307 into the exchange answers a
   # marked `no-handoff`, and a classifier that read the mark alone turned that

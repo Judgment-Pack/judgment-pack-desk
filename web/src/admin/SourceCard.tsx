@@ -1,3 +1,5 @@
+import { Message } from '../i18n/Message'
+import { msg, useLocale } from '../i18n'
 /**
  * One Admin section, as one card: where the value is written, whether it was
  * read, what is in the file, the fields, and the Save where there is one — and
@@ -162,6 +164,7 @@ export function SourceCard({
    */
   level?: 2 | 3
 }) {
+  useLocale()
   const grouped = under !== undefined
   // What the form inside this card, if any, says its own write is doing.
   const [write, setWrite] = useState<SourceStatus | undefined>(undefined)
@@ -219,6 +222,7 @@ export function SourceGroup({
   save?: ReactNode
   children: ReactNode
 }) {
+  useLocale()
   return (
     <section className={styles.group} aria-labelledby={`${id}-title`}>
       <Title id={id} title={title} level={2} className={styles.groupTitle} />
@@ -259,6 +263,7 @@ function Title({
   level: 2 | 3
   className: string
 }) {
+  useLocale()
   const Tag = level === 2 ? 'h2' : 'h3'
   return (
     <Tag className={className} id={id}>
@@ -269,18 +274,19 @@ function Title({
 
 /** The two rows, and only the ones this card or group actually states. */
 function Head({ location, status }: { location?: ReactNode; status?: SourceStatus }) {
+  useLocale()
   if (location === undefined && status === undefined) return null
   return (
     <dl className={styles.head}>
       {location !== undefined && (
         <div className={styles.row}>
-          <dt className={styles.key}>Location</dt>
+          <dt className={styles.key}>{msg("Location")}</dt>
           <dd className={styles.value}>{location}</dd>
         </div>
       )}
       {status !== undefined && (
         <div className={styles.row}>
-          <dt className={styles.key}>Status</dt>
+          <dt className={styles.key}>{msg("Status")}</dt>
           <dd className={styles.value}>
             <StatusLine status={status} />
           </dd>
@@ -314,33 +320,26 @@ export function showsContent(status: SourceStatus): boolean {
  * the narration sweep exempts quoted material for exactly that reason.
  */
 export function StatusLine({ status }: { status: SourceStatus }) {
-  if (status.state === 'read') return <>read</>
-  if (status.state === 'absent') return <>not present — defaults in use</>
-  if (status.state === 'pending') return <>not read yet</>
+  useLocale()
+  if (status.state === 'read') return <>{msg("read")}</>
+  if (status.state === 'absent') return <>{msg("not present — defaults in use")}</>
+  if (status.state === 'pending') return <>{msg("not read yet")}</>
   if (status.state === 'said') return <>{status.says}</>
   if (status.state === 'migrated') {
     return (
-      <>
-        read — <Notices notices={status.notices} />
-      </>
+      <><Message text={"read — <0/>"} slots={[<Notices notices={status.notices} />]} /></>
     )
   }
-  if (status.state === 'writing') return <>writing — nothing is written until the desk answers</>
-  if (status.state === 'stale') return <>the file changed on disk — nothing was written</>
+  if (status.state === 'writing') return <>{msg("writing — nothing is written until the desk answers")}</>
+  if (status.state === 'stale') return <>{msg("the file changed on disk — nothing was written")}</>
   if (status.state === 'not-written') {
     return (
-      <>
-        not written:{' '}
-        {status.reason !== undefined && <code className={styles.reason}>{status.reason}</code>}
-        <Problems problems={status.problems} />
-      </>
+      <><Message text={"not written:<0/><1/><2/>"} slots={[' ', status.reason !== undefined && <code className={styles.reason}>{status.reason}</code>, <Problems problems={status.problems} />]} /></>
     )
   }
   if (status.state === 'refused') {
     return (
-      <>
-        refused: <Problems problems={status.problems} />
-      </>
+      <><Message text={"refused: <0/>"} slots={[<Problems problems={status.problems} />]} /></>
     )
   }
   return <UnreadLine failure={status.failure} />
@@ -348,6 +347,7 @@ export function StatusLine({ status }: { status: SourceStatus }) {
 
 /** The decoder's own sentences about what it did, as quoted material. */
 function Notices({ notices }: { notices: readonly ConfigNotice[] }) {
+  useLocale()
   return (
     <>
       {notices.map((notice) => (
@@ -361,6 +361,7 @@ function Notices({ notices }: { notices: readonly ConfigNotice[] }) {
 
 /** The decoder's own sentences, key path and all, as quoted material. */
 function Problems({ problems }: { problems: readonly ConfigProblem[] }) {
+  useLocale()
   return (
     <>
       {problems.map((problem) => (
@@ -382,14 +383,15 @@ function Problems({ problems }: { problems: readonly ConfigProblem[] }) {
  * answer. The reason itself is always quoted, whoever wrote it.
  */
 function UnreadLine({ failure }: { failure: ReadFailure }) {
+  useLocale()
   return (
     <>
       {!failure.responseReceived ? (
-        <>not read — the browser’s own reason: </>
+        <>{msg("not read — the browser’s own reason: ")}</>
       ) : failure.source === 'chassis' ? (
-        <>not read — the desk answered {failure.status}, and its own reason: </>
+        <><Message text={"not read — the desk answered <0/>, and its own reason: "} slots={[failure.status]} /></>
       ) : (
-        <>not read — the desk answered {failure.status}, and this page’s reason: </>
+        <><Message text={"not read — the desk answered <0/>, and this page’s reason: "} slots={[failure.status]} /></>
       )}
       <code className={styles.reason}>{failure.reason}</code>
     </>
@@ -414,6 +416,7 @@ export function CardField({
   action?: ReactNode
   children: ReactNode
 }) {
+  useLocale()
   return (
     <div className={styles.field} data-action={action !== undefined || undefined}>
       <span className={styles.key}>{label}</span>
