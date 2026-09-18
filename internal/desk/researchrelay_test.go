@@ -375,3 +375,17 @@ func TestResearchDocumentRequestLimits(t *testing.T) {
 		t.Fatalf("reenabled configured allowance: %d %s", resp.StatusCode, body)
 	}
 }
+
+func TestLocalDocumentConstraintCannotSendToExternalGateway(t *testing.T) {
+	u := newUpstream(t, nil)
+	_, ts := researchDesk(t, u)
+	for suffix, method := range researchRoutes {
+		response, body := researchDo(t, ts, method, suffix, strings.NewReader(`{"session":"selected-file-session","source":"drive","arguments":{"grant":"local-grant","fileId":"selected-file"}}`), func(r *http.Request) { r.Header.Set("X-JPack-Local-Documents", "1") })
+		if response.StatusCode != http.StatusConflict || codeOfBody(t, body) != CodeResearchUnconfigured {
+			t.Fatal(response.StatusCode, body)
+		}
+	}
+	if len(u.arrivals()) != 0 {
+		t.Fatalf("local grant escaped to external gateway: %v", u.arrivals())
+	}
+}

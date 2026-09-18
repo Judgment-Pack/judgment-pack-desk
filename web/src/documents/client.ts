@@ -1,3 +1,4 @@
+import { connectionError, type DriveSelection } from '../connections/client'
 import { sourceMessage } from '../i18n/source'
 import { answer, deskFetch } from '../files/client'
 import type { ResearchConfig, ResearchGatewayConfig } from '../config/deskConfig'
@@ -11,7 +12,7 @@ export interface DocumentReference { id: string; digest: string; pages: number[]
 export interface DocumentOriginal { name: string; mediaType: string; bytes: string; sha256: string }
 export interface DocumentObject {
   version: 1; original: DocumentOriginal
-  proof?: { session: string; source: string; authority: string; publicKey: string; response: string; registry: string }
+  proof?: { session: string; source: string; authority: string; publicKey: string; response: string; registry: string; drive?: DriveSelection }
 }
 export interface VerifiedDocument { record: DocumentRecord; digest: string; object: DocumentObject }
 const enc = new TextEncoder()
@@ -48,18 +49,20 @@ export async function verifyDocument(object: DocumentObject, pin: ResearchGatewa
   const parsed = parseJsonText(proof.response), receipt = memberOf(parsed, 'receipt'), result = memberOf(parsed, 'result'), salts = memberOf(parsed, 'salts')
   if (!receipt || !result || !salts || stringMember(receipt, 'receiptVersion') !== '3' || stringMember(receipt, 'kind') !== 'acquisition' || stringMember(receipt, 'source') !== proof.source) throw fail()
   const acquisition = memberOf(receipt, 'acquisition')
-  if (!acquisition || stringMember(acquisition, 'shape') !== 'command') throw fail()
+  if (!acquisition || stringMember(acquisition, 'shape') !== (proof.drive ? 'http' : 'command')) throw fail()
   const verdict = await verifySession({ sessionId: proof.session, authority: pin.authority, publicKeyHex: pin.signer.public, receipts: [{ receipt, result }], registryText: proof.registry })
   if (!verdict.ok || !verdict.sealed) throw fail()
   const salt = stringMember(salts, 'args')
   if (!salt || !/^[a-f0-9]{64}$/.test(salt)) throw fail()
-  const args = canonicalize(parseJsonText(JSON.stringify(documentArguments(original))))
+  const args = canonicalize(parseJsonText(JSON.stringify(proof.drive ?? documentArguments(original))))
   const committed = new Uint8Array(32 + 5 + args.length)
   committed.set(hexToBytes(salt)); committed.set(enc.encode('args:'), 32); committed.set(args, 37)
   if (stringMember(receipt, 'argumentsCommitment') !== `sha256:${await sha256Hex(committed)}`) throw fail()
   const digest = stringMember(receipt, 'resultDigest')!
   if (expectedDigest && digest !== expectedDigest) throw fail()
   const record = readDocumentRecord(JSON.parse(proof.response).result)
+  if (proof.drive && (!/^[a-f0-9]{64}$/.test(proof.drive.grant) || record.provenance.source.kind !== 'google-drive' || record.provenance.source.fileId !== proof.drive.fileId || record.original.bytes !== original.bytes)) throw fail()
+  if (!proof.drive && record.provenance.source.kind !== 'inline') throw fail()
   if (record.document.id !== original.sha256 || record.document.size !== raw.length || record.document.name !== original.name || record.document.mediaType !== original.mediaType) throw fail()
   return { record, digest, object }
 }
@@ -113,4 +116,27 @@ export function matchesPageQuote(document: VerifiedDocument, page: number, quote
   const text = usablePages(document.record).find(p => p.number === page)?.text
   const fold = (s: string) => s.replace(/\s+/gu, ' ').trim()
   return Boolean(text && quote.trim() && (text.includes(quote.trim()) || fold(text).includes(fold(quote))))
+}
+
+/** The original and extraction come from the same signed Drive acquisition. */
+export async function ingestDrive(selection: DriveSelection, config: ResearchConfig, signal: AbortSignal, progress: (message: string) => void): Promise<{ reference: DocumentReference; document: VerifiedDocument }> {
+ const gateway = config.gateway
+ if (!gateway || !config.documents?.enabled) throw new Error(sourceMessage('Enable document processing in Admin → Connections before attaching Drive files.'))
+ const session = newResearchSession(), id = crypto.randomUUID()
+ progress(sourceMessage('Reading files…'))
+ const response = await acquire(session, 'drive', selection, 16 << 20, signal, 'local-documents').catch(cause => { if (signal.aborted) throw cause; throw new Error(connectionError(String((cause as Error).message).includes('reconnect-required') ? 'reconnect-required' : 'retrieval-failed')) })
+ signal.throwIfAborted()
+ const record = readDocumentRecord(JSON.parse(response.text).result)
+ if (record.provenance.source.kind !== 'google-drive' || record.original.retention !== 'inline' || !record.original.bytes) throw fail()
+ const object: DocumentObject = { version: 1, original: {name: record.document.name, mediaType: record.document.mediaType, bytes: record.original.bytes, sha256: record.document.id} }
+ if (record.document.size > config.documents.maxFileBytes) throw new Error(sourceMessage('This file is empty or exceeds the configured upload limit.'))
+ const stored = await save(id, object, 'absent', signal)
+ progress(sourceMessage('Verifying document pages…'))
+ await seal(session, signal, 'local-documents')
+ const registryText = (await registry(signal, 'local-documents')).split('\n').filter(line => line.trim() && stringMember(parseJsonText(line), 'sessionId') === session).join('\n') + '\n'
+ object.proof = {session, source: 'drive', authority: gateway.authority, publicKey: gateway.signer.public, response: response.text, registry: registryText, drive: selection}
+ await save(id, object, stored, signal)
+ const document = await verifyDocument(object, gateway)
+ signal.throwIfAborted()
+ return {document, reference: {id, digest: document.digest, pages: usablePages(record).map(p => p.number), allowPartial: false, needsReview: needsPartialConsent(record)}}
 }

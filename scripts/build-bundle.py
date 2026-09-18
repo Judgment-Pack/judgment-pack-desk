@@ -45,7 +45,7 @@ def main():
             archive.extractall(source, filter='data')
         suffix = '.exe' if os.environ.get('GOOS', '') == 'windows' or os.name == 'nt' else ''
         files = {}
-        for name, module, package in [('gateway', 'go', '.'), ('adapter-document', 'adapters', './cmd/adapter-document')]:
+        for name, module, package in [('gateway', 'go', '.'), ('adapter-document', 'adapters', './cmd/adapter-document'), ('gateway-connections', 'adapters', './cmd/gateway-connections'), ('adapter-drive', 'adapters', './cmd/adapter-drive')]:
             artifact = temp / (name + suffix)
             run(['go', 'build', '-buildvcs=false', '-trimpath', '-o', str(artifact), package], source / module)
             files[artifact.name] = hashlib.sha256(artifact.read_bytes()).hexdigest()
@@ -58,7 +58,7 @@ def main():
                 os.replace(staged, target / artifact.name)
             finally:
                 if os.path.exists(staged): os.unlink(staged)
-        # Ship upstream license material with the two companion executables.
+        # Ship upstream license material with the companion executables.
         licenses = target / 'gateway-licenses'
         licenses.mkdir(exist_ok=True)
         for path in source.rglob('*'):

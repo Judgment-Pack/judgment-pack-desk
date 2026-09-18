@@ -7,8 +7,9 @@ import { signedDocument } from '../documents/__fixtures__/signedDocument'
 import { verifyDocument } from '../documents/client'
 import { readDocumentRecord } from '../documents/record'
 import partial from '../documents/__fixtures__/partial-ocr-failed.json'
-const mocked = vi.hoisted(() => ({ ingest: vi.fn(), load: vi.fn() }))
-vi.mock('../documents/client', async original => ({...await original<typeof import('../documents/client')>(), ingestDocument:mocked.ingest,loadDocument:mocked.load}))
+const mocked = vi.hoisted(() => ({ ingest: vi.fn(), load: vi.fn(), pick: vi.fn(), drive: vi.fn() }))
+vi.mock('../documents/client', async original => ({...await original<typeof import('../documents/client')>(), ingestDocument:mocked.ingest,loadDocument:mocked.load,ingestDrive:mocked.drive}))
+vi.mock('../connections/client', () => ({ authorizeDrive: mocked.pick }))
 const stores: ChatStore[] = []
 afterEach(()=>{cleanup();stores.forEach(s=>s.dispose());stores.length=0;sessionStorage.clear();vi.clearAllMocks()})
 async function setup(enabled = true) {
@@ -67,4 +68,27 @@ it('requires consent before using partial extraction and re-verifies before ever
  mocked.load.mockRejectedValue(new Error('tampered receipt'))
  await act(async()=>{prompt=await s.result.current.prepare([file])})
  expect(prompt).toBeUndefined();expect(mocked.load).toHaveBeenCalledTimes(3)
+})
+
+it('refuses Drive selection before consent when document processing is disabled', async () => {
+ const s = await setup(false)
+ await act(() => s.result.current.attachDrive())
+ expect(mocked.pick).not.toHaveBeenCalled()
+ expect(mocked.drive).not.toHaveBeenCalled()
+ expect(s.result.current.error).toContain('Enable document processing')
+})
+it.each(['cancel', 'switch', 'unmount'] as const)('does not attach a Drive result after %s', async how => {
+ const s = await setup()
+ mocked.pick.mockResolvedValue([{fileId:'selected-file',grant:'ab'.repeat(32)}])
+ let finish!: (value: unknown) => void
+ mocked.drive.mockReturnValue(new Promise(resolve => { finish = resolve }))
+ let work!: Promise<void>
+ await act(async () => { work = s.result.current.attachDrive(); await Promise.resolve() })
+ const signal = mocked.drive.mock.calls[0]![2] as AbortSignal
+ if (how === 'cancel') act(() => s.result.current.cancel())
+ if (how === 'switch') {const other=s.store.startChat({id:'other',path:'other.json',digest:'x'});s.rerender({id:other.id})}
+ if (how === 'unmount') s.unmount()
+ expect(signal.aborted).toBe(true)
+ await act(async () => {finish({reference:s.reference,document:s.document});await work})
+ expect(s.store.getSnapshot().drafts.every(chat => !chat.attachments?.length)).toBe(true)
 })

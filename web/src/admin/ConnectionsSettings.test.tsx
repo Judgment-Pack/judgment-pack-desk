@@ -26,7 +26,7 @@ it('shows compact personal summaries and exposes only supported actions', () => 
   expect(screen.getByRole('button', { name: 'Set up gateway' })).toBeTruthy()
   expect((screen.getByRole('button', { name: 'Manage PDF processing' }) as HTMLButtonElement).disabled).toBe(true)
   expect(screen.queryByRole('textbox')).toBeNull()
-  expect(screen.getByText('Not available yet')).toBeTruthy()
+  expect(screen.getAllByText('Unavailable').length).toBeGreaterThan(0)
   expect(screen.queryByRole('button', { name: /connect.*drive/i })).toBeNull()
 })
 it('saves PDF processing conditionally and preserves shared research settings', async () => {
@@ -118,7 +118,7 @@ it('shows ready local processing and saves PDF preferences without persisting a 
   expect((screen.getByRole('button', { name: 'Save changes' }) as HTMLButtonElement).disabled).toBe(true)
   fireEvent.click(screen.getByLabelText('Enable PDF processing')); save()
   await screen.findByText('Saved.')
-  const sent = JSON.parse(mocks.fetch.mock.calls[0]![1].body)
+  const sent = JSON.parse(mocks.fetch.mock.calls.find(call => call[0] === '/api/desk-config' && call[1]?.method === 'PUT')![1].body)
   expect(sent.research.gateway).toBeNull()
   expect(sent.research.documents.enabled).toBe(false)
   expect(sent.research.sources.read.source).toBe('read')
@@ -127,7 +127,7 @@ it('shows ready local processing and saves PDF preferences without persisting a 
 it('offers an existing gateway when local components are unavailable without falsely enabling PDF uploads', () => {
   const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
   setup({ gateway: null }, { status: 'unavailable', problem: 'Missing components' })
-  expect(screen.getByText('Unavailable')).toBeTruthy()
+  expect(screen.getAllByText('Unavailable').length).toBeGreaterThan(0)
   expect((screen.getByRole('button', { name: 'Manage PDF processing' }) as HTMLButtonElement).disabled).toBe(true)
   fireEvent.click(screen.getByRole('button', { name: 'Set up gateway' }))
   expect(screen.getByLabelText('Connection').textContent).toBe('Local (automatic)')

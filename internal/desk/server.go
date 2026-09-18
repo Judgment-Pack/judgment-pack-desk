@@ -106,6 +106,7 @@ type Config struct {
 // Server is the HTTP handler and the owner of the file watcher.
 type Server struct {
 	localGateway *localGateway
+	connections  connectionCompanion
 	cfg          Config
 	mux          *http.ServeMux
 	static       http.Handler
@@ -302,6 +303,7 @@ func New(cfg Config) (*Server, error) {
 	// into a project file, and the key must never reach the page. See
 	// assistant.go for the whole argument.
 	s.mux.HandleFunc("GET /api/desk-config", s.handleDeskConfig)
+	s.mux.HandleFunc("POST /api/connections/{method}", s.handleConnections)
 	s.mux.HandleFunc("GET /api/attachments/{id}", s.handleAttachment)
 	s.mux.HandleFunc("PUT /api/attachments/{id}", s.handleAttachment)
 	s.mux.HandleFunc("GET /api/conversations", s.handleConversations)
@@ -369,6 +371,7 @@ func (s *Server) Close() error {
 }
 
 func (s *Server) closeAll() error {
+	s.connections.close()
 	if s.localGateway != nil {
 		s.localGateway.close()
 	}

@@ -33,6 +33,10 @@ type attachmentProof struct {
 	PublicKey string `json:"publicKey"`
 	Response  string `json:"response"`
 	Registry  string `json:"registry"`
+	Drive     *struct {
+		Grant  string `json:"grant"`
+		FileID string `json:"fileId"`
+	} `json:"drive,omitempty"`
 }
 type attachmentObject struct {
 	Version  int                `json:"version"`

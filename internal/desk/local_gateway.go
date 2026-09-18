@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-const GatewayRevision = "f9f05cc72f85ddda32f994b3b3eb2b75dcfc85ab"
+const GatewayRevision = "9f0c45ce98925ba81eb1fa676e957684e9cced00"
 const localAuthority = "gateway:desk-local"
 
 // LocalGatewayStatus carries public, effective settings only. The signing seed
@@ -90,7 +90,7 @@ func verifyGatewayBundle(dir string) error {
 	if json.Unmarshal(raw, &manifest) != nil || manifest.Revision != GatewayRevision {
 		return errors.New("local processing components do not match this Desk build")
 	}
-	for _, name := range []string{"gateway", "adapter-document"} {
+	for _, name := range []string{"gateway", "adapter-document", "gateway-connections", "adapter-drive"} {
 		file, err := os.Open(filepath.Join(dir, executableName(name)))
 		if err != nil {
 			return err
@@ -233,7 +233,7 @@ func (g *localGateway) start(store *assistantStore) (*localGatewayPin, error) {
 	if err = root.Mkdir(run, 0700); err != nil {
 		return nil, err
 	}
-	options := localWorkerOptions{Bundle: g.bundle, Dir: filepath.Join(store.dir, "local-gateway", run), Seed: filepath.Join(store.dir, "secrets", "local-gateway.seed"), Public: public}
+	options := localWorkerOptions{Bundle: g.bundle, Dir: filepath.Join(store.dir, "local-gateway", run), Seed: filepath.Join(store.dir, "secrets", "local-gateway.seed"), Public: public, ConnectionsDir: filepath.Join(store.dir, "gateway-connections")}
 	g.cmd = exec.Command(g.executable, "--local-gateway-worker")
 	g.input, err = g.cmd.StdinPipe()
 	if err != nil {
@@ -303,7 +303,7 @@ func (s *Server) localResearch(documents *documentSourceConfig) (researchGateway
 	if err != nil {
 		return researchGateway{}, withCode(CodeResearchUnconfigured, err)
 	}
-	gateway := researchGateway{url: pin.URL, authority: pin.Authority, signerPublic: pin.Signer.Public, maxRequestBytes: maxResearchBody}
+	gateway := researchGateway{managedLocal: true, url: pin.URL, authority: pin.Authority, signerPublic: pin.Signer.Public, maxRequestBytes: maxResearchBody}
 	if documents == nil {
 		gateway.maxRequestBytes = 32 << 20
 		gateway.maxFileBytes = 16 << 20

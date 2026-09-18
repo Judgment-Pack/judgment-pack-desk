@@ -40,9 +40,11 @@ A bare `go build` still builds Desk, but does not package the gateway companions
 On Linux and macOS, Desk starts its local gateway automatically and Admin →
 Connections shows **Local processing · Ready**. You can upload PDFs without
 entering a gateway URL, generating keys, or running a separate server. An
-existing gateway configuration stays in control. Local processing is for PDF
-text extraction; Google Drive, web research credentials and OCR are not installed
-by this setup. See [managed local processing](docs/adr/0005-managed-local-gateway.md)
+existing gateway configuration stays in control. The bundle also includes personal
+Google Drive connection and retrieval companions. Configure a Google Desktop app
+registration in Admin → Connections, then connect your account and choose files
+from the chat attachment menu. Google consent is required; setup cannot authorize
+an account automatically. Web research credentials and OCR are not installed. See [managed local processing](docs/adr/0005-managed-local-gateway.md)
 for identity preservation, receipt storage and platform boundaries.
 
 ## Personal chat storage and recovery
@@ -61,7 +63,8 @@ when a project folder moves. Unsent browser drafts remain outside backups.
 See [private data and recovery](docs/adr/0003-private-chat-data-and-recovery.md) for
 limits, concurrency and recovery behavior, and the proposed
 [document connections boundary](docs/adr/0004-document-connections-boundary.md) for
-PDF/Drive integration dependencies. Personal local storage does not enable shared
+integration boundaries, and [Drive connections](docs/adr/0006-gateway-drive-connections.md)
+for the personal gateway-owned connection. Personal local storage does not enable shared
 organization storage, scheduled backups, or a document provider.
 
 ## What it shows
