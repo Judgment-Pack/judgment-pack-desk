@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "keyboard": true,
+      "driveDisabled": true,
+      "uploadChooser": true
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "box": {
+        "x": 493,
+        "y": 349,
+        "width": 352,
+        "height": 221.59375
+      },
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "box": {
+        "x": 22,
+        "y": 370,
+        "width": 352,
+        "height": 221.59375
+      },
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "box": {
+        "x": 16,
+        "y": 358,
+        "width": 288,
+        "height": 257.59375
+      },
+      "horizontalOverflow": false
+    },
+    {
+      "language": "de",
+      "localized": true
+    },
+    {
+      "language": "ja",
+      "localized": true
+    },
+    {
+      "language": "yue-Hant",
+      "localized": true
+    }
+  ],
+  "errors": []
+}

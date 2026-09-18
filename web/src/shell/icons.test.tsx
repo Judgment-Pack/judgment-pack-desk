@@ -26,6 +26,7 @@ describe('the desk icons', () => {
       'IconClose',
       'IconCopy',
       'IconGear',
+      'IconGoogleDrive',
       'IconGraph',
       'IconHelp',
       'IconHistory',
@@ -35,6 +36,7 @@ describe('the desk icons', () => {
       'IconPanelBottom',
       'IconPanelLeft',
       'IconPanelRight',
+      'IconPaperclip',
       'IconPencil',
       'IconPlus',
       'IconPreview'

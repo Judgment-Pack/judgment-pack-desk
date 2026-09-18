@@ -45,6 +45,15 @@ export function IconPlus() {
   )
 }
 
+export function IconPaperclip() {
+  return <Glyph><path d="m6 8 4-4a2.1 2.1 0 0 1 3 3l-6 6a3.5 3.5 0 0 1-5-5l6-6M5 9l5-5" /></Glyph>
+}
+
+/** Monochrome provider mark, keeping the Desk's neutral icon palette. */
+export function IconGoogleDrive() {
+  return <Glyph><path d="M6 2h4l5 8.5-2 3.5H3L1 10.5 6 2Z" /><path d="m6 2 5 8.5M10 2 5 10.5M1 10.5h14M5 10.5 3 14m8-3.5 2 3.5" /></Glyph>
+}
+
 export function IconMore() {
   return <Glyph><circle cx="3" cy="8" r=".8" fill="currentColor" stroke="none" /><circle cx="8" cy="8" r=".8" fill="currentColor" stroke="none" /><circle cx="13" cy="8" r=".8" fill="currentColor" stroke="none" /></Glyph>
 }
