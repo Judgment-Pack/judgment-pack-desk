@@ -8,14 +8,14 @@ import { Alert } from '../ui/Alert'
 import { authorizeDrive, connectionCall, CONNECTIONS_KEY, type MailSearch, type MailSelection } from './client'
 import styles from './GmailPicker.module.css'
 
-export function GmailPicker({ open, onOpenChange, state, onSelect, openerRef }: {
-  open: boolean; onOpenChange: (open: boolean) => void; state?: string
+export function GmailPicker({ open, onOpenChange, state, accountId, onSelect, openerRef }: {
+  open: boolean; onOpenChange: (open: boolean) => void; state?: string; accountId?: string
   onSelect: (items: MailSelection[]) => void; openerRef: RefObject<HTMLElement | null>
 }) {
   useLocale()
   const client = useQueryClient()
   const [submittedQuery, setSubmittedQuery] = useState('')
-  const [query, setQuery] = useState(''), [result, setResult] = useState<MailSearch>({ messages: [] })
+  const [query, setQuery] = useState(''), [result, setResult] = useState<MailSearch>({ selectionContext: '', messages: [] })
   const [selected, setSelected] = useState<string[]>([]), [busy, setBusy] = useState(false), [error, setError] = useState('')
   const active = useRef<AbortController | null>(null)
   const searchInput = useRef<HTMLInputElement>(null)
@@ -29,10 +29,10 @@ export function GmailPicker({ open, onOpenChange, state, onSelect, openerRef }: 
     finally { if (active.current === task) { active.current = null; setBusy(false) } }
   }
   useEffect(() => {
-    setQuery(''); setResult({ messages: [] }); setSelected([]); setError(''); setBusy(false)
+    setQuery(''); setResult({ selectionContext: '', messages: [] }); setSelected([]); setError(''); setBusy(false)
     if (open && state === 'connected') void search('')
     return () => { active.current?.abort(); active.current = null }
-  }, [open, state])
+  }, [open, state, accountId])
   async function connect() {
     const task = operation()
     try { await authorizeDrive('connect', task.signal, 'gmail'); if (!task.signal.aborted) await client.invalidateQueries({ queryKey: CONNECTIONS_KEY }) }
@@ -42,7 +42,7 @@ export function GmailPicker({ open, onOpenChange, state, onSelect, openerRef }: 
   async function attach() {
     const task = operation()
     try {
-      const choices = await connectionCall<MailSelection[]>('select', { messageIds: selected }, task.signal, 'gmail')
+      const choices = await connectionCall<MailSelection[]>('select', { messageIds: selected, selectionContext: result.selectionContext }, task.signal, 'gmail')
       if (active.current === task && !task.signal.aborted) { onSelect(choices); onOpenChange(false) }
     } catch (cause) { if (!task.signal.aborted) setError((cause as Error).message) }
     finally { if (active.current === task) { active.current = null; setBusy(false) } }
@@ -50,7 +50,7 @@ export function GmailPicker({ open, onOpenChange, state, onSelect, openerRef }: 
   return <Dialog open={open} onOpenChange={onOpenChange} title={msg('Gmail')} openerRef={openerRef}
     description={msg('Choose up to four emails. Message text is attached; mail attachments are excluded.')}
     footer={<DialogActions><Button variant="quiet" onClick={() => onOpenChange(false)}>{msg('Cancel')}</Button>{state === 'connected'
-      ? <Button variant="primary" disabled={busy || !selected.length} onClick={() => void attach()}>{msg('Attach selected emails')}</Button>
+      ? <Button variant="primary" disabled={busy || !selected.length || !result.selectionContext} onClick={() => void attach()}>{msg('Attach selected emails')}</Button>
       : <Button variant="primary" disabled={busy || state !== 'not-connected'} onClick={() => void connect()}>{msg('Connect')}</Button>}</DialogActions>}>
     {state === 'connected' ? <>
       <form className={styles.search} onSubmit={event => { event.preventDefault(); void search(query) }}>

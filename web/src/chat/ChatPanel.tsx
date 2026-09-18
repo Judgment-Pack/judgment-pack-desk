@@ -160,7 +160,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
       {(unsubmitted || error || saving || dirty || running) && <p className={styles.footnote}>{error ? msg("Chat has unsaved changes.") : saving || dirty ? msg("Saving chat…") : running ? msg("Working in this window. You can switch chats; keep this window open.") : msg("Send a message to start a chat.")}</p>}
     </div>
     </div>
-    <GmailPicker key={`${chat.id}:${attachmentContext}`} open={gmailOpen && localDrive && !locked && !running} onOpenChange={setGmailOpen} state={gmail.data?.state} openerRef={attachmentButton} onSelect={items => void upload.attachGmail(items)} />
+    <GmailPicker key={`${chat.id}:${attachmentContext}`} open={gmailOpen && localDrive && !locked && !running} onOpenChange={setGmailOpen} state={gmail.data?.state} accountId={gmail.data?.account?.id} openerRef={attachmentButton} onSelect={items => void upload.attachGmail(items)} />
     <ConfigureAssistant open={configure} onOpenChange={setConfigure} openerRef={configureButton} />
   </section>
 }

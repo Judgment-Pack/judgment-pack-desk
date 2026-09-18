@@ -4,7 +4,7 @@ import { sourceMessage } from '../i18n/source'
 export type ConnectionProvider = 'google-drive' | 'gmail'
 export interface MailSelection { messageId: string; grant: string }
 export interface MailPreview { id: string; subject: string; from: string; date: string }
-export interface MailSearch { messages: MailPreview[]; nextPageToken?: string }
+export interface MailSearch { selectionContext: string; messages: MailPreview[]; nextPageToken?: string }
 export interface ConnectionStatus { version: 1; provider: ConnectionProvider; state: 'setup-required'|'not-connected'|'connected'|'blocked'|'unavailable'; account?: { id: string; email: string; name: string }; maxFileBytes: number; maxFiles: number }
 export interface DriveSelection { fileId: string; grant: string }
 export interface ConnectionFlow { id: string; state: 'pending'|'complete'|'failed'|'canceled'; url?: string; error?: string; selections?: DriveSelection[] }

@@ -1,6 +1,6 @@
 # Document attachments
 
-Desk pins gateway `7dd587dc7168da839da14433747cefd651387422`
+Desk pins gateway `e649f098b1143de69fb5bc8558f2686a4934acd9`
 (Drive implementation PR #139, pending independent review).
 The v1 contract is `docs/design/attachments.md` in that repository.
 No runtime or JPS format change is involved.
