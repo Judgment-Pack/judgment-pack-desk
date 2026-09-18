@@ -78,3 +78,22 @@ jobs:
 
       - name: component tests
         run: npm test
+
+  local-gateway:
+    name: Local gateway (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build pinned local companions and Desk
+        run: python3 scripts/build-bundle.py --skip-web --output "$RUNNER_TEMP/Desk bundle"
+      - name: Real gateway lifecycle and PDF extraction
+        run: python3 scripts/local-gateway-check.py "$RUNNER_TEMP/Desk bundle" "$(command -v true)"

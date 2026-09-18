@@ -124,7 +124,8 @@
       "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b"
     },
     "researchGateway": "http://127.0.0.1:8787",
-    "thinking": "off"
+    "thinking": "off",
+    "documents": null
   },
   "accepted-documents-small": {
     "accepted": true,
@@ -210,7 +211,7 @@
     "notices": [
       {
         "key": "assistant.endpoint.model",
-        "says": "no model chosen yet \u2014 pick one below"
+        "says": "no model chosen yet — pick one below"
       }
     ]
   },
@@ -222,7 +223,7 @@
     "notices": [
       {
         "key": "assistant.endpoint.model",
-        "says": "no model chosen yet \u2014 pick one below"
+        "says": "no model chosen yet — pick one below"
       }
     ]
   },
@@ -255,7 +256,7 @@
     "notices": [
       {
         "key": "assistant.endpoint.model",
-        "says": "no model chosen yet \u2014 pick one below"
+        "says": "no model chosen yet — pick one below"
       }
     ]
   },

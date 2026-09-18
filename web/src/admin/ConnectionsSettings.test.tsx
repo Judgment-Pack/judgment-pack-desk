@@ -4,16 +4,16 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, expect, it, vi } from 'vitest'
 import { testQueryClient } from '../testing/harness'
 import { DeskConfigFixture } from '../config/DeskConfigProvider'
-import { decodeDeskConfig, DOCUMENT_DEFAULTS, effectiveConfig } from '../config/deskConfig'
+import { decodeDeskConfig, DOCUMENT_DEFAULTS, effectiveConfig, type LocalGatewayStatus } from '../config/deskConfig'
 import { ConnectionsSettings } from './ConnectionsSettings'
 const mocks = vi.hoisted(() => ({ fetch: vi.fn() }))
 vi.mock('../files/client', async original => ({ ...await original<typeof import('../files/client')>(), deskFetch: mocks.fetch }))
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 const gateway = { url: 'http://localhost:8787', authority: 'gateway:test', signer: { algorithm: 'ed25519', public: 'ab'.repeat(32) } }
 const research = { gateway, sources: { read: { source: 'read', dialect: 'jina-reader' } } }
-function setup(extra = {}) {
+function setup(extra = {}, localGateway?: LocalGatewayStatus) {
   const content = JSON.stringify({ deskConfigVersion: 1, research: { ...research, ...extra } })
-  const effective = effectiveConfig(undefined, undefined, undefined, { path: '/private/desk.json', present: true, sha256: 'revision-one', text: content, decoded: decodeDeskConfig(content, 'desk') })
+  const effective = effectiveConfig(undefined, undefined, undefined, { localGateway, path: '/private/desk.json', present: true, sha256: 'revision-one', text: content, decoded: decodeDeskConfig(content, 'desk') })
   return render(<MemoryRouter><QueryClientProvider client={testQueryClient()}><DeskConfigFixture value={effective}><ConnectionsSettings /></DeskConfigFixture></QueryClientProvider></MemoryRouter>)
 }
 function openPDF() { fireEvent.click(screen.getByRole('button', { name: 'Manage PDF processing' })) }
@@ -105,4 +105,31 @@ it('confirms discarding changes and returns focus to the opener', async () => {
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Manage PDF processing' })))
   openPDF(); expect((screen.getByLabelText('Enable PDF processing') as HTMLInputElement).checked).toBe(false)
   expect(mocks.fetch).not.toHaveBeenCalled()
+})
+
+it('shows ready local processing and saves PDF preferences without persisting a temporary gateway URL', async () => {
+  mocks.fetch.mockImplementation(async () => response())
+  setup({ gateway: null }, { status: 'ready', gateway: { ...gateway, signer: { ...gateway.signer, algorithm: 'ed25519' } } })
+  expect(screen.getByText('Local processing')).toBeTruthy()
+  expect(screen.getByText('Ready')).toBeTruthy()
+  openPDF()
+  expect((screen.getByLabelText('Enable PDF processing') as HTMLInputElement).checked).toBe(true)
+  expect(screen.queryByLabelText('Document source name')).toBeNull()
+  expect((screen.getByRole('button', { name: 'Save changes' }) as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.click(screen.getByLabelText('Enable PDF processing')); save()
+  await screen.findByText('Saved.')
+  const sent = JSON.parse(mocks.fetch.mock.calls[0]![1].body)
+  expect(sent.research.gateway).toBeNull()
+  expect(sent.research.documents.enabled).toBe(false)
+  expect(sent.research.sources.read.source).toBe('read')
+  expect(JSON.stringify(sent)).not.toContain(gateway.url)
+})
+it('offers an existing gateway when local components are unavailable without falsely enabling PDF uploads', () => {
+  setup({ gateway: null }, { status: 'unavailable', problem: 'Missing components' })
+  expect(screen.getByText('Unavailable')).toBeTruthy()
+  expect((screen.getByRole('button', { name: 'Manage PDF processing' }) as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Set up gateway' }))
+  expect(screen.getByLabelText('Connection').textContent).toBe('Local (automatic)')
+  expect(screen.queryByLabelText('Gateway URL')).toBeNull()
+  expect((screen.getByRole('button', { name: 'Save changes' }) as HTMLButtonElement).disabled).toBe(true)
 })
