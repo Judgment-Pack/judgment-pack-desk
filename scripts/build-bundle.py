@@ -35,7 +35,7 @@ def main():
         temp = Path(temp)
         repo = args.gateway_checkout
         if repo is None:
-            repo = temp / 'gateway'
+            repo = temp / 'checkout'
             run(['git', 'init', str(repo)])
             run(['git', '-c', 'http.version=HTTP/1.1', 'fetch', '--depth=1', 'https://github.com/Judgment-Pack/judgment-pack-gateway.git', REVISION], repo)
         data = run(['git', 'archive', REVISION], repo, stdout=subprocess.PIPE).stdout

@@ -211,7 +211,7 @@
     "notices": [
       {
         "key": "assistant.endpoint.model",
-        "says": "no model chosen yet — pick one below"
+        "says": "no model chosen yet \u2014 pick one below"
       }
     ]
   },
@@ -223,7 +223,7 @@
     "notices": [
       {
         "key": "assistant.endpoint.model",
-        "says": "no model chosen yet — pick one below"
+        "says": "no model chosen yet \u2014 pick one below"
       }
     ]
   },
@@ -256,7 +256,7 @@
     "notices": [
       {
         "key": "assistant.endpoint.model",
-        "says": "no model chosen yet — pick one below"
+        "says": "no model chosen yet \u2014 pick one below"
       }
     ]
   },
