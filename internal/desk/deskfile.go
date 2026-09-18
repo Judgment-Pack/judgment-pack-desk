@@ -118,16 +118,24 @@ func (d deskDecode) refused() bool { return len(d.Problems) > 0 }
 // nothing else here; the rest is carried so the shared corpus can hold both
 // decoders to one answer rather than one verdict.
 type researchConfig struct {
-	gateway *researchGateway
-	search  *researchSource
-	read    *researchSource
-	limits  map[string]int64
+	gateway   *researchGateway
+	search    *researchSource
+	read      *researchSource
+	limits    map[string]int64
+	documents *documentSourceConfig
+}
+
+type documentSourceConfig struct {
+	source                                          string
+	maxFileBytes, maxRequestBytes, maxResponseBytes int64
 }
 
 type researchGateway struct {
-	url          string
-	authority    string
-	signerPublic string
+	url             string
+	authority       string
+	signerPublic    string
+	maxRequestBytes int64
+	maxFileBytes    int64
 }
 
 type researchSource struct {
@@ -645,7 +653,7 @@ func decodeIdentity(value any) []deskProblem {
 // reason `decodeIdentity` gives: a member accepted here and refused by the
 // browser is a request the page never saw a configuration for.
 func decodeResearch(value any) (*researchConfig, []deskProblem) {
-	record, problems := object(value, "research", []string{"gateway", "sources", "limits"})
+	record, problems := object(value, "research", []string{"gateway", "sources", "limits", "documents"})
 	if record == nil {
 		return nil, problems
 	}
@@ -737,7 +745,45 @@ func decodeResearch(value any) (*researchConfig, []deskProblem) {
 			}
 		}
 	}
+	if value, present := record["documents"]; present && value != nil {
+		var extra []deskProblem
+		found.documents, extra = decodeDocumentSource(value)
+		problems = append(problems, extra...)
+	}
 	return found, problems
+}
+
+func decodeDocumentSource(value any) (*documentSourceConfig, []deskProblem) {
+	inner, problems := object(value, "research.documents", []string{"source", "maxFileBytes", "maxRequestBytes", "maxResponseBytes"})
+	if inner == nil {
+		return nil, problems
+	}
+	d := &documentSourceConfig{maxFileBytes: 16 << 20, maxRequestBytes: 32 << 20, maxResponseBytes: 8 << 20}
+	if name, ok := inner["source"].(string); !ok || !researchSourceName.MatchString(name) {
+		problems = append(problems, deskProblem{Key: "research.documents.source", Reason: "Enter the document source name configured on your gateway."})
+	} else {
+		d.source = name
+	}
+	for _, field := range []struct {
+		name      string
+		target    *int64
+		low, high int64
+	}{
+		{"maxFileBytes", &d.maxFileBytes, 1, 16 << 20}, {"maxRequestBytes", &d.maxRequestBytes, 65536, 64 << 20}, {"maxResponseBytes", &d.maxResponseBytes, 65536, 16 << 20},
+	} {
+		if value, present := inner[field.name]; present {
+			n, ok := value.(float64)
+			if !ok || n < float64(field.low) || n > float64(field.high) || n != float64(int64(n)) {
+				problems = append(problems, deskProblem{Key: "research.documents." + field.name, Reason: fmt.Sprintf("must be an integer from %d to %d; found %s", field.low, field.high, describe(value))})
+			} else {
+				*field.target = int64(n)
+			}
+		}
+	}
+	if 4*((d.maxFileBytes+2)/3)+4096 > d.maxRequestBytes {
+		problems = append(problems, deskProblem{Key: "research.documents.maxRequestBytes", Reason: "The request limit must fit the encoded file plus 4096 bytes of metadata."})
+	}
+	return d, problems
 }
 
 func decodeResearchSource(value any, key string) (*researchSource, []deskProblem) {

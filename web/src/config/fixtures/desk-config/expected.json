@@ -81,6 +81,63 @@
     ],
     "model": "a-model"
   },
+  "accepted-documents-defaults": {
+    "accepted": true,
+    "engine": "vercel",
+    "keys": [],
+    "research": {
+      "authority": "gateway:local",
+      "limits": {
+        "bytes": 8388608,
+        "reads": 12,
+        "searches": 8,
+        "seconds": 600
+      },
+      "read": null,
+      "search": null,
+      "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b"
+    },
+    "researchGateway": "http://127.0.0.1:8787",
+    "thinking": "off"
+  },
+  "accepted-documents-disabled": {
+    "accepted": true,
+    "engine": "vercel",
+    "keys": [],
+    "research": {
+      "authority": "gateway:local",
+      "limits": {
+        "bytes": 8388608,
+        "reads": 12,
+        "searches": 8,
+        "seconds": 600
+      },
+      "read": null,
+      "search": null,
+      "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b"
+    },
+    "researchGateway": "http://127.0.0.1:8787",
+    "thinking": "off"
+  },
+  "accepted-documents-small": {
+    "accepted": true,
+    "engine": "vercel",
+    "keys": [],
+    "research": {
+      "authority": "gateway:local",
+      "limits": {
+        "bytes": 8388608,
+        "reads": 12,
+        "searches": 8,
+        "seconds": 600
+      },
+      "read": null,
+      "search": null,
+      "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b"
+    },
+    "researchGateway": "http://127.0.0.1:8787",
+    "thinking": "off"
+  },
   "accepted-endpoint": {
     "accepted": true,
     "keys": [],
@@ -487,6 +544,36 @@
     "accepted": false,
     "keys": [
       "assistant.thinking"
+    ]
+  },
+  "refused-documents-array": {
+    "accepted": false,
+    "keys": [
+      "research.documents"
+    ]
+  },
+  "refused-documents-encoded-envelope": {
+    "accepted": false,
+    "keys": [
+      "research.documents.maxRequestBytes"
+    ]
+  },
+  "refused-documents-source": {
+    "accepted": false,
+    "keys": [
+      "research.documents.source"
+    ]
+  },
+  "refused-documents-unknown": {
+    "accepted": false,
+    "keys": [
+      "research.documents.url"
+    ]
+  },
+  "refused-documents-zero": {
+    "accepted": false,
+    "keys": [
+      "research.documents.maxResponseBytes"
     ]
   },
   "refused-endpoint-a-sixth-tool": {

@@ -8,6 +8,7 @@ package desk
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -333,5 +334,30 @@ func TestResearchRelayHoldsTheIdleBoundAfterTheHeaders(t *testing.T) {
 	// is a cut body, not a refusal envelope, and never the whole three seconds.
 	if resp.StatusCode != http.StatusOK || body != "{" {
 		t.Fatalf("%d %q", resp.StatusCode, body)
+	}
+}
+
+func TestResearchDocumentRequestLimits(t *testing.T) {
+	u := newUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	s, ts := researchDesk(t, u)
+	var config map[string]any
+	if err := json.Unmarshal([]byte(researchDeskFile(u.server.URL)), &config); err != nil {
+		t.Fatal(err)
+	}
+	config["research"].(map[string]any)["documents"] = map[string]any{"source": "documents", "maxFileBytes": 1024 * 1024, "maxRequestBytes": 2 * 1024 * 1024}
+	data, _ := json.Marshal(config)
+	writeDeskConfig(t, s, string(data))
+	large := strings.Repeat("x", maxResearchBody+1)
+	resp, body := researchDo(t, ts, "POST", "acquire", strings.NewReader(large), nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("configured upload: %d %s", resp.StatusCode, body)
+	}
+	resp, body = researchDo(t, ts, "POST", "seal", strings.NewReader(large), nil)
+	if resp.StatusCode != 413 {
+		t.Fatalf("seal limit broadened: %d %s", resp.StatusCode, body)
+	}
+	resp, body = researchDo(t, ts, "POST", "acquire", strings.NewReader(strings.Repeat("x", 2*1024*1024+1)), nil)
+	if resp.StatusCode != 413 {
+		t.Fatalf("document bound missing: %d %s", resp.StatusCode, body)
 	}
 }

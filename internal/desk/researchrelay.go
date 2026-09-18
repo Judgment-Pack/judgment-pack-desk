@@ -125,7 +125,13 @@ func (s *Server) configuredResearch() (researchGateway, error) {
 		return zero, withCode(CodeResearchUnconfigured, errors.New(
 			"no research gateway is configured: research.gateway is absent or null"))
 	}
-	return *decoded.Research.gateway, nil
+	gateway := *decoded.Research.gateway
+	gateway.maxRequestBytes = maxResearchBody
+	if decoded.Research.documents != nil {
+		gateway.maxRequestBytes = decoded.Research.documents.maxRequestBytes
+		gateway.maxFileBytes = decoded.Research.documents.maxFileBytes
+	}
+	return gateway, nil
 }
 
 // researchTarget is the gateway's own route under the configured base.
@@ -164,17 +170,23 @@ func (s *Server) handleResearchRelay(w http.ResponseWriter, r *http.Request) {
 			"a research request carries no query; nothing was sent")
 		return
 	}
-	if r.ContentLength > maxResearchBody {
-		writeJSONCoded(w, http.StatusRequestEntityTooLarge, CodeTooLarge,
-			fmt.Sprintf("a research request body is at most %d bytes; nothing was sent", maxResearchBody))
-		return
-	}
 	if s.refuseUnusableStore(w) {
 		return
 	}
 	gateway, err := s.configuredResearch()
 	if err != nil {
 		writeJSONError(w, statusForRefusal(err), err)
+		return
+	}
+	// Larger uploads are opt-in at the personal configuration boundary. Seal
+	// and registry requests retain the original small envelope limit.
+	bodyLimit := int64(maxResearchBody)
+	if suffix == "acquire" {
+		bodyLimit = gateway.maxRequestBytes
+	}
+	if r.ContentLength > bodyLimit {
+		writeJSONCoded(w, http.StatusRequestEntityTooLarge, CodeTooLarge,
+			fmt.Sprintf("a research request body is at most %d bytes; nothing was sent", bodyLimit))
 		return
 	}
 	target, err := researchTarget(gateway.url, suffix)
@@ -209,13 +221,13 @@ func (s *Server) handleResearchRelay(w http.ResponseWriter, r *http.Request) {
 	// The whole body first, bounded, so a request this desk refuses is one the
 	// gateway never saw any of — the model relay's rule, for its reason.
 	_ = controller.SetReadDeadline(deadline)
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxResearchBody))
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, bodyLimit))
 	_ = controller.SetReadDeadline(time.Time{})
 	if err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
 			writeJSONCoded(w, http.StatusRequestEntityTooLarge, CodeTooLarge,
-				fmt.Sprintf("a research request body is at most %d bytes; nothing was sent", maxResearchBody))
+				fmt.Sprintf("a research request body is at most %d bytes; nothing was sent", bodyLimit))
 			return
 		}
 		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest,
@@ -264,7 +276,7 @@ func (s *Server) handleResearchRelay(w http.ResponseWriter, r *http.Request) {
 			var tooLarge *http.MaxBytesError
 			if errors.As(err, &tooLarge) {
 				writeJSONCoded(w, http.StatusRequestEntityTooLarge, CodeTooLarge,
-					fmt.Sprintf("a research request body is at most %d bytes", maxResearchBody))
+					fmt.Sprintf("a research request body is at most %d bytes", bodyLimit))
 				return
 			}
 			// One word from the probe's closed vocabulary, never anything the

@@ -259,7 +259,8 @@ type DeskConfigWrite struct {
 	// Sending neither is a 400: a conditional commit that changes nothing is a
 	// request with no meaning, and answering it 200 would report a write that
 	// did not happen.
-	Project json.RawMessage `json:"project"`
+	Project  json.RawMessage `json:"project"`
+	Research json.RawMessage `json:"research"`
 	// IfMatch is the digest of the desk.json bytes the page last read, bare
 	// hex, or the empty string for "there was no file".
 	//
@@ -615,7 +616,7 @@ func (s *Server) handleDeskConfigWrite(w http.ResponseWriter, r *http.Request) {
 	// and a request that names neither is a conditional commit that would
 	// change nothing — answering it 200 would report a write that did not
 	// happen.
-	if len(req.Assistant) == 0 && len(req.Project) == 0 {
+	if len(req.Assistant) == 0 && len(req.Project) == 0 && len(req.Research) == 0 {
 		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest,
 			"assistant or project is required; write null for a member this desk configures none of")
 		return
@@ -786,7 +787,7 @@ func (s *Server) commitDeskConfigLocked(req DeskConfigWrite) (int, any) {
 		}
 	}
 
-	composed, problems := composeDeskFile(current, present, req.Assistant, req.Project)
+	composed, problems := composeDeskFile(current, present, req.Assistant, req.Project, req.Research)
 	if len(problems) > 0 {
 		return http.StatusUnprocessableEntity, deskConfigRefusal{
 			Error: fmt.Sprintf(
@@ -932,18 +933,22 @@ func (s *Server) commitDeskConfigLocked(req DeskConfigWrite) (int, any) {
 // own constant rather than something the page supplies, because a page that
 // could choose it could ask this desk to write a file it will not read.
 func composeDeskFile(
-	current []byte, present bool, assistant, project json.RawMessage,
+	current []byte, present bool, assistant, project json.RawMessage, research ...json.RawMessage,
 ) ([]byte, []deskProblem) {
 	// **Only the members this request named.** One that was not sent is not
 	// replaced, not removed and not re-rendered — it is copied across with
 	// every other member of the file, which is what lets the Project card save
 	// without sending the assistant slot and the Assistant form save without
 	// sending the project one.
+	var documents json.RawMessage
+	if len(research) > 0 {
+		documents = research[0]
+	}
 	written := map[string]json.RawMessage{}
 	for _, member := range []struct {
 		name string
 		raw  json.RawMessage
-	}{{"assistant", assistant}, {"project", project}} {
+	}{{"assistant", assistant}, {"project", project}, {"research", documents}} {
 		if len(member.raw) == 0 {
 			continue
 		}
@@ -982,7 +987,7 @@ func composeDeskFile(
 
 	// In the file's own order, so a member this request names keeps its place
 	// and one it does not name is never moved.
-	for _, name := range []string{"assistant", "project"} {
+	for _, name := range []string{"assistant", "project", "research"} {
 		raw, sent := written[name]
 		if !sent {
 			continue

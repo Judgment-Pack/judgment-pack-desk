@@ -1,9 +1,22 @@
+import type { DocumentReference } from '../documents/client'
 import { sourceMessage } from '../i18n/source'
 import { answer, deskFetch } from '../files/client'
 import { checkpoint, decodeCheckpoint, type Checkpoint } from './checkpoint'
 import type { ResearchRunBinding } from '../research/useResearchRun'
 
-export interface ChatAttachment { id: string; name: string; text: string }
+export interface ChatAttachment { id: string; name: string; text: string; document?: DocumentReference }
+/** Keep pages used by earlier turns available to their citations after reuse. */
+export function retainSentDocuments(previous: ChatAttachment[], sent: ChatAttachment[]): ChatAttachment[] {
+  const documents = new Map(previous.map(file => [file.id, file]))
+  for (const file of sent) {
+    if (!file.document) continue
+    const before = documents.get(file.id)?.document
+    documents.set(file.id, before?.digest === file.document.digest ? {
+      ...file, document: { ...file.document, pages: [...new Set([...before.pages, ...file.document.pages])].sort((a, b) => a-b), allowPartial: before.allowPartial || file.document.allowPartial }
+    } : file)
+  }
+  return [...documents.values()]
+}
 export interface Chat {
   id: string; title: string; pinned: boolean; archived: boolean; updatedAt: string
   composer: string; model: string; mode: 'draft' | 'research'; view: 'chat' | 'draft'
@@ -11,6 +24,7 @@ export interface Chat {
   checkpoint?: Checkpoint
   createdCandidateDigest?: string
   attachments?: ChatAttachment[]
+  documents?: ChatAttachment[]
   adversarialReview?: boolean
   titleEdited?: boolean
 }
@@ -38,9 +52,17 @@ function decode(value: unknown): Chat[] {
     ids.add(chat.id)
     if (chat.attachments !== undefined && (!Array.isArray(chat.attachments) || chat.attachments.length > 4
       || chat.attachments.some(file => !file || typeof file.id !== 'string' || typeof file.name !== 'string' || typeof file.text !== 'string' || file.text.length > 200_000))) throw new Error(sourceMessage("Invalid saved attachments"))
+    if (chat.documents !== undefined && (!Array.isArray(chat.documents) || chat.documents.length > 256)) throw new Error(sourceMessage("Invalid saved attachments"))
+    for (const file of [...(chat.attachments ?? []), ...(chat.documents ?? [])]) {
+      if (!file) throw new Error(sourceMessage("Invalid saved attachments"))
+      const ref = file.document
+      if (ref && file.text !== '') throw new Error(sourceMessage("Invalid saved attachments"))
+      if (ref && (file.id !== ref.id || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(ref.id) || !/^sha256:[a-f0-9]{64}$/.test(ref.digest) || !Array.isArray(ref.pages) || ref.pages.length > 500 || new Set(ref.pages).size !== ref.pages.length || ref.pages.some(n => !Number.isSafeInteger(n) || n < 1) || typeof ref.allowPartial !== 'boolean')) throw new Error(sourceMessage("Invalid saved attachments"))
+    }
+    if (chat.documents !== undefined && (!Array.isArray(chat.documents) || chat.documents.length > 256 || chat.documents.some(file => !file?.document || typeof file.name !== 'string' || typeof file.text !== 'string'))) throw new Error(sourceMessage("Invalid saved attachments"))
     if (chat.pack && (typeof chat.pack.id !== 'string' || typeof chat.pack.path !== 'string' || typeof chat.pack.digest !== 'string')) throw new Error(sourceMessage("Invalid saved pack context"))
     return { id: chat.id, title: chat.title, composer: chat.composer, model: chat.model, pinned: chat.pinned, archived: chat.archived,
-      updatedAt: chat.updatedAt, mode: chat.mode, view: chat.view, attachments: chat.attachments ?? [], adversarialReview: chat.adversarialReview === true, titleEdited: chat.titleEdited === true, ...(chat.pack ? { pack: chat.pack } : {}),
+      updatedAt: chat.updatedAt, mode: chat.mode, view: chat.view, attachments: chat.attachments ?? [], documents: chat.documents ?? [], adversarialReview: chat.adversarialReview === true, titleEdited: chat.titleEdited === true, ...(chat.pack ? { pack: chat.pack } : {}),
       ...(chat.checkpoint ? { checkpoint: decodeCheckpoint(chat.checkpoint) } : {}),
       ...(typeof chat.createdCandidateDigest === 'string' ? { createdCandidateDigest: chat.createdCandidateDigest } : {}) }
   })
