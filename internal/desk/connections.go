@@ -43,7 +43,7 @@ func (c *connectionCompanion) stop() {
 	c.done = nil
 }
 func (c *connectionCompanion) close() { c.mu.Lock(); defer c.mu.Unlock(); c.closed = true; c.stop() }
-func (c *connectionCompanion) call(ctx context.Context, bundle, dir, method string, params json.RawMessage) (json.RawMessage, error) {
+func (c *connectionCompanion) call(ctx context.Context, bundle, dir, method string, params json.RawMessage, existingOnly bool) (json.RawMessage, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed {
@@ -55,6 +55,9 @@ func (c *connectionCompanion) call(ctx context.Context, bundle, dir, method stri
 			c.stop()
 		default:
 		}
+	}
+	if c.cmd == nil && existingOnly {
+		return json.RawMessage(`{"state":"canceled"}`), nil
 	}
 	if c.cmd == nil {
 		if err := verifyGatewayBundle(bundle); err != nil {
@@ -135,21 +138,6 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, 400, CodeBadRequest, "connection operations carry no query")
 		return
 	}
-	// No implicit fallback from a configured organization/external gateway.
-	_, raw, err := s.readDeskFile()
-	if err != nil {
-		writeJSONCoded(w, 409, CodeBadRequest, "connection settings unavailable")
-		return
-	}
-	status := s.localGatewayStatus(raw)
-	if s.localGateway == nil || status == nil || status.Status != "ready" {
-		if method != "status" {
-			writeJSONCoded(w, 503, CodeBadRequest, "gateway connection service unavailable")
-			return
-		}
-		writeJSON(w, 200, map[string]any{"version": 1, "provider": "google-drive", "state": "unavailable", "maxFileBytes": 4 << 20, "maxFiles": 4})
-		return
-	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 32<<10))
 	if err != nil {
 		writeJSONCoded(w, 413, CodeTooLarge, "connection request too large")
@@ -163,9 +151,31 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, 400, CodeBadRequest, "invalid connection request")
 		return
 	}
+	bundle, directory := "", ""
+	// Cleanup refers only to a flow this server already owns. It remains
+	// available after a settings change and must never start a companion.
+	if method != "cancel" {
+		// No implicit fallback from a configured organization/external gateway.
+		_, raw, err := s.readDeskFile()
+		if err != nil {
+			writeJSONCoded(w, 409, CodeBadRequest, "connection settings unavailable")
+			return
+		}
+		status := s.localGatewayStatus(raw)
+		if s.localGateway == nil || status == nil || status.Status != "ready" {
+			if method != "status" {
+				writeJSONCoded(w, 503, CodeBadRequest, "gateway connection service unavailable")
+				return
+			}
+			writeJSON(w, 200, map[string]any{"version": 1, "provider": "google-drive", "state": "unavailable", "maxFileBytes": 4 << 20, "maxFiles": 4})
+			return
+		}
+		bundle = s.localGateway.bundle
+		directory = filepath.Join(s.assistant.dir, "gateway-connections")
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 55*time.Second)
 	defer cancel()
-	out, err := s.connections.call(ctx, s.localGateway.bundle, filepath.Join(s.assistant.dir, "gateway-connections"), method, body)
+	out, err := s.connections.call(ctx, bundle, directory, method, body, method == "cancel")
 	if err != nil {
 		writeJSONCoded(w, 503, CodeBadRequest, "gateway connection service unavailable")
 		return

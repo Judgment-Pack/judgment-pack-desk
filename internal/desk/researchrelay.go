@@ -12,7 +12,9 @@ package desk
 // place a request to something outside this desk can be made on the page's
 // behalf.
 //
-// **It carries no credential, in either direction.** The provider's key —
+// **It carries no provider credential, in either direction.** Selected Drive
+// files carry short-lived grants, constrained below to managed local processing.
+// The provider's key —
 // Tavily's, Jina's — is in the gateway's own credentials file, read by the
 // adapter the gateway spawns and by nothing on this machine; the gateway
 // itself is reached as the desk-level file names it, with no token, because a
@@ -195,6 +197,16 @@ func (s *Server) handleResearchRelay(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeJSONError(w, statusForRefusal(err), err)
 		return
+	}
+	// A Drive grant must stay at the managed local gateway, even if the page
+	// has stale settings. This marker constrains the resolved target; it cannot
+	// select a destination and is removed by the outbound header allow-list.
+	if values, present := r.Header[http.CanonicalHeaderKey("X-JPack-Local-Documents")]; present {
+		if len(values) != 1 || values[0] != "1" || !gateway.managedLocal || gateway.maxFileBytes == 0 {
+			writeJSONCoded(w, http.StatusConflict, CodeResearchUnconfigured,
+				"local document processing is no longer available; nothing was sent")
+			return
+		}
 	}
 	// Larger uploads are opt-in at the personal configuration boundary. Seal
 	// and registry requests retain the original small envelope limit.

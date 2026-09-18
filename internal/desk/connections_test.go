@@ -63,3 +63,15 @@ func TestUnavailableConnectionControlCannotReportConfigurationSuccess(t *testing
 		t.Fatal("started local connections for external gateway")
 	}
 }
+
+func TestCancelDoesNotStartALocalCompanionAfterGatewaySwitch(t *testing.T) {
+	s, ts, _ := assistantServer(t)
+	writeDeskConfig(t, s, researchDeskFile("http://127.0.0.1:1"))
+	status, body := sendJSON(t, ts, "POST", "/api/connections/cancel", map[string]string{"id": strings.Repeat("a", 64)})
+	if status != 200 || body["state"] != "canceled" {
+		t.Fatal(status, body)
+	}
+	if s.connections.cmd != nil {
+		t.Fatal("cleanup started a companion")
+	}
+}

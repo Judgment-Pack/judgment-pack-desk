@@ -17,11 +17,12 @@ export function useChatAttachments(store: ChatStore | null, chatId: string, disa
   const [error, setError] = useState('')
   const [progress, setProgress] = useState('')
   const active = useRef<AbortController | null>(null)
+  const attachmentContext = JSON.stringify([config?.gateway, config?.documents])
   useEffect(() => {
     setReading(false)
     setError('')
     return () => { active.current?.abort(); active.current = null }
-  }, [store, chatId, disabled])
+  }, [store, chatId, disabled, attachmentContext])
   const isReading = () => active.current !== null
   const cancel = () => { active.current?.abort(); active.current = null; setReading(false); setProgress(''); setError(sourceMessage('Canceled in Desk. Gateway processing may still finish; its result will not be attached.')) }
   const attach = async (files: FileList | readonly File[] | null) => {
@@ -84,9 +85,11 @@ export function useChatAttachments(store: ChatStore | null, chatId: string, disa
     const operation = new AbortController(); active.current = operation; setReading(true); setError(''); setProgress(sourceMessage('Continue in the Google sign-in window.'))
     try {
       const selected = await authorizeDrive('pick', operation.signal)
+      if (active.current !== operation || operation.signal.aborted) return
       if (selected.length + (chat.attachments?.length ?? 0) > LIMIT) throw new Error(sourceMessage('Attach up to four files at a time.'))
       const pieces: ChatAttachment[] = []
       for (const selection of selected) {
+        if (active.current !== operation || operation.signal.aborted) return
         const { reference, document } = await ingestDrive(selection, config, operation.signal, setProgress)
         pieces.push({ id: reference.id, name: document.record.document.name, text: '', document: reference })
       }

@@ -132,6 +132,7 @@ type documentSourceConfig struct {
 }
 
 type researchGateway struct {
+	managedLocal    bool
 	url             string
 	authority       string
 	signerPublic    string

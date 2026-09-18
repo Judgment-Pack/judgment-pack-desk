@@ -26,7 +26,12 @@ citations, attachment limits and late-result cancellation are reused.
 This first deployment is personal and local. The installed companion fixes the
 principal to this OS-account installation; project files and requests cannot set
 it. An explicitly configured external gateway takes precedence and does not
-silently activate local Drive connections. A shared deployment needs a real
+silently activate local Drive connections. Pending browser operations are canceled
+when their gateway or document settings change. Drive requests also carry a
+relay-only local-document constraint; the server checks its resolved configuration
+before dispatch and never forwards that marker upstream. Cancellation of an
+already-owned local flow remains available after switching gateways, without
+starting a new local companion. A shared deployment needs a real
 identity issuer, caller mapping and policy enforcement before the same control
 contract is exposed remotely. No organization-management UI is enabled here.
 

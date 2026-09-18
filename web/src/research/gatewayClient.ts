@@ -14,6 +14,8 @@ import { chassisUrl, deskFetch } from '../files/client'
 import { memberOf, parseJsonText, type JsonNode } from './verify/canon'
 
 const RELAY = '/api/research/gateway'
+type GatewayConstraint = 'local-documents'
+const constraintHeaders = (constraint?: GatewayConstraint): Record<string, string> => constraint ? { 'X-JPack-Local-Documents': '1' } : {}
 
 /** A refusal from the relay or from the gateway, with the status and the sentence. */
 export class GatewayError extends Error {
@@ -121,11 +123,12 @@ export async function acquire(
   source: string,
   args: unknown,
   limit: number,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  constraint?: GatewayConstraint
 ): Promise<Acquired> {
   const response = await deskFetch(chassisUrl(`${RELAY}/acquire`), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...constraintHeaders(constraint) },
     body: JSON.stringify({ session, source, arguments: args }),
     signal
   })
@@ -149,10 +152,10 @@ export async function acquire(
 }
 
 /** One `/seal`: the session's final count, sealed under the gateway's key. */
-export async function seal(session: string, signal?: AbortSignal): Promise<JsonNode> {
+export async function seal(session: string, signal?: AbortSignal, constraint?: GatewayConstraint): Promise<JsonNode> {
   const response = await deskFetch(chassisUrl(`${RELAY}/seal`), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...constraintHeaders(constraint) },
     body: JSON.stringify({ session }),
     signal
   })
@@ -161,8 +164,8 @@ export async function seal(session: string, signal?: AbortSignal): Promise<JsonN
 }
 
 /** The registry, one seal per line, fetched from the key holder. */
-export async function registry(signal?: AbortSignal): Promise<string> {
-  const response = await deskFetch(chassisUrl(`${RELAY}/registry`), { method: 'GET', signal })
+export async function registry(signal?: AbortSignal, constraint?: GatewayConstraint): Promise<string> {
+  const response = await deskFetch(chassisUrl(`${RELAY}/registry`), { method: 'GET', headers: constraintHeaders(constraint), signal })
   if (!response.ok) throw await refusal(response)
   return bodyText(response, MAX_REGISTRY_BYTES)
 }

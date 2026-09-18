@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-const GatewayRevision = "bce6d3be503d89bcc42b21c991278adb246dd2c0"
+const GatewayRevision = "9f0c45ce98925ba81eb1fa676e957684e9cced00"
 const localAuthority = "gateway:desk-local"
 
 // LocalGatewayStatus carries public, effective settings only. The signing seed
@@ -303,7 +303,7 @@ func (s *Server) localResearch(documents *documentSourceConfig) (researchGateway
 	if err != nil {
 		return researchGateway{}, withCode(CodeResearchUnconfigured, err)
 	}
-	gateway := researchGateway{url: pin.URL, authority: pin.Authority, signerPublic: pin.Signer.Public, maxRequestBytes: maxResearchBody}
+	gateway := researchGateway{managedLocal: true, url: pin.URL, authority: pin.Authority, signerPublic: pin.Signer.Public, maxRequestBytes: maxResearchBody}
 	if documents == nil {
 		gateway.maxRequestBytes = 32 << 20
 		gateway.maxFileBytes = 16 << 20

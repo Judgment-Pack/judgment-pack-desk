@@ -124,7 +124,7 @@ export async function ingestDrive(selection: DriveSelection, config: ResearchCon
  if (!gateway || !config.documents?.enabled) throw new Error(sourceMessage('Enable document processing in Admin → Connections before attaching Drive files.'))
  const session = newResearchSession(), id = crypto.randomUUID()
  progress(sourceMessage('Reading files…'))
- const response = await acquire(session, 'drive', selection, 16 << 20, signal).catch(cause => { if (signal.aborted) throw cause; throw new Error(connectionError(String((cause as Error).message).includes('reconnect-required') ? 'reconnect-required' : 'retrieval-failed')) })
+ const response = await acquire(session, 'drive', selection, 16 << 20, signal, 'local-documents').catch(cause => { if (signal.aborted) throw cause; throw new Error(connectionError(String((cause as Error).message).includes('reconnect-required') ? 'reconnect-required' : 'retrieval-failed')) })
  signal.throwIfAborted()
  const record = readDocumentRecord(JSON.parse(response.text).result)
  if (record.provenance.source.kind !== 'google-drive' || record.original.retention !== 'inline' || !record.original.bytes) throw fail()
@@ -132,8 +132,8 @@ export async function ingestDrive(selection: DriveSelection, config: ResearchCon
  if (record.document.size > config.documents.maxFileBytes) throw new Error(sourceMessage('This file is empty or exceeds the configured upload limit.'))
  const stored = await save(id, object, 'absent', signal)
  progress(sourceMessage('Verifying document pages…'))
- await seal(session, signal)
- const registryText = (await registry(signal)).split('\n').filter(line => line.trim() && stringMember(parseJsonText(line), 'sessionId') === session).join('\n') + '\n'
+ await seal(session, signal, 'local-documents')
+ const registryText = (await registry(signal, 'local-documents')).split('\n').filter(line => line.trim() && stringMember(parseJsonText(line), 'sessionId') === session).join('\n') + '\n'
  object.proof = {session, source: 'drive', authority: gateway.authority, publicKey: gateway.signer.public, response: response.text, registry: registryText, drive: selection}
  await save(id, object, stored, signal)
  const document = await verifyDocument(object, gateway)

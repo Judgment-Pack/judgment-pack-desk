@@ -119,7 +119,7 @@ def main():
             wait_for(callback_closed)
             assert request(other_desk + '/api/connections/poll', {'id': flow['id']}).get('error'), 'flow crossed connection process'
             try:
-                unknown = request(desk + '/api/research/gateway/acquire', {'session':str(uuid.uuid4()), 'source':'drive', 'arguments':{'grant':'ab'*32,'fileId':'not-selected'}})
+                unknown = request(desk + '/api/research/gateway/acquire', {'session':str(uuid.uuid4()), 'source':'drive', 'arguments':{'grant':'ab'*32,'fileId':'not-selected'}}, headers={'X-JPack-Local-Documents':'1'})
             except urllib.error.HTTPError as error:
                 detail = error.read().decode()
                 assert json.loads(detail)['error'] == 'source failed: selection-expired\n', detail
@@ -144,6 +144,10 @@ def main():
             for setting in (None, {'enabled': False, 'source': 'documents', 'maxFileBytes': 16777216, 'maxRequestBytes': 33554432, 'maxResponseBytes': 8388608}):
                 save_config(setting)
                 try:
+                    request(desk + '/api/research/gateway/acquire', {'session':str(uuid.uuid4()), 'source':'drive', 'arguments':{'grant':'ab'*32,'fileId':'not-selected'}}, headers={'X-JPack-Local-Documents':'1'})
+                    raise AssertionError('disabled document processing dispatched a Drive read')
+                except urllib.error.HTTPError as error: assert error.code == 409
+                try:
                     request(desk + '/api/attachments/' + str(uuid.uuid4()), {'version': 1, 'original': original}, 'PUT', {'If-Match': 'absent'})
                     raise AssertionError('disabled PDF processing accepted new original')
                 except urllib.error.HTTPError as error: assert error.code == 409
@@ -156,6 +160,8 @@ def main():
             wait_for(lambda: closed(other_url))
             third, desk, restarted = start()
             assert restarted['localGateway']['gateway']['signer'] == gateway['signer'], 'identity rotated on restart'
+            active_flow = request(desk + '/api/connections/connect', {})
+            callback = parse_qs(urlsplit(active_flow['url']).query)['redirect_uri'][0]
             # Configured external gateways suppress automatic setup and remain byte-exact.
             configuration = {'deskConfigVersion': 1, 'research': {'gateway': {**gateway, 'url': 'http://127.0.0.1:1'}}}
             config_path = config / 'jpack-desk/desk.json'
@@ -164,6 +170,12 @@ def main():
             external = request(desk + '/api/desk-config')
             assert external['localGateway']['status'] == 'external'
             assert config_path.read_bytes() == before
+            assert request(desk + '/api/connections/cancel', {'id':active_flow['id']})['state'] == 'canceled'
+            wait_for(callback_closed)
+            config_path.write_text('{"deskConfigVersion":1}')
+            replacement = request(desk + '/api/connections/connect', {})
+            assert replacement.get('state') == 'pending', replacement
+            request(desk + '/api/connections/cancel', {'id':replacement['id']})
             # Invalid configuration must not get a managed fallback.
             config_path.write_text('{broken')
             assert 'localGateway' not in request(desk + '/api/desk-config')
