@@ -400,7 +400,8 @@ function sectionFromHash(hash: string): AdminSection {
   } catch {
     return first
   }
-  return SECTION[id === 'documents' ? 'connections' : id] ?? first
+  if (id === 'documents') id = 'connections'
+  return SECTION[id] ?? first
 }
 
 /**
