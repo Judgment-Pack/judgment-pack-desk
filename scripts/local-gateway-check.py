@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -63,7 +64,7 @@ def sample_pdf():
 
 def main():
     bundle = Path(sys.argv[1]).resolve()
-    runtime = str(Path(sys.argv[2]).resolve())
+    runtime = shutil.which(sys.argv[2]) or str(Path(sys.argv[2]).resolve())
     processes = []
     with tempfile.TemporaryDirectory(prefix='desk-local-gateway-') as temp:
         root = Path(temp).resolve()
@@ -72,9 +73,15 @@ def main():
         env = {**os.environ, 'XDG_CONFIG_HOME': str(config), 'XDG_DATA_HOME': str(data)}
         def start():
             address = 'http://127.0.0.1:' + str(port())
-            proc = subprocess.Popen([str(bundle / 'jpack-desk'), '--port', address.rsplit(':',1)[1], '--jpack', runtime, '--dev-token', TOKEN, '--print-url=false', str(project)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            log_path = root / ('backend-' + str(len(processes)) + '.log')
+            log = log_path.open('wb')
+            proc = subprocess.Popen([str(bundle / 'jpack-desk'), '--port', address.rsplit(':',1)[1], '--jpack', runtime, '--dev-token', TOKEN, '--print-url=false', str(project)], env=env, stdout=log, stderr=log)
+            log.close()
             processes.append(proc)
-            answer = wait_for(lambda: request(address + '/api/desk-config'))
+            def ready():
+                if proc.poll() is not None: raise AssertionError('Isolated Desk exited: ' + log_path.read_text())
+                return request(address + '/api/desk-config')
+            answer = wait_for(ready)
             assert answer['localGateway']['status'] == 'ready', answer.get('localGateway')
             return proc, address, answer
         try:
