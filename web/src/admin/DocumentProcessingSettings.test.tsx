@@ -5,7 +5,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { testQueryClient } from '../testing/harness'
 import { DeskConfigFixture } from '../config/DeskConfigProvider'
 import { decodeDeskConfig, DOCUMENT_DEFAULTS, effectiveConfig, type LocalGatewayStatus } from '../config/deskConfig'
-import { ConnectionsSettings } from './ConnectionsSettings'
+import { DocumentProcessingSettings } from './DocumentProcessingSettings'
 const mocks = vi.hoisted(() => ({ fetch: vi.fn() }))
 vi.mock('../files/client', async original => ({ ...await original<typeof import('../files/client')>(), deskFetch: mocks.fetch }))
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.restoreAllMocks() })
@@ -14,7 +14,7 @@ const research = { gateway, sources: { read: { source: 'read', dialect: 'jina-re
 function setup(extra = {}, localGateway?: LocalGatewayStatus) {
   const content = JSON.stringify({ deskConfigVersion: 1, research: { ...research, ...extra } })
   const effective = effectiveConfig(undefined, undefined, undefined, { localGateway, path: '/private/desk.json', present: true, sha256: 'revision-one', text: content, decoded: decodeDeskConfig(content, 'desk') })
-  return render(<MemoryRouter><QueryClientProvider client={testQueryClient()}><DeskConfigFixture value={effective}><ConnectionsSettings /></DeskConfigFixture></QueryClientProvider></MemoryRouter>)
+  return render(<MemoryRouter><QueryClientProvider client={testQueryClient()}><DeskConfigFixture value={effective}><DocumentProcessingSettings /></DeskConfigFixture></QueryClientProvider></MemoryRouter>)
 }
 function openPDF() { fireEvent.click(screen.getByRole('button', { name: 'Manage PDF processing' })) }
 function save() { fireEvent.click(screen.getByRole('button', { name: 'Save changes' })) }
@@ -26,7 +26,7 @@ it('shows compact personal summaries and exposes only supported actions', () => 
   expect(screen.getByRole('button', { name: 'Set up gateway' })).toBeTruthy()
   expect((screen.getByRole('button', { name: 'Manage PDF processing' }) as HTMLButtonElement).disabled).toBe(true)
   expect(screen.queryByRole('textbox')).toBeNull()
-  expect(screen.getAllByText('Unavailable').length).toBeGreaterThan(0)
+  expect(screen.queryByText('Google Drive')).toBeNull()
   expect(screen.queryByRole('button', { name: /connect.*drive/i })).toBeNull()
 })
 it('saves PDF processing conditionally and preserves shared research settings', async () => {

@@ -24,7 +24,7 @@ derived public pin; `/publickey` never establishes trust by itself.
 
 An explicitly configured gateway always wins, including an unreachable one.
 There is no fallback from an invalid configuration or failed external gateway.
-Admin → Connections offers Local (automatic) or Existing gateway. Existing URLs,
+Admin → Storage & data offers Local (automatic) or Existing gateway. Existing URLs,
 identities, source mappings, disabled PDF settings, and unrelated configuration
 are retained. Switching identity can make old documents unverifiable until the
 previous settings are restored. Local processing supplies only the `documents`

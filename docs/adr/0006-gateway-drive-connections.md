@@ -11,7 +11,7 @@ Provider credentials, consent, refresh/revocation and retrieval live in those
 programs, outside the signer module. The Desk chassis relays a fixed list of
 control operations over a private parent pipe after its existing session and
 origin checks. It never handles provider API calls or persists provider tokens.
-The Admin file input supplies operator-owned Desktop app registration JSON once;
+The advanced personal connection dialog accepts Desktop app registration JSON once;
 the gateway retains it privately, outside project files and chat backups.
 
 The local gateway binds `drive` to an HTTP-shaped source with fixed operator
@@ -47,3 +47,30 @@ expiry/principal/file/connection substitution, revocation, content bounds and
 version changes, private custody, and independent consumer verification. A Google
 Cloud registration and a user's consent are external prerequisites for the live
 sign-in test; fake-provider tests do not establish successful production consent.
+
+## Personal connection entry points
+
+The composer **+ → Google Drive / Gmail** owns first-use authorization. Configured
+users review access, continue to Google, and return to content selection in the
+same chat. Existing Drive connections open the Google picker directly; Gmail
+opens its email selector. Canceling, switching chats, or changing document/gateway
+configuration abandons pending UI operations and prevents late imports.
+
+The account menu's **My connections** shares the consent and disconnect dialog.
+Admin no longer has a Connections section: local PDF/gateway processing belongs
+under Storage & data. Legacy Admin connection/document fragments resolve there.
+No enterprise connection-policy controls are exposed.
+
+The default publisher-owned Desktop OAuth registration remains a release
+prerequisite, not a value the UI can create through user consent. An unregistered
+build says so and offers an advanced **Use your own Google app** import; it does
+not offer a nonfunctional Continue button. Registration import stays in the
+current dialog. Starting OAuth requires a fresh user gesture so popup blockers do
+not interfere. Real Google sign-in still needs external registration and consent;
+synthetic-provider UI tests cannot establish it.
+
+This follows the documented first-use authentication pattern in
+[ChatGPT plugins](https://learn.chatgpt.com/docs/plugins), while keeping
+[workspace controls](https://learn.chatgpt.com/docs/enterprise/apps-and-connectors)
+separate from personal authorization. Exact ChatGPT menu labels and placement
+vary by surface; the composer entry point is based on the supplied reference UI.

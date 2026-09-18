@@ -57,7 +57,7 @@ import { OverflowTooltip } from '../ui/Tooltip'
  */
 import { useEffect, useRef, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { ConnectionsSettings } from '../admin/ConnectionsSettings'
+import { DocumentProcessingSettings } from '../admin/DocumentProcessingSettings'
 import { ChatDataSettings } from '../admin/ChatDataSettings'
 import { AssistantSection } from '../assistant/AssistantSection'
 import { AdminStatusLine } from '../admin/AdminStatusLine'
@@ -103,12 +103,11 @@ const SECTION_MEMBER: Record<string, keyof DeskConfig> = {
   organization: 'organization',
   storage: 'storage',
   assistant: 'assistant',
-  connections: 'research',
   'identity-provider': 'identity'
 }
 
 /** The two sections that exist only in the desk-level file. */
-const DESK_ONLY = new Set(['assistant', 'connections', 'identity-provider'])
+const DESK_ONLY = new Set(['assistant', 'identity-provider'])
 
 /**
  * The one section that is about the project's file itself rather than about a
@@ -237,6 +236,7 @@ ${effective.desk.chassis.runtimeBin}`} />
                   save={<StorageForm dirSays={PACK_LOCATION_SAYS[packLocation]} />}
                 />
                 <ChatDataSettings />
+                <DocumentProcessingSettings />
               </RetainedPanel>
               <RetainedPanel active={open.id === 'assistant'}>
                 <AssistantSection
@@ -246,7 +246,6 @@ ${effective.desk.chassis.runtimeBin}`} />
                   under={deskStatus(effective)}
                 />
               </RetainedPanel>
-              <RetainedPanel active={open.id === 'connections'}><ConnectionsSettings /></RetainedPanel>
               <RetainedPanel active={open.id === 'identity-provider'}>
                 <SourceCard
                   id={sectionId(SECTION['identity-provider']!.id)}
@@ -400,7 +399,7 @@ function sectionFromHash(hash: string): AdminSection {
   } catch {
     return first
   }
-  if (id === 'documents') id = 'connections'
+  if (id === 'documents' || id === 'connections') id = 'storage'
   return SECTION[id] ?? first
 }
 

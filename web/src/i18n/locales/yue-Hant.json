@@ -2147,5 +2147,16 @@
   "{{value}} pixels high": "高 {{value}} 像素",
   "{{value}} pixels wide": "闊 {{value}} 像素",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— 指向作出聲明嘅儲存庫檔案嘅定位資訊。呢份承載資料冇作出聲明。檔案嘅聲明針對執行環境，唔係呢個規則包、呢啲事實，亦唔係按處置結果行動係咪正確。",
-  "… (truncated for display)": "…（已截短顯示）"
+  "… (truncated for display)": "…（已截短顯示）",
+  "My connections": "我嘅連線",
+  "Use your own Google app": "用自己嘅 Google 應用程式",
+  "Google sign-in is not configured in this build. You can use your own Google app below.": "呢個版本未設定 Google 登入。你可以喺下面用自己註冊嘅 Google 應用程式。",
+  "Continue to Google to choose your account and review access. Your chat stays here.": "去 Google 揀帳戶同查看存取權限。對話會留喺呢度。",
+  "Connect Gmail from the attachment menu.": "喺附件選單連接 Gmail。",
+  "Connect Google Drive from the attachment menu.": "喺附件選單連接 Google Drive。",
+  "Document processing": "文件處理",
+  "Configure the gateway in Admin → Storage & data to use attached PDFs.": "請喺管理 → 儲存空間同資料設定閘道，先可以使用已附加嘅 PDF。",
+  "Enable PDF processing in Admin → Storage & data before attaching PDFs.": "附加 PDF 前，請先喺管理 → 儲存空間同資料啟用 PDF 處理。",
+  "Enable document processing in Admin → Storage & data before attaching Drive files.": "附加 Drive 檔案之前，請喺管理 → 儲存空間同資料啟用文件處理。",
+  "Enable document processing in Admin → Storage & data before attaching emails.": "附加電郵前，請喺管理 → 儲存空間同資料啟用文件處理。"
 }

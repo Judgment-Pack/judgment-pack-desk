@@ -38,13 +38,20 @@ without changing that checkout. Keep all files in `bin` together when installing
 A bare `go build` still builds Desk, but does not package the gateway companions.
 
 On Linux and macOS, Desk starts its local gateway automatically and Admin →
-Connections shows **Local processing · Ready**. You can upload PDFs without
+Storage & data shows **Local processing · Ready**. You can upload PDFs without
 entering a gateway URL, generating keys, or running a separate server. An
 existing gateway configuration stays in control. The bundle also includes personal
-Google Drive connection and retrieval companions. Configure a Google Desktop app
-registration in Admin → Connections, then connect your account and choose files
-from the chat attachment menu. Google consent is required; setup cannot authorize
-an account automatically. Web research credentials and OCR are not installed. See [managed local processing](docs/adr/0005-managed-local-gateway.md)
+Google Drive and Gmail connection and retrieval companions. Choose either provider
+from the chat **+** menu to connect and select files or emails without leaving chat.
+Manage accounts under the user menu → **My connections**.
+
+This build does not ship a publisher-owned Google OAuth registration. Until one is
+provided, the connection dialog explains that prerequisite and offers **Use your
+own Google app** for importing Desktop app registration JSON. Import does not open
+a sign-in window until you choose Continue. After consent, Drive continues to the
+Google file picker and Gmail returns to email selection. Registration and account
+tokens are retained by the local gateway, never in chats or project settings.
+Google consent is required; setup cannot authorize an account automatically. Web research credentials and OCR are not installed. See [managed local processing](docs/adr/0005-managed-local-gateway.md)
 for identity preservation, receipt storage and platform boundaries.
 
 ## Personal chat storage and recovery
@@ -4463,7 +4470,8 @@ cites. The Console's Activity tab carries what the tools did.
 
 ### PDF and document attachments
 
-Use **Admin → Connections** to configure a gateway document source, then
+Local PDF processing starts automatically. Use **Admin → Storage & data** to
+change processing settings or configure an existing gateway, then
 **+ → Upload files** in chat to attach PDFs. Page previews show extraction gaps,
 partial results need consent, and every send verifies the retained original and
 receipt. See [Document attachments](docs/document-attachments.md) for compatible

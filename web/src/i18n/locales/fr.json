@@ -2163,5 +2163,16 @@
   "{{value}} pixels high": "{{value}} pixels de haut",
   "{{value}} pixels wide": "{{value}} pixels de large",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— un localisateur du fichier du dépôt portant la déclaration. Cette charge utile n’en fait aucune. La déclaration concerne le moteur, pas ce pack, ces faits ni la pertinence d’agir selon la décision.",
-  "… (truncated for display)": "… (tronqué pour l’affichage)"
+  "… (truncated for display)": "… (tronqué pour l’affichage)",
+  "My connections": "Mes connexions",
+  "Use your own Google app": "Utiliser votre propre application Google",
+  "Google sign-in is not configured in this build. You can use your own Google app below.": "La connexion Google n’est pas configurée dans cette version. Vous pouvez utiliser votre propre application Google ci-dessous.",
+  "Continue to Google to choose your account and review access. Your chat stays here.": "Continuez vers Google pour choisir votre compte et vérifier les autorisations. Votre discussion reste ici.",
+  "Connect Gmail from the attachment menu.": "Connectez Gmail depuis le menu des pièces jointes.",
+  "Connect Google Drive from the attachment menu.": "Connectez Google Drive depuis le menu des pièces jointes.",
+  "Document processing": "Traitement des documents",
+  "Configure the gateway in Admin → Storage & data to use attached PDFs.": "Configurez la passerelle dans Administration → Stockage et données pour utiliser les PDF joints.",
+  "Enable PDF processing in Admin → Storage & data before attaching PDFs.": "Activez le traitement des PDF dans Administration → Stockage et données avant de joindre des PDF.",
+  "Enable document processing in Admin → Storage & data before attaching Drive files.": "Activez le traitement des documents dans Admin → Stockage et données avant de joindre des fichiers Drive.",
+  "Enable document processing in Admin → Storage & data before attaching emails.": "Activez le traitement des documents dans Administration → Stockage et données avant de joindre des e-mails."
 }

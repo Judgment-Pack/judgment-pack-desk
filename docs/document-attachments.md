@@ -28,7 +28,7 @@ Local Drive setup is described separately below.
    not bundled with Desk or the adapter. The gateway's default 1 MiB request limit
    is too small for the default Desk PDF allowance; configure all layers together.
 
-2. Open **Admin → Connections**. Set up the shared **Gateway** with its URL,
+2. Open **Admin → Storage & data**. Set up the shared **Gateway** with its URL,
    identity (authority), and verification **public** key from `gateway keygen`.
    Then manage **PDF processing** to enable it and choose the maximum file size.
    Source name and request/response limits are under **Advanced settings**. Limits
@@ -63,7 +63,7 @@ Local Drive setup is described separately below.
 ## Personal Google Drive
 
 The complete bundle includes gateway-owned connection and retrieval companions.
-In Admin → Connections, choose Google Drive → Set up. Register a Google Cloud
+In Admin → Storage & data, choose Google Drive → Set up. Register a Google Cloud
 Desktop app with Drive and Picker APIs enabled and choose its downloaded
 credentials JSON. The gateway stores the registration privately. Then choose
 Manage → Connect, or Google Drive in the chat attachment menu, and complete
@@ -152,7 +152,7 @@ would mint another receipt).
 
 ## Gmail email attachments
 
-Admin → Connections configures Gmail alongside Drive through the gateway-owned
+Admin → Storage & data configures Gmail alongside Drive through the gateway-owned
 connection companion. The chat + menu opens a searchable email picker. Up to four
 selected emails become retained, verified plain-text exports, reusing document
 preview, citations and chat storage. Search previews are not sent to the assistant.

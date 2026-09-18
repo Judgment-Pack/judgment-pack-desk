@@ -26,11 +26,11 @@ export function AttachmentMenu({ disabled, onUpload, onDrive, driveState, onGmai
         </DropdownMenu.Item>
         <DropdownMenu.Item className={`desk-menu-item ${styles.item}`} textValue="Google Drive" disabled={!onDrive || !driveState || ['unavailable', 'blocked'].includes(driveState)} onSelect={onDrive} aria-labelledby={`${id}-drive`} aria-describedby={`${id}-drive-hint`}>
           <IconGoogleDrive />
-          <span className={styles.copy}><span id={`${id}-drive`}>{msg('Google Drive')}</span><span id={`${id}-drive-hint`} className={styles.description}>{driveState === 'setup-required' ? msg('Set up') : driveState === 'connected' ? msg('Choose files') : driveState === 'not-connected' ? msg('Connect') : msg('Unavailable')}</span></span>
+          <span className={styles.copy}><span id={`${id}-drive`}>{msg('Google Drive')}</span><span id={`${id}-drive-hint`} className={styles.description}>{driveState === 'connected' ? msg('Choose files') : driveState === 'not-connected' || driveState === 'setup-required' ? msg('Connect') : msg('Unavailable')}</span></span>
         </DropdownMenu.Item>
         <DropdownMenu.Item className={`desk-menu-item ${styles.item}`} textValue="Gmail" disabled={!onGmail || !gmailState || ['unavailable', 'blocked'].includes(gmailState)} onSelect={onGmail} aria-labelledby={`${id}-gmail`} aria-describedby={`${id}-gmail-hint`}>
           <IconMail />
-          <span className={styles.copy}><span id={`${id}-gmail`}>{msg('Gmail')}</span><span id={`${id}-gmail-hint`} className={styles.description}>{gmailState === 'setup-required' ? msg('Set up') : gmailState === 'connected' ? msg('Choose emails') : gmailState === 'not-connected' ? msg('Connect') : msg('Unavailable')}</span></span>
+          <span className={styles.copy}><span id={`${id}-gmail`}>{msg('Gmail')}</span><span id={`${id}-gmail-hint`} className={styles.description}>{gmailState === 'connected' ? msg('Choose emails') : gmailState === 'not-connected' || gmailState === 'setup-required' ? msg('Connect') : msg('Unavailable')}</span></span>
         </DropdownMenu.Item>
       </DropdownMenu.Content>
     </DropdownMenu.Portal>

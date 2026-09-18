@@ -2147,5 +2147,16 @@
   "{{value}} pixels high": "高さ {{value}} ピクセル",
   "{{value}} pixels wide": "幅 {{value}} ピクセル",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— 主張を記載したリポジトリ内ファイルの所在です。このペイロードは主張を行いません。ファイルの主張はランタイムに関するもので、このパックや事実、処置結果に従うことの正しさについてではありません。",
-  "… (truncated for display)": "…（表示用に省略）"
+  "… (truncated for display)": "…（表示用に省略）",
+  "My connections": "自分の接続",
+  "Use your own Google app": "独自の Google アプリを使用",
+  "Google sign-in is not configured in this build. You can use your own Google app below.": "このビルドでは Google ログインが設定されていません。以下で独自に登録した Google アプリを使用できます。",
+  "Continue to Google to choose your account and review access. Your chat stays here.": "Google に進み、アカウントを選択してアクセス権限を確認してください。チャットはここに保持されます。",
+  "Connect Gmail from the attachment menu.": "添付メニューから Gmail に接続してください。",
+  "Connect Google Drive from the attachment menu.": "添付メニューから Google Drive に接続してください。",
+  "Document processing": "ドキュメント処理",
+  "Configure the gateway in Admin → Storage & data to use attached PDFs.": "添付したPDFを使用するには、管理 → ストレージとデータでゲートウェイを設定してください。",
+  "Enable PDF processing in Admin → Storage & data before attaching PDFs.": "PDFを添付する前に、管理 → ストレージとデータでPDF処理を有効にしてください。",
+  "Enable document processing in Admin → Storage & data before attaching Drive files.": "Drive ファイルを添付する前に、管理 → ストレージとデータでドキュメント処理を有効にしてください。",
+  "Enable document processing in Admin → Storage & data before attaching emails.": "メールを添付する前に、管理 → ストレージとデータでドキュメント処理を有効にしてください。"
 }

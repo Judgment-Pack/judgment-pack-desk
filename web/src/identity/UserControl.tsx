@@ -46,7 +46,8 @@ import { LanguageMenu } from '../i18n/LanguageMenu'
  * `TestNoCookieAuthorizesAnyGatedRoute` hold the two halves.
  */
 import { Avatar, DropdownMenu } from 'radix-ui'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { PersonalConnections } from '../connections/PersonalConnections'
 import { Link } from 'react-router-dom'
 import {
   DENSITIES,
@@ -158,6 +159,8 @@ export function monogram(name: string): string {
 
 export function UserControl() {
   useLocale()
+  const [connections, setConnections] = useState(false)
+  const opener = useRef<HTMLButtonElement>(null)
   const { provider, displayName } = useIdentity()
   // Where a provider is configured and carries no label, the name falls back
   // to the issuer's host — something the desk read out of the file. It does
@@ -172,8 +175,9 @@ export function UserControl() {
   const name = provider === null ? displayName : (provider.label ?? provider.issuerHost)
 
   return (
+    <>
     <DropdownMenu.Root>
-      <DropdownMenu.Trigger className="desk-user" aria-label={msg("Account and desk settings")}>
+      <DropdownMenu.Trigger ref={opener} className="desk-user" aria-label={msg("Account and desk settings")}>
         <Avatar.Root className="desk-avatar">
           <Avatar.Fallback delayMs={0}>{monogram(name)}</Avatar.Fallback>
         </Avatar.Root>
@@ -190,6 +194,7 @@ export function UserControl() {
           </DropdownMenu.Label>
           <DropdownMenu.Label className="desk-menu-note">{msg(SESSION_SENTENCE)}</DropdownMenu.Label>
           <DropdownMenu.Separator className="desk-rule-h" />
+          <DropdownMenu.Item className="desk-menu-item" onSelect={() => requestAnimationFrame(() => setConnections(true))}>{msg("My connections")}</DropdownMenu.Item>
           <LanguageMenu />
           <AppearanceItems />
           <DropdownMenu.Separator className="desk-rule-h" />
@@ -206,6 +211,8 @@ export function UserControl() {
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
+    {connections && <PersonalConnections open={connections} onOpenChange={setConnections} openerRef={opener} />}
+    </>
   )
 }
 
