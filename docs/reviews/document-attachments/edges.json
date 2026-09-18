@@ -1,0 +1,38 @@
+{
+  "results": [
+    {
+      "name": "encrypted-user.pdf",
+      "status": "Extraction failed. No pages can be sent.",
+      "usablePages": 0
+    },
+    {
+      "name": "scanned.pdf",
+      "status": "Some pages are missing or unreadable. Only selected readable pages can be sent.",
+      "usablePages": 0
+    },
+    {
+      "name": "malformed-truncated.pdf",
+      "status": "Extraction failed. No pages can be sent.",
+      "usablePages": 0
+    },
+    {
+      "unsentDraftStored": true
+    },
+    {
+      "language": "de",
+      "actualLanguage": "de",
+      "overflow": false
+    },
+    {
+      "language": "ja",
+      "actualLanguage": "ja",
+      "overflow": false
+    },
+    {
+      "language": "yue-Hant",
+      "actualLanguage": "yue-Hant",
+      "overflow": false
+    }
+  ],
+  "errors": []
+}

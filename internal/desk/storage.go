@@ -212,8 +212,8 @@ func (s *Server) describeStorage(store *chatDataStore) (storageStatus, error) {
 			status.ProjectCount++
 		}
 		status.Bytes += info.Size()
-		if entry.Name() == recordName {
-			status.ProjectBytes = info.Size()
+		if entry.Name() == recordName || attachmentFileName.MatchString(entry.Name()) && strings.HasPrefix(entry.Name(), attachmentProjectPrefix(recordName)) {
+			status.ProjectBytes += info.Size()
 		}
 	}
 	return status, nil
@@ -408,7 +408,7 @@ func copyChatData(ctx context.Context, source, target *chatDataStore, copied *[]
 			}
 			return fmt.Errorf("unrecognized item %s in chat storage; it was not moved", name)
 		}
-		data, err := readPrivateData(source.root, name, maxConversationBytes)
+		data, err := readPrivateData(source.root, name, storageFileLimit(name))
 		if err != nil {
 			return err
 		}

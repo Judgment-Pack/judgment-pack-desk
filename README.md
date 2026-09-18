@@ -4434,6 +4434,14 @@ snapshot, peer identity, adapter) and its verification state with findings,
 and every excerpt in context; for a rule, its condition and the excerpts it
 cites. The Console's Activity tab carries what the tools did.
 
+### PDF and document attachments
+
+Use **Admin → Documents** to configure a gateway document source, then
+**+ → Upload files** in chat to attach PDFs. Page previews show extraction gaps,
+partial results need consent, and every send verifies the retained original and
+receipt. See [Document attachments](docs/document-attachments.md) for compatible
+gateway limits, OCR setup, storage retention, backups, and citation checks.
+
 ### Configuring research
 
 The gateway, the key its receipts are pinned to, and the sources are desk-level

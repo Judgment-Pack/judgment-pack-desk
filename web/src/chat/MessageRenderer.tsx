@@ -1,3 +1,5 @@
+import { DocumentPreview } from '../documents/DocumentPreview'
+import type { ChatAttachment } from './store'
 import { msg, useLocale } from '../i18n'
 import { isValidElement, useEffect, useState, type ReactNode } from 'react'
 import Markdown from 'react-markdown'
@@ -16,12 +18,19 @@ function textOf(node: ReactNode): string {
 }
 
 /** Model text is content: no HTML execution, remote images, or unsafe URLs. */
-export function MessageRenderer({ text }: { text: string }) {
+export function MessageRenderer({ text, documents = [] }: { text: string; documents?: ChatAttachment[] }) {
   useLocale()
   return <div className={styles.markdown}><Markdown remarkPlugins={[remarkGfm]} skipHtml
-    urlTransform={url => /^https?:\/\//i.test(url) ? url : ''}
+    urlTransform={url => /^https?:\/\//i.test(url) || /^attachment:[a-f0-9-]{36}\/sha256:[a-f0-9]{64}\/page\/[1-9][0-9]*$/.test(url) ? url : ''}
     components={{
-      a: ({ children, href }) => href ? <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> : <span>{children}</span>,
+      a: ({ children, href }) => {
+        if (href?.startsWith('attachment:')) {
+          const match = /^attachment:([a-f0-9-]{36})\/(sha256:[a-f0-9]{64})\/page\/([1-9][0-9]*)$/.exec(href)
+          const file = match && documents.find(file => file.document?.id === match[1] && file.document.digest === match[2])
+          return file?.document ? <DocumentPreview name={file.name} reference={file.document} disabled citation={{ page: Number(match![3]), quote: textOf(children) }} /> : <span>{children}</span>
+        }
+        return href ? <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> : <span>{children}</span>
+      },
       img: ({ alt }) => <span>{alt ? msg("[Image: {{value0}}]", { value0: alt }) : msg("[Image]")}</span>,
       pre: ({ children }) => <CodeBlock text={textOf(children).replace(/\n$/, '')} label={msg("Code")} />,
       table: ({ children }) => <div className={styles.messageTable} role="region" aria-label={msg("Response table")} tabIndex={0}><table>{children}</table></div>

@@ -10,6 +10,7 @@ import { Popover } from '../ui/Popover'
 import { IconHistory, IconMore, IconPlus } from '../shell/icons'
 import { useChats } from './ChatProvider'
 import type { Chat } from './store'
+import { readDocumentObject } from '../documents/client'
 import { chatHref, chatTitle, hasChatContent, homeChatId } from './navigation'
 export { chatHref } from './navigation'
 import styles from './ChatWorkspace.module.css'
@@ -55,16 +56,35 @@ export function ChatHistoryList({ packId, activeId, onNavigate, compact = false 
   const [rename, setRename] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [exportError, setExportError] = useState('')
+  const [exporting, setExporting] = useState(false)
   const [actionChat, setActionChat] = useState<string | null>(null)
   const shown = chats.filter(chat => hasChatContent(chat) && (all || !packId || chat.pack?.id === packId) && (archived || !chat.archived)
     && `${chatTitle(chat)} ${chat.composer} ${chat.pack?.id ?? ''} ${chat.checkpoint?.state.turns.map(turn => turn.text).join(' ') ?? ''}`.toLowerCase().includes(query.toLowerCase()))
     .sort((a,b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt.localeCompare(a.updatedAt))
-  const exportChat = (chat: Chat) => {
-    const url = URL.createObjectURL(new Blob([JSON.stringify(chat, null, 2)], { type: "application/json" }))
-    const link = document.createElement('a'); link.href = url; link.download = `chat-${chat.id}.json`; link.click()
-    setTimeout(() => URL.revokeObjectURL(url), 0)
+  const exportChat = async (chat: Chat) => {
+    if (exporting) return
+    setExporting(true); setExportError('')
+    try {
+      const references = [...new Map([...(chat.documents ?? []), ...(chat.attachments ?? [])].filter(file => file.document).map(file => [file.document!.id, file.document!])).values()]
+      const objects: Record<string, unknown> = {}
+      let bytes = new TextEncoder().encode(JSON.stringify(chat)).length
+      for (const ref of references) {
+        const object = await readDocumentObject(ref.id)
+        bytes += new TextEncoder().encode(JSON.stringify(object)).length
+        if (bytes > 128 * 1024 * 1024) throw new Error(msg('This chat exceeds the 128 MiB export limit.'))
+        objects[ref.id] = object
+      }
+      const output = references.length ? { version: 1, chat, documentObjects: objects } : chat
+      const url = URL.createObjectURL(new Blob([JSON.stringify(output)], { type: 'application/json' }))
+      const link = document.createElement('a'); link.href = url; link.download = `chat-${chat.id}.json`; link.click()
+      setTimeout(() => URL.revokeObjectURL(url), 0)
+    } catch (cause) { setExportError((cause as Error).message) }
+    finally { setExporting(false) }
   }
   return <section className={styles.historyBody} data-compact={compact || undefined} aria-label={msg("Chat history")}>
+    {exportError && <p role="alert">{systemMessage(exportError)}</p>}
+    {exporting && <p role="status">{msg("Preparing export…")}</p>}
     {error && <div role="alert"><p>{systemMessage(error)}</p><Button onClick={() => ready ? store?.retrySave() : void store?.load()}>{msg("Retry")}</Button></div>}
     {!ready && !error && <p role="status">{msg("Loading chat history…")}</p>}
     <div className={styles.historySearch}>
@@ -87,7 +107,7 @@ export function ChatHistoryList({ packId, activeId, onNavigate, compact = false 
               <DropdownMenu.Item className="desk-menu-item" onSelect={() => { setRename(chat.id); setName(chat.title) }}>{msg("Rename")}</DropdownMenu.Item>
               <DropdownMenu.Item className="desk-menu-item" onSelect={() => store?.update(chat.id, { pinned: !chat.pinned })}>{chat.pinned ? msg("Unpin") : msg("Pin")}</DropdownMenu.Item>
               <DropdownMenu.Item className="desk-menu-item" onSelect={() => store?.update(chat.id, { archived: !chat.archived })}>{chat.archived ? msg("Unarchive") : msg("Archive")}</DropdownMenu.Item>
-              <DropdownMenu.Item className="desk-menu-item" onSelect={() => exportChat(chat)}>{msg("Export chat")}</DropdownMenu.Item>
+              <DropdownMenu.Item className="desk-menu-item" disabled={exporting} onSelect={() => void exportChat(chat)}>{msg("Export chat")}</DropdownMenu.Item>
               <DropdownMenu.Item className="desk-menu-item" disabled={bindings.get(chat.id)?.run?.running} onSelect={() => setDeleting(chat.id)}>{msg("Delete chat…")}</DropdownMenu.Item>
             </DropdownMenu.Content></DropdownMenu.Portal>
           </DropdownMenu.Root>

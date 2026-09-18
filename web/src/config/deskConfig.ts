@@ -352,7 +352,22 @@ export interface ResearchConfig {
   gateway: ResearchGatewayConfig | null
   sources: { search: ResearchSourceConfig | null; read: ResearchSourceConfig | null }
   limits: ResearchLimits
+  /** Personal gateway document adapter; absent keeps local text uploads only. */
+  documents?: DocumentSourceConfig
 }
+
+export interface DocumentSourceConfig {
+  source: string
+  maxFileBytes: number
+  maxRequestBytes: number
+  maxResponseBytes: number
+}
+export const DOCUMENT_DEFAULTS: DocumentSourceConfig = {
+  source: 'documents', maxFileBytes: 16_777_216, maxRequestBytes: 33_554_432, maxResponseBytes: 8_388_608
+}
+export const DOCUMENT_LIMIT_BOUNDS = {
+  maxFileBytes: [1, 16_777_216], maxRequestBytes: [65_536, 67_108_864], maxResponseBytes: [65_536, 16_777_216]
+} as const
 
 export interface AppearanceConfig {
   theme: ThemeChoice
@@ -756,14 +771,15 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
     const research = section(
       record.research,
       'research',
-      ['gateway', 'sources', 'limits'],
+      ['gateway', 'sources', 'limits', 'documents'],
       problems
     )
     if (research) {
       values.research = {
         gateway: researchGatewayValue(research.gateway, problems),
         sources: researchSourcesValue(research.sources, problems),
-        limits: researchLimitsValue(research.limits, problems)
+        limits: researchLimitsValue(research.limits, problems),
+        ...(research.documents !== undefined ? { documents: documentSourceValue(research.documents, problems) } : {})
       }
     }
   }
@@ -1294,6 +1310,28 @@ export const RESEARCH_LIMIT_BOUNDS: Readonly<Record<keyof ResearchLimits, [numbe
   reads: [0, 100],
   bytes: [65_536, 67_108_864],
   seconds: [30, 3_600]
+}
+
+function documentSourceValue(value: unknown, problems: ConfigProblem[]): DocumentSourceConfig | undefined {
+  if (value === null) return undefined
+  const declared = section(value, 'research.documents', ['source', ...Object.keys(DOCUMENT_LIMIT_BOUNDS)], problems)
+  if (!declared) return undefined
+  const result = { ...DOCUMENT_DEFAULTS }
+  if (typeof declared.source !== 'string' || !SOURCE_NAME.test(declared.source)) {
+    problems.push({ key: 'research.documents.source', reason: sourceMessage('Enter the document source name configured on your gateway.') })
+  } else result.source = declared.source
+  for (const key of Object.keys(DOCUMENT_LIMIT_BOUNDS) as (keyof typeof DOCUMENT_LIMIT_BOUNDS)[]) {
+    const value = declared[key]
+    if (value === undefined) continue
+    const [low, high] = DOCUMENT_LIMIT_BOUNDS[key]
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < low || value > high) {
+      problems.push({ key: `research.documents.${key}`, reason: sourceMessage('must be an integer from {{value0}} to {{value1}}; found {{value2}}', { value0: low, value1: high, value2: describe(value) }) })
+    } else result[key] = value
+  }
+  if (4 * Math.ceil(result.maxFileBytes / 3) + 4096 > result.maxRequestBytes) {
+    problems.push({ key: 'research.documents.maxRequestBytes', reason: sourceMessage('The request limit must fit the encoded file plus 4096 bytes of metadata.') })
+  }
+  return result
 }
 
 function researchLimitsValue(value: unknown, problems: ConfigProblem[]): ResearchLimits {

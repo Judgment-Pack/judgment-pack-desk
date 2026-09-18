@@ -33,11 +33,14 @@ type backupManifest struct {
 // Only recognized chat records enter a backup. Credentials, server preferences,
 // temporary files and project artifacts cannot be selected by the caller.
 func chatStorageFile(name string) bool {
-	return conversationFileName.MatchString(name) || name == projectBindingsName
+	return conversationFileName.MatchString(name) || attachmentFileName.MatchString(name) || name == projectBindingsName
 }
 func validateStorageFile(name string, data []byte) error {
 	if !chatStorageFile(name) {
 		return fmt.Errorf("unsupported chat data file %q", name)
+	}
+	if attachmentFileName.MatchString(name) {
+		return validateAttachmentObject(data)
 	}
 	if name == projectBindingsName {
 		_, err := decodeProjectBindings(data)
@@ -112,7 +115,7 @@ func buildChatBackup(ctx context.Context, store *chatDataStore, out *os.File) er
 			}
 			return fmt.Errorf("unrecognized item %s in chat storage; backup was not created", name)
 		}
-		data, err := readPrivateData(store.root, name, maxConversationBytes)
+		data, err := readPrivateData(store.root, name, storageFileLimit(name))
 		if err != nil {
 			return err
 		}
@@ -202,7 +205,7 @@ func validateChatBackup(file *os.File) (*zip.Reader, backupManifest, error) {
 	checked := map[string]bool{}
 	var total int64
 	for _, entry := range manifest.Files {
-		if !chatStorageFile(entry.Name) || !seen[entry.Name] || checked[entry.Name] || entry.Bytes < 0 || entry.Bytes > maxConversationBytes || len(entry.SHA256) != 64 {
+		if !chatStorageFile(entry.Name) || !seen[entry.Name] || checked[entry.Name] || entry.Bytes < 0 || entry.Bytes > int64(storageFileLimit(entry.Name)) || len(entry.SHA256) != 64 {
 			return nil, manifest, errors.New("backup manifest has an invalid file entry")
 		}
 		checked[entry.Name] = true
@@ -242,7 +245,7 @@ func copyChatBackup(ctx context.Context, file *os.File, target *chatDataStore, c
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		data, err := readBackupFile(files[entry.Name], maxConversationBytes)
+		data, err := readBackupFile(files[entry.Name], storageFileLimit(entry.Name))
 		if err != nil {
 			return err
 		}

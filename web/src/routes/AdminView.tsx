@@ -57,6 +57,7 @@ import { OverflowTooltip } from '../ui/Tooltip'
  */
 import { useEffect, useRef, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { DocumentSettings } from '../admin/DocumentSettings'
 import { ChatDataSettings } from '../admin/ChatDataSettings'
 import { AssistantSection } from '../assistant/AssistantSection'
 import { AdminStatusLine } from '../admin/AdminStatusLine'
@@ -102,11 +103,12 @@ const SECTION_MEMBER: Record<string, keyof DeskConfig> = {
   organization: 'organization',
   storage: 'storage',
   assistant: 'assistant',
+  documents: 'research',
   'identity-provider': 'identity'
 }
 
 /** The two sections that exist only in the desk-level file. */
-const DESK_ONLY = new Set(['assistant', 'identity-provider'])
+const DESK_ONLY = new Set(['assistant', 'documents', 'identity-provider'])
 
 /**
  * The one section that is about the project's file itself rather than about a
@@ -244,6 +246,7 @@ ${effective.desk.chassis.runtimeBin}`} />
                   under={deskStatus(effective)}
                 />
               </RetainedPanel>
+              <RetainedPanel active={open.id === 'documents'}><DocumentSettings /></RetainedPanel>
               <RetainedPanel active={open.id === 'identity-provider'}>
                 <SourceCard
                   id={sectionId(SECTION['identity-provider']!.id)}
