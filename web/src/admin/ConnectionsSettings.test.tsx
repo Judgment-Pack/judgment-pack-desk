@@ -8,7 +8,7 @@ import { decodeDeskConfig, DOCUMENT_DEFAULTS, effectiveConfig, type LocalGateway
 import { ConnectionsSettings } from './ConnectionsSettings'
 const mocks = vi.hoisted(() => ({ fetch: vi.fn() }))
 vi.mock('../files/client', async original => ({ ...await original<typeof import('../files/client')>(), deskFetch: mocks.fetch }))
-afterEach(() => { cleanup(); vi.clearAllMocks() })
+afterEach(() => { cleanup(); vi.clearAllMocks(); vi.restoreAllMocks() })
 const gateway = { url: 'http://localhost:8787', authority: 'gateway:test', signer: { algorithm: 'ed25519', public: 'ab'.repeat(32) } }
 const research = { gateway, sources: { read: { source: 'read', dialect: 'jina-reader' } } }
 function setup(extra = {}, localGateway?: LocalGatewayStatus) {
@@ -125,6 +125,7 @@ it('shows ready local processing and saves PDF preferences without persisting a 
   expect(JSON.stringify(sent)).not.toContain(gateway.url)
 })
 it('offers an existing gateway when local components are unavailable without falsely enabling PDF uploads', () => {
+  const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
   setup({ gateway: null }, { status: 'unavailable', problem: 'Missing components' })
   expect(screen.getByText('Unavailable')).toBeTruthy()
   expect((screen.getByRole('button', { name: 'Manage PDF processing' }) as HTMLButtonElement).disabled).toBe(true)
@@ -132,4 +133,5 @@ it('offers an existing gateway when local components are unavailable without fal
   expect(screen.getByLabelText('Connection').textContent).toBe('Local (automatic)')
   expect(screen.queryByLabelText('Gateway URL')).toBeNull()
   expect((screen.getByRole('button', { name: 'Save changes' }) as HTMLButtonElement).disabled).toBe(true)
+  expect(errors).not.toHaveBeenCalled()
 })
