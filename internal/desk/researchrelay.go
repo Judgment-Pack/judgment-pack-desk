@@ -32,6 +32,7 @@ package desk
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -107,6 +108,9 @@ func (s *Server) configuredResearch() (researchGateway, error) {
 		return zero, withCode(CodeResearchUnconfigured, fmt.Errorf(
 			"no research gateway could be read: %s could not be read: %v", path, err))
 	}
+	if !present && s.localGateway != nil {
+		return s.localResearch(nil)
+	}
 	if !present {
 		return zero, withCode(CodeResearchUnconfigured, fmt.Errorf(
 			"no research gateway is configured: there is no %s", path))
@@ -121,9 +125,23 @@ func (s *Server) configuredResearch() (researchGateway, error) {
 			"%s was refused, so no research gateway in it is configured: %s",
 			path, describeProblems(decoded.Problems)))
 	}
-	if decoded.Research == nil || decoded.Research.gateway == nil {
-		return zero, withCode(CodeResearchUnconfigured, errors.New(
-			"no research gateway is configured: research.gateway is absent or null"))
+	if decoded.Research == nil {
+		return s.localResearch(nil)
+	}
+	if decoded.Research.gateway == nil {
+		documents := decoded.Research.documents
+		if documents == nil {
+			var raw struct {
+				Research struct {
+					Documents json.RawMessage `json:"documents"`
+				} `json:"research"`
+			}
+			_ = json.Unmarshal(data, &raw)
+			if string(raw.Research.Documents) == "null" {
+				documents = &documentSourceConfig{}
+			}
+		}
+		return s.localResearch(documents)
 	}
 	gateway := *decoded.Research.gateway
 	gateway.maxRequestBytes = maxResearchBody

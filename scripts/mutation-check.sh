@@ -730,7 +730,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "an absent desk-level file is a refusal" "$A" \
     '	if !present {
 		writeJSON(w, http.StatusOK, DeskLevelConfig{
-			Path: path, Present: false, Project: s.projectPaths(), Runtime: s.runtimePaths()})
+			Path: path, Present: false, Project: s.projectPaths(), Runtime: s.runtimePaths(), LocalGateway: s.localGatewayStatus(nil)})
 		return
 	}' \
     '	if !present {

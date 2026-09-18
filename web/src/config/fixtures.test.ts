@@ -22,7 +22,7 @@ import { DESK_DEFAULTS, decodeDeskConfig, type DocumentSourceConfig } from './de
 const FIXTURES = join(import.meta.dirname, 'fixtures', 'desk-config')
 
 interface Verdict {
-  documents?: DocumentSourceConfig
+  documents?: DocumentSourceConfig | null
   accepted: boolean
   keys: string[]
   /**

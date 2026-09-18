@@ -39,6 +39,7 @@ import {
   effectiveConfig,
   type ChassisPaths,
   type DeskLevelRead,
+  type LocalGatewayStatus,
   type EffectiveConfig
 } from './deskConfig'
 
@@ -46,6 +47,7 @@ export const DESK_CONFIG_QUERY_KEY = ['desk-config'] as const
 
 /** What `GET /api/desk-config` answers. Absence is a 200, not a 404. */
 interface DeskLevelAnswer {
+  localGateway?: LocalGatewayStatus
   path: string
   present: boolean
   content?: string
@@ -132,6 +134,7 @@ export async function loadDeskLevelConfig(signal?: AbortSignal): Promise<DeskLev
       // sends the same value a write that replaces one sends.
       sha256: answered.sha256 ?? '',
       chassis: chassisPaths(answered),
+      localGateway: answered.localGateway,
       note: `no desk-level configuration file at ${answered.path}`
     }
   }
@@ -140,6 +143,7 @@ export async function loadDeskLevelConfig(signal?: AbortSignal): Promise<DeskLev
     present: true,
     sha256: answered.sha256 ?? '',
     chassis: chassisPaths(answered),
+      localGateway: answered.localGateway,
     // The bytes, carried alongside the decode. Admin quotes a member out of
     // them rather than re-serialising what the decode produced.
     text: answered.content,

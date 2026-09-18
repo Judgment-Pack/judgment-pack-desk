@@ -62,6 +62,8 @@ type Config struct {
 	Root *ProjectRoot
 	// JpackBin names the runtime binary: a path, or a name resolved on PATH.
 	JpackBin string
+	// LocalGatewayBundle is the trusted installation directory; empty disables management.
+	LocalGatewayBundle string
 	// Port is the TCP port the listener this server is served behind is bound
 	// to, and it is **required**.
 	//
@@ -103,10 +105,11 @@ type Config struct {
 
 // Server is the HTTP handler and the owner of the file watcher.
 type Server struct {
-	cfg    Config
-	mux    *http.ServeMux
-	static http.Handler
-	log    *log.Logger
+	localGateway *localGateway
+	cfg          Config
+	mux          *http.ServeMux
+	static       http.Handler
+	log          *log.Logger
 
 	mu    sync.Mutex
 	conns map[*conn]struct{}
@@ -261,6 +264,10 @@ func New(cfg Config) (*Server, error) {
 		// use to read a pack; what is withdrawn is the ability to keep a key.
 		s.log.Printf("desk: no assistant key will be kept: %v", s.assistant.problem)
 	}
+	if cfg.LocalGatewayBundle != "" {
+		executable, _ := os.Executable()
+		s.localGateway = &localGateway{bundle: cfg.LocalGatewayBundle, executable: executable}
+	}
 	s.removeStaleStaging()
 	if cfg.Static != nil {
 		s.static = http.FileServer(http.FS(cfg.Static))
@@ -362,6 +369,9 @@ func (s *Server) Close() error {
 }
 
 func (s *Server) closeAll() error {
+	if s.localGateway != nil {
+		s.localGateway.close()
+	}
 	var err error
 	if s.watcher != nil {
 		err = s.watcher.Close()

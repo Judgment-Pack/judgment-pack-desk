@@ -353,7 +353,7 @@ export interface ResearchConfig {
   sources: { search: ResearchSourceConfig | null; read: ResearchSourceConfig | null }
   limits: ResearchLimits
   /** Personal gateway document adapter; absent keeps local text uploads only. */
-  documents?: DocumentSourceConfig
+  documents?: DocumentSourceConfig | null
 }
 
 export interface DocumentSourceConfig {
@@ -1314,8 +1314,8 @@ export const RESEARCH_LIMIT_BOUNDS: Readonly<Record<keyof ResearchLimits, [numbe
   seconds: [30, 3_600]
 }
 
-function documentSourceValue(value: unknown, problems: ConfigProblem[]): DocumentSourceConfig | undefined {
-  if (value === null) return undefined
+function documentSourceValue(value: unknown, problems: ConfigProblem[]): DocumentSourceConfig | null | undefined {
+  if (value === null) return null
   const declared = section(value, 'research.documents', ['enabled', 'source', ...Object.keys(DOCUMENT_LIMIT_BOUNDS)], problems)
   if (!declared) return undefined
   const result = { ...DOCUMENT_DEFAULTS }
@@ -2094,6 +2094,7 @@ export interface ChassisPaths {
  * absent is neither.
  */
 export interface DeskLevelRead {
+  localGateway?: LocalGatewayStatus
   /** Absolute, on this machine, and known even where nothing was read. */
   path: string
   present: boolean
@@ -2131,8 +2132,25 @@ export interface DeskLevelRead {
   chassis?: ChassisPaths
 }
 
+export interface LocalGatewayStatus {
+  status: 'ready' | 'unavailable' | 'external'
+  gateway?: ResearchGatewayConfig
+  problem?: string
+}
+
+/** Layer process-owned local settings without ever serializing its temporary URL. */
+export function withLocalGateway(research: ResearchConfig, local?: LocalGatewayStatus): ResearchConfig {
+  if (!local || research.gateway) return research
+  const documents = research.documents === undefined ? DOCUMENT_DEFAULTS : research.documents
+  return { ...research, sources: { search: null, read: null }, gateway: local.gateway ?? null, documents: documents && {
+    ...documents, source: 'documents', maxRequestBytes: Math.min(documents.maxRequestBytes, 32 * 1024 * 1024),
+    maxResponseBytes: Math.min(documents.maxResponseBytes, 8 * 1024 * 1024)
+  } }
+}
+
 /** What Admin renders about the desk-level file. The decode, summarised. */
 export interface DeskLevelSummary {
+  localGateway?: LocalGatewayStatus
   path: string
   present: boolean
   problems: ConfigProblem[]
@@ -2288,7 +2306,7 @@ export function effectiveConfig(
       // default, and nothing in between.
       identity: deskValues?.identity ?? DESK_DEFAULTS.identity,
       assistant: deskValues?.assistant ?? DESK_DEFAULTS.assistant,
-      research: deskValues?.research ?? DESK_DEFAULTS.research,
+      research: withLocalGateway(deskValues?.research ?? DESK_DEFAULTS.research, !desk?.readFailure && !desk?.decoded?.problems.length ? desk?.localGateway : undefined),
       project: deskValues?.project ?? DESK_DEFAULTS.project,
       appearance: pick('appearance'),
       panes: pick('panes'),
@@ -2316,6 +2334,7 @@ export function effectiveConfig(
       desk === undefined
         ? undefined
         : {
+            localGateway: desk.localGateway,
             path: desk.path,
             present: desk.present,
             problems: desk.decoded?.problems ?? [],

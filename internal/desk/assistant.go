@@ -184,6 +184,7 @@ func readBounded(reader io.Reader, limit int) ([]byte, error) {
 // tells the reader to write. A *failed* read is still a refusal, because then
 // the answer is genuinely not known.
 type DeskLevelConfig struct {
+	LocalGateway *LocalGatewayStatus `json:"localGateway,omitempty"`
 	// Path is absolute, on this machine.
 	Path    string `json:"path"`
 	Present bool   `json:"present"`
@@ -318,7 +319,7 @@ func (s *Server) handleDeskConfig(w http.ResponseWriter, r *http.Request) {
 	// is no file" and is what a page sends back as `ifMatch` to create one.
 	if !present {
 		writeJSON(w, http.StatusOK, DeskLevelConfig{
-			Path: path, Present: false, Project: s.projectPaths(), Runtime: s.runtimePaths()})
+			Path: path, Present: false, Project: s.projectPaths(), Runtime: s.runtimePaths(), LocalGateway: s.localGatewayStatus(nil)})
 		return
 	}
 	if !validUTF8(data) {
@@ -327,7 +328,7 @@ func (s *Server) handleDeskConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, DeskLevelConfig{
-		Path: path, Present: true, Content: string(data), SHA256: digestOf(data),
+		Path: path, Present: true, Content: string(data), SHA256: digestOf(data), LocalGateway: s.localGatewayStatus(data),
 		Project: s.projectPaths(), Runtime: s.runtimePaths()})
 }
 

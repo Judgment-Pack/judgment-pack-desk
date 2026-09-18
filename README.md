@@ -21,6 +21,30 @@ machine-held credential to the browser as a model id. See
 [Where the assistant key lives](#where-the-assistant-key-lives).
 
 
+## Automatic local PDF processing
+
+Build a complete local installation with Node 22+, Python 3.8.17+ and Go (the
+pinned gateway modules require Go 1.26):
+
+```sh
+npm --prefix web ci
+python3 scripts/build-bundle.py
+./bin/jpack-desk --jpack /path/to/jpack /path/to/project
+```
+
+The build fetches the pinned gateway source. For an existing checkout, add
+`--gateway-checkout /path/to/judgment-pack-gateway`; it reads the pinned commit
+without changing that checkout. Keep all files in `bin` together when installing.
+A bare `go build` still builds Desk, but does not package the gateway companions.
+
+On Linux and macOS, Desk starts its local gateway automatically and Admin →
+Connections shows **Local processing · Ready**. You can upload PDFs without
+entering a gateway URL, generating keys, or running a separate server. An
+existing gateway configuration stays in control. Local processing is for PDF
+text extraction; Google Drive, web research credentials and OCR are not installed
+by this setup. See [managed local processing](docs/adr/0005-managed-local-gateway.md)
+for identity preservation, receipt storage and platform boundaries.
+
 ## Personal chat storage and recovery
 
 **Admin → Storage & data** keeps project pack settings separate from private chat

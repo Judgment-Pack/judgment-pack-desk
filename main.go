@@ -41,6 +41,9 @@ func main() {
 }
 
 func run() error {
+	if len(os.Args) == 2 && os.Args[1] == "--local-gateway-worker" {
+		return desk.RunLocalGatewayWorker(os.Stdin, os.Stdout)
+	}
 	var (
 		port     = flag.Int("port", 8791, "loopback TCP port to listen on; 0 lets the kernel choose one, and the printed URL names it")
 		jpackBin = flag.String("jpack", "jpack", "path to the judgment-pack runtime binary")
@@ -62,6 +65,9 @@ func run() error {
 	// What comes back is the **descriptor**, not a name for one: validating a
 	// pathname and then re-resolving it to open is a window in which the
 	// directory checked is not the directory served. See `desk.OpenProject`.
+	// A missing standard config base is normal on a fresh installation. Any
+	// unsafe/unavailable location is still reported by the custody layer.
+	_ = desk.PrepareDeskConfigBase(desk.DeskConfigDirFor(""))
 	project, err := desk.OpenProject(flag.Arg(0), desk.DeskConfigDirFor(""))
 	if err != nil {
 		return err
@@ -105,8 +111,9 @@ func run() error {
 	}
 
 	srv, err := desk.New(desk.Config{
-		Root:     project,
-		JpackBin: runtimeBin,
+		Root:               project,
+		JpackBin:           runtimeBin,
+		LocalGatewayBundle: desk.LocalGatewayBundleDir(),
 		// The port this listener binds, handed over because the handoff
 		// cookie's name carries it: a cookie's origin has no port, so two
 		// desks on one host would otherwise share one handoff.
