@@ -7,10 +7,10 @@ export interface DocumentPage {
 export interface DocumentRecord {
   attachmentVersion: '1'
   document: { id: string; name: string; mediaType: string; detectedMediaType: string | null; size: number; version: string | null; encryption: { handler: string | null; revision: number | null; opened: boolean } | null }
-  original: { retention: 'caller'; encoding: null; bytes: null }
+  original: { retention: 'caller'|'inline'; encoding: 'base64'|null; bytes: string|null }
   content: { kind: 'text'; extraction: DocumentPage['extraction'] | 'mixed'; pageCount: number; truncated: boolean; chars: number; pages: DocumentPage[] }
   processing: { status: 'complete' | 'partial' | 'failed'; errors: { code: string; message: string; page: number | null }[]; bounds: Record<string, number>; durationMs: number }
-  provenance: { adapter: { name: string; version: string; digest: string }; source: { kind: 'inline' }; observedAt: string; processor: string | null; ocr: { program: string; digest: string; pages: number[] } | null }
+  provenance: { adapter: { name: string; version: string; digest: string }; source: { kind: 'inline'|'google-drive'; fileId?: string; version?: string; mediaType?: string }; observedAt: string; processor: string | null; ocr: { program: string; digest: string; pages: number[] } | null }
 }
 const ERROR_CODES = new Set(['media-type-unsupported','media-type-mismatch','document-over-bound','document-empty','pdf-malformed','pdf-encrypted','pdf-unsupported','pdf-page-failed','pdf-pages-over-bound','text-over-bound','stream-over-bound','timeout','ocr-not-run','ocr-failed','ocr-incomplete','ocr-timeout'])
 const PAGE_ERRORS = new Set(['pdf-unsupported','pdf-page-failed','stream-over-bound','text-over-bound'])
@@ -35,7 +35,8 @@ export function readDocumentRecord(value: unknown): DocumentRecord {
   require(str(d.mediaType) && /^[a-z0-9][a-z0-9!#$&^_.+-]{0,126}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}$/.test(d.mediaType))
   require([null, 'application/pdf', 'text/plain'].includes(d.detectedMediaType as string | null) && int(d.size) && nullableString(d.version))
   if (d.encryption !== null) { const e = object(d.encryption); require(nullableString(e.handler) && (e.revision === null || int(e.revision)) && typeof e.opened === 'boolean') }
-  require(o.retention === 'caller' && o.encoding === null && o.bytes === null)
+  const sourceKind = object(v.source).kind
+  require(sourceKind === 'google-drive' ? o.retention === 'inline' && o.encoding === 'base64' && str(o.bytes) : o.retention === 'caller' && o.encoding === null && o.bytes === null)
   require(c.kind === 'text' && ['text-layer','ocr','mixed','verbatim','none'].includes(c.extraction as string) && int(c.pageCount) && typeof c.truncated === 'boolean' && int(c.chars) && Array.isArray(c.pages))
   require(['complete','partial','failed'].includes(p.status as string) && Array.isArray(p.errors) && int(p.durationMs))
   const bounds = object(p.bounds)
@@ -75,7 +76,8 @@ export function readDocumentRecord(value: unknown): DocumentRecord {
   // A known incomplete page cannot masquerade as complete via an empty errors list.
   if (c.pages.some(item => ['failed','needs-ocr'].includes(object(item).status as string))) require(p.status !== 'complete')
   const adapter = object(v.adapter), source = object(v.source)
-  require(str(adapter.name) && adapter.name.length > 0 && str(adapter.version) && digest(adapter.digest) && source.kind === 'inline')
+  require(str(adapter.name) && adapter.name.length > 0 && str(adapter.version) && digest(adapter.digest) && ['inline', 'google-drive'].includes(source.kind as string))
+  if (source.kind === 'google-drive') require(str(source.fileId) && /^[A-Za-z0-9_-]{1,200}$/.test(source.fileId) && str(source.version) && source.version === d.version && str(source.mediaType) && o.retention === 'inline')
   require(str(v.observedAt) && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(v.observedAt) && Number.isFinite(Date.parse(v.observedAt)))
   require(v.processor === null || ['adapter-document/pdf/1','adapter-document/text/1'].includes(v.processor as string))
   if (v.processor === null) require(c.pages.length === 0 && d.detectedMediaType === null)

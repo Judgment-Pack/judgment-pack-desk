@@ -1,11 +1,15 @@
 # Document attachments
 
-Desk integrates the gateway document adapter at gateway main
-`f9f05cc72f85ddda32f994b3b3eb2b75dcfc85ab` (PRs #134–#137).
+Desk pins gateway `bce6d3be503d89bcc42b21c991278adb246dd2c0`
+(Drive implementation PR #139, pending independent review).
 The v1 contract is `docs/design/attachments.md` in that repository.
 No runtime or JPS format change is involved.
 
-## Setup and use
+## PDF setup and use
+
+The complete Desk bundle starts local processing automatically on Linux/macOS.
+The manual gateway steps below apply to explicitly managed external deployments.
+Local Drive setup is described separately below.
 
 1. Install/build `adapter-document` from the gateway adapters module. Start the
    gateway with v3 receipts and an operator-configured **command** source:
@@ -41,7 +45,8 @@ No runtime or JPS format change is involved.
 
    **Configured** means settings were saved, not that a live connection was tested.
    Availability is checked when used. Changing the gateway identity/key may
-   prevent existing documents from verifying. Google Drive remains unavailable.
+   prevent existing documents from verifying. Explicit external gateways do not
+   silently activate personal local Drive connections.
    These settings are personal preferences, not organization policy controls.
 3. In home chat or a pack's Assistant, use **+ → Upload files**, or drop a PDF.
    Local TXT/Markdown/JSON/CSV attachments still work without a gateway (200 KB each).
@@ -55,15 +60,38 @@ No runtime or JPS format change is involved.
    serialized attachment context is bounded to 800,000 UTF-8 bytes per message.
    Messages can contain at most four pending attachments.
 
-Google Drive/OAuth is not implemented by this connection. Desk does not display
-an enabled cloud provider that the gateway cannot serve.
+## Personal Google Drive
+
+The complete bundle includes gateway-owned connection and retrieval companions.
+In Admin → Connections, choose Google Drive → Set up. Register a Google Cloud
+Desktop app with Drive and Picker APIs enabled and choose its downloaded
+credentials JSON. The gateway stores the registration privately. Then choose
+Manage → Connect, or Google Drive in the chat attachment menu, and complete
+Google consent. Select individual files through Google's browser picker.
+
+Only selected-file access is requested (`drive.file`). The gateway handles tokens,
+refresh, revocation and retrieval. Desk receives account display information and
+short-lived file grants, never Google access/refresh tokens. Disconnect removes
+local access and attempts upstream revocation; a failed revocation is reported.
+An in-flight read may finish after disconnect.
+
+PDF, TXT, Markdown, JSON and CSV are supported. Google Docs, Sheets and Slides
+are exported as PDFs. The source limit is 4 MiB per original/export, four pending
+attachments per message, and 16 MiB per extraction response. Desk's configured
+file limit can be lower. New Drive attachments require document processing enabled.
+Page preview, partial-extraction consent and citations are the same as for uploads.
+
+These are personal OS-account connections on Linux/macOS. Shared enterprise
+connection identity and policy enforcement are not implemented. See
+[ADR 0006](adr/0006-gateway-drive-connections.md). Live Google consent has not yet
+been validated with a registered application; automated tests use a fake provider.
 
 ## Verification and citations
 
 One upload uses a fresh gateway session, then seals it. Before a document's text
 can be used, Desk verifies the session under the **currently configured** public
-key and authority, checks the command acquisition/source and v3 argument
-commitment, and matches the record's name, media type, size and original digest
+key and authority, checks the acquisition/source (command for uploads, HTTP for
+Drive) and v3 argument commitment, and matches the record's name, media type, size and original digest
 to the retained bytes. Saved flags never confer trust: opening a preview and
 preparing each send repeat verification from held bytes. Pin changes therefore
 withhold old documents until the trusted pin is restored or documents are
@@ -87,8 +115,11 @@ Attachments are explicitly marked untrusted reference material in model input.
 Originals and acquisition packets are separate objects beside private
 conversations. Chat JSON and the unsent home draft hold small references; visiting
 home still does not create a conversation. Each object contains the original
-base64 once plus the exact acquire response, its argument salt, and the session
-seal. The request is reproducible from the original and fixed `ocr: auto` option.
+base64 plus the exact acquire response, its argument salt, and the session
+seal. Drive responses also retain the signed original inline, so those objects
+contain a second serialized copy within the same storage bound. Upload arguments
+are reproduced from the original and fixed `ocr: auto` option; Drive arguments
+are retained selected-file grants, which cannot be replayed for another acquisition.
 
 Object names are opaque UUIDs in the server-resolved project-history namespace.
 Paths cannot be supplied by callers. Reads/writes use existing session/origin

@@ -7,8 +7,8 @@ import styles from './AttachmentMenu.module.css'
 
 /** Shared by home chat and pack Assistant. Provider availability is explicit:
  * a configured document extractor is not a Google Drive connection. */
-export function AttachmentMenu({ disabled, onUpload }: {
-  disabled: boolean; onUpload: () => void
+export function AttachmentMenu({ disabled, onUpload, onDrive, driveState }: {
+  disabled: boolean; onUpload: () => void; onDrive?: () => void; driveState?: string
 }) {
   useLocale()
   const [open, setOpen] = useState(false)
@@ -24,9 +24,9 @@ export function AttachmentMenu({ disabled, onUpload }: {
           <IconPaperclip />
           <span className={styles.copy}><span id={`${id}-upload`}>{msg('Upload files')}</span><span id={`${id}-upload-hint`} className={styles.description}>{msg('PDFs and text files')}</span></span>
         </DropdownMenu.Item>
-        <DropdownMenu.Item className={`desk-menu-item ${styles.item}`} textValue="Google Drive" disabled aria-labelledby={`${id}-drive`} aria-describedby={`${id}-drive-hint`}>
+        <DropdownMenu.Item className={`desk-menu-item ${styles.item}`} textValue="Google Drive" disabled={!onDrive || !driveState || ['unavailable', 'blocked'].includes(driveState)} onSelect={onDrive} aria-labelledby={`${id}-drive`} aria-describedby={`${id}-drive-hint`}>
           <IconGoogleDrive />
-          <span className={styles.copy}><span id={`${id}-drive`}>{msg('Google Drive')}</span><span id={`${id}-drive-hint`} className={styles.description}>{msg('Not available yet')}</span></span>
+          <span className={styles.copy}><span id={`${id}-drive`}>{msg('Google Drive')}</span><span id={`${id}-drive-hint`} className={styles.description}>{driveState === 'setup-required' ? msg('Set up') : driveState === 'connected' ? msg('Choose files') : driveState === 'not-connected' ? msg('Connect') : msg('Unavailable')}</span></span>
         </DropdownMenu.Item>
       </DropdownMenu.Content>
     </DropdownMenu.Portal>

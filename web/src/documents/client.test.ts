@@ -24,3 +24,17 @@ it.each(['original','name','salt','response','seal','pin','source','digest'] as 
   if (kind === 'digest') reference.digest = 'sha256:'+'11'.repeat(32)
   await expect(verifyDocument(object,pin,reference.digest)).rejects.toThrow()
 })
+it('verifies a Drive acquisition with its retained original and selected file', async () => {
+  const {object,pin,reference} = await signedDocument(true)
+  const doc = await verifyDocument(object,pin,reference.digest)
+  expect(doc.record.provenance.source.fileId).toBe('file-A')
+  expect(documentContext(doc,reference)).not.toContain(object.proof!.drive!.grant)
+})
+it.each(['file','grant','missing-request','source-swap'] as const)('rejects Drive %s substitution', async kind => {
+  const {object,pin,reference} = await signedDocument(true)
+  if (kind === 'file') object.proof!.drive!.fileId = 'file-B'
+  if (kind === 'grant') object.proof!.drive!.grant = 'bb'.repeat(32)
+  if (kind === 'missing-request') delete object.proof!.drive
+  if (kind === 'source-swap') object.proof!.response = object.proof!.response.replace('google-drive','inline')
+  await expect(verifyDocument(object,pin,reference.digest)).rejects.toThrow()
+})

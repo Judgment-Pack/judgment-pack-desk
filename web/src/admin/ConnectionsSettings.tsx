@@ -1,3 +1,4 @@
+import { DriveConnection } from './DriveConnection'
 import { useEffect, useId, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { msg, systemMessage, useLocale } from '../i18n'
@@ -113,7 +114,7 @@ export function ConnectionsSettings() {
       <SettingRow title={msg('PDF processing')} description={msg('Extract text from uploaded PDFs.')}
         status={!gateway ? msg('Requires a gateway') : documents?.enabled ? msg('Enabled · Up to {{size}} per file', { size: formatStorageBytes(documents.maxFileBytes) }) : msg('Disabled')}
         action={<Button ref={pdfOpener} disabled={!writable || !gateway} aria-label={msg('Manage PDF processing')} onClick={() => open('pdf')}>{msg('Manage')}</Button>} />
-      <SettingRow title={msg('Google Drive')} description={msg('Not available yet')} />
+      <DriveConnection available={managed && local?.status === 'ready'} />
       {managed && local?.status === 'unavailable' && <div><Alert>{msg('Local processing is unavailable. Check the details below or use an existing gateway.')}</Alert><Disclosure title={msg('Technical details')}><p>{systemMessage(local.problem ?? '')}</p></Disclosure></div>}
       {!writable && <Alert>{msg('Settings could not be read. Reload the page before making changes.')}</Alert>}
       <p className={styles.note}>{msg('Text files can be attached without a gateway.')}</p>
