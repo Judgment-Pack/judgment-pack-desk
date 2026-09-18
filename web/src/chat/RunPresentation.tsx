@@ -36,7 +36,7 @@ export function WorkSummary({ state }: { state: RunState }) {
   const failures = rows.filter(row => row.status === 'failed').length
   return <details className={styles.work}><summary>{rows.length ? msg("Work · {{count}} steps", { count: rows.length }) + (failures ? msg(" · {{count}} failed", { count: failures }) : "") : msg("Assistant notice")}</summary>
     {rows.length > 0 && <ol>{rows.map(row => <li key={row.id}><span>{TOOL_LABELS[row.name] ?? row.name}</span><span>{row.status === 'complete' ? msg("Done") : row.status === 'failed' ? msg("Failed") : row.status === 'interrupted' ? msg("Interrupted") : msg("Working…")}</span></li>)}</ol>}
-    {notices.map(notice => <p key={systemMessage(notice)}>{systemMessage(notice)}</p>)}
+    {notices.map(notice => <p key={notice}>{systemMessage(notice)}</p>)}
     {critique && <p><Message text={"Adversarial review: <0/>"} slots={[critique.text]} /></p>}
   </details>
 }

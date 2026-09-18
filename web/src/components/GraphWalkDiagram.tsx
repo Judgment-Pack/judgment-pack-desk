@@ -1,5 +1,5 @@
 import { Message } from '../i18n/Message'
-import { msg, useLocale } from '../i18n'
+import { systemMessage, msg, useLocale } from '../i18n'
 import { edgeIndices, nodesInWalkOrder, parseDisposition, parseProbe } from '../mcp/canonical'
 import { edgeCarries, type GraphWalkShape, type WalkEdge } from '../mcp/graphDocument'
 import type { GraphSuiteEntry, GraphTestRow, MatrixProbe } from '../mcp/types'
@@ -165,7 +165,7 @@ function DocumentWalk({
           const y2 = to.y
           const midX = (x1 + x2) / 2
           const midY = (y1 + y2) / 2
-          const carries = edgeCarries(edge)
+          const carries = edgeCarries(edge, msg)
           return (
             <g key={edge.index} className="diagram-edge">
               <title>{msg("edge {{value0}}: {{value1}} → {{value2}} carries {{value3}}", { value0: edge.index, value1: edge.from, value2: edge.to, value3: carries })}</title>
@@ -337,7 +337,7 @@ function EdgeList({
             <code>
               {edge.from} → {edge.to}
             </code>
-            <span className="edge-carries">{edgeCarries(edge)}</span>
+            <span className="edge-carries">{edgeCarries(edge, msg)}</span>
             {!edge.drawable && (
               <span className="probe-status probe-status-missing">{msg("names a node this document does not declare — not drawn")}</span>
             )}
@@ -392,7 +392,7 @@ function CoverageWalk({
   if (nodes.length === 0) {
     return (
       <>
-        {fallbackReason && <p className="note note-warn">{fallbackReason}</p>}
+        {fallbackReason && <p className="note note-warn">{systemMessage(fallbackReason)}</p>}
         <p className="empty">{msg("The coverage report names no node, so this run reports nothing about the graph's shape. A graph whose rows did not load reports its failure and no structure.")}</p>
       </>
     )
@@ -404,7 +404,7 @@ function CoverageWalk({
 
   return (
     <div className="diagram-wrap">
-      {fallbackReason && <p className="note note-warn">{fallbackReason}</p>}
+      {fallbackReason && <p className="note note-warn">{systemMessage(fallbackReason)}</p>}
       <svg
         className="diagram"
         viewBox={`0 0 ${width} ${height}`}

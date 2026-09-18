@@ -50,7 +50,7 @@ export function RuleCard({
               index={order.index}
               count={order.count}
               move={order.move}
-              what="rule"
+              what={msg("rule")}
             />
           )}
         </p>

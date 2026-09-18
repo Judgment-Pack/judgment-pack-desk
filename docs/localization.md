@@ -1,6 +1,6 @@
 # Desk localization
 
-Localization is available for testing while the catalogues are being completed. The language selector does not imply complete translation coverage. `npm --prefix web run i18n:check` reports remaining catalogue gaps; missing entries continue to fall back to English.
+The English catalogue and all 11 translated catalogues cover the current Desk UI messages. Translations were authored and reviewed directly, without sending UI text or project data to an external translation API. English remains the fallback for an unsupported system language or a translation bundle that cannot load. `npm --prefix web run i18n:check` rejects missing messages, invalid placeholders, and untranslated UI literals.
 
 ## Language choice
 
@@ -25,18 +25,25 @@ The preference covers replies, clarification questions, visible progress summari
 3. Add count messages to `src/i18n/plurals.json` with their English singular form. Provide each locale's applicable CLDR forms in the catalogue. Never build a plural by appending English `s`.
 4. Keep technical values outside translation functions, even if they resemble words. Display labels can differ from persisted keys and values. Do not pass pack text or assistant prose to `msg`.
 5. Memoized projections containing translated labels must depend on the locale. Pure document parsing and editor identity must not depend on it.
-6. Keep deferred Desk notices in their canonical English form with the dependency-free `sourceMessage` helper, and translate them with `systemMessage` when rendered. This preserves stored records and allows existing feedback to follow a language switch. Never mark source quotations, user content, or model prose as Desk notices.
-7. Run `npm --prefix web run i18n:extract`, translate the new catalogue entries, then run `npm --prefix web run i18n:check`. The checker validates coverage and interpolation/element placeholders.
+6. Keep deferred Desk notices in their canonical English form with the pure `sourceMessage` helper, and translate them with `systemMessage` when rendered. This preserves stored records and allows existing feedback to follow a language switch. Only explicitly named `message0`, `message1`, etc. interpolation slots contain nested Desk notices; ordinary interpolation values stay exact. Use `SourceError` for actionable Desk errors that `ErrorBox` should translate. Other errors remain raw diagnostics. Never mark source quotations, user content, or model prose as Desk notices.
+7. Do not capture translated labels at module initialization or use them as document/grouping identifiers. Resolve shared vocabulary when rendering; keep stable keys independent of the language.
+8. Run `npm --prefix web run i18n:extract`, translate the new catalogue entries, then run `npm --prefix web run i18n:check`. The checker validates coverage and interpolation/element placeholders.
 
 Do not substitute English values into missing catalogue entries to make coverage pass. Identical translations are legitimate for names such as JSON, but an untranslated paragraph is unfinished work. Translation drafts require terminology and contextual review, especially Cantonese, Portuguese variants, and decision-contract explanations.
 
-## Validation and remaining work
+## Validation
 
-The implementation includes language negotiation tests, live language switching and draft preservation tests, safe inline interpolation tests, plural/date/number tests, and model-boundary tests for author and critic requests. `scripts/localization-check.mjs` exercises all language choices in an isolated project, including narrow layouts and light/dark themes. It does not call an AI provider or modify real chat data.
+The checks cover language negotiation, live switching with draft preservation, safe inline interpolation, CLDR plural forms, regional dates and numbers, and reply-language instructions for both the author and critic. Regression tests also cover stored feedback, interrupted replies, graph captions, inspector relationships, optional editor sections, offline recovery, and identifiers that happen to match translatable words.
 
-Remaining before release:
+CI runs catalogue validation and the UI-message guard alongside the component suite, type check and production build. The source guard checks literal JSX text, display and accessibility properties, option captions, confirmations, and captions inside `Message` slots. It cannot prove that every string passed through a variable is translated: imported labels and generated notices still require source and rendered review.
 
-- Complete all catalogues and review the terminology in context.
-- Finish the audit of dynamic status/error text and English fragments in complex sentences. Preserve raw diagnostics as evidence while localizing surrounding controls and explanations.
-- Check pack forms, test reports, graphs, storage dialogs, and error paths in translated layouts, including persistence during a live edit or assistant run.
-- Re-run catalogue checks, component tests, browser checks, build, and the relevant mutation safeguards after the final copy changes.
+The browser audit exercises every language in an isolated project: home, Packs, tests, pack flows, Assistant settings, storage, identity settings, Help, and pack overview, logic and editing. It checks offline recovery, the configuration dialog, the language menu, draft preservation, reload persistence and visible untranslated labels. German, Cantonese and Japanese are also checked in both themes at 1440, 768 and 390 pixels. It does not send a message, call an AI provider or modify real chat data.
+
+After building Desk, run it with Node 22 or later and a runtime fixture:
+
+```sh
+JPACK_BIN=/path/to/jpack node scripts/localization-check.mjs \
+  /path/to/jpack-desk /path/to/runtime/internal/graph/testdata/project /tmp/localization-artifacts
+```
+
+The final repeated sweep found no remaining UI-copy gaps in the audited source and exercised states. This does not imply that user-authored packs, existing AI replies, exact source quotations or raw runtime/provider diagnostics change language; those intentionally retain their original content. Language quality can still benefit from native-speaker feedback in actual workflows.

@@ -90,10 +90,10 @@ function ProbeGroups({
     // A graph's probes are namespaced per node, and the report emits the nodes
     // in the walk's evaluation order. Grouping keeps that order rather than
     // sorting it into an order nothing on the wire states.
-    const order: string[] = []
-    const byNode = new Map<string, MatrixProbe[]>()
+    const order: (string | null)[] = []
+    const byNode = new Map<string | null, MatrixProbe[]>()
     for (const probe of probes) {
-      const key = parseProbe(probe.probe).node ?? msg("the graph")
+      const key = parseProbe(probe.probe).node ?? null
       if (!byNode.has(key)) {
         byNode.set(key, [])
         order.push(key)
@@ -103,9 +103,9 @@ function ProbeGroups({
     return (
       <>
         {order.map((node) => (
-          <div key={node} className="coverage-group">
+          <div key={JSON.stringify(node)} className="coverage-group">
             <h4 className="coverage-group-title">
-              {node === 'the graph' ? msg("The graph") : <code>{node}</code>}
+              {node === null ? msg("The graph") : <code>{node}</code>}
             </h4>
             <ProbeList probes={byNode.get(node)!} tone={tone} />
           </div>

@@ -1,3 +1,4 @@
+import { SourceError, sourceMessage } from '../i18n/source'
 /**
  * The session this page holds, and the **one** bootstrap that gets it.
  *
@@ -49,7 +50,7 @@
 
 /** What the page says when the chassis has no session for it. */
 export const NO_SESSION_MESSAGE =
-  'No session — open the URL that jpack-desk printed at startup.'
+  sourceMessage("No session — open the URL that jpack-desk printed at startup.")
 
 /**
  * What the page says when its handoff **lapsed** rather than being taken.
@@ -59,14 +60,14 @@ export const NO_SESSION_MESSAGE =
  * answer is to *reopen* the printed URL rather than to restart.
  */
 export const HANDOFF_EXPIRED_MESSAGE =
-  'The launch link expired before this page loaded. Open the URL jpack-desk printed at startup.'
+  sourceMessage("The launch link expired before this page loaded. Open the URL jpack-desk printed at startup.")
 
 /**
  * Thrown where this page has no session the chassis will accept. It is not
  * retryable: no handoff appears on its own, and what fixes it is a person — the
  * message says which thing they should do.
  */
-export class NoSession extends Error {
+export class NoSession extends SourceError {
   constructor(message: string = NO_SESSION_MESSAGE) {
     super(message)
     this.name = 'NoSession'
@@ -333,7 +334,7 @@ async function sentenceOf(answered: Response): Promise<string> {
   } catch {
     // Not a body this page can read. The fallback below is still true.
   }
-  return 'This desk will not begin another session. Restart jpack-desk.'
+  return sourceMessage("This desk will not begin another session. Restart jpack-desk.")
 }
 
 /**

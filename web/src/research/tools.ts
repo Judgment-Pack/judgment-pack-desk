@@ -1,3 +1,4 @@
+import { sourceMessage } from '../i18n/source'
 /**
  * The research tools the desk hands an authoring run: a search, a read and a
  * citation, each executed on the page through the configured gateway and
@@ -145,7 +146,7 @@ export function researchTools(deps: ResearchDeps): HostTool[] {
       if (reserved === null) return text(`the budget of ${deps.budget.bytes} retrieved bytes for this run is spent; work from what was retrieved`, undefined, true)
       const record = ledger.open('search', { source: searchSource.source, dialect: searchSource.dialect, query })
       deps.spent.searches += 1
-      deps.log(`search ${record.id}: asking ${searchSource.source} (${searchSource.dialect})`)
+      deps.log(sourceMessage("search {{value0}}: asking {{value1}} ({{value2}})", { value0: record.id, value1: searchSource.source, value2: searchSource.dialect }))
       let acquired: Acquired
       try {
         acquired = await call(ledger.session, searchSource.source, searchDialect.request(query, { maxResults: max }), reserved.limit, signal)
@@ -153,7 +154,7 @@ export function researchTools(deps: ResearchDeps): HostTool[] {
         reserved.settle(cause instanceof OverBudget ? reserved.limit : 0)
         const failure = failureOf(cause)
         ledger.settle(record.id, { failure })
-        deps.log(`search ${record.id}: failed — ${failure}`)
+        deps.log(sourceMessage("search {{value0}}: failed — {{value1}}", { value0: record.id, value1: failure }))
         return text(`search failed: ${failure}`, undefined, true)
       }
       reserved.settle(acquired.bytes)
@@ -163,12 +164,12 @@ export function researchTools(deps: ResearchDeps): HostTool[] {
       } catch (cause) {
         const failure = `the search answered in a shape this desk could not read: ${(cause as Error).message}`
         ledger.settle(record.id, { failure })
-        deps.log(`search ${record.id}: ${failure}`)
+        deps.log(sourceMessage("search {{value0}}: {{value1}}", { value0: record.id, value1: failure }))
         return text(failure, undefined, true)
       }
       const settled = ledger.settle(record.id, { response: acquired, hits })
       deps.log(
-        `search ${record.id}: ${hits.length} hit(s), receipt ${settled.acquisition?.session ?? '?'}/${settled.acquisition?.callIndex ?? '?'}`
+        sourceMessage("search {{value0}}: {{value1}} hit(s), receipt {{value2}}/{{value3}}", { value0: record.id, value1: hits.length, value2: settled.acquisition?.session ?? '?', value3: settled.acquisition?.callIndex ?? '?' })
       )
       const lines = hits.map(
         (hit) =>
@@ -245,7 +246,7 @@ export function researchTools(deps: ResearchDeps): HostTool[] {
       if (reserved === null) return text(`the budget of ${deps.budget.bytes} retrieved bytes for this run is spent; work from what was retrieved`, undefined, true)
       const record = ledger.open('page', { source: readSource.source, dialect: readSource.dialect, url })
       deps.spent.reads += 1
-      deps.log(`read ${record.id}: asking ${readSource.source} (${readSource.dialect}) for ${url}`)
+      deps.log(sourceMessage("read {{value0}}: asking {{value1}} ({{value2}}) for {{value3}}", { value0: record.id, value1: readSource.source, value2: readSource.dialect, value3: url }))
       let acquired: Acquired
       try {
         acquired = await call(ledger.session, readSource.source, readDialect.request(url), reserved.limit, signal)
@@ -253,7 +254,7 @@ export function researchTools(deps: ResearchDeps): HostTool[] {
         reserved.settle(cause instanceof OverBudget ? reserved.limit : 0)
         const failure = failureOf(cause)
         ledger.settle(record.id, { failure })
-        deps.log(`read ${record.id}: failed — ${failure}`)
+        deps.log(sourceMessage("read {{value0}}: failed — {{value1}}", { value0: record.id, value1: failure }))
         return text(`read failed: ${failure}`, undefined, true)
       }
       reserved.settle(acquired.bytes)
@@ -263,12 +264,12 @@ export function researchTools(deps: ResearchDeps): HostTool[] {
       } catch (cause) {
         const failure = `the reader answered in a shape this desk could not read: ${(cause as Error).message}`
         ledger.settle(record.id, { failure })
-        deps.log(`read ${record.id}: ${failure}`)
+        deps.log(sourceMessage("read {{value0}}: {{value1}}", { value0: record.id, value1: failure }))
         return text(failure, undefined, true)
       }
       const settled = ledger.settle(record.id, { response: acquired, document })
       deps.log(
-        `read ${record.id}: ${document.text.length} characters, receipt ${settled.acquisition?.session ?? '?'}/${settled.acquisition?.callIndex ?? '?'}`
+        sourceMessage("read {{value0}}: {{value1}} characters, receipt {{value2}}/{{value3}}", { value0: record.id, value1: document.text.length, value2: settled.acquisition?.session ?? '?', value3: settled.acquisition?.callIndex ?? '?' })
       )
       return window({ id: record.id, document })
     }
@@ -292,7 +293,7 @@ export function researchTools(deps: ResearchDeps): HostTool[] {
       const quote = typeof args.quote === 'string' ? args.quote : ''
       const found = ledger.cite(sourceId, quote)
       if ('refused' in found) return text(`cite_excerpt refused: ${found.refused}`, undefined, true)
-      deps.log(`excerpt ${found.id}: characters ${found.start}–${found.end} of ${sourceId}`)
+      deps.log(sourceMessage("excerpt {{value0}}: characters {{value1}}–{{value2}} of {{value3}}", { value0: found.id, value1: found.start, value2: found.end, value3: sourceId }))
       return text(
         `excerpt ${found.id} recorded: characters ${found.start}–${found.end} of ${sourceId}`,
         { excerptId: found.id, sourceId, start: found.start, end: found.end }

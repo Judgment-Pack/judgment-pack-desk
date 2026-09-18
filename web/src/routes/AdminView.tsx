@@ -1,3 +1,4 @@
+import { DESK_LEVEL_PATH_UNKNOWN } from '../config/queries'
 import { msg, useLocale } from '../i18n'
 import { OverflowTooltip } from '../ui/Tooltip'
 /**
@@ -522,7 +523,9 @@ function deskLocation(effective: EffectiveConfig) {
   if (effective.desk === undefined) {
     return <span className="quiet">{msg("nothing has asked for it")}</span>
   }
-  return <code>{effective.desk.path}</code>
+  return effective.desk.path === DESK_LEVEL_PATH_UNKNOWN
+    ? <span className="quiet">{msg("the chassis did not say where")}</span>
+    : <code>{effective.desk.path}</code>
 }
 
 /** Which file supplied one layered section, and therefore where it is written. */

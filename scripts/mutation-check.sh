@@ -3269,13 +3269,13 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "the rules member is treated as optional" "$MB" \
     "  {
     id: 'rules',
-    label: PACK_TERMS.rules.label,
+    get label() { return PACK_TERMS.rules.label },
     members: ['rules'],
     pointer: '/rules',
     counted: true,
     required: true
   }," \
-    "  { id: 'rules', label: PACK_TERMS.rules.label, members: ['rules'], pointer: '/rules', counted: true },"
+    "  { id: 'rules', get label() { return PACK_TERMS.rules.label }, members: ['rules'], pointer: '/rules', counted: true },"
   # Every omission at the end would have passed the ordering test this replaces:
   # it filtered every omission out of the actual output before comparing.
   mutate web "an omission is drawn after the members rather than in its place" "$MB" \

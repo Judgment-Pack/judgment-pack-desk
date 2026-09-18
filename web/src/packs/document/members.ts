@@ -1,3 +1,4 @@
+import { msg } from '../../i18n'
 import { PACK_TERMS } from '../terminology'
 /**
  * The document's members, in the order the schema declares them, in one place.
@@ -107,7 +108,7 @@ export interface MemberUnit {
 export const MEMBER_UNITS: readonly MemberUnit[] = [
   {
     id: 'specVersion',
-    label: 'Identity',
+    get label() { return msg('Identity') },
     blockLabel: '/specVersion',
     members: ['specVersion'],
     pointer: '/specVersion',
@@ -116,7 +117,7 @@ export const MEMBER_UNITS: readonly MemberUnit[] = [
   },
   {
     id: 'id',
-    label: 'Identity',
+    get label() { return msg('Identity') },
     blockLabel: '/id',
     members: ['id'],
     pointer: '/id',
@@ -125,7 +126,7 @@ export const MEMBER_UNITS: readonly MemberUnit[] = [
   },
   {
     id: 'version',
-    label: 'Identity',
+    get label() { return msg('Identity') },
     blockLabel: '/version',
     members: ['version'],
     pointer: '/version',
@@ -134,7 +135,7 @@ export const MEMBER_UNITS: readonly MemberUnit[] = [
   },
   {
     id: 'title',
-    label: 'Identity',
+    get label() { return msg('Identity') },
     blockLabel: '/title',
     members: ['title'],
     pointer: '/title',
@@ -143,30 +144,30 @@ export const MEMBER_UNITS: readonly MemberUnit[] = [
   },
   {
     id: 'description',
-    label: 'Identity',
+    get label() { return msg('Identity') },
     blockLabel: '/description',
     members: ['description'],
     pointer: '/description',
     group: 'identity'
   },
-  { id: 'decision', label: 'Decision', members: ['decision'], pointer: '/decision', required: true },
+  { id: 'decision', get label() { return msg('Decision') }, members: ['decision'], pointer: '/decision', required: true },
   {
     id: 'applicability',
-    label: PACK_TERMS.applicability.label,
+    get label() { return PACK_TERMS.applicability.label },
     members: ['applicability'],
     pointer: '/applicability'
   },
   {
     id: 'evidenceRequirements',
-    label: PACK_TERMS.evidenceRequirements.label,
+    get label() { return PACK_TERMS.evidenceRequirements.label },
     members: ['evidenceRequirements'],
     pointer: '/evidenceRequirements',
     counted: true
   },
-  { id: 'sources', label: PACK_TERMS.sources.label, members: ['sources'], pointer: '/sources', counted: true },
+  { id: 'sources', get label() { return PACK_TERMS.sources.label }, members: ['sources'], pointer: '/sources', counted: true },
   {
     id: 'outcomes',
-    label: PACK_TERMS.outcomes.label,
+    get label() { return PACK_TERMS.outcomes.label },
     members: ['outcomes'],
     pointer: '/outcomes',
     counted: true,
@@ -174,7 +175,7 @@ export const MEMBER_UNITS: readonly MemberUnit[] = [
   },
   {
     id: 'rules',
-    label: PACK_TERMS.rules.label,
+    get label() { return PACK_TERMS.rules.label },
     members: ['rules'],
     pointer: '/rules',
     counted: true,
@@ -182,20 +183,20 @@ export const MEMBER_UNITS: readonly MemberUnit[] = [
   },
   {
     id: 'exceptions',
-    label: PACK_TERMS.exceptions.label,
+    get label() { return PACK_TERMS.exceptions.label },
     members: ['exceptions'],
     pointer: '/exceptions',
     counted: true
   },
   {
     id: 'fallbackOutcome',
-    label: PACK_TERMS.fallbackOutcome.label,
+    get label() { return PACK_TERMS.fallbackOutcome.label },
     members: ['fallbackOutcome'],
     pointer: '/fallbackOutcome'
   },
-  { id: 'escalation', label: PACK_TERMS.escalation.label, members: ['escalation'], pointer: '/escalation' },
-  { id: 'metadata', label: 'Metadata', members: ['metadata'], pointer: '/metadata' },
-  { id: 'extensions', label: 'Extensions', members: ['extensions'], pointer: '/extensions' }
+  { id: 'escalation', get label() { return PACK_TERMS.escalation.label }, members: ['escalation'], pointer: '/escalation' },
+  { id: 'metadata', get label() { return msg('Metadata') }, members: ['metadata'], pointer: '/metadata' },
+  { id: 'extensions', get label() { return msg('Extensions') }, members: ['extensions'], pointer: '/extensions' }
 ]
 
 /** True where the document declares any member of this unit. */

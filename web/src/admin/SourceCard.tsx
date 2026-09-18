@@ -351,7 +351,7 @@ function Notices({ notices }: { notices: readonly ConfigNotice[] }) {
   return (
     <>
       {notices.map((notice) => (
-        <code key={`${notice.key}:${systemMessage(notice.says)}`} className={styles.reason}>
+        <code key={`${notice.key}:${notice.says}`} className={styles.reason}>
           {systemMessage(notice.says)}
         </code>
       ))}

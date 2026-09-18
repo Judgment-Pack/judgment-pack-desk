@@ -1,3 +1,4 @@
+import { DESK_LEVEL_PATH_UNKNOWN } from '../config/queries'
 import { sourceMessage } from '../i18n/source'
 import { Message } from '../i18n/Message'
 import { msg, useLocale, systemMessage } from '../i18n'
@@ -108,7 +109,7 @@ export function useDefaultProject(): { field: ReactNode; save: ReactNode } {
           <><Message text={"Written to<0/><1/>, used on the next launch without a directory. This launch:<2/><3/>"} slots={[' ', desk === undefined ? (
               <span className="quiet">{msg("a file this desk has not named")}</span>
             ) : (
-              <code>{desk.path}</code>
+              <code>{desk.path === DESK_LEVEL_PATH_UNKNOWN ? msg("the chassis did not say where") : desk.path}</code>
             ), ' ', chassis === undefined ? (
               <span className="quiet">{msg("the desk has not said")}</span>
             ) : (

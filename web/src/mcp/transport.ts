@@ -1,3 +1,4 @@
+import { sourceMessage, SourceError } from '../i18n/source'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js'
 
@@ -47,9 +48,10 @@ export class DeskWebSocketTransport implements Transport {
       socket.onerror = () => {
         // The browser withholds the reason for a failed handshake, so say what
         // the causes actually are rather than reporting an empty Event.
-        const error = new Error(
-          `cannot reach the desk chassis at ${this.url} — it may not be running, or this page's session may have gone stale`
-        )
+        const error = new SourceError(sourceMessage(
+          'cannot reach the desk chassis at {{value0}} — it may not be running, or this page’s session may have gone stale',
+          { value0: this.url }
+        ))
         this.onerror?.(error)
         reject(error)
       }
@@ -74,7 +76,7 @@ export class DeskWebSocketTransport implements Transport {
 
   send(message: JSONRPCMessage): Promise<void> {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      return Promise.reject(new Error('the desk connection is not open'))
+      return Promise.reject(new SourceError(sourceMessage('the desk connection is not open')))
     }
     // JSON.stringify escapes newlines inside strings, so one message is always
     // one line — which is what the chassis' stdio side requires.

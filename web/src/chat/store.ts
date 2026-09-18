@@ -98,7 +98,7 @@ export class ChatStore {
       if (this.revision !== revision) this.timer = setTimeout(() => { void this.flush() }, 600)
       return true
     } catch (error) {
-      this.set({ saving: false, error: `Chat changes are not saved: ${(error as Error).message}` })
+      this.set({ saving: false, error: sourceMessage("Chat changes are not saved: {{value0}}", { value0: (error as Error).message }) })
       return false
     }
   }
@@ -184,7 +184,7 @@ export class ChatStore {
     if (!binding || (this.running && this.running !== id) || (needsModel && binding.blocked) || binding.run?.running) return false
     const draft = this.state.drafts.find(chat => chat.id === id)
     if (draft && needsModel) {
-      if (!this.canCreate) { this.problem('Chat history is full. Delete an older chat before sending.'); return false }
+      if (!this.canCreate) { this.problem(sourceMessage('Chat history is full. Delete an older chat before sending.')); return false }
       this.changed([draft, ...this.state.chats], { drafts: this.state.drafts.filter(chat => chat.id !== id) })
       if (!draft.pack) this.saveHomeDraft()
     }

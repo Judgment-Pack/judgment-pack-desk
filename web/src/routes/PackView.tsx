@@ -1,5 +1,6 @@
+import { sourceMessage } from '../i18n/source'
 import { Message } from '../i18n/Message'
-import { msg, useLocale } from '../i18n'
+import { systemMessage, msg, useLocale } from '../i18n'
 /**
  * One pack: the document, the check under it, and the Inspector beside it —
  * read or edited, over one buffer.
@@ -421,7 +422,7 @@ export function PackView() {
     const previous = selectionBinding.current
     selectionBinding.current = { packId, pointer: at, id }
     if (previous?.packId === packId && previous?.pointer === at && previous.id !== undefined && previous.id !== id) {
-      setSelectionNotice('The selected item changed in this revision. Select an item again to inspect it.')
+      setSelectionNotice(sourceMessage('The selected item changed in this revision. Select an item again to inspect it.'))
       const next = new URLSearchParams(params); next.delete('at'); setParams(next, { replace: true })
     }
   }, [model, at, packId, editing, section, params, setParams])
@@ -916,7 +917,7 @@ export function PackView() {
       identity={onPath ? buffer.identity : undefined} busy={busyDraft} diagnostics={diagnosticsToFix} />)
 
 
-  if (pack.isPending) return <Loading what={`pack ${packId}`} />
+  if (pack.isPending) return <Loading what={msg("pack {{value0}}", { value0: packId })} />
   /**
    * **The refusal replaces the page only when there is nothing behind it.**
    *
@@ -1165,9 +1166,9 @@ export function PackView() {
             ) : (
               <>
                 {section === 'overview' || section === 'logic' ? <>
-                  {selectionNotice && <p role="status" className={styles.warning}>{selectionNotice}</p>}
+                  {selectionNotice && <p role="status" className={styles.warning}>{systemMessage(selectionNotice)}</p>}
                   {(fetching || stale || unavailable || digestsDisagree || disagreement.length > 0 || Boolean(report?.diagnostics?.length) || (report?.status && report.status !== 'valid')) && <details className={styles.validation} open={Boolean(digestsDisagree || disagreement.length || report?.diagnostics?.length || (report?.status && report.status !== 'valid'))}>
-                    <summary><Message text={"Validation · <0/>"} slots={[fetching ? msg("checking") : stale ? msg("out of date") : report?.status ?? "unchecked"]} /></summary>{strip}
+                    <summary><Message text={"Validation · <0/>"} slots={[fetching ? msg("checking") : stale ? msg("out of date") : report?.status ?? msg("not checked")]} /></summary>{strip}
                   </details>}
                   {section === 'overview' ? <PackOverview document={drawn} packId={packId} logicHref={`/packs/${encodeURIComponent(packId ?? '')}?view=logic${params.get('chat') ? `&chat=${encodeURIComponent(params.get('chat')!)}` : ''}`} /> : model && <>
                     {runRequested && <div className={styles.runContext} role="status">
@@ -1233,7 +1234,9 @@ function formWithheld(
   }
   const first = disagreement[0]
   if (first === undefined) return undefined
-  return msg("Form editing is withheld: {{value0}}{{value1}}.", { value0: first.reason, value1: first.pointer === '' ? '' : ` at ${first.pointer}` })
+  return first.pointer === ''
+    ? msg("Form editing is withheld: {{reason}}.", { reason: first.reason })
+    : msg("Form editing is withheld: {{reason}} at {{pointer}}.", { reason: first.reason, pointer: first.pointer })
 }
 
 /**

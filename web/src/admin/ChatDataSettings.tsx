@@ -35,7 +35,7 @@ export function ChatDataSettings() {
     if (!edit || moving || blocked || !path.trim() || path.trim() === edit.path) return
     setMoving(true); setError(''); setNotice('')
     try {
-      if (store && !await store.flush()) throw new Error(msg("Save or recover unsaved chat changes before moving data."))
+      if (store && !await store.flush()) throw new Error(sourceMessage("Save or recover unsaved chat changes before moving data."))
       const next = await answer<ChatStorageStatus>(await deskFetch('/api/storage/move', {
         method: "POST", headers: { 'Content-Type': "application/json" }, body: JSON.stringify({ path: path.trim(), revision: edit.revision })
       }))

@@ -472,7 +472,7 @@ function GraphRowItem({ row }: { row: GraphTestRow }) {
       {row.expectedErrorClass ? (
         <p className="row-refusal"><Message text={"expected a refused walk: <0/><1/><2/><3/>"} slots={[<code>{row.expectedErrorClass}</code>, row.expectedErrorPhase && (
             <><Message text={"<0/>in <1/>"} slots={[' ', <code>{row.expectedErrorPhase}</code>]} /></>
-          ), " · actual: ", row.actualErrorClass ? (
+          ), msg(" · actual: "), row.actualErrorClass ? (
             <>
               <code>{row.actualErrorClass}</code>
               {row.actualErrorPhase && (

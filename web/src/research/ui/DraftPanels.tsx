@@ -293,7 +293,7 @@ export function ReviewPanel({ state, sources, onCreate, onSelect, showCreateActi
           <h3>{msg("Revisions")}</h3>
           <ul className={styles.unknowns}>
             {state.candidates.map((candidate) => (
-              <li key={candidate.revision}><Message text={"Revision <0/> (<1/>):<2/><3/>"} slots={[candidate.revision, candidate.producedBy, ' ', candidate.check ? `${candidate.check.valid ? 'valid' : 'invalid'}, ${candidate.check.cases.filter((c) => c.passed).length}/${candidate.check.cases.length} agree` : msg("not checked")]} /></li>
+              <li key={candidate.revision}><Message text={"Revision <0/> (<1/>):<2/><3/>"} slots={[candidate.revision, candidate.producedBy, ' ', candidate.check ? msg('{{status}}, {{passed}}/{{total}} agree', { status: candidate.check.valid ? 'valid' : 'invalid', passed: candidate.check.cases.filter(c => c.passed).length, total: candidate.check.cases.length }) : msg("not checked")]} /></li>
             ))}
           </ul>
         </section>

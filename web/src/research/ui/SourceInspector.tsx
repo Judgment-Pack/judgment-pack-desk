@@ -147,7 +147,7 @@ export function SourceInspector({ selection, ledger, state, onSelect }: { select
               </>
             )}
             <dt>{msg("Rendered text")}</dt>
-            <dd><Message text={"<0/> characters<1/>"} slots={[document.text.length, document.pages ? `, ${document.pages} pages` : '']} /></dd>
+            <dd>{document.pages ? msg('{{characters}} characters · Pages: {{pages}}', { characters: document.text.length, pages: document.pages }) : msg('{{count}} characters', { count: document.text.length })}</dd>
           </dl>
         </section>
       )}

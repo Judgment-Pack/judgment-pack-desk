@@ -532,7 +532,7 @@ const PROJECT_AT_PROJECT =
  * go instead.
  */
 export const KEYS_ARE_NEVER_IN_CONFIGURATION =
-  sourceMessage("a key is never stored in configuration — the desk keeps the assistant key on this machine, in a file that is in no project and is never sent to this page; store it on Admin › Assistant")
+  sourceMessage('a key is never stored in configuration — the desk keeps the assistant key on this machine, in a file that is in no project and is never sent to this page; store it on Admin › Assistant')
 
 /**
  * The names this decoder treats as key-shaped, wherever they appear.

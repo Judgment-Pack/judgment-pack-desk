@@ -22,6 +22,7 @@
  * a document that made none. The Escalation block prints the words verbatim
  * and that is the whole of what they are.
  */
+import { sourceMessage } from '../i18n/source'
 import type { Condition, PackDocument } from '../mcp/types'
 import { parsePointer, pointer, valueAt } from './pointers'
 
@@ -70,15 +71,21 @@ export function referencesFor(document: PackDocument | undefined, at: string): R
   const sourceAt = declaredAt(document.sources, 'sources')
   const ruleAt = declaredAt(document.rules, 'rules')
 
+  const missing = {
+    outcome: sourceMessage('no declared outcome carries this id'),
+    'evidence requirement': sourceMessage('no declared evidence requirement carries this id'),
+    source: sourceMessage('no declared source carries this id'),
+    rule: sourceMessage('no declared rule carries this id')
+  }
   const named = (
     relation: string,
     id: string,
     where: Map<string, string[]>,
-    kind: string
+    kind: keyof typeof missing
   ): Reference => {
     const targets = where.get(id) ?? []
     if (targets.length === 0) {
-      return { relation, id, unresolved: `no declared ${kind} carries this id` }
+      return { relation, id, unresolved: missing[kind] }
     }
     // Exactly one is the ordinary case and reads as a link. More than one is a
     // document that does not say which, and neither does this.
@@ -97,17 +104,17 @@ export function referencesFor(document: PackDocument | undefined, at: string): R
     // carries this id" — a sentence about a lookup nobody asked for. Absence
     // is the runtime's diagnostic to issue, at `/rules/N/outcome`.
     if (typeof rule.outcome === 'string') {
-      lines.push(named('outcome', rule.outcome, outcomeAt, 'outcome'))
+      lines.push(named(sourceMessage('outcome'), rule.outcome, outcomeAt, 'outcome'))
     }
     for (const id of rule.evidenceRequirementRefs ?? []) {
-      if (typeof id === 'string') lines.push(named('evidence', id, evidenceAt, 'evidence requirement'))
+      if (typeof id === 'string') lines.push(named(sourceMessage('evidence'), id, evidenceAt, 'evidence requirement'))
     }
     for (const id of rule.sourceRefs ?? []) {
-      if (typeof id === 'string') lines.push(named('sources', id, sourceAt, 'source'))
+      if (typeof id === 'string') lines.push(named(sourceMessage('sources'), id, sourceAt, 'source'))
     }
     for (const [index, exception] of (document.exceptions ?? []).entries()) {
       if (exception.targetRule === rule.id) {
-        lines.push({ relation: 'cited by', id: exception.id, target: pointer(['exceptions', index]) })
+        lines.push({ relation: sourceMessage('cited by'), id: exception.id, target: pointer(['exceptions', index]) })
       }
     }
   }
@@ -116,12 +123,12 @@ export function referencesFor(document: PackDocument | undefined, at: string): R
   const exception = entryUnder(document, at, 'exceptions') as Exception | undefined
   if (exception !== undefined) {
     if (exception.targetRule !== undefined) {
-      lines.push(named('target rule', exception.targetRule, ruleAt, 'rule'))
+      lines.push(named(sourceMessage('target rule'), exception.targetRule, ruleAt, 'rule'))
     }
     if (exception.outcome !== undefined) {
-      lines.push(named('outcome', exception.outcome, outcomeAt, 'outcome'))
+      lines.push(named(sourceMessage('outcome'), exception.outcome, outcomeAt, 'outcome'))
     }
-    for (const id of exception.sourceRefs ?? []) lines.push(named('sources', id, sourceAt, 'source'))
+    for (const id of exception.sourceRefs ?? []) lines.push(named(sourceMessage('sources'), id, sourceAt, 'source'))
   }
 
   // An outcome: what produces it, and whether it is the fallback.
@@ -129,20 +136,20 @@ export function referencesFor(document: PackDocument | undefined, at: string): R
   if (outcome !== undefined) {
     for (const [index, rule] of (document.rules ?? []).entries()) {
       if (rule.outcome === outcome.id) {
-        lines.push({ relation: 'produced by rule', id: rule.id, target: pointer(['rules', index]) })
+        lines.push({ relation: sourceMessage('produced by rule'), id: rule.id, target: pointer(['rules', index]) })
       }
     }
     for (const [index, exception] of (document.exceptions ?? []).entries()) {
       if (exception.outcome === outcome.id) {
         lines.push({
-          relation: 'produced by exception',
+          relation: sourceMessage('produced by exception'),
           id: exception.id,
           target: pointer(['exceptions', index])
         })
       }
     }
     if (document.fallbackOutcome === outcome.id) {
-      lines.push({ relation: 'fallback outcome', id: outcome.id, target: pointer(['fallbackOutcome']) })
+      lines.push({ relation: sourceMessage('fallback outcome'), id: outcome.id, target: pointer(['fallbackOutcome']) })
     }
   }
 
@@ -155,12 +162,12 @@ export function referencesFor(document: PackDocument | undefined, at: string): R
   if (requirement !== undefined) {
     for (const [index, rule] of (document.rules ?? []).entries()) {
       if ((rule.evidenceRequirementRefs ?? []).includes(requirement.id)) {
-        lines.push({ relation: 'required by rule', id: rule.id, target: pointer(['rules', index]) })
+        lines.push({ relation: sourceMessage('required by rule'), id: rule.id, target: pointer(['rules', index]) })
       }
     }
     for (const node of evidencePresentNodes(document)) {
       if (node.id === requirement.id) {
-        lines.push({ relation: 'tested by condition', id: requirement.id, target: node.pointer })
+        lines.push({ relation: sourceMessage('tested by condition'), id: requirement.id, target: node.pointer })
       }
     }
   }
@@ -170,13 +177,13 @@ export function referencesFor(document: PackDocument | undefined, at: string): R
   if (source !== undefined) {
     for (const [index, rule] of (document.rules ?? []).entries()) {
       if ((rule.sourceRefs ?? []).includes(source.id)) {
-        lines.push({ relation: 'cited by rule', id: rule.id, target: pointer(['rules', index]) })
+        lines.push({ relation: sourceMessage('cited by rule'), id: rule.id, target: pointer(['rules', index]) })
       }
     }
     for (const [index, exception] of (document.exceptions ?? []).entries()) {
       if ((exception.sourceRefs ?? []).includes(source.id)) {
         lines.push({
-          relation: 'cited by exception',
+          relation: sourceMessage('cited by exception'),
           id: exception.id,
           target: pointer(['exceptions', index])
         })
@@ -186,7 +193,7 @@ export function referencesFor(document: PackDocument | undefined, at: string): R
 
   // The fallback outcome names an outcome like any other reference does.
   if (at === pointer(['fallbackOutcome']) && document.fallbackOutcome !== undefined) {
-    lines.push(named('outcome', document.fallbackOutcome, outcomeAt, 'outcome'))
+    lines.push(named(sourceMessage('outcome'), document.fallbackOutcome, outcomeAt, 'outcome'))
   }
 
   return lines

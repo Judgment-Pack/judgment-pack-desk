@@ -10,3 +10,6 @@ export function sourceMessage(source: string, values: Record<string, unknown> = 
   return template.replace(/\{\{(\w+)\}\}/g, (token, name: string) =>
     Object.hasOwn(values, name) ? String(values[name]) : token)
 }
+
+/** An actionable Desk-authored failure, distinct from verbatim protocol diagnostics. */
+export class SourceError extends Error {}

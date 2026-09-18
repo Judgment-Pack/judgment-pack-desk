@@ -103,7 +103,7 @@ export function ResearchAuthoringPage() {
       <PageHeader
         title={msg("Packs")}
         context={msg("Research and draft")}
-        meta={state.phase === 'idle' ? (model ? `model ${model}` : undefined) : statusLine(state)}
+        meta={state.phase === 'idle' ? (model ? msg("model {{value0}}", { value0: model }) : undefined) : statusLine(state)}
         actions={
           state.phase === 'idle' ? undefined : running ? (
             <Button onClick={() => run?.stop()}>{msg("Stop")}</Button>

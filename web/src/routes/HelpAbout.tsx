@@ -104,7 +104,7 @@ export function HelpAbout() {
       </Section>
 
       <Section title={msg("Security")}>
-        <p className="quiet" id="security">{SESSION_SENTENCE}</p>
+        <p className="quiet" id="security">{msg(SESSION_SENTENCE)}</p>
         <p className="quiet">{msg("The desk is authorized by three things and not by who you are: the loopback bind, that session, and an origin check on every relay and file-API request. A configured identity provider changes what the header displays and nothing about who may reach the desk.")}</p>
       </Section>
 
