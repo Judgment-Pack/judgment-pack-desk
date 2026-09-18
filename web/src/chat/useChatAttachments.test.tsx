@@ -80,7 +80,7 @@ it('does not restore a file removed while another is reading', async () => {
 })
 
 it.each([
-  { name: 'unsupported type', files: () => [file('valid.txt'), file('policy.pdf')], error: /Configure Documents/ },
+  { name: 'unsupported type', files: () => [file('valid.txt'), file('policy.pdf')], error: /Enable PDF processing/ },
   { name: 'too many', files: () => Array.from({ length: 5 }, (_, i) => file(`${i}.txt`)), error: /four files/ },
   { name: 'too large', files: () => [file('large.txt', 'x'.repeat(200_001))], error: /200 KB/ }
 ])('rejects $name before reading any file', async scenario => {

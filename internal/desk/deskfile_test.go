@@ -32,6 +32,13 @@ func fixtureDir(t *testing.T) string {
 }
 
 type fixtureVerdict struct {
+	Documents *struct {
+		Enabled          bool   `json:"enabled"`
+		Source           string `json:"source"`
+		MaxFileBytes     int64  `json:"maxFileBytes"`
+		MaxRequestBytes  int64  `json:"maxRequestBytes"`
+		MaxResponseBytes int64  `json:"maxResponseBytes"`
+	} `json:"documents"`
 	Accepted bool     `json:"accepted"`
 	Keys     []string `json:"keys"`
 	// Engine and Thinking are the decoded values an accepted file yields, the
@@ -194,6 +201,18 @@ func TestSharedFixturesDecodeAsTheVerdictSays(t *testing.T) {
 						if decoded.Research.limits[name] != want {
 							t.Errorf("research.limits.%s %d, want %d", name, decoded.Research.limits[name], want)
 						}
+					}
+				}
+				var documents *documentSourceConfig
+				if decoded.Research != nil {
+					documents = decoded.Research.documents
+				}
+				if (documents == nil) != (verdict.Documents == nil) {
+					t.Fatal("document settings presence differs from expected verdict")
+				}
+				if want := verdict.Documents; want != nil {
+					if documents.enabled != want.Enabled || documents.source != want.Source || documents.maxFileBytes != want.MaxFileBytes || documents.maxRequestBytes != want.MaxRequestBytes || documents.maxResponseBytes != want.MaxResponseBytes {
+						t.Fatalf("document settings = %+v, want %+v", documents, want)
 					}
 				}
 				// The migrations, in the decoder's own words. A sentence

@@ -66,7 +66,7 @@ export async function verifyDocument(object: DocumentObject, pin: ResearchGatewa
 
 export async function ingestDocument(file: File, config: ResearchConfig, signal: AbortSignal, progress: (message: string) => void): Promise<{ reference: DocumentReference; document: VerifiedDocument }> {
   const documents = config.documents, gateway = config.gateway
-  if (!documents || !gateway) throw new Error(sourceMessage('Configure Documents in Admin before attaching PDFs.'))
+  if (!documents?.enabled || !gateway) throw new Error(sourceMessage('Enable PDF processing in Admin → Connections before attaching PDFs.'))
   if (!file.size || file.size > documents.maxFileBytes) throw new Error(sourceMessage('This file is empty or exceeds the configured upload limit.'))
   if (enc.encode(file.name).length > 255 || /[\x00-\x1f\x7f]/.test(file.name)) throw new Error(sourceMessage('The file name is too long or contains control characters.'))
   progress(sourceMessage('Saving the original…'))

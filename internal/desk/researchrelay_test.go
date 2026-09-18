@@ -360,4 +360,18 @@ func TestResearchDocumentRequestLimits(t *testing.T) {
 	if resp.StatusCode != 413 {
 		t.Fatalf("document bound missing: %d %s", resp.StatusCode, body)
 	}
+	config["research"].(map[string]any)["documents"].(map[string]any)["enabled"] = false
+	data, _ = json.Marshal(config)
+	writeDeskConfig(t, s, string(data))
+	resp, body = researchDo(t, ts, "POST", "acquire", strings.NewReader(large), nil)
+	if resp.StatusCode != 413 {
+		t.Fatalf("disabled document request allowance: %d %s", resp.StatusCode, body)
+	}
+	config["research"].(map[string]any)["documents"].(map[string]any)["enabled"] = true
+	data, _ = json.Marshal(config)
+	writeDeskConfig(t, s, string(data))
+	resp, body = researchDo(t, ts, "POST", "acquire", strings.NewReader(large), nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("reenabled configured allowance: %d %s", resp.StatusCode, body)
+	}
 }

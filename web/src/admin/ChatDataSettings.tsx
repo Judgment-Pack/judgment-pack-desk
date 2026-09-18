@@ -55,6 +55,7 @@ export function ChatDataSettings() {
       <CardField label={msg("Usage")}>{formatStorageBytes(status.bytes)} · {status.projectCount} {status.projectCount === 1 ? msg("project") : msg("projects")}</CardField>
       <CardField label={msg("This project")}>{formatStorageBytes(status.projectBytes)}</CardField>
       <p className={styles.caption}>{msg("This is a folder on the computer running Desk. Chats stay separate from project files. API keys remain in protected settings.")}</p>
+      <p className={styles.caption}>{msg('Removing a file from a message does not erase its retained original. Unsent and canceled uploads also remain in private storage and backups.')}</p>
       {status.legacy && <p className={styles.caption}>{msg("Your existing history is still in the settings folder. You can move it to a dedicated data folder.")}</p>}
       {status.previousPath && <p className={styles.caption}><Message text={"Recovery copy: <0/>. New changes are saved only to the current location."} slots={[<code>{status.previousPath}</code>]} /></p>}
       <div className={styles.actions}><Button ref={opener} disabled={blocked || query.isFetching || query.isError || Boolean(status.problem)} onClick={() => { setEdit(status); setPath(status.legacy ? status.recommendedPath : ''); setError('') }}>{msg("Change location…")}</Button>

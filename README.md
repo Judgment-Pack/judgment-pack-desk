@@ -4436,7 +4436,7 @@ cites. The Console's Activity tab carries what the tools did.
 
 ### PDF and document attachments
 
-Use **Admin → Documents** to configure a gateway document source, then
+Use **Admin → Connections** to configure a gateway document source, then
 **+ → Upload files** in chat to attach PDFs. Page previews show extraction gaps,
 partial results need consent, and every send verifies the retained original and
 receipt. See [Document attachments](docs/document-attachments.md) for compatible

@@ -325,4 +325,18 @@ func TestAttachmentPersonalUploadLimit(t *testing.T) {
 	if status != 413 {
 		t.Fatal("configured original limit not enforced", status)
 	}
+	config["research"].(map[string]any)["documents"].(map[string]any)["enabled"] = false
+	data, _ = json.Marshal(config)
+	writeDeskConfig(t, s, string(data))
+	status, _, _ = documentRequest(t, ts, "PUT", testAttachmentID, "absent", body)
+	if status != 409 {
+		t.Fatal("disabled processing accepted a new original", status)
+	}
+	config["research"].(map[string]any)["documents"].(map[string]any)["enabled"] = true
+	data, _ = json.Marshal(config)
+	writeDeskConfig(t, s, string(data))
+	status, _, _ = documentRequest(t, ts, "PUT", testAttachmentID, "absent", body)
+	if status != 413 {
+		t.Fatal("reenabling lost the configured original limit", status)
+	}
 }

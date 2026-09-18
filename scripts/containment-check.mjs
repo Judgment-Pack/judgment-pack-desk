@@ -400,6 +400,7 @@ const routesFor = (pack, graph) => [
   '/packs',
   '/create-pack',
   '/create-pack/research',
+  '/chats',
   '/chats/containment-chat',
   pack,
   `${pack}?view=logic&layout=map`,
@@ -414,7 +415,7 @@ const routesFor = (pack, graph) => [
   '/author',
   '/help'
 ]
-const configsFor = (width, route) => /^(\/create-pack|\/chats\/)/.test(route) ? CONFIGS(width).filter(config => !config.inspector) : CONFIGS(width)
+const configsFor = (width, route) => route === '/' || /^(\/create-pack|\/chats(?:\/|$))/.test(route) ? CONFIGS(width).filter(config => !config.inspector) : CONFIGS(width)
 const ROUTE_COUNT = routesFor('/packs/x', '/graphs/y').length
 
 if (PLAN) {
@@ -463,7 +464,7 @@ await page.waitForSelector('.desk', { timeout: 30000 })
 {
   const wrong = []
   const landed = new URL(page.url())
-  if (landed.pathname !== '/packs' || landed.search !== '') {
+  if (landed.pathname !== '/' || landed.search !== '') {
     wrong.push(`the address is ${page.url()}`)
   }
   // **`href`, not `hash`.** The launch redirects to `/#` so the request's own

@@ -1,0 +1,20 @@
+{
+  "deskConfigVersion": 1,
+  "research": {
+    "gateway": {
+      "url": "http://127.0.0.1:8787",
+      "authority": "gateway:local",
+      "signer": {
+        "algorithm": "ed25519",
+        "public": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b"
+      }
+    },
+    "documents": {
+      "source": "pdf",
+      "maxFileBytes": 100000,
+      "maxRequestBytes": 1048576,
+      "maxResponseBytes": 65536,
+      "enabled": "false"
+    }
+  }
+}

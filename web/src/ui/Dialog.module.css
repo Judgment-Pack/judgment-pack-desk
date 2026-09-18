@@ -40,3 +40,15 @@
   gap: 0.5rem;
   margin-top: var(--density-field);
 }
+
+.content[data-fixed-footer] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  padding: 0;
+  overflow: hidden;
+  max-height: calc(100dvh - 2rem);
+}
+.content[data-fixed-footer] .header { padding: var(--density-section) var(--density-section) 0; }
+.body { position: relative; min-height: 0; overflow-y: auto; padding: var(--density-block) var(--density-section); }
+.footer { border-top: 1px solid var(--border); padding: var(--density-block) var(--density-section); }
+.footer .actions { margin: 0; }

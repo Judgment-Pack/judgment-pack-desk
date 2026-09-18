@@ -15,7 +15,7 @@ export function DocumentPreview({ name, reference, disabled, onChange, citation 
     if (!open) return
     const operation = new AbortController()
     setDocument(undefined); setError('')
-    if (!pin) { setError(msg('Configure Documents in Admin before attaching PDFs.')); return }
+    if (!pin) { setError(msg('Configure the gateway in Admin → Connections to use attached PDFs.')); return }
     void loadDocument(reference, pin, operation.signal).then(value => { if (!operation.signal.aborted) {
       if (citation && (!reference.pages.includes(citation.page) || !matchesPageQuote(value, citation.page, citation.quote))) setError(msg('This quote does not match the cited page.'))
       else setDocument(value)

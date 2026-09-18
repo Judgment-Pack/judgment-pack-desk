@@ -1,0 +1,6 @@
+.row { display: flex; align-items: center; gap: var(--density-block); padding-block: var(--density-block); border-bottom: 1px solid var(--border); }
+.summary { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.summary h3 { margin: 0; font-size: var(--text-body); font-weight: 500; }
+.summary p { margin: var(--space-1) 0 0; font-size: var(--text-sm); color: var(--ink-faint); }
+.action { flex-shrink: 0; }
+@media (max-width: 420px) { .row { align-items: flex-start; flex-wrap: wrap; } .summary { flex-basis: 65%; } }
