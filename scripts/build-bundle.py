@@ -49,7 +49,15 @@ def main():
             artifact = temp / (name + suffix)
             run(['go', 'build', '-buildvcs=false', '-trimpath', '-o', str(artifact), package], source / module)
             files[artifact.name] = hashlib.sha256(artifact.read_bytes()).hexdigest()
-            shutil.copy2(artifact, target / artifact.name)
+            # Replace the inode atomically: a running companion may still have
+            # the previous executable open during a local rebuild.
+            descriptor, staged = tempfile.mkstemp(prefix='.companion-', dir=target)
+            os.close(descriptor)
+            try:
+                shutil.copy2(artifact, staged)
+                os.replace(staged, target / artifact.name)
+            finally:
+                if os.path.exists(staged): os.unlink(staged)
         # Ship upstream license material with the two companion executables.
         licenses = target / 'gateway-licenses'
         licenses.mkdir(exist_ok=True)
