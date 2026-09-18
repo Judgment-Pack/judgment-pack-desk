@@ -1,6 +1,6 @@
 # Document attachments
 
-Desk pins gateway `9f0c45ce98925ba81eb1fa676e957684e9cced00`
+Desk pins gateway `7dd587dc7168da839da14433747cefd651387422`
 (Drive implementation PR #139, pending independent review).
 The v1 contract is `docs/design/attachments.md` in that repository.
 No runtime or JPS format change is involved.
@@ -149,3 +149,26 @@ Cancel and navigation stop Desk's wait and discard late results. The gateway
 may finish and mint a receipt after caller cancellation. Desk never claims it
 killed upstream work and never automatically retries an acquisition (a retry
 would mint another receipt).
+
+## Gmail email attachments
+
+Admin → Connections configures Gmail alongside Drive through the gateway-owned
+connection companion. The chat + menu opens a searchable email picker. Up to four
+selected emails become retained, verified plain-text exports, reusing document
+preview, citations and chat storage. Search previews are not sent to the assistant.
+Separate mail attachments are excluded from this version. Provider tokens stay in
+the gateway; Desk stores exported text and signed acquisition proof.
+
+The fixed Google scope is Gmail read-only, which grants mailbox-wide reading at
+Google. User selection determines what is attached to chat, not Google's scope.
+Operator Desktop app registration must enable Gmail API. Google revocation applies
+to a Cloud project, so disconnecting can also revoke other Google connections under
+that project; Admin explains this. Shared enterprise identity/policy remains future
+work, and explicit external gateway settings do not activate a personal fallback.
+
+Gmail uses its own companion process and custody namespace, with the same private
+root, expiry, cancellation and single-use grants as Drive. Acquisition is constrained
+to the current managed local gateway; Gmail search/selection also refuses disabled
+document processing. Original export and proof are checked before supplying any page
+to a model. Live Google authorization/retrieval remains unvalidated until an operator
+supplies registration and consent. The current installation is not modified by this PR.

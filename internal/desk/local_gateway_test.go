@@ -91,7 +91,7 @@ func TestLocalIdentityRefusesLossAndRotation(t *testing.T) {
 func TestLocalBundleRefusesWrongRevisionAndTampering(t *testing.T) {
 	dir := t.TempDir()
 	files := map[string]string{}
-	for _, name := range []string{"gateway", "adapter-document", "gateway-connections", "adapter-drive"} {
+	for _, name := range []string{"gateway", "adapter-document", "gateway-connections", "adapter-drive", "adapter-gmail"} {
 		name = executableName(name)
 		raw := []byte(name)
 		os.WriteFile(filepath.Join(dir, name), raw, 0700)

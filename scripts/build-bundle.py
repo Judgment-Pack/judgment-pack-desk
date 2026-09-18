@@ -45,7 +45,7 @@ def main():
             archive.extractall(source, filter='data')
         suffix = '.exe' if os.environ.get('GOOS', '') == 'windows' or os.name == 'nt' else ''
         files = {}
-        for name, module, package in [('gateway', 'go', '.'), ('adapter-document', 'adapters', './cmd/adapter-document'), ('gateway-connections', 'adapters', './cmd/gateway-connections'), ('adapter-drive', 'adapters', './cmd/adapter-drive')]:
+        for name, module, package in [('gateway', 'go', '.'), ('adapter-document', 'adapters', './cmd/adapter-document'), ('gateway-connections', 'adapters', './cmd/gateway-connections'), ('adapter-drive', 'adapters', './cmd/adapter-drive'), ('adapter-gmail', 'adapters', './cmd/adapter-gmail')]:
             artifact = temp / (name + suffix)
             run(['go', 'build', '-buildvcs=false', '-trimpath', '-o', str(artifact), package], source / module)
             files[artifact.name] = hashlib.sha256(artifact.read_bytes()).hexdigest()
@@ -62,7 +62,7 @@ def main():
         licenses = target / 'gateway-licenses'
         licenses.mkdir(exist_ok=True)
         for path in source.rglob('*'):
-            if path.is_file() and (path.name.upper().startswith(('LICENSE', 'NOTICE', 'COPYING'))):
+            if path.is_file() and (path.name.upper().startswith(('LICENSE', 'NOTICE', 'COPYING', 'PATENTS'))):
                 destination = licenses / path.relative_to(source)
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(path, destination)
