@@ -1,5 +1,6 @@
+import { SourceError } from '../i18n/source'
 import { Message } from '../i18n/Message'
-import { useLocale } from '../i18n'
+import { systemMessage, useLocale } from '../i18n'
 import type { ReactNode } from 'react'
 
 /** A titled block. A section with nothing in it renders nothing at all. */
@@ -87,7 +88,7 @@ export function ErrorBox({ title, error }: { title: string; error: Error }) {
   return (
     <div className="error-box" role="alert">
       <strong>{title}</strong>
-      <p>{error.message}</p>
+      <p>{error instanceof SourceError ? systemMessage(error.message) : error.message}</p>
     </div>
   )
 }

@@ -1,5 +1,6 @@
+import { sourceMessage } from '../i18n/source'
 import { Message } from '../i18n/Message'
-import { msg, useLocale } from '../i18n'
+import { msg, useLocale, systemMessage } from '../i18n'
 import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useChats } from '../chat/ChatProvider'
@@ -34,13 +35,13 @@ export function ChatDataSettings() {
     if (!edit || moving || blocked || !path.trim() || path.trim() === edit.path) return
     setMoving(true); setError(''); setNotice('')
     try {
-      if (store && !await store.flush()) throw new Error(msg("Save or recover unsaved chat changes before moving data."))
+      if (store && !await store.flush()) throw new Error(sourceMessage("Save or recover unsaved chat changes before moving data."))
       const next = await answer<ChatStorageStatus>(await deskFetch('/api/storage/move', {
         method: "POST", headers: { 'Content-Type': "application/json" }, body: JSON.stringify({ path: path.trim(), revision: edit.revision })
       }))
       queryClient.setQueryData(queryKey, next)
       setEdit(null)
-      setNotice('Chat data moved. The original folder was kept as a recovery copy.')
+      setNotice(sourceMessage("Chat data moved. The original folder was kept as a recovery copy."))
     } catch (cause) {
       setError((cause as Error).message)
       void query.refetch()
@@ -62,7 +63,7 @@ export function ChatDataSettings() {
       {blocked && <p className={styles.caption}>{msg("Finish or stop active work and save chat changes before moving data.")}</p>}
     </div>}
     {(chatError || status?.problem) && <p role="alert">{chatError || status?.problem}</p>}
-    {notice && <p role="status" className={styles.caption}>{notice}</p>}
+    {notice && <p role="status" className={styles.caption}>{systemMessage(notice)}</p>}
     <Dialog open={edit !== null} onOpenChange={open => { if (!open && !moving) setEdit(null) }} title={msg("Move chat data")} openerRef={opener}
       description={msg("All saved chats move together. Desk verifies the copy before switching locations and keeps the original folder for recovery.")}>
       <form onSubmit={event => { event.preventDefault(); void move() }}>
@@ -72,7 +73,7 @@ export function ChatDataSettings() {
           </Field>
           <p className={styles.caption}>{msg("Close older Desk versions before moving. Other current Desk windows will follow the new location.")}</p>
           {edit && edit.bytes > edit.maxMoveBytes && <p role="alert"><Message text={"This store exceeds the supported move size of <0/>."} slots={[formatStorageBytes(edit.maxMoveBytes)]} /></p>}
-          {error && <div role="alert"><p>{error}</p><Button disabled={moving || query.isFetching} onClick={() => { void query.refetch().then(result => { if (result.data) { setEdit(result.data); setError('') } }) }}>{msg("Reload settings")}</Button></div>}
+          {error && <div role="alert"><p>{systemMessage(error)}</p><Button disabled={moving || query.isFetching} onClick={() => { void query.refetch().then(result => { if (result.data) { setEdit(result.data); setError('') } }) }}>{msg("Reload settings")}</Button></div>}
           {moving && <p role="status" className={styles.caption}>{msg("Copying and verifying chat data…")}</p>}
         </FieldGroup>
         <DialogActions><Button disabled={moving} onClick={() => setEdit(null)}>{msg("Cancel")}</Button>

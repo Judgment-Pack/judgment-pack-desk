@@ -1,5 +1,6 @@
 import { Message } from '../i18n/Message'
-import { msg, useLocale } from '../i18n'
+import { msg, systemMessage, useLocale } from '../i18n'
+import { sourceMessage } from '../i18n/source'
 /**
  * Create a pack: a name, a description, and a template.
  *
@@ -474,7 +475,7 @@ export function CreatePackDialog({
     source?.kind !== 'proposal' && source?.kind !== 'draft'
       ? undefined
       : proposed === undefined || 'problem' in proposed
-        ? (proposed?.problem ?? msg(CHECKING))
+        ? (proposed?.problem ? systemMessage(proposed.problem) : msg(CHECKING))
         : !validateSupported
           ? msg(NO_VALIDATE)
           : checked.isError
@@ -483,7 +484,7 @@ export function CreatePackDialog({
               ? msg(CHECKING)
               : checked.data.report.status === 'valid'
                 ? undefined
-                : msg("The runtime will not call this document a pack — {{value0}}", { value0: layersReached(checked.data.report).text })
+                : msg("The runtime will not call this document a pack — {{value0}}", { value0: layersReached(checked.data.report, msg).text })
 
   /**
    * What to say under the Template field, and the four facts it is made of.
@@ -524,7 +525,8 @@ export function CreatePackDialog({
               : msg("This template could not be read — {{value0}}", { value0: templateError.message })
             : undefined
 
-  const nameProblem = name.trim() === '' ? undefined : 'problem' in derived ? derived.problem : taken
+  const nameProblemSource = name.trim() === '' ? undefined : 'problem' in derived ? derived.problem : taken
+  const nameProblem = nameProblemSource === undefined ? undefined : systemMessage(nameProblemSource)
 
   // A listing that failed is not a project with no files in it. `retry: false`
   // means one failed request is the final answer, so this is said as soon as it
@@ -637,7 +639,7 @@ export function CreatePackDialog({
     if (!ready || slug === undefined || path === undefined || source === undefined) return
     setFailure(undefined)
     setBusy(true)
-    recordActivity('Creating pack…')
+    recordActivity(sourceMessage('Creating pack…'))
     let completed = false
     try {
       // (0a) The configuration as it is now, read directly and **first**.
@@ -659,8 +661,8 @@ export function CreatePackDialog({
         const absent = cause instanceof FileRequestError && cause.status === 404
         setFailure(
           absent
-            ? { lead: msg(NO_PROJECT_FILE) }
-            : { lead: msg(UNREADABLE_PROJECT_FILE), reason: reasonOf(cause) }
+            ? { lead: sourceMessage(NO_PROJECT_FILE) }
+            : { lead: sourceMessage(UNREADABLE_PROJECT_FILE), reason: reasonOf(cause) }
         )
         return
       }
@@ -685,12 +687,12 @@ export function CreatePackDialog({
       // for the second write.
       try {
         await readFile(path)
-        setFailure({ lead: msg(PACK_FILE_TAKEN) })
+        setFailure({ lead: sourceMessage(PACK_FILE_TAKEN) })
         return
       } catch (cause) {
         if (!(cause instanceof FileRequestError) || cause.status !== 404) {
           setFailure({
-            lead: refusalLead(cause) ?? 'That location could not be used.',
+            lead: refusalLead(cause) ?? sourceMessage('That location could not be used.'),
             reason: refusalDetail(cause)
           })
           return
@@ -708,16 +710,16 @@ export function CreatePackDialog({
         const claimed = declaredMatrixPaths(current)
         for (const companion of [`${base}.matrix.json`, `${base}.research.json`]) {
           if (claimed.some((declared) => samePath(declared, companion))) {
-            setFailure({ lead: msg(COMPANION_PATH_TAKEN), reason: `${companion} is already declared as another pack's matrix.` })
+            setFailure({ lead: sourceMessage(COMPANION_PATH_TAKEN), reason: sourceMessage("{{path}} is already declared as another pack's matrix.", { path: companion }) })
             return
           }
           try {
             await readFile(companion)
-            setFailure({ lead: msg(COMPANION_PATH_TAKEN), reason: `${companion} already exists.` })
+            setFailure({ lead: sourceMessage(COMPANION_PATH_TAKEN), reason: sourceMessage('{{path}} already exists.', { path: companion }) })
             return
           } catch (cause) {
             if (!(cause instanceof FileRequestError) || cause.status !== 404) {
-              setFailure({ lead: refusalLead(cause) ?? 'That location could not be used.', reason: refusalDetail(cause) })
+              setFailure({ lead: refusalLead(cause) ?? sourceMessage('That location could not be used.'), reason: refusalDetail(cause) })
               return
             }
           }
@@ -737,7 +739,7 @@ export function CreatePackDialog({
       if (source.kind === 'proposal' || source.kind === 'draft') {
         const validated = checked.data
         if (validated === undefined || validated.checkedBytes !== shapedText) {
-          setFailure({ lead: msg(PROPOSAL_UNUSABLE), reason: msg(CHECKING) })
+          setFailure({ lead: sourceMessage(PROPOSAL_UNUSABLE), reason: sourceMessage(CHECKING) })
           return
         }
         content = validated.checkedBytes
@@ -745,7 +747,7 @@ export function CreatePackDialog({
         try {
           content = shapeTemplate(source.text, { name, description, slug, idBase })
         } catch (cause) {
-          setFailure({ lead: msg(TEMPLATE_UNUSABLE), reason: reasonOf(cause) })
+          setFailure({ lead: sourceMessage(TEMPLATE_UNUSABLE), reason: reasonOf(cause) })
           return
         }
       }
@@ -757,7 +759,7 @@ export function CreatePackDialog({
       // Discarding it and registering the requested spelling is how an entry
       // ends up naming a path the runtime cleans to something else — the same
       // aliasing defect the collision check had, arriving from the other side.
-      if (canCreate && !canCreate()) { setFailure({ lead: msg("The draft changed during review. Return to the conversation and review it again.") }); return }
+      if (canCreate && !canCreate()) { setFailure({ lead: sourceMessage("The draft changed during review. Return to the conversation and review it again.") }); return }
       let landed: FileContent
       try {
         landed = await writeFile({ path, content, baseSha256: '', createParents: true })
@@ -767,7 +769,7 @@ export function CreatePackDialog({
           // its own words go underneath. "The directory packs does not exist in
           // the project; create it first" is a good sentence for an editor and
           // the wrong one to put in front of somebody who typed a name.
-          lead: refusalLead(cause) ?? 'The pack could not be created.',
+          lead: refusalLead(cause) ?? sourceMessage('The pack could not be created.'),
           reason: refusalDetail(cause)
         })
         invalidate([['desk-files']])
@@ -795,7 +797,7 @@ export function CreatePackDialog({
           written.push(matrixPath)
           await writeFile({ path: researchPath, content: JSON.stringify(research, null, 2) + '\n', baseSha256: '' })
         } catch (cause) {
-          setFailure({ lead: msg(COMPANIONS_ORPHANED), reason: `${written.join(' and ')} ${written.length === 1 ? 'is' : 'are'} on disk and unregistered. ${refusalDetail(cause) ?? ''}`.trim() })
+          setFailure({ lead: sourceMessage(COMPANIONS_ORPHANED), reason: sourceMessage('Files on disk but not registered: {{paths}}. {{reason}}', { paths: written.join(', '), reason: refusalDetail(cause) ?? '' }) })
           // **The name is handed back, on the step it is asked on.** The pack
           // file this press left behind is a file at the name that wrote it,
           // so the name is the one thing that has to change to get out of
@@ -833,12 +835,12 @@ export function CreatePackDialog({
         })
       } catch (cause) {
         setFailure({
-          lead: msg(ORPHANED),
+          lead: sourceMessage(ORPHANED),
           // A conflict here is the one refusal with a fix worth naming —
           // reload and try again. Everything else keeps the chassis' own
           // words, because the lead already says what happened and the detail
           // is the only place the *why* survives.
-          reason: codeOf(cause) === 'stale' ? msg(STALE_PROJECT_FILE) : refusalDetail(cause)
+          reason: codeOf(cause) === 'stale' ? sourceMessage(STALE_PROJECT_FILE) : refusalDetail(cause)
         })
         invalidate([['desk-files'], ['desk-file', PROJECT_FILE]])
         return
@@ -849,7 +851,7 @@ export function CreatePackDialog({
       // (3) Everything that answered before this pack existed.
       invalidate([['desk-files'], ['desk-file', PROJECT_FILE], ['list_packs'], ['desk-config']])
       completed = true
-      recordActivity('Pack created and registered.')
+      recordActivity(sourceMessage('Pack created and registered.'))
       if (presentation === 'page' || presentation === 'review') {
         describe.discard()
         onCreated?.()
@@ -884,7 +886,7 @@ export function CreatePackDialog({
       // just navigated to.
       if (presentation === 'dialog') onCreated?.()
     } finally {
-      if (!completed) recordActivity('Pack creation stopped. See the creation page for details.')
+      if (!completed) recordActivity(sourceMessage('Pack creation stopped. See the creation page for details.'))
       setBusy(false)
     }
   }
@@ -941,7 +943,7 @@ export function CreatePackDialog({
     <p className={flow.hint}>{handover ? msg("{{value0}} checked cases and the research record will be saved with this pack.", { value0: caseCount(handover) }) : msg("The structure is validated. Source research and behavioral testing have not been performed.")}</p>
     {createWhy && <p role="status">{createWhy}</p>}
     {refused && <DiagnosticList diagnostics={anchor(refused, new Set())} label={msg("Validation details")} />}
-    {(failure ?? blocked) && <Alert reason={(failure ?? blocked)!.reason}>{(failure ?? blocked)!.lead}</Alert>}
+    {(failure ?? blocked) && <Alert reason={(failure ?? blocked)!.reason ? systemMessage((failure ?? blocked)!.reason!) : undefined}>{systemMessage((failure ?? blocked)!.lead)}</Alert>}
     <div className={flow.actions}><Button disabled={busy} onClick={() => close(false)}>{msg("Back to draft")}</Button><Button variant="primary" type="submit" disabled={!ready}>{busy ? msg("Creating…") : msg("Create pack")}</Button></div>
   </form>
 
@@ -958,28 +960,28 @@ export function CreatePackDialog({
             describe.discard()
           }
           setStep(1)
-        } catch (cause) { setFailure({ lead: msg(TEMPLATE_UNUSABLE), reason: reasonOf(cause) }) }
+        } catch (cause) { setFailure({ lead: sourceMessage(TEMPLATE_UNUSABLE), reason: reasonOf(cause) }) }
       } else if (held.drafts.size === 0) setStep(2)
     }
     const preview = draft === undefined ? undefined : buffered(draft).index.value
     return <>
       {guide}
-      <PageHeader title={msg("Packs")} context="Create pack" actions={<Button onClick={() => inspector.reveal()}>{msg("Guide")}</Button>} />
+      <PageHeader title={msg("Packs")} context={msg("Create pack")} actions={<Button onClick={() => inspector.reveal()}>{msg("Guide")}</Button>} />
       <PageBody width="form">
         <form noValidate className={flow.flow} onSubmit={(event) => { event.preventDefault(); if (step === 2) void create(); else next() }}>
           <ol className={flow.steps} aria-label={msg("Creation steps")}>
-            {['Basics', 'Build', 'Review'].map((label, index) => <li key={label} aria-current={step === index ? 'step' : undefined}>{index + 1}. {label}</li>)}
+            {[msg('Basics'), msg('Build'), msg('Review')].map((label, index) => <li key={label} aria-current={step === index ? 'step' : undefined}>{index + 1}. {label}</li>)}
           </ol>
-          <div className={flow.intro}><h2>{['Create a pack', 'Build your decision', 'Review your pack'][step]}</h2>
-            <p className={flow.hint}>{['Start manually or draft with your assistant.', 'Define the rules, outcomes, and supporting evidence.', 'Check the content and runtime validation before creating.'][step]}</p>
+          <div className={flow.intro}><h2>{[msg("Create a pack"), msg("Build your decision"), msg("Review your pack")][step]}</h2>
+            <p className={flow.hint}>{[msg("Start manually or draft with your assistant."), msg("Define the rules, outcomes, and supporting evidence."), msg("Check the content and runtime validation before creating.")][step]}</p>
           </div>
           {step === 0 && <>
             {handover === undefined && <><div><SegmentedControl label={msg("Creation method")} value={method} onValueChange={(next) => {
               if (next === 'manual') { setMethod('manual'); describe.discard(); setChoice(undefined) }
               else setMethod('ai')
             }} segments={[
-              { value: 'manual', label: "Manual", disabled: draft !== undefined || describe.running },
-              { value: 'ai', label: "Draft with Assistant", disabled: draft !== undefined || !describe.usable || !describe.advertised || describe.picked.model === '' }
+              { value: 'manual', label: msg("Manual"), disabled: draft !== undefined || describe.running },
+              { value: 'ai', label: msg("Draft with Assistant"), disabled: draft !== undefined || !describe.usable || !describe.advertised || describe.picked.model === '' }
             ]} /></div>
             {!describe.usable && <p className={flow.hint}><Message text={"AI drafting is unavailable. Configure the assistant in Admin to enable it. <0/>"} slots={[describe.unusableBecause]} /></p>}
             {describe.usable && !describe.advertised && <p className={flow.hint}>{msg("This runtime does not offer the authoring prompt required for AI drafting.")}</p>}
@@ -1025,10 +1027,10 @@ export function CreatePackDialog({
             <h3>{msg("Structure check")}</h3>
             <p id={createWhyHere === proposalRefusal ? createHelpId : undefined} role="status">{proposalRefusal ?? msg("The runtime validated this draft. This does not mean its rules have passed tests.")}</p>
             {refused !== undefined && <DiagnosticList diagnostics={anchor(refused, new Set())} label={msg("What the runtime said about this document")} />}
-            {refused !== undefined && truncationNote(refused) !== undefined && <p>{truncationNote(refused)}</p>}
+            {refused !== undefined && truncationNote(refused, msg) !== undefined && <p>{truncationNote(refused, msg)}</p>}
             {held.drafts.size > 0 && <p>{msg("Finish or clear the incomplete field values before continuing.")}</p>}
           </section>}
-          {(failure ?? blocked) && <Alert reason={(failure ?? blocked)!.reason}>{(failure ?? blocked)!.lead}</Alert>}
+          {(failure ?? blocked) && <Alert reason={(failure ?? blocked)!.reason ? systemMessage((failure ?? blocked)!.reason!) : undefined}>{systemMessage((failure ?? blocked)!.lead)}</Alert>}
           {busy && <p role="status">{msg("Creating and registering the pack. Stay on this page until it finishes.")}</p>}
           {createWhyHere && (step === 0 || createWhyHere !== proposalRefusal) && <p id={createHelpId} className={flow.hint}>{createWhyHere}</p>}
           <div className={flow.actions}>
@@ -1129,8 +1131,8 @@ export function CreatePackDialog({
               diagnostics={anchor(refused, new Set())}
               label={msg("What the runtime said about this document")}
             />
-            {truncationNote(refused) !== undefined && (
-              <p className="quiet">{truncationNote(refused)}</p>
+            {truncationNote(refused, msg) !== undefined && (
+              <p className="quiet">{truncationNote(refused, msg)}</p>
             )}
           </>
         )}
@@ -1138,7 +1140,7 @@ export function CreatePackDialog({
         <DescribeIt state={describe} blockingElsewhere={Boolean(createWhy)} />
 
         {(failure ?? blocked) && (
-          <Alert reason={(failure ?? blocked)!.reason}>{(failure ?? blocked)!.lead}</Alert>
+          <Alert reason={(failure ?? blocked)!.reason ? systemMessage((failure ?? blocked)!.reason!) : undefined}>{systemMessage((failure ?? blocked)!.lead)}</Alert>
         )}
 
         {createWhyHere && createWhyHere !== proposalRefusal && <p id={createHelpId} className="quiet">{createWhyHere}</p>}

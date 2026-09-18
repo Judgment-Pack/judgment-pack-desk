@@ -74,12 +74,12 @@ export function FlowExplorer({ graphId }: { graphId: string }) {
     {doc.description && <ExpandableText text={doc.description} label={msg("flow description")} />}
     {shape.nodes.length === 0 ? <Empty>{msg("This flow declares no pack nodes.")}</Empty> : <div ref={setCanvas} className={styles.canvas}>
       <Suspense fallback={<Loading what={msg("the diagram")} />}>
-        <RelationshipMap columnGap={8} nodeWidth={nodeWidth} ariaLabel="Pack flow diagram" nodes={shape.nodes.map(n => ({
-          id: n.id, title: n.id, column: n.layer, selected: node?.id === n.id, action: "View details",
+        <RelationshipMap columnGap={8} nodeWidth={nodeWidth} ariaLabel={msg("Pack flow diagram")} nodes={shape.nodes.map(n => ({
+          id: n.id, title: n.id, column: n.layer, selected: node?.id === n.id, action: msg("View details"),
           content: <div className={styles.nodeContent}><span>{n.pack}</span>{n.description && <p>{n.description}</p>}{n.isResult && <span className="quiet">{msg("Flow result")}</span>}</div>
         }))} edges={shape.edges.filter(e => e.drawable).map(e => ({
           id: String(e.index), source: e.from, target: e.to,
-          label: e.fact && e.evidence ? 'Fact + evidence' : e.fact ? 'Fact' : 'Evidence'
+          label: e.fact && e.evidence ? msg('Fact + evidence') : e.fact ? msg('Fact') : msg('Evidence')
         }))} unit={unit} viewport={viewport} onViewportChange={setViewport}
           onSelect={id => inspect({ node: id })} onInspect={id => inspect({ node: id })}
           onEdgeInspect={id => inspect({ edge: Number(id) })} />

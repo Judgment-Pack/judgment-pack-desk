@@ -32,7 +32,7 @@ export function ExtensionsBlock({
       <MisshapenMember
         pointer={at}
         label={heading ?? msg("extensions")}
-        expected="an object"
+        expected={msg("an object")}
         value={extensions}
         compact={heading === undefined}
       />

@@ -1,5 +1,5 @@
 import { Message } from '../i18n/Message'
-import { msg, useLocale } from '../i18n'
+import { systemMessage, msg, useLocale } from '../i18n'
 /** API key entry, explicit saving, replacement, and confirmed removal. */
 import { useState, type ReactNode, type RefObject } from 'react'
 import { Button } from '../ui/Button'
@@ -204,5 +204,5 @@ export function bindingSays(
  * came rather than translated into one that is not it.
  */
 function providerName(kind: string): string {
-  return KIND_LABEL[kind as EndpointKind] ?? kind
+  return KIND_LABEL[kind as EndpointKind] ? systemMessage(KIND_LABEL[kind as EndpointKind]) : kind
 }

@@ -16,7 +16,7 @@ export const humanId = (value: unknown, fallback: string): string => text(value,
 export const entries = (value: unknown): unknown[] => Array.isArray(value) ? value : []
 export function evidenceSummary(value: unknown): string {
   if (!isRecord(value)) return msg('Unrecognized entry')
-  return `${value.required === true ? msg('Required') : value.required === false ? msg('Optional') : msg('Required status not declared')} · ${text(value.kind, msg('Type not declared'))}`
+  return `${value.required === true ? msg('Required') : value.required === false ? msg('Optional') : msg('Required status not declared')} · ${typeof value.kind === 'string' ? valueLabel('kind', value.kind) : msg('Type not declared')}`
 }
 export function outcomeLabel(doc: PackDocument, id: unknown): string {
   const found = entries(doc.outcomes).find(x => isRecord(x) && x.id === id)

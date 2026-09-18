@@ -1,5 +1,5 @@
 import { Message } from '../i18n/Message'
-import { msg, useLocale } from '../i18n'
+import { msg, useLocale, systemMessage } from '../i18n'
 /**
  * One Admin section, as one card: where the value is written, whether it was
  * read, what is in the file, the fields, and the Save where there is one — and
@@ -315,16 +315,16 @@ export function showsContent(status: SourceStatus): boolean {
 /**
  * One status, as one line.
  *
- * A refusal is rendered in the decoder's own words, in a `code` element,
- * because it is quoted material rather than a sentence this page wrote — and
- * the narration sweep exempts quoted material for exactly that reason.
+ * Decoder state keeps its canonical diagnostics. Presentation translates known
+ * Desk explanations; keys, quoted values and unknown external diagnostics stay
+ * exact. No translated value feeds back into validation or writes.
  */
 export function StatusLine({ status }: { status: SourceStatus }) {
   useLocale()
   if (status.state === 'read') return <>{msg("read")}</>
   if (status.state === 'absent') return <>{msg("not present — defaults in use")}</>
   if (status.state === 'pending') return <>{msg("not read yet")}</>
-  if (status.state === 'said') return <>{status.says}</>
+  if (status.state === 'said') return <>{systemMessage(status.says)}</>
   if (status.state === 'migrated') {
     return (
       <><Message text={"read — <0/>"} slots={[<Notices notices={status.notices} />]} /></>
@@ -345,28 +345,28 @@ export function StatusLine({ status }: { status: SourceStatus }) {
   return <UnreadLine failure={status.failure} />
 }
 
-/** The decoder's own sentences about what it did, as quoted material. */
+/** Localized display of the decoder's canonical migration notices. */
 function Notices({ notices }: { notices: readonly ConfigNotice[] }) {
   useLocale()
   return (
     <>
       {notices.map((notice) => (
         <code key={`${notice.key}:${notice.says}`} className={styles.reason}>
-          {notice.says}
+          {systemMessage(notice.says)}
         </code>
       ))}
     </>
   )
 }
 
-/** The decoder's own sentences, key path and all, as quoted material. */
+/** Localized known constraints with exact key paths and supplied values. */
 function Problems({ problems }: { problems: readonly ConfigProblem[] }) {
   useLocale()
   return (
     <>
       {problems.map((problem) => (
         <code key={`${problem.key}:${problem.reason}`} className={styles.reason}>
-          {problem.key === '' ? problem.reason : `${problem.key}: ${problem.reason}`}
+          {problem.key === '' ? systemMessage(problem.reason) : `${problem.key}: ${systemMessage(problem.reason)}`}
         </code>
       ))}
     </>

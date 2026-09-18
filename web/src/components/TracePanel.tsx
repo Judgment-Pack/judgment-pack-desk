@@ -64,7 +64,7 @@ export function TracePanel({
    */
   context,
   /** What "this payload carries no trace entries" should call the payload. */
-  emptyWhat = 'This payload'
+  emptyWhat = msg('This payload')
 }: {
   trace: TraceEntry[]
   title?: string

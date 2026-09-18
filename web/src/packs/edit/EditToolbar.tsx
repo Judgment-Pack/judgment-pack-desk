@@ -30,8 +30,8 @@ export function EditToolbar({
       <SegmentedControl label={msg("Shape")} value={shape}
         onValueChange={next => onShape(next === 'json' ? 'json' : 'form')}
         segments={[
-          { value: 'form', label: "Form", disabled: !shapeAvailable,
-            description: shapeAvailable ? undefined : 'These bytes cannot be read as a document.' },
+          { value: 'form', label: msg("Form"), disabled: !shapeAvailable,
+            description: shapeAvailable ? undefined : msg('These bytes cannot be read as a document.') },
           { value: 'json', label: "JSON" }
         ]} />
     </ToolbarSlot>

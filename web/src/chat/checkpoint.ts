@@ -40,8 +40,8 @@ export function decodeCheckpoint(value: unknown): Checkpoint {
     || !Array.isArray(state.expectationIssues) || !Number.isInteger(state.revisionsUsed) || (state.revisionsUsed as number) < 0) return invalid()
   const turns: Turn[] = state.turns.map(turn => {
     if (!object(turn) || (turn.role !== 'user' && turn.role !== 'assistant') || typeof turn.text !== 'string'
-      || (turn.input !== undefined && typeof turn.input !== 'string') || typeof turn.at !== 'string' || !['brief', 'message', 'unknowns', 'note'].includes(String(turn.kind))) return invalid()
-    return { role: turn.role, text: turn.text, at: turn.at, kind: turn.kind as Turn['kind'], ...(typeof turn.input === 'string' ? { input: turn.input } : {}) }
+      || (turn.input !== undefined && typeof turn.input !== 'string') || (turn.interrupted !== undefined && typeof turn.interrupted !== 'boolean') || typeof turn.at !== 'string' || !['brief', 'message', 'unknowns', 'note'].includes(String(turn.kind))) return invalid()
+    return { role: turn.role, text: turn.text, at: turn.at, kind: turn.kind as Turn['kind'], ...(typeof turn.input === 'string' ? { input: turn.input } : {}), ...(turn.interrupted === true ? { interrupted: true } : {}) }
   })
   const candidates = state.candidates.map((candidate, index) => {
     if (!object(candidate) || typeof candidate.text !== 'string') return invalid()

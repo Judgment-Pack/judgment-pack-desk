@@ -1,3 +1,4 @@
+import { sourceMessage } from '../i18n/source'
 /**
  * The thinking tier, normalized in the desk.
  *
@@ -376,25 +377,30 @@ export const THINKING_ALWAYS = 'this model always thinks'
  * describes the wrong observation is worse than a shorter one.
  */
 export const ALWAYS_FROM_ABSENCE =
-  'the tier asked for no thinking and the endpoint returned reasoning anyway'
+  sourceMessage("the tier asked for no thinking and the endpoint returned reasoning anyway")
 
 export function alwaysFromRefusal(status: number): string {
-  return `the endpoint answered ${status} to every spelling of the parameter that turns thinking off`
+  return sourceMessage("the endpoint answered {{value0}} to every spelling of the parameter that turns thinking off", { value0: status })
 }
 
 export const THINKING_UNAVAILABLE = 'thinking is unavailable for this endpoint'
 
 /** The desk's own notice, with the reason after it. */
 export function thinkingNotice(state: 'always' | 'unavailable', reason: string): string {
-  const head = state === 'always' ? THINKING_ALWAYS : THINKING_UNAVAILABLE
-  return reason === '' ? `${head}.` : `${head}: ${reason}`
+  if (state === 'always') return reason === ''
+    ? sourceMessage('this model always thinks.')
+    : sourceMessage('this model always thinks: {{message0}}', { message0: reason })
+  return reason === ''
+    ? sourceMessage('thinking is unavailable for this endpoint.')
+    : sourceMessage('thinking is unavailable for this endpoint: {{message0}}', { message0: reason })
 }
 
 /** One line for the tab, naming the tier the file asked for and the real state. */
-export function thinkingLine(tier: ThinkingTier, state: ThinkingState): string {
-  if (state === 'always') return `thinking ${tier} · this model always thinks`
-  if (state === 'unavailable') return `thinking ${tier} · unavailable for this endpoint`
-  return `thinking ${state}`
+export function thinkingLine(tier: ThinkingTier, state: ThinkingState, msg = sourceMessage): string {
+  const label = (value: ThinkingTier) => value === 'off' ? msg('off') : value === 'on' ? msg('on') : msg('ultra')
+  if (state === 'always') return msg('thinking {{tier}} · this model always thinks', { tier: label(tier) })
+  if (state === 'unavailable') return msg('thinking {{tier}} · unavailable for this endpoint', { tier: label(tier) })
+  return msg('thinking {{tier}}', { tier: label(state) })
 }
 
 /**
@@ -573,7 +579,7 @@ export function openThinking(session: Pick<AssistantSession, 'thinking' | 'model
       // matched against a closed list and never quoted past it.
       return {
         kind: 'degrade',
-        event: notice('unavailable', `the endpoint answered ${status} to the tier parameter`)
+        event: notice('unavailable', sourceMessage("the endpoint answered {{value0}} to the tier parameter", { value0: status }))
       }
     },
     sawReasoning() {
@@ -608,7 +614,7 @@ export function openThinking(session: Pick<AssistantSession, 'thinking' | 'model
       unavailable = true
       return notice(
         'unavailable',
-        `${PERMANENCE} consecutive turns carried an answer and no reasoning block`
+        sourceMessage("{{value0}} consecutive turns carried an answer and no reasoning block", { value0: PERMANENCE })
       )
     },
     truncated(reason) {

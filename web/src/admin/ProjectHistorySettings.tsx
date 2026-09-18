@@ -1,5 +1,5 @@
 import { Message } from '../i18n/Message'
-import { msg, useLocale } from '../i18n'
+import { msg, useLocale, systemMessage } from '../i18n'
 import { useRef, useState } from 'react'
 import { answer, deskFetch } from '../files/client'
 import { Button } from '../ui/Button'
@@ -42,7 +42,7 @@ export function ProjectHistorySettings({ blocked, onLinked }: { blocked: boolean
             <p><Message text={"<0/> saved <1/> found."} slots={[preview.chatCount, preview.chatCount === 1 ? msg("chat") : msg("chats")]} /></p>
             <p className={styles.caption}><Message text={"Link these chats to <0/>? Opening the old project location will use the same history. If this is a separate copy of the project, keep a separate history."} slots={[<code>{preview.project}</code>]} /></p>
           </div>}
-          {error && <p role="alert">{error}</p>}
+          {error && <p role="alert">{systemMessage(error)}</p>}
         </FieldGroup>
         <DialogActions><Button disabled={busy} onClick={() => setOpen(false)}>{msg("Cancel")}</Button>
           <Button type="submit" variant="primary" disabled={blocked || busy || !path.trim()}>{busy ? msg("Working…") : preview ? msg("Link history and reload") : msg("Find history")}</Button></DialogActions>

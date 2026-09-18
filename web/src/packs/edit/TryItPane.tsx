@@ -209,8 +209,8 @@ export function TryItPane({
           setArmedFor(null)
         }}
         segments={[
-          { value: 'pack', label: "these edits" },
-          { value: 'pack_id', label: "the saved pack" }
+          { value: 'pack', label: msg("these edits") },
+          { value: 'pack_id', label: msg("the saved pack") }
         ]}
       />
 
@@ -264,7 +264,7 @@ export function TryItPane({
         {!connected && <span className={styles.status}>{msg("waiting for the runtime connection")}</span>}
       </div>
       {armed && (
-        <p className={styles.confirm} role="status"><Message text={"This runtime does not take the rehearsal declaration. In a project whose<0/><1/> declares an audit directory, running this appends one record to it. Press again to run it anyway."} slots={[' ', <code>jpack.json</code>]} /></p>
+        <p className={styles.confirm} role="status"><Message text={"This runtime does not take the rehearsal declaration. In a project whose<0/><1/> declares an audit directory, running this appends one record to it. Press again to run it anyway."} slots={[' ', <code>{msg("jpack.json")}</code>]} /></p>
       )}
 
       {attempt !== null && (

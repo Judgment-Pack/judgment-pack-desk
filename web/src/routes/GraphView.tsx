@@ -1,3 +1,4 @@
+import { sourceMessage } from '../i18n/source'
 import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
 import { useQueryClient } from '@tanstack/react-query'
@@ -51,8 +52,8 @@ export function GraphView() {
   const run = () => {
     if (status !== 'ready' || isFetching) return
     setSearch(previous => { const next = new URLSearchParams(previous); next.set('view', 'tests'); return next })
-    recordActivity('Flow tests started.')
-    void refetch().then(result => recordActivity(result.error ? 'Flow tests failed.' : `Flow tests completed: ${result.data?.status ?? 'no result'}.`))
+    recordActivity(sourceMessage('Flow tests started.'))
+    void refetch().then(result => recordActivity(result.error ? sourceMessage('Flow tests failed.') : result.data?.status ? sourceMessage('Flow tests completed: {{status}}.', { status: result.data.status }) : sourceMessage('Flow tests returned no result.')))
   }
 
   return <article className="detail" data-measure="full" data-layout="page">
@@ -165,7 +166,7 @@ function ConfiguredGraph({ row }: { row: GraphSummary }) {
         <span>
           {row.nodeCount === undefined || row.edgeCount === undefined
             ? msg("node and edge counts not read")
-            : `${row.nodeCount} ${row.nodeCount === 1 ? 'node' : 'nodes'}, ${row.edgeCount} ${row.edgeCount === 1 ? 'edge' : 'edges'}`}
+            : msg('Nodes: {{nodes}} · Edges: {{edges}}', { nodes: row.nodeCount, edges: row.edgeCount })}
         </span>
       </p>
       </details>
@@ -471,7 +472,7 @@ function GraphRowItem({ row }: { row: GraphTestRow }) {
       {row.expectedErrorClass ? (
         <p className="row-refusal"><Message text={"expected a refused walk: <0/><1/><2/><3/>"} slots={[<code>{row.expectedErrorClass}</code>, row.expectedErrorPhase && (
             <><Message text={"<0/>in <1/>"} slots={[' ', <code>{row.expectedErrorPhase}</code>]} /></>
-          ), " · actual: ", row.actualErrorClass ? (
+          ), msg(" · actual: "), row.actualErrorClass ? (
             <>
               <code>{row.actualErrorClass}</code>
               {row.actualErrorPhase && (
@@ -490,8 +491,8 @@ function GraphRowItem({ row }: { row: GraphTestRow }) {
 
       <TargetPair
         of={row}
-        expectedLabel="expected composite target"
-        actualLabel="actual composite target"
+        expectedLabel={msg("expected composite target")}
+        actualLabel={msg("actual composite target")}
       />
 
       {row.nodes?.length ? (
@@ -542,8 +543,8 @@ function GraphNodeItem({ node }: { node: GraphTestNode }) {
 
       <TargetPair
         of={node}
-        expectedLabel={`expected target of ${node.node}`}
-        actualLabel={`actual target of ${node.node}`}
+        expectedLabel={msg('expected target of {{node}}', { node: node.node })}
+        actualLabel={msg('actual target of {{node}}', { node: node.node })}
       />
 
       {node.trace !== undefined && (
@@ -551,9 +552,9 @@ function GraphNodeItem({ node }: { node: GraphTestNode }) {
           trace={node.trace}
           title={msg("Trace of {{value0}}", { value0: node.node })}
           context={
-            "This trace is the evaluator’s own walk order; the node comparisons above it are listed lexicographically by node name. Two orders, and neither is read off the other."
+            msg("This trace is the evaluator’s own walk order; the node comparisons above it are listed lexicographically by node name. Two orders, and neither is read off the other.")
           }
-          emptyWhat="This node's evaluation"
+          emptyWhat={msg("This node's evaluation")}
         />
       )}
     </li>
@@ -576,7 +577,7 @@ function summarize(text: string): string {
   const reasons = disposition.reasons ?? []
   return (
     [disposition.kind, disposition.outcomeId].filter(Boolean).join(' ') +
-    (reasons.length ? ` · reasons ${reasons.join(', ')}` : '') +
-    (disposition.handoff ? ` · handoff ${disposition.handoff.state}` : '')
+    (reasons.length ? msg(' · reasons {{reasons}}', { reasons: reasons.join(', ') }) : '') +
+    (disposition.handoff ? msg(' · handoff {{state}}', { state: disposition.handoff.state }) : '')
   )
 }

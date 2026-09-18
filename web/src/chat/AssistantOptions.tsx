@@ -1,5 +1,5 @@
 import { Message } from '../i18n/Message'
-import { msg, useLocale } from '../i18n'
+import { systemMessage, msg, useLocale } from '../i18n'
 import { useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useFileListing } from '../files/queries'
@@ -45,7 +45,7 @@ export function AssistantOptions({ thinking, tools, mode = 'draft', review = fal
       trigger={<button ref={trigger} className="desk-icon-button" type="button" aria-label={msg("Assistant settings")}><IconGear /></button>}>
       <div className={styles.settingsBody}>
         <dl className={styles.setting}><dt>{msg("Thinking requested")}</dt><dd>{thinking === 'off' ? msg("Off") : thinking === 'ultra' ? msg("Ultra") : msg("On")}</dd></dl>
-        <p className={styles.caption}>{notice || msg("Reasoning support depends on the selected model.")}</p>
+        <p className={styles.caption}>{(notice ? systemMessage(notice) : undefined) || msg("Reasoning support depends on the selected model.")}</p>
         {onReview && <label className={styles.reviewOption}><Message text={"<0/> Adversarial review"} slots={[<input type="checkbox" checked={review} disabled={disabled || !reviewAvailable} onChange={event => onReview(event.target.checked)} />]} /></label>}
         <p className={styles.caption}>{reviewAvailable ? msg("Optional model review of proposed changes. Runtime validation remains required.") : msg("Connect a runtime with test_pack to enable adversarial review.")}</p>
         <section className={styles.toolSection} aria-label={msg("Allowed tools")}>

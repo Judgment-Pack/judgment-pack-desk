@@ -30,6 +30,7 @@
  * listing with no request behind it.
  */
 import { useRef, useState } from 'react'
+import { sourceMessage } from '../i18n/source'
 import type { AssistantEndpointConfig } from '../config/deskConfig'
 import { DIAGNOSTIC_SAYS, probeAssistantEndpoint, type ProbeResult } from './client'
 import type { EndpointDraft } from './endpointDraft'
@@ -43,7 +44,7 @@ import { bindModelCall } from './session'
  * The page's own sentence, about the page's own refusal to send: no decoder
  * says this, and nothing here claims one did.
  */
-export const CHOOSE_A_MODEL = 'Choose a model to test this provider.'
+export const CHOOSE_A_MODEL = sourceMessage('Choose a model to test this provider.')
 
 /**
  * Which endpoint an answer is about.
@@ -177,8 +178,8 @@ export interface CheckLine {
   quoted?: string
 }
 
-export const ASKING = 'Checking credentials and loading models…'
-export const TEST_REFUSED = 'The test was refused:'
+export const ASKING = sourceMessage('Checking credentials and loading models…')
+export const TEST_REFUSED = sourceMessage('The test was refused:')
 
 /**
  * One answer, read into a line.
@@ -188,27 +189,27 @@ export const TEST_REFUSED = 'The test was refused:'
  * before a listing that did, because a desk that cannot reach the endpoint has
  * no news about its models worth reading.
  */
-export function checkLine(answer: CheckAnswer): CheckLine {
-  if (answer.refusedToAsk !== undefined) return { says: answer.refusedToAsk }
-  if (answer.asking) return { says: ASKING }
+export function checkLine(answer: CheckAnswer, msg = sourceMessage): CheckLine {
+  if (answer.refusedToAsk !== undefined) return { says: msg(answer.refusedToAsk) }
+  if (answer.asking) return { says: msg(ASKING) }
   if (answer.probeRefusal !== undefined) {
-    return { says: TEST_REFUSED, quoted: answer.probeRefusal }
+    return { says: msg(TEST_REFUSED), quoted: answer.probeRefusal }
   }
   const probe = answer.probe
   if (probe === undefined) return { says: '' }
   if (!probe.reachable) {
-    const answered = probe.status === 0 ? 'no answer arrived' : `answered ${probe.status}`
+    const answered = probe.status === 0 ? msg('no answer arrived') : msg('answered {{status}}', { status: probe.status })
     const says =
       probe.diagnostic === ''
-        ? `Not connected · ${answered}`
-        : `Not connected · ${answered} · ${DIAGNOSTIC_SAYS[probe.diagnostic] ?? probe.diagnostic}`
+        ? msg('Not connected · {{answered}}', { answered })
+        : msg('Not connected · {{answered}} · {{diagnostic}}', { answered, diagnostic: DIAGNOSTIC_SAYS[probe.diagnostic] ? msg(DIAGNOSTIC_SAYS[probe.diagnostic]!) : probe.diagnostic })
     return { says }
   }
   if (answer.listingRefusal !== undefined) {
-    return { says: 'Connected · the models could not be listed:', quoted: answer.listingRefusal }
+    return { says: msg('Connected · the models could not be listed:'), quoted: answer.listingRefusal }
   }
   const rows = answer.rows
-  if (rows === undefined) return { says: 'Connected' }
-  if (rows.length === 0) return { says: 'Connected · the endpoint listed no models' }
-  return { says: `Connected · ${rows.length} model${rows.length === 1 ? '' : 's'} available` }
+  if (rows === undefined) return { says: msg('Connected') }
+  if (rows.length === 0) return { says: msg('Connected · the endpoint listed no models') }
+  return { says: msg('Connected · {{count}} models available', { count: rows.length }) }
 }

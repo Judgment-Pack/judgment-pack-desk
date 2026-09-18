@@ -1,3 +1,4 @@
+import { sourceMessage } from '../i18n/source'
 import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
 /**
@@ -341,7 +342,7 @@ export function useDescribeIt(): DescribeItState {
     }
     if (!hadSession.current) return
     discardNow.current()
-    setLost(msg(SLOT_LOST))
+    setLost(SLOT_LOST)
   }, [usable])
 
   /**
@@ -359,7 +360,7 @@ export function useDescribeIt(): DescribeItState {
       whenSessionEnds(() => {
         if (!hadSession.current) return
         discardNow.current()
-        setLost(msg(SLOT_LOST))
+        setLost(SLOT_LOST)
       }),
     []
   )
@@ -460,7 +461,7 @@ export function useDescribeIt(): DescribeItState {
   const problem = promptFailed ?? outcome.failure
   const blocking =
     lost !== ''
-      ? lost
+      ? msg(SLOT_LOST)
       : discarded || submitted === null
         ? ''
         : running
@@ -473,10 +474,10 @@ export function useDescribeIt(): DescribeItState {
 
   const wasRunning = useRef(false)
   useEffect(() => {
-    if (running && !wasRunning.current) recordActivity('Assistant drafting started…')
+    if (running && !wasRunning.current) recordActivity(sourceMessage('Assistant drafting started…'))
     if (!running && wasRunning.current) recordActivity(proposal === undefined
-      ? 'Assistant drafting ended without an available proposal. See the creation page for details.'
-      : 'Assistant draft ready for review. No pack has been created.')
+      ? sourceMessage('Assistant drafting ended without an available proposal. See the creation page for details.')
+      : sourceMessage('Assistant draft ready for review. No pack has been created.'))
     wasRunning.current = running
   }, [running, proposal])
 
@@ -488,14 +489,14 @@ export function useDescribeIt(): DescribeItState {
         : slot.endpoint === null
           ? msg(NO_ASSISTANT)
           : slot.keyStatus === 'pending'
-            ? CHECKING_KEY
-            : slot.keyStatus === 'error' ? UNREAD_KEY : msg(NO_KEY),
+            ? msg(CHECKING_KEY)
+            : slot.keyStatus === 'error' ? msg(UNREAD_KEY) : msg(NO_KEY),
     retryKey: slot.state === 'configured' && slot.keyStatus === 'error' ? slot.retryKey : undefined,
     advertised,
     standing:
       slot.endpoint === null
         ? ''
-        : `${slot.engine} · ${picked.model === '' ? 'no model' : picked.model} · thinking ${slot.thinking}`,
+        : msg('{{engine}} · {{model}} · Thinking: {{thinking}}', { engine: slot.engine, model: picked.model || msg('no model'), thinking: msg(slot.thinking) }),
     picked,
     typed,
     setTyped,

@@ -1,5 +1,6 @@
+import { sourceMessage } from '../i18n/source'
 import { Message } from '../i18n/Message'
-import { msg, useLocale } from '../i18n'
+import { msg, useLocale, systemMessage } from '../i18n'
 import { useRef, useState } from 'react'
 import { answer, deskFetch } from '../files/client'
 import { Button } from '../ui/Button'
@@ -32,7 +33,7 @@ export function ChatBackupSettings({ status, blocked, onRestored }: { status: Ch
       link.href = url; link.download = `jpack-chat-backup-${new Date().toISOString().slice(0, 10)}.zip`
       document.body.append(link); link.click(); link.remove()
       setTimeout(() => URL.revokeObjectURL(url), 1000)
-      setNotice('Backup download started.')
+      setNotice(sourceMessage("Backup download started."))
     } catch (cause) { setError((cause as Error).message) }
     finally { setBusy(null) }
   }
@@ -56,21 +57,21 @@ export function ChatBackupSettings({ status, blocked, onRestored }: { status: Ch
         <Button ref={opener} disabled={blocked || busy !== null} onClick={() => { setOpen(true); setRevision(status.revision); setFile(null); setPath(''); setError(''); setNotice('') }}>{msg("Restore backup…")}</Button>
       </div>
       <p className={styles.caption}><Message text={"Saved data only; unsent messages are kept in this browser. Backup limit: <0/>."} slots={[formatStorageBytes(status.maxBackupBytes)]} /></p>
-      {notice && <p role="status" className={styles.caption}>{notice}</p>}
-      {error && !open && <p role="alert">{error}</p>}
+      {notice && <p role="status" className={styles.caption}>{systemMessage(notice)}</p>}
+      {error && !open && <p role="alert">{systemMessage(error)}</p>}
     </div>
     <Dialog open={open} onOpenChange={value => { if (busy !== 'restore') setOpen(value) }} title={msg("Restore chat backup")} openerRef={opener}
       description={msg("Restore replaces the active chat store for all projects. Current files remain in their original folder for recovery. Desk reloads after switching to the restored data.")}>
       <form onSubmit={event => { event.preventDefault(); void restore() }}>
         <FieldGroup>
-          <Field label={msg("Chat backup")} error={tooLarge ? "This backup exceeds the supported size." : undefined}>
+          <Field label={msg("Chat backup")} error={tooLarge ? msg("This backup exceeds the supported size.") : undefined}>
             {wiring => <Input {...wiring} type="file" accept=".zip,application/zip" disabled={busy === 'restore'} onChange={event => setFile(event.target.files?.[0] ?? null)} />}
           </Field>
           <Field label={msg("Restore into")} hint={msg("Use a new or empty private folder on the computer running Desk, outside the project and current data folder.")}>
             {wiring => <Input {...wiring} value={path} autoComplete="off" spellCheck={false} disabled={busy === 'restore'} onChange={event => setPath(event.target.value)} />}
           </Field>
           <p className={styles.caption}>{msg("Existing chats are not merged. Chats keep their project association. After moving a project, use its previous folder path to recover its history.")}</p>
-          {error && <p role="alert">{error}</p>}
+          {error && <p role="alert">{systemMessage(error)}</p>}
           {busy === 'restore' && <p role="status" className={styles.caption}>{msg("Uploading, verifying and restoring chat data…")}</p>}
         </FieldGroup>
         <DialogActions><Button disabled={busy === 'restore'} onClick={() => setOpen(false)}>{msg("Cancel")}</Button>

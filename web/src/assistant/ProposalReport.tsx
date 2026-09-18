@@ -1,5 +1,5 @@
 import { Message } from '../i18n/Message'
-import { msg, useLocale } from '../i18n'
+import { systemMessage, msg, useLocale } from '../i18n'
 /**
  * A proposal, reported: what it is, what it left open, and what the runtime
  * said about it.
@@ -55,17 +55,15 @@ export function summariseProposal(document: unknown): ProposalSummary {
 export function ProposalSummaryLine({ document }: { document: unknown }) {
   useLocale()
   const summary = summariseProposal(document)
-  const some = (count: number | undefined, one: string, many: string) =>
-    count === undefined ? `no ${many} member` : `${count} ${count === 1 ? one : many}`
   return (
     <p className={styles.honesty}>
       <strong>{summary.title ?? msg("a document with no title")}</strong>
       {' — '}
       <code>{summary.id ?? msg("no id")}</code>
       {' · '}
-      {some(summary.rules, 'rule', 'rules')}
+      {summary.rules === undefined ? msg('Rules: not declared') : msg('Rules: {{count}}', { count: summary.rules })}
       {' · '}
-      {some(summary.outcomes, 'outcome', 'outcomes')}
+      {summary.outcomes === undefined ? msg('Outcomes: not declared') : msg('Outcomes: {{count}}', { count: summary.outcomes })}
     </p>
   )
 }
@@ -115,14 +113,14 @@ export function RefutationReport({ events }: { events: readonly AssistantEvent[]
     <div>
       <p className={styles.label}>{msg("The refutation pass")}</p>
       {critique.checks.length === 0 ? (
-        <p className={styles.honesty}>{critique.text}</p>
+        <p className={styles.honesty}>{systemMessage(critique.text)}</p>
       ) : (
         <>
           <p className={critique.refuted ? styles.notice : styles.honesty}>
             {critique.refuted
               ? msg("The runtime refuted this proposal.")
               : msg("The runtime did not refute this proposal.")}{' '}
-            {critique.text}
+            {systemMessage(critique.text)}
           </p>
           <ul className={styles.unknowns}>
             {critique.checks.map((check, index) => (

@@ -60,6 +60,11 @@ jobs:
       - name: npm ci
         run: npm ci
 
+      - name: localization coverage and source guard
+        run: |
+          npm run i18n:check
+          node --test scripts/ui-message-audit.test.mjs
+
       - name: tsc
         run: npm run typecheck
 

@@ -1,4 +1,4 @@
-import { msg } from '../i18n'
+import { msg, useLocale } from '../i18n'
 import { Tooltip } from './Tooltip'
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import styles from './PaneDivider.module.css'
@@ -9,8 +9,9 @@ export function PaneDivider({ label, controls, value, min, max, onChange, onRese
   label: string; controls: string; value: number; min: number; max: number
   onChange: (value: number) => void; onReset: () => void; onCollapse: () => void
 }) {
+  useLocale()
   const horizontal = orientation === 'horizontal'
-  const dimension = horizontal ? 'height' : 'width'
+  const dimension = horizontal ? msg('height') : msg('width')
   const help = msg("Drag to resize. Arrow keys adjust {{value0}}; Shift moves faster. Double-click to reset.", { value0: dimension })
   const drag = useRef<{ id: number; x: number; value: number } | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -44,7 +45,7 @@ export function PaneDivider({ label, controls, value, min, max, onChange, onRese
   return <Tooltip disabled={dragging || keyboardFocus} openOnFocus={false} side="left" content={help}><div className={styles.divider} data-orientation={orientation} data-dragging={dragging || undefined}
     data-keyboard-focus={keyboardFocus || undefined} role="separator" tabIndex={0}
     aria-label={label} aria-controls={controls} aria-orientation={orientation}
-    aria-valuemin={min} aria-valuemax={max} aria-valuenow={value} aria-valuetext={`${value} pixels ${horizontal ? 'high' : 'wide'}`}
+    aria-valuemin={min} aria-valuemax={max} aria-valuenow={value} aria-valuetext={horizontal ? msg('{{value}} pixels high', { value }) : msg('{{value}} pixels wide', { value })}
     aria-description={help}
     onKeyDown={key} onDoubleClick={onReset}
     onFocus={event => setKeyboardFocus(event.currentTarget.matches(':focus-visible'))}

@@ -1,3 +1,4 @@
+import { sourceMessage } from '../i18n/source'
 /**
  * Reading one served graph document, and laying its walk out.
  *
@@ -77,27 +78,27 @@ export function readGraphDocument(text: string): GraphDocumentRead {
   try {
     value = JSON.parse(text)
   } catch (cause) {
-    return { ok: false, reason: `the served text is not JSON (${String(cause)})` }
+    return { ok: false, reason: sourceMessage("the served text is not JSON ({{value0}})", { value0: String(cause) }) }
   }
   if (!isPlainObject(value)) {
-    return { ok: false, reason: 'the served document is not a JSON object' }
+    return { ok: false, reason: sourceMessage("the served document is not a JSON object") }
   }
 
   const nodes = value.nodes
   if (!isPlainObject(nodes)) {
-    return { ok: false, reason: 'its `nodes` member is not a map of node ids' }
+    return { ok: false, reason: sourceMessage("its `nodes` member is not a map of node ids") }
   }
   const ids = Object.keys(nodes)
   if (ids.length === 0) {
-    return { ok: false, reason: 'it declares no node, and the format requires at least one' }
+    return { ok: false, reason: sourceMessage("it declares no node, and the format requires at least one") }
   }
   for (const id of ids) {
     const node = nodes[id]
     if (!isPlainObject(node)) {
-      return { ok: false, reason: `its node \`${id}\` is not an object` }
+      return { ok: false, reason: sourceMessage("its node `{{value0}}` is not an object", { value0: id }) }
     }
     if (!optionalString(node.pack) || !optionalString(node.description)) {
-      return { ok: false, reason: `its node \`${id}\` declares a member of the wrong type` }
+      return { ok: false, reason: sourceMessage("its node `{{value0}}` declares a member of the wrong type", { value0: id }) }
     }
   }
 
@@ -107,34 +108,34 @@ export function readGraphDocument(text: string): GraphDocumentRead {
       ok: false,
       reason:
         edges === undefined
-          ? 'it declares no `edges` member, which the format requires even when empty'
-          : 'its `edges` member is not an array'
+          ? sourceMessage("it declares no `edges` member, which the format requires even when empty")
+          : sourceMessage("its `edges` member is not an array")
     }
   }
   for (let index = 0; index < edges.length; index += 1) {
     const edge: unknown = edges[index]
     if (!isPlainObject(edge)) {
-      return { ok: false, reason: `its edge ${index} is not an object` }
+      return { ok: false, reason: sourceMessage("its edge {{value0}} is not an object", { value0: index }) }
     }
     if (typeof edge.from !== 'string' || typeof edge.to !== 'string') {
-      return { ok: false, reason: `its edge ${index} does not name both of its endpoints` }
+      return { ok: false, reason: sourceMessage("its edge {{value0}} does not name both of its endpoints", { value0: index }) }
     }
     if (!optionalString(edge.fact) || !optionalString(edge.description)) {
-      return { ok: false, reason: `its edge ${index} declares a member of the wrong type` }
+      return { ok: false, reason: sourceMessage("its edge {{value0}} declares a member of the wrong type", { value0: index }) }
     }
     const evidence: unknown = edge.evidence
     if (evidence !== undefined) {
       if (!isPlainObject(evidence) || typeof evidence.id !== 'string') {
-        return { ok: false, reason: `its edge ${index} declares an evidence feed with no requirement id` }
+        return { ok: false, reason: sourceMessage("its edge {{value0}} declares an evidence feed with no requirement id", { value0: index }) }
       }
       if (!optionalString(evidence.onUnresolved)) {
-        return { ok: false, reason: `its edge ${index} declares an onUnresolved that is not a string` }
+        return { ok: false, reason: sourceMessage("its edge {{value0}} declares an onUnresolved that is not a string", { value0: index }) }
       }
     }
   }
 
   if (!optionalString(value.result)) {
-    return { ok: false, reason: 'its `result` member is not a node id' }
+    return { ok: false, reason: sourceMessage("its `result` member is not a node id") }
   }
 
   return {
@@ -165,8 +166,8 @@ export function readServedDocument(
       ok: false,
       reason:
         meta.status === 'undecodable' || meta.status === undefined
-          ? (meta.detail ?? 'the runtime gave no reason')
-          : `the runtime reports this document as ${meta.status}` +
+          ? (meta.detail ?? sourceMessage("the runtime gave no reason"))
+          : sourceMessage("the runtime reports this document as {{value0}}", { value0: meta.status }) +
             (meta.detail ? ` — ${meta.detail}` : '')
     }
   }
@@ -331,8 +332,7 @@ export function deriveWalkLayout(
     return {
       drawn: false,
       reason:
-        `the served document's edge ${selfLoop.index} names \`${selfLoop.from}\` as both its ` +
-        `endpoints, which no layering can place`
+        sourceMessage("the served document's edge {{value0}} names `{{value1}}` as both its endpoints, which no layering can place", { value0: selfLoop.index, value1: selfLoop.from })
     }
   }
 
@@ -377,9 +377,7 @@ export function deriveWalkLayout(
     return {
       drawn: false,
       reason:
-        `the served document's edges cannot be layered: ${unplaced.join(', ')} could not be ` +
-        `placed, which a cycle in those edges causes — a node inside one and a node fed by ` +
-        `one are both unplaceable`
+        sourceMessage("the served document's edges cannot be layered: {{value0}} could not be placed, which a cycle in those edges causes — a node inside one and a node fed by one are both unplaceable", { value0: unplaced.join(', ') })
     }
   }
 
@@ -471,37 +469,35 @@ export function walkFallbackReason(input: {
   if (!supported) return undefined
   if (error) {
     return error instanceof ToolRefusal
-      ? because(`the runtime refused to serve this graph's document — ${error.message}`)
+      ? because(sourceMessage("the runtime refused to serve this graph's document — {{value0}}", { value0: error.message }))
       : because(
-          `this desk could not fetch this graph's document — ${error.message} — which is a ` +
-            `fetch that did not complete rather than an answer from the runtime`
+          sourceMessage("this desk could not fetch this graph's document — {{value0}} — which is a fetch that did not complete rather than an answer from the runtime", { value0: error.message })
         )
   }
   if (!served) return undefined
   if (served.meta.status !== 'valid') {
     return because(
-      `the runtime served this graph's document and could not decode it — ` +
-        `${served.meta.detail ?? 'no reason was given'} — and serving is not validating`
+      served.meta.detail === undefined
+        ? sourceMessage("The runtime served this graph's document but could not decode it and gave no reason. Serving is not validating.")
+        : sourceMessage("the runtime served this graph's document and could not decode it — {{value0}} — and serving is not validating", { value0: served.meta.detail })
     )
   }
   if (divergent) {
     return because(
-      `the matrix run and the served document report different digests, so the graph file was ` +
-        `edited between the two calls and the two answers describe different revisions`
+      sourceMessage("the matrix run and the served document report different digests, so the graph file was edited between the two calls and the two answers describe different revisions")
     )
   }
   if (drawn) return undefined
   if (declined) return because(declined)
   if (served.unreadable) {
-    return because(`the served graph document is not one this view can draw: ${served.unreadable}`)
+    return because(sourceMessage("the served graph document is not one this view can draw: {{message0}}", { message0: served.unreadable }))
   }
-  return because('the served graph document did not yield the shape this view draws from')
+  return because(sourceMessage("the served graph document did not yield the shape this view draws from"))
 }
 
 /** One reason, with the sentence that says what is on screen instead. */
 function because(reason: string): string {
-  const lead = reason.charAt(0).toUpperCase() + reason.slice(1)
-  return `${lead}, so the walk below is the coverage report's evaluation order and no edge is drawn.`
+  return sourceMessage("Graph view unavailable: {{message0}}. The walk below is the coverage report's evaluation order and no edge is drawn.", { message0: reason })
 }
 
 /**
@@ -516,15 +512,15 @@ function because(reason: string): string {
 export function edgeCarries(edge: {
   fact?: string
   evidence?: GraphDocumentEvidenceFeed
-}): string {
+}, msg = sourceMessage): string {
   const parts: string[] = []
   if (edge.fact) parts.push(edge.fact)
   if (edge.evidence?.id) {
     parts.push(
       edge.evidence.onUnresolved
-        ? `evidence ${edge.evidence.id} (${edge.evidence.onUnresolved} if unresolved)`
-        : `evidence ${edge.evidence.id}`
+        ? msg('evidence {{id}} ({{handling}} if unresolved)', { id: edge.evidence.id, handling: edge.evidence.onUnresolved })
+        : msg('evidence {{id}}', { id: edge.evidence.id })
     )
   }
-  return parts.join(' · ') || 'nothing this document declares'
+  return parts.join(' · ') || msg('nothing this document declares')
 }

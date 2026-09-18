@@ -1,5 +1,6 @@
+import { sourceMessage } from '../i18n/source'
 import { Message } from '../i18n/Message'
-import { msg, useLocale } from '../i18n'
+import { systemMessage, msg, useLocale } from '../i18n'
 /**
  * Admin › Assistant, as one form: the provider, the key, the endpoint, the
  * model, the tools and the tier — and the writes that put them somewhere.
@@ -222,7 +223,7 @@ export function EndpointForm({
   const problemFor = (path: string) =>
     problems
       .filter((problem) => problem.key === path)
-      .map((problem) => problem.reason)
+      .map((problem) => systemMessage(problem.reason))
       .join(' ') || undefined
   const unplaced = problems.filter(
     (problem) => !(PLACED as readonly string[]).includes(problem.key)
@@ -300,11 +301,11 @@ export function EndpointForm({
 
   const save = () => {
     if (!settingsChanged || blocked || busy || checking || unavailable || editingKey) return
-    commit(assistantWrite(draft), (answer) => (answer.created ? msg(CREATED) : msg(SAVED)))
+    commit(assistantWrite(draft), (answer) => (answer.created ? sourceMessage(CREATED) : sourceMessage(SAVED)))
   }
   const removeEndpoint = () => {
     check.reset()
-    commit(assistantWithoutEndpoint(draft), () => msg(REMOVED))
+    commit(assistantWithoutEndpoint(draft), () => sourceMessage(REMOVED))
   }
 
   // Save the endpoint before binding a key to it. A successful endpoint write
@@ -317,7 +318,7 @@ export function EndpointForm({
     if (here) storeKey(value)
     else commit(
       assistantWrite(draft),
-      (answer) => (answer.created ? msg(CREATED) : msg(SAVED)),
+      (answer) => (answer.created ? sourceMessage(CREATED) : sourceMessage(SAVED)),
       () => storeKey(value)
     )
   }
@@ -380,7 +381,7 @@ export function EndpointForm({
                 {...wiring}
                 value={draft.kind}
                 onValueChange={(value) => edit(withKind(draft, value as EndpointKind))}
-                options={KIND_OPTIONS}
+                options={KIND_OPTIONS.map(option => ({ ...option, label: systemMessage(option.label) }))}
               />
             )}
           </Field>
@@ -436,7 +437,7 @@ export function EndpointForm({
             <Field
               label={msg("Endpoint URL")}
               hint={msg("Leave the default unless you use a proxy or your own server.")}
-              error={urlProblem ?? problemFor('assistant.endpoint.url')}
+              error={urlProblem === undefined ? problemFor('assistant.endpoint.url') : systemMessage(urlProblem)}
             >
               {(wiring) => (
                 <Input
@@ -481,7 +482,7 @@ export function EndpointForm({
                 onValueChange={(value) =>
                   edit({ ...draft, thinking: value as EndpointDraft['thinking'] })
                 }
-                options={TIER_OPTIONS}
+                options={TIER_OPTIONS.map(option => ({ ...option, label: systemMessage(option.label) }))}
               />
             )}
           </Field>
@@ -491,7 +492,7 @@ export function EndpointForm({
           {busy && <span className="quiet">{msg("Saving…")}</span>}
           {editingKey && !busy && <span className="quiet">{msg("Save or cancel the API key changes first.")}</span>}
           {dirty && saved === undefined && !busy && !editingKey && <span className="quiet">{msg("Unsaved settings")}</span>}
-          {saved !== undefined && !busy && <span className="quiet" role="status">{saved}</span>}
+          {saved !== undefined && !busy && <span className="quiet" role="status">{systemMessage(saved)}</span>}
           <Button variant={binding === 'bound' && !replacingKey ? 'primary' : 'secondary'} type="submit" disabled={!settingsChanged || blocked || busy || checking || editingKey}>{msg("Save settings")}</Button>
         </div>
 
@@ -516,8 +517,8 @@ export function EndpointForm({
 
       {stale !== undefined && (
         <AlertPanel
-          heading="The configuration changed on disk. Nothing was written."
-          detailLabel="digests"
+          heading={msg("The configuration changed on disk. Nothing was written.")}
+          detailLabel={msg("digests")}
           detail={
             <>
               <span><Message text={"this page read<0/><1/>"} slots={[' ', <Digest value={stale.expectedSha256} />]} /></span>
@@ -544,7 +545,7 @@ export function EndpointForm({
           <p>{msg("This configuration was refused, and nothing was written.")}</p>
           {unplaced.map((problem) => (
             <code key={`${problem.key}:${problem.reason}`} className="partial-reason">
-              {problem.key === '' ? problem.reason : `${problem.key}: ${problem.reason}`}
+              {problem.key === '' ? systemMessage(problem.reason) : `${problem.key}: ${systemMessage(problem.reason)}`}
             </code>
           ))}
         </div>
@@ -626,7 +627,7 @@ function ToolChoice({
  */
 function CheckReading({ answer }: { answer: CheckAnswer }) {
   useLocale()
-  const line = checkLine(answer)
+  const line = checkLine(answer, msg)
   if (line.says === '') return null
   return (
     <span className="quiet">
@@ -634,7 +635,7 @@ function CheckReading({ answer }: { answer: CheckAnswer }) {
       {line.quoted !== undefined && (
         <>
           {' '}
-          <code className="partial-reason">{line.quoted}</code>
+          <code className="partial-reason">{systemMessage(line.quoted)}</code>
         </>
       )}
     </span>

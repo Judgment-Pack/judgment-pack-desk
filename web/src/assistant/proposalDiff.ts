@@ -1,3 +1,4 @@
+import { sourceMessage } from '../i18n/source'
 /**
  * The proposal as a diff on the draft — **computed here, never quoted**.
  *
@@ -118,7 +119,7 @@ export type DraftReading = { value: Record<string, unknown> } | { problem: strin
  */
 export function readDraft(text: string | undefined): DraftReading {
   if (text === undefined || text.trim() === '') {
-    return { problem: 'there is no draft on this page to compare with' }
+    return { problem: sourceMessage("there is no draft on this page to compare with") }
   }
   const index = indexDocument(text)
   const disagreement = agreesWithParse(text, index)
@@ -129,7 +130,7 @@ export function readDraft(text: string | undefined): DraftReading {
     }
   }
   if (!isObject(index.value)) {
-    return { problem: 'the bytes in the editor are JSON, but not an object' }
+    return { problem: sourceMessage("the bytes in the editor are JSON, but not an object") }
   }
   return { value: index.value }
 }

@@ -19,7 +19,8 @@ const server = spawn(binary, ['--dev-token', secret, '--port', '8851', '--jpack'
   env: { ...process.env, XDG_CONFIG_HOME: `${work}/config`, XDG_DATA_HOME: `${work}/data` }, stdio: 'ignore'
 })
 let browser
-const results = [], errors = []
+const results = [], errors = [], untranslatedLabels = []
+const english = JSON.parse(await readFile(`${root}/web/src/i18n/locales/en.json`, 'utf8'))
 try {
   let ready = false
   for (let i = 0; i < 80; i++) {
@@ -33,11 +34,41 @@ try {
     const catalogue = JSON.parse(await readFile(`${root}/web/src/i18n/locales/${language}.json`, 'utf8'))
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: 'dark', locale: language })
     const page = await context.newPage()
+    // Direct entry without a launch session is a real, localized recovery path.
+    await page.goto(origin)
+    await page.getByText(catalogue['No session — open the URL that jpack-desk printed at startup.'], { exact: true }).first().waitFor()
+    results.push(`${language}: offline recovery instructions`)
     page.on('pageerror', error => errors.push(error.message))
     await page.goto(`${origin}/launch?secret=${secret}`)
     await page.locator('textarea').first().waitFor()
     assert.equal(await page.locator('html').getAttribute('lang'), language)
     await page.getByRole('heading', { name: catalogue['What would you like to work on?'], exact: true }).waitFor()
+    // Exercise routed views and portal menus, not only the landing page.
+    const routes = ['/packs', '/matrix', '/graphs', '/admin#assistant', '/admin#storage', '/admin#identity-provider', '/help', '/packs/vendor-onboarding', '/packs/vendor-onboarding?view=logic', '/packs/vendor-onboarding?edit=1']
+    for (const route of routes) {
+      await page.goto(origin + route)
+      await page.locator('main').waitFor()
+      await page.waitForTimeout(150)
+      const labels = await page.locator('button, [role="tab"], nav a, label, h1, h2, h3, .quiet, [role="status"]').evaluateAll(elements =>
+        elements.filter(el => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden')
+          .map(el => el.textContent.trim()).filter(Boolean))
+      for (const text of new Set(labels)) {
+        if (language !== 'en' && english[text] && catalogue[text] !== text) untranslatedLabels.push({ language, route, text })
+      }
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, `${language} ${route}: no overflow`)
+      if (['de', 'yue-Hant', 'ja'].includes(language)) await page.screenshot({ path: `${output}/${language}-${route.replace(/[^a-z]+/gi, '-')}.png`, fullPage: true })
+    }
+    await page.goto(origin)
+    await page.locator('textarea').first().waitFor()
+    results.push(`${language}: Packs, tests, flows, Assistant settings, storage, identity, Help, pack overview, logic and edit`)
+    const configure = page.getByRole('button', { name: catalogue['Configure Assistant'], exact: true }).filter({ hasText: catalogue['Configure Assistant'] })
+    if (await configure.count()) {
+      await configure.click()
+      const dialog = page.getByRole('dialog', { name: catalogue['Configure Assistant'], exact: true })
+      await dialog.waitFor()
+      await dialog.getByRole('button', { name: catalogue.Done, exact: true }).click()
+      await dialog.waitFor({ state: 'hidden' })
+    }
     const editor = page.locator('textarea').first()
     await editor.fill('Draft /case/type = "approval" — 未送信')
     await page.locator('.desk-user').click()
@@ -71,6 +102,12 @@ try {
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)
         assert.equal(overflow, false, `${language} ${scheme} ${width}: no page overflow`)
         await page.screenshot({ path: `${output}/${language}-${scheme}-${width}.png`, fullPage: true })
+        if (width < 900) for (const route of ['/admin#assistant', '/packs/vendor-onboarding?view=logic']) {
+          await page.goto(origin + route); await page.locator('main').waitFor(); await page.waitForTimeout(150)
+          assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, `${language} ${scheme} ${width} ${route}: no page overflow`)
+          await page.screenshot({ path: `${output}/${language}-${scheme}-${width}-${route.replace(/[^a-z]+/gi, '-')}.png`, fullPage: true })
+        }
+        await page.goto(origin); await editor.waitFor()
       }
     }
     await context.close()
@@ -79,7 +116,8 @@ try {
   assert(Array.isArray(chats.content?.chats), 'chat listing is complete')
   assert.equal(chats.content.chats.length, 0)
   assert.deepEqual(errors, [])
-  console.log(JSON.stringify({ results, noSavedConversations: true, browserErrors: errors }, null, 2))
+  assert.deepEqual(untranslatedLabels, [], 'all visible application labels use the selected language')
+  console.log(JSON.stringify({ results, noSavedConversations: true, browserErrors: errors, untranslatedLabels }, null, 2))
 } finally {
   await browser?.close()
   server.kill('SIGTERM'); await Promise.race([once(server, 'exit'), new Promise(resolve => setTimeout(resolve, 1500))])

@@ -1,3 +1,5 @@
+import { systemMessage } from '../i18n'
+import { sourceMessage } from '../i18n/source'
 import { msg, useLocale } from '../i18n'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useBlocker, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -84,7 +86,7 @@ function DraftWorkspace({ chat }: { chat: Chat }) {
   const passing = draftReady(chat,state)
   const beginReview = () => { reviewDigest.current = latest?.digest; setReviewNotice(''); setReview(true) }
   useEffect(() => {
-    if (review && latest?.digest !== reviewDigest.current) { setReview(false); setReviewNotice('The draft changed. Review the latest revision before creating it.') }
+    if (review && latest?.digest !== reviewDigest.current) { setReview(false); setReviewNotice(sourceMessage('The draft changed. Review the latest revision before creating it.')) }
   }, [review, latest?.digest])
   const presentation = useMemo(() => ({ title: msg("Assistant"), available: draft && !narrow, open: draft && !narrow && rightOpen,
     onOpenChange: setRightOpen, width, onResize: shell.resizeInspector, onReset: shell.resetInspectorWidth, minimumMainWidth: 480, maximumWidth: 640 }), [draft, narrow, rightOpen, width, shell.resizeInspector, shell.resetInspectorWidth, locale])
@@ -107,7 +109,7 @@ function DraftWorkspace({ chat }: { chat: Chat }) {
       {draft && !review && <Button variant="primary" disabled={!passing} onClick={beginReview}>{msg("Review and create")}</Button>}
     </>} />}
     {portal}{detailPortal}
-    {draft && reviewNotice && <p className={styles.reviewNotice} role="status">{reviewNotice}</p>}
+    {draft && reviewNotice && <p className={styles.reviewNotice} role="status">{systemMessage(reviewNotice)}</p>}
     <div className={styles.workspace}>
       {!draft ? <ChatPanel chat={chat} headerTarget={chatHeaderTarget} landing onOpenDraft={openDraft} /> : review && latest ? <div className={styles.review}>
         <CreatePackDialog open presentation="review" onOpenChange={open => { if (!open && !writing) setReview(false) }}

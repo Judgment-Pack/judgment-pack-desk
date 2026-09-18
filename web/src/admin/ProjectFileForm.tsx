@@ -1,5 +1,5 @@
 import { Message } from '../i18n/Message'
-import { msg, useLocale } from '../i18n'
+import { msg, useLocale, systemMessage } from '../i18n'
 /**
  * The shape every project-file card's Save has, held in one place.
  *
@@ -210,7 +210,7 @@ export function ProjectFileForm<D>({
           {save.pending && <span className="quiet">{msg("writing…")}</span>}
           {save.reloading && <span className="quiet">{msg("reading…")}</span>}
           {save.said !== undefined && !save.pending && (
-            <span className="quiet">{save.said}</span>
+            <span className="quiet">{systemMessage(save.said)}</span>
           )}
           <Button
             variant="primary"
@@ -220,12 +220,12 @@ export function ProjectFileForm<D>({
         </p>
       </fieldset>
 
-      {save.blocked !== undefined && <p className="quiet">{save.blocked}</p>}
+      {save.blocked !== undefined && <p className="quiet">{systemMessage(save.blocked)}</p>}
 
       {save.stale !== undefined && (
         <AlertPanel
-          heading="The file changed on disk — nothing was written."
-          detailLabel="digests"
+          heading={msg("The file changed on disk — nothing was written.")}
+          detailLabel={msg("digests")}
           detail={
             <>
               <span><Message text={"this page read<0/><1/>"} slots={[' ', <Digest value={save.stale.expectedSha256} />]} /></span>
@@ -249,7 +249,7 @@ export function ProjectFileForm<D>({
           <p>{msg("This value was refused, and nothing was written.")}</p>
           {unplaced.map((problem) => (
             <code key={`${problem.key}:${problem.reason}`} className="partial-reason">
-              {problem.key === '' ? problem.reason : `${problem.key}: ${problem.reason}`}
+              {problem.key === '' ? systemMessage(problem.reason) : `${problem.key}: ${systemMessage(problem.reason)}`}
             </code>
           ))}
         </div>
@@ -287,7 +287,7 @@ export function problemAt(
   return (
     save.problems
       .filter((problem) => problem.key === key)
-      .map((problem) => problem.reason)
+      .map((problem) => systemMessage(problem.reason))
       .join(' ') || undefined
   )
 }

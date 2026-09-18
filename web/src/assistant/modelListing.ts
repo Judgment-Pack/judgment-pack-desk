@@ -1,3 +1,4 @@
+import { sourceMessage } from '../i18n/source'
 /**
  * The endpoint's own model listing, read through the relay and no other way.
  *
@@ -68,7 +69,7 @@ export interface ModelRow {
  * repeat.
  */
 export const NOT_A_LISTING =
-  'the endpoint answered something this desk could not read as a model listing'
+  sourceMessage("the endpoint answered something this desk could not read as a model listing")
 
 /**
  * A refusal, as its status and one word from the probe's vocabulary.
@@ -83,7 +84,7 @@ export const NOT_A_LISTING =
  */
 export function listingRefusal(status: number): string {
   const says = SAYS[status] ?? DIAGNOSTIC_SAYS[diagnosticFor(status)]
-  return `the model listing was refused — answered ${status}, ${says}`
+  return sourceMessage("the model listing was refused — answered {{value0}}, {{message0}}", { value0: status, message0: says })
 }
 
 /**
@@ -98,9 +99,8 @@ export function listingRefusal(status: number): string {
  */
 const SAYS: Record<number, string> = {
   502:
-    'either the endpoint never answered, or what it answered is something this desk will not ' +
-    'put on the page',
-  503: 'this desk is already carrying as many requests to the endpoint as it will'
+    sourceMessage("either the endpoint never answered, or what it answered is something this desk will not put on the page"),
+  503: sourceMessage("this desk is already carrying as many requests to the endpoint as it will")
 }
 
 function diagnosticFor(status: number): ProbeDiagnostic {

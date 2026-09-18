@@ -1993,7 +1993,7 @@ function usePacks() { useConfiguredGraphs(); return readPacks() }'
     return { values: undefined, problems: unique, notices: [], declaredPanes }
   }'
   mutate web "an unknown config key is accepted silently" "$D" \
-    "    problems.push({ key, reason: 'unknown key' })" \
+    '    problems.push({ key, reason: sourceMessage("unknown key") })'  \
     '    void key'
   mutate web "identity may be configured in the shared project file" "$D" \
     "const PROJECT_KEYS: readonly string[] = COMMON_KEYS" \
@@ -2151,7 +2151,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '            {files.length === 0 ? ('
   mutate web "the partial warning is not shown" "$A" \
     '            {partial.length > 0 && (' \
-    '            {false && (' 
+    '            {false && ('
   mutate web "the save read-back installs over a newer read" "$FE" \
     '            if (state !== undefined && state.dataUpdatedAt > startedAt) return' \
     '            void state'
@@ -2232,7 +2232,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '        read = { path: PROJECT_FILE, bytes: 0, sha256: '"'"''"'"', content: '"'"'{}'"'"' }
         current = parseProjectConfig(read.content)'
   mutate web 'a 409 on jpack.json is reported as an ordinary failure' web/src/shell/CreatePackDialog.tsx \
-    '          reason: codeOf(cause) === '"'"'stale'"'"' ? msg(STALE_PROJECT_FILE) : refusalDetail(cause)' \
+    '          reason: codeOf(cause) === '"'"'stale'"'"' ? sourceMessage(STALE_PROJECT_FILE) : refusalDetail(cause)' \
     '          reason: refusalDetail(cause)'
   # Repaired, and narrowed: the `role="alert"` half moved into the `Alert`
   # primitive when the dialog stopped rendering bare markup, and it is held
@@ -2241,7 +2241,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # all, rather than set in state and shown to nobody.
   mutate web "the create dialog renders no failure at all" "$X" \
     '        {(failure ?? blocked) && (
-          <Alert reason={(failure ?? blocked)!.reason}>{(failure ?? blocked)!.lead}</Alert>
+          <Alert reason={(failure ?? blocked)!.reason ? systemMessage((failure ?? blocked)!.reason!) : undefined}>{systemMessage((failure ?? blocked)!.lead)}</Alert>
         )}' \
     ''
   mutate web "the registration replaces the file rather than amending it" "$JC" \
@@ -2266,8 +2266,8 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '  if (project.files.some((file) => samePath(file, project.path))) {' \
     '  if (false) {'
   mutate web "a slug that does not begin with a letter is accepted" "$NP" \
-    "  if (!/^[a-z]/.test(slug)) return { problem: 'A name must start with a letter.' }" \
-    "  if (false) return { problem: 'A name must start with a letter.' }"
+    '  if (!/^[a-z]/.test(slug)) return { problem: sourceMessage("A name must start with a letter.") }'  \
+    '  if (false) return { problem: sourceMessage("A name must start with a letter.") }'
   mutate web "the template's specVersion is overwritten" "$NP" \
     '    version: NEW_PACK_VERSION
   }' \
@@ -2803,8 +2803,8 @@ function usePacks() { useExampleListing(); return readPacks() }'
         const absent = cause instanceof FileRequestError && cause.status === 404
         setFailure(
           absent
-            ? { lead: msg(NO_PROJECT_FILE) }
-            : { lead: msg(UNREADABLE_PROJECT_FILE), reason: reasonOf(cause) }
+            ? { lead: sourceMessage(NO_PROJECT_FILE) }
+            : { lead: sourceMessage(UNREADABLE_PROJECT_FILE), reason: reasonOf(cause) }
         )
         return
       }' \
@@ -2819,7 +2819,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '        try {
           content = shapeTemplate(source.text, { name, description, slug, idBase })
         } catch (cause) {
-          setFailure({ lead: msg(TEMPLATE_UNUSABLE), reason: reasonOf(cause) })
+          setFailure({ lead: sourceMessage(TEMPLATE_UNUSABLE), reason: reasonOf(cause) })
           return
         }' \
     '        content = shapeTemplate(source.text, { name, description, slug, idBase })'
@@ -2843,7 +2843,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
 
   # What a refusal says.
   mutate web "a taken pack file is reported in an editor's words" "$X" \
-    "          lead: refusalLead(cause) ?? 'The pack could not be created.'," \
+    "          lead: refusalLead(cause) ?? sourceMessage('The pack could not be created.')," \
     "          lead: 'The pack could not be created.',"
   mutate web "the amended configuration is left in the cache as it was" "$X" \
     "      invalidate([['desk-files'], ['desk-file', PROJECT_FILE], ['list_packs'], ['desk-config']])" \
@@ -2970,7 +2970,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
   const left = [...a]'
   mutate web 'the candidate path is never asked about directly' web/src/shell/CreatePackDialog.tsx \
     '        await readFile(path)
-        setFailure({ lead: msg(PACK_FILE_TAKEN) })
+        setFailure({ lead: sourceMessage(PACK_FILE_TAKEN) })
         return' \
     '        void path'
 
@@ -3011,7 +3011,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '        <Field label={msg("Template")} error={templateProblem} hint="checks report it incomplete until you fill it in">'
 
   mutate web "the chassis sentence is put in front of whoever typed a name" "$X" \
-    '          lead: refusalLead(cause) ?? '"'"'The pack could not be created.'"'"',' \
+    '          lead: refusalLead(cause) ?? sourceMessage('"'"'The pack could not be created.'"'"'),' \
     "          lead: 'The pack could not be created.',"
   mutate web "a code this desk does not know invents a sentence" "$CR" \
     '  return code === undefined ? undefined : CREATE_REFUSALS[code]' \
@@ -3073,7 +3073,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
 
   # 3. The set is mirrored on the client, and the mirror has to be complete.
   mutate web "a chassis code has no Create sentence" "$CR" \
-    "  'not-a-file': 'Something that is not a file is in the way. Nothing was created.'," \
+    "  'not-a-file': sourceMessage(\"Something that is not a file is in the way. Nothing was created.\")," \
     ''
   mutate web "the mirrored code set drifts from the chassis'" "$CR" \
     "  'excluded-directory'," \
@@ -3198,11 +3198,11 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # layer that did run.
   mutate web "the layer sentence drops the status and every row but the failure" "$CK" \
     '  const spelled = rows
-    .map((row) => `${row.name ?? '"'"'an unnamed layer'"'"'} ${row.status ?? '"'"'with no status'"'"'}`)
+    .map((row) => `${row.name ?? msg('"'"'an unnamed layer'"'"')} ${row.status ?? msg('"'"'with no status'"'"')}`)
     .join('"'"', '"'"')' \
     '  const spelled = rows
     .filter((row) => row.status !== '"'"'passed'"'"')
-    .map((row) => `${row.name ?? '"'"'an unnamed layer'"'"'}`)
+    .map((row) => `${row.name ?? msg('"'"'an unnamed layer'"'"')}`)
     .join('"'"', '"'"')'
   mutate web "a truncated list still claims nothing else was found" "$CK" \
     "  if (report?.diagnosticsTruncated !== true) return undefined" \
@@ -3269,13 +3269,13 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "the rules member is treated as optional" "$MB" \
     "  {
     id: 'rules',
-    label: PACK_TERMS.rules.label,
+    get label() { return PACK_TERMS.rules.label },
     members: ['rules'],
     pointer: '/rules',
     counted: true,
     required: true
   }," \
-    "  { id: 'rules', label: PACK_TERMS.rules.label, members: ['rules'], pointer: '/rules', counted: true },"
+    "  { id: 'rules', get label() { return PACK_TERMS.rules.label }, members: ['rules'], pointer: '/rules', counted: true },"
   # Every omission at the end would have passed the ordering test this replaces:
   # it filtered every omission out of the actual output before comparing.
   mutate web "an omission is drawn after the members rather than in its place" "$MB" \
@@ -3957,9 +3957,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '  if (held !== undefined) return <>{children}</>' \
     '  if (held !== NOT_DECLARED) return <>{children}</>'
   mutate web 'the blank option is the empty string ui/Select says is never offered' web/src/packs/edit/fields.tsx \
-    '            ...(optional === true ? [{ value: NOT_DECLARED, label: "not declared" }] : []),
+    '            ...(optional === true ? [{ value: NOT_DECLARED, label: msg("not declared") }] : []),
             ...declared.map((word) => ({ value: word, label: word })),' \
-    '            ...(optional === true ? [{ value: '"'"''"'"', label: "not declared" }] : []),
+    '            ...(optional === true ? [{ value: '"'"''"'"', label: msg("not declared") }] : []),
             ...declared.map((word) => ({ value: word, label: word })),'
 
   # A node the document does not carry is not a kind this desk has never seen.
@@ -4411,7 +4411,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # gets established; without its note the transcript of a retried run is
   # indistinguishable from one that established on the first pass.
   mutate web "a retry leaves no trace in the transcript" "$RR" \
-    "    this.addTurn({ role: 'user', kind: 'note', text: 'Sent the held case proposal back for validation.' })" \
+    "    this.addTurn({ role: 'user', kind: 'note', text: sourceMessage(\"Sent the held case proposal back for validation.\") })" \
     '    void 0'
 
   # **Two rows are gone from here**, and the reason is worth the space. They
@@ -4488,7 +4488,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '  if (!probe.reachable) {' \
     '  if (false) {'
   mutate web "a status of zero is painted as an answer" "$ECK" \
-    "    const answered = probe.status === 0 ? 'no answer arrived' : \`answered \${probe.status}\`" \
+    "    const answered = probe.status === 0 ? msg('no answer arrived') : msg('answered {{status}}', { status: probe.status })" \
     "    const answered = \`answered \${probe.status}\`"
   # A read that has not answered is not "no key": it is a page that has not
   # been told.
@@ -4594,7 +4594,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '  if (!state.present) return msg("No key stored")' \
     '  if (!state.present || state.configuredOrigin === '"'"''"'"') return msg("No key stored")'
   mutate web "a diagnostic is rendered as the bare word" "$ECK" \
-    '        : `Not connected · ${answered} · ${DIAGNOSTIC_SAYS[probe.diagnostic] ?? probe.diagnostic}`' \
+    '        : msg('"'"'Not connected · {{answered}} · {{diagnostic}}'"'"', { answered, diagnostic: DIAGNOSTIC_SAYS[probe.diagnostic] ? msg(DIAGNOSTIC_SAYS[probe.diagnostic]!) : probe.diagnostic })' \
     '        : `Not connected · ${answered} · ${probe.diagnostic}`'
 
   # ---- The Admin form: what it writes, and what it will not ---------------
@@ -4766,10 +4766,10 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "the default is accepted outside the enabled set" "$D" \
     '  if (!models.includes(model)) {
     return (
-      `must be one of the models enabled for this endpoint; ` +' \
+      sourceMessage("must be one of the models enabled for this endpoint; {{value0}} is not one of them", { value0: JSON.stringify(model) })' \
     '  if (false) {
     return (
-      `must be one of the models enabled for this endpoint; ` +'
+      sourceMessage("must be one of the models enabled for this endpoint; {{value0}} is not one of them", { value0: JSON.stringify(model) })'
 
   # **One press, two questions.** Test connection is the reachability probe and
   # the endpoint's own model listing, and a button that made only the first of
@@ -4837,7 +4837,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # A picker offering a fourth tier offers a configuration the decoder refuses
   # by name — and the two states it cannot express are the desk's to report.
   mutate web "the tier picker offers a value outside the union" "$EF" \
-    '              options={TIER_OPTIONS}' \
+    '              options={TIER_OPTIONS.map(option => ({ ...option, label: systemMessage(option.label) }))}' \
     "              options={[...TIER_OPTIONS, { value: 'always', label: 'always' }]}"
   # **Deliberately not added: a second row for the key field being cleared
   # before the request.** "the field is cleared only once the store has
@@ -5183,7 +5183,7 @@ export function assistantTransport(id: string): Transport {
         await this.casesAndCheck(signal, false)
       } catch (cause) {
         this.set(before)
-        this.undone = `The correction for ${id} was rolled back: its retest did not complete, so nothing was approved and the proposal is still on offer.`
+        this.undone = sourceMessage("The correction for {{value0}} was rolled back: its retest did not complete, so nothing was approved and the proposal is still on offer.", { value0: id })
         throw cause
       }' \
     '      await this.casesAndCheck(signal, false)'
@@ -5193,7 +5193,7 @@ export function assistantTransport(id: string): Transport {
   # account of a correction the run took back -- which is #82's complaint, a
   # reason that is not the real one, in a new place.
   mutate web "a rolled-back approval is not reported" "$RR" \
-    '        this.undone = `The correction for ${id} was rolled back: its retest did not complete, so nothing was approved and the proposal is still on offer.`' \
+    '        this.undone = sourceMessage("The correction for {{value0}} was rolled back: its retest did not complete, so nothing was approved and the proposal is still on offer.", { value0: id })' \
     '        void 0'
 
   # **Taken back whole means the phase too.** The retest moved the run to
@@ -5980,7 +5980,7 @@ export function assistantTransport(id: string): Transport {
   # A run still in flight is about to replace the events the proposal is on.
   mutate web "Accept is enabled while the session is still running" "$AC" \
     '  if (input.running) {
-    return { enabled: false, why: '"'"'The session is still running. Stop it or wait for it to end.'"'"' }
+    return { enabled: false, why: sourceMessage("The session is still running. Stop it or wait for it to end.") }
   }' \
     '  if (false) {
     return { enabled: false, why: '"'"''"'"' }
@@ -6190,13 +6190,13 @@ export function assistantTransport(id: string): Transport {
   mutate web 'a document the runtime refused is treated as valid' web/src/shell/CreatePackDialog.tsx \
     '              : checked.data.report.status === '"'"'valid'"'"'
                 ? undefined
-                : msg("The runtime will not call this document a pack — {{value0}}", { value0: layersReached(checked.data.report).text })' \
+                : msg("The runtime will not call this document a pack — {{value0}}", { value0: layersReached(checked.data.report, msg).text })' \
     '              : undefined'
 
   # Losing the slot used to hide the controls and leave the session running.
   mutate web 'the assistant going away only hides the controls' web/src/shell/DescribeIt.tsx \
     '    discardNow.current()
-    setLost(msg(SLOT_LOST))' \
+    setLost(SLOT_LOST)' \
     '    void SLOT_LOST'
 
   # The rail mounts this dialog above the route, so a Back leaves it standing
@@ -6625,7 +6625,7 @@ export function assistantTransport(id: string): Transport {
   # nobody chose to look at — the same defect `dist` had.
   mutate web "a control character is accepted in a pack location" "$D" \
     '  if (CONTROL_CHARACTER.test(value)) {
-    return bad(`${NO_CONTROL_CHARACTERS}; found ${describe(value)}`)
+    return bad(sourceMessage(NO_CONTROL_CHARACTERS + "; found {{value0}}", { value0: describe(value) }))
   }' \
     ''
 
@@ -6635,12 +6635,12 @@ export function assistantTransport(id: string): Transport {
   # which is the half of the rule round 2 found missing.
   mutate web "the control-character rule is asked after the trim has hidden the edges" "$D" \
     '  if (CONTROL_CHARACTER.test(value)) {
-    return bad(`${NO_CONTROL_CHARACTERS}; found ${describe(value)}`)
+    return bad(sourceMessage(NO_CONTROL_CHARACTERS + "; found {{value0}}", { value0: describe(value) }))
   }
   const trimmed = value.trim().replace(/\/+$/, '"'"''"'"')' \
     '  const trimmed = value.trim().replace(/\/+$/, '"'"''"'"')
   if (CONTROL_CHARACTER.test(trimmed)) {
-    return bad(`${NO_CONTROL_CHARACTERS}; found ${describe(value)}`)
+    return bad(sourceMessage(NO_CONTROL_CHARACTERS + "; found {{value0}}", { value0: describe(value) }))
   }'
 
   # **A save that lands is over.** The decoder normalises what it accepts — an
@@ -6955,7 +6955,7 @@ export function assistantTransport(id: string): Transport {
   # produces the collision; without the refusal the approval appends a second
   # row under the same id and the suite carries two answers for one case.
   mutate web "an approval rewrites an established case" "$RR" \
-    '      if (this.state.cases.some(row => row.id === id)) throw new Error('"'"'A case with this id is already established; the correction was not applied.'"'"')' \
+    '      if (this.state.cases.some(row => row.id === id)) throw new Error(sourceMessage("A case with this id is already established; the correction was not applied."))' \
     '      void id'
 
   # **A check taken before the corrected case joined the suite is not a check of
@@ -7179,12 +7179,12 @@ export function assistantTransport(id: string): Transport {
     '          <Button
             variant="secondary"
             disabled={blocked}
-            onClick={() => commit(chassis?.projectFile ?? null, msg(SET))}
+            onClick={() => commit(chassis?.projectFile ?? null, SET)}
           >' \
     '          <Button
             variant="primary"
             disabled={blocked}
-            onClick={() => commit(chassis?.projectFile ?? null, msg(SET))}
+            onClick={() => commit(chassis?.projectFile ?? null, SET)}
           >'
 
   # **Tracked capitals back on a section title.** Two label styles on one page,
@@ -7375,7 +7375,7 @@ export function assistantTransport(id: string): Transport {
   # — the project it happens to be open on — is a value nobody wrote that a
   # reader cannot tell from one that is in the file.
   mutate web "an Admin row composes a summary the decoder did not say" "$SSUM" \
-    "  organization: ({ config }) => config.organization.name ?? 'none'," \
+    "  organization: ({ config }) => config.organization.name ?? msg('none')," \
     "  organization: ({ config }) => config.organization.name ?? 'this project',"
 
   # **The claim outliving the route.** Admin publishes the file into the
@@ -7441,7 +7441,7 @@ export function assistantTransport(id: string): Transport {
   # answered, a row that picked one of the other two would be answering for the
   # desk. This makes it claim the default where nothing has said so.
   mutate web "the Project row's summary composed from something the decoder did not say" "$SSUM" \
-    '    if (chassis === undefined) return NOT_SAID' \
+    '    if (chassis === undefined) return msg(NOT_SAID)' \
     '    if (chassis === undefined) return IS_DEFAULT'
   mutate web "the Inspector claim is never released, so Admin's pane outlives it" "$ISLOT" \
     '    if (!publishing) return
@@ -7560,12 +7560,12 @@ export function assistantTransport(id: string): Transport {
     '      whenSessionEnds(() => {
         if (!hadSession.current) return
         discardNow.current()
-        setLost(msg(SLOT_LOST))
+        setLost(SLOT_LOST)
       }),' \
     '      whenSessionEnds(() => {
         if (true) return
         discardNow.current()
-        setLost(msg(SLOT_LOST))
+        setLost(SLOT_LOST)
       }),'
   # **`unauthorized` and no other code.** A 307 into the exchange answers a
   # marked `no-handoff`, and a classifier that read the mark alone turned that

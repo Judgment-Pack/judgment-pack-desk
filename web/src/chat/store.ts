@@ -1,3 +1,4 @@
+import { sourceMessage } from '../i18n/source'
 import { answer, deskFetch } from '../files/client'
 import { checkpoint, decodeCheckpoint, type Checkpoint } from './checkpoint'
 import type { ResearchRunBinding } from '../research/useResearchRun'
@@ -25,19 +26,19 @@ const persistence: ChatPersistence = {
 }
 function decode(value: unknown): Chat[] {
   const doc = value as Partial<Document> | null
-  if (doc?.version !== 1 || !Array.isArray(doc.chats) || doc.chats.length > 256) throw new Error('Unsupported chat history. The saved file has not been changed.')
+  if (doc?.version !== 1 || !Array.isArray(doc.chats) || doc.chats.length > 256) throw new Error(sourceMessage("Unsupported chat history. The saved file has not been changed."))
   const ids = new Set<string>()
   return doc.chats.map(value => {
-    if (!value || typeof value !== 'object') throw new Error('Invalid saved chat')
+    if (!value || typeof value !== 'object') throw new Error(sourceMessage("Invalid saved chat"))
     const chat = value as Chat
     if (typeof chat.id !== 'string' || !/^[a-zA-Z0-9-]{1,80}$/.test(chat.id) || ids.has(chat.id)
       || typeof chat.title !== 'string' || typeof chat.composer !== 'string' || typeof chat.model !== 'string'
       || typeof chat.pinned !== 'boolean' || typeof chat.archived !== 'boolean'
-      || typeof chat.updatedAt !== 'string' || !Number.isFinite(Date.parse(chat.updatedAt)) || !['draft', 'research'].includes(chat.mode) || !['chat', 'draft'].includes(chat.view)) throw new Error('Invalid saved chat. History has not been changed.')
+      || typeof chat.updatedAt !== 'string' || !Number.isFinite(Date.parse(chat.updatedAt)) || !['draft', 'research'].includes(chat.mode) || !['chat', 'draft'].includes(chat.view)) throw new Error(sourceMessage("Invalid saved chat. History has not been changed."))
     ids.add(chat.id)
     if (chat.attachments !== undefined && (!Array.isArray(chat.attachments) || chat.attachments.length > 4
-      || chat.attachments.some(file => !file || typeof file.id !== 'string' || typeof file.name !== 'string' || typeof file.text !== 'string' || file.text.length > 200_000))) throw new Error('Invalid saved attachments')
-    if (chat.pack && (typeof chat.pack.id !== 'string' || typeof chat.pack.path !== 'string' || typeof chat.pack.digest !== 'string')) throw new Error('Invalid saved pack context')
+      || chat.attachments.some(file => !file || typeof file.id !== 'string' || typeof file.name !== 'string' || typeof file.text !== 'string' || file.text.length > 200_000))) throw new Error(sourceMessage("Invalid saved attachments"))
+    if (chat.pack && (typeof chat.pack.id !== 'string' || typeof chat.pack.path !== 'string' || typeof chat.pack.digest !== 'string')) throw new Error(sourceMessage("Invalid saved pack context"))
     return { id: chat.id, title: chat.title, composer: chat.composer, model: chat.model, pinned: chat.pinned, archived: chat.archived,
       updatedAt: chat.updatedAt, mode: chat.mode, view: chat.view, attachments: chat.attachments ?? [], adversarialReview: chat.adversarialReview === true, titleEdited: chat.titleEdited === true, ...(chat.pack ? { pack: chat.pack } : {}),
       ...(chat.checkpoint ? { checkpoint: decodeCheckpoint(chat.checkpoint) } : {}),
@@ -72,7 +73,7 @@ export class ChatStore {
     this.loading = (async () => {
       try {
         const reply = await this.io.read()
-        if (reply.project !== this.project) throw new Error('Chat history belongs to a different project')
+        if (reply.project !== this.project) throw new Error(sourceMessage("Chat history belongs to a different project"))
         const chats = decode(reply.content)
         this.digest = reply.sha256
         this.set({ chats, ready: true, error: '' })
@@ -90,14 +91,14 @@ export class ChatStore {
     this.set({ saving: true })
     try {
       const reply = await this.io.write(document, this.digest)
-      if (reply.project !== this.project) throw new Error('Chat save answered for a different project')
+      if (reply.project !== this.project) throw new Error(sourceMessage("Chat save answered for a different project"))
       this.digest = reply.sha256
       this.savedRevision = revision
       this.set({ saving: false, dirty: this.revision !== revision, error: '' })
       if (this.revision !== revision) this.timer = setTimeout(() => { void this.flush() }, 600)
       return true
     } catch (error) {
-      this.set({ saving: false, error: `Chat changes are not saved: ${(error as Error).message}` })
+      this.set({ saving: false, error: sourceMessage("Chat changes are not saved: {{value0}}", { value0: (error as Error).message }) })
       return false
     }
   }
@@ -112,7 +113,7 @@ export class ChatStore {
   }
   /** An unsubmitted composer is not a conversation or a private-history write. */
   startChat(pack?: Chat['pack'], mode?: Chat['mode'], fresh = false): Chat {
-    if (!this.state.ready) throw new Error('Chat history is still loading')
+    if (!this.state.ready) throw new Error(sourceMessage("Chat history is still loading"))
     const previous = this.state.drafts.find(chat => chat.pack?.id === pack?.id && (mode === undefined || chat.mode === mode))
     if (previous && !fresh) { this.activate(previous.id); return previous }
     if (previous) this.remove(previous.id)
@@ -135,8 +136,8 @@ export class ChatStore {
     return chat
   }
   create(pack?: Chat['pack'], mode: Chat['mode'] = 'draft'): Chat {
-    if (!this.state.ready) throw new Error('Chat history is still loading')
-    if (this.state.chats.length >= 256) throw new Error('Chat history is full. Export and delete an older chat first.')
+    if (!this.state.ready) throw new Error(sourceMessage("Chat history is still loading"))
+    if (this.state.chats.length >= 256) throw new Error(sourceMessage("Chat history is full. Export and delete an older chat first."))
     const chat: Chat = { id: crypto.randomUUID(), title: 'New chat', pinned: false, archived: false, updatedAt: new Date().toISOString(), composer: '', model: '', mode, view: 'chat', ...(pack ? { pack } : {}) }
     this.changed([chat, ...this.state.chats]); this.activate(chat.id)
     return chat
@@ -183,14 +184,14 @@ export class ChatStore {
     if (!binding || (this.running && this.running !== id) || (needsModel && binding.blocked) || binding.run?.running) return false
     const draft = this.state.drafts.find(chat => chat.id === id)
     if (draft && needsModel) {
-      if (!this.canCreate) { this.problem('Chat history is full. Delete an older chat before sending.'); return false }
+      if (!this.canCreate) { this.problem(sourceMessage('Chat history is full. Delete an older chat before sending.')); return false }
       this.changed([draft, ...this.state.chats], { drafts: this.state.drafts.filter(chat => chat.id !== id) })
       if (!draft.pack) this.saveHomeDraft()
     }
     action(binding); return true
   }
   remove(id: string) {
-    if (this.state.bindings.get(id)?.run?.running) throw new Error('Stop the running chat before deleting it')
+    if (this.state.bindings.get(id)?.run?.running) throw new Error(sourceMessage("Stop the running chat before deleting it"))
     const bindings = new Map(this.state.bindings); bindings.delete(id)
     this.observed.delete(id)
     const draft = this.state.drafts.find(chat => chat.id === id)

@@ -60,14 +60,14 @@ export function AuthorView() {
   // Two guards, because they cover two different exits and neither covers the
   // other — both now in `shell/useDirtyGuard.ts`, so the pack editor holds the
   // same pair rather than a second spelling of it.
-  useDirtyGuard(dirty, 'This file has unsaved changes that will be lost. Leave anyway?')
+  useDirtyGuard(dirty, msg('This file has unsaved changes that will be lost. Leave anyway?'))
 
   const choose = (path: string) => {
     if (path === selected) return
     if (
       dirty &&
       !window.confirm(
-        `${selected} has unsaved changes that will be lost. Open ${path} anyway?`
+        msg('{{current}} has unsaved changes that will be lost. Open {{next}} anyway?', { current: selected, next: path })
       )
     ) {
       return

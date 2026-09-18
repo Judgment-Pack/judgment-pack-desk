@@ -42,8 +42,8 @@ export function StaleWriteAlert({
   useLocale()
   return (
     <AlertPanel
-      heading="This file changed since you opened it. Nothing was written."
-      detailLabel="digests"
+      heading={msg("This file changed since you opened it. Nothing was written.")}
+      detailLabel={msg("digests")}
       detail={
         <>
           <span><Message text={"this edit started from<0/><1/>"} slots={[' ', <Digest value={stale.expectedSha256} />]} /></span>

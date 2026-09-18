@@ -43,7 +43,7 @@ export function ExceptionCard({
               index={order.index}
               count={order.count}
               move={order.move}
-              what="exception"
+              what={msg("exception")}
             />
           )}
         </p>

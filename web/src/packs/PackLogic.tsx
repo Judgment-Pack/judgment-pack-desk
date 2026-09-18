@@ -77,8 +77,8 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
     return { id: node.id, title: node.title, column: node.column,
       selected: node.items.some(i => i.pointer === current?.item.pointer),
       matched: searching && node.items.some(i => matchPointers.has(i.pointer)),
-      observation: observed ? `Recorded condition${aggregate ? 's' : ''}: ${observed}` : undefined,
-      action: aggregate ? 'Expand rules' : 'View details',
+      observation: observed ? aggregate ? msg('Recorded conditions: {{observed}}', { observed }) : msg('Recorded condition: {{observed}}', { observed }) : undefined,
+      action: aggregate ? msg('Expand rules') : msg('View details'),
       content: aggregate ? <div className={styles.groupPreview}>
         <ul>{node.items.slice(0, 3).map(i => <li key={i.pointer}>{i.label}</li>)}</ul>
         {node.items.length > 3 && <p><Message text={"+ <0/> more rules"} slots={[node.items.length - 3]} /></p>}
@@ -127,7 +127,7 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
   return <section ref={root} className={styles.logic} aria-label={msg("Pack logic")}>
     <span ref={setRuler} className={styles.ruler} aria-hidden="true" />
     <div className={styles.toolbar}>
-      <SegmentedControl label={msg("Logic view")} value={mode} onValueChange={v => onMode(v as LogicMode)} segments={[{ value: 'list', label: "List" }, { value: 'map', label: "Map" }]} />
+      <SegmentedControl label={msg("Logic view")} value={mode} onValueChange={v => onMode(v as LogicMode)} segments={[{ value: 'list', label: msg("List") }, { value: 'map', label: msg("Map") }]} />
       <form className={styles.search} onSubmit={e => { e.preventDefault(); requestMatch() }}>
         <Input type="search" aria-label={msg("Find pack item")} value={query} onChange={e => onQuery(e.target.value)} placeholder={mode === 'map' ? msg("Find in map…") : msg("Filter items…")} />
       </form>

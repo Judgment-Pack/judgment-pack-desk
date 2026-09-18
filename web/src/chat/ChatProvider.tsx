@@ -1,3 +1,4 @@
+import { sourceMessage } from '../i18n/source'
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useFileListing } from '../files/queries'
 import { useResearchRun } from '../research/useResearchRun'
@@ -39,8 +40,8 @@ function ChatWorker({ store, chat }: { store: ChatStore; chat: Chat }) {
     restoring.current = true
     try {
       restoreLedger(binding.ledger, initial.current.sources)
-      void binding.run.restore(initial.current.state).then(() => setRestored(true), error => store.problem(`Chat could not be restored: ${error.message}`))
-    } catch (error) { store.problem(`Chat could not be restored: ${(error as Error).message}`) }
+      void binding.run.restore(initial.current.state).then(() => setRestored(true), error => store.problem(sourceMessage('Chat could not be restored: {{reason}}', { reason: error.message })))
+    } catch (error) { store.problem(sourceMessage('Chat could not be restored: {{reason}}', { reason: (error as Error).message })) }
   }, [binding.run, binding.ledger, store])
   useEffect(() => {
     if (restored) store.report(chat.id, binding)

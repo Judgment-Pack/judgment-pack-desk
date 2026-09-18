@@ -29,9 +29,9 @@ export function DraftPackEditor({ text, onChange, pending, hold }: {
   }}>
     <Tabs label={msg("Build your pack")} value={form ? tab : 'json'} onValueChange={setTab} tabs={[
       ...(form ? [
-        { value: 'rules', label: "Rules & outcomes", panel: <PackDocumentView key="rules" document={doc as unknown as PackDocument} active={null} members={PACK_GROUPS.rules} outline={false} /> },
-        { value: 'evidence', label: "Evidence & sources", panel: <PackDocumentView key="evidence" document={doc as unknown as PackDocument} active={null} members={PACK_GROUPS.evidence} outline={false} /> },
-        { value: 'document', label: "Full document", panel: <PackDocumentView key="document" document={doc as unknown as PackDocument} active={null} /> }
+        { value: 'rules', label: msg("Rules & outcomes"), panel: <PackDocumentView key="rules" document={doc as unknown as PackDocument} active={null} members={PACK_GROUPS.rules} outline={false} /> },
+        { value: 'evidence', label: msg("Evidence & sources"), panel: <PackDocumentView key="evidence" document={doc as unknown as PackDocument} active={null} members={PACK_GROUPS.evidence} outline={false} /> },
+        { value: 'document', label: msg("Full document"), panel: <PackDocumentView key="document" document={doc as unknown as PackDocument} active={null} /> }
       ] : []),
       { value: 'json', label: "JSON", panel: <>
         {!form && <p role="status"><Message text={"The draft needs JSON editing before it can be shown as a form. <0/>"} slots={[read.index.parseError]} /></p>}

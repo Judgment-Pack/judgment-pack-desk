@@ -11,7 +11,7 @@ export function ConfigureAssistant({ open, onOpenChange, openerRef }: { open: bo
   const slot = useAssistantSlot()
   const [dirty, setDirty] = useState(false)
   const close = () => {
-    if (dirty && !window.confirm('Close Assistant settings and discard the unsaved changes?')) return false
+    if (dirty && !window.confirm(msg('Close Assistant settings and discard the unsaved changes?'))) return false
     setDirty(false); onOpenChange(false); return true
   }
   return <Dialog open={open} onOpenChange={next => { if (next) onOpenChange(true); else close() }} title={msg("Configure Assistant")} description={msg("Connect a provider and choose a model. Your API key stays on this computer.")} openerRef={openerRef}>

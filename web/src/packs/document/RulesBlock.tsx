@@ -32,7 +32,7 @@ export function RulesBlock({ rules, at }: { rules: Rule[]; at: string }) {
               <MisshapenMember
                 pointer={`${at}/${index}`}
                 label={msg("Rule {{value0}}", { value0: index + 1 })}
-                expected="an object"
+                expected={msg("an object")}
                 value={rule}
               />
             </li>

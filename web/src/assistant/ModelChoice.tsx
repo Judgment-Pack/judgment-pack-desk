@@ -1,5 +1,5 @@
 import { Message } from '../i18n/Message'
-import { msg, useLocale } from '../i18n'
+import { msg, useLocale, systemMessage } from '../i18n'
 /**
  * **Models**: which of this endpoint's models this desk may run, and which one
  * a run opens on.
@@ -140,7 +140,7 @@ export function ModelChoice({
       {/* **Add sits with the field, above the hint**, because it is what the
           field is for: a control a line below its own input, under a sentence
           about the input, reads as a control about the sentence. */}
-      <Field label={msg("Other model… (type an id)")} hint={msg(TYPED)} error={adding}>
+      <Field label={msg("Other model… (type an id)")} hint={msg(TYPED)} error={adding === undefined ? undefined : systemMessage(adding)}>
         {(wiring) => (
           <span className="model-add">
             <Input

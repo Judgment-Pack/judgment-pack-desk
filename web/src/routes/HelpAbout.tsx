@@ -73,13 +73,13 @@ export function HelpAbout() {
         <ul id="shortcuts">
           {SHORTCUTS.map((shortcut) => (
             <li key={shortcut.keys}>
-              <code>{shortcut.keys}</code> — {shortcut.label}
+              <code>{shortcut.keys}</code> — {msg(shortcut.label)}
             </li>
           ))}
         </ul>
         <p className="quiet"><Message text={"<0/> is Ctrl or Cmd. On macOS the browser claims Cmd+Alt+I and Cmd+Alt+J for its own developer tools before the page sees them, and Cmd+B is Firefox's bookmarks sidebar — use the Ctrl spelling there, or the buttons. Every shortcut has a visible button, so a chord the browser eats costs a click and not a feature. Shortcuts are suppressed while you are typing in a field or in the authoring editor."} slots={[<code>Mod</code>]} /></p>
         <p className="quiet"><Message text={"Below 900px the rail is an overlay drawer and draws no collapse toggle of its own, so its button moves to the header: <0/>, at the left, next to the organization mark. A control inside a closed drawer opens nothing."} slots={[<strong>{msg("Project navigation")}</strong>]} /></p>
-        <p className="quiet"><Message text={"A pane is not a dialog, so <0/> does not close one — with one exception, stated rather than hidden: below 1100px the Inspector is rendered as a drawer, and a drawer <1/> a dialog, so Escape closes it there."} slots={[<code>Escape</code>, <em>{msg("is")}</em>]} /></p>
+        <p className="quiet"><Message text={"<0/> closes the Inspector when it appears as a drawer below 1100px. It does not close a regular pane."} slots={[<code>Escape</code>]} /></p>
       </Section>
 
       <Section title={msg("Authoring method")}>
@@ -104,7 +104,7 @@ export function HelpAbout() {
       </Section>
 
       <Section title={msg("Security")}>
-        <p className="quiet" id="security">{SESSION_SENTENCE}</p>
+        <p className="quiet" id="security">{msg(SESSION_SENTENCE)}</p>
         <p className="quiet">{msg("The desk is authorized by three things and not by who you are: the loopback bind, that session, and an origin check on every relay and file-API request. A configured identity provider changes what the header displays and nothing about who may reach the desk.")}</p>
       </Section>
 

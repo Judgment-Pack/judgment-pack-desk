@@ -1,5 +1,5 @@
 import { Message } from '../i18n/Message'
-import { msg, useLocale } from '../i18n'
+import { systemMessage, msg, useLocale } from '../i18n'
 import { edgeIndices, nodesInWalkOrder, parseDisposition, parseProbe } from '../mcp/canonical'
 import { edgeCarries, type GraphWalkShape, type WalkEdge } from '../mcp/graphDocument'
 import type { GraphSuiteEntry, GraphTestRow, MatrixProbe } from '../mcp/types'
@@ -133,9 +133,7 @@ function DocumentWalk({
         style={{ maxWidth: Math.min(width, 760) }}
         role="img"
         aria-label={
-          `The ${shape.nodes.length} ${shape.nodes.length === 1 ? 'node' : 'nodes'} and ` +
-          `${shape.edges.length} ${shape.edges.length === 1 ? 'edge' : 'edges'} the served graph ` +
-          `document declares for graph ${entry.id}, drawn as a layered walk`
+          msg('Graph {{graph}}: the served graph document declares {{nodes}} nodes and {{edges}} edges, drawn as a layered walk.', { graph: entry.id, nodes: shape.nodes.length, edges: shape.edges.length })
         }
       >
         <defs>
@@ -167,7 +165,7 @@ function DocumentWalk({
           const y2 = to.y
           const midX = (x1 + x2) / 2
           const midY = (y1 + y2) / 2
-          const carries = edgeCarries(edge)
+          const carries = edgeCarries(edge, msg)
           return (
             <g key={edge.index} className="diagram-edge">
               <title>{msg("edge {{value0}}: {{value1}} → {{value2}} carries {{value3}}", { value0: edge.index, value1: edge.from, value2: edge.to, value3: carries })}</title>
@@ -223,10 +221,10 @@ function DocumentWalk({
               className={`diagram-node diagram-node-${status}${node.isResult ? ' diagram-node-result' : ''}`}
             >
               <title>
-                {`${node.id}${node.pack ? ` · pack ${node.pack}` : ''} · ` +
+                {`${node.id}${node.pack ? ` · ${msg('pack {{value0}}', { value0: node.pack })}` : ''} · ` +
                   (result
                     ? `${result.status} · ${describe(disposition)}`
-                    : 'the selected row reports no comparison for this node')}
+                    : msg('the selected row reports no comparison for this node'))}
               </title>
               <rect
                 className="diagram-box"
@@ -258,8 +256,7 @@ function DocumentWalk({
               {node.inCoverage ? (
                 gaps > 0 && (
                   <text className="diagram-node-coverage" x={point.x + 12} y={point.y + 77}>
-                    {gaps} unwitnessed
-                  </text>
+                    {msg("{{count}} unwitnessed", { count: gaps })}</text>
                 )
               ) : (
                 <text className="diagram-node-coverage" x={point.x + 12} y={point.y + 77}>
@@ -300,10 +297,7 @@ function DocumentWalk({
           node whose probes the report omitted look identical from here, so no
           cause is given for what is only an absence. */}
       {shape.nodes.some((node) => !node.inCoverage) && (
-        <p className="note note-warn"><Message text={"<0/><1/><2/> declared by the document and named by no probe in the coverage report. It is drawn because the document declares it, and nothing is claimed here about why coverage names no probe for it or about what its rows witness."} slots={[shape.nodes
-            .filter((node) => !node.inCoverage)
-            .map((node) => node.id)
-            .join(', '), ' ', shape.nodes.filter((node) => !node.inCoverage).length === 1 ? msg("is") : msg("are")]} /></p>
+        <p className="note note-warn"><Message text={"Declared by the document and named by no probe in the coverage report: <0/>. The diagram shows the declaration only; no cause or coverage result is inferred."} slots={[shape.nodes.filter((node) => !node.inCoverage).map((node) => node.id).join(', ')]} /></p>
       )}
 
       {shape.resultDangling && (
@@ -343,7 +337,7 @@ function EdgeList({
             <code>
               {edge.from} → {edge.to}
             </code>
-            <span className="edge-carries">{edgeCarries(edge)}</span>
+            <span className="edge-carries">{edgeCarries(edge, msg)}</span>
             {!edge.drawable && (
               <span className="probe-status probe-status-missing">{msg("names a node this document does not declare — not drawn")}</span>
             )}
@@ -398,7 +392,7 @@ function CoverageWalk({
   if (nodes.length === 0) {
     return (
       <>
-        {fallbackReason && <p className="note note-warn">{fallbackReason}</p>}
+        {fallbackReason && <p className="note note-warn">{systemMessage(fallbackReason)}</p>}
         <p className="empty">{msg("The coverage report names no node, so this run reports nothing about the graph's shape. A graph whose rows did not load reports its failure and no structure.")}</p>
       </>
     )
@@ -410,7 +404,7 @@ function CoverageWalk({
 
   return (
     <div className="diagram-wrap">
-      {fallbackReason && <p className="note note-warn">{fallbackReason}</p>}
+      {fallbackReason && <p className="note note-warn">{systemMessage(fallbackReason)}</p>}
       <svg
         className="diagram"
         viewBox={`0 0 ${width} ${height}`}
@@ -457,8 +451,7 @@ function CoverageWalk({
               </text>
               {gaps > 0 && (
                 <text className="diagram-node-gaps" x={AXIS_NODE_X + AXIS_NODE_WIDTH - 14} y={y + 44}>
-                  {gaps} unwitnessed
-                </text>
+                  {msg("{{count}} unwitnessed", { count: gaps })}</text>
               )}
             </g>
           )
@@ -503,7 +496,7 @@ function CoverageWalk({
           <ul className="edge-slots">
             {edges.map((index) => (
               <li key={index} className="edge-slot">
-                <code>edge {index}</code>
+                <code>{msg("Edge {{index}}", { index })}</code>
                 {['resolved', 'unresolved'].map((branch) => {
                   const probe = (entry.coverage ?? []).find(
                     (candidate) => candidate.probe === `edge:${index}:${branch}`

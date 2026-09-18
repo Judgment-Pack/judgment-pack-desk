@@ -539,7 +539,7 @@ describe('the section before a run', () => {
     serve()
     draw({ endpoint: ENDPOINT, engine: 'vercel', thinking: 'ultra' })
     await openIt()
-    expect(await screen.findByText('vercel · a-model · thinking ultra')).toBeTruthy()
+    expect(await screen.findByText('vercel · a-model · Thinking: ultra')).toBeTruthy()
   })
 
   it('offers the enabled set here too, and names what it would run', async () => {
@@ -555,7 +555,7 @@ describe('the section before a run', () => {
     const picker = await screen.findByRole('combobox', { name: 'Model' })
     fireEvent.click(picker)
     fireEvent.click(await screen.findByRole('option', { name: 'a-second-model' }))
-    expect(await screen.findByText('vercel · a-second-model · thinking off')).toBeTruthy()
+    expect(await screen.findByText('vercel · a-second-model · Thinking: off')).toBeTruthy()
   })
 
   it('offers no picker where nothing is enabled', async () => {
@@ -592,9 +592,9 @@ describe('one whole run, in the dialog', () => {
     const proposal = screen.getByRole('region', { name: 'The proposal' })
     expect(proposal.textContent).toContain(scenario.documents.DRAFT_V2.title)
     expect(proposal.textContent).toContain(scenario.documents.DRAFT_V2.id)
-    expect(proposal.textContent).toContain(`${scenario.documents.DRAFT_V2.rules.length} rules`)
+    expect(proposal.textContent).toContain(`Rules: ${scenario.documents.DRAFT_V2.rules.length}`)
     expect(proposal.textContent).toContain(
-      `${scenario.documents.DRAFT_V2.outcomes.length} outcomes`
+      `Outcomes: ${scenario.documents.DRAFT_V2.outcomes.length}`
     )
     for (const unknown of scenario.unknowns) expect(screen.getByText(unknown)).toBeTruthy()
     const validate = screen.getByLabelText('validate, as the runtime wrote it') as HTMLTextAreaElement

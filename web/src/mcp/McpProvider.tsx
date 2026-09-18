@@ -1,3 +1,4 @@
+import { SourceError, sourceMessage } from '../i18n/source'
 import { msg } from '../i18n'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import type { Notification } from '@modelcontextprotocol/sdk/types.js'
@@ -314,7 +315,7 @@ export function McpProvider({ children }: { children: ReactNode }) {
       client.onclose = () => {
         if (disposed || live !== client) return
         live = null
-        scheduleRetry(new Error(msg("the desk connection closed — the chassis may have restarted")))
+        scheduleRetry(new SourceError(sourceMessage("the desk connection closed — the chassis may have restarted")))
       }
 
       const reconnecting = attempt > 0

@@ -160,7 +160,7 @@ export function EnumField({
           value={value}
           placeholder={msg("not declared")}
           options={[
-            ...(optional === true ? [{ value: NOT_DECLARED, label: "not declared" }] : []),
+            ...(optional === true ? [{ value: NOT_DECLARED, label: msg("not declared") }] : []),
             ...declared.map((word) => ({ value: word, label: word })),
             ...options.map((word) => ({ value: word, label: valueLabel(pointer.split('/').at(-1) ?? '', word) }))
           ]}
@@ -207,9 +207,9 @@ export function IdRefField({
           value={value}
           placeholder={msg("not declared")}
           options={[
-            ...(optional === true ? [{ value: NOT_DECLARED, label: "not declared" }] : []),
+            ...(optional === true ? [{ value: NOT_DECLARED, label: msg("not declared") }] : []),
             ...ids.map((id) => ({ value: id, label: id })),
-            ...dangling.map((id) => ({ value: id, label: `${id} — not declared here` }))
+            ...dangling.map((id) => ({ value: id, label: msg('{{id}} — not declared here', { id }) }))
           ]}
           onValueChange={(next) =>
             write((current) => setEnum(current, pointer, next === NOT_DECLARED ? '' : next))

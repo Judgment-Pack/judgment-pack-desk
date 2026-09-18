@@ -1,3 +1,4 @@
+import { sourceMessage } from '../i18n/source'
 /**
  * The one save path the project-file cards on Admin write through.
  *
@@ -266,7 +267,7 @@ function keyPathOf(pointer: string): string {
 }
 
 /** What one card's save says when it lands. One sentence, from a closed set. */
-export const SAVED = 'Saved. Every other member of the file is exactly as it was.'
+export const SAVED = sourceMessage("Saved. Every other member of the file is exactly as it was.")
 
 /**
  * The sentence a card refuses to write on, where this page never read the file.
@@ -276,7 +277,7 @@ export const SAVED = 'Saved. Every other member of the file is exactly as it was
  * same words for the same reason, and neither guesses.
  */
 export const NOT_READ =
-  'This desk has not read this project’s configuration file, and a write states the bytes it replaces.'
+  sourceMessage("This desk has not read this project’s configuration file, and a write states the bytes it replaces.")
 
 /**
  * The sentence a card says where the value it shows comes from the other file.
@@ -288,7 +289,7 @@ export const NOT_READ =
  * than left as a control that does nothing.
  */
 export const FROM_THE_DESK_FILE =
-  'This value comes from the desk-level file, which this page does not write.'
+  sourceMessage("This value comes from the desk-level file, which this page does not write.")
 
 /**
  * The sentence a card says over a file this desk would not read back.
@@ -297,7 +298,7 @@ export const FROM_THE_DESK_FILE =
  * on the form are nobody's configuration; composing a write over one would be
  * this page saving a file it never honoured.
  */
-export const REFUSED = 'This file was refused, so these values are the built-in ones.'
+export const REFUSED = sourceMessage("This file was refused, so these values are the built-in ones.")
 
 export interface ProjectFileSave {
   /** True where this page has the bytes and the digest a write states. */

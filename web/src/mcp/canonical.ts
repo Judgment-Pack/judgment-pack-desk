@@ -1,3 +1,4 @@
+import { sourceMessage } from '../i18n/source'
 /**
  * Reading the two encodings the matrix surfaces report results in.
  *
@@ -46,9 +47,9 @@ export const HANDOFF_TARGET_UNAVAILABLE = 'unavailable'
  * last two are distinct and are never collapsed: "no target" is an answer, and
  * "unavailable" is the absence of one.
  */
-export function describeHandoffTarget(member: string): string {
-  if (member === NO_HANDOFF_TARGET) return 'no target'
-  if (member === HANDOFF_TARGET_UNAVAILABLE) return 'unavailable'
+export function describeHandoffTarget(member: string, message = sourceMessage): string {
+  if (member === NO_HANDOFF_TARGET) return message(sourceMessage('no target'))
+  if (member === HANDOFF_TARGET_UNAVAILABLE) return message(sourceMessage('unavailable'))
   const parsed = parseDisposition(member) as { kind?: string; name?: string } | undefined
   if (parsed?.name) return parsed.kind ? `${parsed.name} (${parsed.kind})` : parsed.name
   // A rendering this sheet cannot decompose is still the runtime's own text,

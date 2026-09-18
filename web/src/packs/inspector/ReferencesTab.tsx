@@ -1,5 +1,5 @@
 import { Message } from '../../i18n/Message'
-import { msg, useLocale } from '../../i18n'
+import { msg, systemMessage, useLocale } from '../../i18n'
 /**
  * What the selected member refers to, and what refers back to it.
  *
@@ -27,7 +27,7 @@ export function ReferencesTab({
     <ul className={styles.references}>
       {references.map((reference, index) => (
         <li key={`${reference.relation}-${reference.id}-${index}`} className={styles.reference}>
-          <span className={styles.relation}>{reference.relation}</span>
+          <span className={styles.relation}>{systemMessage(reference.relation)}</span>
           <span aria-hidden="true"> </span>
           {reference.candidates !== undefined ? (
             // **Every candidate, and no choice between them.** A last-wins map
@@ -53,7 +53,7 @@ export function ReferencesTab({
           ) : reference.target === undefined ? (
             <>
               <code className={styles.id}>{reference.id}</code>
-              <span className={styles.unresolved}> {reference.unresolved}</span>
+              <span className={styles.unresolved}> {reference.unresolved && systemMessage(reference.unresolved)}</span>
             </>
           ) : (
             <Link

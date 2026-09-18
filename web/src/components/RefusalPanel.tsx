@@ -27,7 +27,7 @@ import { ToolRefusal } from '../mcp/refusal'
 
 export function RefusalPanel({
   error,
-  title = 'The runtime refused this evaluation'
+  title = msg('The runtime refused this evaluation')
 }: {
   error: Error
   /** What the box calls it, where the surface's words differ. */

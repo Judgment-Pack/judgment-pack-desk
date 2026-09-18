@@ -35,7 +35,7 @@ export function PackNavigation({ packId, current }: { packId: string; current: P
   const link = usePackLink()
   const active = current === 'rules' || current === 'evidence' ? 'logic' : current
   return <nav className={styles.navigation} aria-label={msg("Pack sections")}>
-    {([['overview', 'Overview'], ['logic', 'Logic'], ['test', 'Tests']] as const).map(([value, label]) =>
+    {([['overview', msg('Overview')], ['logic', msg('Logic')], ['test', msg('Tests')]] as const).map(([value, label]) =>
       <Link key={value} to={link(value === 'test' ? `${base}/evaluate` : `${base}?view=${value}`)}
         aria-current={active === value ? 'page' : undefined}>{label}</Link>)}
     {current === 'document' && <Link to={link(`${base}?view=document`)} aria-current="page">{msg("Full document")}</Link>}

@@ -66,7 +66,7 @@ export function ResearchAuthoringPage() {
   const blocker = useBlocker(({ currentLocation, nextLocation }) => running && currentLocation.pathname !== nextLocation.pathname)
   useEffect(() => {
     if (blocker.state !== 'blocked') return
-    if (window.confirm('Leave and stop the research run? The draft so far will be discarded.')) blocker.proceed()
+    if (window.confirm(msg('Leave and stop the research run? The draft so far will be discarded.'))) blocker.proceed()
     else blocker.reset()
   }, [blocker])
 
@@ -102,8 +102,8 @@ export function ResearchAuthoringPage() {
     <div data-layout="page">
       <PageHeader
         title={msg("Packs")}
-        context="Research and draft"
-        meta={state.phase === 'idle' ? (model ? `model ${model}` : undefined) : statusLine(state)}
+        context={msg("Research and draft")}
+        meta={state.phase === 'idle' ? (model ? msg("model {{value0}}", { value0: model }) : undefined) : statusLine(state)}
         actions={
           state.phase === 'idle' ? undefined : running ? (
             <Button onClick={() => run?.stop()}>{msg("Stop")}</Button>
@@ -149,8 +149,8 @@ export function ResearchAuthoringPage() {
                   value={shown}
                   onValueChange={(next) => setShown(next as 'conversation' | 'draft')}
                   segments={[
-                    { value: 'conversation', label: "Conversation" },
-                    { value: 'draft', label: "Draft" }
+                    { value: 'conversation', label: msg("Conversation") },
+                    { value: 'draft', label: msg("Draft") }
                   ]}
                 />
               </div>

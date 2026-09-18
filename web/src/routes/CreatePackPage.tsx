@@ -1,3 +1,4 @@
+import { msg } from '../i18n'
 import { useEffect, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { useBlocker, useNavigate } from 'react-router-dom'
@@ -12,7 +13,7 @@ export function CreatePackPage() {
   useEffect(() => {
     if (blocker.state !== 'blocked') return
     if (writing) blocker.reset()
-    else if (window.confirm('Leave without creating this pack? Your draft will be discarded.')) blocker.proceed()
+    else if (window.confirm(msg('Leave without creating this pack? Your draft will be discarded.'))) blocker.proceed()
     else blocker.reset()
   }, [blocker, writing])
   useEffect(() => {

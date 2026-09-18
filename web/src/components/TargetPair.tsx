@@ -44,7 +44,7 @@ export function TargetSide({ label, member }: { label: string; member: string | 
     <div className="row-side">
       <span className="row-side-label">{label}</span>
       <p className="target-name">
-        {member === undefined ? msg("(not reported)") : describeHandoffTarget(member)}
+        {member === undefined ? msg("(not reported)") : describeHandoffTarget(member, msg)}
       </p>
     </div>
   )
@@ -92,8 +92,8 @@ export function handoffTargetPair(
 export function TargetPair({
   of,
   /** What the two sides are called, so a node's pair reads as the node's. */
-  expectedLabel = 'expected target',
-  actualLabel = 'actual target'
+  expectedLabel = msg('expected target'),
+  actualLabel = msg('actual target')
 }: {
   of: HandoffTargetCarrier
   expectedLabel?: string

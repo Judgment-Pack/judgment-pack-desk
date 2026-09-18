@@ -32,7 +32,7 @@ export function MetadataBlock({ metadata, at }: { metadata: PackMetadata; at: st
     return (
       <Block pointer={at}>
         <h2 className={styles.heading}>{msg("Metadata")}</h2>
-        <StringsField pointer={`${at}/authors`} label={msg("authors")} what="an author" />
+        <StringsField pointer={`${at}/authors`} label={msg("authors")} what={msg("an author")} />
         <StringField
           pointer={`${at}/createdAt`}
           label={msg("created")}
@@ -42,7 +42,7 @@ export function MetadataBlock({ metadata, at }: { metadata: PackMetadata; at: st
         <StringsField
           pointer={`${at}/requiredExtensions`}
           label={msg("required extensions")}
-          what="an extension name"
+          what={msg("an extension name")}
           hint={msg("namespaced extension names this pack cannot be evaluated without.")}
         />
         <Reviews reviews={reviews} metadata={metadata} at={at} />
@@ -139,7 +139,7 @@ function Reviews({
       <MisshapenMember
         pointer={`${at}/reviews`}
         label={msg("reviews")}
-        expected="a list"
+        expected={msg("a list")}
         value={metadata.reviews}
         compact
       />
@@ -156,7 +156,7 @@ function Reviews({
               <MisshapenMember
                 pointer={`${at}/reviews/${index}`}
                 label={msg("Review {{value0}}", { value0: index + 1 })}
-                expected="an object"
+                expected={msg("an object")}
                 value={review}
                 compact
               />

@@ -52,7 +52,7 @@ it('makes scope, evidence, conditions, outcomes and handoff readable without ins
   expect(within(rules).getByText('false')).toBeTruthy()
   expect(within(rules).getAllByText('"5000"')).toHaveLength(2)
   expect(screen.getByText('/case/type')).toBeTruthy()
-  expect(screen.getByText(/Required · attestation/)).toBeTruthy()
+  expect(screen.getByText(/Required · Attestation/)).toBeTruthy()
   expect(screen.getByText('No fallback outcome')).toBeTruthy()
   expect(screen.getByText('Compliance')).toBeTruthy()
   expect(screen.getByText('Conflicting outcomes')).toBeTruthy()

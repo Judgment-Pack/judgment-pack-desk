@@ -14,6 +14,7 @@
  * and returns before semantic — so the rows are the whole of what may be said
  * about which layers ran, and nothing may be inferred from `status` alone.
  */
+import { sourceMessage } from '../i18n/source'
 import type { Diagnostic, ValidationReport } from '../mcp/types'
 import { indexDocument, spanAt } from './documentText'
 import { parentPointers } from './pointers'
@@ -52,11 +53,11 @@ export interface LayerSentence {
  *   (`validator.go:268-285`) — an unsupported *required extension*. All three
  *   ran, and saying otherwise would describe the wrong refusal.
  */
-export function layersReached(report: ValidationReport | undefined): LayerSentence {
-  if (report === undefined) return { text: 'Not checked.' }
+export function layersReached(report: ValidationReport | undefined, msg = sourceMessage): LayerSentence {
+  if (report === undefined) return { text: msg('Not checked.') }
   const rows = report.layers ?? []
   const count = report.diagnostics?.length ?? 0
-  const diagnostics = `${count} diagnostic${count === 1 ? '' : 's'}`
+  const diagnostics = msg('{{count}} diagnostics', { count })
   const named = rows
     .map((row) => row.name)
     .filter((name): name is string => typeof name === 'string')
@@ -69,28 +70,28 @@ export function layersReached(report: ValidationReport | undefined): LayerSenten
   // is spelled with the status the payload gave it, in the payload's order,
   // and the status is quoted rather than translated — `valid`, `unsupported`,
   // or a word a later runtime uses that this desk has never seen.
-  const status = report.status ?? 'no status'
+  const status = report.status ?? msg('no status')
   const spelled = rows
-    .map((row) => `${row.name ?? 'an unnamed layer'} ${row.status ?? 'with no status'}`)
+    .map((row) => `${row.name ?? msg('an unnamed layer')} ${row.status ?? msg('with no status')}`)
     .join(', ')
   const missed = LADDER.filter((layer) => !named.includes(layer))
   const tail =
     missed.length === 0
       ? ''
-      : ` The ${listOf(missed)} layer${missed.length === 1 ? '' : 's'} did not run.`
+      : ` ${msg('The {{layers}} layers did not run.', { layers: listOf(missed, msg), count: missed.length })}`
   if (rows.length === 0) {
     return {
       status: report.status,
-      text: `${status} — ${diagnostics}. This answer lists no layer.`
+      text: msg('{{status}} — {{diagnostics}}. This answer lists no layer.', { status, diagnostics })
     }
   }
-  return { status: report.status, text: `${status} — ${spelled}, ${diagnostics}.${tail}` }
+  return { status: report.status, text: msg('{{status}} — {{layers}}, {{diagnostics}}.{{tail}}', { status, layers: spelled, diagnostics, tail }) }
 }
 
-function listOf(words: readonly string[]): string {
+function listOf(words: readonly string[], msg: typeof sourceMessage): string {
   if (words.length === 0) return ''
   if (words.length === 1) return words[0]!
-  return `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`
+  return msg('{{first}} and {{last}}', { first: words.slice(0, -1).join(', '), last: words[words.length - 1] })
 }
 
 /** One diagnostic, and the block it is printed on. */
@@ -164,9 +165,9 @@ export function isStale(checkedBytes: string | undefined, currentBytes: string |
  * about diagnostics the runtime did not send. The list was cut, and the tab
  * says that instead.
  */
-export function truncationNote(report: ValidationReport | undefined): string | undefined {
+export function truncationNote(report: ValidationReport | undefined, msg = sourceMessage): string | undefined {
   if (report?.diagnosticsTruncated !== true) return undefined
-  return `The runtime stopped at ${RUNTIME_DIAGNOSTIC_LIMIT} diagnostics, so this list is not all of them.`
+  return msg('The runtime stopped at {{count}} diagnostics, so this list is not all of them.', { count: RUNTIME_DIAGNOSTIC_LIMIT })
 }
 
 /**

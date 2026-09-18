@@ -22,16 +22,16 @@ export function DispositionDiff({
 }) {
   useLocale()
   const rows: DiffRow[] = [
-    scalarRow('Kind', previous.disposition?.kind, current.disposition?.kind),
-    scalarRow('Outcome id', previous.disposition?.outcomeId, current.disposition?.outcomeId),
-    setRow('Reasons', previous.disposition?.reasons, current.disposition?.reasons),
-    scalarRow('Handoff state', previous.disposition?.handoff?.state, current.disposition?.handoff?.state),
+    scalarRow(msg('Kind'), previous.disposition?.kind, current.disposition?.kind),
+    scalarRow(msg('Outcome id'), previous.disposition?.outcomeId, current.disposition?.outcomeId),
+    setRow(msg('Reasons'), previous.disposition?.reasons, current.disposition?.reasons),
+    scalarRow(msg('Handoff state'), previous.disposition?.handoff?.state, current.disposition?.handoff?.state),
     setRow(
-      'Handoff triggered by',
+      msg('Handoff triggered by'),
       previous.disposition?.handoff?.triggeredBy,
       current.disposition?.handoff?.triggeredBy
     ),
-    scalarRow('Handoff target', targetOf(previous), targetOf(current))
+    scalarRow(msg('Handoff target'), targetOf(previous), targetOf(current))
   ]
   const changed = rows.filter((row) => row.changed)
 

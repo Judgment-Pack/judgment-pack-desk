@@ -1,5 +1,5 @@
 import { Message } from '../i18n/Message'
-import { msg, useLocale } from '../i18n'
+import { systemMessage, msg, useLocale } from '../i18n'
 /**
  * The Assistant tab: type what the pack should decide, and watch the runtime
  * be consulted about it.
@@ -110,8 +110,8 @@ const EMPTY_MODELS: readonly string[] = []
 
 /** Why Fix is not offered, where it is not. */
 function fixWhy(diagnostics: number, advertised: boolean, listed: boolean): string | undefined {
-  if (!advertised && listed) return 'This runtime advertises no fix_pack prompt.'
-  if (diagnostics === 0) return 'The check on this page reports no diagnostic to fix.'
+  if (!advertised && listed) return msg('This runtime advertises no fix_pack prompt.')
+  if (diagnostics === 0) return msg('The check on this page reports no diagnostic to fix.')
   return undefined
 }
 
@@ -477,13 +477,13 @@ export function AssistantPane({
             naming the file's default beside a picker showing something else
             would be the page reporting a configuration rather than a run. */}
         {run.engineId} · {picked.model === '' ? msg("no model") : picked.model} ·{' '}
-        {thinkingLine(slot.thinking, stateFromEvents(slot.thinking, run.events))}
+        {thinkingLine(slot.thinking, stateFromEvents(slot.thinking, run.events), msg)}
       </p>
       <p className={styles.status}>
         <ModelPicker picked={picked} id="assistant-model" />
       </p>
       {ran !== undefined && (
-        <p className={styles.status}><Message text={"Running the runtime’s <0/> prompt<1/>."} slots={[ran, ran === FIX_PACK_PROMPT ? `, over ${diagnosticCount} diagnostic${diagnosticCount === 1 ? '' : 's'}` : '']} /></p>
+        <p className={styles.status}>{ran === FIX_PACK_PROMPT ? msg('Running the runtime’s {{prompt}} prompt over {{count}} diagnostics.', { prompt: ran, count: diagnosticCount }) : msg('Running the runtime’s {{prompt}} prompt.', { prompt: ran })}</p>
       )}
 
       <label className={styles.label} htmlFor="assistant-policy">{msg("What should this pack decide?")}</label>
@@ -556,7 +556,7 @@ export function AssistantPane({
           <p className={styles.heading}><Message text={"Proposal — <0/>"} slots={[sentDraft ? msg("an update to the draft it was given") : msg("a new document")]} /></p>
           <p className={styles.honesty}>{msg("Nothing has been written. This is a document to accept or reject, and the checks below are the runtime’s own words.")}</p>
           {outcome.failure !== '' && (
-            <p className={styles.notice}><Message text={"This session did not stand behind what it proposed: <0/>. It cannot be accepted into the draft."} slots={[outcome.failure]} /></p>
+            <p className={styles.notice}><Message text={"This session did not stand behind what it proposed: <0/>. It cannot be accepted into the draft."} slots={[systemMessage(outcome.failure)]} /></p>
           )}
           {diff !== undefined && <ProposalDiffView diff={diff} onBaseline={onBaseline} />}
           <p className={styles.label}>{msg("The whole proposed document")}</p>
@@ -586,7 +586,7 @@ export function AssistantPane({
             )}
             <Button disabled={disposition !== 'open' || running} onClick={() => setRejected(true)}>{msg("Reject")}</Button>
           </div>
-          {editing && accept.why && <p id={`${helpId}-accept`} className={styles.honesty}>{accept.why}</p>}
+          {editing && accept.why && <p id={`${helpId}-accept`} className={styles.honesty}>{systemMessage(accept.why)}</p>}
           {disposition === 'accepted' && (
             <p className={styles.honesty}><Message text={"Accepted into the draft. <0/> The check runs again over the new bytes, Undo takes the whole accept back in one step, and Save is yours to press."} slots={[<strong>{msg("Nothing has been saved.")}</strong>]} /></p>
           )}

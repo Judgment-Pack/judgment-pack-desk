@@ -1,5 +1,5 @@
 import { Message } from '../../i18n/Message'
-import { msg, useLocale } from '../../i18n'
+import { systemMessage, msg, useLocale } from '../../i18n'
 import { projectLogic } from '../../packs/logicModel'
 import { LogicInspector } from '../../packs/inspector/LogicInspector'
 import type { PackDocument } from '../../mcp/types'
@@ -80,7 +80,7 @@ export function SourceInspector({ selection, ledger, state, onSelect }: { select
             return (
               <div key={citation.sourceId} className={styles.section}>
                 <p className={styles.detail}>
-                  <strong>{citation.sourceId}</strong> · {citation.traced ? msg("traced") : msg("not traced: {{value0}}", { value0: citation.reason })}
+                  <strong>{citation.sourceId}</strong> · {citation.traced ? msg("traced") : msg("not traced: {{value0}}", { value0: systemMessage(citation.reason) })}
                 </p>
                 {excerpt && <blockquote className={styles.excerpt}>{excerpt.text}</blockquote>}
                 {citation.url && <div className={styles.url}>{citation.url}</div>}
@@ -147,7 +147,7 @@ export function SourceInspector({ selection, ledger, state, onSelect }: { select
               </>
             )}
             <dt>{msg("Rendered text")}</dt>
-            <dd><Message text={"<0/> characters<1/>"} slots={[document.text.length, document.pages ? `, ${document.pages} pages` : '']} /></dd>
+            <dd>{document.pages ? msg('{{characters}} characters · Pages: {{pages}}', { characters: document.text.length, pages: document.pages }) : msg('{{count}} characters', { count: document.text.length })}</dd>
           </dl>
         </section>
       )}
@@ -206,7 +206,7 @@ export function SourceInspector({ selection, ledger, state, onSelect }: { select
       )}
       {record.response && (
         <Disclosure title={msg("Receipt and result, as received")}>
-          <pre className={styles.excerpt}>{record.response.text.length > 20_000 ? record.response.text.slice(0, 20_000) + '\n… (truncated for display)' : record.response.text}</pre>
+          <pre className={styles.excerpt}>{record.response.text.length > 20_000 ? record.response.text.slice(0, 20_000) + '\n' + msg('… (truncated for display)') : record.response.text}</pre>
         </Disclosure>
       )}
     </div>

@@ -1,5 +1,5 @@
 import { Message } from '../../i18n/Message'
-import { msg, useLocale } from '../../i18n'
+import { systemMessage, msg, useLocale } from '../../i18n'
 import { Fragment, useMemo, useRef, useState } from 'react'
 import type { PackDocument } from '../../mcp/types'
 import { PackLogic } from '../../packs/PackLogic'
@@ -47,7 +47,7 @@ export function SourcesPanel({ sources, selection, onSelect }: { sources: readon
                 <span className={styles.badge}>{record.id}</span>
                 <strong>{title}</strong>
                 {verificationBadge(record)}
-                {record.excerpts.length > 0 && <span className={styles.badge}><Message text={"<0/> excerpt<1/>"} slots={[record.excerpts.length, record.excerpts.length === 1 ? '' : msg("s")]} /></span>}
+                {record.excerpts.length > 0 && <span className={styles.badge}>{msg("{{count}} excerpts", { count: record.excerpts.length })}</span>}
               </div>
               {record.kind === 'page' && <div className={styles.url}>{record.request.url}</div>}
               {record.kind === 'search' && record.hits && <div className={styles.url}><Message text={"<0/> hit(s) from <1/>"} slots={[record.hits.length, record.request.source]} /></div>}
@@ -171,7 +171,7 @@ export function TestsPanel({ state, onSelect, mode = 'research', ...actions }: E
           <ul className={styles.unknowns}>
             {state.droppedCases.map((dropped) => (
               <li key={dropped.id}>
-                {dropped.id}: {dropped.reason}
+                {dropped.id}: {systemMessage(dropped.reason)}
               </li>
             ))}
           </ul>
@@ -203,7 +203,7 @@ export function DraftPanel({ state, onSelect, onViewLogic, onViewSources }: { st
                   <button type="button" className={styles.rowButton} onClick={() => onSelect({ kind: 'rule', id })} aria-label={msg("Inspect rule {{value0}}", { value0: id })}>
                     <div className={styles.rowHead}>
                       <strong>{id}</strong>
-                      <span className={styles.badge}>{refs.length === 0 ? msg("no source") : msg("{{value0}} source ref{{value1}}", { value0: refs.length, value1: refs.length === 1 ? '' : 's' })}</span>
+                      <span className={styles.badge}>{refs.length === 0 ? msg("no source") : msg("{{count}} source references", { count: refs.length })}</span>
                     </div>
                     <div className={styles.url}>{typeof rule.description === 'string' ? rule.description : ''}</div>
                   </button>
@@ -233,10 +233,10 @@ export function ReviewPanel({ state, sources, onCreate, onSelect, showCreateActi
     <div className={styles.panel}>
       <section className={styles.section}>
         <h3>{msg("Where this stands")}</h3>
-        <p className={styles.detail}>{state.detail || msg("Not started.")}</p>
+        <p className={styles.detail}>{systemMessage(state.detail) || msg("Not started.")}</p>
         <dl className={styles.facts}>
           <dt>{msg("Revisions")}</dt>
-          <dd><Message text={"<0/> (<1/> repair<2/>)"} slots={[state.candidates.length, state.revisionsUsed, state.revisionsUsed === 1 ? '' : msg("s")]} /></dd>
+          <dd>{msg("{{revisions}} ({{count}} repairs)", { revisions: state.candidates.length, count: state.revisionsUsed })}</dd>
           <dt>{msg("Test cases")}</dt>
           <dd>{state.expectationIssues.some(issue => !issue.resolved) ? msg("Blocked by invalid expectations") : check?.cases.length ? msg("{{value0}} of {{value1}} agree", { value0: check.cases.filter((c) => c.passed).length, value1: check.cases.length }) : msg("Not run")}</dd>
           <dt>{msg("Sources")}</dt>
@@ -261,7 +261,7 @@ export function ReviewPanel({ state, sources, onCreate, onSelect, showCreateActi
           <ul className={styles.unknowns}>
             {untraced.map((citation) => (
               <li key={citation.sourceId}>
-                <strong>{citation.sourceId}</strong>: {citation.reason}
+                <strong>{citation.sourceId}</strong>: {systemMessage(citation.reason)}
                 {citation.url ? ` (${citation.url})` : ''}
               </li>
             ))}
@@ -293,7 +293,7 @@ export function ReviewPanel({ state, sources, onCreate, onSelect, showCreateActi
           <h3>{msg("Revisions")}</h3>
           <ul className={styles.unknowns}>
             {state.candidates.map((candidate) => (
-              <li key={candidate.revision}><Message text={"Revision <0/> (<1/>):<2/><3/>"} slots={[candidate.revision, candidate.producedBy, ' ', candidate.check ? `${candidate.check.valid ? 'valid' : 'invalid'}, ${candidate.check.cases.filter((c) => c.passed).length}/${candidate.check.cases.length} agree` : msg("not checked")]} /></li>
+              <li key={candidate.revision}><Message text={"Revision <0/> (<1/>):<2/><3/>"} slots={[candidate.revision, candidate.producedBy, ' ', candidate.check ? msg('{{status}}, {{passed}}/{{total}} agree', { status: candidate.check.valid ? 'valid' : 'invalid', passed: candidate.check.cases.filter(c => c.passed).length, total: candidate.check.cases.length }) : msg("not checked")]} /></li>
             ))}
           </ul>
         </section>
@@ -343,18 +343,18 @@ export function DraftTabs({ state, sources, selection, onSelect, onCreate, showC
         <span>{typeof (state.candidates.at(-1)?.document as { title?: unknown })?.title === 'string' ? (state.candidates.at(-1)!.document as { title: string }).title : msg("Draft")}</span>
         <span className={styles.status}>{state.candidates.length === 0 ? msg("no revision yet") : msg("revision {{value0}}", { value0: state.candidates.at(-1)!.revision })}</span>
       </header>
-      {pending > 0 && <div className={styles.panel} role="status"><span><Message text={"<0/> invalid expectation<1/> · testing paused"} slots={[pending, pending === 1 ? '' : msg("s")]} /></span><div><Button variant="quiet" onClick={() => setTab('tests')}>{msg("Review expectations")}</Button></div></div>}
+      {pending > 0 && <div className={styles.panel} role="status"><span>{msg("{{count}} invalid expectations · testing paused", { count: pending })}</span><div><Button variant="quiet" onClick={() => setTab('tests')}>{msg("Review expectations")}</Button></div></div>}
       <Tabs
         scrollable
         label={msg("Draft views")}
         value={tab}
         onValueChange={setTab}
         tabs={[
-          { value: 'draft', label: "Overview", panel: <DraftPanel state={state} onSelect={onSelect} onViewLogic={() => setTab('logic')} onViewSources={() => setTab('sources')} /> },
-          { value: 'logic', label: "Logic", panel: <DraftLogic state={state} selection={selection} onSelect={onSelect} /> },
-          { value: 'sources', label: `Sources${sources.length ? ` (${sources.length})` : ''}`, panel: <div className={styles.panel}><SourcesPanel sources={sources} selection={selection} onSelect={onSelect} /></div> },
-          { value: 'tests', label: `Tests${total ? ` (${total})` : ''}`, panel: <TestsPanel mode={mode} state={state} onSelect={onSelect} {...actions} /> },
-          { value: 'review', label: "Review", panel: <ReviewPanel showCreateAction={showCreateAction} mode={mode} state={state} sources={sources} onCreate={onCreate} onSelect={onSelect} /> }
+          { value: 'draft', label: msg("Overview"), panel: <DraftPanel state={state} onSelect={onSelect} onViewLogic={() => setTab('logic')} onViewSources={() => setTab('sources')} /> },
+          { value: 'logic', label: msg("Logic"), panel: <DraftLogic state={state} selection={selection} onSelect={onSelect} /> },
+          { value: 'sources', label: sources.length ? msg('Sources ({{count}})', { count: sources.length }) : msg('Sources'), panel: <div className={styles.panel}><SourcesPanel sources={sources} selection={selection} onSelect={onSelect} /></div> },
+          { value: 'tests', label: total ? msg('Tests ({{count}})', { count: total }) : msg('Tests'), panel: <TestsPanel mode={mode} state={state} onSelect={onSelect} {...actions} /> },
+          { value: 'review', label: msg("Review"), panel: <ReviewPanel showCreateAction={showCreateAction} mode={mode} state={state} sources={sources} onCreate={onCreate} onSelect={onSelect} /> }
         ]}
       />
     </section>

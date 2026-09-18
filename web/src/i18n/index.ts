@@ -91,20 +91,30 @@ export function formatDate(value: Date | number, options?: Intl.DateTimeFormatOp
 // Translate it at presentation time so old progress updates follow the current
 // language. This is only for Desk-authored status/errors, never model prose,
 // source evidence, document values, or raw runtime diagnostics.
-const statusPatterns = Object.keys(en).filter(key => key.includes('{{') && !key.includes('<') && key.replace(/\{\{\w+\}\}/g, '').trim().length >= 12).map(source => {
+const statusPatterns = Object.entries(en).filter(([, source]) => source.includes('{{') && !source.includes('<') && (source.includes('{{count}}') || source.replace(/\{\{\w+\}\}/g, '').trim().length >= 6))
+  // Match the most specific caption first, so a short log prefix cannot
+  // consume a longer notice and leave its remaining explanation in English.
+  .sort((a, b) => b[1].replace(/\{\{\w+\}\}/g, '').length - a[1].replace(/\{\{\w+\}\}/g, '').length)
+  .map(([key, source]) => {
   const names: string[] = []
   const pattern = source.split(/(\{\{\w+\}\})/).map(part => {
     if (/^\{\{\w+\}\}$/.test(part)) { names.push(part.slice(2, -2)); return '([\\s\\S]*?)' }
     return part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   }).join('')
-  return { source, names, pattern: new RegExp(`^${pattern}$`) }
+  return { key: key.replace(/_(one|other)$/, ''), names, pattern: new RegExp(`^${pattern}$`) }
 })
-export function systemMessage(source: string): string {
-  if (!source || language() === 'en') return source
+export function systemMessage(source: string, depth = 0): string {
+  if (!source || language() === 'en' || depth > 8) return source
   if (Object.hasOwn(en, source)) return msg(source)
   for (const entry of statusPatterns) {
     const found = entry.pattern.exec(source)
-    if (found) return msg(entry.source, Object.fromEntries(entry.names.map((name, index) => [name, found[index + 1]])))
+    if (found) return msg(entry.key, Object.fromEntries(entry.names.map((name, index) => {
+      const value = found[index + 1]!
+      return [name, /^message\d+$/.test(name) ? systemMessage(value, depth + 1) : name === 'count' && /^\d+$/.test(value) ? Number(value) : value]
+    })))
   }
+  // Composed Desk notices keep each paragraph canonical. Only explicitly
+  // named message slots recurse; identifiers and user/model prose never do.
+  if (source.includes('\n\n')) return source.split('\n\n').map(part => systemMessage(part, depth + 1)).join('\n\n')
   return source
 }

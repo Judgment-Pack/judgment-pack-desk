@@ -117,7 +117,7 @@ function ConditionNode({
   }
 
   const children = kind === 'all' || kind === 'any' ? childCount(node) : 0
-  const label = `${kind}${kind === 'all' || kind === 'any' ? ' of' : ''} — ${at}`
+  const label = `${valueLabel('op', kind)} — ${at}`
 
   return (
     <Block pointer={at} as="div" className={styles.node}>

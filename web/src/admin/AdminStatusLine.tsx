@@ -1,4 +1,5 @@
-import { msg, useLocale } from '../i18n'
+import { sourceMessage } from '../i18n/source'
+import { msg, useLocale, systemMessage } from '../i18n'
 import { useState, type ReactNode } from 'react'
 import { Button } from '../ui/Button'
 import styles from './AdminStatusLine.module.css'
@@ -23,12 +24,12 @@ export function AdminStatusLine({
       <Pair label={msg("Binary")}>{binary}</Pair>
     </dl>
     {copyText !== undefined && <div className={styles.actions}>
-      <span role="status">{copied}</span>
+      <span role="status">{systemMessage(copied ?? '')}</span>
       <Button onClick={async () => {
         try {
           await navigator.clipboard.writeText(copyText)
           setCopied('Copied')
-        } catch { setCopied('Could not copy. Select the details to copy them.') }
+        } catch { setCopied(sourceMessage("Could not copy. Select the details to copy them.")) }
       }}>{msg("Copy details")}</Button>
     </div>}
     </>

@@ -1,4 +1,5 @@
-import { msg } from '../i18n'
+import { sourceMessage } from '../i18n/source'
+import { systemMessage, msg as uiMessage } from '../i18n'
 import { Message } from '../i18n/Message'
 import { useLocale } from '../i18n'
 /**
@@ -50,16 +51,18 @@ const COMPACT: ReadonlySet<AssistantEvent['type']> = new Set([
  * a line elsewhere must not write a second sentence for an event this file
  * already has one for.
  */
-export function describeEvent(event: AssistantEvent): string {
+export function describeEvent(event: AssistantEvent, msg: typeof uiMessage = uiMessage): string {
   switch (event.type) {
     case 'tool_call':
       return msg("called {{value0}}({{value1}})", { value0: event.name, value1: Object.keys((event.args ?? {}) as object).join(', ') })
     case 'tool_result':
-      return msg("{{value0}} answered {{value1}} bytes{{value2}}{{value3}}", { value0: event.name, value1: byteCount(event.text), value2: event.isError ? ' (isError)' : '', value3: event.structured === undefined ? '' : ' with structured content' })
+      return msg("{{value0}} answered {{value1}} bytes{{value2}}{{value3}}", { value0: event.name, value1: byteCount(event.text), value2: event.isError ? ' (isError)' : '', value3: event.structured === undefined ? '' : msg(' with structured content') })
     case 'guardrail':
-      return `${event.action} ${event.tool}: ${event.detail}`
+      return event.action === 'rewrote' ? msg('rewrote {{tool}}: {{detail}}', { tool: event.tool, detail: msg === sourceMessage ? event.detail : systemMessage(event.detail) })
+        : event.action === 'refused' ? msg('refused {{tool}}: {{detail}}', { tool: event.tool, detail: msg === sourceMessage ? event.detail : systemMessage(event.detail) })
+          : msg('narrowed {{tool}}: {{detail}}', { tool: event.tool, detail: msg === sourceMessage ? event.detail : systemMessage(event.detail) })
     case 'thinking_unavailable':
-      return event.detail
+      return msg === sourceMessage ? event.detail : systemMessage(event.detail)
     case 'reasoning':
       return msg("{{value0}} characters of reasoning", { value0: event.text.length })
     case 'message_progress':
@@ -67,11 +70,11 @@ export function describeEvent(event: AssistantEvent): string {
     case 'message':
       return event.text
     case 'critique':
-      return event.text
+      return msg === sourceMessage ? event.text : systemMessage(event.text)
     case 'proposal':
       return msg("proposed a document with {{value0}} unknown(s); nothing was written", { value0: event.unknowns.length })
     case 'error':
-      return event.message
+      return msg === sourceMessage ? event.message : systemMessage(event.message)
     case 'end':
       return msg("the session ended")
   }
@@ -87,7 +90,7 @@ export function lineClass(event: AssistantEvent): string {
 export function EventList({
   events,
   failure,
-  label = 'What the assistant did',
+  label = uiMessage(sourceMessage('What the assistant did')),
   compact = false
 }: {
   events: readonly AssistantEvent[]
@@ -147,7 +150,7 @@ export function EventList({
         </li>
       ))}
       {failure !== undefined && (
-        <li key="failure" className={styles.error}><Message text={"the session failed after it ended: <0/>"} slots={[failure]} /></li>
+        <li key="failure" className={styles.error}><Message text={"the session failed after it ended: <0/>"} slots={[systemMessage(failure)]} /></li>
       )}
     </ol>
   )

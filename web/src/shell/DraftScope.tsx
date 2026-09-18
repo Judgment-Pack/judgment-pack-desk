@@ -1,3 +1,4 @@
+import { msg } from '../i18n'
 import { createContext, useCallback, useContext, useEffect, useId, useState, type ReactNode } from 'react'
 import { useDirtyGuard } from './useDirtyGuard'
 
@@ -15,7 +16,7 @@ export function DraftScope({ children }: { children: ReactNode }) {
       return next
     })
   }, [])
-  useDirtyGuard(dirtyForms.size > 0, 'Leave settings and discard your unsaved changes?')
+  useDirtyGuard(dirtyForms.size > 0, msg('Leave settings and discard your unsaved changes?'))
   return <DraftContext.Provider value={publish}>{children}</DraftContext.Provider>
 }
 

@@ -1,5 +1,4 @@
-import { Message } from '../i18n/Message'
-import { msg, useLocale } from '../i18n'
+import { msg, useLocale, systemMessage } from '../i18n'
 /**
  * The proposal, drawn as what it would do to the draft.
  *
@@ -24,10 +23,10 @@ import type { DiffEntry, ProposalDiff } from './proposalDiff'
 
 /** The word each status is announced by, in the desk's own plain English. */
 const SAYS: Record<DiffEntry['status'], string> = {
-  added: 'added',
-  removed: 'removed',
-  changed: 'changed',
-  unchanged: 'unchanged'
+  get added() { return msg('added') },
+  get removed() { return msg('removed') },
+  get changed() { return msg('changed') },
+  get unchanged() { return msg('unchanged') }
 }
 
 export function ProposalDiffView({
@@ -52,7 +51,7 @@ export function ProposalDiffView({
     <section className={styles.diff} aria-label={msg("The proposal as a diff")}>
       <p className={styles.honesty}>
         {diff.against !== 'the draft'
-          ? msg("There was nothing to compare with — {{value0}} — so every member below is new.", { value0: diff.reason })
+          ? msg("There was nothing to compare with — {{value0}} — so every member below is new.", { value0: systemMessage(diff.reason ?? '') })
           : onBaseline
             ? msg("Compared with the draft on this page, member by member.")
             : msg("Compared with the draft this proposal was given, member by member — the draft on this page has changed since.")}
@@ -64,7 +63,7 @@ export function ProposalDiffView({
         <Entry key={entry.key} entry={entry} />
       ))}
       {kept.length > 0 && (
-        <p className={styles.honesty}><Message text={"<0/> member<1/> unchanged:<2/><3/>"} slots={[kept.length, kept.length === 1 ? '' : msg("s"), ' ', kept.map((entry) => entry.label).join(', ')]} /></p>
+        <p className={styles.honesty}>{msg("{{count}} members unchanged: {{members}}", { count: kept.length, members: kept.map(entry => entry.label).join(', ') })}</p>
       )}
     </section>
   )
@@ -114,7 +113,7 @@ function Entry({ entry }: { entry: DiffEntry }) {
             <Entry key={child.key} entry={child} />
           ))}
           {kept > 0 && (
-            <p className={styles.honesty}><Message text={"<0/> element<1/> unchanged, in the same place."} slots={[kept, kept === 1 ? '' : msg("s")]} /></p>
+            <p className={styles.honesty}>{msg("{{count}} elements unchanged, in the same place.", { count: kept })}</p>
           )}
         </>
       )}

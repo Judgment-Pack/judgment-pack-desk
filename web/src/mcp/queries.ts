@@ -1,3 +1,4 @@
+import { sourceMessage, SourceError } from '../i18n/source'
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import {
   useMutation,
@@ -439,7 +440,7 @@ export function useEvaluate(): UseMutationResult<
   const { client, rehearsalSupported } = useMcp()
   return useMutation({
     mutationFn: async (input: EvaluateInput & EvaluateSource) => {
-      if (!client) throw new Error('the desk is not connected to the runtime')
+      if (!client) throw new SourceError(sourceMessage('the desk is not connected to the runtime'))
       const args = buildEvaluateArguments(input, rehearsalSupported)
       const { parsed, raw } = await callToolJSON<Evaluation>(
         client,

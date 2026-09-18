@@ -3,10 +3,12 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse } from '@babel/parser'
+import { untranslatedUiMessages } from './ui-message-audit.mjs'
 const sourceRoot = fileURLToPath(new URL('../src/', import.meta.url))
 const localeRoot = path.join(sourceRoot, 'i18n/locales')
 const messages = new Map()
 const dynamic = []
+const untranslated = []
 const walk = (node, visit) => {
   visit(node)
   for (const [key, value] of Object.entries(node)) {
@@ -16,11 +18,13 @@ const walk = (node, visit) => {
 }
 function inspect(file) {
   const text = fs.readFileSync(file, 'utf8')
+  for (const issue of untranslatedUiMessages(text)) untranslated.push(`${path.relative(sourceRoot, file)}:${issue.line}: ${issue.text}`)
   const ast = parse(text, { sourceType: 'module', plugins: ['typescript', 'jsx'] })
   const constants = new Map()
   walk(ast, node => { if (node.type === 'VariableDeclarator' && node.id.type === 'Identifier') constants.set(node.id.name, node.init) })
   function value(node, seen = new Set()) {
     if (node?.type === 'StringLiteral') return node.value
+    if (node?.type === 'CallExpression' && node.callee.name === 'sourceMessage') return value(node.arguments[0], seen)
     if (node?.type === 'JSXExpressionContainer') return value(node.expression, seen)
     if (node?.type === 'Identifier' && !seen.has(node.name)) return value(constants.get(node.name), new Set([...seen, node.name]))
     if (node?.type === 'BinaryExpression' && node.operator === '+') {
@@ -30,7 +34,7 @@ function inspect(file) {
   }
   walk(ast, node => {
     let argument
-    if (node.type === 'CallExpression' && node.callee.name === 'msg') argument = node.arguments[0]
+    if (node.type === 'CallExpression' && ['msg', 'sourceMessage'].includes(node.callee.name)) argument = node.arguments[0]
     if (node.type === 'JSXOpeningElement' && node.name.name === 'Message') argument = node.attributes.find(a => a.name?.name === 'text')?.value
     if (!argument) return
     const key = value(argument)
@@ -62,7 +66,8 @@ if (process.argv.includes('--extract')) {
   process.exit(0)
 }
 const issues = []
-const tokens = value => (value.match(/\{\{\w+\}\}|<\d+\/>/g) ?? []).sort().join('|')
+if (untranslated.length) issues.push(`Untranslated UI literals:\n${untranslated.join('\n')}`)
+const tokens = value => ((value ?? '').match(/\{\{\w+\}\}|<\d+\/>/g) ?? []).sort().join('|')
 const sourceKeys = [...messages.keys()]
 const staleEnglish = Object.keys(prior).filter(key => !messages.has(key))
 const missingEnglish = sourceKeys.filter(key => !Object.hasOwn(prior, key))
@@ -71,11 +76,16 @@ for (const file of fs.readdirSync(localeRoot).filter(file => file.endsWith('.jso
   const catalogue = JSON.parse(fs.readFileSync(path.join(localeRoot, file), 'utf8'))
   const missing = sourceKeys.filter(key => typeof catalogue[key] !== 'string' || !catalogue[key].trim())
   const language = file.replace('.json', '')
+  const pluralKeys = []
   for (const base of Object.keys(plurals)) for (const category of new Intl.PluralRules(language).resolvedOptions().pluralCategories) {
     const key = `${base}_${category}`
+    pluralKeys.push([key, base])
     if (!catalogue[key]?.trim() && !missing.includes(key)) missing.push(key)
   }
-  const invalid = sourceKeys.filter(key => catalogue[key] && tokens(catalogue[key]) !== tokens(prior[key]))
+  const invalid = [...new Set([
+    ...sourceKeys.filter(key => catalogue[key] && tokens(catalogue[key]) !== tokens(prior[key])),
+    ...pluralKeys.filter(([key, base]) => catalogue[key] && tokens(catalogue[key]) !== tokens(base)).map(([key]) => key)
+  ])]
   console.log(`${file}: ${sourceKeys.length - missing.length}/${sourceKeys.length} translated; ${invalid.length} placeholder errors`)
   if (missing.length || invalid.length) issues.push(`${file}: ${missing.length} missing, ${invalid.length} invalid`)
 }
