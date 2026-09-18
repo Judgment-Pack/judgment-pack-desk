@@ -1,4 +1,4 @@
-import { msg, useLocale } from '../i18n'
+import { msg, useLocale, systemMessage } from '../i18n'
 /**
  * The fields on the cards that write the project's own configuration file, and
  * nothing else about them.
@@ -93,7 +93,7 @@ export function OrganizationForm() {
           />
         )}
       </Field>
-      <Field label={msg("Mark")} hint={ORGANIZATION_MARK_SAYS} error={problemAt(save, 'organization.mark')}>
+      <Field label={msg("Mark")} hint={systemMessage(ORGANIZATION_MARK_SAYS)} error={problemAt(save, 'organization.mark')}>
         {(wiring) => (
           <TextArea
             {...wiring}
@@ -126,7 +126,7 @@ export function StorageKind() {
   useLocale()
   const { config } = useEffectiveConfig()
   return (
-    <CardField label={msg("Kind")} rule={STORAGE_KIND_SAYS}>
+    <CardField label={msg("Kind")} rule={systemMessage(STORAGE_KIND_SAYS)}>
       <code>{config.storage.packs.kind}</code>
     </CardField>
   )
@@ -163,7 +163,7 @@ export function StorageForm({ dirSays }: { dirSays: string }) {
           it is the one that is broken. */}
       <Field
         label={msg("Packs go to")}
-        hint={`${dirSays} — ${NO_CONTROL_CHARACTERS}`}
+        hint={`${dirSays} — ${systemMessage(NO_CONTROL_CHARACTERS)}`}
         error={problemAt(save, 'storage.packs.dir')}
       >
         {(wiring) => (
@@ -177,7 +177,7 @@ export function StorageForm({ dirSays }: { dirSays: string }) {
       </Field>
       <Field
         label={msg("Id prefix")}
-        hint={`${ID_BASE_SAYS} — ${NO_CONTROL_CHARACTERS}. ${ID_BASE_NORMALISES}`}
+        hint={`${systemMessage(ID_BASE_SAYS)} — ${systemMessage(NO_CONTROL_CHARACTERS)}. ${systemMessage(ID_BASE_NORMALISES)}`}
         error={problemAt(save, 'storage.packs.idBase')}
       >
         {(wiring) => (

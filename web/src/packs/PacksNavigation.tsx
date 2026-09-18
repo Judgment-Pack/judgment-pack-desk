@@ -20,7 +20,7 @@ export function PacksNavigation({ current, count }: { current: PacksSection; cou
   })
   const total = count ?? cachedCount
   return <nav className={styles.navigation} aria-label={msg("Packs workspace")}>
-    {([['packs', '/packs', 'All packs'], ['tests', '/matrix', 'Tests'], ['flows', '/graphs', 'Pack flows']] as const)
+    {([['packs', '/packs', msg('All packs')], ['tests', '/matrix', msg('Tests')], ['flows', '/graphs', msg('Pack flows')]] as const)
       .map(([id, to, label]) => <Link key={id} to={to} aria-current={id === current ? 'page' : undefined}>{label}
         {id === 'packs' && total !== undefined && <span className={styles.count}>{total}</span>}
       </Link>)}

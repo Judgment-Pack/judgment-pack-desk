@@ -25,7 +25,7 @@ export function SourcesBlock({ sources, at }: { sources: Source[]; at: string })
               <MisshapenMember
                 pointer={`${at}/${index}`}
                 label={msg("Source {{value0}}", { value0: index + 1 })}
-                expected="an object"
+                expected={msg("an object")}
                 value={source}
               />
             </li>
@@ -131,7 +131,7 @@ function SourceForm({ at }: { at: string }) {
       <StringField pointer={`${at}/title`} label={msg("title")} />
       <StringField pointer={`${at}/publisher`} label={msg("publisher")} />
       <StringField pointer={`${at}/publishedAt`} label={msg("published")} hint={msg("a date.")} />
-      <AbsentObject pointer={`${at}/locator`} label={msg("locator")} what="a locator">
+      <AbsentObject pointer={`${at}/locator`} label={msg("locator")} what={msg("a locator")}>
         <Block pointer={`${at}/locator`} as="div">
           <EnumField
             pointer={`${at}/locator/kind`}
@@ -142,7 +142,7 @@ function SourceForm({ at }: { at: string }) {
         </Block>
       </AbsentObject>
       <StringField pointer={`${at}/rights`} label={msg("rights")} />
-      <AbsentObject pointer={`${at}/citation`} label={msg("citation")} what="a citation">
+      <AbsentObject pointer={`${at}/citation`} label={msg("citation")} what={msg("a citation")}>
         <Block pointer={`${at}/citation`} as="div">
           <StringField pointer={`${at}/citation/location`} label={msg("citation location")} />
           <TextField pointer={`${at}/citation/excerpt`} label={msg("citation excerpt")} rows={2} />

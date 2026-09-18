@@ -1,3 +1,4 @@
+import { sourceMessage } from '../i18n/source'
 import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
 import { PACK_TERMS } from '../packs/terminology'
@@ -84,19 +85,19 @@ export function PackEvaluate() {
     if (!packId || !runnable || evaluate.isPending) return
     const ticket = generation.current
     const packBytes = pack.data?.raw
-    recordActivity('Running pack evaluation…')
+    recordActivity(sourceMessage('Running pack evaluation…'))
     evaluate.mutate(
       { ...(packBytes === undefined ? { source: 'pack_id' as const, packId } : { source: 'pack' as const, pack: packBytes }), facts, evidence: evidenceSupplied ? evidence : undefined },
       {
         onSuccess: (completed) => {
-          recordActivity('Pack evaluation completed. Results are available in Test.')
+          recordActivity(sourceMessage('Pack evaluation completed. Results are available in Test.'))
           if (ticket !== generation.current) return
           setHistory((runs) => [...runs, { ...completed, packBytes }])
           // Keep edits made while this request was in flight. The result is
           // bound to completed.facts/evidence; drifted labels the difference.
           setTab('reading')
         },
-        onError: () => recordActivity('Pack evaluation failed. See Test for the runtime response.')
+        onError: () => recordActivity(sourceMessage('Pack evaluation failed. See Test for the runtime response.'))
       }
     )
   }
@@ -200,11 +201,11 @@ export function PackEvaluate() {
             <span><Message text={"run <0/> of this page<1/>"} slots={[history.length, drifted ? msg("; the editors have moved since") : '']} /></span>
           </p>
           <Tabs label={msg("Result view")} value={tab} onValueChange={(next) => setTab(next as ResultTab)} tabs={[
-            { value: 'reading', label: "Outcome & trace", panel: <>
+            { value: 'reading', label: msg("Outcome & trace"), panel: <>
               {previous && <DispositionDiff previous={previous.payload} current={current.payload} />}
               <EvaluationView payload={current.payload} />
             </> },
-            { value: 'raw', label: "Raw response", panel: <EvaluationRaw raw={current.raw} /> }
+            { value: 'raw', label: msg("Raw response"), panel: <EvaluationRaw raw={current.raw} /> }
           ]} />
         </>
       ) : (

@@ -1,3 +1,5 @@
+import { systemMessage } from '../i18n'
+import { sourceMessage } from '../i18n/source'
 import { msg, useLocale } from '../i18n'
 /** Selected details and real activity, beneath the main pane. */
 import { Tabs } from 'radix-ui'
@@ -39,8 +41,9 @@ export function BottomPane({
   // One line per transition. The store drops an identical consecutive line,
   // which is what makes StrictMode's mount → cleanup → mount free here.
   useEffect(() => {
-    const suffix = attempt > 0 ? msg(" (attempt {{value0}})", { value0: attempt }) : ''
-    recordConnection(`${status} · connection ${connectionEpoch}${suffix}`)
+    recordConnection(attempt > 0
+      ? sourceMessage('{{status}} · connection {{epoch}} (attempt {{attempt}})', { status, epoch: connectionEpoch, attempt })
+      : sourceMessage('{{status}} · connection {{epoch}}', { status, epoch: connectionEpoch }))
   }, [status, connectionEpoch, attempt])
 
   const connection = entries.filter((entry) => entry.channel === 'connection')
@@ -93,7 +96,7 @@ function LogList({
   entries,
   empty
 }: {
-  entries: { seq: number; at: number; text: string }[]
+  entries: { seq: number; at: number; text: string; authored?: boolean; context?: 'research' | 'assistant' }[]
   empty: string
 }) {
   useLocale()
@@ -103,7 +106,7 @@ function LogList({
       {entries.map((entry) => (
         <li key={entry.seq}>
           <span className="quiet">{new Date(entry.at).toISOString().slice(11, 19)}</span>
-          <span>{entry.text}</span>
+          <span>{entry.context && <>{entry.context === 'research' ? msg('Research') : msg('Assistant')}: </>}{entry.authored ? systemMessage(entry.text) : entry.text}</span>
         </li>
       ))}
     </ul>

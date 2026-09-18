@@ -24,7 +24,7 @@ export function ExceptionsBlock({ exceptions, at }: { exceptions: Exception[]; a
               <MisshapenMember
                 pointer={`${at}/${index}`}
                 label={msg("Exception {{value0}}", { value0: index + 1 })}
-                expected="an object"
+                expected={msg("an object")}
                 value={exception}
               />
             </li>

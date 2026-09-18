@@ -170,7 +170,7 @@ export function useCardOrder(
 
   return {
     move,
-    announcement: landed === null ? '' : `Moved to position ${landed.at + 1} of ${landed.of}.`,
+    announcement: landed === null ? '' : msg('Moved to position {{position}} of {{total}}.', { position: landed.at + 1, total: landed.of }),
     onCardKey
   }
 }

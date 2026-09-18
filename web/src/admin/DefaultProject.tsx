@@ -1,6 +1,6 @@
 import { sourceMessage } from '../i18n/source'
 import { Message } from '../i18n/Message'
-import { msg, useLocale } from '../i18n'
+import { msg, useLocale, systemMessage } from '../i18n'
 /**
  * The Project card's one control: whether this desk opens **this** project
  * when it is launched without a directory.
@@ -133,7 +133,7 @@ export function useDefaultProject(): { field: ReactNode; save: ReactNode } {
         {digest !== undefined && chassis === undefined && <p className="quiet">{msg(NOT_SAID)}</p>}
         {problem !== undefined && (
           <p className="partial-reason">
-            {problem.key}: {problem.reason}
+            {problem.key}: {systemMessage(problem.reason)}
           </p>
         )}
         {stale !== undefined && (

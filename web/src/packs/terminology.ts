@@ -42,6 +42,9 @@ export function pointerLabel(pointer: string, fallback: string): string {
 }
 
 const VALUES: Record<string, Readonly<Record<string, string>>> = {
+  kind: { get document() { return msg('Document') }, get fact() { return msg('Fact') }, get measurement() { return msg('Measurement') }, get attestation() { return msg('Attestation') },
+    get 'human-role'() { return msg('Human role') }, get queue() { return msg('Queue') }, get system() { return msg('System') },
+    uri: 'URI', get repository() { return msg('Repository') }, get path() { return msg('Path') }, get other() { return msg('Other') } },
   operator: { get equals() { return msg("is equal to") }, get 'not-equals'() { return msg("is not equal to") }, get 'greater-than'() { return msg("is greater than") },
     get 'greater-than-or-equal'() { return msg("is greater than or equal to") }, get 'less-than'() { return msg("is less than") },
     get 'less-than-or-equal'() { return msg("is less than or equal to") }, get in() { return msg("is one of") } },

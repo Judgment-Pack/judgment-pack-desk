@@ -1,4 +1,5 @@
 import { sourceMessage } from '../i18n/source'
+import { systemMessage, useLocale } from '../i18n'
 /**
  * The page's binding of the authoring run to this desk: the assistant slot
  * for the engine, the runtime connection for checks, the research
@@ -71,36 +72,37 @@ export function researchBlockedReason(state: {
 }): string {
   const { slot, research, mcp } = state
   return slot.state === 'unavailable'
-    ? 'The desk-level configuration could not be read, so no assistant is available.'
+    ? sourceMessage("The desk-level configuration could not be read, so no assistant is available.")
     : slot.endpoint === null
-      ? 'No assistant endpoint is configured. Configure one in Admin › Assistant.'
+      ? sourceMessage("No assistant endpoint is configured. Configure one in Admin › Assistant.")
       : slot.keyStatus === 'pending'
-        ? 'Checking the saved API key…'
+        ? sourceMessage("Checking the saved API key…")
         : slot.keyStatus === 'error'
-          ? 'The saved API key could not be checked. Retry in Configure Assistant.'
+          ? sourceMessage("The saved API key could not be checked. Retry in Configure Assistant.")
         : !slot.keyPresent
-          ? 'No API key is stored for the assistant. Save one in Admin › Assistant.'
+          ? sourceMessage("No API key is stored for the assistant. Save one in Admin › Assistant.")
           : !state.modelPicked
-            ? 'Choose an enabled model in Admin › Assistant.'
+            ? sourceMessage("Choose an enabled model in Admin › Assistant.")
             : state.mode === 'draft' ? ''
             : !state.advertised
-              ? 'This runtime does not offer the authoring prompt.'
+              ? sourceMessage("This runtime does not offer the authoring prompt.")
               : !state.authorPromptRead
-                ? 'Reading the authoring prompt…'
+                ? sourceMessage("Reading the authoring prompt…")
                 : research.gateway === null
-                  ? 'No research gateway is configured. Add a research section to the desk-level desk.json.'
+                  ? sourceMessage("No research gateway is configured. Add a research section to the desk-level desk.json.")
                   : research.sources.search === null && research.sources.read === null
-                    ? 'The research section names no search or read source.'
+                    ? sourceMessage("The research section names no search or read source.")
                     : mcp.status !== 'ready' || mcp.client === null
-                      ? 'The runtime connection is not ready.'
+                      ? sourceMessage("The runtime connection is not ready.")
                       : !mcp.validateSupported
-                        ? 'This runtime does not serve validate, so a draft cannot be checked.'
+                        ? sourceMessage("This runtime does not serve validate, so a draft cannot be checked.")
                         : !mcp.expectationValidationSupported
-                          ? 'Update the runtime to jpack 0.22.0 or later, which serves experimental_validate_expectations; research cannot start on an older build.'
+                          ? sourceMessage("Update the runtime to jpack 0.22.0 or later, which serves experimental_validate_expectations; research cannot start on an older build.")
                           : ''
 }
 
 export function useResearchRun(options?: { model?: string; mode?: 'draft' | 'research'; adversarialReview?: boolean }): ResearchRunBinding {
+  useLocale()
   const slot = useAssistantSlot()
   const listing = useFileListing()
   const defaultPicked = usePickedModel(slot.endpoint?.models ?? EMPTY_MODELS, slot.endpoint?.model ?? null, listing.data?.root)
@@ -133,7 +135,7 @@ export function useResearchRun(options?: { model?: string; mode?: 'draft' | 'res
   settings.current = { slot, picked, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview }
 
   const run = useMemo(() => {
-    const log = (text: string) => recordActivity(`research: ${text}`)
+    const log = (text: string) => recordActivity(text, 'research')
     const spent = { searches: 0, reads: 0, bytes: 0, startedAt: Date.now() }
     const turn = async (request: TurnRequest, signal: AbortSignal, deliver: (event: AssistantEvent) => void) => {
       const { slot, picked, testPrompt } = settings.current
@@ -144,7 +146,7 @@ export function useResearchRun(options?: { model?: string; mode?: 'draft' | 'res
       // Assistant tab would show -- and never the model's prose or a page.
       const onEvent = (event: AssistantEvent) => {
         if (event.type === 'tool_call' || event.type === 'tool_result' || event.type === 'guardrail' || event.type === 'thinking_unavailable' || event.type === 'error') {
-          recordActivity(`assistant: ${describeEvent(event)}`)
+          recordActivity(describeEvent(event, sourceMessage), 'assistant')
         }
         deliver(event)
       }
@@ -231,7 +233,7 @@ export function useResearchRun(options?: { model?: string; mode?: 'draft' | 'res
     state,
     ledger,
     sources,
-    blocked,
+    blocked: systemMessage(blocked),
     model: picked.model,
     researchConfigured: research.gateway !== null
   }

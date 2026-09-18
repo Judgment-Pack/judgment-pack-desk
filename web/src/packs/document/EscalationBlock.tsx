@@ -38,7 +38,7 @@ export function EscalationBlock({ escalation, at }: { escalation: Escalation; at
             object is absent, so the absence is stated and offered rather than
             drawn as two controls that take a keystroke and write nothing.
           */}
-          <AbsentObject pointer={`${at}/target`} label={msg("target")} what="a target">
+          <AbsentObject pointer={`${at}/target`} label={msg("target")} what={msg("a target")}>
             <Block pointer={`${at}/target`} as="div">
               <EnumField
                 pointer={`${at}/target/kind`}

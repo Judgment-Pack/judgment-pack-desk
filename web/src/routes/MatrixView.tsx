@@ -1,3 +1,4 @@
+import { sourceMessage } from '../i18n/source'
 import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
 import { Link, useParams } from 'react-router-dom'
@@ -34,8 +35,8 @@ export function MatrixView() {
   const { data, error, isFetching, refetch } = usePackMatrix(packId, false)
   const run = () => {
     if (status !== 'ready' || isFetching) return
-    recordActivity('Pack tests started.')
-    void refetch().then(result => recordActivity(result.error ? 'Pack tests failed.' : `Pack tests completed: ${result.data?.status ?? 'no result'}.`))
+    recordActivity(sourceMessage('Pack tests started.'))
+    void refetch().then(result => recordActivity(result.error ? sourceMessage('Pack tests failed.') : result.data?.status ? sourceMessage('Pack tests completed: {{status}}.', { status: result.data.status }) : sourceMessage('Pack tests returned no result.')))
   }
   const configured = (inventory.data?.packs ?? []).filter(pack => pack.matrix && (!packId || pack.id === packId))
   return <article className="detail" data-measure="full" data-layout="page">

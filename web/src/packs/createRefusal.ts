@@ -1,3 +1,4 @@
+import { sourceMessage } from '../i18n/source'
 /**
  * What the Create dialog says when a write is refused.
  *
@@ -133,31 +134,31 @@ export const OTHER_ENDPOINT_CODES = [
 export const CREATE_REFUSALS: Readonly<Record<string, string>> = {
   // The parent the configuration names is not there and could not be made.
   'directory-missing':
-    'The folder configured for packs is not there, and it could not be created. Nothing was created.',
+    sourceMessage("The folder configured for packs is not there, and it could not be created. Nothing was created."),
   // Something at the parent's path is a regular file. A rename fixes it, and
   // this is emphatically not a containment failure — the chassis used to
   // report it as one, which sent people hunting a security problem.
   'parent-is-a-file':
-    'The folder configured for packs is a file, so nothing can be written inside it. Nothing was created.',
+    sourceMessage("The folder configured for packs is a file, so nothing can be written inside it. Nothing was created."),
   'too-deep':
-    'The folder configured for packs is nested too deeply for this desk to write into. Nothing was created.',
+    sourceMessage("The folder configured for packs is nested too deeply for this desk to write into. Nothing was created."),
   symlink:
-    'The folder configured for packs is reached through a shortcut this desk does not write through. Nothing was created.',
-  'outside-root': 'That location is outside this project. Nothing was created.',
-  exists: 'Something is already there under that name — try another.',
-  stale: 'Something else changed that file while this was open. Nothing was created.',
-  'too-large': 'The pack this template would create is too large to write. Nothing was created.',
-  'not-utf8': 'That file is not text this desk can read. Nothing was created.',
-  'not-a-file': 'Something that is not a file is in the way. Nothing was created.',
+    sourceMessage("The folder configured for packs is reached through a shortcut this desk does not write through. Nothing was created."),
+  'outside-root': sourceMessage("That location is outside this project. Nothing was created."),
+  exists: sourceMessage("Something is already there under that name — try another."),
+  stale: sourceMessage("Something else changed that file while this was open. Nothing was created."),
+  'too-large': sourceMessage("The pack this template would create is too large to write. Nothing was created."),
+  'not-utf8': sourceMessage("That file is not text this desk can read. Nothing was created."),
+  'not-a-file': sourceMessage("Something that is not a file is in the way. Nothing was created."),
   unauthorized:
-    'This desk’s session is no longer accepted — reload the page. Nothing was created.',
-  forbidden: 'This desk was not allowed to write there. Nothing was created.',
-  'bad-request': 'This desk sent a request the chassis could not read. Nothing was created.',
+    sourceMessage("This desk’s session is no longer accepted — reload the page. Nothing was created."),
+  forbidden: sourceMessage("This desk was not allowed to write there. Nothing was created."),
+  'bad-request': sourceMessage("This desk sent a request the chassis could not read. Nothing was created."),
   'staging-file':
-    'That name is one this desk reserves for its own temporary files — try another. Nothing was created.',
+    sourceMessage("That name is one this desk reserves for its own temporary files — try another. Nothing was created."),
   'excluded-directory':
-    'The folder configured for packs is one this desk never reads or writes. Nothing was created.',
-  internal: 'The chassis could not complete the write. Nothing was created.'
+    sourceMessage("The folder configured for packs is one this desk never reads or writes. Nothing was created."),
+  internal: sourceMessage("The chassis could not complete the write. Nothing was created.")
 }
 
 /**

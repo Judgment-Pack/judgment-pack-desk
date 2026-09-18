@@ -627,7 +627,7 @@ describe('citation tracing and case admission', () => {
     ledger.cite('src-1', 'A claim of $50 or less')
     const doc = (citation: unknown, value: unknown = 'https://a.example/p') => ({ sources: [{ id: 'p', locator: { kind: 'uri', value }, citation }] })
     // Unchecked: nothing traces until the receipt has verified.
-    expect(traceCitations(doc({ location: 'src-1#e1', excerpt: 'A claim of $50 or less' }), ledger)[0]!.reason).toContain('unchecked')
+    expect(traceCitations(doc({ location: 'src-1#e1', excerpt: 'A claim of $50 or less' }), ledger)[0]!.reason).toContain('has not been checked')
     ledger.verified('src-1', { state: 'verified', at: 't', keyId: 'k' })
     expect(traceCitations(doc({ location: 'src-1#e1', excerpt: 'A claim   of $50 or less' }), ledger)[0]!.traced).toBe(true)
     expect(traceCitations(doc({ location: 'src-1#e1', excerpt: 'something else' }), ledger)[0]!.reason).toContain('not the recorded excerpt text')
@@ -1489,7 +1489,8 @@ describe('conversation-first task lifecycle', () => {
     const failed = await settled(h.run)
     expect(failed.status).toBe('failed')
     expect(failed.streaming).toBe('')
-    expect(failed.turns.at(-1)?.text).toContain('Response interrupted')
+    expect(failed.turns.at(-1)?.text).toBe('A partial reply')
+    expect(failed.turns.at(-1)?.interrupted).toBe(true)
     expect(h.requests).toHaveLength(1)
     h.run.retryResponse()
     const retried = await settled(h.run)

@@ -54,7 +54,8 @@ export function Conversation({ state, onSend, onStop, onRetryValidation }: { sta
               {turn.role === 'user' ? msg("You") : msg("Assistant")}
               {turn.kind === 'unknowns' ? msg(" · open questions and assumptions") : turn.kind === 'note' ? msg(" · note from the desk") : ''}
             </span>
-            {turn.text}
+            {turn.kind === 'note' ? systemMessage(turn.text) : turn.text}
+            {turn.interrupted && <p className={styles.turnMeta}>{msg('Response interrupted')}</p>}
           </article>
         ))}
         {state.status !== 'idle' && state.status !== 'running' && state.detail !== '' && (

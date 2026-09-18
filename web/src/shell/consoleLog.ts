@@ -1,3 +1,4 @@
+import { sourceMessage } from '../i18n/source'
 /**
  * The console's buffer: what this session has seen, in memory.
  *
@@ -21,6 +22,8 @@ export interface ConsoleEntry {
   at: number
   channel: ConsoleChannel
   text: string
+  authored: boolean
+  context?: 'research' | 'assistant'
 }
 
 /** Bounded, because a long session is not a reason to hold a long buffer. */
@@ -44,9 +47,9 @@ function publish(): void {
   for (const listener of listeners) listener()
 }
 
-function append(channel: ConsoleChannel, text: string): void {
+function append(channel: ConsoleChannel, text: string, authored = true, context?: ConsoleEntry['context']): void {
   sequence += 1
-  const next = entries.concat({ seq: sequence, at: Date.now(), channel, text })
+  const next = entries.concat({ seq: sequence, at: Date.now(), channel, text, authored, ...(context ? { context } : {}) })
   entries = next.length > CAPACITY ? next.slice(next.length - CAPACITY) : next
   publish()
 }
@@ -60,7 +63,7 @@ export function recordConnection(text: string): void {
 
 /** One file the chassis' watcher reported. The path, and nothing else. */
 export function recordFileChange(path: string): void {
-  append('files', path === '' ? '(a file changed; the notification carried no path)' : path)
+  append('files', path === '' ? sourceMessage('(a file changed; the notification carried no path)') : path, path === '')
 }
 
 export function subscribeConsole(listener: () => void): () => void {
@@ -82,4 +85,4 @@ export function forgetConsole(): void {
 }
 
 /** Operation milestones only: never prompts, credentials, facts or evidence. */
-export function recordActivity(text: string): void { append('calls', text) }
+export function recordActivity(text: string, context?: ConsoleEntry['context']): void { append('calls', text, true, context) }

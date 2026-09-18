@@ -1,3 +1,12 @@
+import { thinkingNotice, alwaysFromRefusal } from '../assistant/thinking'
+import { listingRefusal } from '../assistant/modelListing'
+import { describeEvent } from '../assistant/EventList'
+import { checkpoint, decodeCheckpoint } from '../chat/checkpoint'
+import { INITIAL_STATE } from '../research/run'
+import { Conversation } from '../research/ui/Conversation'
+import { IdentityProvider, useIdentity } from '../identity/IdentityProvider'
+import { DeskConfigFixture } from '../config/DeskConfigProvider'
+import { decodeDeskConfig, effectiveConfig } from '../config/deskConfig'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -8,6 +17,10 @@ import { sourceMessage } from './source'
 import { layersReached } from '../packs/checks'
 import { checkLine } from '../assistant/endpointCheck'
 import { CodeBlock } from '../ui/CodeBlock'
+import { slugFor } from '../packs/newPack'
+import { CREATE_REFUSALS } from '../packs/createRefusal'
+import { readDraft } from '../assistant/proposalDiff'
+import { StatusLine } from '../admin/SourceCard'
 
 afterEach(async () => { cleanup(); vi.restoreAllMocks(); localStorage.clear(); setLanguage('en'); await languageReady(); localStorage.clear() })
 
@@ -164,4 +177,69 @@ describe('personal language preference', () => {
     expect(answer.probe).toBe(probe)
   })
 
+  it('localizes deferred creation failures while retaining canonical diagnostics and user values', async () => {
+    const name = slugFor('123 example')
+    expect('problem' in name).toBe(true)
+    const original = 'problem' in name ? name.problem : ''
+    const draft = readDraft('[]')
+    expect('problem' in draft).toBe(true)
+    setLanguage('ja'); await languageReady()
+    expect(systemMessage(original)).toBe('名前は英字で始める必要があります。')
+    expect(systemMessage(CREATE_REFUSALS['outside-root']!)).toBe('その場所はプロジェクトの外部です。何も作成していません。')
+    if ('problem' in draft) expect(systemMessage(draft.problem)).toBe('エディターのデータは JSON ですがオブジェクトではありません')
+    expect(slugFor('123 example')).toEqual(name)
+    expect(systemMessage(sourceMessage('This project already has a pack called {{value0}}.', { value0: 'Save-原文' }))).toContain('Save-原文')
+  })
+
+  it('localizes configuration constraints without changing validation, paths or rejected values', async () => {
+    const text = JSON.stringify({ deskConfigVersion: 1, organization: { name: 42 } })
+    const decoded = decodeDeskConfig(text, 'project')
+    expect(decoded.problems).toEqual([{ key: 'organization.name', reason: 'must be a string or null; found number 42' }])
+    render(<StatusLine status={{ state: 'refused', problems: decoded.problems }} />)
+    await act(async () => { setLanguage('fr'); await languageReady() })
+    expect(screen.getByText('organization.name: doit être une chaîne ou null ; valeur trouvée : number 42')).toBeTruthy()
+    expect(decodeDeskConfig(text, 'project')).toEqual(decoded)
+    expect(systemMessage('Provider diagnostic: keep this exact')).toBe('Provider diagnostic: keep this exact')
+  })
+
+})
+
+
+it('localizes the default identity without changing a configured display name', async () => {
+  function IdentityLabel() { const identity = useIdentity(); return <span>{identity.displayName}</span> }
+  const { rerender } = render(<DeskConfigFixture value={effectiveConfig(undefined)}><IdentityProvider><IdentityLabel /></IdentityProvider></DeskConfigFixture>)
+  await act(async () => { setLanguage('fr'); await languageReady() })
+  expect(screen.getByText(msg('local user'))).toBeTruthy()
+  const explicit = effectiveConfig(decodeDeskConfig(JSON.stringify({ deskConfigVersion: 1, user: { displayName: 'local user' } }), 'project'))
+  rerender(<DeskConfigFixture value={explicit}><IdentityProvider><IdentityLabel /></IdentityProvider></DeskConfigFixture>)
+  expect(screen.getByText('local user')).toBeTruthy()
+  const inherited = effectiveConfig(decodeDeskConfig(JSON.stringify({ deskConfigVersion: 1, user: {} }), 'project'))
+  rerender(<DeskConfigFixture value={inherited}><IdentityProvider><IdentityLabel /></IdentityProvider></DeskConfigFixture>)
+  expect(screen.getByText(msg('local user'))).toBeTruthy()
+})
+
+it('localizes nested agent notices and retained paragraphs without translating identifiers', async () => {
+  const notice = thinkingNotice('always', alwaysFromRefusal(400))
+  const refused = listingRefusal(503)
+  setLanguage('fr'); await languageReady()
+  expect(systemMessage(notice)).toBe('ce modèle raisonne toujours : le point de terminaison a répondu 400 à toutes les variantes du paramètre désactivant le raisonnement')
+  expect(systemMessage(refused)).toBe('la liste des modèles a été refusée — réponse 503, Desk a déjà atteint sa limite de requêtes simultanées vers ce point de terminaison')
+  expect(describeEvent({ type: 'thinking_unavailable', detail: notice })).toBe(systemMessage(notice))
+  expect(describeEvent({ type: 'thinking_unavailable', detail: notice }, sourceMessage)).toBe(notice)
+  expect(systemMessage('Stopped. The last completed stage is kept.\n\nProvider diagnostic: exact')).toBe('Arrêté. La dernière étape terminée est conservée.\n\nProvider diagnostic: exact')
+  expect(systemMessage(sourceMessage('verify: {{value0}} — {{value1}} ({{value2}})', { value0: 'Save', value1: 'FAILED', value2: 'signature-mismatch' }))).toBe('vérification : Save — FAILED (signature-mismatch)')
+})
+
+it('persists interrupted prose verbatim and translates only its separate annotation', async () => {
+  const state = { ...INITIAL_STATE, status: 'stopped' as const, turns: [{ role: 'assistant' as const, kind: 'message' as const, text: 'Save. Response interrupted. 原文', interrupted: true, at: '2026-01-01T00:00:00Z' }] }
+  const saved = JSON.parse(JSON.stringify(checkpoint(state, [])))
+  const restored = decodeCheckpoint(saved).state
+  expect(restored.turns).toEqual(state.turns)
+  render(<Conversation state={restored} onSend={() => {}} onStop={() => {}} />)
+  await act(async () => { setLanguage('ja'); await languageReady() })
+  expect(screen.getByText('Save. Response interrupted. 原文')).toBeTruthy()
+  expect(screen.getByText(msg('Response interrupted'))).toBeTruthy()
+  expect(restored.turns[0]!.text).toBe(state.turns[0]!.text)
+  saved.state.turns[0].interrupted = 'true'
+  expect(() => decodeCheckpoint(saved)).toThrow('Saved chat data is not supported')
 })

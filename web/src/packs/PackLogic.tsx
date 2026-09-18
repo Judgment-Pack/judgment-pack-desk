@@ -127,7 +127,7 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
   return <section ref={root} className={styles.logic} aria-label={msg("Pack logic")}>
     <span ref={setRuler} className={styles.ruler} aria-hidden="true" />
     <div className={styles.toolbar}>
-      <SegmentedControl label={msg("Logic view")} value={mode} onValueChange={v => onMode(v as LogicMode)} segments={[{ value: 'list', label: "List" }, { value: 'map', label: "Map" }]} />
+      <SegmentedControl label={msg("Logic view")} value={mode} onValueChange={v => onMode(v as LogicMode)} segments={[{ value: 'list', label: msg("List") }, { value: 'map', label: msg("Map") }]} />
       <form className={styles.search} onSubmit={e => { e.preventDefault(); requestMatch() }}>
         <Input type="search" aria-label={msg("Find pack item")} value={query} onChange={e => onQuery(e.target.value)} placeholder={mode === 'map' ? msg("Find in map…") : msg("Filter items…")} />
       </form>

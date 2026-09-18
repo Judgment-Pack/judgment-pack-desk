@@ -475,7 +475,7 @@ export function CreatePackDialog({
     source?.kind !== 'proposal' && source?.kind !== 'draft'
       ? undefined
       : proposed === undefined || 'problem' in proposed
-        ? (proposed?.problem ?? msg(CHECKING))
+        ? (proposed?.problem ? systemMessage(proposed.problem) : msg(CHECKING))
         : !validateSupported
           ? msg(NO_VALIDATE)
           : checked.isError
@@ -525,7 +525,8 @@ export function CreatePackDialog({
               : msg("This template could not be read — {{value0}}", { value0: templateError.message })
             : undefined
 
-  const nameProblem = name.trim() === '' ? undefined : 'problem' in derived ? derived.problem : taken
+  const nameProblemSource = name.trim() === '' ? undefined : 'problem' in derived ? derived.problem : taken
+  const nameProblem = nameProblemSource === undefined ? undefined : systemMessage(nameProblemSource)
 
   // A listing that failed is not a project with no files in it. `retry: false`
   // means one failed request is the final answer, so this is said as soon as it
@@ -638,7 +639,7 @@ export function CreatePackDialog({
     if (!ready || slug === undefined || path === undefined || source === undefined) return
     setFailure(undefined)
     setBusy(true)
-    recordActivity('Creating pack…')
+    recordActivity(sourceMessage('Creating pack…'))
     let completed = false
     try {
       // (0a) The configuration as it is now, read directly and **first**.
@@ -850,7 +851,7 @@ export function CreatePackDialog({
       // (3) Everything that answered before this pack existed.
       invalidate([['desk-files'], ['desk-file', PROJECT_FILE], ['list_packs'], ['desk-config']])
       completed = true
-      recordActivity('Pack created and registered.')
+      recordActivity(sourceMessage('Pack created and registered.'))
       if (presentation === 'page' || presentation === 'review') {
         describe.discard()
         onCreated?.()
@@ -885,7 +886,7 @@ export function CreatePackDialog({
       // just navigated to.
       if (presentation === 'dialog') onCreated?.()
     } finally {
-      if (!completed) recordActivity('Pack creation stopped. See the creation page for details.')
+      if (!completed) recordActivity(sourceMessage('Pack creation stopped. See the creation page for details.'))
       setBusy(false)
     }
   }
@@ -965,7 +966,7 @@ export function CreatePackDialog({
     const preview = draft === undefined ? undefined : buffered(draft).index.value
     return <>
       {guide}
-      <PageHeader title={msg("Packs")} context="Create pack" actions={<Button onClick={() => inspector.reveal()}>{msg("Guide")}</Button>} />
+      <PageHeader title={msg("Packs")} context={msg("Create pack")} actions={<Button onClick={() => inspector.reveal()}>{msg("Guide")}</Button>} />
       <PageBody width="form">
         <form noValidate className={flow.flow} onSubmit={(event) => { event.preventDefault(); if (step === 2) void create(); else next() }}>
           <ol className={flow.steps} aria-label={msg("Creation steps")}>
@@ -979,8 +980,8 @@ export function CreatePackDialog({
               if (next === 'manual') { setMethod('manual'); describe.discard(); setChoice(undefined) }
               else setMethod('ai')
             }} segments={[
-              { value: 'manual', label: "Manual", disabled: draft !== undefined || describe.running },
-              { value: 'ai', label: "Draft with Assistant", disabled: draft !== undefined || !describe.usable || !describe.advertised || describe.picked.model === '' }
+              { value: 'manual', label: msg("Manual"), disabled: draft !== undefined || describe.running },
+              { value: 'ai', label: msg("Draft with Assistant"), disabled: draft !== undefined || !describe.usable || !describe.advertised || describe.picked.model === '' }
             ]} /></div>
             {!describe.usable && <p className={flow.hint}><Message text={"AI drafting is unavailable. Configure the assistant in Admin to enable it. <0/>"} slots={[describe.unusableBecause]} /></p>}
             {describe.usable && !describe.advertised && <p className={flow.hint}>{msg("This runtime does not offer the authoring prompt required for AI drafting.")}</p>}

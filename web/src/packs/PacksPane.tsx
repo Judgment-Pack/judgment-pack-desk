@@ -152,7 +152,7 @@ export function PacksPane({ active = true }: { active?: boolean }) {
         }}>
           {packs.slice(window.start, window.end).map((pack, offset) => <li key={pack.id}
             className={styles.row} data-selected={previewOpen && preview?.id === pack.id || undefined}>
-            <OverflowTooltip selector="[data-overflow-text]" fallback="Preview this pack to read the full description."><Link className={styles.link} data-row={window.start + offset} to={`/packs/${encodeURIComponent(pack.id)}`}
+            <OverflowTooltip selector="[data-overflow-text]" fallback={msg("Preview this pack to read the full description.")}><Link className={styles.link} data-row={window.start + offset} to={`/packs/${encodeURIComponent(pack.id)}`}
               onClick={() => { if (list.current) scrollPosition.current = list.current.scrollTop }}>
               <span className={styles.name}>
                 <span className={styles.nameText} data-overflow-text>{pack.id}</span>

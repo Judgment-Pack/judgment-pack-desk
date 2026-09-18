@@ -1,3 +1,4 @@
+import { sourceMessage } from '../i18n/source'
 /**
  * The refutation pass: a second, adversarial run over the proposed document,
  * and the three rules the desk holds it to.
@@ -119,7 +120,7 @@ export interface Check {
  * absence of a check as a clean bill of health.
  */
 export const NO_CHECKS =
-  'the critic ran no runtime check, so nothing here says whether the document holds'
+  sourceMessage("the critic ran no runtime check, so nothing here says whether the document holds")
 
 /**
  * The sentence the pass reports where the runtime advertises no `test_pack`.
@@ -131,9 +132,7 @@ export const NO_CHECKS =
  * refutation line, because a pass that did not run refuted nothing.
  */
 export const NO_TEST_PROMPT =
-  'the refutation pass did not run: this desk has no test_pack prompt from the runtime to ' +
-  'work from, and the critic works from the runtime’s instructions rather than from words ' +
-  'of this desk’s own'
+  sourceMessage("the refutation pass did not run: this desk has no test_pack prompt from the runtime to work from, and the critic works from the runtime’s instructions rather than from words of this desk’s own")
 
 /** The verdict, and the words on either side of it. */
 export interface Critique {

@@ -1,3 +1,4 @@
+import { sourceMessage } from '../i18n/source'
 /**
  * The desk's three keyboard shortcuts, and the one rule that matters more than
  * the three of them.
@@ -43,10 +44,10 @@ export interface Shortcut {
  * the browser's own save-page dialog opened over unsaved work.
  */
 export const SHORTCUTS: readonly Shortcut[] = [
-  { keys: 'Mod+B', label: 'Collapse or expand the navigation rail' },
-  { keys: 'Mod+Alt+I', label: 'Open or close the Inspector' },
-  { keys: 'Mod+Alt+J', label: 'Open or close the Console' },
-  { keys: 'Mod+S', label: 'Save, while editing a pack' }
+  { keys: 'Mod+B', label: sourceMessage('Collapse or expand the navigation rail') },
+  { keys: 'Mod+Alt+I', label: sourceMessage('Open or close the Inspector') },
+  { keys: 'Mod+Alt+J', label: sourceMessage('Open or close the Console') },
+  { keys: 'Mod+S', label: sourceMessage('Save, while editing a pack') }
 ]
 
 export interface ShortcutActions {

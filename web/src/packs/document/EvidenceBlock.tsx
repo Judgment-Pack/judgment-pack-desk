@@ -1,3 +1,4 @@
+import { valueLabel } from '../terminology'
 import { msg, useLocale } from '../../i18n'
 import { PACK_TERMS } from '../terminology'
 /** What the pack requires before it decides, as the document declares it. */
@@ -31,7 +32,7 @@ export function EvidenceBlock({
               <MisshapenMember
                 pointer={`${at}/${index}`}
                 label={msg("Requirement {{value0}}", { value0: index + 1 })}
-                expected="an object"
+                expected={msg("an object")}
                 value={requirement}
               />
             </li>
@@ -48,7 +49,7 @@ export function EvidenceBlock({
                       {requirement.required ? msg("required") : msg("optional")}
                     </span>
                     {requirement.kind !== undefined && (
-                      <span className={styles.tagQuiet}>{requirement.kind}</span>
+                      <span className={styles.tagQuiet}>{valueLabel('kind', requirement.kind)}</span>
                     )}
                   </p>
                   <p>{requirement.description}</p>

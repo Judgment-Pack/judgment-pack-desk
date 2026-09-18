@@ -209,8 +209,8 @@ export function TryItPane({
           setArmedFor(null)
         }}
         segments={[
-          { value: 'pack', label: "these edits" },
-          { value: 'pack_id', label: "the saved pack" }
+          { value: 'pack', label: msg("these edits") },
+          { value: 'pack_id', label: msg("the saved pack") }
         ]}
       />
 

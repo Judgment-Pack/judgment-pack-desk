@@ -1,5 +1,5 @@
 import { Message } from '../../i18n/Message'
-import { msg, useLocale } from '../../i18n'
+import { systemMessage, msg, useLocale } from '../../i18n'
 import { Button } from '../../ui/Button'
 import { CodeBlock } from '../../ui/CodeBlock'
 import { Disclosure } from '../../ui/Disclosure'
@@ -34,7 +34,7 @@ export function ExpectationReview({ state, onSelect, onProposeCorrection, onAppr
     {pending.length > 0 && <p className={styles.detail} role="status">{msg("{{count}} expectations did not pass runtime expectation validation. Testing is paused until each correction is reviewed and approved.", { count: pending.length })}</p>}
     {state.expectationIssues.map(issue => <article className={styles.row} key={issue.id} aria-label={msg("Expectation {{value0}}", { value0: issue.id })}>
       <div className={styles.rowHead}><strong>{issue.id}</strong><span className={styles.badge}>{issue.resolved ? msg("Correction approved") : msg("Blocked expectation")}</span></div>
-      <p className={styles.detail}>{issue.message}</p>
+      <p className={styles.detail}>{systemMessage(issue.message)}</p>
       <p className={styles.hint}>{issue.original.rationale}</p>
       <div><Button variant="inline" onClick={() => onSelect({ kind: 'excerpt', id: issue.original.expectationSource })}><Message text={"View source <0/>"} slots={[issue.original.expectationSource]} /></Button></div>
       {issue.resolved ? <Disclosure title={msg("Correction history")}>
@@ -44,7 +44,7 @@ export function ExpectationReview({ state, onSelect, onProposeCorrection, onAppr
         <p className={styles.hint}><Message text={"Approved <0/>. Case inputs and source were preserved."} slots={[issue.resolved.approvedAt]} /></p>
       </Disclosure> : <>
         <Expectation disposition={issue.original.expectedDisposition} target={issue.original.expectedHandoffTarget} label={msg("Original expectation")} />
-        {issue.proposalError && <p className={styles.detail} role="alert">{issue.proposalError}</p>}
+        {issue.proposalError && <p className={styles.detail} role="alert">{systemMessage(issue.proposalError)}</p>}
         {issue.proposal && <>
           <Expectation disposition={issue.proposal.expectedDisposition} target={issue.original.expectedHandoffTarget} label={msg("Proposed expectation")} />
           <p className={styles.detail}>{issue.proposal.rationale}</p>

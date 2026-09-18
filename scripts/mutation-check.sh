@@ -1993,7 +1993,7 @@ function usePacks() { useConfiguredGraphs(); return readPacks() }'
     return { values: undefined, problems: unique, notices: [], declaredPanes }
   }'
   mutate web "an unknown config key is accepted silently" "$D" \
-    "    problems.push({ key, reason: 'unknown key' })" \
+    '    problems.push({ key, reason: sourceMessage("unknown key") })'  \
     '    void key'
   mutate web "identity may be configured in the shared project file" "$D" \
     "const PROJECT_KEYS: readonly string[] = COMMON_KEYS" \
@@ -2151,7 +2151,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '            {files.length === 0 ? ('
   mutate web "the partial warning is not shown" "$A" \
     '            {partial.length > 0 && (' \
-    '            {false && (' 
+    '            {false && ('
   mutate web "the save read-back installs over a newer read" "$FE" \
     '            if (state !== undefined && state.dataUpdatedAt > startedAt) return' \
     '            void state'
@@ -2266,8 +2266,8 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '  if (project.files.some((file) => samePath(file, project.path))) {' \
     '  if (false) {'
   mutate web "a slug that does not begin with a letter is accepted" "$NP" \
-    "  if (!/^[a-z]/.test(slug)) return { problem: 'A name must start with a letter.' }" \
-    "  if (false) return { problem: 'A name must start with a letter.' }"
+    '  if (!/^[a-z]/.test(slug)) return { problem: sourceMessage("A name must start with a letter.") }'  \
+    '  if (false) return { problem: sourceMessage("A name must start with a letter.") }'
   mutate web "the template's specVersion is overwritten" "$NP" \
     '    version: NEW_PACK_VERSION
   }' \
@@ -3073,7 +3073,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
 
   # 3. The set is mirrored on the client, and the mirror has to be complete.
   mutate web "a chassis code has no Create sentence" "$CR" \
-    "  'not-a-file': 'Something that is not a file is in the way. Nothing was created.'," \
+    "  'not-a-file': sourceMessage(\"Something that is not a file is in the way. Nothing was created.\")," \
     ''
   mutate web "the mirrored code set drifts from the chassis'" "$CR" \
     "  'excluded-directory'," \
@@ -3957,9 +3957,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '  if (held !== undefined) return <>{children}</>' \
     '  if (held !== NOT_DECLARED) return <>{children}</>'
   mutate web 'the blank option is the empty string ui/Select says is never offered' web/src/packs/edit/fields.tsx \
-    '            ...(optional === true ? [{ value: NOT_DECLARED, label: "not declared" }] : []),
+    '            ...(optional === true ? [{ value: NOT_DECLARED, label: msg("not declared") }] : []),
             ...declared.map((word) => ({ value: word, label: word })),' \
-    '            ...(optional === true ? [{ value: '"'"''"'"', label: "not declared" }] : []),
+    '            ...(optional === true ? [{ value: '"'"''"'"', label: msg("not declared") }] : []),
             ...declared.map((word) => ({ value: word, label: word })),'
 
   # A node the document does not carry is not a kind this desk has never seen.
@@ -4411,7 +4411,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # gets established; without its note the transcript of a retried run is
   # indistinguishable from one that established on the first pass.
   mutate web "a retry leaves no trace in the transcript" "$RR" \
-    "    this.addTurn({ role: 'user', kind: 'note', text: 'Sent the held case proposal back for validation.' })" \
+    "    this.addTurn({ role: 'user', kind: 'note', text: sourceMessage(\"Sent the held case proposal back for validation.\") })" \
     '    void 0'
 
   # **Two rows are gone from here**, and the reason is worth the space. They
@@ -4766,10 +4766,10 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "the default is accepted outside the enabled set" "$D" \
     '  if (!models.includes(model)) {
     return (
-      `must be one of the models enabled for this endpoint; ` +' \
+      sourceMessage("must be one of the models enabled for this endpoint; {{value0}} is not one of them", { value0: JSON.stringify(model) })' \
     '  if (false) {
     return (
-      `must be one of the models enabled for this endpoint; ` +'
+      sourceMessage("must be one of the models enabled for this endpoint; {{value0}} is not one of them", { value0: JSON.stringify(model) })'
 
   # **One press, two questions.** Test connection is the reachability probe and
   # the endpoint's own model listing, and a button that made only the first of
@@ -5183,7 +5183,7 @@ export function assistantTransport(id: string): Transport {
         await this.casesAndCheck(signal, false)
       } catch (cause) {
         this.set(before)
-        this.undone = `The correction for ${id} was rolled back: its retest did not complete, so nothing was approved and the proposal is still on offer.`
+        this.undone = sourceMessage("The correction for {{value0}} was rolled back: its retest did not complete, so nothing was approved and the proposal is still on offer.", { value0: id })
         throw cause
       }' \
     '      await this.casesAndCheck(signal, false)'
@@ -5193,7 +5193,7 @@ export function assistantTransport(id: string): Transport {
   # account of a correction the run took back -- which is #82's complaint, a
   # reason that is not the real one, in a new place.
   mutate web "a rolled-back approval is not reported" "$RR" \
-    '        this.undone = `The correction for ${id} was rolled back: its retest did not complete, so nothing was approved and the proposal is still on offer.`' \
+    '        this.undone = sourceMessage("The correction for {{value0}} was rolled back: its retest did not complete, so nothing was approved and the proposal is still on offer.", { value0: id })' \
     '        void 0'
 
   # **Taken back whole means the phase too.** The retest moved the run to
@@ -5980,7 +5980,7 @@ export function assistantTransport(id: string): Transport {
   # A run still in flight is about to replace the events the proposal is on.
   mutate web "Accept is enabled while the session is still running" "$AC" \
     '  if (input.running) {
-    return { enabled: false, why: '"'"'The session is still running. Stop it or wait for it to end.'"'"' }
+    return { enabled: false, why: sourceMessage("The session is still running. Stop it or wait for it to end.") }
   }' \
     '  if (false) {
     return { enabled: false, why: '"'"''"'"' }
@@ -6625,7 +6625,7 @@ export function assistantTransport(id: string): Transport {
   # nobody chose to look at — the same defect `dist` had.
   mutate web "a control character is accepted in a pack location" "$D" \
     '  if (CONTROL_CHARACTER.test(value)) {
-    return bad(`${NO_CONTROL_CHARACTERS}; found ${describe(value)}`)
+    return bad(sourceMessage(NO_CONTROL_CHARACTERS + "; found {{value0}}", { value0: describe(value) }))
   }' \
     ''
 
@@ -6635,12 +6635,12 @@ export function assistantTransport(id: string): Transport {
   # which is the half of the rule round 2 found missing.
   mutate web "the control-character rule is asked after the trim has hidden the edges" "$D" \
     '  if (CONTROL_CHARACTER.test(value)) {
-    return bad(`${NO_CONTROL_CHARACTERS}; found ${describe(value)}`)
+    return bad(sourceMessage(NO_CONTROL_CHARACTERS + "; found {{value0}}", { value0: describe(value) }))
   }
   const trimmed = value.trim().replace(/\/+$/, '"'"''"'"')' \
     '  const trimmed = value.trim().replace(/\/+$/, '"'"''"'"')
   if (CONTROL_CHARACTER.test(trimmed)) {
-    return bad(`${NO_CONTROL_CHARACTERS}; found ${describe(value)}`)
+    return bad(sourceMessage(NO_CONTROL_CHARACTERS + "; found {{value0}}", { value0: describe(value) }))
   }'
 
   # **A save that lands is over.** The decoder normalises what it accepts — an

@@ -1,3 +1,4 @@
+import { sourceMessage } from '../i18n/source'
 /**
  * Accepting a proposal: the diff, turned into the writers a form edit uses.
  *
@@ -287,7 +288,7 @@ export function writable(document: unknown): boolean {
  * what happened and offers the only honest way forward.
  */
 export const DRAFT_MOVED =
-  'The draft changed since this proposal was made — run again to propose against it.'
+  sourceMessage("The draft changed since this proposal was made — run again to propose against it.")
 
 /** What the proposal is called once a person has acted on it. */
 export type Disposition = 'open' | 'accepted' | 'rejected'
@@ -334,20 +335,20 @@ export function acceptState(input: {
   /** True where the proposal is JSON data this desk could write. */
   writable: boolean
 }): AcceptState {
-  if (!input.editing) return { enabled: false, why: 'Open Edit to accept.' }
-  if (!input.proposal) return { enabled: false, why: 'There is no proposal to accept yet.' }
+  if (!input.editing) return { enabled: false, why: sourceMessage("Open Edit to accept.") }
+  if (!input.proposal) return { enabled: false, why: sourceMessage("There is no proposal to accept yet.") }
   if (input.failure !== '') return { enabled: false, why: input.failure }
   if (input.running) {
-    return { enabled: false, why: 'The session is still running. Stop it or wait for it to end.' }
+    return { enabled: false, why: sourceMessage("The session is still running. Stop it or wait for it to end.") }
   }
-  if (input.disposition === 'rejected') return { enabled: false, why: 'This proposal was rejected.' }
+  if (input.disposition === 'rejected') return { enabled: false, why: sourceMessage("This proposal was rejected.") }
   if (input.disposition === 'accepted') {
-    return { enabled: false, why: 'This proposal is already in the draft.' }
+    return { enabled: false, why: sourceMessage("This proposal is already in the draft.") }
   }
   if (!input.onBaseline) return { enabled: false, why: DRAFT_MOVED }
   if (input.busy !== '') return { enabled: false, why: input.busy }
   if (!input.writable) {
-    return { enabled: false, why: 'The proposal is not JSON data, so there is nothing to write.' }
+    return { enabled: false, why: sourceMessage("The proposal is not JSON data, so there is nothing to write.") }
   }
   return { enabled: true, why: '' }
 }

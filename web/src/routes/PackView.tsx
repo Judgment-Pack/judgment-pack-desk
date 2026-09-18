@@ -1000,7 +1000,7 @@ export function PackView() {
         {inspector}{details}
         <div data-layout="page">
         {editing ? <PackEditHeader
-          title={text(drawn?.title, packId ?? 'Pack')}
+          title={text(drawn?.title, packId ?? msg('Pack'))}
           backRef={backButton}
           onBack={requestReturn}
           onSave={() => save()}
@@ -1178,9 +1178,9 @@ export function PackView() {
                     <PackLogic model={model} at={at} groupId={groupId} select={selectInMain} inspect={select} mode={mode} onMode={changeMode}
                       query={logic.query} onQuery={logic.setQuery} display={logic.display} onDisplay={logic.setDisplay}
                       viewport={logic.viewport} onViewport={logic.setViewport} listScroll={logic.listScroll}
-                      trace={runTrace} mapUnavailable={!formAvailable ? "The document cannot be interpreted unambiguously."
-                        : stale || !report ? "A current validation is needed before displaying a complete map."
-                        : report.status !== 'valid' ? "This document is invalid or requires unsupported semantics. Inspect its definitions and validation details in List." : undefined} />
+                      trace={runTrace} mapUnavailable={!formAvailable ? msg("The document cannot be interpreted unambiguously.")
+                        : stale || !report ? msg("A current validation is needed before displaying a complete map.")
+                        : report.status !== 'valid' ? msg("This document is invalid or requires unsupported semantics. Inspect its definitions and validation details in List.") : undefined} />
                   </>}
                 </> : <PackDocumentView key={section} document={drawn} active={active}
                   members={section === 'evidence' ? PACK_GROUPS.evidence : undefined}

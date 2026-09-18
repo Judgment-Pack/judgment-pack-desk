@@ -1,5 +1,5 @@
 import { Message } from '../../i18n/Message'
-import { msg, useLocale } from '../../i18n'
+import { systemMessage, msg, useLocale } from '../../i18n'
 import { Fragment, useMemo, useRef, useState } from 'react'
 import type { PackDocument } from '../../mcp/types'
 import { PackLogic } from '../../packs/PackLogic'
@@ -171,7 +171,7 @@ export function TestsPanel({ state, onSelect, mode = 'research', ...actions }: E
           <ul className={styles.unknowns}>
             {state.droppedCases.map((dropped) => (
               <li key={dropped.id}>
-                {dropped.id}: {dropped.reason}
+                {dropped.id}: {systemMessage(dropped.reason)}
               </li>
             ))}
           </ul>
@@ -233,7 +233,7 @@ export function ReviewPanel({ state, sources, onCreate, onSelect, showCreateActi
     <div className={styles.panel}>
       <section className={styles.section}>
         <h3>{msg("Where this stands")}</h3>
-        <p className={styles.detail}>{state.detail || msg("Not started.")}</p>
+        <p className={styles.detail}>{systemMessage(state.detail) || msg("Not started.")}</p>
         <dl className={styles.facts}>
           <dt>{msg("Revisions")}</dt>
           <dd>{msg("{{revisions}} ({{count}} repairs)", { revisions: state.candidates.length, count: state.revisionsUsed })}</dd>
@@ -261,7 +261,7 @@ export function ReviewPanel({ state, sources, onCreate, onSelect, showCreateActi
           <ul className={styles.unknowns}>
             {untraced.map((citation) => (
               <li key={citation.sourceId}>
-                <strong>{citation.sourceId}</strong>: {citation.reason}
+                <strong>{citation.sourceId}</strong>: {systemMessage(citation.reason)}
                 {citation.url ? ` (${citation.url})` : ''}
               </li>
             ))}
@@ -350,11 +350,11 @@ export function DraftTabs({ state, sources, selection, onSelect, onCreate, showC
         value={tab}
         onValueChange={setTab}
         tabs={[
-          { value: 'draft', label: "Overview", panel: <DraftPanel state={state} onSelect={onSelect} onViewLogic={() => setTab('logic')} onViewSources={() => setTab('sources')} /> },
-          { value: 'logic', label: "Logic", panel: <DraftLogic state={state} selection={selection} onSelect={onSelect} /> },
-          { value: 'sources', label: `Sources${sources.length ? ` (${sources.length})` : ''}`, panel: <div className={styles.panel}><SourcesPanel sources={sources} selection={selection} onSelect={onSelect} /></div> },
-          { value: 'tests', label: `Tests${total ? ` (${total})` : ''}`, panel: <TestsPanel mode={mode} state={state} onSelect={onSelect} {...actions} /> },
-          { value: 'review', label: "Review", panel: <ReviewPanel showCreateAction={showCreateAction} mode={mode} state={state} sources={sources} onCreate={onCreate} onSelect={onSelect} /> }
+          { value: 'draft', label: msg("Overview"), panel: <DraftPanel state={state} onSelect={onSelect} onViewLogic={() => setTab('logic')} onViewSources={() => setTab('sources')} /> },
+          { value: 'logic', label: msg("Logic"), panel: <DraftLogic state={state} selection={selection} onSelect={onSelect} /> },
+          { value: 'sources', label: sources.length ? msg('Sources ({{count}})', { count: sources.length }) : msg('Sources'), panel: <div className={styles.panel}><SourcesPanel sources={sources} selection={selection} onSelect={onSelect} /></div> },
+          { value: 'tests', label: total ? msg('Tests ({{count}})', { count: total }) : msg('Tests'), panel: <TestsPanel mode={mode} state={state} onSelect={onSelect} {...actions} /> },
+          { value: 'review', label: msg("Review"), panel: <ReviewPanel showCreateAction={showCreateAction} mode={mode} state={state} sources={sources} onCreate={onCreate} onSelect={onSelect} /> }
         ]}
       />
     </section>

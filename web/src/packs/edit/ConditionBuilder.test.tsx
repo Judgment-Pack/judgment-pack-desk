@@ -135,16 +135,16 @@ describe('what the form will not refuse', () => {
 describe('the kinds', () => {
   it('recurses through the schema’s five and names each group', () => {
     draw(WHEN)
-    expect(screen.getByRole('group', { name: `all of — ${WHEN}` })).toBeTruthy()
+    expect(screen.getByRole('group', { name: `All conditions — ${WHEN}` })).toBeTruthy()
     expect(
-      screen.getByRole('group', { name: `any of — ${WHEN}/conditions/1` })
+      screen.getByRole('group', { name: `Any condition — ${WHEN}/conditions/1` })
     ).toBeTruthy()
     expect(
-      screen.getByRole('group', { name: `not — ${WHEN}/conditions/1/conditions/1` })
+      screen.getByRole('group', { name: `Not — ${WHEN}/conditions/1/conditions/1` })
     ).toBeTruthy()
     expect(
       screen.getByRole('group', {
-        name: `literal — ${WHEN}/conditions/1/conditions/1/condition`
+        name: `Fixed condition — ${WHEN}/conditions/1/conditions/1/condition`
       })
     ).toBeTruthy()
   })
@@ -170,21 +170,21 @@ describe('the kinds', () => {
 describe('the group controls', () => {
   it('adds, wraps and removes through the writer', async () => {
     const { bytes } = draw(WHEN)
-    const group = screen.getByRole('group', { name: `all of — ${WHEN}` })
+    const group = screen.getByRole('group', { name: `All conditions — ${WHEN}` })
     fireEvent.click(within(group).getAllByRole('button', { name: 'Add' })[0]!)
     await waitFor(() => expect(bytes.current).toContain('"op": "literal"'))
-    const child = screen.getByRole('group', { name: `fact — ${WHEN}/conditions/0` })
+    const child = screen.getByRole('group', { name: `Compare a fact — ${WHEN}/conditions/0` })
     fireEvent.click(within(child).getAllByRole('button', { name: 'Remove' })[0]!)
     await waitFor(() => expect(bytes.current).not.toContain('"/request/amount"'))
   })
 
   it('collapses a nested group and says how many conditions it holds', async () => {
     draw(WHEN)
-    const nested = screen.getByRole('group', { name: `any of — ${WHEN}/conditions/1` })
+    const nested = screen.getByRole('group', { name: `Any condition — ${WHEN}/conditions/1` })
     fireEvent.click(within(nested).getByRole('button', { name: 'Collapse' }))
     await waitFor(() => expect(screen.getByText('collapsed · 2 conditions')).toBeTruthy())
     expect(
-      screen.queryByRole('group', { name: `not — ${WHEN}/conditions/1/conditions/1` })
+      screen.queryByRole('group', { name: `Not — ${WHEN}/conditions/1/conditions/1` })
     ).toBeNull()
   })
 })

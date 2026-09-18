@@ -1,3 +1,4 @@
+import { languageReady, setLanguage } from '../i18n'
 /**
  * The console: two channels with a real feed, and two that say so.
  *
@@ -14,9 +15,10 @@ import { connected } from '../testing/harness'
 import { BottomPane } from './BottomPane'
 import { forgetConsole, recordFileChange, recordActivity } from './consoleLog'
 
-afterEach(() => {
+afterEach(async () => {
   cleanup()
   forgetConsole()
+  setLanguage('en'); await languageReady()
 })
 
 function renderConsole(overrides = {}, tab: 'connection' | 'calls' | 'files' | 'notices' = 'connection') {
@@ -105,5 +107,24 @@ describe('the console', () => {
       </McpContext.Provider>
     )
     expect(screen.queryByRole('region', { name: 'Console' })).toBeNull()
+  })
+})
+
+
+describe('console localization', () => {
+  it('translates recorded milestones when the language changes', async () => {
+    renderConsole({}, 'calls')
+    act(() => recordActivity('Pack created and registered.'))
+    await act(async () => { setLanguage('fr'); await languageReady() })
+    expect(screen.getByText('Pack créé et enregistré.')).toBeTruthy()
+    await act(async () => { setLanguage('ja'); await languageReady() })
+    expect(screen.getByText('パックを作成して登録しました。')).toBeTruthy()
+  })
+  it('preserves file paths even if a name matches a translated UI message', async () => {
+    renderConsole({}, 'files')
+    act(() => recordFileChange('Pack created and registered.'))
+    await act(async () => { setLanguage('fr'); await languageReady() })
+    expect(screen.getByText('Pack created and registered.')).toBeTruthy()
+    expect(screen.queryByText('Pack créé et enregistré.')).toBeNull()
   })
 })

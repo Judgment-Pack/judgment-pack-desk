@@ -40,7 +40,7 @@ export function OutcomesBlock({
               <MisshapenMember
                 pointer={`${at}/${index}`}
                 label={msg("Outcome {{value0}}", { value0: index + 1 })}
-                expected="an object"
+                expected={msg("an object")}
                 value={outcome}
               />
             </li>

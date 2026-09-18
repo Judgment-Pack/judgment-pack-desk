@@ -1,3 +1,4 @@
+import { sourceMessage } from '../i18n/source'
 /**
  * The desk's configuration: one schema, and a decoder that refuses by name.
  *
@@ -178,7 +179,7 @@ export const WITHDRAWN_ASSISTANT_ENGINE = 'builtin'
  * is two contracts.
  */
 export const ASSISTANT_ENGINE_WITHDRAWN =
-  'engine: "builtin" was withdrawn; the Vercel engine runs'
+  sourceMessage("engine: \"builtin\" was withdrawn; the Vercel engine runs")
 
 /**
  * What the decoder says about an endpoint that has no model yet.
@@ -190,7 +191,7 @@ export const ASSISTANT_ENGINE_WITHDRAWN =
  * `noModelChosen` in `internal/desk/assistant.go` writes it, and held identical
  * by a test that reads that file.
  */
-export const NO_MODEL_CHOSEN = 'no model chosen yet — pick one below'
+export const NO_MODEL_CHOSEN = sourceMessage("no model chosen yet — pick one below")
 
 /**
  * The depths the engine may be asked to run the model's reasoning at.
@@ -510,20 +511,15 @@ const DESK_KEYS: readonly string[] = [
 ]
 
 const IDENTITY_AT_PROJECT =
-  'identity may only be configured in the desk-level desk.json — a project is a shared ' +
-  'checkout, and committing an issuer would push one operator’s directory onto every clone'
+  sourceMessage("identity may only be configured in the desk-level desk.json — a project is a shared checkout, and committing an issuer would push one operator’s directory onto every clone")
 
 const RESEARCH_AT_PROJECT =
-  'research may only be configured in the desk-level desk.json — the gateway this desk ' +
-  'reaches and the key it pins are this machine\'s arrangement, and a project file must not ' +
-  'choose where this chassis sends traffic'
+  sourceMessage("research may only be configured in the desk-level desk.json — the gateway this desk reaches and the key it pins are this machine's arrangement, and a project file must not choose where this chassis sends traffic")
 const ASSISTANT_AT_PROJECT =
-  'assistant may only be configured in the desk-level desk.json — a project is a shared ' +
-  'checkout, and committing an endpoint would push one operator’s model endpoint onto every clone'
+  sourceMessage("assistant may only be configured in the desk-level desk.json — a project is a shared checkout, and committing an endpoint would push one operator’s model endpoint onto every clone")
 
 const PROJECT_AT_PROJECT =
-  'project may only be configured in the desk-level desk.json — it names which project this ' +
-  'machine’s desk opens when it is launched without one, which is not a fact about any project'
+  sourceMessage("project may only be configured in the desk-level desk.json — it names which project this machine’s desk opens when it is launched without one, which is not a fact about any project")
 
 /**
  * The sentence a key-shaped member is refused with, wherever it appears.
@@ -536,8 +532,7 @@ const PROJECT_AT_PROJECT =
  * go instead.
  */
 export const KEYS_ARE_NEVER_IN_CONFIGURATION =
-  'a key is never stored in configuration — the desk keeps the assistant key on this machine, ' +
-  'in a file that is in no project and is never sent to this page; store it on Admin › Assistant'
+  sourceMessage("a key is never stored in configuration — the desk keeps the assistant key on this machine, in a file that is in no project and is never sent to this page; store it on Admin › Assistant")
 
 /**
  * The names this decoder treats as key-shaped, wherever they appear.
@@ -624,6 +619,8 @@ function withoutRedundantReasons(problems: ConfigProblem[]): ConfigProblem[] {
 const MAX_MARK_BYTES = 65536
 
 export interface DecodedConfig {
+  /** Presentation provenance; never part of the configuration document. */
+  userNameDefaulted?: true
   /** Undefined where anything at all was refused. */
   values: Partial<DeskConfig> | undefined
   problems: ConfigProblem[]
@@ -651,12 +648,12 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
   try {
     parsed = JSON.parse(text)
   } catch (cause) {
-    return refuse({ key: '', reason: `the file is not JSON: ${String(cause)}` })
+    return refuse({ key: '', reason: sourceMessage("the file is not JSON: {{value0}}", { value0: String(cause) }) })
   }
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
     return refuse({
       key: '',
-      reason: `the file must be a JSON object; found ${describe(parsed)}`
+      reason: sourceMessage("the file must be a JSON object; found {{value0}}", { value0: describe(parsed) })
     })
   }
   const record = parsed as Record<string, unknown>
@@ -672,7 +669,7 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
   } else if (record.deskConfigVersion !== DESK_CONFIG_VERSION) {
     problems.push({
       key: 'deskConfigVersion',
-      reason: `must be ${DESK_CONFIG_VERSION}; found ${describe(record.deskConfigVersion)}`
+      reason: sourceMessage("must be {{value0}}; found {{value1}}", { value0: DESK_CONFIG_VERSION, value1: describe(record.deskConfigVersion) })
     })
   }
 
@@ -695,7 +692,7 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
       problems.push({ key: 'project', reason: PROJECT_AT_PROJECT })
       continue
     }
-    problems.push({ key, reason: 'unknown key' })
+    problems.push({ key, reason: sourceMessage("unknown key") })
   }
 
   const values: Partial<DeskConfig> = {}
@@ -720,7 +717,7 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
         if (typeof user.displayName !== 'string' || user.displayName.trim() === '') {
           problems.push({
             key: 'user.displayName',
-            reason: `must be a non-empty string; found ${describe(user.displayName)}`
+            reason: sourceMessage("must be a non-empty string; found {{value0}}", { value0: describe(user.displayName) })
           })
         } else {
           displayName = user.displayName
@@ -874,7 +871,8 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
   if (unique.length > 0) {
     return { values: undefined, problems: unique, notices: [], declaredPanes }
   }
-  return { values, problems: [], notices, declaredPanes }
+  return { values, problems: [], notices, declaredPanes,
+    ...(values.user && !Object.hasOwn(record.user as object, 'displayName') ? { userNameDefaulted: true as const } : {}) }
 }
 
 /**
@@ -938,20 +936,18 @@ function projectFile(value: unknown, problems: ConfigProblem[]): string | null {
   }
   if (typeof value !== 'string') {
     return bad(
-      `must be an absolute path to a ${PROJECT_CONFIG_NAME}, or null; found ${describe(value)}`
+      sourceMessage("must be an absolute path to a {{value0}}, or null; found {{value1}}", { value0: PROJECT_CONFIG_NAME, value1: describe(value) })
     )
   }
   const trimmed = value.trim()
   if (!isAbsolutePath(trimmed)) {
     return bad(
-      'must be an absolute path, because it is read before this desk has a working directory ' +
-        `to resolve one against; found ${describe(value)}`
+      sourceMessage("must be an absolute path, because it is read before this desk has a working directory to resolve one against; found {{value0}}", { value0: describe(value) })
     )
   }
   if (lastSegment(trimmed) !== PROJECT_CONFIG_NAME) {
     return bad(
-      `must name a ${PROJECT_CONFIG_NAME} — the desk opens the directory that file is in; ` +
-        `found ${describe(value)}`
+      sourceMessage("must name a {{value0}} — the desk opens the directory that file is in; found {{value1}}", { value0: PROJECT_CONFIG_NAME, value1: describe(value) })
     )
   }
   return trimmed
@@ -979,7 +975,7 @@ function lastSegment(path: string): string {
  * break either one while the other went on saying it.
  */
 export const STORAGE_KIND_SAYS =
-  'must be "filesystem"; "database" and "cloud storage" are not available yet'
+  sourceMessage("must be \"filesystem\"; \"database\" and \"cloud storage\" are not available yet")
 
 /**
  * The one storage kind there is.
@@ -997,7 +993,7 @@ function storageKind(
   if (value !== 'filesystem') {
     problems.push({
       key: 'storage.packs.kind',
-      reason: `${STORAGE_KIND_SAYS}, found ${describe(value)}`
+      reason: sourceMessage(STORAGE_KIND_SAYS + ", found {{value0}}", { value0: describe(value) })
     })
     return undefined
   }
@@ -1048,23 +1044,23 @@ function packDir(value: unknown, problems: ConfigProblem[]): string | undefined 
     problems.push({ key: 'storage.packs.dir', reason })
     return undefined
   }
-  if (typeof value !== 'string') return bad(`must be a string; found ${describe(value)}`)
+  if (typeof value !== 'string') return bad(sourceMessage("must be a string; found {{value0}}", { value0: describe(value) }))
   // **On the bytes as written, before any trim.** Round 2 found the check
   // behind one: `String.trim` removes U+0009 through U+000D, so a leading tab
   // or a trailing newline was silently taken off and the name accepted — a
   // rule that claimed every control character and covered only the ones that
   // are not whitespace. See NO_CONTROL_CHARACTERS.
   if (CONTROL_CHARACTER.test(value)) {
-    return bad(`${NO_CONTROL_CHARACTERS}; found ${describe(value)}`)
+    return bad(sourceMessage(NO_CONTROL_CHARACTERS + "; found {{value0}}", { value0: describe(value) }))
   }
   const trimmed = value.trim().replace(/\/+$/, '')
-  if (trimmed === '') return bad('must name a directory inside the project')
-  if (trimmed.startsWith('/')) return bad('must be relative to the project, not absolute')
+  if (trimmed === '') return bad(sourceMessage("must name a directory inside the project"))
+  if (trimmed.startsWith('/')) return bad(sourceMessage("must be relative to the project, not absolute"))
   if (trimmed.includes('\\') || trimmed.includes(':')) {
-    return bad('must be slash-separated and carry no backslash or colon')
+    return bad(sourceMessage("must be slash-separated and carry no backslash or colon"))
   }
   if (trimmed.split('/').some((part) => part === '..' || part === '.' || part === '')) {
-    return bad('must not contain an empty, "." or ".." path segment')
+    return bad(sourceMessage("must not contain an empty, \".\" or \"..\" path segment"))
   }
   const skipped = trimmed
     .split('/')
@@ -1074,7 +1070,7 @@ function packDir(value: unknown, problems: ConfigProblem[]): string | undefined 
         EXCLUDED_DIRECTORIES.some((name) => name.toLowerCase() === part.toLowerCase())
     )
   if (skipped !== undefined) {
-    return bad(`must not name ${skipped}, which the desk never reads or writes`)
+    return bad(sourceMessage("must not name {{value0}}, which the desk never reads or writes", { value0: skipped }))
   }
   // The same bound the chassis holds writes to, refused where it was written
   // rather than on the write. `GET /api/files` gives up at this depth and
@@ -1083,7 +1079,7 @@ function packDir(value: unknown, problems: ConfigProblem[]): string | undefined 
   // where the dialog could only say that a write failed.
   if (trimmed.split('/').length > MAX_PACK_DIR_DEPTH) {
     return bad(
-      `must be at most ${MAX_PACK_DIR_DEPTH} directories deep; the file listing gives up there`
+      sourceMessage("must be at most {{value0}} directories deep; the file listing gives up there", { value0: MAX_PACK_DIR_DEPTH })
     )
   }
   return trimmed
@@ -1098,7 +1094,7 @@ function packDir(value: unknown, problems: ConfigProblem[]): string | undefined 
  * member is `format: uri`. Exported so Admin's hint is this sentence rather
  * than a second, stricter one written on the page.
  */
-export const ID_BASE_SAYS = "must be a URI, because a pack's id member is one"
+export const ID_BASE_SAYS = sourceMessage("must be a URI, because a pack's id member is one")
 
 /**
  * What the decoder does to an `idBase` that is accepted, said once.
@@ -1107,7 +1103,7 @@ export const ID_BASE_SAYS = "must be a URI, because a pack's id member is one"
  * what lands is not what they typed. Exported beside the rule it accompanies so
  * Admin quotes it rather than describing it.
  */
-export const ID_BASE_NORMALISES = 'A separator is added where there is none.'
+export const ID_BASE_NORMALISES = sourceMessage("A separator is added where there is none.")
 
 /**
  * The rule both pack-storage strings are held to, as one sentence.
@@ -1123,7 +1119,7 @@ export const ID_BASE_NORMALISES = 'A separator is added where there is none.'
  * Refused where it is written, in the decoder both the page and a pasted file
  * go through, rather than at the write that eventually fails.
  */
-export const NO_CONTROL_CHARACTERS = 'must carry no control character'
+export const NO_CONTROL_CHARACTERS = sourceMessage("must carry no control character")
 
 /**
  * Every C0 control, and DEL — **tested against the value as it was written**.
@@ -1154,14 +1150,14 @@ function idBase(value: unknown, problems: ConfigProblem[]): string | undefined {
   if (typeof value === 'string' && CONTROL_CHARACTER.test(value)) {
     problems.push({
       key: 'storage.packs.idBase',
-      reason: `${NO_CONTROL_CHARACTERS}; found ${describe(value)}`
+      reason: sourceMessage(NO_CONTROL_CHARACTERS + "; found {{value0}}", { value0: describe(value) })
     })
     return undefined
   }
   if (typeof value !== 'string' || value.trim() === '') {
     problems.push({
       key: 'storage.packs.idBase',
-      reason: `must be a non-empty string; found ${describe(value)}`
+      reason: sourceMessage("must be a non-empty string; found {{value0}}", { value0: describe(value) })
     })
     return undefined
   }
@@ -1171,7 +1167,7 @@ function idBase(value: unknown, problems: ConfigProblem[]): string | undefined {
   } catch {
     problems.push({
       key: 'storage.packs.idBase',
-      reason: `${ID_BASE_SAYS}; found ${describe(value)}`
+      reason: sourceMessage(ID_BASE_SAYS + "; found {{value0}}", { value0: describe(value) })
     })
     return undefined
   }
@@ -1203,7 +1199,7 @@ function researchGatewayValue(
   if (url === undefined || url === '') {
     problems.push({
       key: 'research.gateway.url',
-      reason: `must be a non-empty string; found ${describe(gateway.url)}`
+      reason: sourceMessage("must be a non-empty string; found {{value0}}", { value0: describe(gateway.url) })
     })
   } else {
     const reason = endpointUrlProblem(url)
@@ -1211,7 +1207,7 @@ function researchGatewayValue(
     else if (/\?/.test(url)) {
       problems.push({
         key: 'research.gateway.url',
-        reason: 'must not carry a query; the relay appends the gateway\'s own paths and nothing else'
+        reason: sourceMessage("must not carry a query; the relay appends the gateway's own paths and nothing else")
       })
     }
   }
@@ -1222,7 +1218,7 @@ function researchGatewayValue(
   if (authority === undefined) {
     problems.push({
       key: 'research.gateway.authority',
-      reason: `must be the gateway's authority label as it was started with: printable ASCII with no space; found ${describe(gateway.authority)}`
+      reason: sourceMessage("must be the gateway's authority label as it was started with: printable ASCII with no space; found {{value0}}", { value0: describe(gateway.authority) })
     })
   }
   let publicKey = ''
@@ -1231,15 +1227,14 @@ function researchGatewayValue(
     if (signer.algorithm !== 'ed25519') {
       problems.push({
         key: 'research.gateway.signer.algorithm',
-        reason: `must be "ed25519"; found ${describe(signer.algorithm)}`
+        reason: sourceMessage("must be \"ed25519\"; found {{value0}}", { value0: describe(signer.algorithm) })
       })
     }
     if (typeof signer.public !== 'string' || !PUBLIC_KEY_HEX.test(signer.public)) {
       problems.push({
         key: 'research.gateway.signer.public',
         reason:
-          'must be the public key as gateway keygen printed it: 64 lowercase hexadecimal ' +
-          `characters; found ${describe(signer.public)}`
+          sourceMessage("must be the public key as gateway keygen printed it: 64 lowercase hexadecimal characters; found {{value0}}", { value0: describe(signer.public) })
       })
     } else {
       publicKey = signer.public
@@ -1267,7 +1262,7 @@ function researchSourceValue(
   if (name === undefined || !SOURCE_NAME.test(name)) {
     problems.push({
       key: `${key}.source`,
-      reason: `must be a gateway source name (letters, digits, ".", "_", "-" or "/"); found ${describe(source.source)}`
+      reason: sourceMessage("must be a gateway source name (letters, digits, \".\", \"_\", \"-\" or \"/\"); found {{value0}}", { value0: describe(source.source) })
     })
   }
   const dialect = oneOf(source.dialect, `${key}.dialect`, RESEARCH_DIALECTS, problems)
@@ -1313,7 +1308,7 @@ function researchLimitsValue(value: unknown, problems: ConfigProblem[]): Researc
     if (typeof given !== 'number' || !Number.isInteger(given) || given < low || given > high) {
       problems.push({
         key: `research.limits.${name}`,
-        reason: `must be an integer from ${low} to ${high}; found ${describe(given)}`
+        reason: sourceMessage("must be an integer from {{value0}} to {{value1}}; found {{value2}}", { value0: low, value1: high, value2: describe(given) })
       })
       continue
     }
@@ -1345,13 +1340,13 @@ function section(
   problems: ConfigProblem[]
 ): Record<string, unknown> | undefined {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    problems.push({ key, reason: `must be an object; found ${describe(value)}` })
+    problems.push({ key, reason: sourceMessage("must be an object; found {{value0}}", { value0: describe(value) }) })
     return undefined
   }
   const record = value as Record<string, unknown>
   for (const member of Object.keys(record)) {
     if (!allowed.includes(member)) {
-      problems.push({ key: `${key}.${member}`, reason: 'unknown key' })
+      problems.push({ key: `${key}.${member}`, reason: sourceMessage("unknown key") })
     }
   }
   return record
@@ -1365,7 +1360,7 @@ function optionalString(
   if (value === undefined) return undefined
   if (value === null) return null
   if (typeof value !== 'string') {
-    problems.push({ key, reason: `must be a string or null; found ${describe(value)}` })
+    problems.push({ key, reason: sourceMessage("must be a string or null; found {{value0}}", { value0: describe(value) }) })
     return undefined
   }
   return value
@@ -1387,7 +1382,7 @@ function organizationName(
   if (typeof name === 'string' && name.trim() === '') {
     problems.push({
       key: 'organization.name',
-      reason: `must be a non-empty string or null; found ${describe(value)}`
+      reason: sourceMessage("must be a non-empty string or null; found {{value0}}", { value0: describe(value) })
     })
     return undefined
   }
@@ -1399,7 +1394,7 @@ function organizationName(
  * hint, on the same terms as `STORAGE_KIND_SAYS`: one producer.
  */
 export const ORGANIZATION_MARK_SAYS =
-  'must begin with "<svg" or "data:image/" — a file path is not accepted'
+  sourceMessage("must begin with \"<svg\" or \"data:image/\" — a file path is not accepted")
 
 function markValue(value: unknown, problems: ConfigProblem[]): string | null | undefined {
   if (value === undefined) return undefined
@@ -1407,7 +1402,7 @@ function markValue(value: unknown, problems: ConfigProblem[]): string | null | u
   if (typeof value !== 'string') {
     problems.push({
       key: 'organization.mark',
-      reason: `must be an inline SVG string, a data: URI, or null; found ${describe(value)}`
+      reason: sourceMessage("must be an inline SVG string, a data: URI, or null; found {{value0}}", { value0: describe(value) })
     })
     return undefined
   }
@@ -1420,7 +1415,7 @@ function markValue(value: unknown, problems: ConfigProblem[]): string | null | u
   if (bytes > MAX_MARK_BYTES) {
     problems.push({
       key: 'organization.mark',
-      reason: `must be at most ${MAX_MARK_BYTES} bytes of UTF-8; found ${bytes}`
+      reason: sourceMessage("must be at most {{value0}} bytes of UTF-8; found {{value1}}", { value0: MAX_MARK_BYTES, value1: bytes })
     })
     return undefined
   }
@@ -1437,7 +1432,7 @@ function oneOf<T extends string>(
   if (typeof value !== 'string' || !choices.includes(value as T)) {
     problems.push({
       key,
-      reason: `must be one of ${choices.map((choice) => JSON.stringify(choice)).join(', ')}; found ${describe(value)}`
+      reason: sourceMessage("must be one of {{value0}}; found {{value1}}", { value0: choices.map((choice) => JSON.stringify(choice)).join(', '), value1: describe(value) })
     })
     return undefined
   }
@@ -1447,7 +1442,7 @@ function oneOf<T extends string>(
 function boolean(value: unknown, key: string, problems: ConfigProblem[]): boolean | undefined {
   if (value === undefined) return undefined
   if (typeof value !== 'boolean') {
-    problems.push({ key, reason: `must be a boolean; found ${describe(value)}` })
+    problems.push({ key, reason: sourceMessage("must be a boolean; found {{value0}}", { value0: describe(value) }) })
     return undefined
   }
   return value
@@ -1482,7 +1477,7 @@ function dimension(value: unknown, key: string, problems: ConfigProblem[]): numb
   if (typeof value !== 'number' || !Number.isInteger(value)) {
     problems.push({
       key,
-      reason: `must be a whole number of pixels; found ${describe(value)}`
+      reason: sourceMessage("must be a whole number of pixels; found {{value0}}", { value0: describe(value) })
     })
     return undefined
   }
@@ -1490,7 +1485,7 @@ function dimension(value: unknown, key: string, problems: ConfigProblem[]): numb
   if (bounds !== undefined && (value < bounds.min || value > bounds.max)) {
     problems.push({
       key,
-      reason: `must be between ${bounds.min} and ${bounds.max} pixels inclusive; found ${value}`
+      reason: sourceMessage("must be between {{value0}} and {{value1}} pixels inclusive; found {{value2}}", { value0: bounds.min, value1: bounds.max, value2: value })
     })
     return undefined
   }
@@ -1522,12 +1517,12 @@ function providerValue(
   if (issuer === undefined) {
     problems.push({
       key: 'identity.provider.issuer',
-      reason: `must be a string; found ${describe(provider.issuer)}`
+      reason: sourceMessage("must be a string; found {{value0}}", { value0: describe(provider.issuer) })
     })
   } else if (!isAcceptableIssuer(issuer)) {
     problems.push({
       key: 'identity.provider.issuer',
-      reason: 'must be an https: URL, or an http: URL on localhost or 127.0.0.1'
+      reason: sourceMessage("must be an https: URL, or an http: URL on localhost or 127.0.0.1")
     })
   }
 
@@ -1535,7 +1530,7 @@ function providerValue(
   if (clientId === undefined || clientId === '') {
     problems.push({
       key: 'identity.provider.clientId',
-      reason: `must be a non-empty string; found ${describe(provider.clientId)}`
+      reason: sourceMessage("must be a non-empty string; found {{value0}}", { value0: describe(provider.clientId) })
     })
   }
 
@@ -1547,7 +1542,7 @@ function providerValue(
     ) {
       problems.push({
         key: 'identity.provider.scopes',
-        reason: `must be an array of strings; found ${describe(provider.scopes)}`
+        reason: sourceMessage("must be an array of strings; found {{value0}}", { value0: describe(provider.scopes) })
       })
     } else {
       scopes = provider.scopes as string[]
@@ -1569,7 +1564,7 @@ function providerValue(
         if (typeof spelled !== 'string' || spelled === '') {
           problems.push({
             key: `identity.provider.claims.${member}`,
-            reason: `must be a non-empty string; found ${describe(spelled)}`
+            reason: sourceMessage("must be a non-empty string; found {{value0}}", { value0: describe(spelled) })
           })
         } else {
           claims[member] = spelled
@@ -1633,7 +1628,7 @@ function endpointValue(
   if (url === undefined || url === '') {
     problems.push({
       key: 'assistant.endpoint.url',
-      reason: `must be a non-empty string; found ${describe(endpoint.url)}`
+      reason: sourceMessage("must be a non-empty string; found {{value0}}", { value0: describe(endpoint.url) })
     })
   } else {
     const reason = endpointUrlProblem(url)
@@ -1691,8 +1686,7 @@ function endpointValue(
     problems.push({
       key: 'assistant.endpoint.tools',
       reason:
-        'required — an absent tool list would be a capability granted by a file that never ' +
-        'mentioned it; write [] for an assistant that may call nothing'
+        sourceMessage("required — an absent tool list would be a capability granted by a file that never mentioned it; write [] for an assistant that may call nothing")
     })
   } else if (
     !Array.isArray(endpoint.tools) ||
@@ -1700,7 +1694,7 @@ function endpointValue(
   ) {
     problems.push({
       key: 'assistant.endpoint.tools',
-      reason: `must be an array of strings; found ${describe(endpoint.tools)}`
+      reason: sourceMessage("must be an array of strings; found {{value0}}", { value0: describe(endpoint.tools) })
     })
   } else {
     // Named one at a time. "One of these is not allowed" makes the reader
@@ -1710,8 +1704,7 @@ function endpointValue(
         problems.push({
           key: 'assistant.endpoint.tools',
           reason:
-            `${JSON.stringify(tool)} is not a tool the assistant may call; ` +
-            `it accepts ${ASSISTANT_TOOLS.join(', ')}`
+            sourceMessage("{{value0}} is not a tool the assistant may call; it accepts {{value1}}", { value0: JSON.stringify(tool), value1: ASSISTANT_TOOLS.join(', ') })
         })
       }
     }
@@ -1745,7 +1738,7 @@ function modelSet(value: unknown, problems: ConfigProblem[]): string[] {
   if (!Array.isArray(value)) {
     problems.push({
       key: 'assistant.endpoint.models',
-      reason: `must be an array of strings; found ${describe(value)}`
+      reason: sourceMessage("must be an array of strings; found {{value0}}", { value0: describe(value) })
     })
     return []
   }
@@ -1778,7 +1771,7 @@ export function modelAddProblem(value: unknown, models: readonly string[]): stri
   if (problem !== undefined) return problem
   const id = (value as string).trim()
   if (models.includes(id)) {
-    return `${JSON.stringify(id)} is listed twice; each model appears once`
+    return sourceMessage("{{value0}} is listed twice; each model appears once", { value0: JSON.stringify(id) })
   }
   return undefined
 }
@@ -1805,15 +1798,14 @@ export function modelDefaultProblem(
 ): string | undefined {
   if (models.length === 0) {
     if (model === null) return undefined
-    return 'must be null where no model is enabled; there is nothing for a default to be'
+    return sourceMessage("must be null where no model is enabled; there is nothing for a default to be")
   }
   if (model === null) {
-    return 'must name one of the models enabled for this endpoint; found null'
+    return sourceMessage("must name one of the models enabled for this endpoint; found null")
   }
   if (!models.includes(model)) {
     return (
-      `must be one of the models enabled for this endpoint; ` +
-      `${JSON.stringify(model)} is not one of them`
+      sourceMessage("must be one of the models enabled for this endpoint; {{value0}} is not one of them", { value0: JSON.stringify(model) })
     )
   }
   return undefined
@@ -1840,7 +1832,7 @@ export function modelDefaultProblem(
 export function modelIdProblem(value: unknown): string | undefined {
   const model = typeof value === 'string' ? value.trim() : undefined
   if (model === undefined || model === '') {
-    return `must be a non-empty string; found ${describe(value)}`
+    return sourceMessage("must be a non-empty string; found {{value0}}", { value0: describe(value) })
   }
   return undefined
 }
@@ -1873,18 +1865,16 @@ export function endpointUrlProblem(raw: string): string | undefined {
   try {
     url = new URL(raw)
   } catch {
-    return `must be an absolute URL; found ${JSON.stringify(raw)}`
+    return sourceMessage("must be an absolute URL; found {{value0}}", { value0: JSON.stringify(raw) })
   }
   if (url.username !== '' || url.password !== '') {
     return (
-      'must not carry a user or password in the URL — a key is never written into ' +
-      'configuration, and that includes into a URL'
+      sourceMessage("must not carry a user or password in the URL — a key is never written into configuration, and that includes into a URL")
     )
   }
   if (url.hash !== '' || raw.includes('#')) {
     return (
-      'must not carry a fragment; an endpoint is a location a request is sent to, ' +
-      'and a fragment is never sent'
+      sourceMessage("must not carry a fragment; an endpoint is a location a request is sent to, and a fragment is never sent")
     )
   }
   const query = endpointQueryProblem(raw)
@@ -1894,8 +1884,7 @@ export function endpointUrlProblem(raw: string): string | undefined {
     return undefined
   }
   return (
-    'must be an https: URL, or an http: URL on localhost or 127.0.0.1 — a key sent in ' +
-    'clear text over a network is a key given away'
+    sourceMessage("must be an https: URL, or an http: URL on localhost or 127.0.0.1 — a key sent in clear text over a network is a key given away")
   )
 }
 
@@ -1942,8 +1931,7 @@ function endpointQueryProblem(raw: string): string | undefined {
   if (query === '') return undefined
   if (query.includes(';')) {
     return (
-      'must not carry a semicolon in its query: it is a separator to some servers and a ' +
-      'value to others, and this desk will not send one it cannot read the same way twice'
+      sourceMessage("must not carry a semicolon in its query: it is a separator to some servers and a value to others, and this desk will not send one it cannot read the same way twice")
     )
   }
   for (const parameter of query.split('&')) {
@@ -1961,9 +1949,7 @@ function endpointQueryProblem(raw: string): string | undefined {
       decodeURIComponent(value.replace(/\+/g, ' '))
     } catch {
       return (
-        `has a query parameter this desk cannot read the same way a browser does ` +
-        `(${JSON.stringify(parameter)}): a query it cannot read identically twice is one ` +
-        'it will not forward'
+        sourceMessage("has a query parameter this desk cannot read the same way a browser does ({{value0}}): a query it cannot read identically twice is one it will not forward", { value0: JSON.stringify(parameter) })
       )
     }
     // **The reserved names are read first**, because `pageToken` folds to a
@@ -1979,12 +1965,11 @@ function endpointQueryProblem(raw: string): string | undefined {
       )
     ) {
       return (
-        `must not carry ${JSON.stringify(decoded)} in its query: it is a name the relay ` +
-        'itself may add, and a query with two of one name is one two parsers count differently'
+        sourceMessage("must not carry {{value0}} in its query: it is a name the relay itself may add, and a query with two of one name is one two parsers count differently", { value0: JSON.stringify(decoded) })
       )
     }
     if (isCredentialQueryName(decoded)) {
-      return `must not carry ${JSON.stringify(decoded)} in its query — ${KEYS_ARE_NEVER_IN_CONFIGURATION}`
+      return sourceMessage("must not carry {{value0}} in its query — {{value1}}", { value0: JSON.stringify(decoded), value1: KEYS_ARE_NEVER_IN_CONFIGURATION })
     }
   }
   return undefined
@@ -2143,6 +2128,8 @@ export interface DeskLevelSummary {
 }
 
 export interface EffectiveConfig {
+  /** Distinguishes an inherited local-user caption from an explicit name. */
+  userNameDefaulted?: true
   config: DeskConfig
   /** One badge per top-level section, so Admin can say where a value came from. */
   sources: Record<keyof Omit<DeskConfig, 'deskConfigVersion'>, ValueSource>
@@ -2248,7 +2235,10 @@ export function effectiveConfig(
       : deskValues?.panes !== undefined
         ? desk?.decoded?.declaredPanes
         : undefined
+  const userNameDefaulted = values?.user !== undefined ? decoded?.userNameDefaulted
+    : deskValues?.user !== undefined ? desk?.decoded?.userNameDefaulted : true
   return {
+    ...(userNameDefaulted ? { userNameDefaulted: true as const } : {}),
     config: {
       deskConfigVersion: DESK_CONFIG_VERSION,
       organization: pick('organization'),

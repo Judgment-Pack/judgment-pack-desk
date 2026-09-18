@@ -1,3 +1,4 @@
+import { sourceMessage } from '../i18n/source'
 /**
  * What a new pack is called, where it goes, and what its first bytes are.
  *
@@ -104,17 +105,17 @@ export function slugFor(name: string): SlugResult {
   ]
   if (unsupported.length > 0) {
     return {
-      problem: `A name cannot carry ${unsupported.join(' ')} — an id is a–z and 0–9 only, and this desk will not drop a letter to make one.`
+      problem: sourceMessage("A name cannot carry {{value0}} — an id is a–z and 0–9 only, and this desk will not drop a letter to make one.", { value0: unsupported.join(' ') })
     }
   }
 
   const slug = transliterated.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
   if (slug === '') {
-    return { problem: 'A name needs at least one letter a–z or digit 0–9 — an id can carry no others.' }
+    return { problem: sourceMessage("A name needs at least one letter a–z or digit 0–9 — an id can carry no others.") }
   }
-  if (!/^[a-z]/.test(slug)) return { problem: 'A name must start with a letter.' }
+  if (!/^[a-z]/.test(slug)) return { problem: sourceMessage("A name must start with a letter.") }
   if (slug.length > MAX_SLUG_LENGTH) {
-    return { problem: `A name is too long: an id can be at most ${MAX_SLUG_LENGTH} characters.` }
+    return { problem: sourceMessage("A name is too long: an id can be at most {{value0}} characters.", { value0: MAX_SLUG_LENGTH }) }
   }
   return { slug }
 }
@@ -159,13 +160,13 @@ export function collisionIn(
   }
 ): string | undefined {
   if (project.keys.includes(slug)) {
-    return `This project already has a pack called ${slug}.`
+    return sourceMessage("This project already has a pack called {{value0}}.", { value0: slug })
   }
   if (claimedBy(project.paths, project.path)) {
-    return `Another pack in this project already uses that file.`
+    return sourceMessage("Another pack in this project already uses that file.")
   }
   if (project.files.some((file) => samePath(file, project.path))) {
-    return `There is already a file where this pack would be written.`
+    return sourceMessage("There is already a file where this pack would be written.")
   }
   return undefined
 }
@@ -190,10 +191,10 @@ export function shapeTemplate(templateJson: string, fields: PackFields): string 
   try {
     parsed = JSON.parse(templateJson)
   } catch (cause) {
-    throw new Error(`the template is not valid JSON (${String(cause)})`)
+    throw new Error(sourceMessage("the template is not valid JSON ({{value0}})", { value0: String(cause) }))
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new Error('the template is not a JSON object')
+    throw new Error(sourceMessage("the template is not a JSON object"))
   }
   return serialise(shapePack(parsed as Record<string, unknown>, fields))
 }
@@ -235,7 +236,7 @@ export function shapeTemplate(templateJson: string, fields: PackFields): string 
  */
 export function packFromProposal(document: unknown, fields: PackFields): string {
   if (typeof document !== 'object' || document === null || Array.isArray(document)) {
-    throw new Error('the proposal is not a JSON object')
+    throw new Error(sourceMessage("the proposal is not a JSON object"))
   }
   return serialise(shapePack(document as Record<string, unknown>, fields))
 }

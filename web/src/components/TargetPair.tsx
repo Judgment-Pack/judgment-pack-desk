@@ -92,8 +92,8 @@ export function handoffTargetPair(
 export function TargetPair({
   of,
   /** What the two sides are called, so a node's pair reads as the node's. */
-  expectedLabel = 'expected target',
-  actualLabel = 'actual target'
+  expectedLabel = msg('expected target'),
+  actualLabel = msg('actual target')
 }: {
   of: HandoffTargetCarrier
   expectedLabel?: string

@@ -1,3 +1,4 @@
+import { sourceMessage } from '../i18n/source'
 /**
  * The assistant slot, as one reading for whatever comes to depend on it.
  *
@@ -26,8 +27,8 @@ import {
   type ThinkingTier
 } from '../config/deskConfig'
 
-export const CHECKING_KEY = 'Checking saved API key…'
-export const UNREAD_KEY = 'Could not check the saved API key. Retry or open Admin › Assistant for details.'
+export const CHECKING_KEY = sourceMessage('Checking saved API key…')
+export const UNREAD_KEY = sourceMessage('Could not check the saved API key. Retry or open Admin › Assistant for details.')
 
 export interface AssistantSlot {
   /**

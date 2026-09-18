@@ -106,7 +106,7 @@ export function Shaped({
     <MisshapenMember
       pointer={pointer}
       label={label}
-      expected={expects === 'list' ? "a list" : "an object"}
+      expected={expects === 'list' ? msg("a list") : msg("an object")}
       value={value}
       compact
     />

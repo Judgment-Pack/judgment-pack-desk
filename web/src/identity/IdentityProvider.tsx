@@ -1,4 +1,4 @@
-import { msg } from '../i18n'
+import { msg, useLocale } from '../i18n'
 /**
  * Who the desk says is looking, and the boundary that keeps that harmless.
  *
@@ -65,7 +65,8 @@ export function issuerHost(issuer: string): string {
 }
 
 export function IdentityProvider({ children }: { children: ReactNode }) {
-  const { config } = useEffectiveConfig()
+  const locale = useLocale()
+  const { config, sources, userNameDefaulted } = useEffectiveConfig()
   const provider = config.identity.provider
   const state = useMemo<IdentityState>(
     () => ({
@@ -73,9 +74,9 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
         provider === null
           ? null
           : { issuerHost: issuerHost(provider.issuer), label: provider.label },
-      displayName: config.user.displayName
+      displayName: sources.user === 'default' || userNameDefaulted ? msg('local user') : config.user.displayName
     }),
-    [provider, config.user.displayName]
+    [provider, config.user.displayName, sources.user, userNameDefaulted, locale]
   )
   return <IdentityContext.Provider value={state}>{children}</IdentityContext.Provider>
 }

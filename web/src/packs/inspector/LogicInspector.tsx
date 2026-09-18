@@ -64,7 +64,7 @@ export function LogicInspector({ model, at, groupId, onSelect, trace, advanced, 
     <Disclosure className={styles.group} title={msg("Technical details")}>
       <p className={styles.meta}><Message text={"Document path: <0/>"} slots={[<code>{pointer || '/'}</code>]} /></p>
       <h3><Message text={"Exact <0/> JSON"} slots={[condition !== undefined ? msg("condition") : msg("definition")]} /></h3>
-      <CodeBlock text={JSON.stringify(condition ?? value, null, 2) ?? "Not declared"} />
+      <CodeBlock text={JSON.stringify(condition ?? value, null, 2) ?? msg("Not declared")} />
     </Disclosure>
     <section className={styles.group} aria-label={msg("References, checks and metadata")}>{advanced}</section>
   </div>

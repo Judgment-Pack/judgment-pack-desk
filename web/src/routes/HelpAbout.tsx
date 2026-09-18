@@ -73,7 +73,7 @@ export function HelpAbout() {
         <ul id="shortcuts">
           {SHORTCUTS.map((shortcut) => (
             <li key={shortcut.keys}>
-              <code>{shortcut.keys}</code> — {shortcut.label}
+              <code>{shortcut.keys}</code> — {msg(shortcut.label)}
             </li>
           ))}
         </ul>

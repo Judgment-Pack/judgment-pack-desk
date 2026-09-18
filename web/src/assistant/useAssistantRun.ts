@@ -1,3 +1,4 @@
+import { sourceMessage } from '../i18n/source'
 /**
  * One run of the assistant, as the pane holds it.
  *
@@ -171,7 +172,7 @@ export function canonicalProposal(
     return {
       type: 'error',
       message:
-        'the proposal could not be read as JSON data; nothing was proposed and nothing was written'
+        sourceMessage("the proposal could not be read as JSON data; nothing was proposed and nothing was written")
     }
   }
   const document = held.document
@@ -179,8 +180,7 @@ export function canonicalProposal(
     return {
       type: 'error',
       message:
-        'the proposal carries no document object, so there is nothing to diff and nothing to ' +
-        'write; nothing was written'
+        sourceMessage("the proposal carries no document object, so there is nothing to diff and nothing to write; nothing was written")
     }
   }
   return frozen({
