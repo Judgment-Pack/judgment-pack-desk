@@ -57,7 +57,7 @@ import { OverflowTooltip } from '../ui/Tooltip'
  */
 import { useEffect, useRef, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { DocumentSettings } from '../admin/DocumentSettings'
+import { ConnectionsSettings } from '../admin/ConnectionsSettings'
 import { ChatDataSettings } from '../admin/ChatDataSettings'
 import { AssistantSection } from '../assistant/AssistantSection'
 import { AdminStatusLine } from '../admin/AdminStatusLine'
@@ -103,12 +103,12 @@ const SECTION_MEMBER: Record<string, keyof DeskConfig> = {
   organization: 'organization',
   storage: 'storage',
   assistant: 'assistant',
-  documents: 'research',
+  connections: 'research',
   'identity-provider': 'identity'
 }
 
 /** The two sections that exist only in the desk-level file. */
-const DESK_ONLY = new Set(['assistant', 'documents', 'identity-provider'])
+const DESK_ONLY = new Set(['assistant', 'connections', 'identity-provider'])
 
 /**
  * The one section that is about the project's file itself rather than about a
@@ -246,7 +246,7 @@ ${effective.desk.chassis.runtimeBin}`} />
                   under={deskStatus(effective)}
                 />
               </RetainedPanel>
-              <RetainedPanel active={open.id === 'documents'}><DocumentSettings /></RetainedPanel>
+              <RetainedPanel active={open.id === 'connections'}><ConnectionsSettings /></RetainedPanel>
               <RetainedPanel active={open.id === 'identity-provider'}>
                 <SourceCard
                   id={sectionId(SECTION['identity-provider']!.id)}
@@ -400,6 +400,7 @@ function sectionFromHash(hash: string): AdminSection {
   } catch {
     return first
   }
+  if (id === 'documents') id = 'connections'
   return SECTION[id] ?? first
 }
 

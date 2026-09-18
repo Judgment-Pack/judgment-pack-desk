@@ -37,6 +37,7 @@ export function Dialog({
   title,
   description,
   openerRef,
+  footer,
   children
 }: {
   open: boolean
@@ -52,6 +53,8 @@ export function Dialog({
    * every way out: Cancel, Escape, the overlay, and a successful submit.
    */
   openerRef?: RefObject<HTMLElement | null>
+  /** A fixed action area; the body scrolls independently when supplied. */
+  footer?: ReactNode
   children: ReactNode
 }) {
   return (
@@ -61,6 +64,7 @@ export function Dialog({
         <RadixDialog.Content
           data-modal-surface
           className={styles.content}
+          data-fixed-footer={footer !== undefined || undefined}
           onCloseAutoFocus={
             openerRef === undefined
               ? undefined
@@ -70,13 +74,16 @@ export function Dialog({
                 }
           }
         >
-          <RadixDialog.Title className={styles.title}>{title}</RadixDialog.Title>
-          {description ? (
-            <RadixDialog.Description className={styles.description}>
-              {description}
-            </RadixDialog.Description>
-          ) : null}
-          {children}
+          <div className={styles.header}>
+            <RadixDialog.Title className={styles.title}>{title}</RadixDialog.Title>
+            {description ? (
+              <RadixDialog.Description className={styles.description}>
+                {description}
+              </RadixDialog.Description>
+            ) : null}
+          </div>
+          {footer === undefined ? children : <div className={styles.body}>{children}</div>}
+          {footer !== undefined && <div className={styles.footer}>{footer}</div>}
         </RadixDialog.Content>
       </RadixDialog.Portal>
     </RadixDialog.Root>

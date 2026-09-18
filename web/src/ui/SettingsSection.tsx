@@ -15,7 +15,7 @@ export function SettingsSection({
   children: ReactNode
   footer?: ReactNode
   level?: 2 | 3
-  variant?: 'card' | 'plain'
+  variant?: 'card' | 'plain' | 'standalone'
 }) {
   const titleId = useId()
   const Heading = level === 2 ? 'h2' : 'h3'

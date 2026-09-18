@@ -17,11 +17,12 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { DESK_DEFAULTS, decodeDeskConfig } from './deskConfig'
+import { DESK_DEFAULTS, decodeDeskConfig, type DocumentSourceConfig } from './deskConfig'
 
 const FIXTURES = join(import.meta.dirname, 'fixtures', 'desk-config')
 
 interface Verdict {
+  documents?: DocumentSourceConfig
   accepted: boolean
   keys: string[]
   /**
@@ -118,6 +119,7 @@ describe('the shared desk-configuration fixtures', () => {
         const project = { ...DESK_DEFAULTS.project, ...(decoded.values?.project ?? {}) }
         expect(project.file ?? '', `${name}: project.file`).toBe(verdict.projectFile ?? '')
         const research = decoded.values?.research ?? DESK_DEFAULTS.research
+        expect(research.documents, `${name}: document settings`).toEqual(verdict.documents)
         expect(research.gateway?.url ?? '', `${name}: research.gateway.url`).toBe(
           verdict.researchGateway ?? ''
         )

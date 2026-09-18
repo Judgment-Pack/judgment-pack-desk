@@ -24,10 +24,25 @@ No runtime or JPS format change is involved.
    not bundled with Desk or the adapter. The gateway's default 1 MiB request limit
    is too small for the default Desk PDF allowance; configure all layers together.
 
-2. Open **Admin → Documents**. Set the gateway URL, authority, signing **public**
-   key (pinned from `gateway keygen`), source name, and enable document uploads.
-   Save. These personal settings cannot be supplied by a project file. Existing
-   research search/read settings and the Assistant configuration are preserved.
+2. Open **Admin → Connections**. Set up the shared **Gateway** with its URL,
+   identity (authority), and verification **public** key from `gateway keygen`.
+   Then manage **PDF processing** to enable it and choose the maximum file size.
+   Source name and request/response limits are under **Advanced settings**. Limits
+   are displayed in MiB and stored as exact bytes. These personal settings cannot
+   be supplied by a project file. Research sources and Assistant settings are
+   preserved. Gateway configuration alone does not enable PDF processing.
+
+   Turning PDF processing off saves `research.documents.enabled: false` and
+   retains its source and limits. Previously saved documents remain available
+   under the configured verification identity; new PDF originals are refused by
+   both the browser and server. Re-enabling restores the same limits. Legacy
+   document configurations without `enabled` remain enabled; absent/null
+   `documents` keeps processing off. Old `/admin#documents` links still work.
+
+   **Configured** means settings were saved, not that a live connection was tested.
+   Availability is checked when used. Changing the gateway identity/key may
+   prevent existing documents from verifying. Google Drive remains unavailable.
+   These settings are personal preferences, not organization policy controls.
 3. In home chat or a pack's Assistant, use **+ → Upload files**, or drop a PDF.
    Local TXT/Markdown/JSON/CSV attachments still work without a gateway (200 KB each).
 4. Open an attached PDF to inspect extracted page text, select pages, and download
@@ -86,7 +101,7 @@ retain their previous format.
 
 - Original limit: 16 MiB hard ceiling; configurable lower in Admin.
 - Default relay request limit with documents enabled: 32 MiB; ceiling 64 MiB.
-  It must fit base64 expansion plus 4096 bytes. Without documents configuration,
+  It must fit base64 expansion plus 4096 bytes. With documents absent or disabled,
   and for seal/registry requests, the existing 1 MiB limit remains.
 - Default extraction response limit: 8 MiB; ceiling 16 MiB. Registry read: 4 MiB.
 - Retained object: at most 64 MiB. Private upload quota: 1 GiB; file count: 4096.

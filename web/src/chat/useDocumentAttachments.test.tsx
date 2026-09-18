@@ -11,9 +11,9 @@ const mocked = vi.hoisted(() => ({ ingest: vi.fn(), load: vi.fn() }))
 vi.mock('../documents/client', async original => ({...await original<typeof import('../documents/client')>(), ingestDocument:mocked.ingest,loadDocument:mocked.load}))
 const stores: ChatStore[] = []
 afterEach(()=>{cleanup();stores.forEach(s=>s.dispose());stores.length=0;sessionStorage.clear();vi.clearAllMocks()})
-async function setup() {
+async function setup(enabled = true) {
  const {object,pin,reference} = await signedDocument(), document = await verifyDocument(object,pin)
- const config = {...DESK_DEFAULTS.research,gateway:pin,documents:DOCUMENT_DEFAULTS}
+ const config = {...DESK_DEFAULTS.research,gateway:pin,documents:{...DOCUMENT_DEFAULTS,enabled}}
  const store = new ChatStore('/isolated',{read:async()=>({project:'/isolated',sha256:'absent',content:{version:1,chats:[]}}),write:vi.fn()});stores.push(store)
  await store.load(); const chat=store.startChat()
  mocked.ingest.mockResolvedValue({reference,document});mocked.load.mockResolvedValue(document)
@@ -21,6 +21,15 @@ async function setup() {
  const file={name:'policy.pdf',size:100,arrayBuffer:vi.fn()} as unknown as File
  return { ...hook,store,chat,file,reference,document }
 }
+it('blocks new PDF uploads when processing is off while still verifying previously saved documents', async () => {
+ const s=await setup(false); await act(()=>s.result.current.attach([s.file]))
+ expect(mocked.ingest).not.toHaveBeenCalled()
+ expect(s.result.current.error).toContain('Enable PDF processing')
+ let prompt:string|undefined
+ await act(async()=>{prompt=await s.result.current.prepare([{id:s.reference.id,name:'policy.pdf',text:'',document:s.reference}])})
+ expect(prompt).toContain('selectedPages')
+ expect(mocked.load).toHaveBeenCalledOnce()
+})
 it('stores only a reference in an unsent home draft',async()=>{
  const s=await setup();await act(()=>s.result.current.attach([s.file]))
  expect(s.store.getSnapshot().chats).toHaveLength(0)

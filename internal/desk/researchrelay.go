@@ -127,7 +127,7 @@ func (s *Server) configuredResearch() (researchGateway, error) {
 	}
 	gateway := *decoded.Research.gateway
 	gateway.maxRequestBytes = maxResearchBody
-	if decoded.Research.documents != nil {
+	if decoded.Research.documents != nil && decoded.Research.documents.enabled {
 		gateway.maxRequestBytes = decoded.Research.documents.maxRequestBytes
 		gateway.maxFileBytes = decoded.Research.documents.maxFileBytes
 	}

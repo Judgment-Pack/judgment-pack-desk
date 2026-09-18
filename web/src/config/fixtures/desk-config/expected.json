@@ -98,7 +98,14 @@
       "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b"
     },
     "researchGateway": "http://127.0.0.1:8787",
-    "thinking": "off"
+    "thinking": "off",
+    "documents": {
+      "enabled": true,
+      "source": "documents",
+      "maxFileBytes": 16777216,
+      "maxRequestBytes": 33554432,
+      "maxResponseBytes": 8388608
+    }
   },
   "accepted-documents-disabled": {
     "accepted": true,
@@ -136,7 +143,14 @@
       "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b"
     },
     "researchGateway": "http://127.0.0.1:8787",
-    "thinking": "off"
+    "thinking": "off",
+    "documents": {
+      "enabled": true,
+      "source": "pdf",
+      "maxFileBytes": 100000,
+      "maxRequestBytes": 1048576,
+      "maxResponseBytes": 65536
+    }
   },
   "accepted-endpoint": {
     "accepted": true,
@@ -1299,6 +1313,70 @@
     "accepted": false,
     "keys": [
       "deskConfigVersion"
+    ]
+  },
+  "accepted-documents-paused": {
+    "accepted": true,
+    "engine": "vercel",
+    "keys": [],
+    "research": {
+      "authority": "gateway:local",
+      "limits": {
+        "bytes": 8388608,
+        "reads": 12,
+        "searches": 8,
+        "seconds": 600
+      },
+      "read": null,
+      "search": null,
+      "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b"
+    },
+    "researchGateway": "http://127.0.0.1:8787",
+    "thinking": "off",
+    "documents": {
+      "enabled": false,
+      "source": "pdf",
+      "maxFileBytes": 100000,
+      "maxRequestBytes": 1048576,
+      "maxResponseBytes": 65536
+    }
+  },
+  "accepted-documents-enabled": {
+    "accepted": true,
+    "engine": "vercel",
+    "keys": [],
+    "research": {
+      "authority": "gateway:local",
+      "limits": {
+        "bytes": 8388608,
+        "reads": 12,
+        "searches": 8,
+        "seconds": 600
+      },
+      "read": null,
+      "search": null,
+      "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b"
+    },
+    "researchGateway": "http://127.0.0.1:8787",
+    "thinking": "off",
+    "documents": {
+      "enabled": true,
+      "source": "pdf",
+      "maxFileBytes": 100000,
+      "maxRequestBytes": 1048576,
+      "maxResponseBytes": 65536
+    }
+  },
+  "refused-documents-enabled-null": {
+    "accepted": false,
+    "keys": [
+      "research.documents.enabled"
+    ]
+  },
+  "refused-documents-enabled-string": {
+    "accepted": false,
+    "keys": [
+      "research.documents.enabled"
     ]
   }
 }

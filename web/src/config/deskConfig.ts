@@ -357,13 +357,15 @@ export interface ResearchConfig {
 }
 
 export interface DocumentSourceConfig {
+  /** Older configurations without this member are enabled. */
+  enabled: boolean
   source: string
   maxFileBytes: number
   maxRequestBytes: number
   maxResponseBytes: number
 }
 export const DOCUMENT_DEFAULTS: DocumentSourceConfig = {
-  source: 'documents', maxFileBytes: 16_777_216, maxRequestBytes: 33_554_432, maxResponseBytes: 8_388_608
+  enabled: true, source: 'documents', maxFileBytes: 16_777_216, maxRequestBytes: 33_554_432, maxResponseBytes: 8_388_608
 }
 export const DOCUMENT_LIMIT_BOUNDS = {
   maxFileBytes: [1, 16_777_216], maxRequestBytes: [65_536, 67_108_864], maxResponseBytes: [65_536, 16_777_216]
@@ -1314,9 +1316,10 @@ export const RESEARCH_LIMIT_BOUNDS: Readonly<Record<keyof ResearchLimits, [numbe
 
 function documentSourceValue(value: unknown, problems: ConfigProblem[]): DocumentSourceConfig | undefined {
   if (value === null) return undefined
-  const declared = section(value, 'research.documents', ['source', ...Object.keys(DOCUMENT_LIMIT_BOUNDS)], problems)
+  const declared = section(value, 'research.documents', ['enabled', 'source', ...Object.keys(DOCUMENT_LIMIT_BOUNDS)], problems)
   if (!declared) return undefined
   const result = { ...DOCUMENT_DEFAULTS }
+  result.enabled = boolean(declared.enabled, 'research.documents.enabled', problems) ?? DOCUMENT_DEFAULTS.enabled
   if (typeof declared.source !== 'string' || !SOURCE_NAME.test(declared.source)) {
     problems.push({ key: 'research.documents.source', reason: sourceMessage('Enter the document source name configured on your gateway.') })
   } else result.source = declared.source

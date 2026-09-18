@@ -73,7 +73,9 @@ trap cleanup EXIT INT TERM
 # handed one `GET /launch?secret=…` that trades it for a one-shot handoff.
 SECRET="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 export XDG_CONFIG_HOME="$WORK/config"
+export XDG_DATA_HOME="$WORK/data"
 mkdir -p "$XDG_CONFIG_HOME/jpack-desk"
+mkdir -p "$XDG_DATA_HOME"
 cp -a "$PROJECT" "$WORK/project"
 
 cat > "$XDG_CONFIG_HOME/jpack-desk/desk.json" <<JSON

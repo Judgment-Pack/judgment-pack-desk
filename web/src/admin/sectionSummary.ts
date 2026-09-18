@@ -74,7 +74,7 @@ export const SECTION_SUMMARY: Record<
       msg('thinking {{level}}', { level: config.assistant.thinking === 'off' ? msg('off') : config.assistant.thinking === 'on' ? msg('on') : msg('ultra') })
     ].join(JOIN)
   },
-  documents: ({ config }) => config.research.documents?.source ?? msg('None'),
+  connections: ({ config }) => config.research.gateway ? msg('Configured') : msg('Not configured'),
   'identity-provider': ({ config }) =>
     config.identity.provider === null ? msg('None') : config.identity.provider.issuer
 }

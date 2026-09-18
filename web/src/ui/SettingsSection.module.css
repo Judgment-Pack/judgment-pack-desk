@@ -45,3 +45,8 @@
 .section[data-variant='plain'] .head { padding: var(--density-section) 0 0; border-top: 1px solid var(--border); }
 .section[data-variant='plain'] .content { padding: var(--density-block) 0; }
 .section[data-variant='plain'] .footer { padding-inline: 0; background: transparent; }
+
+.section[data-variant='standalone'] { border-style: none; background: transparent; }
+.section[data-variant='standalone'] .head { padding: 0; }
+.section[data-variant='standalone'] .content { padding: var(--density-section) 0 0; }
+.section[data-variant='standalone'] .footer { padding-inline: 0; background: transparent; }

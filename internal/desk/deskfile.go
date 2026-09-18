@@ -126,6 +126,7 @@ type researchConfig struct {
 }
 
 type documentSourceConfig struct {
+	enabled                                         bool
 	source                                          string
 	maxFileBytes, maxRequestBytes, maxResponseBytes int64
 }
@@ -754,11 +755,15 @@ func decodeResearch(value any) (*researchConfig, []deskProblem) {
 }
 
 func decodeDocumentSource(value any) (*documentSourceConfig, []deskProblem) {
-	inner, problems := object(value, "research.documents", []string{"source", "maxFileBytes", "maxRequestBytes", "maxResponseBytes"})
+	inner, problems := object(value, "research.documents", []string{"enabled", "source", "maxFileBytes", "maxRequestBytes", "maxResponseBytes"})
 	if inner == nil {
 		return nil, problems
 	}
-	d := &documentSourceConfig{maxFileBytes: 16 << 20, maxRequestBytes: 32 << 20, maxResponseBytes: 8 << 20}
+	d := &documentSourceConfig{enabled: true, maxFileBytes: 16 << 20, maxRequestBytes: 32 << 20, maxResponseBytes: 8 << 20}
+	problems = append(problems, boolean(inner, "research.documents", "enabled")...)
+	if enabled, ok := inner["enabled"].(bool); ok {
+		d.enabled = enabled
+	}
 	if name, ok := inner["source"].(string); !ok || !researchSourceName.MatchString(name) {
 		problems = append(problems, deskProblem{Key: "research.documents.source", Reason: "Enter the document source name configured on your gateway."})
 	} else {

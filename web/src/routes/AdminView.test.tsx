@@ -462,7 +462,7 @@ describe('Admin, with no overview', () => {
         'Organization',
         'Storage & data',
         'Assistant',
-        'Documents',
+        'Connections',
         'Identity provider'
       ])
       expect(rail(container).querySelectorAll('dt'), where).toHaveLength(0)
@@ -1951,4 +1951,10 @@ describe('every control on Admin comes through the same component', () => {
     expect(row.textContent).toContain('used on the next launch without a directory')
     expect(container.querySelector('article')).toBeTruthy()
   })
+})
+
+// Bookmarked links from before Documents was renamed still open its settings.
+it('opens Connections for the legacy Documents fragment', () => {
+  renderAdmin(effectiveConfig(undefined), '/admin#documents')
+  expect(screen.getByRole('heading', { name: 'Connections' })).toBeTruthy()
 })
