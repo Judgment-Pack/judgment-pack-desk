@@ -37,6 +37,10 @@ type attachmentProof struct {
 		Grant  string `json:"grant"`
 		FileID string `json:"fileId"`
 	} `json:"drive,omitempty"`
+	Gmail *struct {
+		Grant     string `json:"grant"`
+		MessageID string `json:"messageId"`
+	} `json:"gmail,omitempty"`
 }
 type attachmentObject struct {
 	Version  int                `json:"version"`

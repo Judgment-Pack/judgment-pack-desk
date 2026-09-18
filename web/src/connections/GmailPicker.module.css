@@ -1,0 +1,8 @@
+.search { display: flex; gap: var(--space-2); margin-bottom: var(--space-3); }
+.search input { min-width: 0; flex: 1; }
+.results { min-height: 8rem; }
+.row { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-3) var(--space-2); border-bottom: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; }
+.row:hover, .row:has(input:checked) { background: var(--accent-soft); }
+.row input { margin-top: var(--space-1); flex: 0 0 auto; }
+.copy { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; overflow-wrap: anywhere; }
+.copy small, .empty { color: var(--ink-soft); font-size: var(--text-xs); }

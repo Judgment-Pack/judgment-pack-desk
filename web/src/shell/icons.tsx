@@ -54,6 +54,8 @@ export function IconGoogleDrive() {
   return <Glyph><path d="M6 2h4l5 8.5-2 3.5H3L1 10.5 6 2Z" /><path d="m6 2 5 8.5M10 2 5 10.5M1 10.5h14M5 10.5 3 14m8-3.5 2 3.5" /></Glyph>
 }
 
+export function IconMail() { return <Glyph><rect x="1.5" y="3" width="13" height="10" rx="1.5" /><path d="m2 4 6 5 6-5" /></Glyph> }
+
 export function IconMore() {
   return <Glyph><circle cx="3" cy="8" r=".8" fill="currentColor" stroke="none" /><circle cx="8" cy="8" r=".8" fill="currentColor" stroke="none" /><circle cx="13" cy="8" r=".8" fill="currentColor" stroke="none" /></Glyph>
 }

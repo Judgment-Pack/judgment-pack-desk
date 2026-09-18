@@ -19,3 +19,8 @@ it('maps gateway refusal codes to UI text instead of rendering raw provider erro
  fetch.mockResolvedValue(Response.json({error:'wrong-account'}))
  await expect(connectionCall('pick')).rejects.toThrow('Choose the Google account')
 })
+it('routes Gmail controls to their provider namespace',async () => {
+ fetch.mockResolvedValue(Response.json({messages:[]}))
+ await connectionCall('search',{query:'subject:policy'},undefined,'gmail')
+ expect(fetch).toHaveBeenCalledWith('/api/connections/gmail/search',expect.objectContaining({body:JSON.stringify({query:'subject:policy'})}))
+})

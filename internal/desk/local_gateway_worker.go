@@ -64,7 +64,7 @@ func RunLocalGatewayWorker(input io.Reader, output io.Writer) error {
 		listener.Close()
 		url := "http://127.0.0.1:" + strconv.Itoa(port)
 		cmd := exec.Command(filepath.Join(options.Bundle, executableName("gateway")), "serve", filepath.Join(options.Dir, "store"), options.Seed, localAuthority, filepath.Join(options.Dir, "registry.jsonl"),
-			"--port", strconv.Itoa(port), "--receipt-version", "3", "--max-request", "33554432", "--source-timeout", "documents=40", "--source", "documents="+executableName("adapter-document")+" --max-bytes 16777216 --max-output 8388608 --timeout 30s", "--source-timeout", "drive=60", "--source", "drive="+executableName("adapter-drive")+" --principal desk-local", "--source-env", "drive=JPACK_CONNECTIONS_DIR", "--source-shape", "drive=http", "--source-max-output", "16777216")
+			"--port", strconv.Itoa(port), "--receipt-version", "3", "--max-request", "33554432", "--source-timeout", "documents=40", "--source", "documents="+executableName("adapter-document")+" --max-bytes 16777216 --max-output 8388608 --timeout 30s", "--source-timeout", "drive=60", "--source", "drive="+executableName("adapter-drive")+" --principal desk-local", "--source-env", "drive=JPACK_CONNECTIONS_DIR", "--source-shape", "drive=http", "--source-timeout", "gmail=60", "--source", "gmail="+executableName("adapter-gmail")+" --principal desk-local", "--source-env", "gmail=JPACK_CONNECTIONS_DIR", "--source-shape", "gmail=http", "--source-max-output", "16777216")
 		cmd.Dir = options.Dir
 		// The CLI splits a source declaration into words. Resolve the adapter by its
 		// fixed basename on a dedicated PATH so installation paths may contain spaces.

@@ -75,3 +75,37 @@ func TestCancelDoesNotStartALocalCompanionAfterGatewaySwitch(t *testing.T) {
 		t.Fatal("cleanup started a companion")
 	}
 }
+
+func TestGmailRoutesStayAuthenticatedAndCannotFallback(t *testing.T) {
+	s, ts, _ := assistantServer(t)
+	writeDeskConfig(t, s, researchDeskFile("http://127.0.0.1:1"))
+	for _, path := range []string{"/api/connections/gmail/search", "/api/connections/gmail/select", "/api/connections/gmail/configure"} {
+		request, _ := http.NewRequest("POST", ts.URL+path, strings.NewReader(`{}`))
+		response, err := ts.Client().Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if response.StatusCode != 401 {
+			t.Fatal(path, response.StatusCode)
+		}
+		status, _ := sendJSON(t, ts, "POST", path, map[string]string{})
+		if status != 503 {
+			t.Fatal(path, status)
+		}
+	}
+	for _, path := range []string{"/api/connections/gmail/send", "/api/connections/gmail/pick", "/api/connections/google-drive/search", "/api/connections/unknown/status"} {
+		status, _ := sendJSON(t, ts, "POST", path, map[string]string{})
+		if status != 400 {
+			t.Fatal(path, status)
+		}
+	}
+	status, body := sendJSON(t, ts, "POST", "/api/connections/gmail/status", map[string]string{})
+	if status != 200 || body["provider"] != "gmail" || body["state"] != "unavailable" {
+		t.Fatal(status, body)
+	}
+	status, body = sendJSON(t, ts, "POST", "/api/connections/gmail/cancel", map[string]string{"id": strings.Repeat("a", 64)})
+	if status != 200 || body["state"] != "canceled" || s.gmailConnections.cmd != nil || s.connections.cmd != nil {
+		t.Fatal("unexpected companion", status, body)
+	}
+}

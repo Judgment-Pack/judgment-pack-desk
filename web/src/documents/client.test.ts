@@ -38,3 +38,18 @@ it.each(['file','grant','missing-request','source-swap'] as const)('rejects Driv
   if (kind === 'source-swap') object.proof!.response = object.proof!.response.replace('google-drive','inline')
   await expect(verifyDocument(object,pin,reference.digest)).rejects.toThrow()
 })
+it('verifies a Gmail text export and keeps the selected-message grant out of model context', async () => {
+  const {object,pin,reference} = await signedDocument('gmail')
+  const doc = await verifyDocument(object,pin,reference.digest)
+  expect(doc.record.provenance.source.messageId).toBe('abc1')
+  expect(documentContext(doc,reference)).not.toContain(object.proof!.gmail!.grant)
+})
+it.each(['message','grant','missing-request','cross-provider','source-swap'] as const)('rejects Gmail %s substitution', async kind => {
+  const {object,pin,reference} = await signedDocument('gmail')
+  if (kind === 'message') object.proof!.gmail!.messageId = 'abc3'
+  if (kind === 'grant') object.proof!.gmail!.grant = 'bb'.repeat(32)
+  if (kind === 'missing-request') delete object.proof!.gmail
+  if (kind === 'cross-provider') object.proof!.drive = {fileId:'abc1',grant:object.proof!.gmail!.grant}
+  if (kind === 'source-swap') object.proof!.source = 'drive'
+  await expect(verifyDocument(object,pin,reference.digest)).rejects.toThrow()
+})

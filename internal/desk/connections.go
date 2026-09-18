@@ -43,7 +43,7 @@ func (c *connectionCompanion) stop() {
 	c.done = nil
 }
 func (c *connectionCompanion) close() { c.mu.Lock(); defer c.mu.Unlock(); c.closed = true; c.stop() }
-func (c *connectionCompanion) call(ctx context.Context, bundle, dir, method string, params json.RawMessage, existingOnly bool) (json.RawMessage, error) {
+func (c *connectionCompanion) call(ctx context.Context, bundle, dir, method string, params json.RawMessage, provider string, existingOnly bool) (json.RawMessage, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed {
@@ -63,7 +63,7 @@ func (c *connectionCompanion) call(ctx context.Context, bundle, dir, method stri
 		if err := verifyGatewayBundle(bundle); err != nil {
 			return nil, err
 		}
-		c.cmd = exec.Command(filepath.Join(bundle, executableName("gateway-connections")), "--state-dir", dir, "--principal", "desk-local")
+		c.cmd = exec.Command(filepath.Join(bundle, executableName("gateway-connections")), "--state-dir", dir, "--principal", "desk-local", "--provider", provider)
 		var err error
 		c.input, err = c.cmd.StdinPipe()
 		if err != nil {
@@ -128,8 +128,27 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	method := r.PathValue("method")
+	provider := r.PathValue("provider")
+	companion := &s.connections
+	switch provider {
+	case "", "google-drive":
+		provider = "google-drive"
+	case "gmail":
+		companion = &s.gmailConnections
+	default:
+		writeJSONCoded(w, 400, CodeBadRequest, "unknown connection provider")
+		return
+	}
+	if (method == "search" || method == "select") && provider != "gmail" {
+		writeJSONCoded(w, 400, CodeBadRequest, "unknown connection operation")
+		return
+	}
+	if method == "pick" && provider == "gmail" {
+		writeJSONCoded(w, 400, CodeBadRequest, "unknown connection operation")
+		return
+	}
 	switch method {
-	case "status", "configure", "connect", "pick", "poll", "cancel", "disconnect":
+	case "status", "configure", "connect", "pick", "poll", "cancel", "disconnect", "search", "select":
 	default:
 		writeJSONCoded(w, 400, CodeBadRequest, "unknown connection operation")
 		return
@@ -167,15 +186,22 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 				writeJSONCoded(w, 503, CodeBadRequest, "gateway connection service unavailable")
 				return
 			}
-			writeJSON(w, 200, map[string]any{"version": 1, "provider": "google-drive", "state": "unavailable", "maxFileBytes": 4 << 20, "maxFiles": 4})
+			writeJSON(w, 200, map[string]any{"version": 1, "provider": provider, "state": "unavailable", "maxFileBytes": 4 << 20, "maxFiles": 4})
 			return
+		}
+		if provider == "gmail" && (method == "search" || method == "select") {
+			gateway, err := s.configuredResearch()
+			if err != nil || !gateway.managedLocal || gateway.maxFileBytes == 0 {
+				writeJSONCoded(w, http.StatusConflict, CodeResearchUnconfigured, "local document processing is no longer available; nothing was sent")
+				return
+			}
 		}
 		bundle = s.localGateway.bundle
 		directory = filepath.Join(s.assistant.dir, "gateway-connections")
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 55*time.Second)
 	defer cancel()
-	out, err := s.connections.call(ctx, bundle, directory, method, body, method == "cancel")
+	out, err := companion.call(ctx, bundle, directory, method, body, provider, method == "cancel")
 	if err != nil {
 		writeJSONCoded(w, 503, CodeBadRequest, "gateway connection service unavailable")
 		return

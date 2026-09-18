@@ -125,6 +125,25 @@ def main():
                 assert json.loads(detail)['error'] == 'source failed: selection-expired\n', detail
             else:
                 raise AssertionError('unknown Drive grant returned a result: '+json.dumps(unknown))
+            assert request(desk + '/api/connections/gmail/status', {})['state'] == 'setup-required', 'Drive setup leaked into Gmail'
+            assert request(desk + '/api/connections/gmail/configure', {'clientId':'gmail-isolated.apps.googleusercontent.com','clientSecret':'synthetic-gmail'})['saved']
+            assert request(other_desk + '/api/connections/gmail/status', {})['state'] == 'not-connected'
+            mail_flow = request(desk + '/api/connections/gmail/connect', {})
+            mail_params = parse_qs(urlsplit(mail_flow['url']).query)
+            assert mail_params['scope'] == ['https://www.googleapis.com/auth/gmail.readonly']
+            assert mail_params['include_granted_scopes'] == ['false']
+            assert mail_params['code_challenge_method'] == ['S256']
+            assert 'trigger_onepick' not in mail_params
+            assert request(desk + '/api/connections/cancel', {'id':mail_flow['id']}).get('error'), 'Gmail flow crossed provider boundary'
+            assert request(desk + '/api/connections/gmail/cancel', {'id':mail_flow['id']})['state'] == 'canceled'
+            callback = mail_params['redirect_uri'][0]
+            wait_for(callback_closed)
+            try:
+                request(desk + '/api/research/gateway/acquire', {'session':str(uuid.uuid4()),'source':'gmail','arguments':{'grant':'ab'*32,'messageId':'abc1'}}, headers={'X-JPack-Local-Documents':'1'})
+            except urllib.error.HTTPError as error:
+                detail = error.read().decode()
+                assert json.loads(detail)['error'] == 'source failed: selection-expired\n', detail
+            else: raise AssertionError('unknown Gmail grant returned a result')
             for path in (config / 'jpack-desk/gateway-connections').rglob('*'):
                 if path.is_file(): assert path.stat().st_mode & 0o777 == 0o600
                 elif path.is_dir(): assert path.stat().st_mode & 0o777 == 0o700
@@ -147,6 +166,11 @@ def main():
                     request(desk + '/api/research/gateway/acquire', {'session':str(uuid.uuid4()), 'source':'drive', 'arguments':{'grant':'ab'*32,'fileId':'not-selected'}}, headers={'X-JPack-Local-Documents':'1'})
                     raise AssertionError('disabled document processing dispatched a Drive read')
                 except urllib.error.HTTPError as error: assert error.code == 409
+                for method in ('search', 'select'):
+                    try:
+                        request(desk + '/api/connections/gmail/' + method, {})
+                    except urllib.error.HTTPError as error: assert error.code == 409
+                    else: raise AssertionError('disabled Gmail operation reached the companion')
                 try:
                     request(desk + '/api/attachments/' + str(uuid.uuid4()), {'version': 1, 'original': original}, 'PUT', {'If-Match': 'absent'})
                     raise AssertionError('disabled PDF processing accepted new original')
@@ -179,7 +203,7 @@ def main():
             # Invalid configuration must not get a managed fallback.
             config_path.write_text('{broken')
             assert 'localGateway' not in request(desk + '/api/desk-config')
-            print('PASS: connections shared status, fixed OAuth, cancel, grant refusal, private modes; automatic setup, two instances, signed extraction, disable/null, graceful shutdown, crash cleanup, stable identity, external preservation, invalid config refusal')
+            print('PASS: Drive/Gmail isolated status, fixed OAuth, cancel, grant refusal, private modes; automatic setup, two instances, signed extraction, disable/null, graceful shutdown, crash cleanup, stable identity, external preservation, invalid config refusal')
         finally:
             for proc in processes:
                 if proc.poll() is None: proc.terminate()
