@@ -70,10 +70,10 @@ export function GoogleConnectionDialog({ open, onOpenChange, provider, available
     description={provider === 'gmail' ? msg('Gmail grants read access to your mailbox. Only emails you select are attached to chat. Credentials stay with the gateway.') : msg('Only files you select are used. Google credentials stay with the gateway.')}
     footer={<DialogActions><Button variant="quiet" onClick={close}>{busy ? msg('Cancel') : msg('Close')}</Button>
       {state === 'connected' && !onSelected ? <Button disabled={busy} onClick={() => void disconnect()}>{msg('Disconnect')}</Button>
-        : usable && <Button variant="primary" disabled={busy} onClick={() => void connect()}>{msg('Continue')}</Button>}
+        : usable && <Button variant="primary" disabled={busy} onClick={() => void connect()}>{msg('Continue with Google')}</Button>}
     </DialogActions>}>
     {state === 'connected' ? <><p>{query.data?.account?.email}</p>{!onSelected && <><p>{msg('Disconnecting does not delete documents already attached to chats.')}</p><p>{msg('Google may also disconnect other connections using the same Cloud project.')}</p></>}</>
-      : state === 'setup-required' ? <p>{msg('Google sign-in is not configured in this build. You can use your own Google app below.')}</p>
+      : state === 'setup-required' ? <p>{msg('Google sign-in is not included in this build. Contact the app publisher.')}</p>
       : state === 'not-connected' ? <p>{msg('Continue to Google to choose your account and review access. Your chat stays here.')}</p>
       : <p>{state === undefined ? msg('Loading…') : msg('Unavailable')}</p>}
     {(state === 'setup-required' || state === 'not-connected') && <Disclosure title={msg('Use your own Google app')}>
