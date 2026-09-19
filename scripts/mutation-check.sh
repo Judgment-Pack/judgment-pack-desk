@@ -2941,12 +2941,12 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # 4. Radix restores focus to its own trigger; this dialog has none.
   mutate web "closing Create drops focus on the body" "$UD" \
     '          onCloseAutoFocus={
-            openerRef === undefined
+            onCloseAutoFocus ?? (openerRef === undefined
               ? undefined
               : (event) => {
                   event.preventDefault()
                   openerRef.current?.focus()
-                }
+                })
           }' \
     ''
   # The opener is no longer a dialog trigger; focus belongs to the new page.
