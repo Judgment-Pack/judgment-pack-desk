@@ -3391,17 +3391,24 @@ that is refused as a whole names no project, and the launch says which problem.
 
 ## Development mode
 
-Two processes: the chassis for the relay, Vite for hot reload.
+Two processes: the chassis for the relay, Vite for hot reload. Build the complete
+[local installation](#automatic-local-pdf-processing) first so `bin` contains the
+pinned gateway companions. Rebuild the complete bundle when the gateway pin changes.
 
 ```sh
 # terminal 1 — chassis with a fixed launch secret so the URL is stable across
 # restarts (flags come before the project directory: Go stops parsing flags at
 # the first positional argument)
-go run . --dev-token dev --port 8791 --jpack /path/to/jpack /path/to/project
+go build -trimpath -o bin/jpack-desk .
+./bin/jpack-desk --dev-token dev --port 8791 --jpack /path/to/jpack /path/to/project
 
 # terminal 2 — Vite dev server, proxying /launch, /ws and /api to the chassis
 npm --prefix web run dev
 ```
+
+Run the chassis from `bin`, beside its gateway companions. `go run` places its
+executable in a temporary directory without those companions, so PDFs, Google
+Drive and Gmail become unavailable even if a complete bundle exists in `bin`.
 
 Then open <http://localhost:5173/launch?secret=dev> **once**. The chassis answers
 `303` to `/#`; the browser lands on Vite's own `/` holding the handoff cookie —
