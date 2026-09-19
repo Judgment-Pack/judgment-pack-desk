@@ -8,15 +8,17 @@
 .historyBody[data-compact] { padding: 0; }
 .historySearch { flex: 0 0 auto; padding: var(--space-3); }
 .historySearch > input { width: 100%; }
-.thread { position: relative; flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-5); }
-.thread > * { flex: 0 0 auto; min-width: 0; }
+.transcript { position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
+.thread { position: relative; flex: 1 1 auto; min-height: 0; overflow: auto; overflow-anchor: none; scrollbar-gutter: stable both-edges; overscroll-behavior: contain; padding: var(--space-4); }
+.threadContent { width: min(100%, var(--measure-form)); margin-inline: auto; display: flex; flex-direction: column; gap: var(--space-5); }
+.threadContent > * { flex: 0 0 auto; min-width: 0; }
 .welcome { max-width: var(--measure-form); margin: auto; text-align: center; padding: var(--space-5) var(--space-2); }
 .welcome h1 { font-size: var(--text-page); font-weight: 500; margin: 0 0 var(--space-3); }
 .welcome p { font-size: var(--text-sm); color: var(--ink-soft); margin: 0; line-height: 1.6; }
 .chat[data-landing] { justify-content: center; }
-.chat[data-landing] .thread { position: relative; flex: 0 1 auto; padding-bottom: 0; }
+.chat[data-landing] .transcript { flex: 0 1 auto; margin-top: auto; }
+.chat[data-landing] .thread { flex: 0 1 auto; padding-bottom: 0; }
 .chat[data-landing] .composerArea { margin-bottom: auto; }
-.chat[data-landing] .thread { margin-top: auto; }
 .message { width: min(100%, var(--measure-form)); margin-inline: auto; font-size: var(--text-body); line-height: 1.65; overflow-wrap: anywhere; }
 .message > div { white-space: normal; }
 .message .userText { white-space: pre-wrap; }
@@ -33,14 +35,14 @@
 .composerArea { flex: 0 0 auto; padding: var(--space-3) var(--space-4); width: 100%; max-width: calc(var(--measure-form) + 2 * var(--space-4)); margin-inline: auto; }
 .composer { border: 1px solid var(--border-strong); background: var(--surface); border-radius: var(--radius-panel); padding: var(--space-2); }
 .composer:focus-within { border-color: var(--border-strong); }
-.composer .messageInput { resize: none; min-height: 3rem; max-height: 25vh; width: 100%; background: transparent; border: none; box-shadow: none; }
+.composer .messageInput { resize: none; min-height: 3rem; max-height: max(80px, 25vh); width: 100%; background: transparent; border: none; box-shadow: none; }
 .composerTools { display: flex; align-items: center; gap: var(--space-1); flex-wrap: wrap; }
 .pick { min-width: 0; max-width: 8rem; }
 .model { min-width: 0; max-width: 12rem; flex: 1 1 7rem; }
 .model button, .pick button { max-width: 100%; min-width: 0; }
 .model button > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .grow { flex: 1; }
-.footnote { color: var(--ink-faint); font-size: var(--text-xs); text-align: center; margin: var(--space-2) 0 0; }
+.footnote { min-height: 1.6em; line-height: 1.6; color: var(--ink-faint); font-size: var(--text-xs); text-align: center; margin: var(--space-2) 0 0; }
 .setup, .notice { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; font-size: var(--text-xs); color: var(--ink-soft); margin-bottom: var(--space-3); }
 .notice p { margin: 0; }
 .history { position: relative; list-style: none; padding: 0 var(--space-2) var(--space-2); margin: 0; display: flex; flex-direction: column; gap: var(--space-1); overflow: auto; overscroll-behavior: contain; min-height: 0; }
@@ -95,7 +97,8 @@
 .messageActions > button { font-size: var(--text-xs); }
 .work li { display: flex; justify-content: space-between; gap: var(--space-3); }
 .work p { line-height: 1.5; }
-.jump { display: flex; justify-content: center; flex: 0 0 auto; padding-top: var(--space-2); }
+.jump { position: absolute; inset-inline: 0; bottom: var(--space-3); display: flex; justify-content: center; pointer-events: none; }
+.jump > button { pointer-events: auto; box-shadow: 0 2px 8px var(--shadow); }
 .attachments { display: flex; flex-wrap: wrap; gap: var(--space-2); list-style: none; margin: 0 0 var(--space-2); padding: 0; }
 .attachments li { display: flex; align-items: center; max-width: 100%; min-width: 0; background: var(--accent-soft); border-radius: var(--radius-sm); }
 .attachments li > button:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }

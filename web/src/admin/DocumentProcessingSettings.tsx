@@ -107,7 +107,7 @@ export function DocumentProcessingSettings() {
   return <>
     <SettingsSection title={msg('Document processing')} level={2} variant="standalone" description={msg('Extract text from uploaded PDFs.')}>
       <p className={styles.scope}>{msg('Personal · This computer')}</p>
-      <SettingRow title={managed ? msg('Local processing') : msg('Gateway')} description={managed ? msg('Managed automatically by Desk on this computer.') : msg('Shared by research and PDF processing.')}
+      <SettingRow title={managed ? msg('Local processing') : msg('Gateway')} description={managed ? msg('Extracts embedded PDF text on this computer. OCR is not included.') : msg('Shared by research and PDF processing.')}
         status={managed ? local?.status === 'ready' ? msg('Ready') : msg('Unavailable') : gateway ? msg('Configured · Availability checked when used') : msg('Not configured')}
         action={<Button ref={gatewayOpener} disabled={!writable} aria-label={gateway ? msg('Manage gateway') : msg('Set up gateway')} onClick={() => open('gateway')}>{gateway || managed ? msg('Manage') : msg('Set up')}</Button>} />
       <SettingRow title={msg('PDF processing')} description={msg('Extract text from uploaded PDFs.')}
@@ -116,6 +116,7 @@ export function DocumentProcessingSettings() {
       {managed && local?.status === 'unavailable' && <div><Alert>{msg('Local processing is unavailable. Check the details below or use an existing gateway.')}</Alert><Disclosure title={msg('Technical details')}><p>{systemMessage(local.problem ?? '')}</p></Disclosure></div>}
       {!writable && <Alert>{msg('Settings could not be read. Reload the page before making changes.')}</Alert>}
       <p className={styles.note}>{msg('Text files can be attached without a gateway.')}</p>
+      <p className={styles.note}>{msg('When you send a message, selected document text is sent to your configured AI model.')}</p>
       <p className={styles.note}>{msg('Uploaded originals stay in chat storage when removed from a message.')}</p>
       {notice && <p role="status" className={styles.note}>{systemMessage(notice)}</p>}
     </SettingsSection>

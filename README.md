@@ -45,6 +45,13 @@ Google Drive and Gmail connection and retrieval companions. Choose either provid
 from the chat **+** menu to connect and select files or emails without leaving chat.
 Manage accounts under the user menu → **My connections**.
 
+Here, **local** means the bundled gateway extracts the PDF's embedded text on
+your computer. It does not use an LLM, render page images, or include an OCR
+engine. Scanned pages without readable text are marked **Needs OCR**. A separately
+configured gateway can supply OCR. When you send a chat message, selected page
+text is included in the request to your configured AI model; local extraction
+does not imply that the AI conversation runs locally.
+
 GitHub releases and source builds include **no publisher Google registration**.
 To enable Google Drive or Gmail on your own installation, open **Admin → Connections**
 and configure your own Google Desktop app. Then choose the provider from chat's

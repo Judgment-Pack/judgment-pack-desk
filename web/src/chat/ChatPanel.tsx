@@ -1,6 +1,6 @@
 import { Message } from '../i18n/Message'
 import { msg, useLocale, systemMessage } from '../i18n'
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import { useInspectorSlot } from '../shell/InspectorSlot'
@@ -38,7 +38,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
   proposalActions?: ReactNode; locked?: boolean
 }) {
   useLocale()
-  const { store, bindings, error, saving, dirty, drafts } = useChats()
+  const { store, bindings, error, drafts } = useChats()
   const binding = bindings.get(chat.id)
   const state = binding?.state ?? INITIAL_STATE
   const slot = useAssistantSlot()
@@ -52,6 +52,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
   const [configure, setConfigure] = useState(false)
   const configureButton = useRef<HTMLButtonElement>(null)
   const thread = useRef<HTMLDivElement>(null)
+  const threadContent = useRef<HTMLDivElement>(null)
   const following = useRef(true)
   const [awayFromLatest, setAwayFromLatest] = useState(false)
   const messageInput = useRef<HTMLTextAreaElement>(null)
@@ -100,21 +101,47 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
       document.getElementById(`${id}-message`)?.focus()
     }
   }
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!history && following.current) thread.current?.scrollTo?.({ top: thread.current.scrollHeight })
-  }, [state.turns.length, state.events.length, state.streaming, running, history])
+  }, [state.turns.length, state.streaming, running, history])
+  useLayoutEffect(() => {
+    const scroller = thread.current, content = threadContent.current
+    if (!scroller || !content) return
+    const observer = new ResizeObserver(() => {
+      if (!history && following.current) scroller.scrollTo?.({ top: scroller.scrollHeight })
+    })
+    observer.observe(scroller); observer.observe(content)
+    return () => observer.disconnect()
+  }, [history])
+  const resizeInput = useCallback(() => {
+    const input = messageInput.current
+    if (!input) return
+    const scroll = input.scrollTop
+    input.style.height = 'auto'
+    input.style.height = `${Math.min(input.scrollHeight, Math.max(80, window.innerHeight * 0.25))}px`
+    input.scrollTop = scroll
+  }, [])
+  useLayoutEffect(resizeInput, [chat.composer, empty, resizeInput])
   useEffect(() => {
     const input = messageInput.current
     if (!input) return
-    input.style.height = 'auto'
-    input.style.height = `${Math.min(input.scrollHeight, Math.max(80, window.innerHeight * 0.25))}px`
-  }, [chat.composer, empty])
+    let width = input.getBoundingClientRect().width
+    const observer = new ResizeObserver(entries => {
+      const next = entries[0]?.contentRect.width
+      if (next !== undefined && next !== width) { width = next; resizeInput() }
+    })
+    observer.observe(input)
+    window.addEventListener('resize', resizeInput)
+    return () => { observer.disconnect(); window.removeEventListener('resize', resizeInput) }
+  }, [resizeInput])
   const toolbar = <ChatToolbar chat={chat} history={history} historyRef={historyButton} onHistory={() => setHistory(true)} onBack={backToChat}
     onNew={() => { if (!store?.canCreate) return; const next = store.startChat(chat.pack, chat.mode, true); setHistory(false); openNewChat(navigate, next, location) }} />
   return <section className={styles.chat} data-landing={landing && empty || undefined} aria-label={msg("Assistant chat")}>
     {toolbarTarget ? createPortal(toolbar, toolbarTarget) : placement === 'main' && headerTarget === undefined ? <header className={styles.chatHeader}>{toolbar}</header> : null}
     <div className={styles.conversation}>
+    <div className={styles.transcript}>
     <div className={styles.thread} ref={thread} onScroll={() => { const node = thread.current; if (node) { following.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80; setAwayFromLatest(!following.current) } }}>
+      <div className={styles.threadContent} ref={threadContent}>
       {empty && <div className={styles.welcome}><h1>{chat.pack ? msg("What would you like to change?") : msg("What would you like to work on?")}</h1><p>{chat.pack ? msg("Ask about {{value0}}, test an idea, or propose a change.", { value0: chat.pack.id }) : msg("Ask a question, explore an idea, or create and improve a pack.")}</p></div>}
       {state.turns.map((turn,index) => <article key={`${turn.at}-${index}`} className={styles.message} data-role={turn.role}>
         <span className={styles.caption}>{turn.role === 'user' ? msg("You") : turn.kind === 'note' ? msg("Desk") : msg("Assistant")}</span>
@@ -134,8 +161,10 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
       {!state.restored && state.candidates.length > 0 && state.status === 'failed' && <Button disabled={Boolean(otherRun)} onClick={() => store?.perform(chat.id, active => active.run?.recheck(), false)}>{msg("Retry draft checks")}</Button>}
       {state.restored && !savedCandidate && state.candidates.length > 0 && <Button disabled={running || Boolean(otherRun)} onClick={() => store?.perform(chat.id, active => active.run?.recheck(), false)}>{msg("Recheck saved draft")}</Button>}
       {canRetryExpectationValidation(state) && <Button disabled={locked || Boolean(otherRun) || Boolean(blocked)} onClick={() => store?.perform(chat.id, active => active.run?.retryExpectationValidation())}>{msg("Retry validation")}</Button>}
+      </div>
     </div>
     {awayFromLatest && !empty && <div className={styles.jump}><Button onClick={() => { following.current = true; setAwayFromLatest(false); thread.current?.scrollTo({ top: thread.current.scrollHeight }) }}>{msg("Jump to latest")}</Button></div>}
+    </div>
     <div className={styles.composerArea} onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault() }} onDrop={event => { if (event.dataTransfer.files.length) { event.preventDefault(); void upload.attach([...event.dataTransfer.files]) } }}>
       {error && <div className={styles.notice} role="alert"><p>{systemMessage(error)}</p>{store?.canCreate ? <Button variant="quiet" onClick={() => store?.retrySave()}>{msg("Retry saving")}</Button> : <Button variant="quiet" onClick={() => navigate("/chats")}>{msg("Manage chat history")}</Button>}</div>}
       {otherRun && <div className={styles.notice} role="status"><Message text={"Another chat is working. You can keep writing here.<0/>"} slots={[<Button variant="quiet" onClick={() => { const other = store?.getSnapshot().chats.find(item => item.id === otherRun); if (other) navigate(chatHref(other, location)) }}>{msg("Open working chat")}</Button>]} /></div>}
@@ -170,7 +199,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
         </div>
       </div>
       {upload.error && <p className={styles.caption} role="alert">{systemMessage(upload.error)}</p>}
-      {(unsubmitted || error || saving || dirty || running) && <p className={styles.footnote}>{error ? msg("Chat has unsaved changes.") : saving || dirty ? msg("Saving chat…") : running ? msg("Working in this window. You can switch chats; keep this window open.") : msg("Send a message to start a chat.")}</p>}
+      <p className={styles.footnote}>{running ? msg("Working in this window. You can switch chats; keep this window open.") : unsubmitted ? msg("Send a message to start a chat.") : null}</p>
     </div>
     </div>
     {connectProvider && <GoogleConnectionDialog key={`${chat.id}:${attachmentContext}:${connectProvider}`} provider={connectProvider}
