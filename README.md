@@ -45,43 +45,40 @@ Google Drive and Gmail connection and retrieval companions. Choose either provid
 from the chat **+** menu to connect and select files or emails without leaving chat.
 Manage accounts under the user menu → **My connections**.
 
-Google-enabled releases include the publisher's Google OAuth registration. Users
-choose **Continue with Google**, authorize their own account, then select files
-or emails. Users do not need a Cloud project or a credential file. Registration
-and account tokens are retained by the local gateway, never in chats or project
-settings. Source-only builds without a publisher registration explain that Google
-sign-in is not included. **Use your own Google app** remains an advanced fallback
-for developers or self-hosted distributions, not ordinary user onboarding.
-Google consent is required; setup cannot authorize an account automatically. Web research credentials and OCR are not installed. See [managed local processing](docs/adr/0005-managed-local-gateway.md)
-for identity preservation, receipt storage and platform boundaries.
+GitHub releases and source builds include **no publisher Google registration**.
+To enable Google Drive or Gmail on your own installation, open **Admin → Connections**
+and configure your own Google Desktop app. Then choose the provider from chat's
+**+** menu and select **Continue with Google** to authorize your account.
+App registration and account tokens stay with the local gateway, outside chats
+and project settings. Configuring the app does not grant account access.
 
-### Publisher setup for Google-enabled releases
+### Configure Google for your installation
 
-The publisher enables Drive API, Google Picker API and Gmail API in Google Cloud,
-configures Google Auth Platform branding, audience and data access, and creates a
-**Desktop app** OAuth client. Keep the downloaded registration outside the source
-tree, then build the distribution with:
+1. Create your own Google Cloud project. Enable Drive API and Google Picker API
+   for Drive, and Gmail API for Gmail.
+2. Configure Google Auth Platform branding, audience and data access. Add your
+   account as a test user while developing.
+3. Create a **Desktop app** OAuth client and download its registration JSON.
+4. In **Admin → Connections**, choose **Set up** for the provider and select that
+   JSON file. Configure each provider you want to use; both can use the same app.
+5. Return to chat and connect your Google account. Only the files or emails you
+   select are attached to chat.
 
-```sh
-python3 scripts/build-bundle.py \
-  --google-oauth-client /private/release/google-desktop.json \
-  --require-google-oauth
-```
+The public bundle builder refuses a gateway source archive containing a publisher
+registration. It has no option to embed one. Do not put registrations, account
+tokens, service-account keys or personal Cloud credentials in source control or
+GitHub release artifacts. Existing locally configured registrations and connected
+accounts are preserved by updates. Disconnect an account in **My connections**
+before replacing its registration in Admin.
 
-`--require-google-oauth` prevents accidentally shipping a Google-enabled release
-without its registration. The build validates the Desktop client, strips unrelated
-metadata and embeds it in the gateway connection companion in a disposable build
-tree. Its checksum covers the registration; the original checkout and frontend
-assets never receive it. Desktop app registration is distributed app identity,
-not a user's password or a confidential web-server credential. Never commit the
-registration JSON, user tokens, or a service-account key.
-
-Use designated test users during development. Public releases must satisfy
-Google's applicable verification requirements, especially for Gmail read access.
-See [desktop OAuth](https://developers.google.com/identity/protocols/oauth2/native-app)
-and [restricted-scope verification](https://developers.google.com/identity/protocols/oauth2/production-readiness/restricted-scope-verification).
-An existing custom registration or connected account is preserved during upgrades;
-changing its client remains an explicit operation after disconnecting the account.
+See [desktop OAuth](https://developers.google.com/identity/protocols/oauth2/native-app),
+[Drive Picker for desktop apps](https://developers.google.com/workspace/drive/picker/guides/desktop-mobile-picker)
+and [Gmail scopes](https://developers.google.com/workspace/gmail/api/auth/scopes)
+for Google's setup and applicable verification requirements.
+Google consent is required; setup cannot authorize an account automatically.
+Web research credentials and OCR are not installed. See
+[managed local processing](docs/adr/0005-managed-local-gateway.md) for identity
+preservation, receipt storage and platform boundaries.
 
 ## Personal chat storage and recovery
 

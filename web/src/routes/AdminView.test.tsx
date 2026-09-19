@@ -426,7 +426,7 @@ describe('Admin, with no overview', () => {
     }
   })
 
-  it('is exactly five rows under exactly two group titles, and states no file’s head', () => {
+  it('is exactly six rows under exactly two group titles, and states no file’s head', () => {
     // **The column is a list of sections and nothing else.** The head it used to
     // carry above the rows — where the file is, what reading it produced, and
     // the control that writes it — is the Project section now: a path in a 13rem
@@ -456,12 +456,13 @@ describe('Admin, with no overview', () => {
     for (const [where, build, path] of states) {
       const { container } = renderAdmin(build(), path)
       expect(railTitles(container), where).toEqual(['This project', 'This desk'])
-      expect(rowsIn(container), where).toHaveLength(5)
+      expect(rowsIn(container), where).toHaveLength(6)
       expect(rowTitles(container), where).toEqual([
         'Project',
         'Organization',
         'Storage & data',
         'Assistant',
+        'Connections',
         'Identity provider'
       ])
       expect(rail(container).querySelectorAll('dt'), where).toHaveLength(0)

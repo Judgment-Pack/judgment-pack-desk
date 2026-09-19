@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { MemoryRouter } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -29,46 +30,29 @@ function Harness({ available = true, provider = 'google-drive', onSelected }: {
 }
 function setup(props: Parameters<typeof Harness>[0] = {}) {
   const client = testQueryClient()
-  const view = (next = props) => <QueryClientProvider client={client}><Harness {...next} /></QueryClientProvider>
+  const view = (next = props) => <MemoryRouter><QueryClientProvider client={client}><Harness {...next} /></QueryClientProvider></MemoryRouter>
   return { ...render(view()), view }
 }
-it('keeps registration setup advanced and never pretends an unregistered build can sign in', async () => {
+it('routes missing registration to Admin without importing files or starting OAuth', async () => {
   state = 'setup-required'; setup()
-  await screen.findByText('Google sign-in is not included in this build. Contact the app publisher.')
+  await screen.findByText('Configure Google registration in Admin → Connections before signing in.')
+  expect(screen.getByRole('link', { name: 'Set up in Admin' }).getAttribute('href')).toBe('/admin#connections')
   expect(screen.queryByRole('button', { name: 'Continue with Google' })).toBeNull()
-  expect(screen.getByText('Use your own Google app').closest('details')?.open).toBe(false)
+  expect(document.querySelector('input[type=file]')).toBeNull()
   expect(mocks.authorize).not.toHaveBeenCalled()
 })
-it.each(['google-drive', 'gmail'] as const)('uses publisher-configured %s sign-in without a credential import', async provider => {
+it.each(['google-drive', 'gmail'] as const)('uses locally configured %s sign-in without a credential import', async provider => {
   const selected = vi.fn()
   mocks.authorize.mockImplementation(async () => { state = 'connected'; return [] })
   setup({ provider, onSelected: selected })
   const connect = await screen.findByRole('button', { name: 'Continue with Google' })
-  expect(screen.getByText('Use your own Google app').closest('details')?.open).toBe(false)
-  expect(screen.queryByText('Google sign-in is not included in this build. Contact the app publisher.')).toBeNull()
+  expect(document.querySelector('input[type=file]')).toBeNull()
+  expect(screen.queryByText('Configure Google registration in Admin → Connections before signing in.')).toBeNull()
   expect(mocks.authorize).not.toHaveBeenCalled()
   fireEvent.click(connect)
   await waitFor(() => expect(selected).toHaveBeenCalledWith([]))
   expect(mocks.authorize).toHaveBeenCalledWith(provider === 'google-drive' ? 'pick' : 'connect', expect.any(AbortSignal), provider)
   expect(mocks.fetch.mock.calls.some(call => call[0].endsWith('/configure'))).toBe(false)
-})
-it('imports registration without leaving chat, then waits for a user click before OAuth', async () => {
-  state = 'setup-required'; const selected = vi.fn(), ui = setup({ onSelected: selected })
-  fireEvent.click(await screen.findByText('Use your own Google app'))
-  const file = new File(['{}'], 'desktop.json', { type: 'application/json' })
-  Object.defineProperty(file, 'text', { value: async () => JSON.stringify({ installed: { client_id: 'synthetic.apps.googleusercontent.com' } }) })
-  fireEvent.change(document.querySelector('input[type=file]')!, { target: { files: [file] } })
-  await screen.findByRole('button', { name: 'Continue with Google' })
-  expect(screen.getByRole('dialog')).toBeTruthy()
-  expect(mocks.authorize).not.toHaveBeenCalled()
-  const sent = JSON.parse(mocks.fetch.mock.calls.find(call => call[0].endsWith('/configure'))![1].body)
-  expect(sent).toEqual({ clientId: 'synthetic.apps.googleusercontent.com', clientSecret: '' })
-  mocks.authorize.mockImplementation(async () => { state = 'connected'; return [{ fileId: 'chosen', grant: 'a'.repeat(64) }] })
-  fireEvent.click(screen.getByRole('button', { name: 'Continue with Google' }))
-  await waitFor(() => expect(selected).toHaveBeenCalledWith([{ fileId: 'chosen', grant: 'a'.repeat(64) }]))
-  expect(mocks.authorize).toHaveBeenCalledWith('pick', expect.any(AbortSignal), 'google-drive')
-  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Attach' })))
-  expect(ui.container.textContent).not.toContain('synthetic.apps')
 })
 it('connects Gmail before returning to email selection and keeps management consent separate', async () => {
   mocks.authorize.mockImplementation(async () => { state = 'connected'; return [] })
@@ -88,17 +72,6 @@ it.each(['close', 'unavailable'] as const)('cancels OAuth on %s and ignores a la
   expect(signal.aborted).toBe(true)
   await act(async () => { finish([{ fileId: 'late', grant: 'a'.repeat(64) }]) })
   expect(selected).not.toHaveBeenCalled()
-})
-it('does not import registration after the dialog closes during a file read', async () => {
-  state = 'setup-required'; setup()
-  fireEvent.click(await screen.findByText('Use your own Google app'))
-  let finish!: (value: string) => void
-  const file = new File(['{}'], 'desktop.json')
-  Object.defineProperty(file, 'text', { value: () => new Promise(resolve => { finish = resolve }) })
-  fireEvent.change(document.querySelector('input[type=file]')!, { target: { files: [file] } })
-  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-  await act(async () => { finish('{"installed":{"client_id":"synthetic.apps.googleusercontent.com"}}') })
-  expect(mocks.fetch.mock.calls.some(call => call[0].endsWith('/configure'))).toBe(false)
 })
 it('reports failed remote revocation without claiming all Google access was removed', async () => {
   state = 'connected'; setup()

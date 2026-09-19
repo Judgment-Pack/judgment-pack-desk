@@ -57,6 +57,7 @@ import { OverflowTooltip } from '../ui/Tooltip'
  */
 import { useEffect, useRef, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { ConnectionSettings } from '../admin/ConnectionSettings'
 import { DocumentProcessingSettings } from '../admin/DocumentProcessingSettings'
 import { ChatDataSettings } from '../admin/ChatDataSettings'
 import { AssistantSection } from '../assistant/AssistantSection'
@@ -170,7 +171,7 @@ export function AdminView() {
   // the portal are one call, so leaving Admin releases the slot and the next
   // route's own panel — or the pane's empty state — takes it back.
   const pane = useInspectorPortal(
-    <ConfigPane {...paneFor(effective, open)} />
+    open.id === 'connections' ? null : <ConfigPane {...paneFor(effective, open)} />
   )
 
   return (
@@ -246,6 +247,7 @@ ${effective.desk.chassis.runtimeBin}`} />
                   under={deskStatus(effective)}
                 />
               </RetainedPanel>
+              {open.id === 'connections' && <ConnectionSettings />}
               <RetainedPanel active={open.id === 'identity-provider'}>
                 <SourceCard
                   id={sectionId(SECTION['identity-provider']!.id)}
@@ -399,7 +401,7 @@ function sectionFromHash(hash: string): AdminSection {
   } catch {
     return first
   }
-  if (id === 'documents' || id === 'connections') id = 'storage'
+  if (id === 'documents') id = 'storage'
   return SECTION[id] ?? first
 }
 
@@ -467,6 +469,7 @@ type LayeredSection = Exclude<
 
 /** One section's own state, whichever of the two files it belongs to. */
 function statusOfSection(effective: EffectiveConfig, id: string): SourceStatus {
+  if (id === 'connections') return { state: 'read' } // Status is read from the gateway in this page, not a project file.
   if (id === PROJECT_FILE_SECTION) return projectStatus(effective)
   if (DESK_ONLY.has(id)) return deskStatus(effective)
   return sectionStatus(effective, SECTION_MEMBER[id] as LayeredSection)
@@ -474,6 +477,7 @@ function statusOfSection(effective: EffectiveConfig, id: string): SourceStatus {
 
 /** The state the file this section's group is about is in, for comparison. */
 function groupStatusFor(effective: EffectiveConfig, id: string): SourceStatus | undefined {
+  if (id === 'connections') return { state: 'read' }
   if (id === PROJECT_FILE_SECTION) return projectStatus(effective)
   if (DESK_ONLY.has(id)) return deskStatus(effective)
   return groupFor(effective, SECTION_MEMBER[id] as LayeredSection)
