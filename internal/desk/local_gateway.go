@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-const GatewayRevision = "e3925e1942145f0e834703eb4cb930e828780658"
+const GatewayRevision = "09222a922364e272101eae9f7a6ba0d4f22c1172"
 const localAuthority = "gateway:desk-local"
 
 // LocalGatewayStatus carries public, effective settings only. The signing seed
