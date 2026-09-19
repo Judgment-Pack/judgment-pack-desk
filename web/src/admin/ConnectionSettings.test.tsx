@@ -1,11 +1,15 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { useCallback, useRef, useState, type ReactNode } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { effectiveConfig } from '../config/deskConfig'
 import { DeskConfigFixture } from '../config/DeskConfigProvider'
 import { testQueryClient } from '../testing/harness'
 import { ConnectionSettings } from './ConnectionSettings'
+import { InspectorPresentationContext, type InspectorPresentation } from '../shell/InspectorPresentation'
+import { InspectorSlotContext } from '../shell/InspectorSlot'
+import { RightPane } from '../shell/RightPane'
 
 const fetch = vi.hoisted(() => vi.fn())
 vi.mock('../files/client', async original => ({ ...await original<typeof import('../files/client')>(), deskFetch: fetch }))
@@ -19,11 +23,27 @@ beforeEach(() => {
   })
 })
 afterEach(() => { cleanup(); vi.clearAllMocks() })
-function setup(available = true, returnTo = '/') {
+function GuideShell({ children, drawer }: { children: ReactNode; drawer: boolean }) {
+  const [presentation, setPresentation] = useState<InspectorPresentation | null>(null)
+  const [target, setTarget] = useState<HTMLDivElement | null>(null)
+  const register = useCallback((value: InspectorPresentation) => { setPresentation(value); return () => setPresentation(current => current === value ? null : current) }, [])
+  const claim = useCallback(() => () => {}, [])
+  const opener = useRef<HTMLButtonElement>(null)
+  return <InspectorPresentationContext.Provider value={register}>
+    <InspectorSlotContext.Provider value={{ target, claim, open: !!presentation?.open, size: 420, tab: null, setTab: () => {}, reveal: () => {} }}>
+      {children}
+      <RightPane title={presentation?.title} open={!!presentation?.open} onClose={() => presentation?.onOpenChange(false)} asDrawer={drawer}
+        declaredWidth={420} publishTarget={setTarget} publishPane={() => {}} openerRef={opener} restoreFocusRef={presentation?.restoreFocusRef} showEmpty={false} />
+    </InspectorSlotContext.Provider>
+  </InspectorPresentationContext.Provider>
+}
+function setup(available = true, returnTo = '/', guide?: { drawer: boolean }) {
   const config = effectiveConfig(undefined)
   config.desk = { present: false, path: '/synthetic/desk.json', problems: [], localGateway: { status: available ? 'ready' : 'unavailable' } }
   const view = (ready = available) => <MemoryRouter initialEntries={[{ pathname: '/admin', hash: '#connections', state: { returnTo } }]}>
-    <QueryClientProvider client={client}><DeskConfigFixture value={{ ...config, desk: { ...config.desk!, localGateway: { status: ready ? 'ready' : 'unavailable' } } }}><ConnectionSettings /></DeskConfigFixture></QueryClientProvider>
+    <QueryClientProvider client={client}><DeskConfigFixture value={{ ...config, desk: { ...config.desk!, localGateway: { status: ready ? 'ready' : 'unavailable' } } }}>
+      {guide ? <GuideShell drawer={guide.drawer}><ConnectionSettings /></GuideShell> : <ConnectionSettings />}
+    </DeskConfigFixture></QueryClientProvider>
   </MemoryRouter>
   const client = testQueryClient()
   return { ...render(view()), view }
@@ -96,4 +116,51 @@ it('does not offer unavailable setup or a foreign return destination', async () 
   expect(screen.getByRole('link', { name: 'Manage gateway' }).getAttribute('href')).toBe('/admin#storage')
   expect(screen.queryByRole('link', { name: 'Return to chat' })).toBeNull()
   expect(fetch).not.toHaveBeenCalled()
+})
+
+it.each([
+  ['Google Drive', false], ['Gmail', false], ['Google Drive', true], ['Gmail', true]
+] as const)('hands %s setup to the guide and back (drawer: %s)', async (title, drawer) => {
+  const ui = setup(true, '/', { drawer })
+  const opener = await screen.findByRole('button', { name: `${title} registration` })
+  await waitFor(() => expect(opener.hasAttribute('disabled')).toBe(false))
+  fireEvent.click(opener)
+  fireEvent.click(screen.getByRole('button', { name: 'Guide' }))
+  expect(screen.queryByRole('dialog', { name: `${title} registration` })).toBeNull()
+  const pane = await screen.findByRole(drawer ? 'dialog' : 'complementary', { name: `${title} setup guide` })
+  await waitFor(() => expect(pane.contains(document.activeElement)).toBe(true))
+  expect(within(pane).getAllByRole('listitem')).toHaveLength(6)
+  const scope = title === 'Gmail' ? 'gmail.readonly' : 'drive.file'
+  expect(within(pane).getByText(`https://www.googleapis.com/auth/${scope}`)).toBeTruthy()
+  const official = within(pane).getByRole('link', { name: 'Official Google documentation' })
+  expect(official.getAttribute('href')).toBe('https://developers.google.com/workspace/guides/create-credentials#desktop-app')
+  expect(official.getAttribute('target')).toBe('_blank')
+  expect(fetch.mock.calls.every(([url]) => url.endsWith('/status'))).toBe(true)
+  fireEvent.click(within(pane).getByRole('button', { name: 'Continue setup' }))
+  const dialog = await screen.findByRole('dialog', { name: `${title} registration` })
+  await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
+  expect(screen.queryByRole(drawer ? 'dialog' : 'complementary', { name: `${title} setup guide` })).toBeNull()
+  fireEvent.change(dialog.querySelector('input[type=file]')!, { target: { files: [registration()] } })
+  await screen.findByText('Registration saved. Connect your account from the chat attachment menu.')
+  expect(fetch.mock.calls.filter(([url]) => url.endsWith('/configure'))).toHaveLength(1)
+  fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+  fireEvent.click(opener)
+  fireEvent.click(screen.getByRole('button', { name: 'Guide' }))
+  await screen.findByRole(drawer ? 'dialog' : 'complementary', { name: `${title} setup guide` })
+  ui.rerender(ui.view(false))
+  expect(screen.queryByText('Official Google documentation')).toBeNull()
+})
+
+it('returns from the Gmail guide drawer to the Gmail setup control', async () => {
+  setup(true, '/', { drawer: true })
+  const opener = await screen.findByRole('button', { name: 'Gmail registration' })
+  // RightPane only restores focus to a visible initiating control.
+  opener.getClientRects = () => [new DOMRect(0, 0, 80, 32)] as unknown as DOMRectList
+  await waitFor(() => expect(opener.hasAttribute('disabled')).toBe(false))
+  fireEvent.click(opener)
+  fireEvent.click(screen.getByRole('button', { name: 'Guide' }))
+  const guide = await screen.findByRole('dialog', { name: 'Gmail setup guide' })
+  fireEvent.click(within(guide).getByRole('button', { name: 'Close gmail setup guide' }))
+  await waitFor(() => expect(document.activeElement).toBe(opener))
+  expect(screen.queryByRole('dialog')).toBeNull()
 })

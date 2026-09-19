@@ -37,6 +37,7 @@ export function Dialog({
   title,
   description,
   openerRef,
+  onCloseAutoFocus,
   footer,
   children
 }: {
@@ -53,6 +54,8 @@ export function Dialog({
    * every way out: Cancel, Escape, the overlay, and a successful submit.
    */
   openerRef?: RefObject<HTMLElement | null>
+  /** Override restoration when handing focus to another surface. */
+  onCloseAutoFocus?: (event: Event) => void
   /** A fixed action area; the body scrolls independently when supplied. */
   footer?: ReactNode
   children: ReactNode
@@ -66,12 +69,12 @@ export function Dialog({
           className={styles.content}
           data-fixed-footer={footer !== undefined || undefined}
           onCloseAutoFocus={
-            openerRef === undefined
+            onCloseAutoFocus ?? (openerRef === undefined
               ? undefined
               : (event) => {
                   event.preventDefault()
                   openerRef.current?.focus()
-                }
+                })
           }
         >
           <div className={styles.header}>

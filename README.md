@@ -54,6 +54,11 @@ and project settings. Configuring the app does not grant account access.
 
 ### Configure Google for your installation
 
+In **Admin → Connections → Set up**, choose **Guide** for instructions in the
+resizable right pane (a side drawer on narrow screens). It includes the required
+permissions for each provider and an official Google documentation link at the
+bottom. **Continue setup** returns to the credentials upload.
+
 1. Create your own Google Cloud project. Enable Drive API and Google Picker API
    for Drive, and Gmail API for Gmail.
 2. Configure Google Auth Platform branding, audience and data access. Add your
