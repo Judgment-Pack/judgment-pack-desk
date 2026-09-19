@@ -45,14 +45,43 @@ Google Drive and Gmail connection and retrieval companions. Choose either provid
 from the chat **+** menu to connect and select files or emails without leaving chat.
 Manage accounts under the user menu → **My connections**.
 
-This build does not ship a publisher-owned Google OAuth registration. Until one is
-provided, the connection dialog explains that prerequisite and offers **Use your
-own Google app** for importing Desktop app registration JSON. Import does not open
-a sign-in window until you choose Continue. After consent, Drive continues to the
-Google file picker and Gmail returns to email selection. Registration and account
-tokens are retained by the local gateway, never in chats or project settings.
+Google-enabled releases include the publisher's Google OAuth registration. Users
+choose **Continue with Google**, authorize their own account, then select files
+or emails. Users do not need a Cloud project or a credential file. Registration
+and account tokens are retained by the local gateway, never in chats or project
+settings. Source-only builds without a publisher registration explain that Google
+sign-in is not included. **Use your own Google app** remains an advanced fallback
+for developers or self-hosted distributions, not ordinary user onboarding.
 Google consent is required; setup cannot authorize an account automatically. Web research credentials and OCR are not installed. See [managed local processing](docs/adr/0005-managed-local-gateway.md)
 for identity preservation, receipt storage and platform boundaries.
+
+### Publisher setup for Google-enabled releases
+
+The publisher enables Drive API, Google Picker API and Gmail API in Google Cloud,
+configures Google Auth Platform branding, audience and data access, and creates a
+**Desktop app** OAuth client. Keep the downloaded registration outside the source
+tree, then build the distribution with:
+
+```sh
+python3 scripts/build-bundle.py \
+  --google-oauth-client /private/release/google-desktop.json \
+  --require-google-oauth
+```
+
+`--require-google-oauth` prevents accidentally shipping a Google-enabled release
+without its registration. The build validates the Desktop client, strips unrelated
+metadata and embeds it in the gateway connection companion in a disposable build
+tree. Its checksum covers the registration; the original checkout and frontend
+assets never receive it. Desktop app registration is distributed app identity,
+not a user's password or a confidential web-server credential. Never commit the
+registration JSON, user tokens, or a service-account key.
+
+Use designated test users during development. Public releases must satisfy
+Google's applicable verification requirements, especially for Gmail read access.
+See [desktop OAuth](https://developers.google.com/identity/protocols/oauth2/native-app)
+and [restricted-scope verification](https://developers.google.com/identity/protocols/oauth2/production-readiness/restricted-scope-verification).
+An existing custom registration or connected account is preserved during upgrades;
+changing its client remains an explicit operation after disconnecting the account.
 
 ## Personal chat storage and recovery
 

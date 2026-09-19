@@ -28,6 +28,7 @@ jobs:
 
       - name: mutation needle guards
         run: |
+          python3 scripts/build-bundle_test.py
           python3 scripts/needle-check_test.py
           scripts/needle-check.sh .
 
@@ -98,3 +99,15 @@ jobs:
         run: python3 scripts/build-bundle.py --skip-web --output "$RUNNER_TEMP/Desk bundle"
       - name: Real gateway lifecycle and PDF extraction
         run: python3 scripts/local-gateway-check.py "$RUNNER_TEMP/Desk bundle" "$(command -v true)"
+      - name: Build with a synthetic publisher registration
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          (Path(os.environ['RUNNER_TEMP']) / 'google-desktop-test.json').write_text(json.dumps({
+              'installed': {'client_id': 'publisher-test.apps.googleusercontent.com', 'client_secret': 'synthetic-desktop-client'}
+          }))
+          PY
+          python3 scripts/build-bundle.py --skip-web --google-oauth-client "$RUNNER_TEMP/google-desktop-test.json" --require-google-oauth --output "$RUNNER_TEMP/Desk publisher bundle"
+      - name: Publisher OAuth without user credential setup
+        run: python3 scripts/publisher-oauth-check.py "$RUNNER_TEMP/Desk publisher bundle"
