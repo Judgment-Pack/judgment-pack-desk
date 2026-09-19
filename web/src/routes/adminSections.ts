@@ -34,8 +34,7 @@ export const ADMIN_GROUPS: readonly AdminGroup[] = [
     get title() { return msg("This desk") },
     sections: [
       { id: 'assistant', get title() { return msg("Assistant") } },
-      // After Assistant, because it is the other desk-level slot and is built
-      // on the same one-nullable-field pattern.
+      { id: 'connections', get title() { return msg("Connections") } },
       { id: 'identity-provider', get title() { return msg("Identity provider") } }
     ]
   }

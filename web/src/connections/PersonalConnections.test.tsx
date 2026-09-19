@@ -1,3 +1,4 @@
+import { MemoryRouter } from 'react-router-dom'
 import { useRef, useState } from 'react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -18,7 +19,7 @@ function Harness() {
 it('closes one connection layer at a time and restores the correct opener', async () => {
   const config = effectiveConfig(undefined)
   config.desk = { present: false, path: '/synthetic/desk.json', problems: [], localGateway: { status: 'ready', gateway: { url: 'http://127.0.0.1:8888', authority: 'gateway:desk-local', signer: { algorithm: 'ed25519', public: 'ab'.repeat(32) } } } }
-  render(<QueryClientProvider client={testQueryClient()}><DeskConfigFixture value={config}><Harness /></DeskConfigFixture></QueryClientProvider>)
+  render(<MemoryRouter><QueryClientProvider client={testQueryClient()}><DeskConfigFixture value={config}><Harness /></DeskConfigFixture></QueryClientProvider></MemoryRouter>)
   const manage = await screen.findByRole('button', { name: 'Manage' })
   for (let attempt = 0; attempt < 3; attempt++) {
     fireEvent.click(manage)

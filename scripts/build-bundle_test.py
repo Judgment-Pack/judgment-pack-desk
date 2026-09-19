@@ -1,6 +1,7 @@
 import importlib.util
-import json
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -9,38 +10,35 @@ bundle = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(bundle)
 
 
-class PublisherRegistrationTest(unittest.TestCase):
-    def parse(self, raw):
+class PublicBundleRegistrationTest(unittest.TestCase):
+    def check(self, raw):
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / 'client.json'
-            path.write_bytes(raw.encode())
-            return bundle.publisher_registration(path)
+            source = Path(directory)
+            path = source / 'adapters/cmd/gateway-connections/publisher-google.json'
+            path.parent.mkdir(parents=True)
+            if raw is not None:
+                path.write_bytes(raw)
+            bundle.require_unregistered_gateway(source)
 
-    def test_only_desktop_client_identity_enters_the_bundle(self):
-        raw = json.dumps({'installed': {'client_id': 'test.apps.googleusercontent.com',
-            'client_secret': 'test-secret', 'token_uri': 'https://wrong.example/token',
-            'redirect_uris': ['https://wrong.example/callback']}, 'unrelated': 'private'})
-        result = json.loads(self.parse(raw))
-        self.assertEqual(result, {'installed': {'client_id': 'test.apps.googleusercontent.com', 'client_secret': 'test-secret'}})
+    def test_empty_upstream_registration_is_allowed(self):
+        self.check(b'{}\n')
 
-    def test_secret_is_optional_for_desktop_clients(self):
-        self.assertEqual(json.loads(self.parse('{"installed":{"client_id":"test.apps.googleusercontent.com"}}'))['installed']['client_secret'], '')
-
-    def test_rejects_wrong_client_types_duplicates_and_limits_without_echoing_input(self):
-        valid = {'client_id': 'test.apps.googleusercontent.com', 'client_secret': 'do-not-echo'}
-        values = ['null', '[]', '{}', json.dumps({'web': valid}), json.dumps({'type': 'service_account', 'private_key': 'do-not-echo'}),
-            json.dumps({'installed': valid, 'web': {}}), json.dumps({'installed': valid, 'type': 'service_account'}),
-            '{"installed":{"client_id":"test.apps.googleusercontent.com","client_id":"other.apps.googleusercontent.com"}}',
-            '{"installed":{"client_id":"test.apps.googleusercontent.com","client_secret":"\\ud800"}}',
-            json.dumps({'installed': {**valid, 'client_id': 'wrong'}}),
-            json.dumps({'installed': {**valid, 'client_secret': 42}}),
-            json.dumps({'installed': {**valid, 'client_secret': 'line\nbreak'}}),
-            json.dumps({'installed': {**valid, 'client_secret': 'a' * 4097}}),
-            json.dumps({'installed': valid, 'extra': 'a' * 16_384})]
-        for raw in values:
-            with self.subTest(case=values.index(raw)), self.assertRaisesRegex(ValueError, '^Choose a valid Google Desktop app registration JSON') as error:
-                self.parse(raw)
+    def test_refuses_embedded_identity_or_an_unrecognized_archive_without_echo(self):
+        for raw in [None, b'', b'null', b'{"installed":{"client_id":"do-not-echo.apps.googleusercontent.com"}}',
+                    b'{}{}', b'{}' + b' ' * 70 + b'private', b'{"client_secret":"do-not-echo"}', b' ' * 65 + b'{}', b'{}\n' + b'x' * 1024]:
+            with self.subTest(case=raw), self.assertRaisesRegex(ValueError, '^Public Desk bundles require an unconfigured Google registration') as error:
+                self.check(raw)
             self.assertNotIn('do-not-echo', str(error.exception))
+
+    def test_publisher_embedding_flags_are_rejected_before_writing_a_bundle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'bundle'
+            result = subprocess.run([sys.executable, str(Path(__file__).with_name('build-bundle.py')),
+                '--google-oauth-client', str(Path(directory) / 'registration.json'), '--require-google-oauth',
+                '--output', str(output)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn('unrecognized arguments', result.stderr)
+            self.assertFalse(output.exists())
 
 
 if __name__ == '__main__':
