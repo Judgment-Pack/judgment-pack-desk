@@ -29,7 +29,9 @@ export function DocumentPreview({ name, reference, disabled, onChange, citation 
     const url = URL.createObjectURL(new Blob([Uint8Array.from(atob(document.object.original.bytes), c => c.charCodeAt(0))], { type: 'application/octet-stream' }))
     const link = window.document.createElement('a'); link.href = url; link.download = name; link.click(); setTimeout(() => URL.revokeObjectURL(url), 0)
   }
-  return <Popover title={name} open={open} onOpenChange={setOpen} trigger={<Button variant="quiet" className={citation ? styles.citation : undefined}>{citation ? citation.quote : name}</Button>}>
+  return <Popover title={name} open={open} onOpenChange={setOpen}
+    triggerTooltip={citation ? `${name} · ${msg('Page {{number}}', { number: citation.page })}` : undefined}
+    trigger={citation ? <button type="button" className={styles.citation}>{citation.quote}</button> : <Button variant="quiet">{name}</Button>}>
     <div className={styles.preview}>
       {error ? <p role="alert">{systemMessage(error)}</p> : !record ? <p role="status">{msg('Verifying document pages…')}</p> : <>
         <p>{msg('Receipt verified. This confirms byte lineage, not accuracy or authority.')}</p>

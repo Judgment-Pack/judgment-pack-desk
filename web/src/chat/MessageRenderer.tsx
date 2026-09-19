@@ -1,8 +1,8 @@
 import { DocumentPreview } from '../documents/DocumentPreview'
 import type { ChatAttachment } from './store'
 import { msg, useLocale } from '../i18n'
-import { isValidElement, useEffect, useState, type ReactNode } from 'react'
-import Markdown from 'react-markdown'
+import { isValidElement, memo, useEffect, useMemo, useState, type ReactNode } from 'react'
+import Markdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { VisuallyHidden } from 'radix-ui'
 import { IconCheck, IconCopy } from '../shell/icons'
@@ -17,12 +17,13 @@ function textOf(node: ReactNode): string {
   return ''
 }
 
-/** Model text is content: no HTML execution, remote images, or unsafe URLs. */
-export function MessageRenderer({ text, documents = [] }: { text: string; documents?: ChatAttachment[] }) {
-  useLocale()
-  return <div className={styles.markdown}><Markdown remarkPlugins={[remarkGfm]} skipHtml
-    urlTransform={url => /^https?:\/\//i.test(url) || /^attachment:[a-f0-9-]{36}\/sha256:[a-f0-9]{64}\/page\/[1-9][0-9]*$/.test(url) ? url : ''}
-    components={{
+const NO_DOCUMENTS: ChatAttachment[] = []
+/** Model text is content: no HTML execution, remote images, or unsafe URLs.
+ * Stable renderers preserve citations and code controls as streamed text grows;
+ * typing in the composer must not remount completed answers. */
+export const MessageRenderer = memo(function MessageRenderer({ text, documents = NO_DOCUMENTS }: { text: string; documents?: ChatAttachment[] }) {
+  const locale = useLocale()
+  const components = useMemo<Components>(() => ({
       a: ({ children, href }) => {
         if (href?.startsWith('attachment:')) {
           const match = /^attachment:([a-f0-9-]{36})\/(sha256:[a-f0-9]{64})\/page\/([1-9][0-9]*)$/.exec(href)
@@ -34,8 +35,11 @@ export function MessageRenderer({ text, documents = [] }: { text: string; docume
       img: ({ alt }) => <span>{alt ? msg("[Image: {{value0}}]", { value0: alt }) : msg("[Image]")}</span>,
       pre: ({ children }) => <CodeBlock text={textOf(children).replace(/\n$/, '')} label={msg("Code")} />,
       table: ({ children }) => <div className={styles.messageTable} role="region" aria-label={msg("Response table")} tabIndex={0}><table>{children}</table></div>
-    }}>{text}</Markdown></div>
-}
+    }), [documents, locale])
+  return <div className={styles.markdown}><Markdown remarkPlugins={[remarkGfm]} skipHtml
+    urlTransform={url => /^https?:\/\//i.test(url) || /^attachment:[a-f0-9-]{36}\/sha256:[a-f0-9]{64}\/page\/[1-9][0-9]*$/.test(url) ? url : ''}
+    components={components}>{text}</Markdown></div>
+})
 
 export function CopyMessage({ text }: { text: string }) {
   useLocale()
