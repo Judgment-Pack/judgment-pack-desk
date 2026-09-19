@@ -1,4 +1,4 @@
-import { createContext, useContext, useLayoutEffect } from 'react'
+import { createContext, useContext, useLayoutEffect, type RefObject } from 'react'
 
 /** A route can own a temporary preview without rewriting the document pane's
  * saved preferences. Releasing it restores the shell's normal Inspector. */
@@ -13,6 +13,8 @@ export interface InspectorPresentation {
   minimumMainWidth: number
   maximumWidth: number
   closeOnEscape?: boolean
+  /** A temporary pane can return focus to its own setup or preview control. */
+  restoreFocusRef?: RefObject<HTMLElement | null>
 }
 
 export const InspectorPresentationContext = createContext<(presentation: InspectorPresentation) => () => void>(() => () => {})

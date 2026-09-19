@@ -236,10 +236,10 @@ function ShellFrame({
   const closeInspector = useCallback(() => {
     if (!inspectorOpen) return
     toggleInspector()
-    const gesture = inspectionGestureRef.current
+    const gesture = presentation?.restoreFocusRef?.current ?? inspectionGestureRef.current
     if (gesture?.isConnected && gesture.getClientRects().length) gesture.focus()
     else inspectorOpenerRef.current?.focus()
-  }, [inspectorOpen, toggleInspector])
+  }, [inspectorOpen, toggleInspector, presentation?.restoreFocusRef])
   useEffect(() => {
     if (!presentation?.closeOnEscape || !inspectorOpen) return
     const close = (event: KeyboardEvent) => {
@@ -347,7 +347,7 @@ function ShellFrame({
               publishHeaderTarget={setInspectorHeaderTarget}
               publishPane={publishPane}
               openerRef={inspectorOpenerRef}
-              restoreFocusRef={inspectionGestureRef}
+              restoreFocusRef={presentation?.restoreFocusRef ?? inspectionGestureRef}
               showEmpty={inspectorClaims === 0}
             />
 

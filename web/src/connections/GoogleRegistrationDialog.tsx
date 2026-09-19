@@ -8,8 +8,8 @@ import { connectionCall, CONNECTIONS_KEY, useDriveStatus, type ConnectionProvide
 import { googleRegistration } from './registration'
 
 /** Admin owns application setup; the chat dialog owns personal consent. */
-export function GoogleRegistrationDialog({ provider, available, openerRef, onClose }: {
-  provider: ConnectionProvider; available: boolean; openerRef: RefObject<HTMLElement | null>; onClose: () => void
+export function GoogleRegistrationDialog({ provider, available, openerRef, guideFocusRef, onClose, onGuide }: {
+  provider: ConnectionProvider; available: boolean; openerRef: RefObject<HTMLElement | null>; guideFocusRef: RefObject<HTMLElement | null>; onClose: () => void; onGuide: () => void
 }) {
   useLocale()
   const query = useDriveStatus(available, provider), client = useQueryClient()
@@ -17,6 +17,7 @@ export function GoogleRegistrationDialog({ provider, available, openerRef, onClo
   const editable = state === 'setup-required' || state === 'not-connected'
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [saved, setSaved] = useState(false)
   const file = useRef<HTMLInputElement>(null), active = useRef<AbortController | null>(null)
+  const handingOff = useRef(false)
   useEffect(() => () => { active.current?.abort(); active.current = null }, [provider, available])
   function close() { active.current?.abort(); active.current = null; onClose() }
   async function configure(chosen?: File) {
@@ -38,12 +39,13 @@ export function GoogleRegistrationDialog({ provider, available, openerRef, onClo
     }
   }
   return <Dialog open onOpenChange={next => { if (!next) close() }} openerRef={openerRef}
+    onCloseAutoFocus={event => { event.preventDefault(); (handingOff.current ? guideFocusRef : openerRef).current?.focus() }}
     title={msg('{{provider}} registration', { provider: provider === 'gmail' ? msg('Gmail') : msg('Google Drive') })}
     description={msg('Personal · This computer')}
     footer={<DialogActions><Button variant="quiet" onClick={close}>{busy ? msg('Cancel') : msg('Close')}</Button></DialogActions>}>
     {editable ? <>
       <p>{provider === 'gmail' ? msg('Register a Desktop app in Google Cloud and enable Gmail API with read-only access. Select its downloaded credentials JSON.') : msg('Register a Desktop app in Google Cloud and enable the Drive and Picker APIs. Select its downloaded credentials JSON.')}</p>
-      <p><a href="https://developers.google.com/identity/protocols/oauth2/native-app" target="_blank" rel="noreferrer">{msg('Guide')}</a></p>
+      <p><Button variant="quiet" disabled={busy} onClick={() => { handingOff.current = true; onGuide() }}>{msg('Guide')}</Button></p>
       <Button disabled={busy} onClick={() => file.current?.click()}>{msg('Choose credentials file')}</Button>
       <input ref={file} type="file" accept=".json,application/json" hidden onChange={event => void configure(event.target.files?.[0])} />
     </> : <p>{state === 'connected' ? msg('Disconnect this account in My connections before changing its registration.') : state === undefined ? msg('Loading…') : msg('Unavailable')}</p>}
