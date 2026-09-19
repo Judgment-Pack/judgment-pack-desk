@@ -199,7 +199,6 @@ describe('the left rail', () => {
       'Organization',
       'Storage & data',
       'Assistant',
-      'Connections',
       'Identity provider'
     ])
   })

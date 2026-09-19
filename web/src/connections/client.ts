@@ -11,7 +11,7 @@ export interface ConnectionFlow { id: string; state: 'pending'|'complete'|'faile
 export const CONNECTIONS_KEY = ['gateway-connections'] as const
 export function connectionError(code: string, provider: ConnectionProvider = 'google-drive'): string {
  switch (code) {
- case 'setup-required': if (provider === 'gmail') return sourceMessage('Set up Gmail in Admin → Connections.'); return sourceMessage('Set up Google Drive in Admin → Connections.')
+ case 'setup-required': if (provider === 'gmail') return sourceMessage('Connect Gmail from the attachment menu.'); return sourceMessage('Connect Google Drive from the attachment menu.')
  case 'wrong-account': return sourceMessage('Choose the Google account already connected, or disconnect it first.')
  case 'reconnect-required': case 'connect-required': if (provider === 'gmail') return sourceMessage('Reconnect Gmail to continue.'); return sourceMessage('Reconnect Google Drive to continue.')
  case 'authorization-in-progress': return sourceMessage('Finish or cancel the current Google sign-in first.')

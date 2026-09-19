@@ -2163,5 +2163,16 @@
   "{{value}} pixels high": "{{value}} píxeis de altura",
   "{{value}} pixels wide": "{{value}} píxeis de largura",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— um localizador do ficheiro do repositório que faz a afirmação. Este conteúdo não faz nenhuma. A afirmação refere-se ao motor, não a este pacote, a estes factos ou à correção de agir segundo a disposição.",
-  "… (truncated for display)": "… (truncado para apresentação)"
+  "… (truncated for display)": "… (truncado para apresentação)",
+  "My connections": "As minhas ligações",
+  "Use your own Google app": "Utilizar a sua própria aplicação Google",
+  "Google sign-in is not configured in this build. You can use your own Google app below.": "O início de sessão com o Google não está configurado nesta versão. Pode utilizar a sua própria aplicação Google abaixo.",
+  "Continue to Google to choose your account and review access. Your chat stays here.": "Continue no Google para escolher a sua conta e rever as permissões. A sua conversa permanece aqui.",
+  "Connect Gmail from the attachment menu.": "Ligue o Gmail a partir do menu de anexos.",
+  "Connect Google Drive from the attachment menu.": "Ligue o Google Drive a partir do menu de anexos.",
+  "Document processing": "Processamento de documentos",
+  "Configure the gateway in Admin → Storage & data to use attached PDFs.": "Configure o gateway em Administração → Armazenamento e dados para utilizar os PDF anexados.",
+  "Enable PDF processing in Admin → Storage & data before attaching PDFs.": "Ative o processamento de PDF em Administração → Armazenamento e dados antes de anexar PDF.",
+  "Enable document processing in Admin → Storage & data before attaching Drive files.": "Ative o processamento de documentos em Administração → Armazenamento e dados antes de anexar ficheiros do Drive.",
+  "Enable document processing in Admin → Storage & data before attaching emails.": "Ative o processamento de documentos em Administração → Armazenamento e dados antes de anexar emails."
 }

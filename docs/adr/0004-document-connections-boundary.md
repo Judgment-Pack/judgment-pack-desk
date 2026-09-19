@@ -6,7 +6,7 @@ Updated after gateway #134–#137 and Desk #105–#107.
 
 ## Product ownership
 
-Admin → Connections manages the personal shared gateway and PDF processing.
+Admin → Storage & data manages the personal shared gateway and PDF processing.
 The chat composer offers Upload files and marks Google Drive unavailable.
 Configuration is kept in Admin; the composer has no duplicate settings action. Assistant remains the term for model
 configuration. Reading a Drive document will not enable chat sync or cloud backup.

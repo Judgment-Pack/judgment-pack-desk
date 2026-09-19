@@ -2147,5 +2147,16 @@
   "{{value}} pixels high": "{{value}} Pixel hoch",
   "{{value}} pixels wide": "{{value}} Pixel breit",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— ein Verweis auf die Repository-Datei mit der Aussage. Diese Nutzdaten treffen keine solche Aussage. Die Datei bezieht sich auf die Laufzeit, nicht auf dieses Paket, diese Fakten oder die Richtigkeit einer Handlung nach der Disposition.",
-  "… (truncated for display)": "… (für die Anzeige gekürzt)"
+  "… (truncated for display)": "… (für die Anzeige gekürzt)",
+  "My connections": "Meine Verbindungen",
+  "Use your own Google app": "Eigene Google-App verwenden",
+  "Google sign-in is not configured in this build. You can use your own Google app below.": "Die Google-Anmeldung ist in dieser Version nicht eingerichtet. Du kannst unten deine eigene Google-App verwenden.",
+  "Continue to Google to choose your account and review access. Your chat stays here.": "Weiter zu Google, um dein Konto auszuwählen und die Zugriffsrechte zu prüfen. Dein Chat bleibt hier.",
+  "Connect Gmail from the attachment menu.": "Verbinde Gmail über das Menü für Anhänge.",
+  "Connect Google Drive from the attachment menu.": "Verbinde Google Drive über das Menü für Anhänge.",
+  "Document processing": "Dokumentverarbeitung",
+  "Configure the gateway in Admin → Storage & data to use attached PDFs.": "Konfigurieren Sie das Gateway unter Verwaltung → Speicher und Daten, um angehängte PDFs zu verwenden.",
+  "Enable PDF processing in Admin → Storage & data before attaching PDFs.": "Aktivieren Sie die PDF-Verarbeitung unter Verwaltung → Speicher und Daten, bevor Sie PDFs anhängen.",
+  "Enable document processing in Admin → Storage & data before attaching Drive files.": "Aktiviere die Dokumentverarbeitung unter Administration → Speicher und Daten, bevor du Drive-Dateien anhängst.",
+  "Enable document processing in Admin → Storage & data before attaching emails.": "Aktivieren Sie die Dokumentverarbeitung unter Verwaltung → Speicher und Daten, bevor Sie E-Mails anhängen."
 }

@@ -71,7 +71,7 @@ export async function verifyDocument(object: DocumentObject, pin: ResearchGatewa
 
 export async function ingestDocument(file: File, config: ResearchConfig, signal: AbortSignal, progress: (message: string) => void): Promise<{ reference: DocumentReference; document: VerifiedDocument }> {
   const documents = config.documents, gateway = config.gateway
-  if (!documents?.enabled || !gateway) throw new Error(sourceMessage('Enable PDF processing in Admin → Connections before attaching PDFs.'))
+  if (!documents?.enabled || !gateway) throw new Error(sourceMessage('Enable PDF processing in Admin → Storage & data before attaching PDFs.'))
   if (!file.size || file.size > documents.maxFileBytes) throw new Error(sourceMessage('This file is empty or exceeds the configured upload limit.'))
   if (enc.encode(file.name).length > 255 || /[\x00-\x1f\x7f]/.test(file.name)) throw new Error(sourceMessage('The file name is too long or contains control characters.'))
   progress(sourceMessage('Saving the original…'))
@@ -125,7 +125,7 @@ export const ingestDrive = (selection: DriveSelection, config: ResearchConfig, s
 export const ingestGmail = (selection: MailSelection, config: ResearchConfig, signal: AbortSignal, progress: (message: string) => void) => ingestSelected(selection, 'gmail', config, signal, progress)
 async function ingestSelected(selection: DriveSelection | MailSelection, source: 'drive' | 'gmail', config: ResearchConfig, signal: AbortSignal, progress: (message: string) => void): Promise<{ reference: DocumentReference; document: VerifiedDocument }> {
  const gateway = config.gateway
- if (!gateway || !config.documents?.enabled) throw new Error(source === 'gmail' ? sourceMessage('Enable document processing in Admin → Connections before attaching emails.') : sourceMessage('Enable document processing in Admin → Connections before attaching Drive files.'))
+ if (!gateway || !config.documents?.enabled) throw new Error(source === 'gmail' ? sourceMessage('Enable document processing in Admin → Storage & data before attaching emails.') : sourceMessage('Enable document processing in Admin → Storage & data before attaching Drive files.'))
  const session = newResearchSession(), id = crypto.randomUUID()
  progress(sourceMessage('Reading files…'))
  const response = await acquire(session, source, selection, 16 << 20, signal, 'local-documents').catch(cause => { if (signal.aborted) throw cause; throw new Error(connectionError(String((cause as Error).message).includes('reconnect-required') ? 'reconnect-required' : 'retrieval-failed', source === 'gmail' ? 'gmail' : 'google-drive')) })

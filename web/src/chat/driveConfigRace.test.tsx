@@ -27,3 +27,20 @@ it.each(['disabled', 'external'] as const)('cancels pending selection when docum
  expect(signal.aborted).toBe(true)
  expect(mocked.ingest).not.toHaveBeenCalled()
 })
+
+it('imports a first-use picker result without opening Google authorization a second time', async () => {
+ const store = new ChatStore('/review', {read:async()=>({project:'/review',sha256:'absent',content:{version:1,chats:[]}}),write:vi.fn()})
+ await store.load()
+ const chat = store.startChat()
+ const config = {...DESK_DEFAULTS.research, gateway:{url:'http://127.0.0.1:9001',authority:'gateway:desk-local',signer:{algorithm:'ed25519' as const,public:'ab'.repeat(32)}},documents:{...DOCUMENT_DEFAULTS,enabled:true}}
+ const hook = renderHook(() => useChatAttachments(store, chat.id, false, config))
+ const selected = {fileId:'selected-file',grant:'aa'.repeat(32)}
+ mocked.ingest.mockResolvedValue({reference:{id:'retained-document'},document:{record:{document:{name:'Selected policy.pdf'}}}})
+ await act(async () => { await hook.result.current.attachDrive([selected]) })
+ expect(mocked.pick).not.toHaveBeenCalled()
+ expect(mocked.ingest).toHaveBeenCalledWith(selected, config, expect.any(AbortSignal), expect.any(Function))
+ const saved = store.getSnapshot().drafts.find(item => item.id === chat.id)!
+ expect(saved.attachments?.map(item => item.name)).toEqual(['Selected policy.pdf'])
+ expect(JSON.stringify(saved)).not.toContain(selected.grant)
+ store.dispose()
+})

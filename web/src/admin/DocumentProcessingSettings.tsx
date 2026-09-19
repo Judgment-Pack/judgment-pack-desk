@@ -1,4 +1,3 @@
-import { DriveConnection, GoogleConnection } from './DriveConnection'
 import { useEffect, useId, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { msg, systemMessage, useLocale } from '../i18n'
@@ -8,7 +7,7 @@ import { decodeDeskConfig, DESK_DEFAULTS, DOCUMENT_DEFAULTS, DOCUMENT_LIMIT_BOUN
 import { DESK_CONFIG_QUERY_KEY, loadDeskLevelConfig } from '../config/queries'
 import { answer, deskFetch } from '../files/client'
 import { Alert } from '../ui/Alert'
-import { Button, ButtonLink } from '../ui/Button'
+import { Button } from '../ui/Button'
 import { Dialog, DialogActions } from '../ui/Dialog'
 import { Disclosure } from '../ui/Disclosure'
 import { Field, FieldGroup } from '../ui/Field'
@@ -18,7 +17,7 @@ import { SettingRow } from '../ui/SettingRow'
 import { SettingsSection } from '../ui/SettingsSection'
 import { useUnsavedChanges } from '../shell/DraftScope'
 import { formatStorageBytes } from './chatStorage'
-import styles from './ConnectionsSettings.module.css'
+import styles from './DocumentProcessingSettings.module.css'
 
 type Editor = 'gateway' | 'pdf'
 type Snapshot = { research: ResearchConfig; digest?: string; text?: string }
@@ -35,7 +34,7 @@ function editable(research: ResearchConfig, local?: LocalGatewayStatus) {
   }
 }
 
-export function ConnectionsSettings() {
+export function DocumentProcessingSettings() {
   useLocale()
   const effective = useEffectiveConfig(), client = useQueryClient(), formId = useId()
   const local = effective.desk?.localGateway
@@ -106,7 +105,7 @@ export function ConnectionsSettings() {
   const managed = Boolean(local) && !current.research.gateway
   const writable = current.digest !== undefined
   return <>
-    <SettingsSection title={msg('Connections')} level={2} variant="standalone" description={msg('Connect sources for chats and research.')}>
+    <SettingsSection title={msg('Document processing')} level={2} variant="standalone" description={msg('Extract text from uploaded PDFs.')}>
       <p className={styles.scope}>{msg('Personal · This computer')}</p>
       <SettingRow title={managed ? msg('Local processing') : msg('Gateway')} description={managed ? msg('Managed automatically by Desk on this computer.') : msg('Shared by research and PDF processing.')}
         status={managed ? local?.status === 'ready' ? msg('Ready') : msg('Unavailable') : gateway ? msg('Configured · Availability checked when used') : msg('Not configured')}
@@ -114,12 +113,10 @@ export function ConnectionsSettings() {
       <SettingRow title={msg('PDF processing')} description={msg('Extract text from uploaded PDFs.')}
         status={!gateway ? msg('Requires a gateway') : documents?.enabled ? msg('Enabled · Up to {{size}} per file', { size: formatStorageBytes(documents.maxFileBytes) }) : msg('Disabled')}
         action={<Button ref={pdfOpener} disabled={!writable || !gateway} aria-label={msg('Manage PDF processing')} onClick={() => open('pdf')}>{msg('Manage')}</Button>} />
-      <DriveConnection available={managed && local?.status === 'ready'} />
-      <GoogleConnection provider="gmail" available={managed && local?.status === 'ready'} />
       {managed && local?.status === 'unavailable' && <div><Alert>{msg('Local processing is unavailable. Check the details below or use an existing gateway.')}</Alert><Disclosure title={msg('Technical details')}><p>{systemMessage(local.problem ?? '')}</p></Disclosure></div>}
       {!writable && <Alert>{msg('Settings could not be read. Reload the page before making changes.')}</Alert>}
       <p className={styles.note}>{msg('Text files can be attached without a gateway.')}</p>
-      <p className={styles.note}>{msg('Uploaded originals stay in chat storage when removed from a message.')} <ButtonLink variant="inline" to="/admin#storage">{msg('Storage & data')}</ButtonLink></p>
+      <p className={styles.note}>{msg('Uploaded originals stay in chat storage when removed from a message.')}</p>
       {notice && <p role="status" className={styles.note}>{systemMessage(notice)}</p>}
     </SettingsSection>
     <Dialog open={editor !== null} onOpenChange={isOpen => { if (!isOpen) close() }} openerRef={opener}

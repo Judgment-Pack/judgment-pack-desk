@@ -2163,5 +2163,16 @@
   "{{value}} pixels high": "{{value}} pixel di altezza",
   "{{value}} pixels wide": "{{value}} pixel di larghezza",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— un localizzatore del file del repository che contiene l’affermazione. Questo payload non ne fa alcuna. L’affermazione riguarda il motore, non questo pacchetto, questi fatti o la correttezza di agire in base alla disposizione.",
-  "… (truncated for display)": "… (troncato per la visualizzazione)"
+  "… (truncated for display)": "… (troncato per la visualizzazione)",
+  "My connections": "Le mie connessioni",
+  "Use your own Google app": "Usa la tua applicazione Google",
+  "Google sign-in is not configured in this build. You can use your own Google app below.": "L’accesso con Google non è configurato in questa versione. Puoi usare la tua applicazione Google qui sotto.",
+  "Continue to Google to choose your account and review access. Your chat stays here.": "Continua su Google per scegliere il tuo account e verificare le autorizzazioni. La chat rimane qui.",
+  "Connect Gmail from the attachment menu.": "Collega Gmail dal menu degli allegati.",
+  "Connect Google Drive from the attachment menu.": "Collega Google Drive dal menu degli allegati.",
+  "Document processing": "Elaborazione dei documenti",
+  "Configure the gateway in Admin → Storage & data to use attached PDFs.": "Configura il gateway in Amministrazione → Archiviazione e dati per usare i PDF allegati.",
+  "Enable PDF processing in Admin → Storage & data before attaching PDFs.": "Attiva l’elaborazione dei PDF in Amministrazione → Archiviazione e dati prima di allegare PDF.",
+  "Enable document processing in Admin → Storage & data before attaching Drive files.": "Attiva l’elaborazione dei documenti in Amministrazione → Archiviazione e dati prima di allegare file di Drive.",
+  "Enable document processing in Admin → Storage & data before attaching emails.": "Attiva l’elaborazione dei documenti in Amministrazione → Archiviazione e dati prima di allegare email."
 }

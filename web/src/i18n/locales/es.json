@@ -2163,5 +2163,16 @@
   "{{value}} pixels high": "{{value}} píxeles de alto",
   "{{value}} pixels wide": "{{value}} píxeles de ancho",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— un localizador del archivo del repositorio que hace la afirmación. Esta carga útil no hace ninguna. La afirmación trata del motor, no de este paquete, estos hechos ni de si es correcto actuar según la disposición.",
-  "… (truncated for display)": "… (recortado para mostrar)"
+  "… (truncated for display)": "… (recortado para mostrar)",
+  "My connections": "Mis conexiones",
+  "Use your own Google app": "Usar tu propia aplicación de Google",
+  "Google sign-in is not configured in this build. You can use your own Google app below.": "El inicio de sesión con Google no está configurado en esta versión. Puedes usar tu propia aplicación de Google a continuación.",
+  "Continue to Google to choose your account and review access. Your chat stays here.": "Continúa en Google para elegir tu cuenta y revisar los permisos. Tu conversación permanece aquí.",
+  "Connect Gmail from the attachment menu.": "Conecta Gmail desde el menú de archivos adjuntos.",
+  "Connect Google Drive from the attachment menu.": "Conecta Google Drive desde el menú de archivos adjuntos.",
+  "Document processing": "Procesamiento de documentos",
+  "Configure the gateway in Admin → Storage & data to use attached PDFs.": "Configure la puerta de enlace en Administración → Almacenamiento y datos para usar los PDF adjuntos.",
+  "Enable PDF processing in Admin → Storage & data before attaching PDFs.": "Active el procesamiento de PDF en Administración → Almacenamiento y datos antes de adjuntar PDF.",
+  "Enable document processing in Admin → Storage & data before attaching Drive files.": "Activa el procesamiento de documentos en Administración → Almacenamiento y datos antes de adjuntar archivos de Drive.",
+  "Enable document processing in Admin → Storage & data before attaching emails.": "Activa el procesamiento de documentos en Administración → Almacenamiento y datos antes de adjuntar correos."
 }
