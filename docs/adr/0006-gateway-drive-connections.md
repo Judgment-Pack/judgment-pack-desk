@@ -48,7 +48,10 @@ version changes, private custody, and independent consumer verification. A Googl
 Cloud registration and a user's consent are external prerequisites for the live
 sign-in test; fake-provider tests do not establish successful production consent.
 
-## Personal connection entry points
+## Personal connection entry points (superseded)
+
+The historical interaction and distribution decisions in this section are
+superseded by the 2026-09-21 update below.
 
 The composer **+ → Google Drive / Gmail** owns first-use authorization. Configured
 users review access, continue to Google, and return to content selection in the
@@ -74,3 +77,25 @@ This follows the documented first-use authentication pattern in
 [workspace controls](https://learn.chatgpt.com/docs/enterprise/apps-and-connectors)
 separate from personal authorization. Exact ChatGPT menu labels and placement
 vary by surface; the composer entry point is based on the supplied reference UI.
+
+## 2026-09-21: personal setup and a shared connection pane
+
+GitHub releases and source builds include no publisher Google registration.
+Self-hosted users configure their own Google Desktop app in Admin → Connections
+or inline when selecting Google Drive/Gmail in the chat connection catalog.
+Saving app registration never starts account consent. A future hosted service
+would need an organization-owned registration and a separate deployment decision;
+no such registration is bundled into this personal Desk release.
+
+Composer **+ → More connections** and the user menu's **My connections** share a
+searchable catalog and contextual right pane. Connected providers are shortcuts
+in the composer menu. The same pane handles setup instructions, registration,
+explicit browser consent, source selection and connection management. It does
+not stack provider dialogs. The current Google account and native picker remain
+provider-owned; file/email retrieval and credentials remain gateway-owned.
+
+Opening a connection preserves the chat. Closing restores the prior Assistant
+presentation; attaching returns focus to the composer without sending. PDF/local
+gateway processing remains under Storage & data. Admin → Connections remains
+available for application registration. The detailed interaction and remaining
+provider scope are in [the shared connection design](../design/connections.md).

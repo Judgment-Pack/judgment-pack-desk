@@ -27,8 +27,9 @@ source reading/citations. The runtime/evaluator does not need a new protocol.
 Notion uses the gateway's MCP receipt shape; local Obsidian snapshots use command.
 Public builds continue to contain no publisher Google registration.
 
-The shared UI supports all 12 current locales. Provider marks come from official
-provider assets, documented beside the local SVGs. Tests use synthetic accounts,
+The shared UI supports all 12 current locales. The new Notion and Obsidian marks
+come from official assets, documented beside their local SVGs. Google Drive and
+mail continue to use the existing Desk glyphs. Tests use synthetic accounts,
 notes and signed records. A successful fixture test is not a live Notion OAuth
 acceptance test. The user's working Google Drive connection is outside the test
 fixtures and must be preserved during any eventual local update.
