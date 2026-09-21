@@ -68,8 +68,13 @@ bottom. **Continue setup** returns to the credentials upload.
 
 1. Create your own Google Cloud project. Enable Drive API and Google Picker API
    for Drive, and Gmail API for Gmail.
-2. Configure Google Auth Platform branding, audience and data access. Add your
-   account as a test user while developing.
+2. In Google Auth Platform → Branding, enter your app name and contact email.
+   Open **Audience** separately in the sidebar. Choose **External** for personal
+   Google accounts; **Internal** is limited to your Google Workspace organization.
+   For your own local Desk, you can keep **In production**. If you use **Testing**,
+   add your account under **Test users** and expect to reconnect Drive or Gmail
+   after seven days. Personal-use apps can qualify for a verification exemption;
+   Google may still show an unverified-app warning.
 3. Create a **Desktop app** OAuth client and download its registration JSON.
 4. In **Admin → Connections**, choose **Set up** for the provider and select that
    JSON file. Configure each provider you want to use; both can use the same app.
@@ -87,6 +92,8 @@ See [desktop OAuth](https://developers.google.com/identity/protocols/oauth2/nati
 [Drive Picker for desktop apps](https://developers.google.com/workspace/drive/picker/guides/desktop-mobile-picker)
 and [Gmail scopes](https://developers.google.com/workspace/gmail/api/auth/scopes)
 for Google's setup and applicable verification requirements.
+Google also documents the [personal-use verification exception](https://developers.google.com/identity/protocols/oauth2/production-readiness/restricted-scope-verification#personal-use)
+and [Testing's seven-day refresh-token limit](https://developers.google.com/identity/protocols/oauth2#expiration).
 Google consent is required; setup cannot authorize an account automatically.
 Web research credentials and OCR are not installed. See
 [managed local processing](docs/adr/0005-managed-local-gateway.md) for identity
