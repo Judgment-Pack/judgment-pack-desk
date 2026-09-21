@@ -1,3 +1,5 @@
+import { useCallback, useState } from 'react'
+import { ConnectionPaneContext, useConnectionChatLock } from './ConnectionPaneContext'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -112,4 +114,25 @@ it('offers the registered providers in a searchable catalog', () => {
  fireEvent.change(screen.getByRole('textbox', { name: 'Search connections…' }), { target: { value: 'notion' } })
  expect(screen.queryByRole('button', { name: /Obsidian/ })).toBeNull()
  fireEvent.click(screen.getByRole('button', { name: /Notion/ })); expect(mocks.provider).toHaveBeenCalledWith('notion')
+})
+
+function LockObserver({ locked, chatId }: { locked: boolean; chatId: string }) {
+ useConnectionChatLock(chatId, locked)
+ return null
+}
+function LockFixture({ locked, chatId = 'chat' }: { locked: boolean; chatId?: string }) {
+ const [open, setOpen] = useState(true), close = useCallback(() => setOpen(false), [])
+ return <ConnectionPaneContext.Provider value={{ open: () => {}, activeChatId: 'chat', close }}>
+  <LockObserver locked={locked} chatId={chatId} />{open && view()}
+ </ConnectionPaneContext.Provider>
+}
+it('cancels pending attachment when its retained chat locks, but not when another chat locks', async () => {
+ let finish!: (value: unknown) => void
+ mocks.call.mockImplementation(method => method === 'search' ? Promise.resolve({ items: rows, selectionContext: 'epoch', more: false }) : new Promise(resolve => { finish = resolve }))
+ const ui = render(<LockFixture locked={false} />); await choose(); fireEvent.click(screen.getByRole('button', { name: 'Attach 1 item' }))
+ const signal = mocks.call.mock.calls.find(call => call[0] === 'select')![2] as AbortSignal
+ ui.rerender(<LockFixture locked chatId="another-chat" />); expect(signal.aborted).toBe(false)
+ ui.rerender(<LockFixture locked />); expect(signal.aborted).toBe(true)
+ await act(async () => finish([{ resourceId: 'late', grant: 'a'.repeat(64) }]))
+ expect(mocks.source).not.toHaveBeenCalled()
 })

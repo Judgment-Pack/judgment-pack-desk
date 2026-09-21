@@ -177,7 +177,7 @@ function ShellFrame({
     connectionChat.current = request.chatId
     setConnection(request)
   }, [])
-  const connectionContext = useMemo(() => ({ open: openConnection, busyChatId }), [openConnection, busyChatId])
+  const connectionContext = useMemo(() => ({ open: openConnection, busyChatId, activeChatId: connection?.chatId, close: closeConnection }), [openConnection, busyChatId, connection?.chatId, closeConnection])
   const presentation: InspectorPresentation | null = connection ? {
     title: connection.provider ? providerName(connection.provider) : msg('Connections'),
     available: true, open: true, onOpenChange: open => { if (!open) closeConnection() },

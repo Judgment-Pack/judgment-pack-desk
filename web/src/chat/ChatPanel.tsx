@@ -21,7 +21,7 @@ import { Button } from '../ui/Button'
 import { Select } from '../ui/Select'
 import { TextArea } from '../ui/TextArea'
 import { AttachmentList } from './AttachmentList'
-import { useConnectionsPane } from '../connections/ConnectionPaneContext'
+import { useConnectionsPane, useConnectionChatLock } from '../connections/ConnectionPaneContext'
 import type { ConnectionProvider } from '../connections/client'
 import { useDriveStatus } from '../connections/client'
 import { AttachmentMenu } from './AttachmentMenu'
@@ -79,6 +79,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
   const gmail = useDriveStatus(localDrive, 'gmail')
   const notion = useDriveStatus(localDrive, 'notion'), obsidian = useDriveStatus(localDrive, 'obsidian')
   const connections = useConnectionsPane()
+  useConnectionChatLock(chat.id, locked)
   const connectionBusy = connections.busyChatId === chat.id
   const attachmentButton = useRef<HTMLButtonElement>(null)
   const openConnection = (provider?: ConnectionProvider) => requestAnimationFrame(() => connections.open({ provider, chatId: chat.id, opener: attachmentButton.current }))
