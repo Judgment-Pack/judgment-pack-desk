@@ -22,7 +22,10 @@ export function GoogleRegistrationGuide({ provider, onContinue, headingRef }: { 
         <p>{provider === 'gmail' ? msg('In APIs & Services → Library, enable Gmail API.') : msg('In APIs & Services → Library, enable Google Drive API and Google Picker API.')}</p>
       </li>
       <li><h3>{msg('Configure the consent screen')}</h3>
-        <p>{msg('In Google Auth Platform, complete Branding with an app name and your contact email. For a personal account, select External under Audience and add your Google email as a test user while the app is in Testing.')}</p>
+        <p>{msg('In Google Auth Platform → Branding, enter your app name and contact email.')}</p>
+        <p>{msg('Open Audience in the left sidebar. Choose External for personal Google accounts. Internal is limited to your Google Workspace organization.')}</p>
+        <p>{msg('For your own local Desk, you can keep In production. If you use Testing, add your Google email under Test users and expect to reconnect Drive or Gmail after seven days.')}</p>
+        <p>{msg('Personal-use apps can qualify for an exemption from verification. Google may still show an unverified-app warning.')}</p>
       </li>
       <li><h3>{msg('Choose access permissions')}</h3>
         <p>{msg('In Data Access, add this scope:')}</p><code>{scope}</code>
