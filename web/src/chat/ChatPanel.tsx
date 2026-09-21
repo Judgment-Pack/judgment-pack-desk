@@ -1,6 +1,8 @@
+import { MessageTime, useMessageClock } from './MessageTime'
+import { messageTimeFormatter, dayBoundaries } from './timestamps'
 import { Message } from '../i18n/Message'
 import { msg, useLocale, systemMessage } from '../i18n'
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useId, useMemo, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import { useInspectorSlot } from '../shell/InspectorSlot'
@@ -43,6 +45,10 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
   const { store, bindings, error, drafts } = useChats()
   const binding = bindings.get(chat.id)
   const state = binding?.state ?? INITIAL_STATE
+  const clock = useMessageClock()
+  const formatTime = useMemo(() => messageTimeFormatter(clock.locale, clock.timeZone), [clock.locale, clock.timeZone])
+  const times = useMemo(() => state.turns.map(turn => formatTime(turn.at)), [state.turns, formatTime])
+  const days = useMemo(() => dayBoundaries(times), [times])
   const slot = useAssistantSlot()
   const pane = useInspectorSlot()
   const openReading = useReadingDetails(chat.id)
@@ -152,13 +158,12 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
     <div className={styles.thread} ref={thread} onScroll={() => { const node = thread.current; if (node) { following.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80; setAwayFromLatest(!following.current) } }}>
       <div className={styles.threadContent} ref={threadContent}>
       {empty && <div className={styles.welcome}><h1>{chat.pack ? msg("What would you like to change?") : msg("What would you like to work on?")}</h1><p>{chat.pack ? msg("Ask about {{value0}}, test an idea, or propose a change.", { value0: chat.pack.id }) : msg("Ask a question, explore an idea, or create and improve a pack.")}</p></div>}
-      {state.turns.map((turn,index) => <article key={`${turn.at}-${index}`} className={styles.message} data-role={turn.role}>
-        <span className={styles.caption}>{turn.role === 'user' ? msg("You") : turn.kind === 'note' ? msg("Desk") : msg("Assistant")}</span>
+      {state.turns.map((turn,index) => <Fragment key={`${turn.at}-${index}`}>{days[index] && <div className={styles.day}>{days[index]}</div>}<article className={styles.message} data-role={turn.role}>
+        <MessageTime turn={turn} formatted={times[index]} onOpen={opener => read(<MessageDetails turn={turn} text={turn.kind === 'note' ? systemMessage(turn.text) : turn.text} input={turn.input} />, opener)} />
         {turn.role === 'assistant' ? <MessageRenderer onRead={read} scope={chat.id} documents={chat.documents} text={turn.kind === 'note' ? systemMessage(turn.text) : turn.text} /> : <div className={styles.userText}>{turn.kind === 'note' ? systemMessage(turn.text) : turn.text}</div>}
         {turn.interrupted && <p className={styles.caption}>{msg('Response interrupted')}</p>}
-        {turn.role === 'user' && turn.input && <Button variant="inline" className={styles.messageDetails} onClick={event => read(<MessageDetails text={turn.text} input={turn.input!} />, event.currentTarget)}>{msg("View message details")}</Button>}
         {turn.role === 'assistant' && turn.kind === 'message' && <CopyMessage text={turn.text} />}
-      </article>)}
+      </article></Fragment>)}
       {running && state.streaming && <article className={styles.message} data-role="assistant" aria-label={msg("Response in progress")}><span className={styles.caption}>{msg("Assistant")}</span><MessageRenderer onRead={read} scope={chat.id} documents={chat.documents} text={state.streaming} /></article>}
       {!empty && !savedCandidate && <TaskStatus state={state} />}
       <VisuallyHidden.Root role="status" aria-live="polite">{state.status === 'complete' ? msg("Response complete.") : state.status === 'ready' ? msg("Draft ready for review.") : ''}</VisuallyHidden.Root>

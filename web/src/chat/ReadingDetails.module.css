@@ -4,3 +4,7 @@
 .heading h2 { min-width: 0; flex: 1; margin: 0; font-size: var(--text-body); font-weight: 600; overflow-wrap: anywhere; }
 .body { position: relative; flex: 1; min-height: 0; overflow: auto; padding: var(--space-3) var(--space-4); overscroll-behavior: contain; }
 .text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; margin-top: 0; }
+
+.metadata { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: var(--space-4); row-gap: var(--space-2); margin: 0 0 var(--space-4); font-size: var(--text-sm); }
+.metadata dt { color: var(--ink-soft); }
+.metadata dd { margin: 0; overflow-wrap: anywhere; }

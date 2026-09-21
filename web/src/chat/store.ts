@@ -1,3 +1,4 @@
+import { timestampDate } from './timestamps'
 import type { DocumentReference } from '../documents/client'
 import { sourceMessage } from '../i18n/source'
 import { answer, deskFetch } from '../files/client'
@@ -19,6 +20,8 @@ export function retainSentDocuments(previous: ChatAttachment[], sent: ChatAttach
 }
 export interface Chat {
   id: string; title: string; pinned: boolean; archived: boolean; updatedAt: string
+  /** First accepted submission; absent for history predating this field. */
+  createdAt?: string
   composer: string; model: string; mode: 'draft' | 'research'; view: 'chat' | 'draft'
   pack?: { id: string; path: string; digest: string }
   checkpoint?: Checkpoint
@@ -49,6 +52,7 @@ function decode(value: unknown): Chat[] {
       || typeof chat.title !== 'string' || typeof chat.composer !== 'string' || typeof chat.model !== 'string'
       || typeof chat.pinned !== 'boolean' || typeof chat.archived !== 'boolean'
       || typeof chat.updatedAt !== 'string' || !Number.isFinite(Date.parse(chat.updatedAt)) || !['draft', 'research'].includes(chat.mode) || !['chat', 'draft'].includes(chat.view)) throw new Error(sourceMessage("Invalid saved chat. History has not been changed."))
+    if (chat.createdAt !== undefined && (typeof chat.createdAt !== 'string' || !timestampDate(chat.createdAt))) throw new Error(sourceMessage("Invalid saved chat"))
     ids.add(chat.id)
     if (chat.attachments !== undefined && (!Array.isArray(chat.attachments) || chat.attachments.length > 4
       || chat.attachments.some(file => !file || typeof file.id !== 'string' || typeof file.name !== 'string' || typeof file.text !== 'string' || file.text.length > 200_000))) throw new Error(sourceMessage("Invalid saved attachments"))
@@ -62,7 +66,7 @@ function decode(value: unknown): Chat[] {
     if (chat.documents !== undefined && (!Array.isArray(chat.documents) || chat.documents.length > 256 || chat.documents.some(file => !file?.document || typeof file.name !== 'string' || typeof file.text !== 'string'))) throw new Error(sourceMessage("Invalid saved attachments"))
     if (chat.pack && (typeof chat.pack.id !== 'string' || typeof chat.pack.path !== 'string' || typeof chat.pack.digest !== 'string')) throw new Error(sourceMessage("Invalid saved pack context"))
     return { id: chat.id, title: chat.title, composer: chat.composer, model: chat.model, pinned: chat.pinned, archived: chat.archived,
-      updatedAt: chat.updatedAt, mode: chat.mode, view: chat.view, attachments: chat.attachments ?? [], documents: chat.documents ?? [], adversarialReview: chat.adversarialReview === true, titleEdited: chat.titleEdited === true, ...(chat.pack ? { pack: chat.pack } : {}),
+      updatedAt: chat.updatedAt, ...(chat.createdAt !== undefined ? { createdAt: chat.createdAt } : {}), mode: chat.mode, view: chat.view, attachments: chat.attachments ?? [], documents: chat.documents ?? [], adversarialReview: chat.adversarialReview === true, titleEdited: chat.titleEdited === true, ...(chat.pack ? { pack: chat.pack } : {}),
       ...(chat.checkpoint ? { checkpoint: decodeCheckpoint(chat.checkpoint) } : {}),
       ...(typeof chat.createdCandidateDigest === 'string' ? { createdCandidateDigest: chat.createdCandidateDigest } : {}) }
   })
@@ -164,7 +168,7 @@ export class ChatStore {
     this.changed([chat, ...this.state.chats]); this.activate(chat.id)
     return chat
   }
-  update(id: string, patch: Partial<Omit<Chat, 'id' | 'updatedAt'>>) {
+  update(id: string, patch: Partial<Omit<Chat, 'id' | 'updatedAt' | 'createdAt'>>) {
     const draft = this.state.drafts.find(chat => chat.id === id)
     const previous = draft ?? this.state.chats.find(chat => chat.id === id)
     if (previous?.mode === 'research' && patch.mode === 'draft' && (this.state.bindings.get(id)?.state.candidates.length || previous.checkpoint?.state.candidates.length)) return
@@ -207,7 +211,7 @@ export class ChatStore {
     const draft = this.state.drafts.find(chat => chat.id === id)
     if (draft && needsModel) {
       if (!this.canCreate) { this.problem(sourceMessage('Chat history is full. Delete an older chat before sending.')); return false }
-      this.changed([draft, ...this.state.chats], { drafts: this.state.drafts.filter(chat => chat.id !== id) })
+      this.changed([{ ...draft, createdAt: new Date().toISOString() }, ...this.state.chats], { drafts: this.state.drafts.filter(chat => chat.id !== id) })
       if (!draft.pack) this.saveHomeDraft()
     }
     action(binding); return true

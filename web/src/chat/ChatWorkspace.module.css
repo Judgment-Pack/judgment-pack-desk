@@ -113,7 +113,7 @@
 .history li.historyGroup { padding: var(--space-3) var(--space-2) var(--space-1); color: var(--ink-soft); font-size: var(--text-xs); font-weight: 500; }
 .history li.historyGroup:hover { background: transparent; }
 
-.messageDetails { margin-top: var(--space-2); min-height: var(--density-control); }
+.day { color: var(--ink-soft); font-size: var(--text-xs); line-height: 1.6; text-align: center; padding-block: var(--space-1); }
 .documentList { display: grid; justify-items: start; gap: var(--space-2); }
 .send { flex: 0 0 var(--density-control); width: var(--density-control); padding: 0; }
 .messageTable th { font-weight: 600; background: var(--surface); }
