@@ -11,22 +11,22 @@ const fixture = () => structuredClone(connectionCatalogFixture)
 
 it('requires the supported protocol and complete operations without inventing missing providers', () => {
  const wire = fixture()
- expect(parseConnectionCatalog(wire).map(item => item.id)).toEqual(['google-drive', 'gmail', 'notion', 'obsidian'])
+ expect(parseConnectionCatalog(wire).providers.map(item => item.id)).toEqual(['google-drive', 'gmail', 'notion', 'obsidian'])
  wire.providers[0]!.selection = 'remote-script'
  wire.providers[1]!.operations = ['status']
  wire.providers.push({ ...wire.providers[2]!, id: 'future-provider' })
- expect(parseConnectionCatalog(wire).map(item => item.id)).toEqual(['notion', 'obsidian'])
- expect(parseConnectionCatalog({ version: 1, providers: [] })).toEqual([])
+ expect(parseConnectionCatalog(wire).providers.map(item => item.id)).toEqual(['notion', 'obsidian'])
+ expect(parseConnectionCatalog({ version: 2, providers: [], sources: [] })).toEqual({ providers: [], web: false })
 })
 
-it.each([null, {}, { version: 2, providers: [] }, { version: 1, providers: null }, { version: 1, providers: Array(33).fill({}) }, { version: 1, providers: [connectionCatalogFixture.providers[0], connectionCatalogFixture.providers[0]] }, { version: 1, providers: [{ ...connectionCatalogFixture.providers[0], operations: ['status', 'status'] }] }, { version: 1, providers: [{ ...connectionCatalogFixture.providers[0], queryRequired: undefined }] }])('refuses malformed discovery: %j', raw => {
+it.each([null, {}, { version: 2, providers: [] }, { version: 1, providers: [], sources: [] }, { ...fixture(), providers: null }, { ...fixture(), providers: Array(33).fill({}) }, { ...fixture(), providers: [connectionCatalogFixture.providers[0], connectionCatalogFixture.providers[0]] }, { ...fixture(), providers: [{ ...connectionCatalogFixture.providers[0], operations: ['status', 'status'] }] }, { ...fixture(), providers: [{ ...connectionCatalogFixture.providers[0], queryRequired: undefined }] }])('refuses malformed discovery: %j', raw => {
  expect(() => parseConnectionCatalog(raw)).toThrow()
 })
 
 it('requests status only for advertised, compatible providers and drops cached actions on failure', async () => {
  let broken = false
  fetch.mockImplementation(async (url: string) => {
-  if (url.endsWith('/catalog')) return Response.json(broken ? { version: 2, providers: [] } : { version: 1, providers: [connectionCatalogFixture.providers[3]] })
+  if (url.endsWith('/catalog')) return Response.json(broken ? { version: 2, providers: [] } : { ...fixture(), providers: [connectionCatalogFixture.providers[3]] })
   return Response.json({ version: 1, provider: 'obsidian', state: 'connected', maxFileBytes: 4 << 20, maxFiles: 4 })
  })
  const client = testQueryClient()
@@ -49,7 +49,7 @@ it('does not start a discovery request with local processing disabled', () => {
 it('removing a provider cancels its pending status and cannot restore it through a late response', async () => {
  let providers = connectionCatalogFixture.providers.slice(3), release!: (response: Response) => void, signal!: AbortSignal
  fetch.mockImplementation((url: string, options: RequestInit) => {
-  if (url.endsWith('/catalog')) return Promise.resolve(Response.json({ version: 1, providers }))
+  if (url.endsWith('/catalog')) return Promise.resolve(Response.json({ ...fixture(), providers }))
   signal = options.signal as AbortSignal
   return new Promise<Response>(resolve => { release = resolve })
  })
@@ -62,4 +62,12 @@ it('removing a provider cancels its pending status and cannot restore it through
  expect(signal.aborted).toBe(true)
  await act(async () => release(Response.json({ state: 'connected' })))
  expect(result.current.entries).toEqual([])
+})
+
+it('advertises only a compatible explicit URL source and hides it on failed discovery', () => {
+ const raw=fixture();expect(parseConnectionCatalog(raw).web).toBe(true)
+ raw.sources[0]!.input='execute';expect(parseConnectionCatalog(raw).web).toBe(false)
+ raw.sources[0]!.input='url';raw.sources[0]!.mediaTypes=['application/json'];expect(parseConnectionCatalog(raw).web).toBe(false)
+ raw.sources=[];expect(parseConnectionCatalog(raw).web).toBe(false)
+ expect(() => parseConnectionCatalog({...fixture(),sources:[fixture().sources[0],fixture().sources[0]]})).toThrow()
 })

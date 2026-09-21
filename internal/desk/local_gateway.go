@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-const GatewayRevision = "7732913e65366a8e7def1cb09535cc8f92ffbc5b"
+const GatewayRevision = "741620fa11cda18e935bc3df851433aac0d2649b"
 const localAuthority = "gateway:desk-local"
 
 // LocalGatewayStatus carries public, effective settings only. The signing seed
@@ -90,7 +90,7 @@ func verifyGatewayBundle(dir string) error {
 	if json.Unmarshal(raw, &manifest) != nil || manifest.Revision != GatewayRevision {
 		return errors.New("local processing components do not match this Desk build")
 	}
-	for _, name := range []string{"gateway", "adapter-document", "gateway-connections", "adapter-drive", "adapter-gmail", "adapter-sources"} {
+	for _, name := range []string{"gateway", "adapter-document", "gateway-connections", "adapter-drive", "adapter-gmail", "adapter-sources", "adapter-web"} {
 		file, err := os.Open(filepath.Join(dir, executableName(name)))
 		if err != nil {
 			return err

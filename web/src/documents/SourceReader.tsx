@@ -87,10 +87,11 @@ export function SourceReader({ name, reference, citation }: { name: string; refe
     const url = URL.createObjectURL(new Blob([Uint8Array.from(atob(original.bytes), c => c.charCodeAt(0))], { type: 'application/octet-stream' }))
     const link = document.createElement('a'); link.href = url; link.download = name; link.click(); setTimeout(() => URL.revokeObjectURL(url), 0)
   }
-  return <ReadingDetails title={name} actions={original && <Button variant="quiet" onClick={download}>{msg('Download original')}</Button>}>
+  return <ReadingDetails title={name} actions={original && <Button variant="quiet" onClick={download}>{source.value?.record.provenance.source.kind === 'web' && source.value.record.provenance.source.format === 'static-text-v1' ? msg('Download snapshot') : msg('Download original')}</Button>}>
     {!source.value ? <Status error={source.error} retry={source.retry} /> : <>
       <Warnings value={source.value} />
       {source.value.record.provenance.source.kind === 'connected-source' && <p className={styles.meta}><a href={source.value.record.provenance.source.url} target="_blank" rel="noopener noreferrer">{msg('Open in {{provider}}', { provider: source.value.record.provenance.source.provider === 'notion' ? 'Notion' : 'Obsidian' })}</a></p>}
+      {source.value.record.provenance.source.kind === 'web' && <p className={styles.meta}><a href={source.value.record.provenance.source.url} target="_blank" rel="noopener noreferrer">{msg('Open original source')}</a>{source.value.record.provenance.source.format === 'static-text-v1' && <> · {msg('Static text snapshot')}</>}</p>}
       <Disclosure title={msg('Technical details')}><p>{msg('Receipt verified. This confirms byte lineage, not accuracy or authority.')}</p><code className={styles.identity}>{source.value.digest}</code></Disclosure>
       {source.value.record.content.pages.filter(page => reference.pages.includes(page.number)).map(page => <section key={page.number} ref={citation?.page === page.number ? selected : undefined} className={styles.page}>
         <h3>{msg('Page {{number}}', { number: page.number })}</h3>

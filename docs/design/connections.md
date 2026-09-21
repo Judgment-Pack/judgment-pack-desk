@@ -143,3 +143,23 @@ for live status only for compatible providers. The composer and shared pane now
 use this one result. Discovery failure is recoverable with Retry and never falls
 back to a guessed provider list. Removing a capability cancels pending selection.
 See [acceptance evidence](../reviews/connection-catalog/README.md).
+
+### Selected public links
+
+`+ → Add link` is a separate source action, advertised by catalog v2. It opens the
+same resizable right pane as connected sources while preserving chat and unsent
+text. One URL field and Attach link are sufficient; there is no account setup,
+permission modal, or fake web connection. At narrow widths, the shell's existing
+drawer presents the same controller and retains the URL.
+
+Retrieval goes through the bundled `adapter-web` and signed HTTP acquisition.
+Desk verifies the chosen URL commitment, retained bytes, source variant, seal and
+current signer before attaching. Closing, switching routes, starting a run, or
+losing the capability cancels the browser operation and discards late results.
+Source pages remain untrusted reference text. The user still decides when to send.
+
+HTML is labeled a static text snapshot with Download snapshot and an original
+source link; PDF/text retain their original download. The pane explains public
+HTTPS, 4 MiB, and no sign-in/JavaScript content. This is selected-link ingestion,
+not automatic web search. Agent-driven search and the remaining provider backlog
+remain separate work. All new copy is localized in the 12 supported locales.

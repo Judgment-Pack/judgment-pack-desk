@@ -23,7 +23,14 @@ type connectionDescriptor struct {
 	QueryRequired *bool    `json:"queryRequired"`
 	Operations    []string `json:"operations"`
 }
+type sourceDescriptor struct {
+	ID         string   `json:"id"`
+	Input      string   `json:"input"`
+	MediaTypes []string `json:"mediaTypes"`
+	MaxBytes   int      `json:"maxBytes"`
+}
 type connectionCatalog struct {
+	Sources   []sourceDescriptor     `json:"sources"`
 	Version   int                    `json:"version"`
 	Providers []connectionDescriptor `json:"providers"`
 }
@@ -65,11 +72,22 @@ func runConnectionCatalog(ctx context.Context, cmd *exec.Cmd) (json.RawMessage, 
 	}
 	// encoding/json otherwise folds duplicate and case-insensitive member
 	// names. Discovery has one spelling and one value for every protocol field.
-	members, ok := catalogMembers(raw, "version", "providers")
+	members, ok := catalogMembers(raw, "version", "providers", "sources")
 	if !ok {
 		return nil, errConnectionCatalog
 	}
 	for _, member := range members {
+		if member.name == "sources" {
+			var rows []json.RawMessage
+			if json.Unmarshal(member.raw, &rows) != nil || len(rows) > 32 {
+				return nil, errConnectionCatalog
+			}
+			for _, row := range rows {
+				if _, ok := catalogMembers(row, "id", "input", "mediaTypes", "maxBytes"); !ok {
+					return nil, errConnectionCatalog
+				}
+			}
+		}
 		if member.name == "providers" {
 			var rows []json.RawMessage
 			if json.Unmarshal(member.raw, &rows) != nil || len(rows) > 32 {
@@ -83,7 +101,7 @@ func runConnectionCatalog(ctx context.Context, cmd *exec.Cmd) (json.RawMessage, 
 		}
 	}
 	var catalog connectionCatalog
-	if decodeDataJSON(raw, &catalog) != nil || catalog.Version != 1 || catalog.Providers == nil || len(catalog.Providers) > 32 {
+	if decodeDataJSON(raw, &catalog) != nil || catalog.Version != 2 || catalog.Sources == nil || len(catalog.Sources) > 32 || catalog.Providers == nil || len(catalog.Providers) > 32 {
 		return nil, errConnectionCatalog
 	}
 	seen := map[string]bool{}
@@ -98,6 +116,20 @@ func runConnectionCatalog(ctx context.Context, cmd *exec.Cmd) (json.RawMessage, 
 				return nil, errConnectionCatalog
 			}
 			operations[operation] = true
+		}
+	}
+	seenSources := map[string]bool{}
+	for _, source := range catalog.Sources {
+		if seenSources[source.ID] || !catalogIdentifier.MatchString(source.ID) || !catalogIdentifier.MatchString(source.Input) || source.MaxBytes < 1 || source.MaxBytes > 16<<20 || len(source.MediaTypes) == 0 || len(source.MediaTypes) > 8 {
+			return nil, errConnectionCatalog
+		}
+		seenSources[source.ID] = true
+		types := map[string]bool{}
+		for _, media := range source.MediaTypes {
+			if types[media] || !regexp.MustCompile(`^[a-z][a-z0-9.+-]{0,63}/[a-z][a-z0-9.+-]{0,63}$`).MatchString(media) {
+				return nil, errConnectionCatalog
+			}
+			types[media] = true
 		}
 	}
 	return json.Marshal(catalog)

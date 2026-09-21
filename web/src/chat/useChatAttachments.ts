@@ -3,7 +3,7 @@ import { sourceMessage } from '../i18n/source'
 import { useEffect, useRef, useState } from 'react'
 import type { ChatStore, ChatAttachment } from './store'
 import type { ResearchConfig } from '../config/deskConfig'
-import { ingestDocument, ingestDrive, ingestGmail, ingestSource, loadDocument, documentContext } from '../documents/client'
+import { ingestDocument, ingestDrive, ingestGmail, ingestSource, ingestWeb, loadDocument, documentContext } from '../documents/client'
 
 export const TEXT_ATTACHMENT_ACCEPT = '.txt,.md,.json,.csv,.pdf'
 const LIMIT = 4
@@ -76,21 +76,21 @@ export function useChatAttachments(store: ChatStore | null, chatId: string, disa
       if (active.current === operation) { active.current = null; setReading(false) }
     }
   }
-  const attachCloud = async (mail?: MailSelection[], drive?: DriveSelection[], sources?: {provider: SourceProvider; items: SourceSelection[]}) => {
+  const attachCloud = async (mail?: MailSelection[], drive?: DriveSelection[], sources?: {provider: SourceProvider; items: SourceSelection[]}, web?: {url: string}) => {
     if (!store || disabled || isReading()) return
-    if (!config?.gateway || !config.documents?.enabled) { setError(sources ? sourceMessage('Enable document processing in Admin → Storage & data before attaching sources.') : mail ? sourceMessage('Enable document processing in Admin → Storage & data before attaching emails.') : sourceMessage('Enable document processing in Admin → Storage & data before attaching Drive files.')); return }
+    if (!config?.gateway || !config.documents?.enabled) { setError(sources || web ? sourceMessage('Enable document processing in Admin → Storage & data before attaching sources.') : mail ? sourceMessage('Enable document processing in Admin → Storage & data before attaching emails.') : sourceMessage('Enable document processing in Admin → Storage & data before attaching Drive files.')); return }
     const current = () => { const snapshot = store.getSnapshot(); return [...snapshot.chats, ...snapshot.drafts].find(item => item.id === chatId) }
     const chat = current()
     if (!chat || (chat.attachments?.length ?? 0) >= LIMIT) { setError(sourceMessage('Attach up to four files at a time.')); return }
-    const operation = new AbortController(); active.current = operation; setReading(true); setError(''); setProgress(sources ? sourceMessage('Reading files…') : mail ? sourceMessage('Reading emails…') : sourceMessage('Continue in the Google sign-in window.'))
+    const operation = new AbortController(); active.current = operation; setReading(true); setError(''); setProgress(sources || web ? sourceMessage('Reading files…') : mail ? sourceMessage('Reading emails…') : sourceMessage('Continue in the Google sign-in window.'))
     try {
-      const selected = sources?.items ?? mail ?? drive ?? await authorizeDrive('pick', operation.signal)
+      const selected = web ? [web] : sources?.items ?? mail ?? drive ?? await authorizeDrive('pick', operation.signal)
       if (active.current !== operation || operation.signal.aborted) return
       if (selected.length + (chat.attachments?.length ?? 0) > LIMIT) throw new Error(sourceMessage('Attach up to four files at a time.'))
       const pieces: ChatAttachment[] = []
       for (const selection of selected) {
         if (active.current !== operation || operation.signal.aborted) return
-        const { reference, document } = await (sources ? ingestSource(selection as SourceSelection, sources.provider, config, operation.signal, setProgress) : mail ? ingestGmail(selection as MailSelection, config, operation.signal, setProgress) : ingestDrive(selection as import('../connections/client').DriveSelection, config, operation.signal, setProgress))
+        const { reference, document } = await (web ? ingestWeb(web, config, operation.signal, setProgress) : sources ? ingestSource(selection as SourceSelection, sources.provider, config, operation.signal, setProgress) : mail ? ingestGmail(selection as MailSelection, config, operation.signal, setProgress) : ingestDrive(selection as import('../connections/client').DriveSelection, config, operation.signal, setProgress))
         pieces.push({ id: reference.id, name: document.record.document.name, text: '', document: reference })
       }
       if (active.current !== operation) return
@@ -124,5 +124,5 @@ export function useChatAttachments(store: ChatStore | null, chatId: string, disa
     } catch (cause) { if (active.current === operation) setError((cause as Error).message); return undefined }
     finally { if (active.current === operation) { active.current = null; setReading(false) } }
   }
-  return { attachSource: (provider: SourceProvider, items: SourceSelection[]) => attachCloud(undefined, undefined, {provider, items}), reading, error, progress, isReading, attach, attachDrive: (items?: DriveSelection[]) => attachCloud(undefined, items), attachGmail: (items: MailSelection[]) => attachCloud(items), cancel, prepare }
+  return { attachWeb: (url: string) => attachCloud(undefined, undefined, undefined, {url}), attachSource: (provider: SourceProvider, items: SourceSelection[]) => attachCloud(undefined, undefined, {provider, items}), reading, error, progress, isReading, attach, attachDrive: (items?: DriveSelection[]) => attachCloud(undefined, items), attachGmail: (items: MailSelection[]) => attachCloud(items), cancel, prepare }
 }

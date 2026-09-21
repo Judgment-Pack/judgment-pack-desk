@@ -27,6 +27,9 @@ type attachmentOriginal struct {
 	SHA256    string `json:"sha256"`
 }
 type attachmentProof struct {
+	Web *struct {
+		URL string `json:"url"`
+	} `json:"web,omitempty"`
 	Session   string `json:"session"`
 	Source    string `json:"source"`
 	Authority string `json:"authority"`
