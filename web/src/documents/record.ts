@@ -119,6 +119,6 @@ function validConnectedSource(s: Record<string, unknown>): boolean {
 /** URL spelling only. DNS and redirect admission belong to the gateway. */
 export function validWebURL(raw: unknown): raw is string {
  if (typeof raw !== 'string' || new TextEncoder().encode(raw).length > 4096 || /[\\\x00-\x20#]/.test(raw)) return false
- try { const u = new URL(raw); return raw.startsWith('https://') && u.protocol === 'https:' && Boolean(u.hostname) && !u.username && !u.password && !u.hash && !u.port }
+ try { const u = new URL(raw); return raw.startsWith('https://') && !raw.slice(8).split(/[/?]/, 1)[0]!.includes('@') && u.protocol === 'https:' && Boolean(u.hostname) && !u.username && !u.password && !u.hash && !u.port }
  catch { return false }
 }

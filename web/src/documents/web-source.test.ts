@@ -31,7 +31,7 @@ it('refuses incompatible web format, identity, digest, and OCR claims independen
  const changed = structuredClone(record); changed.document.version = null
  expect(() => readDocumentRecord(changed)).toThrow()
 })
-it.each(['http://example.com','https://user:pass@example.com','https://example.com:8443','https://example.com/#section','https://example.com\\@localhost','https://example.com/\n'])('refuses unsupported URL spelling: %s', url => expect(validWebURL(url)).toBe(false))
+it.each(['https://@example.com','http://example.com','https://user:pass@example.com','https://example.com:8443','https://example.com/#section','https://example.com\\@localhost','https://example.com/\n'])('refuses unsupported URL spelling: %s', url => expect(validWebURL(url)).toBe(false))
 
 it('accepts the gateway-produced HTML snapshot fixture', async () => {
  const { default: fixture } = await import('./__fixtures__/web-snapshot.json')
