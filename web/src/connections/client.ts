@@ -1,7 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { deskFetch, answer } from '../files/client'
 import { sourceMessage } from '../i18n/source'
-export type ConnectionProvider = 'google-drive' | 'gmail'
+export type SourceProvider = 'notion' | 'obsidian'
+export type ConnectionProvider = 'google-drive' | 'gmail' | SourceProvider
+export interface SourceSelection { resourceId: string; grant: string }
+export interface SourcePreview { id: string; title: string; url: string; description?: string }
+export interface SourceSearch { selectionContext: string; items: SourcePreview[]; more: boolean }
 export interface MailSelection { messageId: string; grant: string }
 export interface MailPreview { id: string; subject: string; from: string; date: string }
 export interface MailSearch { selectionContext: string; messages: MailPreview[]; nextPageToken?: string }
@@ -10,6 +14,15 @@ export interface DriveSelection { fileId: string; grant: string }
 export interface ConnectionFlow { id: string; state: 'pending'|'complete'|'failed'|'canceled'; url?: string; error?: string; selections?: DriveSelection[] }
 export const CONNECTIONS_KEY = ['gateway-connections'] as const
 export function connectionError(code: string, provider: ConnectionProvider = 'google-drive'): string {
+ if (provider === 'notion' || provider === 'obsidian') {
+  if (code === 'invalid-vault') return sourceMessage('Choose an existing Obsidian vault folder containing an .obsidian folder.')
+  if (code === 'callback-unavailable') return sourceMessage('The sign-in callback port is in use. Close other Desk windows and try again.')
+  if (code === 'canceled') return sourceMessage('Canceled.')
+  if (code === 'connect-required' || code === 'reconnect-required') return sourceMessage('Reconnect {{provider}} to continue.', { provider: provider === 'notion' ? 'Notion' : 'Obsidian' })
+  if (code === 'selection-expired') return sourceMessage('This selection expired. Search again and reselect your sources.')
+  if (code === 'unsupported-file') return sourceMessage('This source is not available to read with this connection.')
+  return sourceMessage('{{provider}} could not complete this request. Try again.', { provider: provider === 'notion' ? 'Notion' : 'Obsidian' })
+ }
  switch (code) {
  case 'setup-required': return sourceMessage('Configure Google registration in Admin → Connections before signing in.')
  case 'wrong-account': return sourceMessage('Choose the Google account already connected, or disconnect it first.')
@@ -23,24 +36,24 @@ export function connectionError(code: string, provider: ConnectionProvider = 'go
  }
 }
 export async function connectionCall<T>(method: string, params: object = {}, signal?: AbortSignal, provider: ConnectionProvider = 'google-drive'): Promise<T> {
- const result = await answer<T & { error?: string }>(await deskFetch(`/api/connections/${provider === 'gmail' ? 'gmail/' : ''}${method}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(params), signal }))
+ const result = await answer<T & { error?: string }>(await deskFetch(`/api/connections/${provider === 'google-drive' ? '' : `${provider}/`}${method}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(params), signal }))
  if (result.error) throw new Error(connectionError(result.error, provider))
  return result
 }
 export function useDriveStatus(enabled = true, provider: ConnectionProvider = 'google-drive') {
- return useQuery({ queryKey: provider === 'gmail' ? [...CONNECTIONS_KEY, 'gmail'] : CONNECTIONS_KEY, queryFn: () => connectionCall<ConnectionStatus>('status', {}, undefined, provider), enabled, retry: false, staleTime: 30_000 })
+ return useQuery({ queryKey: provider === 'google-drive' ? CONNECTIONS_KEY : [...CONNECTIONS_KEY, provider], queryFn: () => connectionCall<ConnectionStatus>('status', {}, undefined, provider), enabled, retry: false, staleTime: 30_000 })
 }
 /** Open synchronously from the user's click. Only a Google authorization URL
  * reaches this tab; credentials and the callback are gateway-owned. */
 export async function authorizeDrive(mode: 'connect'|'pick', signal: AbortSignal, provider: ConnectionProvider = 'google-drive'): Promise<DriveSelection[]> {
  const tab = window.open('about:blank', '_blank')
- if (!tab) throw new Error(sourceMessage('Allow pop-ups to open Google sign-in.'))
+ if (!tab) throw new Error(sourceMessage('Allow pop-ups to open the sign-in window.'))
  tab.opener = null
  let id: string | undefined, done = false
  try {
   const flow = await connectionCall<ConnectionFlow>(mode, {}, signal, provider); id = flow.id
   const url = new URL(flow.url ?? '')
-  if (url.origin !== 'https://accounts.google.com' || url.pathname !== '/o/oauth2/v2/auth' || !/^[a-f0-9]{64}$/.test(id)) throw new Error(connectionError('invalid-response', provider))
+  if (url.username || url.password || url.origin !== (provider === 'notion' ? 'https://mcp.notion.com' : 'https://accounts.google.com') || url.pathname !== (provider === 'notion' ? '/authorize' : '/o/oauth2/v2/auth') || !/^[a-f0-9]{64}$/.test(id)) throw new Error(connectionError('invalid-response', provider))
   signal.throwIfAborted(); tab.location.href = url.href
   const until = Date.now() + 5 * 60_000
   while (Date.now() < until) {

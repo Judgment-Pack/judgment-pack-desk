@@ -105,13 +105,15 @@ type Config struct {
 
 // Server is the HTTP handler and the owner of the file watcher.
 type Server struct {
-	localGateway     *localGateway
-	connections      connectionCompanion
-	gmailConnections connectionCompanion
-	cfg              Config
-	mux              *http.ServeMux
-	static           http.Handler
-	log              *log.Logger
+	localGateway        *localGateway
+	connections         connectionCompanion
+	gmailConnections    connectionCompanion
+	notionConnections   connectionCompanion
+	obsidianConnections connectionCompanion
+	cfg                 Config
+	mux                 *http.ServeMux
+	static              http.Handler
+	log                 *log.Logger
 
 	mu    sync.Mutex
 	conns map[*conn]struct{}
@@ -375,6 +377,8 @@ func (s *Server) Close() error {
 func (s *Server) closeAll() error {
 	s.connections.close()
 	s.gmailConnections.close()
+	s.notionConnections.close()
+	s.obsidianConnections.close()
 	if s.localGateway != nil {
 		s.localGateway.close()
 	}

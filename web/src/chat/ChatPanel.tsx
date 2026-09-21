@@ -23,6 +23,8 @@ import { TextArea } from '../ui/TextArea'
 import { AttachmentList } from './AttachmentList'
 import { GoogleConnectionDialog } from '../connections/GoogleConnectionDialog'
 import type { ConnectionProvider } from '../connections/client'
+import { SourceConnection } from '../connections/SourceConnection'
+import type { SourceProvider } from '../connections/client'
 import { GmailPicker } from '../connections/GmailPicker'
 import { useDriveStatus } from '../connections/client'
 import { AttachmentMenu } from './AttachmentMenu'
@@ -78,11 +80,13 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
   const localDrive = effective.desk?.localGateway?.status === 'ready' && !effective.desk?.decoded?.values?.research?.gateway
   const drive = useDriveStatus(localDrive)
   const gmail = useDriveStatus(localDrive, 'gmail')
+  const notion = useDriveStatus(localDrive, 'notion'), obsidian = useDriveStatus(localDrive, 'obsidian')
+  const [sourceProvider, setSourceProvider] = useState<SourceProvider | null>(null)
   const [gmailOpen, setGmailOpen] = useState(false)
   const [connectProvider, setConnectProvider] = useState<ConnectionProvider | null>(null)
   const attachmentButton = useRef<HTMLButtonElement>(null)
   const attachmentContext = JSON.stringify([localDrive, research.gateway, research.documents])
-  useEffect(() => { setGmailOpen(false); setConnectProvider(null) }, [chat.id, locked, running, attachmentContext])
+  useEffect(() => { setGmailOpen(false); setConnectProvider(null); setSourceProvider(null) }, [chat.id, locked, running, attachmentContext])
   const upload = useChatAttachments(store, chat.id, locked || running, research)
   const unsubmitted = drafts.some(draft => draft.id === chat.id)
   const otherRun = store?.running && store.running !== chat.id ? store.running : undefined
@@ -195,6 +199,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
         <div className={styles.composerTools}>
           <input ref={fileInput} hidden type="file" tabIndex={-1} accept={TEXT_ATTACHMENT_ACCEPT} multiple onChange={event => { void upload.attach([...(event.target.files ?? [])]); event.target.value = '' }} />
           <AttachmentMenu triggerRef={attachmentButton} disabled={running || locked || upload.reading} onUpload={() => fileInput.current?.click()}
+            sources={(['notion', 'obsidian'] as const).map(provider => ({ provider, state: localDrive && !(provider === 'notion' ? notion : obsidian).isError ? (provider === 'notion' ? notion : obsidian).data?.state : 'unavailable', onSelect: () => requestAnimationFrame(() => setSourceProvider(provider)) }))}
             gmailState={localDrive && !gmail.isError ? gmail.data?.state : 'unavailable'}
             onGmail={() => {
               if (!research.documents?.enabled) { void upload.attachGmail([]); return }
@@ -219,6 +224,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
     {connectProvider && <GoogleConnectionDialog key={`${chat.id}:${attachmentContext}:${connectProvider}`} provider={connectProvider}
       available={localDrive} open={!locked && !running} onOpenChange={() => setConnectProvider(null)} openerRef={attachmentButton}
       onSelected={selections => { if (connectProvider === 'gmail') setGmailOpen(true); else void upload.attachDrive(selections) }} />}
+    {sourceProvider && <SourceConnection key={`${chat.id}:${attachmentContext}:${sourceProvider}`} provider={sourceProvider} available={localDrive} open={!locked && !running} onOpenChange={() => setSourceProvider(null)} openerRef={attachmentButton} onSelect={items => void upload.attachSource(sourceProvider, items)} />}
     <GmailPicker key={`${chat.id}:${attachmentContext}`} open={gmailOpen && localDrive && !locked && !running} onOpenChange={setGmailOpen} state={gmail.data?.state} accountId={gmail.data?.account?.id} openerRef={attachmentButton} onSelect={items => void upload.attachGmail(items)} />
     <ConfigureAssistant open={configure} onOpenChange={setConfigure} openerRef={configureButton} />
   </section>

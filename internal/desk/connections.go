@@ -135,15 +135,19 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 		provider = "google-drive"
 	case "gmail":
 		companion = &s.gmailConnections
+	case "notion":
+		companion = &s.notionConnections
+	case "obsidian":
+		companion = &s.obsidianConnections
 	default:
 		writeJSONCoded(w, 400, CodeBadRequest, "unknown connection provider")
 		return
 	}
-	if (method == "search" || method == "select") && provider != "gmail" {
+	if (method == "search" || method == "select") && provider == "google-drive" {
 		writeJSONCoded(w, 400, CodeBadRequest, "unknown connection operation")
 		return
 	}
-	if method == "pick" && provider == "gmail" {
+	if method == "pick" && provider != "google-drive" {
 		writeJSONCoded(w, 400, CodeBadRequest, "unknown connection operation")
 		return
 	}
@@ -189,7 +193,7 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 200, map[string]any{"version": 1, "provider": provider, "state": "unavailable", "maxFileBytes": 4 << 20, "maxFiles": 4})
 			return
 		}
-		if provider == "gmail" && (method == "search" || method == "select") {
+		if provider != "google-drive" && (method == "search" || method == "select") {
 			gateway, err := s.configuredResearch()
 			if err != nil || !gateway.managedLocal || gateway.maxFileBytes == 0 {
 				writeJSONCoded(w, http.StatusConflict, CodeResearchUnconfigured, "local document processing is no longer available; nothing was sent")

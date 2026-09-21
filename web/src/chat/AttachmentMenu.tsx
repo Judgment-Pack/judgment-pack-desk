@@ -3,11 +3,14 @@ import { DropdownMenu } from 'radix-ui'
 import { msg, useLocale } from '../i18n'
 import { IconGoogleDrive, IconMail, IconPaperclip, IconPlus } from '../shell/icons'
 import { Tooltip } from '../ui/Tooltip'
+import { ProviderIcon } from '../connections/ProviderIcon'
+import type { SourceProvider } from '../connections/client'
 import styles from './AttachmentMenu.module.css'
 
 /** Shared by home chat and pack Assistant. Provider availability is explicit:
  * a configured document extractor is not a Google Drive connection. */
-export function AttachmentMenu({ disabled, onUpload, onDrive, driveState, onGmail, gmailState, triggerRef }: {
+export function AttachmentMenu({ disabled, onUpload, onDrive, driveState, onGmail, gmailState, sources = [], triggerRef }: {
+  sources?: { provider: SourceProvider; state?: string; onSelect: () => void }[];
   disabled: boolean; onUpload: () => void; onDrive?: () => void; driveState?: string; onGmail?: () => void; gmailState?: string; triggerRef?: RefObject<HTMLButtonElement | null>
 }) {
   useLocale()
@@ -32,6 +35,9 @@ export function AttachmentMenu({ disabled, onUpload, onDrive, driveState, onGmai
           <IconMail />
           <span className={styles.copy}><span id={`${id}-gmail`}>{msg('Gmail')}</span><span id={`${id}-gmail-hint`} className={styles.description}>{gmailState === 'connected' ? msg('Choose emails') : gmailState === 'not-connected' || gmailState === 'setup-required' ? msg('Connect') : msg('Unavailable')}</span></span>
         </DropdownMenu.Item>
+        {sources.map(source => <DropdownMenu.Item key={source.provider} className={`desk-menu-item ${styles.item}`} textValue={source.provider === 'notion' ? 'Notion' : 'Obsidian'} disabled={!source.state || ['unavailable','blocked'].includes(source.state)} onSelect={source.onSelect}>
+          <ProviderIcon provider={source.provider} /><span className={styles.copy}><span>{source.provider === 'notion' ? 'Notion' : 'Obsidian'}</span><span className={styles.description}>{source.state === 'connected' ? msg('Choose notes') : source.state === 'not-connected' ? msg('Connect') : msg('Unavailable')}</span></span>
+        </DropdownMenu.Item>)}
       </DropdownMenu.Content>
     </DropdownMenu.Portal>
   </DropdownMenu.Root>

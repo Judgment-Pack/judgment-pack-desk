@@ -60,7 +60,7 @@ def main():
         require_unregistered_gateway(source)
         suffix = '.exe' if os.environ.get('GOOS', '') == 'windows' or os.name == 'nt' else ''
         files = {}
-        for name, module, package in [('gateway', 'go', '.'), ('adapter-document', 'adapters', './cmd/adapter-document'), ('gateway-connections', 'adapters', './cmd/gateway-connections'), ('adapter-drive', 'adapters', './cmd/adapter-drive'), ('adapter-gmail', 'adapters', './cmd/adapter-gmail')]:
+        for name, module, package in [('gateway', 'go', '.'), ('adapter-document', 'adapters', './cmd/adapter-document'), ('gateway-connections', 'adapters', './cmd/gateway-connections'), ('adapter-drive', 'adapters', './cmd/adapter-drive'), ('adapter-gmail', 'adapters', './cmd/adapter-gmail'), ('adapter-sources', 'adapters', './cmd/adapter-sources')]:
             artifact = temp / (name + suffix)
             run(['go', 'build', '-buildvcs=false', '-trimpath', '-o', str(artifact), package], source / module)
             files[artifact.name] = hashlib.sha256(artifact.read_bytes()).hexdigest()
