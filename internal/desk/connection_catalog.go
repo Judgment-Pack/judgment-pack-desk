@@ -63,6 +63,25 @@ func runConnectionCatalog(ctx context.Context, cmd *exec.Cmd) (json.RawMessage, 
 	if cmd.Wait() != nil || ctx.Err() != nil {
 		return nil, errConnectionCatalog
 	}
+	// encoding/json otherwise folds duplicate and case-insensitive member
+	// names. Discovery has one spelling and one value for every protocol field.
+	members, ok := catalogMembers(raw, "version", "providers")
+	if !ok {
+		return nil, errConnectionCatalog
+	}
+	for _, member := range members {
+		if member.name == "providers" {
+			var rows []json.RawMessage
+			if json.Unmarshal(member.raw, &rows) != nil || len(rows) > 32 {
+				return nil, errConnectionCatalog
+			}
+			for _, row := range rows {
+				if _, ok := catalogMembers(row, "id", "auth", "registration", "selection", "queryRequired", "operations"); !ok {
+					return nil, errConnectionCatalog
+				}
+			}
+		}
+	}
 	var catalog connectionCatalog
 	if decodeDataJSON(raw, &catalog) != nil || catalog.Version != 1 || catalog.Providers == nil || len(catalog.Providers) > 32 {
 		return nil, errConnectionCatalog
@@ -82,4 +101,21 @@ func runConnectionCatalog(ctx context.Context, cmd *exec.Cmd) (json.RawMessage, 
 		}
 	}
 	return json.Marshal(catalog)
+}
+
+func catalogMembers(raw []byte, allowed ...string) ([]deskMember, bool) {
+	members, duplicate, err := topLevelMembers(raw)
+	if err != nil || duplicate != "" || len(members) != len(allowed) {
+		return nil, false
+	}
+	for _, member := range members {
+		found := false
+		for _, name := range allowed {
+			found = found || member.name == name
+		}
+		if !found {
+			return nil, false
+		}
+	}
+	return members, true
 }
