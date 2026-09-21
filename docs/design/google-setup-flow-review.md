@@ -1,15 +1,14 @@
 # Google registration setup: one working surface
 
-Reviewed September 21, 2026. This document recommends a layout change; the
-associated wording correction does not yet change the setup interaction.
+Implemented September 21, 2026. Setup and instructions now share one pane.
 
-## Current friction
+## Problem addressed
 
-Admin → Connections currently opens a registration modal. Guide dismisses that
-modal and opens a right-hand guide. Continue setup closes the guide and reopens
-the modal, where the credentials file can finally be selected. These are two
-surfaces for one task, with separate focus and scroll transitions. The path to
-the file picker through the guide requires four Desk actions: Set up, Guide,
+Admin → Connections previously opened a registration modal. Guide dismissed that
+modal and opened a right-hand guide. Continue setup closed the guide and reopened
+the modal to select a credentials file. The two surfaces added separate focus
+and scroll transitions to one task. Reaching the file picker through the guide
+required four Desk actions: Set up, Guide,
 Continue setup, Choose credentials file.
 
 The guide also combined Branding and Audience in one paragraph. They are
@@ -20,19 +19,18 @@ connections a seven-day refresh-token lifetime. An existing In production
 configuration can be retained for personal local use; personal-use verification
 exceptions and unverified-app warnings still apply.
 
-## Recommendation
+## Implemented interaction
 
-Set up and Manage should open a single provider setup pane, reusing the shell's
+Set up and Manage open a single provider setup pane, reusing the shell's
 resizing, sticky header, independent scrolling and focus restoration. Start at
 480 px, clamp within the existing shell geometry, and use the existing drawer
 on narrow screens. Keep the provider rows visible on wide screens. Set up opens
 the pane explicitly; background state changes should not open it.
 
-- Header: Set up Google Drive or Set up Gmail, with the existing close control.
+- Header: Google Drive registration or Gmail registration, with the existing close control.
 - Keep one file-selection action readily available in a sticky footer. Label it
-  Upload credentials JSON, with nearby text explaining that the file is validated
-  and saved on this computer. Users who already have the file need not read all
-  instructions first.
+  Choose credentials file, with the local scope identified in the pane. Users
+  who already have the file need not read all instructions first.
 - Show Setup instructions expanded for a provider that needs registration;
   collapse them when managing an existing registration. The disclosure opens
   directly below its toggle and can be closed without leaving setup. Keep upload
@@ -49,8 +47,8 @@ the pane explicitly; background state changes should not open it.
   in My connections before replacing its registration. Do not offer a writable
   upload control in that state.
 
-This removes Guide and Continue setup from the path to upload: Set up → Upload
-credentials JSON. Google Cloud configuration and consent still require the
+This removes Guide and Continue setup from the path to upload: Set up → Choose
+credentials file. Google Cloud configuration and consent still require the
 user's actions; Desk cannot infer that external steps have been completed.
 
 ## Alternatives
@@ -82,8 +80,8 @@ and [token expiration rules](https://developers.google.com/identity/protocols/oa
 support the revised copy.
 
 This recommendation comes from reviewing the actual component flow and public
-design guidance, not a comparative user study. Before shipping the pane change,
-check both providers in setup-required, configured, connected, unavailable,
-uploading, failed, and saved states. Verify closing, Escape, provider switching,
+design guidance, not a comparative user study. Validation covers both providers
+in setup-required, configured, connected, unavailable, uploading, failed, and
+saved states. This includes closing, Escape, provider switching,
 late responses, keyboard focus, narrow drawers, long translations, and resizing.
 Keep credential values out of rendered output, logs, and translations.

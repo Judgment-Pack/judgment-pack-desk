@@ -1,17 +1,15 @@
 .guide {
-  padding: var(--density-section) var(--density-cell-x);
   color: var(--ink-soft);
   font-size: var(--text-sm);
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
-.guide h2, .guide h3 {
+.guide h3 {
   color: var(--ink);
   font-size: var(--text-body);
   font-weight: 600;
   margin: 0;
 }
-.guide h2:focus { outline: none; }
 .guide p { margin: var(--space-2) 0; }
 .guide code { font-size: var(--text-xs); white-space: normal; }
 .steps { margin: var(--density-section) 0; padding-inline-start: var(--space-5); }
