@@ -406,8 +406,8 @@ function ShellFrame({
               showEmpty={inspectorClaims === 0}
               utility={Boolean(connection)}
               publishUtilityTarget={setConnectionTarget}
-              navigation={connection && <><button type="button" className="desk-icon-button" aria-label={connection.provider ? msg('All connections') : msg('Back to assistant')}
-                onClick={() => connection.provider ? setConnection({ ...connection, provider: undefined }) : closeConnection()}><IconChevronLeft /></button>{connection.provider && <ProviderIcon provider={connection.provider} />}</>}
+              navigation={connection && <>{(connection.provider || packPage) && <button type="button" className="desk-icon-button" aria-label={connection.provider ? msg('All connections') : msg('Back to assistant')}
+                onClick={() => connection.provider ? setConnection({ ...connection, provider: undefined }) : closeConnection()}><IconChevronLeft /></button>}{connection.provider && <ProviderIcon provider={connection.provider} />}</>}
             />
 
             {connection && <ConnectionsPane key={connection.provider ?? 'catalog'} request={connection} target={connectionTarget}
