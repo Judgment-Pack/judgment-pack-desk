@@ -208,3 +208,6 @@ export function IconCopy() {
     </Glyph>
   )
 }
+
+export function IconSend() { return <Glyph><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" /></Glyph> }
+export function IconStop() { return <Glyph><rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor" stroke="none" /></Glyph> }

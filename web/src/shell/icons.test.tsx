@@ -40,7 +40,9 @@ describe('the desk icons', () => {
       'IconPaperclip',
       'IconPencil',
       'IconPlus',
-      'IconPreview'
+      'IconPreview',
+      'IconSend',
+      'IconStop'
     ])
   })
 

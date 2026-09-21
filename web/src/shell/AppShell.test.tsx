@@ -20,6 +20,8 @@ import type { PackDocument } from '../mcp/types'
 import { AdminView } from '../routes/AdminView'
 import { PacksPane } from '../packs/PacksPane'
 import { PackDocumentView } from '../packs/document/PackDocumentView'
+import { useDetailsSlot, useDetailsPortal } from './DetailsSlot'
+import { ReadingDetails, MessageDetails, useReadingDetails } from '../chat/ReadingDetails'
 import { AppShell } from './AppShell'
 import { forgetConsole } from './consoleLog'
 import { forgetAuthorBridge } from './authorBridge'
@@ -386,4 +388,30 @@ describe('the shell frame', () => {
       expect(JSON.parse(stored!)).toEqual({ v: 2, console: { open: true, tab: 'connection' } })
     })
   })
+})
+
+function ReaderFixture() {
+  const read = useReadingDetails('chat-one')
+  const details = useDetailsSlot()
+  const portal = useDetailsPortal(<p>Selected pack rule</p>)
+  return <>{portal}<textarea aria-label="Unsent message" defaultValue="Keep my draft" />
+    <button onClick={event => read(<MessageDetails text="Explain the attachment" input="EXACT CONTEXT" />, event.currentTarget)}>View message details</button>
+    <button onClick={event => read(<ReadingDetails title="Source reader"><p>Source excerpt</p></ReadingDetails>, event.currentTarget)}>Open source text</button>
+    <button onClick={details.reveal}>Inspect rule</button></>
+}
+it('replaces one detail reader, preserves draft text, restores focus and can return to pack details', async () => {
+  renderShell(<AppShell><ReaderFixture /></AppShell>)
+  const message = screen.getByRole('button', { name: 'View message details' })
+  fireEvent.click(message)
+  expect(await screen.findByRole('region', { name: 'Message details' })).toBeTruthy()
+  expect(screen.queryByText('Selected pack rule')?.closest('[hidden]')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Open source text' }))
+  expect(await screen.findByRole('region', { name: 'Source reader' })).toBeTruthy()
+  expect(screen.queryByRole('region', { name: 'Message details' })).toBeNull()
+  expect((screen.getByLabelText('Unsent message') as HTMLTextAreaElement).value).toBe('Keep my draft')
+  fireEvent.keyDown(screen.getByRole('region', { name: 'Source reader' }), { key: 'Escape' })
+  expect(screen.queryByRole('region', { name: 'Source reader' })).toBeNull()
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Open source text' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Inspect rule' }))
+  expect(screen.getByText('Selected pack rule').closest('[hidden]')).toBeNull()
 })

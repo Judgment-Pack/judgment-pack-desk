@@ -19,13 +19,15 @@ it('keeps a verified citation open when more response text arrives', async () =>
   const text = `The source says [line one](attachment:${reference.id}/${reference.digest}/page/1).`
   const view = (response: string) => <DeskConfigFixture value={config}><MessageRenderer text={response} documents={documents} /></DeskConfigFixture>
   const rendered = render(view(text))
-  const citation = screen.getByRole('button', { name: 'line one' })
+  const citation = screen.getByRole('button', { name: 'View source 1: notes.txt, page 1' })
   fireEvent.click(citation)
-  await screen.findByText('Receipt verified. This confirms byte lineage, not accuracy or authority.')
+  await screen.findByText('Quote found on page 1')
   rendered.rerender(view(`${text}\n\nMore of the answer.`))
-  expect(screen.getByRole('button', { name: 'line one' })).toBe(citation)
+  expect(screen.getByRole('button', { name: 'View source 1: notes.txt, page 1' })).toBe(citation)
   expect(screen.getByRole('dialog', { name: 'notes.txt' })).toBeTruthy()
-  expect(screen.getByText('Extraction complete.')).toBeTruthy()
+  expect(screen.getByText('Quote found on page 1')).toBeTruthy()
+  expect(screen.queryByRole('checkbox')).toBeNull()
+  expect(screen.getByText('line one', { selector: 'mark' })).toBeTruthy()
   expect(mocks.load).toHaveBeenCalledTimes(1)
 })
 

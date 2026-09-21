@@ -993,3 +993,5 @@
   .desk-console-actions { display: flex; gap: var(--space-1); padding-inline-end: var(--space-2); }
   .desk-details-slot { min-width: 0; }
 }
+
+.desk-console-body[data-reading] { overflow: hidden; min-height: 0; padding: 0; }

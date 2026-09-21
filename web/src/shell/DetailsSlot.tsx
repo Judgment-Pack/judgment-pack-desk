@@ -6,6 +6,8 @@ export interface DetailsSlot {
   open: boolean
   claim: () => () => void
   reveal: () => void
+  inspect?: (content: ReactNode, opener: HTMLElement | null) => () => void
+  dismissInspection?: () => void
 }
 export const DetailsSlotContext = createContext<DetailsSlot>({ target: null, open: false, claim: () => () => {}, reveal: () => {} })
 export const useDetailsSlot = () => useContext(DetailsSlotContext)

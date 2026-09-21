@@ -5,6 +5,7 @@ import type { RunState } from '../research/run'
 import { statusLine } from '../research/ui/Conversation'
 import { TOOL_LABELS } from './toolLabels'
 import styles from './ChatWorkspace.module.css'
+import { Disclosure } from '../ui/Disclosure'
 
 export interface WorkItem { id: string; name: string; status: 'working' | 'complete' | 'failed' | 'interrupted' }
 /** Pair by invocation identity, never by a tool name (parallel calls may repeat). */
@@ -34,11 +35,11 @@ export function WorkSummary({ state }: { state: RunState }) {
   const critique = [...state.events].reverse().find(event => event.type === 'critique')
   if (!rows.length && !notices.length && !critique) return null
   const failures = rows.filter(row => row.status === 'failed').length
-  return <details className={styles.work}><summary>{rows.length ? msg("Work · {{count}} steps", { count: rows.length }) + (failures ? msg(" · {{count}} failed", { count: failures }) : "") : msg("Assistant notice")}</summary>
+  return <Disclosure className={styles.work} title={<>{rows.length ? msg("Work · {{count}} steps", { count: rows.length }) + (failures ? msg(" · {{count}} failed", { count: failures }) : "") : msg("Assistant notice")}</>}>
     {rows.length > 0 && <ol>{rows.map(row => <li key={row.id}><span>{TOOL_LABELS[row.name] ?? row.name}</span><span>{row.status === 'complete' ? msg("Done") : row.status === 'failed' ? msg("Failed") : row.status === 'interrupted' ? msg("Interrupted") : msg("Working…")}</span></li>)}</ol>}
     {notices.map(notice => <p key={notice}>{systemMessage(notice)}</p>)}
     {critique && <p><Message text={"Adversarial review: <0/>"} slots={[critique.text]} /></p>}
-  </details>
+  </Disclosure>
 }
 
 /** One visible status. Completed replies have no persistent status furniture. */

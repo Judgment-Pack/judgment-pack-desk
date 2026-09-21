@@ -3,7 +3,7 @@ import { sourceMessage } from '../i18n/source'
 import { msg, useLocale } from '../i18n'
 /** Selected details and real activity, beneath the main pane. */
 import { Tabs } from 'radix-ui'
-import { useEffect, useSyncExternalStore } from 'react'
+import { useEffect, useSyncExternalStore, type ReactNode } from 'react'
 import { useMcp } from '../mcp/McpProvider'
 import { consoleSnapshot, recordConnection, subscribeConsole } from './consoleLog'
 import { Button } from '../ui/Button'
@@ -19,6 +19,7 @@ export function BottomPane({
   showDetails = false,
   onDetails,
   publishTarget,
+  inspection,
   onClose,
   onMaximize,
   maximized = false
@@ -26,6 +27,7 @@ export function BottomPane({
   open: boolean
   tab: ConsoleTab
   onTabChange: (tab: ConsoleTab) => void
+  inspection?: ReactNode
   details?: boolean
   showDetails?: boolean
   onDetails?: () => void
@@ -72,8 +74,9 @@ export function BottomPane({
           {onMaximize && <Button variant="quiet" onClick={onMaximize} aria-label={maximized ? msg("Restore panel height") : msg("Expand panel")}>{maximized ? msg("Restore") : msg("Expand")}</Button>}
           {onClose && <Button variant="quiet" onClick={onClose}>{msg("Close")}</Button>}
         </div></div>
-        <Tabs.Content forceMount className="desk-console-body" value="details" hidden={!details || !showDetails}>
-          <div className="desk-details-slot" ref={publishTarget} />
+        <Tabs.Content forceMount className="desk-console-body" data-reading={inspection != null || undefined} value="details" hidden={!details || !showDetails}>
+          <div className="desk-details-slot" ref={publishTarget} hidden={inspection != null} />
+          {inspection}
         </Tabs.Content>
         <Tabs.Content className="desk-console-body" value="connection">
           <LogList entries={connection} empty={msg("Nothing recorded on this connection yet.")} />

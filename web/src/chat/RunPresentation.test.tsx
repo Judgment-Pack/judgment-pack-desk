@@ -31,5 +31,5 @@ it('renders useful Markdown while refusing active HTML, remote images and unsafe
   expect(screen.getByRole('link', { name: 'Source' }).getAttribute('rel')).toContain('noopener')
   expect(rendered.container.querySelectorAll('img,script')).toHaveLength(0)
   expect(screen.queryByRole('link', { name: 'unsafe' })).toBeNull()
-  expect(screen.getByRole('button', { name: 'Copy Code' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Copy json' })).toBeTruthy()
 })
