@@ -1,0 +1,4 @@
+.caption { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-1); color: var(--ink-soft); font-size: var(--text-xs); line-height: 1.65; }
+.time { display: inline-flex; align-items: center; padding: 0; border: none; background: transparent; color: inherit; font: inherit; line-height: inherit; text-align: start; border-radius: var(--radius-sm); cursor: pointer; font-variant-numeric: tabular-nums; }
+.time:hover { color: var(--ink); }
+.time:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

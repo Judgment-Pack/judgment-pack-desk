@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, type ReactNode } from 'react'
 import { msg, useLocale } from '../i18n'
 import { useDetailsSlot } from '../shell/DetailsSlot'
+import { messageSpeaker, useMessageClock } from './MessageTime'
+import { formatMessageTime } from './timestamps'
+import type { Turn } from '../research/run'
 import { CodeBlock } from '../ui/CodeBlock'
 import { Disclosure } from '../ui/Disclosure'
 import styles from './ReadingDetails.module.css'
@@ -28,11 +31,17 @@ export function ReadingDetails({ title, children, actions }: { title: string; ch
   }}><header className={styles.heading}><h2>{title}</h2>{actions}</header><div className={styles.body}>{children}</div></section>
 }
 
-export function MessageDetails({ text, input }: { text: string; input: string }) {
+export function MessageDetails({ text, input, turn }: { text: string; input?: string; turn?: Turn }) {
   useLocale()
+  const clock = useMessageClock()
+  const formatted = turn && formatMessageTime(turn.at, clock.locale, clock.timeZone)
   return <ReadingDetails title={msg('Message details')}>
+    {turn && <dl className={styles.metadata}><dt>{msg('Sender')}</dt><dd>{messageSpeaker(turn)}</dd>
+      <dt>{turn.role === 'user' && turn.kind !== 'note' ? msg('Sent') : msg('Recorded')}</dt><dd>{formatted ? <time dateTime={turn.at}>{formatted.full}</time> : msg('Time unavailable')}</dd>
+      {turn.interrupted && <><dt>{msg('Status')}</dt><dd>{msg('Response interrupted')}</dd></>}
+    </dl>}
     <p className={styles.text}>{text}</p>
-    <Disclosure title={msg('Exact sent context')}><CodeBlock text={input} label={msg('Sent context')} /></Disclosure>
+    {input !== undefined && <Disclosure title={msg('Exact sent context')}><CodeBlock text={input} label={msg('Sent context')} /></Disclosure>}
   </ReadingDetails>
 }
 
