@@ -82,7 +82,7 @@ it.each(['cancel', 'switch', 'unmount'] as const)('does not attach a Drive resul
  mocked.pick.mockResolvedValue([{fileId:'selected-file',grant:'ab'.repeat(32)}])
  let finish!: (value: unknown) => void
  mocked.drive.mockReturnValue(new Promise(resolve => { finish = resolve }))
- let work!: Promise<void>
+ let work!: ReturnType<ReturnType<typeof useChatAttachments>['attachDrive']>
  await act(async () => { work = s.result.current.attachDrive(); await Promise.resolve() })
  const signal = mocked.drive.mock.calls[0]![2] as AbortSignal
  if (how === 'cancel') act(() => s.result.current.cancel())

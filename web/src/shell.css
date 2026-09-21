@@ -331,6 +331,7 @@
     min-height: 0;
   }
 
+  .desk-inspector-retained { display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; }
   .desk-inspector-slot { position: relative; flex: 1 1 auto; min-height: 0; min-width: 0; overflow: auto; }
 
   .desk-console {
@@ -739,6 +740,9 @@
     font-weight: 600;
   }
 
+  .desk-pane-heading { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+  .desk-pane-heading > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .desk-pane-heading > svg, .desk-pane-heading > img { flex-shrink: 0; }
   .desk-pane-head-slot { flex: 1; min-width: 0; }
   .desk-pane-head-slot:empty { display: none; }
 

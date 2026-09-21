@@ -1,0 +1,115 @@
+import { QueryClientProvider } from '@tanstack/react-query'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { testQueryClient } from '../testing/harness'
+import { ConnectionsPane } from './ConnectionsPane'
+import type { ConnectionProvider } from './client'
+const mocks = vi.hoisted(() => ({ call: vi.fn(), authorize: vi.fn(), status: vi.fn(), source: vi.fn(), mail: vi.fn(), drive: vi.fn(), cancel: vi.fn(), close: vi.fn(), onBusy: vi.fn(), provider: vi.fn(), config: {} as any, snapshot: {} as any }))
+vi.mock('./client', () => ({ connectionCall: mocks.call, authorizeDrive: mocks.authorize, useDriveStatus: mocks.status, CONNECTIONS_KEY: ['gateway-connections'] }))
+vi.mock('../config/DeskConfigProvider', () => ({ useEffectiveConfig: () => mocks.config }))
+vi.mock('../chat/ChatProvider', () => ({ useChats: () => mocks.snapshot }))
+vi.mock('../chat/useChatAttachments', () => ({ useChatAttachments: () => ({ reading: false, isReading: () => false, attachSource: mocks.source, attachGmail: mocks.mail, attachDrive: mocks.drive, cancel: mocks.cancel, error: '' }) }))
+const rows = Array.from({ length: 5 }, (_, i) => ({ id: `note-${i}.md`, title: `Policy ${i}`, url: `obsidian://open?vault=Fixture&file=note-${i}` }))
+let account: string, state: string
+beforeEach(() => {
+ account = 'vault-a'; state = 'connected'
+ mocks.config = { desk: { localGateway: { status: 'ready' } }, config: { research: { documents: { enabled: true }, gateway: { url: 'http://127.0.0.1:8888' } } } }
+ mocks.snapshot = { store: {}, chats: [{ id: 'chat', attachments: [] }], drafts: [], bindings: new Map() }
+ mocks.status.mockImplementation(() => ({ data: { state, account: state === 'connected' ? { id: account, name: 'Fixture' } : undefined } }))
+ mocks.call.mockResolvedValue({ items: rows, selectionContext: 'epoch', more: false })
+ mocks.source.mockResolvedValue(true); mocks.mail.mockResolvedValue(true); mocks.drive.mockResolvedValue(true)
+})
+afterEach(() => { cleanup(); vi.resetAllMocks() })
+const client = () => testQueryClient()
+function view(provider: ConnectionProvider | undefined = 'obsidian', target: HTMLElement = document.body, chatId: string | undefined = 'chat') {
+ return <QueryClientProvider client={client()}><ConnectionsPane request={{ provider, chatId, opener: null }} target={target} onProvider={mocks.provider} onClose={mocks.close} onBusy={mocks.onBusy} /></QueryClientProvider>
+}
+async function choose(index = 0) {
+ fireEvent.click(screen.getByRole('button', { name: 'Search' }))
+ fireEvent.click((await screen.findAllByRole('checkbox'))[index]!)
+}
+it('keeps discovery separate from attachment and attaches selected IDs through the gateway', async () => {
+ mocks.call.mockImplementation(async method => method === 'search' ? { items: rows, selectionContext: 'epoch', more: false } : [{ resourceId: rows[1]!.id, grant: 'a'.repeat(64) }])
+ render(view()); await choose(1)
+ expect(mocks.source).not.toHaveBeenCalled()
+ fireEvent.click(screen.getByRole('button', { name: 'Attach 1 item' }))
+ await waitFor(() => expect(mocks.source).toHaveBeenCalledWith('obsidian', [{ resourceId: 'note-1.md', grant: 'a'.repeat(64) }]))
+ expect(mocks.call).toHaveBeenCalledWith('select', { resourceIds: ['note-1.md'], selectionContext: 'epoch' }, expect.any(AbortSignal), 'obsidian')
+ await waitFor(() => expect(mocks.close).toHaveBeenCalledTimes(1))
+})
+it('accounts for existing attachments and clears stale selections on a failed new search', async () => {
+ mocks.snapshot.chats[0].attachments = [{ id: 'existing' }]
+ render(view()); await choose()
+ const inputs = screen.getAllByRole('checkbox') as HTMLInputElement[]
+ fireEvent.click(inputs[1]!); fireEvent.click(inputs[2]!); expect(inputs[3]!.disabled).toBe(true)
+ fireEvent.click(inputs[1]!); expect(inputs[3]!.disabled).toBe(false)
+ mocks.call.mockRejectedValue(new Error('Fixture failure')); fireEvent.click(screen.getByRole('button', { name: 'Search' }))
+ await screen.findByRole('alert'); expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+ expect((screen.getByRole('button', { name: 'Attach 0 items' }) as HTMLButtonElement).disabled).toBe(true)
+})
+it.each(['leave', 'account', 'configuration'] as const)('cancels a pending selection on %s and ignores a late reply', async change => {
+ let finish!: (result: unknown) => void
+ mocks.call.mockImplementation(method => method === 'search' ? Promise.resolve({ items: rows, selectionContext: 'epoch', more: false }) : new Promise(resolve => { finish = resolve }))
+ const ui = render(view()); await choose(); fireEvent.click(screen.getByRole('button', { name: 'Attach 1 item' }))
+ const signal = mocks.call.mock.calls.find(call => call[0] === 'select')![2] as AbortSignal
+ if (change === 'leave') ui.unmount()
+ else { if (change === 'account') account = 'vault-b'; else mocks.config.config.research.documents.enabled = false; ui.rerender(view()) }
+ expect(signal.aborted).toBe(true)
+ await act(async () => finish([{ resourceId: 'late', grant: 'a'.repeat(64) }]))
+ expect(mocks.source).not.toHaveBeenCalled(); expect(mocks.close).not.toHaveBeenCalled()
+})
+it('retains the typed query and selected sources when the portal moves to a drawer', async () => {
+ const dock = document.createElement('div'), drawer = document.createElement('div'); document.body.append(dock, drawer)
+ const ui = render(view('obsidian', dock)); fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Policy' } }); await choose(2)
+ ui.rerender(view('obsidian', drawer))
+ expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('Policy')
+ expect((screen.getAllByRole('checkbox')[2] as HTMLInputElement).checked).toBe(true)
+ expect(dock.children).toHaveLength(0); ui.unmount(); dock.remove(); drawer.remove()
+})
+it('keeps Gmail page selections bound to the context that returned each message', async () => {
+ mocks.call.mockImplementation(async (method, params) => method === 'select' ? [{ messageId: params.messageIds[0], grant: params.selectionContext }] : params.pageToken ? { messages: [{ id: 'b', subject: 'Second' }], selectionContext: 'page-b' } : { messages: [{ id: 'a', subject: 'First' }], selectionContext: 'page-a', nextPageToken: 'next' })
+ render(view('gmail')); await choose()
+ fireEvent.change(screen.getByRole('textbox'), { target: { value: 'not submitted' } }); fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
+ await screen.findByText('Second'); fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(screen.getByRole('button', { name: 'Attach 2 items' }))
+ await waitFor(() => expect(mocks.mail).toHaveBeenCalledWith([{ messageId: 'a', grant: 'page-a' }, { messageId: 'b', grant: 'page-b' }]))
+ expect(mocks.call).toHaveBeenCalledWith('search', { query: '', pageToken: 'next' }, expect.any(AbortSignal), 'gmail')
+})
+it('does not close when selected content could not be attached', async () => {
+ mocks.call.mockImplementation(async method => method === 'search' ? { items: rows, selectionContext: 'epoch', more: false } : [])
+ mocks.source.mockResolvedValue(undefined); render(view()); await choose(); fireEvent.click(screen.getByRole('button', { name: 'Attach 1 item' }))
+ await waitFor(() => expect(mocks.source).toHaveBeenCalled()); expect(mocks.close).not.toHaveBeenCalled()
+})
+it.each(['google-drive', 'gmail', 'notion'] as const)('starts %s consent only from an explicit action, without attaching', async provider => {
+ state = 'not-connected'; mocks.authorize.mockResolvedValue([]); render(view(provider))
+ expect(mocks.authorize).not.toHaveBeenCalled(); expect(document.querySelector('input[type=file]')).toBeNull()
+ fireEvent.click(screen.getByRole('button', { name: provider === 'notion' ? 'Continue with Notion' : 'Continue with Google' }))
+ await waitFor(() => expect(mocks.authorize).toHaveBeenCalledWith('connect', expect.any(AbortSignal), provider))
+ expect(mocks.source).not.toHaveBeenCalled(); expect(mocks.mail).not.toHaveBeenCalled(); expect(mocks.drive).not.toHaveBeenCalled()
+})
+it('cancels sign-in without closing the pane or attaching a late result', async () => {
+ state = 'not-connected'; let finish!: () => void
+ mocks.authorize.mockReturnValue(new Promise<void>(resolve => { finish = resolve }))
+ render(view('gmail')); fireEvent.click(screen.getByRole('button', { name: 'Continue with Google' }))
+ const signal = mocks.authorize.mock.calls[0]![1] as AbortSignal
+ fireEvent.click(screen.getByRole('button', { name: 'Cancel' })); expect(signal.aborted).toBe(true)
+ await act(async () => finish()); expect(mocks.close).not.toHaveBeenCalled(); expect(mocks.mail).not.toHaveBeenCalled()
+})
+it('sends the vault path only to gateway configuration', async () => {
+ state = 'not-connected'; mocks.call.mockResolvedValue({ saved: true }); render(view())
+ fireEvent.change(screen.getByRole('textbox', { name: 'Vault folder' }), { target: { value: '/synthetic/vault' } })
+ fireEvent.click(screen.getByRole('button', { name: 'Connect vault' }))
+ await waitFor(() => expect(mocks.call).toHaveBeenCalledWith('configure', { path: '/synthetic/vault' }, expect.any(AbortSignal), 'obsidian'))
+ expect(mocks.source).not.toHaveBeenCalled(); expect(mocks.authorize).not.toHaveBeenCalled()
+})
+it('shows Google setup inline with instructions, without opening a modal or consent', () => {
+ state = 'setup-required'; render(view('google-drive'))
+ expect(screen.getByText('Setup instructions').closest('details')?.open).toBe(true)
+ expect(screen.getByRole('button', { name: 'Choose credentials file' })).toBeTruthy()
+ expect(screen.queryByRole('dialog')).toBeNull(); expect(mocks.authorize).not.toHaveBeenCalled()
+})
+it('offers the registered providers in a searchable catalog', () => {
+ render(<QueryClientProvider client={client()}><ConnectionsPane request={{ opener: null }} target={document.body} onProvider={mocks.provider} onClose={mocks.close} onBusy={mocks.onBusy} /></QueryClientProvider>)
+ fireEvent.change(screen.getByRole('textbox', { name: 'Search connections…' }), { target: { value: 'notion' } })
+ expect(screen.queryByRole('button', { name: /Obsidian/ })).toBeNull()
+ fireEvent.click(screen.getByRole('button', { name: /Notion/ })); expect(mocks.provider).toHaveBeenCalledWith('notion')
+})

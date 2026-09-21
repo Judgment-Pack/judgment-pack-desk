@@ -99,6 +99,7 @@ export function useChatAttachments(store: ChatStore | null, chatId: string, disa
       const existing = latest.attachments ?? []
       if (existing.length + pieces.length > LIMIT) throw new Error(sourceMessage('Attach up to four files at a time.'))
       store.update(chatId, { attachments: [...existing, ...pieces] })
+      return true
     } catch (cause) { if (active.current === operation) setError((cause as Error).message) }
     finally { if (active.current === operation) { active.current = null; setReading(false); setProgress('') } }
   }

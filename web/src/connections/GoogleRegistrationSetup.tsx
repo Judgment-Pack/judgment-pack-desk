@@ -11,8 +11,8 @@ import { connectionCall, CONNECTIONS_KEY, useDriveStatus, type ConnectionProvide
 import { googleRegistration } from './registration'
 
 /** Admin owns application setup; the chat dialog owns personal consent. */
-export function GoogleRegistrationSetup({ provider, available, instructionsInitiallyOpen, onClose }: {
-  provider: ConnectionProvider; available: boolean; instructionsInitiallyOpen: boolean; onClose: () => void
+export function GoogleRegistrationSetup({ provider, available, instructionsInitiallyOpen, onClose, contextual = false }: {
+  provider: ConnectionProvider; available: boolean; instructionsInitiallyOpen: boolean; onClose: () => void; contextual?: boolean
 }) {
   useLocale()
   const query = useDriveStatus(available, provider), client = useQueryClient()
@@ -56,14 +56,14 @@ export function GoogleRegistrationSetup({ provider, available, instructionsIniti
     </div>
     <footer className={styles.footer}>
       {busy && <p role="status">{msg('Working…')}</p>}
-      {saved && <p role="status">{msg('Registration saved. Connect your account from the chat attachment menu.')}</p>}
+      {saved && !contextual && <p role="status">{msg('Registration saved. Connect your account from the chat attachment menu.')}</p>}
       {error && <Alert>{error}</Alert>}
       <div className={styles.actions}>
         {editable && <>
           <Button variant="primary" disabled={busy} onClick={() => file.current?.click()}>{msg('Choose credentials file')}</Button>
           <input ref={file} type="file" accept=".json,application/json" hidden onChange={event => void configure(event.target.files?.[0])} />
         </>}
-        <Button variant="quiet" onClick={close}>{busy ? msg('Cancel') : msg('Done')}</Button>
+        {(!contextual || busy) && <Button variant="quiet" onClick={close}>{busy ? msg('Cancel') : msg('Done')}</Button>}
       </div>
     </footer>
   </section>

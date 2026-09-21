@@ -28,6 +28,7 @@ export function connectionError(code: string, provider: ConnectionProvider = 'go
  case 'wrong-account': return sourceMessage('Choose the Google account already connected, or disconnect it first.')
  case 'reconnect-required': case 'connect-required': if (provider === 'gmail') return sourceMessage('Reconnect Gmail to continue.'); return sourceMessage('Reconnect Google Drive to continue.')
  case 'authorization-in-progress': return sourceMessage('Finish or cancel the current Google sign-in first.')
+ case 'selection-expired': return sourceMessage('This selection expired. Search again and reselect your sources.')
  case 'too-many-files': return sourceMessage('Attach up to four files at a time.')
  case 'canceled': return sourceMessage('Canceled.')
  case 'disconnect-first': if (provider === 'gmail') return sourceMessage('Disconnect Gmail before changing its setup.'); return sourceMessage('Disconnect Google Drive before changing its setup.')

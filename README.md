@@ -41,9 +41,18 @@ On Linux and macOS, Desk starts its local gateway automatically and Admin →
 Storage & data shows **Local processing · Ready**. You can upload PDFs without
 entering a gateway URL, generating keys, or running a separate server. An
 existing gateway configuration stays in control. The bundle also includes personal
-Google Drive and Gmail connection and retrieval companions. Choose either provider
-from the chat **+** menu to connect and select files or emails without leaving chat.
-Manage accounts under the user menu → **My connections**.
+Google Drive, Gmail, Notion and Obsidian connection and retrieval companions.
+The chat **+** menu shows connected providers and **More connections**, which opens
+an searchable catalog in the right pane. Connect an account or local vault, choose
+sources, and attach them without leaving chat. **My connections** in the user menu
+opens the same pane. Setup instructions expand in place; Google registration can
+be configured there or in Admin. Closing restores the previous Assistant pane;
+attaching returns focus to the composer and does not send the message.
+
+Notion uses browser sign-in. Obsidian reads Markdown in an existing local vault;
+no plugin or account is required. Both retain verified source snapshots for chat
+citations. See the [connection interface and rollout plan](docs/design/connections.md)
+for the common interaction and the remaining integration backlog.
 
 Here, **local** means the bundled gateway extracts the PDF's embedded text on
 your computer. It does not use an LLM, render page images, or include an OCR
@@ -53,8 +62,9 @@ text is included in the request to your configured AI model; local extraction
 does not imply that the AI conversation runs locally.
 
 GitHub releases and source builds include **no publisher Google registration**.
-To enable Google Drive or Gmail on your own installation, open **Admin → Connections**
-and configure your own Google Desktop app. Then choose the provider from chat's
+To enable Google Drive or Gmail on your own installation, choose the provider in
+**+ → More connections** or open **Admin → Connections**, and configure your own
+Google Desktop app. Then choose the provider from chat's
 **+** menu and select **Continue with Google** to authorize your account.
 App registration and account tokens stay with the local gateway, outside chats
 and project settings. Configuring the app does not grant account access.

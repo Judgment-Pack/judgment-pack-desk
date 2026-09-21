@@ -1,3 +1,7 @@
+import { useMemo, useRef, useState } from 'react'
+import { useConnectionsPane } from '../connections/ConnectionPaneContext'
+import { useInspectorPortal } from './InspectorSlot'
+import { useInspectorPresentation } from './InspectorPresentation'
 /**
  * The frame, as a page: its landmarks, its defaults, and the one property the
  * whole arrangement rests on — that `<main>` never remounts.
@@ -414,4 +418,30 @@ it('replaces one detail reader, preserves draft text, restores focus and can ret
   expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Open source text' }))
   fireEvent.click(screen.getByRole('button', { name: 'Inspect rule' }))
   expect(screen.getByText('Selected pack rule').closest('[hidden]')).toBeNull()
+})
+
+function ConnectionOverlayFixture() {
+ const connections = useConnectionsPane(), opener = useRef<HTMLButtonElement>(null)
+ const [open, setOpen] = useState(true), [width, setWidth] = useState(360)
+ const presentation = useMemo(() => ({ title: 'Assistant', available: true, open, onOpenChange: setOpen, width, onResize: setWidth, onReset: () => setWidth(360), minimumMainWidth: 0, maximumWidth: 800 }), [open, width])
+ useInspectorPresentation(presentation)
+ const assistant = useInspectorPortal(<label>Assistant draft<input defaultValue="Unsent question" /></label>)
+ return <><label>Main draft<input defaultValue="Unsent policy" /></label><button ref={opener} onClick={() => connections.open({ opener: opener.current })}>Open connections</button>{assistant}</>
+}
+it('overlays connections without replacing the Assistant portal or its route presentation', async () => {
+ renderShell(<AppShell><ConnectionOverlayFixture /></AppShell>)
+ const assistant = await screen.findByRole('textbox', { name: 'Assistant draft' }), main = screen.getByRole('textbox', { name: 'Main draft' })
+ fireEvent.change(assistant, { target: { value: 'Keep this question' } }); fireEvent.change(main, { target: { value: 'Keep this policy' } })
+ const opener = screen.getByRole('button', { name: 'Open connections' })
+ fireEvent.click(opener)
+ expect(screen.queryByRole('textbox', { name: 'Assistant draft' })).toBeNull()
+ expect(assistant.isConnected).toBe(true)
+ expect(screen.getByRole('textbox', { name: 'Main draft' })).toBe(main)
+ expect(screen.queryByRole('dialog')).toBeNull()
+ fireEvent.click(screen.getByRole('button', { name: 'Close connections' }))
+ expect(screen.getByRole('textbox', { name: 'Assistant draft' })).toBe(assistant)
+ expect((assistant as HTMLInputElement).value).toBe('Keep this question')
+ expect((main as HTMLInputElement).value).toBe('Keep this policy')
+ expect(screen.getByRole('complementary', { name: 'Assistant' })).toBeTruthy()
+ await waitFor(() => expect(document.activeElement).toBe(opener))
 })

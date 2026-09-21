@@ -1,8 +1,9 @@
 # Notion and Obsidian connections
 
-The chat attachment menu and My connections now include Notion and Obsidian.
-Both use the same search/select dialog and preserve the current chat and unsent
-composer text. Search results are not attached until selected. Up to four selected
+Notion and Obsidian join Google Drive and Gmail in the shared Connections pane.
+The chat attachment menu offers connected providers and More connections; the user
+menu opens the same catalog through My connections. Setup, sign-in and selection
+stay in one contextual pane, preserving the current chat and unsent composer text. Search results are not attached until selected. Up to four selected
 notes become independently verified, retained snapshots with citations and links
 back to the source. Removing a connection never rewrites previous chat evidence.
 
@@ -38,7 +39,9 @@ capability grants and are not inferred from attaching a note.
 
 ## Candidate validation
 
-- Full web suite: 3,757 tests passed, one skipped; final changed paths: 26 tests passed.
+- Final shared-pane web suite: 3,756 passed, one skipped across 169 files.
+  Focused shell/pane/style checks passed 497 tests, including draft retention,
+  cancellation, account changes, portal moves and paginated selection contexts.
 - Desk backend suite and local companion/pin checks passed.
 - All 926 existing mutation needles still match. Locale checks cover all 12 locales
   with no missing translations or placeholder errors; the UI copy audit passed.
@@ -54,6 +57,8 @@ capability grants and are not inferred from attaching a note.
   corpus passed. The new connection, attachment and HTTP MCP packages also pass
   the race detector. The optional full adapter race run hit existing wall-clock
   assertions in the process/PDF test packages; the ordinary required suite passed.
+
+See [the shared connection design and full backlog](../design/connections.md).
 
 Gateway material-decision review and a live Notion OAuth acceptance test remain
 outstanding. The candidate has not replaced the user's installed Desk.

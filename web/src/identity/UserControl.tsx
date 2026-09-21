@@ -47,7 +47,7 @@ import { LanguageMenu } from '../i18n/LanguageMenu'
  */
 import { Avatar, DropdownMenu } from 'radix-ui'
 import { useRef, useState } from 'react'
-import { PersonalConnections } from '../connections/PersonalConnections'
+import { useConnectionsPane } from '../connections/ConnectionPaneContext'
 import { Link } from 'react-router-dom'
 import {
   DENSITIES,
@@ -159,7 +159,7 @@ export function monogram(name: string): string {
 
 export function UserControl() {
   useLocale()
-  const [connections, setConnections] = useState(false)
+  const connections = useConnectionsPane()
   const opener = useRef<HTMLButtonElement>(null)
   const { provider, displayName } = useIdentity()
   // Where a provider is configured and carries no label, the name falls back
@@ -194,7 +194,7 @@ export function UserControl() {
           </DropdownMenu.Label>
           <DropdownMenu.Label className="desk-menu-note">{msg(SESSION_SENTENCE)}</DropdownMenu.Label>
           <DropdownMenu.Separator className="desk-rule-h" />
-          <DropdownMenu.Item className="desk-menu-item" onSelect={() => requestAnimationFrame(() => setConnections(true))}>{msg("My connections")}</DropdownMenu.Item>
+          <DropdownMenu.Item className="desk-menu-item" onSelect={() => requestAnimationFrame(() => connections.open({ opener: opener.current }))}>{msg("My connections")}</DropdownMenu.Item>
           <LanguageMenu />
           <AppearanceItems />
           <DropdownMenu.Separator className="desk-rule-h" />
@@ -211,7 +211,6 @@ export function UserControl() {
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
-    {connections && <PersonalConnections open={connections} onOpenChange={setConnections} openerRef={opener} />}
     </>
   )
 }
