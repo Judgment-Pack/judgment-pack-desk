@@ -11,8 +11,9 @@ import { Alert } from '../ui/Alert'
 import { Disclosure } from '../ui/Disclosure'
 import { GoogleRegistrationSetup } from './GoogleRegistrationSetup'
 import { ProviderIcon } from './ProviderIcon'
-import { CONNECTION_PROVIDERS, providerName, providerDescription } from './registry'
-import { authorizeDrive, connectionCall, CONNECTIONS_KEY, useDriveStatus, type ConnectionProvider, type ConnectionStatus, type MailSearch, type MailSelection, type SourceSearch, type SourceSelection } from './client'
+import { providerName, providerDescription } from './registry'
+import { authorizeDrive, connectionCall, CONNECTIONS_KEY, type ConnectionProvider, type ConnectionStatus, type MailSearch, type MailSelection, type SourceSearch, type SourceSelection } from './client'
+import { useConnections } from './catalog'
 import type { ConnectionPaneRequest } from './ConnectionPaneContext'
 import styles from './ConnectionsPane.module.css'
 
@@ -27,11 +28,10 @@ export function ConnectionsPane({ request, target, onProvider, onClose, onBusy, 
  useLocale()
  const effective = useEffectiveConfig(), client = useQueryClient()
  const available = effective.desk?.localGateway?.status === 'ready' && !effective.desk?.decoded?.values?.research?.gateway
- const drive = useDriveStatus(available), gmail = useDriveStatus(available, 'gmail')
- const notion = useDriveStatus(available, 'notion'), obsidian = useDriveStatus(available, 'obsidian')
- const statuses = { 'google-drive': drive, gmail, notion, obsidian }
- const provider = request.provider, status = provider ? statuses[provider] : undefined
- const state = !available || status?.isError ? 'unavailable' : status?.data?.state
+ const catalog = useConnections(available)
+ const provider = request.provider, entry = catalog.entries.find(item => item.descriptor.id === provider)
+ const status = entry?.status, descriptor = entry?.descriptor
+ const state = !available || catalog.isError || (!catalog.loading && !entry && Boolean(provider)) || status?.isError ? 'unavailable' : status?.data?.state
  const { store, chats, drafts, bindings } = useChats()
  const chat = [...chats, ...drafts].find(item => item.id === request.chatId)
  const running = Boolean(request.chatId && bindings.get(request.chatId)?.run?.running)
@@ -45,7 +45,7 @@ export function ConnectionsPane({ request, target, onProvider, onClose, onBusy, 
  const [error, setError] = useState(''), [notice, setNotice] = useState('')
  const active = useRef<AbortController | null>(null)
  const panel = useRef<HTMLElement>(null)
- const context = JSON.stringify([available, effective.config.research.gateway, effective.config.research.documents])
+ const context = JSON.stringify([available, descriptor, effective.config.research.gateway, effective.config.research.documents])
  const cancel = () => { active.current?.abort(); active.current = null; setBusy(false) }
  useEffect(() => {
   setRows(null); setSelected([]); setNextPage(undefined); setError(''); setBusy(false)
@@ -84,7 +84,7 @@ export function ConnectionsPane({ request, target, onProvider, onClose, onBusy, 
   finally { finish(task) }
  }
  async function search(pageToken?: string) {
-  if (!provider || provider === 'google-drive') return
+  if (!provider || !descriptor || descriptor.selection === 'browser-picker' || descriptor.queryRequired && !(pageToken ? submitted : query).trim()) return
   const task = begin(); if (!task) return
   setRows(null); setNextPage(undefined)
   if (!pageToken) { setSelected([]); setSubmitted(query) }
@@ -127,30 +127,30 @@ export function ConnectionsPane({ request, target, onProvider, onClose, onBusy, 
  // Opening a source picker is already a browse gesture. Notion requires a
  // query; Gmail and a local vault can show their first bounded page directly.
  useEffect(() => {
-  if (canAttach && state === 'connected' && (provider === 'gmail' || provider === 'obsidian')) void search()
+  if (canAttach && state === 'connected' && descriptor && descriptor.selection !== 'browser-picker' && !descriptor.queryRequired) void search()
  }, [canAttach, state, provider, status?.data?.account?.id, context])
  const content = !provider ? <section ref={panel} tabIndex={-1} className={styles.pane} aria-label={msg('Connections')}>
   <div className={styles.body}>
    <Input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder={msg('Search connections…')} aria-label={msg('Search connections…')} />
    {(['connected', 'available'] as const).map(group => {
-    const providers = CONNECTION_PROVIDERS.filter(item => (statuses[item].data?.state === 'connected' && available) === (group === 'connected') && providerName(item).toLocaleLowerCase().includes(query.toLocaleLowerCase()))
+    const providers = catalog.entries.filter(item => (item.status.data?.state === 'connected' && !item.status.isError) === (group === 'connected') && providerName(item.descriptor.id).toLocaleLowerCase().includes(query.toLocaleLowerCase()))
     return providers.length ? <section key={group} aria-label={group === 'connected' ? msg('Connected') : msg('Available')}>
      <h2 className={styles.group}>{group === 'connected' ? msg('Connected') : msg('Available')}</h2>
-     {providers.map(item => <button key={item} type="button" className={styles.provider} onClick={() => onProvider(item)}>
+     {providers.map(({ descriptor: { id: item }, status: itemStatus }) => <button key={item} type="button" className={styles.provider} onClick={() => onProvider(item)}>
       <ProviderIcon provider={item} /><span className={styles.copy}><span>{providerName(item)}</span><span className={styles.description}>{providerDescription(item)}</span></span>
-      <span className={styles.hint}>{statusLabel(available && !statuses[item].isError ? statuses[item].data?.state : 'unavailable')}</span>
+      <span className={styles.hint}>{statusLabel(!itemStatus.isError ? itemStatus.data?.state : 'unavailable')}</span>
      </button>)}
     </section> : null
    })}
-   {!CONNECTION_PROVIDERS.some(item => providerName(item).toLocaleLowerCase().includes(query.toLocaleLowerCase())) && <p>{msg('No connections found.')}</p>}
+   {catalog.loading ? <p role="status">{msg('Loading…')}</p> : !available ? <p>{msg('Local processing is unavailable. Check the details in Admin → Storage & data.')}</p> : catalog.isError ? <><Alert>{msg('Connections could not be loaded.')}</Alert><Button onClick={() => void catalog.refetch()}>{msg('Retry')}</Button></> : !catalog.entries.some(item => providerName(item.descriptor.id).toLocaleLowerCase().includes(query.toLocaleLowerCase())) && <p>{msg('No connections found.')}</p>}
   </div>
- </section> : state === 'setup-required' && (provider === 'google-drive' || provider === 'gmail') ?
+ </section> : state === 'setup-required' && descriptor?.registration === 'google-desktop' && (provider === 'google-drive' || provider === 'gmail') ?
   <GoogleRegistrationSetup provider={provider} available={available} instructionsInitiallyOpen onClose={onClose} contextual /> :
  <section ref={panel} tabIndex={-1} className={styles.pane} aria-label={providerName(provider)}>
   <div className={styles.body}>
    <p className={styles.scope}>{status?.data?.account?.email || status?.data?.account?.name || msg('Personal · This computer')}</p>
    <p>{provider === 'obsidian' ? msg('Search and attach notes from a local vault. Your notes stay unchanged.') : provider === 'notion' ? msg('Search and attach Notion pages. Desk cannot change your workspace.') : provider === 'gmail' ? msg('Choose up to four emails. Message text is attached; mail attachments are excluded.') : msg('Choose the files you want to attach to this chat.')}</p>
-   {unavailable ? <p>{state === 'blocked' ? msg('Managed by your organization') : msg('Local processing is unavailable. Check the details in Admin → Storage & data.')}</p> : state === undefined ? <p role="status">{msg('Loading…')}</p> : state !== 'connected' ? <>
+   {unavailable ? <p>{state === 'blocked' ? msg('Managed by your organization') : !available ? msg('Local processing is unavailable. Check the details in Admin → Storage & data.') : msg('This connection is unavailable in the current gateway.')}</p> : state === undefined ? <p role="status">{msg('Loading…')}</p> : state !== 'connected' ? <>
     {provider === 'obsidian' && <label>{msg('Vault folder')}<Input value={vault} onChange={event => setVault(event.target.value)} autoComplete="off" spellCheck={false} disabled={working} placeholder={msg('Absolute path to your Obsidian vault')} /></label>}
     <Disclosure title={msg('How it works')}>
      <p>{provider === 'obsidian' ? msg('In Obsidian, open Manage vaults and copy the folder path shown below your vault name. Paste that full path here. No plugin is needed.') : msg('Connect your account, then choose the sources to attach. Connecting does not add anything to your chat.')}</p>
@@ -159,7 +159,7 @@ export function ConnectionsPane({ request, target, onProvider, onClose, onBusy, 
     {!canAttach ? <p>{msg('Enable document processing in Admin → Storage & data before attaching sources.')}</p> : provider !== 'google-drive' && <>
      <form className={styles.search} onSubmit={event => { event.preventDefault(); void search() }}>
       <Input value={query} onChange={event => setQuery(event.target.value)} disabled={working} maxLength={1024} aria-label={msg('Search {{provider}}', { provider: providerName(provider) })} placeholder={msg('Search {{provider}}', { provider: providerName(provider) })} />
-      <Button type="submit" disabled={working || provider === 'notion' && !query.trim()}>{msg('Search')}</Button>
+      <Button type="submit" disabled={working || descriptor?.queryRequired && !query.trim()}>{msg('Search')}</Button>
      </form>
      {rows?.map(row => <label key={row.id} className={styles.row}>
       <input type="checkbox" checked={selected.some(item => item.id === row.id)} disabled={working || !selected.some(item => item.id === row.id) && selected.length >= capacity} onChange={event => setSelected(items => event.target.checked ? [...items, row] : items.filter(item => item.id !== row.id))} />
@@ -179,7 +179,7 @@ export function ConnectionsPane({ request, target, onProvider, onClose, onBusy, 
    {notice && <p role="status">{notice}</p>}
    {working && <p role="status">{upload.reading ? upload.progress : state === 'connected' || provider === 'obsidian' ? msg('Loading…') : provider === 'notion' ? msg('Continue in the Notion sign-in window.') : msg('Continue in the Google sign-in window.')}</p>}
    <div className={styles.actions}>
-    {working ? <Button variant="quiet" onClick={() => { cancel(); if (upload.reading) upload.cancel() }}>{msg('Cancel')}</Button> : unavailable ? <Button onClick={() => void status?.refetch()} disabled={!available}>{msg('Retry')}</Button> : state === 'not-connected' ?
+    {working ? <Button variant="quiet" onClick={() => { cancel(); if (upload.reading) upload.cancel() }}>{msg('Cancel')}</Button> : unavailable ? <Button onClick={() => { void catalog.refetch(); void status?.refetch() }} disabled={!available}>{msg('Retry')}</Button> : state === 'not-connected' ?
      <Button variant="primary" disabled={provider === 'obsidian' && !vault.trim()} onClick={() => void connect()}>{provider === 'obsidian' ? msg('Connect vault') : provider === 'notion' ? msg('Continue with Notion') : msg('Continue with Google')}</Button> : state === 'connected' && request.chatId &&
      <Button variant="primary" disabled={!canAttach || capacity === 0 || provider !== 'google-drive' && (selected.length === 0 || selected.length > capacity)} onClick={() => { if (provider === 'google-drive') void upload.attachDrive().then(done => { if (done) onAttached() }); else void attach() }}>{provider === 'google-drive' ? msg('Choose files') : msg('Attach {{count}} items', { count: selected.length })}</Button>}
    </div>

@@ -23,7 +23,7 @@ import { TextArea } from '../ui/TextArea'
 import { AttachmentList } from './AttachmentList'
 import { useConnectionsPane, useConnectionChatLock } from '../connections/ConnectionPaneContext'
 import type { ConnectionProvider } from '../connections/client'
-import { useDriveStatus } from '../connections/client'
+import { useConnections } from '../connections/catalog'
 import { AttachmentMenu } from './AttachmentMenu'
 import { TEXT_ATTACHMENT_ACCEPT, useChatAttachments } from './useChatAttachments'
 import { ConfigureAssistant } from './ConfigureAssistant'
@@ -75,9 +75,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
   const effective = useEffectiveConfig()
   const research = effective.config.research
   const localDrive = effective.desk?.localGateway?.status === 'ready' && !effective.desk?.decoded?.values?.research?.gateway
-  const drive = useDriveStatus(localDrive)
-  const gmail = useDriveStatus(localDrive, 'gmail')
-  const notion = useDriveStatus(localDrive, 'notion'), obsidian = useDriveStatus(localDrive, 'obsidian')
+  const connectionCatalog = useConnections(localDrive)
   const connections = useConnectionsPane()
   useConnectionChatLock(chat.id, locked)
   const connectionBusy = connections.busyChatId === chat.id
@@ -195,10 +193,8 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
         <div className={styles.composerTools}>
           <input ref={fileInput} hidden type="file" tabIndex={-1} accept={TEXT_ATTACHMENT_ACCEPT} multiple onChange={event => { void upload.attach([...(event.target.files ?? [])]); event.target.value = '' }} />
           <AttachmentMenu triggerRef={attachmentButton} disabled={running || locked || upload.reading || connectionBusy} onUpload={() => fileInput.current?.click()}
-            connectedOnly onMore={() => openConnection()}
-            sources={(['notion', 'obsidian'] as const).map(provider => ({ provider, state: localDrive && !(provider === 'notion' ? notion : obsidian).isError ? (provider === 'notion' ? notion : obsidian).data?.state : 'unavailable', onSelect: () => openConnection(provider) }))}
-            gmailState={localDrive && !gmail.isError ? gmail.data?.state : 'unavailable'} onGmail={() => openConnection('gmail')}
-            driveState={localDrive && !drive.isError ? drive.data?.state : 'unavailable'} onDrive={() => openConnection('google-drive')} />
+            onMore={() => openConnection()}
+            connections={connectionCatalog.entries.filter(item => !item.status.isError && item.status.data?.state === 'connected').map(item => ({ provider: item.descriptor.id, selection: item.descriptor.selection, onSelect: () => openConnection(item.descriptor.id) }))} />
           <div className={styles.pick}><VisuallyHidden.Root asChild><label htmlFor={`${id}-mode`}>{msg("Task tools")}</label></VisuallyHidden.Root><Select quiet id={`${id}-mode`} value={chat.mode} disabled={running || locked || (chat.mode === 'research' && state.candidates.length > 0)} onValueChange={mode => store?.update(chat.id, { mode: mode as Chat['mode'] })} options={[{ value: 'draft', label: msg("Chat") }, { value: 'research', label: msg("Research") }]} /></div>
           {(slot.endpoint?.models.length ?? 0) > 0 && <div className={styles.model}><VisuallyHidden.Root asChild><label htmlFor={`${id}-model`}>{msg("Model")}</label></VisuallyHidden.Root><Select quiet id={`${id}-model`} value={binding?.model} disabled={running || locked} onValueChange={model => store?.update(chat.id, { model })} options={slot.endpoint!.models.map(model => ({ value: model, label: model }))} /></div>}
           <AssistantOptions thinking={slot.thinking} tools={slot.endpoint?.tools ?? []} mode={chat.mode} review={chat.adversarialReview === true} onReview={value => store?.update(chat.id, { adversarialReview: value })} disabled={running || locked} notice={[...state.events].reverse().find(event => event.type === "thinking_unavailable")?.detail} />

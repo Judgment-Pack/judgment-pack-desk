@@ -42,7 +42,10 @@ export async function connectionCall<T>(method: string, params: object = {}, sig
  return result
 }
 export function useDriveStatus(enabled = true, provider: ConnectionProvider = 'google-drive') {
- return useQuery({ queryKey: provider === 'google-drive' ? CONNECTIONS_KEY : [...CONNECTIONS_KEY, provider], queryFn: () => connectionCall<ConnectionStatus>('status', {}, undefined, provider), enabled, retry: false, staleTime: 30_000 })
+ return useQuery(connectionStatusOptions(provider, enabled))
+}
+export function connectionStatusOptions(provider: ConnectionProvider, enabled = true) {
+ return { queryKey: provider === 'google-drive' ? CONNECTIONS_KEY : [...CONNECTIONS_KEY, provider], queryFn: ({ signal }: { signal: AbortSignal }) => connectionCall<ConnectionStatus>('status', {}, signal, provider), enabled, retry: false, staleTime: 30_000 }
 }
 /** Open synchronously from the user's click. Only a Google authorization URL
  * reaches this tab; credentials and the callback are gateway-owned. */
