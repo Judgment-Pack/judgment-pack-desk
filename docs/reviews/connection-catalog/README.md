@@ -4,7 +4,7 @@ The companion advertises implemented connection protocols. Desk intersects these
 with supported UI handlers, then requests account status only for compatible
 providers. This follows the shared-pane candidate in Desk #122; its reviewed
 commit is unchanged. The gateway parent is #143 and the catalog commit is
-6129d634200fbcb971f0e90093b8a363f813fe71.
+7732913e65366a8e7def1cb09535cc8f92ffbc5b.
 
 The composer, connection catalog and provider detail pane use the same capability
 result. Losing a capability cancels pending selection and discards late results.
@@ -29,7 +29,7 @@ This is not an arbitrary extension loader or account-wide assistant search grant
   parameter refusal and no implicit local fallback for an external gateway.
 - Gateway adapter tests/vet and core regression tests passed. Its new tests prove
   discovery neither loads publisher registration nor needs/creates account state;
-  unsupported control methods are refused before custody access.
+  unsupported control methods retain operator-disable enforcement.
 - Isolated Chromium run used a temporary project, private state directory and
   synthetic Obsidian vault. No model requests, personal sources or live OAuth.
   Browser-discovered catalog included exactly the four implemented providers.
