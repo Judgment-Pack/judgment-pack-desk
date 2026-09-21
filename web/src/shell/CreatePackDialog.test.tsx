@@ -1331,6 +1331,8 @@ describe('creating a reviewed research handover', () => {
     await reviewHandedDraft()
     fireEvent.click(createButton())
     await waitFor(() => expect(router.state.location.pathname).toBe('/packs/reviewed-pack'))
+    // Router state changes before React commits the destination and unmounts Create.
+    await screen.findByText('the pack page')
     await act(async () => { await router.navigate(-1) })
     expect(await screen.findByRole('radiogroup', { name: 'Creation method' })).toBeTruthy()
     expect(screen.queryByLabelText('Reviewed draft')).toBeNull()
@@ -1357,6 +1359,8 @@ describe('creating a reviewed research handover', () => {
     await reviewHandedDraft()
     fireEvent.click(createButton())
     await waitFor(() => expect(router.state.location.pathname).toBe('/packs/reviewed-pack'))
+    // Router state changes before React commits the destination and unmounts Create.
+    await screen.findByText('the pack page')
     await act(async () => { await router.navigate(-1) })
     const entry = router.state.location
     expect(`${entry.pathname}${entry.search}${entry.hash}`).toBe('/create-pack?via=research#draft')
