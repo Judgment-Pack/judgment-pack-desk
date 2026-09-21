@@ -50,7 +50,7 @@ func TestConnectionCatalogProcessBoundsAndValidation(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestDeskCatalogHelper$")
 		cmd.Env = append(os.Environ(), "DESK_CATALOG_HELPER="+example.mode)
-		raw, err := runConnectionCatalog(cmd)
+		raw, err := runConnectionCatalog(ctx, cmd)
 		cancel()
 		if (err == nil) != example.ok || !example.ok && raw != nil {
 			t.Fatalf("catalog result mismatch for %.60s: %s %v", example.mode, raw, err)

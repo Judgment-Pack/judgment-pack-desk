@@ -38,10 +38,10 @@ func readConnectionCatalog(ctx context.Context, bundle string) (json.RawMessage,
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, filepath.Join(bundle, executableName("gateway-connections")), "--catalog")
-	return runConnectionCatalog(cmd)
+	return runConnectionCatalog(ctx, cmd)
 }
 
-func runConnectionCatalog(cmd *exec.Cmd) (json.RawMessage, error) {
+func runConnectionCatalog(ctx context.Context, cmd *exec.Cmd) (json.RawMessage, error) {
 	cmd.Stdin = nil
 	cmd.Stderr = io.Discard
 	cmd.WaitDelay = time.Second
@@ -49,13 +49,18 @@ func runConnectionCatalog(cmd *exec.Cmd) (json.RawMessage, error) {
 	if err != nil || cmd.Start() != nil {
 		return nil, errConnectionCatalog
 	}
+	// Closing our read end also bounds cancellation if a descendant ever
+	// inherits stdout. Killing just the direct child would not close that FD.
+	stop := context.AfterFunc(ctx, func() { _ = pipe.Close() })
+	defer stop()
+	defer pipe.Close()
 	raw, err := io.ReadAll(io.LimitReader(pipe, connectionCatalogLimit+1))
 	if err != nil || len(raw) > connectionCatalogLimit {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
 		return nil, errConnectionCatalog
 	}
-	if cmd.Wait() != nil {
+	if cmd.Wait() != nil || ctx.Err() != nil {
 		return nil, errConnectionCatalog
 	}
 	var catalog connectionCatalog
