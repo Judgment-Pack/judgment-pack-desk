@@ -21,8 +21,9 @@ import { InspectorPresentationContext, type InspectorPresentation } from './Insp
  * `!important` on every property.
  */
 import { TooltipProvider } from '../ui/Tooltip'
-import { useMatch } from 'react-router-dom'
+import { useLocation, useMatch } from 'react-router-dom'
 import {
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -117,14 +118,30 @@ function ShellFrame({
   const shell = useShellState()
   const [detailsTarget, setDetailsTarget] = useState<HTMLDivElement | null>(null)
   const [detailsClaims, setDetailsClaims] = useState(0)
+  const [inspection, setInspection] = useState<{ owner: number; content: ReactNode } | null>(null)
+  const inspectionNumber = useRef(0)
+  const detailOpener = useRef<HTMLElement | null>(null)
+  const route = useLocation()
+  useEffect(() => { setInspection(null) }, [route.pathname, route.search])
+  const inspect = useCallback((content: ReactNode, opener: HTMLElement | null) => {
+    const owner = ++inspectionNumber.current
+    detailOpener.current = opener
+    setInspection({ owner, content }); setShowDetails(true); shell.openConsole()
+    return () => setInspection(current => current?.owner === owner ? null : current)
+  }, [shell.openConsole])
+  const dismissInspection = useCallback(() => {
+    if (detailOpener.current?.isConnected) detailOpener.current.focus()
+    setInspection(null)
+    if (shell.console.open) shell.toggleConsole()
+  }, [shell.console.open, shell.toggleConsole])
   const [showDetails, setShowDetails] = useState(false)
   const [bottomMaximized, setBottomMaximized] = useState(false)
   const detailsClaim = useCallback(() => {
     setDetailsClaims(count => count + 1)
     return () => setDetailsClaims(count => Math.max(0, count - 1))
   }, [])
-  const revealDetails = useCallback(() => { setShowDetails(true); shell.openConsole() }, [shell.openConsole])
-  const detailsSlot = useMemo<DetailsSlot>(() => ({ target: detailsTarget, open: shell.console.open && showDetails, claim: detailsClaim, reveal: revealDetails }), [detailsTarget, shell.console.open, showDetails, detailsClaim, revealDetails])
+  const revealDetails = useCallback(() => { setInspection(null); setShowDetails(true); shell.openConsole() }, [shell.openConsole])
+  const detailsSlot = useMemo<DetailsSlot>(() => ({ target: detailsTarget, open: shell.console.open && showDetails, claim: detailsClaim, reveal: revealDetails, inspect, dismissInspection }), [detailsTarget, shell.console.open, showDetails, detailsClaim, revealDetails, inspect, dismissInspection])
   const [presentation, setPresentation] = useState<InspectorPresentation | null>(null)
   const registerPresentation = useCallback((next: InspectorPresentation) => {
     setPresentation(next)
@@ -360,11 +377,12 @@ function ShellFrame({
               open={shell.console.open}
               tab={shell.console.tab}
               onTabChange={tab => { setShowDetails(false); shell.setConsoleTab(tab) }}
-              details={detailsClaims > 0}
+              details={detailsClaims > 0 || inspection !== null}
+              inspection={inspection ? <Fragment key={inspection.owner}>{inspection.content}</Fragment> : undefined}
               showDetails={showDetails}
               onDetails={() => setShowDetails(true)}
               publishTarget={setDetailsTarget}
-              onClose={() => { consoleOpenerRef.current?.focus(); shell.toggleConsole() }}
+              onClose={() => { if (inspection) dismissInspection(); else { consoleOpenerRef.current?.focus(); shell.toggleConsole() } }}
               maximized={bottomMaximized}
               onMaximize={() => setBottomMaximized(value => !value)}
             />

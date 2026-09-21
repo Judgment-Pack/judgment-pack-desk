@@ -1,0 +1,6 @@
+.reader { display: flex; flex-direction: column; min-width: 0; height: 100%; min-height: 0; font-size: var(--text-body); }
+.reader:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.heading { flex: 0 0 auto; display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--border); }
+.heading h2 { min-width: 0; flex: 1; margin: 0; font-size: var(--text-body); font-weight: 600; overflow-wrap: anywhere; }
+.body { position: relative; flex: 1; min-height: 0; overflow: auto; padding: var(--space-3) var(--space-4); overscroll-behavior: contain; }
+.text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; margin-top: 0; }

@@ -33,6 +33,7 @@ import { Select as RadixSelect } from 'radix-ui'
 import { useMemo } from 'react'
 import { IconChevronDown } from '../shell/icons'
 import styles from './Select.module.css'
+import { OverflowTooltip } from './Tooltip'
 
 export interface SelectOption {
   value: string
@@ -46,6 +47,7 @@ export function Select({
   options,
   placeholder,
   disabled,
+  quiet = false,
   ...described
 }: {
   id: string
@@ -54,6 +56,7 @@ export function Select({
   options: readonly SelectOption[]
   placeholder?: string
   disabled?: boolean
+  quiet?: boolean
   'aria-describedby'?: string
   'aria-invalid'?: boolean
 }) {
@@ -72,12 +75,12 @@ export function Select({
         if (offered.has(next)) onValueChange(next)
       }}
     >
-      <RadixSelect.Trigger id={id} className={styles.trigger} {...described}>
-        <RadixSelect.Value placeholder={placeholder} />
+      <OverflowTooltip selector="[data-value]" content={options.find(option => option.value === value)?.label}><RadixSelect.Trigger id={id} className={styles.trigger} data-quiet={quiet || undefined} {...described}>
+        <RadixSelect.Value data-value placeholder={placeholder} />
         <RadixSelect.Icon className={styles.icon}>
           <IconChevronDown />
         </RadixSelect.Icon>
-      </RadixSelect.Trigger>
+      </RadixSelect.Trigger></OverflowTooltip>
       <RadixSelect.Portal>
         <RadixSelect.Content className={styles.content} position="popper" sideOffset={4}>
           <RadixSelect.Viewport className={styles.viewport}>

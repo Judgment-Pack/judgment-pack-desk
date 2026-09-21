@@ -12,6 +12,8 @@ conversations. No private documents or live model requests were needed.
 | Reading space changes when scrolling upward | Jump to latest occupies layout space; baseline viewport movement was 14 px. | Float the control over the transcript. Follow content growth only while the reader is at the bottom. |
 | Composer height lags behind wrapping or pane resizing | Textarea measurement happens after paint and only when text changes. | Measure before paint; remeasure on width/window changes and cap height so long drafts scroll inside the input. |
 
+The citation presentation was refined in [Chat source reading and message details](chat-source-reading.md): numbered markers and a read-only excerpt replace the underlined quotation trigger. The streaming, typing and scroll stability requirements above still apply.
+
 ## Reference patterns
 
 [Linear's design refresh](https://linear.app/now/behind-the-latest-design-refresh)

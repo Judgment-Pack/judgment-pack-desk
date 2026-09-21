@@ -1,3 +1,4 @@
+import { quoteRange } from './quote'
 import { connectionError, type DriveSelection, type MailSelection } from '../connections/client'
 import { sourceMessage } from '../i18n/source'
 import { answer, deskFetch } from '../files/client'
@@ -116,8 +117,7 @@ export function documentContext(document: VerifiedDocument, ref: DocumentReferen
 }
 export function matchesPageQuote(document: VerifiedDocument, page: number, quote: string): boolean {
   const text = usablePages(document.record).find(p => p.number === page)?.text
-  const fold = (s: string) => s.replace(/\s+/gu, ' ').trim()
-  return Boolean(text && quote.trim() && (text.includes(quote.trim()) || fold(text).includes(fold(quote))))
+  return Boolean(text && quoteRange(text, quote))
 }
 
 /** The original and extraction come from the same signed Drive acquisition. */
