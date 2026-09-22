@@ -3288,7 +3288,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
 
   # 12. The pane's empty state used to stand beside every published panel.
   mutate web 'the empty state stands beside a published panel' web/src/shell/RightPane.tsx \
-    '      {showEmpty && <p className="desk-pane-empty">{msg(EMPTY_STATE)}</p>}' \
+    '      {showEmpty && !utility && <p className="desk-pane-empty">{msg(EMPTY_STATE)}</p>}' \
     '      <p className="desk-pane-empty">{msg(EMPTY_STATE)}</p>'
 
   # 14. jsdom lays nothing out, so a measured height of zero must render every

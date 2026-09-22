@@ -17,7 +17,7 @@ it.each(['disabled', 'external'] as const)('cancels pending selection when docum
  let finish!: (value: unknown) => void
  mocked.pick.mockReturnValue(new Promise(resolve => { finish = resolve }))
  mocked.ingest.mockRejectedValue(new Error('review stopped before network'))
- let work!: Promise<void>
+ let work!: ReturnType<ReturnType<typeof useChatAttachments>['attachDrive']>
  act(() => { work = hook.result.current.attachDrive() })
  const signal = mocked.pick.mock.calls[0]![1] as AbortSignal
  const changed = mode === 'disabled' ? {...config,documents:{...config.documents,enabled:false}} : {...config,gateway:{...config.gateway,url:'https://external.example',authority:'gateway:external'}}

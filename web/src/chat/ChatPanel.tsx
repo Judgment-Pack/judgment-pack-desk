@@ -21,9 +21,8 @@ import { Button } from '../ui/Button'
 import { Select } from '../ui/Select'
 import { TextArea } from '../ui/TextArea'
 import { AttachmentList } from './AttachmentList'
-import { GoogleConnectionDialog } from '../connections/GoogleConnectionDialog'
+import { useConnectionsPane, useConnectionChatLock } from '../connections/ConnectionPaneContext'
 import type { ConnectionProvider } from '../connections/client'
-import { GmailPicker } from '../connections/GmailPicker'
 import { useDriveStatus } from '../connections/client'
 import { AttachmentMenu } from './AttachmentMenu'
 import { TEXT_ATTACHMENT_ACCEPT, useChatAttachments } from './useChatAttachments'
@@ -78,11 +77,12 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
   const localDrive = effective.desk?.localGateway?.status === 'ready' && !effective.desk?.decoded?.values?.research?.gateway
   const drive = useDriveStatus(localDrive)
   const gmail = useDriveStatus(localDrive, 'gmail')
-  const [gmailOpen, setGmailOpen] = useState(false)
-  const [connectProvider, setConnectProvider] = useState<ConnectionProvider | null>(null)
+  const notion = useDriveStatus(localDrive, 'notion'), obsidian = useDriveStatus(localDrive, 'obsidian')
+  const connections = useConnectionsPane()
+  useConnectionChatLock(chat.id, locked)
+  const connectionBusy = connections.busyChatId === chat.id
   const attachmentButton = useRef<HTMLButtonElement>(null)
-  const attachmentContext = JSON.stringify([localDrive, research.gateway, research.documents])
-  useEffect(() => { setGmailOpen(false); setConnectProvider(null) }, [chat.id, locked, running, attachmentContext])
+  const openConnection = (provider?: ConnectionProvider) => requestAnimationFrame(() => connections.open({ provider, chatId: chat.id, opener: attachmentButton.current }))
   const upload = useChatAttachments(store, chat.id, locked || running, research)
   const unsubmitted = drafts.some(draft => draft.id === chat.id)
   const otherRun = store?.running && store.running !== chat.id ? store.running : undefined
@@ -93,7 +93,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
   const attachments = chat.attachments ?? []
   const hasMessage = Boolean(chat.composer.trim() || attachments.length)
   const send = async () => {
-    if (!store || !hasMessage || locked || running || upload.isReading()) return
+    if (!store || !hasMessage || locked || running || connectionBusy || upload.isReading()) return
     if (needsConfig) return
     const text = chat.composer.trim() || msg('Please review the attached files.')
     const display = text + (attachments.length ? '\n\n' + msg('Attached: {{files}}', { files: attachments.map(file => file.name).join(', ') }) : '')
@@ -151,7 +151,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
   }, [resizeInput])
   const toolbar = <ChatToolbar chat={chat} history={history} historyRef={historyButton} onHistory={() => setHistory(true)} onBack={backToChat}
     onNew={() => { if (!store?.canCreate) return; const next = store.startChat(chat.pack, chat.mode, true); setHistory(false); openNewChat(navigate, next, location) }} />
-  return <section className={styles.chat} data-landing={landing && empty || undefined} aria-label={msg("Assistant chat")}>
+  return <section className={styles.chat} data-chat-id={chat.id} data-landing={landing && empty || undefined} aria-label={msg("Assistant chat")}>
     {toolbarTarget ? createPortal(toolbar, toolbarTarget) : placement === 'main' && headerTarget === undefined ? <header className={styles.chatHeader}>{toolbar}</header> : null}
     <div className={styles.conversation}>
     <div className={styles.transcript}>
@@ -194,32 +194,22 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
           onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (!otherRun && !running && (!blocked || needsConfig)) send() } }} />
         <div className={styles.composerTools}>
           <input ref={fileInput} hidden type="file" tabIndex={-1} accept={TEXT_ATTACHMENT_ACCEPT} multiple onChange={event => { void upload.attach([...(event.target.files ?? [])]); event.target.value = '' }} />
-          <AttachmentMenu triggerRef={attachmentButton} disabled={running || locked || upload.reading} onUpload={() => fileInput.current?.click()}
-            gmailState={localDrive && !gmail.isError ? gmail.data?.state : 'unavailable'}
-            onGmail={() => {
-              if (!research.documents?.enabled) { void upload.attachGmail([]); return }
-              requestAnimationFrame(() => gmail.data?.state === 'connected' ? setGmailOpen(true) : setConnectProvider('gmail'))
-            }}
-            driveState={localDrive && !drive.isError ? drive.data?.state : 'unavailable'}
-            onDrive={() => {
-              if (!research.documents?.enabled || drive.data?.state === 'connected') { void upload.attachDrive(); return }
-              requestAnimationFrame(() => setConnectProvider('google-drive'))
-            }} />
+          <AttachmentMenu triggerRef={attachmentButton} disabled={running || locked || upload.reading || connectionBusy} onUpload={() => fileInput.current?.click()}
+            connectedOnly onMore={() => openConnection()}
+            sources={(['notion', 'obsidian'] as const).map(provider => ({ provider, state: localDrive && !(provider === 'notion' ? notion : obsidian).isError ? (provider === 'notion' ? notion : obsidian).data?.state : 'unavailable', onSelect: () => openConnection(provider) }))}
+            gmailState={localDrive && !gmail.isError ? gmail.data?.state : 'unavailable'} onGmail={() => openConnection('gmail')}
+            driveState={localDrive && !drive.isError ? drive.data?.state : 'unavailable'} onDrive={() => openConnection('google-drive')} />
           <div className={styles.pick}><VisuallyHidden.Root asChild><label htmlFor={`${id}-mode`}>{msg("Task tools")}</label></VisuallyHidden.Root><Select quiet id={`${id}-mode`} value={chat.mode} disabled={running || locked || (chat.mode === 'research' && state.candidates.length > 0)} onValueChange={mode => store?.update(chat.id, { mode: mode as Chat['mode'] })} options={[{ value: 'draft', label: msg("Chat") }, { value: 'research', label: msg("Research") }]} /></div>
           {(slot.endpoint?.models.length ?? 0) > 0 && <div className={styles.model}><VisuallyHidden.Root asChild><label htmlFor={`${id}-model`}>{msg("Model")}</label></VisuallyHidden.Root><Select quiet id={`${id}-model`} value={binding?.model} disabled={running || locked} onValueChange={model => store?.update(chat.id, { model })} options={slot.endpoint!.models.map(model => ({ value: model, label: model }))} /></div>}
           <AssistantOptions thinking={slot.thinking} tools={slot.endpoint?.tools ?? []} mode={chat.mode} review={chat.adversarialReview === true} onReview={value => store?.update(chat.id, { adversarialReview: value })} disabled={running || locked} notice={[...state.events].reverse().find(event => event.type === "thinking_unavailable")?.detail} />
           <span className={styles.grow} />
-          <Tooltip content={running ? msg("Stop") : msg("Send")}><Button className={styles.send} variant={running ? "secondary" : "primary"} aria-label={running ? msg("Stop") : msg("Send")} disabled={!running && (needsConfig || !hasMessage || !binding || Boolean(otherRun) || locked || upload.reading || Boolean(blocked && !needsConfig))} onClick={running ? () => binding?.run?.stop() : send}>{running ? <IconStop /> : <IconSend />}</Button></Tooltip>
+          <Tooltip content={running ? msg("Stop") : msg("Send")}><Button className={styles.send} variant={running ? "secondary" : "primary"} aria-label={running ? msg("Stop") : msg("Send")} disabled={!running && (needsConfig || !hasMessage || !binding || Boolean(otherRun) || locked || upload.reading || connectionBusy || Boolean(blocked && !needsConfig))} onClick={running ? () => binding?.run?.stop() : send}>{running ? <IconStop /> : <IconSend />}</Button></Tooltip>
         </div>
       </div>
       {upload.error && <p className={styles.caption} role="alert">{systemMessage(upload.error)}</p>}
       <p className={styles.footnote}>{running ? msg("Working in this window. You can switch chats; keep this window open.") : unsubmitted ? msg("Send a message to start a chat.") : null}</p>
     </div>
     </div>
-    {connectProvider && <GoogleConnectionDialog key={`${chat.id}:${attachmentContext}:${connectProvider}`} provider={connectProvider}
-      available={localDrive} open={!locked && !running} onOpenChange={() => setConnectProvider(null)} openerRef={attachmentButton}
-      onSelected={selections => { if (connectProvider === 'gmail') setGmailOpen(true); else void upload.attachDrive(selections) }} />}
-    <GmailPicker key={`${chat.id}:${attachmentContext}`} open={gmailOpen && localDrive && !locked && !running} onOpenChange={setGmailOpen} state={gmail.data?.state} accountId={gmail.data?.account?.id} openerRef={attachmentButton} onSelect={items => void upload.attachGmail(items)} />
     <ConfigureAssistant open={configure} onOpenChange={setConfigure} openerRef={configureButton} />
   </section>
 }

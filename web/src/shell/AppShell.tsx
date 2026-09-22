@@ -20,6 +20,11 @@ import { InspectorPresentationContext, type InspectorPresentation } from './Insp
  * absolute as inline styles, which a class rule cannot beat without
  * `!important` on every property.
  */
+import { ConnectionPaneContext, type ConnectionPaneRequest } from '../connections/ConnectionPaneContext'
+import { ConnectionsPane } from '../connections/ConnectionsPane'
+import { ProviderIcon } from '../connections/ProviderIcon'
+import { providerName } from '../connections/registry'
+import { IconChevronLeft } from './icons'
 import { TooltipProvider } from '../ui/Tooltip'
 import { useLocation, useMatch } from 'react-router-dom'
 import {
@@ -142,11 +147,43 @@ function ShellFrame({
   }, [])
   const revealDetails = useCallback(() => { setInspection(null); setShowDetails(true); shell.openConsole() }, [shell.openConsole])
   const detailsSlot = useMemo<DetailsSlot>(() => ({ target: detailsTarget, open: shell.console.open && showDetails, claim: detailsClaim, reveal: revealDetails, inspect, dismissInspection }), [detailsTarget, shell.console.open, showDetails, detailsClaim, revealDetails, inspect, dismissInspection])
-  const [presentation, setPresentation] = useState<InspectorPresentation | null>(null)
+  const [routePresentation, setPresentation] = useState<InspectorPresentation | null>(null)
   const registerPresentation = useCallback((next: InspectorPresentation) => {
     setPresentation(next)
     return () => setPresentation(current => current === next ? null : current)
   }, [])
+  // A utility overlays the route presentation; closing it restores the exact
+  // route state rather than registering another last-writer-wins portal.
+  const [connection, setConnection] = useState<ConnectionPaneRequest | null>(null)
+  const [connectionWidth, setConnectionWidth] = useState(480)
+  const [connectionTarget, setConnectionTarget] = useState<HTMLDivElement | null>(null)
+  const [busyChatId, setBusyChatId] = useState<string | undefined>()
+  const connectionOpener = useRef<HTMLElement | null>(null)
+  const connectionChat = useRef<string | undefined>(undefined)
+  const closeConnection = useCallback((focusComposer = false) => {
+    setConnection(null); setBusyChatId(undefined)
+    requestAnimationFrame(() => {
+      if (focusComposer && connectionChat.current) {
+        const panel = [...document.querySelectorAll<HTMLElement>('[data-chat-id]')].find(node => node.dataset.chatId === connectionChat.current)
+        const composer = panel?.querySelector<HTMLTextAreaElement>('textarea')
+        if (composer) { composer.focus({ preventScroll: true }); return }
+      }
+      if (connectionOpener.current?.isConnected) connectionOpener.current.focus({ preventScroll: true })
+    })
+  }, [])
+  useEffect(() => { setConnection(null); setBusyChatId(undefined) }, [route.key])
+  const openConnection = useCallback((request: ConnectionPaneRequest) => {
+    connectionOpener.current = request.opener
+    connectionChat.current = request.chatId
+    setConnection(request)
+  }, [])
+  const connectionContext = useMemo(() => ({ open: openConnection, busyChatId, activeChatId: connection?.chatId, close: closeConnection }), [openConnection, busyChatId, connection?.chatId, closeConnection])
+  const presentation: InspectorPresentation | null = connection ? {
+    title: connection.provider ? providerName(connection.provider) : msg('Connections'),
+    available: true, open: true, onOpenChange: open => { if (!open) closeConnection() },
+    width: connectionWidth, onResize: setConnectionWidth, onReset: () => setConnectionWidth(480),
+    minimumMainWidth: 560, maximumWidth: 560, closeOnEscape: true, restoreFocusRef: connectionOpener
+  } : routePresentation
   const inspectorOpen = presentation?.open ?? shell.inspector.open
   const openInspector = useCallback(() => {
     if (presentation) presentation.onOpenChange(true)
@@ -271,7 +308,7 @@ function ShellFrame({
   }, [presentation?.closeOnEscape, inspectorOpen, closeInspector])
   const slot = useMemo<InspectorSlot>(
     () => ({
-      open: inspectorOpen,
+      open: connection ? (routePresentation?.open ?? shell.inspector.open) : inspectorOpen,
       size: inspectorOpen ? (inspectorBox?.width ?? 0) : 0,
       tab: inspectorTab,
       setTab: setInspectorTab,
@@ -282,7 +319,7 @@ function ShellFrame({
       close: closeInspector,
       requestWorkingWidth
     }),
-    [inspectorOpen, inspectorBox, inspectorTab, inspectorTarget, inspectorHeaderTarget, claim, reveal, closeInspector, requestWorkingWidth]
+    [connection, routePresentation, shell.inspector.open, inspectorOpen, inspectorBox, inspectorTab, inspectorTarget, inspectorHeaderTarget, claim, reveal, closeInspector, requestWorkingWidth]
   )
 
   useEffect(
@@ -312,6 +349,7 @@ function ShellFrame({
   } as CSSProperties
 
   return (
+    <ConnectionPaneContext.Provider value={connectionContext}>
     <InspectorPresentationContext.Provider value={registerPresentation}>
     <InspectorSlotContext.Provider value={slot}>
     <DetailsSlotContext.Provider value={detailsSlot}>
@@ -366,7 +404,14 @@ function ShellFrame({
               openerRef={inspectorOpenerRef}
               restoreFocusRef={presentation?.restoreFocusRef ?? inspectionGestureRef}
               showEmpty={inspectorClaims === 0}
+              utility={Boolean(connection)}
+              publishUtilityTarget={setConnectionTarget}
+              navigation={connection && <>{(connection.provider || packPage) && <button type="button" className="desk-icon-button" aria-label={connection.provider ? msg('All connections') : msg('Back to assistant')}
+                onClick={() => connection.provider ? setConnection({ ...connection, provider: undefined }) : closeConnection()}><IconChevronLeft /></button>}{connection.provider && <ProviderIcon provider={connection.provider} />}</>}
             />
+
+            {connection && <ConnectionsPane key={connection.provider ?? 'catalog'} request={connection} target={connectionTarget}
+              onProvider={provider => setConnection({ ...connection, provider })} onClose={closeConnection} onAttached={() => closeConnection(true)} onBusy={setBusyChatId} />}
 
             {shell.console.open && <PaneDivider orientation="horizontal" label={msg("Details and activity")} controls="desk-console"
               value={bottomHeight} min={bottomMin} max={bottomMax}
@@ -394,5 +439,6 @@ function ShellFrame({
     </DetailsSlotContext.Provider>
     </InspectorSlotContext.Provider>
     </InspectorPresentationContext.Provider>
+    </ConnectionPaneContext.Provider>
   )
 }

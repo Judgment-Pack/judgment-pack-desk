@@ -50,6 +50,9 @@ export function RightPane({
   openerRef,
   restoreFocusRef,
   showEmpty,
+  utility,
+  publishUtilityTarget,
+  navigation,
   children
 }: {
   title?: string
@@ -87,14 +90,17 @@ export function RightPane({
   restoreFocusRef?: RefObject<HTMLElement | null>
   /** False while a route is publishing into the slot. */
   showEmpty: boolean
+  utility?: boolean
+  publishUtilityTarget?: (target: HTMLDivElement | null) => void
+  navigation?: ReactNode
   children?: ReactNode
 }) {
   useLocale()
   const body = (
     <>
       <div className="desk-pane-head">
-        <span>{title}</span>
-        <div ref={publishHeaderTarget} className="desk-pane-head-slot" />
+        <div className="desk-pane-heading">{navigation}<span>{title}</span></div>
+        <div ref={publishHeaderTarget} className="desk-pane-head-slot" hidden={utility} />
         <Tooltip content={msg("Close {{value0}}", { value0: title })} openOnFocus={false} side="left"><button
           type="button"
           className="desk-icon-button"
@@ -104,10 +110,13 @@ export function RightPane({
           <IconClose />
         </button></Tooltip>
       </div>
-      {showEmpty && <p className="desk-pane-empty">{msg(EMPTY_STATE)}</p>}
+      {showEmpty && !utility && <p className="desk-pane-empty">{msg(EMPTY_STATE)}</p>}
       {/* Always mounted, so a route's portal target never disappears under
           it — including while nothing is published. */}
+      <div className="desk-inspector-retained" hidden={utility}>
       <div ref={publishTarget} className="desk-inspector-slot" />
+      </div>
+      <div ref={publishUtilityTarget} className="desk-inspector-slot" hidden={!utility} />
       {children}
     </>
   )

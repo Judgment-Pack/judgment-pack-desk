@@ -14,5 +14,6 @@
   "{{count}} diagnostics": "{{count}} diagnostic",
   "The {{layers}} layers did not run.": "The {{layers}} layer did not run.",
   "Running the runtime’s {{prompt}} prompt over {{count}} diagnostics.": "Running the runtime’s {{prompt}} prompt over {{count}} diagnostic.",
-  "{{count}} characters": "{{count}} character"
+  "{{count}} characters": "{{count}} character",
+  "Attach {{count}} items": "Attach {{count}} item"
 }

@@ -24,3 +24,14 @@ it('routes Gmail controls to their provider namespace',async () => {
  await connectionCall('search',{query:'subject:policy'},undefined,'gmail')
  expect(fetch).toHaveBeenCalledWith('/api/connections/gmail/search',expect.objectContaining({body:JSON.stringify({query:'subject:policy'})}))
 })
+
+// Protocol classifications survive localization so the UI can offer recovery.
+it.each(['wrong-account','blocked-by-policy','authorization-in-progress','too-many-selections','file-too-large','source-changed','source-incomplete','registration-expired'])('gives actionable Notion copy for %s', async code => {
+ const {connectionError}=await import('./client')
+ expect(connectionError(code,'notion')).not.toContain('Try again.')
+})
+it('preserves reconnect classification independently from display text',async()=>{
+ const {connectionFailure}=await import('./client')
+ const error=connectionFailure(new Error('adapter failed: reconnect-required'),'notion')
+ expect(error.reconnectRequired).toBe(true);expect(error.code).toBe('reconnect-required')
+})
