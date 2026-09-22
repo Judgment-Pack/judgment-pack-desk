@@ -122,7 +122,7 @@ def main():
                 unknown = request(desk + '/api/research/gateway/acquire', {'session':str(uuid.uuid4()), 'source':'drive', 'arguments':{'grant':'ab'*32,'fileId':'not-selected'}}, headers={'X-JPack-Local-Documents':'1'})
             except urllib.error.HTTPError as error:
                 detail = error.read().decode()
-                assert json.loads(detail)['error'] == 'source failed: selection-expired\n', detail
+                assert json.loads(detail)['error'] == 'source failed: selection-expired', detail
             else:
                 raise AssertionError('unknown Drive grant returned a result: '+json.dumps(unknown))
             assert request(desk + '/api/connections/gmail/status', {})['state'] == 'setup-required', 'Drive setup leaked into Gmail'
@@ -142,7 +142,7 @@ def main():
                 request(desk + '/api/research/gateway/acquire', {'session':str(uuid.uuid4()),'source':'gmail','arguments':{'grant':'ab'*32,'messageId':'abc1'}}, headers={'X-JPack-Local-Documents':'1'})
             except urllib.error.HTTPError as error:
                 detail = error.read().decode()
-                assert json.loads(detail)['error'] == 'source failed: selection-expired\n', detail
+                assert json.loads(detail)['error'] == 'source failed: selection-expired', detail
             else: raise AssertionError('unknown Gmail grant returned a result')
             for path in (config / 'jpack-desk/gateway-connections').rglob('*'):
                 if path.is_file(): assert path.stat().st_mode & 0o777 == 0o600

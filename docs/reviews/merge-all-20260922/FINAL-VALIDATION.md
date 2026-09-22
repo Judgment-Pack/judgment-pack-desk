@@ -19,3 +19,9 @@ Concurrent upstream `dafcb07` is retained. Independent review approves `ab047f4`
 Gateway merged main: `a986bef5ca9a52349938750ffc2e9e0086f7f108`. Its tree is byte-identical to the final reviewed/tested candidate. Desk pins this exact revision.
 
 The local runtime is built from CI-passing main `d891b056133fea952ceb2c39e38a2ee16fee24ee`, labeled `0.22.0-dev+d891b05`; all 47 JPS 0.2.0-draft conformance cases pass. Desk MCP listing/evaluation relay tests pass with a synthetic project declaring explicit applicability. The initial generic graph fixture produced a legitimate empty trace, so it was adapted only in `/tmp` to exercise the trace transport. No production test or runtime contract was weakened. The user's `.vscode/tasks.json` diff remains unchanged.
+
+## Final Desk bundle checks
+
+The full Desk Go suite passes with the newly built runtime (51.698s); web build and component CI pass. The complete local bundle builds with all seven gateway companions, no publisher Google registration, and manifest SHA-256 `670299fca536131851977955951a27ccaf2f815118f915ef68564ed88b5e3a8f`.
+
+The real lifecycle smoke initially expected a trailing newline in two source-error strings. Gateway #147 intentionally trims these diagnostics; the exact assertions now expect `source failed: selection-expired`. The corrected smoke passes Drive/Gmail isolation, OAuth URL/cancellation, grant refusal, private file modes, signed PDF extraction, processing disablement, graceful and crash shutdown, stable signing identity, and external/invalid configuration behavior. No production compatibility workaround was added.
