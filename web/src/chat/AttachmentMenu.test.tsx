@@ -19,3 +19,20 @@ it('keeps shortcut positions stable while open and disables a removed connection
  expect(await screen.findByRole('menuitem', { name: /Gmail/ })).toBeTruthy()
  expect(screen.queryByRole('menuitem', { name: /Obsidian/ })).toBeNull()
 })
+
+it('offers Add link only when the caller advertises the shipped URL reader', async () => {
+ const link=vi.fn();const ui=render(<AttachmentMenu disabled={false} onUpload={vi.fn()} onLink={link} />)
+ fireEvent.keyDown(screen.getByRole('button',{name:'Attach files'}),{key:'Enter'})
+ fireEvent.click(await screen.findByRole('menuitem',{name:/Add link/}));expect(link).toHaveBeenCalledOnce()
+ ui.rerender(<AttachmentMenu disabled={false} onUpload={vi.fn()} />)
+ fireEvent.keyDown(screen.getByRole('button',{name:'Attach files'}),{key:'Enter'})
+ await screen.findByRole('menuitem',{name:'Upload files'});expect(screen.queryByRole('menuitem',{name:/Add link/})).toBeNull()
+})
+
+it('keeps an open menu stable when URL retrieval becomes unavailable', async () => {
+ const ui=render(<AttachmentMenu disabled={false} onUpload={vi.fn()} onLink={vi.fn()} />)
+ fireEvent.keyDown(screen.getByRole('button',{name:'Attach files'}),{key:'Enter'})
+ await screen.findByRole('menuitem',{name:/Add link/})
+ ui.rerender(<AttachmentMenu disabled={false} onUpload={vi.fn()} />)
+ expect(screen.getByRole('menuitem',{name:/Add link/}).getAttribute('aria-disabled')).toBe('true')
+})

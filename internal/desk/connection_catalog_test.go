@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const catalogFixture = `{"version":1,"providers":[{"id":"obsidian","auth":"local-folder","registration":"none","selection":"source-search","queryRequired":false,"operations":["status","configure","search","select","disconnect"]}]}`
+const catalogFixture = `{"version":2,"sources":[],"providers":[{"id":"obsidian","auth":"local-folder","registration":"none","selection":"source-search","queryRequired":false,"operations":["status","configure","search","select","disconnect"]}]}`
 
 func TestDeskCatalogHelper(t *testing.T) {
 	mode := os.Getenv("DESK_CATALOG_HELPER")
@@ -39,11 +39,11 @@ func TestConnectionCatalogProcessBoundsAndValidation(t *testing.T) {
 		mode string
 		ok   bool
 	}{
-		{catalogFixture, true}, {`{"version":1,"providers":[]}`, true},
+		{catalogFixture, true}, {`{"version":2,"sources":[],"providers":[]}`, true},
 		{"huge", false}, {"hang", false}, {"fail", false}, {"null", false},
-		{strings.Replace(catalogFixture, `"version":1`, `"version":2`, 1), false},
-		{strings.Replace(catalogFixture, `"version":1`, `"version":2,"version":1`, 1), false},
-		{strings.Replace(catalogFixture, `"version":1`, `"Version":1`, 1), false},
+		{strings.Replace(catalogFixture, `"version":2`, `"version":1`, 1), false},
+		{strings.Replace(catalogFixture, `"version":2`, `"version":1,"version":2`, 1), false},
+		{strings.Replace(catalogFixture, `"version":2`, `"Version":2`, 1), false},
 		{strings.Replace(catalogFixture, `"auth":"local-folder"`, `"auth":"oauth","auth":"local-folder"`, 1), false},
 		{strings.Replace(catalogFixture, `"queryRequired":false,`, ``, 1), false},
 		{strings.Replace(catalogFixture, `"obsidian"`, `"../../bin/sh"`, 1), false},

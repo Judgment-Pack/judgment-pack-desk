@@ -34,6 +34,7 @@ export function DocumentPreview({ name, reference, disabled, onChange, citation 
     trigger={citation ? <button type="button" className={styles.citation}>{citation.quote}</button> : <Button variant="quiet">{name}</Button>}>
     <div className={styles.preview}>
       {error ? <p role="alert">{systemMessage(error)}</p> : !record ? <p role="status">{msg('Verifying document pages…')}</p> : <>
+        {record.provenance.source.kind === 'web' && <p><a href={record.provenance.source.url} target="_blank" rel="noopener noreferrer">{msg('Open original source')}</a>{record.provenance.source.format === 'static-text-v1' && <> · {msg('Static text snapshot')}</>}</p>}
         <p>{msg('Receipt verified. This confirms byte lineage, not accuracy or authority.')}</p>
         <p>{record.processing.status === 'failed' ? msg('Extraction failed. No pages can be sent.') : needsPartialConsent(record) ? msg('Some pages are missing or unreadable. Only selected readable pages can be sent.') : msg('Extraction complete.')}</p>
         {record.content.extraction === 'ocr' || record.content.extraction === 'mixed' ? <p>{msg('OCR was used. Check the page text against the original.')}</p> : null}
@@ -45,7 +46,7 @@ export function DocumentPreview({ name, reference, disabled, onChange, citation 
           {page.text && <p className={styles.pageText}>{page.text}</p>}
         </section>)}</div>
         {onChange && needsPartialConsent(record) && canUse.size > 0 && <label className={styles.consent}><input type="checkbox" disabled={disabled} checked={reference.allowPartial} onChange={e => onChange({ ...reference, allowPartial: e.target.checked })} />{msg('Use the selected readable pages despite the missing content.')}</label>}
-        <Button variant="quiet" onClick={exportOriginal}>{msg('Download original')}</Button>
+        <Button variant="quiet" onClick={exportOriginal}>{record.provenance.source.kind === 'web' && record.provenance.source.format === 'static-text-v1' ? msg('Download snapshot') : msg('Download original')}</Button>
         <details><summary>{msg('Record identity')}</summary><code className={styles.identity}>{document!.digest}</code></details>
       </>}
     </div>

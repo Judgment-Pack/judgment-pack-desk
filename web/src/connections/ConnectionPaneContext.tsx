@@ -3,6 +3,7 @@ import type { ConnectionProvider } from './client'
 
 /** Metadata only. The shell owns the temporary surface, not a chat's portal. */
 export interface ConnectionPaneRequest {
+ source?: 'web'
  provider?: ConnectionProvider
  chatId?: string
  opener: HTMLElement | null

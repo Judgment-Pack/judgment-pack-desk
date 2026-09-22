@@ -211,3 +211,5 @@ export function IconCopy() {
 
 export function IconSend() { return <Glyph><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" /></Glyph> }
 export function IconStop() { return <Glyph><rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor" stroke="none" /></Glyph> }
+
+export function IconLink() { return <Glyph><path d="m6 10 4-4M5.5 5.5 3 8a3 3 0 0 0 4.2 4.2l2.3-2.3M6.5 6.1l2.3-2.3A3 3 0 0 1 13 8l-2.5 2.5" /></Glyph> }
