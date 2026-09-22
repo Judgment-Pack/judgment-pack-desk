@@ -140,6 +140,10 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	method := r.PathValue("method")
 	provider := r.PathValue("provider")
+	if method == "catalog" && provider != "" {
+		writeJSONCoded(w, 400, CodeBadRequest, "unknown connection operation")
+		return
+	}
 	companion := &s.connections
 	switch provider {
 	case "", "google-drive":
@@ -163,7 +167,7 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch method {
-	case "status", "configure", "connect", "pick", "poll", "cancel", "disconnect", "search", "select":
+	case "catalog", "status", "configure", "connect", "pick", "poll", "cancel", "disconnect", "search", "select":
 	default:
 		writeJSONCoded(w, 400, CodeBadRequest, "unknown connection operation")
 		return
@@ -183,6 +187,10 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	var obj map[string]json.RawMessage
 	if decodeDataJSON(body, &obj) != nil {
 		writeJSONCoded(w, 400, CodeBadRequest, "invalid connection request")
+		return
+	}
+	if method == "catalog" && (obj == nil || len(obj) != 0) {
+		writeJSONCoded(w, 400, CodeBadRequest, "catalog takes no parameters")
 		return
 	}
 	bundle, directory := "", ""
@@ -216,7 +224,12 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 55*time.Second)
 	defer cancel()
-	out, err := companion.call(ctx, bundle, directory, method, body, provider, method == "cancel")
+	var out json.RawMessage
+	if method == "catalog" {
+		out, err = readConnectionCatalog(ctx, bundle)
+	} else {
+		out, err = companion.call(ctx, bundle, directory, method, body, provider, method == "cancel")
+	}
 	if err != nil {
 		writeJSONCoded(w, 503, CodeBadRequest, "gateway connection service unavailable")
 		return

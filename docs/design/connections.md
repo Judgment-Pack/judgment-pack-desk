@@ -132,3 +132,14 @@ Linear's [Peek documentation](https://linear.app/docs/peek) supports contextual 
 Linear's [integration directory](https://linear.app/docs/integration-directory) distinguishes discovery and workspace administration and asks users to consider integration owner/permissions. Its admin-first install policy belongs to its team product; today's personal Desk should not copy that restriction universally.
 
 Provider constraints: [Slack official MCP](https://docs.slack.dev/ai/slack-mcp-server/), [Microsoft delegated/application permissions](https://learn.microsoft.com/en-us/graph/permissions-overview), and [GitHub host integration](https://github.com/github/github-mcp-server/blob/main/docs/host-integration.md). The provider families and scope exclusions are captured in the backlog above.
+
+### Gateway discovery follow-up
+
+The next candidate consumes `gateway-connections --catalog` from the pinned local
+bundle. Its versioned descriptors name implemented auth, registration, selection
+and control protocols; they do not contain account state, executable endpoints or
+source-access grants. Desk intersects them with its supported handlers and asks
+for live status only for compatible providers. The composer and shared pane now
+use this one result. Discovery failure is recoverable with Retry and never falls
+back to a guessed provider list. Removing a capability cancels pending selection.
+See [acceptance evidence](../reviews/connection-catalog/README.md).

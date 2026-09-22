@@ -1,8 +1,7 @@
 import { msg } from '../i18n'
 import type { ConnectionProvider } from './client'
 
-/** Only implemented providers belong here; gateway status determines availability. */
-export const CONNECTION_PROVIDERS: readonly ConnectionProvider[] = ['google-drive', 'gmail', 'notion', 'obsidian']
+/** Display copy stays local; the gateway catalog supplies provider availability. */
 export function providerName(provider: ConnectionProvider): string {
  switch (provider) { case 'google-drive': return 'Google Drive'; case 'gmail': return 'Gmail'; case 'notion': return 'Notion'; case 'obsidian': return 'Obsidian' }
 }

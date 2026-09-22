@@ -5,9 +5,11 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { testQueryClient } from '../testing/harness'
 import { ConnectionsPane } from './ConnectionsPane'
+import { connectionCatalogFixture } from '../testing/connectionCatalog'
 import { ConnectionRequestError, type ConnectionProvider } from './client'
-const mocks = vi.hoisted(() => ({ call: vi.fn(), authorize: vi.fn(), status: vi.fn(), source: vi.fn(), mail: vi.fn(), drive: vi.fn(), cancel: vi.fn(), close: vi.fn(), onBusy: vi.fn(), provider: vi.fn(), config: {} as any, snapshot: {} as any }))
+const mocks = vi.hoisted(() => ({ call: vi.fn(), authorize: vi.fn(), status: vi.fn(), catalog: vi.fn(), source: vi.fn(), mail: vi.fn(), drive: vi.fn(), cancel: vi.fn(), close: vi.fn(), onBusy: vi.fn(), provider: vi.fn(), config: {} as any, snapshot: {} as any }))
 vi.mock('./client', async importOriginal => ({ ...await importOriginal<typeof import('./client')>(), connectionCall: mocks.call, authorizeDrive: mocks.authorize, useDriveStatus: mocks.status, CONNECTIONS_KEY: ['gateway-connections'] }))
+vi.mock('./catalog', () => ({ useConnections: mocks.catalog }))
 vi.mock('../config/DeskConfigProvider', () => ({ useEffectiveConfig: () => mocks.config }))
 vi.mock('../chat/ChatProvider', () => ({ useChats: () => mocks.snapshot }))
 vi.mock('../chat/useChatAttachments', () => ({ useChatAttachments: () => ({ reading: false, isReading: () => false, attachSource: mocks.source, attachGmail: mocks.mail, attachDrive: mocks.drive, cancel: mocks.cancel, error: '', clearError: vi.fn() }) }))
@@ -18,6 +20,7 @@ beforeEach(() => {
  mocks.config = { desk: { localGateway: { status: 'ready' } }, config: { research: { documents: { enabled: true }, gateway: { url: 'http://127.0.0.1:8888' } } } }
  mocks.snapshot = { store: {}, chats: [{ id: 'chat', attachments: [] }], drafts: [], bindings: new Map() }
  mocks.status.mockImplementation(() => ({ data: { state, account: state === 'connected' ? { id: account, name: 'Fixture' } : undefined } }))
+ mocks.catalog.mockImplementation(() => ({ entries: connectionCatalogFixture.providers.map(descriptor => ({ descriptor, status: mocks.status() })), loading: false, isError: false, refetch: vi.fn() }))
  mocks.call.mockResolvedValue({ items: rows, selectionContext: 'epoch', more: false })
  mocks.source.mockResolvedValue(true); mocks.mail.mockResolvedValue(true); mocks.drive.mockResolvedValue(true)
 })
@@ -114,6 +117,40 @@ it('offers the registered providers in a searchable catalog', () => {
  fireEvent.change(screen.getByRole('textbox', { name: 'Search connections…' }), { target: { value: 'notion' } })
  expect(screen.queryByRole('button', { name: /Obsidian/ })).toBeNull()
  fireEvent.click(screen.getByRole('button', { name: /Notion/ })); expect(mocks.provider).toHaveBeenCalledWith('notion')
+})
+
+it('reports catalog failure once with retry instead of showing guessed providers', () => {
+ const refetch = vi.fn()
+ mocks.catalog.mockReturnValue({ entries: [], loading: false, isError: true, refetch })
+ render(<QueryClientProvider client={client()}><ConnectionsPane request={{ opener: null }} target={document.body} onProvider={mocks.provider} onClose={mocks.close} onBusy={mocks.onBusy} /></QueryClientProvider>)
+ expect(screen.getAllByRole('alert')).toHaveLength(1)
+ expect(screen.queryByRole('button', { name: /Notion/ })).toBeNull()
+ expect(screen.queryByText('No connections found.')).toBeNull()
+ fireEvent.click(screen.getByRole('button', { name: 'Retry' })); expect(refetch).toHaveBeenCalledTimes(1)
+})
+
+it('cancels a pending selection when its gateway capability disappears', async () => {
+ let release!: (result: unknown) => void
+ mocks.call.mockImplementation(method => method === 'search' ? Promise.resolve({ items: rows, selectionContext: 'epoch', more: false }) : new Promise(resolve => { release = resolve }))
+ const ui = render(view()); await choose(); fireEvent.click(screen.getByRole('button', { name: 'Attach 1 item' }))
+ const signal = mocks.call.mock.calls.find(call => call[0] === 'select')![2] as AbortSignal
+ mocks.catalog.mockReturnValue({ entries: [], loading: false, isError: false, refetch: vi.fn() })
+ ui.rerender(view())
+ expect(signal.aborted).toBe(true)
+ expect(screen.getByText('This connection is unavailable in the current gateway.')).toBeTruthy()
+ await act(async () => release([{ resourceId: 'late', grant: 'a'.repeat(64) }]))
+ expect(mocks.source).not.toHaveBeenCalled(); expect(mocks.close).not.toHaveBeenCalled()
+})
+
+it('uses the gateway query requirement instead of assuming a provider can browse', async () => {
+ mocks.catalog.mockImplementation(() => ({ entries: [{ descriptor: { ...connectionCatalogFixture.providers[3], queryRequired: true }, status: mocks.status() }], loading: false, isError: false }))
+ render(view())
+ expect(mocks.call).not.toHaveBeenCalled()
+ expect((screen.getByRole('button', { name: 'Search' }) as HTMLButtonElement).disabled).toBe(true)
+ fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Policy' } })
+ fireEvent.click(screen.getByRole('button', { name: 'Search' }))
+ await screen.findByText('Policy 0')
+ expect(mocks.call).toHaveBeenCalledWith('search', { query: 'Policy' }, expect.any(AbortSignal), 'obsidian')
 })
 
 function LockObserver({ locked, chatId }: { locked: boolean; chatId: string }) {

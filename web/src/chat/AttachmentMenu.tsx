@@ -1,23 +1,25 @@
 import { useId, useState, type RefObject } from 'react'
 import { DropdownMenu } from 'radix-ui'
 import { msg, useLocale } from '../i18n'
-import { IconGoogleDrive, IconMail, IconPaperclip, IconPlus } from '../shell/icons'
+import { IconPaperclip, IconPlus } from '../shell/icons'
 import { Tooltip } from '../ui/Tooltip'
 import { ProviderIcon } from '../connections/ProviderIcon'
-import type { SourceProvider } from '../connections/client'
+import { providerName } from '../connections/registry'
+import type { ConnectionDescriptor } from '../connections/catalog'
 import styles from './AttachmentMenu.module.css'
 
-/** Shared by home chat and pack Assistant. Provider availability is explicit:
- * a configured document extractor is not a Google Drive connection. */
-export function AttachmentMenu({ disabled, onUpload, onDrive, driveState, onGmail, gmailState, sources = [], triggerRef, onMore, connectedOnly = false }: {
-  onMore?: () => void; connectedOnly?: boolean;
-  sources?: { provider: SourceProvider; state?: string; onSelect: () => void }[];
-  disabled: boolean; onUpload: () => void; onDrive?: () => void; driveState?: string; onGmail?: () => void; gmailState?: string; triggerRef?: RefObject<HTMLButtonElement | null>
+type MenuConnection = { provider: ConnectionDescriptor['id']; selection: ConnectionDescriptor['selection']; onSelect: () => void }
+
+/** The gateway catalog and current status determine the connected shortcuts. */
+export function AttachmentMenu({ disabled, onUpload, connections = [], triggerRef, onMore }: {
+  onMore?: () => void; connections?: MenuConnection[];
+  disabled: boolean; onUpload: () => void; triggerRef?: RefObject<HTMLButtonElement | null>
 }) {
   useLocale()
   const [open, setOpen] = useState(false)
   const id = useId()
-  return <DropdownMenu.Root open={open} onOpenChange={setOpen}>
+  const [visible, setVisible] = useState<MenuConnection[]>([])
+  return <DropdownMenu.Root open={open} onOpenChange={value => { if (value) setVisible(connections); setOpen(value) }}>
     <Tooltip content={msg('Attach files')} disabled={open} openOnFocus={false}>
       <DropdownMenu.Trigger ref={triggerRef} type="button" className="desk-icon-button" aria-label={msg('Attach files')} disabled={disabled}><IconPlus /></DropdownMenu.Trigger>
     </Tooltip>
@@ -28,17 +30,12 @@ export function AttachmentMenu({ disabled, onUpload, onDrive, driveState, onGmai
           <IconPaperclip />
           <span className={styles.copy}><span id={`${id}-upload`}>{msg('Upload files')}</span><span id={`${id}-upload-hint`} className={styles.description}>{msg('PDFs and text files')}</span></span>
         </DropdownMenu.Item>
-        {(!connectedOnly || driveState === 'connected') && <DropdownMenu.Item className={`desk-menu-item ${styles.item}`} textValue="Google Drive" disabled={!onDrive || !driveState || ['unavailable', 'blocked'].includes(driveState)} onSelect={onDrive} aria-labelledby={`${id}-drive`} aria-describedby={`${id}-drive-hint`}>
-          <IconGoogleDrive />
-          <span className={styles.copy}><span id={`${id}-drive`}>{msg('Google Drive')}</span><span id={`${id}-drive-hint`} className={styles.description}>{driveState === 'connected' ? msg('Choose files') : driveState === 'not-connected' || driveState === 'setup-required' ? msg('Connect') : msg('Unavailable')}</span></span>
-        </DropdownMenu.Item>}
-        {(!connectedOnly || gmailState === 'connected') && <DropdownMenu.Item className={`desk-menu-item ${styles.item}`} textValue="Gmail" disabled={!onGmail || !gmailState || ['unavailable', 'blocked'].includes(gmailState)} onSelect={onGmail} aria-labelledby={`${id}-gmail`} aria-describedby={`${id}-gmail-hint`}>
-          <IconMail />
-          <span className={styles.copy}><span id={`${id}-gmail`}>{msg('Gmail')}</span><span id={`${id}-gmail-hint`} className={styles.description}>{gmailState === 'connected' ? msg('Choose emails') : gmailState === 'not-connected' || gmailState === 'setup-required' ? msg('Connect') : msg('Unavailable')}</span></span>
-        </DropdownMenu.Item>}
-        {sources.filter(source => !connectedOnly || source.state === 'connected').map(source => <DropdownMenu.Item key={source.provider} className={`desk-menu-item ${styles.item}`} textValue={source.provider === 'notion' ? 'Notion' : 'Obsidian'} disabled={!source.state || ['unavailable','blocked'].includes(source.state)} onSelect={source.onSelect}>
-          <ProviderIcon provider={source.provider} /><span className={styles.copy}><span>{source.provider === 'notion' ? 'Notion' : 'Obsidian'}</span><span className={styles.description}>{source.state === 'connected' ? msg('Choose notes') : source.state === 'not-connected' ? msg('Connect') : msg('Unavailable')}</span></span>
-        </DropdownMenu.Item>)}
+        {visible.map(item => {
+          const current = connections.find(connection => connection.provider === item.provider)
+          return <DropdownMenu.Item key={item.provider} className={`desk-menu-item ${styles.item}`} textValue={providerName(item.provider)} disabled={!current} onSelect={current?.onSelect}>
+            <ProviderIcon provider={item.provider} /><span className={styles.copy}><span>{providerName(item.provider)}</span><span className={styles.description}>{!current ? msg('Unavailable') : item.selection === 'browser-picker' ? msg('Choose files') : item.selection === 'mail-search' ? msg('Choose emails') : msg('Choose notes')}</span></span>
+          </DropdownMenu.Item>
+        })}
         {onMore && <><DropdownMenu.Separator className="desk-menu-separator" /><DropdownMenu.Item className="desk-menu-item" onSelect={onMore}>{msg('More connections')}</DropdownMenu.Item></>}
       </DropdownMenu.Content>
     </DropdownMenu.Portal>
