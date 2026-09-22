@@ -30,7 +30,10 @@ Public builds continue to contain no publisher Google registration.
 The shared UI supports all 12 current locales. The new Notion and Obsidian marks
 come from official assets, documented beside their local SVGs. Google Drive and
 mail continue to use the existing Desk glyphs. Tests use synthetic accounts,
-notes and signed records. A successful fixture test is not a live Notion OAuth
+notes and signed records. At the originally reviewed SHA the connected-source
+fixtures were unsigned records; the remediation adds signed Notion and Obsidian
+v3 receipts, commitments and seals in `signedConnected.ts` and attack tests that
+sign the deliberately inconsistent relationship before verifying it. A successful fixture test is not a live Notion OAuth
 acceptance test. The user's working Google Drive connection is outside the test
 fixtures and must be preserved during any eventual local update.
 
@@ -38,7 +41,7 @@ This slice authorizes user-selected snapshots. Whole-workspace agent search,
 background indexing, source watchers and provider write actions require separate
 capability grants and are not inferred from attaching a note.
 
-## Candidate validation
+## Original candidate validation (before review remediation)
 
 - Final shared-pane web suite: 3,756 passed, one skipped across 169 files.
   Focused shell/pane/style checks passed 497 tests, including draft retention,
@@ -61,5 +64,6 @@ capability grants and are not inferred from attaching a note.
 
 See [the shared connection design and full backlog](../design/connections.md).
 
-Gateway material-decision review and a live Notion OAuth acceptance test remain
-outstanding. The candidate has not replaced the user's installed Desk.
+The maintainer has supplied an independent Anthropic review of the parent gateway
+and Desk SHAs. Findings and implementing dispositions are recorded on gateway
+#143. A live Notion OAuth acceptance test remains outstanding. The candidate has not replaced the user's installed Desk.
