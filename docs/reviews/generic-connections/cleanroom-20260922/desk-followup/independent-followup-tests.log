@@ -1,0 +1,19 @@
+
+> judgment-pack-desk-web@0.1.0 test
+> vitest run --reporter=verbose src/connections/cleanroom-oauth-form.test.tsx src/connections/cleanroom-oauth-phase.test.tsx
+
+
+ RUN  v4.1.11 /tmp/jp-foundation-cleanroom-20260922/desk-followup/web
+
+ ✓ src/connections/cleanroom-oauth-form.test.tsx > allows OAuth sign-in after successfully saving required form registration 329ms
+ ✓ src/connections/cleanroom-oauth-phase.test.tsx > opens a previously configured OAuth provider directly into enabled consent 254ms
+ ✓ src/connections/cleanroom-oauth-phase.test.tsx > reconnects an OAuth form provider without demanding its saved registration again 101ms
+ ✓ src/connections/cleanroom-oauth-phase.test.tsx > returns to required configuration if an expired registration changes status to setup-required 160ms
+ ✓ src/connections/cleanroom-oauth-phase.test.tsx > keeps required credentials form fields enforced while configuring 38ms
+ ✓ src/connections/cleanroom-oauth-phase.test.tsx > keeps required oauth form fields enforced while configuring 37ms
+
+ Test Files  2 passed (2)
+      Tests  6 passed (6)
+   Start at  09:17:12
+   Duration  2.79s (transform 1.15s, setup 256ms, import 1.68s, tests 924ms, environment 2.06s)
+

@@ -1,0 +1,11 @@
+PASS signed current-pin, seal, resource and bytes verification: application-json.json
+PASS signed current-pin, seal, resource and bytes verification: encrypted-user.pdf.json
+PASS signed current-pin, seal, resource and bytes verification: inflate-bomb.pdf.json
+PASS signed current-pin, seal, resource and bytes verification: malformed-truncated.pdf.json
+PASS signed current-pin, seal, resource and bytes verification: many-pages.pdf.json
+PASS signed current-pin, seal, resource and bytes verification: mixed.pdf.json
+PASS signed current-pin, seal, resource and bytes verification: normal.pdf.json
+PASS signed current-pin, seal, resource and bytes verification: scanned.pdf.json
+PASS signed current-pin, seal, resource and bytes verification: text-csv.json
+PASS signed current-pin, seal, resource and bytes verification: text-markdown.json
+PASS signed current-pin, seal, resource and bytes verification: text-plain.json

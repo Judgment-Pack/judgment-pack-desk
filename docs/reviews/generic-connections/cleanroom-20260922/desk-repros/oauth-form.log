@@ -1,0 +1,37 @@
+
+> judgment-pack-desk-web@0.1.0 test
+> vitest run --reporter=verbose src/connections/cleanroom-oauth-form.test.tsx
+
+
+ RUN  v4.1.11 /tmp/jp-foundation-cleanroom-20260922/desk-repros/web
+
+ × src/connections/cleanroom-oauth-form.test.tsx > allows OAuth sign-in after successfully saving required form registration 199ms
+   → expected true to be false // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/connections/cleanroom-oauth-form.test.tsx > allows OAuth sign-in after successfully saving required form registration
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ src/connections/cleanroom-oauth-form.test.tsx:33:26
+     31|  expect(screen.queryByLabelText('Access key')).toBeNull()
+     32|  const button=screen.getByRole('button',{name:'Continue with Fixture f…
+     33|  expect(button.disabled).toBe(false)
+       |                          ^
+     34|  fireEvent.click(button)
+     35|  await waitFor(()=>expect(mocks.authorize).toHaveBeenCalledWith('conne…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+   Start at  09:07:38
+   Duration  1.44s (transform 373ms, setup 62ms, import 512ms, tests 201ms, environment 548ms)
+

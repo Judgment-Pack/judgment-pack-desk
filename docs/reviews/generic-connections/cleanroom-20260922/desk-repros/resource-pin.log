@@ -1,0 +1,16 @@
+
+> judgment-pack-desk-web@0.1.0 test
+> vitest run --reporter=verbose src/documents/cleanroom-resource-pin.test.ts
+
+
+ RUN  v4.1.11 /tmp/jp-foundation-cleanroom-20260922/desk-repros/web
+
+ ✓ src/documents/cleanroom-resource-pin.test.ts > reopens the retained generic resource without provider/catalog access 22ms
+ ✓ src/documents/cleanroom-resource-pin.test.ts > refuses retained generic resource when current authority changes 8ms
+ ✓ src/documents/cleanroom-resource-pin.test.ts > refuses retained generic resource when current public-key changes 15ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  09:10:49
+   Duration  1.75s (transform 265ms, setup 101ms, import 236ms, tests 47ms, environment 1.14s)
+

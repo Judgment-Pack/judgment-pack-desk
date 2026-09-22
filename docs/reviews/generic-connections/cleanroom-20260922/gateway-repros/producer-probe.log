@@ -1,0 +1,16 @@
+PASS text producer text/plain
+PASS text producer text/markdown
+PASS text producer text/csv
+PASS text producer application/json
+PASS PDF producer normal.pdf status=complete pages=3
+PASS PDF producer mixed.pdf status=partial pages=2
+PASS PDF producer scanned.pdf status=partial pages=2
+PASS PDF producer encrypted-user.pdf status=failed pages=0
+PASS PDF producer malformed-truncated.pdf status=failed pages=0
+PASS PDF producer inflate-bomb.pdf status=partial pages=2
+PASS PDF producer many-pages.pdf status=complete pages=60
+PASS byte limit 0
+PASS byte limit 4194304
+PASS byte limit 4194305
+PASS unsafe URL refusals
+PASS page boundary refusals
