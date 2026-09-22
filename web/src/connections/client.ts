@@ -13,8 +13,30 @@ export interface ConnectionStatus { version: 1; provider: ConnectionProvider; st
 export interface DriveSelection { fileId: string; grant: string }
 export interface ConnectionFlow { id: string; state: 'pending'|'complete'|'failed'|'canceled'; url?: string; error?: string; selections?: DriveSelection[] }
 export const CONNECTIONS_KEY = ['gateway-connections'] as const
+export class ConnectionRequestError extends Error {
+ constructor(readonly code: string, readonly provider: ConnectionProvider) {
+  super(connectionError(code, provider)); this.name = 'ConnectionRequestError'
+ }
+ get reconnectRequired() { return ['reconnect-required', 'connect-required', 'registration-expired'].includes(this.code) }
+}
+export function connectionFailure(cause: unknown, provider: ConnectionProvider): ConnectionRequestError {
+ if (cause instanceof ConnectionRequestError) return cause
+ // Adapter refusals arrive as gateway diagnostics. Recognize only these exact
+ // protocol code tokens; never use translated display copy to drive recovery.
+ const tokens = cause instanceof Error ? cause.message.split(/[^a-z-]+/) : []
+ const code = ['reconnect-required', 'connect-required', 'registration-expired', 'source-incomplete', 'source-changed', 'file-too-large', 'blocked-by-policy'].find(code => tokens.includes(code))
+ return new ConnectionRequestError(code ?? 'retrieval-failed', provider)
+}
 export function connectionError(code: string, provider: ConnectionProvider = 'google-drive'): string {
  if (provider === 'notion' || provider === 'obsidian') {
+  if (code === 'wrong-account') return sourceMessage('Choose the account already connected, or disconnect it first.')
+  if (code === 'blocked-by-policy') return sourceMessage('Managed by your organization')
+  if (code === 'authorization-in-progress') return sourceMessage('Finish or cancel the current sign-in first.')
+  if (code === 'too-many-selections' || code === 'too-many-files') return sourceMessage('Attach up to four files at a time.')
+  if (code === 'file-too-large') return sourceMessage('This source exceeds the connection size limit. Choose a smaller source.')
+  if (code === 'source-changed') return sourceMessage('This source changed while being read. Search again and reselect it.')
+  if (code === 'source-incomplete') return sourceMessage('Notion returned incomplete content. Choose a smaller page or upload an export.')
+  if (code === 'registration-expired') return sourceMessage('The Notion registration expired. Reconnect to register again.')
   if (code === 'invalid-vault') return sourceMessage('Choose an existing Obsidian vault folder containing an .obsidian folder.')
   if (code === 'callback-unavailable') return sourceMessage('The sign-in callback port is in use. Close other Desk windows and try again.')
   if (code === 'canceled') return sourceMessage('Canceled.')
@@ -38,7 +60,7 @@ export function connectionError(code: string, provider: ConnectionProvider = 'go
 }
 export async function connectionCall<T>(method: string, params: object = {}, signal?: AbortSignal, provider: ConnectionProvider = 'google-drive'): Promise<T> {
  const result = await answer<T & { error?: string }>(await deskFetch(`/api/connections/${provider === 'google-drive' ? '' : `${provider}/`}${method}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(params), signal }))
- if (result.error) throw new Error(connectionError(result.error, provider))
+ if (result.error) throw new ConnectionRequestError(result.error, provider)
  return result
 }
 export function useDriveStatus(enabled = true, provider: ConnectionProvider = 'google-drive') {
@@ -68,7 +90,7 @@ export async function authorizeDrive(mode: 'connect'|'pick', signal: AbortSignal
    })
    const result = await connectionCall<ConnectionFlow>('poll', { id }, signal, provider)
    if (result.state === 'complete') { done = true; return result.selections ?? [] }
-   if (result.state !== 'pending') { done = true; throw new Error(connectionError(result.error ?? 'canceled', provider)) }
+   if (result.state !== 'pending') { done = true; throw new ConnectionRequestError(result.error ?? 'canceled', provider) }
    if (tab.closed) throw new Error(sourceMessage('Canceled.'))
   }
   throw new Error(connectionError('expired', provider))

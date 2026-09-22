@@ -21,3 +21,8 @@ it.each([
  const record = fixture(kind); record.provenance.source[field] = value
  expect(() => readDocumentRecord(record)).toThrow()
 })
+it.each(['notion','obsidian'])('requires %s snapshot version to identify the retained document',kind=>{
+ const record=fixture(kind)
+ record.document.version=record.provenance.source.version='sha256:'+'0'.repeat(64)
+ expect(()=>readDocumentRecord(record)).toThrow()
+})

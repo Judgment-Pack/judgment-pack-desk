@@ -21,3 +21,8 @@ not claim that acceptance.
 Unit checks additionally hold Assistant/main DOM retention and focus restoration,
 source selection across dock/drawer portal moves, account/configuration changes,
 late cancellation, attachment capacity and Gmail pagination context binding.
+
+The original session-local smoke driver is now preserved as
+[`scripts/check-connections.mjs`](../../../scripts/check-connections.mjs), with
+configurable paths. See [the recovery review evidence](../notion-review-recovery/README.md)
+for invocation and a fresh run, including route-change dismissal.

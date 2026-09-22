@@ -1,5 +1,5 @@
 import { quoteRange } from './quote'
-import { connectionError, type DriveSelection, type MailSelection, type SourceSelection, type SourceProvider } from '../connections/client'
+import { connectionFailure, type DriveSelection, type MailSelection, type SourceSelection, type SourceProvider } from '../connections/client'
 import { sourceMessage } from '../i18n/source'
 import { answer, deskFetch } from '../files/client'
 import type { ResearchConfig, ResearchGatewayConfig } from '../config/deskConfig'
@@ -132,7 +132,7 @@ async function ingestSelected(selection: DriveSelection | MailSelection | Source
  if (!gateway || !config.documents?.enabled) throw new Error(source === 'web' || source === 'notion' || source === 'obsidian' ? sourceMessage('Enable document processing in Admin → Storage & data before attaching sources.') : source === 'gmail' ? sourceMessage('Enable document processing in Admin → Storage & data before attaching emails.') : sourceMessage('Enable document processing in Admin → Storage & data before attaching Drive files.'))
  const session = newResearchSession(), id = crypto.randomUUID()
  progress(sourceMessage('Reading files…'))
- const response = await acquire(session, source, selection, 16 << 20, signal, 'local-documents').catch(cause => { if (signal.aborted) throw cause; if (source === 'web') throw new Error(sourceMessage('Could not read this link. Use a public HTTPS page, PDF, or text file under 4 MiB.')); throw new Error(connectionError(String((cause as Error).message).includes('reconnect-required') ? 'reconnect-required' : 'retrieval-failed', source === 'drive' ? 'google-drive' : source)) })
+ const response = await acquire(session, source, selection, 16 << 20, signal, 'local-documents').catch(cause => { if (signal.aborted) throw cause; if (source === 'web') throw new Error(sourceMessage('Could not read this link. Use a public HTTPS page, PDF, or text file under 4 MiB.')); throw connectionFailure(cause, source === 'drive' ? 'google-drive' : source) })
  signal.throwIfAborted()
  const record = readDocumentRecord(JSON.parse(response.text).result)
  if (record.provenance.source.kind !== (source === 'web' ? 'web' : source === 'gmail' ? 'gmail' : source === 'drive' ? 'google-drive' : 'connected-source') || record.original.retention !== 'inline' || !record.original.bytes) throw fail()
