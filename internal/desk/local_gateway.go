@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-const GatewayRevision = "f62de27b82c8f31d90bffc2f11a2be37ee4d9962"
+const GatewayRevision = "d465a51139a0ff331e7b08b469d828578a7ed350"
 const localAuthority = "gateway:desk-local"
 
 // LocalGatewayStatus carries public, effective settings only. The signing seed
@@ -87,11 +87,21 @@ func verifyGatewayBundle(dir string) error {
 		Revision string            `json:"revision"`
 		Files    map[string]string `json:"files"`
 	}
-	if json.Unmarshal(raw, &manifest) != nil || manifest.Revision != GatewayRevision {
+	approved := manifestRevisionApproved(raw)
+	if json.Unmarshal(raw, &manifest) != nil || !approved || len(manifest.Files) > 64 {
 		return errors.New("local processing components do not match this Desk build")
 	}
-	for _, name := range []string{"gateway", "adapter-document", "gateway-connections", "adapter-drive", "adapter-gmail", "adapter-sources", "adapter-web"} {
-		file, err := os.Open(filepath.Join(dir, executableName(name)))
+	for _, required := range []string{"gateway", "adapter-document", "gateway-connections"} {
+		if manifest.Files[executableName(required)] == "" {
+			return errors.New("local processing bundle is incomplete")
+		}
+	}
+	for name := range manifest.Files {
+		base := strings.TrimSuffix(name, ".exe")
+		if !catalogIdentifier.MatchString(base) || executableName(base) != name {
+			return errors.New("invalid local processing component name")
+		}
+		file, err := os.Open(filepath.Join(dir, name))
 		if err != nil {
 			return err
 		}
@@ -103,7 +113,7 @@ func verifyGatewayBundle(dir string) error {
 		hash := sha256.New()
 		_, err = io.Copy(hash, file)
 		file.Close()
-		if err != nil || hex.EncodeToString(hash.Sum(nil)) != manifest.Files[executableName(name)] {
+		if err != nil || hex.EncodeToString(hash.Sum(nil)) != manifest.Files[name] {
 			return errors.New("local processing component checksum does not match the bundle")
 		}
 	}
@@ -341,4 +351,18 @@ func PrepareDeskConfigBase(configDir string) error {
 		return err
 	}
 	return ensureOwnedDirectory(filepath.Dir(base), filepath.Base(base))
+}
+
+// A locally installed replacement may be approved by its exact manifest digest
+// at process startup. This is an operator trust input, never project/browser data.
+// The default stays the reviewed revision; there are no automatic downloads.
+func manifestRevisionApproved(raw []byte) bool {
+	if approved, present := os.LookupEnv("JPACK_DESK_GATEWAY_MANIFEST_SHA256"); present {
+		sum := sha256.Sum256(raw)
+		return len(approved) == 64 && approved == hex.EncodeToString(sum[:])
+	}
+	var manifest struct {
+		Revision string `json:"revision"`
+	}
+	return json.Unmarshal(raw, &manifest) == nil && manifest.Revision == GatewayRevision
 }

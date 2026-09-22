@@ -340,3 +340,30 @@ func TestAttachmentPersonalUploadLimit(t *testing.T) {
 		t.Fatal("reenabling lost the configured original limit", status)
 	}
 }
+
+func TestGenericResourceProofRetainedByAttachmentStorage(t *testing.T) {
+	s, ts, _ := assistantServer(t)
+	enableTestDocuments(t, s)
+	original := documentBody(t, "resource bytes")
+	status, digest, reply := documentRequest(t, ts, "PUT", testAttachmentID, "absent", original)
+	if status != 200 {
+		t.Fatalf("original refused: %d %s", status, reply)
+	}
+	var object map[string]any
+	if err := json.Unmarshal([]byte(original), &object); err != nil {
+		t.Fatal(err)
+	}
+	object["proof"] = map[string]any{"session": "fixture-test", "source": "fixture-files", "authority": "gateway:test", "publicKey": strings.Repeat("ab", 32), "response": `{"result":{},"receipt":{}}`, "registry": "registry bytes", "resource": map[string]string{"resourceId": "bucket/policy.txt", "grant": strings.Repeat("ab", 32)}}
+	body, err := json.Marshal(object)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, _, reply = documentRequest(t, ts, "PUT", testAttachmentID, digest, string(body))
+	if status != 200 {
+		t.Fatalf("resource proof refused: %d %s", status, reply)
+	}
+	status, _, reply = documentRequest(t, ts, "GET", testAttachmentID, "", "")
+	if status != 200 || !bytes.Contains(reply, []byte(`"resource":{"grant":`)) || !bytes.Contains(reply, []byte(`"resourceId":"bucket/policy.txt"`)) {
+		t.Fatalf("resource proof lost: %d %s", status, reply)
+	}
+}

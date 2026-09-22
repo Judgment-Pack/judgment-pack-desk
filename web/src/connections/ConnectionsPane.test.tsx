@@ -9,7 +9,7 @@ import { connectionCatalogFixture } from '../testing/connectionCatalog'
 import { ConnectionRequestError, type ConnectionProvider } from './client'
 const mocks = vi.hoisted(() => ({ call: vi.fn(), authorize: vi.fn(), status: vi.fn(), catalog: vi.fn(), source: vi.fn(), mail: vi.fn(), drive: vi.fn(), cancel: vi.fn(), close: vi.fn(), onBusy: vi.fn(), provider: vi.fn(), config: {} as any, snapshot: {} as any }))
 vi.mock('./client', async importOriginal => ({ ...await importOriginal<typeof import('./client')>(), connectionCall: mocks.call, authorizeDrive: mocks.authorize, useDriveStatus: mocks.status, CONNECTIONS_KEY: ['gateway-connections'] }))
-vi.mock('./catalog', () => ({ useConnections: mocks.catalog }))
+vi.mock('./catalog', async original => ({ ...await original<typeof import('./catalog')>(), useConnections: mocks.catalog }))
 vi.mock('../config/DeskConfigProvider', () => ({ useEffectiveConfig: () => mocks.config }))
 vi.mock('../chat/ChatProvider', () => ({ useChats: () => mocks.snapshot }))
 vi.mock('../chat/useChatAttachments', () => ({ useChatAttachments: () => ({ reading: false, isReading: () => false, attachSource: mocks.source, attachGmail: mocks.mail, attachDrive: mocks.drive, cancel: mocks.cancel, error: '', clearError: vi.fn() }) }))
@@ -116,7 +116,7 @@ it('offers the registered providers in a searchable catalog', () => {
  render(<QueryClientProvider client={client()}><ConnectionsPane request={{ opener: null }} target={document.body} onProvider={mocks.provider} onClose={mocks.close} onBusy={mocks.onBusy} /></QueryClientProvider>)
  fireEvent.change(screen.getByRole('textbox', { name: 'Search connections…' }), { target: { value: 'notion' } })
  expect(screen.queryByRole('button', { name: /Obsidian/ })).toBeNull()
- fireEvent.click(screen.getByRole('button', { name: /Notion/ })); expect(mocks.provider).toHaveBeenCalledWith('notion')
+ fireEvent.click(screen.getByRole('button', { name: /Notion/ })); expect(mocks.provider).toHaveBeenCalledWith('notion', expect.objectContaining({ id: 'notion' }))
 })
 
 it('reports catalog failure once with retry instead of showing guessed providers', () => {
@@ -187,4 +187,38 @@ it('offers explicit reconnect after a revoked connection without opening consent
  expect(mocks.authorize).not.toHaveBeenCalled()
  fireEvent.click(reconnect)
  await waitFor(()=>expect(mocks.authorize).toHaveBeenCalledWith('connect',expect.any(AbortSignal),'notion'))
+})
+
+it('configures and attaches a new protocol-compatible provider without a named handler', async () => {
+ const {genericConnection}=await import('../testing/genericConnection')
+ state='not-connected'
+ mocks.catalog.mockImplementation(()=>({entries:[{descriptor:genericConnection,status:mocks.status()}],unsupported:[],loading:false,isError:false}))
+ mocks.call.mockImplementation(async method=>method==='search'?{items:rows,selectionContext:'epoch',more:false}:method==='select'?[{resourceId:rows[0]!.id,grant:'a'.repeat(64)}]:{saved:true})
+ const ui=render(view('fixture-files'))
+ fireEvent.change(screen.getByLabelText('Folder'),{target:{value:'policies'}})
+ fireEvent.change(screen.getByLabelText('Access key'),{target:{value:'fixture-only-key'}})
+ fireEvent.click(screen.getByRole('button',{name:'Connect'}))
+ await waitFor(()=>expect(mocks.call).toHaveBeenCalledWith('configure',{folder:'policies',key:'fixture-only-key'},expect.any(AbortSignal),'fixture-files'))
+ await waitFor(()=>expect((screen.getByLabelText('Access key') as HTMLInputElement).value).toBe(''))
+ state='connected';ui.rerender(view('fixture-files'))
+ fireEvent.click((await screen.findAllByRole('checkbox'))[0]!)
+ fireEvent.click(screen.getByRole('button',{name:'Attach 1 item'}))
+ await waitFor(()=>expect(mocks.source).toHaveBeenCalledWith('fixture-files',[{resourceId:rows[0]!.id,grant:'a'.repeat(64)}],genericConnection))
+ expect(mocks.authorize).not.toHaveBeenCalled()
+})
+
+it('waits for configuration to settle before browsing once, without a second click', async () => {
+ const {genericConnection}=await import('../testing/genericConnection')
+ state='not-connected';let release!:()=>void
+ mocks.catalog.mockImplementation(()=>({entries:[{descriptor:genericConnection,status:{data:{state}}}],unsupported:[],loading:false,isError:false}))
+ mocks.call.mockImplementation(method=>method==='configure'?new Promise<void>(resolve=>{release=resolve}):Promise.resolve({items:rows,selectionContext:'epoch',more:false}))
+ const ui=render(view('fixture-files'))
+ fireEvent.change(screen.getByLabelText('Folder'),{target:{value:'policies'}})
+ fireEvent.change(screen.getByLabelText('Access key'),{target:{value:'fixture-only-key'}})
+ fireEvent.click(screen.getByRole('button',{name:'Connect'}))
+ state='connected';ui.rerender(view('fixture-files'))
+ expect(mocks.call.mock.calls.filter(call=>call[0]==='search')).toHaveLength(0)
+ await act(async()=>release())
+ await screen.findAllByRole('checkbox')
+ expect(mocks.call.mock.calls.filter(call=>call[0]==='search')).toHaveLength(1)
 })

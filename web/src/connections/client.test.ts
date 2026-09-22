@@ -35,3 +35,22 @@ it('preserves reconnect classification independently from display text',async()=
  const error=connectionFailure(new Error('adapter failed: reconnect-required'),'notion')
  expect(error.reconnectRequired).toBe(true);expect(error.code).toBe('reconnect-required')
 })
+
+it('uses the declared endpoint for a new provider without a named authorization handler', async () => {
+ vi.useFakeTimers()
+ const tab={opener:{},location:{href:'about:blank'},close:vi.fn()}
+ vi.spyOn(window,'open').mockReturnValue(tab as unknown as Window)
+ fetch.mockResolvedValueOnce(Response.json({id:'aa'.repeat(32),state:'pending',url:'https://accounts.example.com/authorize?state=fixture'})).mockResolvedValueOnce(Response.json({state:'complete'}))
+ const result=authorizeDrive('connect',new AbortController().signal,'fixture-files',['https://accounts.example.com/authorize'])
+ await vi.advanceTimersByTimeAsync(1100)
+ await expect(result).resolves.toEqual([])
+ expect(tab.location.href).toBe('https://accounts.example.com/authorize?state=fixture')
+ expect(tab.opener).toBeNull();expect(tab.close).toHaveBeenCalled()
+})
+it.each(['https://accounts.example.com/wrong','https://other.example.com/authorize','https://user:secret@accounts.example.com/authorize','https://accounts.example.com/authorize#token'])('refuses undeclared generic sign-in URL %s', async url=>{
+ const tab={opener:{},location:{href:'about:blank'},close:vi.fn()}
+ vi.spyOn(window,'open').mockReturnValue(tab as unknown as Window)
+ fetch.mockResolvedValue(Response.json({id:'aa'.repeat(32),state:'pending',url}))
+ await expect(authorizeDrive('connect',new AbortController().signal,'fixture-files',['https://accounts.example.com/authorize'])).rejects.toThrow()
+ expect(tab.location.href).toBe('about:blank')
+})

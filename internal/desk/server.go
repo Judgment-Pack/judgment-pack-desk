@@ -106,6 +106,9 @@ type Config struct {
 // Server is the HTTP handler and the owner of the file watcher.
 type Server struct {
 	localGateway        *localGateway
+	providerMu          sync.Mutex
+	providerConnections map[string]*connectionCompanion
+	providersClosed     bool
 	connections         connectionCompanion
 	gmailConnections    connectionCompanion
 	notionConnections   connectionCompanion
@@ -375,6 +378,13 @@ func (s *Server) Close() error {
 }
 
 func (s *Server) closeAll() error {
+	s.providerMu.Lock()
+	s.providersClosed = true
+	companions := s.providerConnections
+	s.providerMu.Unlock()
+	for _, companion := range companions {
+		companion.close()
+	}
 	s.connections.close()
 	s.gmailConnections.close()
 	s.notionConnections.close()

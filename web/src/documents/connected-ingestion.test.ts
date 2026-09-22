@@ -13,3 +13,12 @@ it('refuses the wrong source kind before saving any acquired attachment',async()
  await expect(ingestSource({resourceId:'11111111222233334444555555555555',grant:'aa'.repeat(32)},'notion',{gateway:pin,documents:{enabled:true,maxFileBytes:4<<20}} as never,new AbortController().signal,()=>{})).rejects.toThrow()
  expect(mocks.fetch).not.toHaveBeenCalled();expect(mocks.seal).not.toHaveBeenCalled()
 })
+
+it.each(['provider','resourceId'] as const)('refuses inconsistent generic %s before retaining bytes',async key=>{
+ const {signedResource}=await import('./__fixtures__/signedResource')
+ const {genericConnection}=await import('../testing/genericConnection')
+ const {object,pin}=await signedResource(record=>{record.provenance.source[key]='other'})
+ mocks.acquire.mockResolvedValue({text:object.proof!.response})
+ await expect(ingestSource({resourceId:'bucket/policy.txt',grant:'aa'.repeat(32)},'fixture-files',{gateway:pin,documents:{enabled:true,maxFileBytes:4<<20}} as never,new AbortController().signal,()=>{},genericConnection)).rejects.toThrow()
+ expect(mocks.fetch).not.toHaveBeenCalled();expect(mocks.seal).not.toHaveBeenCalled()
+})

@@ -52,6 +52,10 @@ func RunLocalGatewayWorker(input io.Reader, output io.Writer) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() { _, _ = io.Copy(io.Discard, reader); cancel() }()
+	sourceArgs, err := localGatewaySourceArgs(ctx, options.Bundle)
+	if err != nil {
+		return err
+	}
 	for attempt := 0; attempt < 5; attempt++ {
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
@@ -63,8 +67,10 @@ func RunLocalGatewayWorker(input io.Reader, output io.Writer) error {
 		// announcement and verify the pre-pinned identity; retry a bind collision.
 		listener.Close()
 		url := "http://127.0.0.1:" + strconv.Itoa(port)
-		cmd := exec.Command(filepath.Join(options.Bundle, executableName("gateway")), "serve", filepath.Join(options.Dir, "store"), options.Seed, localAuthority, filepath.Join(options.Dir, "registry.jsonl"),
-			"--port", strconv.Itoa(port), "--receipt-version", "3", "--max-request", "33554432", "--source-timeout", "documents=40", "--source", "documents="+executableName("adapter-document")+" --max-bytes 16777216 --max-output 8388608 --timeout 30s", "--source-timeout", "drive=60", "--source", "drive="+executableName("adapter-drive")+" --principal desk-local", "--source-env", "drive=JPACK_CONNECTIONS_DIR", "--source-shape", "drive=http", "--source-timeout", "gmail=60", "--source", "gmail="+executableName("adapter-gmail")+" --principal desk-local", "--source-env", "gmail=JPACK_CONNECTIONS_DIR", "--source-shape", "gmail=http", "--source-timeout", "notion=60", "--source", "notion="+executableName("adapter-sources")+" --provider notion --principal desk-local", "--source-env", "notion=JPACK_CONNECTIONS_DIR", "--source-shape", "notion=mcp", "--source-timeout", "obsidian=60", "--source", "obsidian="+executableName("adapter-sources")+" --provider obsidian --principal desk-local", "--source-env", "obsidian=JPACK_CONNECTIONS_DIR", "--source-timeout", "web=60", "--source", "web="+executableName("adapter-web"), "--source-shape", "web=http", "--source-max-output", "16777216")
+		args := []string{"serve", filepath.Join(options.Dir, "store"), options.Seed, localAuthority, filepath.Join(options.Dir, "registry.jsonl"), "--port", strconv.Itoa(port), "--receipt-version", "3", "--max-request", "33554432", "--source-max-output", "16777216"}
+		args = append(args, sourceArgs...)
+		cmd := exec.Command(filepath.Join(options.Bundle, executableName("gateway")), args...)
+
 		cmd.Dir = options.Dir
 		// The CLI splits a source declaration into words. Resolve the adapter by its
 		// fixed basename on a dedicated PATH so installation paths may contain spaces.

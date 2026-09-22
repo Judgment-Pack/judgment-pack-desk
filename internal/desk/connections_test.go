@@ -94,13 +94,17 @@ func TestGmailRoutesStayAuthenticatedAndCannotFallback(t *testing.T) {
 			t.Fatal(path, status)
 		}
 	}
-	for _, path := range []string{"/api/connections/gmail/send", "/api/connections/gmail/pick", "/api/connections/google-drive/search", "/api/connections/unknown/status"} {
+	for _, path := range []string{"/api/connections/gmail/send", "/api/connections/gmail/pick", "/api/connections/google-drive/search"} {
 		status, _ := sendJSON(t, ts, "POST", path, map[string]string{})
 		if status != 400 {
 			t.Fatal(path, status)
 		}
 	}
-	status, body := sendJSON(t, ts, "POST", "/api/connections/gmail/status", map[string]string{})
+	status, body := sendJSON(t, ts, "POST", "/api/connections/unknown/status", map[string]string{})
+	if status != 200 || body["state"] != "unavailable" {
+		t.Fatal("unavailable discovery invented provider support", status, body)
+	}
+	status, body = sendJSON(t, ts, "POST", "/api/connections/gmail/status", map[string]string{})
 	if status != 200 || body["provider"] != "gmail" || body["state"] != "unavailable" {
 		t.Fatal(status, body)
 	}

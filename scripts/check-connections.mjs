@@ -32,7 +32,7 @@ try {
  await page.getByRole('button',{name:/Obsidian/}).click();
  const dialog=page.locator('#desk-inspector');await dialog.getByRole('textbox',{name:'Vault folder'}).fill(`${work}/vault`);
  await dialog.getByText('How it works',{exact:true}).click();await page.screenshot({path:`${out}/connect.png`});
- await dialog.getByRole('button',{name:'Connect vault',exact:true}).click();
+ await dialog.getByRole('button',{name:'Connect',exact:true}).click();
  const row=dialog.getByRole('checkbox');await row.waitFor();if(await row.count()!==1)throw Error('Hidden vault note leaked');
  await row.check();await page.screenshot({path:`${out}/select.png`});
  await dialog.getByRole('button',{name:'Attach 1 item',exact:true}).click();
@@ -60,10 +60,10 @@ try {
  findings.locales=[];
  for(const locale of ['en','fr','es','de','it','pt-PT','pt-BR','ko','zh-Hans','zh-Hant','yue-Hant','ja']){
   const msgs=JSON.parse(await readFile(`${repo}/web/src/i18n/locales/${locale}.json`,'utf8'));
-  await page.evaluate(locale=>localStorage.setItem('jpack-desk.language.v1',locale),locale);await page.setViewportSize({width:390,height:720});await page.reload();
+  await page.evaluate(locale=>localStorage.setItem('jpack-desk.language.v1',locale),locale);await page.setViewportSize({width:390,height:720});await page.reload();await page.waitForLoadState('networkidle');
   await page.getByRole('button',{name:msgs['Attach files'],exact:true}).click();await page.getByRole('menuitem',{name:msgs['More connections'],exact:true}).click();await page.getByRole('button',{name:/Obsidian/}).click();
   const popup=page.locator('#desk-inspector');await popup.getByRole('textbox',{name:msgs['Vault folder']}).waitFor();const box=await popup.boundingBox();
-  if(box.x<0||box.x+box.width>391||await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1))throw Error('Overflow '+locale);
+  if(!box||box.x<0||box.x+box.width>391||await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1))throw Error('Missing pane or overflow '+locale);
   findings.locales.push(locale);if(locale==='ja')await page.screenshot({path:`${out}/narrow-ja.png`});await page.keyboard.press('Escape');
  }
  findings.errors=errors;if(!findings.composerFocused||!findings.draftPreserved||!findings.verified||!findings.routeChangeClosedConnections||errors.length)throw Error('Interaction regression');
