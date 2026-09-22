@@ -80,7 +80,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
   useConnectionChatLock(chat.id, locked)
   const connectionBusy = connections.busyChatId === chat.id
   const attachmentButton = useRef<HTMLButtonElement>(null)
-  const openConnection = (provider?: ConnectionProvider) => requestAnimationFrame(() => connections.open({ provider, chatId: chat.id, opener: attachmentButton.current }))
+  const openConnection = (provider?: ConnectionProvider) => requestAnimationFrame(() => connections.open({ provider, descriptor: connectionCatalog.entries.find(item => item.descriptor.id === provider)?.descriptor, chatId: chat.id, opener: attachmentButton.current }))
   const upload = useChatAttachments(store, chat.id, locked || running, research)
   const unsubmitted = drafts.some(draft => draft.id === chat.id)
   const otherRun = store?.running && store.running !== chat.id ? store.running : undefined
@@ -194,7 +194,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
           <input ref={fileInput} hidden type="file" tabIndex={-1} accept={TEXT_ATTACHMENT_ACCEPT} multiple onChange={event => { void upload.attach([...(event.target.files ?? [])]); event.target.value = '' }} />
           <AttachmentMenu triggerRef={attachmentButton} disabled={running || locked || upload.reading || connectionBusy} onUpload={() => fileInput.current?.click()} onLink={connectionCatalog.web ? () => requestAnimationFrame(() => connections.open({ source: 'web', chatId: chat.id, opener: attachmentButton.current })) : undefined}
             onMore={() => openConnection()}
-            connections={connectionCatalog.entries.filter(item => !item.status.isError && item.status.data?.state === 'connected').map(item => ({ provider: item.descriptor.id, selection: item.descriptor.selection, onSelect: () => openConnection(item.descriptor.id) }))} />
+            connections={connectionCatalog.entries.filter(item => !item.status.isError && item.status.data?.state === 'connected').map(item => ({ descriptor: item.descriptor, provider: item.descriptor.id, selection: item.descriptor.selection, onSelect: () => openConnection(item.descriptor.id) }))} />
           <div className={styles.pick}><VisuallyHidden.Root asChild><label htmlFor={`${id}-mode`}>{msg("Task tools")}</label></VisuallyHidden.Root><Select quiet id={`${id}-mode`} value={chat.mode} disabled={running || locked || (chat.mode === 'research' && state.candidates.length > 0)} onValueChange={mode => store?.update(chat.id, { mode: mode as Chat['mode'] })} options={[{ value: 'draft', label: msg("Chat") }, { value: 'research', label: msg("Research") }]} /></div>
           {(slot.endpoint?.models.length ?? 0) > 0 && <div className={styles.model}><VisuallyHidden.Root asChild><label htmlFor={`${id}-model`}>{msg("Model")}</label></VisuallyHidden.Root><Select quiet id={`${id}-model`} value={binding?.model} disabled={running || locked} onValueChange={model => store?.update(chat.id, { model })} options={slot.endpoint!.models.map(model => ({ value: model, label: model }))} /></div>}
           <AssistantOptions thinking={slot.thinking} tools={slot.endpoint?.tools ?? []} mode={chat.mode} review={chat.adversarialReview === true} onReview={value => store?.update(chat.id, { adversarialReview: value })} disabled={running || locked} notice={[...state.events].reverse().find(event => event.type === "thinking_unavailable")?.detail} />

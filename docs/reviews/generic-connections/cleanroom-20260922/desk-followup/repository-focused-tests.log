@@ -1,0 +1,44 @@
+
+> judgment-pack-desk-web@0.1.0 test
+> vitest run --reporter=verbose src/connections/ConnectionsPane.test.tsx src/connections/ConnectionsPane.oauth-registration.test.tsx
+
+
+ RUN  v4.1.11 /tmp/jp-foundation-cleanroom-20260922/desk-followup/web
+
+ ✓ src/connections/ConnectionsPane.oauth-registration.test.tsx > allows OAuth sign-in for a form registration: register 316ms
+ ✓ src/connections/ConnectionsPane.oauth-registration.test.tsx > allows OAuth sign-in for a form registration: existing 30ms
+ ✓ src/connections/ConnectionsPane.oauth-registration.test.tsx > allows OAuth sign-in for a form registration: reconnect 22ms
+ ✓ src/connections/ConnectionsPane.test.tsx > keeps discovery separate from attachment and attaches selected IDs through the gateway 355ms
+ ✓ src/connections/ConnectionsPane.test.tsx > accounts for existing attachments and clears stale selections on a failed new search 119ms
+ ✓ src/connections/ConnectionsPane.test.tsx > cancels a pending selection on leave and ignores a late reply 54ms
+ ✓ src/connections/ConnectionsPane.test.tsx > cancels a pending selection on account and ignores a late reply 82ms
+ ✓ src/connections/ConnectionsPane.test.tsx > cancels a pending selection on configuration and ignores a late reply 47ms
+ ✓ src/connections/ConnectionsPane.test.tsx > retains the typed query and selected sources when the portal moves to a drawer 66ms
+ ✓ src/connections/ConnectionsPane.test.tsx > keeps Gmail page selections within the same connection epoch 77ms
+ ✓ src/connections/ConnectionsPane.test.tsx > does not close when selected content could not be attached 58ms
+ ✓ src/connections/ConnectionsPane.test.tsx > starts google-drive consent only from an explicit action, without attaching 24ms
+ ✓ src/connections/ConnectionsPane.test.tsx > starts gmail consent only from an explicit action, without attaching 12ms
+ ✓ src/connections/ConnectionsPane.test.tsx > starts notion consent only from an explicit action, without attaching 12ms
+ ✓ src/connections/ConnectionsPane.test.tsx > cancels sign-in without closing the pane or attaching a late result 20ms
+ ✓ src/connections/ConnectionsPane.test.tsx > sends the vault path only to gateway configuration 30ms
+ ✓ src/connections/ConnectionsPane.test.tsx > shows Google setup inline with instructions, without opening a modal or consent 27ms
+ ✓ src/connections/ConnectionsPane.test.tsx > offers the registered providers in a searchable catalog 29ms
+ ✓ src/connections/ConnectionsPane.test.tsx > reports catalog failure once with retry instead of showing guessed providers 14ms
+ ✓ src/connections/ConnectionsPane.test.tsx > cancels a pending selection when its gateway capability disappears 48ms
+ ✓ src/connections/ConnectionsPane.test.tsx > uses the gateway query requirement instead of assuming a provider can browse 47ms
+ ✓ src/connections/ConnectionsPane.test.tsx > cancels pending attachment when its retained chat locks, but not when another chat locks 62ms
+ ✓ src/connections/ConnectionsPane.test.tsx > drops earlier Gmail selections when the connection epoch changes between pages 46ms
+ ✓ src/connections/ConnectionsPane.test.tsx > offers explicit reconnect after a revoked connection without opening consent automatically 54ms
+ ✓ src/connections/ConnectionsPane.test.tsx > configures and attaches a new protocol-compatible provider without a named handler 87ms
+ ✓ src/connections/ConnectionsPane.test.tsx > waits for configuration to settle before browsing once, without a second click 64ms
+ ✓ src/connections/ConnectionsPane.test.tsx > shows scope and limits, pages by the submitted prefix, and disables unreadable objects 106ms
+ ✓ src/connections/ConnectionsPane.test.tsx > refuses a repeated cursor and does not silently restart paging 44ms
+ ✓ src/connections/ConnectionsPane.test.tsx > clears selections when the configured resource changes within the same account 34ms
+ ✓ src/connections/ConnectionsPane.test.tsx > reports local disconnect truthfully for keys and requires explicit confirmation 61ms
+ ✓ src/connections/ConnectionsPane.test.tsx > offers credential replacement for a key error without starting OAuth 28ms
+
+ Test Files  2 passed (2)
+      Tests  31 passed (31)
+   Start at  09:17:50
+   Duration  3.31s (transform 828ms, setup 154ms, import 1.35s, tests 2.08s, environment 1.39s)
+

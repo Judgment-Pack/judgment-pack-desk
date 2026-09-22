@@ -92,3 +92,43 @@ func TestConnectionCatalogRequiresSessionAndNeverFallsBack(t *testing.T) {
 		t.Fatal("catalog accepted parameters", status)
 	}
 }
+
+const catalogV3Fixture = `{"version":3,"sources":[],"providers":[{"id":"fixture-files","auth":"credentials","registration":"form","selection":"source-search","queryRequired":false,"operations":["status","configure","search","select","disconnect"],"protocol":"connection-v1","queryMode":"prefix","presentation":{"name":"Fixture files","icon":"","description":{"en":"Files"},"instructions":{"en":"Choose sources"}},"setup":[{"key":"key","type":"password","label":{"en":"Access key"},"required":true}],"authorizationEndpoints":[],"source":{"id":"fixture-files","shape":"command","record":"resource-v1"}}]}`
+
+func TestConnectionCatalogV3Metadata(t *testing.T) {
+	for _, example := range []struct {
+		name, raw string
+		ok        bool
+	}{
+		{"new provider", catalogV3Fixture, true},
+		{"unknown protocol remains visible", strings.Replace(catalogV3Fixture, "connection-v1", "connection-v2", 1), true},
+		{"null endpoints", strings.Replace(catalogV3Fixture, `"authorizationEndpoints":[]`, `"authorizationEndpoints":null`, 1), false},
+		{"remote icon", strings.Replace(catalogV3Fixture, `"icon":""`, `"icon":"https://example.com/icon.png"`, 1), false},
+		{"source extra member", strings.Replace(catalogV3Fixture, `"record":"resource-v1"`, `"record":"resource-v1","executable":"evil"`, 1), false},
+		{"source duplicate member", strings.Replace(catalogV3Fixture, `"record":"resource-v1"`, `"record":"note-v1","record":"resource-v1"`, 1), false},
+		{"presentation extra member", strings.Replace(catalogV3Fixture, `"name":"Fixture files"`, `"name":"Fixture files","html":"<script>"`, 1), false},
+		{"no English fallback", strings.Replace(catalogV3Fixture, `"en":"Files"`, `"fr":"Fichiers"`, 1), false},
+		{"prototype setup key", strings.Replace(catalogV3Fixture, `"key":"key"`, `"key":"constructor"`, 1), false},
+		{"capability URL", strings.Replace(catalogV3Fixture, `"authorizationEndpoints":[]`, `"authorizationEndpoints":["https://example.com/login?key=secret"]`, 1), false},
+		{"HTTP URL", strings.Replace(catalogV3Fixture, `"authorizationEndpoints":[]`, `"authorizationEndpoints":["http://example.com/login"]`, 1), false},
+		{"empty query", strings.Replace(catalogV3Fixture, `"authorizationEndpoints":[]`, `"authorizationEndpoints":["https://example.com/login?"]`, 1), false},
+		{"safe authorization", strings.Replace(catalogV3Fixture, `"authorizationEndpoints":[]`, `"authorizationEndpoints":["https://example.com/login"]`, 1), true},
+	} {
+		t.Run(example.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestDeskCatalogHelper$")
+			cmd.Env = append(os.Environ(), "DESK_CATALOG_HELPER="+example.raw)
+			raw, err := runConnectionCatalog(ctx, cmd)
+			if (err == nil) != example.ok {
+				t.Fatalf("catalog result: %s %v", raw, err)
+			}
+			if example.ok && string(raw) != example.raw {
+				t.Fatal("metadata changed during relay")
+			}
+			if !example.ok && raw != nil {
+				t.Fatal("invalid metadata returned")
+			}
+		})
+	}
+}

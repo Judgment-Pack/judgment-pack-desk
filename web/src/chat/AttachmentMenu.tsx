@@ -8,7 +8,7 @@ import { providerName } from '../connections/registry'
 import type { ConnectionDescriptor } from '../connections/catalog'
 import styles from './AttachmentMenu.module.css'
 
-type MenuConnection = { provider: ConnectionDescriptor['id']; selection: ConnectionDescriptor['selection']; onSelect: () => void }
+type MenuConnection = { descriptor?: ConnectionDescriptor; provider: ConnectionDescriptor['id']; selection: ConnectionDescriptor['selection']; onSelect: () => void }
 
 /** The gateway catalog and current status determine the connected shortcuts. */
 export function AttachmentMenu({ disabled, onUpload, connections = [], triggerRef, onMore, onLink }: {
@@ -36,8 +36,8 @@ export function AttachmentMenu({ disabled, onUpload, connections = [], triggerRe
         </DropdownMenu.Item>}
         {visible.map(item => {
           const current = connections.find(connection => connection.provider === item.provider)
-          return <DropdownMenu.Item key={item.provider} className={`desk-menu-item ${styles.item}`} textValue={providerName(item.provider)} disabled={!current} onSelect={current?.onSelect}>
-            <ProviderIcon provider={item.provider} /><span className={styles.copy}><span>{providerName(item.provider)}</span><span className={styles.description}>{!current ? msg('Unavailable') : item.selection === 'browser-picker' ? msg('Choose files') : item.selection === 'mail-search' ? msg('Choose emails') : msg('Choose notes')}</span></span>
+          return <DropdownMenu.Item key={item.provider} className={`desk-menu-item ${styles.item}`} textValue={providerName(item.provider, item.descriptor)} disabled={!current} onSelect={current?.onSelect}>
+            <ProviderIcon provider={item.provider} descriptor={item.descriptor} /><span className={styles.copy}><span>{providerName(item.provider, item.descriptor)}</span><span className={styles.description}>{!current ? msg('Unavailable') : item.selection === 'browser-picker' ? msg('Choose files') : item.selection === 'mail-search' ? msg('Choose emails') : item.descriptor?.source?.record === 'resource-v1' ? msg('Choose files') : msg('Choose notes')}</span></span>
           </DropdownMenu.Item>
         })}
         {onMore && <><DropdownMenu.Separator className="desk-menu-separator" /><DropdownMenu.Item className="desk-menu-item" onSelect={onMore}>{msg('More connections')}</DropdownMenu.Item></>}

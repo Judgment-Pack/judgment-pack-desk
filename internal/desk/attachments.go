@@ -48,6 +48,10 @@ type attachmentProof struct {
 		Grant      string `json:"grant"`
 		ResourceID string `json:"resourceId"`
 	} `json:"connected,omitempty"`
+	Resource *struct {
+		Grant      string `json:"grant"`
+		ResourceID string `json:"resourceId"`
+	} `json:"resource,omitempty"`
 }
 type attachmentObject struct {
 	Version  int                `json:"version"`

@@ -1,0 +1,13 @@
+
+> judgment-pack-desk-web@0.1.0 test
+> vitest run --maxWorkers=4 src/connections/ConnectionsPane.oauth-registration.test.tsx src/connections/ConnectionsPane.test.tsx
+
+
+ RUN  v4.1.11 /tmp/jp-foundation-cleanroom-20260922/author-fix/web
+
+
+ Test Files  2 passed (2)
+      Tests  31 passed (31)
+   Start at  09:13:24
+   Duration  2.92s (transform 710ms, setup 154ms, import 1.17s, tests 1.55s, environment 1.53s)
+

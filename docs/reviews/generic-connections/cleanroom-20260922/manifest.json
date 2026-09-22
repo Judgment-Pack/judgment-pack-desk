@@ -1,0 +1,14 @@
+[
+  {
+    "repository": "gateway",
+    "path": "/tmp/jp-foundation-cleanroom-20260922/gateway",
+    "head": "a36190272b012dd5f9d4e5fcaab55a5421fc2eaf",
+    "base": "f62de27b82c8f31d90bffc2f11a2be37ee4d9962"
+  },
+  {
+    "repository": "desk",
+    "path": "/tmp/jp-foundation-cleanroom-20260922/desk",
+    "head": "c67f6096c4285a62726d7c39b4615ee2a99803c6",
+    "base": "88009f99324e19a7b8b14f6a38d4891e5b99e531"
+  }
+]

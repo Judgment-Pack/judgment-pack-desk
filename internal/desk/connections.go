@@ -144,28 +144,19 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, 400, CodeBadRequest, "unknown connection operation")
 		return
 	}
-	companion := &s.connections
-	switch provider {
-	case "", "google-drive":
+	if provider == "" {
 		provider = "google-drive"
-	case "gmail":
-		companion = &s.gmailConnections
-	case "notion":
-		companion = &s.notionConnections
-	case "obsidian":
-		companion = &s.obsidianConnections
-	default:
+	}
+	// Preserve legacy endpoint refusals even when no companion is available.
+	if method == "pick" && (provider == "gmail" || provider == "notion" || provider == "obsidian") || (method == "search" || method == "select") && provider == "google-drive" {
+		writeJSONCoded(w, 400, CodeBadRequest, "unknown connection operation")
+		return
+	}
+	if !catalogIdentifier.MatchString(provider) {
 		writeJSONCoded(w, 400, CodeBadRequest, "unknown connection provider")
 		return
 	}
-	if (method == "search" || method == "select") && provider == "google-drive" {
-		writeJSONCoded(w, 400, CodeBadRequest, "unknown connection operation")
-		return
-	}
-	if method == "pick" && provider != "google-drive" {
-		writeJSONCoded(w, 400, CodeBadRequest, "unknown connection operation")
-		return
-	}
+
 	switch method {
 	case "catalog", "status", "configure", "connect", "pick", "poll", "cancel", "disconnect", "search", "select":
 	default:
@@ -212,7 +203,7 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 200, map[string]any{"version": 1, "provider": provider, "state": "unavailable", "maxFileBytes": 4 << 20, "maxFiles": 4})
 			return
 		}
-		if provider != "google-drive" && (method == "search" || method == "select") {
+		if method == "search" || method == "select" {
 			gateway, err := s.configuredResearch()
 			if err != nil || !gateway.managedLocal || gateway.maxFileBytes == 0 {
 				writeJSONCoded(w, http.StatusConflict, CodeResearchUnconfigured, "local document processing is no longer available; nothing was sent")
@@ -228,7 +219,32 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	if method == "catalog" {
 		out, err = readConnectionCatalog(ctx, bundle)
 	} else {
-		out, err = companion.call(ctx, bundle, directory, method, body, provider, method == "cancel")
+		if method != "cancel" {
+			catalogRaw, catalogErr := readConnectionCatalog(ctx, bundle)
+			var catalog connectionCatalog
+			if catalogErr != nil || json.Unmarshal(catalogRaw, &catalog) != nil {
+				writeJSONCoded(w, 503, CodeBadRequest, "gateway connection service unavailable")
+				return
+			}
+			allowed := false
+			for _, descriptor := range catalog.Providers {
+				if descriptor.ID == provider {
+					for _, operation := range descriptor.Operations {
+						allowed = allowed || operation == method
+					}
+				}
+			}
+			if !allowed {
+				writeJSONCoded(w, 400, CodeBadRequest, "unknown connection operation")
+				return
+			}
+		}
+		companion := s.connectionCompanion(provider, method != "cancel")
+		if companion == nil {
+			out = json.RawMessage(`{"state":"canceled"}`)
+		} else {
+			out, err = companion.call(ctx, bundle, directory, method, body, provider, method == "cancel")
+		}
 	}
 	if err != nil {
 		writeJSONCoded(w, 503, CodeBadRequest, "gateway connection service unavailable")
@@ -237,4 +253,32 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
 	_, _ = w.Write(out)
+}
+
+func (s *Server) connectionCompanion(provider string, create bool) *connectionCompanion {
+	s.providerMu.Lock()
+	defer s.providerMu.Unlock()
+	if s.providersClosed {
+		return nil
+	}
+	// Existing fields preserve ownership for callers of the legacy endpoints.
+	switch provider {
+	case "google-drive":
+		return &s.connections
+	case "gmail":
+		return &s.gmailConnections
+	case "notion":
+		return &s.notionConnections
+	case "obsidian":
+		return &s.obsidianConnections
+	}
+	if s.providerConnections == nil {
+		s.providerConnections = map[string]*connectionCompanion{}
+	}
+	c := s.providerConnections[provider]
+	if c == nil && create && len(s.providerConnections) < 32 {
+		c = &connectionCompanion{}
+		s.providerConnections[provider] = c
+	}
+	return c
 }

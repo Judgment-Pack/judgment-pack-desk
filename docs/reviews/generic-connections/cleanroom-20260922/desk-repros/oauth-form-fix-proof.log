@@ -1,0 +1,14 @@
+
+> judgment-pack-desk-web@0.1.0 test
+> vitest run --reporter=verbose src/connections/cleanroom-oauth-form.test.tsx
+
+
+ RUN  v4.1.11 /tmp/jp-foundation-cleanroom-20260922/desk-repros/web
+
+ ✓ src/connections/cleanroom-oauth-form.test.tsx > allows OAuth sign-in after successfully saving required form registration 181ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  09:10:22
+   Duration  1.35s (transform 343ms, setup 65ms, import 483ms, tests 182ms, environment 500ms)
+

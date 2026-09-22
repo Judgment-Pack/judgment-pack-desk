@@ -1,0 +1,59 @@
+
+> judgment-pack-desk-web@0.1.0 test
+> vitest run --maxWorkers=2 src/connections/ConnectionsPane.oauth-registration.test.tsx
+
+
+ RUN  v4.1.11 /tmp/jp-foundation-cleanroom-20260922/author-fix/web
+
+ ❯ src/connections/ConnectionsPane.oauth-registration.test.tsx (3 tests | 3 failed) 220ms
+   × allows OAuth sign-in for a form registration: register 188ms
+   × allows OAuth sign-in for a form registration: existing 14ms
+   × allows OAuth sign-in for a form registration: reconnect 16ms
+
+ Test Files  1 failed (1)
+      Tests  3 failed (3)
+   Start at  09:14:17
+   Duration  1.41s (transform 341ms, setup 70ms, import 470ms, tests 220ms, environment 510ms)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/connections/ConnectionsPane.oauth-registration.test.tsx > allows OAuth sign-in for a form registration: register
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ src/connections/ConnectionsPane.oauth-registration.test.tsx:39:26
+     37|  expect(screen.queryByLabelText('Access key')).toBeNull()
+     38|  const button=screen.getByRole('button',{name:mode==='reconnect'?'Reco…
+     39|  expect(button.disabled).toBe(false)
+       |                          ^
+     40|  expect(mocks.authorize).not.toHaveBeenCalled()
+     41|  fireEvent.click(button)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  src/connections/ConnectionsPane.oauth-registration.test.tsx > allows OAuth sign-in for a form registration: existing
+ FAIL  src/connections/ConnectionsPane.oauth-registration.test.tsx > allows OAuth sign-in for a form registration: reconnect
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ src/connections/ConnectionsPane.oauth-registration.test.tsx:39:26
+     37|  expect(screen.queryByLabelText('Access key')).toBeNull()
+     38|  const button=screen.getByRole('button',{name:mode==='reconnect'?'Reco…
+     39|  expect(button.disabled).toBe(false)
+       |                          ^
+     40|  expect(mocks.authorize).not.toHaveBeenCalled()
+     41|  fireEvent.click(button)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+

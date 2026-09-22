@@ -180,7 +180,7 @@ function ShellFrame({
   }, [])
   const connectionContext = useMemo(() => ({ open: openConnection, busyChatId, activeChatId: connection?.chatId, close: closeConnection }), [openConnection, busyChatId, connection?.chatId, closeConnection])
   const presentation: InspectorPresentation | null = connection ? {
-    title: connection.source === 'web' ? msg('Add link') : connection.provider ? providerName(connection.provider) : msg('Connections'),
+    title: connection.source === 'web' ? msg('Add link') : connection.provider ? providerName(connection.provider, connection.descriptor) : msg('Connections'),
     available: true, open: true, onOpenChange: open => { if (!open) closeConnection() },
     width: connectionWidth, onResize: setConnectionWidth, onReset: () => setConnectionWidth(480),
     minimumMainWidth: 560, maximumWidth: 560, closeOnEscape: true, restoreFocusRef: connectionOpener
@@ -408,11 +408,11 @@ function ShellFrame({
               utility={Boolean(connection)}
               publishUtilityTarget={setConnectionTarget}
               navigation={connection && <>{(connection.provider || packPage) && <button type="button" className="desk-icon-button" aria-label={connection.provider ? msg('All connections') : msg('Back to assistant')}
-                onClick={() => connection.provider ? setConnection({ ...connection, provider: undefined }) : closeConnection()}><IconChevronLeft /></button>}{connection.provider && <ProviderIcon provider={connection.provider} />}</>}
+                onClick={() => connection.provider ? setConnection({ ...connection, provider: undefined }) : closeConnection()}><IconChevronLeft /></button>}{connection.provider && <ProviderIcon provider={connection.provider} descriptor={connection.descriptor} />}</>}
             />
 
             {connection?.source === 'web' ? <WebSourcePane request={connection} target={connectionTarget} onClose={closeConnection} onAttached={() => closeConnection(true)} onBusy={setBusyChatId} /> : connection && <ConnectionsPane key={connection.provider ?? 'catalog'} request={connection} target={connectionTarget}
-              onProvider={provider => setConnection({ ...connection, provider })} onClose={closeConnection} onAttached={() => closeConnection(true)} onBusy={setBusyChatId} />}
+              onProvider={(provider, descriptor) => setConnection({ ...connection, provider, descriptor })} onClose={closeConnection} onAttached={() => closeConnection(true)} onBusy={setBusyChatId} />}
 
             {shell.console.open && <PaneDivider orientation="horizontal" label={msg("Details and activity")} controls="desk-console"
               value={bottomHeight} min={bottomMin} max={bottomMax}

@@ -1,15 +1,16 @@
 import { useQuery } from '@tanstack/react-query'
 import { deskFetch, answer } from '../files/client'
 import { sourceMessage } from '../i18n/source'
-export type SourceProvider = 'notion' | 'obsidian'
-export type ConnectionProvider = 'google-drive' | 'gmail' | SourceProvider
+import { readResourceStatus } from './resourceProtocol'
+export type SourceProvider = string
+export type ConnectionProvider = string
 export interface SourceSelection { resourceId: string; grant: string }
-export interface SourcePreview { id: string; title: string; url: string; description?: string }
-export interface SourceSearch { selectionContext: string; items: SourcePreview[]; more: boolean }
+export interface SourcePreview { id: string; title: string; url: string; description?: string; sizeBytes?: number; unavailableReason?: string }
+export interface SourceSearch { selectionContext: string; items: SourcePreview[]; more: boolean; nextPageToken?: string }
 export interface MailSelection { messageId: string; grant: string }
 export interface MailPreview { id: string; subject: string; from: string; date: string }
 export interface MailSearch { selectionContext: string; messages: MailPreview[]; nextPageToken?: string }
-export interface ConnectionStatus { version: 1; provider: ConnectionProvider; state: 'setup-required'|'not-connected'|'connected'|'blocked'|'unavailable'; account?: { id: string; email: string; name: string }; maxFileBytes: number; maxFiles: number }
+export interface ConnectionStatus { version: 1; provider: ConnectionProvider; state: 'setup-required'|'not-connected'|'connected'|'blocked'|'unavailable'; account?: { id: string; email: string; name: string }; resource?: {id: string; name: string}; maxFileBytes: number; maxFiles: number }
 export interface DriveSelection { fileId: string; grant: string }
 export interface ConnectionFlow { id: string; state: 'pending'|'complete'|'failed'|'canceled'; url?: string; error?: string; selections?: DriveSelection[] }
 export const CONNECTIONS_KEY = ['gateway-connections'] as const
@@ -17,17 +18,31 @@ export class ConnectionRequestError extends Error {
  constructor(readonly code: string, readonly provider: ConnectionProvider) {
   super(connectionError(code, provider)); this.name = 'ConnectionRequestError'
  }
- get reconnectRequired() { return ['reconnect-required', 'connect-required', 'registration-expired'].includes(this.code) }
+ get reconnectRequired() { return ['reconnect-required', 'connect-required', 'registration-expired','credentials-required'].includes(this.code) }
 }
 export function connectionFailure(cause: unknown, provider: ConnectionProvider): ConnectionRequestError {
  if (cause instanceof ConnectionRequestError) return cause
  // Adapter refusals arrive as gateway diagnostics. Recognize only these exact
  // protocol code tokens; never use translated display copy to drive recovery.
  const tokens = cause instanceof Error ? cause.message.split(/[^a-z-]+/) : []
- const code = ['reconnect-required', 'connect-required', 'registration-expired', 'source-incomplete', 'source-changed', 'file-too-large', 'blocked-by-policy'].find(code => tokens.includes(code))
+ const code = ['reconnect-required', 'connect-required', 'registration-expired', 'source-incomplete', 'source-changed', 'file-too-large', 'blocked-by-policy','credentials-required','archived','permission-required','not-downloadable','unsupported-file','selection-expired','rate-limited'].find(code => tokens.includes(code))
  return new ConnectionRequestError(code ?? 'retrieval-failed', provider)
 }
 export function connectionError(code: string, provider: ConnectionProvider = 'google-drive'): string {
+ if (!['google-drive','gmail','notion','obsidian'].includes(provider)) {
+  if (code === 'credentials-required') return sourceMessage('Update the connection credentials to continue.')
+  if (code === 'archived') return sourceMessage('Archived. Restore this file at the provider before attaching it.')
+  if (code === 'permission-required') return sourceMessage('Read permission is required for this file.')
+  if (code === 'not-downloadable') return sourceMessage('This file cannot be downloaded. Export it at the provider first.')
+  if (code === 'unsupported-file') return sourceMessage('This source is not available to read with this connection.')
+  if (code === 'file-too-large') return sourceMessage('This source exceeds the connection size limit. Choose a smaller source.')
+  if (code === 'source-changed' || code === 'selection-expired') return sourceMessage('This selection expired. Search again and reselect your sources.')
+  if (code === 'rate-limited') return sourceMessage('The provider is limiting requests. Try again later.')
+  if (['reconnect-required','connect-required','registration-expired'].includes(code)) return sourceMessage('Reconnect {{provider}} to continue.', {provider})
+  if (code === 'blocked-by-policy') return sourceMessage('Managed by your organization')
+  if (code === 'canceled') return sourceMessage('Canceled.')
+  return sourceMessage('{{provider}} could not complete this request. Try again.', {provider})
+ }
  if (provider === 'notion' || provider === 'obsidian') {
   if (code === 'wrong-account') return sourceMessage('Choose the account already connected, or disconnect it first.')
   if (code === 'blocked-by-policy') return sourceMessage('Managed by your organization')
@@ -59,6 +74,7 @@ export function connectionError(code: string, provider: ConnectionProvider = 'go
  }
 }
 export async function connectionCall<T>(method: string, params: object = {}, signal?: AbortSignal, provider: ConnectionProvider = 'google-drive'): Promise<T> {
+ if (!/^[a-z][a-z0-9-]{0,47}$/.test(provider) || !/^[a-z][a-z0-9-]{0,47}$/.test(method)) throw new Error('Invalid connection request')
  const result = await answer<T & { error?: string }>(await deskFetch(`/api/connections/${provider === 'google-drive' ? '' : `${provider}/`}${method}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(params), signal }))
  if (result.error) throw new ConnectionRequestError(result.error, provider)
  return result
@@ -66,12 +82,12 @@ export async function connectionCall<T>(method: string, params: object = {}, sig
 export function useDriveStatus(enabled = true, provider: ConnectionProvider = 'google-drive') {
  return useQuery(connectionStatusOptions(provider, enabled))
 }
-export function connectionStatusOptions(provider: ConnectionProvider, enabled = true) {
- return { queryKey: provider === 'google-drive' ? CONNECTIONS_KEY : [...CONNECTIONS_KEY, provider], queryFn: ({ signal }: { signal: AbortSignal }) => connectionCall<ConnectionStatus>('status', {}, signal, provider), enabled, retry: false, staleTime: 30_000 }
+export function connectionStatusOptions(provider: ConnectionProvider, enabled = true, resource = false) {
+ return { queryKey: provider === 'google-drive' ? CONNECTIONS_KEY : [...CONNECTIONS_KEY, provider], queryFn: async ({ signal }: { signal: AbortSignal }) => {const result = await connectionCall<ConnectionStatus>('status', {}, signal, provider); return resource ? readResourceStatus(result, provider) : result}, enabled, retry: false, staleTime: 30_000 }
 }
-/** Open synchronously from the user's click. Only a Google authorization URL
- * reaches this tab; credentials and the callback are gateway-owned. */
-export async function authorizeDrive(mode: 'connect'|'pick', signal: AbortSignal, provider: ConnectionProvider = 'google-drive'): Promise<DriveSelection[]> {
+/** Open synchronously from the user's click. Only a declared authorization
+ * endpoint reaches this tab; credentials and the callback are gateway-owned. */
+export async function authorizeDrive(mode: 'connect'|'pick', signal: AbortSignal, provider: ConnectionProvider = 'google-drive', authorizationEndpoints?: string[]): Promise<DriveSelection[]> {
  const tab = window.open('about:blank', '_blank')
  if (!tab) throw new Error(sourceMessage('Allow pop-ups to open the sign-in window.'))
  tab.opener = null
@@ -79,7 +95,7 @@ export async function authorizeDrive(mode: 'connect'|'pick', signal: AbortSignal
  try {
   const flow = await connectionCall<ConnectionFlow>(mode, {}, signal, provider); id = flow.id
   const url = new URL(flow.url ?? '')
-  if (url.username || url.password || url.origin !== (provider === 'notion' ? 'https://mcp.notion.com' : 'https://accounts.google.com') || url.pathname !== (provider === 'notion' ? '/authorize' : '/o/oauth2/v2/auth') || !/^[a-f0-9]{64}$/.test(id)) throw new Error(connectionError('invalid-response', provider))
+  if (url.username || url.password || url.protocol !== 'https:' || url.hash || !(authorizationEndpoints ?? [provider === 'notion' ? 'https://mcp.notion.com/authorize' : 'https://accounts.google.com/o/oauth2/v2/auth']).includes(url.origin + url.pathname) || !/^[a-f0-9]{64}$/.test(id)) throw new Error(connectionError('invalid-response', provider))
   signal.throwIfAborted(); tab.location.href = url.href
   const until = Date.now() + 5 * 60_000
   while (Date.now() < until) {

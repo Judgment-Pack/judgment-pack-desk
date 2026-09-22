@@ -4,7 +4,7 @@ import { useChats } from '../chat/ChatProvider'
 import { useChatAttachments } from '../chat/useChatAttachments'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { validWebURL } from '../documents/record'
-import { msg, useLocale } from '../i18n'
+import { msg, systemMessage, useLocale } from '../i18n'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { Alert } from '../ui/Alert'
@@ -49,10 +49,10 @@ export function WebSourcePane({ request, target, onClose, onAttached, onBusy }: 
    {invalid && <Alert>{msg('Enter a public HTTPS link without a sign-in or fragment.')}</Alert>}
    {!capacity && <Alert>{msg('Attach up to four files at a time.')}</Alert>}
    {!available && !catalog.loading && <Alert>{msg('Local processing is unavailable. Check the details in Admin → Storage & data.')}</Alert>}
-   {upload.error && <Alert>{upload.error}</Alert>}
+   {upload.error && <Alert>{systemMessage(upload.error)}</Alert>}
   </div>
   <div className={styles.footer}>
-   {upload.reading && <p role="status">{upload.progress}</p>}
+   {upload.reading && <p role="status">{systemMessage(upload.progress)}</p>}
    <div className={styles.actions}>
     <Button type="button" variant="quiet" onClick={() => { upload.cancel(); onClose() }}>{msg('Cancel')}</Button>
     <Button type="submit" variant="primary" disabled={!url.trim() || !available || !capacity || upload.reading}>{msg('Attach link')}</Button>
