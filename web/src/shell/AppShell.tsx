@@ -161,8 +161,9 @@ function ShellFrame({
   const [busyChatId, setBusyChatId] = useState<string | undefined>()
   const connectionOpener = useRef<HTMLElement | null>(null)
   const connectionChat = useRef<string | undefined>(undefined)
-  const closeConnection = useCallback((focusComposer = false) => {
+  const closeConnection = useCallback((focusComposer = false, restoreFocus = true) => {
     setConnection(null); setBusyChatId(undefined)
+    if (!restoreFocus) return
     requestAnimationFrame(() => {
       if (focusComposer && connectionChat.current) {
         const panel = [...document.querySelectorAll<HTMLElement>('[data-chat-id]')].find(node => node.dataset.chatId === connectionChat.current)
@@ -178,7 +179,9 @@ function ShellFrame({
     connectionChat.current = request.chatId
     setConnection(request)
   }, [])
-  const connectionContext = useMemo(() => ({ open: openConnection, busyChatId, activeChatId: connection?.chatId, close: closeConnection }), [openConnection, busyChatId, connection?.chatId, closeConnection])
+  const connectionContext = useMemo(() => ({ open: openConnection, busyChatId, activeChatId: connection?.chatId,
+    close: (options?: { restoreFocus?: boolean }) => closeConnection(false, options?.restoreFocus ?? true)
+  }), [openConnection, busyChatId, connection?.chatId, closeConnection])
   const presentation: InspectorPresentation | null = connection ? {
     title: connection.source === 'web' ? msg('Add link') : connection.provider ? providerName(connection.provider, connection.descriptor) : msg('Connections'),
     available: true, open: true, onOpenChange: open => { if (!open) closeConnection() },

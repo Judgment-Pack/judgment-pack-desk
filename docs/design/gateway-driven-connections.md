@@ -10,6 +10,12 @@ Setup labels and instructions come from bounded localized gateway metadata.
 Provider icons can be bounded inline PNG; absent marks use a generic link glyph.
 Existing Google/Notion/Obsidian marks remain bundled fallbacks.
 
+Admin → Connections and the chat connection picker both read this catalog.
+Admin lists every advertised provider with its current status; compatible new
+providers open the shared connection pane without a Desk-specific settings row.
+Google Desktop registration remains available in Admin. Opening Admin only reads
+the catalog and status; connecting and changing credentials remain explicit actions.
+
 Unknown interaction protocols are visible with Update Desk to use this connection,
 and remain inactive. Discovery failure clears available actions. Descriptor or
 account changes cancel pending work and discard stale selections. Existing Google

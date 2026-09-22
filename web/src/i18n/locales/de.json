@@ -2279,5 +2279,6 @@
   "{{value}} pixels high": "{{value}} Pixel hoch",
   "{{value}} pixels wide": "{{value}} Pixel breit",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— ein Verweis auf die Repository-Datei mit der Aussage. Diese Nutzdaten treffen keine solche Aussage. Die Datei bezieht sich auf die Laufzeit, nicht auf dieses Paket, diese Fakten oder die Richtigkeit einer Handlung nach der Disposition.",
-  "… (truncated for display)": "… (für die Anzeige gekürzt)"
+  "… (truncated for display)": "… (für die Anzeige gekürzt)",
+  "{{action}}: {{provider}}": "{{action}}: {{provider}}"
 }
