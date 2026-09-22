@@ -1,4 +1,4 @@
-import { authorizeDrive, type MailSelection, type DriveSelection, type SourceSelection, type SourceProvider } from '../connections/client'
+import { ConnectionRequestError, authorizeDrive, type MailSelection, type DriveSelection, type SourceSelection, type SourceProvider } from '../connections/client'
 import { sourceMessage } from '../i18n/source'
 import { useEffect, useRef, useState } from 'react'
 import type { ChatStore, ChatAttachment } from './store'
@@ -14,7 +14,9 @@ const LIMIT = 4
  * part of the context the user chose. */
 export function useChatAttachments(store: ChatStore | null, chatId: string, disabled: boolean, config?: ResearchConfig) {
   const [reading, setReading] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setErrorText] = useState('')
+  const [connectionFailure, setConnectionFailure] = useState<ConnectionRequestError>()
+  const setError = (text: string) => { setErrorText(text); setConnectionFailure(undefined) }
   const [progress, setProgress] = useState('')
   const active = useRef<AbortController | null>(null)
   const attachmentContext = JSON.stringify([config?.gateway, config?.documents])
@@ -100,7 +102,7 @@ export function useChatAttachments(store: ChatStore | null, chatId: string, disa
       if (existing.length + pieces.length > LIMIT) throw new Error(sourceMessage('Attach up to four files at a time.'))
       store.update(chatId, { attachments: [...existing, ...pieces] })
       return true
-    } catch (cause) { if (active.current === operation) setError((cause as Error).message) }
+    } catch (cause) { if (active.current === operation) { setError((cause as Error).message); if (cause instanceof ConnectionRequestError) setConnectionFailure(cause) } }
     finally { if (active.current === operation) { active.current = null; setReading(false); setProgress('') } }
   }
   const prepare = async (files: ChatAttachment[]): Promise<string | undefined> => {
@@ -124,5 +126,5 @@ export function useChatAttachments(store: ChatStore | null, chatId: string, disa
     } catch (cause) { if (active.current === operation) setError((cause as Error).message); return undefined }
     finally { if (active.current === operation) { active.current = null; setReading(false) } }
   }
-  return { attachSource: (provider: SourceProvider, items: SourceSelection[]) => attachCloud(undefined, undefined, {provider, items}), reading, error, progress, isReading, attach, attachDrive: (items?: DriveSelection[]) => attachCloud(undefined, items), attachGmail: (items: MailSelection[]) => attachCloud(items), cancel, prepare }
+  return { connectionFailure, clearError: () => setError(''), attachSource: (provider: SourceProvider, items: SourceSelection[]) => attachCloud(undefined, undefined, {provider, items}), reading, error, progress, isReading, attach, attachDrive: (items?: DriveSelection[]) => attachCloud(undefined, items), attachGmail: (items: MailSelection[]) => attachCloud(items), cancel, prepare }
 }

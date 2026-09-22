@@ -46,6 +46,9 @@ func (c *connectionCompanion) close() { c.mu.Lock(); defer c.mu.Unlock(); c.clos
 func (c *connectionCompanion) call(ctx context.Context, bundle, dir, method string, params json.RawMessage, provider string, existingOnly bool) (json.RawMessage, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 	if c.closed {
 		return nil, errors.New("connections are closed")
 	}
@@ -118,6 +121,14 @@ func (c *connectionCompanion) call(ctx context.Context, bundle, dir, method stri
 		}
 		return envelope.Result, nil
 	case <-ctx.Done():
+		// The provider may already have rotated a refresh token. Let the
+		// companion finish its bounded operation and durable commit before
+		// closing it. Drain the reply under the mutex so it can never be
+		// mistaken for another request's response. The browser is free to leave.
+		select {
+		case <-reply:
+		case <-time.After(65 * time.Second):
+		}
 		c.stop()
 		return nil, errors.New("gateway connection request canceled")
 	}

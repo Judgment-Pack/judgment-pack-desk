@@ -5,12 +5,12 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { testQueryClient } from '../testing/harness'
 import { ConnectionsPane } from './ConnectionsPane'
-import type { ConnectionProvider } from './client'
+import { ConnectionRequestError, type ConnectionProvider } from './client'
 const mocks = vi.hoisted(() => ({ call: vi.fn(), authorize: vi.fn(), status: vi.fn(), source: vi.fn(), mail: vi.fn(), drive: vi.fn(), cancel: vi.fn(), close: vi.fn(), onBusy: vi.fn(), provider: vi.fn(), config: {} as any, snapshot: {} as any }))
-vi.mock('./client', () => ({ connectionCall: mocks.call, authorizeDrive: mocks.authorize, useDriveStatus: mocks.status, CONNECTIONS_KEY: ['gateway-connections'] }))
+vi.mock('./client', async importOriginal => ({ ...await importOriginal<typeof import('./client')>(), connectionCall: mocks.call, authorizeDrive: mocks.authorize, useDriveStatus: mocks.status, CONNECTIONS_KEY: ['gateway-connections'] }))
 vi.mock('../config/DeskConfigProvider', () => ({ useEffectiveConfig: () => mocks.config }))
 vi.mock('../chat/ChatProvider', () => ({ useChats: () => mocks.snapshot }))
-vi.mock('../chat/useChatAttachments', () => ({ useChatAttachments: () => ({ reading: false, isReading: () => false, attachSource: mocks.source, attachGmail: mocks.mail, attachDrive: mocks.drive, cancel: mocks.cancel, error: '' }) }))
+vi.mock('../chat/useChatAttachments', () => ({ useChatAttachments: () => ({ reading: false, isReading: () => false, attachSource: mocks.source, attachGmail: mocks.mail, attachDrive: mocks.drive, cancel: mocks.cancel, error: '', clearError: vi.fn() }) }))
 const rows = Array.from({ length: 5 }, (_, i) => ({ id: `note-${i}.md`, title: `Policy ${i}`, url: `obsidian://open?vault=Fixture&file=note-${i}` }))
 let account: string, state: string
 beforeEach(() => {
@@ -68,12 +68,12 @@ it('retains the typed query and selected sources when the portal moves to a draw
  expect((screen.getAllByRole('checkbox')[2] as HTMLInputElement).checked).toBe(true)
  expect(dock.children).toHaveLength(0); ui.unmount(); dock.remove(); drawer.remove()
 })
-it('keeps Gmail page selections bound to the context that returned each message', async () => {
- mocks.call.mockImplementation(async (method, params) => method === 'select' ? [{ messageId: params.messageIds[0], grant: params.selectionContext }] : params.pageToken ? { messages: [{ id: 'b', subject: 'Second' }], selectionContext: 'page-b' } : { messages: [{ id: 'a', subject: 'First' }], selectionContext: 'page-a', nextPageToken: 'next' })
+it('keeps Gmail page selections within the same connection epoch', async () => {
+ mocks.call.mockImplementation(async (method, params) => method === 'select' ? params.messageIds.map((id: string) => ({messageId: id, grant: params.selectionContext})) : params.pageToken ? { messages: [{ id: 'b', subject: 'Second' }], selectionContext: 'epoch' } : { messages: [{ id: 'a', subject: 'First' }], selectionContext: 'epoch', nextPageToken: 'next' })
  render(view('gmail')); await choose()
  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'not submitted' } }); fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
  await screen.findByText('Second'); fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(screen.getByRole('button', { name: 'Attach 2 items' }))
- await waitFor(() => expect(mocks.mail).toHaveBeenCalledWith([{ messageId: 'a', grant: 'page-a' }, { messageId: 'b', grant: 'page-b' }]))
+ await waitFor(() => expect(mocks.mail).toHaveBeenCalledWith([{ messageId: 'a', grant: 'epoch' }, { messageId: 'b', grant: 'epoch' }]))
  expect(mocks.call).toHaveBeenCalledWith('search', { query: '', pageToken: 'next' }, expect.any(AbortSignal), 'gmail')
 })
 it('does not close when selected content could not be attached', async () => {
@@ -135,4 +135,19 @@ it('cancels pending attachment when its retained chat locks, but not when anothe
  ui.rerender(<LockFixture locked />); expect(signal.aborted).toBe(true)
  await act(async () => finish([{ resourceId: 'late', grant: 'a'.repeat(64) }]))
  expect(mocks.source).not.toHaveBeenCalled()
+})
+
+it('drops earlier Gmail selections when the connection epoch changes between pages', async () => {
+ mocks.call.mockImplementation(async (_method, params) => params.pageToken ? {messages:[{id:'b',subject:'Second'}],selectionContext:'new'} : {messages:[{id:'a',subject:'First'}],selectionContext:'old',nextPageToken:'next'})
+ render(view('gmail')); await choose(); fireEvent.click(screen.getByRole('button',{name:'Next page'}))
+ await screen.findByText('Second'); expect((screen.getByRole('button',{name:'Attach 0 items'}) as HTMLButtonElement).disabled).toBe(true)
+})
+it('offers explicit reconnect after a revoked connection without opening consent automatically', async () => {
+ mocks.call.mockRejectedValue(new ConnectionRequestError('reconnect-required','notion'))
+ render(view('notion')); fireEvent.change(screen.getByRole('textbox'),{target:{value:'policy'}})
+ fireEvent.click(screen.getByRole('button',{name:'Search'}))
+ const reconnect = await screen.findByRole('button',{name:'Reconnect'})
+ expect(mocks.authorize).not.toHaveBeenCalled()
+ fireEvent.click(reconnect)
+ await waitFor(()=>expect(mocks.authorize).toHaveBeenCalledWith('connect',expect.any(AbortSignal),'notion'))
 })
