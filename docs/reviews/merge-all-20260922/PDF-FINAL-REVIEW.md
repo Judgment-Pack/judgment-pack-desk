@@ -1,6 +1,6 @@
 # Independent PDF final-delta and integration review
 
-Review date: 2026-09-22. Final scoped verdict: **approved after independent fix recheck** at `3912e7e4cb1a1f44349032cf57ee6ee0e70977fa`. The one P2 finding below is resolved. No outstanding finding remains in this review scope; the root coordinator owns the full-suite and overall merge decision.
+Review date: 2026-09-22. Final scoped verdict: **approved after independent fix rechecks**, latest candidate `ab047f477237cc344ad0b9677f29bdcc151b08d1`. The earlier approval at `3912e7e4cb1a1f44349032cf57ee6ee0e70977fa` is preserved below; the concurrent upstream follow-up is recorded in `PDF-UPSTREAM-BOUNDS-REVIEW.md`. The one P2 finding below is resolved. No outstanding finding remains in this review scope; the root coordinator owns the full-suite and overall merge decision.
 
 ## Provenance and scope
 
@@ -51,3 +51,8 @@ Fetched the corrected candidate from the local integration checkout and checked 
 The committed new regressions and existing inferred-code coverage regressions also pass. The trailer-rescan assertion now recognizes the existing file-scoped bound; the production scanner behavior was not altered by that test-only commit. Its five synthetic cases pass. The complete focused recheck took 0.247 seconds; evidence: `/tmp/jp-merge-all-20260922/pdf-final-independent-probes-after.log`.
 
 No production files remain changed in the review clone. The untracked independent probe file is retained as review evidence. No additional full PDF suite was run during recheck, because the coordinator was running it on the final candidate. **No outstanding review finding remains; this scoped review approves the corrected candidate.**
+
+
+## Concurrent upstream #146 follow-up
+
+The later upstream bounds commit `dafcb070b6bba63e7148d3d9a7f580df2259cb92` was independently reviewed and then checked in combined merge `ce3f35b`. Review found an integration test compilation failure (P2) and a frozen-test-clock refusal/publication mismatch (P3, not a demonstrated production clock failure). Both were corrected in `ab047f477237cc344ad0b9677f29bdcc151b08d1` and independently rechecked. The separate complete report is `/tmp/jp-merge-all-20260922/PDF-UPSTREAM-BOUNDS-REVIEW.md`, including exact source locations, reproductions, before/after logs and limitations. Final focused PDF tests passed in 3.690 seconds and request tests under `-race` in 10.286 seconds. No outstanding scoped review finding remains at `ab047f4`; the coordinator owns the full-suite and overall merge check.
