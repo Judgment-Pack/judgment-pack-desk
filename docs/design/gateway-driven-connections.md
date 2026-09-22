@@ -57,3 +57,25 @@ attachment verification, draft/focus preservation and no empty saved chat. Keep
 the Desk executable byte-identical throughout replacement. Fixtures use no real
 account or AI API. Repeat existing Obsidian smoke and twelve-locale narrow layout
 checks. Provider-specific live OAuth and cloud permissions are later acceptance.
+
+
+## Cloud roadmap review follow-up
+
+The earlier cloud roadmap review predates this implementation. Its remaining
+shared concerns are now explicit: resource identity in status; four-file/4-MiB
+limits; text versus path-prefix queries; 50-item/48-KiB cursor pages; disabled
+rows with reasons; credential replacement; and truthful local disconnect versus
+remote revocation. The gateway response records the finding dispositions and
+provider-specific decisions still required.
+
+The pane preserves the submitted query across pages, keeps eligible selections
+within the connection epoch, refuses repeated cursors, and clears selections
+when the configured resource changes. Unknown unavailability reasons disable
+selection. The gateway must still recheck eligibility and grants before reading;
+UI metadata grants no access. Resource-v1 accepts PDF and supported text through
+one source contract, with actual PDF producer and signed consumer fixtures.
+
+This is a flat bounded source list; no folder tree, full-text object search,
+pre-attachment content preview, automatic restore or infrastructure actions are
+claimed. The original review does not approve these commits. Both exact heads
+and the parent stack still require the repository's independent review.

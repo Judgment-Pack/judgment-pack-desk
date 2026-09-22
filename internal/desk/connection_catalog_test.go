@@ -93,7 +93,7 @@ func TestConnectionCatalogRequiresSessionAndNeverFallsBack(t *testing.T) {
 	}
 }
 
-const catalogV3Fixture = `{"version":3,"sources":[],"providers":[{"id":"fixture-files","auth":"credentials","registration":"form","selection":"source-search","queryRequired":false,"operations":["status","configure","search","select","disconnect"],"protocol":"connection-v1","presentation":{"name":"Fixture files","icon":"","description":{"en":"Files"},"instructions":{"en":"Choose sources"}},"setup":[{"key":"key","type":"password","label":{"en":"Access key"},"required":true}],"authorizationEndpoints":[],"source":{"id":"fixture-files","shape":"command","record":"resource-v1"}}]}`
+const catalogV3Fixture = `{"version":3,"sources":[],"providers":[{"id":"fixture-files","auth":"credentials","registration":"form","selection":"source-search","queryRequired":false,"operations":["status","configure","search","select","disconnect"],"protocol":"connection-v1","queryMode":"prefix","presentation":{"name":"Fixture files","icon":"","description":{"en":"Files"},"instructions":{"en":"Choose sources"}},"setup":[{"key":"key","type":"password","label":{"en":"Access key"},"required":true}],"authorizationEndpoints":[],"source":{"id":"fixture-files","shape":"command","record":"resource-v1"}}]}`
 
 func TestConnectionCatalogV3Metadata(t *testing.T) {
 	for _, example := range []struct {

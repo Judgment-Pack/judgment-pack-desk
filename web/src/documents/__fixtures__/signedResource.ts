@@ -6,8 +6,8 @@ import snapshot from './resource-snapshot.json'
 
 /** Actual gateway producer output, signed with the public corpus test seed.
  * Semantic mutations are signed too: these tests exercise consumer bindings. */
-export async function signedResource(change?: (record: typeof snapshot) => void) {
- const record=structuredClone(snapshot)
+export async function signedResource(change?: (record: typeof snapshot) => void, fixture = snapshot) {
+ const record=structuredClone(fixture)
  const original={name:record.document.name,mediaType:record.document.mediaType,bytes:record.original.bytes,sha256:record.document.id}
  const resource={resourceId:record.provenance.source.resourceId,grant:'aa'.repeat(32)}
  change?.(record)

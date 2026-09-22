@@ -22,7 +22,7 @@ type connectionSetupField struct {
 }
 
 func validConnectionPresentation(d connectionDescriptor) bool {
-	if !catalogIdentifier.MatchString(d.Protocol) || d.Source == nil || !catalogIdentifier.MatchString(d.Source.ID) || !catalogIdentifier.MatchString(d.Source.Shape) || !catalogIdentifier.MatchString(d.Source.Record) {
+	if !catalogIdentifier.MatchString(d.QueryMode) || !catalogIdentifier.MatchString(d.Protocol) || d.Source == nil || !catalogIdentifier.MatchString(d.Source.ID) || !catalogIdentifier.MatchString(d.Source.Shape) || !catalogIdentifier.MatchString(d.Source.Record) {
 		return false
 	}
 	if _, ok := catalogMembers(d.Presentation, "name", "description", "instructions", "icon"); !ok {

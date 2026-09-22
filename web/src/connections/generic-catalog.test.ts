@@ -8,7 +8,7 @@ it('admits a new provider by its protocols, without a provider-specific handler'
  raw.providers[0]!.id='another-store';raw.providers[0]!.source!.id='another-store'
  expect(parseConnectionCatalog(raw).providers[0]?.id).toBe('another-store')
 })
-it.each(['protocol','auth','selection','registration'] as const)('keeps an unsupported %s visible without enabling it', key => {
+it.each(['protocol','auth','selection','registration','queryMode'] as const)('keeps an unsupported %s visible without enabling it', key => {
  const raw=genericCatalog();Object.assign(raw.providers[0]!,{[key]:'future-protocol'})
  const parsed=parseConnectionCatalog(raw)
  expect(parsed.providers).toHaveLength(0);expect(parsed.unsupported?.[0]?.presentation?.name).toBe('Fixture files')

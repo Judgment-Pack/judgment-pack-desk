@@ -89,7 +89,7 @@ func main() {
 			if connected {
 				state = "connected"
 			}
-			result = map[string]any{"version": 1, "provider": "fixture-files", "state": state, "maxFiles": 4, "maxFileBytes": 4194304}
+			result = map[string]any{"version": 1, "provider": "fixture-files", "state": state, "maxFiles": 4, "maxFileBytes": 4194304, "resource": map[string]string{"id": "bucket/policies", "name": "Policies / Team A"}}
 		case "configure":
 			var values map[string]string
 			if json.Unmarshal(request.Params, &values) != nil || values["folder"] != "policies" || values["key"] != "fixture-only-key" {
@@ -101,7 +101,20 @@ func main() {
 			if !connected {
 				os.Exit(2)
 			}
-			result = map[string]any{"selectionContext": "fixture-epoch", "items": []any{map[string]string{"id": "bucket/policy.txt", "title": "Policy.txt", "url": "https://example.com/policy"}}, "more": false}
+			var query struct {
+				Query     string `json:"query"`
+				PageToken string `json:"pageToken"`
+			}
+			if json.Unmarshal(request.Params, &query) != nil {
+				os.Exit(2)
+			}
+			if query.PageToken == "" {
+				result = map[string]any{"selectionContext": "fixture-epoch", "items": []any{map[string]any{"id": "bucket/archive.txt", "title": "Archived.txt", "url": "", "unavailableReason": "archived"}, map[string]any{"id": "bucket/large.txt", "title": "Large.txt", "url": "", "sizeBytes": 5 << 20}}, "more": true, "nextPageToken": "page-2"}
+			} else if query.PageToken == "page-2" {
+				result = map[string]any{"selectionContext": "fixture-epoch", "items": []any{map[string]string{"id": "bucket/policy.txt", "title": "Policy.txt", "url": "https://example.com/policy"}}, "more": false}
+			} else {
+				os.Exit(2)
+			}
 		case "select":
 			var q struct {
 				IDs     []string `json:"resourceIds"`
@@ -121,7 +134,7 @@ func main() {
 			result = []any{map[string]string{"resourceId": q.IDs[0], "grant": grant}}
 		case "disconnect":
 			connected = false
-			result = map[string]bool{"revoked": true}
+			result = map[string]bool{"disconnected": true, "revoked": false}
 		case "cancel":
 			result = map[string]string{"state": "canceled"}
 		default:

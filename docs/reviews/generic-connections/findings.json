@@ -1,7 +1,11 @@
 {
+  "resourceScope": true,
+  "unavailableRows": true,
+  "pagination": true,
   "draftPreserved": true,
   "composerFocused": true,
   "verified": true,
+  "truthfulDisconnect": true,
   "deskBinaryUnchanged": true,
   "unsentChats": 0,
   "errors": []

@@ -10,6 +10,7 @@ export interface ConnectionDescriptor {
  selection: 'browser-picker' | 'mail-search' | 'source-search'
  queryRequired: boolean
  operations: string[]
+ queryMode?: 'text' | 'prefix'
  protocol?: string
  presentation?: { icon: string; name: string; description: Localized; instructions: Localized }
  setup?: SetupField[]
@@ -23,12 +24,12 @@ const identifier = (value: unknown): value is string => typeof value === 'string
 const text = (v: unknown, max: number): v is string => typeof v === 'string' && new TextEncoder().encode(v).length <= max && !/[\x00-\x08\x0b-\x1f\x7f]/.test(v)
 const localizedValid = (v: unknown, max: number) => Boolean(v && typeof v === 'object' && !Array.isArray(v) && typeof (v as Localized).en === 'string' && Object.keys(v).length <= 32 && Object.entries(v).every(([key,value]) => key.length <= 32 && text(value, max)))
 function validPresentation(item: ConnectionDescriptor) {
- return identifier(item.protocol) && item.presentation && validConnectionIcon(item.presentation.icon) && text(item.presentation.name,120) && item.presentation.name.length > 0 && localizedValid(item.presentation.description,512) && localizedValid(item.presentation.instructions,4096) && Array.isArray(item.setup) && item.setup.length <= 12 && new Set(item.setup.map(field => field.key)).size === item.setup.length && item.setup.every(field => field && identifier(field.key) && !['constructor','prototype'].includes(field.key) && identifier(field.type) && localizedValid(field.label,120) && typeof field.required === 'boolean') && Array.isArray(item.authorizationEndpoints) && item.authorizationEndpoints.length <= 4 && item.authorizationEndpoints.every(endpoint => {
+ return identifier(item.queryMode) && identifier(item.protocol) && item.presentation && validConnectionIcon(item.presentation.icon) && text(item.presentation.name,120) && item.presentation.name.length > 0 && localizedValid(item.presentation.description,512) && localizedValid(item.presentation.instructions,4096) && Array.isArray(item.setup) && item.setup.length <= 12 && new Set(item.setup.map(field => field.key)).size === item.setup.length && item.setup.every(field => field && identifier(field.key) && !['constructor','prototype'].includes(field.key) && identifier(field.type) && localizedValid(field.label,120) && typeof field.required === 'boolean') && Array.isArray(item.authorizationEndpoints) && item.authorizationEndpoints.length <= 4 && item.authorizationEndpoints.every(endpoint => {
   try { const u = new URL(endpoint); return endpoint.length <= 2048 && u.protocol === 'https:' && !u.username && !u.password && !u.hash && !u.search && !/[\\\x00-\x20]/.test(endpoint) } catch { return false }
  }) && item.source && identifier(item.source.id) && identifier(item.source.shape) && identifier(item.source.record)
 }
 function supported(item: ConnectionDescriptor) {
- if (item.protocol !== 'connection-v1' || !item.setup?.every(field => ['text','password'].includes(field.type))) return false
+ if (!['text','prefix'].includes(item.queryMode ?? '') || item.protocol !== 'connection-v1' || !item.setup?.every(field => ['text','password'].includes(field.type))) return false
  if (!['oauth','local-folder','credentials'].includes(item.auth) || !['google-desktop','automatic','none','form'].includes(item.registration)) return false
  if (item.auth === 'oauth' && !item.authorizationEndpoints?.length) return false
  if (!['command','http','mcp'].includes(item.source!.shape)) return false
@@ -78,7 +79,7 @@ export function useConnections(enabled: boolean) {
  })
  // A failed refresh must not keep previously advertised actions active.
  const descriptors = enabled && !catalog.isError ? catalog.data?.providers ?? [] : []
- const statuses = useQueries({ queries: descriptors.map(provider => connectionStatusOptions(provider.id)) })
+ const statuses = useQueries({ queries: descriptors.map(provider => connectionStatusOptions(provider.id, true, provider.source?.record === 'resource-v1')) })
  const entries = descriptors.map((descriptor, index) => ({ descriptor, status: statuses[index]! }))
  return { ...catalog, entries, unsupported: enabled && !catalog.isError ? catalog.data?.unsupported ?? [] : [], web: Boolean(enabled && !catalog.isError && catalog.data?.web), loading: enabled && catalog.isPending }
 }

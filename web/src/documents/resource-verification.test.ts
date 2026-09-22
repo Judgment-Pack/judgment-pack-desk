@@ -1,5 +1,6 @@
 import { expect,it } from 'vitest'
 import { verifyDocument } from './client'
+import pdfSnapshot from './__fixtures__/resource-pdf.json'
 import { signedResource } from './__fixtures__/signedResource'
 
 it('verifies a retained source from a provider with no Desk-specific handler',async()=>{
@@ -19,4 +20,12 @@ it.each(['grant','selection','proof-kind','multiple-proof','bytes','signature'] 
  if(kind==='bytes') object.original.bytes=btoa('changed')
  if(kind==='signature') object.proof!.response=object.proof!.response.replace('Fixture policy.','Different policy')
  await expect(verifyDocument(object,pin)).rejects.toThrow()
+})
+
+it('verifies PDF bytes and extracted text through the same provider-independent resource contract',async()=>{
+ const {object,pin}=await signedResource(undefined,pdfSnapshot)
+ const verified=await verifyDocument(object,pin)
+ expect(verified.record.document.mediaType).toBe('application/pdf')
+ expect(verified.record.content.pages[0]?.text).toContain('Fixture PDF policy.')
+ expect(verified.record.provenance.ocr).toBeNull()
 })

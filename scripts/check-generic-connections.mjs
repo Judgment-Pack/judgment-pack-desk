@@ -14,7 +14,7 @@ const hash=value=>createHash('sha256').update(value).digest('hex');
 const originalDesk=hash(await readFile(`${DESK_BUNDLE}/jpack-desk`));
 await cp(DESK_BUNDLE,bundle,{recursive:true});await cp(JPACK_FIXTURE_PROJECT,`${work}/project`,{recursive:true});
 for(const dir of ['config','data'])await mkdir(`${work}/${dir}`);
-const descriptor={id:'fixture-files',protocol:'connection-v1',auth:'credentials',registration:'form',selection:'source-search',queryRequired:false,operations:['status','configure','search','select','disconnect'],presentation:{name:'Fixture files',icon:'',description:{en:'Synthetic source for acceptance testing.'},instructions:{en:'Use the fixture folder and key.'}},setup:[{key:'folder',type:'text',label:{en:'Folder'},required:true},{key:'key',type:'password',label:{en:'Access key'},required:true}],authorizationEndpoints:[],source:{id:'fixture-files',shape:'command',record:'resource-v1'}};
+const descriptor={id:'fixture-files',protocol:'connection-v1',queryMode:'prefix',auth:'credentials',registration:'form',selection:'source-search',queryRequired:false,operations:['status','configure','search','select','disconnect'],presentation:{name:'Fixture files',icon:'',description:{en:'Synthetic source for acceptance testing.'},instructions:{en:'Use the fixture folder and key.'}},setup:[{key:'folder',type:'text',label:{en:'Folder'},required:true},{key:'key',type:'password',label:{en:'Access key'},required:true}],authorizationEndpoints:[],source:{id:'fixture-files',shape:'command',record:'resource-v1'}};
 await writeFile(`${bundle}/catalog.json`,JSON.stringify({version:3,sources:[],providers:[descriptor]}));
 await writeFile(`${bundle}/plan.json`,JSON.stringify({version:1,sources:[{id:'documents',executable:'adapter-document',args:[],shape:'command',timeout:40,connections:false},{id:'fixture-files',executable:'adapter-fixture',args:[],shape:'command',timeout:60,connections:true}]}));
 await cp(`${repo}/web/src/documents/__fixtures__/resource-snapshot.json`,`${bundle}/resource.json`);
@@ -42,7 +42,9 @@ try {
  await page.getByRole('button',{name:/Fixture files/}).click();
  const pane=page.locator('#desk-inspector');await pane.getByLabel('Folder',{exact:true}).fill('policies');await pane.getByLabel('Access key',{exact:true}).fill('fixture-only-key');
  await page.screenshot({path:`${out}/setup.png`});await pane.getByRole('button',{name:'Connect',exact:true}).click();
- await pane.getByRole('checkbox').check();await page.screenshot({path:`${out}/select.png`});
+ await pane.getByText('Policies / Team A',{exact:true}).waitFor();findings.resourceScope=true;
+ await pane.getByRole('checkbox').first().waitFor();findings.unavailableRows=await pane.getByRole('checkbox').evaluateAll(items=>items.length===2&&items.every(item=>item.disabled));
+ await pane.getByRole('button',{name:'Next page',exact:true}).click();await pane.getByRole('checkbox').check();findings.pagination=true;await page.screenshot({path:`${out}/select.png`});
  await pane.getByRole('button',{name:'Attach 1 item',exact:true}).click();
  await page.getByRole('button',{name:'Policy.txt',exact:true}).waitFor();
  findings.draftPreserved=await input.inputValue()==='Keep this draft while connecting.';
@@ -50,10 +52,12 @@ try {
  await page.getByRole('button',{name:'Policy.txt',exact:true}).click();
  const preview=page.getByRole('dialog',{name:'Policy.txt',exact:true});await preview.getByText('Fixture policy.',{exact:true}).waitFor();
  findings.verified=await preview.getByText(/Receipt verified/).count()===1;await page.screenshot({path:`${out}/verified.png`});
+ await page.keyboard.press('Escape');await page.getByRole('button',{name:'Attach files',exact:true}).click();await page.getByRole('menuitem',{name:'More connections',exact:true}).click();await page.getByRole('button',{name:/Fixture files/}).click();
+ await pane.getByText('Connection settings',{exact:true}).click();await pane.getByRole('button',{name:'Disconnect',exact:true}).click();await pane.getByText('Disconnected here. Provider access may still be active.',{exact:true}).waitFor();findings.truthfulDisconnect=true;await page.screenshot({path:`${out}/disconnected.png`});
  findings.deskBinaryUnchanged=originalDesk===hash(await readFile(`${bundle}/jpack-desk`));
  findings.unsentChats=(await(await api('/api/conversations')).json()).chats?.length??0;
  findings.errors=errors;
- if(!findings.draftPreserved||!findings.composerFocused||!findings.verified||!findings.deskBinaryUnchanged||findings.unsentChats!==0||errors.length)throw Error('Generic connection acceptance failed');
+ if(!findings.resourceScope||!findings.unavailableRows||!findings.pagination||!findings.truthfulDisconnect||!findings.draftPreserved||!findings.composerFocused||!findings.verified||!findings.deskBinaryUnchanged||findings.unsentChats!==0||errors.length)throw Error('Generic connection acceptance failed');
  await writeFile(`${out}/findings.json`,JSON.stringify(findings,null,2));console.log(JSON.stringify(findings,null,2));
 }catch(error){if(page){await page.screenshot({path:`${out}/failure.png`});await writeFile(`${out}/failure.txt`,await page.locator('body').innerText())}throw error}
 finally{await browser?.close();server.kill('SIGTERM');await new Promise(r=>setTimeout(r,500));await rm(work,{recursive:true,force:true})}

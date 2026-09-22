@@ -18,6 +18,7 @@ const connectionCatalogLimit = 128 << 10
 type connectionDescriptor struct {
 	ID                     string                    `json:"id"`
 	Protocol               string                    `json:"protocol,omitempty"`
+	QueryMode              string                    `json:"queryMode,omitempty"`
 	Presentation           json.RawMessage           `json:"presentation,omitempty"`
 	Setup                  json.RawMessage           `json:"setup,omitempty"`
 	AuthorizationEndpoints []string                  `json:"authorizationEndpoints,omitempty"`
@@ -105,7 +106,7 @@ func runConnectionCatalog(ctx context.Context, cmd *exec.Cmd) (json.RawMessage, 
 			for _, row := range rows {
 				keys := []string{"id", "auth", "registration", "selection", "queryRequired", "operations"}
 				if version.Version == 3 {
-					keys = append(keys, "protocol", "presentation", "setup", "authorizationEndpoints", "source")
+					keys = append(keys, "queryMode", "protocol", "presentation", "setup", "authorizationEndpoints", "source")
 				}
 				providerMembers, ok := catalogMembers(row, keys...)
 				if !ok {
