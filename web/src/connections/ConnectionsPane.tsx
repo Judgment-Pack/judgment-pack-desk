@@ -43,7 +43,8 @@ export function ConnectionsPane({ request, target, onProvider, onClose, onBusy, 
  const capacity = Math.max(0, Math.min(4, status?.data?.maxFiles ?? 4) - (chat?.attachments?.length ?? 0))
  const [query, setQuery] = useState(''), [vault, setVault] = useState('')
  const [setup, setSetup] = useState<Record<string,string>>({})
- const missingSetup = descriptor?.setup?.some(field => field.required && !setup[field.key]?.trim()) ?? false
+ const needsSetup = descriptor?.registration === 'form' && (state === 'setup-required' || descriptor.auth !== 'oauth')
+ const missingSetup = needsSetup && (descriptor?.setup?.some(field => field.required && !setup[field.key]?.trim()) ?? false)
  const unsupported = (catalog.unsupported ?? []).find(item => item.id === provider)
  const [rows, setRows] = useState<ResultRow[] | null>(null)
  const [selected, setSelected] = useState<ResultRow[]>([])
@@ -83,7 +84,7 @@ export function ConnectionsPane({ request, target, onProvider, onClose, onBusy, 
   if (!provider) return
   const task = begin(); if (!task) return
   try {
-   if (descriptor?.registration === 'form' && (state === 'setup-required' || descriptor.auth !== 'oauth')) {
+   if (needsSetup) {
     await connectionCall('configure', setup, task.signal, provider)
     if (current(task)) setSetup({})
    } else if (provider === 'obsidian') await connectionCall('configure', { path: vault.trim() }, task.signal, provider)
@@ -189,7 +190,7 @@ export function ConnectionsPane({ request, target, onProvider, onClose, onBusy, 
    <p className={styles.scope}>{[status?.data?.resource?.name, status?.data?.account?.email || status?.data?.account?.name].filter(Boolean).join(' · ') || (generic ? providerName(provider, descriptor) : msg('Personal · This computer'))}</p>
    <p>{descriptor?.presentation ? localized(descriptor.presentation.description) : provider === 'obsidian' ? msg('Search and attach notes from a local vault. Your notes stay unchanged.') : provider === 'notion' ? msg('Search and attach Notion pages. Desk cannot change your workspace.') : provider === 'gmail' ? msg('Choose up to four emails. Message text is attached; mail attachments are excluded.') : msg('Choose the files you want to attach to this chat.')}</p>
    {unavailable ? <p>{unsupported ? msg('Update Desk to use this connection.') : state === 'blocked' ? msg('Managed by your organization') : !available ? msg('Local processing is unavailable. Check the details in Admin → Storage & data.') : msg('This connection is unavailable in the current gateway.')}</p> : state === undefined ? <p role="status">{msg('Loading…')}</p> : state !== 'connected' || reconnect ? <>
-    {descriptor?.registration === 'form' && (state === 'setup-required' || descriptor.auth !== 'oauth') ? descriptor.setup?.map(field => <label key={field.key} className={styles.setupField}>{localized(field.label)}<Input type={field.type} value={setup[field.key] ?? ''} onChange={event => setSetup(values => ({...values, [field.key]:event.target.value}))} autoComplete="off" spellCheck={false} disabled={working} maxLength={4096} required={field.required} /></label>) : provider === 'obsidian' && <label>{msg('Vault folder')}<Input value={vault} onChange={event => setVault(event.target.value)} autoComplete="off" spellCheck={false} disabled={working} placeholder={msg('Absolute path to your Obsidian vault')} /></label>}
+    {needsSetup ? descriptor?.setup?.map(field => <label key={field.key} className={styles.setupField}>{localized(field.label)}<Input type={field.type} value={setup[field.key] ?? ''} onChange={event => setSetup(values => ({...values, [field.key]:event.target.value}))} autoComplete="off" spellCheck={false} disabled={working} maxLength={4096} required={field.required} /></label>) : provider === 'obsidian' && <label>{msg('Vault folder')}<Input value={vault} onChange={event => setVault(event.target.value)} autoComplete="off" spellCheck={false} disabled={working} placeholder={msg('Absolute path to your Obsidian vault')} /></label>}
     <Disclosure title={msg('How it works')}>
      <p>{descriptor?.presentation ? localized(descriptor.presentation.instructions) : provider === 'obsidian' ? msg('In Obsidian, open Manage vaults and copy the folder path shown below your vault name. Paste that full path here. No plugin is needed.') : msg('Connect your account, then choose the sources to attach. Connecting does not add anything to your chat.')}</p>
     </Disclosure>
