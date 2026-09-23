@@ -10,7 +10,7 @@ export interface ConnectionPaneRequest {
  chatId?: string
  opener: HTMLElement | null
 }
-export const ConnectionPaneContext = createContext<{ open: (request: ConnectionPaneRequest) => void; busyChatId?: string; activeChatId?: string; close?: () => void }>({ open: () => {} })
+export const ConnectionPaneContext = createContext<{ open: (request: ConnectionPaneRequest) => void; busyChatId?: string; activeChatId?: string; close?: (options?: { restoreFocus?: boolean }) => void }>({ open: () => {} })
 export const useConnectionsPane = () => useContext(ConnectionPaneContext)
 
 /** A pack write can lock the retained Assistant without navigating away. */

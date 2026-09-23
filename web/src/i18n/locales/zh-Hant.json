@@ -2279,5 +2279,6 @@
   "{{value}} pixels high": "高度 {{value}} 像素",
   "{{value}} pixels wide": "寬度 {{value}} 像素",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— 指向作出該聲明的儲存庫檔案的定位資訊。此承載資料不作聲明。檔案中的聲明針對執行環境，而非此規則包、這些事實或依處置結果行動是否正確。",
-  "… (truncated for display)": "…（已截斷顯示）"
+  "… (truncated for display)": "…（已截斷顯示）",
+  "{{action}}: {{provider}}": "{{action}}: {{provider}}"
 }

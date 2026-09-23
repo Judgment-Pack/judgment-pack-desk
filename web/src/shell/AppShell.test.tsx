@@ -426,7 +426,7 @@ function ConnectionOverlayFixture() {
  const presentation = useMemo(() => ({ title: 'Assistant', available: true, open, onOpenChange: setOpen, width, onResize: setWidth, onReset: () => setWidth(360), minimumMainWidth: 0, maximumWidth: 800 }), [open, width])
  useInspectorPresentation(presentation)
  const assistant = useInspectorPortal(<label>Assistant draft<input defaultValue="Unsent question" /></label>)
- return <><label>Main draft<input defaultValue="Unsent policy" /></label><button ref={opener} onClick={() => connections.open({ opener: opener.current })}>Open connections</button>{assistant}</>
+ return <><label>Main draft<input defaultValue="Unsent policy" /></label><button ref={opener} onClick={() => connections.open({ opener: opener.current })}>Open connections</button><button onClick={event => { connections.close?.({ restoreFocus: false }); event.currentTarget.focus() }}>Open another setup</button>{assistant}</>
 }
 it('overlays connections without replacing the Assistant portal or its route presentation', async () => {
  renderShell(<AppShell><ConnectionOverlayFixture /></AppShell>)
@@ -444,4 +444,22 @@ it('overlays connections without replacing the Assistant portal or its route pre
  expect((main as HTMLInputElement).value).toBe('Keep this policy')
  expect(screen.getByRole('complementary', { name: 'Assistant' })).toBeTruthy()
  await waitFor(() => expect(document.activeElement).toBe(opener))
+})
+
+it('hands focus to another setup without restoring a stale connection opener', async () => {
+ renderShell(<AppShell><ConnectionOverlayFixture /></AppShell>)
+ const opener = screen.getByRole('button', { name: 'Open connections' })
+ fireEvent.click(opener)
+ fireEvent.click(screen.getByRole('button', { name: 'Close connections' }))
+ await waitFor(() => expect(document.activeElement).toBe(opener))
+ const next = screen.getByRole('button', { name: 'Open another setup' })
+ // A previously closed utility can still retain its old opener.
+ fireEvent.click(next)
+ await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+ expect(document.activeElement).toBe(next)
+ fireEvent.click(opener)
+ fireEvent.click(next)
+ await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+ expect(document.activeElement).toBe(next)
+ expect(screen.getByRole('complementary', { name: 'Assistant' })).toBeTruthy()
 })

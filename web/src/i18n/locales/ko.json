@@ -2279,5 +2279,6 @@
   "{{value}} pixels high": "높이 {{value}}픽셀",
   "{{value}} pixels wide": "너비 {{value}}픽셀",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— 주장을 담은 저장소 파일의 위치 정보입니다. 이 페이로드는 그런 주장을 하지 않습니다. 해당 파일의 주장은 런타임에 관한 것이며 이 팩, 사실 또는 처분에 따라 행동하는 것이 올바른지에 관한 것이 아닙니다.",
-  "… (truncated for display)": "… (표시를 위해 잘림)"
+  "… (truncated for display)": "… (표시를 위해 잘림)",
+  "{{action}}: {{provider}}": "{{action}}: {{provider}}"
 }

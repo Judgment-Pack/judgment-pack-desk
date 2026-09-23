@@ -2296,5 +2296,6 @@
   "{{value}} pixels high": "{{value}} pixels de altura",
   "{{value}} pixels wide": "{{value}} pixels de largura",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— um localizador do arquivo do repositório que faz a afirmação. Este conteúdo não faz nenhuma. A afirmação se refere ao motor, não a este pacote, a estes fatos ou à correção de agir segundo a disposição.",
-  "… (truncated for display)": "… (truncado para exibição)"
+  "… (truncated for display)": "… (truncado para exibição)",
+  "{{action}}: {{provider}}": "{{action}}: {{provider}}"
 }
