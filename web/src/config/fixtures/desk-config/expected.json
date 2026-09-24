@@ -565,6 +565,34 @@
       }
     }
   },
+  "accepted-research-web-discovery": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "researchGateway": "https://gateway.example.invalid/engine",
+    "documents": {
+      "enabled": true,
+      "source": "documents",
+      "maxFileBytes": 16777216,
+      "maxRequestBytes": 33554432,
+      "maxResponseBytes": 8388608
+    },
+    "research": {
+      "authority": "gateway:organization",
+      "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b",
+      "search": null,
+      "read": null,
+      "web": "web",
+      "limits": {
+        "searches": 8,
+        "reads": 12,
+        "bytes": 8388608,
+        "seconds": 600
+      }
+    },
+    "discovery": "web-discovery"
+  },
   "accepted-research-web-source": {
     "accepted": true,
     "keys": [],
@@ -1319,6 +1347,30 @@
     "accepted": false,
     "keys": [
       "research.crawler"
+    ]
+  },
+  "refused-research-web-discovery-array": {
+    "accepted": false,
+    "keys": [
+      "research.sources.web.discovery"
+    ]
+  },
+  "refused-research-web-discovery-name": {
+    "accepted": false,
+    "keys": [
+      "research.sources.web.discovery"
+    ]
+  },
+  "refused-research-web-discovery-null": {
+    "accepted": false,
+    "keys": [
+      "research.sources.web.discovery"
+    ]
+  },
+  "refused-research-web-discovery-object": {
+    "accepted": false,
+    "keys": [
+      "research.sources.web.discovery"
     ]
   },
   "refused-research-web-source-dialect": {

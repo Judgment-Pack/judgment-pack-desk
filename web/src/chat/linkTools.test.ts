@@ -8,7 +8,8 @@ import { Ledger } from '../research/ledger'
 import { AuthoringRun, type Turn } from '../research/run'
 import type { DraftToolContext } from '../research/useResearchRun'
 import { READ_WINDOW, RETRIEVED } from '../research/tools'
-import { MAX_LINK_READS_PER_TURN, READ_LINK, givenInChat, linkReadable, linkReading, webSourceOffered, type LinkReadingDeps } from './linkTools'
+import { MAX_LINK_READS_PER_TURN, EXPLORE_WEBSITE, READ_LINK, givenInChat, linkReadable, linkReading, webSourceOffered, type LinkReadingDeps } from './linkTools'
+import type { WebsiteReference, VerifiedWebsite } from '../documents/website'
 import type { ChatAttachment } from './store'
 
 const INCIDENT = 'https://lab-notes-ai-git-builders-night-demo-treo-gaia.vercel.app/gaia/policy-evidence#brief-human-review'
@@ -93,7 +94,7 @@ describe('read_link', () => {
     const { tool, ingested, documents } = harness({ turns: [user('what does the policy say?'), assistant('See https://invented.example/policy for details.')] })
     const result = await tool.execute({ url: 'https://invented.example/policy' }, signal)
     expect(result.isError).toBe(true)
-    expect(said(result)).toContain('that link was not given in this chat; ask the person to paste it')
+    expect(said(result)).toContain('that link was not given in this chat or verified by website discovery')
     expect(ingested).toEqual([])
     expect(documents).toHaveLength(0)
   })
@@ -391,4 +392,67 @@ describe('where a web source is offered', () => {
     expect(linkReadable({ ...declared, documents: null }, { local: false, catalogWeb: false })).toBe(false)
     expect(linkReadable(CONFIG, { local: true, catalogWeb: true })).toBe(true)
   })
+})
+
+
+describe('website exploration in chat',()=>{
+ function websiteHarness(){
+  let available=true
+  let config=structuredClone(CONFIG)
+  const websites:WebsiteReference[]=[],documents:ChatAttachment[]=[]
+  const ref={id:'12345678-1234-1234-1234-123456789abc',seed:FETCHED,digest:'sha256:'+'c'.repeat(64)}
+  const found:VerifiedWebsite={reference:ref,discovery:{version:1,seed:FETCHED,origin:new URL(FETCHED).origin,pages:[{url:FETCHED,from:'',depth:0,status:'discovered',reason:'',title:'Home'},...Array.from({length:9},(_,i)=>({url:new URL(`/child-${i}`,FETCHED).href,from:FETCHED,depth:1,status:'discovered' as const,reason:'',title:'Child'})),{url:new URL('/blocked',FETCHED).href,from:FETCHED,depth:1,status:'blocked',reason:'robots',title:''}],stopReason:'page-limit',bytes:1000,requests:11,externalLinks:1,limits:{pages:10,depth:2,links:100,bytes:8<<20,seconds:45}}}
+  const discover=vi.fn(async()=>found),loadWebsite=vi.fn(async()=>found),ingestSite=vi.fn(async(selection:{url:string;site:string})=>webDocument(PAGE,selection.url))
+  const deps:LinkReadingDeps={available:()=>true,discoveryAvailable:()=>available,config:()=>config,documents:()=>documents,websites:()=>websites,addWebsite:ref=>websites.push(ref),addDocument:d=>documents.push(d),log:()=>{},discover,loadWebsite,ingestSite}
+  const factory=linkReading(deps),context={turns:()=>[user(`Read ${FETCHED} and its other pages`)]},tools=factory(context)
+  return {found,ref,websites,documents,discover,loadWebsite,ingestSite,deps,factory,context,explore:tools.find(t=>t.name===EXPLORE_WEBSITE)!,read:tools.find(t=>t.name===READ_LINK)!,disable:()=>{available=false},changePin:()=>{config={...config,gateway:{...config.gateway!,signer:{algorithm:'ed25519',public:'ff'.repeat(32)}}}}}
+ }
+ it('discovers from a user seed, then fetches only confirmed links with an origin constraint',async()=>{
+  const h=websiteHarness()
+  expect((await h.explore.execute({url:FETCHED},signal)).isError).toBeUndefined()
+  const child=h.found.discovery.pages[1]!.url
+  expect((await h.read.execute({url:child},signal)).isError).toBeUndefined()
+  expect(h.ingestSite).toHaveBeenCalledWith({url:child,site:FETCHED},CONFIG,signal,expect.any(Function))
+  for(const url of ['https://external.example/',new URL('/invented',FETCHED).href,new URL('/blocked',FETCHED).href])expect((await h.read.execute({url},signal)).isError).toBe(true)
+  expect(h.ingestSite).toHaveBeenCalledTimes(1)
+  expect(h.loadWebsite).not.toHaveBeenCalled()
+  expect(h.documents).toHaveLength(1)
+ })
+ it('refuses an invented seed and limits exploration to once per message',async()=>{
+  const h=websiteHarness()
+  expect((await h.explore.execute({url:'https://invented.example/'},signal)).isError).toBe(true)
+  expect(h.discover).not.toHaveBeenCalled()
+  await h.explore.execute({url:FETCHED},signal)
+  expect((await h.explore.execute({url:FETCHED},signal)).isError).toBe(true)
+  expect(h.discover).toHaveBeenCalledTimes(1)
+ })
+ it('reverifies persisted discovery; an invalid stored manifest authorizes nothing',async()=>{
+  const h=websiteHarness();h.websites.push(h.ref)
+  const child=h.found.discovery.pages[1]!.url
+  expect((await h.read.execute({url:child},signal)).isError).toBeUndefined()
+  expect(h.loadWebsite).toHaveBeenCalledWith(h.ref,CONFIG.gateway,signal)
+  h.changePin();h.loadWebsite.mockRejectedValue(new Error('invalid proof'))
+  expect((await h.read.execute({url:h.found.discovery.pages[2]!.url},signal)).isError).toBe(true)
+  expect(h.ingestSite).toHaveBeenCalledTimes(1)
+ })
+ it.each(['cancel','disable','settings'] as const)('discards late discovery after %s',async kind=>{
+  const h=websiteHarness(),controller=new AbortController()
+  h.discover.mockImplementation(async()=>{if(kind==='cancel')controller.abort();if(kind==='disable')h.disable();if(kind==='settings')h.changePin();return h.found})
+  expect((await h.explore.execute({url:FETCHED},controller.signal)).isError).toBe(true)
+  expect(h.websites).toEqual([])
+ })
+ it('stops authorizing links when the capability disappears during persisted verification',async()=>{
+  const h=websiteHarness();h.websites.push(h.ref)
+  h.loadWebsite.mockImplementation(async()=>{h.disable();return h.found})
+  expect((await h.read.execute({url:h.found.discovery.pages[1]!.url},signal)).isError).toBe(true)
+  expect(h.ingestSite).not.toHaveBeenCalled()
+ })
+ it('reads ten discovered pages, while retaining normal citation windows',async()=>{
+  const h=websiteHarness();await h.explore.execute({url:FETCHED},signal)
+  for(const page of h.found.discovery.pages.filter(p=>p.status==='discovered')){
+   const result=await h.read.execute({url:page.url},signal)
+   expect(result.isError).toBeUndefined();expect(said(result)).toContain('attachment:')
+  }
+  expect(h.ingestSite).toHaveBeenCalledTimes(10)
+ })
 })

@@ -8,13 +8,13 @@ import { acquire, seal, registry, newResearchSession, readBounded } from '../res
 import { canonicalize, hexToBytes, memberOf, parseJsonText, stringMember } from '../research/verify/canon'
 import { sha256Hex } from '../research/verify/receipt'
 import { verifySession } from '../research/verify/session'
-import { readDocumentRecord, usablePages, needsPartialConsent, type DocumentRecord } from './record'
+import { validWebURL, readDocumentRecord, usablePages, needsPartialConsent, type DocumentRecord } from './record'
 
 export interface DocumentReference { id: string; digest: string; pages: number[]; allowPartial: boolean; needsReview?: boolean }
 export interface DocumentOriginal { name: string; mediaType: string; bytes: string; sha256: string }
 export interface DocumentObject {
   version: 1; original: DocumentOriginal
-  proof?: { session: string; source: string; authority: string; publicKey: string; response: string; registry: string; drive?: DriveSelection; gmail?: MailSelection; connected?: SourceSelection; resource?: SourceSelection; web?: { url: string } }
+  proof?: { session: string; source: string; authority: string; publicKey: string; response: string; registry: string; drive?: DriveSelection; gmail?: MailSelection; connected?: SourceSelection; resource?: SourceSelection; web?: { url: string; site?: string } }
 }
 export interface VerifiedDocument { record: DocumentRecord; digest: string; object: DocumentObject }
 const enc = new TextEncoder()
@@ -68,6 +68,7 @@ export async function verifyDocument(object: DocumentObject, pin: ResearchGatewa
   if (proof.gmail && (!/^[a-f0-9]{64}$/.test(proof.gmail.grant) || proof.source !== 'gmail' || record.provenance.source.kind !== 'gmail' || record.provenance.source.messageId !== proof.gmail.messageId || record.original.bytes !== original.bytes)) throw fail()
   if (proof.connected && (!/^[a-f0-9]{64}$/.test(proof.connected.grant) || !['notion','obsidian'].includes(proof.source) || record.provenance.source.kind !== 'connected-source' || record.provenance.source.provider !== proof.source || record.provenance.source.resourceId !== proof.connected.resourceId || record.original.bytes !== original.bytes)) throw fail()
   if (proof.resource && (!/^[a-f0-9]{64}$/.test(proof.resource.grant) || record.provenance.source.kind !== 'connection-resource' || record.provenance.source.provider !== proof.source || record.provenance.source.resourceId !== proof.resource.resourceId || record.original.bytes !== original.bytes)) throw fail()
+  if(proof.web?.site && (!validWebURL(proof.web.site) || record.provenance.source.kind!=='web' || !record.provenance.source.url || new URL(record.provenance.source.url).origin!==new URL(proof.web.site).origin || new URL(proof.web.url).origin!==new URL(proof.web.site).origin))throw fail()
   if (proof.web && (proof.source !== 'web' || record.provenance.source.kind !== 'web' || record.provenance.source.requestedUrl !== proof.web.url || record.original.bytes !== original.bytes)) throw fail()
   if (!proof.drive && !proof.gmail && !proof.connected && !proof.resource && !proof.web && record.provenance.source.kind !== 'inline') throw fail()
   if (record.document.id !== original.sha256 || record.document.size !== raw.length || record.document.name !== original.name || record.document.mediaType !== original.mediaType) throw fail()
@@ -130,6 +131,7 @@ export const ingestGmail = (selection: MailSelection, config: ResearchConfig, si
 export const ingestSource = (selection: SourceSelection, provider: SourceProvider, config: ResearchConfig, signal: AbortSignal, progress: (message: string) => void, descriptor?: ConnectionDescriptor) => ingestSelected(selection, provider, config, signal, progress, descriptor)
 export const ingestWeb = (selection: { url: string }, config: ResearchConfig, signal: AbortSignal, progress: (message: string) => void) => ingestSelected(selection, 'web', config, signal, progress)
 /** A link read for the assistant: the same acquisition as Add link, with the gateway's failure word kept for the sentence that names it. */
+export const ingestSiteLink = (selection: {url:string;site:string}, config:ResearchConfig,signal:AbortSignal,progress:(message:string)=>void) => ingestSelected(selection,'web',config,signal,progress,undefined,true)
 export const ingestLink = (selection: { url: string }, config: ResearchConfig, signal: AbortSignal, progress: (message: string) => void) => ingestSelected(selection, 'web', config, signal, progress, undefined, true)
 async function ingestSelected(selection: DriveSelection | MailSelection | SourceSelection | { url: string }, source: 'drive' | 'gmail' | SourceProvider | 'web', config: ResearchConfig, signal: AbortSignal, progress: (message: string) => void, descriptor?: ConnectionDescriptor, verbatimFailure = false): Promise<{ reference: DocumentReference; document: VerifiedDocument }> {
  const resource = descriptor?.source?.record === 'resource-v1'

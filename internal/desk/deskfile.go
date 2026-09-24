@@ -150,7 +150,8 @@ type researchSource struct {
 // web source, declared by an external gateway, named `web` in this release
 // because a saved link is verified as that source's own record.
 type webSource struct {
-	source string
+	discovery string
+	source    string
 }
 
 // ResearchDialects mirrors `RESEARCH_DIALECTS` in `deskConfig.ts`.
@@ -835,7 +836,7 @@ func decodeWebSource(value any, key string) (*webSource, []deskProblem) {
 	if value == nil {
 		return nil, nil
 	}
-	record, problems := object(value, key, []string{"source"})
+	record, problems := object(value, key, []string{"source", "discovery"})
 	if record == nil {
 		return nil, problems
 	}
@@ -844,7 +845,15 @@ func decodeWebSource(value any, key string) (*webSource, []deskProblem) {
 			Reason: fmt.Sprintf(`must name the gateway's public web source, "web", since a saved link is verified as that source's own record; found %s`, describe(record["source"]))})
 		return nil, problems
 	}
-	return &webSource{source: "web"}, problems
+	found := &webSource{source: "web"}
+	if value, present := record["discovery"]; present {
+		if value != "web-discovery" {
+			problems = append(problems, deskProblem{Key: key + ".discovery", Reason: "Unsupported website discovery source"})
+		} else {
+			found.discovery = "web-discovery"
+		}
+	}
+	return found, problems
 }
 
 // projectConfigName is the file a `project.file` must name.

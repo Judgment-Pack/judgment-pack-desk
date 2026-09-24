@@ -1,3 +1,4 @@
+import { validWebsiteReference, type WebsiteReference } from '../documents/website'
 import { timestampDate } from './timestamps'
 import type { DocumentReference } from '../documents/client'
 import { sourceMessage } from '../i18n/source'
@@ -37,6 +38,7 @@ export interface Chat {
   createdCandidateDigest?: string
   attachments?: ChatAttachment[]
   documents?: ChatAttachment[]
+  websites?: WebsiteReference[]
   adversarialReview?: boolean
   titleEdited?: boolean
 }
@@ -74,9 +76,10 @@ function decode(value: unknown): Chat[] {
       if (ref && (file.id !== ref.id || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(ref.id) || !/^sha256:[a-f0-9]{64}$/.test(ref.digest) || !Array.isArray(ref.pages) || ref.pages.length > 500 || new Set(ref.pages).size !== ref.pages.length || ref.pages.some(n => !Number.isSafeInteger(n) || n < 1) || typeof ref.allowPartial !== 'boolean')) throw new Error(sourceMessage("Invalid saved attachments"))
     }
     if (chat.documents !== undefined && (!Array.isArray(chat.documents) || chat.documents.length > 256 || chat.documents.some(file => !file?.document || typeof file.name !== 'string' || typeof file.text !== 'string'))) throw new Error(sourceMessage("Invalid saved attachments"))
+    if(chat.websites!==undefined && (!Array.isArray(chat.websites)||chat.websites.length>16||!chat.websites.every(validWebsiteReference)||new Set(chat.websites.map(w=>w.id)).size!==chat.websites.length))throw new Error(sourceMessage("Invalid saved attachments"))
     if (chat.pack && (typeof chat.pack.id !== 'string' || typeof chat.pack.path !== 'string' || typeof chat.pack.digest !== 'string')) throw new Error(sourceMessage("Invalid saved pack context"))
     return { id: chat.id, title: chat.title, composer: chat.composer, model: chat.model, pinned: chat.pinned, archived: chat.archived,
-      updatedAt: chat.updatedAt, ...(chat.createdAt !== undefined ? { createdAt: chat.createdAt } : {}), mode: chat.mode, view: chat.view, attachments: chat.attachments ?? [], documents: chat.documents ?? [], adversarialReview: chat.adversarialReview === true, titleEdited: chat.titleEdited === true, ...(chat.pack ? { pack: chat.pack } : {}),
+      updatedAt: chat.updatedAt, ...(chat.createdAt !== undefined ? { createdAt: chat.createdAt } : {}), mode: chat.mode, view: chat.view, attachments: chat.attachments ?? [], documents: chat.documents ?? [], websites:chat.websites ?? [], adversarialReview: chat.adversarialReview === true, titleEdited: chat.titleEdited === true, ...(chat.pack ? { pack: chat.pack } : {}),
       ...(chat.checkpoint ? { checkpoint: decodeCheckpoint(chat.checkpoint) } : {}),
       ...(typeof chat.createdCandidateDigest === 'string' ? { createdCandidateDigest: chat.createdCandidateDigest } : {}) }
   })

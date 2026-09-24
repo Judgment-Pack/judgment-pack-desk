@@ -6,5 +6,6 @@ export const TOOL_LABELS: Record<string, string> = {
   get experimental_test_packs() { return msg("Run pack tests") }, get experimental_validate_expectations() { return msg("Validate test expectations") },
   get list_packs() { return msg("List packs") }, get get_pack() { return msg("Read a pack") }, get test_conformance() { return msg("Check conformance") },
   get search_sources() { return msg("Search sources") }, get read_source() { return msg("Read a source") }, get cite_excerpt() { return msg("Record a citation") },
+  get explore_website(){return msg("Explore website")},
   get read_link() { return msg("Read a link") }
 }

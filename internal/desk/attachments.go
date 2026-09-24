@@ -28,7 +28,8 @@ type attachmentOriginal struct {
 }
 type attachmentProof struct {
 	Web *struct {
-		URL string `json:"url"`
+		URL  string `json:"url"`
+		Site string `json:"site,omitempty"`
 	} `json:"web,omitempty"`
 	Session   string `json:"session"`
 	Source    string `json:"source"`

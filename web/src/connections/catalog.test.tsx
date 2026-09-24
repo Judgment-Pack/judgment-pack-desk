@@ -16,7 +16,7 @@ it('requires the supported protocol and complete operations without inventing mi
  wire.providers[1]!.operations = ['status']
  wire.providers.push({ ...wire.providers[2]!, id: 'future-provider' })
  expect(parseConnectionCatalog(wire).providers.map(item => item.id)).toEqual(['notion', 'obsidian'])
- expect(parseConnectionCatalog({ version: 2, providers: [], sources: [] })).toEqual({ providers: [], web: false })
+ expect(parseConnectionCatalog({ version: 2, providers: [], sources: [] })).toEqual({ providers: [], web: false, discovery: false })
 })
 
 it.each([null, {}, { version: 2, providers: [] }, { version: 1, providers: [], sources: [] }, { ...fixture(), providers: null }, { ...fixture(), providers: Array(33).fill({}) }, { ...fixture(), providers: [connectionCatalogFixture.providers[0], connectionCatalogFixture.providers[0]] }, { ...fixture(), providers: [{ ...connectionCatalogFixture.providers[0], operations: ['status', 'status'] }] }, { ...fixture(), providers: [{ ...connectionCatalogFixture.providers[0], queryRequired: undefined }] }])('refuses malformed discovery: %j', raw => {
@@ -70,4 +70,11 @@ it('advertises only a compatible explicit URL source and hides it on failed disc
  raw.sources[0]!.input='url';raw.sources[0]!.mediaTypes=['application/json'];expect(parseConnectionCatalog(raw).web).toBe(false)
  raw.sources=[];expect(parseConnectionCatalog(raw).web).toBe(false)
  expect(() => parseConnectionCatalog({...fixture(),sources:[fixture().sources[0],fixture().sources[0]]})).toThrow()
+})
+
+it('offers discovery only for the exact bounded manifest contract',()=>{
+ const source={id:'web-discovery',input:'url',mediaTypes:['application/vnd.jpack.web-discovery+json'],maxBytes:1<<20}
+ const catalog=(item:unknown)=>parseConnectionCatalog({version:2,providers:[],sources:[item]})
+ expect(catalog(source).discovery).toBe(true)
+ for(const changed of [{...source,id:'other'},{...source,input:'text'},{...source,mediaTypes:['text/html']},{...source,maxBytes:4<<20}])expect(catalog(changed).discovery).toBe(false)
 })

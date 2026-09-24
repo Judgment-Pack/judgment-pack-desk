@@ -1943,8 +1943,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
     '  const fetchUrl = `${parsed.origin}${parsed.pathname}${parsed.search}`' \
     '  const fetchUrl = `${parsed.origin}${parsed.pathname}${parsed.search}${parsed.hash}`'
   mutate web "read_link reads a link the person never gave" "$LT" \
-    '      if (!givenInChat(link.fetchUrl, context.turns(), deps.documents())) {' \
-    '      if (false) {'
+    'if(!site&&!givenInChat(link.fetchUrl,context.turns(),deps.documents()))' \
+    'if(false)'
   mutate web "read_link hands the model the whole page" "$LT" \
     '  const end = Math.min(start + READ_WINDOW, joined.length)' \
     '  const end = joined.length'
