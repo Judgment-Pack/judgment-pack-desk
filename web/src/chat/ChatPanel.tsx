@@ -26,6 +26,7 @@ import type { ConnectionProvider } from '../connections/client'
 import { useConnections } from '../connections/catalog'
 import { AttachmentMenu } from './AttachmentMenu'
 import { TEXT_ATTACHMENT_ACCEPT, useChatAttachments } from './useChatAttachments'
+import { linkReadable, webSourceOffered } from './linkTools'
 import { ConfigureAssistant } from './ConfigureAssistant'
 import { AssistantOptions } from './AssistantOptions'
 import { ChatToolbar, chatHref } from './ChatHistory'
@@ -192,12 +193,12 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
           onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (!otherRun && !running && (!blocked || needsConfig)) send() } }} />
         <div className={styles.composerTools}>
           <input ref={fileInput} hidden type="file" tabIndex={-1} accept={TEXT_ATTACHMENT_ACCEPT} multiple onChange={event => { void upload.attach([...(event.target.files ?? [])]); event.target.value = '' }} />
-          <AttachmentMenu triggerRef={attachmentButton} disabled={running || locked || upload.reading || connectionBusy} onUpload={() => fileInput.current?.click()} onLink={connectionCatalog.web ? () => requestAnimationFrame(() => connections.open({ source: 'web', chatId: chat.id, opener: attachmentButton.current })) : undefined}
+          <AttachmentMenu triggerRef={attachmentButton} disabled={running || locked || upload.reading || connectionBusy} onUpload={() => fileInput.current?.click()} onLink={webSourceOffered(research, { local: localDrive, catalogWeb: connectionCatalog.web }) ? () => requestAnimationFrame(() => connections.open({ source: 'web', chatId: chat.id, opener: attachmentButton.current })) : undefined}
             onMore={() => openConnection()}
             connections={connectionCatalog.entries.filter(item => !item.status.isError && item.status.data?.state === 'connected').map(item => ({ descriptor: item.descriptor, provider: item.descriptor.id, selection: item.descriptor.selection, onSelect: () => openConnection(item.descriptor.id) }))} />
           <div className={styles.pick}><VisuallyHidden.Root asChild><label htmlFor={`${id}-mode`}>{msg("Task tools")}</label></VisuallyHidden.Root><Select quiet id={`${id}-mode`} value={chat.mode} disabled={running || locked || (chat.mode === 'research' && state.candidates.length > 0)} onValueChange={mode => store?.update(chat.id, { mode: mode as Chat['mode'] })} options={[{ value: 'draft', label: msg("Chat") }, { value: 'research', label: msg("Research") }]} /></div>
           {(slot.endpoint?.models.length ?? 0) > 0 && <div className={styles.model}><VisuallyHidden.Root asChild><label htmlFor={`${id}-model`}>{msg("Model")}</label></VisuallyHidden.Root><Select quiet id={`${id}-model`} value={binding?.model} disabled={running || locked} onValueChange={model => store?.update(chat.id, { model })} options={slot.endpoint!.models.map(model => ({ value: model, label: model }))} /></div>}
-          <AssistantOptions thinking={slot.thinking} tools={slot.endpoint?.tools ?? []} mode={chat.mode} linkReading={connectionCatalog.web && Boolean(research.documents?.enabled) && research.gateway !== null} review={chat.adversarialReview === true} onReview={value => store?.update(chat.id, { adversarialReview: value })} disabled={running || locked} notice={[...state.events].reverse().find(event => event.type === "thinking_unavailable")?.detail} />
+          <AssistantOptions thinking={slot.thinking} tools={slot.endpoint?.tools ?? []} mode={chat.mode} linkReading={linkReadable(research, { local: localDrive, catalogWeb: connectionCatalog.web })} review={chat.adversarialReview === true} onReview={value => store?.update(chat.id, { adversarialReview: value })} disabled={running || locked} notice={[...state.events].reverse().find(event => event.type === "thinking_unavailable")?.detail} />
           <span className={styles.grow} />
           <Tooltip content={running ? msg("Stop") : msg("Send")}><Button className={styles.send} variant={running ? "secondary" : "primary"} aria-label={running ? msg("Stop") : msg("Send")} disabled={!running && (needsConfig || !hasMessage || !binding || Boolean(otherRun) || locked || upload.reading || connectionBusy || Boolean(blocked && !needsConfig))} onClick={running ? () => binding?.run?.stop() : send}>{running ? <IconStop /> : <IconSend />}</Button></Tooltip>
         </div>

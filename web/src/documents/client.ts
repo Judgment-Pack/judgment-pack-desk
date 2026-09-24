@@ -137,8 +137,10 @@ async function ingestSelected(selection: DriveSelection | MailSelection | Source
  const gateway = config.gateway
  if (!gateway || !config.documents?.enabled) throw new Error(resource || source === 'web' || source === 'notion' || source === 'obsidian' ? sourceMessage('Enable document processing in Admin → Storage & data before attaching sources.') : source === 'gmail' ? sourceMessage('Enable document processing in Admin → Storage & data before attaching emails.') : sourceMessage('Enable document processing in Admin → Storage & data before attaching Drive files.'))
  const session = newResearchSession(), id = crypto.randomUUID()
+ // A selected file rides a grant that must stay at the managed local gateway, so its acquisition carries the relay's constraint; a public link carries no grant and may go to the gateway the desk-level file declares.
+ const constraint = source === 'web' && config.managedLocal !== true ? undefined : 'local-documents'
  progress(sourceMessage('Reading files…'))
- const response = await acquire(session, source, selection, 16 << 20, signal, 'local-documents').catch(cause => { if (signal.aborted || verbatimFailure) throw cause; if (source === 'web') throw new Error(sourceMessage('Could not read this link. Use a public HTTPS page, PDF, or text file under 4 MiB.')); throw connectionFailure(cause, source === 'drive' ? 'google-drive' : source) })
+ const response = await acquire(session, source, selection, 16 << 20, signal, constraint).catch(cause => { if (signal.aborted || verbatimFailure) throw cause; if (source === 'web') throw new Error(sourceMessage('Could not read this link. Use a public HTTPS page, PDF, or text file under 4 MiB.')); throw connectionFailure(cause, source === 'drive' ? 'google-drive' : source) })
  signal.throwIfAborted()
  const record = readDocumentRecord(JSON.parse(response.text).result)
  if (record.provenance.source.kind !== (resource ? 'connection-resource' : source === 'web' ? 'web' : source === 'gmail' ? 'gmail' : source === 'drive' ? 'google-drive' : 'connected-source') || record.original.retention !== 'inline' || !record.original.bytes) throw fail()
@@ -147,8 +149,8 @@ async function ingestSelected(selection: DriveSelection | MailSelection | Source
  if (record.document.size > config.documents.maxFileBytes) throw new Error(sourceMessage('This file is empty or exceeds the configured upload limit.'))
  const stored = await save(id, object, 'absent', signal)
  progress(sourceMessage('Verifying document pages…'))
- await seal(session, signal, 'local-documents')
- const registryText = (await registry(signal, 'local-documents')).split('\n').filter(line => line.trim() && stringMember(parseJsonText(line), 'sessionId') === session).join('\n') + '\n'
+ await seal(session, signal, constraint)
+ const registryText = (await registry(signal, constraint)).split('\n').filter(line => line.trim() && stringMember(parseJsonText(line), 'sessionId') === session).join('\n') + '\n'
  object.proof = {session, source, authority: gateway.authority, publicKey: gateway.signer.public, response: response.text, registry: registryText, ...(resource ? {resource: selection as SourceSelection} : source === 'web' ? {web: selection as { url: string }} : source === 'gmail' ? {gmail: selection as MailSelection} : source === 'drive' ? {drive: selection as DriveSelection} : {connected: selection as SourceSelection})}
  await save(id, object, stored, signal)
  const document = await verifyDocument(object, gateway)

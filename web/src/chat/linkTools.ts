@@ -41,6 +41,21 @@ import type { DraftToolContext } from '../research/useResearchRun'
 import type { ChatAttachment } from './store'
 
 export const READ_LINK = 'read_link'
+
+/**
+ * Whether a web source is on offer: the managed local gateway's catalog
+ * advertises one, or the desk-level file declares one under
+ * `research.sources.web` for the gateway it names. The composer's Add link and
+ * the chat's `read_link` are offered on exactly these terms.
+ */
+export function webSourceOffered(research: ResearchConfig, offer: { local: boolean; catalogWeb: boolean }): boolean {
+  return offer.local ? offer.catalogWeb : (research.sources?.web ?? null) !== null
+}
+
+/** Whether a link can be read now: a web source on offer, a pinned gateway, and document processing to keep the page. */
+export function linkReadable(research: ResearchConfig, offer: { local: boolean; catalogWeb: boolean }): boolean {
+  return research.gateway !== null && Boolean(research.documents?.enabled) && webSourceOffered(research, offer)
+}
 /** New links one message may read; a link already in the chat is served again for nothing. */
 export const MAX_LINK_READS_PER_TURN = 3
 /** The chat store's own bound on retained documents, applied before a read rather than at the save. */

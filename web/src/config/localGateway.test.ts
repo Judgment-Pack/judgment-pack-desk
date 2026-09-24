@@ -27,8 +27,15 @@ describe('managed connection layering', () => {
     const declared = { ...DESK_DEFAULTS.research, documents: { ...DOCUMENT_DEFAULTS, source: 'old-external', maxRequestBytes: 64 << 20, maxResponseBytes: 16 << 20 } }
     const actual = withLocalGateway(declared, local)
     expect(actual.documents).toEqual({ ...DOCUMENT_DEFAULTS })
-    expect(actual.sources).toEqual({ search: null, read: null })
+    expect(actual.sources).toEqual({ search: null, read: null, web: null })
     expect(declared.documents.source).toBe('old-external')
+  })
+  it('marks the layered gateway as the managed local one, and an external one as not', () => {
+    expect(withLocalGateway(DESK_DEFAULTS.research, local).managedLocal).toBe(true)
+    const external = { ...DESK_DEFAULTS.research, gateway: { ...pin, authority: 'gateway:organization' }, sources: { search: null, read: null, web: { source: 'web' as const } } }
+    expect(withLocalGateway(external, local).managedLocal).toBeUndefined()
+    expect(withLocalGateway(external, local).sources.web).toEqual({ source: 'web' })
+    expect(DESK_DEFAULTS.research.managedLocal).toBeUndefined()
   })
   it('never overlays a refused personal configuration', () => {
     const effective = effectiveConfig(undefined, undefined, undefined, { path: '/private/desk.json', present: true, decoded: decodeDeskConfig('{broken', 'desk'), localGateway: local })

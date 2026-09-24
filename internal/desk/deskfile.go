@@ -121,6 +121,7 @@ type researchConfig struct {
 	gateway   *researchGateway
 	search    *researchSource
 	read      *researchSource
+	web       *webSource
 	limits    map[string]int64
 	documents *documentSourceConfig
 }
@@ -143,6 +144,13 @@ type researchGateway struct {
 type researchSource struct {
 	source  string
 	dialect string
+}
+
+// webSource mirrors `WebSourceConfig` in `deskConfig.ts`: the gateway's public
+// web source, declared by an external gateway, named `web` in this release
+// because a saved link is verified as that source's own record.
+type webSource struct {
+	source string
 }
 
 // ResearchDialects mirrors `RESEARCH_DIALECTS` in `deskConfig.ts`.
@@ -712,13 +720,15 @@ func decodeResearch(value any) (*researchConfig, []deskProblem) {
 		}
 	}
 	if sources, present := record["sources"]; present {
-		inner, innerProblems := object(sources, "research.sources", []string{"search", "read"})
+		inner, innerProblems := object(sources, "research.sources", []string{"search", "read", "web"})
 		problems = append(problems, innerProblems...)
 		if inner != nil {
 			var sourceProblems []deskProblem
 			found.search, sourceProblems = decodeResearchSource(inner["search"], "research.sources.search")
 			problems = append(problems, sourceProblems...)
 			found.read, sourceProblems = decodeResearchSource(inner["read"], "research.sources.read")
+			problems = append(problems, sourceProblems...)
+			found.web, sourceProblems = decodeWebSource(inner["web"], "research.sources.web")
 			problems = append(problems, sourceProblems...)
 		}
 	}
@@ -816,6 +826,25 @@ func decodeResearchSource(value any, key string) (*researchSource, []deskProblem
 		}
 	}
 	return found, problems
+}
+
+// decodeWebSource reads `research.sources.web`, mirrored from `webSourceValue`
+// in `deskConfig.ts`: an object whose one member is the source's name, and the
+// name is `web`.
+func decodeWebSource(value any, key string) (*webSource, []deskProblem) {
+	if value == nil {
+		return nil, nil
+	}
+	record, problems := object(value, key, []string{"source"})
+	if record == nil {
+		return nil, problems
+	}
+	if name, ok := record["source"].(string); !ok || name != "web" {
+		problems = append(problems, deskProblem{Key: key + ".source",
+			Reason: fmt.Sprintf(`must name the gateway's public web source, "web", since a saved link is verified as that source's own record; found %s`, describe(record["source"]))})
+		return nil, problems
+	}
+	return &webSource{source: "web"}, problems
 }
 
 // projectConfigName is the file a `project.file` must name.

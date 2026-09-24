@@ -82,6 +82,7 @@ type fixtureVerdict struct {
 		Signer    string           `json:"signer"`
 		Search    *string          `json:"search"`
 		Read      *string          `json:"read"`
+		Web       *string          `json:"web"`
 		Limits    map[string]int64 `json:"limits"`
 	} `json:"research"`
 }
@@ -192,7 +193,14 @@ func TestSharedFixturesDecodeAsTheVerdictSays(t *testing.T) {
 						s := source.source + "/" + source.dialect
 						return &s
 					}
-					for name, got := range map[string][2]*string{"search": {spell(decoded.Research.search), verdict.Research.Search}, "read": {spell(decoded.Research.read), verdict.Research.Read}} {
+					spellWeb := func(source *webSource) *string {
+						if source == nil {
+							return nil
+						}
+						s := source.source
+						return &s
+					}
+					for name, got := range map[string][2]*string{"search": {spell(decoded.Research.search), verdict.Research.Search}, "read": {spell(decoded.Research.read), verdict.Research.Read}, "web": {spellWeb(decoded.Research.web), verdict.Research.Web}} {
 						if (got[0] == nil) != (got[1] == nil) || (got[0] != nil && *got[0] != *got[1]) {
 							t.Errorf("research source %s decoded to %v, want %v", name, got[0], got[1])
 						}

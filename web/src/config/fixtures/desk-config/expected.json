@@ -87,15 +87,16 @@
     "keys": [],
     "research": {
       "authority": "gateway:local",
+      "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b",
+      "search": null,
+      "read": null,
+      "web": null,
       "limits": {
         "bytes": 8388608,
         "reads": 12,
         "searches": 8,
         "seconds": 600
-      },
-      "read": null,
-      "search": null,
-      "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b"
+      }
     },
     "researchGateway": "http://127.0.0.1:8787",
     "thinking": "off",
@@ -113,19 +114,74 @@
     "keys": [],
     "research": {
       "authority": "gateway:local",
+      "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b",
+      "search": null,
+      "read": null,
+      "web": null,
       "limits": {
         "bytes": 8388608,
         "reads": 12,
         "searches": 8,
         "seconds": 600
-      },
-      "read": null,
-      "search": null,
-      "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b"
+      }
     },
     "researchGateway": "http://127.0.0.1:8787",
     "thinking": "off",
     "documents": null
+  },
+  "accepted-documents-enabled": {
+    "accepted": true,
+    "engine": "vercel",
+    "keys": [],
+    "research": {
+      "authority": "gateway:local",
+      "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b",
+      "search": null,
+      "read": null,
+      "web": null,
+      "limits": {
+        "bytes": 8388608,
+        "reads": 12,
+        "searches": 8,
+        "seconds": 600
+      }
+    },
+    "researchGateway": "http://127.0.0.1:8787",
+    "thinking": "off",
+    "documents": {
+      "enabled": true,
+      "source": "pdf",
+      "maxFileBytes": 100000,
+      "maxRequestBytes": 1048576,
+      "maxResponseBytes": 65536
+    }
+  },
+  "accepted-documents-paused": {
+    "accepted": true,
+    "engine": "vercel",
+    "keys": [],
+    "research": {
+      "authority": "gateway:local",
+      "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b",
+      "search": null,
+      "read": null,
+      "web": null,
+      "limits": {
+        "bytes": 8388608,
+        "reads": 12,
+        "searches": 8,
+        "seconds": 600
+      }
+    },
+    "researchGateway": "http://127.0.0.1:8787",
+    "thinking": "off",
+    "documents": {
+      "enabled": false,
+      "source": "pdf",
+      "maxFileBytes": 100000,
+      "maxRequestBytes": 1048576,
+      "maxResponseBytes": 65536
+    }
   },
   "accepted-documents-small": {
     "accepted": true,
@@ -133,15 +189,16 @@
     "keys": [],
     "research": {
       "authority": "gateway:local",
+      "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b",
+      "search": null,
+      "read": null,
+      "web": null,
       "limits": {
         "bytes": 8388608,
         "reads": 12,
         "searches": 8,
         "seconds": 600
-      },
-      "read": null,
-      "search": null,
-      "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b"
+      }
     },
     "researchGateway": "http://127.0.0.1:8787",
     "thinking": "off",
@@ -420,6 +477,7 @@
       "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b",
       "search": null,
       "read": null,
+      "web": null,
       "limits": {
         "searches": 8,
         "reads": 12,
@@ -439,6 +497,7 @@
       "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b",
       "search": null,
       "read": null,
+      "web": null,
       "limits": {
         "searches": 8,
         "reads": 12,
@@ -458,6 +517,7 @@
       "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b",
       "search": null,
       "read": null,
+      "web": null,
       "limits": {
         "searches": 8,
         "reads": 12,
@@ -477,6 +537,7 @@
       "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b",
       "search": "search/tavily-search",
       "read": "read/jina-reader",
+      "web": null,
       "limits": {
         "searches": 4,
         "reads": 6,
@@ -495,6 +556,34 @@
       "signer": "",
       "search": null,
       "read": null,
+      "web": null,
+      "limits": {
+        "searches": 8,
+        "reads": 12,
+        "bytes": 8388608,
+        "seconds": 600
+      }
+    }
+  },
+  "accepted-research-web-source": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "researchGateway": "https://gateway.example.invalid/engine",
+    "documents": {
+      "enabled": true,
+      "source": "documents",
+      "maxFileBytes": 16777216,
+      "maxRequestBytes": 33554432,
+      "maxResponseBytes": 8388608
+    },
+    "research": {
+      "authority": "gateway:organization",
+      "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b",
+      "search": null,
+      "read": null,
+      "web": "web",
       "limits": {
         "searches": 8,
         "reads": 12,
@@ -565,6 +654,18 @@
     "accepted": false,
     "keys": [
       "research.documents"
+    ]
+  },
+  "refused-documents-enabled-null": {
+    "accepted": false,
+    "keys": [
+      "research.documents.enabled"
+    ]
+  },
+  "refused-documents-enabled-string": {
+    "accepted": false,
+    "keys": [
+      "research.documents.enabled"
     ]
   },
   "refused-documents-encoded-envelope": {
@@ -1220,6 +1321,18 @@
       "research.crawler"
     ]
   },
+  "refused-research-web-source-dialect": {
+    "accepted": false,
+    "keys": [
+      "research.sources.web.dialect"
+    ]
+  },
+  "refused-research-web-source-name": {
+    "accepted": false,
+    "keys": [
+      "research.sources.web.source"
+    ]
+  },
   "refused-storage-dir-absolute": {
     "accepted": false,
     "keys": [
@@ -1314,70 +1427,6 @@
     "accepted": false,
     "keys": [
       "deskConfigVersion"
-    ]
-  },
-  "accepted-documents-paused": {
-    "accepted": true,
-    "engine": "vercel",
-    "keys": [],
-    "research": {
-      "authority": "gateway:local",
-      "limits": {
-        "bytes": 8388608,
-        "reads": 12,
-        "searches": 8,
-        "seconds": 600
-      },
-      "read": null,
-      "search": null,
-      "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b"
-    },
-    "researchGateway": "http://127.0.0.1:8787",
-    "thinking": "off",
-    "documents": {
-      "enabled": false,
-      "source": "pdf",
-      "maxFileBytes": 100000,
-      "maxRequestBytes": 1048576,
-      "maxResponseBytes": 65536
-    }
-  },
-  "accepted-documents-enabled": {
-    "accepted": true,
-    "engine": "vercel",
-    "keys": [],
-    "research": {
-      "authority": "gateway:local",
-      "limits": {
-        "bytes": 8388608,
-        "reads": 12,
-        "searches": 8,
-        "seconds": 600
-      },
-      "read": null,
-      "search": null,
-      "signer": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b"
-    },
-    "researchGateway": "http://127.0.0.1:8787",
-    "thinking": "off",
-    "documents": {
-      "enabled": true,
-      "source": "pdf",
-      "maxFileBytes": 100000,
-      "maxRequestBytes": 1048576,
-      "maxResponseBytes": 65536
-    }
-  },
-  "refused-documents-enabled-null": {
-    "accepted": false,
-    "keys": [
-      "research.documents.enabled"
-    ]
-  },
-  "refused-documents-enabled-string": {
-    "accepted": false,
-    "keys": [
-      "research.documents.enabled"
     ]
   }
 }

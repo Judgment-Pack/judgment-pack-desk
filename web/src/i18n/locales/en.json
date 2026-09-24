@@ -1887,6 +1887,7 @@
   "must name a directory inside the project": "must name a directory inside the project",
   "must name a {{value0}} — the desk opens the directory that file is in; found {{value1}}": "must name a {{value0}} — the desk opens the directory that file is in; found {{value1}}",
   "must name one of the models enabled for this endpoint; found null": "must name one of the models enabled for this endpoint; found null",
+  "must name the gateway's public web source, \"web\", since a saved link is verified as that source's own record; found {{value0}}": "must name the gateway's public web source, \"web\", since a saved link is verified as that source's own record; found {{value0}}",
   "must not carry a fragment; an endpoint is a location a request is sent to, and a fragment is never sent": "must not carry a fragment; an endpoint is a location a request is sent to, and a fragment is never sent",
   "must not carry a query; the relay appends the gateway's own paths and nothing else": "must not carry a query; the relay appends the gateway's own paths and nothing else",
   "must not carry a semicolon in its query: it is a separator to some servers and a value to others, and this desk will not send one it cannot read the same way twice": "must not carry a semicolon in its query: it is a separator to some servers and a value to others, and this desk will not send one it cannot read the same way twice",

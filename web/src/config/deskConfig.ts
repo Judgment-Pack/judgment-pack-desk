@@ -330,6 +330,20 @@ export interface ResearchGatewayConfig {
   signer: { algorithm: 'ed25519'; public: string }
 }
 
+/**
+ * The gateway's public web source, as `adapter-web` serves it: one link in,
+ * one signed attachment record out. No dialect, because there is one wire
+ * shape and the record itself is what is checked; and the name is `web` in
+ * this release, because a saved link is verified as that source's own
+ * record (`verifyDocument` ties a web proof to the source named `web` and to
+ * an http-shaped acquisition). The managed local gateway needs no declaration:
+ * its catalog advertises the source. This member is how an external gateway
+ * says it serves one.
+ */
+export interface WebSourceConfig {
+  source: 'web'
+}
+
 /** One of the gateway's configured sources, and the wire dialect it speaks. */
 export interface ResearchSourceConfig {
   /** The source name as `gateway serve --source NAME=…` declared it. */
@@ -350,8 +364,16 @@ export interface ResearchLimits {
 
 export interface ResearchConfig {
   gateway: ResearchGatewayConfig | null
-  sources: { search: ResearchSourceConfig | null; read: ResearchSourceConfig | null }
+  sources: { search: ResearchSourceConfig | null; read: ResearchSourceConfig | null; web: WebSourceConfig | null }
   limits: ResearchLimits
+  /**
+   * Whether `gateway` is the desk-managed local gateway, layered in by
+   * `withLocalGateway`, as opposed to one the desk-level file declared. What
+   * reads it is the one decision that differs between the two: a document
+   * acquisition is pinned to the local gateway with the relay's constraint
+   * header, which an external gateway must not be sent.
+   */
+  managedLocal?: boolean
   /** Personal gateway document adapter; absent keeps local text uploads only. */
   documents?: DocumentSourceConfig | null
 }
@@ -449,7 +471,7 @@ export const DESK_DEFAULTS: DeskConfig = {
   assistant: { endpoint: null, engine: 'vercel', thinking: 'off' },
   research: {
     gateway: null,
-    sources: { search: null, read: null },
+    sources: { search: null, read: null, web: null },
     limits: { searches: 8, reads: 12, bytes: 8_388_608, seconds: 600 }
   },
   project: { file: null },
@@ -1292,13 +1314,33 @@ function researchSourcesValue(
   value: unknown,
   problems: ConfigProblem[]
 ): ResearchConfig['sources'] {
-  if (value === undefined) return { search: null, read: null }
-  const sources = section(value, 'research.sources', ['search', 'read'], problems)
-  if (!sources) return { search: null, read: null }
+  if (value === undefined) return { search: null, read: null, web: null }
+  const sources = section(value, 'research.sources', ['search', 'read', 'web'], problems)
+  if (!sources) return { search: null, read: null, web: null }
   return {
     search: researchSourceValue(sources.search, 'research.sources.search', problems),
-    read: researchSourceValue(sources.read, 'research.sources.read', problems)
+    read: researchSourceValue(sources.read, 'research.sources.read', problems),
+    web: webSourceValue(sources.web, problems)
   }
+}
+
+/**
+ * `research.sources.web`: the one member is the source's name, and the name
+ * is `web` (see `WebSourceConfig`). Mirrored by `decodeWebSource` in
+ * `internal/desk/deskfile.go` and held to it by the shared fixtures.
+ */
+function webSourceValue(value: unknown, problems: ConfigProblem[]): WebSourceConfig | null {
+  if (value === undefined || value === null) return null
+  const source = section(value, 'research.sources.web', ['source'], problems)
+  if (!source) return null
+  if (source.source !== 'web') {
+    problems.push({
+      key: 'research.sources.web.source',
+      reason: sourceMessage("must name the gateway's public web source, \"web\", since a saved link is verified as that source's own record; found {{value0}}", { value0: describe(source.source) })
+    })
+    return null
+  }
+  return { source: 'web' }
 }
 
 /**
@@ -2142,7 +2184,7 @@ export interface LocalGatewayStatus {
 export function withLocalGateway(research: ResearchConfig, local?: LocalGatewayStatus): ResearchConfig {
   if (!local || research.gateway) return research
   const documents = research.documents === undefined ? DOCUMENT_DEFAULTS : research.documents
-  return { ...research, sources: { search: null, read: null }, gateway: local.gateway ?? null, documents: documents && {
+  return { ...research, managedLocal: true, sources: { search: null, read: null, web: null }, gateway: local.gateway ?? null, documents: documents && {
     ...documents, source: 'documents', maxRequestBytes: Math.min(documents.maxRequestBytes, 32 * 1024 * 1024),
     maxResponseBytes: Math.min(documents.maxResponseBytes, 8 * 1024 * 1024)
   } }

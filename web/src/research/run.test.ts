@@ -126,7 +126,7 @@ function harness(scripts: Script[], overrides: Partial<RunPorts> = {}, tamper: (
   const tools = researchTools({
     config: {
       gateway: { url: 'http://127.0.0.1:8787', authority: gateway.authority, signer: { algorithm: 'ed25519', public: PUBLIC_KEY } },
-      sources: { search: { source: 'search', dialect: 'tavily-search' }, read: { source: 'read', dialect: 'jina-reader' } },
+      sources: { search: { source: 'search', dialect: 'tavily-search' }, read: { source: 'read', dialect: 'jina-reader' }, web: null },
       limits: { searches: 8, reads: 12, bytes: 8_388_608, seconds: 600 }
     },
     ledger,
