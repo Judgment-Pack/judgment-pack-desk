@@ -2280,5 +2280,12 @@
   "{{value}} pixels wide": "幅 {{value}} ピクセル",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— 主張を記載したリポジトリ内ファイルの所在です。このペイロードは主張を行いません。ファイルの主張はランタイムに関するもので、このパックや事実、処置結果に従うことの正しさについてではありません。",
   "… (truncated for display)": "…（表示用に省略）",
-  "{{action}}: {{provider}}": "{{action}}: {{provider}}"
+  "{{action}}: {{provider}}": "{{action}}: {{provider}}",
+  "Read a link": "リンクを読む",
+  "Open at {{anchor}}": "{{anchor}} で開く",
+  "link: reading {{value0}}": "リンク: {{value0}} を読み込み中",
+  "link: {{value0}} characters retained as document {{value1}}": "リンク: {{value0}} 文字を文書 {{value1}} として保持",
+  "link: failed — {{value0}}": "リンク: 失敗 — {{value0}}",
+  "link: {{value0}} is already in this chat; served from its document": "リンク: {{value0}} はこのチャットに既にあります。その文書から提供",
+  "link: refused — {{value0}}": "リンク: 拒否 — {{value0}}"
 }

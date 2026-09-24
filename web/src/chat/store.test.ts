@@ -150,3 +150,26 @@ it('allows upgrading a draft to research but never downgrading a research candid
   store.update(chat.id, { mode: 'draft' })
   expect(store.getSnapshot().chats[0]!.mode).toBe('research')
 })
+
+it('keeps the link a read document came from and refuses a malformed one', async () => {
+  const base = setup(); await base.store.load(); const chat = base.store.create()
+  const reference = { id: '12345678-1234-1234-1234-123456789abc', digest: `sha256:${'a'.repeat(64)}`, pages: [1], allowPartial: false }
+  const document = { id: reference.id, name: 'policy-evidence.txt', text: '', document: reference, link: { url: 'https://example.com/policy', anchor: 'brief-human-review' } }
+  const good = { ...chat, documents: [document] }
+  const restored = setup({ read: async () => ({ project: '/project', sha256: 'x', content: { version: 1, chats: [good] } }) })
+  await restored.store.load()
+  expect(restored.store.getSnapshot().chats[0]?.documents?.[0]?.link).toEqual({ url: 'https://example.com/policy', anchor: 'brief-human-review' })
+  const malformed = [
+    { ...document, link: { url: 'http://example.com/policy' } },
+    { ...document, link: { url: 'https://example.com/policy#section' } },
+    { ...document, link: { url: 'https://example.com/policy', anchor: 'a\u0000b' } },
+    { ...document, link: 'https://example.com/policy' },
+    { id: 'text-one', name: 'notes.txt', text: 'notes', link: { url: 'https://example.com/policy' } }
+  ]
+  for (const file of malformed) {
+    const bad = setup({ read: async () => ({ project: '/project', sha256: 'x', content: { version: 1, chats: [{ ...chat, documents: [file] }] } }) })
+    await bad.store.load()
+    expect(bad.store.getSnapshot().ready, JSON.stringify(file.link)).toBe(false)
+    expect(bad.write).not.toHaveBeenCalled()
+  }
+})

@@ -1919,6 +1919,22 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # `experimental_test_graphs` walk against any runtime without the inventory
   # tool, and in the rail that would fire on every route. Aliased at the import
   # so the mutation is one line and still compiles.
+  # Reading links in chat (linkTools.ts). Three safeguards, each with the test
+  # that holds it: the fragment stays on this side of the gateway, a link the
+  # person never gave is refused before any acquisition, and the model is
+  # handed a window of the page and never the page.
+  LK=web/src/documents/link.ts
+  LT=web/src/chat/linkTools.ts
+  mutate web "a link's fragment reaches the gateway" "$LK" \
+    '  const fetchUrl = `${parsed.origin}${parsed.pathname}${parsed.search}`' \
+    '  const fetchUrl = `${parsed.origin}${parsed.pathname}${parsed.search}${parsed.hash}`'
+  mutate web "read_link reads a link the person never gave" "$LT" \
+    '      if (!givenInChat(link.fetchUrl, context.turns(), deps.documents())) {' \
+    '      if (false) {'
+  mutate web "read_link hands the model the whole page" "$LT" \
+    '  const end = Math.min(start + READ_WINDOW, joined.length)' \
+    '  const end = joined.length'
+
   mutate web "rail calls the whole-project graph walk" web/src/shell/LeftRail.tsx \
     'import { usePacks } from '"'"'../mcp/queries'"'"'' \
     'import { useConfiguredGraphs, usePacks as readPacks } from '"'"'../mcp/queries'"'"'

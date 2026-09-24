@@ -7,6 +7,7 @@ import { useMcp } from '../mcp/McpProvider'
 import { listAllTools } from '../mcp/capabilities'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { usePromptNames, TEST_PACK_PROMPT } from '../mcp/prompts'
+import { READ_LINK } from './linkTools'
 import { TOOL_LABELS } from './toolLabels'
 import type { ThinkingTier } from '../config/deskConfig'
 import { IconGear } from '../shell/icons'
@@ -17,9 +18,11 @@ import { ConfigureAssistant } from './ConfigureAssistant'
 import styles from './ChatWorkspace.module.css'
 
 /** One compact settings summary, shared by the home and pack conversations. */
-export function AssistantOptions({ thinking, tools, mode = 'draft', review = false, onReview, disabled, notice }: {
+export function AssistantOptions({ thinking, tools, mode = 'draft', review = false, onReview, disabled, notice, linkReading = false }: {
   thinking: ThinkingTier; tools: readonly string[]; mode?: 'draft' | 'research'; review?: boolean
   onReview?: (value: boolean) => void; disabled?: boolean; notice?: string
+  /** Whether an ordinary chat may read links the person gives (the gateway offers the web source). */
+  linkReading?: boolean
 }) {
   useLocale()
   const [open, setOpen] = useState(false)
@@ -34,7 +37,8 @@ export function AssistantOptions({ thinking, tools, mode = 'draft', review = fal
   const available = mcp.status === 'ready' ? tools.filter(name => listed.data?.some(tool => tool.name === name)) : []
   const research = config.research
   const host = mode === 'research' && research.gateway ? [
-    ...(research.sources.search ? ['search_sources'] : []), ...(research.sources.read ? ['read_source', 'cite_excerpt'] : [])] : []
+    ...(research.sources.search ? ['search_sources'] : []), ...(research.sources.read ? ['read_source', 'cite_excerpt'] : [])]
+    : mode === 'draft' && linkReading ? [READ_LINK] : []
   const trigger = useRef<HTMLButtonElement>(null)
   const configureButton = useRef<HTMLButtonElement>(null)
   return <>

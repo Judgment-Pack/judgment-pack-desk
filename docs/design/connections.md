@@ -163,3 +163,26 @@ source link; PDF/text retain their original download. The pane explains public
 HTTPS, 4 MiB, and no sign-in/JavaScript content. This is selected-link ingestion,
 not automatic web search. Agent-driven search and the remaining provider backlog
 remain separate work. All new copy is localized in the 12 supported locales.
+
+### Links read on request
+
+An ordinary chat (mode `draft`) offers the assistant one host tool, `read_link`,
+on the same terms as Add link: the catalog advertises the web source, document
+processing is enabled and a gateway is pinned. It reads only a link the person
+wrote in a message of theirs or attached; a link found inside a page or made up
+is refused with a sentence that says to ask for it. The fragment is never sent:
+`normalizeLink` fetches the address without it, the proof records that address,
+and the anchor is kept on the chat's document. Static text has no element ids,
+so the tool reports the anchor as not located and offers a text match for its
+words, labelled as one; a route-style hash is reported as a client-side route.
+
+The result is a window of `READ_WINDOW` characters under the research tools'
+retrieved-material frame, with an offset to continue, and never the page. The
+page itself goes through `ingestLink` — the same acquisition, attachment store
+and verification as Add link — and the chat keeps a `DocumentReference` with the
+link beside its attached documents, so `attachment:` citations, the citation
+popover, the source reader and a reload all work unchanged; the research ledger's
+checkpoint is not used, since it keeps whole responses in the chat's own file.
+Failures name the adapter's word (`web-public-only`, `web-over-limit`, …) in one
+sentence each; a message reads at most three new links. Work shows "Read a link";
+Assistant settings list the tool; the reader offers "Open at #anchor".

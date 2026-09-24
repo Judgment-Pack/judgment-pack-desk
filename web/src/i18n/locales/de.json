@@ -2280,5 +2280,12 @@
   "{{value}} pixels wide": "{{value}} Pixel breit",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— ein Verweis auf die Repository-Datei mit der Aussage. Diese Nutzdaten treffen keine solche Aussage. Die Datei bezieht sich auf die Laufzeit, nicht auf dieses Paket, diese Fakten oder die Richtigkeit einer Handlung nach der Disposition.",
   "… (truncated for display)": "… (für die Anzeige gekürzt)",
-  "{{action}}: {{provider}}": "{{action}}: {{provider}}"
+  "{{action}}: {{provider}}": "{{action}}: {{provider}}",
+  "Read a link": "Einen Link lesen",
+  "Open at {{anchor}}": "Bei {{anchor}} öffnen",
+  "link: reading {{value0}}": "Link: {{value0}} wird gelesen",
+  "link: {{value0}} characters retained as document {{value1}}": "Link: {{value0}} Zeichen als Dokument {{value1}} behalten",
+  "link: failed — {{value0}}": "Link: fehlgeschlagen — {{value0}}",
+  "link: {{value0}} is already in this chat; served from its document": "Link: {{value0}} ist bereits in diesem Chat; aus seinem Dokument bedient",
+  "link: refused — {{value0}}": "Link: abgelehnt — {{value0}}"
 }

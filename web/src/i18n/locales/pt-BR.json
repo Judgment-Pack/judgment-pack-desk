@@ -2297,5 +2297,12 @@
   "{{value}} pixels wide": "{{value}} pixels de largura",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— um localizador do arquivo do repositório que faz a afirmação. Este conteúdo não faz nenhuma. A afirmação se refere ao motor, não a este pacote, a estes fatos ou à correção de agir segundo a disposição.",
   "… (truncated for display)": "… (truncado para exibição)",
-  "{{action}}: {{provider}}": "{{action}}: {{provider}}"
+  "{{action}}: {{provider}}": "{{action}}: {{provider}}",
+  "Read a link": "Ler um link",
+  "Open at {{anchor}}": "Abrir em {{anchor}}",
+  "link: reading {{value0}}": "link: lendo {{value0}}",
+  "link: {{value0}} characters retained as document {{value1}}": "link: {{value0}} caracteres retidos como documento {{value1}}",
+  "link: failed — {{value0}}": "link: falhou — {{value0}}",
+  "link: {{value0}} is already in this chat; served from its document": "link: {{value0}} já está neste chat; servido a partir do seu documento",
+  "link: refused — {{value0}}": "link: recusado — {{value0}}"
 }

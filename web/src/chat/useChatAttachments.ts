@@ -94,7 +94,7 @@ export function useChatAttachments(store: ChatStore | null, chatId: string, disa
       for (const selection of selected) {
         if (active.current !== operation || operation.signal.aborted) return
         const { reference, document } = await (web ? ingestWeb(web, config, operation.signal, setProgress) : sources ? ingestSource(selection as SourceSelection, sources.provider, config, operation.signal, setProgress, sources.descriptor) : mail ? ingestGmail(selection as MailSelection, config, operation.signal, setProgress) : ingestDrive(selection as import('../connections/client').DriveSelection, config, operation.signal, setProgress))
-        pieces.push({ id: reference.id, name: document.record.document.name, text: '', document: reference })
+        pieces.push({ id: reference.id, name: document.record.document.name, text: '', document: reference, ...(web ? { link: { url: web.url } } : {}) })
       }
       if (active.current !== operation) return
       const latest = current()
