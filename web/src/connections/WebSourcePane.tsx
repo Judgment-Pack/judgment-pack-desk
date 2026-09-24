@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useChats } from '../chat/ChatProvider'
+import { linkReadable } from '../chat/linkTools'
 import { useChatAttachments } from '../chat/useChatAttachments'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { validWebURL } from '../documents/record'
@@ -24,7 +25,7 @@ export function WebSourcePane({ request, target, onClose, onAttached, onBusy }: 
  const { store, chats, drafts, bindings } = useChats()
  const chat = [...chats, ...drafts].find(item => item.id === request.chatId)
  const running = Boolean(request.chatId && bindings.get(request.chatId)?.run?.running)
- const available = catalog.web && Boolean(effective.config.research.documents?.enabled)
+ const available = linkReadable(effective.config.research, { local, catalogWeb: catalog.web })
  const upload = useChatAttachments(store, request.chatId ?? '', running || !available, effective.config.research)
  const [url, setURL] = useState(''), [invalid, setInvalid] = useState(false)
  const input = useRef<HTMLInputElement>(null)

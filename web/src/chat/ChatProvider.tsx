@@ -6,7 +6,7 @@ import { useFileListing } from '../files/queries'
 import { useResearchRun } from '../research/useResearchRun'
 import { recordActivity } from '../shell/consoleLog'
 import { restoreLedger } from './checkpoint'
-import { linkReading } from './linkTools'
+import { linkReadable, linkReading } from './linkTools'
 import { ChatStore, type Chat, type ChatAttachment } from './store'
 
 const Context = createContext<ChatStore | null>(null)
@@ -39,11 +39,12 @@ function ChatWorker({ store, chat }: { store: ChatStore; chat: Chat }) {
   const effective = useEffectiveConfig()
   const research = effective.config.research
   // Link reading is offered on the same terms as the composer's Add link: the
-  // managed local gateway's catalog advertises the web source and document
-  // processing is enabled. Read per turn, so a setting changed mid-chat holds.
+  // managed local gateway's catalog advertises the web source, or the desk-level
+  // file declares one, and document processing is enabled. Read per turn, so a
+  // setting changed mid-chat holds.
   const local = effective.desk?.localGateway?.status === 'ready' && !effective.desk?.decoded?.values?.research?.gateway
   const catalog = useConnections(local)
-  const readable = catalog.web && Boolean(research.documents?.enabled) && research.gateway !== null
+  const readable = linkReadable(research, { local, catalogWeb: catalog.web })
   const latest = useRef({ research, readable })
   latest.current = { research, readable }
   const draftTools = useMemo(() => linkReading({

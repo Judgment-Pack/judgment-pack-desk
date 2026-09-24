@@ -233,6 +233,13 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   PJ=internal/desk/project.go
   PL=internal/desk/project_linux.go
 
+  # The web source declaration (deskfile.go). The name must be `web`, because a
+  # saved link is verified as that source's own record; the shared fixture
+  # refused-research-web-source-name holds it.
+  mutate go "any name passes as the web source" internal/desk/deskfile.go \
+    '	if name, ok := record["source"].(string); !ok || name != "web" {' \
+    '	if _, ok := record["source"].(string); !ok {'
+
   mutate go "lexical path guard: the project itself allowed" "$F" \
     '	if clean == "." {' \
     '	if false {'
@@ -1925,6 +1932,13 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   # handed a window of the page and never the page.
   LK=web/src/documents/link.ts
   LT=web/src/chat/linkTools.ts
+  # A link sent to an external gateway carries no local-processing constraint
+  # (documents/client.ts); a selected file's acquisition always does.
+  DC=web/src/documents/client.ts
+  mutate web "every acquisition is pinned to the local gateway" "$DC" \
+    " const constraint = source === 'web' && config.managedLocal !== true ? undefined : 'local-documents'" \
+    " const constraint = 'local-documents'"
+
   mutate web "a link's fragment reaches the gateway" "$LK" \
     '  const fetchUrl = `${parsed.origin}${parsed.pathname}${parsed.search}`' \
     '  const fetchUrl = `${parsed.origin}${parsed.pathname}${parsed.search}${parsed.hash}`'

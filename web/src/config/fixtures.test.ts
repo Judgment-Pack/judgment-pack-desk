@@ -75,6 +75,8 @@ interface Verdict {
     signer: string
     search: string | null
     read: string | null
+    /** The web source's name where the file declares one, on `search`'s terms. */
+    web: string | null
     limits: Record<string, number>
   }
 }
@@ -131,6 +133,7 @@ describe('the shared desk-configuration fixtures', () => {
               signer: research.gateway?.signer.public ?? '',
               search: spell(research.sources.search),
               read: spell(research.sources.read),
+              web: research.sources.web?.source ?? null,
               limits: research.limits
             },
             `${name}: research values`

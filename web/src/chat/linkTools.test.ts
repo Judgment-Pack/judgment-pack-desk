@@ -8,7 +8,7 @@ import { Ledger } from '../research/ledger'
 import { AuthoringRun, type Turn } from '../research/run'
 import type { DraftToolContext } from '../research/useResearchRun'
 import { READ_WINDOW, RETRIEVED } from '../research/tools'
-import { MAX_LINK_READS_PER_TURN, READ_LINK, givenInChat, linkReading, type LinkReadingDeps } from './linkTools'
+import { MAX_LINK_READS_PER_TURN, READ_LINK, givenInChat, linkReadable, linkReading, webSourceOffered, type LinkReadingDeps } from './linkTools'
 import type { ChatAttachment } from './store'
 
 const INCIDENT = 'https://lab-notes-ai-git-builders-night-demo-treo-gaia.vercel.app/gaia/policy-evidence#brief-human-review'
@@ -17,7 +17,7 @@ const PAGE = 'First fact & second. A brief human review follows the evidence.'
 
 const CONFIG: ResearchConfig = {
   gateway: { url: 'http://127.0.0.1:8787', authority: 'gateway:local', signer: { algorithm: 'ed25519', public: 'ab'.repeat(32) } },
-  sources: { search: null, read: null },
+  sources: { search: null, read: null, web: null },
   limits: { searches: 8, reads: 12, bytes: 8_388_608, seconds: 600 },
   documents: { enabled: true, source: 'documents', maxFileBytes: 16_777_216, maxRequestBytes: 33_554_432, maxResponseBytes: 8_388_608 }
 }
@@ -373,4 +373,22 @@ it('uses the latest manually confirmed snapshot after an earlier partial read', 
   expect((await h.tool.execute({url:INCIDENT},signal)).isError).toBe(true)
   h.documents.push({id:confirmed.reference.id,name:'confirmed',text:'',document:confirmed.reference,link:{url:FETCHED}})
   expect((await h.tool.execute({url:INCIDENT},signal)).isError).toBeUndefined()
+})
+
+describe('where a web source is offered', () => {
+  const declared: ResearchConfig = { ...CONFIG, sources: { search: null, read: null, web: { source: 'web' } } }
+  it('takes the local catalog’s word for the managed gateway, and the declaration for an external one', () => {
+    expect(webSourceOffered(CONFIG, { local: true, catalogWeb: true })).toBe(true)
+    expect(webSourceOffered(CONFIG, { local: true, catalogWeb: false })).toBe(false)
+    expect(webSourceOffered(declared, { local: true, catalogWeb: false })).toBe(false)
+    expect(webSourceOffered(CONFIG, { local: false, catalogWeb: true })).toBe(false)
+    expect(webSourceOffered(declared, { local: false, catalogWeb: false })).toBe(true)
+  })
+  it('reads only with a pinned gateway and document processing', () => {
+    expect(linkReadable(declared, { local: false, catalogWeb: false })).toBe(true)
+    expect(linkReadable({ ...declared, gateway: null }, { local: false, catalogWeb: false })).toBe(false)
+    expect(linkReadable({ ...declared, documents: { ...CONFIG.documents!, enabled: false } }, { local: false, catalogWeb: false })).toBe(false)
+    expect(linkReadable({ ...declared, documents: null }, { local: false, catalogWeb: false })).toBe(false)
+    expect(linkReadable(CONFIG, { local: true, catalogWeb: true })).toBe(true)
+  })
 })

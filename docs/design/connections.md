@@ -187,6 +187,15 @@ Failures name the adapter's word (`web-public-only`, `web-over-limit`, …) in o
 sentence each; a message reads at most three new links. Work shows "Read a link";
 Assistant settings list the tool; the reader offers "Open at #anchor".
 
+An external gateway declares its web source in the desk-level file as
+`research.sources.web: { "source": "web" }` (both decoders read it, held to one
+answer by the shared fixtures); the managed local gateway needs no declaration,
+since its catalog advertises the source. `webSourceOffered` and `linkReadable`
+in `linkTools.ts` are the one predicate Add link, the chat worker, Assistant
+settings and the pane share. A link acquisition sent to an external gateway
+carries no `X-JPack-Local-Documents` constraint; a selected file's acquisition
+still does, so a grant never leaves the managed local gateway.
+
 
 Link-read verification is scoped to the current gateway pin. An already offered
 tool checks capability and document settings again when called; canceled or

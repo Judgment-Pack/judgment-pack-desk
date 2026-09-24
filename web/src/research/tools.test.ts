@@ -28,7 +28,7 @@ function acquired(name: string, callIndex = 0): Acquired {
 
 const CONFIG: ResearchConfig = {
   gateway: { url: 'http://127.0.0.1:8787', authority: 'gateway:corpus', signer: { algorithm: 'ed25519', public: 'ab'.repeat(32) } },
-  sources: { search: { source: 'search', dialect: 'tavily-search' }, read: { source: 'read', dialect: 'jina-reader' } },
+  sources: { search: { source: 'search', dialect: 'tavily-search' }, read: { source: 'read', dialect: 'jina-reader' }, web: null },
   limits: { searches: 2, reads: 2, bytes: 1_000_000, seconds: 600 }
 }
 
@@ -79,7 +79,7 @@ describe('search_sources', () => {
     expect(logged.join('\n')).not.toContain('Minimum requirements')
   })
   it('refuses without a configured search source, a blank query, or a spent budget', async () => {
-    const none = harness({}, { ...CONFIG, sources: { search: null, read: CONFIG.sources.read } })
+    const none = harness({}, { ...CONFIG, sources: { search: null, read: CONFIG.sources.read, web: null } })
     expect((await none.tool('search_sources').execute({ query: 'x' }, signal)).isError).toBe(true)
     expect(none.calls).toEqual([])
     const { tool, calls, deps } = harness()

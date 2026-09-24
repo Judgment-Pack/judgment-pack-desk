@@ -4553,7 +4553,9 @@ tool says so and offers a text match for the anchor's words instead. Only a
 link the person wrote in the chat, or attached, can be read — never one the
 model invented or found inside a page — and a message reads at most three new
 links. It is offered on the same terms as Add link: the managed local gateway
-advertises the web source and document processing is enabled.
+advertises the web source, or the desk-level file declares one under
+`research.sources.web` for the gateway it names, and document processing is
+enabled.
 
 ### Configuring research
 
@@ -4573,7 +4575,8 @@ project file:
     },
     "sources": {
       "search": { "source": "search", "dialect": "tavily-search" },
-      "read":   { "source": "read",   "dialect": "jina-reader" }
+      "read":   { "source": "read",   "dialect": "jina-reader" },
+      "web":    { "source": "web" }
     },
     "limits": { "searches": 8, "reads": 12, "bytes": 8388608, "seconds": 600 }
   }
@@ -4590,6 +4593,17 @@ with no search source works from the URLs it was given. The limits are
 bounded and default as shown. No credential is anywhere in this file: a
 provider's key lives in the gateway's credentials file, read by the adapter
 that spawns for that source and by nothing on this machine.
+
+`sources.web` says the gateway serves the public web source (`adapter-web`,
+declared to the gateway as `--source web=adapter-web --source-shape web=http`),
+which is what **+ → Add link** and the chat's `read_link` acquire a page
+through. It has no dialect, and its name is `web` in this release: a saved
+link is verified as that source's own record. The managed local gateway needs
+no declaration, since its catalog advertises the source; an external gateway
+does, and `research.documents` must be enabled beside it, because a fetched
+page is kept in the attachment store under that section's limits. A link sent
+to an external gateway carries no local-processing constraint; a selected
+Drive, Gmail or note file still does, and stays at the managed local gateway.
 
 The chassis relays exactly three gateway routes, by name — `acquire`, `seal`
 and `registry` — at `/api/research/gateway/<route>`, with no credential in
