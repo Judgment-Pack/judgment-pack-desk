@@ -4542,6 +4542,19 @@ partial results need consent, and every send verifies the retained original and
 receipt. See [Document attachments](docs/document-attachments.md) for compatible
 gateway limits, OCR setup, storage retention, backups, and citation checks.
 
+### Reading links in chat
+
+A link the person pastes into an ordinary chat can be read on request. The
+assistant's `read_link` tool fetches the page through the same local `web`
+source **+ → Add link** uses, keeps the signed snapshot beside the chat's
+attached documents, and answers from a bounded excerpt with a citation that
+opens the retained text. A link's fragment (`#section`) is never sent: the
+tool says so and offers a text match for the anchor's words instead. Only a
+link the person wrote in the chat, or attached, can be read — never one the
+model invented or found inside a page — and a message reads at most three new
+links. It is offered on the same terms as Add link: the managed local gateway
+advertises the web source and document processing is enabled.
+
 ### Configuring research
 
 The gateway, the key its receipts are pinned to, and the sources are desk-level

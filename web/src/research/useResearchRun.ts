@@ -17,7 +17,7 @@ import { systemMessage, useLocale } from '../i18n'
 import { useMemo, useRef, useSyncExternalStore } from 'react'
 import { describeEvent } from '../assistant/EventList'
 import { loadEngine } from '../assistant/engines'
-import type { AssistantEvent, CallTool, McpToolResult } from '../assistant/engine'
+import type { AssistantEvent, CallTool, HostTool, McpToolResult } from '../assistant/engine'
 import { usePickedModel } from '../assistant/pickedModel'
 import { bindModelCall, openAssistantConnection, runAssistantSession } from '../assistant/session'
 import { normalize } from '../assistant/thinking'
@@ -30,10 +30,19 @@ import { sessionBearer } from '../mcp/session'
 import { recordActivity } from '../shell/consoleLog'
 import { acquire, newResearchSession, registry, seal } from './gatewayClient'
 import { Ledger, type SourceRecord } from './ledger'
-import { AuthoringRun, INITIAL_STATE, type RunState, type TurnRequest } from './run'
+import { AuthoringRun, INITIAL_STATE, type RunState, type Turn, type TurnRequest } from './run'
 import { researchTools } from './tools'
 
 export const MAX_REVISIONS = 4
+
+/**
+ * What a draft turn's tool factory is handed: the chat's turns so far, read
+ * when a call needs them rather than when the run was built, so a link the
+ * person sent in the message being answered is already among them.
+ */
+export interface DraftToolContext {
+  turns: () => readonly Turn[]
+}
 
 export interface ResearchRunBinding {
   run: AuthoringRun | null
@@ -101,7 +110,13 @@ export function researchBlockedReason(state: {
                           : ''
 }
 
-export function useResearchRun(options?: { model?: string; mode?: 'draft' | 'research'; adversarialReview?: boolean }): ResearchRunBinding {
+export function useResearchRun(options?: {
+  model?: string
+  mode?: 'draft' | 'research'
+  adversarialReview?: boolean
+  /** The tools a draft (ordinary chat) turn is offered, built per turn; research keeps the gateway's three. */
+  draftTools?: (context: DraftToolContext) => HostTool[]
+}): ResearchRunBinding {
   useLocale()
   const slot = useAssistantSlot()
   const listing = useFileListing()
@@ -131,8 +146,8 @@ export function useResearchRun(options?: { model?: string; mode?: 'draft' | 'res
   const ledger = ledgerRef.current
 
   // The settings a turn reads, as of the moment it starts.
-  const settings = useRef({ slot, picked, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview })
-  settings.current = { slot, picked, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview }
+  const settings = useRef({ slot, picked, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, draftTools: options?.draftTools })
+  settings.current = { slot, picked, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, draftTools: options?.draftTools }
 
   const run = useMemo(() => {
     const log = (text: string) => recordActivity(text, 'research')
@@ -190,7 +205,12 @@ export function useResearchRun(options?: { model?: string; mode?: 'draft' | 'res
         acquire,
         log
       })
-    return new AuthoringRun({
+    // A draft turn's tools are the chat's own, built per turn from the turns
+    // so far; the context reads the run that is about to be built, which
+    // exists by the time any turn asks.
+    let built: AuthoringRun | null = null
+    const context: DraftToolContext = { turns: () => built?.getSnapshot().turns ?? [] }
+    built = new AuthoringRun({
       turn,
       get mode() { return settings.current.mode ?? 'research' },
       callTool: async (name, args) => {
@@ -202,7 +222,7 @@ export function useResearchRun(options?: { model?: string; mode?: 'draft' | 'res
       },
       ledger,
       get researchTools() {
-        return settings.current.mode === 'draft' ? [] : toolsFor()
+        return settings.current.mode === 'draft' ? (settings.current.draftTools?.(context) ?? []) : toolsFor()
       },
       seal: async (session, signal) => {
         await seal(session, signal)
@@ -222,6 +242,7 @@ export function useResearchRun(options?: { model?: string; mode?: 'draft' | 'res
       },
       log
     })
+    return built
     // One run per page mount: the ledger and the budget are the run's.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ledger])

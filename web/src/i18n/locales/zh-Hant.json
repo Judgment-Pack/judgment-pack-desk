@@ -2280,5 +2280,12 @@
   "{{value}} pixels wide": "寬度 {{value}} 像素",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— 指向作出該聲明的儲存庫檔案的定位資訊。此承載資料不作聲明。檔案中的聲明針對執行環境，而非此規則包、這些事實或依處置結果行動是否正確。",
   "… (truncated for display)": "…（已截斷顯示）",
-  "{{action}}: {{provider}}": "{{action}}: {{provider}}"
+  "{{action}}: {{provider}}": "{{action}}: {{provider}}",
+  "Read a link": "讀取連結",
+  "Open at {{anchor}}": "在 {{anchor}} 開啟",
+  "link: reading {{value0}}": "連結：正在讀取 {{value0}}",
+  "link: {{value0}} characters retained as document {{value1}}": "連結：{{value0}} 個字元已保留為文件 {{value1}}",
+  "link: failed — {{value0}}": "連結：失敗 — {{value0}}",
+  "link: {{value0}} is already in this chat; served from its document": "連結：{{value0}} 已在此對話中；由其文件提供",
+  "link: refused — {{value0}}": "連結：已拒絕 — {{value0}}"
 }

@@ -129,14 +129,16 @@ export const ingestDrive = (selection: DriveSelection, config: ResearchConfig, s
 export const ingestGmail = (selection: MailSelection, config: ResearchConfig, signal: AbortSignal, progress: (message: string) => void) => ingestSelected(selection, 'gmail', config, signal, progress)
 export const ingestSource = (selection: SourceSelection, provider: SourceProvider, config: ResearchConfig, signal: AbortSignal, progress: (message: string) => void, descriptor?: ConnectionDescriptor) => ingestSelected(selection, provider, config, signal, progress, descriptor)
 export const ingestWeb = (selection: { url: string }, config: ResearchConfig, signal: AbortSignal, progress: (message: string) => void) => ingestSelected(selection, 'web', config, signal, progress)
-async function ingestSelected(selection: DriveSelection | MailSelection | SourceSelection | { url: string }, source: 'drive' | 'gmail' | SourceProvider | 'web', config: ResearchConfig, signal: AbortSignal, progress: (message: string) => void, descriptor?: ConnectionDescriptor): Promise<{ reference: DocumentReference; document: VerifiedDocument }> {
+/** A link read for the assistant: the same acquisition as Add link, with the gateway's failure word kept for the sentence that names it. */
+export const ingestLink = (selection: { url: string }, config: ResearchConfig, signal: AbortSignal, progress: (message: string) => void) => ingestSelected(selection, 'web', config, signal, progress, undefined, true)
+async function ingestSelected(selection: DriveSelection | MailSelection | SourceSelection | { url: string }, source: 'drive' | 'gmail' | SourceProvider | 'web', config: ResearchConfig, signal: AbortSignal, progress: (message: string) => void, descriptor?: ConnectionDescriptor, verbatimFailure = false): Promise<{ reference: DocumentReference; document: VerifiedDocument }> {
  const resource = descriptor?.source?.record === 'resource-v1'
  if (resource && (descriptor.id !== source || descriptor.source!.id !== source)) throw fail()
  const gateway = config.gateway
  if (!gateway || !config.documents?.enabled) throw new Error(resource || source === 'web' || source === 'notion' || source === 'obsidian' ? sourceMessage('Enable document processing in Admin → Storage & data before attaching sources.') : source === 'gmail' ? sourceMessage('Enable document processing in Admin → Storage & data before attaching emails.') : sourceMessage('Enable document processing in Admin → Storage & data before attaching Drive files.'))
  const session = newResearchSession(), id = crypto.randomUUID()
  progress(sourceMessage('Reading files…'))
- const response = await acquire(session, source, selection, 16 << 20, signal, 'local-documents').catch(cause => { if (signal.aborted) throw cause; if (source === 'web') throw new Error(sourceMessage('Could not read this link. Use a public HTTPS page, PDF, or text file under 4 MiB.')); throw connectionFailure(cause, source === 'drive' ? 'google-drive' : source) })
+ const response = await acquire(session, source, selection, 16 << 20, signal, 'local-documents').catch(cause => { if (signal.aborted || verbatimFailure) throw cause; if (source === 'web') throw new Error(sourceMessage('Could not read this link. Use a public HTTPS page, PDF, or text file under 4 MiB.')); throw connectionFailure(cause, source === 'drive' ? 'google-drive' : source) })
  signal.throwIfAborted()
  const record = readDocumentRecord(JSON.parse(response.text).result)
  if (record.provenance.source.kind !== (resource ? 'connection-resource' : source === 'web' ? 'web' : source === 'gmail' ? 'gmail' : source === 'drive' ? 'google-drive' : 'connected-source') || record.original.retention !== 'inline' || !record.original.bytes) throw fail()

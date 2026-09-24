@@ -5,6 +5,7 @@ import { Button } from '../ui/Button'
 import { Popover } from '../ui/Popover'
 import { Disclosure } from '../ui/Disclosure'
 import { ReadingDetails } from '../chat/ReadingDetails'
+import type { ChatLink } from '../chat/store'
 import { loadDocument, type DocumentReference, type VerifiedDocument } from './client'
 import { needsPartialConsent, usablePages } from './record'
 import { quoteRange } from './quote'
@@ -49,8 +50,10 @@ function Highlight({ text, quote, compact = false }: { text: string; quote?: str
   const end = compact ? Math.min(text.length, range.start + 480) : text.length
   return <>{start > 0 ? '…' : ''}{text.slice(start, range.start)}<mark>{text.slice(range.start, Math.min(range.end, end))}</mark>{text.slice(Math.min(range.end, end), compact ? Math.min(end, range.end + 120) : end)}{compact && Math.min(end, range.end + 120) < text.length ? '…' : ''}</>
 }
-export function CitationPreview({ name, reference, citation, number, onRead }: {
+export function CitationPreview({ name, reference, citation, number, onRead, link }: {
   name: string; reference: DocumentReference; citation: Citation; number: number; onRead: (node: ReactNode, opener: HTMLElement | null) => void
+  /** The link a web document was read from, where the chat kept one, for its anchor. */
+  link?: ChatLink
 }) {
   useLocale()
   const [open, setOpen] = useState(false)
@@ -66,11 +69,11 @@ export function CitationPreview({ name, reference, citation, number, onRead }: {
       <p className={styles.meta}>{msg('Quote found on page {{number}}', { number: citation.page })}</p>
       <Warnings value={source.value} />
       <p className={styles.excerpt}><Highlight text={page.text} quote={citation.quote} compact /></p>
-      <Button variant="inline" onClick={() => { moving.current = true; setOpen(false); onRead(<SourceReader name={name} reference={reference} citation={citation} />, trigger.current) }}>{msg('Open source text')}</Button>
+      <Button variant="inline" onClick={() => { moving.current = true; setOpen(false); onRead(<SourceReader name={name} reference={reference} citation={citation} link={link} />, trigger.current) }}>{msg('Open source text')}</Button>
     </>}</div>
   </Popover></>
 }
-export function SourceReader({ name, reference, citation }: { name: string; reference: DocumentReference; citation?: Citation }) {
+export function SourceReader({ name, reference, citation, link }: { name: string; reference: DocumentReference; citation?: Citation; link?: ChatLink }) {
   useLocale()
   const source = useSource(reference, true, citation)
   const selected = useRef<HTMLElement>(null)
@@ -92,7 +95,7 @@ export function SourceReader({ name, reference, citation }: { name: string; refe
       <Warnings value={source.value} />
       {source.value.record.provenance.source.kind === 'connection-resource' && source.value.record.provenance.source.url && <p className={styles.meta}><a href={source.value.record.provenance.source.url} target="_blank" rel="noopener noreferrer">{msg('Open source')}</a></p>}
       {source.value.record.provenance.source.kind === 'connected-source' && <p className={styles.meta}><a href={source.value.record.provenance.source.url} target="_blank" rel="noopener noreferrer">{msg('Open in {{provider}}', { provider: source.value.record.provenance.source.provider === 'notion' ? 'Notion' : 'Obsidian' })}</a></p>}
-      {source.value.record.provenance.source.kind === 'web' && <p className={styles.meta}><a href={source.value.record.provenance.source.url} target="_blank" rel="noopener noreferrer">{msg('Open original source')}</a>{source.value.record.provenance.source.format === 'static-text-v1' && <> · {msg('Static text snapshot')}</>}</p>}
+      {source.value.record.provenance.source.kind === 'web' && <p className={styles.meta}><a href={source.value.record.provenance.source.url} target="_blank" rel="noopener noreferrer">{msg('Open original source')}</a>{link?.anchor && <> · <a href={`${link.url}#${link.anchor}`} target="_blank" rel="noopener noreferrer">{msg('Open at {{anchor}}', { anchor: `#${link.anchor}` })}</a></>}{source.value.record.provenance.source.format === 'static-text-v1' && <> · {msg('Static text snapshot')}</>}</p>}
       <Disclosure title={msg('Technical details')}><p>{msg('Receipt verified. This confirms byte lineage, not accuracy or authority.')}</p><code className={styles.identity}>{source.value.digest}</code></Disclosure>
       {source.value.record.content.pages.filter(page => reference.pages.includes(page.number)).map(page => <section key={page.number} ref={citation?.page === page.number ? selected : undefined} className={styles.page}>
         <h3>{msg('Page {{number}}', { number: page.number })}</h3>

@@ -1,9 +1,13 @@
 import { sourceMessage } from '../i18n/source'
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffectiveConfig } from '../config/DeskConfigProvider'
+import { useConnections } from '../connections/catalog'
 import { useFileListing } from '../files/queries'
 import { useResearchRun } from '../research/useResearchRun'
+import { recordActivity } from '../shell/consoleLog'
 import { restoreLedger } from './checkpoint'
-import { ChatStore, type Chat } from './store'
+import { linkReading } from './linkTools'
+import { ChatStore, type Chat, type ChatAttachment } from './store'
 
 const Context = createContext<ChatStore | null>(null)
 export const useChatStore = () => useContext(Context)
@@ -30,8 +34,29 @@ function ChatWorkers() {
   }, [store, dirty])
   return <>{active.map(id => { const chat = chats.find(chat => chat.id === id) ?? drafts.find(chat => chat.id === id); return store && chat ? <ChatWorker key={id} store={store} chat={chat} /> : null })}</>
 }
+const chatOf = (store: ChatStore, id: string) => { const snapshot = store.getSnapshot(); return [...snapshot.chats, ...snapshot.drafts].find(chat => chat.id === id) }
 function ChatWorker({ store, chat }: { store: ChatStore; chat: Chat }) {
-  const binding = useResearchRun({ model: chat.model, mode: chat.mode, adversarialReview: chat.adversarialReview })
+  const effective = useEffectiveConfig()
+  const research = effective.config.research
+  // Link reading is offered on the same terms as the composer's Add link: the
+  // managed local gateway's catalog advertises the web source and document
+  // processing is enabled. Read per turn, so a setting changed mid-chat holds.
+  const local = effective.desk?.localGateway?.status === 'ready' && !effective.desk?.decoded?.values?.research?.gateway
+  const catalog = useConnections(local)
+  const readable = catalog.web && Boolean(research.documents?.enabled) && research.gateway !== null
+  const latest = useRef({ research, readable })
+  latest.current = { research, readable }
+  const draftTools = useMemo(() => linkReading({
+    available: () => latest.current.readable,
+    config: () => latest.current.research,
+    documents: () => chatOf(store, chat.id)?.documents ?? [],
+    addDocument: (attachment: ChatAttachment) => {
+      const current = chatOf(store, chat.id)
+      if (current) store.update(chat.id, { documents: [...(current.documents ?? []).filter(file => file.id !== attachment.id), attachment] })
+    },
+    log: text => recordActivity(text, 'research')
+  }), [store, chat.id])
+  const binding = useResearchRun({ model: chat.model, mode: chat.mode, adversarialReview: chat.adversarialReview, draftTools })
   const initial = useRef(chat.checkpoint)
   const restoring = useRef(false)
   const [restored, setRestored] = useState(!initial.current)

@@ -4,8 +4,17 @@ import { sourceMessage } from '../i18n/source'
 import { answer, deskFetch } from '../files/client'
 import { checkpoint, decodeCheckpoint, type Checkpoint } from './checkpoint'
 import type { ResearchRunBinding } from '../research/useResearchRun'
+import { validWebURL } from '../documents/record'
 
-export interface ChatAttachment { id: string; name: string; text: string; document?: DocumentReference }
+/** The link a web document was read from: the fetched address, and the anchor kept beside it, never sent. */
+export interface ChatLink { url: string; anchor?: string }
+export interface ChatAttachment { id: string; name: string; text: string; document?: DocumentReference; link?: ChatLink }
+const MAX_ANCHOR_BYTES = 4096
+function validChatLink(link: unknown): link is ChatLink {
+  if (!link || typeof link !== 'object' || Array.isArray(link)) return false
+  const { url, anchor } = link as { url?: unknown; anchor?: unknown }
+  return validWebURL(url) && (anchor === undefined || typeof anchor === 'string' && new TextEncoder().encode(anchor).length <= MAX_ANCHOR_BYTES && !/[\x00-\x1f\x7f]/.test(anchor))
+}
 /** Keep pages used by earlier turns available to their citations after reuse. */
 export function retainSentDocuments(previous: ChatAttachment[], sent: ChatAttachment[]): ChatAttachment[] {
   const documents = new Map(previous.map(file => [file.id, file]))
@@ -61,6 +70,7 @@ function decode(value: unknown): Chat[] {
       if (!file) throw new Error(sourceMessage("Invalid saved attachments"))
       const ref = file.document
       if (ref && file.text !== '') throw new Error(sourceMessage("Invalid saved attachments"))
+      if (file.link !== undefined && (!ref || !validChatLink(file.link))) throw new Error(sourceMessage("Invalid saved attachments"))
       if (ref && (file.id !== ref.id || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(ref.id) || !/^sha256:[a-f0-9]{64}$/.test(ref.digest) || !Array.isArray(ref.pages) || ref.pages.length > 500 || new Set(ref.pages).size !== ref.pages.length || ref.pages.some(n => !Number.isSafeInteger(n) || n < 1) || typeof ref.allowPartial !== 'boolean')) throw new Error(sourceMessage("Invalid saved attachments"))
     }
     if (chat.documents !== undefined && (!Array.isArray(chat.documents) || chat.documents.length > 256 || chat.documents.some(file => !file?.document || typeof file.name !== 'string' || typeof file.text !== 'string'))) throw new Error(sourceMessage("Invalid saved attachments"))

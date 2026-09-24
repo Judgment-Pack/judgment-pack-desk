@@ -42,7 +42,7 @@ export const MessageRenderer = memo(function MessageRenderer({ text, documents =
         if (href?.startsWith('attachment:')) {
           const match = /^attachment:([a-f0-9-]{36})\/(sha256:[a-f0-9]{64})\/page\/([1-9][0-9]*)$/.exec(href)
           const file = match && documents.find(file => file.document?.id === match[1] && file.document.digest === match[2])
-          return file?.document ? <CitationPreview name={file.name} reference={file.document} citation={{ page: Number(match![3]), quote: textOf(children) }} number={Number(node?.properties['data-source-number']) || 1} onRead={read} /> : <span>{children} <Tooltip content={msg('Source unavailable')}><span tabIndex={0} className={styles.caption} aria-label={msg('Source unavailable')}>[{String(node?.properties['data-source-number'] || '?')}]</span></Tooltip></span>
+          return file?.document ? <CitationPreview name={file.name} reference={file.document} link={file.link} citation={{ page: Number(match![3]), quote: textOf(children) }} number={Number(node?.properties['data-source-number']) || 1} onRead={read} /> : <span>{children} <Tooltip content={msg('Source unavailable')}><span tabIndex={0} className={styles.caption} aria-label={msg('Source unavailable')}>[{String(node?.properties['data-source-number'] || '?')}]</span></Tooltip></span>
         }
         return href ? <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> : <span>{children}</span>
       },
