@@ -69,7 +69,8 @@ export function parseConnectionCatalog(raw: unknown) {
  const sources = value.sources as { id?: unknown; input?: unknown; mediaTypes?: unknown; maxBytes?: unknown }[]
  if (sources.length > 32 || new Set(sources.map(s => s?.id)).size !== sources.length || sources.some(s => !s || typeof s.id !== 'string' || !/^[a-z][a-z0-9-]{0,47}$/.test(s.id) || typeof s.input !== 'string' || !Array.isArray(s.mediaTypes) || !Number.isSafeInteger(s.maxBytes))) throw new Error('Invalid source catalog')
  const web = sources.some(s => s.id === 'web' && s.input === 'url' && s.maxBytes === 4 << 20 && ['text/html','text/plain','application/pdf'].every(type => (s.mediaTypes as string[]).includes(type)))
- return { providers, web, ...(unsupported.length ? { unsupported } : {}) }
+ const discovery = sources.some(s=>s.id==='web-discovery' && s.input==='url' && s.maxBytes===1<<20 && (s.mediaTypes as string[]).includes('application/vnd.jpack.web-discovery+json'))
+ return { providers, web, discovery, ...(unsupported.length ? { unsupported } : {}) }
 }
 
 export function useConnections(enabled: boolean) {
@@ -81,7 +82,7 @@ export function useConnections(enabled: boolean) {
  const descriptors = enabled && !catalog.isError ? catalog.data?.providers ?? [] : []
  const statuses = useQueries({ queries: descriptors.map(provider => connectionStatusOptions(provider.id, true, provider.source?.record === 'resource-v1')) })
  const entries = descriptors.map((descriptor, index) => ({ descriptor, status: statuses[index]! }))
- return { ...catalog, entries, unsupported: enabled && !catalog.isError ? catalog.data?.unsupported ?? [] : [], web: Boolean(enabled && !catalog.isError && catalog.data?.web), loading: enabled && catalog.isPending }
+ return { ...catalog, entries, discovery: Boolean(enabled && !catalog.isError && catalog.data?.discovery), unsupported: enabled && !catalog.isError ? catalog.data?.unsupported ?? [] : [], web: Boolean(enabled && !catalog.isError && catalog.data?.web), loading: enabled && catalog.isPending }
 }
 
 export function validConnectionIcon(icon: unknown): icon is string {

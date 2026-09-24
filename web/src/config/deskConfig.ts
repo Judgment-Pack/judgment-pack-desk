@@ -341,6 +341,7 @@ export interface ResearchGatewayConfig {
  * says it serves one.
  */
 export interface WebSourceConfig {
+  discovery?: 'web-discovery'
   source: 'web'
 }
 
@@ -1325,13 +1326,13 @@ function researchSourcesValue(
 }
 
 /**
- * `research.sources.web`: the one member is the source's name, and the name
+ * `research.sources.web`: the source name and optional discovery capability. The source
  * is `web` (see `WebSourceConfig`). Mirrored by `decodeWebSource` in
  * `internal/desk/deskfile.go` and held to it by the shared fixtures.
  */
 function webSourceValue(value: unknown, problems: ConfigProblem[]): WebSourceConfig | null {
   if (value === undefined || value === null) return null
-  const source = section(value, 'research.sources.web', ['source'], problems)
+  const source = section(value, 'research.sources.web', ['source','discovery'], problems)
   if (!source) return null
   if (source.source !== 'web') {
     problems.push({
@@ -1340,7 +1341,8 @@ function webSourceValue(value: unknown, problems: ConfigProblem[]): WebSourceCon
     })
     return null
   }
-  return { source: 'web' }
+  if(source.discovery!==undefined && source.discovery!=='web-discovery'){problems.push({key:'research.sources.web.discovery',reason:sourceMessage('Unsupported website discovery source')});return null}
+  return { source: 'web', ...(source.discovery==='web-discovery'?{discovery:'web-discovery' as const}:{}) }
 }
 
 /**

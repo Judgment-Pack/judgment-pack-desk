@@ -1,3 +1,4 @@
+import { WebsiteSources } from '../documents/WebsiteSources'
 import { MessageTime, useMessageClock } from './MessageTime'
 import { messageTimeFormatter, dayBoundaries } from './timestamps'
 import { Message } from '../i18n/Message'
@@ -26,7 +27,7 @@ import type { ConnectionProvider } from '../connections/client'
 import { useConnections } from '../connections/catalog'
 import { AttachmentMenu } from './AttachmentMenu'
 import { TEXT_ATTACHMENT_ACCEPT, useChatAttachments } from './useChatAttachments'
-import { linkReadable, webSourceOffered } from './linkTools'
+import { linkReadable, websiteReadable, webSourceOffered } from './linkTools'
 import { ConfigureAssistant } from './ConfigureAssistant'
 import { AssistantOptions } from './AssistantOptions'
 import { ChatToolbar, chatHref } from './ChatHistory'
@@ -167,6 +168,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
       {!empty && !savedCandidate && <TaskStatus state={state} />}
       <VisuallyHidden.Root role="status" aria-live="polite">{state.status === 'complete' ? msg("Response complete.") : state.status === 'ready' ? msg("Draft ready for review.") : ''}</VisuallyHidden.Root>
       <WorkSummary state={state} />
+      {!!chat.websites?.length && <div className={styles.documentList}>{chat.websites.map(reference=><Button variant="inline" key={reference.id} onClick={event=>read(<WebsiteSources chatId={chat.id} reference={reference} documents={chat.documents??[]} onRead={read}/>,event.currentTarget)}>{msg('Website sources')} · {new URL(reference.seed).hostname}</Button>)}</div>}
       {!!chat.documents?.length && <Disclosure title={<>{msg("Attached documents")} · {chat.documents.length}</>}><div className={styles.documentList}>{chat.documents.map(file => <Button variant="inline" key={file.id} onClick={event => read(<SourceReader name={file.name} reference={file.document!} link={file.link} />, event.currentTarget)}>{file.name}</Button>)}</div></Disclosure>}
       {state.candidates.length > 0 && onOpenDraft && <div className={styles.artifact}><div><strong>{(state.candidates.at(-1)!.document as { title?: string })?.title ?? msg("Pack draft")}</strong><small><Message text={"Revision <0/> · <1/>"} slots={[state.candidates.at(-1)!.revision, candidateSummary(state)]} /></small></div><Button onClick={onOpenDraft}>{msg("Open draft")}</Button></div>}
       {proposalActions}
@@ -198,7 +200,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, context, proposa
             connections={connectionCatalog.entries.filter(item => !item.status.isError && item.status.data?.state === 'connected').map(item => ({ descriptor: item.descriptor, provider: item.descriptor.id, selection: item.descriptor.selection, onSelect: () => openConnection(item.descriptor.id) }))} />
           <div className={styles.pick}><VisuallyHidden.Root asChild><label htmlFor={`${id}-mode`}>{msg("Task tools")}</label></VisuallyHidden.Root><Select quiet id={`${id}-mode`} value={chat.mode} disabled={running || locked || (chat.mode === 'research' && state.candidates.length > 0)} onValueChange={mode => store?.update(chat.id, { mode: mode as Chat['mode'] })} options={[{ value: 'draft', label: msg("Chat") }, { value: 'research', label: msg("Research") }]} /></div>
           {(slot.endpoint?.models.length ?? 0) > 0 && <div className={styles.model}><VisuallyHidden.Root asChild><label htmlFor={`${id}-model`}>{msg("Model")}</label></VisuallyHidden.Root><Select quiet id={`${id}-model`} value={binding?.model} disabled={running || locked} onValueChange={model => store?.update(chat.id, { model })} options={slot.endpoint!.models.map(model => ({ value: model, label: model }))} /></div>}
-          <AssistantOptions thinking={slot.thinking} tools={slot.endpoint?.tools ?? []} mode={chat.mode} linkReading={linkReadable(research, { local: localDrive, catalogWeb: connectionCatalog.web })} review={chat.adversarialReview === true} onReview={value => store?.update(chat.id, { adversarialReview: value })} disabled={running || locked} notice={[...state.events].reverse().find(event => event.type === "thinking_unavailable")?.detail} />
+          <AssistantOptions thinking={slot.thinking} tools={slot.endpoint?.tools ?? []} mode={chat.mode} websiteExploration={websiteReadable(research,{local:localDrive,catalogWeb:connectionCatalog.web,catalogDiscovery:connectionCatalog.discovery})} linkReading={linkReadable(research, { local: localDrive, catalogWeb: connectionCatalog.web })} review={chat.adversarialReview === true} onReview={value => store?.update(chat.id, { adversarialReview: value })} disabled={running || locked} notice={[...state.events].reverse().find(event => event.type === "thinking_unavailable")?.detail} />
           <span className={styles.grow} />
           <Tooltip content={running ? msg("Stop") : msg("Send")}><Button className={styles.send} variant={running ? "secondary" : "primary"} aria-label={running ? msg("Stop") : msg("Send")} disabled={!running && (needsConfig || !hasMessage || !binding || Boolean(otherRun) || locked || upload.reading || connectionBusy || Boolean(blocked && !needsConfig))} onClick={running ? () => binding?.run?.stop() : send}>{running ? <IconStop /> : <IconSend />}</Button></Tooltip>
         </div>

@@ -173,3 +173,11 @@ it('keeps the link a read document came from and refuses a malformed one', async
     expect(bad.write).not.toHaveBeenCalled()
   }
 })
+
+it('restores bounded website references without embedding the crawl results in chat',async()=>{
+ const base=setup();await base.store.load();const chat=base.store.create()
+ const ref={id:'12345678-1234-1234-1234-123456789abc',digest:'sha256:'+'a'.repeat(64),seed:'https://example.com/'}
+ const restore=async(websites:unknown)=>{const value=setup({read:async()=>({project:'/project',sha256:'x',content:{version:1,chats:[{...chat,websites}]}})});await value.store.load();return value}
+ expect((await restore([ref])).store.getSnapshot().chats[0]!.websites).toEqual([ref])
+ for(const bad of [[{...ref,seed:'http://example.com/'}],[{...ref,digest:'bad'}],[ref,ref],Array(17).fill(ref)])expect((await restore(bad)).store.getSnapshot().ready).toBe(false)
+})

@@ -1,3 +1,4 @@
+import { discoverWebsite, loadWebsite, type WebsiteReference, type VerifiedWebsite } from '../documents/website'
 /**
  * The link tool an ordinary chat hands the assistant: read a public page the
  * person linked in this chat, through the configured gateway, as a bounded
@@ -31,7 +32,7 @@
  */
 import type { HostTool, McpToolResult } from '../assistant/engine'
 import type { ResearchConfig } from '../config/deskConfig'
-import { ingestLink as ingestDefault, loadDocument as loadDefault, type DocumentReference, type VerifiedDocument } from '../documents/client'
+import { ingestSiteLink, ingestLink as ingestDefault, loadDocument as loadDefault, type DocumentReference, type VerifiedDocument } from '../documents/client'
 import { anchorWords, describeLinkFailure, extractLinks, normalizeLink, type NormalizedLink } from '../documents/link'
 import { needsPartialConsent, usablePages } from '../documents/record'
 import { sourceMessage } from '../i18n/source'
@@ -41,6 +42,8 @@ import type { DraftToolContext } from '../research/useResearchRun'
 import type { ChatAttachment } from './store'
 
 export const READ_LINK = 'read_link'
+export const EXPLORE_WEBSITE = 'explore_website'
+export function websiteReadable(research:ResearchConfig,offer:{local:boolean;catalogWeb:boolean;catalogDiscovery:boolean}){return linkReadable(research,offer) && (offer.local ? offer.catalogDiscovery : research.sources.web?.discovery==='web-discovery')}
 
 /**
  * Whether a web source is on offer: the managed local gateway's catalog
@@ -68,6 +71,12 @@ const SHORT_SNAPSHOT = 400
 export interface LinkReadingDeps {
   /** Whether the gateway offers the web source right now, as the catalog says. */
   available: () => boolean
+  discoveryAvailable?:()=>boolean
+  websites?:()=>readonly WebsiteReference[]
+  addWebsite?:(ref:WebsiteReference)=>void
+  discover?:typeof discoverWebsite
+  loadWebsite?:typeof loadWebsite
+  ingestSite?:typeof ingestSiteLink
   config: () => ResearchConfig
   /** The documents already in the chat, attached or read. */
   documents: () => readonly ChatAttachment[]
@@ -81,6 +90,7 @@ export interface LinkReadingDeps {
 }
 
 interface Spent {
+  explored?:boolean
   reads: number
 }
 
@@ -109,7 +119,12 @@ function text(content: string, structured?: unknown, isError = false): McpToolRe
  */
 export function linkReading(deps: LinkReadingDeps): (context: DraftToolContext) => HostTool[] {
   const held = new Map<string, VerifiedDocument>()
-  return (context) => (deps.available() ? [readLinkTool(deps, context, held, { reads: 0 })] : [])
+  const sites=new Map<string,VerifiedWebsite>()
+  return context=>{
+   if(!deps.available())return []
+   const spent:Spent={reads:0}
+   return [readLinkTool(deps,context,held,spent,sites),...(deps.discoveryAvailable?.()?[exploreWebsiteTool(deps,context,spent,sites)]:[])]
+  }
 }
 
 /** Whether the person gave this address in this chat: in a message of theirs, or as a document they attached. */
@@ -126,15 +141,15 @@ export function givenInChat(fetchUrl: string, turns: readonly Turn[], documents:
 }
 
 const heldKey = (reference: DocumentReference, config: ResearchConfig) => `${JSON.stringify(config.gateway)}/${reference.id}/${reference.digest}`
-const readContext = (config: ResearchConfig) => JSON.stringify([config.gateway, config.documents])
+const readContext = (config: ResearchConfig) => JSON.stringify(config)
 
-function readLinkTool(deps: LinkReadingDeps, context: DraftToolContext, held: Map<string, VerifiedDocument>, spent: Spent): HostTool {
+function readLinkTool(deps: LinkReadingDeps, context: DraftToolContext, held: Map<string, VerifiedDocument>, spent: Spent, sites:Map<string,VerifiedWebsite>): HostTool {
   return {
     name: READ_LINK,
     description:
       'Read a public web page the person linked in this chat, through the configured gateway, ' +
       `${READ_WINDOW} characters at a time. Give the link as the person wrote it. Only a link the person ` +
-      'wrote in this chat, or attached, can be read: not one found inside a page, and not one you invent. ' +
+      'wrote in this chat, attached, or the explore_website tool discovered can be read. Never invent links. ' +
       'A section anchor (#…) is reported, not followed; find locates words in the text. Continue with the ' +
       'same url and an offset. Cite with a Markdown link whose label is an exact quote and whose ' +
       'destination is the citation the result gives.',
@@ -152,24 +167,32 @@ function readLinkTool(deps: LinkReadingDeps, context: DraftToolContext, held: Ma
       if ('refused' in link) return text(`${READ_LINK} cannot read this link: ${link.refused}`, undefined, true)
       const offset = args.offset === undefined || args.offset === null ? null : Math.max(0, Math.floor(Number(args.offset) || 0))
       const find = typeof args.find === 'string' ? args.find.trim().slice(0, MAX_FIND) : ''
-      if (!givenInChat(link.fetchUrl, context.turns(), deps.documents())) {
-        deps.log(sourceMessage("link: refused — {{value0}}", { value0: 'not given in this chat' }))
-        return text(
-          'that link was not given in this chat; ask the person to paste it. Only a link the person wrote in this chat, or attached, can be read.',
-          undefined,
-          true
-        )
-      }
       const config = deps.config()
       const admittedContext = readContext(config)
+      let requiresDiscovery=false
       const invalidated = (): McpToolResult | undefined => {
         if (signal.aborted) return text('read failed: the read was stopped', undefined, true)
-        if (!deps.available() || !deps.config().gateway || !deps.config().documents?.enabled || readContext(deps.config()) !== admittedContext) {
+        if (requiresDiscovery && !deps.discoveryAvailable?.() || !deps.available() || !deps.config().gateway || !deps.config().documents?.enabled || readContext(deps.config()) !== admittedContext) {
           return text('link reading is not available or its gateway settings changed; try again with the current settings', undefined, true)
         }
       }
       const refused = invalidated()
       if (refused) return refused
+      let site:string|undefined
+      if(deps.discoveryAvailable?.()){
+       requiresDiscovery=true
+       for(const ref of [...(deps.websites?.()??[])].reverse()){
+        if(!givenInChat(ref.seed,context.turns(),deps.documents()))continue
+        const key=websiteKey(ref,config)
+        let found=sites.get(key)
+        if(!found){try{found=await (deps.loadWebsite??loadWebsite)(ref,config.gateway!,signal)}catch{continue}}
+        const stale=invalidated();if(stale)return stale
+        sites.set(key,found)
+        if(found.discovery.pages.some(p=>p.url===link.fetchUrl&&p.status==='discovered')){site=ref.seed;break}
+       }
+      }
+      if(!site&&!givenInChat(link.fetchUrl,context.turns(),deps.documents()))return text('that link was not given in this chat or verified by website discovery; ask the person to supply it or use explore_website for the site they provided',undefined,true)
+      const stale=invalidated();if(stale)return stale
       const existing = [...deps.documents()].reverse().find((file) => file.document !== undefined && file.link?.url === link.fetchUrl)
       let attachment: ChatAttachment
       let document: VerifiedDocument
@@ -197,8 +220,8 @@ function readLinkTool(deps: LinkReadingDeps, context: DraftToolContext, held: Ma
         if (config.gateway === null || !config.documents?.enabled) {
           return text('link reading is not available: no gateway with document processing is configured', undefined, true)
         }
-        if (spent.reads >= MAX_LINK_READS_PER_TURN) {
-          return text(`the budget of ${MAX_LINK_READS_PER_TURN} new links for one message is spent; answer from what was read, or ask the person to send another message`, undefined, true)
+        if (spent.reads >= (site ? 10 : MAX_LINK_READS_PER_TURN)) {
+          return text(`the budget of ${site?10:MAX_LINK_READS_PER_TURN} new links for one message is spent; answer from what was read, or ask the person to send another message`, undefined, true)
         }
         if (deps.documents().length >= MAX_CHAT_DOCUMENTS) {
           return text('this chat holds as many documents as it can; start a new chat to read more links', undefined, true)
@@ -207,7 +230,7 @@ function readLinkTool(deps: LinkReadingDeps, context: DraftToolContext, held: Ma
         deps.log(sourceMessage("link: reading {{value0}}", { value0: link.fetchUrl }))
         let acquired: { reference: DocumentReference; document: VerifiedDocument }
         try {
-          acquired = await (deps.ingest ?? ingestDefault)({ url: link.fetchUrl }, config, signal, () => {})
+          acquired = site ? await (deps.ingestSite??ingestSiteLink)({url:link.fetchUrl,site},config,signal,()=>{}) : await (deps.ingest ?? ingestDefault)({ url: link.fetchUrl }, config, signal, () => {})
         } catch (cause) {
           const failure = signal.aborted ? 'the read was stopped' : describeLinkFailure(cause)
           deps.log(sourceMessage("link: failed — {{value0}}", { value0: failure }))
@@ -338,4 +361,29 @@ function window(attachment: ChatAttachment, document: VerifiedDocument, link: No
     offset: start,
     more
   })
+}
+
+const websiteKey=(ref:WebsiteReference,config:ResearchConfig)=>`${JSON.stringify(config.gateway)}/${ref.id}/${ref.digest}/${ref.seed}`
+function exploreWebsiteTool(deps:LinkReadingDeps,context:DraftToolContext,spent:Spent,sites:Map<string,VerifiedWebsite>):HostTool{
+ return {name:EXPLORE_WEBSITE,
+ description:'When the person asks to explore a website or read other pages, discover linked pages on the exact website they supplied. At most 10 pages, two link levels. Use only a seed URL from their messages or attachments. Results are a navigation map, not page evidence: then call read_link on relevant discovered URLs, with offset paging for in-depth reading. Cite retained page text. Never claim all pages were read; report limits and unread pages.',
+ inputSchema:{type:'object',properties:{url:{type:'string',description:'A website URL supplied by the person.'}},required:['url']},
+ execute:async(args,signal)=>{
+  const link=normalizeLink(args.url)
+  if('refused'in link || !givenInChat(link.fetchUrl,context.turns(),deps.documents()))return text('website exploration needs a URL the person supplied',undefined,true)
+  if(spent.explored)return text('one website exploration per message; use the discovered pages or continue in another message',undefined,true)
+  if((deps.websites?.().length??0)>=16 && !deps.websites?.().some(ref=>ref.seed===link.fetchUrl))return text('this chat already has 16 website explorations; start a new chat',undefined,true)
+  const config=deps.config(),admitted=JSON.stringify(config)
+  if(signal.aborted || !deps.available() || !deps.discoveryAvailable?.() || !config.gateway || !config.documents?.enabled)return text('website exploration is not available',undefined,true)
+  spent.explored=true
+  try{
+   const found=await (deps.discover??discoverWebsite)(link.fetchUrl,config,signal)
+   if(signal.aborted || !deps.available() || !deps.discoveryAvailable?.() || JSON.stringify(deps.config())!==admitted)return text('website exploration stopped or its settings changed; no links were authorized',undefined,true)
+   sites.set(websiteKey(found.reference,config),found);deps.addWebsite?.(found.reference)
+   const d=found.discovery
+   const summary={...d,pages:d.pages.filter(p=>p.status!=='skipped'),skipped:d.pages.filter(p=>p.status==='skipped').length}
+   return text(RETRIEVED+'\nWebsite discovery, not page content. Read relevant discovered pages with read_link; inspect further windows for depth.\n'+JSON.stringify(summary)+'\nDo not claim full website coverage. Blocked, skipped and failed pages are not readable under this discovery.',{website:d.seed,discovered:d.pages.filter(p=>p.status==='discovered').length,stopReason:d.stopReason})
+  }catch(error){return text(`website exploration failed: ${describeLinkFailure(error)}`,undefined,true)}
+ }
+ }
 }

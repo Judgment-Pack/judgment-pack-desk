@@ -23,6 +23,7 @@ const FIXTURES = join(import.meta.dirname, 'fixtures', 'desk-config')
 
 interface Verdict {
   documents?: DocumentSourceConfig | null
+  discovery?: string
   accepted: boolean
   keys: string[]
   /**
@@ -122,6 +123,7 @@ describe('the shared desk-configuration fixtures', () => {
         expect(project.file ?? '', `${name}: project.file`).toBe(verdict.projectFile ?? '')
         const research = decoded.values?.research ?? DESK_DEFAULTS.research
         expect(research.documents, `${name}: document settings`).toEqual(verdict.documents)
+        expect(research.sources.web?.discovery??'').toBe(verdict.discovery??'')
         expect(research.gateway?.url ?? '', `${name}: research.gateway.url`).toBe(
           verdict.researchGateway ?? ''
         )

@@ -4549,13 +4549,52 @@ assistant's `read_link` tool fetches the page through the same local `web`
 source **+ → Add link** uses, keeps the signed snapshot beside the chat's
 attached documents, and answers from a bounded excerpt with a citation that
 opens the retained text. A link's fragment (`#section`) is never sent: the
-tool says so and offers a text match for the anchor's words instead. Only a
-link the person wrote in the chat, or attached, can be read — never one the
-model invented or found inside a page — and a message reads at most three new
-links. It is offered on the same terms as Add link: the managed local gateway
+tool says so and offers a text match for the anchor's words instead. A direct read requires a
+link the person wrote in the chat or attached; website exploration can also
+authorize links from its verified discovery result. Ordinary messages read
+at most three new links. It is offered on the same terms as Add link: the managed local gateway
 advertises the web source, or the desk-level file declares one under
 `research.sources.web` for the gateway it names, and document processing is
 enabled.
+
+### Exploring a website
+
+Ask the assistant to read a URL **and other pages on that website**. The
+`explore_website` host tool calls the existing gateway's `adapter-web --discover`
+source, `web-discovery`. It follows static HTML links on the exact HTTPS origin,
+with a fixed maximum of ten attempted pages, two link levels, 100 listed URLs,
+8 MiB of response bodies, 30 HTTP requests and 45 seconds per exploration.
+There is one exploration per message. Robots.txt is checked, including redirects;
+requests are spaced by at least 500 ms and honor a longer crawl-delay.
+
+Discovery returns a signed navigation manifest, not citation evidence. Desk
+verifies it under the current gateway pin and stores it beside other attachment
+objects; chat holds only its reference. Only successfully discovered pages are
+eligible for `read_link`. These subsequent reads fetch again, recheck robots.txt
+and the exact origin, and retain their own ordinary verified documents and
+citations. Up to ten new pages can be read in an exploration turn; each read keeps
+the existing 4 MiB per-file limit and bounded text windows. The discovery's
+8 MiB budget does not include these later reads. The Assistant action time and
+step limits still apply.
+
+**Website sources** opens in the existing reading pane, showing pages discovered,
+text saved, and blocked, failed or skipped pages. Saving text does not mean the
+assistant consumed every text window. The assistant is instructed to report
+unread pages and coverage limits. The crawler does not execute JavaScript, use
+cookies, sign in, follow external hosts, or enumerate sitemaps. A hosted crawler
+can later implement the same gateway capability without moving acquisition
+into Desk.
+
+The bundled gateway advertises this capability automatically. For an external
+gateway, add `"discovery": "web-discovery"` beside `"source": "web"` in
+`research.sources.web`, and configure the gateway with:
+
+```sh
+--source 'web-discovery=adapter-web --discover' \
+--source-shape web-discovery=http --source-timeout web-discovery=60
+```
+
+Older gateways continue to offer direct link reading without exploration.
 
 ### Configuring research
 

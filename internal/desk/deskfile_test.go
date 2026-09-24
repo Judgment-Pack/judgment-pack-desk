@@ -74,6 +74,7 @@ type fixtureVerdict struct {
 	// accepted fixture that decodes to a gateway must say which, so the corpus
 	// proves where the chassis would forward and not only that it may.
 	ResearchGateway string `json:"researchGateway"`
+	Discovery       string `json:"discovery"`
 	// Research is every other decoded research value, compared where the
 	// verdict states it: the authority and the pinned key, each source as
 	// "name/dialect", and the limits with the defaults applied.
@@ -167,6 +168,13 @@ func TestSharedFixturesDecodeAsTheVerdictSays(t *testing.T) {
 				}
 				if decoded.ProjectFile != verdict.ProjectFile {
 					t.Errorf("project.file %q, want %q", decoded.ProjectFile, verdict.ProjectFile)
+				}
+				discovery := ""
+				if decoded.Research != nil && decoded.Research.web != nil {
+					discovery = decoded.Research.web.discovery
+				}
+				if discovery != verdict.Discovery {
+					t.Errorf("discovery %q, want %q", discovery, verdict.Discovery)
 				}
 				gatewayURL := ""
 				if decoded.Research != nil && decoded.Research.gateway != nil {

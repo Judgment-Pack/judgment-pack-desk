@@ -1,0 +1,23 @@
+{
+  "deskConfigVersion": 1,
+  "research": {
+    "gateway": {
+      "url": "https://gateway.example.invalid/engine",
+      "authority": "gateway:organization",
+      "signer": {
+        "algorithm": "ed25519",
+        "public": "fc9fa9b25640778d85953a5e1b4618cb8223565b6f566f739c73035079d7681b"
+      }
+    },
+    "sources": {
+      "web": {
+        "source": "web",
+        "discovery": null
+      }
+    },
+    "documents": {
+      "enabled": true,
+      "source": "documents"
+    }
+  }
+}

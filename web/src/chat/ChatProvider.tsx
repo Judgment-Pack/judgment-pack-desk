@@ -6,7 +6,7 @@ import { useFileListing } from '../files/queries'
 import { useResearchRun } from '../research/useResearchRun'
 import { recordActivity } from '../shell/consoleLog'
 import { restoreLedger } from './checkpoint'
-import { linkReadable, linkReading } from './linkTools'
+import { linkReadable, websiteReadable, linkReading } from './linkTools'
 import { ChatStore, type Chat, type ChatAttachment } from './store'
 
 const Context = createContext<ChatStore | null>(null)
@@ -45,10 +45,14 @@ function ChatWorker({ store, chat }: { store: ChatStore; chat: Chat }) {
   const local = effective.desk?.localGateway?.status === 'ready' && !effective.desk?.decoded?.values?.research?.gateway
   const catalog = useConnections(local)
   const readable = linkReadable(research, { local, catalogWeb: catalog.web })
-  const latest = useRef({ research, readable })
-  latest.current = { research, readable }
+  const discovery=websiteReadable(research,{local,catalogWeb:catalog.web,catalogDiscovery:catalog.discovery})
+  const latest = useRef({ research, readable, discovery })
+  latest.current = { research, readable, discovery }
   const draftTools = useMemo(() => linkReading({
     available: () => latest.current.readable,
+    discoveryAvailable:()=>latest.current.discovery,
+    websites:()=>chatOf(store,chat.id)?.websites??[],
+    addWebsite:ref=>{const current=chatOf(store,chat.id);if(current)store.update(chat.id,{websites:[...(current.websites??[]).filter(w=>w.seed!==ref.seed),ref]})},
     config: () => latest.current.research,
     documents: () => chatOf(store, chat.id)?.documents ?? [],
     addDocument: (attachment: ChatAttachment) => {
