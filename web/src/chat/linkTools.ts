@@ -33,7 +33,7 @@ import type { HostTool, McpToolResult } from '../assistant/engine'
 import type { ResearchConfig } from '../config/deskConfig'
 import { ingestLink as ingestDefault, loadDocument as loadDefault, type DocumentReference, type VerifiedDocument } from '../documents/client'
 import { anchorWords, describeLinkFailure, extractLinks, normalizeLink, type NormalizedLink } from '../documents/link'
-import { usablePages } from '../documents/record'
+import { needsPartialConsent, usablePages } from '../documents/record'
 import { sourceMessage } from '../i18n/source'
 import type { Turn } from '../research/run'
 import { READ_WINDOW, RETRIEVED } from '../research/tools'
@@ -110,7 +110,8 @@ export function givenInChat(fetchUrl: string, turns: readonly Turn[], documents:
   )
 }
 
-const heldKey = (reference: DocumentReference) => `${reference.id}/${reference.digest}`
+const heldKey = (reference: DocumentReference, config: ResearchConfig) => `${JSON.stringify(config.gateway)}/${reference.id}/${reference.digest}`
+const readContext = (config: ResearchConfig) => JSON.stringify([config.gateway, config.documents])
 
 function readLinkTool(deps: LinkReadingDeps, context: DraftToolContext, held: Map<string, VerifiedDocument>, spent: Spent): HostTool {
   return {
@@ -145,12 +146,21 @@ function readLinkTool(deps: LinkReadingDeps, context: DraftToolContext, held: Ma
         )
       }
       const config = deps.config()
-      const existing = deps.documents().find((file) => file.document !== undefined && file.link?.url === link.fetchUrl)
+      const admittedContext = readContext(config)
+      const invalidated = (): McpToolResult | undefined => {
+        if (signal.aborted) return text('read failed: the read was stopped', undefined, true)
+        if (!deps.available() || !deps.config().gateway || !deps.config().documents?.enabled || readContext(deps.config()) !== admittedContext) {
+          return text('link reading is not available or its gateway settings changed; try again with the current settings', undefined, true)
+        }
+      }
+      const refused = invalidated()
+      if (refused) return refused
+      const existing = [...deps.documents()].reverse().find((file) => file.document !== undefined && file.link?.url === link.fetchUrl)
       let attachment: ChatAttachment
       let document: VerifiedDocument
       if (existing?.document) {
         const reference = existing.document
-        let loaded = held.get(heldKey(reference))
+        let loaded = held.get(heldKey(reference, config))
         if (loaded === undefined) {
           if (config.gateway === null) {
             return text('the page is in this chat but no gateway is configured to verify it; configure one in Admin › Storage & data', undefined, true)
@@ -161,7 +171,9 @@ function readLinkTool(deps: LinkReadingDeps, context: DraftToolContext, held: Ma
             const failure = signal.aborted ? 'the read was stopped' : describeLinkFailure(cause)
             return text(`the page could not be re-read from this chat: ${failure}`, undefined, true)
           }
-          held.set(heldKey(reference), loaded)
+          const refused = invalidated()
+          if (refused) return refused
+          held.set(heldKey(reference, config), loaded)
         }
         deps.log(sourceMessage("link: {{value0}} is already in this chat; served from its document", { value0: link.fetchUrl }))
         attachment = existing
@@ -186,6 +198,8 @@ function readLinkTool(deps: LinkReadingDeps, context: DraftToolContext, held: Ma
           deps.log(sourceMessage("link: failed — {{value0}}", { value0: failure }))
           return text(`read failed: ${failure}`, undefined, true)
         }
+        const refused = invalidated()
+        if (refused) return refused
         attachment = {
           id: acquired.reference.id,
           name: acquired.document.record.document.name,
@@ -194,7 +208,7 @@ function readLinkTool(deps: LinkReadingDeps, context: DraftToolContext, held: Ma
           link: { url: link.fetchUrl, ...(link.anchor === '' ? {} : { anchor: link.anchor }) }
         }
         document = acquired.document
-        held.set(heldKey(acquired.reference), document)
+        held.set(heldKey(acquired.reference, config), document)
         deps.addDocument(attachment)
         deps.log(sourceMessage("link: {{value0}} characters retained as document {{value1}}", { value0: document.record.content.chars, value1: acquired.reference.id }))
       }
@@ -239,10 +253,16 @@ function window(attachment: ChatAttachment, document: VerifiedDocument, link: No
   const reference = attachment.document!
   const { record } = document
   const source = record.provenance.source
+  if (document.digest !== reference.digest || source.kind !== 'web' || source.requestedUrl !== link.fetchUrl) {
+    return text('the stored document does not verify the requested link; attach the correct source before reading it', undefined, true)
+  }
   const pages = usablePages(record).filter((page) => reference.pages.includes(page.number))
   if (pages.length === 0) {
     const errors = record.processing.errors.map((error) => error.code).join(', ')
     return text(`the page was fetched but no readable text was retained (processing ${record.processing.status}${errors === '' ? '' : `: ${errors}`})`, undefined, true)
+  }
+  if (needsPartialConsent(record) && !reference.allowPartial) {
+    return text('the document was only partially extracted; ask the person to attach it with Add link and confirm the readable pages before using its text', undefined, true)
   }
   const spans: Span[] = []
   let joined = ''
@@ -267,6 +287,7 @@ function window(attachment: ChatAttachment, document: VerifiedDocument, link: No
     `link: ${link.displayUrl}`,
     `fetched: ${source.url ?? link.fetchUrl}` + (source.url !== undefined && source.url !== link.fetchUrl ? ` (the gateway followed a redirect from ${link.fetchUrl})` : ''),
     `title: ${record.document.name}`,
+    ...(needsPartialConsent(record) ? ['partial extraction: only the confirmed readable pages are shown; missing text is not evidence'] : []),
     snapshot
       ? 'what was retained: a static text snapshot of the HTML page; scripts, styles and anything the page draws with JavaScript are not in it'
       : `what was retained: the original ${source.mediaType ?? record.document.mediaType} file, ${record.content.pageCount} page(s)`,

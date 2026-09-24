@@ -305,3 +305,72 @@ describe('in a draft run', () => {
     expect(built.getSnapshot().turns.map((turn) => turn.role)).toEqual(['user', 'assistant'])
   })
 })
+
+describe('read_link lifecycle and verification boundaries', () => {
+  it('reverifies a cached document after the trusted gateway changes', async () => {
+    const options = { config: structuredClone(CONFIG), load: vi.fn(async () => { throw new Error('gateway pin mismatch') }) }
+    const h = harness(options)
+    await h.tool.execute({url: INCIDENT}, signal)
+    options.config.gateway!.signer.public = 'cd'.repeat(32)
+    const result = await h.tool.execute({url: INCIDENT}, signal)
+    expect(options.load).toHaveBeenCalledOnce()
+    expect(result.isError).toBe(true)
+    expect(said(result)).not.toContain(PAGE)
+  })
+  it('refuses an already offered tool after its capability is disabled', async () => {
+    const options = {available: true}
+    const h = harness(options)
+    await h.tool.execute({url: INCIDENT}, signal)
+    options.available = false
+    const result = await h.tool.execute({url: INCIDENT}, signal)
+    expect(result.isError).toBe(true)
+    expect(said(result)).not.toContain(PAGE)
+  })
+  it.each(['abort', 'gateway change', 'disable'] as const)('discards a late acquisition after %s', async reason => {
+    let finish!: (value: ReturnType<typeof webDocument>) => void
+    const options = {available: true, config: structuredClone(CONFIG), ingest: vi.fn(() => new Promise<ReturnType<typeof webDocument>>(resolve => {finish=resolve}))}
+    const h = harness(options), controller = new AbortController()
+    const pending = h.tool.execute({url: INCIDENT}, controller.signal)
+    if (reason === 'abort') controller.abort()
+    if (reason === 'gateway change') options.config.gateway!.signer.public = 'cd'.repeat(32)
+    if (reason === 'disable') options.available = false
+    finish(webDocument(PAGE))
+    const result = await pending
+    expect(result.isError).toBe(true)
+    expect(h.documents).toHaveLength(0)
+    expect(said(result)).not.toContain(PAGE)
+  })
+  it('requires confirmation before returning partially extracted text, including cached rereads', async () => {
+    const made = webDocument(PAGE)
+    made.document.record.processing.status = 'partial'
+    const h = harness({ingest: async () => made})
+    const first = await h.tool.execute({url: INCIDENT}, signal)
+    expect(first.isError).toBe(true)
+    expect(said(first)).not.toContain(PAGE)
+    expect(h.documents).toHaveLength(1)
+    h.documents[0]!.document!.allowPartial = true
+    const confirmed = await h.tool.execute({url: INCIDENT}, signal)
+    expect(confirmed.isError).toBeUndefined()
+    expect(said(confirmed)).toContain('partial')
+    expect(said(confirmed)).toContain(PAGE)
+  })
+  it('does not treat editable chat metadata as the verified source address', async () => {
+    const made = webDocument(PAGE, 'https://different.example/source')
+    const attachment: ChatAttachment = {id:made.reference.id, name:'page', text:'', document:made.reference, link:{url:FETCHED}}
+    const h = harness({documents:[attachment], load:async()=>made.document})
+    const result = await h.tool.execute({url:INCIDENT},signal)
+    expect(result.isError).toBe(true)
+    expect(said(result)).not.toContain(PAGE)
+  })
+})
+
+it('uses the latest manually confirmed snapshot after an earlier partial read', async () => {
+  const first = webDocument(PAGE), confirmed = webDocument(PAGE)
+  first.document.record.processing.status = 'partial'
+  confirmed.document.record.processing.status = 'partial'
+  confirmed.reference.allowPartial = true
+  const h = harness({ingest:async()=>first,load:async()=>confirmed.document})
+  expect((await h.tool.execute({url:INCIDENT},signal)).isError).toBe(true)
+  h.documents.push({id:confirmed.reference.id,name:'confirmed',text:'',document:confirmed.reference,link:{url:FETCHED}})
+  expect((await h.tool.execute({url:INCIDENT},signal)).isError).toBeUndefined()
+})

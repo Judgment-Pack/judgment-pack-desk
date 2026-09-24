@@ -186,3 +186,11 @@ checkpoint is not used, since it keeps whole responses in the chat's own file.
 Failures name the adapter's word (`web-public-only`, `web-over-limit`, …) in one
 sentence each; a message reads at most three new links. Work shows "Read a link";
 Assistant settings list the tool; the reader offers "Open at #anchor".
+
+
+Link-read verification is scoped to the current gateway pin. An already offered
+tool checks capability and document settings again when called; canceled or
+superseded reads do not publish late results to chat. Restored link metadata must
+match the signed requested URL. Partial extraction follows the attachment consent
+rule: no excerpt is sent until the person confirms readable pages. If they attach
+a newer confirmed snapshot, subsequent reads use that snapshot.

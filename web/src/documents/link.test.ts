@@ -109,3 +109,7 @@ describe('describeLinkFailure', () => {
     expect(describeLinkFailure(new Error('Enable document processing first'))).toBe('Enable document processing first')
   })
 })
+
+it('extracts Markdown destinations with balanced parentheses without keeping the wrapper', () => {
+  expect(extractLinks('[page](https://example.com/Foo_(bar))')).toEqual(['https://example.com/Foo_(bar)'])
+})

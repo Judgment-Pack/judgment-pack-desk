@@ -87,7 +87,7 @@ export function extractLinks(text: string): string[] {
     for (;;) {
       const last = link.at(-1) ?? ''
       const opener = last === ')' ? '(' : last === ']' ? '[' : last === '}' ? '{' : ''
-      if (/[.,;:!?*]/.test(last) || (opener !== '' && !link.includes(opener))) {
+      if (/[.,;:!?*]/.test(last) || (opener !== '' && link.split(last).length > link.split(opener).length)) {
         link = link.slice(0, -1)
         continue
       }
