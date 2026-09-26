@@ -20,7 +20,7 @@ sign-in without restarting Desk. The [setup record](codex-subscription-setup.md)
 documents download bounds, integrity and cancellation. Advanced owners may
 supply `--codex /absolute/path/to/codex` or disable access with `--codex off`.
 No executable path or download source is accepted from a project or HTTP input.
-The native initialize response must match `codex-cli 0.145.0`.
+The native initialize response must match `codex-cli 0.157.1`.
 
 The managed profile lives under `<DeskConfigDir>/codex`, outside the open
 project. A directory lease permits one Desk process to own it at a time and is

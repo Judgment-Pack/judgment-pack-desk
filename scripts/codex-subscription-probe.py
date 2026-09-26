@@ -1,9 +1,25 @@
 #!/usr/bin/env python3
-"""Probe Codex 0.145.0 with a scripted loopback model and an empty profile.
+"""Probe Codex 0.157.1 with a scripted loopback model and an empty profile.
 
 No real account, login, provider key, or subscription inference is used. Each
 scenario starts a new process. Exit 0 means the local protocol checks passed;
 it does not certify real authentication, entitlement, or a production engine.
+
+The profile is Desk's: the same disabled features, and Desk's closed model
+catalog supplied through `model_catalog_json`, because Codex reads a model's
+tool mode from the catalog before the feature flags. Every model the process
+lists is probed unless --model narrows it. The tool inventory counts every list
+whose member name contains `tool`, wherever it appears in a model request, and
+each request must advertise the host tool exactly once, and the host call is
+scripted in the advertised form; a forged native call must be rejected as an
+unknown tool, word for word, with no native request reaching the host.
+--bundled-catalog leaves the release's own catalog in place and
+--negative-control retains an environment (with the image-view feature left
+on, so the environment has a tool to register): each is a control that must fail,
+and exits 0 only when it failed for the right reason: a tool beyond the host's
+advertised through a definition channel, with every scenario's ordinary
+evidence intact, the sandbox diagnostic's being the denial of the private
+fixture's own path.
 """
 import argparse
 import base64
@@ -12,6 +28,7 @@ import json
 import os
 from pathlib import Path
 import queue
+import re
 import signal
 import subprocess
 import tempfile
@@ -19,32 +36,211 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = 'codex-cli 0.145.0'
+VERSION = 'codex-cli 0.157.1'
+CATALOG = Path(__file__).resolve().parent.parent / 'internal' / 'codexbridge' / 'model-catalog.json'
 SCENARIOS = ('host-tool', 'private-image', 'write', 'shell', 'web', 'subagent',
              'skills-list', 'skills-read')
-# Native non-executing utilities remain registered in this exact release.
-# Each skills handler can only address the disabled orchestrator catalog.
-UTILITY_TOOLS = {'update_plan', 'skills.list', 'skills.read'}
+# The host tool, advertised plainly or inside the `functions` namespace some
+# models use. This release registers no other native tool without an
+# environment, and none is allowed.
+HOST_TOOLS = {'jps_probe', 'functions.jps_probe'}
+# A forged native call must come back as an unknown tool, in these words; any
+# other refusal would mean a registered tool declined its arguments.
+REJECTIONS = {'private-image': 'unsupported call: view_image',
+              'write': 'unsupported custom tool call: apply_patch',
+              'shell': 'unsupported call: exec_command', 'web': 'unsupported call: web.run',
+              'subagent': 'unsupported call: spawn_agent',
+              'skills-list': 'unsupported call: skillslist', 'skills-read': 'unsupported call: skillsread'}
 DISABLED_FEATURES = ('shell_tool', 'unified_exec', 'shell_snapshot', 'multi_agent',
     'multi_agent_v2', 'apps', 'hooks', 'plugins', 'remote_plugin', 'plugin_sharing',
     'memories', 'goals', 'browser_use', 'browser_use_external',
     'browser_use_full_cdp_access', 'computer_use', 'in_app_browser',
     'skill_mcp_dependency_install', 'skill_search', 'workspace_dependencies',
     'auth_elicitation', 'tool_suggest', 'image_generation', 'code_mode',
-    'code_mode_host', 'enable_request_compression')
+    'code_mode_host', 'enable_request_compression', 'view_image', 'token_budget')
+
+
+def tool_inventory(request):
+    """Return {qualified tool name: [request paths]} for every tool list in a request.
+
+    Tools can arrive outside the top-level `tools` member, for example in an
+    `additional_tools` input item, so every list whose member name contains
+    `tool` is counted wherever it appears, and a tool's own members are
+    searched as well. A tool without a name is recorded by its type, so it can
+    never pass as the host tool.
+    """
+    found = {}
+    def names(tools, prefix, path):
+        for i, tool in enumerate(tools):
+            here = '%s[%d]' % (path, i)
+            if not isinstance(tool, dict):
+                found.setdefault(prefix + repr(tool), []).append(here)
+                continue
+            name = tool.get('name') if isinstance(tool.get('name'), str) else None
+            if tool.get('type') == 'namespace' and name and isinstance(tool.get('tools'), list):
+                names(tool['tools'], prefix + name + '.', here + '.tools')
+                # A namespace's other members are searched like any tool's.
+                walk({k: v for k, v in tool.items() if k not in ('name', 'tools')}, here)
+                continue
+            found.setdefault(prefix + (name or 'type:' + str(tool.get('type'))), []).append(here)
+            walk({k: v for k, v in tool.items() if k != 'name'}, here)
+    def walk(node, path):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                here = path + '.' + key if path else key
+                if isinstance(value, list) and 'tool' in key.lower():
+                    names(value, '', here)
+                else:
+                    walk(value, here)
+        elif isinstance(node, list):
+            for i, value in enumerate(node):
+                kind = ':' + str(value.get('type')) if isinstance(value, dict) and 'type' in value else ''
+                walk(value, '%s[%d%s]' % (path, i, kind))
+    walk(request, '')
+    return found
+
+
+# The definition kinds this release serialises and the members each always
+# carries (codex-rs/tools/src/tool_spec.rs and tool_definition.rs at the
+# pinned tag): a function its name, description, strictness and parameter
+# schema; a custom tool its name, description and format; a namespace its
+# name, description and tools; tool search its execution, description and
+# parameter schema; web search only optional members. Anything else in a
+# definition list is malformed.
+REQUIRED = {'function': {'name': str, 'description': str, 'strict': bool, 'parameters': dict},
+            'custom': {'name': str, 'description': str, 'format': dict},
+            'namespace': {'name': str, 'description': str, 'tools': list},
+            'tool_search': {'execution': str, 'description': str, 'parameters': dict}, 'web_search': {}}
+NAMED_KINDS = {'function', 'custom'}
+BUILTIN_KINDS = {'web_search', 'tool_search'}
+
+
+def well_formed(tool):
+    """Whether a definition list entry has the members its kind requires."""
+    kind = tool.get('type') if isinstance(tool, dict) else None
+    required = REQUIRED.get(kind)
+    if required is None or (kind in BUILTIN_KINDS and 'name' in tool):
+        return False
+    return all(isinstance(tool.get(member), expected) for member, expected in required.items())
+
+
+def advertised(request):
+    """Return ({qualified tool name: definitions}, [malformed entries]) for the
+    request's definition channels only.
+
+    A tool is offered to the model through the top-level `tools` member or an
+    `additional_tools` input item: a named function or custom tool, a built-in
+    tool of a kind this release serialises named by its type, or a
+    namespace's `tools` list. Only those count as an advertisement; nothing
+    else in a definition (a schema's examples, say) or elsewhere in the request
+    does. An entry of any other shape is reported as malformed, since the
+    scripted endpoint validates nothing. The wider scan above may see
+    tool-shaped data anywhere, which can fail a scenario but never pass one.
+    """
+    found, malformed = {}, []
+    def definitions(tools, prefix, path):
+        for i, tool in enumerate(tools):
+            here = '%s[%d]' % (path, i)
+            if not well_formed(tool):
+                malformed.append(here)
+                continue
+            kind = tool['type']
+            if kind == 'namespace':
+                definitions(tool['tools'], prefix + tool['name'] + '.', here + '.tools')
+            elif kind in NAMED_KINDS:
+                found[prefix + tool['name']] = found.get(prefix + tool['name'], 0) + 1
+            else:
+                found[prefix + 'type:' + kind] = found.get(prefix + 'type:' + kind, 0) + 1
+    if isinstance(request.get('tools'), list):
+        definitions(request['tools'], '', 'tools')
+    for i, item in enumerate(request.get('input', [])):
+        if isinstance(item, dict) and item.get('type') == 'additional_tools' and isinstance(item.get('tools'), list):
+            definitions(item['tools'], '', 'input[%d:additional_tools].tools' % i)
+    return found, malformed
+
+
+def host_once(request):
+    """Whether the request advertises the host tool exactly once, in one form,
+    through a definition channel; every request of a scenario must."""
+    offered, malformed = advertised(request)
+    return not malformed and sum(n for name, n in offered.items() if name in HOST_TOOLS) == 1
+
+
+def self_check():
+    """Run the classification cases the review rounds produced; return the failures.
+
+    Each case gives a synthetic model request and what the two inventories
+    must say of it, and each sequence gives several requests and whether every
+    one advertises the host exactly once. No Codex process is involved.
+    """
+    host = {'type': 'function', 'name': 'jps_probe', 'description': 'the host tool', 'strict': False, 'parameters': {'type': 'object'}}
+    search = {'type': 'tool_search', 'execution': 'server', 'description': 'find tools', 'parameters': {'type': 'object'}}
+    namespace = lambda *tools: {'type': 'namespace', 'name': 'functions', 'description': 'functions', 'tools': list(tools)}
+    sequences = [
+        ('the host in every request', [{'tools': [host]}, {'tools': [host]}], True),
+        ('the host dropped from the second request', [{'tools': [host]}, {'tools': []}], False),
+        ('the host in both channels of one request', [{'tools': [host], 'input': [{'type': 'additional_tools', 'tools': [host]}]}], False),
+    ]
+    cases = [
+        ('a plain advertisement', {'tools': [host]}, 1, [], [], False),
+        ('a namespaced advertisement', {'input': [{'type': 'additional_tools', 'tools': [namespace(host)]}]}, 1, [], [], False),
+        ('an extra tool inside a namespace', {'input': [{'type': 'additional_tools', 'tools': [namespace(host, dict(host, name='exec'))]}]},
+            1, ['functions.exec'], ['functions.exec'], False),
+        ('a built-in tool beside the host', {'tools': [{'type': 'web_search'}, host]}, 1, ['type:web_search'], ['type:web_search'], False),
+        ('tool search beside the host', {'tools': [search, host]}, 1, ['type:tool_search'], ['type:tool_search'], False),
+        ('tool search without its required members', {'tools': [{'type': 'tool_search', 'execution': 17, 'description': [], 'parameters': None}, host]},
+            1, [], ['type:tool_search'], True),
+        ('a function without its parameter schema', {'tools': [{'type': 'function', 'name': 'exec'}, host]}, 1, [], ['exec'], True),
+        ('a function without its description', {'tools': [{k: v for k, v in dict(host, name='exec').items() if k != 'description'}, host]},
+            1, [], ['exec'], True),
+        ('a list nested inside a function tool', {'tools': [dict(host, extra_tools=[{'type': 'function', 'name': 'exec'}])]},
+            1, [], ['exec'], False),
+        ('a tool_definitions member', {'tool_definitions': [{'type': 'function', 'name': 'exec'}], 'tools': [host]}, 1, [], ['exec'], False),
+        ("a namespace's sibling member", {'input': [{'type': 'additional_tools', 'tools': [
+            dict(namespace(host), tool_definitions=[{'type': 'function', 'name': 'exec'}])]}]},
+            1, [], ['exec'], False),
+        ('an unnamed tool typed as the host', {'tools': [{'type': 'jps_probe'}]}, 0, [], ['type:jps_probe'], True),
+        ('an unnamed object of no tool kind', {'tools': [host, {'type': 'message'}]}, 1, [], ['type:message'], True),
+        ('the host only inside a result', {'tools': [], 'input': [{'type': 'function_call_output', 'call_id': 'x',
+            'output': {'tool_definitions': [{'name': 'jps_probe'}]}}]}, 0, [], [], False),
+        ('a well-formed host only inside a result', {'tools': [], 'input': [{'type': 'function_call_output', 'call_id': 'x',
+            'output': {'tools': [host]}}]}, 0, [], [], False),
+        ("examples inside the host's schema", {'tools': [dict(host, parameters={'examples': [{'tools': [host]}]})]}, 1, [], [], False),
+        ('an extra tool only inside a result', {'tools': [host], 'input': [{'type': 'function_call_output', 'call_id': 'x',
+            'output': {'tools': [{'type': 'function', 'name': 'exec'}]}}]}, 1, [], ['exec'], False),
+        ('the host advertised twice', {'tools': [host, host]}, 2, [], [], False),
+        ('a name on an object that is not a tool', {'tools': [host, {'type': 'message', 'name': 'exec'}]}, 1, [], ['exec'], True),
+        ('a namespace without a name', {'tools': [{'type': 'namespace', 'tools': [dict(host, name='exec')]}, host]},
+            1, [], ['exec', 'type:namespace'], True),
+        ('a bare string', {'tools': ['exec', host]}, 1, [], ["'exec'"], True),
+    ]
+    failures = []
+    for label, request, host_count, extra, wide, bad in cases:
+        offered, malformed = advertised(request)
+        got = (sum(n for k, n in offered.items() if k in HOST_TOOLS), sorted(k for k in offered if k not in HOST_TOOLS),
+               sorted(set(tool_inventory(request)) - HOST_TOOLS), bool(malformed))
+        if got != (host_count, extra, wide, bad):
+            failures.append('%s: host %d, advertised extra %s, wide %s, malformed %s' % ((label,) + got))
+    for label, requests, expected in sequences:
+        if all(host_once(r) for r in requests) != expected:
+            failures.append('%s: host once in every request %s' % (label, not expected))
+    return failures
 
 
 class Probe:
-    def __init__(self, binary, model, scenario, environment=False, sandbox_bin=None):
+    def __init__(self, binary, model, scenario, catalog, environment=False, sandbox_bin=None):
         self.binary, self.model, self.scenario = binary, model, scenario
+        self.catalog = catalog
         self.environment = environment
         self.sandbox_bin = sandbox_bin
         self.requests = []
         self.messages = queue.Queue()
         self.next_id = 0
         self.server_requests = []
+        self.process = None
 
-    def tool_item(self):
+    def tool_item(self, namespaced=False):
+        """The scripted model's one call; the host call in the advertised form."""
         if self.scenario == 'write':
             return {'type': 'custom_tool_call', 'id': 'fc_probe', 'call_id': 'call_probe',
                 'name': 'apply_patch', 'input': '*** Begin Patch\n*** Add File: ' +
@@ -63,6 +259,8 @@ class Probe:
                 'name': name, 'arguments': json.dumps(args)}
         if self.scenario.startswith('skills-'):
             item['namespace'] = 'skills'
+        if self.scenario == 'host-tool' and namespaced:
+            item['namespace'] = 'functions'
         return item
 
     def serve(self):
@@ -86,7 +284,8 @@ class Probe:
                 self.send_response(200)
                 self.send_header('Content-Type', 'text/event-stream')
                 self.end_headers()
-                item = probe.tool_item() if sequence == 1 else {
+                namespaced = 'functions.jps_probe' in tool_inventory(body)
+                item = probe.tool_item(namespaced) if sequence == 1 else {
                     'type': 'message', 'id': 'msg_probe', 'role': 'assistant',
                     'status': 'completed', 'content': [
                         {'type': 'output_text', 'text': 'Probe completed.', 'annotations': []}]}
@@ -101,8 +300,15 @@ class Probe:
                     self.wfile.write(('event: ' + event['type'] + '\ndata: ' + json.dumps(event) + '\n\n').encode())
                 self.wfile.flush()
 
-        self.http = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
-        threading.Thread(target=self.http.serve_forever, daemon=True).start()
+        # The server is recorded only once it is serving, so that cleanup never
+        # waits for a loop that did not start.
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        try:
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+        except Exception:
+            server.server_close()
+            raise
+        self.http = server
 
     def write(self, value):
         self.process.stdin.write(json.dumps(value) + '\n')
@@ -132,9 +338,15 @@ class Probe:
         raise RuntimeError('RPC deadline exceeded')
 
     def config(self, work, profile):
-        return '''model = %s
-model_provider = "jps_probe"
-approval_policy = "never"
+        # The model listing needs no model; a scenario names the one it probes.
+        # The environment control keeps the image-view feature on, so that a
+        # retained environment has a tool to register; Desk's profile has it off.
+        selected = 'model = %s\n' % json.dumps(self.model) if self.model else ''
+        catalog = ''
+        if self.catalog is not None:
+            catalog = 'model_catalog_json = %s\n' % json.dumps(str(self.catalog_path))
+        return '''%smodel_provider = "jps_probe"
+%sapproval_policy = "never"
 forced_login_method = "chatgpt"
 cli_auth_credentials_store = "file"
 web_search = "disabled"
@@ -166,70 +378,124 @@ persistence = "none"
 enabled = false
 [features]
 %s
-''' % (json.dumps(self.model), json.dumps(str(work)), json.dumps(str(profile)),
-        self.http.server_port, '\n'.join(k + ' = false' for k in DISABLED_FEATURES))
+''' % (selected, catalog, json.dumps(str(work)), json.dumps(str(profile)),
+        self.http.server_port, '\n'.join(k + ' = false' for k in DISABLED_FEATURES if not (self.environment and k == 'view_image')))
+
+    def launch(self, base, summary, errors):
+        """Prepare the empty private profile, start the process and shake hands."""
+        home, work = base/'home', base/'work'
+        profile = home/'.codex'
+        for p in (home, profile, work):
+            p.mkdir(mode=0o700, parents=True, exist_ok=True)
+        self.private_image = profile/'secret-fixture.png'
+        self.private_image.write_bytes(base64.b64decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a1N8AAAAASUVORK5CYII='))
+        self.canary = work/'patch-canary.txt'
+        self.catalog_path = profile/'model-catalog.json'
+        if self.catalog is not None:
+            self.catalog_path.write_bytes(self.catalog)
+            self.catalog_path.chmod(0o600)
+        config = profile/'config.toml'
+        config.write_text(self.config(work, profile))
+        config.chmod(0o600)
+        # Only the child gets these documented settings. Never inherit the
+        # user's credentials, proxy settings, terminal profile or project.
+        env = {'PATH': '/usr/bin:/bin', 'HOME': str(home), 'CODEX_HOME': str(profile),
+               'LANG': 'C.UTF-8', 'TMPDIR': str(base), 'RUST_LOG': 'off'}
+        if self.sandbox_bin:
+            env['PATH'] = str(self.sandbox_bin.parent) + ':' + env['PATH']
+        version = subprocess.run([self.binary, '--version'], env=env, cwd=str(work),
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, universal_newlines=True,
+            timeout=5, check=True).stdout.strip()
+        summary['version'] = version
+        if version != VERSION:
+            raise RuntimeError('This probe requires ' + VERSION)
+        # Stop discovery at this private root, even if /tmp/.codex exists.
+        subprocess.run(['/usr/bin/git', 'init', '-q', str(work)], env=env, check=True,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+        self.process = subprocess.Popen([self.binary, 'app-server', '--stdio', '--strict-config'],
+            cwd=str(work), env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, universal_newlines=True, bufsize=1, start_new_session=True)
+        def consume():
+            try:
+                for line in self.process.stdout:
+                    if len(line) > 4 * 1024 * 1024:
+                        raise RuntimeError('Protocol frame too large')
+                    self.messages.put(json.loads(line))
+            except Exception as error:
+                self.messages.put(error)
+            finally:
+                self.messages.put(None)
+        def stderr():
+            for line in self.process.stderr:
+                if len(errors) < 8:
+                    errors.append(line.strip())
+        threading.Thread(target=consume, daemon=True).start()
+        threading.Thread(target=stderr, daemon=True).start()
+        hello = self.rpc('initialize', {'clientInfo': {'name': 'jps_isolation_probe', 'version': '0.1.0'},
+            'capabilities': {'experimentalApi': True}})
+        summary['userAgent'] = hello.get('userAgent', '')
+        self.write({'method': 'initialized'})
+        effective = self.rpc('config/read', {'includeLayers': False})['config']
+        summary['noMcpServers'] = not effective.get('mcp_servers')
+        # The catalog is in effect when the process names Desk's file, or when
+        # none was supplied and the process names none.
+        applied = effective.get('model_catalog_json')
+        summary['catalogApplied'] = applied == (str(self.catalog_path) if self.catalog is not None else None)
+        return work
+
+    def stop(self):
+        # Reap the complete process group, including a failing probe's children.
+        if self.process is None:
+            return
+        try:
+            os.killpg(self.process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            self.process.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            os.killpg(self.process.pid, signal.SIGKILL)
+            self.process.wait(timeout=3)
+        for stream in (self.process.stdin, self.process.stdout, self.process.stderr):
+            stream.close()
+
+    def models(self):
+        """List every model the process offers, hidden ones included."""
+        summary, errors = {}, []
+        self.http = None
+        try:
+            self.serve()
+            with tempfile.TemporaryDirectory(prefix='jps-codex-proof-') as scratch:
+                try:
+                    self.launch(Path(scratch), summary, errors)
+                    listed = self.rpc('model/list', {'limit': 100, 'includeHidden': True})
+                    if listed.get('nextCursor'):
+                        raise RuntimeError('model/list paginated')
+                    summary['models'] = [row['model'] for row in listed['data']]
+                except Exception as error:
+                    raise RuntimeError(str(error) + (': ' + '; '.join(errors) if errors else ''))
+                finally:
+                    self.stop()
+        finally:
+            if self.http is not None:
+                self.http.shutdown()
+                self.http.server_close()
+        if not summary.get('catalogApplied'):
+            raise RuntimeError('the process did not apply the expected catalog: ' + '; '.join(errors))
+        return summary['models']
 
     def run(self):
-        summary = {'scenario': self.scenario, 'environmentEnabled': self.environment}
+        summary = {'model': self.model, 'scenario': self.scenario, 'environmentEnabled': self.environment}
         errors = []
-        self.serve()
+        self.http = None
         try:
+            self.serve()
             with tempfile.TemporaryDirectory(prefix='jps-codex-proof-') as scratch:
-                base = Path(scratch)
-                home, work = base/'home', base/'work'
-                profile = home/'.codex'
-                for p in (home, profile, work):
-                    p.mkdir(mode=0o700, parents=True, exist_ok=True)
-                self.private_image = profile/'secret-fixture.png'
-                self.private_image.write_bytes(base64.b64decode(
-                    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a1N8AAAAASUVORK5CYII='))
-                self.canary = work/'patch-canary.txt'
-                config = profile/'config.toml'
-                config.write_text(self.config(work, profile))
-                config.chmod(0o600)
-                # Only the child gets these documented settings. Never inherit the
-                # user's credentials, proxy settings, terminal profile or project.
-                env = {'PATH': '/usr/bin:/bin', 'HOME': str(home), 'CODEX_HOME': str(profile),
-                       'LANG': 'C.UTF-8', 'TMPDIR': str(base), 'RUST_LOG': 'off'}
-                if self.sandbox_bin:
-                    env['PATH'] = str(self.sandbox_bin.parent) + ':' + env['PATH']
-                version = subprocess.run([self.binary, '--version'], env=env, cwd=str(work),
-                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, universal_newlines=True,
-                    timeout=5, check=True).stdout.strip()
-                summary['version'] = version
-                if version != VERSION:
-                    raise RuntimeError('This probe requires ' + VERSION)
-                # Stop discovery at this private root, even if /tmp/.codex exists.
-                subprocess.run(['/usr/bin/git', 'init', '-q', str(work)], env=env, check=True,
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
-                self.process = subprocess.Popen([self.binary, 'app-server', '--stdio', '--strict-config'],
-                    cwd=str(work), env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE, universal_newlines=True, bufsize=1, start_new_session=True)
-                def consume():
-                    try:
-                        for line in self.process.stdout:
-                            if len(line) > 4 * 1024 * 1024:
-                                raise RuntimeError('Protocol frame too large')
-                            self.messages.put(json.loads(line))
-                    except Exception as error:
-                        self.messages.put(error)
-                    finally:
-                        self.messages.put(None)
-                def stderr():
-                    for line in self.process.stderr:
-                        if len(errors) < 8:
-                            errors.append(line.strip())
-                threading.Thread(target=consume, daemon=True).start()
-                threading.Thread(target=stderr, daemon=True).start()
                 try:
-                    hello = self.rpc('initialize', {'clientInfo': {'name': 'jps_isolation_probe', 'version': '0.1.0'},
-                        'capabilities': {'experimentalApi': True}})
-                    summary['userAgent'] = hello.get('userAgent', '')
-                    self.write({'method': 'initialized'})
+                    work = self.launch(Path(scratch), summary, errors)
                     account = self.rpc('account/read', {'refreshToken': False})
                     summary['accountAbsent'] = account.get('account') is None
-                    effective = self.rpc('config/read', {'includeLayers': False})['config']
-                    summary['noMcpServers'] = not effective.get('mcp_servers')
                     started = self.rpc('thread/start', {'model': self.model,
                         'modelProvider': 'jps_probe', 'allowProviderModelFallback': False,
                         'cwd': str(work), 'approvalPolicy': 'never', 'permissions': 'jps',
@@ -252,6 +518,11 @@ enabled = false
                                 params = message['params']
                                 if params.get('tool') != 'jps_probe' or params.get('arguments') != {'input': 'probe'}:
                                     raise RuntimeError('Unexpected host tool arguments')
+                                # Desk refuses a namespaced callback, so record the
+                                # namespace the host saw and fail on any.
+                                summary['hostCallNamespace'] = params.get('namespace')
+                                if params.get('namespace') is not None:
+                                    raise RuntimeError('Host tool call carried a namespace: %r' % params.get('namespace'))
                                 called = True
                                 self.write({'id': message['id'], 'result': {'success': True,
                                     'contentItems': [{'type': 'inputText', 'text': 'JPS_FIXTURE_OK'}]}})
@@ -260,53 +531,61 @@ enabled = false
                         elif message.get('method') == 'turn/completed':
                             completed = message['params']['turn']['status'] == 'completed'
                             break
-                    tools = set()
+                    tools, channels, host_each, offered_extra = set(), {}, [], set()
                     for request in self.requests:
-                        for tool in request.get('tools', []):
-                            if tool['type'] == 'namespace':
-                                tools.update(tool['name'] + '.' + t['name'] for t in tool['tools'])
-                            else:
-                                tools.add(tool.get('name', tool['type']))
+                        inventory = tool_inventory(request)
+                        # Each request must advertise the host tool exactly once,
+                        # in exactly one of its two forms, through a definition
+                        # channel; anything else found anywhere is unexpected.
+                        offered, malformed = advertised(request)
+                        if malformed:
+                            raise RuntimeError('Malformed tool definition at ' + ', '.join(malformed))
+                        host_each.append(host_once(request))
+                        offered_extra.update(name for name in offered if name not in HOST_TOOLS)
+                        for name, paths in inventory.items():
+                            tools.add(name)
+                            channels.setdefault(name, set()).update(
+                                re.sub(r'\[\d+', '[', path) for path in paths)
+                    # Only the scripted call's own result counts.
                     results = [x.get('output', '') for request in self.requests[1:]
                         for x in request.get('input', []) if isinstance(x, dict) and
-                        x.get('type') in ('function_call_output', 'custom_tool_call_output')]
+                        x.get('type') in ('function_call_output', 'custom_tool_call_output') and
+                        x.get('call_id') == 'call_probe']
                     observed = '\n'.join(str(x) for x in results)
                     if self.scenario == 'host-tool':
                         expected = called and 'JPS_FIXTURE_OK' in observed
-                    elif self.scenario == 'skills-list':
-                        expected = any(json.loads(x) == {'skills': [], 'warnings': []} for x in results)
-                    elif self.scenario == 'skills-read':
-                        expected = 'skill package is not available from the requested authority' in observed
                     else:
-                        expected = 'unsupported' in observed
+                        # The router's own unknown-tool refusal, and no native
+                        # request of any kind reached the host.
+                        expected = REJECTIONS[self.scenario] in results and not self.server_requests
+                    if self.scenario == 'private-image':
+                        # The sandbox diagnostic's evidence: the image tool ran and
+                        # the permission profile denied the private fixture's own
+                        # path, with no native request reaching the host.
+                        denied = 'unable to locate image at `%s`: Permission denied' % self.private_image
+                        summary['privateImageDenied'] = any(str(x).startswith(denied) for x in results) and not self.server_requests
                     summary.update({'toolCallback': called, 'turnCompleted': completed,
                         'modelRequests': len(self.requests), 'advertisedTools': sorted(tools),
-                        'unexpectedTools': sorted(tools - UTILITY_TOOLS - {'jps_probe'}),
+                        'hostToolAdvertised': bool(host_each) and all(host_each),
+                        'unexpectedTools': sorted(tools - HOST_TOOLS),
+                        'advertisedUnexpected': sorted(offered_extra),
+                        'toolChannels': {k: sorted(v) for k, v in sorted(channels.items())},
                         'expectedResult': bool(expected), 'privateImageReachedModel': any(
                             'data:image/' in json.dumps(r.get('input')) for r in self.requests),
                         'canaryWritten': self.canary.exists(),
                         'workspaceUnchanged': all(p.name == '.git' for p in work.iterdir()),
                         'serverRequests': self.server_requests, 'toolOutputs': results})
                 finally:
-                    # Reap the complete process group, including a failing probe's children.
-                    try:
-                        os.killpg(self.process.pid, signal.SIGTERM)
-                    except ProcessLookupError:
-                        pass
-                    try:
-                        self.process.wait(timeout=3)
-                    except subprocess.TimeoutExpired:
-                        os.killpg(self.process.pid, signal.SIGKILL)
-                        self.process.wait(timeout=3)
-                    for stream in (self.process.stdin, self.process.stdout, self.process.stderr):
-                        stream.close()
+                    self.stop()
         except Exception as error:
             summary['error'] = str(error) or type(error).__name__
         finally:
-            self.http.shutdown()
-            self.http.server_close()
+            if self.http is not None:
+                self.http.shutdown()
+                self.http.server_close()
         summary['passed'] = all(summary.get(k) for k in (
-            'accountAbsent', 'noMcpServers', 'turnCompleted', 'expectedResult', 'workspaceUnchanged')) and not any(
+            'accountAbsent', 'noMcpServers', 'catalogApplied', 'hostToolAdvertised', 'turnCompleted',
+            'expectedResult', 'workspaceUnchanged')) and not any(
             summary.get(k) for k in ('unexpectedTools', 'canaryWritten', 'privateImageReachedModel', 'error'))
         if not summary['passed']:
             summary['diagnostics'] = errors
@@ -316,23 +595,83 @@ enabled = false
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--codex', required=True, type=Path)
-    parser.add_argument('--model', default='gpt-5.5', help='Model metadata tested; inference stays on loopback')
+    parser.add_argument('--catalog', type=Path, default=CATALOG, help="Desk's closed model catalog")
+    parser.add_argument('--bundled-catalog', action='store_true', help="Leave the release's own catalog in place; must fail")
+    parser.add_argument('--model', action='append', help='Model metadata tested (repeatable); default every listed model. Inference stays on loopback')
     parser.add_argument('--output', type=Path)
     parser.add_argument('--scenario', choices=SCENARIOS)
     parser.add_argument('--sandbox-bin', type=Path, help='Trusted bubblewrap executable for explicit sandbox diagnostics')
     parser.add_argument('--negative-control', action='store_true', help='Retain local environment; must fail tool isolation')
+    parser.add_argument('--self-check', action='store_true', help='Run the classification cases earlier reviews produced, without Codex')
     args = parser.parse_args()
-    binary = str(args.codex.resolve())
-    results = [Probe(binary, args.model, scenario, args.negative_control, args.sandbox_bin).run()
-               for scenario in ([args.scenario] if args.scenario else SCENARIOS)]
-    report = {'model': args.model, 'binarySHA256': hashlib.sha256(Path(binary).read_bytes()).hexdigest(),
-              'passed': all(r['passed'] for r in results), 'results': results}
-    serialized = json.dumps(report, indent=2) + '\n'
-    if args.output:
-        args.output.write_text(serialized)
-    print(serialized, end='')
-    return 0 if report['passed'] else 1
-
+    if args.self_check:
+        failures = self_check()
+        print('\n'.join(failures) if failures else 'self-check: every case classified as expected')
+        return 1 if failures else 0
+    control = args.bundled_catalog or args.negative_control
+    # One report shape whatever happens: a fault anywhere before the last
+    # scenario still leaves the report, carrying the error and what was
+    # established up to it.
+    report = {'binarySHA256': None, 'catalogSHA256': None, 'models': None, 'catalogListed': None,
+              'passed': False, 'results': []}
+    if control:
+        report['controlHeld'] = False
+    def emit(report):
+        # The report reaches stdout whatever happens to the output file; a
+        # file that could not be written is a fault the report itself states.
+        if args.output:
+            try:
+                args.output.write_text(json.dumps(report, indent=2) + '\n')
+            except OSError as error:
+                report['outputError'] = str(error)
+                report['passed'] = False
+                if 'controlHeld' in report:
+                    report['controlHeld'] = False
+        print(json.dumps(report, indent=2))
+    try:
+        binary = str(args.codex.resolve())
+        report['binarySHA256'] = hashlib.sha256(Path(binary).read_bytes()).hexdigest()
+        catalog = None if args.bundled_catalog else args.catalog.read_bytes()
+        desk_models = set(m['slug'] for m in json.loads(args.catalog.read_bytes())['models'])
+        if catalog is not None:
+            report['catalogSHA256'] = hashlib.sha256(catalog).hexdigest()
+        models = Probe(binary, None, None, catalog, args.negative_control, args.sandbox_bin).models()
+        report['models'] = models
+        if catalog is not None:
+            report['catalogListed'] = sorted(models) == sorted(desk_models)
+        for model in args.model or []:
+            if model not in models:
+                raise RuntimeError('model %s is not listed by this process' % model)
+        for model in args.model or models:
+            for scenario in ([args.scenario] if args.scenario else SCENARIOS):
+                report['results'].append(Probe(binary, model, scenario, catalog, args.negative_control, args.sandbox_bin).run())
+    except Exception as error:
+        report['error'] = str(error) or type(error).__name__
+        emit(report)
+        return 1
+    results = report['results']
+    report['passed'] = all(r['passed'] for r in results) and (report['catalogListed'] if catalog is not None else True)
+    if control:
+        # A control holds only when every scenario ran with its ordinary
+        # evidence intact (the sandbox diagnostic's being the denial of the
+        # private fixture's own path), the catalog was applied and listed as
+        # expected, and a tool beyond the host's was advertised through a
+        # definition channel; any other failure is the probe's, not the
+        # boundary's.
+        def evidence(r):
+            if r['scenario'] == 'private-image' and args.sandbox_bin:
+                # The diagnostic lets the image tool run so that the permission
+                # profile, not the router, is what denies the private read.
+                return r.get('privateImageDenied')
+            return r.get('expectedResult')
+        intact = ('accountAbsent', 'noMcpServers', 'catalogApplied', 'turnCompleted', 'workspaceUnchanged')
+        listed = report['catalogListed'] if catalog is not None else set(models) > desk_models
+        report['controlHeld'] = bool(results) and listed and all(
+            not r.get('error') and not r.get('canaryWritten') and not r.get('privateImageReachedModel') and
+            all(r.get(k) for k in intact) and evidence(r) for r in results) and any(
+            r.get('advertisedUnexpected') for r in results)
+    emit(report)
+    return 0 if (report['controlHeld'] if control else report['passed']) else 1
 
 if __name__ == '__main__':
     raise SystemExit(main())

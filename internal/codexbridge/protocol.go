@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-const Version = "codex-cli 0.145.0"
+const Version = "codex-cli 0.157.1"
 const maxFrame = 4 << 20
 
 var (
@@ -111,7 +111,7 @@ func startClient(ctx context.Context, cmd *exec.Cmd) (*client, error) {
 		c.close()
 		return nil, err
 	}
-	if !strings.HasPrefix(hello.UserAgent, "jps_desk/0.145.0 (") {
+	if !strings.HasPrefix(hello.UserAgent, "jps_desk/0.157.1 (") {
 		c.close()
 		return nil, ErrUnavailable
 	}

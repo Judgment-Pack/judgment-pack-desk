@@ -70,7 +70,7 @@ func TestAccountHelper(t *testing.T) {
 		}
 		switch req.Method {
 		case "initialize":
-			reply(map[string]string{"userAgent": "jps_desk/0.145.0 (Linux)"})
+			reply(map[string]string{"userAgent": "jps_desk/0.157.1 (Linux)"})
 		case "initialized":
 		case "account/read":
 			var params struct {
@@ -121,11 +121,75 @@ func TestAccountHelper(t *testing.T) {
 			}
 			_ = os.Remove(fixture)
 			reply(map[string]any{})
+		case "model/list":
+			var params struct {
+				IncludeHidden bool `json:"includeHidden"`
+			}
+			_ = json.Unmarshal(req.Params, &params)
+			rows := catalogRows()
+			foreign := func(slug string, hidden bool) map[string]any {
+				return map[string]any{"model": slug, "displayName": slug, "hidden": hidden,
+					"defaultReasoningEffort": "medium", "supportedReasoningEfforts": []any{map[string]string{"reasoningEffort": "medium"}}}
+			}
+			switch mode {
+			case "catalog-mismatch":
+				// A visible model in place of one of Desk's.
+				rows = append(rows[1:], foreign("gpt-5.2", false))
+			case "catalog-subset":
+				rows = rows[1:]
+			case "catalog-duplicate":
+				// One of Desk's models twice, another missing: the same count.
+				rows = append(rows[1:], rows[1])
+			case "catalog-hidden-extras":
+				// The release's own catalog: Desk's models plus hidden ones, which
+				// only a listing that asks for hidden models reveals.
+				if params.IncludeHidden {
+					for _, slug := range []string{"gpt-daybreak-blue-latest", "gpt-daybreak-red-latest", "gpt-5.4", "codex-auto-review"} {
+						rows = append(rows, foreign(slug, true))
+					}
+				}
+			}
+			reply(map[string]any{"data": rows})
 		default:
 			fail()
 		}
 	}
 	os.Exit(0)
+}
+
+// A process that lists any model outside Desk's catalog did not apply it, so
+// no account or run operation may use that process, and it is reaped.
+func TestAProcessListingOtherModelsIsRefused(t *testing.T) {
+	for _, mode := range []string{"catalog-mismatch", "catalog-subset", "catalog-duplicate", "catalog-hidden-extras"} {
+		t.Run(mode, func(t *testing.T) {
+			m, _ := accountManager(t, mode)
+			defer m.Close()
+			var launched *client
+			launch := m.launch
+			m.launch = func(ctx context.Context, native *exec.Cmd) (*client, error) {
+				c, err := launch(ctx, native)
+				launched = c
+				return c, err
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if _, err := m.Status(ctx, "test", false); !errors.Is(err, ErrUnavailable) {
+				t.Fatalf("status through a process with a foreign model list: %v", err)
+			}
+			if m.client != nil {
+				t.Fatal("the refused process was kept")
+			}
+			if launched == nil {
+				t.Fatal("no process was launched")
+			}
+			// Reaped before the operation returned, not merely asked to stop.
+			select {
+			case <-launched.exited:
+			default:
+				t.Fatal("the refused process was not reaped before the operation returned")
+			}
+		})
+	}
 }
 
 func accountManager(t *testing.T, mode string) (*Manager, Options) {

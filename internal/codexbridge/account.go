@@ -158,6 +158,10 @@ func (m *Manager) spawn(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if err = catalogListed(ctx, c); err != nil {
+		c.close()
+		return err
+	}
 	m.client = c
 	m.workers.Add(1)
 	go m.watch(c)
