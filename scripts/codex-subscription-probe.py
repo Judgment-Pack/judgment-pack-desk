@@ -100,13 +100,16 @@ def tool_inventory(request):
     return found
 
 
-# The definition kinds this release serialises (codex-rs/tools/src/tool_spec.rs
-# at the pinned tag) and the members each requires: a function carries its
-# parameter schema, a custom tool its format, a namespace its tools, tool
-# search its execution, description and parameter schema; web search has only
-# optional members. Anything else in a definition list is malformed.
-REQUIRED = {'function': {'name': str, 'parameters': dict}, 'custom': {'name': str, 'format': dict},
-            'namespace': {'name': str, 'tools': list},
+# The definition kinds this release serialises and the members each always
+# carries (codex-rs/tools/src/tool_spec.rs and tool_definition.rs at the
+# pinned tag): a function its name, description, strictness and parameter
+# schema; a custom tool its name, description and format; a namespace its
+# name, description and tools; tool search its execution, description and
+# parameter schema; web search only optional members. Anything else in a
+# definition list is malformed.
+REQUIRED = {'function': {'name': str, 'description': str, 'strict': bool, 'parameters': dict},
+            'custom': {'name': str, 'description': str, 'format': dict},
+            'namespace': {'name': str, 'description': str, 'tools': list},
             'tool_search': {'execution': str, 'description': str, 'parameters': dict}, 'web_search': {}}
 NAMED_KINDS = {'function', 'custom'}
 BUILTIN_KINDS = {'web_search', 'tool_search'}
@@ -170,8 +173,9 @@ def self_check():
     must say of it, and each sequence gives several requests and whether every
     one advertises the host exactly once. No Codex process is involved.
     """
-    host = {'type': 'function', 'name': 'jps_probe', 'parameters': {'type': 'object'}}
+    host = {'type': 'function', 'name': 'jps_probe', 'description': 'the host tool', 'strict': False, 'parameters': {'type': 'object'}}
     search = {'type': 'tool_search', 'execution': 'server', 'description': 'find tools', 'parameters': {'type': 'object'}}
+    namespace = lambda *tools: {'type': 'namespace', 'name': 'functions', 'description': 'functions', 'tools': list(tools)}
     sequences = [
         ('the host in every request', [{'tools': [host]}, {'tools': [host]}], True),
         ('the host dropped from the second request', [{'tools': [host]}, {'tools': []}], False),
@@ -179,21 +183,21 @@ def self_check():
     ]
     cases = [
         ('a plain advertisement', {'tools': [host]}, 1, [], [], False),
-        ('a namespaced advertisement', {'input': [{'type': 'additional_tools', 'tools': [
-            {'type': 'namespace', 'name': 'functions', 'tools': [host]}]}]}, 1, [], [], False),
-        ('an extra tool inside a namespace', {'input': [{'type': 'additional_tools', 'tools': [
-            {'type': 'namespace', 'name': 'functions', 'tools': [host, dict(host, name='exec')]}]}]},
+        ('a namespaced advertisement', {'input': [{'type': 'additional_tools', 'tools': [namespace(host)]}]}, 1, [], [], False),
+        ('an extra tool inside a namespace', {'input': [{'type': 'additional_tools', 'tools': [namespace(host, dict(host, name='exec'))]}]},
             1, ['functions.exec'], ['functions.exec'], False),
         ('a built-in tool beside the host', {'tools': [{'type': 'web_search'}, host]}, 1, ['type:web_search'], ['type:web_search'], False),
         ('tool search beside the host', {'tools': [search, host]}, 1, ['type:tool_search'], ['type:tool_search'], False),
         ('tool search without its required members', {'tools': [{'type': 'tool_search', 'execution': 17, 'description': [], 'parameters': None}, host]},
             1, [], ['type:tool_search'], True),
         ('a function without its parameter schema', {'tools': [{'type': 'function', 'name': 'exec'}, host]}, 1, [], ['exec'], True),
+        ('a function without its description', {'tools': [{k: v for k, v in dict(host, name='exec').items() if k != 'description'}, host]},
+            1, [], ['exec'], True),
         ('a list nested inside a function tool', {'tools': [dict(host, extra_tools=[{'type': 'function', 'name': 'exec'}])]},
             1, [], ['exec'], False),
         ('a tool_definitions member', {'tool_definitions': [{'type': 'function', 'name': 'exec'}], 'tools': [host]}, 1, [], ['exec'], False),
         ("a namespace's sibling member", {'input': [{'type': 'additional_tools', 'tools': [
-            {'type': 'namespace', 'name': 'functions', 'tools': [host], 'tool_definitions': [{'type': 'function', 'name': 'exec'}]}]}]},
+            dict(namespace(host), tool_definitions=[{'type': 'function', 'name': 'exec'}])]}]},
             1, [], ['exec'], False),
         ('an unnamed tool typed as the host', {'tools': [{'type': 'jps_probe'}]}, 0, [], ['type:jps_probe'], True),
         ('an unnamed object of no tool kind', {'tools': [host, {'type': 'message'}]}, 1, [], ['type:message'], True),
