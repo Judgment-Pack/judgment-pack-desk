@@ -1,5 +1,18 @@
 # Codex subscription bridge: isolated milestone 1
 
+**Runtime pin note (2026-09-26).** Desk's managed Codex pin has moved from
+`0.145.0` to `0.156.0`. The protocol results, the configuration qualification,
+the fixture and the pinned references below now describe `0.156.0`. The rest
+of this record, including its verification lists and milestone updates, was
+recorded against `0.145.0`; the `0.145.0` fixture remains in the repository
+history. The probe now counts every tool list in each model request, including
+`additional_tools` input items. `0.156.0` is the newest stable release whose
+tool inventory passes. From `0.156.1`, `gpt-6-sol` requests have no top-level
+`tools` member; an `additional_tools` item advertises code-mode `exec`/`wait`,
+`request_user_input_async`, `clock.sleep` and `collaboration.*` agent tools,
+although the profile disables code mode, multi-agent work and the experimental
+user-input tool. This is a local scripted-model check, not a certification.
+
 Date: 2026-09-25. Status: local protocol proof and Go foundation; **not a usable
 or certified subscription feature**.
 
@@ -39,15 +52,17 @@ Login lifecycle, engine integration, and setup UI remain unfinished.
 
 ## Local protocol results
 
-The binary reports `codex-cli 0.145.0`; its SHA-256 is
-`a2a05dafaa1acb002a45eaec0a462de5b13694fcfcd7bc43305f14781ce7be14`.
+The binary reports `codex-cli 0.156.0`; its SHA-256 is
+`78a11f06e0a2dda42d13fba1d50dc62e8cbdb2d5f69789722f4d4d99b5cdbe30`.
 The generated experimental schema and matching upstream release source were
 used to interpret its behavior. Newer clients require a fresh certification.
 
 All eight scenarios passed under each of two model metadata selections
 (`gpt-5.5` and `gpt-6-sol`). These names select native metadata for a scripted
 local response; **they are not evidence of account entitlement or live model
-availability**.
+availability**. Every model request advertised exactly `jps_probe` in its
+`tools` member and `skills.list`/`skills.read` in a `skills` namespace there;
+no other tool list appeared.
 
 | Scenario | Observed result |
 | --- | --- |
@@ -57,8 +72,8 @@ availability**.
 | Shell | `exec_command` call rejected as unsupported |
 | Web | No advertised web tool; synthetic `web.run` call rejected |
 | Subagent | `spawn_agent` call rejected as unsupported |
-| Skills listing | Empty enabled orchestrator catalog |
-| Forged skill read | Unavailable package refused |
+| Skills listing | Empty enabled orchestrator catalog, with a null `next_cursor` |
+| Forged skill read | Unavailable package refused (`skill package is not available`) |
 
 The negative control retains a local execution environment. The same probe
 correctly fails because `apply_patch` and `view_image` reappear. This catches the
@@ -73,6 +88,8 @@ from the earlier missing-bubblewrap error caused by the minimal test PATH.
 Machine-readable results are in
 [fixtures/codex-subscription-proof.json](fixtures/codex-subscription-proof.json).
 They contain no real account details, credentials, prompts, or project files.
+The private image's temporary path is replaced by a placeholder, and the
+client's user agent and stderr diagnostics are omitted.
 
 ## Configuration finding and qualification
 
@@ -82,9 +99,11 @@ profile, no escalation, no ambient MCP servers, no apps/plugins/hooks, no
 browser/computer/image-generation tools, and no subagents. The host constructs
 these fields; they must never come from a browser's raw RPC request.
 
-The strict “only host tools exist” wording in the initial plan needs the narrow
-qualification recorded in the updated plan: `update_plan` remains available,
-and the no-environment mode also advertises `skills.list` and `skills.read`.
+The strict “only host tools exist” wording in the initial plan needs a narrow
+qualification: the no-environment mode also advertises `skills.list` and
+`skills.read`. At `0.145.0`, `update_plan` was advertised as well. At `0.156.0`
+it is registered only when `tools.update_plan.enabled` is set, which defaults
+to false, and the probe now refuses it.
 There is no supported general built-in-tool allow-list in this tested version.
 The fixed utilities were audited and explicitly tested, rather than silently
 ignored by the probe. Planning is internal progress; the skills catalog has no
@@ -210,7 +229,7 @@ backend processes and unrelated working-tree changes were preserved.
 
 - [Official App Server protocol](https://learn.chatgpt.com/docs/app-server)
 - [Official Codex authentication](https://learn.chatgpt.com/docs/auth)
-- [Pinned native tool registration](https://github.com/openai/codex/blob/rust-v0.145.0/codex-rs/core/src/tools/spec_plan.rs)
-- [Pinned orchestrator skill authority checks](https://github.com/openai/codex/blob/rust-v0.145.0/codex-rs/ext/skills/src/tools/read.rs)
-- [Pinned configuration schema](https://github.com/openai/codex/blob/rust-v0.145.0/codex-rs/core/config.schema.json)
-- [Pinned official browser login implementation](https://github.com/openai/codex/blob/rust-v0.145.0/codex-rs/login/src/server.rs)
+- [Pinned native tool registration](https://github.com/openai/codex/blob/rust-v0.156.0/codex-rs/core/src/tools/spec_plan.rs)
+- [Pinned orchestrator skill authority checks](https://github.com/openai/codex/blob/rust-v0.156.0/codex-rs/ext/skills/src/tools/read.rs)
+- [Pinned configuration schema](https://github.com/openai/codex/blob/rust-v0.156.0/codex-rs/core/config.schema.json)
+- [Pinned official browser login implementation](https://github.com/openai/codex/blob/rust-v0.156.0/codex-rs/login/src/server.rs)

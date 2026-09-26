@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Probe Codex 0.145.0 with a scripted loopback model and an empty profile.
+"""Probe Codex 0.156.0 with a scripted loopback model and an empty profile.
 
 No real account, login, provider key, or subscription inference is used. Each
 scenario starts a new process. Exit 0 means the local protocol checks passed;
 it does not certify real authentication, entitlement, or a production engine.
+The tool inventory counts every tool list in each model request, not only the
+top-level `tools` member.
 """
 import argparse
 import base64
@@ -12,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import queue
+import re
 import signal
 import subprocess
 import tempfile
@@ -19,12 +22,12 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = 'codex-cli 0.145.0'
+VERSION = 'codex-cli 0.156.0'
 SCENARIOS = ('host-tool', 'private-image', 'write', 'shell', 'web', 'subagent',
              'skills-list', 'skills-read')
-# Native non-executing utilities remain registered in this exact release.
+# The only native tools this exact release registers without an environment.
 # Each skills handler can only address the disabled orchestrator catalog.
-UTILITY_TOOLS = {'update_plan', 'skills.list', 'skills.read'}
+UTILITY_TOOLS = {'skills.list', 'skills.read'}
 DISABLED_FEATURES = ('shell_tool', 'unified_exec', 'shell_snapshot', 'multi_agent',
     'multi_agent_v2', 'apps', 'hooks', 'plugins', 'remote_plugin', 'plugin_sharing',
     'memories', 'goals', 'browser_use', 'browser_use_external',
@@ -32,6 +35,40 @@ DISABLED_FEATURES = ('shell_tool', 'unified_exec', 'shell_snapshot', 'multi_agen
     'skill_mcp_dependency_install', 'skill_search', 'workspace_dependencies',
     'auth_elicitation', 'tool_suggest', 'image_generation', 'code_mode',
     'code_mode_host', 'enable_request_compression')
+
+
+def tool_inventory(request):
+    """Return {qualified tool name: [request paths]} for every tool list in a request.
+
+    Tools can arrive outside the top-level `tools` member, for example in an
+    `additional_tools` input item, so every member named `tools` or `*_tools`
+    is counted wherever it appears.
+    """
+    found = {}
+    def names(tools, prefix, path):
+        for i, tool in enumerate(tools):
+            if not isinstance(tool, dict):
+                found.setdefault(prefix + repr(tool), []).append(path)
+                continue
+            name = tool.get('name') or tool.get('type', '?')
+            if tool.get('type') == 'namespace' and isinstance(tool.get('tools'), list):
+                names(tool['tools'], prefix + name + '.', '%s[%d].tools' % (path, i))
+            else:
+                found.setdefault(prefix + name, []).append(path)
+    def walk(node, path):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                here = path + '.' + key if path else key
+                if isinstance(value, list) and (key == 'tools' or key.endswith('_tools') or key.endswith('Tools')):
+                    names(value, '', here)
+                else:
+                    walk(value, here)
+        elif isinstance(node, list):
+            for i, value in enumerate(node):
+                kind = ':' + str(value.get('type')) if isinstance(value, dict) and 'type' in value else ''
+                walk(value, '%s[%d%s]' % (path, i, kind))
+    walk(request, '')
+    return found
 
 
 class Probe:
@@ -260,13 +297,12 @@ enabled = false
                         elif message.get('method') == 'turn/completed':
                             completed = message['params']['turn']['status'] == 'completed'
                             break
-                    tools = set()
+                    tools, channels = set(), {}
                     for request in self.requests:
-                        for tool in request.get('tools', []):
-                            if tool['type'] == 'namespace':
-                                tools.update(tool['name'] + '.' + t['name'] for t in tool['tools'])
-                            else:
-                                tools.add(tool.get('name', tool['type']))
+                        for name, paths in tool_inventory(request).items():
+                            tools.add(name)
+                            channels.setdefault(name, set()).update(
+                                re.sub(r'\[\d+', '[', path) for path in paths)
                     results = [x.get('output', '') for request in self.requests[1:]
                         for x in request.get('input', []) if isinstance(x, dict) and
                         x.get('type') in ('function_call_output', 'custom_tool_call_output')]
@@ -274,14 +310,16 @@ enabled = false
                     if self.scenario == 'host-tool':
                         expected = called and 'JPS_FIXTURE_OK' in observed
                     elif self.scenario == 'skills-list':
-                        expected = any(json.loads(x) == {'skills': [], 'warnings': []} for x in results)
+                        expected = any(json.loads(x) == {'skills': [], 'warnings': [], 'next_cursor': None}
+                            for x in results)
                     elif self.scenario == 'skills-read':
-                        expected = 'skill package is not available from the requested authority' in observed
+                        expected = 'skill package is not available' in results
                     else:
                         expected = 'unsupported' in observed
                     summary.update({'toolCallback': called, 'turnCompleted': completed,
                         'modelRequests': len(self.requests), 'advertisedTools': sorted(tools),
                         'unexpectedTools': sorted(tools - UTILITY_TOOLS - {'jps_probe'}),
+                        'toolChannels': {k: sorted(v) for k, v in sorted(channels.items())},
                         'expectedResult': bool(expected), 'privateImageReachedModel': any(
                             'data:image/' in json.dumps(r.get('input')) for r in self.requests),
                         'canaryWritten': self.canary.exists(),

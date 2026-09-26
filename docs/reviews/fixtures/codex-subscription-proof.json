@@ -1,17 +1,17 @@
 {
-  "date": "2026-09-25",
+  "date": "2026-09-26",
   "scope": "local scripted-model protocol checks, not authenticated subscription certification",
   "runs": [
     {
       "run": "proof-report.json",
       "model": "gpt-5.5",
-      "binarySHA256": "a2a05dafaa1acb002a45eaec0a462de5b13694fcfcd7bc43305f14781ce7be14",
+      "binarySHA256": "78a11f06e0a2dda42d13fba1d50dc62e8cbdb2d5f69789722f4d4d99b5cdbe30",
       "passed": true,
       "results": [
         {
           "scenario": "host-tool",
           "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
+          "version": "codex-cli 0.156.0",
           "accountAbsent": true,
           "noMcpServers": true,
           "toolCallback": true,
@@ -20,10 +20,20 @@
           "advertisedTools": [
             "jps_probe",
             "skills.list",
-            "skills.read",
-            "update_plan"
+            "skills.read"
           ],
           "unexpectedTools": [],
+          "toolChannels": {
+            "jps_probe": [
+              "tools"
+            ],
+            "skills.list": [
+              "tools[].tools"
+            ],
+            "skills.read": [
+              "tools[].tools"
+            ]
+          },
           "expectedResult": true,
           "privateImageReachedModel": false,
           "canaryWritten": false,
@@ -39,7 +49,7 @@
         {
           "scenario": "private-image",
           "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
+          "version": "codex-cli 0.156.0",
           "accountAbsent": true,
           "noMcpServers": true,
           "toolCallback": false,
@@ -48,10 +58,20 @@
           "advertisedTools": [
             "jps_probe",
             "skills.list",
-            "skills.read",
-            "update_plan"
+            "skills.read"
           ],
           "unexpectedTools": [],
+          "toolChannels": {
+            "jps_probe": [
+              "tools"
+            ],
+            "skills.list": [
+              "tools[].tools"
+            ],
+            "skills.read": [
+              "tools[].tools"
+            ]
+          },
           "expectedResult": true,
           "privateImageReachedModel": false,
           "canaryWritten": false,
@@ -65,7 +85,7 @@
         {
           "scenario": "write",
           "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
+          "version": "codex-cli 0.156.0",
           "accountAbsent": true,
           "noMcpServers": true,
           "toolCallback": false,
@@ -74,10 +94,20 @@
           "advertisedTools": [
             "jps_probe",
             "skills.list",
-            "skills.read",
-            "update_plan"
+            "skills.read"
           ],
           "unexpectedTools": [],
+          "toolChannels": {
+            "jps_probe": [
+              "tools"
+            ],
+            "skills.list": [
+              "tools[].tools"
+            ],
+            "skills.read": [
+              "tools[].tools"
+            ]
+          },
           "expectedResult": true,
           "privateImageReachedModel": false,
           "canaryWritten": false,
@@ -91,7 +121,7 @@
         {
           "scenario": "shell",
           "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
+          "version": "codex-cli 0.156.0",
           "accountAbsent": true,
           "noMcpServers": true,
           "toolCallback": false,
@@ -100,10 +130,20 @@
           "advertisedTools": [
             "jps_probe",
             "skills.list",
-            "skills.read",
-            "update_plan"
+            "skills.read"
           ],
           "unexpectedTools": [],
+          "toolChannels": {
+            "jps_probe": [
+              "tools"
+            ],
+            "skills.list": [
+              "tools[].tools"
+            ],
+            "skills.read": [
+              "tools[].tools"
+            ]
+          },
           "expectedResult": true,
           "privateImageReachedModel": false,
           "canaryWritten": false,
@@ -117,7 +157,7 @@
         {
           "scenario": "web",
           "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
+          "version": "codex-cli 0.156.0",
           "accountAbsent": true,
           "noMcpServers": true,
           "toolCallback": false,
@@ -126,10 +166,20 @@
           "advertisedTools": [
             "jps_probe",
             "skills.list",
-            "skills.read",
-            "update_plan"
+            "skills.read"
           ],
           "unexpectedTools": [],
+          "toolChannels": {
+            "jps_probe": [
+              "tools"
+            ],
+            "skills.list": [
+              "tools[].tools"
+            ],
+            "skills.read": [
+              "tools[].tools"
+            ]
+          },
           "expectedResult": true,
           "privateImageReachedModel": false,
           "canaryWritten": false,
@@ -143,7 +193,7 @@
         {
           "scenario": "subagent",
           "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
+          "version": "codex-cli 0.156.0",
           "accountAbsent": true,
           "noMcpServers": true,
           "toolCallback": false,
@@ -152,10 +202,20 @@
           "advertisedTools": [
             "jps_probe",
             "skills.list",
-            "skills.read",
-            "update_plan"
+            "skills.read"
           ],
           "unexpectedTools": [],
+          "toolChannels": {
+            "jps_probe": [
+              "tools"
+            ],
+            "skills.list": [
+              "tools[].tools"
+            ],
+            "skills.read": [
+              "tools[].tools"
+            ]
+          },
           "expectedResult": true,
           "privateImageReachedModel": false,
           "canaryWritten": false,
@@ -169,7 +229,7 @@
         {
           "scenario": "skills-list",
           "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
+          "version": "codex-cli 0.156.0",
           "accountAbsent": true,
           "noMcpServers": true,
           "toolCallback": false,
@@ -178,24 +238,34 @@
           "advertisedTools": [
             "jps_probe",
             "skills.list",
-            "skills.read",
-            "update_plan"
+            "skills.read"
           ],
           "unexpectedTools": [],
+          "toolChannels": {
+            "jps_probe": [
+              "tools"
+            ],
+            "skills.list": [
+              "tools[].tools"
+            ],
+            "skills.read": [
+              "tools[].tools"
+            ]
+          },
           "expectedResult": true,
           "privateImageReachedModel": false,
           "canaryWritten": false,
           "workspaceUnchanged": true,
           "serverRequests": [],
           "toolOutputs": [
-            "{\"skills\":[],\"warnings\":[]}"
+            "{\"skills\":[],\"warnings\":[],\"next_cursor\":null}"
           ],
           "passed": true
         },
         {
           "scenario": "skills-read",
           "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
+          "version": "codex-cli 0.156.0",
           "accountAbsent": true,
           "noMcpServers": true,
           "toolCallback": false,
@@ -204,17 +274,27 @@
           "advertisedTools": [
             "jps_probe",
             "skills.list",
-            "skills.read",
-            "update_plan"
+            "skills.read"
           ],
           "unexpectedTools": [],
+          "toolChannels": {
+            "jps_probe": [
+              "tools"
+            ],
+            "skills.list": [
+              "tools[].tools"
+            ],
+            "skills.read": [
+              "tools[].tools"
+            ]
+          },
           "expectedResult": true,
           "privateImageReachedModel": false,
           "canaryWritten": false,
           "workspaceUnchanged": true,
           "serverRequests": [],
           "toolOutputs": [
-            "skill package is not available from the requested authority"
+            "skill package is not available"
           ],
           "passed": true
         }
@@ -223,13 +303,13 @@
     {
       "run": "proof-report-sol.json",
       "model": "gpt-6-sol",
-      "binarySHA256": "a2a05dafaa1acb002a45eaec0a462de5b13694fcfcd7bc43305f14781ce7be14",
+      "binarySHA256": "78a11f06e0a2dda42d13fba1d50dc62e8cbdb2d5f69789722f4d4d99b5cdbe30",
       "passed": true,
       "results": [
         {
           "scenario": "host-tool",
           "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
+          "version": "codex-cli 0.156.0",
           "accountAbsent": true,
           "noMcpServers": true,
           "toolCallback": true,
@@ -238,10 +318,20 @@
           "advertisedTools": [
             "jps_probe",
             "skills.list",
-            "skills.read",
-            "update_plan"
+            "skills.read"
           ],
           "unexpectedTools": [],
+          "toolChannels": {
+            "jps_probe": [
+              "tools"
+            ],
+            "skills.list": [
+              "tools[].tools"
+            ],
+            "skills.read": [
+              "tools[].tools"
+            ]
+          },
           "expectedResult": true,
           "privateImageReachedModel": false,
           "canaryWritten": false,
@@ -257,7 +347,7 @@
         {
           "scenario": "private-image",
           "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
+          "version": "codex-cli 0.156.0",
           "accountAbsent": true,
           "noMcpServers": true,
           "toolCallback": false,
@@ -266,10 +356,20 @@
           "advertisedTools": [
             "jps_probe",
             "skills.list",
-            "skills.read",
-            "update_plan"
+            "skills.read"
           ],
           "unexpectedTools": [],
+          "toolChannels": {
+            "jps_probe": [
+              "tools"
+            ],
+            "skills.list": [
+              "tools[].tools"
+            ],
+            "skills.read": [
+              "tools[].tools"
+            ]
+          },
           "expectedResult": true,
           "privateImageReachedModel": false,
           "canaryWritten": false,
@@ -283,7 +383,7 @@
         {
           "scenario": "write",
           "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
+          "version": "codex-cli 0.156.0",
           "accountAbsent": true,
           "noMcpServers": true,
           "toolCallback": false,
@@ -292,10 +392,20 @@
           "advertisedTools": [
             "jps_probe",
             "skills.list",
-            "skills.read",
-            "update_plan"
+            "skills.read"
           ],
           "unexpectedTools": [],
+          "toolChannels": {
+            "jps_probe": [
+              "tools"
+            ],
+            "skills.list": [
+              "tools[].tools"
+            ],
+            "skills.read": [
+              "tools[].tools"
+            ]
+          },
           "expectedResult": true,
           "privateImageReachedModel": false,
           "canaryWritten": false,
@@ -309,7 +419,7 @@
         {
           "scenario": "shell",
           "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
+          "version": "codex-cli 0.156.0",
           "accountAbsent": true,
           "noMcpServers": true,
           "toolCallback": false,
@@ -318,10 +428,20 @@
           "advertisedTools": [
             "jps_probe",
             "skills.list",
-            "skills.read",
-            "update_plan"
+            "skills.read"
           ],
           "unexpectedTools": [],
+          "toolChannels": {
+            "jps_probe": [
+              "tools"
+            ],
+            "skills.list": [
+              "tools[].tools"
+            ],
+            "skills.read": [
+              "tools[].tools"
+            ]
+          },
           "expectedResult": true,
           "privateImageReachedModel": false,
           "canaryWritten": false,
@@ -335,7 +455,7 @@
         {
           "scenario": "web",
           "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
+          "version": "codex-cli 0.156.0",
           "accountAbsent": true,
           "noMcpServers": true,
           "toolCallback": false,
@@ -344,10 +464,20 @@
           "advertisedTools": [
             "jps_probe",
             "skills.list",
-            "skills.read",
-            "update_plan"
+            "skills.read"
           ],
           "unexpectedTools": [],
+          "toolChannels": {
+            "jps_probe": [
+              "tools"
+            ],
+            "skills.list": [
+              "tools[].tools"
+            ],
+            "skills.read": [
+              "tools[].tools"
+            ]
+          },
           "expectedResult": true,
           "privateImageReachedModel": false,
           "canaryWritten": false,
@@ -361,7 +491,7 @@
         {
           "scenario": "subagent",
           "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
+          "version": "codex-cli 0.156.0",
           "accountAbsent": true,
           "noMcpServers": true,
           "toolCallback": false,
@@ -370,10 +500,20 @@
           "advertisedTools": [
             "jps_probe",
             "skills.list",
-            "skills.read",
-            "update_plan"
+            "skills.read"
           ],
           "unexpectedTools": [],
+          "toolChannels": {
+            "jps_probe": [
+              "tools"
+            ],
+            "skills.list": [
+              "tools[].tools"
+            ],
+            "skills.read": [
+              "tools[].tools"
+            ]
+          },
           "expectedResult": true,
           "privateImageReachedModel": false,
           "canaryWritten": false,
@@ -387,7 +527,7 @@
         {
           "scenario": "skills-list",
           "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
+          "version": "codex-cli 0.156.0",
           "accountAbsent": true,
           "noMcpServers": true,
           "toolCallback": false,
@@ -396,24 +536,34 @@
           "advertisedTools": [
             "jps_probe",
             "skills.list",
-            "skills.read",
-            "update_plan"
+            "skills.read"
           ],
           "unexpectedTools": [],
+          "toolChannels": {
+            "jps_probe": [
+              "tools"
+            ],
+            "skills.list": [
+              "tools[].tools"
+            ],
+            "skills.read": [
+              "tools[].tools"
+            ]
+          },
           "expectedResult": true,
           "privateImageReachedModel": false,
           "canaryWritten": false,
           "workspaceUnchanged": true,
           "serverRequests": [],
           "toolOutputs": [
-            "{\"skills\":[],\"warnings\":[]}"
+            "{\"skills\":[],\"warnings\":[],\"next_cursor\":null}"
           ],
           "passed": true
         },
         {
           "scenario": "skills-read",
           "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
+          "version": "codex-cli 0.156.0",
           "accountAbsent": true,
           "noMcpServers": true,
           "toolCallback": false,
@@ -422,17 +572,27 @@
           "advertisedTools": [
             "jps_probe",
             "skills.list",
-            "skills.read",
-            "update_plan"
+            "skills.read"
           ],
           "unexpectedTools": [],
+          "toolChannels": {
+            "jps_probe": [
+              "tools"
+            ],
+            "skills.list": [
+              "tools[].tools"
+            ],
+            "skills.read": [
+              "tools[].tools"
+            ]
+          },
           "expectedResult": true,
           "privateImageReachedModel": false,
           "canaryWritten": false,
           "workspaceUnchanged": true,
           "serverRequests": [],
           "toolOutputs": [
-            "skill package is not available from the requested authority"
+            "skill package is not available"
           ],
           "passed": true
         }
@@ -441,13 +601,13 @@
     {
       "run": "proof-negative.json",
       "model": "gpt-5.5",
-      "binarySHA256": "a2a05dafaa1acb002a45eaec0a462de5b13694fcfcd7bc43305f14781ce7be14",
+      "binarySHA256": "78a11f06e0a2dda42d13fba1d50dc62e8cbdb2d5f69789722f4d4d99b5cdbe30",
       "passed": false,
       "results": [
         {
           "scenario": "host-tool",
           "environmentEnabled": true,
-          "version": "codex-cli 0.145.0",
+          "version": "codex-cli 0.156.0",
           "accountAbsent": true,
           "noMcpServers": true,
           "toolCallback": true,
@@ -456,13 +616,23 @@
           "advertisedTools": [
             "apply_patch",
             "jps_probe",
-            "update_plan",
             "view_image"
           ],
           "unexpectedTools": [
             "apply_patch",
             "view_image"
           ],
+          "toolChannels": {
+            "apply_patch": [
+              "tools"
+            ],
+            "jps_probe": [
+              "tools"
+            ],
+            "view_image": [
+              "tools"
+            ]
+          },
           "expectedResult": true,
           "privateImageReachedModel": false,
           "canaryWritten": false,
@@ -480,13 +650,13 @@
     {
       "run": "proof-sandbox.json",
       "model": "gpt-5.5",
-      "binarySHA256": "a2a05dafaa1acb002a45eaec0a462de5b13694fcfcd7bc43305f14781ce7be14",
+      "binarySHA256": "78a11f06e0a2dda42d13fba1d50dc62e8cbdb2d5f69789722f4d4d99b5cdbe30",
       "passed": false,
       "results": [
         {
           "scenario": "private-image",
           "environmentEnabled": true,
-          "version": "codex-cli 0.145.0",
+          "version": "codex-cli 0.156.0",
           "accountAbsent": true,
           "noMcpServers": true,
           "toolCallback": false,
@@ -495,20 +665,30 @@
           "advertisedTools": [
             "apply_patch",
             "jps_probe",
-            "update_plan",
             "view_image"
           ],
           "unexpectedTools": [
             "apply_patch",
             "view_image"
           ],
+          "toolChannels": {
+            "apply_patch": [
+              "tools"
+            ],
+            "jps_probe": [
+              "tools"
+            ],
+            "view_image": [
+              "tools"
+            ]
+          },
           "expectedResult": false,
           "privateImageReachedModel": false,
           "canaryWritten": false,
           "workspaceUnchanged": true,
           "serverRequests": [],
           "toolOutputs": [
-            "synthetic private-image read denied by filesystem permissions"
+            "unable to locate image at `<private profile>/secret-fixture.png`: Permission denied (os error 13)"
           ],
           "passed": false
         }

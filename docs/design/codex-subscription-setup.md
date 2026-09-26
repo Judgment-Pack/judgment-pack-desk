@@ -49,9 +49,9 @@ its runtime and completed account across restarts. Opening settings may start
 an installed runtime to read account status, but cannot trigger inference.
 
 The first managed artifact targets Linux x86-64 and pins official Codex
-`0.145.0`. Its fixed GitHub release URL, archive byte count/SHA-256 and extracted
+`0.156.0`. Its fixed GitHub release URL, archive byte count/SHA-256 and extracted
 binary byte count/SHA-256 live in `internal/codexbridge/runtime.go`. The private
-cache is `<DeskConfigDir>/codex/runtime/codex-0.145.0`. There is no PATH lookup,
+cache is `<DeskConfigDir>/codex/runtime/codex-0.156.0`. There is no PATH lookup,
 project-local executable discovery, package-manager command or downloaded
 version manifest. No terminal login or installation is read or changed.
 
@@ -193,3 +193,28 @@ smoke passed. All 2,818 UI strings passed the eleven locale catalogues. Chromium
 passed the preparation/sign-in/cancel flow at desktop and mobile widths after
 correcting its synthetic session bootstrap. Existing Desk processes were not
 restarted, and no commit or real account sign-in was performed.
+
+### Runtime pin update — 2026-09-26
+
+The managed pin moved from `0.145.0` to `0.156.0` (release `rust-v0.156.0`;
+archive and binary digests in `internal/codexbridge/runtime.go`). The records
+above were made against `0.145.0`. For `0.156.0`, the generated app-server
+schemas show only additive changes (new plan types and optional members) to the
+methods and fields the bridge sends or reads. The real client's initialize
+reply has the `jps_desk/0.156.0 (` form. The bridge race tests passed with the
+real binary and an empty private profile, including absent-account status and
+signed-out logout. The managed-archive smoke test passed with the official
+archive served by a local fixture, and failed when either pinned digest was
+changed. The scripted-model probe now counts every tool list in a model
+request and passed all eight scenarios for both model selections; the
+[proof record](../reviews/codex-subscription-proof.md) has the results.
+
+An existing profile's next Connect prepares `0.156.0`. Its account files are
+left in place; whether `0.156.0` accepts a sign-in made with `0.145.0` was not
+tested, since no real sign-in was performed. The `0.145.0` executable stays in
+the private cache, because staging cleanup never removes a published version.
+
+Newer releases were not pinned. From `0.156.1`, `gpt-6-sol` requests carry an
+`additional_tools` input item that advertises code-mode `exec` and `wait`,
+`request_user_input_async`, `clock.sleep` and `collaboration.*` agent tools,
+which the probe refuses.

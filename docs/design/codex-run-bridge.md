@@ -14,7 +14,7 @@ Desk lazily acquires the private-profile account manager and its run interface.
 The managed runtime is prepared on Connect; `--codex` is an advanced installation
 override, with `off` available to disable subscription access. Account endpoints
 and run transport share one manager and one profile lease. Only Linux and the
-pinned `codex-cli 0.145.0` initialization contract are accepted at this stage.
+pinned `codex-cli 0.156.0` initialization contract are accepted at this stage.
 See [account lifecycle](codex-account-lifecycle.md) for credential ownership and
 restart cleanup.
 

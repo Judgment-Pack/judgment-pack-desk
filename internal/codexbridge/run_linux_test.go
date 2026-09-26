@@ -49,7 +49,7 @@ func TestRunHelper(t *testing.T) {
 		reply := func(v any) { write(map[string]any{"id": f.ID, "result": v}) }
 		switch f.Method {
 		case "initialize":
-			reply(map[string]string{"userAgent": "jps_desk/0.145.0 (Linux)"})
+			reply(map[string]string{"userAgent": "jps_desk/0.156.0 (Linux)"})
 		case "initialized":
 		case "account/read":
 			var account any
