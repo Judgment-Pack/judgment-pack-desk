@@ -15,6 +15,10 @@ func TestJobsUsesSessionAndOriginGuards(t *testing.T) {
 		want                int
 	}{
 		{"/api/operations/jobs", "", "", 401},
+		{"/api/operations/inputs/next", "", "", 401},
+		{"/api/operations/input-profiles", "", "", 401},
+		{"/api/operations/inputs/next", testToken, "https://elsewhere.example", 403},
+		{"/api/operations/runs/run_00000000000000000000000000000000/verification", "", "", 401},
 		{"/api/operations/inputs/preview", "", "", 401},
 		{"/api/operations/inputs/preview", testToken, "https://elsewhere.example", 403},
 		{"/api/operations/inputs/preview", testToken, "", 503},
@@ -72,5 +76,58 @@ func TestJobsRealCompanionRecovery(t *testing.T) {
 	s.ServeHTTP(w, r)
 	if w.Code != 400 {
 		t.Fatal("unsupported identity was accepted", w.Code, w.Body)
+	}
+}
+
+func TestRunnerInputProfilesFile(t *testing.T) {
+	if _, err := LoadRunnerInputProfiles("relative.json"); err == nil {
+		t.Fatal("relative installation path accepted")
+	}
+	path := t.TempDir() + "/profiles.json"
+	for _, body := range []string{`{}`, `null`, strings.Repeat(" ", 49<<10)} {
+		if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := LoadRunnerInputProfiles(path); err == nil {
+			t.Fatal("invalid or oversized profiles accepted")
+		}
+	}
+	if err := os.WriteFile(path, []byte(`[]`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if raw, err := LoadRunnerInputProfiles(path); err != nil || string(raw) != "[]" {
+		t.Fatal(string(raw), err)
+	}
+}
+
+func TestJobsV2PlannerAndProfilesThroughCompanion(t *testing.T) {
+	bin, runtime := os.Getenv("JPACK_RUNNER_TEST_BIN"), os.Getenv("JPACK_BIN")
+	if bin == "" || runtime == "" {
+		t.Skip("requires isolated companion binaries")
+	}
+	config := t.TempDir()
+	os.Chmod(config, 0700)
+	profiles := `[{"id":"test","publicKey":"` + strings.Repeat("ab", 32) + `","class":"record","source":"records","authority":"test","shape":"mcp","adapter":{"name":"mcp","version":"1","digest":"sha256:` + strings.Repeat("a", 64) + `"},"endpoint":null,"tools":["lookup"]}]`
+	s, ts := startDesk(t, Config{RunnerBin: bin, JpackBin: runtime, RunnerInputProfiles: []byte(profiles), ProjectDir: t.TempDir(), DeskConfigDir: config, Token: testToken})
+	defer ts.Close()
+	defer s.Close()
+	call := func(method, path, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, "/api/operations/"+path, strings.NewReader(body))
+		r.Header.Set("Authorization", "Bearer "+testToken)
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		return w
+	}
+	w := call("GET", "input-profiles", "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"id":"test"`) || !strings.Contains(w.Body.String(), `"digest":"sha256:`) {
+		t.Fatal(w.Code, w.Body)
+	}
+	w = call("POST", "inputs/next", `{"source":{"mapping":{"version":2,"case":{"facts":[{"target":"/score","source":"/score"}],"evidence":[]},"sources":[]},"case":{"score":7}}}`)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"facts":{"score":7}`) || !strings.Contains(w.Body.String(), `"class":"asserted"`) {
+		t.Fatal(w.Code, w.Body)
+	}
+	w = call("POST", "inputs/next", `{"inputProfiles":[]}`)
+	if w.Code != 400 {
+		t.Fatal("browser trust override accepted", w.Code, w.Body)
 	}
 }

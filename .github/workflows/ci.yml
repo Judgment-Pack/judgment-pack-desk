@@ -99,3 +99,35 @@ jobs:
         run: python3 scripts/build-bundle.py --skip-web --output "$RUNNER_TEMP/Desk bundle"
       - name: Real gateway lifecycle and PDF extraction
         run: python3 scripts/local-gateway-check.py "$RUNNER_TEMP/Desk bundle" "$(command -v true)"
+
+  jobs-companion:
+    name: Jobs companion
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+      - name: Check out tested Runner
+        uses: actions/checkout@v4
+        with:
+          repository: Judgment-Pack/judgment-pack-runner
+          ref: 2361b58ccc341b8754f55ec010835217d35e6fe3
+          path: .ci-runner
+          persist-credentials: false
+      - name: Check out tested Runtime
+        uses: actions/checkout@v4
+        with:
+          repository: Judgment-Pack/judgment-pack-runtime
+          ref: 6842494ff0492c4f1a3bd185451d7d9c21a8e97e
+          path: .ci-runtime
+          persist-credentials: false
+      - name: Build companions
+        run: |
+          go -C .ci-runner build -trimpath -o "$RUNNER_TEMP/jpack-runner" ./cmd/jpack-runner
+          go -C .ci-runtime build -trimpath -o "$RUNNER_TEMP/jpack" ./cmd/jpack
+      - name: Real Jobs boot, recovery, profiles and planning
+        run: |
+          JPACK_RUNNER_TEST_BIN="$RUNNER_TEMP/jpack-runner" JPACK_BIN="$RUNNER_TEMP/jpack" \
+            go test -race ./internal/desk -run 'TestJobs|TestRunnerInputProfiles' -count=1

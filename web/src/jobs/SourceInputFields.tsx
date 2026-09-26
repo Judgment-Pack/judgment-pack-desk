@@ -59,7 +59,7 @@ export function SourceInputFields({ doc, provider, fixed, disabled, onChange }: 
       active.signal.throwIfAborted()
       const result = await jobsAPI<InputPreview>('inputs/preview', { source }, undefined, active.signal)
       active.signal.throwIfAborted()
-      setPreview(result); onChange(result.input.source)
+      setPreview(result); onChange(result.input.source?.mapping.version === 1 ? result.input.source as SourceInput : undefined)
     } catch (e) { if (!active.signal.aborted) setError(e instanceof Error ? e.message : msg('The inputs could not be mapped.')) }
     finally { if (operation.current === active) { operation.current = null; setProgress('') } }
   }

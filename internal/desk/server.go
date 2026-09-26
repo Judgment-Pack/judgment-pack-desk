@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -41,6 +42,9 @@ var devOrigins = []string{
 type Config struct {
 	// RunnerBin is a trusted installed executable, never project configuration.
 	RunnerBin string
+	// RunnerInputProfiles contains installation-authorized public trust metadata.
+	// It must never come from project configuration or a browser request.
+	RunnerInputProfiles json.RawMessage
 	// CodexBin is an advanced installation override: empty manages the runtime,
 	// "off" disables it, otherwise an absolute trusted executable path.
 	// It is never read from project configuration or browser requests.

@@ -5447,3 +5447,11 @@ there is no released/pinned remote runner dependency or automatic download yet.
 See [the implemented pilot](docs/design/operational-jobs-pilot.md) for its scope,
 recovery, API, storage and verification. A bare Desk build without the companion
 shows an installation message on Jobs and continues to support the existing pages.
+
+Jobs also supports **Mapped sources**: named case, local-file, selected Drive and
+MCP inputs with Runner-verified receipts, derivation, release review and retained
+lineage. Source reads are explicit; artifacts remain local. Configure trusted
+profiles with the installation-only `--runner-input-profiles /absolute/file.json`
+flag. The current mapping editor exposes advanced rules and request templates as
+JSON. See [the Mapping v2 workflow](docs/design/jobs-mapping-v2.md) for setup,
+verification, compatibility and remaining scope.
