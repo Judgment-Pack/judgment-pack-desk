@@ -77,6 +77,8 @@ def tool_inventory(request):
             name = tool.get('name') if isinstance(tool.get('name'), str) else None
             if tool.get('type') == 'namespace' and name and isinstance(tool.get('tools'), list):
                 names(tool['tools'], prefix + name + '.', here + '.tools')
+                # A namespace's other members are searched like any tool's.
+                walk({k: v for k, v in tool.items() if k not in ('name', 'tools')}, here)
                 continue
             found.setdefault(prefix + (name or 'type:' + str(tool.get('type'))), []).append(here)
             walk({k: v for k, v in tool.items() if k != 'name'}, here)
@@ -94,6 +96,21 @@ def tool_inventory(request):
                 walk(value, '%s[%d%s]' % (path, i, kind))
     walk(request, '')
     return found
+
+
+def advertised(request):
+    """Return the inventory of the request's definition channels only.
+
+    A tool is offered to the model through the top-level `tools` member or an
+    `additional_tools` input item. Only those count as an advertisement; the
+    wider scan above may also see tool-shaped data inside a result, which can
+    fail a scenario but never pass one.
+    """
+    channels = {'tools': request.get('tools', [])}
+    for i, item in enumerate(request.get('input', [])):
+        if isinstance(item, dict) and item.get('type') == 'additional_tools':
+            channels['input[%d:additional_tools].tools' % i] = item.get('tools', [])
+    return tool_inventory(channels)
 
 
 class Probe:
@@ -394,8 +411,9 @@ enabled = false
                     for request in self.requests:
                         inventory = tool_inventory(request)
                         # Each request must advertise the host tool exactly once,
-                        # in exactly one of its two forms.
-                        host_each.append(sum(len(paths) for name, paths in inventory.items() if name in HOST_TOOLS) == 1)
+                        # in exactly one of its two forms, through a definition
+                        # channel; anything else found anywhere is unexpected.
+                        host_each.append(sum(len(paths) for name, paths in advertised(request).items() if name in HOST_TOOLS) == 1)
                         for name, paths in inventory.items():
                             tools.add(name)
                             channels.setdefault(name, set()).update(
@@ -467,12 +485,24 @@ def main():
     report['passed'] = all(r['passed'] for r in results) and report.get('catalogListed', True)
     control = args.bundled_catalog or args.negative_control
     if control:
-        # A control holds only when every scenario ran to completion and at
-        # least one advertised a tool beyond the host's; any other failure is
-        # the probe's, not the boundary's.
-        report['controlHeld'] = bool(results) and all(
-            not r.get('error') and r.get('catalogApplied') and r.get('turnCompleted') for r in results) and any(
-            r.get('unexpectedTools') for r in results)
+        # A control holds only when every scenario ran to completion with its
+        # own evidence intact, the catalog was applied and listed as expected,
+        # and at least one scenario advertised a tool beyond the host's; any
+        # other failure is the probe's, not the boundary's.
+        def evidence(r):
+            outputs = '\n'.join(str(o) for o in r.get('toolOutputs', []))
+            if r['scenario'] == 'host-tool':
+                return r.get('toolCallback') and 'JPS_FIXTURE_OK' in outputs
+            if r['scenario'] == 'private-image' and args.sandbox_bin:
+                # The diagnostic lets the image tool run so that the permission
+                # profile, not the router, is what denies the private read.
+                return 'Permission denied' in outputs and not r.get('privateImageReachedModel')
+            return REJECTIONS[r['scenario']] in r.get('toolOutputs', [])
+        intact = ('accountAbsent', 'noMcpServers', 'catalogApplied', 'turnCompleted', 'workspaceUnchanged')
+        listed = report['catalogListed'] if catalog is not None else set(models) > set(m['slug'] for m in json.loads(args.catalog.read_bytes())['models'])
+        report['controlHeld'] = bool(results) and listed and all(
+            not r.get('error') and not r.get('canaryWritten') and all(r.get(k) for k in intact) and evidence(r)
+            for r in results) and any(r.get('unexpectedTools') for r in results)
     report['results'] = results
     serialized = json.dumps(report, indent=2) + '\n'
     if args.output:

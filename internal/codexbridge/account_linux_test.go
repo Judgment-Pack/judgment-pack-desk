@@ -182,10 +182,11 @@ func TestAProcessListingOtherModelsIsRefused(t *testing.T) {
 			if launched == nil {
 				t.Fatal("no process was launched")
 			}
+			// Reaped before the operation returned, not merely asked to stop.
 			select {
-			case <-launched.done:
-			case <-time.After(3 * time.Second):
-				t.Fatal("the refused process is still running")
+			case <-launched.exited:
+			default:
+				t.Fatal("the refused process was not reaped before the operation returned")
 			}
 		})
 	}

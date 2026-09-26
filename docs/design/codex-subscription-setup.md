@@ -222,9 +222,11 @@ executable together, and the `0.145.0` executable (311 MB) stays in the cache,
 because staging cleanup never removes a published version; a full disk is
 reported as a preparation failure, which the UI attributes to the connection.
 Whether `0.157.1` accepts a sign-in made with `0.145.0` was not tested, since
-no real sign-in was performed. To return to the earlier Desk, delete the
-`model_catalog_json` line from `config.toml`: the earlier Desk then accepts the
-profile, account files included, and ignores the catalog file.
+no real sign-in was performed. To return to the earlier Desk, delete the three
+lines this Desk added to `config.toml`: `model_catalog_json`, `view_image =
+false` and `token_budget = false`. The earlier Desk requires its configuration
+byte for byte; with those gone it accepts the profile, account files included,
+and ignores the catalog file.
 
 `0.157.1` also changes account reads. For a signed-in account that carries an
 account id, `account/read` asks the ChatGPT backend for the account's
@@ -257,16 +259,19 @@ Desk therefore supplies its own catalog through `model_catalog_json`:
 derives from the pinned release's bundled catalog
 (`codex-rs/models-manager/models.json` at `rust-v0.157.1`, SHA-256
 `0178d235c589a31abd6ed0ea1e870935dc5819240eb0e813e178d3ebedf534f4`, Apache-2.0)
-with the hidden models dropped and every tool-selecting field cleared for each
-listed model: `tool_mode`, `multi_agent_version`,
-`experimental_supported_tools`, `apply_patch_tool_type` (the write tool an
-environment would register) and `supports_search_tool` (so a deferred tool is
-never advertised; Desk defines none), plus the token-budget switch under
-`model_messages`, which registers the context tools, and
+with the hidden models dropped and, for each listed model, every field that
+selects a tool under Desk's profile cleared: `tool_mode`,
+`multi_agent_version`, `experimental_supported_tools`, `apply_patch_tool_type`
+(the write tool an environment would register) and `supports_search_tool` (so
+a deferred tool is never advertised; Desk defines none), plus the token-budget
+switch under `model_messages`, which registers the context tools, and
 `supports_experimental_context`; the profile also switches the image-view and
-token-budget features off. Everything else, including each model's
-instructions and the developer text its `model_messages` carry, is as
-published. The bridge embeds the catalog, writes it into the private profile
+token-budget features off. The fields kept either select variants of tools
+that a disabled feature or the withheld environment keeps out (`shell_type`,
+`web_search_tool_type`) or govern transport and presentation
+(`use_responses_lite`, the sub-agent effort, the node-REPL settings).
+Everything else, including each model's instructions and the developer text
+its `model_messages` carry, is as published. The bridge embeds the catalog, writes it into the private profile
 beside `config.toml` when absent, refuses a changed copy before every launch,
 and refuses a launched process that does not list exactly the catalog's
 models. The listing carries names, not tool modes: it catches a process that

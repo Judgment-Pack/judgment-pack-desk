@@ -82,7 +82,7 @@ six, and the host's `item/tool/call` carried no namespace in every case, which
 the fixture records as `hostCallNamespace`. This release registers no skills
 utility and no `update_plan`.
 
-The inventory and the forged calls show what a model is offered and that six
+The inventory and the forged calls show what a model is offered and that seven
 known native names are unknown to the router, which dispatches a call by its
 registered name whatever the tool's exposure. They do not by themselves show
 that no other registered name exists. For that the record rests on the pinned
@@ -197,10 +197,13 @@ python3 scripts/codex-subscription-probe.py --codex /absolute/path/to/codex
 JPS_CODEX_TEST_BINARY=/absolute/path/to/codex go test -race ./internal/codexbridge
 ```
 
-The negative control must return a nonzero exit status:
+The two controls must fail the isolation check for the right reason: each
+exits 0 with `passed: false` and `controlHeld: true`, and any other exit
+status is a fault in the probe or the setup, not a result:
 
 ```sh
-python3 scripts/codex-subscription-probe.py --codex /absolute/path/to/codex --negative-control --scenario host-tool
+python3 scripts/codex-subscription-probe.py --codex /absolute/path/to/codex --bundled-catalog --scenario host-tool
+python3 scripts/codex-subscription-probe.py --codex /absolute/path/to/codex --negative-control --scenario host-tool --model gpt-5.5
 ```
 
 ## Remaining release validation

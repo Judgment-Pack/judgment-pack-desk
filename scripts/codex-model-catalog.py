@@ -6,14 +6,17 @@ from the model catalog before it reads the feature flags in config.toml, and a
 signed-in client fetches that catalog from the account's server. Desk therefore
 supplies its own catalog through `model_catalog_json`: the release's bundled
 catalog (codex-rs/models-manager/models.json at the pinned tag, Apache-2.0),
-with the hidden models dropped and every tool-selecting field cleared for each
-model that remains: `tool_mode`, `multi_agent_version`,
-`experimental_supported_tools`, `apply_patch_tool_type` (the write tool, which
-an environment would otherwise register) and `supports_search_tool` (tool
-search, so a deferred tool is never advertised), plus the token-budget switch
-under `model_messages` (it registers the context tools) and
-`supports_experimental_context`. Everything else, including each model's
-instructions, is kept as published.
+with the hidden models dropped and, for each model that remains, every field
+that selects a tool under Desk's profile cleared: `tool_mode`,
+`multi_agent_version`, `experimental_supported_tools`, `apply_patch_tool_type`
+(the write tool, which an environment would otherwise register) and
+`supports_search_tool` (tool search, so a deferred tool is never advertised),
+plus the token-budget switch under `model_messages` (it registers the context
+tools) and `supports_experimental_context`. The fields kept select variants
+of tools that a disabled feature or the withheld environment keeps out
+(`shell_type`, `web_search_tool_type`), or govern transport and presentation
+(`use_responses_lite`, the sub-agent effort, the node-REPL settings).
+Everything else, including each model's instructions, is kept as published.
 
 The output is internal/codexbridge/model-catalog.json, which the bridge embeds,
 writes into the private profile and verifies before every launch. Re-run this
