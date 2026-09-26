@@ -100,9 +100,12 @@ def tool_inventory(request):
     return found
 
 
-# The definition kinds a name belongs to; a built-in tool is defined by its
-# type alone, and anything else in a definition list is malformed.
+# The definition kinds this release serialises (codex-rs/tools/src/tool_spec.rs
+# at the pinned tag): a name belongs to a function, custom or namespace
+# definition, a built-in tool is defined by its type alone, and anything else
+# in a definition list is malformed.
 NAMED_KINDS = {'function', 'custom'}
+BUILTIN_KINDS = {'web_search', 'tool_search'}
 
 
 def advertised(request):
@@ -111,12 +114,12 @@ def advertised(request):
 
     A tool is offered to the model through the top-level `tools` member or an
     `additional_tools` input item: a named function or custom tool, a built-in
-    tool named by its type, or a namespace's `tools` list. Only those count as
-    an advertisement; nothing else in a definition (a schema's examples, say)
-    or elsewhere in the request does. An entry of any other shape is reported
-    as malformed, since the scripted endpoint validates nothing. The wider scan
-    above may see tool-shaped data anywhere, which can fail a scenario but
-    never pass one.
+    tool of a kind this release serialises named by its type, or a
+    namespace's `tools` list. Only those count as an advertisement; nothing
+    else in a definition (a schema's examples, say) or elsewhere in the request
+    does. An entry of any other shape is reported as malformed, since the
+    scripted endpoint validates nothing. The wider scan above may see
+    tool-shaped data anywhere, which can fail a scenario but never pass one.
     """
     found, malformed = {}, []
     def definitions(tools, prefix, path):
@@ -137,7 +140,7 @@ def advertised(request):
                     found[prefix + name] = found.get(prefix + name, 0) + 1
                 else:
                     malformed.append(here)
-            elif name is None:
+            elif name is None and kind in BUILTIN_KINDS:
                 found[prefix + 'type:' + kind] = found.get(prefix + 'type:' + kind, 0) + 1
             else:
                 malformed.append(here)
@@ -149,13 +152,26 @@ def advertised(request):
     return found, malformed
 
 
+def host_once(request):
+    """Whether the request advertises the host tool exactly once, in one form,
+    through a definition channel; every request of a scenario must."""
+    offered, malformed = advertised(request)
+    return not malformed and sum(n for name, n in offered.items() if name in HOST_TOOLS) == 1
+
+
 def self_check():
-    """Run the classification cases earlier reviews produced; return the failures.
+    """Run the classification cases the review rounds produced; return the failures.
 
     Each case gives a synthetic model request and what the two inventories
-    must say of it. No Codex process is involved.
+    must say of it, and each sequence gives several requests and whether every
+    one advertises the host exactly once. No Codex process is involved.
     """
     host = {'type': 'function', 'name': 'jps_probe'}
+    sequences = [
+        ('the host in every request', [{'tools': [host]}, {'tools': [host]}], True),
+        ('the host dropped from the second request', [{'tools': [host]}, {'tools': []}], False),
+        ('the host in both channels of one request', [{'tools': [host], 'input': [{'type': 'additional_tools', 'tools': [host]}]}], False),
+    ]
     cases = [
         ('a plain advertisement', {'tools': [host]}, 1, [], [], False),
         ('a namespaced advertisement', {'input': [{'type': 'additional_tools', 'tools': [
@@ -170,9 +186,12 @@ def self_check():
         ("a namespace's sibling member", {'input': [{'type': 'additional_tools', 'tools': [
             {'type': 'namespace', 'name': 'functions', 'tools': [host], 'tool_definitions': [{'type': 'function', 'name': 'exec'}]}]}]},
             1, [], ['exec'], False),
-        ('an unnamed tool typed as the host', {'tools': [{'type': 'jps_probe'}]}, 0, ['type:jps_probe'], ['type:jps_probe'], False),
+        ('an unnamed tool typed as the host', {'tools': [{'type': 'jps_probe'}]}, 0, [], ['type:jps_probe'], True),
+        ('an unnamed object of no tool kind', {'tools': [host, {'type': 'message'}]}, 1, [], ['type:message'], True),
         ('the host only inside a result', {'tools': [], 'input': [{'type': 'function_call_output', 'call_id': 'x',
             'output': {'tool_definitions': [{'name': 'jps_probe'}]}}]}, 0, [], [], False),
+        ('a well-formed host only inside a result', {'tools': [], 'input': [{'type': 'function_call_output', 'call_id': 'x',
+            'output': {'tools': [host]}}]}, 0, [], [], False),
         ("examples inside the host's schema", {'tools': [dict(host, parameters={'examples': [{'tools': [host]}]})]}, 1, [], [], False),
         ('an extra tool only inside a result', {'tools': [host], 'input': [{'type': 'function_call_output', 'call_id': 'x',
             'output': {'tools': [{'type': 'function', 'name': 'exec'}]}}]}, 1, [], ['exec'], False),
@@ -189,6 +208,9 @@ def self_check():
                sorted(set(tool_inventory(request)) - HOST_TOOLS), bool(malformed))
         if got != (host_count, extra, wide, bad):
             failures.append('%s: host %d, advertised extra %s, wide %s, malformed %s' % ((label,) + got))
+    for label, requests, expected in sequences:
+        if all(host_once(r) for r in requests) != expected:
+            failures.append('%s: host once in every request %s' % (label, not expected))
     return failures
 
 
@@ -421,8 +443,9 @@ enabled = false
     def models(self):
         """List every model the process offers, hidden ones included."""
         summary, errors = {}, []
-        self.serve()
+        self.http = None
         try:
+            self.serve()
             with tempfile.TemporaryDirectory(prefix='jps-codex-proof-') as scratch:
                 try:
                     self.launch(Path(scratch), summary, errors)
@@ -435,8 +458,9 @@ enabled = false
                 finally:
                     self.stop()
         finally:
-            self.http.shutdown()
-            self.http.server_close()
+            if self.http is not None:
+                self.http.shutdown()
+                self.http.server_close()
         if not summary.get('catalogApplied'):
             raise RuntimeError('the process did not apply the expected catalog: ' + '; '.join(errors))
         return summary['models']
@@ -444,8 +468,9 @@ enabled = false
     def run(self):
         summary = {'model': self.model, 'scenario': self.scenario, 'environmentEnabled': self.environment}
         errors = []
-        self.serve()
+        self.http = None
         try:
+            self.serve()
             with tempfile.TemporaryDirectory(prefix='jps-codex-proof-') as scratch:
                 try:
                     work = self.launch(Path(scratch), summary, errors)
@@ -495,7 +520,7 @@ enabled = false
                         offered, malformed = advertised(request)
                         if malformed:
                             raise RuntimeError('Malformed tool definition at ' + ', '.join(malformed))
-                        host_each.append(sum(n for name, n in offered.items() if name in HOST_TOOLS) == 1)
+                        host_each.append(host_once(request))
                         offered_extra.update(name for name in offered if name not in HOST_TOOLS)
                         for name, paths in inventory.items():
                             tools.add(name)
@@ -535,8 +560,9 @@ enabled = false
         except Exception as error:
             summary['error'] = str(error) or type(error).__name__
         finally:
-            self.http.shutdown()
-            self.http.server_close()
+            if self.http is not None:
+                self.http.shutdown()
+                self.http.server_close()
         summary['passed'] = all(summary.get(k) for k in (
             'accountAbsent', 'noMcpServers', 'catalogApplied', 'hostToolAdvertised', 'turnCompleted',
             'expectedResult', 'workspaceUnchanged')) and not any(
@@ -562,36 +588,42 @@ def main():
         failures = self_check()
         print('\n'.join(failures) if failures else 'self-check: every case classified as expected')
         return 1 if failures else 0
-    binary = str(args.codex.resolve())
-    catalog = None if args.bundled_catalog else args.catalog.read_bytes()
     control = args.bundled_catalog or args.negative_control
-    report = {'binarySHA256': hashlib.sha256(Path(binary).read_bytes()).hexdigest(),
-              'catalogSHA256': hashlib.sha256(catalog).hexdigest() if catalog is not None else None}
+    # One report shape whatever happens: a fault anywhere before the last
+    # scenario still leaves the report, carrying the error and what was
+    # established up to it.
+    report = {'binarySHA256': None, 'catalogSHA256': None, 'models': None, 'catalogListed': None,
+              'passed': False, 'results': []}
+    if control:
+        report['controlHeld'] = False
     def emit(report):
         serialized = json.dumps(report, indent=2) + '\n'
         if args.output:
             args.output.write_text(serialized)
         print(serialized, end='')
     try:
+        binary = str(args.codex.resolve())
+        report['binarySHA256'] = hashlib.sha256(Path(binary).read_bytes()).hexdigest()
+        catalog = None if args.bundled_catalog else args.catalog.read_bytes()
+        desk_models = set(m['slug'] for m in json.loads(args.catalog.read_bytes())['models'])
+        if catalog is not None:
+            report['catalogSHA256'] = hashlib.sha256(catalog).hexdigest()
         models = Probe(binary, None, None, catalog, args.negative_control, args.sandbox_bin).models()
+        report['models'] = models
+        if catalog is not None:
+            report['catalogListed'] = sorted(models) == sorted(desk_models)
         for model in args.model or []:
             if model not in models:
                 raise RuntimeError('model %s is not listed by this process' % model)
+        for model in args.model or models:
+            for scenario in ([args.scenario] if args.scenario else SCENARIOS):
+                report['results'].append(Probe(binary, model, scenario, catalog, args.negative_control, args.sandbox_bin).run())
     except Exception as error:
-        # A fault before any scenario still leaves a report, saying so.
-        report.update({'error': str(error) or type(error).__name__, 'passed': False, 'results': []})
-        if control:
-            report['controlHeld'] = False
+        report['error'] = str(error) or type(error).__name__
         emit(report)
         return 1
-    report['models'] = models
-    if catalog is not None:
-        expected = sorted(m['slug'] for m in json.loads(catalog)['models'])
-        report['catalogListed'] = sorted(models) == expected
-    results = [Probe(binary, model, scenario, catalog, args.negative_control, args.sandbox_bin).run()
-               for model in (args.model or models)
-               for scenario in ([args.scenario] if args.scenario else SCENARIOS)]
-    report['passed'] = all(r['passed'] for r in results) and report.get('catalogListed', True)
+    results = report['results']
+    report['passed'] = all(r['passed'] for r in results) and (report['catalogListed'] if catalog is not None else True)
     if control:
         # A control holds only when every scenario ran with its ordinary
         # evidence intact (the sandbox diagnostic's being the denial of the
@@ -606,12 +638,11 @@ def main():
                 return r.get('privateImageDenied')
             return r.get('expectedResult')
         intact = ('accountAbsent', 'noMcpServers', 'catalogApplied', 'turnCompleted', 'workspaceUnchanged')
-        listed = report['catalogListed'] if catalog is not None else set(models) > set(m['slug'] for m in json.loads(args.catalog.read_bytes())['models'])
+        listed = report['catalogListed'] if catalog is not None else set(models) > desk_models
         report['controlHeld'] = bool(results) and listed and all(
             not r.get('error') and not r.get('canaryWritten') and not r.get('privateImageReachedModel') and
             all(r.get(k) for k in intact) and evidence(r) for r in results) and any(
             r.get('advertisedUnexpected') for r in results)
-    report['results'] = results
     emit(report)
     return 0 if (report['controlHeld'] if control else report['passed']) else 1
 
