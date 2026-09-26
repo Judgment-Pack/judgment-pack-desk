@@ -6,9 +6,14 @@ from the model catalog before it reads the feature flags in config.toml, and a
 signed-in client fetches that catalog from the account's server. Desk therefore
 supplies its own catalog through `model_catalog_json`: the release's bundled
 catalog (codex-rs/models-manager/models.json at the pinned tag, Apache-2.0),
-with the hidden models dropped and those three fields cleared for every model
-that remains. Everything else, including each model's instructions, is kept as
-published.
+with the hidden models dropped and every tool-selecting field cleared for each
+model that remains: `tool_mode`, `multi_agent_version`,
+`experimental_supported_tools`, `apply_patch_tool_type` (the write tool, which
+an environment would otherwise register) and `supports_search_tool` (tool
+search, so a deferred tool is never advertised), plus the token-budget switch
+under `model_messages` (it registers the context tools) and
+`supports_experimental_context`. Everything else, including each model's
+instructions, is kept as published.
 
 The output is internal/codexbridge/model-catalog.json, which the bridge embeds,
 writes into the private profile and verifies before every launch. Re-run this
@@ -24,7 +29,10 @@ from pathlib import Path
 RELEASE = 'rust-v0.157.1'
 UPSTREAM = 'https://raw.githubusercontent.com/openai/codex/%s/codex-rs/models-manager/models.json' % RELEASE
 UPSTREAM_SHA256 = '0178d235c589a31abd6ed0ea1e870935dc5819240eb0e813e178d3ebedf534f4'
-CLEARED = {'tool_mode': None, 'multi_agent_version': None, 'experimental_supported_tools': []}
+CLEARED = {'tool_mode': None, 'multi_agent_version': None, 'experimental_supported_tools': [],
+           'apply_patch_tool_type': None, 'supports_search_tool': False,
+           'supports_experimental_context': False}
+TOKEN_BUDGET_OFF = {'enabled': False, 'use_history_notes_extension': False}
 OUTPUT = Path(__file__).resolve().parent.parent / 'internal' / 'codexbridge' / 'model-catalog.json'
 
 
@@ -38,6 +46,12 @@ def derive(data):
             if key not in model:
                 raise SystemExit('model %s has no %s field; the release format changed' % (model.get('slug'), key))
         model.update(CLEARED)
+        budget = (model.get('model_messages') or {}).get('token_budget')
+        if budget is not None:
+            for key in TOKEN_BUDGET_OFF:
+                if key not in budget:
+                    raise SystemExit('model %s token_budget has no %s field; the release format changed' % (model.get('slug'), key))
+            budget.update(TOKEN_BUDGET_OFF)
         models.append(model)
     if not models:
         raise SystemExit('no listed model in the release catalog')

@@ -2,11 +2,15 @@ package codexbridge
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPrivateProfileLeaseIsolationAndConfiguration(t *testing.T) {
@@ -43,13 +47,36 @@ func TestPrivateProfileLeaseIsolationAndConfiguration(t *testing.T) {
 	}
 	m.Close()
 	m = reopenAccountManager(t, options, "pending")
-	m.Close()
-	// A replaced managed file is refused, never silently repaired: the catalog
-	// with one member changed, then the configuration.
+	// A managed file changed while the profile is held is refused before the
+	// next launch, whether the change keeps the size or grows it, and nothing
+	// is launched.
 	changed := bytes.Replace(modelCatalog, []byte(`"tool_mode": null`), []byte(`"tool_mode": "code_mode_only"`), 1)
 	if bytes.Equal(changed, modelCatalog) {
 		t.Fatal("catalog has no tool_mode member to change")
 	}
+	sameSize := append([]byte{}, modelCatalog...)
+	sameSize[bytes.Index(sameSize, []byte(`"tool_mode": null`))+len(`"tool_mode": `)] = 'N'
+	m.launch = func(ctx context.Context, native *exec.Cmd) (*client, error) {
+		t.Error("launched with a changed managed file")
+		return nil, ErrUnavailable
+	}
+	for _, late := range [][]byte{sameSize, changed} {
+		if err := os.WriteFile(catalogPath, late, 0600); err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_, err := m.Status(ctx, "test", false)
+		cancel()
+		if !errors.Is(err, ErrProfile) {
+			t.Fatalf("launch after the catalog changed underneath: %v", err)
+		}
+	}
+	if err := os.WriteFile(catalogPath, modelCatalog, 0600); err != nil {
+		t.Fatal(err)
+	}
+	m.Close()
+	// A replaced managed file is refused on open, never silently repaired: the
+	// catalog with one member changed, then the configuration.
 	for _, tamper := range []struct {
 		path, name string
 		data       []byte
@@ -78,7 +105,7 @@ func TestPrivateProfileLeaseIsolationAndConfiguration(t *testing.T) {
 	// The configuration an earlier Desk wrote, which names no catalog, is
 	// rewritten on the next open; the same text with any other change is not.
 	configPath := filepath.Join(options.ProfileDir, "profile/config.toml")
-	previous := bytes.Replace(modelCatalogConfig(t, configPath), []byte("\nmodel_catalog_json = \""+catalogPath+"\"\n"), []byte("\n"), 1)
+	previous := configBeforeTheCatalog(options.ProfileDir)
 	if err := os.WriteFile(configPath, append(previous, []byte("web_search = \"live\"\n")...), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -94,23 +121,88 @@ func TestPrivateProfileLeaseIsolationAndConfiguration(t *testing.T) {
 	if err := os.Remove(catalogPath); err != nil {
 		t.Fatal(err)
 	}
+	// A replacement staged by an interrupted earlier rewrite is discarded, and
+	// the account file the earlier Desk left is not touched.
+	if err := os.WriteFile(configPath+".new", []byte("stale"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	authPath := filepath.Join(options.ProfileDir, "profile/auth.json")
+	if err := os.WriteFile(authPath, []byte(`{"tokens": "PRIVATE_SENTINEL"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
 	m = reopenAccountManager(t, options, "pending")
 	m.Close()
 	if current, err := os.ReadFile(configPath); err != nil || !bytes.Contains(current, []byte("\nmodel_catalog_json = \""+catalogPath+"\"\n")) {
 		t.Fatalf("earlier configuration not rewritten: %v\n%s", err, current)
 	}
+	if _, err := os.Lstat(configPath + ".new"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("staged replacement left behind: %v", err)
+	}
 	if written, err := os.ReadFile(catalogPath); err != nil || !bytes.Equal(written, modelCatalog) {
 		t.Fatalf("catalog not written with the rewrite: %v", err)
 	}
+	if auth, err := os.ReadFile(authPath); err != nil || string(auth) != `{"tokens": "PRIVATE_SENTINEL"}` {
+		t.Fatalf("account file changed by the rewrite: %v %q", err, auth)
+	}
 }
 
-func modelCatalogConfig(t *testing.T, path string) []byte {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return data
+// configBeforeTheCatalog is, word for word, the configuration the Desk at
+// e36244e wrote for a profile: what an upgrading profile holds. It is kept
+// verbatim rather than derived from today's template, so that a change to the
+// template cannot silently move what the upgrade recognises.
+func configBeforeTheCatalog(profileDir string) []byte {
+	quote := func(v string) string { b, _ := json.Marshal(v); return string(b) }
+	return []byte(`model_provider = "openai"
+approval_policy = "never"
+forced_login_method = "chatgpt"
+cli_auth_credentials_store = "file"
+web_search = "disabled"
+project_doc_max_bytes = 0
+default_permissions = "jps"
+[permissions.jps.filesystem]
+":minimal" = "read"
+` + quote(filepath.Join(profileDir, "work")) + ` = "read"
+` + quote(filepath.Join(profileDir, "profile")) + ` = "deny"
+[permissions.jps.network]
+enabled = false
+[skills]
+include_instructions = false
+[skills.bundled]
+enabled = false
+[analytics]
+enabled = false
+[history]
+persistence = "none"
+[tools.experimental_request_user_input]
+enabled = false
+[features]
+shell_tool = false
+unified_exec = false
+shell_snapshot = false
+multi_agent = false
+multi_agent_v2 = false
+apps = false
+hooks = false
+plugins = false
+remote_plugin = false
+plugin_sharing = false
+memories = false
+goals = false
+browser_use = false
+browser_use_external = false
+browser_use_full_cdp_access = false
+computer_use = false
+in_app_browser = false
+skill_mcp_dependency_install = false
+skill_search = false
+workspace_dependencies = false
+auth_elicitation = false
+tool_suggest = false
+image_generation = false
+code_mode = false
+code_mode_host = false
+enable_request_compression = false
+`)
 }
 
 func TestProfileRejectsProjectSymlinksPermissionsAndForeignState(t *testing.T) {

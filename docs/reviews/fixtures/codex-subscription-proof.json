@@ -5,7 +5,7 @@
     {
       "run": "proof-report.json",
       "binarySHA256": "3e2584f3f3829a43a0495011a1cecb2facbe64a2403e2b682351fd9c2983f970",
-      "catalogSHA256": "50cff85d05c8cd052a363f802723b049db7450a64f99084ddf9933edf2e8d65f",
+      "catalogSHA256": "3dbf61ed5f0c8d726ecfc138033c134a22f39817cc7b4df587f739ddb8698d7a",
       "models": [
         "gpt-6-astra",
         "gpt-6-sol",
@@ -26,6 +26,7 @@
           "noMcpServers": true,
           "catalogApplied": true,
           "accountAbsent": true,
+          "hostCallNamespace": null,
           "toolCallback": true,
           "turnCompleted": true,
           "modelRequests": 2,
@@ -36,7 +37,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -69,7 +70,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -100,7 +101,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -131,7 +132,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -162,7 +163,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -193,7 +194,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -224,7 +225,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -255,7 +256,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -276,6 +277,7 @@
           "noMcpServers": true,
           "catalogApplied": true,
           "accountAbsent": true,
+          "hostCallNamespace": null,
           "toolCallback": true,
           "turnCompleted": true,
           "modelRequests": 2,
@@ -286,7 +288,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -319,7 +321,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -350,7 +352,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -381,7 +383,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -412,7 +414,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -443,7 +445,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -474,7 +476,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -505,7 +507,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -526,6 +528,7 @@
           "noMcpServers": true,
           "catalogApplied": true,
           "accountAbsent": true,
+          "hostCallNamespace": null,
           "toolCallback": true,
           "turnCompleted": true,
           "modelRequests": 2,
@@ -536,7 +539,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -569,7 +572,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -600,7 +603,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -631,7 +634,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -662,7 +665,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -693,7 +696,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -724,7 +727,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -755,7 +758,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -776,6 +779,7 @@
           "noMcpServers": true,
           "catalogApplied": true,
           "accountAbsent": true,
+          "hostCallNamespace": null,
           "toolCallback": true,
           "turnCompleted": true,
           "modelRequests": 2,
@@ -786,7 +790,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -819,7 +823,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -850,7 +854,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -881,7 +885,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -912,7 +916,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -943,7 +947,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -974,7 +978,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -1005,7 +1009,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -1026,6 +1030,7 @@
           "noMcpServers": true,
           "catalogApplied": true,
           "accountAbsent": true,
+          "hostCallNamespace": null,
           "toolCallback": true,
           "turnCompleted": true,
           "modelRequests": 2,
@@ -1036,7 +1041,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -1069,7 +1074,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -1100,7 +1105,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -1131,7 +1136,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -1162,7 +1167,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -1193,7 +1198,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -1224,7 +1229,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -1255,7 +1260,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -1276,6 +1281,7 @@
           "noMcpServers": true,
           "catalogApplied": true,
           "accountAbsent": true,
+          "hostCallNamespace": null,
           "toolCallback": true,
           "turnCompleted": true,
           "modelRequests": 2,
@@ -1286,7 +1292,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -1319,7 +1325,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -1350,7 +1356,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -1381,7 +1387,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -1412,7 +1418,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -1443,7 +1449,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -1474,7 +1480,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -1505,7 +1511,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "functions.jps_probe": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -1526,6 +1532,7 @@
           "noMcpServers": true,
           "catalogApplied": true,
           "accountAbsent": true,
+          "hostCallNamespace": null,
           "toolCallback": true,
           "turnCompleted": true,
           "modelRequests": 2,
@@ -1536,7 +1543,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "jps_probe": [
-              "tools"
+              "tools[]"
             ]
           },
           "expectedResult": true,
@@ -1569,7 +1576,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "jps_probe": [
-              "tools"
+              "tools[]"
             ]
           },
           "expectedResult": true,
@@ -1600,7 +1607,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "jps_probe": [
-              "tools"
+              "tools[]"
             ]
           },
           "expectedResult": true,
@@ -1631,7 +1638,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "jps_probe": [
-              "tools"
+              "tools[]"
             ]
           },
           "expectedResult": true,
@@ -1662,7 +1669,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "jps_probe": [
-              "tools"
+              "tools[]"
             ]
           },
           "expectedResult": true,
@@ -1693,7 +1700,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "jps_probe": [
-              "tools"
+              "tools[]"
             ]
           },
           "expectedResult": true,
@@ -1724,7 +1731,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "jps_probe": [
-              "tools"
+              "tools[]"
             ]
           },
           "expectedResult": true,
@@ -1755,7 +1762,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "jps_probe": [
-              "tools"
+              "tools[]"
             ]
           },
           "expectedResult": true,
@@ -1789,6 +1796,7 @@
       ],
       "catalogListed": null,
       "passed": false,
+      "controlHeld": true,
       "results": [
         {
           "model": "gpt-6-astra",
@@ -1798,6 +1806,7 @@
           "noMcpServers": true,
           "catalogApplied": true,
           "accountAbsent": true,
+          "hostCallNamespace": null,
           "toolCallback": true,
           "turnCompleted": true,
           "modelRequests": 2,
@@ -1828,34 +1837,34 @@
           ],
           "toolChannels": {
             "clock.sleep": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.followup_task": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.interrupt_agent": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.list_agents": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.send_message": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.spawn_agent": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.wait_agent": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "functions.exec": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "functions.request_user_input_async": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "functions.wait": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -1878,6 +1887,7 @@
           "noMcpServers": true,
           "catalogApplied": true,
           "accountAbsent": true,
+          "hostCallNamespace": null,
           "toolCallback": true,
           "turnCompleted": true,
           "modelRequests": 2,
@@ -1908,34 +1918,34 @@
           ],
           "toolChannels": {
             "clock.sleep": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.followup_task": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.interrupt_agent": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.list_agents": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.send_message": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.spawn_agent": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.wait_agent": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "functions.exec": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "functions.request_user_input_async": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "functions.wait": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -1958,6 +1968,7 @@
           "noMcpServers": true,
           "catalogApplied": true,
           "accountAbsent": true,
+          "hostCallNamespace": null,
           "toolCallback": true,
           "turnCompleted": true,
           "modelRequests": 2,
@@ -1988,34 +1999,34 @@
           ],
           "toolChannels": {
             "clock.sleep": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.followup_task": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.interrupt_agent": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.list_agents": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.send_message": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.spawn_agent": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.wait_agent": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "functions.exec": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "functions.request_user_input_async": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "functions.wait": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -2038,6 +2049,7 @@
           "noMcpServers": true,
           "catalogApplied": true,
           "accountAbsent": true,
+          "hostCallNamespace": null,
           "toolCallback": true,
           "turnCompleted": true,
           "modelRequests": 2,
@@ -2064,28 +2076,28 @@
           ],
           "toolChannels": {
             "collaboration.followup_task": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.interrupt_agent": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.list_agents": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.send_message": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.spawn_agent": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.wait_agent": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "functions.exec": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "functions.wait": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -2108,6 +2120,7 @@
           "noMcpServers": true,
           "catalogApplied": true,
           "accountAbsent": true,
+          "hostCallNamespace": null,
           "toolCallback": true,
           "turnCompleted": true,
           "modelRequests": 2,
@@ -2134,28 +2147,28 @@
           ],
           "toolChannels": {
             "collaboration.followup_task": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.interrupt_agent": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.list_agents": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.send_message": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.spawn_agent": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.wait_agent": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "functions.exec": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "functions.wait": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -2178,6 +2191,7 @@
           "noMcpServers": true,
           "catalogApplied": true,
           "accountAbsent": true,
+          "hostCallNamespace": null,
           "toolCallback": true,
           "turnCompleted": true,
           "modelRequests": 2,
@@ -2192,10 +2206,10 @@
           ],
           "toolChannels": {
             "functions.exec": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "functions.wait": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -2218,6 +2232,7 @@
           "noMcpServers": true,
           "catalogApplied": true,
           "accountAbsent": true,
+          "hostCallNamespace": null,
           "toolCallback": true,
           "turnCompleted": true,
           "modelRequests": 2,
@@ -2244,28 +2259,28 @@
           ],
           "toolChannels": {
             "collaboration.followup_task": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.interrupt_agent": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.list_agents": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.send_message": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.spawn_agent": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.wait_agent": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "functions.exec": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "functions.wait": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -2288,6 +2303,7 @@
           "noMcpServers": true,
           "catalogApplied": true,
           "accountAbsent": true,
+          "hostCallNamespace": null,
           "toolCallback": true,
           "turnCompleted": true,
           "modelRequests": 2,
@@ -2314,28 +2330,28 @@
           ],
           "toolChannels": {
             "collaboration.followup_task": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.interrupt_agent": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.list_agents": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.send_message": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.spawn_agent": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "collaboration.wait_agent": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "functions.exec": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "functions.wait": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -2358,6 +2374,7 @@
           "noMcpServers": true,
           "catalogApplied": true,
           "accountAbsent": true,
+          "hostCallNamespace": null,
           "toolCallback": true,
           "turnCompleted": true,
           "modelRequests": 2,
@@ -2368,7 +2385,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "jps_probe": [
-              "tools"
+              "tools[]"
             ]
           },
           "expectedResult": true,
@@ -2391,6 +2408,7 @@
           "noMcpServers": true,
           "catalogApplied": true,
           "accountAbsent": true,
+          "hostCallNamespace": null,
           "toolCallback": true,
           "turnCompleted": true,
           "modelRequests": 2,
@@ -2401,7 +2419,7 @@
           "unexpectedTools": [],
           "toolChannels": {
             "jps_probe": [
-              "tools"
+              "tools[]"
             ]
           },
           "expectedResult": true,
@@ -2424,6 +2442,7 @@
           "noMcpServers": true,
           "catalogApplied": true,
           "accountAbsent": true,
+          "hostCallNamespace": null,
           "toolCallback": true,
           "turnCompleted": true,
           "modelRequests": 2,
@@ -2438,10 +2457,10 @@
           ],
           "toolChannels": {
             "functions.exec": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ],
             "functions.wait": [
-              "input[:additional_tools].tools[].tools"
+              "input[:additional_tools].tools[].tools[]"
             ]
           },
           "expectedResult": true,
@@ -2461,7 +2480,7 @@
     {
       "run": "proof-negative.json",
       "binarySHA256": "3e2584f3f3829a43a0495011a1cecb2facbe64a2403e2b682351fd9c2983f970",
-      "catalogSHA256": "50cff85d05c8cd052a363f802723b049db7450a64f99084ddf9933edf2e8d65f",
+      "catalogSHA256": "3dbf61ed5f0c8d726ecfc138033c134a22f39817cc7b4df587f739ddb8698d7a",
       "models": [
         "gpt-6-astra",
         "gpt-6-sol",
@@ -2473,6 +2492,7 @@
       ],
       "catalogListed": true,
       "passed": false,
+      "controlHeld": true,
       "results": [
         {
           "model": "gpt-5.5",
@@ -2482,28 +2502,24 @@
           "noMcpServers": true,
           "catalogApplied": true,
           "accountAbsent": true,
+          "hostCallNamespace": null,
           "toolCallback": true,
           "turnCompleted": true,
           "modelRequests": 2,
           "advertisedTools": [
-            "apply_patch",
             "jps_probe",
             "view_image"
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [
-            "apply_patch",
             "view_image"
           ],
           "toolChannels": {
-            "apply_patch": [
-              "tools"
-            ],
             "jps_probe": [
-              "tools"
+              "tools[]"
             ],
             "view_image": [
-              "tools"
+              "tools[]"
             ]
           },
           "expectedResult": true,
@@ -2523,7 +2539,7 @@
     {
       "run": "proof-sandbox.json",
       "binarySHA256": "3e2584f3f3829a43a0495011a1cecb2facbe64a2403e2b682351fd9c2983f970",
-      "catalogSHA256": "50cff85d05c8cd052a363f802723b049db7450a64f99084ddf9933edf2e8d65f",
+      "catalogSHA256": "3dbf61ed5f0c8d726ecfc138033c134a22f39817cc7b4df587f739ddb8698d7a",
       "models": [
         "gpt-6-astra",
         "gpt-6-sol",
@@ -2535,6 +2551,7 @@
       ],
       "catalogListed": true,
       "passed": false,
+      "controlHeld": true,
       "results": [
         {
           "model": "gpt-5.5",
@@ -2548,24 +2565,19 @@
           "turnCompleted": true,
           "modelRequests": 2,
           "advertisedTools": [
-            "apply_patch",
             "jps_probe",
             "view_image"
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [
-            "apply_patch",
             "view_image"
           ],
           "toolChannels": {
-            "apply_patch": [
-              "tools"
-            ],
             "jps_probe": [
-              "tools"
+              "tools[]"
             ],
             "view_image": [
-              "tools"
+              "tools[]"
             ]
           },
           "expectedResult": false,

@@ -8,9 +8,16 @@ it does not certify real authentication, entitlement, or a production engine.
 The profile is Desk's: the same disabled features, and Desk's closed model
 catalog supplied through `model_catalog_json`, because Codex reads a model's
 tool mode from the catalog before the feature flags. Every model the process
-lists is probed unless --model narrows it, and the tool inventory counts every
-tool list in each model request, not only the top-level `tools` member.
---bundled-catalog leaves the release's own catalog in place; it must fail.
+lists is probed unless --model narrows it. The tool inventory counts every list
+whose member name contains `tool`, wherever it appears in a model request, and
+each request must advertise the host tool exactly once, and the host call is
+scripted in the advertised form; a forged native call must be rejected as an
+unknown tool, word for word, with no native request reaching the host.
+--bundled-catalog leaves the release's own catalog in place and
+--negative-control retains an environment (with the image-view feature left
+on, so the environment has a tool to register): each is a control that must fail,
+and exits 0 only when it failed for the right reason, by advertising a tool
+beyond the host's after every scenario ran to completion.
 """
 import argparse
 import base64
@@ -33,42 +40,51 @@ SCENARIOS = ('host-tool', 'private-image', 'write', 'shell', 'web', 'subagent',
              'skills-list', 'skills-read')
 # The host tool, advertised plainly or inside the `functions` namespace some
 # models use. This release registers no other native tool without an
-# environment; the skills utilities that earlier releases registered stay
-# allowed, since each can only address the disabled orchestrator catalog.
+# environment, and none is allowed.
 HOST_TOOLS = {'jps_probe', 'functions.jps_probe'}
-UTILITY_TOOLS = {'skills.list', 'skills.read'}
+# A forged native call must come back as an unknown tool, in these words; any
+# other refusal would mean a registered tool declined its arguments.
+REJECTIONS = {'private-image': 'unsupported call: view_image',
+              'write': 'unsupported custom tool call: apply_patch',
+              'shell': 'unsupported call: exec_command', 'web': 'unsupported call: web.run',
+              'subagent': 'unsupported call: spawn_agent',
+              'skills-list': 'unsupported call: skillslist', 'skills-read': 'unsupported call: skillsread'}
 DISABLED_FEATURES = ('shell_tool', 'unified_exec', 'shell_snapshot', 'multi_agent',
     'multi_agent_v2', 'apps', 'hooks', 'plugins', 'remote_plugin', 'plugin_sharing',
     'memories', 'goals', 'browser_use', 'browser_use_external',
     'browser_use_full_cdp_access', 'computer_use', 'in_app_browser',
     'skill_mcp_dependency_install', 'skill_search', 'workspace_dependencies',
     'auth_elicitation', 'tool_suggest', 'image_generation', 'code_mode',
-    'code_mode_host', 'enable_request_compression')
+    'code_mode_host', 'enable_request_compression', 'view_image', 'token_budget')
 
 
 def tool_inventory(request):
     """Return {qualified tool name: [request paths]} for every tool list in a request.
 
     Tools can arrive outside the top-level `tools` member, for example in an
-    `additional_tools` input item, so every member named `tools` or `*_tools`
-    is counted wherever it appears.
+    `additional_tools` input item, so every list whose member name contains
+    `tool` is counted wherever it appears, and a tool's own members are
+    searched as well. A tool without a name is recorded by its type, so it can
+    never pass as the host tool.
     """
     found = {}
     def names(tools, prefix, path):
         for i, tool in enumerate(tools):
+            here = '%s[%d]' % (path, i)
             if not isinstance(tool, dict):
-                found.setdefault(prefix + repr(tool), []).append(path)
+                found.setdefault(prefix + repr(tool), []).append(here)
                 continue
-            name = tool.get('name') or tool.get('type', '?')
-            if tool.get('type') == 'namespace' and isinstance(tool.get('tools'), list):
-                names(tool['tools'], prefix + name + '.', '%s[%d].tools' % (path, i))
-            else:
-                found.setdefault(prefix + name, []).append(path)
+            name = tool.get('name') if isinstance(tool.get('name'), str) else None
+            if tool.get('type') == 'namespace' and name and isinstance(tool.get('tools'), list):
+                names(tool['tools'], prefix + name + '.', here + '.tools')
+                continue
+            found.setdefault(prefix + (name or 'type:' + str(tool.get('type'))), []).append(here)
+            walk({k: v for k, v in tool.items() if k != 'name'}, here)
     def walk(node, path):
         if isinstance(node, dict):
             for key, value in node.items():
                 here = path + '.' + key if path else key
-                if isinstance(value, list) and (key == 'tools' or key.endswith('_tools') or key.endswith('Tools')):
+                if isinstance(value, list) and 'tool' in key.lower():
                     names(value, '', here)
                 else:
                     walk(value, here)
@@ -92,7 +108,8 @@ class Probe:
         self.server_requests = []
         self.process = None
 
-    def tool_item(self):
+    def tool_item(self, namespaced=False):
+        """The scripted model's one call; the host call in the advertised form."""
         if self.scenario == 'write':
             return {'type': 'custom_tool_call', 'id': 'fc_probe', 'call_id': 'call_probe',
                 'name': 'apply_patch', 'input': '*** Begin Patch\n*** Add File: ' +
@@ -111,6 +128,8 @@ class Probe:
                 'name': name, 'arguments': json.dumps(args)}
         if self.scenario.startswith('skills-'):
             item['namespace'] = 'skills'
+        if self.scenario == 'host-tool' and namespaced:
+            item['namespace'] = 'functions'
         return item
 
     def serve(self):
@@ -134,7 +153,8 @@ class Probe:
                 self.send_response(200)
                 self.send_header('Content-Type', 'text/event-stream')
                 self.end_headers()
-                item = probe.tool_item() if sequence == 1 else {
+                namespaced = 'functions.jps_probe' in tool_inventory(body)
+                item = probe.tool_item(namespaced) if sequence == 1 else {
                     'type': 'message', 'id': 'msg_probe', 'role': 'assistant',
                     'status': 'completed', 'content': [
                         {'type': 'output_text', 'text': 'Probe completed.', 'annotations': []}]}
@@ -181,6 +201,8 @@ class Probe:
 
     def config(self, work, profile):
         # The model listing needs no model; a scenario names the one it probes.
+        # The environment control keeps the image-view feature on, so that a
+        # retained environment has a tool to register; Desk's profile has it off.
         selected = 'model = %s\n' % json.dumps(self.model) if self.model else ''
         catalog = ''
         if self.catalog is not None:
@@ -219,7 +241,7 @@ enabled = false
 [features]
 %s
 ''' % (selected, catalog, json.dumps(str(work)), json.dumps(str(profile)),
-        self.http.server_port, '\n'.join(k + ' = false' for k in DISABLED_FEATURES))
+        self.http.server_port, '\n'.join(k + ' = false' for k in DISABLED_FEATURES if not (self.environment and k == 'view_image')))
 
     def launch(self, base, summary, errors):
         """Prepare the empty private profile, start the process and shake hands."""
@@ -355,6 +377,11 @@ enabled = false
                                 params = message['params']
                                 if params.get('tool') != 'jps_probe' or params.get('arguments') != {'input': 'probe'}:
                                     raise RuntimeError('Unexpected host tool arguments')
+                                # Desk refuses a namespaced callback, so record the
+                                # namespace the host saw and fail on any.
+                                summary['hostCallNamespace'] = params.get('namespace')
+                                if params.get('namespace') is not None:
+                                    raise RuntimeError('Host tool call carried a namespace: %r' % params.get('namespace'))
                                 called = True
                                 self.write({'id': message['id'], 'result': {'success': True,
                                     'contentItems': [{'type': 'inputText', 'text': 'JPS_FIXTURE_OK'}]}})
@@ -363,33 +390,32 @@ enabled = false
                         elif message.get('method') == 'turn/completed':
                             completed = message['params']['turn']['status'] == 'completed'
                             break
-                    tools, channels = set(), {}
+                    tools, channels, host_each = set(), {}, []
                     for request in self.requests:
-                        for name, paths in tool_inventory(request).items():
+                        inventory = tool_inventory(request)
+                        # Each request must advertise the host tool exactly once,
+                        # in exactly one of its two forms.
+                        host_each.append(sum(len(paths) for name, paths in inventory.items() if name in HOST_TOOLS) == 1)
+                        for name, paths in inventory.items():
                             tools.add(name)
                             channels.setdefault(name, set()).update(
                                 re.sub(r'\[\d+', '[', path) for path in paths)
+                    # Only the scripted call's own result counts.
                     results = [x.get('output', '') for request in self.requests[1:]
                         for x in request.get('input', []) if isinstance(x, dict) and
-                        x.get('type') in ('function_call_output', 'custom_tool_call_output')]
+                        x.get('type') in ('function_call_output', 'custom_tool_call_output') and
+                        x.get('call_id') == 'call_probe']
                     observed = '\n'.join(str(x) for x in results)
                     if self.scenario == 'host-tool':
                         expected = called and 'JPS_FIXTURE_OK' in observed
-                    elif self.scenario.startswith('skills-') and not tools & UTILITY_TOOLS:
-                        # No skills tool is registered, so the forged call is
-                        # refused like any other unknown tool.
-                        expected = 'unsupported' in observed
-                    elif self.scenario == 'skills-list':
-                        expected = any(json.loads(x) == {'skills': [], 'warnings': [], 'next_cursor': None}
-                            for x in results)
-                    elif self.scenario == 'skills-read':
-                        expected = 'skill package is not available' in results
                     else:
-                        expected = 'unsupported' in observed
+                        # The router's own unknown-tool refusal, and no native
+                        # request of any kind reached the host.
+                        expected = REJECTIONS[self.scenario] in results and not self.server_requests
                     summary.update({'toolCallback': called, 'turnCompleted': completed,
                         'modelRequests': len(self.requests), 'advertisedTools': sorted(tools),
-                        'hostToolAdvertised': len(tools & HOST_TOOLS) == 1,
-                        'unexpectedTools': sorted(tools - UTILITY_TOOLS - HOST_TOOLS),
+                        'hostToolAdvertised': bool(host_each) and all(host_each),
+                        'unexpectedTools': sorted(tools - HOST_TOOLS),
                         'toolChannels': {k: sorted(v) for k, v in sorted(channels.items())},
                         'expectedResult': bool(expected), 'privateImageReachedModel': any(
                             'data:image/' in json.dumps(r.get('input')) for r in self.requests),
@@ -439,12 +465,20 @@ def main():
                for model in (args.model or models)
                for scenario in ([args.scenario] if args.scenario else SCENARIOS)]
     report['passed'] = all(r['passed'] for r in results) and report.get('catalogListed', True)
+    control = args.bundled_catalog or args.negative_control
+    if control:
+        # A control holds only when every scenario ran to completion and at
+        # least one advertised a tool beyond the host's; any other failure is
+        # the probe's, not the boundary's.
+        report['controlHeld'] = bool(results) and all(
+            not r.get('error') and r.get('catalogApplied') and r.get('turnCompleted') for r in results) and any(
+            r.get('unexpectedTools') for r in results)
     report['results'] = results
     serialized = json.dumps(report, indent=2) + '\n'
     if args.output:
         args.output.write_text(serialized)
     print(serialized, end='')
-    return 0 if report['passed'] else 1
+    return 0 if (report['controlHeld'] if control else report['passed']) else 1
 
 
 if __name__ == '__main__':

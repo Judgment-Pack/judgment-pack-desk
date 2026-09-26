@@ -23,11 +23,10 @@ Codex takes a model's tool mode and sub-agent version from the catalog before
 it reads the disabled features, and a signed-in client fetches the catalog from
 the account; Desk's copy of the pinned release's catalog clears that metadata
 for every listed model, and a launched process must list exactly those models.
-The empty orchestrator-skills utilities are the only exception to Desk-supplied
-tools; they grant no JPS, shell, filesystem, browser, or subagent capability.
-The [local proof](../reviews/codex-subscription-proof.md) records the exact
-inventory for every listed model and adversarial call results, including
-failing negative controls.
+At this pin no native tool is advertised without an environment, and the probe
+allows none. The [local proof](../reviews/codex-subscription-proof.md) records
+the exact inventory for every listed model and adversarial call results,
+including failing negative controls.
 
 This ADR remains proposed pending authenticated release evidence. The private
 account bridge, bounded run transport, configuration and setup UI are implemented

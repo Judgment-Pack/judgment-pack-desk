@@ -86,16 +86,14 @@ func openProfile(dir, project string) (*profile, error) {
 	}
 	for _, file := range p.managedFiles() {
 		if _, err = root.Lstat(file.name); errors.Is(err, os.ErrNotExist) {
-			err = p.writeNew(file.name, file.data)
+			err = p.writeManaged(file.name, file.data)
 		} else if data, readErr := p.readBounded(file.name, len(file.data)); readErr != nil || !bytes.Equal(data, file.data) {
 			err = ErrProfile
 			if readErr == nil && file.name == "profile/config.toml" && p.previousConfig(data) {
 				// Desk's own earlier configuration, from before it named the
 				// catalog: an upgrade, not a replaced file. Anything else stays
 				// refused.
-				if err = root.Remove(file.name); err == nil {
-					err = p.writeNew(file.name, file.data)
-				}
+				err = p.writeManaged(file.name, file.data)
 			}
 		}
 		if err != nil {
@@ -155,6 +153,26 @@ func (p *profile) managedFiles() []struct {
 		name string
 		data []byte
 	}{{"profile/config.toml", p.config()}, {"profile/" + catalogFilename, modelCatalog}}
+}
+
+// writeManaged stages the complete file beside its name and renames it into
+// place, so an interrupted write leaves the old file or none, never a partial
+// one that every later open would refuse. A stale staging file from an
+// interrupted earlier attempt is discarded first.
+func (p *profile) writeManaged(name string, data []byte) error {
+	staged := name + ".new"
+	if err := p.root.Remove(staged); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return ErrProfile
+	}
+	if err := p.writeNew(staged, data); err != nil {
+		_ = p.root.Remove(staged)
+		return err
+	}
+	if err := p.root.Rename(staged, name); err != nil {
+		_ = p.root.Remove(staged)
+		return ErrProfile
+	}
+	return p.sync()
 }
 
 func (p *profile) readSmall(name string) ([]byte, error) { return p.readBounded(name, 16384) }
@@ -258,9 +276,14 @@ func (p *profile) catalogLine() string {
 }
 
 // previousConfig reports whether data is exactly the configuration the Desk
-// before the model catalog wrote for this profile: today's without its line.
+// before the model catalog wrote for this profile: today's without the
+// catalog line and without the two features it also switched off.
 func (p *profile) previousConfig(data []byte) bool {
-	return string(data) == strings.Replace(string(p.config()), p.catalogLine(), "", 1)
+	previous := strings.Replace(string(p.config()), p.catalogLine(), "", 1)
+	for _, line := range []string{"view_image = false\n", "token_budget = false\n"} {
+		previous = strings.Replace(previous, line, "", 1)
+	}
+	return string(data) == previous
 }
 
 func (p *profile) config() []byte {
@@ -314,5 +337,7 @@ image_generation = false
 code_mode = false
 code_mode_host = false
 enable_request_compression = false
+view_image = false
+token_budget = false
 `)
 }

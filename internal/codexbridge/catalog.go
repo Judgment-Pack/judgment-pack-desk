@@ -6,14 +6,16 @@ import (
 	"encoding/json"
 )
 
-// Codex takes a model's tool mode, sub-agent version and experimental tools
-// from the model catalog before it reads the feature flags in config.toml, and
-// a signed-in client fetches that catalog from the account. Desk therefore
-// supplies its own through model_catalog_json: the pinned release's bundled
-// catalog with the hidden models dropped and those three fields cleared, as
-// scripts/codex-model-catalog.py derives it. The profile writes the file and
-// refuses a changed copy, and every launched process must list exactly these
-// models.
+// Codex takes a model's tool mode, sub-agent version, experimental tools,
+// write tool, tool search and token-budget tools from the model catalog, most
+// of them before it reads the feature flags in config.toml, and a signed-in
+// client fetches that catalog from the account. Desk therefore supplies its
+// own through model_catalog_json: the pinned release's bundled catalog with
+// the hidden models dropped and every such field cleared, as
+// scripts/codex-model-catalog.py derives it. With tool search off, a deferred
+// tool would not be advertised at all; Desk defines none. The profile writes
+// the file and refuses a changed copy, and every launched process must list
+// exactly these models.
 //
 //go:embed model-catalog.json
 var modelCatalog []byte
@@ -26,12 +28,21 @@ const (
 )
 
 type catalogModel struct {
-	Slug                       string          `json:"slug"`
-	Visibility                 string          `json:"visibility"`
-	SupportedInAPI             bool            `json:"supported_in_api"`
-	ToolMode                   json.RawMessage `json:"tool_mode"`
-	MultiAgentVersion          json.RawMessage `json:"multi_agent_version"`
-	ExperimentalSupportedTools json.RawMessage `json:"experimental_supported_tools"`
+	Slug                        string          `json:"slug"`
+	Visibility                  string          `json:"visibility"`
+	SupportedInAPI              bool            `json:"supported_in_api"`
+	ToolMode                    json.RawMessage `json:"tool_mode"`
+	MultiAgentVersion           json.RawMessage `json:"multi_agent_version"`
+	ExperimentalSupportedTools  json.RawMessage `json:"experimental_supported_tools"`
+	ApplyPatchToolType          json.RawMessage `json:"apply_patch_tool_type"`
+	SupportsSearchTool          bool            `json:"supports_search_tool"`
+	SupportsExperimentalContext bool            `json:"supports_experimental_context"`
+	Messages                    struct {
+		TokenBudget *struct {
+			Enabled                  bool `json:"enabled"`
+			UseHistoryNotesExtension bool `json:"use_history_notes_extension"`
+		} `json:"token_budget"`
+	} `json:"model_messages"`
 }
 
 func catalogModels() ([]catalogModel, error) {

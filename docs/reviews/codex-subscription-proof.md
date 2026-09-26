@@ -16,8 +16,11 @@ disabled features. With the release's own catalog, every listed model except
 most also the `collaboration.*` sub-agent tools, and the `gpt-6` models
 `clock.sleep` and `request_user_input_async`, through an `additional_tools`
 input item. The
-probe now counts every tool list in each request, probes every model the
-process lists, and runs the release catalog as a control that must fail. The
+probe now counts every list whose member name contains `tool`, wherever it
+appears in a request, requires each request to advertise the host tool exactly
+once, requires a forged native call to come back as an unknown tool word for
+word, probes every model the process lists, and runs the release catalog as a
+control that must fail. The
 [setup record](../design/codex-subscription-setup.md) describes the catalog.
 This is a local scripted-model check, not a certification.
 
@@ -70,11 +73,25 @@ seven models (`gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`,
 `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`), and all eight scenarios passed for
 each of them: 56 of 56. These names select native metadata for a scripted local
 response; **they are not evidence of account entitlement or live model
-availability**. Every request advertised the host tool and nothing else:
-`gpt-5.5` as `jps_probe` in the top-level `tools` member, the other six as
-`jps_probe` inside a `functions` namespace carried by an `additional_tools`
-input item. The tool call itself arrived without a namespace in every case.
-This release registers no skills utility and no `update_plan`.
+availability**. Every request advertised the host tool exactly once and
+nothing else, which the probe checks request by request: `gpt-5.5` as
+`jps_probe` in the top-level `tools` member, the other six as `jps_probe`
+inside a `functions` namespace carried by an `additional_tools` input item.
+The scripted call named the tool in the advertised form, namespaced for those
+six, and the host's `item/tool/call` carried no namespace in every case, which
+the fixture records as `hostCallNamespace`. This release registers no skills
+utility and no `update_plan`.
+
+The inventory and the forged calls show what a model is offered and that six
+known native names are unknown to the router, which dispatches a call by its
+registered name whatever the tool's exposure. They do not by themselves show
+that no other registered name exists. For that the record rests on the pinned
+source: without an environment, each native registration path is gated by a
+feature the profile disables (shell, image view, planning, token budget), by
+the environment the profile withholds (write and image tools), by capability
+roots or a cloud skills provider the bridge never selects (skills), or by
+catalog metadata Desk's catalog clears (tool mode, sub-agents, experimental
+tools, write-tool type, tool search).
 
 | Scenario | Observed result |
 | --- | --- |
@@ -87,17 +104,24 @@ This release registers no skills utility and no `update_plan`.
 | Skills listing | No skills tool registered; forged `skills.list` call rejected as unsupported |
 | Forged skill read | No skills tool registered; forged `skills.read` call rejected as unsupported |
 
-Two controls must fail, and do. With the release's own catalog left in place,
-the process lists eleven models, hidden ones included, and nine of them
-advertise code-mode `exec`/`wait` and more; only `gpt-5.5` and `gpt-5.4`, whose
+Two controls must fail, and do; each exits 0 only when it failed for the
+right reason. With the release's own catalog left in place (host-tool
+scenario), the process lists eleven models, hidden ones included, and nine of
+them advertise code-mode `exec`/`wait`; seven of those nine also carry the six
+`collaboration.*` tools, and the three `gpt-6` models `clock.sleep` and
+`request_user_input_async` as well. Only `gpt-5.5` and `gpt-5.4`, whose
 metadata names no tool mode, stay closed. With Desk's catalog but a local
-execution environment retained, `apply_patch` and `view_image` reappear for
-`gpt-5.5`. The second catches the mistake of treating read-only permissions as
-a tool allow-list; the first shows the catalog, not the feature flags, is what
+execution environment retained, `view_image` reappears for `gpt-5.5`; this
+control leaves the image-view feature on, which Desk's profile switches off,
+so that a retained environment has a tool to register at all. `apply_patch`
+no longer appears in it, because the catalog clears the write-tool type. The
+second control catches the mistake of treating read-only permissions as a
+tool allow-list; the first shows the catalog, not the feature flags, is what
 closes the inventory.
 
 A separate diagnostic used the installed bubblewrap executable and the named
-permissions profile. An attempted synthetic private-image read returned
+permissions profile, with the environment retained and the image-view feature
+on as in the control above. An attempted synthetic private-image read returned
 `Permission denied (os error 13)`. Its overall inventory check intentionally
 fails because the diagnostic enables the local environment. This is distinct
 from the earlier missing-bubblewrap error caused by the minimal test PATH.
@@ -118,19 +142,23 @@ these fields; they must never come from a browser's raw RPC request.
 
 Supply Desk's model catalog through `model_catalog_json`, and refuse a process
 that lists any other model. The feature flags alone do not close the inventory:
-a model whose catalog metadata names a tool mode gets code mode, and with it
-the sub-agent and other tools, whatever the flags say. The catalog is the
-pinned release's with that metadata removed, so the models offered are fixed
-with the pin.
+a model whose catalog metadata names a tool mode gets code mode; its sub-agent
+version brings the `collaboration.*` tools and its experimental tools the clock
+and asynchronous-input tools, in direct mode too; its write-tool type would
+register the write tool with an environment, its search flag would advertise a
+deferred tool through tool search, and its token-budget switch registers the
+context tools; all of this whatever the flags say. The catalog is the pinned
+release's with that metadata removed, so the models offered are fixed with the
+pin.
 
 The strict “only host tools exist” wording in the initial plan holds at
 `0.157.1` with that catalog. At `0.145.0` the no-environment mode also
 advertised `skills.list`, `skills.read` and `update_plan`; `0.157.1` registers
-none of them, and the probe still allows the two skills utilities should a
-release register them again, since each can only address the disabled
-orchestrator catalog. There is no supported general built-in-tool allow-list
-in this tested version. The eventual adapter must count/bound native work and
-refuse configuration that makes the catalog live.
+none of them, and the probe allows none: a release that registers a native
+utility again fails it until that utility has been examined. There is no
+supported general built-in-tool allow-list in this tested version. The
+eventual adapter must count/bound native work and refuse configuration that
+makes the catalog live.
 
 This is a local candidate boundary, not proof for every OS, future model
 catalog, managed host configuration, or authenticated subscription. No real

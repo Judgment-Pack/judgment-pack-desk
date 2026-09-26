@@ -212,17 +212,34 @@ the release lists, with the model catalog described below; the
 
 A profile the earlier Desk prepared carries a `config.toml` that names no
 catalog. Desk recognises exactly that configuration on the next open and
-rewrites it, writing the catalog beside it and keeping the account files; a
-configuration that differs in any other way is refused as before. The next
-Connect then prepares `0.157.1`. Whether `0.157.1` accepts a sign-in made with
-`0.145.0` was not tested, since no real sign-in was performed. The `0.145.0`
-executable stays in the private cache, because staging cleanup never removes a
-published version.
+rewrites it, staging the complete replacement first, writing the catalog beside
+it and leaving the account files untouched; a configuration that differs in any
+other way is refused as before. Only Connect prepares a runtime, so a signed-in
+Desk then shows its account as not connected until the owner presses Connect
+once, which downloads `0.157.1` and returns to connected without a browser
+sign-in. Preparation needs about 393 MB free for the archive and the
+executable together, and the `0.145.0` executable (311 MB) stays in the cache,
+because staging cleanup never removes a published version; a full disk is
+reported as a preparation failure, which the UI attributes to the connection.
+Whether `0.157.1` accepts a sign-in made with `0.145.0` was not tested, since
+no real sign-in was performed. To return to the earlier Desk, delete the
+`model_catalog_json` line from `config.toml`: the earlier Desk then accepts the
+profile, account files included, and ignores the catalog file.
+
+`0.157.1` also changes account reads. For a signed-in account that carries an
+account id, `account/read` asks the ChatGPT backend for the account's
+workspace before answering, under a 15-second limit that matches the bridge's
+per-call deadline, and only a successful answer is kept for the process's
+life. Offline, every status, model listing and run therefore waits about 15
+seconds and fails with the runtime-unavailable message rather than a network
+one; online latency was not measured, since no real sign-in was performed.
+`0.145.0` answered from the local file.
 
 `0.157.1` registers no skills utility and no `update_plan` without an
-environment, where `0.145.0` registered all three. The probe accepts either
-form. The `0.156.x` releases were probed with the release catalog only; none was
-pinned.
+environment, where `0.145.0` registered all three; the probe allows none.
+`0.156.0` was also probed with a closed catalog derived from its own release
+file, 40 of 40 scenarios; `0.156.1` and `0.157.0` with the release catalog
+only. None was pinned.
 
 ### Model catalog
 
@@ -240,12 +257,21 @@ Desk therefore supplies its own catalog through `model_catalog_json`:
 derives from the pinned release's bundled catalog
 (`codex-rs/models-manager/models.json` at `rust-v0.157.1`, SHA-256
 `0178d235c589a31abd6ed0ea1e870935dc5819240eb0e813e178d3ebedf534f4`, Apache-2.0)
-with the hidden models dropped and `tool_mode`, `multi_agent_version` and
-`experimental_supported_tools` cleared for each listed model. Everything else,
-including each model's instructions, is as published. The bridge embeds the
-catalog, writes it into the private profile beside `config.toml`, refuses a
-changed copy before every launch, and refuses a launched process that does not
-list exactly the catalog's models.
+with the hidden models dropped and every tool-selecting field cleared for each
+listed model: `tool_mode`, `multi_agent_version`,
+`experimental_supported_tools`, `apply_patch_tool_type` (the write tool an
+environment would register) and `supports_search_tool` (so a deferred tool is
+never advertised; Desk defines none), plus the token-budget switch under
+`model_messages`, which registers the context tools, and
+`supports_experimental_context`; the profile also switches the image-view and
+token-budget features off. Everything else, including each model's
+instructions and the developer text its `model_messages` carry, is as
+published. The bridge embeds the catalog, writes it into the private profile
+beside `config.toml` when absent, refuses a changed copy before every launch,
+and refuses a launched process that does not list exactly the catalog's
+models. The listing carries names, not tool modes: it catches a process that
+fell back to its own catalog, which lists the hidden models too, while the
+byte-for-byte check of the file is what fixes each model's metadata.
 
 A supplied catalog is static: Codex never refreshes it from the account, so the
 models Desk offers are the pinned release's listed models until the pin moves,

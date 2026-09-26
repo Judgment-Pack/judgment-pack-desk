@@ -5,7 +5,7 @@
    "prefer_websockets": true,
    "support_verbosity": true,
    "default_verbosity": "low",
-   "apply_patch_tool_type": "freeform",
+   "apply_patch_tool_type": null,
    "web_search_tool_type": "text_and_image",
    "input_modalities": [
     "text",
@@ -155,7 +155,7 @@
     "self_serve_business_usage_based",
     "team"
    ],
-   "supports_search_tool": true,
+   "supports_search_tool": false,
    "supports_experimental_context": false,
    "default_service_tier": null,
    "service_tiers": [
@@ -176,7 +176,7 @@
    "prefer_websockets": true,
    "support_verbosity": true,
    "default_verbosity": "low",
-   "apply_patch_tool_type": "freeform",
+   "apply_patch_tool_type": null,
    "web_search_tool_type": "text_and_image",
    "input_modalities": [
     "text",
@@ -324,7 +324,7 @@
     "self_serve_business_usage_based",
     "team"
    ],
-   "supports_search_tool": true,
+   "supports_search_tool": false,
    "supports_experimental_context": false,
    "default_service_tier": "priority",
    "service_tiers": [
@@ -345,7 +345,7 @@
    "prefer_websockets": true,
    "support_verbosity": true,
    "default_verbosity": "low",
-   "apply_patch_tool_type": "freeform",
+   "apply_patch_tool_type": null,
    "web_search_tool_type": "text_and_image",
    "input_modalities": [
     "text",
@@ -489,7 +489,7 @@
     "self_serve_business_usage_based",
     "team"
    ],
-   "supports_search_tool": true,
+   "supports_search_tool": false,
    "supports_experimental_context": false,
    "default_service_tier": "priority",
    "service_tiers": [
@@ -510,7 +510,7 @@
    "prefer_websockets": true,
    "support_verbosity": true,
    "default_verbosity": "low",
-   "apply_patch_tool_type": "freeform",
+   "apply_patch_tool_type": null,
    "web_search_tool_type": "text_and_image",
    "input_modalities": [
     "text",
@@ -631,7 +631,7 @@
     "self_serve_business_usage_based",
     "team"
    ],
-   "supports_search_tool": true,
+   "supports_search_tool": false,
    "supports_experimental_context": false,
    "default_service_tier": null,
    "service_tiers": [
@@ -652,7 +652,7 @@
    "prefer_websockets": true,
    "support_verbosity": true,
    "default_verbosity": "low",
-   "apply_patch_tool_type": "freeform",
+   "apply_patch_tool_type": null,
    "web_search_tool_type": "text_and_image",
    "input_modalities": [
     "text",
@@ -773,7 +773,7 @@
     "self_serve_business_usage_based",
     "team"
    ],
-   "supports_search_tool": true,
+   "supports_search_tool": false,
    "supports_experimental_context": false,
    "default_service_tier": null,
    "service_tiers": [
@@ -794,7 +794,7 @@
    "prefer_websockets": true,
    "support_verbosity": true,
    "default_verbosity": "low",
-   "apply_patch_tool_type": "freeform",
+   "apply_patch_tool_type": null,
    "web_search_tool_type": "text_and_image",
    "input_modalities": [
     "text",
@@ -915,7 +915,7 @@
     "self_serve_business_usage_based",
     "team"
    ],
-   "supports_search_tool": true,
+   "supports_search_tool": false,
    "supports_experimental_context": false,
    "default_service_tier": null,
    "service_tiers": [
@@ -936,7 +936,7 @@
    "prefer_websockets": true,
    "support_verbosity": true,
    "default_verbosity": "low",
-   "apply_patch_tool_type": "freeform",
+   "apply_patch_tool_type": null,
    "web_search_tool_type": "text_and_image",
    "input_modalities": [
     "text",
@@ -1041,7 +1041,7 @@
     "self_serve_business_usage_based",
     "team"
    ],
-   "supports_search_tool": true,
+   "supports_search_tool": false,
    "supports_experimental_context": false,
    "default_service_tier": null,
    "service_tiers": [
