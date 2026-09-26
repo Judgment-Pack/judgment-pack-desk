@@ -181,3 +181,21 @@ func TestLocalGatewayPreparesOnlyMissingConfigBase(t *testing.T) {
 		t.Fatal("created a missing home")
 	}
 }
+
+func TestLocalGatewayStatusKeepsLaunchedBuildIdentity(t *testing.T) {
+	s, _, _ := assistantServer(t)
+	done := make(chan struct{})
+	defer close(done)
+	build := &gatewayBuild{Version: "v0.3.1", Revision: GatewayRevision}
+	s.localGateway = &localGateway{bundle: t.TempDir(), done: done, pin: &localGatewayPin{build: build}}
+	// A different manifest on disk must not relabel a still-running companion.
+	os.WriteFile(filepath.Join(s.localGateway.bundle, "gateway-bundle.json"), []byte(`{"version":"future","revision":"replacement"}`), 0600)
+	got := s.localGatewayStatus(nil)
+	if got.Status != "ready" || got.Build == nil || *got.Build != *build {
+		t.Fatalf("running build identity changed: %+v", got)
+	}
+	got = s.localGatewayStatus([]byte(researchDeskFile("http://127.0.0.1:1")))
+	if got.Status != "external" || got.Build != nil {
+		t.Fatalf("local build attributed to external gateway: %+v", got)
+	}
+}

@@ -1,3 +1,4 @@
+import { memoryDraftPersistence } from '../testing/draftPersistence'
 import { act, cleanup, renderHook } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ChatStore, retainSentDocuments } from './store'
@@ -15,7 +16,7 @@ afterEach(()=>{cleanup();stores.forEach(s=>s.dispose());stores.length=0;sessionS
 async function setup(enabled = true) {
  const {object,pin,reference} = await signedDocument(), document = await verifyDocument(object,pin)
  const config = {...DESK_DEFAULTS.research,gateway:pin,documents:{...DOCUMENT_DEFAULTS,enabled}}
- const store = new ChatStore('/isolated',{read:async()=>({project:'/isolated',sha256:'absent',content:{version:1,chats:[]}}),write:vi.fn()});stores.push(store)
+ const store = new ChatStore('/isolated',{read:async()=>({project:'/isolated',sha256:'absent',content:{version:1,chats:[]}}),write:vi.fn()}, memoryDraftPersistence('/isolated'));stores.push(store)
  await store.load(); const chat=store.startChat()
  mocked.ingest.mockResolvedValue({reference,document});mocked.load.mockResolvedValue(document)
  const hook=renderHook(({id})=>useChatAttachments(store,id,false,config),{initialProps:{id:chat.id}})

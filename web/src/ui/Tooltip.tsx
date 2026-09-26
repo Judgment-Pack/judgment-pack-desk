@@ -87,7 +87,8 @@ function TooltipContent({ children, content, shortcut, disabled, openOnFocus = t
   useEffect(() => {
     const dismiss = () => setOpen(false)
     document.addEventListener(DISMISS, dismiss)
-    return () => document.removeEventListener(DISMISS, dismiss)
+    window.addEventListener('resize', dismiss)
+    return () => { document.removeEventListener(DISMISS, dismiss); window.removeEventListener('resize', dismiss) }
   }, [])
   const childDescription = (children.props as { 'aria-describedby'?: string })['aria-describedby']
   const description = [childDescription, open && enabled ? id : undefined].filter(Boolean).join(' ') || undefined

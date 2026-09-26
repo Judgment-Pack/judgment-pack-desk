@@ -2735,3 +2735,11 @@ func TestKeyWriteAndRemovalCarryTheSameVerdict(t *testing.T) {
 		t.Errorf("configuredOrigin after a removal %q", got)
 	}
 }
+
+func TestSubscriptionSelectionKeepsTheAPIEndpointInactive(t *testing.T) {
+	s, _, _ := assistantServerIn(t, t.TempDir())
+	writeDeskConfig(t, s, `{"deskConfigVersion":1,"assistant":{"engine":"codex","endpoint":{"url":"https://api.example.invalid/v1","kind":"openai-compatible","model":"api-model","tools":["validate"]},"agent":{"provider":"openai","authMethod":"subscription","model":"model","tools":["get_schema"]}}}`)
+	if _, err := s.configuredEndpoint(); err == nil || !strings.Contains(err.Error(), "inactive") {
+		t.Fatalf("inactive endpoint admitted: %v", err)
+	}
+}

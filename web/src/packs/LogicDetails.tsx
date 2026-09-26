@@ -8,11 +8,16 @@ import { valueLabel } from './terminology'
 import styles from './LogicDetails.module.css'
 
 /** Shared reading content. No evaluation, inferred policy, or interactive children. */
-export function LogicDetails({ document, group, item, conditions = true }: {
-  document: PackDocument; group: string; item: LogicItem; conditions?: boolean
+export function LogicDetails({ document, group, item, conditions = true, compact = false }: {
+  document: PackDocument; group: string; item: LogicItem; conditions?: boolean; compact?: boolean
 }) {
   useLocale()
   const value = item.value
+  if (compact && (group === 'rules' || group === 'exceptions') && isRecord(value)) return <div className={styles.content}>
+    <span className={styles.note}>{group === 'rules' ? msg('Rule') : msg('Special case')}</span>
+    {conditions && <ConditionTree readOnly structured condition={value.when} at={`${item.pointer}/when`} />}
+    <p>{item.effect}</p>
+  </div>
   if (group === 'applicability') return value === undefined ? <p className={styles.note}>{msg("No scope restriction is set.")}</p>
     : <ConditionTree readOnly structured condition={value} at={item.pointer} />
   if (item.pointer === '/fallbackOutcome') return <div className={styles.content}>

@@ -452,6 +452,7 @@ func (d *deskConfigMoved) Error() string {
 // defaults where the file names neither, and `endpoint` is null where there is
 // none. There is no member for a key, here as everywhere else.
 type AssistantSlotView struct {
+	Agent    *AssistantAgentConfig  `json:"agent,omitempty"`
 	Endpoint *AssistantEndpointView `json:"endpoint"`
 	Engine   string                 `json:"engine"`
 	Thinking string                 `json:"thinking"`
@@ -492,7 +493,7 @@ type AssistantEndpointView struct {
 
 // slotView renders one accepted decode as an answer.
 func slotView(decoded deskDecode) AssistantSlotView {
-	view := AssistantSlotView{Engine: decoded.Engine, Thinking: decoded.Thinking}
+	view := AssistantSlotView{Engine: decoded.Engine, Thinking: decoded.Thinking, Agent: decoded.Agent}
 	if decoded.Endpoint == nil {
 		return view
 	}
@@ -1427,7 +1428,7 @@ var AssistantTools = []string{
 // its contract and its conformance session, which is what a second engine will
 // be admitted by. Nothing in this release reads the member: it is stored and
 // shown.
-var AssistantEngines = []string{"vercel"}
+var AssistantEngines = []string{"vercel", "codex"}
 
 // withdrawnAssistantEngine is the id this release withdrew, still **decodable
 // for one release**.
@@ -1480,6 +1481,7 @@ const (
 // endpoint if there is a usable one, and the two settings with their defaults
 // applied.
 type assistantSlot struct {
+	agent    *AssistantAgentConfig
 	endpoint *assistantEndpoint
 	engine   string
 	thinking string
@@ -1538,6 +1540,9 @@ func (s *Server) configuredEndpoint() (assistantEndpoint, error) {
 		return zero, withCode(CodeAssistantUnconfigured, fmt.Errorf(
 			"%s was refused, so no endpoint in it is configured: %s",
 			path, describeProblems(decoded.Problems)))
+	}
+	if decoded.Engine != "vercel" {
+		return zero, withCode(CodeAssistantUnconfigured, errors.New("the API endpoint is inactive while Codex is selected"))
 	}
 	if decoded.Endpoint == nil {
 		return zero, withCode(CodeAssistantUnconfigured, errors.New(

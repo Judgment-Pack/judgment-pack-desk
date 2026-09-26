@@ -55,7 +55,7 @@ it('keeps preview separate from a saved document Assistant and restores each on 
   expect(within(pane).getByRole('heading', { name: 'alpha' })).toBeTruthy()
   expect(document.querySelector('.desk')?.getAttribute('style')).toContain('--inspector-w: 360px')
   expect(row.closest('li')?.dataset.selected).toBe('true')
-  fireEvent.click(within(pane).getByRole('button', { name: 'Close pack preview' }))
+  fireEvent.click(within(pane).getByRole('button', { name: 'Collapse pack preview' }))
   await act(async () => { await router.navigate('/packs/alpha') })
   await screen.findByRole('complementary', { name: 'Assistant' })
   expect(JSON.parse(localStorage.getItem(key)!).inspector).toEqual({ open: true })
@@ -81,7 +81,7 @@ it('supports Space, arrow browsing, Escape and filtering without navigation or t
 })
 
 it('bounds a preview independently of a document and uses a drawer before squeezing the list', () => {
-  expect(inspectorGeometry(1268, 600, 720, false, 420)).toEqual({ drawer: false, width: 420, min: 320, max: 420 })
-  expect(inspectorGeometry(1000, 360, 720, false, 420).drawer).toBe(true)
+  expect(inspectorGeometry(1268, 600, 560, false, 420)).toEqual({ drawer: false, width: 420, min: 320, max: 420 })
+  expect(inspectorGeometry(880, 360, 560, false, 420).drawer).toBe(true)
   expect(inspectorGeometry(1268, 600, 480, false).width).toBeGreaterThan(420)
 })

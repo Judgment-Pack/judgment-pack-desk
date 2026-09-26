@@ -244,7 +244,7 @@ export function EndpointForm({
     setSaved(undefined)
     setStoreProblem(undefined)
     write.mutate(
-      { assistant, ifMatch: digest },
+      { assistant: { ...(assistant as Record<string,unknown>), ...(config.assistant.engine === 'codex' ? {engine:'vercel'} : {}), ...(config.assistant.agent ? { agent:config.assistant.agent } : {}) }, ifMatch: digest },
       {
         onSuccess: (answer) => {
           // Re-seeded from the file the chassis read back, not from the draft:

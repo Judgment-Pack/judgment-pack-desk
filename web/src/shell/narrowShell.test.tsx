@@ -1,3 +1,8 @@
+import { useMemo, useRef } from 'react'
+import { useInspectorSlot } from './InspectorSlot'
+import { useInspectorPresentation } from './InspectorPresentation'
+import { useShellState } from './paneState'
+import { useEffectiveConfig } from '../config/DeskConfigProvider'
 /**
  * The desk below its two breakpoints.
  *
@@ -104,6 +109,29 @@ function viewport(width: number) {
   }
 }
 
+function PreviewRoute() {
+  const slot = useInspectorSlot()
+  const shell = useShellState()
+  const { config } = useEffectiveConfig()
+  const opener = useRef<HTMLButtonElement>(null)
+  const presentation = useMemo(() => ({
+    title: 'Preview',
+    open: shell.inspector.open,
+    onOpenChange: (open: boolean) => { if (open !== shell.inspector.open) shell.toggleInspector() },
+    width: shell.inspectorWidth ?? config.panes.inspector.width,
+    onResize: shell.resizeInspector,
+    onReset: shell.resetInspectorWidth,
+    minimumMainWidth: 0,
+    maximumWidth: 640,
+    restoreFocusRef: opener
+  }), [shell.inspector.open, shell.inspectorWidth, shell.toggleInspector, shell.resizeInspector,
+    shell.resetInspectorWidth, config.panes.inspector.width])
+  useInspectorPresentation(presentation)
+  return <><h1>a route</h1><button ref={opener}
+    aria-controls={slot.target ? 'desk-inspector' : undefined} aria-expanded={slot.open}
+    onClick={shell.toggleInspector}>Preview</button></>
+}
+
 function renderShell(panes?: PanesConfig, declaredPanes: DeclaredPanes = NOTHING_DECLARED) {
   const router = createMemoryRouter(
     [
@@ -119,7 +147,7 @@ function renderShell(panes?: PanesConfig, declaredPanes: DeclaredPanes = NOTHING
               }}
             >
               <AppShell>
-                <h1>a route</h1>
+                <PreviewRoute />
               </AppShell>
             </DeskConfigFixture>
           </McpContext.Provider>
@@ -145,7 +173,7 @@ describe('the shell at 800px, where the rail is a drawer', () => {
     // available to a viewer with no keyboard.
     viewport(800)
     renderShell()
-    const opener = screen.getByRole('button', { name: 'Project navigation' })
+    const opener = screen.getByRole('button', { name: 'Expand navigation' })
     expect(opener.getAttribute('aria-expanded')).toBe('false')
     // **No IDREF while the drawer is closed.** A closed `Dialog` unmounts its
     // portal, so `aria-controls="desk-rail"` named an element that is not in
@@ -174,11 +202,11 @@ describe('the shell at 800px, where the rail is a drawer', () => {
     // focus to: closing it dropped focus on the body.
     viewport(800)
     renderShell()
-    const opener = screen.getByRole('button', { name: 'Project navigation' })
+    const opener = screen.getByRole('button', { name: 'Expand navigation' })
     fireEvent.click(opener)
     await screen.findByRole('navigation', { name: 'Project' })
 
-    const close = screen.getByRole('button', { name: 'Close navigation' })
+    const close = screen.getByRole('button', { name: 'Collapse navigation' })
     fireEvent.click(close)
     await waitFor(() => expect(screen.queryByRole('navigation', { name: 'Project' })).toBeNull())
     await waitFor(() => expect(document.activeElement).toBe(opener))
@@ -187,7 +215,7 @@ describe('the shell at 800px, where the rail is a drawer', () => {
   it('returns focus to the opener when Escape closes the drawer', async () => {
     viewport(800)
     renderShell()
-    const opener = screen.getByRole('button', { name: 'Project navigation' })
+    const opener = screen.getByRole('button', { name: 'Expand navigation' })
     fireEvent.click(opener)
     await screen.findByRole('navigation', { name: 'Project' })
     fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
@@ -202,7 +230,7 @@ describe('the shell at 800px, where the rail is a drawer', () => {
     viewport(800)
     renderShell()
     for (const name of ['Admin', 'Back to app', 'Help & About']) {
-      fireEvent.click(screen.getByRole('button', { name: 'Project navigation' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Expand navigation' }))
       await screen.findByRole('navigation', { name: 'Project' })
       fireEvent.click(screen.getByRole('link', { name }))
       await waitFor(() =>
@@ -219,7 +247,7 @@ describe('the shell at 800px, where the rail is a drawer', () => {
     // in drawer form the rail is a modal dialog over the page it navigated to.
     viewport(800)
     renderShell()
-    fireEvent.click(screen.getByRole('button', { name: 'Project navigation' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Expand navigation' }))
     await screen.findByRole('navigation', { name: 'Project' })
     fireEvent.click(await screen.findByRole('link', { name: /^Packs/ }))
     await waitFor(() => expect(screen.queryByRole('navigation', { name: 'Project' })).toBeNull())
@@ -228,7 +256,7 @@ describe('the shell at 800px, where the rail is a drawer', () => {
   it('reaches every destination the rail carries once the drawer is open', async () => {
     viewport(800)
     renderShell()
-    fireEvent.click(screen.getByRole('button', { name: 'Project navigation' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Expand navigation' }))
     await screen.findByRole('navigation', { name: 'Project' })
     expect(screen.queryByRole('button', { name: 'New chat' })).toBeNull()
     expect(screen.queryByRole('region', { name: 'Recent chats' })).toBeNull()
@@ -252,7 +280,7 @@ describe('the shell at 800px, where the rail is a drawer', () => {
     expect(screen.getAllByRole('banner')).toHaveLength(1)
     expect(screen.queryByRole('navigation', { name: 'Project' })).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Project navigation' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Expand navigation' }))
     await waitFor(() =>
       expect(screen.getAllByRole('navigation', { name: 'Project' })).toHaveLength(1)
     )
@@ -275,14 +303,14 @@ describe('the shell at 1000px, where the Inspector is a drawer', () => {
     viewport(1000)
     renderShell()
     // At this width the rail is still a column, not a drawer.
-    expect(screen.queryByRole('button', { name: 'Project navigation' })).toBeNull()
-    const toggle = screen.getByRole('button', { name: 'Inspector' })
+    expect(screen.queryByRole('button', { name: 'Expand navigation' })).toBeNull()
+    const toggle = screen.getByRole('button', { name: 'Preview' })
     // Closed, the drawer's portal is not in the document, so the toggle names
     // nothing rather than naming an id that resolves to nothing.
     expect(toggle.hasAttribute('aria-controls')).toBe(false)
     expect(document.getElementById('desk-inspector')).toBeNull()
     fireEvent.click(toggle)
-    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Inspector' })).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Preview' })).toBeTruthy())
     expect(toggle.getAttribute('aria-controls')).toBe('desk-inspector')
     expect(document.getElementById('desk-inspector')).toBeTruthy()
     expect(document.getElementById('desk-inspector')!.getAttribute('role')).toBe('dialog')
@@ -294,32 +322,28 @@ describe('the shell at 1000px, where the Inspector is a drawer', () => {
       { ...DESK_DEFAULTS.panes, inspector: { open: false, width: 420 } },
       { ...NOTHING_DECLARED, inspectorWidth: true }
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Inspector' }))
-    const drawer = await screen.findByRole('dialog', { name: 'Inspector' })
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+    const drawer = await screen.findByRole('dialog', { name: 'Preview' })
     expect(drawer.style.getPropertyValue('--drawer-w')).toBe('420px')
   })
 
-  it('leaves the drawer on the sheet’s own 320px where the file states none', async () => {
-    // The column's default is 360px and the drawer's has always been 320px.
-    // Supplying the effective width unconditionally moved every unconfigured
-    // desk's drawer to 360px — a behaviour change dressed as applying
-    // configuration. `--drawer-w` is written only where a width was stated.
+  it('uses the contextual preview width when the project states none', async () => {
+    // A contextual pane owns its geometry in both docked and drawer forms.
     viewport(1000)
     renderShell()
-    fireEvent.click(screen.getByRole('button', { name: 'Inspector' }))
-    const drawer = await screen.findByRole('dialog', { name: 'Inspector' })
-    expect(drawer.style.getPropertyValue('--drawer-w')).toBe('')
-    // Radix writes `pointer-events` of its own; what must be absent is the
-    // width, so the sheet's `min(var(--drawer-w, 320px), 85vw)` falls back.
-    expect(drawer.getAttribute('style') ?? '').not.toContain('--drawer-w')
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+    const drawer = await screen.findByRole('dialog', { name: 'Preview' })
+    expect(drawer.style.getPropertyValue('--drawer-w')).toBe('360px')
   })
 
-  it('returns focus to the header toggle when the Inspector drawer closes', async () => {
+  it('returns focus to the contextual preview action when its drawer closes', async () => {
     viewport(1000)
     renderShell()
-    const toggle = screen.getByRole('button', { name: 'Inspector' })
+    const toggle = screen.getByRole('button', { name: 'Preview' })
+    // jsdom has no layout; declare this contextual opener visible.
+    vi.spyOn(toggle, 'getClientRects').mockReturnValue([{}] as unknown as DOMRectList)
     fireEvent.click(toggle)
-    await screen.findByRole('dialog', { name: 'Inspector' })
+    await screen.findByRole('dialog', { name: 'Preview' })
     fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
     await waitFor(() => expect(document.activeElement).toBe(toggle))
   })
@@ -340,18 +364,18 @@ describe('crossing a breakpoint', () => {
     })
     // Narrow: the rail is a drawer and the Inspector is clamped shut.
     expect(screen.queryByRole('navigation', { name: 'Project' })).toBeNull()
-    expect(screen.queryByRole('complementary', { name: 'Inspector' })).toBeNull()
+    expect(screen.queryByRole('complementary', { name: 'Preview' })).toBeNull()
 
     wide.resizeTo(1400)
     await waitFor(() =>
       expect(screen.getByRole('navigation', { name: 'Project' }).dataset.mode).toBe('expanded')
     )
-    expect(screen.getByRole('complementary', { name: 'Inspector' })).toBeTruthy()
+    expect(screen.getByRole('complementary', { name: 'Preview' })).toBeTruthy()
 
     // And back again, still untouched.
     wide.resizeTo(800)
     await waitFor(() =>
-      expect(screen.queryByRole('complementary', { name: 'Inspector' })).toBeNull()
+      expect(screen.queryByRole('complementary', { name: 'Preview' })).toBeNull()
     )
   })
 
@@ -366,12 +390,12 @@ describe('crossing a breakpoint', () => {
     )
     const wide = viewport(800)
     renderShell()
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Console' })).toBeTruthy())
-    expect(screen.queryByRole('complementary', { name: 'Inspector' })).toBeNull()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Preview' })).toBeTruthy())
+    expect(screen.queryByRole('complementary', { name: 'Preview' })).toBeNull()
 
     wide.resizeTo(1400)
     await waitFor(() =>
-      expect(screen.getByRole('complementary', { name: 'Inspector' })).toBeTruthy()
+      expect(screen.getByRole('complementary', { name: 'Preview' })).toBeTruthy()
     )
     expect(screen.getByRole('navigation', { name: 'Project' }).dataset.mode).toBe('icons')
   })
@@ -384,9 +408,9 @@ describe('crossing a breakpoint', () => {
       console: { open: false, height: 240 }
     })
     // The file asks for an open Inspector; the viewer closes it.
-    await waitFor(() => expect(screen.getByRole('complementary', { name: 'Inspector' })).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: 'Inspector' }))
-    expect(screen.queryByRole('complementary', { name: 'Inspector' })).toBeNull()
+    await waitFor(() => expect(screen.getByRole('complementary', { name: 'Preview' })).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+    expect(screen.queryByRole('complementary', { name: 'Preview' })).toBeNull()
 
     // Narrowing and widening again must not reopen it over their shoulder.
     wide.resizeTo(800)
@@ -394,6 +418,6 @@ describe('crossing a breakpoint', () => {
     await waitFor(() =>
       expect(screen.getByRole('navigation', { name: 'Project' }).dataset.mode).toBe('expanded')
     )
-    expect(screen.queryByRole('complementary', { name: 'Inspector' })).toBeNull()
+    expect(screen.queryByRole('complementary', { name: 'Preview' })).toBeNull()
   })
 })

@@ -6,7 +6,7 @@ import { PackAssistant } from './PackAssistant'
 
 const fake = vi.hoisted(() => ({ snapshot: {} as any, editing: {} as any }))
 vi.mock('./ChatProvider', () => ({ useChats: () => fake.snapshot }))
-vi.mock('../shell/InspectorSlot', () => ({ useInspectorSlot: () => ({ open: false }) }))
+vi.mock('../shell/InspectorSlot', () => ({ useInspectorControls: () => ({ open: false }) }))
 vi.mock('../packs/edit/editingContext', () => ({ useEditing: () => fake.editing }))
 vi.mock('./ChatPanel', () => ({ ChatPanel: ({ context, proposalActions }: any) => <><button onClick={context?.beforeSend}>Send request</button>{proposalActions}</> }))
 afterEach(cleanup)

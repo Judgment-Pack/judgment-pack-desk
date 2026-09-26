@@ -281,7 +281,7 @@ it('persists interrupted prose verbatim and translates only its separate annotat
   const state = { ...INITIAL_STATE, status: 'stopped' as const, turns: [{ role: 'assistant' as const, kind: 'message' as const, text: 'Save. Response interrupted. 原文', interrupted: true, at: '2026-01-01T00:00:00Z' }] }
   const saved = JSON.parse(JSON.stringify(checkpoint(state, [])))
   const restored = decodeCheckpoint(saved).state
-  expect(restored.turns).toEqual(state.turns)
+  expect(restored.turns.map(({id: _id, ...turn}) => turn)).toEqual(state.turns)
   render(<Conversation state={restored} onSend={() => {}} onStop={() => {}} />)
   await act(async () => { setLanguage('ja'); await languageReady() })
   expect(screen.getByText('Save. Response interrupted. 原文')).toBeTruthy()

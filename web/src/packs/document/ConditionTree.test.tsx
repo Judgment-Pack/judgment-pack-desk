@@ -37,7 +37,7 @@ it('structures values as complete ordered entries without losing types, paths or
   ] }
   const { container } = render(<ConditionTree structured readOnly condition={condition} at="/applicability" />)
   expect(screen.getByText('Case type')).toBeTruthy()
-  expect(screen.getByText('/case/type')).toBeTruthy()
+  expect(screen.queryByText('/case/type')).toBeNull()
   expect(screen.getByText('is one of')).toBeTruthy()
   const list = screen.getByRole('list', { name: 'Exact values' })
   expect(within(list).getAllByRole('listitem').map(item => JSON.parse(item.textContent!))).toEqual(values)

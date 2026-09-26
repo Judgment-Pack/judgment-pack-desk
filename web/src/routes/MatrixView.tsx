@@ -1,7 +1,7 @@
 import { sourceMessage } from '../i18n/source'
 import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
-import { Link, useParams } from 'react-router-dom'
+import { Link, Navigate, useParams } from 'react-router-dom'
 import { CoverageReport } from '../components/CoverageReport'
 import { MatrixRowList } from '../components/MatrixRowList'
 import { Empty, ErrorBox, Loading, Pill, Section, statusTone } from '../components/primitives'
@@ -10,12 +10,11 @@ import { useMcp } from '../mcp/McpProvider'
 import { usePackMatrix, usePacks } from '../mcp/queries'
 import type { PackTest, PackTestEntry } from '../mcp/types'
 import { PageHeader, PageBody } from '../ui/PageLayout'
-import { PacksNavigation } from '../packs/PacksNavigation'
 import { Button } from '../ui/Button'
 import { PackNavigation, TestNavigation } from '../packs/PackWorkspace'
 
 /**
- * The project's declared matrices, run — every pack's, or one pack's.
+ * One pack's saved test cases and coverage, run only by an explicit command.
  *
  * Two things are on this page and they answer different questions. The rows say
  * whether what a project wrote about its own packs still holds. The coverage
@@ -28,8 +27,15 @@ import { PackNavigation, TestNavigation } from '../packs/PackWorkspace'
  * payload says so in its own label, which is shown rather than summarized.
  */
 export function MatrixView() {
+  const { packId } = useParams<{ packId: string }>()
+  // Old collection bookmarks return to Packs and cannot run a project-wide suite.
+  return <article className="detail" data-layout="page">
+    {packId ? <PackMatrixContent packId={packId} /> : <Navigate to="/packs" replace />}
+  </article>
+}
+
+function PackMatrixContent({ packId }: { packId: string }) {
   useLocale()
-  const { packId } = useParams<{ packId?: string }>()
   const { status } = useMcp()
   const inventory = usePacks()
   const { data, error, isFetching, refetch } = usePackMatrix(packId, false)
@@ -38,18 +44,18 @@ export function MatrixView() {
     recordActivity(sourceMessage('Pack tests started.'))
     void refetch().then(result => recordActivity(result.error ? sourceMessage('Pack tests failed.') : result.data?.status ? sourceMessage('Pack tests completed: {{status}}.', { status: result.data.status }) : sourceMessage('Pack tests returned no result.')))
   }
-  const configured = (inventory.data?.packs ?? []).filter(pack => pack.matrix && (!packId || pack.id === packId))
-  return <article className="detail" data-measure="full" data-layout="page">
-    <PageHeader variant={packId ? 'context' : 'collection'} title={msg("Packs")} context={packId} titleHref={packId ? "/packs" : undefined}
-      navigation={packId ? <PackNavigation packId={packId} current="test" /> : <PacksNavigation current="tests" />}
+  const configured = (inventory.data?.packs ?? []).filter(pack => pack.matrix && pack.id === packId)
+  return <>
+    <PageHeader variant="context" title={msg("Packs")} context={packId} titleHref="/packs"
+      navigation={<PackNavigation packId={packId} current="test" />}
       actions={<Button onClick={run} disabled={status !== 'ready' || isFetching}>
-        {isFetching ? msg("Running…") : packId ? msg("Run tests") : msg("Run all tests")}
+        {isFetching ? msg("Running…") : msg("Run tests")}
       </Button>} />
     <PageBody width="full">
-      {packId && <TestNavigation packId={packId} saved hasMatrix />}
+      <TestNavigation packId={packId} saved hasMatrix />
       {isFetching && <Loading what={msg("test results")} />}
-      {error ? <ErrorBox title={msg("Could not run pack tests")} error={error} /> : data ? <MatrixResults data={data} packId={packId} /> : <>
-        <h2 className="section-title">{packId ? msg("Saved cases") : msg("All pack tests")}</h2>
+      {error ? <ErrorBox title={msg("Could not run pack tests")} error={error} /> : data ? <MatrixResults data={data} /> : <>
+        <h2 className="section-title">{msg("Saved cases")}</h2>
         <p className="quiet">{msg("Run saved cases to check expected outcomes and find coverage gaps.")}</p>
         {inventory.error ? <ErrorBox title={msg("Could not list packs")} error={inventory.error} />
           : inventory.isPending ? <Loading what={msg("packs with saved cases")} />
@@ -58,18 +64,18 @@ export function MatrixView() {
               <Link to={`/packs/${encodeURIComponent(pack.id)}/matrix`}>{pack.id}</Link>
               <p className="quiet">{msg("Saved cases configured · No results loaded")}</p>
             </li>)}
-          </ul> : <Empty><Message text={"No saved test cases are configured<0/>."} slots={[packId ? msg(" for this pack") : '']} /></Empty>}
+          </ul> : <Empty><Message text={"No saved test cases are configured<0/>."} slots={[msg(" for this pack")]} /></Empty>}
       </>}
     </PageBody>
-  </article>
+  </>
 }
 
-function MatrixResults({ data, packId }: { data: PackTest; packId?: string }) {
+function MatrixResults({ data }: { data: PackTest }) {
   useLocale()
   const packs = data.packs ?? []
   return <>
       <header className="detail-head">
-        <h2 className="section-title">{packId ? msg("Saved cases") : msg("All pack tests")}</h2>
+        <h2 className="section-title">{msg("Saved cases")}</h2>
         <p className="ids">
           <Pill tone={statusTone(data.status)}>{data.status}</Pill>
           <span><Message text={"<0/> of <1/><2/><3/> passed"} slots={[data.summary.passed, data.summary.total, ' ', data.summary.total === 1 ? msg("row") : msg("rows")]} /></span>

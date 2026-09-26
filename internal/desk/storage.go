@@ -212,7 +212,7 @@ func (s *Server) describeStorage(store *chatDataStore) (storageStatus, error) {
 			status.ProjectCount++
 		}
 		status.Bytes += info.Size()
-		if entry.Name() == recordName || attachmentFileName.MatchString(entry.Name()) && strings.HasPrefix(entry.Name(), attachmentProjectPrefix(recordName)) {
+		if entry.Name() == strings.Replace(recordName, "conversations-", "briefs-", 1) || entry.Name() == strings.Replace(recordName, "conversations-", "source-reviews-", 1) || entry.Name() == recordName || entry.Name() == draftPackName(recordName) || entry.Name() == strings.Replace(recordName, "conversations-", "pack-tests-", 1) || attachmentFileName.MatchString(entry.Name()) && strings.HasPrefix(entry.Name(), attachmentProjectPrefix(recordName)) {
 			status.ProjectBytes += info.Size()
 		}
 	}

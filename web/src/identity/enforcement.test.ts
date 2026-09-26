@@ -109,7 +109,7 @@ const PROVIDER_KEYS = [
 ] as const
 
 /** What the shell reads: a nullable provider, and the local name beside it. */
-const STATE_KEYS = ['provider', 'displayName'] as const
+const STATE_KEYS = ['authenticated', 'provider', 'displayName'] as const
 
 /** What the desk shows about a configured issuer. Display, both of them. */
 const PROVIDER_IDENTITY_KEYS = ['issuerHost', 'label'] as const

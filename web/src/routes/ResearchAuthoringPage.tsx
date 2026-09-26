@@ -21,7 +21,7 @@ import { SourceInspector } from '../research/ui/SourceInspector'
 import styles from '../research/ui/ResearchAuthoring.module.css'
 import { canCreateResearchDraft, matrixDocument, researchRecord } from '../research/run'
 import { useResearchRun } from '../research/useResearchRun'
-import { useInspectorPortal, useInspectorSlot } from '../shell/InspectorSlot'
+import { useInspectorPortal, useInspectorControls } from '../shell/InspectorSlot'
 import { useMediaQuery } from '../shell/useMediaQuery'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
@@ -57,7 +57,7 @@ export function ResearchAuthoringPage() {
   const [shown, setShown] = useState<'conversation' | 'draft'>('conversation')
   const narrow = useMediaQuery('(max-width: 1100px)')
   const navigate = useNavigate()
-  const slot = useInspectorSlot()
+  const slot = useInspectorControls()
   const running = state.status === 'running'
 
   // Leaving the page ends the run: nothing about it is persisted, and a run

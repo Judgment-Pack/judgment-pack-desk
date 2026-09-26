@@ -1,0 +1,6 @@
+{
+  "deskConfigVersion": 1,
+  "assistant": {
+    "engine": "codex"
+  }
+}

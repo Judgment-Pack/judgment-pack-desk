@@ -42,8 +42,14 @@ Storage & data shows **Local processing · Ready**. You can upload PDFs without
 entering a gateway URL, generating keys, or running a separate server. An
 existing gateway configuration stays in control. The bundle also includes personal
 Google Drive, Gmail, Notion and Obsidian connection and retrieval companions.
-The chat **+** menu shows connected providers and **More connections**, which opens
-an searchable catalog in the right pane. Connect an account or local vault, choose
+The chat **+** menu shows up to five connected providers: pinned services first,
+then recently used services. **More connections** opens the searchable catalog in
+the right pane. The same compact catalog in **Admin → Connections** supports
+**Browse all**, **Connected**, and status filters. Search matches provider names,
+descriptions, and IDs; returning from a provider retains your query and position.
+Use **Pin to composer** in a connected provider's pane to keep a shortcut. Pins
+and recents are browser preferences, not grants of access or stored credentials.
+Connect an account or local vault, choose
 sources, and attach them without leaving chat. **My connections** in the user menu
 opens the same pane. Setup instructions expand in place; Google registration can
 be configured there or in Admin. Closing restores the previous Assistant pane;
@@ -112,17 +118,18 @@ Web research credentials and OCR are not installed. See
 [managed local processing](docs/adr/0005-managed-local-gateway.md) for identity
 preservation, receipt storage and platform boundaries.
 
-## Personal chat storage and recovery
+## Private workspace storage and recovery
 
 **Admin → Storage & data** keeps project pack settings separate from private chat
-history. Change location copies and verifies saved chats, keeps the original
+history and independent draft packs. Change location copies and verifies saved
+chats, drafts and their sources, keeps the original
 folder for recovery, and leaves API keys in protected settings. New installations
 use a platform data directory; existing histories move only when requested.
 
-Download chat backup exports saved conversations, candidate checkpoints and
+Download workspace backup exports saved conversations, independent drafts, candidate checkpoints and
 retained source text. Restore backup validates a ZIP into an empty private folder,
 then switches the active store and reloads Desk. It does not merge histories or
-include credential-store files or project files. Recover project history explicitly links chats
+include credential-store files or project files. Recover project history explicitly links chats and their draft repository
 when a project folder moves. Unsent browser drafts remain outside backups.
 
 See [private data and recovery](docs/adr/0003-private-chat-data-and-recovery.md) for
@@ -134,15 +141,16 @@ organization storage, scheduled backups, or a document provider.
 
 ## What it shows
 
-**A Packs workspace.** `/` opens `/packs`. The main sidebar keeps Create pack,
-Packs, Admin and Help & About. Packs has three contextual views: All packs,
-Tests (`/matrix`) and Pack flows (`/graphs`). Project files is available in the
-header’s project menu at the existing `/author` URL. Pack IDs such as `tests`
-and `flows` remain valid; collection views reserve no pack IDs.
+**Packs and Judgment Graphs.** `/` opens chat, and `/packs` opens the pack collection.
+The main sidebar keeps Packs, Graphs, Admin and Help & About. Graphs is immediately
+below Packs and opens `/graphs`. Tests and saved cases belong inside each pack;
+the old `/matrix` collection route returns to Packs. Project files is available
+in the header’s project menu at `/author`. Pack IDs such as `tests` and `flows`
+remain valid; collection views reserve no pack IDs.
 
-**A shell around all of it.** A header, a left rail, an Inspector, a Console and
-a status strip — described under [Shell](#shell). The rail's first entry creates
-a pack, and asks three things: a **name**, a **description**, and a
+**A shell around all of it.** A header, navigation, a contextual right pane and
+a status strip — described under [Shell](#shell). Create pack in the Packs
+collection asks three things: a **name**, a **description**, and a
 **template**. The name gives the id, the id gives the file name, and where that
 file goes is `storage.packs` in `jpack-desk.json` — configuration, not a
 question for whoever is creating a pack. The templates are the runtime's own
@@ -298,12 +306,13 @@ and is refused as malformed-input.
 
 **Pack tests and coverage:**
 
-- `/matrix` lists packs with saved cases. **Run all tests** requests the project’s
-  matrices through `experimental_test_packs`.
-- `/packs/:id/matrix` opens one pack’s saved cases. **Run tests** requests its matrix.
+- `/packs/:id/matrix` opens one pack’s saved cases. **Run tests** requests its matrix
+  through `experimental_test_packs` with that pack’s ID.
+- The duplicate collection Tests page and **Run all tests** action have been removed.
+  Legacy `/matrix` bookmarks redirect to `/packs` without running tests.
 - Opening a Tests page, changing files, window focus and reconnecting do not run
   tests. Completed results are retained for the current connection and labeled
-  Last run. The Console records command progress without input payloads.
+  Last run. Diagnostics records command progress without input payloads.
 
 Two things are on that page, and they answer different questions.
 
@@ -336,14 +345,14 @@ threshold would differ, which is the one input a matrix is most likely to lack.
 None of it gates. A missing probe moves no status, and the page says so, because
 a report that looked like a failing check would be read as one.
 
-**Pack flows:**
+**Judgment Graphs:**
 
-- `/graphs` lists configured flows through `experimental_list_graphs`, with the
+- `/graphs` lists configured graphs through `experimental_list_graphs`, with the
   last completed result already held in this connection’s cache.
 - `/graphs/:id` reads `experimental_get_graph` and draws the declared connections
   with the shared relationship map. Nodes and connections open contextual
   Inspector details; nodes link to their packs.
-- A flow’s Tests tab and the collection’s **Run all flow tests** command use
+- A graph’s Tests tab and the collection’s **Run all graph tests** command use
   `experimental_test_graphs` only when explicitly requested. Detailed traces are
   an option for the next command, never an automatic run.
 - Older runtimes retain explicit testing without an inventory fallback that
@@ -460,7 +469,7 @@ row's own verdict — which covers the headline and every reported node comparis
 together — is shown beside the diagram as the row's, never painted onto the
 composite.
 
-**What the project configures** is listed in Pack flows where
+**What the project configures** is listed in Graphs where
 `experimental_list_graphs` is served: the configured id beside the document's
 own id and version, its declared format version and result node, its node and
 edge counts, and the configuration's description. It costs one call that
@@ -533,68 +542,49 @@ A project that configures no graph is an answer rather than an error: the walk
 reports `skipped` with no entries, the home page offers no graph entry, and the
 graphs page says the project configures none.
 
-**A shell around all of it.** Six regions — a header, a navigation rail, the
-routes above, an Inspector, a Console and the status strip that is its
-collapsed face — plus two pages of their own: `/admin`, which renders the desk's
-configuration as two groups of cards in one shape under a status line, and
-`/help`, which names what this runtime advertises and renders its own authoring
-prompt as text. The shell **derives no verdict**:
-no status colour in the rail, no rollup count, no "N failing" pill anywhere. A
-red badge in a nav rail would be a gate the runtime never issued.
+**A shell around all of it.** The header, navigation, main workspace, contextual
+right pane and status strip share one frame. `/admin` provides configuration;
+`/help` explains the runtime and opens diagnostics. The shell derives no
+verdict: navigation does not invent status colors or aggregate failure counts.
 
 ## Shell
 
-**Six regions**, on a CSS grid of a **definite** viewport height —
-`height: 100dvh` and not `min-height`, so the content row divides the viewport
-instead of growing to fit a long page. Pages using `PageHeader` and `PageBody`
-keep chrome outside the scrolling body; other routes scroll in `.desk-main`.
-The Inspector likewise keeps its header and tabs outside its scrolling content,
-and the 28px strip stays on screen. The three pane sizes in the table are the
-configured defaults. The Inspector also accepts a per-project viewer width.
-The effective, viewport-bounded values are written onto the grid as `--rail-w`,
-`--inspector-w` and `--console-h`; collapse uses a second custom property.
-
-The workspace keeps a 12px right gutter. Drag the main/Inspector divider to
-resize the docked Inspector: 360px default, 320–640px within the available
-space. Main retains its reading or map working width; smaller screens use an
-inset drawer. Arrow keys resize, Shift moves faster, Home/End reach the limits,
-Enter closes the pane, and double-click or Escape restores its default width.
-
-A route publishes into the Inspector through `useInspectorPortal(node)`, which
-portals into the element the slot hands it and **claims the slot while it is
-there**. The context sits above `<main>`, so a route can reach it, and the pane
-publishes its target through a callback ref — a drawer that starts closed
-reports no target rather than a detached one, and a route that is told there is
-nowhere to publish renders nothing.
-
-The claim exists because a portal cannot tell React it happened: the pane used
-to render its empty-state paragraph unconditionally, so the first route to
-publish showed its panel *and* the empty state underneath it. A CSS `:empty`
-sibling rule would have been shorter and is rejected — vitest runs with
-`css: false`, so nothing in this repo could hold it and the mutation harness
-could not discriminate it.
-
-**A route may add a landmark inside `main`.** The pack route adds two: the
-packs pane is a list of navigations, so `<nav aria-label="Packs">` is the
-correct markup for it, and the document carries its own `<nav aria-label=
-"Members">` outline. The six regions below are the *shell's*, each still exactly
-one, and a test holds that with both of the route's own landmarks mounted.
+The shell has a definite `100dvh` height. Route headers stay outside scrolling
+content, and the status strip stays visible. Main and the contextual right pane
+share one rounded workspace boundary; opening a pane never remounts main.
 
 | Region | Default | Collapse | Landmark |
 |---|---|---|---|
 | Header | Always visible, 48px | Never | `banner` |
-| Left rail | Expanded, `panes.left.width` (248px) | → 56px icon rail; a drawer below 900px | `navigation`, named "Project" |
-| Main | Always visible | Never | `main`, `id="main"`, the skip link's target |
-| Inspector | Closed, `panes.inspector.width` (360px) | → 0px; a drawer below 1100px | `complementary`, named "Inspector" |
-| Console | Collapsed to the 28px strip, `panes.console.height` (240px) | → the strip, never below it | `region`, named "Console" |
+| Left navigation | Expanded, 220px | 52px icon rail; drawer below 900px | `navigation`, named "Project" |
+| Main | Always visible | Never | `main`, the skip link's target |
+| Contextual right pane | Closed unless its route requests it | 0px; drawer or workspace takeover when space is limited | Named for its content |
 | Status strip | Always visible, 28px | Never | `contentinfo` |
 
-**One workspace frame encloses main, Inspector and console.** `AppShell` keeps
-these panes in a stable `desk-workspace` container. It owns the complete 1px
-border, shared 12px radius and clipping; internal panes use straight dividers.
-The always-visible status strip sits outside it, with an 8px gap. Console
-height caps reserve that gap and the frame borders, including on short screens.
-The same boundary applies to every route; opening a pane never remounts main.
+**One pane control.** `PaneToggle` uses the shared panel SVG, mirrored for the
+right side, with the same button size, hover, focus and expanded state. The main
+navigation control stays before the brand in the app header. The folder control
+stays at the workspace's upper-left corner: before "Folders" when expanded and
+before "Browse" when collapsed. Right-pane controls sit together at the end of
+the pane header. There is no navigation footer toggle or global Inspector button.
+Provider logos remain separate from the shared interface icons.
+
+**Only contextual content opens a right pane.** Pack workspaces retain the
+Assistant, Details and Activity tool rail. Previews, connections and Admin's
+Technical details open through their local actions. A home page with no selected
+content cannot reopen an empty legacy Inspector from saved settings. Diagnostics
+opens from Help & About or `Mod+Alt+J`, with Connection, Activity and File changes
+tabs; connection logging continues while the pane is closed. There is no bottom
+Console pane or header/footer Console toggle. Legacy `panes.console` settings
+remain readable for configuration compatibility, but do not render a pane.
+
+The workspace keeps a 12px right gutter. Drag its right-pane divider to resize:
+360px default, 320–640px within the available space, unless the route specifies
+its own geometry. Arrow keys resize, Shift moves faster, Home/End reach the
+limits, Enter collapses, and double-click or Escape restores the default width.
+Routes publish content through the existing Inspector and Details portal APIs;
+those internal names remain for compatibility. Slot ownership prevents duplicate
+empty-state content, and a closed drawer publishes no detached target.
 
 **The measure is left-aligned at one gutter.** A route's content is not centred
 in the main pane — `.desk-measure` is `margin: 0` with `padding:
@@ -644,11 +634,11 @@ measures the cascade**, in Chrome, against a built chassis: the computed
 `position` of the frame and each pane, `scrollHeight` against `innerHeight`,
 `scrollY` after a `scrollTo(0, 5000)`, and whether any absolutely positioned
 element still resolves its `offsetParent` to `BODY`. Every route `App.tsx`
-declares, at every width the sheets author a breakpoint for, four pane
-configurations above 1099px and three at or below it — below that the Inspector
-is a modal drawer whose overlay owns the pointer, so the console cannot be
-toggled while it is open — 242 rows a build. It measured 0 of 242 contained at
-e2d1dee and 242 of 242 after. CI supplies no runtime binary and no project, so
+declares is sampled at every derived breakpoint, with the side pane closed and
+open. Workspace routes exercise Assistant; other routes exercise Diagnostics.
+Every sample also asserts the removed bottom Console remains absent. Historical
+runs measured 0 of 242 contained rows at e2d1dee and 242 of 242 after its fix.
+CI supplies no runtime binary and no project, so
 there is nothing for the chassis to serve; the gate is run by hand. Run before
 every merge that touches a stylesheet. This is a convention; nothing automated
 enforces it.
@@ -658,38 +648,26 @@ invisible: closed is the `hidden` attribute plus `[hidden] { display: none
 !important }` in the shell sheet, so a viewer who has closed the Inspector
 cannot tab into it.
 
-**Below 900px the rail is an overlay drawer, opened from the header.** In drawer
-form the rail draws no collapse toggle, so the opener has to live outside it —
-a control inside a closed drawer opens nothing. It is the `Project navigation`
-button at the left of the header, present only at that width, carrying
-`aria-expanded` always and `aria-controls="desk-rail"` **only while the drawer
-is open** — a closed `Dialog` unmounts its portal, so the id is not in the
-document and naming it would offer assistive technology a broken relationship
-rather than none. The same holds for the Inspector's toggle below 1100px. Both
-drawers hand focus back to the header control that opened them, by reference:
-neither has a `Dialog.Trigger` to restore to, because both openers are in the
-header two grid cells away. The drawer carries the
-`navigation` landmark with it, so the region table above holds at every width,
-and it carries a visible close button — Escape and the overlay are not
-affordances a viewer can see. **Every navigation inside it closes it**: the
-drawer is modal, so a link that navigated and left it standing put the
-destination behind an overlay.
-Both drawers are **modal**: while one is open the page beneath it is
-`aria-hidden`, which is what a modal is for and is why the landmark count is not
-the same in that state.
+**Below 900px navigation uses a modal drawer.** The same header control opens it;
+a matching panel control inside collapses it. Both carry a meaningful accessible
+name, and `aria-controls` is present only while its target exists. Escape and
+navigation dismiss the drawer and return focus to its opener. Contextual right
+drawers likewise restore focus to the action that opened them. Modal drawers
+hide the background from the accessibility tree; docked panes do not.
 
 **Shortcuts.** `Mod` is Ctrl or Cmd.
 
 | Chord | Does |
 |---|---|
 | `Mod+B` | Collapse or expand the navigation rail |
-| `Mod+Alt+I` | Open or close the Inspector |
-| `Mod+Alt+J` | Open or close the Console |
+| `Mod+Alt+I` | Toggle the active contextual side pane |
+| `Mod+Alt+J` | Open Diagnostics |
+| `Mod+K` | Search and switch between packs, folders, drafts, graphs and chats |
 | `Mod+S` | Save, while editing a pack |
 
 Every **shell** chord is suppressed while focus is in an `input`, a `textarea`
-or a `contenteditable` — which is exactly an editor — and every one has a
-visible button, so a chord the browser claims costs a click and not a feature.
+or a `contenteditable`. Navigation has a header control, contextual panes have
+local actions, and Diagnostics is available in Help & About.
 
 `Mod+S` is on the list and is deliberately **not** installed by
 `installShortcuts`, and the two facts are one fact: save is the chord that has
@@ -710,8 +688,9 @@ not bound, and `F6` is left to the browser.
 
 Escape closes a transient pack preview or a modal drawer. A docked document
 Inspector stays open. On the focused splitter, Escape resets width instead of
-closing the pane. The shell uses a drawer below 1100px or when the route's main
-working area and minimum Inspector width cannot fit. Swapping to the drawer
+closing the pane. The shell uses the measured workspace width, not a fixed viewport breakpoint,
+and opens a drawer only when the route's main working area and minimum Inspector
+width cannot fit. Before measurement, narrow screens start with the drawer fallback. Swapping to the drawer
 remounts its subtree, so inspector-local disclosure state resets at that point.
 
 **What is remembered is what somebody chose.** A layout that came from the
@@ -756,8 +735,8 @@ and that decision belongs to one predicate so the two cannot disagree.
 
 One desk on one origin serves whichever project it was started against, and a
 layout chosen for a three-pack project is not the one chosen for a forty-pack
-one. Collapse flags, the console's channel and an explicitly resized Inspector
-width are stored **only for the choices the viewer has actually made**.
+one. Navigation collapse and explicitly resized contextual pane
+widths are stored **only for the choices the viewer has actually made**.
 Version 1 records remain readable; the next gesture writes version 2 under
 the existing key. Configured defaults and temporary viewport clamps are never
 stored as width choices. A record that carried all
@@ -1007,6 +986,41 @@ units and nothing under them — no rule card, no condition operand, no review. 
 inside one another, and `role="button"` on a container holding more of them
 would be a lie about both.
 
+### Draft and pack workspace tools
+
+Drafts use one title/revision header and one navigation row. Logic's Map fills
+its remaining area; scope, evidence, resolution and sources remain available
+in List and Jump to. A node click selects; View details opens the shared right
+pane. The right-hand tool rail offers Assistant, Details and Activity, with
+runtime connection diagnostics at its foot. Activity includes file-watcher
+changes, not a second source-file browser. Normal inspection never opens the
+bottom console.
+
+Assistant, Details and Activity each use the full height of the shared right
+pane. Expand temporarily uses the workspace width; Restore returns to the saved
+pane width. Closing a tool or switching to a connection retains its portal,
+scroll position and unsent composer text. At narrow widths the same pane takes
+the main area's place without a modal or component remount. Draft tabs retain
+map/search state. Review and creation still require the existing checks.
+
+Ask Assistant about this adds a removable reference to the active chat composer.
+It does not alter the user's message or send a request. Clicking the reference
+returns to its selected details; sending includes the exact referenced definition
+and clears the reference. References are scoped to the chat and current workspace.
+Conditions show readable field labels and exact operands. Paths and the complete
+selected definition remain in Technical details, collapsed for a new selection.
+
+Drag a node's title to reposition it without changing document order or semantics.
+Positions survive pane, tab and Map/List switches within the workspace; Reset
+layout restores automatic positions without changing zoom. Layout is a temporary
+view preference, not persisted into pack bytes or across page reloads.
+
+The controlled React Flow nodes retain `measured` dimensions on viewport
+updates. Fresh node objects without these dimensions make React Flow hide and
+remeasure every node during panning. ResizeObserver can still report new sizes
+when translated text, display options or content change; a measurement update
+does not reset the viewport.
+
 ### Inspector details and disclosures
 
 - **Member** — the pointer, prose or the member's complete JSON subtree in a
@@ -1032,8 +1046,8 @@ would be a lie about both.
 
 ### The Packs collection
 
-`/packs` uses one compact header: All packs with its count, Tests and Pack flows,
-with Create pack on the right. Search and the compact Sort menu sit beneath it.
+`/packs` uses one compact Browse header with its count and folder toggle,
+with Create pack on the right. Graphs has its own primary navigation entry. Search and the compact Sort menu sit beneath it.
 Search matches the project ID and supplied description. Sorting names its actual
 key: Pack ID A–Z or Z–A; no modification date is invented.
 
@@ -2041,11 +2055,11 @@ file as bytes and forms no opinion about what they mean. `runtime.jpackBin` and
 was given, so a config-supplied path would be a way to run code on this machine
 by editing a file.
 
-**Identity is display, never a gate.** `identity.provider` is one nullable
-field — null, or an object. There is no `kind`, no vendor string and no third
-shape, and that absence is what stops an issuer someone else operates from
-acquiring anything an issuer you run yourself lacks. Configuring one changes
-what the header shows and nothing about who may reach the desk.
+**Legacy `identity.provider` is display configuration only.** Editing it does
+not grant access or change authentication. Actual sign-in is configured and
+tested in **Admin → Sign-in & access** and stored in a protected installation
+policy outside ordinary project and Desk configuration. Verified session claims
+supply the signed-in header identity; issuer + subject authorize the owner.
 
 **A key is refused by name wherever it is written.** There is no
 `clientSecret` and no `apiKey` in this schema at any depth, and a member whose
@@ -2057,6 +2071,24 @@ key" refusal every other misspelling gets: whoever pasted a key into a
 configuration file has made a mistake about *where keys live*, and a refusal
 that only says the spelling is wrong invites them to go looking for the right
 spelling.
+
+### ChatGPT subscription access (experimental, local)
+
+Open **Admin > Assistant > Access > ChatGPT subscription**, click **Connect
+ChatGPT**, complete browser sign-in, choose a model and save. Desk automatically
+prepares its compatible official Codex runtime on the first connection. No
+separate CLI installation, executable path or setup restart is required.
+**Test connection** explicitly runs a schema read; it never runs automatically.
+
+Managed installation currently supports Linux x86-64 and pins Codex `0.145.0`.
+Downloads are verified and cached privately; progress can be canceled or retried.
+Desk keeps its own login and does not import terminal credentials. API settings
+remain available when explicitly switching back. Advanced installation owners
+can override the executable with `--codex /absolute/path/to/codex` or disable
+subscription access with `--codex off`.
+
+Real subscription sign-in/inference still awaits release verification. See the
+[setup guide and validation limits](docs/design/codex-subscription-setup.md).
 
 ### The assistant slot
 
@@ -3418,21 +3450,33 @@ go build -o bin/jpack-desk .
 ./bin/jpack-desk --jpack /path/to/jpack /path/to/project
 ```
 
-It prints the URL to open. That URL is the **launch exchange**, not the desk:
+Open the plain URL printed at startup, for example `http://127.0.0.1:8791/`.
+For personal localhost use without a sign-in provider, opt in on the backend:
 
-```
-judgment-pack desk
-  project: /path/to/project
-  runtime: /path/to/jpack
-  open:    http://127.0.0.1:8791/launch?secret=1f3c…
+```sh
+JPACK_DESK_LOCAL_ACCESS=1 ./bin/jpack-desk --jpack /path/to/jpack /path/to/project
 ```
 
-Opening it once trades the secret for a **sixty-second, single-use handoff**
-cookie and redirects to `/`, so what ends up in the address bar is `/` and the
-secret is on no later request. The page then exchanges that handoff for a
-session id it holds itself and puts on each request as a bearer. See
-[Security model](#security-model) — including what the reusable secret and the
-history entry are worth.
+The plain URL then opens the workspace directly. This setting trusts access to
+this computer; it does not verify a Google or Microsoft identity. It creates an
+expiring local bearer session and preserves API and origin checks. It never
+overrides an enabled or unreadable sign-in policy. Leave it unset (or use `0`)
+to require owner setup. No browser-side environment variable or shared credential
+is needed. Signing out ends the current local session; **Continue** or reloading
+opens a new one while this mode is enabled.
+
+Without that option, a new installation prints a random **owner setup code**. Select
+**Set up sign-in**, enter that code, then configure an OIDC provider under
+**Admin → Sign-in & access**. Test the account and explicitly enable it as this
+installation's owner. Subsequent visits show **Continue with your provider**.
+
+No publisher registration is included in source or releases. The owner supplies
+one registration for the installation; ordinary sign-in uses the provider's own
+page. Google Desktop apps, tenant-specific Microsoft Entra public clients and
+other compatible OIDC providers use the same implementation. Configure the exact
+loopback redirect shown in Admin and keep the Desk port stable. Live acceptance
+against your registration is still required; automated fixtures are not vendor
+certification.
 
 **The project is chosen in three steps, in this order**: the argument, then
 `project.file` in this machine's desk-level file — read through the same
@@ -3454,11 +3498,9 @@ Two processes: the chassis for the relay, Vite for hot reload. Build the complet
 pinned gateway companions. Rebuild the complete bundle when the gateway pin changes.
 
 ```sh
-# terminal 1 — chassis with a fixed launch secret so the URL is stable across
-# restarts (flags come before the project directory: Go stops parsing flags at
-# the first positional argument)
+# terminal 1 — automatic local access; flags precede the project directory
 go build -trimpath -o bin/jpack-desk .
-./bin/jpack-desk --dev-token dev --port 8791 --jpack /path/to/jpack /path/to/project
+JPACK_DESK_LOCAL_ACCESS=1 ./bin/jpack-desk --dev-token dev --port 8791 --jpack /path/to/jpack /path/to/project
 
 # terminal 2 — Vite dev server, proxying /launch, /ws and /api to the chassis
 npm --prefix web run dev
@@ -3468,22 +3510,17 @@ Run the chassis from `bin`, beside its gateway companions. `go run` places its
 executable in a temporary directory without those companions, so PDFs, Google
 Drive and Gmail become unavailable even if a complete bundle exists in `bin`.
 
-Then open <http://localhost:5173/launch?secret=dev> **once**. The chassis answers
-`303` to `/#`; the browser lands on Vite's own `/` holding the handoff cookie —
-set for the dev origin, and **named for the chassis' port**, which is the port
-the desk was told it is on rather than the one the browser is talking to — and
-the page immediately spends it at `POST /api/session` for a session id it keeps
-in `sessionStorage`. Reload and navigate freely from there: the id is per tab and
-survives a reload. Open the launch URL again after restarting the chassis, which
-forgets every id it minted.
+Then open <http://localhost:5173/>; local access opens the workspace directly.
+To exercise owner setup instead, omit `JPACK_DESK_LOCAL_ACCESS`; the development
+setup code is `dev`. After sign-in is enabled, neither the environment option,
+this code nor legacy launch links can grant access. Restarting Desk ends browser
+sessions; return to the same plain URL to open Desk or sign in.
 
-`--dev-token` names a **fixed launch secret**, and passing it is what
-additionally permits the Vite dev server's origin — without it the chassis
-refuses the proxied upgrade, because the browser's `Origin` is the dev server's
-and never matches the host it reaches the chassis under. Vite proxies `/launch`,
-`/ws` and `/api` to `127.0.0.1:8791` (override with `JPACK_DESK_CHASSIS`);
-without the `/launch` entry the dev origin acquires no handoff, the page has
-nothing to exchange, and the other two answer `401`.
+`--dev-token` also permits the explicit Vite development origins. Vite proxies
+`/api` and `/ws` to `127.0.0.1:8791` (override with `JPACK_DESK_CHASSIS`). The
+provider callback goes directly to Desk's backend loopback port, then returns
+to the initiating Vite tab using an opaque attempt ID and a separate tab-held
+proof. No provider token or session credential appears in that return URL.
 
 Node 22 or newer is required (`web/package.json` says so, `.nvmrc` says `22`, and
 `npm run dev` and `npm run build` refuse an older Node with a sentence rather than
@@ -3492,12 +3529,12 @@ Vite's stack trace): run `nvm use` in the repository first.
 **In VS Code**, `.vscode/tasks.json` carries this as tasks. Set `jpackDesk.jpack`
 (the runtime binary) and `jpackDesk.project` (a directory with `jpack.json`) in
 your settings, then run **desk: open (hot reload)**: it starts the chassis on
-port 8790 with the fixed secret `dev`, starts Vite with its proxy pointed at
-that port, and opens `http://localhost:5173/launch?secret=dev`. Page edits
+port 8790 with `JPACK_DESK_LOCAL_ACCESS=1` and the development token `dev`, starts
+Vite with its proxy pointed at that port, and opens `http://localhost:5173/`. Page edits
 reload in place; a Go change means restarting the **desk: chassis (dev)** task,
 and the URL is the same afterwards.
 
-To check a running chassis end to end with the desk's own client code. The
+Before OIDC activation, check an isolated development chassis with the desk's client code. These legacy secret-based smoke commands are refused after activation. The
 origin and the secret are separate arguments, because a credential does not ride
 on a URL — the client presents it as `Authorization: Bearer`:
 
@@ -3508,266 +3545,76 @@ JPACK_DESK_SECRET=dev npm --prefix web run smoke -- http://127.0.0.1:8791
 
 ## Security model
 
-The desk drives a runtime that reads your project, and — since the authoring
-surface — writes files in it. Two capabilities are gated, and gated the same
-way: **`/ws`**, the relay, and **`/api/*`**, the file API. Static assets are
-not; they are the page, and the page can do nothing without one of the two.
+Desk binds `127.0.0.1`; this implementation is for a single local installation
+owner. It does not add a network listener, organizations or multi-user isolation.
+An OS process with access to the owner's files can read local data or reset the
+sign-in policy. OIDC is an application access boundary, not disk encryption or a
+defense against that OS account.
 
-- **Loopback only.** The listener binds `127.0.0.1`. Nothing off the machine
-  can reach it.
-- **A launch secret, traded once for a one-shot handoff.** A random 192-bit
-  secret is generated at startup and printed as
-  `http://127.0.0.1:<port>/launch?secret=…`. `GET /launch` compares it in
-  constant time and sets **`jpack-desk-launch-<port>`**: a fresh 192-bit value,
-  `HttpOnly; SameSite=Strict; Path=/; Max-Age=60`, single use, and worth exactly
-  one call to `POST /api/session`. It mints **no session** — a launch that did
-  would answer with a standing credential in a cookie jar, which is the
-  arrangement this replaces. (The secret's length is observable, which does not
-  matter: the format is fixed and public, and the value is the secret.)
+- **Local access is an explicit backend opt-in.** `JPACK_DESK_LOCAL_ACCESS=1`
+  allows a loopback browser to obtain an expiring local session without entering
+  a code. It requires an exact permitted Origin and same-origin Fetch Metadata;
+  other APIs still require a bearer. Reloads reuse the existing live session.
+  An enabled or unreadable OIDC policy always takes precedence. This option is
+  for an OS-trusted personal installation, not network or multi-user access.
+- **Default setup requires the local owner code.** Without local access enabled,
+  a browser exchanges the terminal code for a setup session. Legacy launch
+  handoffs and script authorization remain available only before OIDC activation.
+  In this default mode, a bare visit grants no workspace access.
+- **Configure → Test → Enable.** An authenticated setup/owner session tests a
+  registration. The callback must return to that same browser session with its
+  separately held proof. Only its latest completed test, within five minutes,
+  can be activated. Activation explicitly grants that verified account access
+  to existing local packs, chats and connections. Other accounts are refused.
+- **Reusable OIDC.** `coreos/go-oidc` and `golang.org/x/oauth2` implement discovery,
+  authorization code + S256 PKCE, remote signing-key retrieval and verification.
+  Desk checks state, nonce, issuer, audience, authorized party, signature and
+  token expiry. HTTPS endpoints are required except explicitly configured HTTP
+  loopback IP issuers. Redirects on backend identity requests are refused;
+  responses, concurrent work, attempts and timeouts are bounded.
+- **Tab-bound redirect completion.** Provider tokens remain in the backend and
+  are discarded after verification. The browser holds a short-lived completion
+  proof in `sessionStorage`, distinct from the opaque callback attempt ID.
+  Return paths must be internal. Invalid, expired and replayed attempts fail.
+- **Protected installation policy.** The tested registration, optional desktop
+  registration secret and exact owner issuer/subject live in owner-only
+  `secrets/sign-in.json` beneath the Desk configuration directory. No provider
+  access, refresh or ID tokens are saved. A malformed or unreadable existing
+  policy locks access; it never silently restores launch authorization. Public
+  releases contain no publisher registrations or credentials.
+- **No launch bypass after activation.** All API and WebSocket guards require
+  the owner session. Enabling or replacing a policy cancels existing requests,
+  streams and sockets, including work admitted with the launch secret, and
+  revokes existing browser sessions. Ordinary configuration edits do not change
+  this policy. A provider outage never falls back to anonymous access.
+- **Bounded, revocable sessions.** A successful login mints a fresh random
+  192-bit opaque session. The backend holds only a keyed hash as its lookup key.
+  Provider and automatic local sessions expire after 30 minutes without
+  authenticated requests and at eight hours absolutely. Expiry and explicit sign-out cancel session work
+  and sockets and free capacity. At most 64 sessions are held; restart ends all
+  sessions. The next visit signs in again, or opens a new local session when
+  local access is enabled. No refresh-token extension or provider-wide logout
+  is implemented.
+- **Explicit bearer transport on loopback.** The browser keeps its opaque Desk
+  session in per-tab, per-origin `sessionStorage`, sends it as `Authorization:
+  Bearer` on HTTP requests and as a WebSocket subprotocol offer. The server
+  selects only the plain protocol, never echoing the credential. Sessions are
+  never placed in query strings. Cookie isolation across localhost ports is
+  insufficient; hosted HTTPS cookie sessions need their own deployment design.
+- **Origin and UI boundaries.** Mutating auth endpoints require an exact local
+  origin or explicit development origin and reject cross-site requests. The
+  existing API/WS origin guard remains. Private providers and views mount only
+  after `GET /api/session` verifies access. Ending a session unmounts them and
+  clears private query caches. Upstream provider `401` responses remain distinct
+  from Desk-authored refusals, so source failure does not sign out the user.
+- **Local recovery.** Stop Desk, run `jpack-desk --reset-sign-in` as the OS owner,
+  then restart and configure the new owner using the new setup code. This removes
+  only the sign-in policy. Packs, chats and source credentials are preserved.
+  Reset is a local CLI operation; there is no anonymous HTTP reset endpoint.
 
-  Then `303 See Other` to `/#`. The empty fragment is written out on purpose: a
-  `Location` carrying none inherits the *request's* (RFC 9110 §10.2.2), so
-  `/launch?secret=S#S` would land on `/#S` with the secret sitting in
-  `location.hash`; the page takes the bare `#` off the address bar once, on
-  load. **Nothing that looks like a launch is ever answered with the page**:
-  every path at or under `launch` in any case, and every request whose raw query
-  mentions `secret` under any case — before or after a lenient percent-decode —
-  is a `404` rather than the single-page fallback, which would have handed back
-  the page with the secret still on the URL.
-
-  A wrong or absent secret answers `403` with one line and **sets nothing**; the
-  two are not distinguished, because a caller that could tell them apart would
-  have an oracle for the shape of the secret.
-
-  **The secret stays valid for the life of the process, and the launch URL may
-  stay in browser history** like any URL that was visited. Both are deliberate,
-  and stated rather than hidden: single use *there* would make every closed tab
-  a restart of the desk, and what is single use is the handoff, which is the
-  thing that is ambient. What that history entry is worth is one more launch, to
-  somebody already at this machine's browser.
-- **The session is a bearer the page holds, and nothing ambient authorizes
-  anything.** `POST /api/session` spends the handoff and answers a 192-bit
-  session id. The page keeps it in `sessionStorage` under
-  `jpack-desk-session:<host:port>` — per tab, per origin **including the port** —
-  and puts it on every request itself: `Authorization: Bearer <id>` on a
-  `fetch`, and the `jpack-desk-session.<id>` subprotocol offer on the WebSocket
-  upgrade, which is the only place a browser lets a page put anything on a
-  handshake. It is never on a URL. The chassis answers the upgrade by selecting
-  the plain `jpack-desk`, so the id is offered and never echoed back. On `/ws` a
-  session id is read **only** off that offer: one on the upgrade's
-  `Authorization` header authorizes nothing there.
-
-  **Why not a cookie.** A cookie is ambient by construction, and it has no port:
-  one set for `127.0.0.1` is sent to every port on that host, so every other
-  local service receives it — and a script that captures one replays it, because
-  the rules that stop a *page* forging `Sec-Fetch-Site` or `Origin` are
-  forbidden-header rules, and they bind browsers and nothing else. That was
-  measured on this desk rather than reasoned about: a cookie captured at the
-  exchange and replayed from `curl` with a forged header read the desk. Nothing
-  is guarded here now — the ambient credential is gone.
-
-  The store is keyed by an HMAC of each id under a key minted in this process,
-  so "is this id live" is not a hash-table probe over bytes a caller chose.
-- **The store holds 64 sessions and refuses a 65th.** `POST /api/session`
-  answers `503` and `this desk holds its maximum of sessions; restart it`, and
-  **every session already minted goes on working** — nothing is dropped. The
-  page shows that sentence verbatim rather than "open the printed URL", because
-  reopening it gets a fresh tab the same 503.
-
-  **Only a live handoff is refused for want of room**, and the order matters:
-  the cookie is classified first. Asking the bound first meant an ordinary
-  reload at a full desk — which presents no handoff and would have been told
-  `no-handoff` — was answered `503` instead, and a page that acts on a capacity
-  refusal deletes an id that was perfectly good. A live handoff refused this way
-  is **not spent** and its cookie is left where it is, so the refusal itself
-  destroys nothing.
-
-  **It does not survive a restart, and nothing does.** A restart regenerates the
-  launch secret and empties both stores, so the URL the old process printed and
-  the handoff cookie in the browser are equally dead — the cookie names a value
-  the new process never minted, which is ignored and reads as `no-handoff`. The
-  way back is the URL the **new** process prints, which is exactly what the
-  capacity refusal's own sentence tells a person to go and get. The one
-  exception is a desk started with a fixed `--dev-token`: it prints the same
-  secret again, so the old URL still opens it.
-
-  **Sixty-four is cumulative for the life of the process, not open tabs — and
-  an ordinary reload does not spend one.** A session is never removed, so every
-  session this process has minted counts. But a reload presents no handoff, is
-  answered `no-handoff`, and **mints nothing**: it keeps the id the tab already
-  holds. What spends capacity is a *launch* — opening the printed URL, which
-  buys a handoff, which buys one session — so sixty-four is sixty-four openings
-  of that URL, not sixty-four page loads. Reaching it means somebody has
-  reopened the launch link sixty-four times, and the answer is to restart the
-  desk. **Anyone holding the launch secret can force it deliberately** —
-  sixty-four `POST /api/session` with the secret as a bearer — which is a
-  self-inflicted denial of service by whoever already has the desk's own
-  credential, and is written down here rather than guarded against.
-
-  **There is no eviction**, and that is a decision rather than an omission:
-  eviction ends a live session from outside the page that holds it, so the page
-  needs a second actor to notice — and this desk's page has exactly one, the
-  bootstrap, because every pair of actors that could read or replace the id was
-  a race.
-- **The one thing that is still ambient, and the residual it leaves.** The
-  handoff is a cookie, for the sixty seconds between the launch and the page's
-  first request. It opens exactly one route and is spent by it.
-
-  A script that captures it inside that window and forges `Sec-Fetch-Site:
-  same-origin` **can take a session, and this desk cannot tell that session from
-  the person's own**. Forbidden-header rules bind browsers, not scripts, and
-  nothing written here changes it.
-
-  **The desk does not detect it and does not announce it.** Four review rounds
-  went into making a theft visible on the page, and every attempt was a defect
-  on the same seam: a signal the page *held* was state a reload could lose, and
-  a signal it *derived* said exactly the same thing about the person's own
-  second tab, a script authorized with the launch secret, and a thief — which
-  this desk cannot tell apart. The line of work is **withdrawn** rather than
-  repaired, and this paragraph is what stands in its place.
-
-  **What the shape does is bound it**: sixty seconds, and one use. **The remedy
-  is a restart**, which regenerates the launch secret and empties the session
-  store, so every id and every handoff from before names nothing.
-
-  **The exchange's three refusals, and what the page does with each.**
-
-  | code | what happened | what the page does |
-  | --- | --- | --- |
-  | `no-handoff` | nothing this desk recognises was presented | keeps the id it holds |
-  | `handoff-spent` | a handoff this desk finished with | keeps the id it holds |
-  | `handoff-expired` | a handoff this desk minted and let lapse | keeps the id it holds; a tab with none is told the link expired |
-
-  `handoff-spent` is read **exactly as** `no-handoff`, and that is the point: a
-  cookie this desk no longer holds tells the page nothing it may act on. The
-  desk cannot distinguish a page's own earlier spend — the exchange clears only
-  `Path=/`, so a copy planted at a longer path by anything on a sibling loopback
-  port outlives it — from anybody else's. The two codes exist because the store
-  remembers which of its own handoffs it *spent* and which it let *lapse*, and
-  only the second says something a person can act on: nobody used the link,
-  sixty seconds went by, and the launch secret still works, so a tab **with no
-  session** is told *The launch link expired before this page loaded. Open the
-  URL jpack-desk printed at startup.* A tab that already holds an id is told
-  nothing and keeps it: the lapsed link says nothing about that id, which an
-  earlier launch bought and which is very likely still live. If it is not, the
-  first chassis call answers a marked `401` and ends the session then — the one
-  path that knows.
-
-  **A refusal clears nothing**, and that is a fix rather than an omission: the
-  clearing header and the refusal used to travel in one response, so a tab that
-  reloaded between the two got a different answer to the same question, decided
-  by a race. Only success clears.
-
-  **A value this desk does not recognise is ignored**, for the reason above: a
-  page on any sibling loopback port can set a cookie of this name at a longer
-  path, and a rule that refused what it did not recognise would refuse every
-  load, for ever, to a tab whose session is fine.
-
-- **A refusal after the bootstrap is terminal until the page is loaded again.**
-  A `401` from any chassis call, or a refused upgrade the page puts to
-  `GET /api/session` and sees refused, makes the page forget the id and say the
-  sentence above. It does not renew and it does not retry: the only thing that
-  mints a session is a handoff, and the only thing that issues a handoff is
-  `/launch?secret=…`. Reloading the page runs the bootstrap again, and a handoff
-  present then is spent — **that is the whole recovery flow**.
-
-  **And terminal reaches the sockets, not only the requests.** A `401` is met by
-  the caller that made the request; a WebSocket that was already open notices
-  nothing at all, and went on carrying frames for a session the chassis had
-  refused. So `forgetSession` publishes on one subscription: the desk's own MCP
-  connection and the assistant's each close their transport, the gated
-  connection an engine drives delivers nothing further and says why, and the
-  page renders the notice **once** — a StrictMode double-mount included, because
-  each subscription is torn down with the effect that made it.
-- **No sign-out, no expiry, no eviction.** A session lives until the process
-  stops. There is no `DELETE /api/session`; a `DELETE` to that path is read as
-  the reader and the session is still live afterwards. Sign-out and eviction
-  arrive with the identity provider, whose sign-out they will be, each as its
-  own PR.
-- **A restart ends every session, and the printed URL is how you come back.**
-  The store is in memory and its HMAC key is minted per process, so nothing
-  survives a stop — every id from before names nothing. **Open the URL the new
-  process printed**: the launch secret is generated per process too, unless
-  `--dev-token` fixed it, so the previous run's URL is not the one to reopen.
-
-  **What a tab open across the restart actually does, in two steps.** Its
-  bootstrap presents no handoff — the one it had was spent and cleared long ago
-  — so the exchange answers `no-handoff` and the page keeps the id it holds. The
-  chassis cannot say more than that: it has never seen this id and has nothing
-  to compare it to. The **first chassis call** then meets a marked `401`, and
-  that is where the session ends, with the sentence that names the way back.
-- **Or the launch secret as a header, for a script.** `Authorization: Bearer
-  <launch secret>`, compared in constant time, on `POST /api/session` to mint a
-  session or on any gated route directly. That is how the smoke client, the
-  acceptance run, the containment gate and every test in `internal/desk`
-  authorize — none of them has a cookie jar. A session id presented there is
-  looked up in the store instead, so the two never stand in for each other. A
-  script holding the secret has no session *record*, and `GET /api/session`
-  tells it so with an empty subject rather than inventing one.
-- **No session material on any query, anywhere.** The `?token=` parameter this
-  chassis authenticated with is **removed**, not deprecated: it authorizes
-  nothing, on any route, on any method, and neither does a session id put there.
-  A credential on a query is a credential in an address bar, a `Referer`, a
-  proxy log, a browser's history and `Response.url` inside the page — and no
-  amount of care at the places a URL is forwarded to fixes that; see the model
-  relay's query rule below for three ways it leaked out of one of them. One test
-  greps the **built bundle** for `?token=`, `secret=` and `/ws?`.
-- **An origin check, and it is the CSRF defence — where there is one to make.**
-  A request whose `Origin` is not the origin the page was served from is refused
-  — **scheme and host both**, and an `Origin` carrying a path, query, fragment
-  or userinfo is refused outright rather than matched on its host. It applies to
-  every gated request and to the upgrade.
-
-  On those routes it is now **defence in depth**: the session is a bearer this
-  page holds, so a cross-site page has nothing to send in the first place. A
-  request with no `Origin` is accepted there, because a script legitimately
-  sends none and a same-origin `GET` sends none either, and neither is
-  authorized by anything ambient.
-
-  On the **exchange** it is not defence in depth. That is the one route an
-  ambient credential opens, so it carries the Origin guard *and* requires
-  `Sec-Fetch-Site: same-origin`, which a browser will not let a page forge.
-- **`GET /api/session`** answers `{subject, issuer}` for the bearer the request
-  carries, and `401` for a request that carries none. Today the exchange is the
-  only thing that mints a session and it writes `local user` and a null issuer.
-  Nothing in the page renders it; the record exists so that an identity provider
-  has somewhere to write a subject it authenticated — and so that a page whose
-  upgrade was refused has a channel that reports a status, which a failed
-  WebSocket handshake does not.
-- **Fetch metadata is required on exactly one route**, the exchange, so what a
-  browser must do is send `Sec-Fetch-Site` on a same-origin `POST` — Chrome,
-  Firefox and Safari 16.4+ all do, and nothing else on this desk reads it. The
-  WebSocket handshake is authorized by the subprotocol offer the page makes, so
-  it depends on no fetch metadata at all.
-- **Under `npm run dev` the Vite dev server sees the session.** In production
-  nothing sits between the page and the chassis: the listener binds loopback.
-  The development configuration this repository documents puts Vite in between
-  and proxies `/ws` through it — and the session id travels in the
-  `Sec-WebSocket-Protocol` **request** header, so the dev server handles it, and
-  would log it if it logged request headers. It is a development arrangement on
-  the developer's own machine, and it is written down rather than left as an
-  assumption that there is nothing in between.
-- **Only `GET /launch` mints a handoff.** Every other method, `HEAD` included,
-  answers `405` and sets nothing. `HEAD` is named because Go's router matches it
-  on a `GET` pattern, so it reached the handler with a valid secret and was
-  handed a credential no page would ever spend.
-- **One 401 does not end the session, and one header is how the page knows.**
-  The assistant's relay forwards the configured endpoint's status verbatim, so a
-  `401` there usually means the stored key was not accepted; ending a person's
-  desk session over that would be reading one refusal as another.
-
-  Every refusal **this chassis authors** carries `X-Jpack-Desk-Refusal: <code>`
-  — set in one place, so a refusal written tomorrow carries it without anybody
-  remembering to — and the relay **strips that header from every upstream
-  answer**, in every casing (`Header.Del` canonicalises) and from trailers,
-  which it forwards none of anyway. So the header's presence is the
-  discriminator, and there is nothing an endpoint can send that wears it.
-
-  **This replaces reading the body, which was wrong twice.** A body has to be
-  consumed to be read and a *clone* has tee semantics, so an oversized chunked
-  refusal deadlocked the reader trying to classify it; and an endpoint can write
-  any body it likes, so a body-borne discriminator was **forgeable** — a
-  residual this desk no longer has.
+Source-account OAuth remains in gateway companions. Signing into Desk does not
+connect Drive/Gmail, delegate a Desk ID token to the gateway, or upload local
+data. Gateway principal isolation and hosted membership remain separate work.
 
 **A cross-origin write is refused twice, and neither layer is load-bearing
 alone.** A page on another site cannot send the file API's `PUT` from a browser
@@ -3794,10 +3641,8 @@ absence of a caveat.
 It writes to the project only through the file API, only inside the project
 root, and only where a request carried a session and an acceptable origin. The
 runtime subprocess inherits the project directory as its working directory and
-is killed when the socket that started it closes. Identity is display only; the
-change that would falsify that is wiring an identity provider — discovery,
-JWKS, a redirect — and the PR that does it must amend this paragraph in the
-same commit.
+is killed when the socket that started it closes. The configured sign-in policy
+authorizes the installation owner on every protected API and WebSocket request.
 
 ### Where the assistant key lives
 
@@ -4405,7 +4250,7 @@ exactly, or with whitespace folded — and answers with an excerpt id
 (`src-2#e1`) the draft cites in its `sources[].citation.location`, beside the
 excerpt text and the page URL, and each rule references from `sourceRefs`.
 Every tool answer is labelled as retrieved material, data and not
-instruction; every call is a milestone in the Console's Activity tab, with no
+instruction; every call is a milestone in the Diagnostics’ Activity tab, with no
 page text in it.
 
 **What is kept apart, by name.** A search snippet is not the page; a read is
@@ -4531,7 +4376,7 @@ URL, the retrieval time against the page's declared dates and the reader's
 reported time, the receipt (session and index, result digest, endpoint,
 snapshot, peer identity, adapter) and its verification state with findings,
 and every excerpt in context; for a rule, its condition and the excerpts it
-cites. The Console's Activity tab carries what the tools did.
+cites. The Diagnostics’ Activity tab carries what the tools did.
 
 ### PDF and document attachments
 
@@ -4670,7 +4515,7 @@ answers without a key at a low rate limit and renders HTML and PDF; Tavily's
 free tier covers a run's searches. A page the reader could not render, a
 rate limit, an answer past the output bound or a refused credential each
 arrive as the source's failure, in the gateway's own words, on the Sources
-tab and in the Console.
+tab and in Diagnostics.
 
 **What this release does not do.** No scheduled monitoring or background
 maintenance: a run lives in the page, and the same controller, ledger,
@@ -5580,3 +5425,25 @@ Disabled-action reasons are visible help, full digest values open a selectable
 and copyable disclosure, and graph diagnostics can be expanded without hover.
 See [the tooltip rules](docs/design-system.md#tooltips-truncation-and-full-values)
 and [the completed sweep](docs/reviews/tooltip-sweep.md).
+
+### Organizing packs
+
+Packs supports nested folders in a resizable, collapsible browser. Existing packs start in the local user’s home folder. Folders organize the project without moving its pack files; include `jpack-folders.json` in project backups. See [Pack folders](docs/design/pack-folders.md) for behavior, storage, and limits.
+
+
+## Local operational Jobs pilot
+
+**Jobs** now appears below Graphs. Create a job from a saved pack, check its saved tests and a sample,
+review its fixed release, then submit new inputs manually or through the authenticated
+API. The pack’s More menu also opens Create job. Runs are separate from saved tests
+and retain their exact inputs, Runtime output and operational audit record.
+
+The independently built `judgment-pack-runner` owns durable SQLite storage and the
+queue. Install `jpack-runner` beside Desk or pass `--runner /absolute/path/to/jpack-runner`.
+To package the local pilot with the bundle builder, supply
+`--runner-checkout /path/to/judgment-pack-runner`. This explicitly uses that checkout;
+there is no released/pinned remote runner dependency or automatic download yet.
+
+See [the implemented pilot](docs/design/operational-jobs-pilot.md) for its scope,
+recovery, API, storage and verification. A bare Desk build without the companion
+shows an installation message on Jobs and continues to support the existing pages.

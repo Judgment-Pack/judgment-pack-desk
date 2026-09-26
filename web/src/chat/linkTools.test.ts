@@ -456,3 +456,17 @@ describe('website exploration in chat',()=>{
   expect(h.ingestSite).toHaveBeenCalledTimes(10)
  })
 })
+
+
+it('records a successful cached read for each response and only the pages actually returned', async () => {
+  const acquired = webDocument('first', FETCHED, ['x'.repeat(READ_WINDOW + 100), 'second'])
+  const h = harness({ingest: async () => acquired})
+  const first = vi.fn(), second = vi.fn()
+  await h.factory({turns:()=>h.turns,recordDocument:first})[0]!.execute({url:FETCHED},signal)
+  expect(first.mock.calls[0]?.[0].document.pages).toEqual([1])
+  await h.factory({turns:()=>h.turns,recordDocument:second})[0]!.execute({url:FETCHED,offset:READ_WINDOW+102},signal)
+  expect(second.mock.calls[0]?.[0].document.pages).toEqual([2])
+  expect(h.documents).toHaveLength(1)
+  await h.factory({turns:()=>h.turns,recordDocument:second})[0]!.execute({url:'https://unprovided.example'},signal)
+  expect(second).toHaveBeenCalledOnce()
+})

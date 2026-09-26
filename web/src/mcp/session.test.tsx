@@ -162,6 +162,17 @@ describe('the one exchange', () => {
     expect(window.sessionStorage.getItem(sessionStorageKey())).toBe(MINTED)
   })
 
+  it('presents the stored bearer so automatic local reloads reuse their session', async () => {
+    window.sessionStorage.setItem(sessionStorageKey(), STORED)
+    const seen = record((call) => {
+      expect(call.authorization).toBe(`Bearer ${STORED}`)
+      return json({ id: STORED })
+    })
+    expect(await bootstrap()).toBe(STORED)
+    expect(exchanges(seen)).toHaveLength(1)
+    expect(window.sessionStorage.getItem(sessionStorageKey())).toBe(STORED)
+  })
+
   it('keeps the stored id when the exchange finds no handoff', async () => {
     // A reload of a tab that bootstrapped earlier: the handoff is long spent,
     // and the id this tab holds may well still be live. Throwing it away over

@@ -22,7 +22,8 @@ import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { connectionSays, useMcp } from '../mcp/McpProvider'
 import { AUTHOR_PACK_PROMPT, usePromptNames, usePromptText } from '../mcp/prompts'
 import { usePacks } from '../mcp/queries'
-import { SESSION_SENTENCE } from '../identity/UserControl'
+import { Button } from '../ui/Button'
+import { useDiagnostics } from '../shell/Diagnostics'
 import { SHORTCUTS } from '../shell/shortcuts'
 import { useHashTarget } from '../shell/useHashTarget'
 
@@ -30,6 +31,7 @@ const REPO = 'https://github.com/Judgment-Pack/judgment-pack-desk'
 
 export function HelpAbout() {
   useLocale()
+  const diagnostics = useDiagnostics()
   const mcp = useMcp()
   const { status, server, known } = mcp
   const { desk } = useEffectiveConfig()
@@ -49,6 +51,7 @@ export function HelpAbout() {
       </header>
 
       <Section title={msg("This connection")}>
+        <Button variant="quiet" onClick={diagnostics}>{msg("Diagnostics")}</Button>
         <p><Message text={"Runtime:<0/><1/><2/>Runtime binary:<3/><4/><5/>Tool listing: <6/><7/><8/>"} slots={[' ', status === 'ready' && server ? (
             <>
               <code>{server.name}</code> {server.version}
@@ -62,6 +65,11 @@ export function HelpAbout() {
           ), <br />, known ? msg("read") : msg("not read — every capability below is unknown, not absent"), <br />, data?.configPath && (
             <><Message text={"Project configuration: <0/><1/>"} slots={[<code>{data.configPath}</code>, <br />]} /></>
           )]} /></p>
+        {desk?.localGateway?.status === 'ready' && desk.localGateway.build && (
+          <p>{msg('Gateway')}: <code>{desk.localGateway.build.version || desk.localGateway.build.revision}</code>
+            {desk.localGateway.build.version && <> · <code>{desk.localGateway.build.revision}</code></>}
+          </p>
+        )}
         <details className="disclosure">
           <summary>{msg("Connection capabilities")}</summary>
           <Json label={msg("This connection, and what this runtime advertises")} value={connectionSummary(mcp)} />
@@ -77,9 +85,9 @@ export function HelpAbout() {
             </li>
           ))}
         </ul>
-        <p className="quiet"><Message text={"<0/> is Ctrl or Cmd. On macOS the browser claims Cmd+Alt+I and Cmd+Alt+J for its own developer tools before the page sees them, and Cmd+B is Firefox's bookmarks sidebar — use the Ctrl spelling there, or the buttons. Every shortcut has a visible button, so a chord the browser eats costs a click and not a feature. Shortcuts are suppressed while you are typing in a field or in the authoring editor."} slots={[<code>Mod</code>]} /></p>
-        <p className="quiet"><Message text={"Below 900px the rail is an overlay drawer and draws no collapse toggle of its own, so its button moves to the header: <0/>, at the left, next to the organization mark. A control inside a closed drawer opens nothing."} slots={[<strong>{msg("Project navigation")}</strong>]} /></p>
-        <p className="quiet"><Message text={"<0/> closes the Inspector when it appears as a drawer below 1100px. It does not close a regular pane."} slots={[<code>Escape</code>]} /></p>
+        <p className="quiet"><Message text={"<0/> is Ctrl or Cmd. On macOS the browser claims Cmd+Alt+I and Cmd+Alt+J for its own developer tools before the page sees them, and Cmd+B is Firefox's bookmarks sidebar — use the Ctrl spelling there, or the buttons. Pane controls are available in their workspace; diagnostics are available in Help & About. Shortcuts are suppressed while you are typing in a field or in the authoring editor."} slots={[<code>Mod</code>]} /></p>
+        <p className="quiet"><Message text={"Use <0/> at the top left to collapse or expand navigation. The control stays in the same place on every screen size."} slots={[<strong>{msg("Expand navigation")}</strong>]} /></p>
+        <p className="quiet"><Message text={"<0/> dismisses an open drawer. Use the panel control to collapse a docked pane."} slots={[<code>Escape</code>]} /></p>
       </Section>
 
       <Section title={msg("Authoring method")}>
@@ -104,8 +112,8 @@ export function HelpAbout() {
       </Section>
 
       <Section title={msg("Security")}>
-        <p className="quiet" id="security">{msg(SESSION_SENTENCE)}</p>
-        <p className="quiet">{msg("The desk is authorized by three things and not by who you are: the loopback bind, that session, and an origin check on every relay and file-API request. A configured identity provider changes what the header displays and nothing about who may reach the desk.")}</p>
+        <p className="quiet" id="security">{msg('One owner per local Desk. Source connections are managed separately.')}</p>
+        <p className="quiet">{msg("If you lose access to the provider, stop Desk and run jpack-desk --reset-sign-in on this computer, then restart and set up sign-in again. Packs, chats, and source connections are preserved.")}</p>
       </Section>
 
       <Section title={msg("Where to read more")}>

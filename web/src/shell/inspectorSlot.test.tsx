@@ -1,3 +1,5 @@
+import { useMemo } from 'react'
+import { useInspectorPresentation } from './InspectorPresentation'
 /**
  * The Inspector slot, from a **route** — which is where it was broken.
  *
@@ -127,6 +129,13 @@ function viewport(width: number) {
  * the shape a route has: the hook is called unconditionally by whatever is
  * mounted, and "not publishing" is that thing not being mounted.
  */
+function OwnedPane({children}: {children: ReactNode}) {
+  const [open, setOpen] = useState(false)
+  const presentation = useMemo(() => ({ title: 'Inspector', open, onOpenChange: setOpen, width:360, onResize:()=>{}, onReset:()=>{}, minimumMainWidth:0, maximumWidth:640 }), [open])
+  useInspectorPresentation(presentation)
+  return <><button onClick={()=>setOpen(value=>!value)}>Inspector</button>{children}</>
+}
+
 function Publisher({ node }: { node?: ReactNode }) {
   return useInspectorPortal(node === undefined ? <p>published from the route</p> : node)
 }
@@ -167,9 +176,9 @@ function renderNothingYet() {
         path: '*',
         element: (
           <McpContext.Provider value={connected({ client: PROJECT.client })}>
-            <AppShell>
+            <AppShell><OwnedPane>
               <NothingYetRoute />
-            </AppShell>
+            </OwnedPane></AppShell>
           </McpContext.Provider>
         )
       }
@@ -190,9 +199,9 @@ function renderClaiming() {
         path: '*',
         element: (
           <McpContext.Provider value={connected({ client: PROJECT.client })}>
-            <AppShell>
+            <AppShell><OwnedPane>
               <ClaimingRoute />
-            </AppShell>
+            </OwnedPane></AppShell>
           </McpContext.Provider>
         )
       }
@@ -235,9 +244,9 @@ function renderDesk() {
         path: '*',
         element: (
           <McpContext.Provider value={connected({ client: PROJECT.client })}>
-            <AppShell>
+            <AppShell><OwnedPane>
               <PublishingRoute />
-            </AppShell>
+            </OwnedPane></AppShell>
           </McpContext.Provider>
         )
       }

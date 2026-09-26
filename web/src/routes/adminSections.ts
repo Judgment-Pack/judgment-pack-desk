@@ -35,7 +35,7 @@ export const ADMIN_GROUPS: readonly AdminGroup[] = [
     sections: [
       { id: 'assistant', get title() { return msg("Assistant") } },
       { id: 'connections', get title() { return msg("Connections") } },
-      { id: 'identity-provider', get title() { return msg("Identity provider") } }
+      { id: 'identity-provider', get title() { return msg('Sign-in & access') } }
     ]
   }
 ]

@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client'
 import { RouterProvider, createBrowserRouter } from 'react-router-dom'
 import { ChatProvider } from './chat/ChatProvider'
 import { App } from './App'
+import { SessionGate } from './auth/SessionGate'
 import { DeskConfigProvider } from './config/DeskConfigProvider'
 import { IdentityProvider } from './identity/IdentityProvider'
 import { McpProvider } from './mcp/McpProvider'
@@ -41,17 +42,15 @@ const router = createBrowserRouter([
   {
     path: '*',
     element: (
-      // The configuration feeds both the identity slot and the pane defaults,
-      // so it is outermost. None of the three is a gate: the config query
-      // fails closed to the built-in defaults, identity is display only, and
-      // the pane state has a real default value of its own.
-      <McpProvider>
+      // Confirm local access before any project/config/chat provider mounts.
+      // The backend remains the authority for every protected operation.
+      <SessionGate><McpProvider>
         <DeskConfigProvider>
           <IdentityProvider>
             <ChatProvider><App /></ChatProvider>
           </IdentityProvider>
         </DeskConfigProvider>
-      </McpProvider>
+      </McpProvider></SessionGate>
     )
   }
 ])

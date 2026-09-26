@@ -1,6 +1,7 @@
 package desk
 
-// The bootstrap, the exchange, and the bearer session it produces.
+// Bearer sessions and the legacy local handoff. The handoff is accepted only
+// before OIDC activation; auth_*.go owns normal sign-in, setup and policy.
 //
 // # The rule this file exists to keep
 //
@@ -57,16 +58,15 @@ package desk
 // thief. The remedy is a **restart**, which regenerates the secret and empties
 // the store.
 //
-// # What is deliberately absent
+// # Session lifetime
 //
-// There is **no renewal, no sign-out, no expiry, no eviction and no socket
-// registry**. A session lives for the life of the process; the store refuses a
-// 65th rather than making room by dropping one. Every one of those is a second
-// actor that can end or replace a session while another is using it, and each
-// pair of actors is a race. They arrive with the identity provider, each as its
-// own PR, when there is a reason for them beyond symmetry.
+// DELETE /api/session revokes the presented browser session and cancels its work.
+// Provider sessions expire after 30 minutes idle and eight hours absolutely.
+// Once sign-in is enabled, launch credentials authorize nothing. Other sessions
+// are unaffected by individual sign-out; policy changes end every session.
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -174,12 +174,19 @@ const maxLaunches = 32
 // `subject` and `issuer` are what `GET /api/session` answers with, and they are
 // why this is a record rather than a set of ids: a session is the thing an
 // identity provider fills in, and a bare set has nowhere to put the subject it
-// authenticated. Today the exchange is the only thing that mints one, and what
-// it writes is the local user and no issuer.
+// authenticated. Setup sessions have a null issuer; OIDC sessions carry the
+// verified owner identity and bounded expiry.
 type session struct {
-	subject string
-	issuer  *string
-	created time.Time
+	subject  string
+	issuer   *string
+	created  time.Time
+	ctx      context.Context
+	cancel   context.CancelFunc
+	name     string
+	email    string
+	absolute time.Time
+	expires  time.Time
+	timer    *time.Timer
 }
 
 // sessionStore is the set of live sessions, keyed by a **MAC of the id rather
@@ -280,7 +287,8 @@ func (st *sessionStore) createCommitting(subject string, issuer *string, commit 
 	if !commit() {
 		return "", errHandoffTaken
 	}
-	st.live[st.handle(id)] = session{subject: subject, issuer: issuer, created: time.Now()}
+	ctx, cancel := context.WithCancel(context.Background())
+	st.live[st.handle(id)] = session{subject: subject, issuer: issuer, created: time.Now(), ctx: ctx, cancel: cancel}
 	return id, nil
 }
 
@@ -309,8 +317,24 @@ func (st *sessionStore) lookup(id string) (session, bool) {
 		return session{}, false
 	}
 	st.mu.Lock()
-	defer st.mu.Unlock()
-	got, ok := st.live[st.handle(id)]
+	handle := st.handle(id)
+	got, ok := st.live[handle]
+	if ok && !got.expires.IsZero() {
+		now := time.Now()
+		if !now.Before(got.expires) {
+			delete(st.live, handle)
+			st.mu.Unlock()
+			got.cancel()
+			return session{}, false
+		}
+		got.expires = now.Add(signInIdleLifetime)
+		if got.expires.After(got.absolute) {
+			got.expires = got.absolute
+		}
+		got.timer.Reset(time.Until(got.expires))
+		st.live[handle] = got
+	}
+	st.mu.Unlock()
 	return got, ok
 }
 
@@ -653,6 +677,9 @@ func looksLikeASessionID(id string) bool {
 // session id presented here is looked up in the store instead, one line up in
 // `authorized`, so the two credentials never stand in for each other.
 func (s *Server) launchSecretPresented(r *http.Request) bool {
+	if s.SignInRequired() {
+		return false
+	}
 	return subtle.ConstantTimeCompare([]byte(bearerOf(r)), []byte(s.cfg.Token)) == 1
 }
 
@@ -669,7 +696,7 @@ func (s *Server) launchSecretPresented(r *http.Request) bool {
 // caller putting `Sec-WebSocket-Protocol` on a request that is not an upgrade.
 func (s *Server) sessionOf(r *http.Request) (session, bool) {
 	if id := bearerOf(r); id != "" {
-		if held, ok := s.sessions.lookup(id); ok {
+		if held, ok := s.sessions.lookup(id); ok && s.signInSessionAllowed(held) {
 			return held, true
 		}
 	}
@@ -703,6 +730,12 @@ func (s *Server) sessionOf(r *http.Request) (session, bool) {
 // guard *would* refuse is the ordinary case: a person pasting the printed URL
 // into a fresh tab sends no `Origin` at all.
 func (s *Server) handleLaunch(w http.ResponseWriter, r *http.Request) {
+	if s.SignInRequired() {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		http.Redirect(w, r, "/#", http.StatusSeeOther)
+		return
+	}
 	// A response that hands out a credential is never a cached response.
 	w.Header().Set("Cache-Control", "no-store")
 	// **`GET` and nothing else, checked here rather than by the router.**
@@ -864,18 +897,60 @@ func hexDigit(b byte) (byte, bool) {
 
 /* The exchange ---------------------------------------------------------------- */
 
-// handleSession is `GET` and `POST` on one path.
-//
-// **There is no `DELETE`.** Sign-out ends a session from outside the page that
-// holds it, which means the page needs a second actor to notice — and this desk
-// has exactly one, the bootstrap. It arrives with the identity provider, whose
-// sign-out it will actually be, as its own PR.
+// handleSession exchanges a handoff, reads a session, or revokes that session.
 func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodPost {
+	switch r.Method {
+	case http.MethodPost:
 		s.createSession(w, r)
+	case http.MethodGet, http.MethodHead:
+		s.readSession(w, r)
+	case http.MethodDelete:
+		s.endSession(w, r)
+	default:
+		w.Header().Set("Allow", "GET, HEAD, POST, DELETE")
+		refuseText(w, http.StatusMethodNotAllowed, CodeBadRequest, "method not allowed")
+	}
+}
+
+// revoke removes the record before cancellation. A concurrent request either
+// fails lookup or holds the same canceled context; cancellation never runs while
+// the store's lock is held. The launch secret cannot identify a session here.
+func (st *sessionStore) revoke(id string) bool {
+	st.mu.Lock()
+	handle := st.handle(id)
+	held, ok := st.live[handle]
+	if ok {
+		delete(st.live, handle)
+	}
+	st.mu.Unlock()
+	if ok {
+		held.cancel()
+	}
+	return ok
+}
+
+func (st *sessionStore) close() {
+	st.mu.Lock()
+	old := st.live
+	st.live = make(map[string]session)
+	st.mu.Unlock()
+	for _, held := range old {
+		held.cancel()
+	}
+}
+
+func (s *Server) endSession(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if !s.guard(w, r) {
 		return
 	}
-	s.readSession(w, r)
+	// guard also admits trusted local scripts; deleting a session requires
+	// the session itself, not the installation's launch capability.
+	if !s.sessions.revoke(bearerOf(r)) {
+		writeJSONCoded(w, http.StatusUnauthorized, CodeUnauthorized, "no session: open the URL jpack-desk printed at startup")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // testHookBeforeCommit runs between classifying a handoff and committing to a
@@ -919,6 +994,14 @@ func beforeCommit() {
 // A script that is *entitled* to a session does not need any of this: it
 // presents the launch secret as `Authorization: Bearer` on this same route.
 func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.LocalAccess {
+		s.beginLocalSession(w, r)
+		return
+	}
+	if s.SignInRequired() {
+		writeJSONCoded(w, http.StatusUnauthorized, CodeNoHandoff, "sign-in required")
+		return
+	}
 	if !s.originAllowed(r) {
 		writeJSONCoded(w, http.StatusForbidden, CodeForbidden,
 			fmt.Sprintf("origin %q is not permitted", r.Header.Get("Origin")))
@@ -1115,5 +1198,15 @@ func (s *Server) readSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	got, _ := s.sessionOf(r)
-	writeJSON(w, http.StatusOK, map[string]any{"subject": got.subject, "issuer": got.issuer})
+	out := map[string]any{"subject": got.subject, "issuer": got.issuer}
+	if s.cfg.LocalAccess && got.issuer == nil {
+		out["localAccess"] = true
+		out["expiresAt"] = got.expires
+	}
+	if got.issuer != nil {
+		out["name"] = got.name
+		out["email"] = got.email
+		out["expiresAt"] = got.expires
+	}
+	writeJSON(w, http.StatusOK, out)
 }

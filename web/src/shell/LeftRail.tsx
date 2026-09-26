@@ -1,36 +1,37 @@
+import { PaneToggle } from './PaneToggle'
+import { useChats } from '../chat/ChatProvider'
 import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
 import { Tooltip } from '../ui/Tooltip'
 import { type ReactElement } from 'react'
-/** Primary navigation stays about destinations. Tests and pack flows live
- * inside Packs; project file editing is available from the project menu.
+/** Primary navigation stays about destinations. Packs and Judgment Graphs have separate entries; tests live
+ * inside each pack or graph; project file editing is available from the project menu.
  * The shell never runs tests or fetches graph inventory to draw navigation. */
 import { Dialog, DropdownMenu, Separator, VisuallyHidden } from 'radix-ui'
-import { useRef, type RefObject } from 'react'
+import { type RefObject } from 'react'
 import { Link, NavLink, useLocation, useMatch } from 'react-router-dom'
 import { usePacks } from '../mcp/queries'
 import { ADMIN_SECTIONS } from '../routes/adminSections'
 import {
   IconChevronLeft,
   IconChevronRight,
-  IconClose,
   IconGear,
   IconHelp,
-  IconPack
+  IconPack,
+  IconGraph,
+  IconHistory
 } from './icons'
 import type { LeftRailMode } from './paneState'
 import { SettingsNavigationTarget } from './SettingsNavigation'
 
 export function LeftRail({
   mode,
-  onToggle,
   asDrawer,
   drawerOpen,
   onDrawerOpenChange,
   openerRef
 }: {
   mode: LeftRailMode
-  onToggle: () => void
   asDrawer: boolean
   drawerOpen: boolean
   onDrawerOpenChange: (open: boolean) => void
@@ -52,7 +53,7 @@ export function LeftRail({
       </NavLink>
       <SettingsNavigationTarget onNavigate={onNavigate} />
     </div>
-  ) : <RailBody mode={asDrawer ? 'expanded' : mode} onToggle={onToggle} showCollapse={!asDrawer} onNavigate={onNavigate} />
+  ) : <RailBody mode={asDrawer ? 'expanded' : mode} onNavigate={onNavigate} />
   if (asDrawer) {
     return (
       <Dialog.Root open={drawerOpen} onOpenChange={onDrawerOpenChange}>
@@ -73,11 +74,7 @@ export function LeftRail({
                 and neither is something a viewer can see — on the width whose
                 likeliest device has no keyboard at all. */}
             <div className="desk-drawer-head">
-              <Dialog.Close asChild>
-                <button type="button" className="desk-icon-button" aria-label={msg("Close navigation")}>
-                  <IconClose />
-                </button>
-              </Dialog.Close>
+              <PaneToggle label={msg('Collapse navigation')} expanded onClick={() => onDrawerOpenChange(false)} controls="desk-rail" />
             </div>
             {/* The landmark travels with the rail. Without this the drawer
                 form offered no `navigation` at all, so the desk below 900px
@@ -92,7 +89,7 @@ export function LeftRail({
     )
   }
   return (
-    <nav className="desk-rail" id="desk-rail" aria-label={msg("Project")} data-mode={mode}>
+    <nav className="desk-rail" hidden={settings && mode === 'icons'} id="desk-rail" aria-label={msg("Project")} data-mode={mode}>
       {body()}
     </nav>
   )
@@ -100,13 +97,9 @@ export function LeftRail({
 
 function RailBody({
   mode,
-  onToggle,
-  showCollapse,
   onNavigate
 }: {
   mode: LeftRailMode
-  onToggle: () => void
-  showCollapse: boolean
   /**
    * Dismiss the thing this rail is inside, where it is inside one.
    *
@@ -120,11 +113,21 @@ function RailBody({
 }) {
   useLocale()
   const icons = mode === 'icons'
-  const toggleRef = useRef<HTMLButtonElement | null>(null)
 
   return (
     <>
       <PacksGroup icons={icons} onNavigate={onNavigate} />
+      <Labelled icons={icons} label={msg("Graphs")}>
+        <NavLink className="desk-nav-item" to="/graphs" aria-label={msg("Graphs")} onClick={onNavigate}>
+          <IconGraph />
+          {!icons && <span className="desk-nav-label">{msg("Graphs")}</span>}
+        </NavLink>
+      </Labelled>
+      <Labelled icons={icons} label={msg("Jobs")}>
+        <NavLink className="desk-nav-item" to="/jobs" aria-label={msg("Jobs")} onClick={onNavigate}>
+          <IconHistory />{!icons && <span className="desk-nav-label">{msg("Jobs")}</span>}
+        </NavLink>
+      </Labelled>
 
       <div className="desk-spacer" />
       <Separator.Root className="desk-rule-h" decorative />
@@ -161,26 +164,7 @@ function RailBody({
         </NavLink>
       </Labelled>
 
-      {showCollapse && (
-        <Tooltip content={msg("Expand navigation")} disabled={!icons} side="right"><button
-          type="button"
-          ref={toggleRef}
-          className="desk-nav-item"
-          aria-expanded={!icons}
-          aria-controls="desk-rail"
-          onClick={() => {
-            // Focus moves to the toggle *before* the width changes, so a rail
-            // that collapses under the keyboard does not leave focus on an
-            // element that is about to be 56px of icon.
-            toggleRef.current?.focus()
-            onToggle()
-          }}
-        >
-          {icons ? <IconChevronRight /> : <IconChevronLeft />}
-          {!icons && <span className="desk-nav-label">{msg("Collapse navigation")}</span>}
-          {icons && <VisuallyHidden.Root>{msg("Expand navigation")}</VisuallyHidden.Root>}
-        </button></Tooltip>
-      )}
+
     </>
   )
 }
@@ -225,8 +209,9 @@ function PacksGroup({ icons, onNavigate }: { icons: boolean; onNavigate?: () => 
   useLocale()
   const { data, error } = usePacks()
   const { pathname } = useLocation()
-  const active = /^\/(packs(?:\/|$)|matrix$|graphs(?:\/|$))/.test(pathname)
-  const count = error === null && data !== undefined ? (data.packs ?? []).length : undefined
+  const active = /^\/packs(?:\/|$)/.test(pathname)
+  const {packDrafts}=useChats()
+  const count = error === null && data !== undefined ? (data.packs ?? []).length + packDrafts.filter(item=>!item.finalized).length : undefined
 
   return (
     <>

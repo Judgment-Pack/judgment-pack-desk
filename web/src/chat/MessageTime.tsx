@@ -24,12 +24,12 @@ export function useMessageClock() {
   return { locale: formattingLocale(), timeZone: new Intl.DateTimeFormat().resolvedOptions().timeZone }
 }
 
-export function MessageTime({ turn, formatted, onOpen }: { turn: Turn; formatted?: MessageTimeFormat; onOpen: (opener: HTMLButtonElement) => void }) {
+export function MessageTime({ turn, formatted, onOpen, pending = false }: { pending?: boolean; turn: Turn; formatted?: MessageTimeFormat; onOpen: (opener: HTMLButtonElement) => void }) {
   useLocale()
   const full = formatted?.full ?? msg('Time unavailable')
-  return <div className={styles.caption}><span>{messageSpeaker(turn)}</span><span aria-hidden="true">·</span>
+  return <div className={styles.caption}><span>{messageSpeaker(turn)}</span>{!pending && <><span aria-hidden="true">·</span>
     <Tooltip content={full}><button type="button" className={styles.time} aria-label={msg('Message details: {{time}}', { time: full })} onClick={event => onOpen(event.currentTarget)}>
       {formatted ? <time dateTime={turn.at}>{formatted.short}</time> : <span>{msg('Time unavailable')}</span>}
-    </button></Tooltip>
+    </button></Tooltip></>}
   </div>
 }

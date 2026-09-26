@@ -10,13 +10,14 @@ export interface RelationshipNode {
   id: string; title: string; column: number; content: ReactNode; action: string
   selected?: boolean; matched?: boolean; observation?: string
 }
+export type NodePositions = Record<string, { x: number; y: number }>
 export interface RelationshipEdge { id: string; source: string; target: string; label?: string }
 type ReadNode = Node<Omit<RelationshipNode, 'id' | 'column'> & { inspect: () => void; width?: number }, 'relationship'>
 function ReadingNode({ data, selected }: NodeProps<ReadNode>) {
   useLocale()
   return <div className={[styles.node, selected ? styles.selected : '', data.matched ? styles.matched : ''].join(' ')} style={data.width === undefined ? undefined : { width: data.width }}>
     <Handle type="target" position={Position.Left} className={styles.handle} />
-    <strong className={styles.title}>{data.title}</strong>
+    <strong className={`${styles.title} relationship-drag-handle`}>{data.title}</strong>
     {data.matched && <span className={styles.match}>{msg("Search match")}</span>}
     <div className={styles.content}>{data.content}</div>
     {data.observation && <span className={styles.observation}>{data.observation}</span>}
@@ -44,10 +45,11 @@ export function relationshipPositions(nodes: Pick<RelationshipNode, 'id' | 'colu
 }
 
 /** Read-only canvas infrastructure; callers own document and edge semantics. */
-export function RelationshipMap({ nodes, edges, unit, viewport, onViewportChange, onSelect, onInspect, focusRequest, ariaLabel = msg('Pack relationship map'), onEdgeInspect, columnGap = 5, nodeWidth }: {
+export function RelationshipMap({ nodes, edges, unit, viewport, onViewportChange, onSelect, onInspect, focusRequest, ariaLabel = msg('Pack relationship map'), onEdgeInspect, columnGap = 5, nodeWidth, nodePositions, onNodePositionsChange }: {
   nodes: RelationshipNode[]; edges: RelationshipEdge[]; unit: number; viewport: Viewport
   onViewportChange: (next: Viewport) => void; onSelect: (id: string) => void; onInspect: (id: string) => void
   columnGap?: number; nodeWidth?: number
+  nodePositions?: NodePositions; onNodePositionsChange?: (positions: NodePositions) => void
   ariaLabel?: string; onEdgeInspect?: (id: string) => void
   focusRequest?: { id: string; sequence: number }
 }) {
@@ -55,13 +57,24 @@ export function RelationshipMap({ nodes, edges, unit, viewport, onViewportChange
   const [sizes, setSizes] = useState<Record<string, { width: number; height: number }>>({})
   const [instance, setInstance] = useState<ReactFlowInstance<ReadNode> | null>(null)
   const root = useRef<HTMLDivElement>(null)
-  const positions = useMemo(() => relationshipPositions(nodes, sizes, unit, columnGap, nodeWidth), [nodes, sizes, unit, columnGap, nodeWidth])
+  const [localPositions, setLocalPositions] = useState<NodePositions>({})
+  const moved = nodePositions ?? localPositions
+  const movedRef = useRef(moved); movedRef.current = moved
+  const moveNodes = (next: NodePositions) => { movedRef.current = next; setLocalPositions(next); onNodePositionsChange?.(next) }
+  const positions = useMemo(() => {
+    const result = relationshipPositions(nodes, sizes, unit, columnGap, nodeWidth)
+    for (const node of nodes) if (moved[node.id]) result.set(node.id, moved[node.id]!)
+    return result
+  }, [nodes, sizes, unit, columnGap, nodeWidth, moved])
   const flowNodes = useMemo<ReadNode[]>(() => nodes.map(n => ({
     id: n.id, type: 'relationship', position: positions.get(n.id)!,
+    // Controlled nodes must return their measurements on every render. Otherwise
+    // React Flow hides them until ResizeObserver measures them again while panning.
+    measured: sizes[n.id],
     data: { ...n, width: nodeWidth, inspect: () => onInspect(n.id) }, selected: n.selected, ariaLabel: msg('Select: {{title}}', { title: n.title }), ariaRole: 'group',
     domAttributes: { 'aria-current': n.selected ? 'true' : undefined, 'data-search-match': n.matched ? 'true' : undefined },
-    className: 'nopan', draggable: false, connectable: false
-  })), [nodes, positions, onInspect, nodeWidth, locale])
+    className: 'nopan', draggable: true, dragHandle: '.relationship-drag-handle', connectable: false
+  })), [nodes, positions, sizes, onInspect, nodeWidth, locale])
   const flowEdges = useMemo(() => edges.map(e => ({ ...e, type: 'smoothstep',
     ariaLabel: msg('Connection: {{source}} to {{target}}', { source: e.source, target: e.target }),
     markerEnd: { type: MarkerType.ArrowClosed, color: "var(--ink-faint)" },
@@ -69,6 +82,12 @@ export function RelationshipMap({ nodes, edges, unit, viewport, onViewportChange
     labelBgStyle: { fill: "var(--bg)" },
   })), [edges, unit, locale])
   const onNodesChange = (changes: NodeChange<ReadNode>[]) => {
+    const movement = changes.filter(change => change.type === 'position' && change.position)
+    if (movement.length) {
+      const next = { ...movedRef.current }
+      for (const change of movement) if (change.type === 'position' && change.position && Number.isFinite(change.position.x) && Number.isFinite(change.position.y)) next[change.id] = change.position
+      moveNodes(next)
+    }
     const dimensions = changes.filter(c => c.type === 'dimensions' && c.dimensions)
     if (!dimensions.length) return
     setSizes(previous => {
@@ -120,15 +139,16 @@ export function RelationshipMap({ nodes, edges, unit, viewport, onViewportChange
         onSelect(node.id)
       }}
       onEdgeClick={(_event, edge) => onEdgeInspect?.(edge.id)}
-      nodesDraggable={false} nodesConnectable={false} edgesReconnectable={false}
+      nodesDraggable nodesConnectable={false} edgesReconnectable={false}
       edgesFocusable={Boolean(onEdgeInspect)} elementsSelectable={false} nodesFocusable
       deleteKeyCode={null} selectionKeyCode={null} panOnScroll zoomOnScroll={false}
-      minZoom={0.5} maxZoom={2} preventScrolling={false}
-      ariaLabelConfig={{ 'node.a11yDescription.default': msg("Press Enter or Space to select. Use View details for supporting information or Expand rules to read a group.") }} />
+      minZoom={0.5} maxZoom={2} preventScrolling
+      ariaLabelConfig={{ 'node.a11yDescription.default': msg("Drag the title to move this node. Press Enter or Space to select. Use View details for supporting information.") }} />
     <div className={styles.controls} aria-label={msg("Map zoom")}>
       <Tooltip content={msg("Zoom out")}><Button aria-label={msg("Zoom out")} onClick={() => onViewportChange({ ...viewport, zoom: Math.max(.5, viewport.zoom - .25) })}>−</Button></Tooltip>
       <Tooltip content={msg("Reset map view")}><Button aria-label={msg("Reset map view")} onClick={() => onViewportChange({ x: 0, y: 24, zoom: 1 })}>{Math.round(viewport.zoom * 100)}%</Button></Tooltip>
       <Tooltip content={msg("Zoom in")}><Button aria-label={msg("Zoom in")} onClick={() => onViewportChange({ ...viewport, zoom: Math.min(2, viewport.zoom + .25) })}>+</Button></Tooltip>
+      {Object.keys(moved).length > 0 && <Button onClick={() => moveNodes({})}>{msg('Reset layout')}</Button>}
     </div>
   </div>
 }

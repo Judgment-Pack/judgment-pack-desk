@@ -1,0 +1,9 @@
+.root { display:flex; flex-direction:column; gap:var(--space-2); min-width:0; }
+.hint { color:var(--ink-soft); margin:0; font-size:var(--text-xs); }
+.results { position:relative; max-height:min(50vh,28rem); overflow:auto; min-width:0; }
+.item { width:100%; display:flex; align-items:center; gap:var(--space-3); padding:var(--space-3); border:none; border-radius:var(--radius-sm); text-align:left; color:var(--ink); background:transparent; cursor:pointer; }
+.item[aria-selected="true"] { background:var(--false-soft); }
+.item > span:first-child { flex:1; min-width:0; }
+.item strong,.item small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.item small,.kind { color:var(--ink-soft); font-size:var(--text-xs); }
+.kind { flex-shrink:0; }

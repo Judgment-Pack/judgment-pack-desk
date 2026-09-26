@@ -33,7 +33,7 @@ type backupManifest struct {
 // Only recognized chat records enter a backup. Credentials, server preferences,
 // temporary files and project artifacts cannot be selected by the caller.
 func chatStorageFile(name string) bool {
-	return conversationFileName.MatchString(name) || attachmentFileName.MatchString(name) || name == projectBindingsName
+	return briefFileName.MatchString(name) || sourceReviewsFileName.MatchString(name) || packTestsFileName.MatchString(name) || draftPackFileName.MatchString(name) || conversationFileName.MatchString(name) || attachmentFileName.MatchString(name) || name == projectBindingsName
 }
 func validateStorageFile(name string, data []byte) error {
 	if !chatStorageFile(name) {
@@ -45,6 +45,18 @@ func validateStorageFile(name string, data []byte) error {
 	if name == projectBindingsName {
 		_, err := decodeProjectBindings(data)
 		return err
+	}
+	if briefFileName.MatchString(name) {
+		return validateBriefs(data)
+	}
+	if sourceReviewsFileName.MatchString(name) {
+		return validateSourceReviews(data)
+	}
+	if packTestsFileName.MatchString(name) {
+		return validatePackTests(data)
+	}
+	if draftPackFileName.MatchString(name) {
+		return validateDraftPacks(data)
 	}
 	return validateConversations(data)
 }

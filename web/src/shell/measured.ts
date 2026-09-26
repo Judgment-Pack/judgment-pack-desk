@@ -52,7 +52,10 @@ export function useMeasuredBox(element: Element | null): MeasuredBox | undefined
       setBox(undefined)
       return
     }
-    const read = () => setBox(measure(element))
+    const read = () => {
+      const next = measure(element)
+      setBox(previous => previous?.width === next.width && previous.height === next.height ? previous : next)
+    }
     read()
     if (!hasResizeObserver()) return
     const observer = new ResizeObserver(read)

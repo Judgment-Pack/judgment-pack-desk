@@ -1,3 +1,5 @@
+import { migrateMessageOwnership } from './messageOwnership'
+import { draftPersistence, decodeDrafts, artifactCheckpoint, retainedSourceFiles, fromChat, draftTitle, type DraftPersistence, type DraftDocument, type PackDraft } from '../packs/drafts/model'
 import { validWebsiteReference, type WebsiteReference } from '../documents/website'
 import { timestampDate } from './timestamps'
 import type { DocumentReference } from '../documents/client'
@@ -36,6 +38,9 @@ export interface Chat {
   pack?: { id: string; path: string; digest: string }
   checkpoint?: Checkpoint
   createdCandidateDigest?: string
+  draftId?: string
+  draftGeneration?: number
+  targetFolderId?: string
   attachments?: ChatAttachment[]
   documents?: ChatAttachment[]
   websites?: WebsiteReference[]
@@ -44,7 +49,7 @@ export interface Chat {
 }
 interface Document { version: 1; chats: Chat[] }
 interface Reply { project: string; sha256: string; content: unknown }
-interface Snapshot { chats: Chat[]; drafts: Chat[]; ready: boolean; saving: boolean; error: string; active: string[]; bindings: ReadonlyMap<string, ResearchRunBinding>; dirty: boolean }
+interface Snapshot { packDrafts: PackDraft[]; deletedDrafts: string[]; chats: Chat[]; drafts: Chat[]; ready: boolean; saving: boolean; error: string; active: string[]; bindings: ReadonlyMap<string, ResearchRunBinding>; dirty: boolean }
 export interface ChatPersistence { read(): Promise<Reply>; write(document: Document, digest: string): Promise<Reply> }
 const persistence: ChatPersistence = {
   read: async () => answer<Reply>(await deskFetch('/api/conversations')),
@@ -64,6 +69,9 @@ function decode(value: unknown): Chat[] {
       || typeof chat.pinned !== 'boolean' || typeof chat.archived !== 'boolean'
       || typeof chat.updatedAt !== 'string' || !Number.isFinite(Date.parse(chat.updatedAt)) || !['draft', 'research'].includes(chat.mode) || !['chat', 'draft'].includes(chat.view)) throw new Error(sourceMessage("Invalid saved chat. History has not been changed."))
     if (chat.createdAt !== undefined && (typeof chat.createdAt !== 'string' || !timestampDate(chat.createdAt))) throw new Error(sourceMessage("Invalid saved chat"))
+    if (chat.targetFolderId !== undefined && (typeof chat.targetFolderId !== 'string' || !/^[a-zA-Z0-9-]{1,80}$/.test(chat.targetFolderId))) throw new Error(sourceMessage("Invalid saved pack context"))
+    if (chat.draftId !== undefined && (typeof chat.draftId !== 'string' || !/^draft-[a-z0-9-]{1,160}$/.test(chat.draftId))) throw new Error(sourceMessage('Invalid saved pack context'))
+    if(chat.draftGeneration!==undefined && (!Number.isSafeInteger(chat.draftGeneration)||chat.draftGeneration<1)) throw new Error(sourceMessage('Invalid saved pack context'))
     ids.add(chat.id)
     if (chat.attachments !== undefined && (!Array.isArray(chat.attachments) || chat.attachments.length > 4
       || chat.attachments.some(file => !file || typeof file.id !== 'string' || typeof file.name !== 'string' || typeof file.text !== 'string' || file.text.length > 200_000))) throw new Error(sourceMessage("Invalid saved attachments"))
@@ -80,6 +88,8 @@ function decode(value: unknown): Chat[] {
     if (chat.pack && (typeof chat.pack.id !== 'string' || typeof chat.pack.path !== 'string' || typeof chat.pack.digest !== 'string')) throw new Error(sourceMessage("Invalid saved pack context"))
     return { id: chat.id, title: chat.title, composer: chat.composer, model: chat.model, pinned: chat.pinned, archived: chat.archived,
       updatedAt: chat.updatedAt, ...(chat.createdAt !== undefined ? { createdAt: chat.createdAt } : {}), mode: chat.mode, view: chat.view, attachments: chat.attachments ?? [], documents: chat.documents ?? [], websites:chat.websites ?? [], adversarialReview: chat.adversarialReview === true, titleEdited: chat.titleEdited === true, ...(chat.pack ? { pack: chat.pack } : {}),
+      ...(chat.draftId ? { draftId: chat.draftId, draftGeneration:chat.draftGeneration } : {}),
+      ...(chat.targetFolderId !== undefined ? { targetFolderId: chat.targetFolderId } : {}),
       ...(chat.checkpoint ? { checkpoint: decodeCheckpoint(chat.checkpoint) } : {}),
       ...(typeof chat.createdCandidateDigest === 'string' ? { createdCandidateDigest: chat.createdCandidateDigest } : {}) }
   })
@@ -87,7 +97,7 @@ function decode(value: unknown): Chat[] {
 
 /** One project, multiple chats, one explicit running operation. No framework objects on disk. */
 export class ChatStore {
-  private state: Snapshot = { chats: [], drafts: [], ready: false, saving: false, error: '', active: [], bindings: new Map(), dirty: false }
+  private state: Snapshot = { packDrafts: [], deletedDrafts: [], chats: [], drafts: [], ready: false, saving: false, error: '', active: [], bindings: new Map(), dirty: false }
   private listeners = new Set<() => void>()
   private leases = 0
   retain() { this.leases++; return () => { this.leases--; queueMicrotask(() => { if (!this.leases) this.dispose() }) } }
@@ -97,7 +107,10 @@ export class ChatStore {
   private timer: ReturnType<typeof setTimeout> | undefined
   private loading: Promise<void> | null = null
   private observed = new Map<string, { state: unknown; sources: unknown }>()
-  constructor(private project: string, private io: ChatPersistence = persistence) {}
+  constructor(private project: string, private io: ChatPersistence = persistence, private draftIO: DraftPersistence = draftPersistence) {}
+  private draftDigest = 'absent'
+  private draftRevision = 0
+  private savedDraftRevision = 0
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   getSnapshot = () => this.state
   private set(patch: Partial<Snapshot>) { this.state = { ...this.state, ...patch }; this.listeners.forEach(listener => listener()) }
@@ -113,9 +126,24 @@ export class ChatStore {
       try {
         const reply = await this.io.read()
         if (reply.project !== this.project) throw new Error(sourceMessage("Chat history belongs to a different project"))
-        const chats = decode(reply.content)
+        const chats = decode(reply.content).map(migrateMessageOwnership)
+        const draftReply = await this.draftIO.read()
+        if (draftReply.project !== this.project) throw new Error(sourceMessage('Chat history belongs to a different project'))
+        const artifacts = decodeDrafts(draftReply.content)
         this.digest = reply.sha256
-        this.set({ chats, ready: true, error: '' })
+        this.draftDigest = draftReply.sha256
+        this.set({ chats, packDrafts: artifacts.drafts, deletedDrafts: artifacts.deleted, ready: true, error: '' })
+        // Idempotent migration includes archived chats. Original checkpoints
+        // stay intact until users delete those conversations.
+        for (const chat of chats) {
+          if (!chat.pack && !chat.draftId && chat.checkpoint?.state.candidates.length) {
+            const candidate = fromChat(chat, chat.checkpoint)
+            if (!artifacts.deleted.includes(candidate.id)) {
+              if (!this.state.packDrafts.some(item => item.id === candidate.id) && !this.saveDraft(candidate)) break
+              this.update(chat.id, {draftId: candidate.id,draftGeneration:this.state.packDrafts.find(item=>item.id===candidate.id)!.generation})
+            }
+          }
+        }
       } catch (error) { this.set({ error: (error as Error).message }) }
       finally { this.loading = null }
     })()
@@ -127,8 +155,16 @@ export class ChatStore {
     if (this.savedRevision === this.revision) return true
     const revision = this.revision
     const document: Document = { version: 1, chats: this.state.chats }
+    const draftRevision = this.draftRevision
+    const draftDocument: DraftDocument = {version: 1, drafts: this.state.packDrafts, deleted: this.state.deletedDrafts}
     this.set({ saving: true })
     try {
+      // Commit artifacts first: a chat delete/link cannot orphan unsaved work.
+      if (draftRevision !== this.savedDraftRevision) {
+        const saved = await this.draftIO.write(draftDocument, this.draftDigest)
+        if (saved.project !== this.project) throw new Error(sourceMessage('Chat save answered for a different project'))
+        this.draftDigest = saved.sha256; this.savedDraftRevision = draftRevision
+      }
       const reply = await this.io.write(document, this.digest)
       if (reply.project !== this.project) throw new Error(sourceMessage("Chat save answered for a different project"))
       this.digest = reply.sha256
@@ -151,26 +187,28 @@ export class ChatStore {
     } catch { /* A draft still works when browser storage is unavailable. */ }
   }
   /** An unsubmitted composer is not a conversation or a private-history write. */
-  startChat(pack?: Chat['pack'], mode?: Chat['mode'], fresh = false): Chat {
+  startChat(pack?: Chat['pack'], mode?: Chat['mode'], fresh = false, draftId?: string): Chat {
     if (!this.state.ready) throw new Error(sourceMessage("Chat history is still loading"))
-    const previous = this.state.drafts.find(chat => chat.pack?.id === pack?.id && (mode === undefined || chat.mode === mode))
+    const previous = this.state.drafts.find(chat => chat.pack?.id === pack?.id && chat.draftId === draftId && (mode === undefined || chat.mode === mode))
     if (previous && !fresh) { this.activate(previous.id); return previous }
     if (previous) this.remove(previous.id)
     let cached: Chat | undefined
-    if (!pack && !fresh) {
+    if (!pack && !draftId && !fresh) {
       try {
         const value = JSON.parse(sessionStorage.getItem(`jpack.home-draft:${this.project}`) ?? 'null')
         if (value) {
           const read = decode({ version: 1, chats: [value] })[0]!
-          if (!read.pack && !read.checkpoint && !read.archived && !read.pinned && read.title === 'New chat'
+          if (!read.pack && !read.draftId && !read.checkpoint && !read.archived && !read.pinned && read.title === 'New chat'
             && !this.state.chats.some(chat => chat.id === read.id) && (mode === undefined || read.mode === mode)) cached = read
         }
       } catch { /* A stale browser draft must not block opening home. */ }
     }
     const chat: Chat = cached ?? { id: crypto.randomUUID(), title: 'New chat', pinned: false, archived: false,
-      updatedAt: new Date().toISOString(), composer: '', model: '', mode: mode ?? 'draft', view: 'chat', ...(pack ? { pack } : {}) }
+      updatedAt: new Date().toISOString(), composer: '', model: '', mode: mode ?? 'draft', view: 'chat', ...(pack ? { pack } : {}), ...(draftId ? {draftId} : {}) }
+    const artifact = this.state.packDrafts.find(item => item.id === draftId)
+    if (artifact) { chat.draftGeneration=artifact.generation; chat.checkpoint = artifactCheckpoint(artifact.checkpoint); chat.documents = artifact.documents; chat.mode = artifact.mode }
     this.set({ drafts: [chat, ...this.state.drafts] })
-    if (!pack) this.saveHomeDraft(chat)
+    if (!pack && !draftId) this.saveHomeDraft(chat)
     this.activate(chat.id)
     return chat
   }
@@ -189,7 +227,7 @@ export class ChatStore {
     if (draft) {
       const next = { ...draft, ...patch, updatedAt: new Date().toISOString() }
       this.set({ drafts: this.state.drafts.map(chat => chat.id === id ? next : chat) })
-      if (!next.pack) this.saveHomeDraft(next)
+      if (!next.pack && !next.draftId) this.saveHomeDraft(next)
       return
     }
     this.changed(this.state.chats.map(chat => chat.id === id ? { ...chat, ...patch } : chat))
@@ -205,8 +243,28 @@ export class ChatStore {
     if (previous?.state === binding.state && previous?.sources === binding.sources) return
     this.observed.set(id, { state: binding.state, sources: binding.sources })
     const prior = previous?.state as ResearchRunBinding['state'] | undefined
-    if (prior && previous?.sources === binding.sources && Object.entries(binding.state).every(([key, value]) => key === 'streaming' || key === 'events' || prior[key as keyof typeof prior] === value)) return
+    if (prior && previous?.sources === binding.sources && Object.entries(binding.state).every(([key, value]) => key === 'streaming' || key === 'streamingId' || key === 'events' || prior[key as keyof typeof prior] === value)) return
     if (binding.state.phase !== 'idle') {
+      const owner = this.state.chats.find(item => item.id === id)
+      if (owner && !owner.pack && binding.state.candidates.length && !binding.state.restored) {
+        const saved = checkpoint(binding.state, binding.sources)
+        const current = this.state.packDrafts.find(item => item.id === owner.draftId)
+        if (!owner.draftId) {
+          const created = fromChat(owner, saved)
+          if (!this.state.deletedDrafts.includes(created.id)) { if(this.saveDraft(created)) this.update(id,{draftId:created.id,draftGeneration:created.generation}) }
+        } else if (current && !current.finalized && owner.draftGeneration===current.generation) {
+          // Never replace a newer artifact with an older conversation branch.
+          const accepted = current.checkpoint.state.candidates
+          if (accepted.every((candidate,index) => saved.state.candidates[index]?.text === candidate.text)) {
+            const next = {...current, title: current.titleEdited ? current.title : draftTitle(saved), checkpoint: artifactCheckpoint(saved), sourceFiles:[...new Map([...(current.sourceFiles??[]),...retainedSourceFiles(saved)].map(file=>[file.name+"\0"+file.text,file])).values()], documents: retainSentDocuments(current.documents, owner.documents ?? [])}
+            // Conversation-only work and source ownership must not advance the artifact generation.
+            if (JSON.stringify(next) !== JSON.stringify(current)) {
+              this.saveDraft({...next, generation:current.generation+1, updatedAt: new Date().toISOString()})
+              this.update(id,{draftGeneration:current.generation+1})
+            }
+          }
+        }
+      }
       const chat = this.state.chats.find(item => item.id === id)
       // Opening, restoring, typing, pinning and rendering do not change recency.
       const last = binding.state.turns.at(-1)
@@ -216,16 +274,48 @@ export class ChatStore {
       if (changed && chat && !binding.state.restored) this.changed(this.state.chats.map(item => item.id === id ? { ...item, updatedAt: last.at } : item))
     }
   }
+  private saveDraft(draft: PackDraft) {
+    const previous = this.state.packDrafts.find(item => item.id === draft.id)
+    if (!previous && this.state.packDrafts.length >= 256) { this.problem(sourceMessage('Draft storage is full. Delete an older draft first.')); return false }
+    this.draftRevision++
+    this.changed(this.state.chats,{packDrafts:previous ? this.state.packDrafts.map(item=>item.id===draft.id?draft:item) : [...this.state.packDrafts,draft]})
+    return true
+  }
+  renameDraft(id: string, title: string) {
+    const draft=this.state.packDrafts.find(item=>item.id===id)
+    if(draft && title.trim()) this.saveDraft({...draft,title:title.trim().slice(0,500),titleEdited:true})
+  }
+  finalizeDraft(id: string, pack: NonNullable<Chat['pack']>) {
+    const draft=this.state.packDrafts.find(item=>item.id===id)
+    if(!draft) return
+    this.saveDraft({...draft,finalized:pack})
+    for(const chat of this.state.chats.filter(item=>item.draftId===id)) this.update(chat.id,{pack,createdCandidateDigest:draft.checkpoint.state.candidates.at(-1)?.digest})
+  }
+  removeDraft(id: string) {
+    if(this.state.chats.some(chat=>chat.draftId===id && this.state.bindings.get(chat.id)?.run?.running)) return false
+    if(this.state.deletedDrafts.length>=4096) return false
+    this.draftRevision++
+    this.changed(this.state.chats,{packDrafts:this.state.packDrafts.filter(item=>item.id!==id),deletedDrafts:[...new Set([...this.state.deletedDrafts,id])]})
+    return true
+  }
   problem(message: string) { this.set({ error: message }) }
   get running(): string | undefined { return [...this.state.bindings].find(([,binding]) => binding.run?.running)?.[0] }
   perform(id: string, action: (binding: ResearchRunBinding) => void, needsModel = true): boolean {
     const binding = this.state.bindings.get(id)
     if (!binding || (this.running && this.running !== id) || (needsModel && binding.blocked) || binding.run?.running) return false
+    const owner = [...this.state.chats,...this.state.drafts].find(chat=>chat.id===id)
+    if (owner?.draftId && needsModel && !owner.pack) {
+      const artifact = this.state.packDrafts.find(item=>item.id===owner.draftId)
+      const current = binding.state.candidates.at(-1)?.text
+      if (!artifact || owner.draftGeneration!==artifact.generation || artifact.checkpoint.state.candidates.at(-1)?.text !== current) {
+        this.problem(sourceMessage('This conversation has an older draft. Open the pack and start a new chat to continue.')); return false
+      }
+    }
     const draft = this.state.drafts.find(chat => chat.id === id)
     if (draft && needsModel) {
       if (!this.canCreate) { this.problem(sourceMessage('Chat history is full. Delete an older chat before sending.')); return false }
       this.changed([{ ...draft, createdAt: new Date().toISOString() }, ...this.state.chats], { drafts: this.state.drafts.filter(chat => chat.id !== id) })
-      if (!draft.pack) this.saveHomeDraft()
+      if (!draft.pack && !draft.draftId) this.saveHomeDraft()
     }
     action(binding); return true
   }
@@ -235,7 +325,7 @@ export class ChatStore {
     this.observed.delete(id)
     const draft = this.state.drafts.find(chat => chat.id === id)
     this.set({ bindings, active: this.state.active.filter(active => active !== id), drafts: this.state.drafts.filter(chat => chat.id !== id) })
-    if (draft && !draft.pack) this.saveHomeDraft()
+    if (draft && !draft.pack && !draft.draftId) this.saveHomeDraft()
     if (!draft) this.changed(this.state.chats.filter(chat => chat.id !== id))
   }
   dispose() { clearTimeout(this.timer); this.state.bindings.forEach(binding => binding.run?.stop()) }

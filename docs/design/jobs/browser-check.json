@@ -1,0 +1,112 @@
+{
+  "passed": true,
+  "errors": [],
+  "apiCalls": [],
+  "measurements": [
+    {
+      "name": "jobs",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "height": 980,
+      "scrollHeight": 980
+    },
+    {
+      "name": "job",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "height": 980,
+      "scrollHeight": 980
+    },
+    {
+      "name": "setup",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "height": 980,
+      "scrollHeight": 980
+    },
+    {
+      "name": "inputs",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "height": 980,
+      "scrollHeight": 980
+    },
+    {
+      "name": "run",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "height": 980,
+      "scrollHeight": 980
+    },
+    {
+      "name": "review",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "height": 980,
+      "scrollHeight": 980
+    },
+    {
+      "name": "action",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "height": 980,
+      "scrollHeight": 980
+    },
+    {
+      "name": "run-details-pane",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "height": 980,
+      "scrollHeight": 980
+    },
+    {
+      "name": "run-light",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "height": 980,
+      "scrollHeight": 980
+    },
+    {
+      "name": "jobs-mobile",
+      "width": 390,
+      "scrollWidth": 390,
+      "height": 844,
+      "scrollHeight": 844
+    },
+    {
+      "name": "setup-mobile",
+      "width": 390,
+      "scrollWidth": 390,
+      "height": 844,
+      "scrollHeight": 844
+    },
+    {
+      "name": "run-mobile",
+      "width": 390,
+      "scrollWidth": 390,
+      "height": 844,
+      "scrollHeight": 844
+    },
+    {
+      "name": "review-mobile",
+      "width": 390,
+      "scrollWidth": 390,
+      "height": 844,
+      "scrollHeight": 844
+    },
+    {
+      "name": "action-mobile",
+      "width": 390,
+      "scrollWidth": 390,
+      "height": 844,
+      "scrollHeight": 844
+    },
+    {
+      "name": "inputs-small",
+      "width": 320,
+      "scrollWidth": 320,
+      "height": 740,
+      "scrollHeight": 740
+    }
+  ]
+}

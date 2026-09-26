@@ -17,7 +17,7 @@ surfaces and quieter navigation with the dedicated settings layout shown in the
 | --- | --- |
 | Font | Linear's [public app](https://linear.app/login) preloads Inter Variable 4.1. Unveil serves the same upstream release locally. |
 | Action text and controls | The public app's initial action styles specify 13px text, weight 500, 32px height and 12px horizontal padding. These are the comfortable Button values. |
-| Sidebar width | The public app declares 244px. This is Unveil's default; an explicit project width still wins. |
+| Sidebar width | The public app declares 244px. Unveil uses a more compact 220px default; an explicit project width still wins. |
 | Corners | Public app styles expose a 4px control radius and 12px main frame. Unveil uses those, with 8px cards and selected navigation items. |
 | Neutral surfaces | The public app's initial light/dark styles and the supplied settings screenshots inform the palette below. |
 | Brand accents | Judgment Pack green and gold replace the reference app’s indigo. Keep the neutral surfaces and compact geometry. |
@@ -146,8 +146,12 @@ small indicators; large workspace surfaces must not acquire a green or gold wash
   Hover changes paint only. Keyboard focus remains visible.
 - Shell icon buttons share one neutral state treatment: quiet at rest, `--bg`
   on hover, and `--accent-soft` with `--ink` when pressed or expanded. Selected
-  controls never gain an accent border. Left navigation, Inspector, and both
-  console controls use this rule; keyboard focus retains the shared accent ring.
+  controls never gain an accent border. Use `PaneToggle` for main navigation,
+  folders and contextual right panes; mirror its panel icon for the right side.
+  Keep navigation before the brand, folders at the workspace's upper-left corner,
+  and right-pane controls together at the header's end. Keyboard focus retains
+  the shared accent ring. Diagnostics belongs in Help & About and a contextual
+  right pane; do not restore global Inspector or bottom Console toggles.
 - Each write names its scope: **Save API key**, **Save settings**, or a section's
   **Save**. Group-wide saves sit at the bottom right with feedback before them.
   Cancel/undo belongs beside its save. Toolbars wrap on narrow layouts.
@@ -192,8 +196,9 @@ release/cancel restores the idle boundary once the mouse leaves. Touch does
 not acquire a sticky hover. Never outline the hit area or add parallel rails.
 Left/Right move the boundary
 8px, Shift moves 32px, Home/End reach the current minimum/maximum, and Enter
-closes the Inspector and focuses its header toggle. Double-click or Escape
-restores the configured default width.
+closes the Inspector and focuses its contextual opener. Double-click or Escape
+restores the configured default width; Escape during an active pointer drag
+restores the width at the beginning of that gesture.
 
 The default remains 360px (or the project's explicit default). Docked widths
 range from 320px to 640px, additionally capped at 45% of the workspace and at
@@ -212,17 +217,34 @@ zoom. The keyboard semantics follow the
 [WAI-ARIA window splitter pattern](https://www.w3.org/WAI/ARIA/apg/patterns/windowsplitter/).
 
 The status strip is outside the frame with a fixed `--space-2` (8px) gap in
-both densities. It does not supply the workspace's bottom border. With console
-closed, main/Inspector meet the rounded bottom edge; with console open, the
-console meets it. The outer frame never changes shape during these toggles.
-
-Console caps and sticky-content height calculations account for the gap and
-both frame borders. The current capped console track is calculated on the
-workspace, where it can read the shell's pane choices. Existing content gutters,
-colors and typography remain owned by their usual shared tokens.
+both densities. It does not supply the workspace's bottom border. Main and the
+contextual right pane meet the rounded bottom edge. The outer frame never changes
+shape when the pane opens. The bottom Console has been retired; diagnostics use
+the right pane. Content gutters, colors and typography remain owned by their
+usual shared tokens.
 
 [Browser captures](workspace-frame-review.md) show the frame with both panes
 open and closed, plus a narrow light-theme example.
+
+## Pack workspace spacing
+
+Saved and draft pack views use `--density-gutter` for the title, section tabs,
+toolbar controls and reading content. A canvas can fill the available pane;
+its controls and status text still keep that gutter. The single-line folder
+location remains above the saved pack title across Overview, Logic and Tests.
+
+Logic keeps one toolbar beneath its section tabs in both List and Map. Draft
+Logic uses this same row instead of placing controls beside the tab list.
+The search field wraps below the other controls when the pane is narrow.
+Only the list content scrolls, and its scroll position is retained separately
+from canvas pan, zoom and node positions. The decision question is shown in
+Overview; Logic uses the space for its controls and content.
+
+Document tabs use the shared Tabs page variant. The tab row owns its gutter;
+individual panels own their body padding. Draft Overview and its source-rule
+list share the bounded reading measure. Details content uses the same density
+gutter as the test editor, without an additional top margin on its first heading.
+Draft header actions wrap beneath the title when they cannot fit alongside it.
 
 ## Navigation and responsive behavior
 
@@ -358,7 +380,10 @@ Long conditions wrap without clipping or horizontal scrolling. `LogicDetails`
 shares reading content between representations; `ConditionTree` preserves
 operators, operand types, order, nested logic and unrecognized values. Structured reading separates the field, comparison and exact operands. Arrays
 show one complete quoted/typed value per row, with no surrounding JSON punctuation.
-Mechanical field labels accompany the exact paths; neither changes authored values.
+Readable field labels lead each condition, followed by its comparison and exact value.
+Equality uses a compact = with an accessible operator name. Exact paths and the
+complete selected definition are in a collapsed Technical details disclosure.
+Changing selection closes this disclosure; switching tools preserves it.
 Evidence uses one full-width row per item with requirement/type below its name.
 The scope/evidence columns and rule cards stack when the Logic container is under
 54rem; the evidence list never nests a second two-column grid.
@@ -622,21 +647,27 @@ the reading action after exiting. The dialog never dismisses unsaved work merely
 because a write was attempted; verified read-back and the current buffer determine
 whether Save and return can finish.
 
-## Packs workspace and pack flows
+## Packs and Judgment Graphs
 
-The primary sidebar carries Packs, Admin and Help & About. New chat and Chat
-history belong in the chat header, with no duplicate recent-chat list in the
-sidebar. All packs, Tests and Pack flows are contextual collection tabs, using
-`PacksNavigation` and the existing neutral navigation tokens. Opening a document
-replaces the collection tabs with document tabs. `/` opens the chat landing page,
-and `/packs` opens Packs. Existing matrix, graph and author URLs remain reachable
-without reserving pack IDs.
+The primary sidebar carries Packs, Graphs, Admin and Help & About, with Graphs
+immediately below Packs. Graphs represents Judgment Graphs and keeps the existing
+`/graphs` and `/graphs/:graphId` routes. Only the current destination is active,
+including in the collapsed rail and navigation drawer. Drawing navigation never
+fetches graph inventory or executes tests.
+
+New chat and Chat history belong in the chat header. Packs retains its folder
+browser and collection controls. Saved cases and their Run tests action belong
+inside each pack; there is no collection Tests page or Run all tests action.
+The legacy `/matrix` bookmark redirects to `/packs` without executing tests;
+`/packs/:packId/matrix` still opens that pack's saved cases. `/` opens the chat
+landing page. Existing graph and author URLs remain reachable without reserving
+pack IDs.
 
 Project files belongs in the header's project menu. That trigger carries the
 shared unsaved-change indicator so advanced file editing remains visible while
 dirty. Source editors retain their existing write and navigation guards.
 
-Flow diagrams reuse `RelationshipMap`, measured spacing, responsive node widths,
+Graph diagrams reuse `RelationshipMap`, measured spacing, responsive node widths,
 `ExpandableText`, and `InspectionRow`. A node opens contextual details and an
 Open pack link; a connection opens its destinations and source details. The
 Inspector publishes only the selected item. Pointer, keyboard and drawer
@@ -646,5 +677,85 @@ Tests are explicit commands, including detailed traces. Opening a page, changing
 trace options, reconnecting or invalidating files must not execute a suite.
 Completed results are snapshots within one connection. A revision mismatch
 withdraws the joined result diagram and refreshes the document; running tests
-again remains the user's action. The existing Console records command progress
+again remains the user's action. Diagnostics records command progress
 without retaining facts or evidence payloads.
+
+### Full-height workspace tools
+
+The right tool rail switches Assistant, Details and Activity into one resizable
+pane. Never stack a long conversation and long details vertically. Header actions
+sit together at the right. Expand lifts the same pane over the pack with a soft
+shadow, rounded border and slight backdrop. The underlying pack keeps its normal
+split-view layout and scroll position. Reserve at least 240px of actual pack
+content, in addition to any docked folder navigation, so the context is visible.
+The pane header retains the pack title and a visible Return to split view action.
+
+On desktop, the overlay starts at 75% of the workspace and is bounded between
+640px and the width that leaves the visible pack context. The shared left-edge
+`PaneDivider` supplies the same hover, pointer and keyboard behavior as split
+view. Pane width offers Narrower, Wider and Reset width as pointer alternatives
+to dragging. Resize never docks or dismisses a pane. Enter on the divider returns
+to split view. Escape cancels an active drag; otherwise the focused divider resets
+its width, and Escape outside menus, dialogs and the divider returns to the pack.
+
+All pane dividers preview size at most once per animation frame. Commit the
+width preference on release; cancellation restores the starting layout without
+saving. Keep drag updates local to the divider and CSS layout, rather than
+re-rendering the conversation, pack or folder tree for each pixel. Pane actions
+and portal targets use `useInspectorControls`; only width-dependent readers
+subscribe to measured size through `useInspectorSlot`.
+
+Overlay width is an independent optional preference in the existing per-project
+shell record. Viewport clamping never overwrites it. Reset panes clears it; Reset
+width clears only the overlay override. Return restores the previous split width.
+
+The dimmed main content is inert while covered. Clicking the exposed background
+only restores split view; it cannot activate an underlying pack control. The
+application navigation and tool rail stay usable, so this is a workspace overlay,
+not a global modal dialog. Keep the same mounted pane and portal targets throughout
+expansion, resizing and restoration. Retain each tool's DOM, scroll and unsent
+composer while hidden, including while an assistant response streams.
+
+If the minimum readable width plus visible pack context cannot fit, use the full
+workspace with Back to pack and no resize affordance. Keep a visible return action
+at browser zoom and narrow widths; do not force an unusably small overlay.
+
+The Details footer offers Ask Assistant about this. It attaches an explicit,
+removable reference chip without replacing or sending the user's text. Clicking
+the chip opens the referenced selection. Sending includes the exact reference;
+removing it excludes the reference from that request. Keep references scoped to
+the active conversation. Node title dragging adjusts visual positions only;
+Reset layout is separate from viewport reset.
+
+
+## Workspace density and action hierarchy (2026-09-24)
+
+Use the normal 32px control height (28px in Compact). Icon-only `Button` and
+`ButtonLink` actions use `size="icon"`: one square target with no text-button
+side padding. Give each an accessible name and the shared tooltip. Pane toggles
+continue to use `PaneToggle`; do not resize navigation independently.
+
+Toolbars use an 8px action gap; adjacent row icons use 4px. Keep primary writes
+such as Run tests and Save visible, secondary navigation quiet, and infrequent
+operations in the existing overflow menu. The shared PageHeader spaces actions
+and allows wrapping. A lone overflow icon stays beside a narrow document title.
+
+Use `Popover.triggerTooltip` or wrap Radix's trigger with `Tooltip`; do not put
+the custom Tooltip component inside an `asChild` trigger, where trigger events
+would not reach the underlying button.
+
+The Tests assistant reuses chat's composer and message styles: quiet bounded
+model selection, square Add/Send/Stop actions, and progress immediately above
+the composer. No empty status row reserves space. Retain readable body text;
+compactness comes from consistent controls and removing redundant gaps.
+
+Case tables retain two lines of title and expose the complete title with an
+overflow tooltip on hover/focus and the case editor on click. Hide the secondary
+Origin column in narrow panes; keep Expected and Last result. On phone widths
+the table scrolls horizontally within its own container. Never clip the whole
+workspace to fit a wide table. Use density tokens for editor sections and
+history rows; source choices use quiet navigation rows instead of stretched
+boxed buttons.
+
+See [the spacing review](reviews/desk-spacing-review-20260924.md) for scope,
+verification and the proposed next features.

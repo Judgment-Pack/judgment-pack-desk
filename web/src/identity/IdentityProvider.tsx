@@ -1,30 +1,8 @@
+import { useVerifiedSession } from '../auth/VerifiedSession'
 import { msg, useLocale } from '../i18n'
-/**
- * Who the desk says is looking, and the boundary that keeps that harmless.
- *
- * **Identity is display, never a gate.** It gates no route, no pane and no
- * chassis endpoint. Authorization is, and stays, the loopback bind, the
- * session id this tab holds and sends as a bearer, and the origin check — a
- * signed-in viewer and a not-signed-in viewer holding that id have identical
- * reach. The header menu and the Admin page say this outright, because an
- * organization that configures SSO and believes it has gated the desk has been
- * misled by the shell.
- *
- * The chassis now records a **session** — `{subject, issuer}`, reported by
- * `GET /api/session` — and that is what the identity provider's own PR fills
- * in. Nothing here reads it: the state below is still decoded from the
- * configuration, and a provider that signed somebody in would still gate
- * nothing until the PR that wires it says otherwise in this comment.
- *
- * **The exposed state is a nullable provider, and there is no discriminator.**
- * This used to be a `mode`-tagged union — `{ mode: 'local' }` or
- * `{ mode: 'provider' }` — which is the very shape the configuration schema
- * refuses by name one layer down. A rule that holds in the file and not in the
- * type it decodes to is a rule the next branch is written against: `mode` is a
- * place to put a third member, and nothing but review stood between two
- * members and three. So the state carries the provider or `null`, every reader
- * branches on nullness, and there is no tag for a third case to occupy.
- */
+/** Display verified session claims when signed in. Legacy identity configuration
+ * remains display-only; the backend's protected sign-in policy authorizes access.
+ * An issuer/subject pair, never a display name or email, identifies the owner. */
 import { createContext, useContext, useMemo, type ReactNode } from 'react'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 
@@ -35,7 +13,8 @@ export interface ProviderIdentity {
 }
 
 export interface IdentityState {
-  /** Null exactly where `identity.provider` is null. There is no third value. */
+  authenticated?: boolean
+  /** The verified issuer, or the legacy display provider during initial setup. */
   provider: ProviderIdentity | null
   /** The local display name, which is what the header shows where there is none. */
   displayName: string
@@ -66,17 +45,22 @@ export function issuerHost(issuer: string): string {
 
 export function IdentityProvider({ children }: { children: ReactNode }) {
   const locale = useLocale()
+  const verified = useVerifiedSession()
   const { config, sources, userNameDefaulted } = useEffectiveConfig()
   const provider = config.identity.provider
   const state = useMemo<IdentityState>(
-    () => ({
+    () => verified?.issuer ? {
+      provider: { issuerHost: issuerHost(verified.issuer), label: null },
+      displayName: verified.name || verified.email || verified.subject,
+      authenticated: true
+    } : ({
       provider:
         provider === null
           ? null
           : { issuerHost: issuerHost(provider.issuer), label: provider.label },
       displayName: sources.user === 'default' || userNameDefaulted ? msg('local user') : config.user.displayName
     }),
-    [provider, config.user.displayName, sources.user, userNameDefaulted, locale]
+    [provider, config.user.displayName, sources.user, userNameDefaulted, locale, verified]
   )
   return <IdentityContext.Provider value={state}>{children}</IdentityContext.Provider>
 }

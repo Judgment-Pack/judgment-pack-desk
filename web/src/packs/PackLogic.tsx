@@ -1,3 +1,4 @@
+import type { NodePositions } from '../components/RelationshipMap'
 import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
 import { lazy, Suspense, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
@@ -20,17 +21,19 @@ import styles from './PackLogic.module.css'
 const RelationshipMap = lazy(() => import('../components/RelationshipMap').then(module => ({ default: module.RelationshipMap })))
 
 export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, query, onQuery, display, onDisplay,
-  viewport, onViewport, listScroll, mapUnavailable, trace }: {
+  viewport, onViewport, nodePositions, onNodePositionsChange, listScroll, mapUnavailable, trace, active = true }: {
   model: LogicProjection; at: string | null; groupId: string | null; select: (pointer: string) => void
   mode: LogicMode; onMode: (mode: LogicMode) => void; query: string; onQuery: (query: string) => void
   inspect: (pointer: string) => void; display: ReturnType<typeof initialLogicDisplay>; onDisplay: (display: ReturnType<typeof initialLogicDisplay>) => void
   viewport: Viewport; onViewport: (v: Viewport) => void
+  nodePositions?: NodePositions; onNodePositionsChange?: (positions: NodePositions) => void
+  active?: boolean
   listScroll: MutableRefObject<number>; mapUnavailable?: string; trace?: readonly TraceEntry[]
 }) {
-  useLocale()
+  const locale = useLocale()
   const [ruler, setRuler] = useState<HTMLSpanElement | null>(null)
   const rem = useMeasuredBox(ruler)?.width || 16
-  useInspectorWorkingWidth(mode === 'map' ? 51 * rem : 34 * rem)
+  useInspectorWorkingWidth(active ? 34 * rem : 0)
   const root = useRef<HTMLElement>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [focusRequest, setFocusRequest] = useState<{ id: string; sequence: number }>()
@@ -38,9 +41,10 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
   const [jump, setJump] = useState<string | null>(null)
   useLayoutEffect(() => { setExpanded(new Set()); nextMatch.current = 0 }, [model.document])
   useLayoutEffect(() => { nextMatch.current = 0 }, [query])
-  // PageBody owns List scrolling; a second scroll box would trap the toolbar.
+  const listBody = useRef<HTMLDivElement>(null)
+  // Keep the toolbar fixed and restore the list independently of the canvas.
   useLayoutEffect(() => {
-    const body = root.current?.closest<HTMLElement>('[data-page-scroll]')
+    const body = listBody.current
     if (!body) return
     body.scrollTop = mode === 'list' ? listScroll.current : 0
     if (mode !== 'list') return
@@ -65,7 +69,7 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
   }, [jump, mode, graph])
   const matchPointers = useMemo(() => new Set(model.groups.flatMap(g => matchingItems(g, query).map(i => i.pointer))), [model, query])
   const searching = Boolean(query.trim())
-  const graphNodes = graph.nodes.map(node => {
+  const graphNodes = useMemo(() => graph.nodes.map(node => {
     const aggregate = node.items.length > 1
     const item = node.items[0]!
     const observations = new Map<string, number>()
@@ -83,8 +87,8 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
         <ul>{node.items.slice(0, 3).map(i => <li key={i.pointer}>{i.label}</li>)}</ul>
         {node.items.length > 3 && <p><Message text={"+ <0/> more rules"} slots={[node.items.length - 3]} /></p>}
         <p>{msg("Expand to read each rule’s conditions.")}</p>
-      </div> : <LogicDetails document={model.document} group={node.group.id} item={item} conditions={display.conditions || searching} /> }
-  })
+      </div> : <LogicDetails document={model.document} group={node.group.id} item={item} conditions={display.conditions || searching} compact /> }
+  }), [graph, current?.item.pointer, searching, matchPointers, trace, model.document, display.conditions, locale])
   const updateDisplay = (next: typeof display) => { onDisplay(next); rememberLogicDisplay(next) }
   const requestMatch = () => {
     if (!searching) return
@@ -96,7 +100,8 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
       if (node.items.length > 1) setExpanded(previous => new Set([...previous, node.id]))
       setFocusRequest(previous => ({ id: match.pointer, sequence: (previous?.sequence ?? 0) + 1 }))
       root.current?.querySelector('[data-logic-canvas]')?.scrollIntoView({ block: 'nearest' })
-    } else {
+    } else if (mode === 'map') inspect(match.pointer)
+    else {
       const target = Array.from(root.current?.querySelectorAll<HTMLElement>('[data-logic-pointer]') ?? []).find(el => el.dataset.logicPointer === match.pointer)
       target?.scrollIntoView({ block: 'center' }); target?.querySelector('button')?.focus({ preventScroll: true })
     }
@@ -124,9 +129,7 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
         : <p className={styles.note}>{msg("None declared.")}</p>}
     </section>
   }
-  return <section ref={root} className={styles.logic} aria-label={msg("Pack logic")}>
-    <span ref={setRuler} className={styles.ruler} aria-hidden="true" />
-    <div className={styles.toolbar}>
+  const toolbar = <div className={styles.toolbar}>
       <SegmentedControl label={msg("Logic view")} value={mode} onValueChange={v => onMode(v as LogicMode)} segments={[{ value: 'list', label: msg("List") }, { value: 'map', label: msg("Map") }]} />
       <form className={styles.search} onSubmit={e => { e.preventDefault(); requestMatch() }}>
         <Input type="search" aria-label={msg("Find pack item")} value={query} onChange={e => onQuery(e.target.value)} placeholder={mode === 'map' ? msg("Find in map…") : msg("Filter items…")} />
@@ -137,15 +140,16 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
         <label className={styles.option}><Message text={"<0/>Group map rules by outcome"} slots={[<input type="checkbox" checked={display.grouped} onChange={e => { setExpanded(new Set()); updateDisplay({ ...display, grouped: e.target.checked }) }} />]} /></label>
         <p className={styles.note}>{msg("Display preferences are remembered. Search always reveals matching conditions.")}</p>
       </Popover>
-      <PackJumpTo model={model} at={at} onJump={pointer => { onQuery(''); select(pointer); setJump(pointer) }} />
+      <PackJumpTo model={model} at={at} onJump={pointer => { onQuery(''); if (mode === 'map' && !graph.nodes.some(node => node.items.some(item => item.pointer === pointer))) inspect(pointer); else { select(pointer); setJump(pointer) } }} />
     </div>
+  return <section ref={root} className={styles.logic} data-mode={mode} aria-label={msg("Pack logic")}>
+    <span ref={setRuler} className={styles.ruler} aria-hidden="true" />
+    {toolbar}
     {searching && <p className={styles.searchStatus} role="status">{matchPointers.size ? msg("{{value0}} matching items", { value0: matchPointers.size }) : msg("No items match “{{value0}}”.", { value0: query })}</p>}
-    <div className={styles.context}>{renderGroup('applicability')}{renderGroup('evidenceRequirements')}</div>
     {mode === 'map' ? mapUnavailable ? <div className={styles.unavailable} role="status">
       <h2>{msg("Map unavailable")}</h2><p>{mapUnavailable}</p><Button onClick={() => onMode('list')}>{msg("Read List")}</Button>
     </div> : <>
-      <p className={styles.note}>{msg("Rules contribute outcomes independently. Connections show declared outcomes and special-case targets.")}</p>
-      <div className={styles.canvas} data-logic-canvas><Suspense fallback={<p role="status">{msg("Loading map…")}</p>}><RelationshipMap nodes={graphNodes} edges={graph.edges} unit={rem} viewport={viewport}
+      <div className={styles.canvas} data-logic-canvas><Suspense fallback={<p role="status">{msg("Loading map…")}</p>}><RelationshipMap nodePositions={nodePositions} onNodePositionsChange={onNodePositionsChange} nodes={graphNodes} edges={graph.edges} unit={rem} nodeWidth={16 * rem} columnGap={3} viewport={viewport}
         focusRequest={focusRequest} onViewportChange={onViewport} onSelect={id => {
           const node = graph.nodes.find(n => n.id === id)
           if (!node) return
@@ -157,7 +161,9 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
           else inspect(id)
         }} /></Suspense></div>
       <p className={styles.caption}>{trace ? msg("Recorded observations on these pack bytes.") : msg("Declared logic. No test results are shown.")} {model.groups.find(g => g.id === 'exceptions')!.items.length === 0 && msg("No special cases.")}</p>
-    </> : <>{renderGroup('rules')}{renderGroup('exceptions')}{renderGroup('outcomes')}</>}
-    {renderGroup('resolution')}{renderGroup('sources')}
+    </> : <div ref={listBody} className={styles.listBody} data-logic-list>
+      <div className={styles.context}>{renderGroup('applicability')}{renderGroup('evidenceRequirements')}</div>
+      {renderGroup('rules')}{renderGroup('exceptions')}{renderGroup('outcomes')}{renderGroup('resolution')}{renderGroup('sources')}
+    </div>}
   </section>
 }

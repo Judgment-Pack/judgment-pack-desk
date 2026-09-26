@@ -1,0 +1,88 @@
+{
+  "checks": [
+    "Bare entry calls no private APIs; help grants no access; launch redirects to workspace",
+    "Confirmation cancel restores focus; server failure preserves session; retry revokes only presented session; relaunch works",
+    "Responsive OS-language recovery; dark/light appearance; unavailable server retry"
+  ],
+  "layouts": [
+    {
+      "name": "local-recovery-dark",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "height": 960,
+      "scrollHeight": 960
+    },
+    {
+      "name": "local-recovery-steps-dark",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "height": 960,
+      "scrollHeight": 960
+    },
+    {
+      "name": "local-recovery-light",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "height": 960,
+      "scrollHeight": 960
+    },
+    {
+      "name": "end-session-confirmation",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "height": 960,
+      "scrollHeight": 960
+    },
+    {
+      "name": "local-ended",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "height": 960,
+      "scrollHeight": 960
+    },
+    {
+      "name": "local-en-US-320",
+      "width": 320,
+      "scrollWidth": 320,
+      "height": 844,
+      "scrollHeight": 844
+    },
+    {
+      "name": "local-de-DE-390",
+      "width": 390,
+      "scrollWidth": 390,
+      "height": 844,
+      "scrollHeight": 844
+    },
+    {
+      "name": "local-ko-KR-390",
+      "width": 390,
+      "scrollWidth": 390,
+      "height": 844,
+      "scrollHeight": 844
+    },
+    {
+      "name": "local-ja-JP-390",
+      "width": 390,
+      "scrollWidth": 390,
+      "height": 844,
+      "scrollHeight": 844
+    },
+    {
+      "name": "local-fr-FR-1440",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "height": 844,
+      "scrollHeight": 844
+    },
+    {
+      "name": "local-unavailable",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "height": 960,
+      "scrollHeight": 960
+    }
+  ],
+  "errors": [],
+  "external": []
+}

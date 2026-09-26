@@ -26,7 +26,7 @@ import { OverflowTooltip } from '../ui/Tooltip'
  * **The bytes went to the right pane.** They are context and not a setting:
  * nobody edits a file's text here, and the disclosure that held it was one more
  * thing stacked into a scroll that already had four sections in it. The page
- * claims the Inspector slot the way the pack routes do — `useInspectorPortal`,
+ * claims the Details slot through `useDetailsPortal`; Technical details opens it,
  * a claim held for as long as the route is mounted and released when it leaves
  * — so the file is *beside* the form instead of underneath it. Nothing about
  * what may be shown changed: a refused file's bytes are still never rendered,
@@ -57,6 +57,7 @@ import { OverflowTooltip } from '../ui/Tooltip'
  */
 import { useEffect, useRef, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { SignInSettings } from '../auth/SignInSettings'
 import { ConnectionSettings } from '../admin/ConnectionSettings'
 import { DocumentProcessingSettings } from '../admin/DocumentProcessingSettings'
 import { ChatDataSettings } from '../admin/ChatDataSettings'
@@ -69,11 +70,11 @@ import { RetainedPanel } from '../ui/RetainedPanel'
 import { DraftScope } from '../shell/DraftScope'
 import { ConfigPane } from '../admin/ConfigPane'
 import { SECTION_SUMMARY } from '../admin/sectionSummary'
-import { CardField, SourceCard, StatusLine, type SourceStatus } from '../admin/SourceCard'
+import { SourceCard, StatusLine, type SourceStatus } from '../admin/SourceCard'
 import { useDefaultProject } from '../admin/DefaultProject'
 import { OrganizationForm, StorageForm, StorageKind } from '../admin/projectFileCards'
 import { useHashTarget } from '../shell/useHashTarget'
-import { useInspectorPortal } from '../shell/InspectorSlot'
+import { useDetailsPortal, useDetailsSlot } from '../shell/DetailsSlot'
 import { useSettingsNavigation } from '../shell/SettingsNavigation'
 import { INSPECTOR_DRAWER_BELOW, useMediaQuery } from '../shell/useMediaQuery'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
@@ -170,20 +171,23 @@ export function AdminView() {
   // **The pane, claimed for as long as this route is mounted.** The claim and
   // the portal are one call, so leaving Admin releases the slot and the next
   // route's own panel — or the pane's empty state — takes it back.
-  const pane = useInspectorPortal(
-    open.id === 'connections' ? null : <ConfigPane {...paneFor(effective, open)} />
+  const details = useDetailsSlot()
+  useEffect(() => { details.dismissInspection?.() }, [open.id, details.dismissInspection])
+  const pane = useDetailsPortal(
+    ['connections', 'identity-provider'].includes(open.id) ? null : <ConfigPane {...paneFor(effective, open)} />
   )
 
   return (
     <article className={`detail ${styles.admin}`} id={navigation.inSidebar ? open.id : undefined} data-measure="full" data-layout="page" data-navigation={navigation.inSidebar ? 'sidebar' : 'inline'} ref={top}>
       {pane}
-      <PageHeader title={msg("Admin")} context={open.title} actions={
+      <PageHeader title={msg("Admin")} context={open.title} actions={<>
+        {!['connections', 'identity-provider'].includes(open.id) && <Button variant="quiet" onClick={() => details.open ? details.dismissInspection?.() : details.reveal()}>{msg("Technical details")}</Button>}
         <Popover title={msg("Runtime details")} trigger={<Button variant="quiet">{msg("Runtime details")}</Button>}>
           <AdminStatusLine runtime={runtimeSays(mcp)} binary={runtimeBinary(effective)}
             copyText={effective.desk?.chassis === undefined ? undefined : `${runtimeSays(mcp)}
 ${effective.desk.chassis.runtimeBin}`} />
         </Popover>
-      } />
+      </>} />
       <DraftScope>
         <PageBody width={navigation.inSidebar ? 'form' : 'wide'}>
           <div className={styles.split}>
@@ -248,38 +252,7 @@ ${effective.desk.chassis.runtimeBin}`} />
                 />
               </RetainedPanel>
               {open.id === 'connections' && <ConnectionSettings />}
-              <RetainedPanel active={open.id === 'identity-provider'}>
-                <SourceCard
-                  id={sectionId(SECTION['identity-provider']!.id)}
-                  title={SECTION['identity-provider']!.title}
-                  level={2}
-                  location={deskLocation(effective)}
-                  status={deskStatus(effective)}
-                  under={deskStatus(effective)}
-                  fields={
-                    <>
-                      <CardField label={msg("Provider")}>
-                        {config.identity.provider === null ? (
-                          msg("None")
-                        ) : (
-                          <>
-                            <code>{config.identity.provider.issuer}</code>
-                            {config.identity.provider.label !== null && (
-                              <> — {config.identity.provider.label}</>
-                            )}
-                          </>
-                        )}
-                      </CardField>
-                      <p className={styles.explanation}>
-                        {config.identity.provider === null
-                          ? msg("You are using a local session. No identity provider is configured.")
-                          : msg("This provider describes the identity displayed in the header. Sign-in is not available yet.")}
-                        {' '}<Link to="/help#security">{msg("About local access")}</Link>
-                      </p>
-                    </>
-                  }
-                />
-              </RetainedPanel>
+              {open.id === 'identity-provider' && <SignInSettings />}
             </div>
           </div>
         </PageBody>

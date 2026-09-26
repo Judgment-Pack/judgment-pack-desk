@@ -1,7 +1,6 @@
 import { sourceMessage } from '../i18n/source'
 /**
- * The desk's three keyboard shortcuts, and the one rule that matters more than
- * the three of them.
+ * The desk's keyboard shortcuts, and their shared text-field rule.
  *
  * **Every shortcut is suppressed while focus is in a text field.** That is
  * exactly AuthorView's `<textarea className="code-editor">`, where a Mod+B
@@ -29,6 +28,7 @@ export interface Shortcut {
  * The list, typed and exported once: Help & About renders it and the README
  * quotes it, so there is one place a chord is written down.
  *
+ * Quick switch owns Mod+K while mounted; the editor owns Mod+S.
  * **`Mod+S` is on the list and is not installed here, and the two facts are
  * one fact.** Every chord below is suppressed inside a text field, which is
  * the rule the module doc opens with and the reason a Mod+B cannot collapse
@@ -45,8 +45,9 @@ export interface Shortcut {
  */
 export const SHORTCUTS: readonly Shortcut[] = [
   { keys: 'Mod+B', label: sourceMessage('Collapse or expand the navigation rail') },
-  { keys: 'Mod+Alt+I', label: sourceMessage('Open or close the Inspector') },
-  { keys: 'Mod+Alt+J', label: sourceMessage('Open or close the Console') },
+  { keys: 'Mod+Alt+I', label: sourceMessage('Toggle the active side pane') },
+  { keys: 'Mod+Alt+J', label: sourceMessage('Open diagnostics') },
+  { keys: 'Mod+K', label: sourceMessage('Search and switch') },
   { keys: 'Mod+S', label: sourceMessage('Save, while editing a pack') }
 ]
 

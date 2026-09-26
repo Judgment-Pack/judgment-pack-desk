@@ -3,6 +3,9 @@ import { createContext, useContext, useLayoutEffect, type RefObject } from 'reac
 /** A route can own a temporary preview without rewriting the document pane's
  * saved preferences. Releasing it restores the shell's normal Inspector. */
 export interface InspectorPresentation {
+  workspaceTools?: boolean
+  /** Optional document identity retained in the expanded pane header. */
+  contextTitle?: string
   title: string
   available?: boolean
   open: boolean

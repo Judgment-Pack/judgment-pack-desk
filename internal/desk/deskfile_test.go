@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -32,6 +33,7 @@ func fixtureDir(t *testing.T) string {
 }
 
 type fixtureVerdict struct {
+	Agent     *AssistantAgentConfig `json:"agent"`
 	Documents *struct {
 		Enabled          bool   `json:"enabled"`
 		Source           string `json:"source"`
@@ -159,6 +161,9 @@ func TestSharedFixturesDecodeAsTheVerdictSays(t *testing.T) {
 				// from the parity this exists to hold.
 				if verdict.Engine == "" || verdict.Thinking == "" {
 					t.Fatalf("expected.json names no engine/thinking for an accepted fixture")
+				}
+				if !reflect.DeepEqual(decoded.Agent, verdict.Agent) {
+					t.Errorf("agent %#v, want %#v", decoded.Agent, verdict.Agent)
 				}
 				if decoded.Engine != verdict.Engine {
 					t.Errorf("engine %q, want %q", decoded.Engine, verdict.Engine)

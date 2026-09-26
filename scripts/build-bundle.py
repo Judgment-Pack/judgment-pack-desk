@@ -20,6 +20,8 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 REVISION = re.search(r'const GatewayRevision = "([a-f0-9]{40})"', (ROOT / 'internal/desk/local_gateway.go').read_text())[1]
 
+VERSION = re.search(r'const GatewayVersion = "([^"]+)"', (ROOT / 'internal/desk/local_gateway.go').read_text())[1]
+
 def run(args, cwd=None, **kwargs):
     return subprocess.run(args, cwd=cwd, check=True, **kwargs)
 
@@ -40,6 +42,7 @@ def require_unregistered_gateway(source):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--gateway-checkout', type=Path)
+    parser.add_argument('--runner-checkout', type=Path, help='Build the local Jobs pilot from this explicitly chosen runner source tree.')
     parser.add_argument('--gateway-revision', default=REVISION, help='Exact reviewed gateway commit to package.')
     parser.add_argument('--gateway-only', action='store_true', help='Build a replacement companion bundle without rebuilding Desk.')
     parser.add_argument('--output', type=Path, default=ROOT / 'bin')
@@ -86,10 +89,12 @@ def main():
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(path, destination)
         manifest = target / 'gateway-bundle.json.tmp'
-        manifest.write_text(json.dumps({'revision': revision, 'files': files}, indent=2) + '\n')
+        manifest.write_text(json.dumps({'version': VERSION if revision == REVISION else None, 'revision': revision, 'files': files}, indent=2) + '\n')
         manifest.replace(target / 'gateway-bundle.json')
         if not args.skip_web and not args.gateway_only:
             run(['npm', '--prefix', 'web', 'run', 'build'], ROOT)
+        if not args.gateway_only and args.runner_checkout:
+            run(['go', 'build', '-trimpath', '-o', str(target / ('jpack-runner' + suffix)), './cmd/jpack-runner'], args.runner_checkout.resolve())
         if not args.gateway_only:
             run(['go', 'build', '-trimpath', '-o', str(target / ('jpack-desk' + suffix)), '.'], ROOT)
     print('Gateway bundle:' if args.gateway_only else 'Complete Desk bundle:', target)

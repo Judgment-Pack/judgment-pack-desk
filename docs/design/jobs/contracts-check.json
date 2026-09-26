@@ -1,0 +1,13 @@
+{
+  "schema": "Draft 2020-12",
+  "validExamples": 5,
+  "refusedMalformedExamples": [
+    "unknown member",
+    "active without revision",
+    "schedule without source",
+    "connected without grant",
+    "completed without record",
+    "resolved without new run"
+  ],
+  "note": "Structural validation only; references are fictional and no artifacts or permissions are verified."
+}

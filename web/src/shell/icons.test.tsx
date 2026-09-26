@@ -18,6 +18,9 @@ const exported = Object.entries(icons) as [string, () => ReactElement][]
 describe('the desk icons', () => {
   it('exports the glyph vocabulary the shell names', () => {
     expect(exported.map(([name]) => name).sort()).toEqual([
+      'IconActivity',
+      'IconAssistant',
+      'IconBrief',
       'IconCheck',
       'IconChevronDown',
       'IconChevronLeft',
@@ -25,11 +28,15 @@ describe('the desk icons', () => {
       'IconChevronUp',
       'IconClose',
       'IconCopy',
+      'IconDetails',
+      'IconFocus',
+      'IconFolder',
       'IconGear',
       'IconGoogleDrive',
       'IconGraph',
       'IconHelp',
       'IconHistory',
+      'IconInfo',
       'IconLink',
       'IconMail',
       'IconMatrix',
@@ -40,10 +47,12 @@ describe('the desk icons', () => {
       'IconPanelRight',
       'IconPaperclip',
       'IconPencil',
+      'IconPin',
       'IconPlus',
       'IconPreview',
-      'IconSend',
-      'IconStop'
+      'IconSearch', 'IconSend',
+      'IconStop',
+      'IconTrash'
     ])
   })
 

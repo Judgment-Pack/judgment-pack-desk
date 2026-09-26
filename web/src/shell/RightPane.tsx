@@ -8,7 +8,8 @@ import { Tooltip } from '../ui/Tooltip'
  * is beaten by any authored `display`, and a pane that is merely invisible
  * still holds tab stops. A test asserts the closed panel contributes none.
  *
- * **Below 1100px it is a `Dialog` drawer instead**, and two consequences are
+ * Workspace tools use a full-width inline takeover on narrow screens, keeping
+ * these portal targets mounted. Other route inspectors may use a `Dialog` drawer, and two consequences are
  * stated here rather than left for someone to find. The wrapper swap remounts
  * the subtree, so inspector-local state resets at that breakpoint. And in
  * drawer form `Escape` closes it — because it *is* a dialog then, and a dialog
@@ -34,12 +35,18 @@ import { Tooltip } from '../ui/Tooltip'
  */
 import { Dialog, VisuallyHidden } from 'radix-ui'
 import { type CSSProperties, type ReactNode, type RefObject } from 'react'
-import { IconClose } from './icons'
+import { WorkspaceActivity } from './WorkspaceActivity'
+import { IconFocus, IconPanelLeft, IconChevronLeft } from './icons'
+import { Button } from '../ui/Button'
+import { PaneWidthMenu } from './PaneWidthMenu'
+import { PaneDivider, type PaneResizePreview } from '../ui/PaneDivider'
+import { PaneToggle } from './PaneToggle'
+import { Diagnostics } from './Diagnostics'
 
 const EMPTY_STATE = 'Select a row, a node or a file to inspect it here.'
 
 export function RightPane({
-  title = 'Inspector',
+  title = 'Details',
   open,
   onClose,
   asDrawer,
@@ -47,13 +54,27 @@ export function RightPane({
   publishTarget,
   publishHeaderTarget,
   publishPane,
-  openerRef,
   restoreFocusRef,
   showEmpty,
   utility,
   publishUtilityTarget,
   navigation,
-  children
+  children,
+  tool = 'route',
+  workspaceTools = false,
+  expanded = false,
+  fullWidth = false,
+  contextTitle,
+  returnLabel,
+  onExpand,
+  onReturn,
+  expandButtonRef,
+  resize,
+
+  brief, publishBriefHeaderTarget,
+  publishDetailsTarget,
+  inspection,
+  hasDetails = false
 }: {
   title?: string
   open: boolean
@@ -81,12 +102,7 @@ export function RightPane({
    * one. What is published is the element; the measurement is the frame's.
    */
   publishPane: (pane: HTMLElement | null) => void
-  /**
-   * The header control that opened the drawer. Radix restores focus to its own
-   * `Dialog.Trigger`, and this pane has none — the opener is a toggle in the
-   * header, two grid cells away — so the restoration is wired by hand.
-   */
-  openerRef: RefObject<HTMLButtonElement | null>
+  /** The contextual action to restore after a drawer closes. */
   restoreFocusRef?: RefObject<HTMLElement | null>
   /** False while a route is publishing into the slot. */
   showEmpty: boolean
@@ -94,30 +110,60 @@ export function RightPane({
   publishUtilityTarget?: (target: HTMLDivElement | null) => void
   navigation?: ReactNode
   children?: ReactNode
+  tool?: 'route' | 'brief' | 'details' | 'activity' | 'runtime' | 'diagnostics'
+  workspaceTools?: boolean
+  expanded?: boolean
+  fullWidth?: boolean
+  contextTitle?: string
+  returnLabel?: string
+  onExpand?: () => void
+  onReturn?: () => void
+  expandButtonRef?: RefObject<HTMLButtonElement | null>
+  resize?: { preview?: PaneResizePreview; value: number; min: number; max: number; onChange: (width: number) => void; onReset: () => void }
+
+  publishDetailsTarget?: (target: HTMLDivElement | null) => void
+  inspection?: ReactNode
+  brief?: ReactNode
+  publishBriefHeaderTarget?: (node: HTMLDivElement | null) => void
+  hasDetails?: boolean
 }) {
   useLocale()
+  const detailsVisible = !utility && tool === 'details'
   const body = (
     <>
+      {resize && <PaneDivider label={title} controls="desk-inspector" {...resize} onCollapse={onReturn ?? onClose} />}
       <div className="desk-pane-head">
-        <div className="desk-pane-heading">{navigation}<span>{title}</span></div>
-        <div ref={publishHeaderTarget} className="desk-pane-head-slot" hidden={utility} />
-        <Tooltip content={msg("Close {{value0}}", { value0: title })} openOnFocus={false} side="left"><button
-          type="button"
-          className="desk-icon-button"
-          aria-label={msg("Close {{value0}}", { value0: title.toLowerCase() })}
-          onClick={onClose}
-        >
-          <IconClose />
-        </button></Tooltip>
+
+        <div className="desk-pane-heading">{navigation}<span>{title}</span>{(expanded || fullWidth) && contextTitle && <span className="desk-pane-context" title={contextTitle}>{contextTitle}</span>}</div>
+        <div ref={publishHeaderTarget} className="desk-pane-head-slot" hidden={utility || tool !== 'route' || fullWidth} />
+        <div ref={publishBriefHeaderTarget} className="desk-pane-head-slot desk-brief-head" hidden={utility || tool !== 'brief'} />
+        <div className="desk-pane-actions">
+        {workspaceTools && (expanded || fullWidth) ? <>
+          {resize && <PaneWidthMenu {...resize} />}
+          <Button ref={expandButtonRef} className="desk-pane-return" onClick={onReturn}>{fullWidth ? <IconChevronLeft /> : <IconPanelLeft />}{fullWidth ? returnLabel ?? msg('Back to pack') : msg('Return to split view')}</Button>
+        </> : workspaceTools && !utility && <Tooltip content={msg('Expand pane')}><button ref={expandButtonRef} className="desk-icon-button" type="button" aria-label={msg('Expand pane')} aria-pressed={false} onClick={onExpand}><IconFocus /></button></Tooltip>}
+        <PaneToggle side="right" expanded label={msg('Collapse {{value0}}', { value0: title.toLowerCase() })} controls="desk-inspector" onClick={onClose} />
+        </div>
       </div>
-      {showEmpty && !utility && <p className="desk-pane-empty">{msg(EMPTY_STATE)}</p>}
+      {showEmpty && !utility && tool === 'route' && <p className="desk-pane-empty">{msg(EMPTY_STATE)}</p>}
       {/* Always mounted, so a route's portal target never disappears under
           it — including while nothing is published. */}
-      <div className="desk-inspector-retained" hidden={utility}>
+      <div className="desk-tool-content">
+      <section className="desk-brief-retained" aria-label={msg('Brief')} hidden={utility || tool !== 'brief'}>{brief}</section>
+      <section id="desk-right-details" className="desk-right-details" data-reading={inspection != null || undefined} aria-label={msg('Details')} hidden={!detailsVisible}>
+        {detailsVisible && !hasDetails && !inspection && <p className="desk-pane-empty">{msg(EMPTY_STATE)}</p>}
+        <div className="desk-details-slot" ref={publishDetailsTarget} hidden={inspection != null} />
+        {inspection}
+      </section>
+      <div className="desk-inspector-retained" hidden={utility || tool !== 'route'}>
       <div ref={publishTarget} className="desk-inspector-slot" />
       </div>
       <div ref={publishUtilityTarget} className="desk-inspector-slot" hidden={!utility} />
+      <div className="desk-tool-activity" hidden={utility || tool !== 'activity'}><WorkspaceActivity /></div>
+      <div className="desk-tool-activity" hidden={utility || tool !== 'runtime'}><WorkspaceActivity runtime /></div>
+      <div className="desk-tool-activity" hidden={utility || tool !== 'diagnostics'}><Diagnostics /></div>
       {children}
+      </div>
     </>
   )
 
@@ -133,7 +179,7 @@ export function RightPane({
           <Dialog.Content
             data-modal-surface
             ref={publishPane}
-            className="desk-drawer desk-drawer-right"
+            className="desk-drawer desk-pane-drawer desk-drawer-right"
             id="desk-inspector"
             aria-label={title}
             style={
@@ -145,7 +191,7 @@ export function RightPane({
               event.preventDefault()
               const gesture = restoreFocusRef?.current
               if (gesture?.isConnected && gesture.getClientRects().length) gesture.focus()
-              else openerRef.current?.focus()
+              else document.getElementById('main')?.focus({ preventScroll: true })
             }}
           >
             <VisuallyHidden.Root>

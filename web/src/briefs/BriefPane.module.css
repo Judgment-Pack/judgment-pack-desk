@@ -1,0 +1,14 @@
+.pane { position: relative; overflow: auto; height: 100%; min-width: 0; padding: var(--space-5); color: var(--ink); }
+.page { max-width: 680px; margin: 0 auto; display: grid; gap: var(--space-5); overflow-wrap: anywhere; }
+.page h2 { margin: 0; font-size: var(--text-page); line-height: 1.4; }
+.page h3 { margin: 0 0 var(--space-2); font-size: var(--text-body); font-weight: 600; }
+.page p { margin: 0; line-height: 1.65; white-space: pre-wrap; }
+.meta { color: var(--ink-soft); font-size: var(--text-xs); line-height: 1.6; }
+.actions { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.evidence { list-style: none; margin: 0; padding: 0; }
+.evidence li { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--border); }
+.evidence span:last-child { color: var(--ink-soft); font-size: var(--text-xs); }
+.notice { padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.empty { display: grid; gap: var(--space-3); padding-top: var(--space-5); }
+.sources { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); }
+.footer { padding-top: var(--space-3); border-top: 1px solid var(--border); }

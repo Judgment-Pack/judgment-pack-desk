@@ -34,3 +34,28 @@ it('counts scalar values and retains a BOM that is legitimate after blank-line t
   const record = fixture('complete-verbatim-text'); record.content.pages[0].text = '\ufeffHello 😀'; record.content.pages[0].chars = 8; record.content.chars = 8
   expect(readDocumentRecord(record).content.chars).toBe(8)
 })
+
+// Upstream v0.3.1 fixture: a timed-out PDF opening has no text to use and must
+// keep its timeout diagnosis instead of becoming a password/processing failure.
+it.each([['Standard', 4], [null, null]])('retains an opening timeout with encryption metadata %s / %s', (handler, revision) => {
+  const raw = fixture('failed-timeout-encrypted')
+  raw.document.encryption.handler = handler
+  raw.document.encryption.revision = revision
+  const record = readDocumentRecord(raw)
+  expect(record.processing.status).toBe('failed')
+  expect(record.processing.errors.map(e => e.code)).toEqual(['timeout'])
+  expect(usablePages(record)).toEqual([])
+  expect(needsPartialConsent(record)).toBe(true)
+})
+it.each(['counted-pages', 'extra-error', 'unrelated-error', 'undeclared-encryption', 'opened-encrypted', 'unopened-text'] as const)('rejects an inconsistent encryption record: %s', kind => {
+  let record = fixture('failed-timeout-encrypted')
+  switch (kind) {
+    case 'counted-pages': record.content.pageCount = 1; break
+    case 'extra-error': record.processing.errors.push({ code: 'pdf-malformed', page: null, message: 'Malformed' }); break
+    case 'unrelated-error': record.processing.errors[0].code = 'pdf-malformed'; break
+    case 'undeclared-encryption': record = fixture('failed-encrypted'); record.document.encryption = null; break
+    case 'opened-encrypted': record = fixture('failed-encrypted'); record.document.encryption.opened = true; break
+    case 'unopened-text': record = fixture('complete-encrypted-opened'); record.document.encryption.opened = false; break
+  }
+  expect(() => readDocumentRecord(record)).toThrow()
+})

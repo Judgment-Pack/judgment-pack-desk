@@ -23,11 +23,14 @@ import { McpContext, type McpConnection } from '../mcp/McpProvider'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { CreatePackDialog } from './CreatePackDialog'
 import type { ResearchHandover } from '../routes/ResearchAuthoringPage'
+import { defaultFolders, HOME_FOLDER } from '../packs/folders/model'
+import * as folderClient from '../packs/folders/client'
 import { proposedExpectation } from '../research/__fixtures__/expectationReview'
 
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
 })
 
 const EXAMPLES = JSON.stringify({
@@ -1318,6 +1321,27 @@ describe('creating a reviewed research handover', () => {
       'packs/reviewed-pack.pack.json', 'packs/reviewed-pack.matrix.json',
       'packs/reviewed-pack.research.json', 'jpack.json'
     ])
+  })
+
+  it.each([false,true])('completes pack creation once when folder assignment fails=%s',async fail=>{
+    const sent=serveProject({project:PROJECT}),handover=researchHandover(),stub=handoverStub()
+    vi.spyOn(folderClient,'loadFolders').mockResolvedValue({document:defaultFolders(),digest:''})
+    const assign=vi.spyOn(folderClient,'assignCreatedPack')
+    if(fail)assign.mockRejectedValue(new Error('stale'))
+    else assign.mockResolvedValue({document:defaultFolders(),digest:'saved'})
+    const onSaved=vi.fn(async()=>'/packs/reviewed-pack?chat=owned')
+    const router=createMemoryRouter([{path:'/create-pack',element:
+      <McpContext.Provider value={connected({client:stub.client,...FULL_CAPS,validateSupported:true})}>
+        <DeskConfigFixture value={effectiveConfig(undefined)}><CreatePackDialog open presentation="review" onOpenChange={()=>{}} onSaved={onSaved} initialFolderId={HOME_FOLDER} reviewDraft={{...handover,research:handover}}/></DeskConfigFixture>
+      </McpContext.Provider>},{path:'/packs/:packId',element:<p>Created destination</p>}],{initialEntries:['/create-pack']})
+    render(<QueryClientProvider client={testQueryClient()}><RouterProvider router={router}/></QueryClientProvider>)
+    await waitFor(()=>expect(createButton().disabled).toBe(false))
+    expect(screen.getByRole('combobox',{name:'Destination folder'}).textContent).toContain('local.user@example.com')
+    fireEvent.click(createButton());await screen.findByText('Created destination')
+    expect(assign).toHaveBeenCalledExactlyOnceWith('reviewed-pack',HOME_FOLDER)
+    expect(onSaved).toHaveBeenCalledOnce()
+    expect(sent.map(write=>write.path)).toEqual(['packs/reviewed-pack.pack.json','packs/reviewed-pack.matrix.json','packs/reviewed-pack.research.json','jpack.json'])
+    expect(router.state.location.state).toEqual(fail?{folderAssignment:{packId:'reviewed-pack',folderId:HOME_FOLDER}}:null)
   })
 
   it('takes the handover off the create entry, so Back does not offer it again', async () => {

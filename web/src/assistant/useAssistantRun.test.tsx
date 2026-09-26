@@ -324,3 +324,19 @@ describe('what ingestion hands on cannot be moved afterwards', () => {
     expect(frozen(null)).toBeNull()
   })
 })
+
+it('generates briefs without opening runtime tools or a socket', async () => {
+  engine = records
+  const socket = vi.fn(() => { throw Error('A brief must not open MCP') })
+  vi.stubGlobal('WebSocket', socket)
+  vi.stubGlobal('fetch', async () => new Response('{}'))
+  const { result } = renderHook(() => useAssistantRun({ purpose: 'brief', endpoint: ENDPOINT, model: ENDPOINT.model, engine: 'vercel', thinking: 'off' }))
+  expect(handed).toBeNull()
+  act(() => result.current.start('Summarize the retained snapshot.'))
+  await waitFor(() => expect(result.current.status).toBe('finished'))
+  expect(socket).not.toHaveBeenCalled()
+  expect(handed?.purpose).toBe('brief')
+  expect(handed?.tools).toEqual([])
+  expect(handed?.adversarialReview).toBe(false)
+  await expect(handed!.callTool('evaluate', {})).rejects.toThrow('no tool capability')
+})

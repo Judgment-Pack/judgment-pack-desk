@@ -1,51 +1,11 @@
+import { useVerifiedSession } from '../auth/VerifiedSession'
 import { msg, useLocale } from '../i18n'
 import { LanguageMenu } from '../i18n/LanguageMenu'
-/**
- * The header's user control.
- *
- * **NONE — the only fully-live state in phase A.** A monogram, the local
- * display name and a menu whose first line is non-interactive
- * and says what actually authorizes this desk. There is **no Sign out and no
- * disabled Sign out**: there is no session to end, and a greyed control that
- * will never enable is an affordance that lies. There is no Sign in either —
- * the route to a provider is Admin.
- *
- * **Provider configured — honest and inert.** Where a provider object is
- * present the header names the issuer host and says sign-in arrives in phase
- * B. Nothing else changes anywhere: no route, no pane, no endpoint. The
- * sign-in flow itself — discovery, JWKS, PKCE — is a separate piece of work,
- * and it is the one that falsifies the README's "opens no outbound
- * connection", which it must amend in the same commit.
- *
- * **The panes' reset lives here**, and this is the menu it belongs in. The
- * record it clears is per viewer and per browser — the same class of thing as
- * the two settings links above it — and it is about all three panes, so it is
- * not one pane's header control: the Inspector's header carries the Inspector's
- * own close and nothing else, and the Console has no header at all. It used to
- * be a button on Admin › Panes, which is a settings page reaching into a
- * browser's own storage; this is the shell's own menu, beside the panes it
- * clears. The menu **stays open** while it answers, because what happened is a
- * sentence and a menu that closed would take it away with it.
- *
- * **Appearance is set here, and it is a preference rather than a setting.**
- * Theme and density are a person's, not an organization's — Admin's card wrote
- * them into a file in the project's repository, so one person's dark was
- * everyone's — so they are two radio groups in this menu, stored in this
- * browser, applied the moment they are picked. There is no Save: a preference
- * is not a file. The project file's `appearance` is what a viewer who has
- * chosen nothing gets, and the menu names it so that clearing is not a leap in
- * the dark.
- *
- * The sentence about the session is checked against the code rather than
- * inherited from the spec. `GET /launch?secret=…` answers `303 See Other` to
- * `/#` and sets a **sixty-second, single-use handoff**; the page spends that at
- * `POST /api/session` for a session id it keeps in `sessionStorage` and puts on
- * each request itself. So the secret leaves the address bar at the redirect —
- * at load, not at some later navigation — and nothing ambient authorizes
- * anything after the first request. `TestLaunchSetsAHandoffAndNoSession` and
- * `TestNoCookieAuthorizesAnyGatedRoute` hold the two halves.
- */
+/** Account menu: verified session identity takes precedence over legacy display
+ * configuration. Ending the Desk session leaves source integrations connected.
+ * Language, appearance and pane preferences remain browser-local. */
 import { Avatar, DropdownMenu } from 'radix-ui'
+import { SignOutDialog } from '../auth/SignOutDialog'
 import { useRef, useState } from 'react'
 import { useConnectionsPane } from '../connections/ConnectionPaneContext'
 import { Link } from 'react-router-dom'
@@ -65,13 +25,9 @@ export const NONE_MENU_SENTENCE =
   'No identity provider is configured. This desk is authorized by the session this tab holds, ' +
   'the loopback bind, and the origin check.'
 
-export const SESSION_SENTENCE =
-  'The desk prints a launch URL at startup. Opening it once trades the secret for a ' +
-  'single-use, 60-second handoff and redirects to the desk; this tab exchanges that for a ' +
-  'session it keeps for itself and puts on each request. Nothing of the secret stays in the ' +
-  'address bar, and no cookie authorizes anything afterwards.'
+export const SESSION_SENTENCE = 'The installation owner needs to configure sign-in once on this computer.'
 
-export const PROVIDER_PHASE_NOTE = 'provider configured · sign-in arrives in phase B'
+export const PROVIDER_PHASE_NOTE = 'Sign-in is not configured.'
 
 /**
  * What a reset did, in four sentences rather than one.
@@ -160,19 +116,12 @@ export function monogram(name: string): string {
 export function UserControl() {
   useLocale()
   const connections = useConnectionsPane()
+  const [signOutOpen, setSignOutOpen] = useState(false)
   const opener = useRef<HTMLButtonElement>(null)
-  const { provider, displayName } = useIdentity()
-  // Where a provider is configured and carries no label, the name falls back
-  // to the issuer's host — something the desk read out of the file. It does
-  // **not** fall back to "signed out": that is a verdict about a provider
-  // session, and phase A performs no discovery, holds no provider token and
-  // computes no expiry, so it is a state this desk has not established and must
-  // not assert.
-  //
-  // Branched on nullness, not on a tag. There is no `mode` to read here
-  // because there is no `mode` in the state, which is the same absence the
-  // configuration schema keeps one layer down.
-  const name = provider === null ? displayName : (provider.label ?? provider.issuerHost)
+  const { provider, displayName, authenticated } = useIdentity()
+  const localAccess = useVerifiedSession()?.localAccess === true
+  // A verified account supplies the display name; legacy config is setup-only.
+  const name = authenticated || provider === null ? displayName : (provider.label ?? provider.issuerHost)
 
   return (
     <>
@@ -190,9 +139,9 @@ export function UserControl() {
       <DropdownMenu.Portal>
         <DropdownMenu.Content className="desk-menu desk-header-menu" align="end" sideOffset={6} collisionPadding={16}>
           <DropdownMenu.Label className="desk-menu-note">
-            {provider === null ? msg(NONE_MENU_SENTENCE) : msg(PROVIDER_PHASE_NOTE)}
+            {localAccess ? msg('Personal · This computer') : authenticated ? msg('Signed in with {{provider}}', { provider: provider?.label ?? provider?.issuerHost ?? '' }) : provider === null ? msg(NONE_MENU_SENTENCE) : msg(PROVIDER_PHASE_NOTE)}
           </DropdownMenu.Label>
-          <DropdownMenu.Label className="desk-menu-note">{msg(SESSION_SENTENCE)}</DropdownMenu.Label>
+          <DropdownMenu.Label className="desk-menu-note">{authenticated || localAccess ? msg('Signing out ends this Desk session. Your connected sources stay connected.') : msg(SESSION_SENTENCE)}</DropdownMenu.Label>
           <DropdownMenu.Separator className="desk-rule-h" />
           <DropdownMenu.Item className="desk-menu-item" onSelect={() => requestAnimationFrame(() => connections.open({ opener: opener.current }))}>{msg("My connections")}</DropdownMenu.Item>
           <LanguageMenu />
@@ -208,9 +157,12 @@ export function UserControl() {
           <DropdownMenu.Item asChild className="desk-menu-item">
             <Link to="/help">{msg("About")}</Link>
           </DropdownMenu.Item>
+          <DropdownMenu.Separator className="desk-rule-h" />
+          <DropdownMenu.Item className="desk-menu-item" onSelect={() => requestAnimationFrame(() => setSignOutOpen(true))}>{msg('End session')}</DropdownMenu.Item>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
+    <SignOutDialog open={signOutOpen} onOpenChange={setSignOutOpen} openerRef={opener} />
     </>
   )
 }

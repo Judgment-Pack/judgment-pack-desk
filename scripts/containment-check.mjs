@@ -61,15 +61,10 @@
  * graph are read off the rendered `/packs` and `/graphs` pages, because
  * neither id can be spelt without the project.
  *
- * **The configurations.** Four where the Inspector is a column and three where
- * it is a drawer, read from `INSPECTOR_DRAWER_BELOW` in
- * `web/src/shell/useMediaQuery.ts`: under a modal drawer the overlay owns the
- * pointer, so the console cannot be toggled while the Inspector is open. The
- * intended row count is that decision — routes × widths × configurations —
- * computed before any sampling and checked against the rows afterwards, so a
- * run that lost rows to a drifted locator fails on the count instead of
- * reporting the rows it managed. Each toggle is then *observed* on the page it
- * claims to configure, and a row whose configuration did not take effect fails.
+ * **The configurations.** The right pane is measured closed and open on every
+ * route: Assistant in workspaces, Diagnostics elsewhere. The retired bottom
+ * Console must remain absent. Intended rows are computed before sampling and
+ * checked afterward, and every configuration is observed rather than assumed.
  *
  *   node scripts/containment-check.mjs <port> <launch secret> [label] [source-root]
  *
@@ -287,34 +282,11 @@ function printPreludes() {
  * The width below which the Inspector is a drawer, read from the constant the
  * shell subscribes to rather than repeated here.
  */
-function inspectorDrawerBelow() {
-  const text = readFileSync(join(SRC, 'shell', 'useMediaQuery.ts'), 'utf8')
-  const match = /INSPECTOR_DRAWER_BELOW\s*=\s*'\(max-width:\s*(\d+)px\)'/.exec(text)
-  if (match === null) {
-    console.error(
-      'INSPECTOR_DRAWER_BELOW is not a `(max-width: Npx)` in web/src/shell/useMediaQuery.ts, ' +
-        'so the configurations that exist at a width cannot be decided from source'
-    )
-    process.exit(2)
-  }
-  return Number(match[1])
-}
-const INSPECTOR_DRAWER_AT_OR_BELOW = inspectorDrawerBelow()
-
-/** The configurations that exist at a width, decided from that breakpoint. */
-const CONFIGS = (width) =>
-  width > INSPECTOR_DRAWER_AT_OR_BELOW
-    ? [
-        { inspector: false, console: false },
-        { inspector: false, console: true },
-        { inspector: true, console: false },
-        { inspector: true, console: true }
-      ]
-    : [
-        { inspector: false, console: false },
-        { inspector: false, console: true },
-        { inspector: true, console: false }
-      ]
+// Every route has a contextual right pane; the bottom Console is retired.
+const CONFIGS = () => [
+  { inspector: false, console: false },
+  { inspector: true, console: false }
+]
 
 const named = (config) =>
   `inspector ${config.inspector ? 'open' : 'closed'}, console ${config.console ? 'open' : 'closed'}`
@@ -398,6 +370,8 @@ function declaredRoutes() {
 const routesFor = (pack, graph) => [
   '/',
   '/packs',
+  '/packs/new',
+  '/packs/drafts/draft-containment',
   '/create-pack',
   '/create-pack/research',
   '/chats',
@@ -415,7 +389,7 @@ const routesFor = (pack, graph) => [
   '/author',
   '/help'
 ]
-const configsFor = (width, route) => route === '/' || /^(\/create-pack|\/chats(?:\/|$))/.test(route) ? CONFIGS(width).filter(config => !config.inspector) : CONFIGS(width)
+const configsFor = () => CONFIGS()
 const ROUTE_COUNT = routesFor('/packs/x', '/graphs/y').length
 
 if (PLAN) {
@@ -423,7 +397,7 @@ if (PLAN) {
   printPreludes()
   console.log(`\nroutes App.tsx declares: ${declaredRoutes().join(', ')}`)
   console.log(
-    `configurations: 4 above ${INSPECTOR_DRAWER_AT_OR_BELOW}px, 3 at or below it\n` +
+    `configurations: contextual right pane closed and open; no bottom pane\n` +
       `intended rows for ${ROUTE_COUNT} routes: ${
         ROUTE_COUNT * WIDTHS.reduce((total, width) => total + CONFIGS(width).length, 0)
       }`
@@ -611,20 +585,16 @@ const consoleOpen = async () =>
 
 async function setInspector(want) {
   if ((await inspectorOpen()) === want) return
-  if (!want && (await page.locator('.desk-drawer-right').count()) > 0) {
-    // A drawer is dismissed the way a person dismisses it.
-    await page.keyboard.press('Escape')
-    await settle(600)
-    return
+  if (!want) {
+    await page.locator('#desk-inspector .desk-pane-actions button[aria-label^="Collapse "]').click()
+  } else if (await page.locator('.desk-tool-rail').count()) {
+    await page.locator('.desk-tool-rail button[aria-label="Assistant"]').click()
+  } else {
+    // Help exposes the same action. Blur editors so the shell shortcut applies.
+    await page.evaluate(() => document.activeElement?.blur())
+    await page.keyboard.press('Control+Alt+j')
   }
-  await page.locator('header button[aria-controls="desk-inspector"], header button[aria-label="Inspector"], header button[aria-label="Assistant"], header button[aria-label="Pack preview"]').first().click()
   await settle(600)
-}
-async function setConsole(want) {
-  if ((await consoleOpen()) !== want) {
-    await page.click('header button[aria-label="Console"]')
-    await settle(500)
-  }
 }
 
 /** One row: measure, then try to scroll the window the way the report did. */
@@ -694,7 +664,18 @@ const history = await historyResponse.json()
 const seeded = await fetch(`${ORIGIN}/api/conversations`, { method: 'PUT', headers: { Authorization: `Bearer ${SECRET}`, 'Content-Type': 'application/json', 'If-Match': history.sha256 }, body: JSON.stringify({ version: 1, chats: [{ id: 'containment-chat', title: 'Containment draft', pinned: false, archived: false, composer: 'Test decision', model: '', mode: 'draft', view: 'chat', updatedAt: new Date().toISOString() }] }) })
 if (!seeded.ok) throw new Error('Could not seed isolated chat history')
 
-const pack = await firstLink('/packs', /^\/packs\/[^/]+$/)
+// Seed a durable artifact so draft coverage exercises its actual workspace.
+const draftDocument = JSON.parse(readFileSync(join(ROOT, 'web/src/packs/__fixtures__/minimal.pack.json'), 'utf8'))
+const draftReply = await fetch(`${ORIGIN}/api/draft-packs`, { headers: { Authorization: `Bearer ${SECRET}` } })
+if (!draftReply.ok) throw new Error('Could not read isolated drafts')
+const draftRecord = await draftReply.json()
+const savedDraft = await fetch(`${ORIGIN}/api/draft-packs`, { method: 'PUT', headers: { Authorization: `Bearer ${SECRET}`, 'Content-Type': 'application/json', 'If-Match': draftRecord.sha256 }, body: JSON.stringify({version:1,deleted:[],drafts:[{
+  id:'draft-containment',generation:1,title:'Containment draft',folderId:'home',mode:'draft',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),documents:[],
+  checkpoint:{sources:[],state:{status:'ready',brief:'Synthetic containment fixture',seedUrls:[],turns:[],candidates:[{text:JSON.stringify(draftDocument)}],cases:[],expectationIssues:[],unknowns:[],sessions:[],revisionsUsed:1}}
+}]}) })
+if (!savedDraft.ok) throw new Error('Could not seed isolated draft')
+
+const pack = await firstLink('/packs', /^\/packs\/(?!new$)[^/]+$/)
 if (pack === undefined) {
   console.error('the project listed no pack, and four of the routes are a pack')
   await browser.close()
@@ -736,12 +717,13 @@ console.log(`\ncontainment check — ${LABEL}\n`)
 printPreludes()
 console.log(
   `routes: ${ROUTES.length} — ${ROUTES.join(', ')}\n` +
-    `configurations: 4 above ${INSPECTOR_DRAWER_AT_OR_BELOW}px, 3 at or below it\n` +
+    `configurations: contextual right pane closed and open; no bottom pane\n` +
     `intended rows: ${INTENDED}\n`
 )
 
 for (const width of WIDTHS) {
   await page.setViewportSize({ width, height: 800 })
+  console.log(`Sampling ${width}px: ${ROUTES.length} routes, pane closed and open` )
   for (const route of ROUTES) {
     try {
       problems = []
@@ -754,12 +736,7 @@ for (const width of WIDTHS) {
       for (const config of configsFor(width, route)) {
         if (!first) problems = []
         first = false
-        // The console is toggled while the Inspector is shut. Below the drawer
-        // breakpoint the Inspector is modal and its overlay owns the pointer,
-        // so a console toggle attempted under it reaches the overlay and not
-        // the button — which is a timeout, not a configuration.
         await setInspector(false)
-        await setConsole(config.console)
         await setInspector(config.inspector)
         await sample(route, config)
       }

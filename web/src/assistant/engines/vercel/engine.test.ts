@@ -2244,3 +2244,13 @@ describe('response language at the model boundary', () => {
     expect(proposal?.document).toEqual({ id: 'p' })
   })
 })
+
+it('emits a draft artifact when a conversational reply includes indented probe examples', async () => {
+  const text = 'Checks:\n```text\nValid\n```\n1. Probe\n     ```json\n     {"status":"evaluated"}\n     ```\n' + PROPOSAL_TEXT
+  const scripted = scriptedCall([turn({ text })])
+  const events = await drain(vercel.start(session(scripted.call, { allowConversation: true, interactive: true, adversarialReview: false })))
+  expect(events.filter(event => event.type === 'proposal')).toEqual([{ type: 'proposal', document: { id: 'p' }, unknowns: ['who signs'] }])
+  expect(events.some(event => event.type === 'error')).toBe(false)
+  expect(events.find(event => event.type === 'message')?.text).toContain('"status":"evaluated"')
+  expect(events.find(event => event.type === 'message')?.text).not.toContain('"proposal"')
+})

@@ -48,7 +48,7 @@ export function AssistantOptions({ thinking, tools, mode = 'draft', review = fal
       onCloseAutoFocus={event => { if (configure) event.preventDefault() }}
       trigger={<button ref={trigger} className="desk-icon-button" type="button" aria-label={msg("Assistant settings")}><IconGear /></button>}>
       <div className={styles.settingsBody}>
-        <dl className={styles.setting}><dt>{msg("Thinking requested")}</dt><dd>{thinking === 'off' ? msg("Off") : thinking === 'ultra' ? msg("Ultra") : msg("On")}</dd></dl>
+        <dl className={styles.setting}><dt>{config.assistant.engine === "codex" ? msg("Codex reasoning") : msg("Thinking requested")}</dt><dd>{config.assistant.engine === "codex" ? config.assistant.agent?.effort ?? msg("Model default") : thinking === 'off' ? msg("Off") : thinking === 'ultra' ? msg("Ultra") : msg("On")}</dd></dl>
         <p className={styles.caption}>{(notice ? systemMessage(notice) : undefined) || msg("Reasoning support depends on the selected model.")}</p>
         {onReview && <label className={styles.reviewOption}><Message text={"<0/> Adversarial review"} slots={[<input type="checkbox" checked={review} disabled={disabled || !reviewAvailable} onChange={event => onReview(event.target.checked)} />]} /></label>}
         <p className={styles.caption}>{reviewAvailable ? msg("Optional model review of proposed changes. Runtime validation remains required.") : msg("Connect a runtime with test_pack to enable adversarial review.")}</p>

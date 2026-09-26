@@ -39,7 +39,9 @@ import { sourceMessage } from '../i18n/source'
  * has no delete verb — and claiming one would be worse than the residue.
  */
 import { SegmentedControl } from '../ui/SegmentedControl'
-import { useQueryClient } from '@tanstack/react-query'
+import { FOLDERS_KEY, loadFolders, assignCreatedPack } from '../packs/folders/client'
+import { folderPath } from '../packs/folders/model'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useId, useMemo, useRef, useState, type RefObject } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
@@ -88,7 +90,7 @@ import { buffered, bytesAt } from '../packs/edit/writes'
 import { isRecord } from '../packs/document/MisshapenMember'
 import { useHeldText } from '../packs/edit/heldText'
 import type { PackDocument } from '../mcp/types'
-import { useInspectorPortal, useInspectorSlot } from './InspectorSlot'
+import { useInspectorPortal, useInspectorControls } from './InspectorSlot'
 import type { ResearchHandover } from '../routes/ResearchAuthoringPage'
 import { ButtonLink } from '../ui/Button'
 import { recordActivity } from './consoleLog'
@@ -179,11 +181,17 @@ export function CreatePackDialog({
   onWritingChange,
   reviewDraft,
   onSaved,
-  canCreate
+  canCreate,
+  initialFolderId,
+  onFolderChange,
+  submitLabel
 }: {
+  submitLabel?: string
   presentation?: 'dialog' | 'page' | 'review'
-  reviewDraft?: { document: unknown; name: string; description: string; unknowns: string[]; research?: ResearchHandover }
+  reviewDraft?: { trialCount?: number; caseCount?: number; document: unknown; name: string; description: string; unknowns: string[]; research?: ResearchHandover }
   onSaved?: (pack: { id: string; path: string; digest: string }) => string | void | Promise<string | void>
+  initialFolderId?: string
+  onFolderChange?: (id:string) => void
   canCreate?: () => boolean
   onDirtyChange?: (dirty: boolean) => void
   onWritingChange?: (writing: boolean) => void
@@ -202,6 +210,9 @@ export function CreatePackDialog({
   openerRef?: RefObject<HTMLElement | null>
 }) {
   const locale = useLocale()
+  const [folderId,setFolderId] = useState(initialFolderId)
+  const folders = useQuery({queryKey:FOLDERS_KEY,queryFn:({signal})=>loadFolders(signal),enabled:open&&initialFolderId!==undefined,retry:false,staleTime:0})
+  const folderReady = initialFolderId===undefined || !folders.isError && !!folders.data?.document.folders.some(folder=>folder.id===folderId)
   const createHelpId = useId()
   const { config } = useEffectiveConfig()
   const { dir, idBase } = config.storage.packs
@@ -246,7 +257,7 @@ export function CreatePackDialog({
   const [unknowns, setUnknowns] = useState<readonly string[]>(reviewDraft?.unknowns ?? [])
   const [reviewedUnknowns, setReviewedUnknowns] = useState(false)
   const held = useHeldText(() => {})
-  const inspector = useInspectorSlot()
+  const inspector = useInspectorControls()
   const guide = useInspectorPortal(presentation === 'page' ? <aside className={flow.guide}>
     <h2>{msg("Create a pack")}</h2>
     <p><Message text={"<0/><1/>Name the decision you want to make. Start with a runtime template, or ask your configured assistant for a draft."} slots={[<strong>{msg("1. Basics")}</strong>, <br />]} /></p>
@@ -636,7 +647,7 @@ export function CreatePackDialog({
   }
 
   const create = async () => {
-    if (!ready || slug === undefined || path === undefined || source === undefined) return
+    if (!ready || !folderReady || slug === undefined || path === undefined || source === undefined) return
     setFailure(undefined)
     setBusy(true)
     recordActivity(sourceMessage('Creating pack…'))
@@ -846,6 +857,11 @@ export function CreatePackDialog({
         return
       }
 
+      let folderAssignment: {packId:string;folderId:string}|undefined
+      if(folderId!==undefined) {
+        try { queryClient.setQueryData(FOLDERS_KEY,await assignCreatedPack(slug,folderId)) }
+        catch { folderAssignment={packId:slug,folderId} }
+      }
       const destination = await onSaved?.({ id: slug, path, digest: landed.sha256 })
 
       // (3) Everything that answered before this pack existed.
@@ -880,7 +896,7 @@ export function CreatePackDialog({
           state: Object.keys(rest).length === 0 ? null : rest
         })
       }
-      navigate(destination ?? `/packs/${slug}`)
+      navigate(destination ?? `/packs/${slug}`,{state:folderAssignment?{folderAssignment}:null})
       // Closing this dialog is not closing the thing it was inside. Below
       // 900px the rail is a modal drawer, and it stayed over the page this
       // just navigated to.
@@ -934,17 +950,18 @@ export function CreatePackDialog({
     <div className={flow.intro}><h2>{msg("Create this pack")}</h2><p className={flow.hint}>{msg("Choose its name and review the remaining questions. Your conversation stays with the pack.")}</p></div>
     <FieldGroup>
       <Field label={msg("Pack name")} error={nameProblem} hint={path ? msg("Save to {{value0}}", { value0: path }) : undefined}>{wiring => <Input {...wiring} required value={name} disabled={busy} onChange={event => setName(event.target.value)} />}</Field>
+      {initialFolderId!==undefined&&<Field label={msg('Destination folder')} error={folders.isError?msg('Reload folders before making changes.'):folders.data&&!folderReady?msg('This folder no longer exists. Choose another folder.'):undefined}>{wiring=><><Select {...wiring} disabled={busy||!folders.data||folders.isError} value={folderId} onValueChange={id=>{setFolderId(id);onFolderChange?.(id)}} options={(folders.data?.document.folders??[]).map(folder=>({value:folder.id,label:folderPath(folders.data!.document,folder.id)}))} placeholder={msg('Choose a folder')}/>{folders.isError&&<Button variant="quiet" onClick={()=>void folders.refetch()}>{msg('Reload folders')}</Button>}</>}</Field>}
       <Field label={msg("Description")}>{wiring => <TextArea {...wiring} rows={2} value={description} disabled={busy} onChange={event => setDescription(event.target.value)} />}</Field>
     </FieldGroup>
     {unknowns.length > 0 && <section className={flow.summary}>
       <ProposalUnknowns unknowns={unknowns} />
       <label><Message text={"<0/> I reviewed these open questions and assumptions."} slots={[<input type="checkbox" checked={reviewedUnknowns} disabled={busy} onChange={event => setReviewedUnknowns(event.target.checked)} />]} /></label>
     </section>}
-    <p className={flow.hint}>{handover ? msg("{{value0}} checked cases and the research record will be saved with this pack.", { value0: caseCount(handover) }) : msg("The structure is validated. Source research and behavioral testing have not been performed.")}</p>
+    <p className={flow.hint}>{handover ? msg("{{value0}} checked cases and the research record will be saved with this pack.", { value0: caseCount(handover) }) : msg("Structure validated. {{cases}} saved cases and {{trials}} recorded draft trials stay with this pack.", { cases: reviewDraft?.caseCount ?? 0, trials: reviewDraft?.trialCount ?? 0 })}</p>
     {createWhy && <p role="status">{createWhy}</p>}
     {refused && <DiagnosticList diagnostics={anchor(refused, new Set())} label={msg("Validation details")} />}
     {(failure ?? blocked) && <Alert reason={(failure ?? blocked)!.reason ? systemMessage((failure ?? blocked)!.reason!) : undefined}>{systemMessage((failure ?? blocked)!.lead)}</Alert>}
-    <div className={flow.actions}><Button disabled={busy} onClick={() => close(false)}>{msg("Back to draft")}</Button><Button variant="primary" type="submit" disabled={!ready}>{busy ? msg("Creating…") : msg("Create pack")}</Button></div>
+    <div className={flow.actions}><Button disabled={busy} onClick={() => close(false)}>{msg("Back to draft")}</Button><Button variant="primary" type="submit" disabled={!ready||!folderReady}>{busy ? msg("Creating…") : msg("Create pack")}</Button></div>
   </form>
 
   if (presentation === 'page') {
@@ -1038,7 +1055,7 @@ export function CreatePackDialog({
             <div>
               {step > 0 && <Button disabled={busy} onClick={() => setStep(step - 1)}>{msg("Back")}</Button>}
               <Button variant="primary" type="submit" disabled={step === 2 ? !ready : step === 0 ? slug === undefined || taken !== undefined || source === undefined || describe.blocking !== '' || (method === 'ai' && source?.kind !== 'proposal' && draft === undefined) : held.drafts.size > 0} aria-describedby={step === 2 && createWhyHere ? createHelpId : undefined}>
-                {busy ? msg("Creating…") : step === 2 ? msg("Create pack") : step === 1 ? msg("Review pack") : msg("Continue")}
+                {busy ? msg("Creating…") : step === 2 ? (submitLabel ?? msg("Create pack")) : step === 1 ? msg("Review pack") : msg("Continue")}
               </Button>
             </div>
           </div>

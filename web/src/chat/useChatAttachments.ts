@@ -6,6 +6,14 @@ import type { ChatStore, ChatAttachment } from './store'
 import type { ResearchConfig } from '../config/deskConfig'
 import { ingestDocument, ingestDrive, ingestGmail, ingestSource, ingestWeb, loadDocument, documentContext } from '../documents/client'
 
+/** A source picker may deliver to a case without creating or modifying a chat. */
+export interface AttachmentDestination {
+ kind: 'test-case' | 'source-refresh'
+ id: string
+ current: () => ChatAttachment[] | undefined
+ append: (files: ChatAttachment[]) => void | Promise<void>
+}
+
 export const TEXT_ATTACHMENT_ACCEPT = '.txt,.md,.json,.csv,.pdf'
 const LIMIT = 4
 
@@ -13,14 +21,20 @@ const LIMIT = 4
  * the composer. Keep reads out of a send and discard late results after leaving
  * the chat. A batch is accepted together, so an invalid file cannot send only
  * part of the context the user chose. */
-export function useChatAttachments(store: ChatStore | null, chatId: string, disabled: boolean, config?: ResearchConfig) {
+export function useChatAttachments(store: ChatStore | null, chatId: string, disabled: boolean, config?: ResearchConfig, destination?: AttachmentDestination) {
   const [reading, setReading] = useState(false)
   const [error, setErrorText] = useState('')
   const [connectionFailure, setConnectionFailure] = useState<ConnectionRequestError>()
   const setError = (text: string) => { setErrorText(text); setConnectionFailure(undefined) }
   const [progress, setProgress] = useState('')
   const active = useRef<AbortController | null>(null)
-  const attachmentContext = JSON.stringify([config?.gateway, config?.documents])
+  const attachmentContext = JSON.stringify([config?.gateway, config?.documents, destination?.id])
+  const owner = () => {
+    if (destination) { const files = destination.current(); return files ? { attachments: files, documents: [] as ChatAttachment[] } : undefined }
+    const snapshot = store?.getSnapshot(); return snapshot && [...snapshot.chats, ...snapshot.drafts].find(item => item.id === chatId)
+  }
+  const ownerRunning = () => Boolean(!destination && store?.getSnapshot().bindings.get(chatId)?.run?.running)
+  const append = async (pieces: ChatAttachment[], existing: ChatAttachment[]) => { if (destination) await destination.append(pieces); else store?.update(chatId, { attachments: [...existing, ...pieces] }) }
   useEffect(() => {
     setReading(false)
     setError('')
@@ -29,13 +43,10 @@ export function useChatAttachments(store: ChatStore | null, chatId: string, disa
   const isReading = () => active.current !== null
   const cancel = () => { active.current?.abort(); active.current = null; setReading(false); setProgress(''); setError(sourceMessage('Canceled in Desk. Gateway processing may still finish; its result will not be attached.')) }
   const attach = async (files: FileList | readonly File[] | null) => {
-    if (!files?.length || !store || disabled || isReading()) return
-    const current = () => {
-      const snapshot = store.getSnapshot()
-      return [...snapshot.chats, ...snapshot.drafts].find(item => item.id === chatId)
-    }
+    if (!files?.length || (!store && !destination) || disabled || isReading()) return
+    const current = owner
     const chat = current()
-    if (!chat || store.getSnapshot().bindings.get(chatId)?.run?.running) return
+    if (!chat || ownerRunning()) return
     const operation = new AbortController()
     active.current = operation
     setReading(true)
@@ -69,10 +80,10 @@ export function useChatAttachments(store: ChatStore | null, chatId: string, disa
       }
       if (active.current !== operation) return
       const latest = current()
-      if (!latest || store.getSnapshot().bindings.get(chatId)?.run?.running) return
+      if (!latest || ownerRunning()) return
       const existing = latest.attachments ?? []
       if (existing.length + pieces.length > LIMIT) throw new Error(sourceMessage("Attach up to four files at a time."))
-      store.update(chatId, { attachments: [...existing, ...pieces] })
+      await append(pieces, existing)
     } catch (cause) {
       if (active.current === operation) setError((cause as Error).message)
     } finally {
@@ -80,9 +91,9 @@ export function useChatAttachments(store: ChatStore | null, chatId: string, disa
     }
   }
   const attachCloud = async (mail?: MailSelection[], drive?: DriveSelection[], sources?: {provider: SourceProvider; items: SourceSelection[]; descriptor?: ConnectionDescriptor}, web?: {url: string}) => {
-    if (!store || disabled || isReading()) return
+    if ((!store && !destination) || disabled || isReading()) return
     if (!config?.gateway || !config.documents?.enabled) { setError(sources || web ? sourceMessage('Enable document processing in Admin → Storage & data before attaching sources.') : mail ? sourceMessage('Enable document processing in Admin → Storage & data before attaching emails.') : sourceMessage('Enable document processing in Admin → Storage & data before attaching Drive files.')); return }
-    const current = () => { const snapshot = store.getSnapshot(); return [...snapshot.chats, ...snapshot.drafts].find(item => item.id === chatId) }
+    const current = owner
     const chat = current()
     if (!chat || (chat.attachments?.length ?? 0) >= LIMIT) { setError(sourceMessage('Attach up to four files at a time.')); return }
     const operation = new AbortController(); active.current = operation; setReading(true); setError(''); setProgress(sources || web ? sourceMessage('Reading files…') : mail ? sourceMessage('Reading emails…') : sourceMessage('Continue in the Google sign-in window.'))
@@ -98,10 +109,10 @@ export function useChatAttachments(store: ChatStore | null, chatId: string, disa
       }
       if (active.current !== operation) return
       const latest = current()
-      if (!latest || store.getSnapshot().bindings.get(chatId)?.run?.running) return
+      if (!latest || ownerRunning()) return
       const existing = latest.attachments ?? []
       if (existing.length + pieces.length > LIMIT) throw new Error(sourceMessage('Attach up to four files at a time.'))
-      store.update(chatId, { attachments: [...existing, ...pieces] })
+      await append(pieces, existing)
       return true
     } catch (cause) { if (active.current === operation) { setError((cause as Error).message); if (cause instanceof ConnectionRequestError) setConnectionFailure(cause) } }
     finally { if (active.current === operation) { active.current = null; setReading(false); setProgress('') } }

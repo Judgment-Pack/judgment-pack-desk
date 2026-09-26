@@ -12,7 +12,7 @@ import { ExpandableText } from '../ui/ExpandableText'
 import { InspectionRow } from '../ui/InspectionRow'
 import { PACK_TERMS } from './terminology'
 import { Popover } from '../ui/Popover'
-import { useMediaQuery } from '../shell/useMediaQuery'
+import { IconMore } from '../shell/icons'
 import { entries, text } from './logicModel'
 import styles from './PackWorkspace.module.css'
 
@@ -49,18 +49,17 @@ export function PackHeader({ packId, document: doc, current, actions, hasMatrix 
   useLocale()
   const base = `/packs/${encodeURIComponent(packId)}`
   const link = usePackLink()
-  const narrow = useMediaQuery('(max-width: 599px)')
   return <PageHeader variant="title" title={text(doc?.title, packId)}
     navigation={<PackNavigation packId={packId} current={current} />}
     actions={<div className={styles.actions}>{actions}
-      <Popover title={msg("Pack details")} trigger={<Button variant="quiet" aria-label={msg("More pack actions")}>{narrow ? '…' : msg("More")}</Button>}>
+      <Popover title={msg("Pack details")} triggerTooltip={msg("More pack actions")} trigger={<Button size="icon" variant="quiet" aria-label={msg("More pack actions")}><IconMore /></Button>}>
         <dl className={styles.metadata}>
           <div><dt>{msg("Title")}</dt><dd>{text(doc?.title, packId)}</dd></div>
           <div><dt>{msg("Version")}</dt><dd>{text(doc?.version)}</dd></div>
           <div><dt>{msg("Pack ID")}</dt><dd>{text(doc?.id, packId)}</dd></div>
         </dl>
         {details}
-        <div className={styles.moreActions}><ButtonLink variant="quiet" to={link(`${base}?view=document`)}>{msg("Full document")}</ButtonLink>{hasMatrix && <ButtonLink variant="quiet" to={link(`${base}/matrix`)}>{msg("Saved cases")}</ButtonLink>}</div>
+        <div className={styles.moreActions}><ButtonLink variant="quiet" to={`/jobs/new?pack=${encodeURIComponent(packId)}`}>{msg("Create job")}</ButtonLink><ButtonLink variant="quiet" to={link(`${base}?view=document`)}>{msg("Full document")}</ButtonLink>{hasMatrix && <ButtonLink variant="quiet" to={link(`${base}/matrix`)}>{msg("Saved cases")}</ButtonLink>}</div>
       </Popover>
       {current !== 'test' && <ButtonLink variant="primary" to={link(`${base}/evaluate`)}>{msg("Test pack")}</ButtonLink>}
     </div>} />

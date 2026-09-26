@@ -23,10 +23,10 @@ import { GraphView } from './GraphView'
 // Exercise the explicit command before checking the result presentation.
 function renderAndRun(...args: Parameters<typeof renderConnected>) {
   const rendered = renderConnected(...args)
-  fireEvent.click(screen.getByRole('button', { name: /Run (all flow )?tests/ }))
+  fireEvent.click(screen.getByRole('button', { name: /Run (all graph )?tests/ }))
   return rendered
 }
-const runAgain = () => fireEvent.click(screen.getByRole('button', { name: /Run (all flow )?tests/ }))
+const runAgain = () => fireEvent.click(screen.getByRole('button', { name: /Run (all graph )?tests/ }))
 
 afterEach(cleanup)
 // Which divergent pairs have been asked about is the connection's memory, not
@@ -475,7 +475,7 @@ describe('the graphs page, against a runtime that serves documents', () => {
       })
     })
     const { container } = renderAndRun(view(), serving(client), { path: '/graphs' })
-    await screen.findByText(/Could not list pack flows/)
+    await screen.findByText(/Could not list graphs/)
     expect(container.textContent).toContain('this project declares no jpack.json under /project')
     // The section named "Configured" is absent rather than showing what a
     // failed call could not confirm.
@@ -937,7 +937,7 @@ describe('the graphs page, against a runtime that reports node traces (ADR-0031)
     fireEvent.click(askBox())
     if ((askBox() as HTMLInputElement).checked) runAgain()
 
-    await screen.findByText(/Could not run flow tests/)
+    await screen.findByText(/Could not run graph tests/)
     expect(askBox()).toBeTruthy()
     expect(container.textContent).toContain('report budget exceeded')
     expect(container.textContent).toContain('This run requested detailed traces')

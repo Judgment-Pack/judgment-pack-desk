@@ -1,6 +1,6 @@
 import { Message } from '../i18n/Message'
 import { msg, useLocale, systemMessage, formatDate } from '../i18n'
-import { Fragment, useState, type RefObject } from 'react'
+import { Fragment, useState, type RefObject, type ReactNode } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { DropdownMenu } from 'radix-ui'
 import { Button } from '../ui/Button'
@@ -11,25 +11,27 @@ import { IconHistory, IconMore, IconPlus } from '../shell/icons'
 import { useChats } from './ChatProvider'
 import type { Chat } from './store'
 import { readDocumentObject } from '../documents/client'
-import { chatHref, chatTitle, hasChatContent, homeChatId } from './navigation'
+import { assistantChatHref, chatHref, chatTitle, hasChatContent, homeChatId } from './navigation'
 export { chatHref } from './navigation'
 import styles from './ChatWorkspace.module.css'
 
 /** The same compact controls are portalled into main or the Assistant title bar. */
-export function ChatToolbar({ chat, history, onHistory, onBack, onNew, historyRef }: {
+export function ChatToolbar({ chat, history, onHistory, onBack, onNew, historyRef, sources }: {
+  sources?: ReactNode
   chat: Chat; history: boolean; onHistory: () => void; onBack: () => void; onNew: () => void
   historyRef: RefObject<HTMLButtonElement | null>
 }) {
   useLocale()
   const { store, bindings } = useChats()
   const state = bindings.get(chat.id)?.state ?? chat.checkpoint?.state
-  const empty = !chat.composer.trim() && !chat.attachments?.length && !state?.turns.length && !state?.candidates.length
+  const empty = !chat.composer.trim() && !chat.attachments?.length && !state?.turns.length
   return <div className={styles.chatToolbar} role="group" aria-label={msg("Chat actions")}>
+    {sources}
     <Tooltip content={msg("New chat")}><button type="button" className="desk-icon-button" aria-label={msg("New chat")} disabled={!store?.canCreate || empty} onClick={onNew}><IconPlus /></button></Tooltip>
     <Popover title={msg("Chat history")} variant="list" triggerTooltip={msg("Chat history")} open={history} onOpenChange={open => open ? onHistory() : onBack()}
       onEscapeKeyDown={event => event.stopPropagation()}
       trigger={<button ref={historyRef} type="button" className="desk-icon-button" aria-label={msg("Chat history")} aria-pressed={history}><IconHistory /></button>}>
-      <ChatHistoryList packId={chat.pack?.id} activeId={chat.id} onNavigate={onBack} compact />
+      <ChatHistoryList packId={chat.pack?.id ?? chat.draftId} activeId={chat.id} onNavigate={onBack} compact />
     </Popover>
   </div>
 }
@@ -59,7 +61,7 @@ export function ChatHistoryList({ packId, activeId, onNavigate, compact = false 
   const [exportError, setExportError] = useState('')
   const [exporting, setExporting] = useState(false)
   const [actionChat, setActionChat] = useState<string | null>(null)
-  const shown = chats.filter(chat => hasChatContent(chat) && (all || !packId || chat.pack?.id === packId) && (archived || !chat.archived)
+  const shown = chats.filter(chat => hasChatContent(chat) && (all || !packId || (chat.pack?.id === packId || chat.draftId===packId)) && (archived || !chat.archived)
     && `${chatTitle(chat)} ${chat.composer} ${chat.pack?.id ?? ''} ${chat.checkpoint?.state.turns.map(turn => turn.text).join(' ') ?? ''}`.toLowerCase().includes(query.toLowerCase()))
     .sort((a,b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt.localeCompare(a.updatedAt))
   const exportChat = async (chat: Chat) => {
@@ -99,7 +101,7 @@ export function ChatHistoryList({ packId, activeId, onNavigate, compact = false 
         {rename === chat.id ? <form className={styles.historyRename} onSubmit={event => { event.preventDefault(); if (name.trim()) { store?.update(chat.id, { title: name.trim(), titleEdited: true }); setRename(null) } }}>
           <Input aria-label={msg("Chat name")} value={name} autoFocus maxLength={120} onChange={event => setName(event.target.value)} /><Button type="submit" disabled={!name.trim()}>{msg("Save")}</Button><Button variant="quiet" onClick={() => setRename(null)}>{msg("Cancel")}</Button>
         </form> : <>
-          <OverflowTooltip content={chatTitle(chat)} selector="[data-chat-title]"><button type="button" className={styles.historyOpen} aria-current={activeId === chat.id ? 'true' : undefined} onClick={() => { navigate(chatHref(chat, location)); onNavigate?.() }}>
+          <OverflowTooltip content={chatTitle(chat)} selector="[data-chat-title]"><button type="button" className={styles.historyOpen} aria-current={activeId === chat.id ? 'true' : undefined} onClick={() => { navigate(packId && location.pathname.startsWith('/packs/') ? assistantChatHref(chat,location) : chatHref(chat)); onNavigate?.() }}>
             <span data-chat-title>{chat.pinned ? msg("Pinned · ") : ''}{chatTitle(chat)}</span><small>{chat.pack?.id ?? (chat.checkpoint?.state.candidates.length ? msg("Draft") : msg("Conversation"))} · {attention(bindings.get(chat.id)?.state.status ?? chat.checkpoint?.state.status) || formatDate(new Date(chat.updatedAt))}{chat.archived ? msg(" · Archived") : ''}</small>
           </button></OverflowTooltip>
           <DropdownMenu.Root open={actionChat === chat.id} onOpenChange={open => setActionChat(open ? chat.id : null)}><Tooltip content={msg("Chat actions")} openOnFocus={false} disabled={actionChat === chat.id}><DropdownMenu.Trigger className={`desk-icon-button ${styles.historyActions}`} aria-label={msg("Actions for {{value0}}", { value0: chatTitle(chat) })}><IconMore /></DropdownMenu.Trigger></Tooltip>

@@ -1589,32 +1589,6 @@ func TestSessionEndpointRefusesAForeignOrigin(t *testing.T) {
 	}
 }
 
-// TestASessionEndsOnlyWithTheProcess. There is no route that ends a session, so
-// a `DELETE` is not a sign-out — it falls to the reader, which answers the
-// bearer's record — and the session is still live afterwards. Sign-out arrives
-// with the identity provider, whose sign-out it will be.
-func TestASessionEndsOnlyWithTheProcess(t *testing.T) {
-	s, ts := newTestServer(t, false)
-	id := beginSession(t, ts)
-
-	req, _ := http.NewRequest(http.MethodDelete, ts.URL+"/api/session", nil)
-	pageBearer(id)(req)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("delete: %v", err)
-	}
-	defer resp.Body.Close()
-	var body map[string]any
-	_ = json.NewDecoder(resp.Body).Decode(&body)
-	if _, forgotten := body["forgotten"]; forgotten {
-		t.Fatalf("DELETE /api/session is a sign-out: %v", body)
-	}
-	if n := s.sessions.count(); n != 1 {
-		t.Fatalf("%d sessions after a DELETE, want the one that was minted", n)
-	}
-	acceptsSession(t, ts, id, ts.URL)
-}
-
 /* The mark this chassis puts on its own refusals ------------------------------ */
 
 // TestEveryRefusalThisChassisAuthoredIsMarked.

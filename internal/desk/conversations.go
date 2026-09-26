@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"regexp"
+	"strings"
 )
 
 const maxConversationBytes = 16 << 20
@@ -36,8 +38,61 @@ func validateConversations(data []byte) error {
 	}
 	return nil
 }
+
+var draftPackFileName = regexp.MustCompile(`^draft-packs-[a-f0-9]{64}\.json$`)
+
+var briefFileName = regexp.MustCompile(`^briefs-[a-f0-9]{64}\.json$`)
+
+var packTestsFileName = regexp.MustCompile(`^pack-tests-[a-f0-9]{64}\.json$`)
+
+func validatePackTests(data []byte) error {
+	if !validUTF8(data) || !json.Valid(data) {
+		return errors.New("tests must be one UTF-8 JSON document")
+	}
+	var doc struct {
+		Version int                        `json:"version"`
+		Suites  map[string]json.RawMessage `json:"suites"`
+	}
+	if err := json.Unmarshal(data, &doc); err != nil || doc.Version != 1 || doc.Suites == nil || len(doc.Suites) > 512 {
+		return errors.New("test storage must have version 1 and at most 512 suites")
+	}
+	return nil
+}
+func (s *Server) handlePackTests(w http.ResponseWriter, r *http.Request) {
+	s.handleWorkspaceRecord(w, r, false)
+}
+
+func draftPackName(conversation string) string {
+	return strings.Replace(conversation, "conversations-", "draft-packs-", 1)
+}
+func validateDraftPacks(data []byte) error {
+	if !validUTF8(data) || !json.Valid(data) {
+		return errors.New("draft packs must be one UTF-8 JSON document")
+	}
+	var doc struct {
+		Version int               `json:"version"`
+		Drafts  []json.RawMessage `json:"drafts"`
+		Deleted []string          `json:"deleted"`
+	}
+	if err := json.Unmarshal(data, &doc); err != nil || doc.Version != 1 || doc.Drafts == nil || len(doc.Drafts) > 256 || len(doc.Deleted) > 4096 {
+		return errors.New("draft packs must have version 1 and at most 256 drafts")
+	}
+	return nil
+}
 func (s *Server) readConversationFile(root *os.Root, name string) (conversationReply, error) {
+	return s.readWorkspaceRecord(root, name, false)
+}
+func (s *Server) readWorkspaceRecord(root *os.Root, name string, drafts bool) (conversationReply, error) {
 	reply := conversationReply{Project: s.projectDir, SHA256: "absent", Content: json.RawMessage(`{"version":1,"chats":[]}`)}
+	if briefFileName.MatchString(name) {
+		reply.Content = json.RawMessage(`{"version":1,"subjects":{}}`)
+	} else if sourceReviewsFileName.MatchString(name) {
+		reply.Content = json.RawMessage(`{"version":1,"reviews":[]}`)
+	} else if packTestsFileName.MatchString(name) {
+		reply.Content = json.RawMessage(`{"version":1,"suites":{}}`)
+	} else if drafts {
+		reply.Content = json.RawMessage(`{"version":1,"drafts":[],"deleted":[]}`)
+	}
 	info, err := root.Lstat(name)
 	if errors.Is(err, os.ErrNotExist) {
 		return reply, nil
@@ -73,7 +128,17 @@ func (s *Server) readConversationFile(root *os.Root, name string) (conversationR
 	if err != nil {
 		return reply, withCode(CodeTooLarge, errors.New("chat history exceeds its 16 MiB limit"))
 	}
-	if err = validateConversations(data); err != nil {
+	validate := validateConversations
+	if briefFileName.MatchString(name) {
+		validate = validateBriefs
+	} else if sourceReviewsFileName.MatchString(name) {
+		validate = validateSourceReviews
+	} else if packTestsFileName.MatchString(name) {
+		validate = validatePackTests
+	} else if drafts {
+		validate = validateDraftPacks
+	}
+	if err = validate(data); err != nil {
 		return reply, withCode(CodeBadRequest, err)
 	}
 	reply.SHA256 = digestOf(data)
@@ -81,6 +146,12 @@ func (s *Server) readConversationFile(root *os.Root, name string) (conversationR
 	return reply, nil
 }
 func (s *Server) handleConversations(w http.ResponseWriter, r *http.Request) {
+	s.handleWorkspaceRecord(w, r, false)
+}
+func (s *Server) handleDraftPacks(w http.ResponseWriter, r *http.Request) {
+	s.handleWorkspaceRecord(w, r, true)
+}
+func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, drafts bool) {
 	if !s.guard(w, r) || s.refuseUnusableStore(w) {
 		return
 	}
@@ -105,12 +176,35 @@ func (s *Server) handleConversations(w http.ResponseWriter, r *http.Request) {
 		storageFailure(w, err)
 		return
 	}
+	briefs := r.URL.Path == "/api/briefs"
+	reviews := r.URL.Path == "/api/source-reviews"
+	tests := r.URL.Path == "/api/pack-tests"
+	if briefs {
+		recordName = strings.Replace(recordName, "conversations-", "briefs-", 1)
+	} else if reviews {
+		recordName = strings.Replace(recordName, "conversations-", "source-reviews-", 1)
+	} else if tests {
+		recordName = strings.Replace(recordName, "conversations-", "pack-tests-", 1)
+	} else if drafts {
+		recordName = draftPackName(recordName)
+	}
+	read := func() (conversationReply, error) { return s.readWorkspaceRecord(root, recordName, drafts) }
+	validate := validateConversations
+	if briefs {
+		validate = validateBriefs
+	} else if reviews {
+		validate = validateSourceReviews
+	} else if tests {
+		validate = validatePackTests
+	} else if drafts {
+		validate = validateDraftPacks
+	}
 	fail := func(err error) {
 		code := codeOf(err)
-		writeJSONCoded(w, statusForRefusal(err), code, "Chat history could not be saved or read: "+err.Error())
+		writeJSONCoded(w, statusForRefusal(err), code, "Workspace data could not be saved or read: "+err.Error())
 	}
 	if r.Method == http.MethodGet {
-		reply, err := s.readConversationFile(root, recordName)
+		reply, err := read()
 		if err != nil {
 			fail(err)
 			return
@@ -119,21 +213,38 @@ func (s *Server) handleConversations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	expected := r.Header.Get("If-Match")
-	if expected == "" {
+	if expected == "" && !briefs {
 		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, "If-Match is required; reload history before saving")
 		return
 	}
 	data, err := readBounded(r.Body, maxConversationBytes)
 	if err != nil {
-		writeJSONCoded(w, http.StatusRequestEntityTooLarge, CodeTooLarge, "Chat history is limited to 16 MiB. Export and delete older chats; nothing was written.")
+		writeJSONCoded(w, http.StatusRequestEntityTooLarge, CodeTooLarge, "Workspace records are limited to 16 MiB; nothing was written.")
 		return
 	}
-	if err = validateConversations(data); err != nil {
+	if briefs {
+		current, e := read()
+		if e != nil {
+			fail(e)
+			return
+		}
+		data, e = s.changeBrief(root, recordName, current.Content, data)
+		if e != nil {
+			writeJSONCoded(w, http.StatusConflict, CodeStale, e.Error())
+			return
+		}
+		expected = current.SHA256
+		if len(data) > maxConversationBytes {
+			writeJSONCoded(w, 413, CodeTooLarge, "Brief storage is full; nothing was changed.")
+			return
+		}
+	}
+	if err = validate(data); err != nil {
 		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, err.Error())
 		return
 	}
 	matches := func() error {
-		current, err := s.readConversationFile(root, recordName)
+		current, err := read()
 		if err != nil {
 			return err
 		}
@@ -183,7 +294,7 @@ func (s *Server) handleConversations(w http.ResponseWriter, r *http.Request) {
 		_ = dir.Sync()
 		_ = dir.Close()
 	}
-	reply, err := s.readConversationFile(root, recordName)
+	reply, err := read()
 	if err != nil {
 		fail(err)
 		return

@@ -56,6 +56,8 @@ export function IconGoogleDrive() {
 
 export function IconMail() { return <Glyph><rect x="1.5" y="3" width="13" height="10" rx="1.5" /><path d="m2 4 6 5 6-5" /></Glyph> }
 
+export function IconBrief() { return <Glyph><path d="M8 3.5C6 2 3.5 2 1.5 2.5v10C4 12 6 12 8 13.5c2-1.5 4-1.5 6.5-1v-10C12.5 2 10 2 8 3.5ZM8 3.5v10" /></Glyph> }
+
 export function IconMore() {
   return <Glyph><circle cx="3" cy="8" r=".8" fill="currentColor" stroke="none" /><circle cx="8" cy="8" r=".8" fill="currentColor" stroke="none" /><circle cx="13" cy="8" r=".8" fill="currentColor" stroke="none" /></Glyph>
 }
@@ -200,6 +202,10 @@ export function IconCheck() {
   )
 }
 
+export function IconTrash() {
+  return <Glyph><path d="M2.5 4.5h11M6 4.5v-2h4v2M4 4.5l.5 9h7l.5-9M6.5 7v4M9.5 7v4" /></Glyph>
+}
+
 export function IconCopy() {
   return (
     <Glyph>
@@ -213,3 +219,14 @@ export function IconSend() { return <Glyph><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"
 export function IconStop() { return <Glyph><rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor" stroke="none" /></Glyph> }
 
 export function IconLink() { return <Glyph><path d="m6 10 4-4M5.5 5.5 3 8a3 3 0 0 0 4.2 4.2l2.3-2.3M6.5 6.1l2.3-2.3A3 3 0 0 1 13 8l-2.5 2.5" /></Glyph> }
+
+export function IconAssistant() { return <Glyph><path d="M3 2.5h10a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H7l-4 3v-3H2a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1Z" /><path d="M5 6.5h6M5 9h3" /></Glyph> }
+export function IconDetails() { return <Glyph><rect x="3" y="1.5" width="10" height="13" rx="1.5" /><path d="M5.5 5h5M5.5 8h5M5.5 11h3" /></Glyph> }
+export function IconActivity() { return <Glyph><path d="M1 8h3l2-5 4 10 2-5h3" /></Glyph> }
+export function IconPin() { return <Glyph><path d="m5 2 6 0-1 4 2 3H4l2-3-1-4ZM8 9v5" /></Glyph> }
+export function IconFocus() { return <Glyph><path d="M6 2H2v4M10 2h4v4M2 10v4h4M14 10v4h-4" /></Glyph> }
+
+export function IconFolder() { return <Glyph><path d="M1.5 4V3.5h5L8 5h6.5v7.5h-13Z" /></Glyph> }
+export function IconInfo() { return <Glyph><circle cx="8" cy="8" r="6.25" /><path d="M8 7.5V11M8 4.75h.01" /></Glyph> }
+
+export function IconSearch() { return <Glyph><circle cx="6.5" cy="6.5" r="4.5"/><path d="m10 10 4 4"/></Glyph> }

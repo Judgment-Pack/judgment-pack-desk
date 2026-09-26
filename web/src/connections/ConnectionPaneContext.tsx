@@ -1,9 +1,11 @@
+import type { AttachmentDestination } from "../chat/useChatAttachments"
 import { createContext, useContext, useEffect } from 'react'
 import type { ConnectionDescriptor } from './catalog'
 import type { ConnectionProvider } from './client'
 
 /** Metadata only. The shell owns the temporary surface, not a chat's portal. */
 export interface ConnectionPaneRequest {
+ destination?: AttachmentDestination
  source?: 'web'
  descriptor?: ConnectionDescriptor
  provider?: ConnectionProvider

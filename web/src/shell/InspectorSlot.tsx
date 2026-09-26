@@ -27,7 +27,8 @@
  * slot counts **claims** instead — a publisher claims on mount and releases on
  * unmount — and the frame hands the count to the pane.
  */
-import { createContext, useContext, useEffect, type ReactNode, type ReactPortal } from 'react'
+import { useMeasuredBox } from './measured'
+import { createContext, useContext, useEffect, useMemo, type ReactNode, type ReactPortal } from 'react'
 import { createPortal } from 'react-dom'
 
 export interface InspectorSlot {
@@ -42,6 +43,8 @@ export interface InspectorSlot {
    * It updates as the window is dragged.
    */
   size: number
+  /** Reserve an inner navigation column before the visible document context. */
+  requestLeadingWidth?: (pixels: number) => () => void
   tab: string | null
   setTab: (tab: string | null) => void
   /** The portal target, or null before the shell has mounted it. */
@@ -68,7 +71,13 @@ export interface InspectorSlot {
   reveal: () => void
   /** Close the current presentation, preserving unrelated pane preferences. */
   close?: () => void
+  /** Whether the tool currently obscures the main workspace. */
+  mainCovered?: boolean
+  /** Reveal workspace content, preserving a docked Assistant where it fits. */
+  revealMain?: () => void
   /** Reserve readable main-area width; the shell chooses drawer versus dock. */
+  /** Route content floor, also used by contextual navigation to yield space. */
+  minimumMainWidth?: number
   requestWorkingWidth?: (pixels: number) => () => void
 }
 
@@ -84,12 +93,28 @@ const CLOSED: InspectorSlot = {
 
 export const InspectorSlotContext = createContext<InspectorSlot>(CLOSED)
 
-export function useInspectorSlot(): InspectorSlot {
+const InspectorSizeContext = createContext<number | undefined>(undefined)
+
+/** ResizeObserver updates only size subscribers, not the shell or route tree. */
+export function InspectorSizeProvider({ pane, open, children }: { pane: HTMLElement | null; open: boolean; children: ReactNode }) {
+  const box = useMeasuredBox(pane)
+  return <InspectorSizeContext.Provider value={open ? box?.width ?? 0 : 0}>{children}</InspectorSizeContext.Provider>
+}
+
+/** Portal targets and actions do not need a render for every pixel of a drag. */
+export function useInspectorControls(): Omit<InspectorSlot, 'size'> {
   return useContext(InspectorSlotContext)
 }
 
+/** Readers that actually lay out by width opt into the measured size. */
+export function useInspectorSlot(): InspectorSlot {
+  const slot = useContext(InspectorSlotContext)
+  const size = useContext(InspectorSizeContext)
+  return useMemo(() => size === undefined ? slot : { ...slot, size }, [slot, size])
+}
+
 export function useInspectorWorkingWidth(pixels: number): void {
-  const { requestWorkingWidth } = useInspectorSlot()
+  const { requestWorkingWidth } = useInspectorControls()
   useEffect(() => requestWorkingWidth?.(pixels), [pixels, requestWorkingWidth])
 }
 
@@ -114,7 +139,7 @@ export function useInspectorWorkingWidth(pixels: number): void {
  * above says they are.
  */
 export function useInspectorPortal(node: ReactNode): ReactPortal | null {
-  const { target, claim } = useInspectorSlot()
+  const { target, claim } = useInspectorControls()
   const publishing = target !== null && node !== null && node !== undefined
   useEffect(() => {
     if (!publishing) return

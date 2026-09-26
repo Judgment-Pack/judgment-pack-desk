@@ -52,9 +52,19 @@ describe('contextual pack inspection', () => {
       onSelect={() => {}} advanced={null} />)
     expect(document.querySelector('[data-pointer]')).toBeNull()
     expect(screen.getByText('is greater than')).toBeTruthy()
-    const raw = screen.getByText('Exact condition JSON').closest('details')!
+    const raw = screen.getByText('Exact definition JSON').closest('details')!
     expect(raw.open).toBe(false)
-    expect(JSON.parse(raw.querySelector('pre')!.textContent!)).toEqual(doc.rules[1]!.when)
+    expect(JSON.parse(raw.querySelector('pre')!.textContent!)).toEqual(doc.rules[1]!)
     expect(screen.getByText('Author description').closest('details')!.open).toBe(false)
   })
+})
+
+it('closes technical JSON when a different rule is selected', () => {
+  const model = projectLogic(doc)
+  const view = (at: string) => <LogicInspector model={model} at={at} onSelect={() => {}} advanced={null} />
+  const { rerender } = render(view('/rules/1'))
+  const technical = screen.getByText('Technical details').closest('details')!
+  technical.open = true
+  rerender(view('/rules/0'))
+  expect(screen.getByText('Technical details').closest('details')!.open).toBe(false)
 })

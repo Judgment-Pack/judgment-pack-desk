@@ -7,6 +7,7 @@
 package desk
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -38,6 +39,13 @@ var devOrigins = []string{
 
 // Config is the chassis' whole configuration.
 type Config struct {
+	// RunnerBin is a trusted installed executable, never project configuration.
+	RunnerBin string
+	// CodexBin is an advanced installation override: empty manages the runtime,
+	// "off" disables it, otherwise an absolute trusted executable path.
+	// It is never read from project configuration or browser requests.
+	CodexBin string
+
 	// ProjectDir is the path of the Judgment Pack project. It becomes the
 	// working directory of every `jpack mcp` subprocess, which is how the
 	// runtime finds jpack.json, and it is the tree the file watcher watches.
@@ -93,6 +101,8 @@ type Config struct {
 	Static fs.FS
 	// DevMode additionally accepts the Vite dev-server origin on /ws.
 	DevMode bool
+	// LocalAccess permits automatic loopback browser sessions before OIDC activation.
+	LocalAccess bool
 	// DeskConfigDir overrides where this machine's own desk-level directory
 	// is — the desk.json this desk reads and the key it keeps. Empty is the
 	// answer every running desk uses: ~/.config/jpack-desk, with
@@ -105,6 +115,9 @@ type Config struct {
 
 // Server is the HTTP handler and the owner of the file watcher.
 type Server struct {
+	jobs  *jobsCompanion
+	codex providerAccountManager
+
 	localGateway        *localGateway
 	providerMu          sync.Mutex
 	providerConnections map[string]*connectionCompanion
@@ -118,8 +131,10 @@ type Server struct {
 	static              http.Handler
 	log                 *log.Logger
 
-	mu    sync.Mutex
-	conns map[*conn]struct{}
+	mu        sync.Mutex
+	conns     map[*conn]struct{}
+	closing   bool
+	relayWork sync.WaitGroup
 
 	watcher *watcher
 
@@ -177,6 +192,7 @@ type Server struct {
 	// presented as a bearer id the page puts on each request itself. See
 	// session.go for why nothing ambient authorizes anything.
 	sessions *sessionStore
+	signIn   *signInState
 	// closeOnce makes shutdown idempotent; see Close.
 	closeOnce sync.Once
 	closeErr  error
@@ -271,6 +287,8 @@ func New(cfg Config) (*Server, error) {
 		// use to read a pack; what is withdrawn is the ability to keep a key.
 		s.log.Printf("desk: no assistant key will be kept: %v", s.assistant.problem)
 	}
+	s.openSignIn()
+	s.registerSignIn()
 	if cfg.LocalGatewayBundle != "" {
 		executable, _ := os.Executable()
 		s.localGateway = &localGateway{bundle: cfg.LocalGatewayBundle, executable: executable}
@@ -297,6 +315,10 @@ func New(cfg Config) (*Server, error) {
 	// the cookie doing it. `GET` reports the bearer's record, which is what an
 	// identity provider fills in. There is no `DELETE`: see `handleSession`.
 	s.mux.HandleFunc("/api/session", s.handleSession)
+	s.mux.HandleFunc("/api/operations/{rest...}", s.handleJobs)
+	s.mux.HandleFunc("/api/agent/run", s.handleAgentRun)
+	s.mux.HandleFunc("/api/model-providers", s.handleModelProviders)
+	s.mux.HandleFunc("/api/model-providers/openai/{action}", s.handleModelProviders)
 	// The file API (issue #14, phase 1). Everything else the desk shows comes
 	// over the relay; writes cannot, because the runtime has no write tools by
 	// design. See files.go for what this does and does not decide.
@@ -313,6 +335,14 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("POST /api/connections/{provider}/{method}", s.handleConnections)
 	s.mux.HandleFunc("GET /api/attachments/{id}", s.handleAttachment)
 	s.mux.HandleFunc("PUT /api/attachments/{id}", s.handleAttachment)
+	s.mux.HandleFunc("GET /api/source-reviews", s.handleSourceReviews)
+	s.mux.HandleFunc("PUT /api/source-reviews", s.handleSourceReviews)
+	s.mux.HandleFunc("GET /api/briefs", s.handlePackTests)
+	s.mux.HandleFunc("POST /api/briefs", s.handlePackTests)
+	s.mux.HandleFunc("GET /api/pack-tests", s.handlePackTests)
+	s.mux.HandleFunc("PUT /api/pack-tests", s.handlePackTests)
+	s.mux.HandleFunc("GET /api/draft-packs", s.handleDraftPacks)
+	s.mux.HandleFunc("PUT /api/draft-packs", s.handleDraftPacks)
 	s.mux.HandleFunc("GET /api/conversations", s.handleConversations)
 	s.mux.HandleFunc("PUT /api/conversations", s.handleConversations)
 	s.mux.HandleFunc("GET /api/storage", s.handleStorage)
@@ -362,6 +392,8 @@ func New(cfg Config) (*Server, error) {
 	} else {
 		s.watcher = w
 	}
+	s.initJobs()
+	s.initModelProviders()
 	return s, nil
 }
 
@@ -378,6 +410,27 @@ func (s *Server) Close() error {
 }
 
 func (s *Server) closeAll() error {
+	// Stop admission before waiting: upgraded sockets are not tracked by
+	// http.Server.Shutdown, and a relay may still be starting its subprocess.
+	s.mu.Lock()
+	s.closing = true
+	for c := range s.conns {
+		c.cancel()
+	}
+	s.mu.Unlock()
+	if s.jobs != nil {
+		s.jobs.close()
+	}
+	if s.codex != nil {
+		s.codex.Close()
+	}
+	s.sessions.close()
+	if s.signIn != nil {
+		s.signIn.mu.Lock()
+		s.signIn.cancelEpoch()
+		s.signIn.mu.Unlock()
+	}
+	s.relayWork.Wait()
 	s.providerMu.Lock()
 	s.providersClosed = true
 	companions := s.providerConnections
@@ -413,7 +466,28 @@ func (s *Server) closeAll() error {
 	return err
 }
 
-func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.ServeHTTP(w, r) }
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	r, finishPolicy := s.withSignInPolicy(r)
+	defer finishPolicy()
+	// Bind authenticated work to its session so revocation ends active relay
+	// streams and runtime sockets, including a socket racing with sign-out.
+	// Authorization remains in each existing guard; this does not grant access.
+	id := bearerOf(r)
+	if r.URL.Path == "/ws" {
+		id, _ = offeredSessionID(r)
+	}
+	if held, ok := s.sessions.lookup(id); ok && !(r.URL.Path == "/api/session" && r.Method == http.MethodDelete) && r.URL.Path != "/api/auth/enable" {
+		ctx, cancel := context.WithCancel(r.Context())
+		stop := context.AfterFunc(held.ctx, cancel)
+		defer stop()
+		defer cancel()
+		if held.ctx.Err() != nil {
+			cancel()
+		}
+		r = r.WithContext(ctx)
+	}
+	s.mux.ServeHTTP(w, r)
+}
 
 // authorized reports whether the request may reach a gated capability, and
 // there are exactly two ways to be — in this order.
@@ -617,8 +691,8 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 // script.
 func (s *Server) upgradeAuthorized(r *http.Request) bool {
 	if id, _ := offeredSessionID(r); id != "" {
-		_, live := s.sessions.lookup(id)
-		return live
+		held, live := s.sessions.lookup(id)
+		return live && s.signInSessionAllowed(held)
 	}
 	// No offer. A script's socket, and only the launch secret opens one: a
 	// session id on this header authorizes nothing here.

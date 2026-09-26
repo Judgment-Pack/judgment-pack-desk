@@ -37,7 +37,7 @@ import { allowedTools, gateTransport, type GuardrailNotice } from './toolGate'
 import type { EndpointKind } from '../config/deskConfig'
 import type {
   AssistantEvent,
-  AssistantSession,
+  EngineSession,
   CallTool,
   Engine,
   McpTool,
@@ -609,7 +609,7 @@ export function openAssistantConnection(options: {
  */
 export async function runAssistantSession(
   engine: Engine,
-  session: AssistantSession,
+  session: EngineSession,
   onEvent: (event: AssistantEvent) => void
 ): Promise<void> {
   const localizedSession = { ...session, replyLanguage: session.replyLanguage ?? currentLanguage() }

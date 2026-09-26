@@ -7,6 +7,7 @@ import { testQueryClient } from '../testing/harness'
 import { ConnectionsPane } from './ConnectionsPane'
 import { connectionCatalogFixture } from '../testing/connectionCatalog'
 import { ConnectionRequestError, type ConnectionProvider } from './client'
+import { CONNECTION_PREFERENCES_KEY, connectionShortcuts } from './preferences'
 const mocks = vi.hoisted(() => ({ call: vi.fn(), authorize: vi.fn(), status: vi.fn(), catalog: vi.fn(), source: vi.fn(), mail: vi.fn(), drive: vi.fn(), cancel: vi.fn(), close: vi.fn(), onBusy: vi.fn(), provider: vi.fn(), config: {} as any, snapshot: {} as any }))
 vi.mock('./client', async importOriginal => ({ ...await importOriginal<typeof import('./client')>(), connectionCall: mocks.call, authorizeDrive: mocks.authorize, useDriveStatus: mocks.status, CONNECTIONS_KEY: ['gateway-connections'] }))
 vi.mock('./catalog', async original => ({ ...await original<typeof import('./catalog')>(), useConnections: mocks.catalog }))
@@ -16,6 +17,7 @@ vi.mock('../chat/useChatAttachments', () => ({ useChatAttachments: () => ({ read
 const rows = Array.from({ length: 5 }, (_, i) => ({ id: `note-${i}.md`, title: `Policy ${i}`, url: `obsidian://open?vault=Fixture&file=note-${i}` }))
 let account: string, state: string
 beforeEach(() => {
+ sessionStorage.clear(); localStorage.clear()
  account = 'vault-a'; state = 'connected'
  mocks.config = { desk: { localGateway: { status: 'ready' } }, config: { research: { documents: { enabled: true }, gateway: { url: 'http://127.0.0.1:8888' } } } }
  mocks.snapshot = { store: {}, chats: [{ id: 'chat', attachments: [] }], drafts: [], bindings: new Map() }
@@ -23,6 +25,30 @@ beforeEach(() => {
  mocks.catalog.mockImplementation(() => ({ entries: connectionCatalogFixture.providers.map(descriptor => ({ descriptor, status: mocks.status() })), loading: false, isError: false, refetch: vi.fn() }))
  mocks.call.mockResolvedValue({ items: rows, selectionContext: 'epoch', more: false })
  mocks.source.mockResolvedValue(true); mocks.mail.mockResolvedValue(true); mocks.drive.mockResolvedValue(true)
+})
+it('pins a connected service without selecting files or starting a provider operation', async () => {
+ render(view())
+ await screen.findAllByRole('checkbox')
+ mocks.call.mockClear(); mocks.authorize.mockClear()
+ fireEvent.click(screen.getByRole('button',{name:'Pin to composer'}))
+ expect(screen.getByRole('button',{name:'Unpin from composer'}).getAttribute('aria-pressed')).toBe('true')
+ expect((screen.getAllByRole('checkbox') as HTMLInputElement[]).every(box=>!box.checked)).toBe(true)
+ expect(mocks.call).not.toHaveBeenCalled(); expect(mocks.authorize).not.toHaveBeenCalled()
+ fireEvent.click(screen.getByRole('button',{name:'Unpin from composer'}))
+ expect(screen.getByRole('button',{name:'Pin to composer'}).getAttribute('aria-pressed')).toBe('false')
+})
+it('promotes a newly connected service into the composer shortcuts from the chat flow', async () => {
+ state='not-connected'
+ const ui=render(view())
+ expect(localStorage.getItem(CONNECTION_PREFERENCES_KEY)).toBeNull()
+ fireEvent.change(screen.getByRole('textbox',{name:'Vault folder'}),{target:{value:'/notes'}})
+ fireEvent.click(screen.getByRole('button',{name:'Connect vault'}))
+ await waitFor(()=>expect(mocks.call).toHaveBeenCalledWith('configure',{path:'/notes'},expect.any(AbortSignal),'obsidian'))
+ state='connected'; ui.rerender(view())
+ await screen.findAllByRole('checkbox')
+ const prefs=JSON.parse(localStorage.getItem(CONNECTION_PREFERENCES_KEY)!)
+ const connected=[...Array.from({length:5},(_,i)=>({provider:`files-${i}`})),{provider:'obsidian'}]
+ expect(connectionShortcuts(connected,prefs)[0]!.provider).toBe('obsidian')
 })
 afterEach(() => { cleanup(); vi.resetAllMocks() })
 const client = () => testQueryClient()

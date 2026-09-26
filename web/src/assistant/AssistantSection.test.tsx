@@ -232,7 +232,7 @@ describe('the Assistant section', () => {
     stubChassis({ key: BOUND })
     const { container } = renderSection()
     const labels = Array.from(container.querySelectorAll('label')).map((each) => each.textContent)
-    expect(labels.slice(0, 3)).toEqual(['Provider', 'API key', 'Endpoint URL'])
+    expect(labels.slice(0, 4)).toEqual(['Access', 'Provider', 'API key', 'Endpoint URL'])
     expect(
       screen.getByText('Stored on this computer only, never in the project. Readable by your user account only.')
     ).toBeTruthy()

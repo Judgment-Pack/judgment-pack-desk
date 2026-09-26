@@ -79,3 +79,7 @@
 .validation > summary { cursor: pointer; }
 .runContext { border: 1px solid var(--border-strong); padding: var(--space-3); border-radius: var(--radius-sm); font-size: var(--text-sm); }
 .runContext p { margin: var(--space-1) 0; color: var(--ink-soft); }
+
+.workspace[data-logic] { flex: 1; min-height: 0; overflow: hidden; }
+.workspace[data-logic] > .column { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.workspace[data-logic] > .column > section[aria-label] { flex: 1; min-height: 0; }

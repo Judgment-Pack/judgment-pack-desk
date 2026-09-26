@@ -1,6 +1,6 @@
 import { msg, useLocale } from '../i18n'
 import { SHORTCUTS } from './shortcuts'
-import { Tooltip } from '../ui/Tooltip'
+import { QuickSwitcher } from './QuickSwitcher'
 /**
  * The header: whose desk this is, what it points at, and who is looking.
  * The status strip owns the persistent connection indicator.
@@ -9,9 +9,7 @@ import { Tooltip } from '../ui/Tooltip'
  * route's own `<header className="detail-head">` is nested inside `<main>` and
  * is therefore not a second banner.)
  *
- * **The centre is empty and reserved.** Nothing is painted there — no search,
- * no palette, no ⌘K. That is a decision recorded by an empty element and a
- * comment, not an omission.
+ * The centre stays quiet; the compact quick switcher lives beside the user menu.
  *
  * The organization name is **local configuration and never a token claim**,
  * even where an issuer offers a tenant or org claim: an issuer's label for a
@@ -19,7 +17,7 @@ import { Tooltip } from '../ui/Tooltip'
  * set the open desk's chrome. Absent, it falls back to `judgment‑pack desk` —
  * never to an invented company.
  */
-import { Avatar, DropdownMenu, Separator, Toggle } from 'radix-ui'
+import { Avatar, DropdownMenu, Separator } from 'radix-ui'
 import { type RefObject } from 'react'
 import { Link } from 'react-router-dom'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
@@ -27,7 +25,8 @@ import { DESK_FALLBACK_NAME } from '../config/deskConfig'
 import { UserControl, monogram } from '../identity/UserControl'
 import { usePacks } from '../mcp/queries'
 import { useAuthorDirty } from './authorBridge'
-import { IconChevronDown, IconPanelBottom, IconPanelLeft, IconPanelRight } from './icons'
+import { IconChevronDown } from './icons'
+import { PaneToggle } from './PaneToggle'
 
 /**
  * The mark as a `data:` URI.
@@ -46,36 +45,10 @@ export function markToDataUri(mark: string | null): string | undefined {
   return undefined
 }
 
-export function HeaderBar({
-  inspectorTitle = 'Inspector',
-  inspectorAvailable = true,
-  consoleOpenerRef,
-  inspectorOpen,
-  inspectorIsDrawer,
-  consoleOpen,
-  onToggleInspector,
-  onToggleConsole,
-  inspectorOpenerRef,
-  railIsDrawer,
-  railDrawerOpen,
-  onOpenRail,
-  railOpenerRef
-}: {
-  inspectorTitle?: string
-  inspectorAvailable?: boolean
-  consoleOpenerRef?: RefObject<HTMLButtonElement | null>
-  inspectorOpen: boolean
-  /** True below 1100px, where the Inspector is a drawer rather than a column. */
-  inspectorIsDrawer: boolean
-  consoleOpen: boolean
-  onToggleInspector: () => void
-  onToggleConsole: () => void
-  /** Held by the frame, so a closed drawer can hand focus back to it. */
-  inspectorOpenerRef?: RefObject<HTMLButtonElement | null>
-  /** True below 900px, where the rail is an overlay rather than a column. */
+export function HeaderBar({ railIsDrawer, railOpen, onToggleRail, railOpenerRef }: {
   railIsDrawer: boolean
-  railDrawerOpen: boolean
-  onOpenRail: () => void
+  railOpen: boolean
+  onToggleRail: () => void
   railOpenerRef?: RefObject<HTMLButtonElement | null>
 }) {
   useLocale()
@@ -86,28 +59,9 @@ export function HeaderBar({
   return (
     <header className="desk-head">
       <div className="desk-head-left">
-        {/* The drawer's only pointer affordance, and it has to live outside
-            the drawer: in overlay form the rail renders no collapse toggle,
-            so without this the entire left menu was reachable by Mod+B alone
-            — on a width whose likeliest device has no keyboard at all. */}
-        {railIsDrawer && (
-          <Tooltip content={msg("Open navigation")} shortcut={SHORTCUTS[0]?.keys} side="bottom"><button
-            type="button"
-            ref={railOpenerRef}
-            className="desk-icon-button"
-            aria-label={msg("Project navigation")}
-            aria-expanded={railDrawerOpen}
-            /* Only while the drawer is actually in the document. A closed
-               `Dialog` unmounts its portal, so an unconditional IDREF here
-               named an element that does not exist — which offers assistive
-               technology a broken relationship rather than none. `aria-expanded`
-               carries the state either way. */
-            aria-controls={railDrawerOpen ? 'desk-rail' : undefined}
-            onClick={onOpenRail}
-          >
-            <IconPanelLeft />
-          </button></Tooltip>
-        )}
+        <PaneToggle label={railOpen ? msg('Collapse navigation') : msg('Expand navigation')}
+          expanded={railOpen} controls={!railIsDrawer || railOpen ? 'desk-rail' : undefined}
+          onClick={onToggleRail} buttonRef={railOpenerRef} shortcut={SHORTCUTS[0]?.keys} />
         <Avatar.Root className="desk-orgmark">
           {mark && <Avatar.Image src={mark} alt="" />}
           <Avatar.Fallback delayMs={0}>{monogram(name)}</Avatar.Fallback>
@@ -129,35 +83,11 @@ export function HeaderBar({
         <ProjectChip />
       </div>
 
-      {/* The centre zone. Reserved, and painted with nothing: no palette and
-          no search lands here in this line of work. */}
+      {/* Flexible space keeps the project and user controls at their edges. */}
       <div className="desk-head-centre" />
 
       <div className="desk-head-right">
-        {inspectorAvailable && <Tooltip content={`${inspectorOpen ? "Close" : "Open"} ${inspectorTitle}`} shortcut={SHORTCUTS[1]?.keys} side="bottom"><Toggle.Root
-          ref={inspectorOpenerRef}
-          className="desk-icon-button"
-          aria-label={inspectorTitle}
-          /* In column form the panel is always in the document — `hidden`, not
-             absent — so the reference resolves whether it is open or shut.
-             In drawer form it exists only while it is open. */
-          aria-controls={!inspectorIsDrawer || inspectorOpen ? 'desk-inspector' : undefined}
-          pressed={inspectorOpen}
-          onPressedChange={onToggleInspector}
-        >
-          <IconPanelRight />
-        </Toggle.Root></Tooltip>}
-        <Tooltip content={consoleOpen ? msg("Close Console") : msg("Open Console")} shortcut={SHORTCUTS[2]?.keys} side="bottom"><Toggle.Root
-          className="desk-icon-button"
-          ref={consoleOpenerRef}
-          aria-label={msg("Console")}
-          aria-controls="desk-console"
-          pressed={consoleOpen}
-          onPressedChange={onToggleConsole}
-        >
-          <IconPanelBottom />
-        </Toggle.Root></Tooltip>
-        <Separator.Root className="desk-rule" decorative orientation="vertical" />
+        <QuickSwitcher />
         <UserControl />
       </div>
     </header>

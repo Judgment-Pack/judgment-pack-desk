@@ -1,3 +1,5 @@
+import { selectedAssistant } from '../assistant/target'
+import { assistantReady } from '../assistant/useAssistantSlot'
 import { sourceMessage } from '../i18n/source'
 import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
@@ -54,7 +56,6 @@ import { TextArea } from '../ui/TextArea'
 import styles from './DescribeIt.module.css'
 import { recordActivity } from './consoleLog'
 import type { AssistantEvent } from '../assistant/engine'
-import type { AssistantEndpointConfig } from '../config/deskConfig'
 
 /** The question the field asks, which is the whole of what the desk adds. */
 export const DESCRIBE_LABEL =
@@ -153,15 +154,6 @@ export interface DescribeItState {
   discard: () => void
 }
 
-/** An endpoint-shaped nothing, so the run hook stays unconditional. */
-const NO_ENDPOINT: AssistantEndpointConfig = {
-  url: '',
-  kind: 'openai-compatible',
-  model: '',
-  models: [],
-  tools: []
-}
-
 /** One list, allocated once, so an unconfigured desk re-renders to one value. */
 const EMPTY_MODELS: readonly string[] = []
 
@@ -170,6 +162,7 @@ const EMPTY: readonly AssistantEvent[] = []
 
 export function useDescribeIt(): DescribeItState {
   const slot = useAssistantSlot()
+  const selected = selectedAssistant(slot)
   const prompts = usePromptNames()
   const advertised = (prompts.data ?? []).includes(AUTHOR_PACK_PROMPT)
   // **The pick is this tab's, on this project**, and the run is given its
@@ -177,8 +170,8 @@ export function useDescribeIt(): DescribeItState {
   // Assistant tab uses, so the two surfaces are one preference and not two.
   const listing = useFileListing()
   const picked = usePickedModel(
-    slot.endpoint?.models ?? EMPTY_MODELS,
-    slot.endpoint?.model ?? null,
+    selected?.models ?? EMPTY_MODELS,
+    selected?.model ?? null,
     listing.data?.root
   )
   const [typed, setTyped] = useState('')
@@ -253,7 +246,8 @@ export function useDescribeIt(): DescribeItState {
   const run = useAssistantRun({
     // Only ever started where the endpoint exists; the fallback keeps the hook
     // unconditional, which is the rule React enforces.
-    endpoint: slot.endpoint ?? NO_ENDPOINT,
+    endpoint: slot.endpoint,
+    agent: slot.agent,
     model: picked.model,
     engine: slot.engine,
     thinking: slot.thinking,
@@ -324,7 +318,7 @@ export function useDescribeIt(): DescribeItState {
    * It runs on the way in as well, where there is nothing to discard: the key
    * read has not answered yet and `usable` is honestly false.
    */
-  const usable = slot.state === 'configured' && slot.endpoint !== null && slot.keyPresent
+  const usable = slot.engine === 'codex' ? assistantReady(slot) : slot.state === 'configured' && slot.endpoint !== null && slot.keyPresent
   /**
    * Whether there is a session to take away, read at the instant of the loss.
    *
@@ -484,7 +478,7 @@ export function useDescribeIt(): DescribeItState {
   return {
     usable,
     unusableBecause:
-      slot.state === 'unavailable'
+      slot.engine === 'codex' ? msg(slot.unusable ?? 'Configure a ChatGPT subscription in Assistant settings.') : slot.state === 'unavailable'
         ? msg(UNREAD_CONFIGURATION)
         : slot.endpoint === null
           ? msg(NO_ASSISTANT)
@@ -494,7 +488,7 @@ export function useDescribeIt(): DescribeItState {
     retryKey: slot.state === 'configured' && slot.keyStatus === 'error' ? slot.retryKey : undefined,
     advertised,
     standing:
-      slot.endpoint === null
+      selected === null
         ? ''
         : msg('{{engine}} · {{model}} · Thinking: {{thinking}}', { engine: slot.engine, model: picked.model || msg('no model'), thinking: msg(slot.thinking) }),
     picked,

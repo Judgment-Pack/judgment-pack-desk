@@ -87,7 +87,18 @@ export function readDocumentRecord(value: unknown): DocumentRecord {
   if (v.processor === null) require(c.pages.length === 0 && d.detectedMediaType === null)
   if (v.processor === 'adapter-document/pdf/1') require(d.mediaType === 'application/pdf' && d.detectedMediaType === 'application/pdf')
   if (v.processor === 'adapter-document/text/1') require(d.mediaType !== 'application/pdf' && d.detectedMediaType === 'text/plain' && (c.pages.length === 0 || c.extraction === 'verbatim'))
-  if (d.encryption !== null && !object(d.encryption).opened) require(c.pages.length === 0)
+  // Gateway attachment v1 permits a deadline during PDF opening, before any
+  // page is counted. It is not evidence that a password is required. Keep the
+  // two failure states distinct, and never accept page text from an unopened PDF.
+  const encrypted = p.errors.some(e => object(e).code === 'pdf-encrypted')
+  const openingTimeout = p.errors.length === 1 && object(p.errors[0]).code === 'timeout' && c.pageCount === 0
+  if (d.encryption === null) require(!encrypted)
+  else {
+    const encryption = object(d.encryption)
+    require(v.processor === 'adapter-document/pdf/1')
+    if (encryption.opened) require(!encrypted && encryption.handler === 'Standard' && int(encryption.revision, 2) && encryption.revision <= 6)
+    else require(c.pages.length === 0 && encrypted !== openingTimeout)
+  }
   if (v.ocr !== null) {
     const ocr = object(v.ocr)
     require(str(ocr.program) && ocr.program.length > 0 && digest(ocr.digest) && Array.isArray(ocr.pages))

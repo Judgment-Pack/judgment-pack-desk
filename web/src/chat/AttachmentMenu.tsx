@@ -7,6 +7,7 @@ import { ProviderIcon } from '../connections/ProviderIcon'
 import { providerName } from '../connections/registry'
 import type { ConnectionDescriptor } from '../connections/catalog'
 import styles from './AttachmentMenu.module.css'
+import { connectionShortcuts, rememberConnection, useConnectionPreferences } from '../connections/preferences'
 
 type MenuConnection = { descriptor?: ConnectionDescriptor; provider: ConnectionDescriptor['id']; selection: ConnectionDescriptor['selection']; onSelect: () => void }
 
@@ -16,11 +17,12 @@ export function AttachmentMenu({ disabled, onUpload, connections = [], triggerRe
   disabled: boolean; onUpload: () => void; triggerRef?: RefObject<HTMLButtonElement | null>
 }) {
   useLocale()
+  const preferences = useConnectionPreferences()
   const [open, setOpen] = useState(false)
   const id = useId()
   const [visible, setVisible] = useState<MenuConnection[]>([])
   const [linkVisible, setLinkVisible] = useState(false)
-  return <DropdownMenu.Root open={open} onOpenChange={value => { if (value) { setVisible(connections); setLinkVisible(Boolean(onLink)) } setOpen(value) }}>
+  return <DropdownMenu.Root open={open} onOpenChange={value => { if (value) { setVisible(connectionShortcuts(connections, preferences)); setLinkVisible(Boolean(onLink)) } setOpen(value) }}>
     <Tooltip content={msg('Attach files')} disabled={open} openOnFocus={false}>
       <DropdownMenu.Trigger ref={triggerRef} type="button" className="desk-icon-button" aria-label={msg('Attach files')} disabled={disabled}><IconPlus /></DropdownMenu.Trigger>
     </Tooltip>
@@ -36,7 +38,7 @@ export function AttachmentMenu({ disabled, onUpload, connections = [], triggerRe
         </DropdownMenu.Item>}
         {visible.map(item => {
           const current = connections.find(connection => connection.provider === item.provider)
-          return <DropdownMenu.Item key={item.provider} className={`desk-menu-item ${styles.item}`} textValue={providerName(item.provider, item.descriptor)} disabled={!current} onSelect={current?.onSelect}>
+          return <DropdownMenu.Item key={item.provider} className={`desk-menu-item ${styles.item}`} textValue={providerName(item.provider, item.descriptor)} disabled={!current} onSelect={current ? () => { rememberConnection(current.provider); current.onSelect() } : undefined}>
             <ProviderIcon provider={item.provider} descriptor={item.descriptor} /><span className={styles.copy}><span>{providerName(item.provider, item.descriptor)}</span><span className={styles.description}>{!current ? msg('Unavailable') : item.selection === 'browser-picker' ? msg('Choose files') : item.selection === 'mail-search' ? msg('Choose emails') : item.descriptor?.source?.record === 'resource-v1' ? msg('Choose files') : msg('Choose notes')}</span></span>
           </DropdownMenu.Item>
         })}

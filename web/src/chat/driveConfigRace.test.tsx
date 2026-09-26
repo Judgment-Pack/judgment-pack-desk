@@ -1,3 +1,4 @@
+import { memoryDraftPersistence } from '../testing/draftPersistence'
 // Adapted from the independent D2 reproduction recorded on PR #110.
 import { act, cleanup, renderHook } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -9,7 +10,7 @@ vi.mock('../connections/client', () => ({ authorizeDrive: mocked.pick }))
 vi.mock('../documents/client', () => ({ ingestDrive: mocked.ingest, ingestDocument: vi.fn(), loadDocument: vi.fn(), documentContext: vi.fn() }))
 afterEach(() => { cleanup(); vi.clearAllMocks(); sessionStorage.clear() })
 it.each(['disabled', 'external'] as const)('cancels pending selection when document configuration becomes %s', async mode => {
- const store = new ChatStore('/review', {read:async()=>({project:'/review',sha256:'absent',content:{version:1,chats:[]}}),write:vi.fn()})
+ const store = new ChatStore('/review', {read:async()=>({project:'/review',sha256:'absent',content:{version:1,chats:[]}}),write:vi.fn()}, memoryDraftPersistence('/review'))
  await store.load()
  const chat = store.startChat()
  const config = {...DESK_DEFAULTS.research, gateway:{url:'http://127.0.0.1:9001',authority:'gateway:desk-local',signer:{algorithm:'ed25519' as const,public:'ab'.repeat(32)}},documents:{...DOCUMENT_DEFAULTS,enabled:true}}
@@ -29,7 +30,7 @@ it.each(['disabled', 'external'] as const)('cancels pending selection when docum
 })
 
 it('imports a first-use picker result without opening Google authorization a second time', async () => {
- const store = new ChatStore('/review', {read:async()=>({project:'/review',sha256:'absent',content:{version:1,chats:[]}}),write:vi.fn()})
+ const store = new ChatStore('/review', {read:async()=>({project:'/review',sha256:'absent',content:{version:1,chats:[]}}),write:vi.fn()}, memoryDraftPersistence('/review'))
  await store.load()
  const chat = store.startChat()
  const config = {...DESK_DEFAULTS.research, gateway:{url:'http://127.0.0.1:9001',authority:'gateway:desk-local',signer:{algorithm:'ed25519' as const,public:'ab'.repeat(32)}},documents:{...DOCUMENT_DEFAULTS,enabled:true}}

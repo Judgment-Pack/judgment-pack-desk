@@ -1,18 +1,13 @@
 import { languageReady, setLanguage } from '../i18n'
-/**
- * The console: two channels with a real feed, and two that say so.
- *
- * Both of the traps `radixGround.test.tsx` records are live here. A Radix tab
- * switches on **mousedown**, not on click; and an inactive `Tabs.Content`
- * keeps its element and loses its children, so a channel's entries are simply
- * absent until its tab is the active one. A test written the obvious way would
- * assert on a tab that never switched and a panel that never rendered.
+/** Diagnostic channels preserve recorded events without inventing traffic.
+ * Radix tab changes use mousedown, and inactive channels stay mounted.
  */
-import { act, cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { McpContext } from '../mcp/McpProvider'
 import { connected } from '../testing/harness'
-import { BottomPane } from './BottomPane'
+import { Diagnostics, useConnectionLog } from './Diagnostics'
+import { StrictMode } from 'react'
 import { forgetConsole, recordFileChange, recordActivity } from './consoleLog'
 
 afterEach(async () => {
@@ -21,63 +16,51 @@ afterEach(async () => {
   setLanguage('en'); await languageReady()
 })
 
-function renderConsole(overrides = {}, tab: 'connection' | 'calls' | 'files' | 'notices' = 'connection') {
+function LogFixture() { useConnectionLog(); return <Diagnostics /> }
+
+function renderDiagnostics(overrides = {}, tab: 'connection' | 'calls' | 'files' = 'connection') {
   const value = connected(overrides)
-  return render(
+  const view = render(
     <McpContext.Provider value={value}>
-      <BottomPane open tab={tab} onTabChange={() => {}} />
+      <StrictMode><LogFixture /></StrictMode>
     </McpContext.Provider>
   )
+  if (tab !== 'connection') fireEvent.mouseDown(screen.getByRole('tab', { name: tab === 'files' ? 'File changes' : 'Activity' }), { button: 0, ctrlKey: false })
+  return view
 }
 
-describe('the console', () => {
-  it('offers the four channels in the artboard’s order', () => {
-    renderConsole()
+describe('diagnostics', () => {
+  it('offers the three populated diagnostic channels', () => {
+    renderDiagnostics()
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
       'Connection',
       'Activity',
-      'Files',
-      'Notices'
+      'File changes',
     ])
   })
 
-  it('puts the log inside a flex column, so a long one scrolls rather than clips', () => {
-    // The DOM half of the console's flex chain. `.desk-console` is a fixed
-    // height flex column with `overflow: hidden` and `.desk-console-body`
-    // claims `flex: 1`; the tab root between them was an ordinary block, so
-    // the body had no flex parent and no constrained height and entries past
-    // the pane's height were simply cut off. The flex declarations are
-    // asserted in `shellSheet.test.ts` and the pane's own `position` — the
-    // half that makes `overflow: hidden` clip anything positioned inside it —
-    // in `ui/containingBlock.test.ts`; what is asserted here is that they
-    // select something, because a rule with no element is not a fix.
-    const { container } = renderConsole()
-    const console_ = container.querySelector('.desk-console')!
-    const tabs = console_.querySelector('.desk-console-tabs')!
-    expect(tabs).toBeTruthy()
-    // The chain, link by link: console › tab root › body, each the next one's
-    // parent, with nothing unstyled in between.
-    const body = container.querySelector('.desk-console-body')!
-    expect(tabs.parentElement).toBe(console_)
-    expect(body.parentElement).toBe(tabs)
+  it('keeps tab bodies in bounded scroll regions', () => {
+    const { container } = renderDiagnostics()
+    expect(container.querySelector('[data-pane-tabs]')).toBeTruthy()
+    expect(container.querySelectorAll('[data-pane-scroll]')).toHaveLength(3)
   })
 
   it('records one line per connection transition, not two under StrictMode', () => {
-    const { rerender } = renderConsole()
+    const { rerender } = renderDiagnostics()
     const value = connected()
     // A second render with the same connection: the effect runs again and the
     // store drops the identical line rather than double-reporting a state the
     // connection entered once.
     rerender(
       <McpContext.Provider value={value}>
-        <BottomPane open tab="connection" onTabChange={() => {}} />
+        <StrictMode><LogFixture /></StrictMode>
       </McpContext.Provider>
     )
     expect(screen.getAllByText(/ready · connection 1/)).toHaveLength(1)
   })
 
   it('shows a reported file change on the Files channel, by path', () => {
-    renderConsole({}, 'files')
+    renderDiagnostics({}, 'files')
     // Through `act`, because the store publishes outside React's own dispatch
     // — a notification from the socket arrives the same way in the page.
     act(() => recordFileChange('packs/intake-triage.json'))
@@ -85,7 +68,7 @@ describe('the console', () => {
   })
 
   it('starts Activity empty, then shows only recorded milestones', () => {
-    renderConsole({}, 'calls')
+    renderDiagnostics({}, 'calls')
     expect(screen.getByText('No operations recorded yet.')).toBeTruthy()
     act(() => recordActivity('Pack created and registered.'))
     expect(screen.getByText('Pack created and registered.')).toBeTruthy()
@@ -95,25 +78,18 @@ describe('the console', () => {
   })
 
   it('leaves the log list out of the live region', () => {
-    renderConsole()
+    renderDiagnostics()
     const list = screen.getByRole('list')
     expect(list.getAttribute('aria-live')).toBe('off')
   })
 
-  it('is absent from the accessibility tree when collapsed', () => {
-    render(
-      <McpContext.Provider value={connected()}>
-        <BottomPane open={false} tab="connection" onTabChange={() => {}} />
-      </McpContext.Provider>
-    )
-    expect(screen.queryByRole('region', { name: 'Console' })).toBeNull()
-  })
+
 })
 
 
 describe('console localization', () => {
   it('translates recorded milestones when the language changes', async () => {
-    renderConsole({}, 'calls')
+    renderDiagnostics({}, 'calls')
     act(() => recordActivity('Pack created and registered.'))
     await act(async () => { setLanguage('fr'); await languageReady() })
     expect(screen.getByText('Pack créé et enregistré.')).toBeTruthy()
@@ -121,7 +97,7 @@ describe('console localization', () => {
     expect(screen.getByText('パックを作成して登録しました。')).toBeTruthy()
   })
   it('preserves file paths even if a name matches a translated UI message', async () => {
-    renderConsole({}, 'files')
+    renderDiagnostics({}, 'files')
     act(() => recordFileChange('Pack created and registered.'))
     await act(async () => { setLanguage('fr'); await languageReady() })
     expect(screen.getByText('Pack created and registered.')).toBeTruthy()

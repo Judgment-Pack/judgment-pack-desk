@@ -22,6 +22,7 @@ import { DESK_DEFAULTS, decodeDeskConfig, type DocumentSourceConfig } from './de
 const FIXTURES = join(import.meta.dirname, 'fixtures', 'desk-config')
 
 interface Verdict {
+  agent?: unknown
   documents?: DocumentSourceConfig | null
   discovery?: string
   accepted: boolean
@@ -117,6 +118,7 @@ describe('the shared desk-configuration fixtures', () => {
         expect(verdict.engine, `${name} has no expected engine`).toBeTypeOf('string')
         expect(verdict.thinking, `${name} has no expected thinking`).toBeTypeOf('string')
         const assistant = { ...DESK_DEFAULTS.assistant, ...(decoded.values?.assistant ?? {}) }
+        expect(assistant.agent).toEqual(verdict.agent)
         expect(assistant.engine, `${name}: engine`).toBe(verdict.engine)
         expect(assistant.thinking, `${name}: thinking`).toBe(verdict.thinking)
         const project = { ...DESK_DEFAULTS.project, ...(decoded.values?.project ?? {}) }

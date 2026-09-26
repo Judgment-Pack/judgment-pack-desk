@@ -50,6 +50,8 @@ import {
   MAX_TURNS,
   SYSTEM,
   CONVERSATION_SYSTEM,
+  TEST_DESIGN_SYSTEM,
+  BRIEF_SYSTEM,
   streamingProse,
   hasProposalFence,
   eventIterator,
@@ -586,7 +588,7 @@ export function runVercel(
       // See claimPromises: the unused browser tracing path leaks on failure.
       telemetry: { isEnabled: false },
       model,
-      instructions: (session.allowConversation ? CONVERSATION_SYSTEM : SYSTEM) + assistantLanguageInstructions(session.replyLanguage),
+      instructions: (session.purpose === 'brief' ? BRIEF_SYSTEM : session.purpose === 'test-design' ? TEST_DESIGN_SYSTEM : session.allowConversation ? CONVERSATION_SYSTEM : SYSTEM) + assistantLanguageInstructions(session.replyLanguage),
       tools,
       messages: [{ role: 'user', content: session.prompt }],
       stopWhen: stepCountIs(MAX_TURNS),
@@ -736,7 +738,7 @@ export function runVercel(
     const finalText = final !== '' ? final : await withAbort(() => Promise.resolve(result.text), gate.signal)
     if (session.allowConversation && !hasProposalFence(finalText)) {
       if (!finalText.trim()) throw new Error('The assistant returned an empty reply')
-      await deliver({ type: 'message', text: finalText.trim() })
+      await deliver({ type: 'message', text: proseOf(finalText) })
       return
     }
     const proposal = extractProposal(finalText)

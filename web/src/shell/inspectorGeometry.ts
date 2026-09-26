@@ -8,7 +8,7 @@ export function inspectorGeometry(workspaceWidth: number | undefined, preferred:
   const floor = Math.max(MAIN_MIN, requiredMain)
   const limit = Math.max(INSPECTOR_MIN, Math.min(INSPECTOR_MAX, maximum))
   const capacity = workspaceWidth ? Math.floor(Math.min(limit, available * .45, available - floor)) : limit
-  const drawer = narrow || capacity < INSPECTOR_MIN
+  const drawer = workspaceWidth && Number.isFinite(workspaceWidth) ? capacity < INSPECTOR_MIN : narrow
   const max = drawer ? limit : capacity
   const width = Math.round(Math.min(max, Math.max(INSPECTOR_MIN, preferred)))
   return { drawer, width, min: INSPECTOR_MIN, max }

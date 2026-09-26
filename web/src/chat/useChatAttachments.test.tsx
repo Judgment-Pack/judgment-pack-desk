@@ -1,3 +1,4 @@
+import { memoryDraftPersistence } from '../testing/draftPersistence'
 import { act, cleanup, renderHook } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ChatStore } from './store'
@@ -7,7 +8,7 @@ const stores: ChatStore[] = []
 afterEach(() => { cleanup(); stores.forEach(store => store.dispose()); stores.length = 0; sessionStorage.clear() })
 async function setup() {
   const write = vi.fn()
-  const store = new ChatStore('/project', { read: async () => ({ project: '/project', sha256: 'absent', content: { version: 1, chats: [] } }), write })
+  const store = new ChatStore('/project', { read: async () => ({ project: '/project', sha256: 'absent', content: { version: 1, chats: [] } }), write }, memoryDraftPersistence('/project'))
   stores.push(store)
   await store.load()
   const chat = store.startChat()
@@ -101,4 +102,19 @@ it.each(['invalid-utf8', 'binary'])('rejects the whole batch for %s content', as
   expect(files()).toEqual([])
   expect(result.current.error).toContain('broken.txt')
   expect(result.current.isReading()).toBe(false)
+})
+
+it('delivers files to a test case without a chat and discards a late read after changing cases', async () => {
+  let selected: import('./store').ChatAttachment[] = []
+  const append = vi.fn((files: import('./store').ChatAttachment[]) => { selected = [...selected,...files] })
+  const hook = renderHook(({id}) => useChatAttachments(null, '', false, undefined, {kind:'test-case',id,current:()=>selected,append}), {initialProps:{id:'case-one'}})
+  await act(() => hook.result.current.attach([file('case-source.txt')]))
+  expect(selected.map(s=>s.name)).toEqual(['case-source.txt'])
+  const pending=pendingFile()
+  let completion!:Promise<void>
+  act(()=>{completion=hook.result.current.attach([pending.entry])})
+  hook.rerender({id:'case-two'})
+  await act(async()=>{pending.finish();await completion})
+  expect(append).toHaveBeenCalledTimes(1)
+  expect(selected).toHaveLength(1)
 })

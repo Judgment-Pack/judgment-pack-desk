@@ -36,6 +36,7 @@ import {
 import { createElement } from 'react'
 import type { PanesConfig } from '../config/deskConfig'
 import { INSPECTOR_MIN, INSPECTOR_MAX } from './inspectorGeometry'
+import { validOverlayWidth } from './overlayGeometry'
 
 export type LeftRailMode = 'expanded' | 'icons'
 export type ConsoleTab = 'connection' | 'calls' | 'files' | 'notices'
@@ -45,6 +46,7 @@ export interface ShellState {
   inspector: { open: boolean }
   console: { open: boolean; tab: ConsoleTab }
   inspectorWidth?: number
+  overlayWidth?: number
   consoleHeight?: number
 }
 
@@ -157,6 +159,7 @@ export function readShellState(key: string): Partial<ShellState> | undefined {
 
   const restored: Partial<ShellState> = {}
   if (record.v === RECORD_VERSION && validInspectorWidth(record.inspectorWidth)) restored.inspectorWidth = record.inspectorWidth
+  if (record.v === RECORD_VERSION && validOverlayWidth(record.overlayWidth)) restored.overlayWidth = record.overlayWidth
   if (validConsoleHeight(record.consoleHeight)) restored.consoleHeight = record.consoleHeight
   const left = record.left as { mode?: unknown } | undefined
   if (left && (left.mode === 'expanded' || left.mode === 'icons')) {
@@ -191,6 +194,7 @@ export interface TouchedPanes {
   inspector: boolean
   console: boolean
   inspectorWidth?: boolean
+  overlayWidth?: boolean
   consoleHeight?: boolean
 }
 
@@ -221,8 +225,10 @@ export function writeShellState(key: string, state: ShellState, touched: Touched
   const inspector = touched.inspector ? state.inspector : kept.inspector
   const consoleSection = touched.console ? state.console : kept.console
   const width = touched.inspectorWidth ? state.inspectorWidth : kept.inspectorWidth
+  const overlayWidth = touched.overlayWidth ? state.overlayWidth : kept.overlayWidth
   const height = touched.consoleHeight ? state.consoleHeight : kept.consoleHeight
   const record: Record<string, unknown> = { v: RECORD_VERSION }
+  if (validOverlayWidth(overlayWidth)) record.overlayWidth = overlayWidth
   if (validConsoleHeight(height)) record.consoleHeight = height
   if (left !== undefined) record.left = left
   if (inspector !== undefined) record.inspector = inspector
@@ -313,6 +319,7 @@ export function initialShellState(
     inspector: { open: viewport.inspectorIsDrawer ? false : merged.inspector.open },
     console: merged.console,
     ...(stored?.consoleHeight === undefined ? {} : { consoleHeight: stored.consoleHeight }),
+    ...(stored?.overlayWidth === undefined ? {} : { overlayWidth: stored.overlayWidth }),
     ...(stored?.inspectorWidth === undefined ? {} : { inspectorWidth: stored.inspectorWidth })
   }
 }
@@ -355,6 +362,8 @@ export interface ShellStateApi extends ShellState {
   resetPanes: () => ResetOutcome
   resizeInspector: (width: number) => void
   resetInspectorWidth: () => void
+  resizeOverlay: (width: number) => void
+  resetOverlayWidth: () => void
 }
 
 /**
@@ -375,7 +384,9 @@ const DEFAULT_API: ShellStateApi = {
   keyResolved: false,
   resetPanes: () => 'unresolved',
   resizeInspector: () => {},
-  resetInspectorWidth: () => {}
+  resetInspectorWidth: () => {},
+  resizeOverlay: () => {},
+  resetOverlayWidth: () => {}
 }
 
 const ShellStateContext = createContext<ShellStateApi>(DEFAULT_API)
@@ -471,9 +482,9 @@ export function ShellStateProvider({
     if (seededFrom.current === signature) return
     seededFrom.current = signature
     const chosen = touched.current
-    if (keyResolved && widthOwner.current !== undefined && widthOwner.current !== storageKey) { chosen.inspectorWidth = false; chosen.consoleHeight = false }
+    if (keyResolved && widthOwner.current !== undefined && widthOwner.current !== storageKey) { chosen.inspectorWidth = false; chosen.consoleHeight = false; chosen.overlayWidth = false }
     if (keyResolved) widthOwner.current = storageKey
-    if (chosen.left && chosen.inspector && chosen.console && chosen.inspectorWidth && chosen.consoleHeight) return
+    if (chosen.left && chosen.inspector && chosen.console && chosen.inspectorWidth && chosen.consoleHeight && chosen.overlayWidth) return
     setState((previous) => {
       const seeded = initialShellState(storedForKey(), panes, viewport)
       return {
@@ -481,6 +492,7 @@ export function ShellStateProvider({
         inspector: chosen.inspector ? previous.inspector : seeded.inspector,
         console: chosen.console ? previous.console : seeded.console,
         consoleHeight: chosen.consoleHeight ? previous.consoleHeight : seeded.consoleHeight,
+        overlayWidth: chosen.overlayWidth ? previous.overlayWidth : seeded.overlayWidth,
         ...((chosen.inspectorWidth ? previous.inspectorWidth : seeded.inspectorWidth) === undefined ? {} : {
           inspectorWidth: chosen.inspectorWidth ? previous.inspectorWidth : seeded.inspectorWidth
         })
@@ -520,7 +532,7 @@ export function ShellStateProvider({
     const timer = setTimeout(() => {
       pending.current = undefined
       const chosen = touched.current
-      if (!chosen.left && !chosen.inspector && !chosen.console && !chosen.inspectorWidth && !chosen.consoleHeight) return
+      if (!chosen.left && !chosen.inspector && !chosen.console && !chosen.inspectorWidth && !chosen.consoleHeight && !chosen.overlayWidth) return
       writeShellState(storageKey, state, chosen)
     }, WRITE_DEBOUNCE_MS)
     pending.current = timer
@@ -626,6 +638,16 @@ export function ShellStateProvider({
     setState(previous => { const next = { ...previous }; delete next.inspectorWidth; return next })
   }, [])
 
+  const resizeOverlay = useCallback((width: number) => {
+    if (!validOverlayWidth(width)) return
+    touched.current.overlayWidth = true
+    setState(previous => previous.overlayWidth === width ? previous : { ...previous, overlayWidth: width })
+  }, [])
+  const resetOverlayWidth = useCallback(() => {
+    touched.current.overlayWidth = true
+    setState(previous => { const next = { ...previous }; delete next.overlayWidth; return next })
+  }, [])
+
   const value = useMemo<ShellStateApi>(
     () => ({
       ...state,
@@ -641,7 +663,9 @@ export function ShellStateProvider({
       keyResolved,
       resetPanes,
       resizeInspector,
-      resetInspectorWidth
+      resetInspectorWidth,
+      resizeOverlay,
+      resetOverlayWidth
     }),
     [
       state,
@@ -657,7 +681,9 @@ export function ShellStateProvider({
       keyResolved,
       resetPanes,
       resizeInspector,
-      resetInspectorWidth
+      resetInspectorWidth,
+      resizeOverlay,
+      resetOverlayWidth
     ]
   )
   return createElement(ShellStateContext.Provider, { value }, children)
