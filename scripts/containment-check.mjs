@@ -62,7 +62,7 @@
  * neither id can be spelt without the project.
  *
  * **The configurations.** The right pane is measured closed and open on every
- * route: Assistant in workspaces, Diagnostics elsewhere. The retired bottom
+ * route: Assistant in pack workspaces, Brief for jobs/runs, Diagnostics elsewhere. The retired bottom
  * Console must remain absent. Intended rows are computed before sampling and
  * checked afterward, and every configuration is observed rather than assumed.
  *
@@ -599,7 +599,11 @@ async function setInspector(want) {
   if (!want) {
     await page.locator('#desk-inspector .desk-pane-actions button[aria-label^="Collapse "]').click()
   } else if (await page.locator('.desk-tool-rail').count()) {
-    await page.locator('.desk-tool-rail button[aria-label="Assistant"]').click()
+    const assistant = page.locator('.desk-tool-rail button[aria-label="Assistant"]')
+    const brief = page.locator('.desk-tool-rail button[aria-label="Brief"]')
+    if (await assistant.count()) await assistant.click()
+    else if (await brief.count()) await brief.click()
+    else throw new Error('The workspace has no contextual pane to sample')
   } else {
     // Help exposes the same action. Blur editors so the shell shortcut applies.
     await page.evaluate(() => document.activeElement?.blur())
@@ -636,6 +640,7 @@ async function sample(route, config) {
   if (unpositioned.length > 0) failures.push(unpositioned.join(', '))
   if (seen.hung.length > 0) failures.push(`${seen.hung.length} from BODY (${seen.hung.join('; ')})`)
   if (problems.length > 0) failures.push(problems.join('; '))
+  if (failures.length > 0) console.log(`  ${route} [${named(config)}] ${seen.innerWidth}px: ${failures.join('; ')}`)
   rows.push({
     route,
     config: named(config),
@@ -699,7 +704,7 @@ if (graph === undefined) {
   process.exit(2)
 }
 
-// These records live only in the wrapper's throwaway XDG_DATA_HOME. Rehearse
+// These records live only in the wrapper's throwaway configuration tree. Rehearse
 // and run a synthetic literal pack so job/run routes show their real content;
 // a disabled companion or failed run must fail the gate, not measure an error.
 async function operation(path, body, key) {
