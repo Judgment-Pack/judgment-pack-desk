@@ -101,11 +101,24 @@ def tool_inventory(request):
 
 
 # The definition kinds this release serialises (codex-rs/tools/src/tool_spec.rs
-# at the pinned tag): a name belongs to a function, custom or namespace
-# definition, a built-in tool is defined by its type alone, and anything else
-# in a definition list is malformed.
+# at the pinned tag) and the members each requires: a function carries its
+# parameter schema, a custom tool its format, a namespace its tools, tool
+# search its execution, description and parameter schema; web search has only
+# optional members. Anything else in a definition list is malformed.
+REQUIRED = {'function': {'name': str, 'parameters': dict}, 'custom': {'name': str, 'format': dict},
+            'namespace': {'name': str, 'tools': list},
+            'tool_search': {'execution': str, 'description': str, 'parameters': dict}, 'web_search': {}}
 NAMED_KINDS = {'function', 'custom'}
 BUILTIN_KINDS = {'web_search', 'tool_search'}
+
+
+def well_formed(tool):
+    """Whether a definition list entry has the members its kind requires."""
+    kind = tool.get('type') if isinstance(tool, dict) else None
+    required = REQUIRED.get(kind)
+    if required is None or (kind in BUILTIN_KINDS and 'name' in tool):
+        return False
+    return all(isinstance(tool.get(member), expected) for member, expected in required.items())
 
 
 def advertised(request):
@@ -125,25 +138,16 @@ def advertised(request):
     def definitions(tools, prefix, path):
         for i, tool in enumerate(tools):
             here = '%s[%d]' % (path, i)
-            if not isinstance(tool, dict) or not isinstance(tool.get('type'), str):
+            if not well_formed(tool):
                 malformed.append(here)
                 continue
             kind = tool['type']
-            name = tool.get('name') if isinstance(tool.get('name'), str) else None
             if kind == 'namespace':
-                if name and isinstance(tool.get('tools'), list):
-                    definitions(tool['tools'], prefix + name + '.', here + '.tools')
-                else:
-                    malformed.append(here)
+                definitions(tool['tools'], prefix + tool['name'] + '.', here + '.tools')
             elif kind in NAMED_KINDS:
-                if name:
-                    found[prefix + name] = found.get(prefix + name, 0) + 1
-                else:
-                    malformed.append(here)
-            elif name is None and kind in BUILTIN_KINDS:
-                found[prefix + 'type:' + kind] = found.get(prefix + 'type:' + kind, 0) + 1
+                found[prefix + tool['name']] = found.get(prefix + tool['name'], 0) + 1
             else:
-                malformed.append(here)
+                found[prefix + 'type:' + kind] = found.get(prefix + 'type:' + kind, 0) + 1
     if isinstance(request.get('tools'), list):
         definitions(request['tools'], '', 'tools')
     for i, item in enumerate(request.get('input', [])):
@@ -166,7 +170,8 @@ def self_check():
     must say of it, and each sequence gives several requests and whether every
     one advertises the host exactly once. No Codex process is involved.
     """
-    host = {'type': 'function', 'name': 'jps_probe'}
+    host = {'type': 'function', 'name': 'jps_probe', 'parameters': {'type': 'object'}}
+    search = {'type': 'tool_search', 'execution': 'server', 'description': 'find tools', 'parameters': {'type': 'object'}}
     sequences = [
         ('the host in every request', [{'tools': [host]}, {'tools': [host]}], True),
         ('the host dropped from the second request', [{'tools': [host]}, {'tools': []}], False),
@@ -177,9 +182,13 @@ def self_check():
         ('a namespaced advertisement', {'input': [{'type': 'additional_tools', 'tools': [
             {'type': 'namespace', 'name': 'functions', 'tools': [host]}]}]}, 1, [], [], False),
         ('an extra tool inside a namespace', {'input': [{'type': 'additional_tools', 'tools': [
-            {'type': 'namespace', 'name': 'functions', 'tools': [host, {'type': 'function', 'name': 'exec'}]}]}]},
+            {'type': 'namespace', 'name': 'functions', 'tools': [host, dict(host, name='exec')]}]}]},
             1, ['functions.exec'], ['functions.exec'], False),
         ('a built-in tool beside the host', {'tools': [{'type': 'web_search'}, host]}, 1, ['type:web_search'], ['type:web_search'], False),
+        ('tool search beside the host', {'tools': [search, host]}, 1, ['type:tool_search'], ['type:tool_search'], False),
+        ('tool search without its required members', {'tools': [{'type': 'tool_search', 'execution': 17, 'description': [], 'parameters': None}, host]},
+            1, [], ['type:tool_search'], True),
+        ('a function without its parameter schema', {'tools': [{'type': 'function', 'name': 'exec'}, host]}, 1, [], ['exec'], True),
         ('a list nested inside a function tool', {'tools': [dict(host, extra_tools=[{'type': 'function', 'name': 'exec'}])]},
             1, [], ['exec'], False),
         ('a tool_definitions member', {'tool_definitions': [{'type': 'function', 'name': 'exec'}], 'tools': [host]}, 1, [], ['exec'], False),
@@ -197,7 +206,7 @@ def self_check():
             'output': {'tools': [{'type': 'function', 'name': 'exec'}]}}]}, 1, [], ['exec'], False),
         ('the host advertised twice', {'tools': [host, host]}, 2, [], [], False),
         ('a name on an object that is not a tool', {'tools': [host, {'type': 'message', 'name': 'exec'}]}, 1, [], ['exec'], True),
-        ('a namespace without a name', {'tools': [{'type': 'namespace', 'tools': [{'type': 'function', 'name': 'exec'}]}, host]},
+        ('a namespace without a name', {'tools': [{'type': 'namespace', 'tools': [dict(host, name='exec')]}, host]},
             1, [], ['exec', 'type:namespace'], True),
         ('a bare string', {'tools': ['exec', host]}, 1, [], ["'exec'"], True),
     ]
@@ -287,8 +296,15 @@ class Probe:
                     self.wfile.write(('event: ' + event['type'] + '\ndata: ' + json.dumps(event) + '\n\n').encode())
                 self.wfile.flush()
 
-        self.http = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
-        threading.Thread(target=self.http.serve_forever, daemon=True).start()
+        # The server is recorded only once it is serving, so that cleanup never
+        # waits for a loop that did not start.
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        try:
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+        except Exception:
+            server.server_close()
+            raise
+        self.http = server
 
     def write(self, value):
         self.process.stdin.write(json.dumps(value) + '\n')
@@ -597,10 +613,17 @@ def main():
     if control:
         report['controlHeld'] = False
     def emit(report):
-        serialized = json.dumps(report, indent=2) + '\n'
+        # The report reaches stdout whatever happens to the output file; a
+        # file that could not be written is a fault the report itself states.
         if args.output:
-            args.output.write_text(serialized)
-        print(serialized, end='')
+            try:
+                args.output.write_text(json.dumps(report, indent=2) + '\n')
+            except OSError as error:
+                report['outputError'] = str(error)
+                report['passed'] = False
+                if 'controlHeld' in report:
+                    report['controlHeld'] = False
+        print(json.dumps(report, indent=2))
     try:
         binary = str(args.codex.resolve())
         report['binarySHA256'] = hashlib.sha256(Path(binary).read_bytes()).hexdigest()

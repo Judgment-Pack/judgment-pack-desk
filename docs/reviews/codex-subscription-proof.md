@@ -207,8 +207,10 @@ python3 scripts/codex-subscription-probe.py --codex /absolute/path/to/codex --se
 
 The two controls must fail the isolation check for the right reason: each
 exits 0 with `passed: false` and `controlHeld: true`. Any other exit status
-is a fault in the probe or the setup, not a result; a fault before any
-scenario still writes a report that carries the error:
+is a fault in the probe or the setup, not a result. From resolving the binary
+to the last scenario, a fault still writes a report that carries the error,
+and an output file that cannot be written is reported in the report on
+standard output; a usage error is the parser's, before any report:
 
 ```sh
 python3 scripts/codex-subscription-probe.py --codex /absolute/path/to/codex --bundled-catalog --scenario host-tool
