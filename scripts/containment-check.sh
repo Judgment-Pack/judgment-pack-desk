@@ -16,7 +16,7 @@
 #
 #   npm --prefix web ci && npm --prefix web run build
 #   go build -o /tmp/jpack-desk .
-#   scripts/containment-check.sh /tmp/jpack-desk /path/to/project 8765
+#   JPACK_RUNNER_BIN=/path/to/jpack-runner scripts/containment-check.sh /tmp/jpack-desk /path/to/project 8765
 #
 # What it arranges, and what it deliberately does not touch:
 #
@@ -40,7 +40,8 @@
 #   and puts on every later request itself.
 #
 # `JPACK_BIN` names the runtime binary to hand the chassis, if the project
-# needs one. `PLAYWRIGHT_CHROME` names a Chrome executable; without it,
+# needs one. `JPACK_RUNNER_BIN` must name a built Jobs companion, used only
+# with the isolated data directory. `PLAYWRIGHT_CHROME` names Chrome; without it,
 # playwright-core is asked for the installed one (`channel: 'chrome'`).
 set -uo pipefail
 
@@ -52,6 +53,7 @@ PORT="${3:-8765}"
 LABEL="${4:-$(git rev-parse --short HEAD 2>/dev/null || echo build)}"
 
 [ -x "$BIN" ] || { echo "not an executable chassis: $BIN" >&2; exit 2; }
+[ -x "${JPACK_RUNNER_BIN:-}" ] || { echo "set JPACK_RUNNER_BIN to a built Jobs companion" >&2; exit 2; }
 [ -d "$PROJECT" ] || { echo "not a project directory: $PROJECT" >&2; exit 2; }
 [ -d web/node_modules/playwright-core ] || {
   echo "playwright-core is missing; run: npm --prefix web ci" >&2; exit 2
@@ -94,12 +96,11 @@ cat > "$XDG_CONFIG_HOME/jpack-desk/desk.json" <<JSON
 }
 JSON
 
+DESK_ARGS=(--dev-token "$SECRET" --port "$PORT" --codex off --runner "$JPACK_RUNNER_BIN")
 if [ -n "${JPACK_BIN:-}" ]; then
-  "$BIN" --dev-token "$SECRET" --port "$PORT" --jpack "$JPACK_BIN" "$WORK/project" \
-    > "$WORK/chassis.log" 2>&1 &
-else
-  "$BIN" --dev-token "$SECRET" --port "$PORT" "$WORK/project" > "$WORK/chassis.log" 2>&1 &
+  DESK_ARGS+=(--jpack "$JPACK_BIN")
 fi
+"$BIN" "${DESK_ARGS[@]}" "$WORK/project" > "$WORK/chassis.log" 2>&1 &
 DESK_PID=$!
 
 AUTH="Authorization: Bearer $SECRET"

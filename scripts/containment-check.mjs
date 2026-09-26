@@ -367,7 +367,7 @@ function declaredRoutes() {
 }
 
 /** The routes a run visits, given the pack and the graph the project lists. */
-const routesFor = (pack, graph) => [
+const routesFor = (pack, graph, job = '/jobs/job-containment', run = '/jobs/job-containment/runs/run-containment') => [
   '/',
   '/packs',
   '/packs/new',
@@ -383,6 +383,11 @@ const routesFor = (pack, graph) => [
   `${pack}/evaluate`,
   `${pack}/matrix`,
   '/admin',
+  '/jobs',
+  `/jobs/new?pack=${encodeURIComponent(pack.split('/').pop())}`,
+  `/jobs/new?pack=${encodeURIComponent(pack.split('/').pop())}&containment=mapped`,
+  job,
+  run,
   '/graphs',
   graph,
   '/matrix',
@@ -575,6 +580,12 @@ async function go(path) {
   await page.goto(at(path), { waitUntil: 'networkidle', timeout: 45000 })
   await page.waitForSelector('.desk', { timeout: 30000 })
   await settle(1100)
+  if (new URL(at(path)).searchParams.get('containment') === 'mapped') {
+    await page.getByLabel('Input source', { exact: true }).click()
+    await page.getByRole('option', { name: 'Mapped sources', exact: true }).click()
+    await page.getByLabel('Case inputs (JSON)', { exact: true }).waitFor()
+    await settle()
+  }
 }
 
 const inspectorOpen = async () =>
@@ -688,7 +699,29 @@ if (graph === undefined) {
   process.exit(2)
 }
 
-const ROUTES = routesFor(pack, graph)
+// These records live only in the wrapper's throwaway XDG_DATA_HOME. Rehearse
+// and run a synthetic literal pack so job/run routes show their real content;
+// a disabled companion or failed run must fail the gate, not measure an error.
+async function operation(path, body, key) {
+  const response = await fetch(`${ORIGIN}/api/operations/${path}`, {
+    method: body === undefined ? 'GET' : 'POST',
+    headers: { Authorization: `Bearer ${SECRET}`, 'Content-Type': 'application/json', ...(key ? { 'Idempotency-Key': key } : {}) },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) })
+  })
+  if (!response.ok) throw new Error(`Isolated Jobs fixture ${path}: HTTP ${response.status}: ${await response.text()}`)
+  return response.json()
+}
+const release = await operation('previews', { pack: JSON.stringify(draftDocument), input: { facts: {} } })
+if (!['passed', 'not-run'].includes(release.tests)) throw new Error('Isolated release check failed')
+const job = await operation('jobs', { name: 'Containment job', releaseId: release.id, reviewed: true })
+let run = await operation(`jobs/${job.id}/runs`, { facts: {} }, 'containment-run')
+for (let attempt = 0; attempt < 100 && ['queued', 'running'].includes(run.state); attempt += 1) {
+  await page.waitForTimeout(200)
+  run = await operation(`runs/${run.id}`)
+}
+if (run.state !== 'completed') throw new Error(`Isolated run did not complete: ${JSON.stringify(run)}`)
+const jobPath = `/jobs/${job.id}`
+const ROUTES = routesFor(pack, graph, jobPath, `${jobPath}/runs/${run.id}`)
 
 // Every pattern the router declares is visited, so a route added later fails
 // this gate until somebody samples it. `*` is the only exception and is not a

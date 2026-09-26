@@ -5122,10 +5122,9 @@ every route `App.tsx` declares — the list is asserted against that file at run
 time, so a route added later fails the gate until it is sampled — at every
 width the sheets author a breakpoint for: `{1400, 640}`, plus `N − 1` for each
 `max-width: N` and `N` for each `min-width: N` read out of an `@media` prelude
-under `web/src`, each at height 800. Four pane configurations above 1099px and
-three at or below it, because below that the Inspector is a modal drawer whose
-overlay owns the pointer, so the console cannot be toggled while it is open:
-242 rows a build. The intended row count is computed before any sampling and
+under `web/src`, each at height 800. Each route is measured with its contextual
+right pane closed and open; the retired bottom console must remain absent.
+The intended row count is computed before any sampling and
 checked against the rows afterwards, and each configuration is observed on the
 page it claims to configure.
 A row is contained only if `document.scrollingElement.scrollHeight` equals
@@ -5139,18 +5138,22 @@ sampled. It prints a table and exits non-zero on any row that fails.
 ```sh
 npm --prefix web ci && npm --prefix web run build
 go build -o /tmp/jpack-desk .
-JPACK_BIN=/path/to/jpack scripts/containment-check.sh /tmp/jpack-desk /path/to/project 8765
+JPACK_BIN=/path/to/jpack JPACK_RUNNER_BIN=/path/to/jpack-runner \
+  scripts/containment-check.sh /tmp/jpack-desk /path/to/project 8765
 ```
 
-The project must list at least one pack and one graph: four of the eleven routes
-are a pack's and one is a graph's, and the gate exits 2 rather than sample fewer.
+The project must list at least one pack and one graph; the gate exits 2 rather
+than sample fewer routes. Jobs coverage uses a synthetic release and completed
+run created through the real companion in temporary storage, and samples both
+manual and mapped source creation forms.
 `judgment-pack-demo/projects/enterprise-demo` is one it runs on; a project with
 packs and no graphs is not. `node scripts/containment-check.mjs --plan` prints what
 a run would sample — the preludes read and the preludes refused, the widths, the
 routes, the intended row count — without a browser.
 
 It copies the project rather than driving the one it was handed, uses a
-throwaway `XDG_CONFIG_HOME`, and kills what it starts by PID. A project that
+throwaway `XDG_CONFIG_HOME` and `XDG_DATA_HOME`, disables the Codex process,
+and kills what it starts by PID. A project that
 lists no pack, or no graph, exits 2 saying so: four of the routes are a pack
 and one is a graph, and neither id can be spelt without the project. `PLAYWRIGHT_CHROME`
 names a Chrome executable; without it, `playwright-core` — a devDependency of
