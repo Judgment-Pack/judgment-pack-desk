@@ -197,9 +197,18 @@ python3 scripts/codex-subscription-probe.py --codex /absolute/path/to/codex
 JPS_CODEX_TEST_BINARY=/absolute/path/to/codex go test -race ./internal/codexbridge
 ```
 
+The probe's classification of tool definitions can be checked without Codex;
+it runs every case earlier reviews produced and exits 0 when each is
+classified as expected:
+
+```sh
+python3 scripts/codex-subscription-probe.py --codex /absolute/path/to/codex --self-check
+```
+
 The two controls must fail the isolation check for the right reason: each
-exits 0 with `passed: false` and `controlHeld: true`, and any other exit
-status is a fault in the probe or the setup, not a result:
+exits 0 with `passed: false` and `controlHeld: true`. Any other exit status
+is a fault in the probe or the setup, not a result; a fault before any
+scenario still writes a report that carries the error:
 
 ```sh
 python3 scripts/codex-subscription-probe.py --codex /absolute/path/to/codex --bundled-catalog --scenario host-tool

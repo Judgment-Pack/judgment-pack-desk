@@ -100,32 +100,96 @@ def tool_inventory(request):
     return found
 
 
+# The definition kinds a name belongs to; a built-in tool is defined by its
+# type alone, and anything else in a definition list is malformed.
+NAMED_KINDS = {'function', 'custom'}
+
+
 def advertised(request):
-    """Return {qualified tool name: definitions} for the request's definition channels only.
+    """Return ({qualified tool name: definitions}, [malformed entries]) for the
+    request's definition channels only.
 
     A tool is offered to the model through the top-level `tools` member or an
-    `additional_tools` input item, plainly or inside a namespace's `tools`.
-    Only those count as an advertisement; nothing else in a definition (a
-    schema's examples, say) or elsewhere in the request does. The wider scan
+    `additional_tools` input item: a named function or custom tool, a built-in
+    tool named by its type, or a namespace's `tools` list. Only those count as
+    an advertisement; nothing else in a definition (a schema's examples, say)
+    or elsewhere in the request does. An entry of any other shape is reported
+    as malformed, since the scripted endpoint validates nothing. The wider scan
     above may see tool-shaped data anywhere, which can fail a scenario but
     never pass one.
     """
-    found = {}
-    def definitions(tools, prefix):
-        for tool in tools:
-            if not isinstance(tool, dict):
+    found, malformed = {}, []
+    def definitions(tools, prefix, path):
+        for i, tool in enumerate(tools):
+            here = '%s[%d]' % (path, i)
+            if not isinstance(tool, dict) or not isinstance(tool.get('type'), str):
+                malformed.append(here)
                 continue
+            kind = tool['type']
             name = tool.get('name') if isinstance(tool.get('name'), str) else None
-            if tool.get('type') == 'namespace' and name and isinstance(tool.get('tools'), list):
-                definitions(tool['tools'], prefix + name + '.')
-            elif name:
-                found[prefix + name] = found.get(prefix + name, 0) + 1
+            if kind == 'namespace':
+                if name and isinstance(tool.get('tools'), list):
+                    definitions(tool['tools'], prefix + name + '.', here + '.tools')
+                else:
+                    malformed.append(here)
+            elif kind in NAMED_KINDS:
+                if name:
+                    found[prefix + name] = found.get(prefix + name, 0) + 1
+                else:
+                    malformed.append(here)
+            elif name is None:
+                found[prefix + 'type:' + kind] = found.get(prefix + 'type:' + kind, 0) + 1
+            else:
+                malformed.append(here)
     if isinstance(request.get('tools'), list):
-        definitions(request['tools'], '')
-    for item in request.get('input', []):
+        definitions(request['tools'], '', 'tools')
+    for i, item in enumerate(request.get('input', [])):
         if isinstance(item, dict) and item.get('type') == 'additional_tools' and isinstance(item.get('tools'), list):
-            definitions(item['tools'], '')
-    return found
+            definitions(item['tools'], '', 'input[%d:additional_tools].tools' % i)
+    return found, malformed
+
+
+def self_check():
+    """Run the classification cases earlier reviews produced; return the failures.
+
+    Each case gives a synthetic model request and what the two inventories
+    must say of it. No Codex process is involved.
+    """
+    host = {'type': 'function', 'name': 'jps_probe'}
+    cases = [
+        ('a plain advertisement', {'tools': [host]}, 1, [], [], False),
+        ('a namespaced advertisement', {'input': [{'type': 'additional_tools', 'tools': [
+            {'type': 'namespace', 'name': 'functions', 'tools': [host]}]}]}, 1, [], [], False),
+        ('an extra tool inside a namespace', {'input': [{'type': 'additional_tools', 'tools': [
+            {'type': 'namespace', 'name': 'functions', 'tools': [host, {'type': 'function', 'name': 'exec'}]}]}]},
+            1, ['functions.exec'], ['functions.exec'], False),
+        ('a built-in tool beside the host', {'tools': [{'type': 'web_search'}, host]}, 1, ['type:web_search'], ['type:web_search'], False),
+        ('a list nested inside a function tool', {'tools': [dict(host, extra_tools=[{'type': 'function', 'name': 'exec'}])]},
+            1, [], ['exec'], False),
+        ('a tool_definitions member', {'tool_definitions': [{'type': 'function', 'name': 'exec'}], 'tools': [host]}, 1, [], ['exec'], False),
+        ("a namespace's sibling member", {'input': [{'type': 'additional_tools', 'tools': [
+            {'type': 'namespace', 'name': 'functions', 'tools': [host], 'tool_definitions': [{'type': 'function', 'name': 'exec'}]}]}]},
+            1, [], ['exec'], False),
+        ('an unnamed tool typed as the host', {'tools': [{'type': 'jps_probe'}]}, 0, ['type:jps_probe'], ['type:jps_probe'], False),
+        ('the host only inside a result', {'tools': [], 'input': [{'type': 'function_call_output', 'call_id': 'x',
+            'output': {'tool_definitions': [{'name': 'jps_probe'}]}}]}, 0, [], [], False),
+        ("examples inside the host's schema", {'tools': [dict(host, parameters={'examples': [{'tools': [host]}]})]}, 1, [], [], False),
+        ('an extra tool only inside a result', {'tools': [host], 'input': [{'type': 'function_call_output', 'call_id': 'x',
+            'output': {'tools': [{'type': 'function', 'name': 'exec'}]}}]}, 1, [], ['exec'], False),
+        ('the host advertised twice', {'tools': [host, host]}, 2, [], [], False),
+        ('a name on an object that is not a tool', {'tools': [host, {'type': 'message', 'name': 'exec'}]}, 1, [], ['exec'], True),
+        ('a namespace without a name', {'tools': [{'type': 'namespace', 'tools': [{'type': 'function', 'name': 'exec'}]}, host]},
+            1, [], ['exec', 'type:namespace'], True),
+        ('a bare string', {'tools': ['exec', host]}, 1, [], ["'exec'"], True),
+    ]
+    failures = []
+    for label, request, host_count, extra, wide, bad in cases:
+        offered, malformed = advertised(request)
+        got = (sum(n for k, n in offered.items() if k in HOST_TOOLS), sorted(k for k in offered if k not in HOST_TOOLS),
+               sorted(set(tool_inventory(request)) - HOST_TOOLS), bool(malformed))
+        if got != (host_count, extra, wide, bad):
+            failures.append('%s: host %d, advertised extra %s, wide %s, malformed %s' % ((label,) + got))
+    return failures
 
 
 class Probe:
@@ -367,7 +431,7 @@ enabled = false
                         raise RuntimeError('model/list paginated')
                     summary['models'] = [row['model'] for row in listed['data']]
                 except Exception as error:
-                    raise RuntimeError('%s: %s' % (error, '; '.join(errors)))
+                    raise RuntimeError(str(error) + (': ' + '; '.join(errors) if errors else ''))
                 finally:
                     self.stop()
         finally:
@@ -428,7 +492,9 @@ enabled = false
                         # Each request must advertise the host tool exactly once,
                         # in exactly one of its two forms, through a definition
                         # channel; anything else found anywhere is unexpected.
-                        offered = advertised(request)
+                        offered, malformed = advertised(request)
+                        if malformed:
+                            raise RuntimeError('Malformed tool definition at ' + ', '.join(malformed))
                         host_each.append(sum(n for name, n in offered.items() if name in HOST_TOOLS) == 1)
                         offered_extra.update(name for name in offered if name not in HOST_TOOLS)
                         for name, paths in inventory.items():
@@ -490,24 +556,42 @@ def main():
     parser.add_argument('--scenario', choices=SCENARIOS)
     parser.add_argument('--sandbox-bin', type=Path, help='Trusted bubblewrap executable for explicit sandbox diagnostics')
     parser.add_argument('--negative-control', action='store_true', help='Retain local environment; must fail tool isolation')
+    parser.add_argument('--self-check', action='store_true', help='Run the classification cases earlier reviews produced, without Codex')
     args = parser.parse_args()
+    if args.self_check:
+        failures = self_check()
+        print('\n'.join(failures) if failures else 'self-check: every case classified as expected')
+        return 1 if failures else 0
     binary = str(args.codex.resolve())
     catalog = None if args.bundled_catalog else args.catalog.read_bytes()
-    models = Probe(binary, None, None, catalog, args.negative_control, args.sandbox_bin).models()
+    control = args.bundled_catalog or args.negative_control
     report = {'binarySHA256': hashlib.sha256(Path(binary).read_bytes()).hexdigest(),
-              'catalogSHA256': hashlib.sha256(catalog).hexdigest() if catalog is not None else None,
-              'models': models}
+              'catalogSHA256': hashlib.sha256(catalog).hexdigest() if catalog is not None else None}
+    def emit(report):
+        serialized = json.dumps(report, indent=2) + '\n'
+        if args.output:
+            args.output.write_text(serialized)
+        print(serialized, end='')
+    try:
+        models = Probe(binary, None, None, catalog, args.negative_control, args.sandbox_bin).models()
+        for model in args.model or []:
+            if model not in models:
+                raise RuntimeError('model %s is not listed by this process' % model)
+    except Exception as error:
+        # A fault before any scenario still leaves a report, saying so.
+        report.update({'error': str(error) or type(error).__name__, 'passed': False, 'results': []})
+        if control:
+            report['controlHeld'] = False
+        emit(report)
+        return 1
+    report['models'] = models
     if catalog is not None:
         expected = sorted(m['slug'] for m in json.loads(catalog)['models'])
         report['catalogListed'] = sorted(models) == expected
-    for model in args.model or []:
-        if model not in models:
-            raise SystemExit('model %s is not listed by this process' % model)
     results = [Probe(binary, model, scenario, catalog, args.negative_control, args.sandbox_bin).run()
                for model in (args.model or models)
                for scenario in ([args.scenario] if args.scenario else SCENARIOS)]
     report['passed'] = all(r['passed'] for r in results) and report.get('catalogListed', True)
-    control = args.bundled_catalog or args.negative_control
     if control:
         # A control holds only when every scenario ran with its ordinary
         # evidence intact (the sandbox diagnostic's being the denial of the
@@ -528,12 +612,8 @@ def main():
             all(r.get(k) for k in intact) and evidence(r) for r in results) and any(
             r.get('advertisedUnexpected') for r in results)
     report['results'] = results
-    serialized = json.dumps(report, indent=2) + '\n'
-    if args.output:
-        args.output.write_text(serialized)
-    print(serialized, end='')
+    emit(report)
     return 0 if (report['controlHeld'] if control else report['passed']) else 1
-
 
 if __name__ == '__main__':
     raise SystemExit(main())
