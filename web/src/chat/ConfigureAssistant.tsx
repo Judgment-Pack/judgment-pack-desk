@@ -1,6 +1,6 @@
 import { msg, useLocale } from '../i18n'
 import { useState, type RefObject } from 'react'
-import { EndpointForm } from '../assistant/EndpointForm'
+import { AssistantSettings } from '../assistant/AssistantSettings'
 import { useAssistantSlot } from '../assistant/useAssistantSlot'
 import { Dialog, DialogActions } from '../ui/Dialog'
 import { Button, ButtonLink } from '../ui/Button'
@@ -14,8 +14,8 @@ export function ConfigureAssistant({ open, onOpenChange, openerRef }: { open: bo
     if (dirty && !window.confirm(msg('Close Assistant settings and discard the unsaved changes?'))) return false
     setDirty(false); onOpenChange(false); return true
   }
-  return <Dialog open={open} onOpenChange={next => { if (next) onOpenChange(true); else close() }} title={msg("Configure Assistant")} description={msg("Connect a provider and choose a model. Your API key stays on this computer.")} openerRef={openerRef}>
-    <EndpointForm unavailable={slot.state === 'unavailable'} onDirtyChange={setDirty} />
+  return <Dialog open={open} onOpenChange={next => { if (next) onOpenChange(true); else close() }} title={msg("Configure Assistant")} description={msg("Connect a provider and choose a model.")} openerRef={openerRef}>
+    <AssistantSettings unavailable={slot.state === 'unavailable'} onDirtyChange={setDirty} />
     <DialogActions><ButtonLink to="/admin#assistant" onClick={event => { if (!close()) event.preventDefault() }} variant="quiet">{msg("Open Admin settings")}</ButtonLink><Button onClick={close}>{msg("Done")}</Button></DialogActions>
   </Dialog>
 }

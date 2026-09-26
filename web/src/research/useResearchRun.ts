@@ -1,3 +1,6 @@
+import { bindExecution } from '../assistant/target'
+import { selectedAssistant } from '../assistant/target'
+import { assistantReady } from '../assistant/useAssistantSlot'
 import { sourceMessage } from '../i18n/source'
 import { systemMessage, useLocale } from '../i18n'
 /**
@@ -19,8 +22,7 @@ import { describeEvent } from '../assistant/EventList'
 import { loadEngine } from '../assistant/engines'
 import type { AssistantEvent, CallTool, HostTool, McpToolResult } from '../assistant/engine'
 import { usePickedModel } from '../assistant/pickedModel'
-import { bindModelCall, openAssistantConnection, runAssistantSession } from '../assistant/session'
-import { normalize } from '../assistant/thinking'
+import { openAssistantConnection, runAssistantSession } from '../assistant/session'
 import { useAssistantSlot } from '../assistant/useAssistantSlot'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { useFileListing } from '../files/queries'
@@ -41,6 +43,8 @@ export const MAX_REVISIONS = 4
  * person sent in the message being answered is already among them.
  */
 export interface DraftToolContext {
+  recordDocument?: (file: import('../chat/store').ChatAttachment) => void
+  recordWebsite?: (reference: import('../documents/website').WebsiteReference) => void
   turns: () => readonly Turn[]
 }
 
@@ -71,7 +75,7 @@ function callToolThrough(client: NonNullable<ReturnType<typeof useMcp>['client']
  * later, and the last of them is what an old runtime is told.
  */
 export function researchBlockedReason(state: {
-  slot: { state: string; endpoint: unknown; keyStatus: string; keyPresent: boolean }
+  slot: { state: string; endpoint: unknown; keyStatus: string; keyPresent: boolean; engine?: string; unusable?: string; agent?: unknown }
   mode?: 'draft' | 'research'
   modelPicked: boolean
   advertised: boolean
@@ -82,13 +86,14 @@ export function researchBlockedReason(state: {
   const { slot, research, mcp } = state
   return slot.state === 'unavailable'
     ? sourceMessage("The desk-level configuration could not be read, so no assistant is available.")
-    : slot.endpoint === null
+    : slot.engine === 'codex' && (!slot.agent || slot.unusable) ? slot.unusable ?? sourceMessage('Connect your ChatGPT account in Assistant settings.')
+    : slot.engine !== 'codex' && slot.endpoint === null
       ? sourceMessage("No assistant endpoint is configured. Configure one in Admin › Assistant.")
-      : slot.keyStatus === 'pending'
+      : slot.engine !== 'codex' && slot.keyStatus === 'pending'
         ? sourceMessage("Checking the saved API key…")
-        : slot.keyStatus === 'error'
+        : slot.engine !== 'codex' && slot.keyStatus === 'error'
           ? sourceMessage("The saved API key could not be checked. Retry in Configure Assistant.")
-        : !slot.keyPresent
+        : slot.engine !== 'codex' && !slot.keyPresent
           ? sourceMessage("No API key is stored for the assistant. Save one in Admin › Assistant.")
           : !state.modelPicked
             ? sourceMessage("Choose an enabled model in Admin › Assistant.")
@@ -119,8 +124,9 @@ export function useResearchRun(options?: {
 }): ResearchRunBinding {
   useLocale()
   const slot = useAssistantSlot()
+  const selected = selectedAssistant(slot)
   const listing = useFileListing()
-  const defaultPicked = usePickedModel(slot.endpoint?.models ?? EMPTY_MODELS, slot.endpoint?.model ?? null, listing.data?.root)
+  const defaultPicked = usePickedModel(selected?.models ?? EMPTY_MODELS, selected?.model ?? null, listing.data?.root)
   const picked = { ...defaultPicked, model: options?.model && defaultPicked.models.includes(options.model) ? options.model : defaultPicked.model }
   const prompts = usePromptNames()
   const advertised = (prompts.data ?? []).includes(AUTHOR_PACK_PROMPT)
@@ -132,7 +138,7 @@ export function useResearchRun(options?: {
   const mcp = useMcp()
 
   const blocked = researchBlockedReason({
-    slot: { state: slot.state, endpoint: slot.endpoint, keyStatus: slot.keyStatus, keyPresent: slot.keyPresent },
+    slot,
     modelPicked: picked.model !== '',
     advertised,
     authorPromptRead: authorPrompt.data !== undefined,
@@ -154,8 +160,7 @@ export function useResearchRun(options?: {
     const spent = { searches: 0, reads: 0, bytes: 0, startedAt: Date.now() }
     const turn = async (request: TurnRequest, signal: AbortSignal, deliver: (event: AssistantEvent) => void) => {
       const { slot, picked, testPrompt } = settings.current
-      const endpoint = slot.endpoint
-      if (endpoint === null) throw new Error(sourceMessage("no assistant endpoint is configured"))
+      if (!assistantReady(slot)) throw new Error(slot.unusable ?? sourceMessage('Configure Assistant before starting.'))
       // What the engine actually did, as it did it, on the Console: every
       // call and answer, every guardrail, every refusal -- the same line the
       // Assistant tab would show -- and never the model's prose or a page.
@@ -167,7 +172,7 @@ export function useResearchRun(options?: {
       }
       const sessionId = await sessionBearer()
       const opened = settings.current.mcp.status === 'ready' && settings.current.mcp.client !== null
-        ? openAssistantConnection({ allowed: endpoint.tools, onEvent, sessionId, signal }) : null
+        ? openAssistantConnection({ allowed: selectedAssistant(slot)?.tools ?? [], onEvent, sessionId, signal }) : null
       try {
         const ready = opened ? await opened.ready : { tools: [], callTool: async () => { throw new Error(sourceMessage("Connect the runtime to use pack tools.")) } }
         const engine = await loadEngine(slot.engine)
@@ -182,8 +187,7 @@ export function useResearchRun(options?: {
             tools: ready.tools,
             callTool: ready.callTool,
             hostTools: request.hostTools,
-            model: { family: endpoint.kind, model: picked.model, call: bindModelCall(endpoint.kind) },
-            thinking: normalize(request.reviewer ? 'off' : slot.thinking, endpoint.kind),
+            ...bindExecution(slot, picked.model, request.reviewer ? 'off' : slot.thinking),
             signal
           },
           onEvent
@@ -209,7 +213,7 @@ export function useResearchRun(options?: {
     // so far; the context reads the run that is about to be built, which
     // exists by the time any turn asks.
     let built: AuthoringRun | null = null
-    const context: DraftToolContext = { turns: () => built?.getSnapshot().turns ?? [] }
+    const context: DraftToolContext = { turns: () => built?.getSnapshot().turns ?? [], recordDocument: file => built?.recordDocument(file), recordWebsite: reference => built?.recordWebsite(reference) }
     built = new AuthoringRun({
       turn,
       get mode() { return settings.current.mode ?? 'research' },

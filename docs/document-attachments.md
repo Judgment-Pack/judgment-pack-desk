@@ -172,3 +172,22 @@ to the current managed local gateway; Gmail search/selection also refuses disabl
 document processing. Original export and proof are checked before supplying any page
 to a model. Live Google authorization/retrieval remains unvalidated until an operator
 supplies registration and consent. The current installation is not modified by this PR.
+
+### Gateway v0.3.1 compatibility
+
+Desk pins the local gateway and all companion adapters to release `v0.3.1`,
+commit `1ab277d127ba6ed60a4ede2c970742b04121d247`. The bundle manifest records
+the release, exact revision and each executable's SHA-256. An explicitly
+requested different build revision is not labelled as that release. Help & About
+(Runtime details) displays the local gateway release and exact commit captured
+when its process started. An external or unavailable gateway is not labelled
+with the bundled gateway's version.
+
+Attachment version 1 now permits an unopened encrypted PDF whose only error is
+`timeout` and whose page count is zero. Desk preserves that failure diagnosis and
+withholds all text. It also checks the reference contract's encryption states:
+an unopened PDF must report either encryption failure or timeout during opening;
+an opened PDF cannot report `pdf-encrypted`. Unknown encryption metadata may
+remain null when the deadline prevented reading it. The release's
+`failed-timeout-encrypted.json` fixture is retained unchanged in the browser tests,
+with negative cases for contradictory errors, counted pages and exposed text.

@@ -34,7 +34,7 @@
  * - the event stream's shape and order, and `end` exactly once.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CERTIFIED_ENGINES, loadEngine } from '../engines'
+import { CERTIFIED_ENGINES, MODEL_ENGINES, loadEngine } from '../engines'
 import { bindModelCall, openAssistantConnection, runAssistantSession } from '../session'
 import scenario from './scenario.json'
 import {
@@ -941,7 +941,7 @@ describe('the scenario this session carries', () => {
   })
 })
 
-describe.each(CERTIFIED_ENGINES)('engine %s', (engineId) => {
+describe.each(MODEL_ENGINES)('engine %s', (engineId) => {
   describe.each(LEGS)('leg $api answered as $answerAs', (leg) => {
     it('runs the whole scenario and ends with a proposal', async () => {
       const { events, seen } = await runLeg(fromRegistry(engineId), leg)
@@ -1198,7 +1198,7 @@ const notices = (events: AssistantEvent[]) =>
       event.type === 'thinking_unavailable'
   )
 
-describe.each(CERTIFIED_ENGINES)('engine %s · thinking', (engineId) => {
+describe.each(MODEL_ENGINES)('engine %s · thinking', (engineId) => {
   describe.each(LEGS)('leg $api answered as $answerAs', (leg) => {
     it('T-a — every request carries the tier parameter, not only the first', async ({
       annotate

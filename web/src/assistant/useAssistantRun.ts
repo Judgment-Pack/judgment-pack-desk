@@ -1,3 +1,4 @@
+import { bindExecution } from './target'
 import { sourceMessage } from '../i18n/source'
 /**
  * One run of the assistant, as the pane holds it.
@@ -40,14 +41,14 @@ import { sourceMessage } from '../i18n/source'
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { loadEngine } from './engines'
-import { bindModelCall, openAssistantConnection, runAssistantSession } from './session'
+import { openAssistantConnection, runAssistantSession } from './session'
 import { sessionBearer, whenSessionEnds } from '../mcp/session'
-import { normalize } from './thinking'
 import type { HostTool, AssistantEvent } from './engine'
 import type { AssistantConnection } from './session'
 import {
   NO_MODEL_CHOSEN,
   type AssistantEndpointConfig,
+  type AssistantAgentConfig,
   type AssistantEngine,
   type ThinkingTier
 } from '../config/deskConfig'
@@ -210,7 +211,8 @@ function modelOf(picked: string): string {
 }
 
 export function useAssistantRun(options: {
-  endpoint: AssistantEndpointConfig
+  endpoint: AssistantEndpointConfig | null
+  agent?: AssistantAgentConfig
   /**
    * Which of the endpoint's enabled models this run uses.
    *
@@ -230,6 +232,7 @@ export function useAssistantRun(options: {
    * `prompts/get` — `callTool` is the whole of it — and a query does not belong
    * in this hook.
    */
+  purpose?: 'test-design' | 'brief'
   testPrompt?: string
   /**
    * The desk's own tools for this run, executed on the page: the research
@@ -239,6 +242,7 @@ export function useAssistantRun(options: {
   hostTools?: HostTool[]
 }): AssistantRun {
   const [status, setStatus] = useState<RunStatus>('idle')
+  const [runningEngine, setRunningEngine] = useState(options.engine)
   const [events, setEvents] = useState<AssistantEvent[]>([])
   const [failure, setFailure] = useState<string | undefined>(undefined)
   const active = useRef<Active | null>(null)
@@ -334,12 +338,13 @@ export function useAssistantRun(options: {
   const start = useCallback(
     (prompt: string) => {
       if (active.current !== null && !active.current.ended) return
-      const { endpoint, model, engine, thinking, testPrompt, hostTools } = settings.current
+      const { endpoint, agent, model, engine, thinking, testPrompt, hostTools, purpose } = settings.current
       const run: Active = { controller: new AbortController(), connection: null, ended: false }
       active.current = run
       setEvents([])
       setFailure(undefined)
       setStatus('running')
+      setRunningEngine(engine)
 
       void (async () => {
         try {
@@ -354,20 +359,22 @@ export function useAssistantRun(options: {
           const sessionId = await sessionBearer()
           // Recorded before anything else is awaited: the handle exists now,
           // and `close()` on it is valid whatever stage the setup has reached.
-          const opened = openAssistantConnection({
-            allowed: endpoint.tools,
+          const opened = purpose === 'brief' ? null : openAssistantConnection({
+            allowed: (engine === 'codex' ? agent?.tools : endpoint?.tools) ?? [],
             onEvent: (event) => push(run, event),
             sessionId,
             signal: run.controller.signal
           })
           run.connection = opened
-          const ready = await opened.ready
+          const ready = opened ? await opened.ready : { tools: [], callTool: async () => { throw new Error('Brief generation has no tool capability.') } }
           const loaded = await loadEngine(engine)
           await runAssistantSession(
             loaded,
             {
               prompt,
               testPrompt: testPrompt ?? '',
+              purpose,
+              ...(purpose === 'test-design' || purpose === 'brief' ? { allowConversation: true, interactive: true, adversarialReview: false } : {}),
               tools: ready.tools,
               callTool: ready.callTool,
               hostTools: hostTools ?? [],
@@ -375,14 +382,7 @@ export function useAssistantRun(options: {
               // chosen is a saved endpoint whose assistant is not ready; a run
               // that substituted the empty string would put a request on the
               // wire naming no model and read whatever came back as an answer.
-              model: {
-                family: endpoint.kind,
-                model: modelOf(model),
-                call: bindModelCall(endpoint.kind)
-              },
-              // **Normalized here, once.** The engine is handed the desk's own
-              // table's result rather than a tier it would have to interpret.
-              thinking: normalize(thinking, endpoint.kind),
+              ...bindExecution({ endpoint, agent, engine }, modelOf(model), thinking),
               signal: run.controller.signal
             },
             (event) => push(run, event)
@@ -418,7 +418,7 @@ export function useAssistantRun(options: {
     events,
     failure,
     terminals: terminals.current,
-    engineId: options.engine,
+    engineId: status === 'idle' ? options.engine : runningEngine,
     start,
     stop
   }

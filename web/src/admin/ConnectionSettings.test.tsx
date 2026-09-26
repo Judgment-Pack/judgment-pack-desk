@@ -1,7 +1,7 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { useCallback, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useState, type ReactNode } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { effectiveConfig } from '../config/deskConfig'
 import { DeskConfigFixture } from '../config/DeskConfigProvider'
@@ -21,6 +21,7 @@ const openConnection = vi.fn(), closeConnection = vi.fn()
 let states: Record<string, string>
 let catalog: unknown
 beforeEach(() => {
+  sessionStorage.clear()
   states = { drive: 'setup-required', gmail: 'setup-required', notion: 'not-connected', obsidian: 'not-connected', 'fixture-files': 'setup-required' }
   catalog = structuredClone(connectionCatalogFixture)
   fetch.mockImplementation(async (url: string) => {
@@ -36,12 +37,11 @@ function SetupShell({ children, drawer }: { children: ReactNode; drawer: boolean
   const [target, setTarget] = useState<HTMLDivElement | null>(null)
   const register = useCallback((value: InspectorPresentation) => { setPresentation(value); return () => setPresentation(current => current === value ? null : current) }, [])
   const claim = useCallback(() => () => {}, [])
-  const opener = useRef<HTMLButtonElement>(null)
   return <InspectorPresentationContext.Provider value={register}>
     <InspectorSlotContext.Provider value={{ target, claim, open: !!presentation?.open, size: 480, tab: null, setTab: () => {}, reveal: () => {} }}>
       {children}
       <RightPane title={presentation?.title} open={!!presentation?.open} onClose={() => presentation?.onOpenChange(false)} asDrawer={drawer}
-        declaredWidth={480} publishTarget={setTarget} publishPane={() => {}} openerRef={opener} restoreFocusRef={presentation?.restoreFocusRef} showEmpty={false} />
+        declaredWidth={480} publishTarget={setTarget} publishPane={() => {}} restoreFocusRef={presentation?.restoreFocusRef} showEmpty={false} />
     </InspectorSlotContext.Provider>
   </InspectorPresentationContext.Provider>
 }
@@ -173,7 +173,7 @@ it('returns from the Gmail setup drawer to the Gmail setup control', async () =>
   await waitFor(() => expect(opener.hasAttribute('disabled')).toBe(false))
   fireEvent.click(opener)
   const pane = await screen.findByRole('dialog', { name: /Gmail registration$/ })
-  fireEvent.click(within(pane).getByRole('button', { name: 'Close gmail registration' }))
+  fireEvent.click(within(pane).getByRole('button', { name: 'Collapse gmail registration' }))
   await waitFor(() => expect(document.activeElement).toBe(opener))
   expect(screen.queryByRole('dialog')).toBeNull()
 })

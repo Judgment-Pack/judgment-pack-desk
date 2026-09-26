@@ -250,7 +250,9 @@ function readLinkTool(deps: LinkReadingDeps, context: DraftToolContext, held: Ma
         deps.addDocument(attachment)
         deps.log(sourceMessage("link: {{value0}} characters retained as document {{value1}}", { value0: document.record.content.chars, value1: acquired.reference.id }))
       }
-      return window(attachment, document, link, offset, find)
+      const result = window(attachment, document, link, offset, find)
+      if (!result.isError) context.recordDocument?.({...attachment, document: {...attachment.document!, pages: (result.structuredContent as {pages: number[]}).pages}})
+      return result
     }
   }
 }
@@ -349,6 +351,7 @@ function window(attachment: ChatAttachment, document: VerifiedDocument, link: No
   ]
   return text(lines.join('\n'), {
     documentId: reference.id,
+    pages: shown.map(span => span.number),
     digest: reference.digest,
     link: link.displayUrl,
     url: link.fetchUrl,
@@ -379,7 +382,7 @@ function exploreWebsiteTool(deps:LinkReadingDeps,context:DraftToolContext,spent:
   try{
    const found=await (deps.discover??discoverWebsite)(link.fetchUrl,config,signal)
    if(signal.aborted || !deps.available() || !deps.discoveryAvailable?.() || JSON.stringify(deps.config())!==admitted)return text('website exploration stopped or its settings changed; no links were authorized',undefined,true)
-   sites.set(websiteKey(found.reference,config),found);deps.addWebsite?.(found.reference)
+   sites.set(websiteKey(found.reference,config),found);deps.addWebsite?.(found.reference);context.recordWebsite?.(found.reference)
    const d=found.discovery
    const summary={...d,pages:d.pages.filter(p=>p.status!=='skipped'),skipped:d.pages.filter(p=>p.status==='skipped').length}
    return text(RETRIEVED+'\nWebsite discovery, not page content. Read relevant discovered pages with read_link; inspect further windows for depth.\n'+JSON.stringify(summary)+'\nDo not claim full website coverage. Blocked, skipped and failed pages are not readable under this discovery.',{website:d.seed,discovered:d.pages.filter(p=>p.status==='discovered').length,stopReason:d.stopReason})

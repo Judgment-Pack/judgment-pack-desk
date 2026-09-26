@@ -1,0 +1,11 @@
+.workspace { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
+.body { position: relative; flex: 1; min-height: 0; overflow: auto; }
+.footer { flex: 0 0 auto; padding: var(--density-block) var(--density-gutter); border-top: 1px solid var(--border); }
+.footer > button { max-width: 100%; height: auto; min-height: var(--density-control); white-space: normal; line-height: 1.4; padding-block: var(--space-1); }
+.chip { display: flex; align-items: center; min-width: 0; width: fit-content; max-width: 100%; border: 1px solid var(--border); border-radius: var(--radius); margin: var(--space-1) var(--space-1) var(--space-2); }
+.open, .remove { display: flex; align-items: center; gap: var(--space-2); background: transparent; color: var(--ink); border: none; border-radius: var(--radius-sm); padding: var(--space-2); font: inherit; font-size: var(--text-xs); cursor: pointer; }
+.open { min-width: 0; }
+.open > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.open svg, .remove svg { width: 14px; height: 14px; flex-shrink: 0; }
+.remove { flex-shrink: 0; }
+.open:hover, .remove:hover { background: var(--accent-soft); }

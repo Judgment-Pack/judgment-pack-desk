@@ -10,6 +10,8 @@ import { loadDocument, type DocumentReference, type VerifiedDocument } from './c
 import { needsPartialConsent, usablePages } from './record'
 import { quoteRange } from './quote'
 import styles from './SourceReader.module.css'
+import { SourceRefreshReview } from './SourceRefreshReview'
+import type { ChatAttachment } from '../chat/store'
 
 type Citation = { page: number; quote: string }
 function useSource(reference: DocumentReference, enabled: boolean, citation?: Citation) {
@@ -73,9 +75,10 @@ export function CitationPreview({ name, reference, citation, number, onRead, lin
     </>}</div>
   </Popover></>
 }
-export function SourceReader({ name, reference, citation, link }: { name: string; reference: DocumentReference; citation?: Citation; link?: ChatLink }) {
+export function SourceReader({ name, reference, citation, link, onUse }: { name: string; reference: DocumentReference; citation?: Citation; link?: ChatLink; onUse?: (file:ChatAttachment)=>void }) {
   useLocale()
   const source = useSource(reference, true, citation)
+  const [refreshOpen,setRefreshOpen] = useState(false)
   const selected = useRef<HTMLElement>(null)
   useEffect(() => {
     const page = selected.current
@@ -96,6 +99,8 @@ export function SourceReader({ name, reference, citation, link }: { name: string
       {source.value.record.provenance.source.kind === 'connection-resource' && source.value.record.provenance.source.url && <p className={styles.meta}><a href={source.value.record.provenance.source.url} target="_blank" rel="noopener noreferrer">{msg('Open source')}</a></p>}
       {source.value.record.provenance.source.kind === 'connected-source' && <p className={styles.meta}><a href={source.value.record.provenance.source.url} target="_blank" rel="noopener noreferrer">{msg('Open in {{provider}}', { provider: source.value.record.provenance.source.provider === 'notion' ? 'Notion' : 'Obsidian' })}</a></p>}
       {source.value.record.provenance.source.kind === 'web' && <p className={styles.meta}><a href={source.value.record.provenance.source.url} target="_blank" rel="noopener noreferrer">{msg('Open original source')}</a>{link?.anchor && <> · <a href={`${link.url}#${link.anchor}`} target="_blank" rel="noopener noreferrer">{msg('Open at {{anchor}}', { anchor: `#${link.anchor}` })}</a></>}{source.value.record.provenance.source.format === 'static-text-v1' && <> · {msg('Static text snapshot')}</>}</p>}
+      <p className={styles.meta}>{msg('Acquired {{date}}',{date:new Date(source.value.record.provenance.observedAt).toLocaleString()})}</p>
+      <Disclosure title={msg('Source refresh review')} onToggle={e=>setRefreshOpen(e.currentTarget.open)}>{refreshOpen&&<SourceRefreshReview key={reference.id} before={source.value} reference={reference} onUse={onUse}/>}</Disclosure>
       <Disclosure title={msg('Technical details')}><p>{msg('Receipt verified. This confirms byte lineage, not accuracy or authority.')}</p><code className={styles.identity}>{source.value.digest}</code></Disclosure>
       {source.value.record.content.pages.filter(page => reference.pages.includes(page.number)).map(page => <section key={page.number} ref={citation?.page === page.number ? selected : undefined} className={styles.page}>
         <h3>{msg('Page {{number}}', { number: page.number })}</h3>

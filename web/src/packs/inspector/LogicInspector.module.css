@@ -1,9 +1,9 @@
-.details { padding: var(--space-4); font-size: var(--text-sm); min-width: 0; }
-.details h2 { font-size: var(--text-heading); margin: var(--space-3) 0; overflow-wrap: anywhere; }
+.details { padding: var(--density-gutter); font-size: var(--text-sm); min-width: 0; }
+.details h2 { font-size: var(--text-heading); margin: 0 0 var(--space-3); overflow-wrap: anywhere; }
 .details h3 { font-size: var(--text-control); margin: 0 0 var(--space-2); }
 .details p, .details code, .details pre { overflow-wrap: anywhere; }
 .details p { margin: var(--space-2) 0; }
-.group { margin-top: var(--density-section); padding-top: var(--space-4); border-top: 1px solid var(--border); }
+.group { margin-top: var(--density-section); padding-top: var(--density-block); border-top: 1px solid var(--border); }
 .meta { color: var(--ink-soft); font-size: var(--text-xs); }
 .observation { display: block; font-size: var(--text-xs); color: var(--ink); }
 .definition { display: grid; gap: var(--space-3); }

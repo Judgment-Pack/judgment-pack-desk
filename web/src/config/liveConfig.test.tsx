@@ -170,48 +170,19 @@ describe('the desk reading jpack-desk.json', () => {
     ).toBe(true)
   })
 
-  it('honours a late `panes` block for every pane the viewer has not moved', async () => {
-    // One global touched bit made a single toggle suppress the whole re-seed:
-    // collapsing the Console before the file was read froze the rail and the
-    // Inspector on the built-in defaults, and then wrote both into a record
-    // that outranks the file for ever after.
-    serveConfig(
-      {
-        ...LIVE_ANSWER,
-        content: JSON.stringify({
-          deskConfigVersion: 1,
-          panes: {
-            left: { mode: 'icons', width: 248 },
-            inspector: { open: true, width: 360 },
-            console: { open: true, height: 240 }
-          }
-        })
-      },
-      200,
-      300
-    )
+  it('applies late navigation defaults without reopening retired panes', async () => {
+    serveConfig({...LIVE_ANSWER,content:JSON.stringify({deskConfigVersion:1,panes:{left:{mode:'icons',width:248},inspector:{open:true,width:420},console:{open:true,height:240}}})},200,100)
     renderDesk()
-    // The viewer opens the Console before the file arrives, and closes it.
-    fireEvent.click(screen.getByRole('button', { name: 'Console' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Console' }))
-
-    // The file's rail and Inspector still land; the Console stays where the
-    // viewer left it.
-    await waitFor(() =>
-      expect(screen.getByRole('navigation', { name: 'Project' }).dataset.mode).toBe('icons')
-    )
-    expect(screen.getByRole('complementary', { name: 'Inspector' })).toBeTruthy()
-    expect(screen.queryByRole('region', { name: 'Console' })).toBeNull()
-
-    // And only the Console is written down.
-    await waitFor(() => expect(shellRecords()).toHaveLength(1))
-    expect(JSON.parse(shellRecords()[0]![1])).toEqual({
-      v: 2,
-      console: { open: false, tab: 'connection' }
-    })
+    fireEvent.keyDown(document.body,{key:'j',ctrlKey:true,altKey:true})
+    fireEvent.click(screen.getByRole('button',{name:'Collapse diagnostics'}))
+    await waitFor(()=>expect(screen.getByRole('navigation',{name:'Project'}).dataset.mode).toBe('icons'))
+    expect(screen.queryByRole('complementary')).toBeNull()
+    expect(screen.queryByRole('region',{name:'Console'})).toBeNull()
+    await wait(PAST_THE_DEBOUNCE)
+    expect(shellRecords()).toEqual([])
   })
 
-  it('applies the configured pane sizes to the grid, rather than three built-in numbers', async () => {
+  it('applies side-pane sizes while reserving no bottom-pane space', async () => {
     serveConfig({
       ...LIVE_ANSWER,
       content: JSON.stringify({
@@ -227,7 +198,7 @@ describe('the desk reading jpack-desk.json', () => {
     const desk = container.querySelector('.desk') as HTMLElement
     await waitFor(() => expect(desk.style.getPropertyValue('--rail-w')).toBe('300px'))
     expect(desk.style.getPropertyValue('--inspector-w')).toBe('420px')
-    expect(desk.style.getPropertyValue('--console-h')).toBe('180px')
+    expect(desk.style.getPropertyValue('--console-h')).toBe('0px')
     // And collapse still writes one of the two values, not a third number.
     expect(desk.style.getPropertyValue('--rail-current')).toBe('var(--rail-w)')
   })
@@ -247,40 +218,26 @@ describe('the desk reading jpack-desk.json', () => {
     expect(screen.queryByText('local')).toBeNull()
   })
 
-  it('opens the console because the file said so', async () => {
-    serveConfig(LIVE_ANSWER)
-    renderDesk()
-    await waitFor(() => expect(screen.getByRole('region', { name: 'Console' })).toBeTruthy())
+  it('ignores the obsolete configured Console open flag', async () => {
+    serveConfig(LIVE_ANSWER);renderDesk()
+    await screen.findByRole('link',{name:'Acme Co.'})
+    expect(screen.queryByRole('region',{name:'Console'})).toBeNull()
+    expect(screen.queryByRole('button',{name:'Console'})).toBeNull()
   })
 
-  it('does not re-seed over a pane the viewer has already moved', async () => {
-    // The seed is re-taken because both of its inputs arrive after the first
-    // paint. That is also the risk: a viewer who collapses the console in the
-    // half-second before the file is read must not have it reopened over their
-    // shoulder.
-    serveConfig(LIVE_ANSWER)
-    renderDesk()
-    fireEvent.click(screen.getByRole('button', { name: 'Console' }))
-    expect(screen.getByRole('region', { name: 'Console' })).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Console' }))
-    // The file says the console is open; the viewer has said otherwise.
-    await screen.findByRole('link', { name: 'Acme Co.' })
-    expect(screen.queryByRole('region', { name: 'Console' })).toBeNull()
+  it('does not re-seed navigation after the viewer has changed it', async () => {
+    serveConfig(LIVE_ANSWER,200,100);renderDesk()
+    fireEvent.click(screen.getByRole('button',{name:'Collapse navigation'}))
+    await screen.findByRole('link',{name:'Acme Co.'})
+    expect(screen.getByRole('navigation',{name:'Project'}).dataset.mode).toBe('icons')
   })
 
-  it('opens the console because the file said so, even when the read is slow', async () => {
-    // The ordering that used to lose. `list_packs` answers immediately and the
-    // file read does not, so the shell's own debounced write landed first — and
-    // a stored record is preferred over the configured one, so the file was
-    // shadowed by a layout the shell had written to itself.
-    serveConfig(LIVE_ANSWER, 200, 600)
-    renderDesk()
+  it('also ignores obsolete pane flags after a delayed read', async () => {
+    serveConfig(LIVE_ANSWER,200,600);renderDesk()
     await wait(PAST_THE_DEBOUNCE)
-    expect(screen.queryByRole('region', { name: 'Console' })).toBeNull()
-    await waitFor(
-      () => expect(screen.getByRole('region', { name: 'Console' })).toBeTruthy(),
-      { timeout: 2000 }
-    )
+    expect(screen.queryByRole('region',{name:'Console'})).toBeNull()
+    await screen.findByRole('link',{name:'Acme Co.'},{timeout:2000})
+    expect(screen.queryByRole('region',{name:'Console'})).toBeNull()
   })
 
   it('writes no record at all for a layout nobody chose', async () => {
@@ -307,7 +264,8 @@ describe('the desk reading jpack-desk.json', () => {
     vi.unstubAllGlobals()
     serveConfig(LIVE_ANSWER)
     renderDesk()
-    await waitFor(() => expect(screen.getByRole('region', { name: 'Console' })).toBeTruthy())
+    await screen.findByRole('link',{name:'Acme Co.'})
+    expect(screen.queryByRole('region',{name:'Console'})).toBeNull()
   })
 
   it('still remembers a layout the viewer chose', async () => {
@@ -315,13 +273,13 @@ describe('the desk reading jpack-desk.json', () => {
     serveConfig({ error: 'no such file' }, 404)
     const first = renderDesk()
     await screen.findByRole('link', { name: 'judgment‑pack desk' })
-    fireEvent.click(screen.getByRole('button', { name: 'Console' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse navigation' }))
     await waitFor(() => expect(shellRecords()).toHaveLength(1))
-    expect(shellRecords()[0]![1]).toContain('"open":true')
+    expect(shellRecords()[0]![1]).toContain('"mode":"icons"')
     first.unmount()
 
     renderDesk()
-    await waitFor(() => expect(screen.getByRole('region', { name: 'Console' })).toBeTruthy())
+    await waitFor(()=>expect(screen.getByRole('navigation',{name:'Project'}).dataset.mode).toBe('icons'))
   })
 
   it('applies the configured theme to the root element, and takes it off for system', async () => {

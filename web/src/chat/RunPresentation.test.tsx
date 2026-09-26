@@ -33,3 +33,13 @@ it('renders useful Markdown while refusing active HTML, remote images and unsafe
   expect(screen.queryByRole('link', { name: 'unsafe' })).toBeNull()
   expect(screen.getByRole('button', { name: 'Copy json' })).toBeTruthy()
 })
+
+
+it('marks only running status for motion, leaving actionable errors static', () => {
+ const view=render(<TaskStatus state={{...INITIAL_STATE,status:'running',detail:'Working…'}}/>)
+ expect(screen.getByRole('status').getAttribute('data-running')).toBe('true')
+ view.rerender(<TaskStatus state={{...INITIAL_STATE,status:'failed',detail:'Try again'}}/>)
+ expect(screen.getByRole('alert').hasAttribute('data-running')).toBe(false)
+ view.rerender(<TaskStatus state={{...INITIAL_STATE,status:'ready'}}/>)
+ expect(screen.queryByRole('status')).toBeNull()
+})

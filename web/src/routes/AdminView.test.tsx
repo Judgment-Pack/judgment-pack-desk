@@ -165,7 +165,7 @@ function renderInShell(value = effectiveConfig(undefined), path = '/admin') {
   // publishes into the slot whether or not the pane is showing, and a closed
   // pane is `hidden`, so nothing inside it is in the accessibility tree for a
   // role query to find. Nothing here reveals the pane on the page's behalf.
-  fireEvent.click(screen.getByRole('button', { name: 'Inspector' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Technical details' }))
   return { ...view, router }
 }
 
@@ -463,7 +463,7 @@ describe('Admin, with no overview', () => {
         'Storage & data',
         'Assistant',
         'Connections',
-        'Identity provider'
+        'Sign-in & access'
       ])
       expect(rail(container).querySelectorAll('dt'), where).toHaveLength(0)
       expect(rail(container).textContent, where).not.toContain('Location')
@@ -844,7 +844,7 @@ describe('Admin, with no overview', () => {
     expect(screen.queryByText(/a key is never stored/)).toBeNull()
     cleanup()
 
-    renderInShell(value(), '/admin#identity-provider')
+    renderInShell(value(), '/admin#assistant')
     // The refusal says the thing that is actually wrong, in the decoder's words.
     await waitFor(() =>
       expect(
@@ -1266,38 +1266,11 @@ describe('one section at a time', () => {
     expect(container.textContent).toContain(STORAGE_KIND_SAYS)
   })
 
-  it('says None where no identity provider is configured, and its issuer where one is', () => {
-    renderAdmin(effectiveConfig(undefined), '/admin#identity-provider')
-    // Off the field row: "None" is also what the overview's own row says about
-    // a provider nobody configured.
-    expect(screen.getByText('Provider').parentElement!.textContent).toContain('None')
-    cleanup()
-    renderAdmin(
-      effectiveConfig(undefined, undefined, undefined, {
-        path: DESK_PATH,
-        present: true,
-        sha256: '',
-        decoded: decodeDeskConfig(
-          JSON.stringify({
-            deskConfigVersion: 1,
-            identity: {
-              provider: {
-                label: 'Acme SSO',
-                issuer: 'https://issuer.example',
-                clientId: 'a-client'
-              }
-            }
-          }),
-          'desk'
-        )
-      }),
-      '/admin#identity-provider'
-    )
-    const provider = screen.getByText('Provider').parentElement!
-    expect(provider.textContent).toContain('https://issuer.example')
-    expect(provider.textContent).toContain('Acme SSO')
-    // And no sentence about what a provider will do later.
-    expect(screen.queryByText(/gates nothing/)).toBeNull()
+  it('keeps sign-in policy separate from the legacy display configuration', () => {
+    renderAdmin(everythingConfigured(), '/admin#identity-provider')
+    expect(screen.getByRole('heading', { name: 'Sign-in & access', level: 2 })).toBeTruthy()
+    expect(screen.queryByText('This provider describes the identity displayed in the header. Sign-in is not available yet.')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Technical details' })).toBeNull()
   })
 
   it('carries exactly the controls each open section names, and no others', () => {
@@ -1344,17 +1317,18 @@ describe('one section at a time', () => {
     }
   })
 
-  it('offers the assistant’s two pickers, and no engine picker at all', () => {
+  it('offers access, API provider and review settings without an engine implementation picker', () => {
     const { container } = renderAdmin(effectiveConfig(undefined), '/admin#assistant')
     const triggers = Array.from(container.querySelectorAll('[role="combobox"]')).map(
       (element) => element.textContent
     )
-    // Two, not three: the engine slot has one member, so there is nothing to
-    // choose — and the third picker was a menu with one item in it.
-    expect(triggers).toEqual(['OpenAI-compatible', 'off'])
+    // Access chooses the authentication path; implementation engine names stay
+    // out of the settings controls. Existing API settings remain available.
+    expect(triggers).toEqual(['API key', 'OpenAI-compatible', 'off'])
     const offered = Array.from(container.querySelectorAll('select')).map(
       (element) => element.textContent
     )
+    // Radix adds native select mirrors only for the controls inside the API form.
     expect(offered).toEqual(['OpenAI-compatibleAnthropicGoogle Gemini', 'offstandarddeep'])
     // The key field is on the form now, in the order a person setting this up
     // reads: provider, key, endpoint.
@@ -1534,9 +1508,9 @@ describe('what Admin puts in the right pane', () => {
   })
 
   it('names the desk-level file for a member only that file carries', async () => {
-    renderInShell(everythingConfigured(), '/admin#identity-provider')
+    renderInShell(everythingConfigured(), '/admin#assistant')
     await waitFor(() =>
-      expect(screen.getByRole('heading', { level: 2, name: 'desk.json › identity' })).toBeTruthy()
+      expect(screen.getByRole('heading', { level: 2, name: 'desk.json › assistant' })).toBeTruthy()
     )
     expect(screen.getByText(DESK_PATH)).toBeTruthy()
     expect(screen.getByText(/^sha256 dddddddddddd…$/)).toBeTruthy()
@@ -1554,10 +1528,10 @@ describe('what Admin puts in the right pane', () => {
         text: refusedDesk,
         decoded: decodeDeskConfig(refusedDesk, 'desk')
       }),
-      '/admin#identity-provider'
+      '/admin#assistant'
     )
     await waitFor(() =>
-      expect(screen.getByRole('heading', { level: 2, name: 'desk.json › identity' })).toBeTruthy()
+      expect(screen.getByRole('heading', { level: 2, name: 'desk.json › assistant' })).toBeTruthy()
     )
     expect(document.body.textContent).not.toContain('sk-live-secret')
     expect(screen.getAllByText(/identity.apiKey: a key is never stored/).length).toBeGreaterThan(0)

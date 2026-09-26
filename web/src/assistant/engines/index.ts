@@ -39,6 +39,7 @@ export type EngineLoaders = Record<string, () => Promise<Engine>>
  * from the decoder in either direction.
  */
 const LOADERS = {
+  codex: async () => (await import('./codex')).codex,
   vercel: async () => (await import('./vercel')).vercel
 } satisfies Record<AssistantEngine, () => Promise<Engine>>
 
@@ -53,6 +54,10 @@ export type CertifiedEngine = keyof typeof LOADERS
  * certifying it — a build that could run an engine the suite had never seen.
  */
 export const CERTIFIED_ENGINES = Object.keys(LOADERS) as CertifiedEngine[]
+/** Each transport has its own protocol matrix and shares the recorded JPS scenario. */
+export const ENGINE_CAPABILITIES = { vercel: 'model', codex: 'agent' } as const satisfies Record<AssistantEngine, 'model' | 'agent'>
+export const MODEL_ENGINES = CERTIFIED_ENGINES.filter(id => ENGINE_CAPABILITIES[id] === 'model')
+export const AGENT_ENGINES = CERTIFIED_ENGINES.filter(id => ENGINE_CAPABILITIES[id] === 'agent')
 
 /** True only where two key sets are the same set, both ways round. */
 type Exactly<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false

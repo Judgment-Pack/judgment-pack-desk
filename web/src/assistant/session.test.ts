@@ -741,6 +741,7 @@ describe('session response language', () => {
     const engine: Engine = {
       id: 'vercel',
       async *start(input) {
+        if ('agent' in input) throw new Error('Unexpected agent session')
         seen.push(input)
         rememberLanguage('de')
         yield { type: 'end' }

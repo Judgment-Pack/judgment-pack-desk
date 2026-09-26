@@ -1,5 +1,5 @@
 .map {
-  height: 100%; min-height: 22rem; position: relative; outline: none;
+  height: 100%; min-height: 0; position: relative; outline: none;
   --xy-background-color: var(--bg);
   --xy-edge-stroke: var(--ink-faint);
   --xy-edge-stroke-width: 1.5;
@@ -8,13 +8,15 @@
   --xy-selection-border: 1px solid var(--border-strong);
 }
 .map :global(.react-flow__node):focus-visible { outline: 2px solid var(--accent); outline-offset: var(--space-1); }
-.node { width: 22rem; padding: var(--density-block); display: flex; flex-direction: column; gap: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--ink); overflow-wrap: anywhere; cursor: pointer; }
-.title { font-size: var(--text-control); font-weight: 500; }
+.node { width: 22rem; padding: var(--density-block); display: flex; flex-direction: column; gap: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--ink); overflow-wrap: anywhere; cursor: pointer; }
+.title { cursor: grab; user-select: none; touch-action: none; font-size: var(--text-control); font-weight: 500; }
 .content { min-width: 0; }
 .selected, .matched { background: var(--accent-soft); }
-.selected .title { font-weight: 600; }
+.selected .title { cursor: grab; user-select: none; touch-action: none; font-weight: 600; }
 .handle { visibility: hidden; }
 .observation { font-size: var(--text-xs); border-top: 1px solid var(--border); padding-top: var(--space-2); }
 .action { display: flex; justify-content: space-between; color: var(--ink-soft); font-size: var(--text-xs); }
 .match { color: var(--ink); font-size: var(--text-xs); }
 .controls { position: absolute; bottom: var(--space-3); left: var(--space-3); display: flex; gap: var(--space-1); }
+
+.title:active { cursor: grabbing; }

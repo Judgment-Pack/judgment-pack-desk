@@ -11,3 +11,5 @@
 .page h3 { font-size: var(--text-sm); color: var(--ink-soft); font-weight: 500; }
 .identity { overflow-wrap: anywhere; }
 .warning { color: var(--ink-soft); }
+
+.refreshActions {display:flex;flex-wrap:wrap;gap:var(--space-2);margin-block:var(--space-3);}

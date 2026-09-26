@@ -268,7 +268,7 @@
     "notices": [
       {
         "key": "assistant.endpoint.model",
-        "says": "no model chosen yet \u2014 pick one below"
+        "says": "no model chosen yet — pick one below"
       }
     ]
   },
@@ -280,7 +280,7 @@
     "notices": [
       {
         "key": "assistant.endpoint.model",
-        "says": "no model chosen yet \u2014 pick one below"
+        "says": "no model chosen yet — pick one below"
       }
     ]
   },
@@ -313,7 +313,7 @@
     "notices": [
       {
         "key": "assistant.endpoint.model",
-        "says": "no model chosen yet \u2014 pick one below"
+        "says": "no model chosen yet — pick one below"
       }
     ]
   },
@@ -1479,6 +1479,102 @@
     "accepted": false,
     "keys": [
       "deskConfigVersion"
+    ]
+  },
+  "accepted-codex-subscription": {
+    "accepted": true,
+    "keys": [],
+    "engine": "codex",
+    "thinking": "off",
+    "agent": {
+      "provider": "openai",
+      "authMethod": "subscription",
+      "model": "model",
+      "tools": [
+        "get_schema",
+        "validate"
+      ],
+      "effort": "high"
+    }
+  },
+  "accepted-codex-no-model": {
+    "accepted": true,
+    "keys": [],
+    "engine": "codex",
+    "thinking": "off",
+    "agent": {
+      "provider": "openai",
+      "authMethod": "subscription",
+      "model": null,
+      "tools": [
+        "get_schema",
+        "validate"
+      ],
+      "effort": "high"
+    }
+  },
+  "accepted-inactive-agent": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "agent": {
+      "provider": "openai",
+      "authMethod": "subscription",
+      "model": "model",
+      "tools": [
+        "get_schema",
+        "validate"
+      ],
+      "effort": "high"
+    }
+  },
+  "refused-codex-missing-agent": {
+    "accepted": false,
+    "keys": [
+      "assistant.agent"
+    ]
+  },
+  "refused-codex-api-auth": {
+    "accepted": false,
+    "keys": [
+      "assistant.agent.authMethod"
+    ]
+  },
+  "refused-codex-other-provider": {
+    "accepted": false,
+    "keys": [
+      "assistant.agent.provider"
+    ]
+  },
+  "refused-codex-credentials": {
+    "accepted": false,
+    "keys": [
+      "assistant.agent.apiKey"
+    ]
+  },
+  "refused-codex-no-tools": {
+    "accepted": false,
+    "keys": [
+      "assistant.agent.tools"
+    ]
+  },
+  "refused-codex-native-tool": {
+    "accepted": false,
+    "keys": [
+      "assistant.agent.tools"
+    ]
+  },
+  "refused-codex-ultra": {
+    "accepted": false,
+    "keys": [
+      "assistant.agent.effort"
+    ]
+  },
+  "refused-codex-blank-model": {
+    "accepted": false,
+    "keys": [
+      "assistant.agent.model"
     ]
   }
 }

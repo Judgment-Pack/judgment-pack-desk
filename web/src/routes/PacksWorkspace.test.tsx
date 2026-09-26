@@ -23,13 +23,14 @@ function views() {
     <Route path="/graphs" element={<GraphView />} />
     <Route path="/graphs/:graphId" element={<GraphView />} />
     <Route path="/matrix" element={<MatrixView />} />
+    <Route path="/packs" element={<p>Pack collection</p>} />
     <Route path="/packs/:packId/matrix" element={<MatrixView />} />
   </Routes>
 }
 const testCalls = (stub: ReturnType<typeof desk>) => stub.calls.filter(call => call.name.startsWith('experimental_test_'))
 
 describe('Packs workspace commands', () => {
-  it.each(['/graphs', '/graphs?view=tests', '/graphs/flow?view=tests', '/matrix', '/packs/a/matrix'])('does not run tests while browsing %s or refreshing files', async path => {
+  it.each(['/graphs', '/graphs?view=tests', '/graphs/flow?view=tests', '/packs/a/matrix'])('does not run tests while browsing %s or refreshing files', async path => {
     const stub = desk(), queryClient = testQueryClient()
     const rendered = renderConnected(views(), connected({ client: stub.client, graphInventorySupported: true }), { path, queryClient })
     await waitFor(() => expect(stub.calls.length).toBeGreaterThan(0))
@@ -39,12 +40,30 @@ describe('Packs workspace commands', () => {
     expect(testCalls(stub)).toHaveLength(0)
   })
 
+  it('redirects the retired collection Tests route without offering or running a suite', async () => {
+    const stub = desk()
+    renderConnected(views(), connected({ client: stub.client }), { path: '/matrix' })
+    await screen.findByText('Pack collection')
+    expect(screen.queryByRole('button', { name: 'Run all tests' })).toBeNull()
+    expect(testCalls(stub)).toHaveLength(0)
+  })
+
+  it('presents Graphs as a separate Judgment Graph collection', async () => {
+    const stub = desk()
+    renderConnected(views(), connected({ client: stub.client, graphInventorySupported: true }), { path: '/graphs' })
+    await screen.findByText('flow.json')
+    expect(screen.getByRole('heading', { name: 'Graphs' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: /Judgment Graphs/ })).toBeTruthy()
+    expect(screen.queryByRole('navigation', { name: 'Packs workspace' })).toBeNull()
+    expect(testCalls(stub)).toHaveLength(0)
+  })
+
   it('does not run suites as an inventory fallback on older runtimes', async () => {
     const stub = desk()
     renderConnected(views(), connected({ client: stub.client }), { path: '/graphs' })
-    expect(screen.getByText(/cannot list pack flows without running/)).toBeTruthy()
+    expect(screen.getByText(/cannot list graphs without running/)).toBeTruthy()
     expect(stub.calls).toHaveLength(0)
-    fireEvent.click(screen.getByRole('button', { name: 'Run all flow tests' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Run all graph tests' }))
     await screen.findByText(/1 of 1 cases passed/)
     expect(testCalls(stub)).toHaveLength(1)
   })
@@ -62,7 +81,7 @@ describe('Packs workspace commands', () => {
     expect(testCalls(stub)[0]?.args).toEqual({ graph_id: 'flow' })
   })
 
-  it.each([['/matrix', 'Run all tests', {}], ['/packs/a/matrix', 'Run tests', { pack_id: 'a' }]] as const)('runs the requested pack test scope at %s once', async (path, name, args) => {
+  it.each([['/packs/a/matrix', 'Run tests', { pack_id: 'a' }]] as const)('runs the requested pack test scope at %s once', async (path, name, args) => {
     const stub = desk(), queryClient = testQueryClient()
     renderConnected(views(), connected({ client: stub.client }), { path, queryClient })
     fireEvent.click(screen.getByRole('button', { name }))

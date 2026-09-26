@@ -53,7 +53,7 @@ export function ChatBackupSettings({ status, blocked, onRestored }: { status: Ch
     <div className={styles.details}>
       <p className={styles.caption}>{msg("Backups are unencrypted and may contain private messages and source material. Keep them in a private location.")}</p>
       <div className={styles.actions}>
-        <Button disabled={blocked || busy !== null || status.bytes > status.maxBackupBytes || Boolean(status.problem)} onClick={() => void download()}>{busy === 'backup' ? msg("Preparing backup…") : msg("Download chat backup")}</Button>
+        <Button disabled={blocked || busy !== null || status.bytes > status.maxBackupBytes || Boolean(status.problem)} onClick={() => void download()}>{busy === 'backup' ? msg("Preparing backup…") : msg("Download workspace backup")}</Button>
         <Button ref={opener} disabled={blocked || busy !== null} onClick={() => { setOpen(true); setRevision(status.revision); setFile(null); setPath(''); setError(''); setNotice('') }}>{msg("Restore backup…")}</Button>
       </div>
       <p className={styles.caption}><Message text={"Saved data only; unsent messages are kept in this browser. Backup limit: <0/>."} slots={[formatStorageBytes(status.maxBackupBytes)]} /></p>

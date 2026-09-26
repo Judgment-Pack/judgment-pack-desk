@@ -23,3 +23,5 @@
 .metadata dt { color: var(--ink-soft); font-size: var(--text-sm); }
 .metadata dd { margin: 0; font-size: var(--text-sm); overflow-wrap: anywhere; }
 .metadata dd button { text-align: left; }
+
+.navigation > button { align-self: center; }

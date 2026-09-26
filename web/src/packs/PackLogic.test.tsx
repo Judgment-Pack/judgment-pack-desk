@@ -47,11 +47,11 @@ function Example({ document = doc, mode: initial = 'list', trace }: { document?:
 it('makes scope, evidence, conditions, outcomes and handoff readable without inspection', () => {
   render(<Example />)
   const rules = screen.getByRole('region', { name: 'Decision rules' })
-  expect(within(rules).getAllByText('/case/correctionApplied')).toHaveLength(2)
+  expect(within(rules).getAllByText('Case correction applied')).toHaveLength(2)
   expect(within(rules).getByText('true')).toBeTruthy()
   expect(within(rules).getByText('false')).toBeTruthy()
   expect(within(rules).getAllByText('"5000"')).toHaveLength(2)
-  expect(screen.getByText('/case/type')).toBeTruthy()
+  expect(screen.getByText('Case type')).toBeTruthy()
   expect(screen.getByText(/Required · Attestation/)).toBeTruthy()
   expect(screen.getByText('No fallback outcome')).toBeTruthy()
   expect(screen.getByText('Compliance')).toBeTruthy()
@@ -77,9 +77,9 @@ it('selects each real map item directly without a group or Outline step', async 
 it('remembers an optional compact display, while search exposes matching conditions', () => {
   rememberLogicDisplay({ conditions: false, grouped: false })
   render(<Example />)
-  expect(screen.queryByText('/case/correctionApplied')).toBeNull()
+  expect(screen.queryByText('Case correction applied')).toBeNull()
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'correctionApplied' } })
-  expect(screen.getAllByText('/case/correctionApplied')).toHaveLength(2)
+  expect(screen.getAllByText('Case correction applied')).toHaveLength(2)
   expect(screen.getByRole('status').textContent).toBe('2 matching items')
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'does-not-exist' } })
   expect(screen.getByRole('status').textContent).toContain('No items match')
@@ -103,7 +103,7 @@ it('expands a large outcome group on the main canvas', async () => {
   render(<Example mode="map" document={{ ...doc, rules: Array.from({ length: 80 }, (_, i) => ({ ...doc.rules[0]!, id: `rule-${i}` })) }} />)
   fireEvent.click(await screen.findByRole('button', { name: 'rules:"proceed"' }))
   expect(await screen.findByRole('button', { name: '/rules/79' })).toBeTruthy()
-  expect(screen.getAllByText('/case/correctionApplied')).toHaveLength(80)
+  expect(screen.getAllByText('Case correction applied')).toHaveLength(80)
   expect(inspect).not.toHaveBeenCalled()
 })
 
@@ -133,4 +133,23 @@ it('defaults to detailed List and honors saved choices and unavailable storage',
   expect(initialLogicDisplay()).toEqual({ conditions: true, grouped: false })
   expect(initialLogicMode()).toBe('list')
   unavailable.mockRestore()
+})
+
+it('restores list scroll after visiting the map and keeps its controls outside the scrolling body', async () => {
+  const listScroll = { current: 0 }
+  const props = { model: projectLogic(doc), at: null, groupId: null, select, inspect,
+    onMode: vi.fn(), query: '', onQuery: vi.fn(), display: initialLogicDisplay(), onDisplay: vi.fn(),
+    viewport: { x: 0, y: 24, zoom: 1 }, onViewport: vi.fn(), listScroll }
+  const view = render(<PackLogic {...props} mode="list" />)
+  const list = document.querySelector<HTMLElement>('[data-logic-list]')!
+  expect(list.contains(screen.getByRole('searchbox'))).toBe(false)
+  list.scrollTop = 275
+  fireEvent.scroll(list)
+  expect(listScroll.current).toBe(275)
+  view.rerender(<PackLogic {...props} mode="map" />)
+  await screen.findByRole('button', { name: '/rules/0' })
+  expect(document.querySelector('[data-logic-list]')).toBeNull()
+  expect(listScroll.current).toBe(275)
+  view.rerender(<PackLogic {...props} mode="list" />)
+  expect(document.querySelector('[data-logic-list]')?.scrollTop).toBe(275)
 })

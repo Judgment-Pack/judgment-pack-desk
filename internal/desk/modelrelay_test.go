@@ -76,9 +76,10 @@ func newUpstream(t *testing.T, respond http.HandlerFunc) *upstream {
 			contentLength:    r.ContentLength,
 			transferEncoding: append([]string(nil), r.TransferEncoding...),
 		})
+		respond := u.respond
 		u.mu.Unlock()
-		if u.respond != nil {
-			u.respond(w, r)
+		if respond != nil {
+			respond(w, r)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -2651,10 +2652,12 @@ func TestRelayBoundsAStalledListingByTheIdleDeadline(t *testing.T) {
 
 	// And the slot came back: a fifth request on a desk that carries four
 	// answers immediately if the stalled one released its own.
+	u.mu.Lock()
 	u.respond = func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"data":[]}`))
 	}
+	u.mu.Unlock()
 	after, afterBody := relayGet(t, ts, "models")
 	if after.StatusCode != http.StatusOK {
 		t.Fatalf("the slot did not come back: %d %s", after.StatusCode, afterBody)
@@ -2730,9 +2733,11 @@ func TestRelayBoundsTheWaitForTheFirstByte(t *testing.T) {
 	// **Released exactly once.** A desk that carries four answers has all four
 	// slots back if the silent request gave up its own, so a later request
 	// answers rather than reporting the desk busy.
+	u.mu.Lock()
 	u.respond = func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	}
+	u.mu.Unlock()
 	after, afterBody := relayDo(t, ts, http.MethodPost, "chat/completions",
 		strings.NewReader("{}"), nil)
 	if after.StatusCode != http.StatusOK {

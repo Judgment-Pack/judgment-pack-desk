@@ -1,3 +1,4 @@
+import { memoryDraftPersistence } from '../testing/draftPersistence'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ChatStore, type Chat, type ChatPersistence } from './store'
 import { checkpoint } from './checkpoint'
@@ -9,7 +10,7 @@ const binding = { state: INITIAL_STATE, sources: [], blocked: '', run: { running
 function setup(chats: Chat[] = []) {
   const write = vi.fn(async (content: unknown) => ({ project: '/project', sha256: 'saved', content }))
   const io: ChatPersistence = { read: async () => ({ project: '/project', sha256: 'initial', content: { version: 1, chats } }), write }
-  const store = new ChatStore('/project', io); stores.push(store)
+  const store = new ChatStore('/project', io, memoryDraftPersistence('/project')); stores.push(store)
   return { store, write }
 }
 const legacy: Chat = { id: 'legacy', title: 'Older chat', composer: '', pinned: false, archived: false, updatedAt: '2026-09-20T12:00:00.000Z', model: '', mode: 'draft', view: 'chat' }
@@ -36,7 +37,7 @@ it('records creation at the first accepted submission and keeps it across later 
   const saved = JSON.parse(JSON.stringify(write.mock.calls.at(-1)![0])) as { chats: Chat[] }
   const restored = setup(saved.chats); await restored.store.load()
   expect(restored.store.getSnapshot().chats[0]).toMatchObject({ createdAt: '2026-09-21T12:05:00.000Z', updatedAt: at, title: 'Renamed', pinned: true, archived: true })
-  expect(restored.store.getSnapshot().chats[0]?.checkpoint?.state.turns).toEqual(turns)
+  expect(restored.store.getSnapshot().chats[0]?.checkpoint?.state.turns.map(({id: _id, attachments: _attachments, ...turn}) => turn)).toEqual(turns)
 })
 it('round-trips legacy history without inventing a creation time or normalizing message times', async () => {
   const turns: Turn[] = ['2026-09-20T15:00:00+03:00', '2026-09-20T15:00:00+03:00', 'unknown', '2026-09-19T12:00:00Z'].map((at, i) => ({ role: 'user', kind: 'message', text: `Message ${i}`, at }))
@@ -46,7 +47,7 @@ it('round-trips legacy history without inventing a creation time or normalizing 
   store.update(chat.id, { pinned: true }); await store.flush()
   const saved = JSON.parse(JSON.stringify(write.mock.calls.at(-1)![0])) as { chats: Chat[] }
   expect(saved.chats[0]).not.toHaveProperty('createdAt')
-  expect(saved.chats[0]?.checkpoint?.state.turns).toEqual(turns)
+  expect(saved.chats[0]?.checkpoint?.state.turns.map(({id: _id, attachments: _attachments, ...turn}) => turn)).toEqual(turns)
 })
 it.each(['2026-02-30T12:00:00Z', '2026-09-21', 'unknown', null, 0])('refuses a malformed new creation field (%s) without overwriting history', async createdAt => {
   const { store, write } = setup([{ ...legacy, createdAt } as Chat]); await store.load()

@@ -1613,15 +1613,15 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 	return s.launchSecretPresented(r)'
   # **Nothing on a query authorizes anything.** A credential on a query is a
   # credential in an address bar, a `Referer`, a proxy log and `Response.url`.
-  mutate go "a session id on the query authorizes a request" "$SE" \
+  mutate go 'a session id on the query authorizes a request' internal/desk/session.go \
     '	if id := bearerOf(r); id != "" {
-		if held, ok := s.sessions.lookup(id); ok {
+		if held, ok := s.sessions.lookup(id); ok && s.signInSessionAllowed(held) {
 			return held, true
 		}
 	}
 	return session{}, false' \
     '	for _, id := range []string{bearerOf(r), r.URL.Query().Get("token")} {
-		if held, ok := s.sessions.lookup(id); ok {
+		if held, ok := s.sessions.lookup(id); ok && s.signInSessionAllowed(held) {
 			return held, true
 		}
 	}
@@ -1629,26 +1629,22 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # **No cookie authorizes anything but the exchange.** A cookie has no port, so
   # one accepted anywhere else is one every sibling service on this host holds —
   # which is the finding that set the previous branch aside.
-  mutate go "a cookie authorizes a gated route" "$SE" \
+  mutate go 'a cookie authorizes a gated route' internal/desk/session.go \
     '	if id := bearerOf(r); id != "" {
-		if held, ok := s.sessions.lookup(id); ok {
+		if held, ok := s.sessions.lookup(id); ok && s.signInSessionAllowed(held) {
 			return held, true
 		}
 	}
-	return session{}, false
-}' \
+	return session{}, false' \
     '	if id := bearerOf(r); id != "" {
-		if held, ok := s.sessions.lookup(id); ok {
+		if held, ok := s.sessions.lookup(id); ok && s.signInSessionAllowed(held) {
 			return held, true
 		}
 	}
 	if cookie, err := r.Cookie("jpack-desk-session"); err == nil {
-		if held, ok := s.sessions.lookup(cookie.Value); ok {
-			return held, true
-		}
+		if held, ok := s.sessions.lookup(cookie.Value); ok && s.signInSessionAllowed(held) { return held, true }
 	}
-	return session{}, false
-}'
+	return session{}, false'
   # **Spent and expired are the two the ring exists to tell apart**, and the
   # only two: a spent handoff says nothing a page can act on, because this desk
   # cannot tell a tab's own earlier spend from anybody else's. An expiry says
@@ -1964,10 +1960,10 @@ function usePacks() { useConfiguredGraphs(); return readPacks() }'
   # The other half of the same effect: a record nobody chose must not be
   # written, because the seed prefers a stored record over the configured one —
   # so a shell that persisted its own defaults would shadow the file for ever.
-  mutate web "an unchosen layout is persisted anyway" web/src/shell/paneState.ts \
-    '      if (!chosen.left && !chosen.inspector && !chosen.console && !chosen.inspectorWidth && !chosen.consoleHeight) return
+  mutate web 'an unchosen layout is persisted anyway' web/src/shell/paneState.ts \
+    '      if (!chosen.left && !chosen.inspector && !chosen.console && !chosen.inspectorWidth && !chosen.consoleHeight && !chosen.overlayWidth) return
       writeShellState(storageKey, state, chosen)' \
-    '      writeShellState(storageKey, state, { left: true, inspector: true, console: true, inspectorWidth: true, consoleHeight: true })'
+    '      writeShellState(storageKey, state, { left: true, inspector: true, console: true, inspectorWidth: true, consoleHeight: true, overlayWidth: true })'
   mutate web "a throwing localStorage takes the shell down" "$P" \
     '  let raw: string | null = null
   try {
@@ -2003,9 +1999,9 @@ function usePacks() { useConfiguredGraphs(); return readPacks() }'
   mutate web 'a refused configuration is silent outside Admin' web/src/shell/StatusStrip.tsx \
     '        {refused && <ConfigCue full={msg(CONFIG_REFUSED_CUE)} short={msg(CONFIG_REFUSED_SHORT)} />}' \
     '        {false && <ConfigCue full={msg(CONFIG_REFUSED_CUE)} short={msg(CONFIG_REFUSED_SHORT)} />}'
-  mutate web "main remounts on a pane change" "$N" \
-    '      <main id="main" tabIndex={-1} className="desk-main">' \
-    '      <main id="main" key={String(shell.console.open)} tabIndex={-1} className="desk-main">'
+  mutate web 'main remounts on a pane change' web/src/shell/AppShell.tsx \
+    '            <main id="main" tabIndex={-1} className="desk-main" inert={covering || undefined}>' \
+    '            <main id="main" key={shell.left.mode} tabIndex={-1} className="desk-main" inert={covering || undefined}>'
   mutate web "the closed inspector stays tabbable" "$R" \
     '      id="desk-inspector"
       hidden={!open}
@@ -2046,9 +2042,11 @@ function usePacks() { useConfiguredGraphs(); return readPacks() }'
   # the header's opener is the only pointer affordance there is. Without it the
   # whole left menu is reachable by Mod+B alone, on the width whose likeliest
   # device has no keyboard.
-  mutate web "the rail drawer has no opener" "$H" \
-    '        {railIsDrawer && (' \
-    '        {false && ('
+  mutate web 'the rail drawer has no opener' web/src/shell/HeaderBar.tsx \
+    '        <PaneToggle label={railOpen ? msg('"'"'Collapse navigation'"'"') : msg('"'"'Expand navigation'"'"')}
+          expanded={railOpen} controls={!railIsDrawer || railOpen ? '"'"'desk-rail'"'"' : undefined}
+          onClick={onToggleRail} buttonRef={railOpenerRef} shortcut={SHORTCUTS[0]?.keys} />' \
+    ''
   mutate web 'the rail drawer carries no landmark' web/src/shell/LeftRail.tsx \
     '            <nav aria-label={msg("Project")}>
               {body(() => onDrawerOpenChange(false))}
@@ -2067,9 +2065,9 @@ function usePacks() { useConfiguredGraphs(); return readPacks() }'
   mutate web "the identity slot admits a discriminator one level up" "$D" \
     "    const identity = section(record.identity, 'identity', ['provider'], problems)" \
     "    const identity = section(record.identity, 'identity', ['provider', 'kind', 'mode', 'operator', 'vendor', 'clientSecret'], problems)"
-  mutate web "the control states a session verdict it never checked" "$U" \
-    "  const name = provider === null ? displayName : (provider.label ?? provider.issuerHost)" \
-    "  const name = provider === null ? displayName : (provider.label ?? 'signed out')"
+  mutate web 'the control states a session verdict it never checked' web/src/identity/UserControl.tsx \
+    '  const name = authenticated || provider === null ? displayName : (provider.label ?? provider.issuerHost)' \
+    '  const name = authenticated || provider === null ? displayName : (provider.label ?? '"'"'signed out'"'"')'
   # **The theme is applied where the ladder is resolved**, which is no longer
   # `DeskConfigProvider`: the file's `appearance` is the default and the
   # viewer's own preference beats it, and that layer cannot see one. The row
@@ -2406,9 +2404,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "the configured rail width is decoded and never applied" "$N" \
     "    '--rail-w': \`\${config.panes.left.width}px\`," \
     "    '--rail-w': '248px',"
-  mutate web "the configured console height is decoded and never applied" "$N" \
-    "    '--console-h': \`\${bottomHeight}px\`," \
-    "    '--console-h': '240px',"
+  # Retired: the bottom Console was removed; Diagnostics uses the right pane.
   mutate web "the inspector drawer is a width nobody configured" "$E" \
     "                : ({ '--drawer-w': \`\${declaredWidth}px\` } as CSSProperties)" \
     '                : undefined'
@@ -2423,9 +2419,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '  const left = state.left
   const inspector = state.inspector
   const consoleSection = state.console'
-  mutate web "one moved pane suppresses the re-seed for every pane" web/src/shell/paneState.ts \
-    '    if (chosen.left && chosen.inspector && chosen.console && chosen.inspectorWidth && chosen.consoleHeight) return' \
-    '    if (chosen.left || chosen.inspector || chosen.console || chosen.inspectorWidth || chosen.consoleHeight) return'
+  mutate web 'one moved pane suppresses the re-seed for every pane' web/src/shell/paneState.ts \
+    '    if (chosen.left && chosen.inspector && chosen.console && chosen.inspectorWidth && chosen.consoleHeight && chosen.overlayWidth) return' \
+    '    if (chosen.left || chosen.inspector || chosen.console || chosen.inspectorWidth || chosen.consoleHeight || chosen.overlayWidth) return'
 
   # 5. The key came from the runtime's `configPath`, which a project with no
   # `jpack.json` does not have — so every configless project on one origin
@@ -2473,19 +2469,8 @@ function usePacks() { useExampleListing(); return readPacks() }'
 
   # 8. The tab root between the console and its body was an ordinary block, so
   # a log longer than the pane was clipped rather than scrolled.
-  mutate web "the console log is clipped rather than scrolled" "$T" \
-    '        className="desk-console-tabs"' \
-    '        '
-  mutate web "the console's flex chain is declared for nothing" "$G" \
-    '  .desk-console-tabs {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-height: 0;
-  }' \
-    '  .desk-console-tabs {
-    display: block;
-  }'
+  # Retired: BottomPane was removed; LogList and Diagnostics test the current scrolling surface.
+  # Retired: the retired bottom Console has no flex chain to mutate.
 
   # 11. The rail drawer is modal, so a link that navigated and left it standing
   # put the destination behind an overlay — including where the viewer was
@@ -2497,33 +2482,27 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # 12. A closed Dialog unmounts its portal, so an unconditional `aria-controls`
   # named an id that is not in the document; and neither drawer had a trigger
   # for Radix to restore focus to.
-  mutate web "the rail opener points at an element that is not there" "$H" \
-    "            aria-controls={railDrawerOpen ? 'desk-rail' : undefined}" \
-    '            aria-controls="desk-rail"'
-  mutate web "the inspector toggle points at an unmounted drawer" "$H" \
-    "          aria-controls={!inspectorIsDrawer || inspectorOpen ? 'desk-inspector' : undefined}" \
-    '          aria-controls="desk-inspector"'
+  mutate web 'the rail opener points at an element that is not there' web/src/shell/HeaderBar.tsx \
+    '          expanded={railOpen} controls={!railIsDrawer || railOpen ? '"'"'desk-rail'"'"' : undefined}' \
+    '          expanded={railOpen} controls="desk-rail"'
+  # Retired: the global Inspector toggle was removed; contextual pane controls have their own aria checks.
   mutate web "closing the rail drawer drops focus on the body" "$L" \
     '            onCloseAutoFocus={(event) => {
               event.preventDefault()
               openerRef?.current?.focus()
             }}' \
     ''
-  mutate web "closing the inspector drawer drops focus on the body" web/src/shell/RightPane.tsx \
+  mutate web 'closing the inspector drawer drops focus on the body' web/src/shell/RightPane.tsx \
     '            onCloseAutoFocus={(event) => {
               event.preventDefault()
               const gesture = restoreFocusRef?.current
               if (gesture?.isConnected && gesture.getClientRects().length) gesture.focus()
-              else openerRef.current?.focus()
+              else document.getElementById('"'"'main'"'"')?.focus({ preventScroll: true })
             }}' \
     ''
   mutate web 'the rail drawer has no visible way out' web/src/shell/LeftRail.tsx \
     '            <div className="desk-drawer-head">
-              <Dialog.Close asChild>
-                <button type="button" className="desk-icon-button" aria-label={msg("Close navigation")}>
-                  <IconClose />
-                </button>
-              </Dialog.Close>
+              <PaneToggle label={msg('"'"'Collapse navigation'"'"')} expanded onClick={() => onDrawerOpenChange(false)} controls="desk-rail" />
             </div>' \
     ''
 
@@ -2568,11 +2547,10 @@ function usePacks() { useExampleListing(); return readPacks() }'
   signOut: '"'"'local'"'"' | '"'"'provider'"'"'
   strategy?: string
 }'
-  mutate web "the identity state carries a discriminator again" "$I" \
-    '  /** Null exactly where `identity.provider` is null. There is no third value. */
-  provider: ProviderIdentity | null' \
-    "  mode?: 'local' | 'provider'
-  provider: ProviderIdentity | null"
+  mutate web 'the identity state carries a discriminator again' web/src/identity/IdentityProvider.tsx \
+    '  provider: ProviderIdentity | null' \
+    '  mode?: '"'"'local'"'"' | '"'"'provider'"'"'
+  provider: ProviderIdentity | null'
 
   # 15. `retryOnMount` re-runs an errored query when a second observer
   # subscribes, and every route change is a second observer beside the rail's.
@@ -2721,11 +2699,11 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '    --console-floor: 80px;' \
     '    --console-floor: 0px;'
 
-  # 3. `slot.size` promises a route the pane's width; the configured number is
-  # capped by the sheet and ignored outright by the drawer form.
-  mutate web "the slot reports a configured width the pane does not have" web/src/shell/AppShell.tsx \
-    '      size: inspectorOpen ? (inspectorBox?.width ?? 0) : 0,' \
-    '      size: inspectorOpen ? inspectorWidth : 0,'
+  # 3. `slot.size` promises the measured pane width. Falling back to the
+  # controls context ignores the size provider used during resize.
+  mutate web 'the slot reports its default width instead of the measured pane' web/src/shell/InspectorSlot.tsx \
+    '  return useMemo(() => size === undefined ? slot : { ...slot, size }, [slot, size])' \
+    '  return useMemo(() => size === undefined ? slot : { ...slot, size: slot.size }, [slot, size])'
   mutate web "the pane is never published for measurement" "$E" \
     '      ref={publishPane}
       className="desk-inspector"' \
@@ -3318,7 +3296,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
 
   # 12. The pane's empty state used to stand beside every published panel.
   mutate web 'the empty state stands beside a published panel' web/src/shell/RightPane.tsx \
-    '      {showEmpty && !utility && <p className="desk-pane-empty">{msg(EMPTY_STATE)}</p>}' \
+    '      {showEmpty && !utility && tool === '"'"'route'"'"' && <p className="desk-pane-empty">{msg(EMPTY_STATE)}</p>}' \
     '      <p className="desk-pane-empty">{msg(EMPTY_STATE)}</p>'
 
   # 14. jsdom lays nothing out, so a measured height of zero must render every
@@ -3361,9 +3339,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
 
   # 16. A `0` beside Packs is a claim about a project the desk knows nothing
   # about.
-  mutate web "the rail claims a count for a listing that never answered" "$RL" \
-    '  const count = error === null && data !== undefined ? (data.packs ?? []).length : undefined' \
-    '  const count = (data?.packs ?? []).length'
+  mutate web 'the rail claims a count for a listing that never answered' web/src/shell/LeftRail.tsx \
+    '  const count = error === null && data !== undefined ? (data.packs ?? []).length + packDrafts.filter(item=>!item.finalized).length : undefined' \
+    '  const count = (data?.packs ?? []).length + packDrafts.filter(item=>!item.finalized).length'
 
 
   # ---------------------------------------------------------------------------
@@ -4712,9 +4690,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # **A write with no digest is a page overwriting whatever it found**, on the
   # file that names the endpoint a credential goes to. The empty string is not
   # "no opinion": it is the claim that there is no file.
-  mutate web "the configuration write states no digest at all" "$EF" \
-    '      { assistant, ifMatch: digest },' \
-    "      { assistant, ifMatch: '' },"
+  mutate web 'the configuration write states no digest at all' web/src/assistant/EndpointForm.tsx \
+    '      { assistant: { ...(assistant as Record<string,unknown>), ...(config.assistant.engine === '"'"'codex'"'"' ? {engine:'"'"'vercel'"'"'} : {}), ...(config.assistant.agent ? { agent:config.assistant.agent } : {}) }, ifMatch: digest },' \
+    '      { assistant: { ...(assistant as Record<string,unknown>), ...(config.assistant.engine === '"'"'codex'"'"' ? {engine:'"'"'vercel'"'"'} : {}), ...(config.assistant.agent ? { agent:config.assistant.agent } : {}) }, ifMatch: '"'"''"'"' },'
   # **The write already answers with the slot and the digest**, and leaving the
   # tab, Describe it and the key row to a second GET meant a write that landed
   # under a read that hung left every one of them describing the endpoint that
@@ -5168,9 +5146,9 @@ export function assistantTransport(id: string): Transport {
   # **The reading moved to `engines/contract.ts` when the second engine landed**,
   # because it is the contract's rule and not either loop's — so this row now
   # breaks it for both of them at once, which is a stronger row than it was.
-  mutate web "the proposal is taken from the prose" "$EC" \
-    "  const blocks = [...(text ?? '').matchAll(FENCE)].map((match) => match[1] ?? '')" \
-    "  const blocks = [(text ?? '').slice((text ?? '').indexOf('{'), (text ?? '').lastIndexOf('}') + 1)]"
+  mutate web 'the proposal is taken from the prose' web/src/assistant/engines/contract.ts \
+    '  const blocks = jsonFences(text ?? '"'"''"'"').filter(block => explicitProposal(block.body))' \
+    '  const blocks = [{ body: (text ?? '"'"''"'"').slice((text ?? '"'"''"'"').indexOf('"'"'{'"'"'), (text ?? '"'"''"'"').lastIndexOf('"'"'}'"'"') + 1) }]'
 
   # The run's terminal event, normalized in the hook. Stop used to clear the
   # run's identity before the engine handled the abort, so no end was observed.
@@ -5185,9 +5163,9 @@ export function assistantTransport(id: string): Transport {
   # Which of the enabled models a piece of work wants is decided at the run;
   # a hook that reached past the pick would run something nobody chose, under a
   # picker and a standing line both showing something else.
-  mutate web "the run ignores the model that was picked" "$AR" \
-    '                model: modelOf(model),' \
-    '                model: endpoint.model ?? '"'"''"'"','
+  mutate web 'the run ignores the model that was picked' web/src/assistant/useAssistantRun.ts \
+    '              ...bindExecution({ endpoint, agent, engine }, modelOf(model), thinking),' \
+    '              ...bindExecution({ endpoint, agent, engine }, endpoint?.model ?? agent?.model ?? '"'"''"'"', thinking),'
   mutate web "Stop writes no terminal event" "$AR" \
     '    finish(run)
     release(run)
@@ -5283,16 +5261,16 @@ export function assistantTransport(id: string): Transport {
   # failed" — which is a true statement about that edit and a false impression
   # of the safeguard. So this row removes the signal AND the recording, which
   # is the state the finding described: nothing anywhere can close a hung setup.
-  mutate web "a hung setup can be closed by nothing" "$AR" \
-    '          const opened = openAssistantConnection({
-            allowed: endpoint.tools,
+  mutate web 'a hung setup can be closed by nothing' web/src/assistant/useAssistantRun.ts \
+    '          const opened = purpose === '"'"'brief'"'"' ? null : openAssistantConnection({
+            allowed: (engine === '"'"'codex'"'"' ? agent?.tools : endpoint?.tools) ?? [],
             onEvent: (event) => push(run, event),
             sessionId,
             signal: run.controller.signal
           })
           run.connection = opened' \
-    '          const opened = openAssistantConnection({
-            allowed: endpoint.tools,
+    '          const opened = purpose === '"'"'brief'"'"' ? null : openAssistantConnection({
+            allowed: (engine === '"'"'codex'"'"' ? agent?.tools : endpoint?.tools) ?? [],
             onEvent: (event) => push(run, event),
             sessionId
           })'
@@ -6082,9 +6060,9 @@ export function assistantTransport(id: string): Transport {
   # An endpoint with no key on this machine is a session that cannot start, and
   # a control that would refuse is worse than a sentence saying where the key
   # goes.
-  mutate web "Describe is drawn with no key stored on this machine" "$DI" \
-    "  const usable = slot.state === 'configured' && slot.endpoint !== null && slot.keyPresent" \
-    "  const usable = slot.state === 'configured' && slot.endpoint !== null"
+  mutate web 'Describe is drawn with no key stored on this machine' web/src/shell/DescribeIt.tsx \
+    '  const usable = slot.engine === '"'"'codex'"'"' ? assistantReady(slot) : slot.state === '"'"'configured'"'"' && slot.endpoint !== null && slot.keyPresent' \
+    '  const usable = slot.engine === '"'"'codex'"'"' ? assistantReady(slot) : slot.state === '"'"'configured'"'"' && slot.endpoint !== null'
   # **Aimed at the sentence, which is what differs.** Breaking `usable` cannot
   # discriminate: a configuration this desk could not read falls through to the
   # defaults, so the endpoint is null and the control is withheld by that
@@ -6109,13 +6087,13 @@ export function assistantTransport(id: string): Transport {
   # The tab's own half of the same sentence: it renders the state directly
   # rather than through `unusableBecause`, so breaking one does not break the
   # other and each has its own row.
-  mutate web "the tab describes an unreadable configuration as having no assistant" "$AP" \
-    "        {slot.state === 'unavailable'" \
-    '        {false'
+  mutate web 'the tab describes an unreadable configuration as having no assistant' web/src/assistant/AssistantPane.tsx \
+    '        {slot.engine === '"'"'codex'"'"' ? msg(slot.unusable ?? '"'"'Configure a ChatGPT subscription in Assistant settings.'"'"') : slot.state === '"'"'unavailable'"'"'' \
+    '        {slot.engine === '"'"'codex'"'"' ? msg(slot.unusable ?? '"'"'Configure a ChatGPT subscription in Assistant settings.'"'"') : false'
   mutate web 'an unreadable configuration is described as having no assistant' web/src/shell/DescribeIt.tsx \
-    '      slot.state === '"'"'unavailable'"'"'
+    '      slot.engine === '"'"'codex'"'"' ? msg(slot.unusable ?? '"'"'Configure a ChatGPT subscription in Assistant settings.'"'"') : slot.state === '"'"'unavailable'"'"'
         ? msg(UNREAD_CONFIGURATION)' \
-    '      false
+    '      slot.engine === '"'"'codex'"'"' ? msg(slot.unusable ?? '"'"'Configure a ChatGPT subscription in Assistant settings.'"'"') : false
         ? msg(UNREAD_CONFIGURATION)'
 
   # Closing the dialog ends the session, and it has to end it **through the run

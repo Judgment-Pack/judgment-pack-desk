@@ -1,3 +1,7 @@
+import { DraftSources, declaredSources } from './DraftSources'
+import { DraftComparison } from '../../packs/DraftComparison'
+import type { ComponentProps, ReactNode } from 'react'
+import type { NodePositions } from '../../components/RelationshipMap'
 import { Message } from '../../i18n/Message'
 import { systemMessage, msg, useLocale } from '../../i18n'
 import { Fragment, useMemo, useRef, useState } from 'react'
@@ -83,24 +87,45 @@ function CheckedSide({ side, label }: { side: unknown; label: string }) {
   </>
 }
 
+function RuntimeChecks({ state }: { state: RunState }) {
+  useLocale()
+  const latest = state.candidates.at(-1)
+  const check = latest?.check ?? latest?.previousCheck
+  const probes = (state.probes ?? []).filter(probe => probe.documentDigest === latest?.digest)
+  return <>
+    <section className={styles.section}>
+      <h3>{msg('Structure check')}</h3>
+      <p>{check ? (check.valid ? msg('Valid') : msg('Invalid')) : msg('Not run')}</p>
+      {!latest?.check && check && <p className={styles.detail}>{msg('Saved result. Recheck the draft before creating it.')}</p>}
+      {check && check.diagnostics.length > 0 && <Disclosure title={msg('Diagnostics')}><CodeBlock text={JSON.stringify(check.diagnostics, null, 2)} label={msg('Diagnostics')} /></Disclosure>}
+    </section>
+    {probes.length > 0 && <section className={styles.section}>
+      <h3>{msg('Runtime rehearsals')}</h3>
+      <p className={styles.detail}>{msg('Recorded runtime responses. These probes have no independently established pass or fail expectation.')}</p>
+      {probes.map((probe, index) => <Disclosure key={index} title={msg('Rehearsal {{value0}}', { value0: index + 1 })}>
+        <CodeBlock text={JSON.stringify(probe.facts, null, 2)} label={msg('Facts')} />
+        {probe.evidence !== undefined && <CodeBlock text={JSON.stringify(probe.evidence, null, 2)} label={msg('Evidence')} />}
+        <CodeBlock text={JSON.stringify({ disposition: probe.disposition, ...(probe.handoffTarget === undefined ? {} : { handoffTarget: probe.handoffTarget }) }, null, 2)} label={msg('Runtime answered')} />
+      </Disclosure>)}
+    </section>}
+  </>
+}
+
 export function TestsPanel({ state, onSelect, mode = 'research', ...actions }: ExpectationReviewActions & { mode?: 'draft' | 'research'; state: RunState; onSelect: (next: Selection) => void }) {
   useLocale()
   const latest = state.candidates.at(-1)
-  const check = latest?.check
+  const check = latest?.check ?? latest?.previousCheck
+  const checks = <RuntimeChecks state={state} />
   const byId = new Map((check?.cases ?? []).map((row) => [row.id, row]))
   if (state.cases.length === 0 && state.droppedCases.length === 0 && state.expectationIssues.length === 0) {
-    return <p className={styles.empty}>{mode === 'draft' ? msg("Tests have not been run. Chat drafts receive a structure check. After creating the pack, use Tests to check its decisions.") : msg("No test cases yet. Research establishes cases from cited sources once a draft exists.")}</p>
+    return <div className={styles.panel}>{checks}<p className={styles.empty}>{(state.probes ?? []).some(probe => probe.documentDigest === latest?.digest) ? `${msg('Test cases')}: 0` : mode === 'draft' ? msg("Tests have not been run. Chat drafts receive a structure check. After creating the pack, use Tests to check its decisions.") : msg("No test cases yet. Research establishes cases from cited sources once a draft exists.")}</p></div>
   }
   return (
     <div className={styles.panel}>
+      {checks}
       <ExpectationReview state={state} onSelect={onSelect} {...actions} />
       {check && (
         <p className={styles.detail}><Message text={"Revision <0/>: <1/> to the runtime; <2/> of <3/> cases agree with their expectations. Rehearsal only; no decision was recorded."} slots={[latest?.revision, check.valid ? msg("valid") : msg("invalid"), check.cases.filter((c) => c.passed).length, check.cases.length]} /></p>
-      )}
-      {check && !check.valid && check.diagnostics.length > 0 && (
-        <Disclosure title={msg("{{value0}} validation diagnostic(s)", { value0: check.diagnostics.length })}>
-          <CodeBlock text={JSON.stringify(check.diagnostics, null, 2)} label={msg("Diagnostics")} />
-        </Disclosure>
       )}
       <div className={styles.tableWrap}>
         <table className={styles.table}>
@@ -188,7 +213,7 @@ export function DraftPanel({ state, onSelect, onViewLogic, onViewSources }: { st
   const document = latest.document
   const rules = isRecord(document) && Array.isArray(document.rules) ? document.rules.filter(isRecord) : []
   return (
-    <div className={styles.panel}>
+    <div className={styles.panel} data-overview>
       {isRecord(document) && <PackQuestion document={document as unknown as PackDocument} />}
       {isRecord(document) && <PackOverview document={document as unknown as PackDocument} onViewLogic={onViewLogic} onViewSources={onViewSources} />}
       {rules.length > 0 && (
@@ -221,7 +246,7 @@ export function DraftPanel({ state, onSelect, onViewLogic, onViewSources }: { st
   )
 }
 
-export function ReviewPanel({ state, sources, onCreate, onSelect, showCreateAction = true, mode = 'research' }: { showCreateAction?: boolean; mode?: 'draft' | 'research'; state: RunState; sources: readonly SourceRecord[]; onCreate: () => void; onSelect: (next: Selection) => void }) {
+export function ReviewPanel({ state, sources, onCreate, onSelect, showCreateAction = true, mode = 'research' }: { testsPanel?: ReactNode; onTabChange?: (tab: string) => void; hideHeader?: boolean; onSelectInMain?: (next: Selection) => void; showCreateAction?: boolean; mode?: 'draft' | 'research'; state: RunState; sources: readonly SourceRecord[]; onCreate: () => void; onSelect: (next: Selection) => void }) {
   useLocale()
   const latest = state.candidates.at(-1)
   const check = latest?.check
@@ -245,6 +270,7 @@ export function ReviewPanel({ state, sources, onCreate, onSelect, showCreateActi
           <dd><Message text={"<0/> of <1/> traced to a recorded excerpt"} slots={[state.citations.length - untraced.length, state.citations.length]} /></dd>
         </dl>
       </section>
+      <DraftComparison candidates={state.candidates} />
       {state.unknowns.length > 0 && (
         <section className={styles.section}>
           <h3>{msg("Assumptions and open questions")}</h3>
@@ -316,44 +342,49 @@ export function ReviewPanel({ state, sources, onCreate, onSelect, showCreateActi
   )
 }
 
-function DraftLogic({ state, selection, onSelect }: { state: RunState; selection: Selection; onSelect: (next: Selection) => void }) {
+function DraftLogic({ state, selection, onSelect, onInspect, active }: { state: RunState; selection: Selection; onSelect: (next: Selection) => void; onInspect: (next: Selection) => void; active: boolean }) {
   const locale = useLocale()
   const document = state.candidates.at(-1)?.document
   const model = useMemo(() => document && isRecord(document) ? projectLogic(document as unknown as PackDocument) : null, [document, locale])
-  const [mode, setMode] = useState<LogicMode>('list')
+  const [mode, setMode] = useState<LogicMode>('map')
   const [query, setQuery] = useState('')
-  const [display, setDisplay] = useState(initialLogicDisplay)
+  const [display, setDisplay] = useState(() => initialLogicDisplay(false))
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 })
+  const [nodePositions, setNodePositions] = useState<NodePositions>({})
   const scroll = useRef(0)
   if (!model) return <p className={styles.empty}>{msg("No draft yet.")}</p>
   const select = (id: string) => onSelect({ kind: 'logic', id })
-  return <div className={styles.panel}><PackLogic model={model} at={selection?.kind === 'logic' ? selection.id : null} groupId={null}
-    select={select} inspect={select} mode={mode} onMode={setMode} query={query} onQuery={setQuery} display={display} onDisplay={setDisplay}
-    viewport={viewport} onViewport={setViewport} listScroll={scroll} /></div>
+  return <div className={styles.logicPanel} data-mode={mode}><PackLogic active={active} model={model} at={selection?.kind === 'logic' ? selection.id : null} groupId={null}
+    select={select} inspect={id => onInspect({ kind: 'logic', id })} mode={mode} onMode={setMode} query={query} onQuery={setQuery} display={display} onDisplay={setDisplay}
+    viewport={viewport} onViewport={setViewport} nodePositions={nodePositions} onNodePositionsChange={setNodePositions} listScroll={scroll} /></div>
 }
 
-export function DraftTabs({ state, sources, selection, onSelect, onCreate, showCreateAction = true, mode = 'research', ...actions }: ExpectationReviewActions & { showCreateAction?: boolean; mode?: 'draft' | 'research'; state: RunState; sources: readonly SourceRecord[]; selection: Selection; onSelect: (next: Selection) => void; onCreate: () => void }) {
+export function DraftTabs({ testsPanel, onTabChange, state, sources, selection, onSelect, onCreate, showCreateAction = true, mode = 'research', hideHeader = false, onSelectInMain, documents = [], files = [], onRead, ...actions }: ExpectationReviewActions & Omit<ComponentProps<typeof DraftSources>, 'document'> & { testsPanel?: ReactNode; onTabChange?: (tab: string) => void; hideHeader?: boolean; onSelectInMain?: (next: Selection) => void; showCreateAction?: boolean; mode?: 'draft' | 'research'; state: RunState; sources: readonly SourceRecord[]; selection: Selection; onSelect: (next: Selection) => void; onCreate: () => void }) {
   useLocale()
-  const [tab, setTab] = useState('draft')
+  const [tab, setTabState] = useState('draft')
+  const setTab = (next: string) => { setTabState(next); onTabChange?.(next) }
   const pending = state.expectationIssues.filter(issue => !issue.resolved).length
   const total = state.cases.length + pending
+  const document = state.candidates.at(-1)?.document
+  const sourceCount = sources.length + documents.length + files.length + declaredSources(document).length
   return (
-    <section className={styles.pane} aria-label={msg("Draft review")} data-pane="draft">
-      <header className={styles.paneHeader}>
+    <section className={styles.pane} aria-label={msg("Draft review")} data-pane="draft" data-document={hideHeader || undefined}>
+      {!hideHeader && <header className={styles.paneHeader}>
         <span>{typeof (state.candidates.at(-1)?.document as { title?: unknown })?.title === 'string' ? (state.candidates.at(-1)!.document as { title: string }).title : msg("Draft")}</span>
         <span className={styles.status}>{state.candidates.length === 0 ? msg("no revision yet") : msg("revision {{value0}}", { value0: state.candidates.at(-1)!.revision })}</span>
-      </header>
+      </header>}
       {pending > 0 && <div className={styles.panel} role="status"><span>{msg("{{count}} invalid expectations · testing paused", { count: pending })}</span><div><Button variant="quiet" onClick={() => setTab('tests')}>{msg("Review expectations")}</Button></div></div>}
       <Tabs
-        scrollable
+        scrollable keepMounted fillPanel={tab === 'tests' && testsPanel ? 'tests' : 'logic'}
+        variant={hideHeader ? 'page' : 'pane'}
         label={msg("Draft views")}
         value={tab}
         onValueChange={setTab}
         tabs={[
           { value: 'draft', label: msg("Overview"), panel: <DraftPanel state={state} onSelect={onSelect} onViewLogic={() => setTab('logic')} onViewSources={() => setTab('sources')} /> },
-          { value: 'logic', label: msg("Logic"), panel: <DraftLogic state={state} selection={selection} onSelect={onSelect} /> },
-          { value: 'sources', label: sources.length ? msg('Sources ({{count}})', { count: sources.length }) : msg('Sources'), panel: <div className={styles.panel}><SourcesPanel sources={sources} selection={selection} onSelect={onSelect} /></div> },
-          { value: 'tests', label: total ? msg('Tests ({{count}})', { count: total }) : msg('Tests'), panel: <TestsPanel mode={mode} state={state} onSelect={onSelect} {...actions} /> },
+          { value: 'logic', label: msg("Logic"), panel: <DraftLogic state={state} selection={selection} onSelect={onSelectInMain ?? onSelect} onInspect={onSelect} active={tab === 'logic'} /> },
+          { value: 'sources', label: sourceCount ? msg('Sources ({{count}})', { count: sourceCount }) : msg('Sources'), panel: <div className={styles.panel}><DraftSources document={document} documents={documents} files={files} onRead={onRead} />{(sources.length > 0 || sourceCount === 0) && <SourcesPanel sources={sources} selection={selection} onSelect={onSelect} />}</div> },
+          { value: 'tests', label: total ? msg('Tests ({{count}})', { count: total }) : msg('Tests'), panel: testsPanel ?? <TestsPanel mode={mode} state={state} onSelect={onSelect} {...actions} /> },
           { value: 'review', label: msg("Review"), panel: <ReviewPanel showCreateAction={showCreateAction} mode={mode} state={state} sources={sources} onCreate={onCreate} onSelect={onSelect} /> }
         ]}
       />

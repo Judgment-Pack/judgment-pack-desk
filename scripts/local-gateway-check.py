@@ -86,6 +86,9 @@ def main():
             return proc, address, answer
         try:
             first, desk, answer = start()
+            installed = json.loads((bundle / 'gateway-bundle.json').read_text())
+            assert answer['localGateway']['build']['revision'] == installed['revision']
+            assert answer['localGateway']['build'].get('version') == installed.get('version')
             gateway = answer['localGateway']['gateway']
             assert not (config / 'jpack-desk/desk.json').exists(), 'automatic setup edited user configuration'
             seed = config / 'jpack-desk/secrets/local-gateway.seed'

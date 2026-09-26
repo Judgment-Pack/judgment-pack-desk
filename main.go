@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -45,16 +46,31 @@ func run() error {
 		return desk.RunLocalGatewayWorker(os.Stdin, os.Stdout)
 	}
 	var (
-		port     = flag.Int("port", 8791, "loopback TCP port to listen on; 0 lets the kernel choose one, and the printed URL names it")
-		jpackBin = flag.String("jpack", "jpack", "path to the judgment-pack runtime binary")
-		devToken = flag.String("dev-token", "", "fixed launch secret for local development; also permits the Vite dev-server origin. Leave empty in normal use so a random secret is generated.")
-		open     = flag.Bool("print-url", true, "print the launch URL at startup")
+		port        = flag.Int("port", 8791, "loopback TCP port to listen on; 0 lets the kernel choose one, and the printed URL names it")
+		codexBin    = flag.String("codex", "", "advanced Codex override: absolute executable path, or off to disable; default manages the compatible runtime automatically")
+		runnerBin   = flag.String("runner", desk.InstalledRunnerBinary(), "path to the optional local Jobs runner companion")
+		jpackBin    = flag.String("jpack", "jpack", "path to the judgment-pack runtime binary")
+		devToken    = flag.String("dev-token", "", "fixed owner setup code for local development; also permits the Vite dev-server origin. Leave empty in normal use so a random secret is generated.")
+		resetSignIn = flag.Bool("reset-sign-in", false, "reset this computer’s sign-in policy; stop Desk first, then restart and configure a new owner")
+		open        = flag.Bool("print-url", true, "print the Desk URL and initial owner setup code at startup")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(), "usage: jpack-desk [flags] [projectDir]\n\nWithout projectDir, the desk opens the project named by project.file in this machine's\ndesk configuration file, and the current directory where that names none.\n\nflags:\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
+	if *resetSignIn {
+		if err := desk.ResetSignIn(); err != nil {
+			return err
+		}
+		fmt.Println("Sign-in policy reset. Restart Desk and use the new owner setup code. Packs, chats and connections are preserved.")
+		return nil
+	}
+
+	localAccess, err := localAccessFromEnv()
+	if err != nil {
+		return err
+	}
 
 	// **Which project, decided and pinned before anything is built for it.**
 	// An argument wins; without one the desk-level file's `project.file` names
@@ -79,6 +95,14 @@ func run() error {
 	runtimeBin, err := desk.ResolveRuntime(*jpackBin)
 	if err != nil {
 		return err
+	}
+
+	runnerExecutable := ""
+	if *runnerBin != "" {
+		runnerExecutable, err = desk.ResolveRuntime(*runnerBin)
+		if err != nil {
+			return fmt.Errorf("resolving Jobs runner: %w", err)
+		}
 	}
 
 	// **The listener first, and the port read off it.** The handoff cookie's
@@ -111,17 +135,20 @@ func run() error {
 	}
 
 	srv, err := desk.New(desk.Config{
+		RunnerBin:          runnerExecutable,
+		CodexBin:           *codexBin,
 		Root:               project,
 		JpackBin:           runtimeBin,
 		LocalGatewayBundle: desk.LocalGatewayBundleDir(),
 		// The port this listener binds, handed over because the handoff
 		// cookie's name carries it: a cookie's origin has no port, so two
 		// desks on one host would otherwise share one handoff.
-		Port:    bound,
-		Token:   token,
-		Static:  static,
-		DevMode: *devToken != "",
-		Logger:  log.New(os.Stderr, "", log.LstdFlags),
+		Port:        bound,
+		Token:       token,
+		Static:      static,
+		DevMode:     *devToken != "",
+		LocalAccess: localAccess,
+		Logger:      log.New(os.Stderr, "", log.LstdFlags),
 	})
 	if err != nil {
 		return err
@@ -156,26 +183,33 @@ func run() error {
 	}()
 
 	if *open {
-		// **The launch path, not the page.** Opening this URL trades the secret
-		// for a sixty-second, single-use handoff cookie and redirects to `/`,
-		// so what ends up in the address bar is `/` and the secret is in no
-		// later request. The page then exchanges that handoff for a session id
-		// it holds itself. See `internal/desk/session.go`.
-		fmt.Printf("judgment-pack desk\n  project: %s\n  runtime: %s\n  open:    http://%s/launch?secret=%s\n", absProject, runtimeBin, addr, token)
+		fmt.Printf("judgment-pack desk\n  project: %s\n  runtime: %s\n  open:    http://%s/\n", absProject, runtimeBin, addr)
+		if !srv.SignInRequired() && localAccess {
+			fmt.Println("  access:  local (JPACK_DESK_LOCAL_ACCESS=1)")
+		} else if !srv.SignInRequired() {
+			fmt.Printf("  owner setup code: %s\n", token)
+		}
 		if *devToken != "" {
-			// **In dev mode the page to open is Vite's, not this one.** This
-			// process serves whatever `web/dist` held when it was built, which
-			// is stale the moment the page source changes; the dev server
-			// serves the source and proxies `/launch`, `/ws` and `/api` here.
-			// A person who opened the line above and met a page from an older
-			// build is who these two lines are for.
-			fmt.Printf("  dev:     this serves the bundle built into web/dist; for hot reload run\n"+
-				"           JPACK_DESK_CHASSIS=http://%s npm --prefix web run dev\n"+
-				"           and open http://localhost:5173/launch?secret=%s\n", addr, token)
+			fmt.Printf("  dev:     JPACK_DESK_CHASSIS=http://%s npm --prefix web run dev\n"+
+				"           open http://localhost:5173/\n", addr)
 		}
 	}
+
 	if err := httpSrv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil
+}
+
+// Read only by the backend; never a VITE_* setting or a browser credential.
+func localAccessFromEnv() (bool, error) {
+	raw := os.Getenv("JPACK_DESK_LOCAL_ACCESS")
+	if raw == "" {
+		return false, nil
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, fmt.Errorf("JPACK_DESK_LOCAL_ACCESS must be 1, 0, true, or false")
+	}
+	return value, nil
 }

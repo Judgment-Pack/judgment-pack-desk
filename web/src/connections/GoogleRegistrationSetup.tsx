@@ -4,7 +4,7 @@ import { msg, useLocale } from '../i18n'
 import { Alert } from '../ui/Alert'
 import { Button } from '../ui/Button'
 import { Disclosure } from '../ui/Disclosure'
-import { useInspectorSlot } from '../shell/InspectorSlot'
+import { useInspectorControls } from '../shell/InspectorSlot'
 import { GoogleRegistrationGuide } from './GoogleRegistrationGuide'
 import styles from './GoogleRegistrationSetup.module.css'
 import { connectionCall, CONNECTIONS_KEY, useDriveStatus, type ConnectionProvider } from './client'
@@ -22,7 +22,7 @@ export function GoogleRegistrationSetup({ provider, available, instructionsIniti
   const file = useRef<HTMLInputElement>(null), active = useRef<AbortController | null>(null)
   const [instructionsOpen, setInstructionsOpen] = useState(instructionsInitiallyOpen)
   const panel = useRef<HTMLElement>(null)
-  const { open } = useInspectorSlot()
+  const { open } = useInspectorControls()
   useEffect(() => { if (open) panel.current?.focus({ preventScroll: true }) }, [open])
   useEffect(() => () => { active.current?.abort(); active.current = null }, [provider, available])
   function close() { active.current?.abort(); active.current = null; onClose() }

@@ -86,7 +86,7 @@ import { PackInspector } from '../packs/inspector/PackInspector'
 import { outlineRepresentatives, readingOrder } from '../packs/document/members'
 import { pointerFromHash } from '../packs/pointers'
 import { useDocumentSpy } from '../packs/useDocumentSpy'
-import { useInspectorPortal, useInspectorSlot } from '../shell/InspectorSlot'
+import { useInspectorPortal, useInspectorControls } from '../shell/InspectorSlot'
 import { usePublishedDirty } from '../shell/authorBridge'
 import { useDirtyGuard } from '../shell/useDirtyGuard'
 import { useMeasuredBox } from '../shell/measured'
@@ -149,7 +149,7 @@ export function PackView() {
    */
   const path = meta?.path ?? summary?.path
   const file = useFileContent(path)
-  const rightSlot = useInspectorSlot()
+  const rightSlot = useInspectorControls()
   const detailsSlot = useDetailsSlot()
   const askedChat = params.get('chat')
   useEffect(() => { if (askedChat) rightSlot.reveal() }, [askedChat, rightSlot.reveal])
@@ -906,7 +906,7 @@ export function PackView() {
   const details = useDetailsPortal(inspectorNode === null ? null :
     !editing && (section === 'logic' || section === 'overview') && model && formAvailable ?
       <LogicInspector model={model} at={at} groupId={groupId}
-        onSelect={select} mainContent={section === 'logic' && (mode === 'map' || !logic.query.trim()
+        onSelect={select} mainContent={section === 'logic' && mode !== 'map' && (!logic.query.trim()
           || model.groups.some(group => matchingItems(group, logic.query).some(item => item.pointer === selectedItem(model, at)?.item.pointer)))}
         conditionsVisible={logic.display.conditions || Boolean(logic.query.trim())}
         trace={runTrace} advanced={inspectorNode} /> : inspectorNode)
@@ -1043,10 +1043,11 @@ export function PackView() {
               onClick={() => { setExitOpen(false); save(false, true) }}>{msg("Save and return")}</Button>
           </DialogActions>
         </Dialog>
-        <PageBody width={section === 'logic' ? 'full' : 'wide'}>
-        <PackQuestion document={drawn} />
+        <PageBody fill={!editing && section === 'logic'} width={section === 'logic' ? 'full' : 'wide'}>
+        {(editing || section !== 'logic') && <PackQuestion document={drawn} />}
         <div
           className={styles.workspace}
+          data-logic={!editing && section === 'logic' || undefined}
           ref={setFrame}
           style={{ '--tryit-pane-width': `${PANE_WIDTH}px` } as CSSProperties}
         >
@@ -1178,7 +1179,7 @@ export function PackView() {
                     </div>}
                     <PackLogic model={model} at={at} groupId={groupId} select={selectInMain} inspect={select} mode={mode} onMode={changeMode}
                       query={logic.query} onQuery={logic.setQuery} display={logic.display} onDisplay={logic.setDisplay}
-                      viewport={logic.viewport} onViewport={logic.setViewport} listScroll={logic.listScroll}
+                      viewport={logic.viewport} onViewport={logic.setViewport} nodePositions={logic.nodePositions} onNodePositionsChange={logic.setNodePositions} listScroll={logic.listScroll}
                       trace={runTrace} mapUnavailable={!formAvailable ? msg("The document cannot be interpreted unambiguously.")
                         : stale || !report ? msg("A current validation is needed before displaying a complete map.")
                         : report.status !== 'valid' ? msg("This document is invalid or requires unsupported semantics. Inspect its definitions and validation details in List.") : undefined} />

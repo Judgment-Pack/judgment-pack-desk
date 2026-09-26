@@ -118,3 +118,28 @@
 .send { flex: 0 0 var(--density-control); width: var(--density-control); padding: 0; }
 .messageTable th { font-weight: 600; background: var(--surface); }
 .markdown :not(pre) > code { background: var(--accent-soft); border-radius: var(--radius-sm); padding-inline: var(--space-1); }
+
+
+.packWorkspace { container-type: inline-size; display:flex; flex-direction:column; height:100%; min-height:0; min-width:0; overflow:hidden; }
+
+.packWorkspace > [data-page-header] { flex-wrap: wrap; row-gap: var(--space-2); padding-block: var(--space-2); }
+.packWorkspace > [data-page-header] h1 { flex: 1 1 min(20rem, calc(100% - var(--density-control) - var(--density-gap))); flex-wrap: wrap; row-gap: var(--space-1); }
+.packWorkspace > [data-page-header] h1 > [data-page-context] { flex: 1 1 8rem; }
+.packWorkspace > [data-page-header] h1 > span:last-child { white-space: nowrap; flex-shrink: 0; }
+
+/* Message-owned supporting material stays inside its response, at a quieter scale. */
+.responseDetails { display: grid; gap: var(--space-2); margin-top: var(--space-2); }
+.sentAttachments { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: 0; margin: var(--space-2) 0 0; list-style: none; }
+.sentAttachments li { max-width: 100%; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.sentAttachments button { max-width: 100%; text-align: start; white-space: normal; overflow-wrap: anywhere; }
+.composerStatus { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); font-size: var(--text-xs); }
+.composerStatus:empty { display: none; }
+.composerStatus:not(:empty) { padding-block: 0 var(--space-2); }
+.composerStatus .runStatus { flex: 1 1 12rem; margin: 0; }
+
+.openQuestions { font-size: var(--text-sm); }
+.openQuestions ul { margin: 0; padding-inline-start: var(--space-4); display: grid; gap: var(--space-2); }
+.openQuestions li p { margin-block: 0; }
+
+.packWorkspace > [data-page-header] [data-page-actions] { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); max-width: 100%; }
+@container (min-width: 48rem) { .packWorkspace > [data-page-header] h1 > [data-page-context] { flex: 0 1 auto; } }

@@ -1,3 +1,5 @@
+import { DetailsWithAssistant } from '../../chat/AssistantReference'
+import { useDetailsSlot } from '../../shell/DetailsSlot'
 import { Message } from '../../i18n/Message'
 import { systemMessage, msg, useLocale } from '../../i18n'
 import { projectLogic } from '../../packs/logicModel'
@@ -43,14 +45,24 @@ function context(text: string, start: number, end: number): { before: string; hi
   return { before: (from > 0 ? '…' : '') + text.slice(from, start), hit: text.slice(start, end), after: text.slice(end, to) + (to < text.length ? '…' : '') }
 }
 
-export function SourceInspector({ selection, ledger, state, onSelect }: { selection: Selection; ledger: Ledger; state: RunState; onSelect?: (selection: Selection) => void }) {
+type SourceInspectorProps = { selection: Selection; ledger: Ledger; state: RunState; onSelect?: (selection: Selection) => void }
+export function SourceInspector(props: SourceInspectorProps) {
+  const details = useDetailsSlot()
+  const { selection, ledger, state, onSelect } = props
+  if (!selection || selection.kind === 'logic') return <SourceInspectorContent {...props} />
+  const rule = selection.kind === 'rule' ? (state.candidates.at(-1)?.document as PackDocument | undefined)?.rules?.find(rule => rule.id === selection.id) : undefined
+  const record = selection.kind === 'source' ? ledger.byId(selection.id) : undefined
+  const value = record ?? (selection.kind === 'excerpt' ? ledger.excerpt(selection.id) : rule)
+  return <DetailsWithAssistant reference={{ label: record?.document?.title || selection.id, text: JSON.stringify({ selection, value }, null, 2), onOpen: () => { onSelect?.(selection); details.reveal() } }}><SourceInspectorContent {...props} /></DetailsWithAssistant>
+}
+function SourceInspectorContent({ selection, ledger, state, onSelect }: SourceInspectorProps) {
   useLocale()
   if (selection === null) {
     return <p className={styles.empty}>{msg("Choose a source, an excerpt or a rule to inspect it here.")}</p>
   }
   if (selection.kind === 'logic') {
     const document = state.candidates.at(-1)?.document as PackDocument | undefined
-    return document ? <LogicInspector model={projectLogic(document)} at={selection.id} onSelect={id => onSelect?.({ kind: 'logic', id })} advanced={null} mainContent /> : null
+    return document ? <LogicInspector model={projectLogic(document)} at={selection.id} onSelect={id => onSelect?.({ kind: 'logic', id })} advanced={null} /> : null
   }
   if (selection.kind === 'rule') {
     const latest = state.candidates.at(-1)

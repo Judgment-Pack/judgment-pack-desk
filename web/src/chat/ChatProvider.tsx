@@ -11,7 +11,7 @@ import { ChatStore, type Chat, type ChatAttachment } from './store'
 
 const Context = createContext<ChatStore | null>(null)
 export const useChatStore = () => useContext(Context)
-const EMPTY = { chats: [], drafts: [], ready: false, saving: false, error: '', active: [], bindings: new Map(), dirty: false } as ReturnType<ChatStore['getSnapshot']>
+const EMPTY = { packDrafts: [], deletedDrafts: [], chats: [], drafts: [], ready: false, saving: false, error: '', active: [], bindings: new Map(), dirty: false } as ReturnType<ChatStore['getSnapshot']>
 const noop = () => () => {}
 export function useChats() {
   const store = useChatStore()

@@ -3,7 +3,7 @@
   container-name: pack-collection;
   display: flex;
   flex-direction: column;
-  height: var(--main-room, 100dvh);
+  height: 100%;
   min-height: 0;
   min-width: 0;
 }
@@ -15,10 +15,11 @@
   padding: var(--space-3) var(--density-gutter);
 }
 .controls .search { width: min(20rem, 100%); flex: 0 1 20rem; min-width: 0; }
-.sort { margin-left: auto; flex: 0 0 auto; }
+.sort { margin-left: auto; display: flex; align-items: center; gap: var(--space-2); flex: 0 0 auto; }
+.draftBadge { flex: 0 0 auto; color: var(--ink-soft); font-size: var(--text-xs); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 1px 5px; }
 .matchCount { color: var(--ink-faint); font-size: var(--text-xs); white-space: nowrap; }
 .collection { display: flex; flex-direction: column; min-height: calc(var(--density-row) * 3 + var(--density-control)); flex: 1; padding: 0 var(--density-gutter); }
-.columns, .row { --name-width: clamp(10rem, 26cqi, 18rem); --version-width: 5rem; --preview-width: 2rem; }
+.columns, .row { --name-width: clamp(10rem, 26cqi, 18rem); --version-width: 5rem; --preview-width: 3.75rem; }
 .columns {
   overflow-y: hidden;
   scrollbar-gutter: stable;
@@ -60,7 +61,7 @@
 .description { color: var(--ink-faint); }
 .rowDetail { color: var(--warn); }
 .version { font-size: var(--text-xs); color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.row .preview { width: var(--preview-width); min-width: 0; height: min(var(--density-control), var(--density-row)); padding: 0; font-size: var(--text-xs); color: var(--ink-soft); }
+.row .preview { width: 2rem; min-width: 0; height: min(var(--density-control), var(--density-row)); padding: 0; font-size: var(--text-xs); color: var(--ink-soft); }
 .empty { padding: var(--space-6) var(--density-gutter); max-width: var(--measure-form); }
 .empty h2 { margin: 0 0 var(--space-2); font-size: var(--text-heading); }
 .empty p { margin: 0 0 var(--space-4); color: var(--ink-soft); font-size: var(--text-sm); overflow-wrap: anywhere; }
@@ -77,3 +78,5 @@
   .columns, .row { --version-width: 0px; }
   .columns > span:nth-child(3), .version { display: none; }
 }
+
+.row > :global(.desk-icon-button) { width: 28px; height: min(var(--density-control), var(--density-row)); flex: 0 0 28px; }

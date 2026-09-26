@@ -1,10 +1,11 @@
+import { AssistantReferenceProvider } from '../chat/AssistantReference'
 import { msg, useLocale } from '../i18n'
 import { InspectorPresentationContext, type InspectorPresentation } from './InspectorPresentation'
 /**
- * The frame: header, rail, main, inspector, console, strip.
+ * The frame: header, navigation, main, contextual right pane and status strip.
  *
  * Header, rail, workspace and status strip follow the shell grid. Inside the
- * workspace, main, Inspector and console share one rounded boundary. The
+ * workspace, main and the contextual right pane share one rounded boundary. The
  * wrapper is a div, so every landmark keeps its own name and role. Collapse
  * still writes custom properties; nothing here computes a height.
  *
@@ -13,7 +14,7 @@ import { InspectorPresentationContext, type InspectorPresentation } from './Insp
  * is not a style preference: `AuthorView` holds an unsaved buffer in component
  * state, and a frame that remounted `<main>` when a pane opened would throw
  * that buffer away for a layout change. There is a test that types, toggles
- * all three panes, and reads the buffer back.
+ * navigation and the right pane, and reads the buffer back.
  *
  * The skip link is the first element in the DOM and is a **plain class with a
  * `:focus` rule**, not `VisuallyHidden`: that primitive applies clip/1px/
@@ -25,13 +26,15 @@ import { WebSourcePane } from '../connections/WebSourcePane'
 import { ConnectionsPane } from '../connections/ConnectionsPane'
 import { ProviderIcon } from '../connections/ProviderIcon'
 import { providerName } from '../connections/registry'
-import { IconChevronLeft } from './icons'
+import { Tooltip } from '../ui/Tooltip'
+import { IconAssistant, IconDetails, IconActivity, IconGear, IconChevronLeft } from './icons'
 import { TooltipProvider } from '../ui/Tooltip'
 import { useLocation, useMatch } from 'react-router-dom'
 import {
   Fragment,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -41,16 +44,20 @@ import {
 import { useDeskConfigRead, useEffectiveConfig } from '../config/DeskConfigProvider'
 import { useFileListing } from '../files/queries'
 import { DetailsSlotContext, type DetailsSlot } from './DetailsSlot'
-import { BottomPane } from './BottomPane'
+import { DiagnosticsContext, useConnectionLog } from './Diagnostics'
 import { HeaderBar } from './HeaderBar'
-import { InspectorSlotContext, type InspectorSlot } from './InspectorSlot'
+import { InspectorSlotContext, InspectorSizeProvider, type InspectorSlot } from './InspectorSlot'
 import { LeftRail } from './LeftRail'
 import { SettingsNavigationProvider } from './SettingsNavigation'
+import { BriefContext, type BriefSubject } from '../briefs/context'
+import { BriefPane } from '../briefs/BriefPane'
+import { IconBrief } from './icons'
 import { RightPane } from './RightPane'
 import { StatusStrip } from './StatusStrip'
 import { AppearanceProvider } from './appearanceState'
 import { useMeasuredBox } from './measured'
 import { inspectorGeometry } from './inspectorGeometry'
+import { overlayGeometry, PACK_PEEK } from './overlayGeometry'
 import { PaneDivider } from '../ui/PaneDivider'
 import { ShellStateProvider, useShellState } from './paneState'
 import { installShortcuts } from './shortcuts'
@@ -122,32 +129,43 @@ function ShellFrame({
 }) {
   useLocale()
   const shell = useShellState()
+  useConnectionLog()
+  const [rightTool, setRightTool] = useState<'brief' | 'details' | 'activity' | 'runtime' | 'diagnostics' | null>(null)
+  const [briefSubject, setBriefSubject] = useState<BriefSubject | null>(null)
+  const [briefHeaderTarget, setBriefHeaderTarget] = useState<HTMLDivElement | null>(null)
+  const registerBrief = useCallback((subject: BriefSubject) => { setBriefSubject(subject); return () => setBriefSubject(current => current === subject ? null : current) }, [])
+  const [auxOpen, setAuxOpen] = useState(false)
+  const [toolExpanded, setToolExpanded] = useState(false)
+  const expandButtonRef = useRef<HTMLButtonElement | null>(null)
+  const paneWasCovering = useRef(false)
+
   const [detailsTarget, setDetailsTarget] = useState<HTMLDivElement | null>(null)
   const [detailsClaims, setDetailsClaims] = useState(0)
   const [inspection, setInspection] = useState<{ owner: number; content: ReactNode } | null>(null)
   const inspectionNumber = useRef(0)
   const detailOpener = useRef<HTMLElement | null>(null)
   const route = useLocation()
-  useEffect(() => { setInspection(null) }, [route.pathname, route.search])
+  useEffect(() => { setInspection(null); setRightTool(null); setAuxOpen(false); setToolExpanded(false) }, [route.pathname])
   const inspect = useCallback((content: ReactNode, opener: HTMLElement | null) => {
     const owner = ++inspectionNumber.current
     detailOpener.current = opener
-    setInspection({ owner, content }); setShowDetails(true); shell.openConsole()
+    setInspection({ owner, content }); setRightTool('details'); setAuxOpen(true)
     return () => setInspection(current => current?.owner === owner ? null : current)
-  }, [shell.openConsole])
+  }, [])
   const dismissInspection = useCallback(() => {
     if (detailOpener.current?.isConnected) detailOpener.current.focus()
     setInspection(null)
-    if (shell.console.open) shell.toggleConsole()
-  }, [shell.console.open, shell.toggleConsole])
-  const [showDetails, setShowDetails] = useState(false)
-  const [bottomMaximized, setBottomMaximized] = useState(false)
+    setRightTool(null); setAuxOpen(false)
+  }, [])
   const detailsClaim = useCallback(() => {
     setDetailsClaims(count => count + 1)
     return () => setDetailsClaims(count => Math.max(0, count - 1))
   }, [])
-  const revealDetails = useCallback(() => { setInspection(null); setShowDetails(true); shell.openConsole() }, [shell.openConsole])
-  const detailsSlot = useMemo<DetailsSlot>(() => ({ target: detailsTarget, open: shell.console.open && showDetails, claim: detailsClaim, reveal: revealDetails, inspect, dismissInspection }), [detailsTarget, shell.console.open, showDetails, detailsClaim, revealDetails, inspect, dismissInspection])
+  const revealDetails = useCallback(() => {
+    if (document.activeElement instanceof HTMLElement) inspectionGestureRef.current = document.activeElement
+    setInspection(null); setRightTool('details'); setAuxOpen(true)
+  }, [])
+
   const [routePresentation, setPresentation] = useState<InspectorPresentation | null>(null)
   const registerPresentation = useCallback((next: InspectorPresentation) => {
     setPresentation(next)
@@ -188,32 +206,44 @@ function ShellFrame({
     width: connectionWidth, onResize: setConnectionWidth, onReset: () => setConnectionWidth(480),
     minimumMainWidth: 560, maximumWidth: 560, closeOnEscape: true, restoreFocusRef: connectionOpener
   } : routePresentation
-  const inspectorOpen = presentation?.open ?? shell.inspector.open
-  const openInspector = useCallback(() => {
-    if (presentation) presentation.onOpenChange(true)
-    else shell.openInspector()
-  }, [presentation, shell.openInspector])
-  const toggleInspector = useCallback(() => {
-    if (presentation) presentation.onOpenChange(!presentation.open)
-    else shell.toggleInspector()
-  }, [presentation, shell.toggleInspector])
   const settingsPage = useMatch('/admin') !== null
   const packPage = useMatch('/packs/:packId') !== null
+  const workspaceTools = !!briefSubject || packPage || Boolean(routePresentation?.workspaceTools)
+  // Only routes with real pane content may restore an Assistant or preview.
+  // Old saved Inspector/Console flags never open empty UI on other pages.
+  const routeAvailable = routePresentation ? routePresentation.available !== false : packPage
+  const inspectorOpen = connection ? true : rightTool ? auxOpen : routeAvailable && (presentation?.open ?? shell.inspector.open)
+  const openInspector = useCallback(() => {
+    if (!routeAvailable) return
+    setRightTool(null)
+    if (routePresentation) routePresentation.onOpenChange(true)
+    else shell.openInspector()
+  }, [routeAvailable, routePresentation, shell.openInspector])
+  const toggleInspector = useCallback(() => {
+    if (rightTool && !connection) { setAuxOpen(value => !value); return }
+    if (presentation) presentation.onOpenChange(!presentation.open)
+    else if (routeAvailable) shell.toggleInspector()
+  }, [rightTool, connection, presentation, routeAvailable, shell.toggleInspector])
+  const openDiagnostics = useCallback(() => {
+    inspectionGestureRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    closeConnection(false, false)
+    setRightTool('diagnostics'); setAuxOpen(true)
+  }, [closeConnection])
+  const detailsVisible = !connection && inspectorOpen && rightTool === 'details'
+  const detailsSlot = useMemo<DetailsSlot>(() => ({ target: detailsTarget, open: detailsVisible, claim: detailsClaim, reveal: revealDetails, inspect, dismissInspection }), [detailsTarget, detailsVisible, detailsClaim, revealDetails, inspect, dismissInspection])
+  const paneTitle = connection ? presentation!.title : rightTool === 'brief' ? msg('Brief') : rightTool === 'details' ? msg('Details') : rightTool === 'activity' ? msg('Activity') : rightTool === 'runtime' ? msg('Runtime details') : rightTool === 'diagnostics' ? msg('Diagnostics') : presentation?.title ?? (packPage ? msg('Assistant') : msg('Details'))
+  const chooseTool = (next: typeof rightTool) => {
+    if (document.activeElement instanceof HTMLElement) inspectionGestureRef.current = document.activeElement
+    if (connection) closeConnection(false, false)
+    if (next === null) { setRightTool(null); if (rightTool || connection || !inspectorOpen) openInspector(); else toggleInspector() }
+    else { setRightTool(next); setAuxOpen(rightTool !== next || !inspectorOpen || Boolean(connection)) }
+  }
   const { config, declaredPanes } = useEffectiveConfig()
   const [railDrawerOpen, setRailDrawerOpen] = useState(false)
 
-  /**
-   * The two header controls that open a drawer, held by reference.
-   *
-   * Radix restores focus to a dialog's own `Dialog.Trigger` when it closes.
-   * Neither drawer has one — both openers live in the header, which is a
-   * separate grid child — so each drawer's `onCloseAutoFocus` puts focus back
-   * on the button that opened it. Without this, Escape out of either drawer
-   * dropped focus on `<body>`.
-   */
+  // Drawer focus returns to navigation's header control or the contextual
+  // action that opened the right pane. Neither uses a Radix Dialog.Trigger.
   const railOpenerRef = useRef<HTMLButtonElement | null>(null)
-  const inspectorOpenerRef = useRef<HTMLButtonElement | null>(null)
-  const consoleOpenerRef = useRef<HTMLButtonElement | null>(null)
   const inspectionGestureRef = useRef<HTMLElement | null>(null)
 
   /**
@@ -250,10 +280,14 @@ function ShellFrame({
   }, [])
   const [workspaceElement, setWorkspaceElement] = useState<HTMLDivElement | null>(null)
   const workspaceBox = useMeasuredBox(workspaceElement)
-  const bottomRoom = Math.max(0, (workspaceBox?.height || 700) - 2)
-  const bottomMax = Math.min(1600, Math.max(bottomRoom - 120, Math.min(80, bottomRoom)))
-  const bottomMin = Math.min(120, bottomMax)
-  const bottomHeight = bottomMaximized ? bottomMax : Math.max(bottomMin, Math.min(bottomMax, shell.consoleHeight ?? config.panes.console.height))
+  const leadingWidths = useRef(new Map<symbol, number>())
+  const [leadingWidth, setLeadingWidth] = useState(0)
+  const requestLeadingWidth = useCallback((pixels: number) => {
+    const owner = Symbol()
+    const update = () => setLeadingWidth(Math.max(0, ...leadingWidths.current.values()))
+    leadingWidths.current.set(owner, Number.isFinite(pixels) ? Math.max(0, pixels) : 0); update()
+    return () => { leadingWidths.current.delete(owner); update() }
+  }, [])
   const workingWidths = useRef(new Map<symbol, number>())
   const [minimumMainWidth, setMinimumMainWidth] = useState(0)
   const requestWorkingWidth = useCallback((pixels: number) => {
@@ -264,14 +298,18 @@ function ShellFrame({
   }, [])
   // Measure the whole workspace so opening the inspector cannot change the
   // input to this decision and cause a dock/drawer feedback loop.
-  const inspectorLayout = inspectorGeometry(workspaceBox?.width,
-    presentation?.width ?? shell.inspectorWidth ?? config.panes.inspector.width,
-    Math.max(minimumMainWidth, presentation?.minimumMainWidth ?? 0), defaultInspectorIsDrawer, presentation?.maximumWidth)
+  const inspectorLayout = inspectorGeometry(workspaceBox?.width ? workspaceBox.width - (workspaceTools ? 40 : 0) : undefined,
+    presentation?.width ?? shell.inspectorWidth ?? (briefSubject && !declaredPanes.inspectorWidth ? 440 : config.panes.inspector.width),
+    Math.max(minimumMainWidth, presentation?.minimumMainWidth ?? 0, briefSubject ? 480 : 0), defaultInspectorIsDrawer, presentation?.maximumWidth)
   const inspectorWidth = inspectorLayout.width
-  const inspectorIsDrawer = inspectorLayout.drawer
+  const overlayLayout = overlayGeometry(workspaceBox?.width ? workspaceBox.width - 42 : defaultInspectorIsDrawer ? 800 : 1200, shell.overlayWidth, leadingWidth)
+  const takeover = workspaceTools && (inspectorLayout.drawer || toolExpanded && !connection && overlayLayout.full)
+  const overlay = workspaceTools && inspectorOpen && toolExpanded && !connection && !takeover
+  const covering = inspectorOpen && (overlay || takeover)
+  const inspectorIsDrawer = !workspaceTools && inspectorLayout.drawer
   // Publish the rendered width, including drawer/CSS caps, rather than the
   // saved preference or the project's configured default.
-  const inspectorBox = useMeasuredBox(inspectorPane)
+  // Pane measurements are isolated from the shell and its route controls.
   /**
    * Opening the pane because a route was asked to inspect something.
    *
@@ -293,27 +331,54 @@ function ShellFrame({
   }, [openInspector])
   const closeInspector = useCallback(() => {
     if (!inspectorOpen) return
+    setToolExpanded(false)
     toggleInspector()
     const gesture = presentation?.restoreFocusRef?.current ?? inspectionGestureRef.current
-    if (gesture?.isConnected && gesture.getClientRects().length) gesture.focus()
-    else inspectorOpenerRef.current?.focus()
-  }, [inspectorOpen, toggleInspector, presentation?.restoreFocusRef])
+    const focus = () => {
+      if (gesture?.isConnected && gesture.getClientRects().length) gesture.focus({ preventScroll: true })
+      else document.getElementById('main')?.focus({ preventScroll: true })
+    }
+    // The pack remains inert until React applies the return to the document.
+    if (covering) requestAnimationFrame(focus)
+    else focus()
+  }, [inspectorOpen, toggleInspector, presentation?.restoreFocusRef, covering])
+  const returnToPack = useCallback(() => {
+    setToolExpanded(false)
+    // If both columns cannot fit, returning exposes the pack and closes the pane.
+    if (inspectorLayout.drawer) closeInspector()
+    else requestAnimationFrame(() => expandButtonRef.current?.focus({ preventScroll: true }))
+  }, [inspectorLayout.drawer, closeInspector])
+
+  useLayoutEffect(() => {
+    const wasCovering = paneWasCovering.current
+    paneWasCovering.current = covering
+    if (covering && !wasCovering) {
+      // Keep an already focused composer. A keyboard focus in the newly inert
+      // pack must move into the pane, while the global navigation stays usable.
+      const active = document.activeElement
+      if (active === document.body || workspaceElement?.querySelector('#main')?.contains(active)) {
+        expandButtonRef.current?.focus({ preventScroll: true })
+      }
+    }
+  }, [covering, workspaceElement])
+
   useEffect(() => {
-    if (!presentation?.closeOnEscape || !inspectorOpen) return
+    if ((!presentation?.closeOnEscape && !covering) || !inspectorOpen) return
     const close = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
       // Menus, drawers and the splitter own Escape while they have focus.
       if (event.target instanceof Element && event.target.closest('[role="menu"], [role="listbox"], [role="dialog"], [role="separator"]')) return
       event.preventDefault()
-      closeInspector()
+      if (covering && !connection) returnToPack()
+      else closeInspector()
     }
     document.addEventListener('keydown', close)
     return () => document.removeEventListener('keydown', close)
-  }, [presentation?.closeOnEscape, inspectorOpen, closeInspector])
+  }, [presentation?.closeOnEscape, inspectorOpen, closeInspector, covering, connection, returnToPack])
   const slot = useMemo<InspectorSlot>(
     () => ({
-      open: connection ? (routePresentation?.open ?? shell.inspector.open) : inspectorOpen,
-      size: inspectorOpen ? (inspectorBox?.width ?? 0) : 0,
+      open: !connection && !rightTool && inspectorOpen,
+      size: 0, // Live measurements are supplied only to useInspectorSlot readers.
       tab: inspectorTab,
       setTab: setInspectorTab,
       target: inspectorTarget,
@@ -321,9 +386,11 @@ function ShellFrame({
       claim,
       reveal,
       close: closeInspector,
-      requestWorkingWidth
+      mainCovered: covering,
+      revealMain: covering ? returnToPack : undefined,
+      requestWorkingWidth, minimumMainWidth, requestLeadingWidth
     }),
-    [connection, routePresentation, shell.inspector.open, inspectorOpen, inspectorBox, inspectorTab, inspectorTarget, inspectorHeaderTarget, claim, reveal, closeInspector, requestWorkingWidth]
+    [connection, rightTool, inspectorOpen, inspectorTab, inspectorTarget, inspectorHeaderTarget, claim, reveal, closeInspector, requestWorkingWidth, minimumMainWidth, requestLeadingWidth, covering, returnToPack]
   )
 
   useEffect(
@@ -331,81 +398,82 @@ function ShellFrame({
       installShortcuts({
         toggleRail: railIsDrawer ? () => setRailDrawerOpen((open) => !open) : shell.toggleRail,
         toggleInspector,
-        toggleConsole: shell.toggleConsole
+        toggleConsole: openDiagnostics
       }),
-    [railIsDrawer, shell.toggleRail, toggleInspector, shell.toggleConsole]
+    [railIsDrawer, shell.toggleRail, toggleInspector, openDiagnostics]
   )
 
-  // Rail and console use configuration; Inspector uses its bounded viewer
+  // Navigation uses configuration; the contextual pane uses its bounded viewer
   // preference. Collapse only chooses between the effective size and zero.
   const style = {
     '--rail-w': `${config.panes.left.width}px`,
     '--inspector-w': `${inspectorWidth}px`,
-    '--console-h': `${bottomHeight}px`,
+    '--overlay-w': `${overlayLayout.width}px`,
+    '--overlay-peek': `${PACK_PEEK + leadingWidth}px`,
+    '--console-h': '0px',
     '--rail-current': railIsDrawer
       ? '0px'
-      : settingsPage || shell.left.mode === 'expanded'
+      : shell.left.mode === 'expanded'
         ? 'var(--rail-w)'
-        : 'var(--rail-w-icon)',
+        : settingsPage ? '0px' : 'var(--rail-w-icon)',
     '--inspector-current':
       inspectorOpen && !inspectorIsDrawer ? 'var(--inspector-w)' : '0px',
-    '--console-current': shell.console.open ? 'var(--console-h)' : '0px'
+    '--console-current': '0px'
   } as CSSProperties
 
   return (
+    <DiagnosticsContext.Provider value={openDiagnostics}>
     <ConnectionPaneContext.Provider value={connectionContext}>
     <InspectorPresentationContext.Provider value={registerPresentation}>
-    <InspectorSlotContext.Provider value={slot}>
-    <DetailsSlotContext.Provider value={detailsSlot}>
-      <SettingsNavigationProvider>
+    <InspectorSlotContext.Provider value={slot}><InspectorSizeProvider pane={inspectorPane} open={inspectorOpen}>
+    <DetailsSlotContext.Provider value={detailsSlot}><BriefContext.Provider value={registerBrief}>
+      <AssistantReferenceProvider><SettingsNavigationProvider>
         <div className="desk" style={style} data-rail-drawer={railIsDrawer || undefined}>
           <a className="desk-skip" href="#main">{msg("Skip to main content")}</a>
 
-          <HeaderBar
-            inspectorAvailable={presentation?.available}
-            consoleOpenerRef={consoleOpenerRef}
-            inspectorTitle={presentation?.title ?? (packPage ? "Assistant" : "Inspector")}
-            inspectorOpen={inspectorOpen}
-            inspectorIsDrawer={inspectorIsDrawer}
-            consoleOpen={shell.console.open}
-            onToggleInspector={() => { inspectionGestureRef.current = null; toggleInspector() }}
-            onToggleConsole={shell.toggleConsole}
-            inspectorOpenerRef={inspectorOpenerRef}
-            railIsDrawer={railIsDrawer}
-            railDrawerOpen={railDrawerOpen}
-            onOpenRail={() => setRailDrawerOpen(true)}
-            railOpenerRef={railOpenerRef}
-          />
+          <HeaderBar railIsDrawer={railIsDrawer}
+            railOpen={railIsDrawer ? railDrawerOpen : shell.left.mode === 'expanded'}
+            onToggleRail={railIsDrawer ? () => setRailDrawerOpen(open => !open) : shell.toggleRail}
+            railOpenerRef={railOpenerRef} />
 
           <LeftRail
-            mode={settingsPage ? 'expanded' : shell.left.mode}
-            onToggle={railIsDrawer ? () => setRailDrawerOpen((open) => !open) : shell.toggleRail}
+            mode={shell.left.mode}
             asDrawer={railIsDrawer}
             drawerOpen={railDrawerOpen}
             onDrawerOpenChange={setRailDrawerOpen}
             openerRef={railOpenerRef}
           />
 
-          <div className="desk-workspace" ref={setWorkspaceElement}>
-            <main id="main" tabIndex={-1} className="desk-main">
+          <div className="desk-workspace" data-workspace-tools={workspaceTools || undefined} data-tool-takeover={takeover && inspectorOpen || undefined} data-tool-overlay={overlay || undefined} ref={setWorkspaceElement}>
+            <main id="main" tabIndex={-1} className="desk-main" inert={covering || undefined}>
               <div className="desk-measure">{children}</div>
             </main>
 
-            {inspectorOpen && !inspectorIsDrawer && <PaneDivider label={presentation?.title ?? (packPage ? msg("Assistant") : msg("Inspector"))} controls="desk-inspector"
+            {overlay && <button type="button" className="desk-pane-backdrop" tabIndex={-1} aria-hidden="true" onPointerDown={event => event.preventDefault()} aria-label={msg('Return to split view')} onClick={returnToPack} />}
+            {inspectorOpen && !inspectorIsDrawer && !takeover && !overlay && <PaneDivider label={paneTitle} controls="desk-inspector"
               value={inspectorWidth} min={inspectorLayout.min} max={inspectorLayout.max}
+              preview={{ element: workspaceElement, property: '--inspector-current' }}
               onChange={presentation?.onResize ?? shell.resizeInspector} onReset={presentation?.onReset ?? shell.resetInspectorWidth}
-              onCollapse={() => { inspectorOpenerRef.current?.focus(); toggleInspector() }} />}
+              onCollapse={closeInspector} />}
 
             <RightPane
-              title={presentation?.title ?? (packPage ? msg("Assistant") : undefined)}
+              title={paneTitle}
+              brief={briefSubject && <BriefPane key={briefSubject.id} subject={briefSubject} headerTarget={briefHeaderTarget} />} publishBriefHeaderTarget={setBriefHeaderTarget}
+              workspaceTools={workspaceTools} tool={rightTool ?? 'route'} expanded={overlay} fullWidth={takeover}
+              contextTitle={routePresentation?.contextTitle ?? briefSubject?.title}
+              returnLabel={route.pathname.startsWith('/jobs/') ? msg('Back to job') : undefined}
+              expandButtonRef={expandButtonRef}
+              onExpand={() => setToolExpanded(true)} onReturn={returnToPack}
+              resize={overlay ? { value: overlayLayout.width, min: overlayLayout.min, max: overlayLayout.max, onChange: shell.resizeOverlay, onReset: shell.resetOverlayWidth, preview: { element: workspaceElement, property: '--overlay-preview' } } : undefined}
+              publishDetailsTarget={setDetailsTarget} hasDetails={detailsClaims > 0}
+              inspection={inspection ? <Fragment key={inspection.owner}>{inspection.content}</Fragment> : undefined}
               open={inspectorOpen}
               onClose={closeInspector}
               asDrawer={inspectorIsDrawer}
-              declaredWidth={presentation || declaredPanes.inspectorWidth || minimumMainWidth > 0 || shell.inspectorWidth !== undefined ? inspectorWidth : undefined}
+              declaredWidth={briefSubject || presentation || declaredPanes.inspectorWidth || minimumMainWidth > 0 || shell.inspectorWidth !== undefined ? inspectorWidth : undefined}
               publishTarget={publishTarget}
               publishHeaderTarget={setInspectorHeaderTarget}
               publishPane={publishPane}
-              openerRef={inspectorOpenerRef}
               restoreFocusRef={presentation?.restoreFocusRef ?? inspectionGestureRef}
               showEmpty={inspectorClaims === 0}
               utility={Boolean(connection)}
@@ -414,35 +482,23 @@ function ShellFrame({
                 onClick={() => connection.provider ? setConnection({ ...connection, provider: undefined }) : closeConnection()}><IconChevronLeft /></button>}{connection.provider && <ProviderIcon provider={connection.provider} descriptor={connection.descriptor} />}</>}
             />
 
+            {workspaceTools && <nav className="desk-tool-rail" aria-label={msg('Workspace tools')}>
+              {([{ key: null, label: msg('Assistant'), icon: <IconAssistant /> }, { key: 'brief', label: msg('Brief'), icon: <IconBrief /> }, { key: 'details', label: msg('Details'), icon: <IconDetails /> }, { key: 'activity', label: msg('Activity'), icon: <IconActivity /> }, { key: 'runtime', label: msg('Runtime details'), icon: <IconGear /> }] as const).filter(item => item.key === 'brief' ? !!briefSubject : item.key === null ? routeAvailable : true).map(item => <Tooltip key={item.label} content={item.label} side="left"><button type="button" className="desk-icon-button" aria-label={item.label} aria-controls="desk-inspector" aria-pressed={!connection && inspectorOpen && rightTool === item.key} onClick={() => chooseTool(item.key)}><span>{item.icon}</span></button></Tooltip>)}
+            </nav>}
+
             {connection?.source === 'web' ? <WebSourcePane request={connection} target={connectionTarget} onClose={closeConnection} onAttached={() => closeConnection(true)} onBusy={setBusyChatId} /> : connection && <ConnectionsPane key={connection.provider ?? 'catalog'} request={connection} target={connectionTarget}
               onProvider={(provider, descriptor) => setConnection({ ...connection, provider, descriptor })} onClose={closeConnection} onAttached={() => closeConnection(true)} onBusy={setBusyChatId} />}
 
-            {shell.console.open && <PaneDivider orientation="horizontal" label={msg("Details and activity")} controls="desk-console"
-              value={bottomHeight} min={bottomMin} max={bottomMax}
-              onChange={height => { setBottomMaximized(false); shell.resizeConsole(height) }}
-              onReset={() => { setBottomMaximized(false); shell.resetConsoleHeight() }}
-              onCollapse={() => { consoleOpenerRef.current?.focus(); shell.toggleConsole() }} />}
-            <BottomPane
-              open={shell.console.open}
-              tab={shell.console.tab}
-              onTabChange={tab => { setShowDetails(false); shell.setConsoleTab(tab) }}
-              details={detailsClaims > 0 || inspection !== null}
-              inspection={inspection ? <Fragment key={inspection.owner}>{inspection.content}</Fragment> : undefined}
-              showDetails={showDetails}
-              onDetails={() => setShowDetails(true)}
-              publishTarget={setDetailsTarget}
-              onClose={() => { if (inspection) dismissInspection(); else { consoleOpenerRef.current?.focus(); shell.toggleConsole() } }}
-              maximized={bottomMaximized}
-              onMaximize={() => setBottomMaximized(value => !value)}
-            />
+
           </div>
 
-          <StatusStrip consoleOpen={shell.console.open} onToggleConsole={shell.toggleConsole} />
+          <StatusStrip />
         </div>
-      </SettingsNavigationProvider>
-    </DetailsSlotContext.Provider>
-    </InspectorSlotContext.Provider>
+      </SettingsNavigationProvider></AssistantReferenceProvider>
+    </BriefContext.Provider></DetailsSlotContext.Provider>
+    </InspectorSizeProvider></InspectorSlotContext.Provider>
     </InspectorPresentationContext.Provider>
     </ConnectionPaneContext.Provider>
+    </DiagnosticsContext.Provider>
   )
 }

@@ -1,0 +1,15 @@
+{
+  "deskConfigVersion": 1,
+  "assistant": {
+    "engine": "codex",
+    "agent": {
+      "provider": "openai",
+      "authMethod": "subscription",
+      "model": "model",
+      "tools": [
+        "exec_command"
+      ],
+      "effort": "high"
+    }
+  }
+}

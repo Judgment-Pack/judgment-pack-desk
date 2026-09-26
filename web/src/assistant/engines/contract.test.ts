@@ -300,3 +300,63 @@ it('does not misclassify an ordinary code example as a pack proposal', async () 
   expect(streamingProse('Answer.\n\n``')).toBe('Answer.')
   expect(streamingProse('Answer.\n\n```json\n{"proposal":')).toBe('Answer.')
 })
+
+it('finds one explicit proposal after indented examples without consuming its fence', async () => {
+  const { extractProposal, hasProposalFence, proseOf } = await import('./contract')
+  const examples = 'Runtime report:\n```text\nstatus: valid\n```\n1. Probe\n     ```json\n     {"status":"evaluated"}\n     ```\n'
+  const proposal = '```json\n{"proposal":{"kind":"create","document":{"id":"p"},"unknowns":[]}}\n```'
+  expect(hasProposalFence(examples + proposal)).toBe(true)
+  expect(extractProposal(examples + proposal).document).toEqual({ id: 'p' })
+  expect(proseOf(examples + proposal)).toBe(examples.trim())
+  expect(() => extractProposal(examples + proposal + '\n' + proposal)).toThrow('carried 2')
+  expect(hasProposalFence('```json\n{"example":{"proposal":{}}}\n```')).toBe(false)
+  expect(hasProposalFence('```text\n{"proposal":{"document":{}}}\n```')).toBe(false)
+  expect(hasProposalFence('```json\n{"proposal":{"document":{}}}')).toBe(false)
+  expect(() => extractProposal('```json\n{"proposal":{"document":null}}\n```')).toThrow('document object')
+})
+
+
+describe('streamed Markdown projection', () => {
+  it('streams unfinished ordinary code and subsequent formatted sections before the answer ends', async () => {
+    const {streamingProse} = await import('./contract')
+    const code='Example:\n\n```typescript\nconst count = 1;'
+    expect(streamingProse(code)).toBe(code)
+    expect(streamingProse(code+'\n``')).toBe(code)
+    const body=code+'\n```\n\n## Results\n\n- First\n- Second\n\n> A quote\n\n| Item | Value |\n| --- | --- |\n| Count | 1 |'
+    expect(streamingProse(body)).toBe(body)
+    expect(streamingProse(body+'\n\n```json\n{"proposal":{"document":')).toBe(body)
+  })
+  it('streams explicitly marked JSON examples token by token, including nested proposal examples', async () => {
+    const {streamingProse, hasProposalFence} = await import('./contract')
+    const prefix='```json example\n{"example":{"proposal":{"document":'
+    expect(streamingProse(prefix)).toBe(prefix)
+    expect(hasProposalFence(prefix+'{}}}}\n```')).toBe(false)
+  })
+  it('releases legacy JSON examples once their value is complete, without waiting for the closing fence or final reply', async () => {
+    const {streamingProse} = await import('./contract')
+    const prefix='Example:\n\n```json\n'
+    expect(streamingProse(prefix+'{"status":')).toBe('Example:')
+    expect(streamingProse(prefix+'{"status":"valid"}')).toBe(prefix+'{"status":"valid"}')
+    const nested=prefix+'{"example":{"proposal":{}}}'
+    expect(streamingProse(nested+'\n```')).toBe(nested+'\n```')
+  })
+  it.each([
+    '{"proposal":{"document":{"id":"p"}}}',
+    '{"metadata":1,"proposal":{"document":{"id":"p"}}}',
+    '{"propo\\u0073al":{"document":{"id":"p"}}}'
+  ])('never flashes an incomplete legacy proposal: %s', async body => {
+    const {streamingProse} = await import('./contract')
+    const answer='Before.\n\n```json\n'+body+'\n```\n\nAfter.'
+    const begin=answer.indexOf('```')
+    for(let n=begin;n<=answer.indexOf('After.');n++)expect(streamingProse(answer.slice(0,n))).toBe('Before.')
+    expect(streamingProse(answer)).toBe('Before.\n\n\nAfter.')
+  })
+  it('handles tildes, longer fences, CRLF, indented examples, and inline backticks without freezing prose', async () => {
+    const {streamingProse,proseOf} = await import('./contract')
+    for(const code of ['~~~sql\r\nselect 1;\r\n~~~','````text\n```\n````','    ```python\n    print(1)\n    ```','Inline ``a ` b`` continues.']) {
+      const body=code+'\n\nNext paragraph.'
+      expect(streamingProse(body)).toBe(body)
+      expect(streamingProse(body+'\n```json\n{"proposal":{"document":{}}}\n```')).toBe(proseOf(body+'\n```json\n{"proposal":{"document":{}}}\n```'))
+    }
+  })
+})

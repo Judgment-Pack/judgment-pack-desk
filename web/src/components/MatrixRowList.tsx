@@ -26,18 +26,18 @@ import { TargetPair, describeTargetAssertion } from './TargetPair'
  *   view never compares them: the comparator decides on decoded targets, and
  *   the row's own status is the only verdict shown.
  */
-export function MatrixRowList({ rows }: { rows: MatrixRow[] }) {
+export function MatrixRowList({ rows, names }: { rows: MatrixRow[]; names?: Record<string,string> }) {
   useLocale()
   return (
     <ul className="rows">
       {rows.map((row) => (
-        <MatrixRowItem key={row.id} row={row} />
+        <MatrixRowItem key={row.id} row={row} name={names?.[row.id]} />
       ))}
     </ul>
   )
 }
 
-function MatrixRowItem({ row }: { row: MatrixRow }) {
+function MatrixRowItem({ row, name }: { row: MatrixRow; name?: string }) {
   useLocale()
   const dispositionsAgree = row.expected === row.actual
   const expectsRefusal = Boolean(row.expectedErrorClass)
@@ -46,7 +46,7 @@ function MatrixRowItem({ row }: { row: MatrixRow }) {
   return (
     <li className={`row row-${row.status}`}>
       <div className="row-head">
-        <code className="row-id">{row.id}</code>
+        {name ? <strong className="row-name">{name}</strong> : <code className="row-id">{row.id}</code>}
         <Pill tone={statusTone(row.status)}>{row.status}</Pill>
         {row.origin && <Pill tone="quiet"><Message text={"origin <0/>"} slots={[row.origin]} /></Pill>}
         {assertion && <Pill tone="quiet">{assertion}</Pill>}

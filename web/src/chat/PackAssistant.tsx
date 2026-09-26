@@ -7,12 +7,12 @@ import { applyProposal } from '../assistant/acceptProposal'
 import { diffProposal } from '../assistant/proposalDiff'
 import { ProposalDiffView } from '../assistant/ProposalDiff'
 import { AssistantPane } from '../assistant/AssistantPane'
-import { useInspectorSlot } from '../shell/InspectorSlot'
+import { useInspectorControls } from '../shell/InspectorSlot'
 import { Button } from '../ui/Button'
 import { Disclosure } from '../ui/Disclosure'
 import { ChatPanel } from './ChatPanel'
 import { useChats } from './ChatProvider'
-import { chatHref } from './ChatHistory'
+import { assistantChatHref } from './navigation'
 import styles from './ChatWorkspace.module.css'
 
 export function PackAssistant({ packId, path, digest, draft, editing, identity, busy, diagnostics, onEdit }: {
@@ -22,7 +22,7 @@ export function PackAssistant({ packId, path, digest, draft, editing, identity, 
   const { store, ready, chats, drafts, bindings } = useChats()
   const [params] = useSearchParams()
   const navigate = useNavigate()
-  const slot = useInspectorSlot()
+  const slot = useInspectorControls()
   const session = useEditing()
   const explicit = params.get('chat')
   const available = [...chats, ...drafts]
@@ -35,7 +35,7 @@ export function PackAssistant({ packId, path, digest, draft, editing, identity, 
     else if (slot.open && store.canCreate && !creating.current) {
       creating.current = true
       const next = store.startChat({ id: packId, path: path ?? '', digest: digest ?? '' })
-      navigate(chatHref(next), { replace: true })
+      navigate(assistantChatHref(next), { replace: true })
     }
   }, [store, ready, chat?.id, packId, path, digest, slot.open, navigate])
   const [baseline, setBaseline] = useState<{ chatId: string; bytes: string; revision: number; identity?: BufferIdentity; fromView?: boolean; path?: string } | null>(null)

@@ -123,7 +123,7 @@ type Exactly<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false
  * and neither is a place a supplied endpoint could become a different thing
  * from one you run yourself.
  */
-const ASSISTANT_KEYS = ['endpoint', 'engine', 'thinking'] as const
+const ASSISTANT_KEYS = ['agent', 'endpoint', 'engine', 'thinking'] as const
 
 /** The endpoint object's members, exactly as the schema declares them. */
 const ENDPOINT_KEYS = ['url', 'kind', 'model', 'models', 'tools'] as const
@@ -138,7 +138,7 @@ const ENDPOINT_KEYS = ['url', 'kind', 'model', 'models', 'tools'] as const
  */
 // Key presence and the read lifecycle are separate facts. Retry re-reads metadata;
 // it never returns, replaces or stores the credential.
-const SLOT_KEYS = ['state', 'endpoint', 'unusable', 'keyPresent', 'keyStatus', 'retryKey', 'engine', 'thinking'] as const
+const SLOT_KEYS = ['agent', 'state', 'endpoint', 'unusable', 'keyPresent', 'keyStatus', 'retryKey', 'engine', 'thinking'] as const
 
 const assistantKeysAreExact: Exactly<keyof AssistantConfig, (typeof ASSISTANT_KEYS)[number]> = true
 const endpointKeysAreExact: Exactly<
@@ -217,7 +217,7 @@ describe('(1) the assistant slot is one nullable field, two settings, and four e
 describe('(1a) engine and thinking are closed lists that say how, not whether', () => {
   it('accepts every engine and every tier the desk declares', () => {
     for (const engine of ASSISTANT_ENGINES) {
-      const decoded = decodeDesk({ endpoint: GOOD_ENDPOINT, engine })
+      const decoded = decodeDesk({ endpoint: GOOD_ENDPOINT, engine, ...(engine === 'codex' ? { agent:{provider:'openai',authMethod:'subscription',model:null,tools:[]} } : {}) })
       expect(decoded.problems, engine).toEqual([])
       expect(decoded.values?.assistant?.engine).toBe(engine)
     }
@@ -674,6 +674,7 @@ describe('(7) one member, one refusal', () => {
  * both ways round, exactly as (1) asserts the endpoint's.
  */
 const SESSION_KEYS = [
+  'purpose',
   'replyLanguage',
   'prompt',
   'testPrompt',

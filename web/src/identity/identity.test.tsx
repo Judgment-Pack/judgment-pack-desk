@@ -107,16 +107,7 @@ function renderHeaderIn(
                 projectDefaultKnown
               >
               <IdentityProvider>
-                <HeaderBar
-                  inspectorOpen={false}
-                  inspectorIsDrawer={false}
-                  consoleOpen={false}
-                  onToggleInspector={() => {}}
-                  onToggleConsole={() => {}}
-                  railIsDrawer={false}
-                  railDrawerOpen={false}
-                  onOpenRail={() => {}}
-                />
+                <HeaderBar railIsDrawer={false} railOpen onToggleRail={() => {}} />
               </IdentityProvider>
               <ShellProbe />
               </AppearanceProvider>
@@ -209,7 +200,7 @@ describe('the user control, identity NONE', () => {
     expect(menu.textContent).toContain(SESSION_SENTENCE)
   })
 
-  it('offers no Sign out — not even a disabled one — and no Sign in', async () => {
+  it('offers End session without pretending a cloud account is signed in', async () => {
     renderHeader()
     fireEvent.keyDown(screen.getByRole('button', { name: 'Account and desk settings' }), {
       key: 'Enter'
@@ -218,8 +209,8 @@ describe('the user control, identity NONE', () => {
     expect(menu.textContent).not.toContain('Sign out')
     expect(menu.textContent).not.toContain('Sign in')
     // The appearance choices are `menuitemradio`, and are asserted as such in
-    // their own suite: what is left as a plain item is the one action that
-    // clears a preference, and the four that navigate or reset.
+    // their own suite. Local session revocation is available independently
+    // of the display-only identity provider configuration.
     expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
       'My connections',
       'Language',
@@ -227,7 +218,8 @@ describe('the user control, identity NONE', () => {
       'Reset panes',
       'Keyboard shortcuts',
       'Admin',
-      'About'
+      'About',
+      'End session'
     ])
   })
 })

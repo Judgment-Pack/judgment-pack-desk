@@ -8,3 +8,7 @@ web/dist/*
 # Editor and OS noise
 .DS_Store
 *.swp
+
+# Python build-tool caches
+__pycache__/
+*.py[cod]

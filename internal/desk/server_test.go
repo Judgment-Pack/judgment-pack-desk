@@ -46,6 +46,9 @@ const testPort = 8799
 // of them (the FIFO test) deliberately leaks a listener rather than hang.
 func startDesk(t *testing.T, cfg Config) (*Server, *httptest.Server) {
 	t.Helper()
+	if cfg.DeskConfigDir == "" {
+		cfg.DeskConfigDir = t.TempDir()
+	}
 	ts := httptest.NewUnstartedServer(nil)
 	cfg.Port = ts.Listener.Addr().(*net.TCPAddr).Port
 	s, err := New(cfg)

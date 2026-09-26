@@ -1,3 +1,5 @@
+import { selectedAssistant } from './target'
+import { assistantReady } from './useAssistantSlot'
 import { Message } from '../i18n/Message'
 import { systemMessage, msg, useLocale } from '../i18n'
 /**
@@ -176,6 +178,7 @@ export function AssistantPane({
   useLocale()
   const helpId = useId()
   const slot = useAssistantSlot()
+  const selected = selectedAssistant(slot)
   // The editing session is the only way bytes change on this desk, and `write`
   // is the whole of what this pane uses it for. There is no `commit` here to
   // reach for: the context does not carry one.
@@ -284,14 +287,15 @@ export function AssistantPane({
   // own, from the listing every other per-project preference is keyed on.
   const listing = useFileListing()
   const picked = usePickedModel(
-    slot.endpoint?.models ?? EMPTY_MODELS,
-    slot.endpoint?.model ?? null,
+    selected?.models ?? EMPTY_MODELS,
+    selected?.model ?? null,
     listing.data?.root
   )
   const run = useAssistantRun({
     // Only rendered where the endpoint exists; the fallback keeps the hook
     // unconditional, which is the rule React enforces.
-    endpoint: slot.endpoint ?? { url: '', kind: 'openai-compatible', model: '', models: [], tools: [] },
+    endpoint: slot.endpoint,
+    agent: slot.agent,
     model: picked.model,
     engine: slot.engine,
     thinking: slot.thinking,
@@ -419,17 +423,12 @@ export function AssistantPane({
     setAccepted(landed.text)
   }, [proposed, write, onBaseline])
 
-  if (
-    slot.state === 'unavailable' ||
-    slot.endpoint === null ||
-    !slot.keyPresent ||
-    slot.unusable !== undefined
-  ) {
+  if (!assistantReady(slot)) {
     return (
       <div className={styles.empty}>
         {/* Configuration, key-read status and model readiness are separate.
             A pending or failed read establishes no absence on disk. */}
-        {slot.state === 'unavailable'
+        {slot.engine === 'codex' ? msg(slot.unusable ?? 'Configure a ChatGPT subscription in Assistant settings.') : slot.state === 'unavailable'
           ? msg("This desk could not read its own configuration, so it cannot say what assistant is configured. Admin › Assistant names the problem.")
           : slot.endpoint === null
             ? msg("No assistant is configured on this desk. Configure an endpoint in Admin › Assistant.")
@@ -440,7 +439,7 @@ export function AssistantPane({
                 : !slot.keyPresent
                   ? msg("An endpoint is configured and no key is stored on this machine. Add one in Admin › Assistant.")
                   : msg("An endpoint is configured and no model is chosen for it. Pick one in Admin › Assistant.")}
-        {slot.state === 'configured' && slot.keyStatus === 'error' && (
+        {slot.engine !== 'codex' && slot.state === 'configured' && slot.keyStatus === 'error' && (
           <p><Button variant="quiet" onClick={slot.retryKey}>{msg("Retry key status")}</Button></p>
         )}
       </div>

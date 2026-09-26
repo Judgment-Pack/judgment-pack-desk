@@ -113,11 +113,11 @@ function ConditionNode({
   if (kind === 'fact') {
     if (structured) return <Block pointer={at} as="div" className={reading.fact}>
       <div className={reading.field}>
-        <span>{factLabel(String(node.path ?? ''))}</span>
-        <Block pointer={`${at}/path`} as="code" className={reading.path}>{String(node.path ?? '')}</Block>
+        <span title={String(node.path ?? '')}>{factLabel(String(node.path ?? ''))}</span>
+
       </div>
       <div className={reading.test}>
-        <Block pointer={`${at}/operator`} as="span" className={reading.comparison}>{valueLabel('operator', String(node.operator ?? ''))}</Block>
+        <Block pointer={`${at}/operator`} as="span" className={reading.comparison}>{node.operator === 'equals' ? <abbr title={valueLabel('operator', 'equals')} aria-label={valueLabel('operator', 'equals')}>=</abbr> : valueLabel('operator', String(node.operator ?? ''))}</Block>
         <Block pointer={`${at}/value`} as="div" className={reading.operand}><Operand value={node.value} /></Block>
       </div>
     </Block>
@@ -205,9 +205,9 @@ function Row({
   )
 }
 
-/** Mechanical display label only; the complete, exact pointer stays visible. */
+/** Mechanical display label only; exact paths remain in Technical details. */
 function factLabel(path: string): string {
   const words = path.replace(/^\//, '').split('/').map(part => part.replace(/~1/g, '/').replace(/~0/g, '~'))
     .join(' ').replace(/([a-z0-9])([A-Z])/g, (_match, before: string, after: string) => `${before} ${after.toLowerCase()}`).replace(/[-_]/g, ' ')
-  return words ? words[0]!.toUpperCase() + words.slice(1) : msg("Fact")
+  return words.trim() ? words[0]!.toUpperCase() + words.slice(1) : path || msg("Fact")
 }

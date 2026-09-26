@@ -1,0 +1,968 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://judgmentpack.org/design/jobs/v0.1/records.schema.json",
+  "title": "Operational jobs records \u2014 design proposal only",
+  "description": "Not a shipped API or JPS contract. Structural checks do not prove authorization, artifact validity, referential integrity, or lifecycle correctness. First pilot: single item and no external writes.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/release"
+    },
+    {
+      "$ref": "#/$defs/job"
+    },
+    {
+      "$ref": "#/$defs/jobRevision"
+    },
+    {
+      "$ref": "#/$defs/run"
+    },
+    {
+      "$ref": "#/$defs/review"
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{2,99}$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "actor": {
+      "type": "object",
+      "properties": {
+        "issuer": {
+          "type": "string",
+          "format": "uri"
+        },
+        "subject": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "issuer",
+        "subject"
+      ],
+      "additionalProperties": false
+    },
+    "artifact": {
+      "type": "object",
+      "properties": {
+        "digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "mediaType": {
+          "enum": [
+            "application/json",
+            "application/zip",
+            "application/octet-stream"
+          ]
+        },
+        "byteLength": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "digest",
+        "mediaType",
+        "byteLength"
+      ],
+      "additionalProperties": false
+    },
+    "target": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "pack",
+            "graph"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "label"
+      ],
+      "additionalProperties": false
+    },
+    "runtime": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "binaryDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "machineOutputVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evaluatorSpecVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "experimental": {
+          "const": true
+        }
+      },
+      "required": [
+        "version",
+        "binaryDigest",
+        "machineOutputVersion",
+        "evaluatorSpecVersion",
+        "experimental"
+      ],
+      "additionalProperties": false
+    },
+    "checks": {
+      "type": "object",
+      "properties": {
+        "bundleDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "validationReport": {
+          "$ref": "#/$defs/artifact"
+        },
+        "testStatus": {
+          "enum": [
+            "passed",
+            "mismatch",
+            "skipped",
+            "not-run"
+          ]
+        },
+        "testReport": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/artifact"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "bundleDigest",
+        "validationReport",
+        "testStatus",
+        "testReport"
+      ],
+      "additionalProperties": false
+    },
+    "trigger": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "manual-api"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "schedule"
+            },
+            "cron": {
+              "type": "string",
+              "minLength": 1
+            },
+            "timeZone": {
+              "type": "string",
+              "minLength": 1
+            },
+            "missedRuns": {
+              "const": "skip"
+            },
+            "dstGap": {
+              "const": "skip"
+            },
+            "dstOverlap": {
+              "const": "once"
+            }
+          },
+          "required": [
+            "kind",
+            "cron",
+            "timeZone",
+            "missedRuns",
+            "dstGap",
+            "dstOverlap"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "inputs": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "manual-api",
+            "connected"
+          ]
+        },
+        "mapping": {
+          "$ref": "#/$defs/artifact"
+        },
+        "binding": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/artifact"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "grantId": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "mapping",
+        "binding",
+        "grantId"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "connected"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "binding": {
+                "$ref": "#/$defs/artifact"
+              },
+              "grantId": {
+                "$ref": "#/$defs/id"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "binding": {
+                "type": "null"
+              },
+              "grantId": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "release": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": "0.1-design"
+        },
+        "kind": {
+          "const": "release"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/id"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "createdBy": {
+          "$ref": "#/$defs/actor"
+        },
+        "target": {
+          "$ref": "#/$defs/target"
+        },
+        "bundle": {
+          "$ref": "#/$defs/artifact"
+        },
+        "runtime": {
+          "$ref": "#/$defs/runtime"
+        },
+        "checks": {
+          "$ref": "#/$defs/checks"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "kind",
+        "id",
+        "workspaceId",
+        "createdAt",
+        "createdBy",
+        "target",
+        "bundle",
+        "runtime",
+        "checks"
+      ],
+      "additionalProperties": false
+    },
+    "job": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": "0.1-design"
+        },
+        "kind": {
+          "const": "job"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/id"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "owner": {
+          "$ref": "#/$defs/actor"
+        },
+        "state": {
+          "enum": [
+            "draft",
+            "active",
+            "paused",
+            "archived"
+          ]
+        },
+        "activeRevisionId": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "$ref": "#/$defs/timestamp"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "kind",
+        "id",
+        "workspaceId",
+        "name",
+        "owner",
+        "state",
+        "activeRevisionId",
+        "createdAt"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "active",
+                  "paused"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "activeRevisionId": {
+                "$ref": "#/$defs/id"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "jobRevision": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": "0.1-design"
+        },
+        "kind": {
+          "const": "job-revision"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/id"
+        },
+        "jobId": {
+          "$ref": "#/$defs/id"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "releaseId": {
+          "$ref": "#/$defs/id"
+        },
+        "releaseBundleDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "createdBy": {
+          "$ref": "#/$defs/actor"
+        },
+        "runAs": {
+          "$ref": "#/$defs/actor"
+        },
+        "inputs": {
+          "$ref": "#/$defs/inputs"
+        },
+        "trigger": {
+          "$ref": "#/$defs/trigger"
+        },
+        "handling": {
+          "type": "object",
+          "properties": {
+            "onOutcome": {
+              "const": "record"
+            },
+            "onUnresolved": {
+              "const": "review"
+            },
+            "reviewer": {
+              "$ref": "#/$defs/actor"
+            },
+            "externalActions": {
+              "const": "none"
+            }
+          },
+          "required": [
+            "onOutcome",
+            "onUnresolved",
+            "reviewer",
+            "externalActions"
+          ],
+          "additionalProperties": false
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "concurrency": {
+              "const": 1
+            },
+            "queueCapacity": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "maxReadRetries": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 5
+            },
+            "stepTimeoutSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600
+            }
+          },
+          "required": [
+            "concurrency",
+            "queueCapacity",
+            "maxReadRetries",
+            "stepTimeoutSeconds"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "kind",
+        "id",
+        "workspaceId",
+        "jobId",
+        "revision",
+        "releaseId",
+        "releaseBundleDigest",
+        "createdAt",
+        "createdBy",
+        "runAs",
+        "inputs",
+        "trigger",
+        "handling",
+        "limits"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "trigger": {
+                "properties": {
+                  "kind": {
+                    "const": "schedule"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "inputs": {
+                "properties": {
+                  "kind": {
+                    "const": "connected"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "run": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": "0.1-design"
+        },
+        "kind": {
+          "const": "run"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/id"
+        },
+        "jobId": {
+          "$ref": "#/$defs/id"
+        },
+        "jobRevisionId": {
+          "$ref": "#/$defs/id"
+        },
+        "releaseId": {
+          "$ref": "#/$defs/id"
+        },
+        "releaseBundleDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "mode": {
+          "enum": [
+            "preview",
+            "operational"
+          ]
+        },
+        "acceptedAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "startedAt": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "completedAt": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "trigger": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "manual",
+                "api",
+                "schedule"
+              ]
+            },
+            "requestedBy": {
+              "$ref": "#/$defs/actor"
+            },
+            "requestKeyDigest": {
+              "$ref": "#/$defs/digest"
+            }
+          },
+          "required": [
+            "kind",
+            "requestedBy",
+            "requestKeyDigest"
+          ],
+          "additionalProperties": false
+        },
+        "runAs": {
+          "$ref": "#/$defs/actor"
+        },
+        "execution": {
+          "enum": [
+            "queued",
+            "running",
+            "completed",
+            "failed",
+            "cancelled",
+            "interrupted"
+          ]
+        },
+        "item": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/id"
+            },
+            "businessKey": {
+              "type": "string",
+              "minLength": 1
+            },
+            "inputSnapshot": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/artifact"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "decisionRecord": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/artifact"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "disposition": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/artifact"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "businessKey",
+            "inputSnapshot",
+            "decisionRecord",
+            "disposition"
+          ],
+          "additionalProperties": false
+        },
+        "followUp": {
+          "enum": [
+            "none",
+            "recorded",
+            "needs-input",
+            "recovery-required"
+          ]
+        },
+        "reviewId": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "message": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "step": {
+                  "enum": [
+                    "acquire",
+                    "map",
+                    "evaluate",
+                    "record",
+                    "route"
+                  ]
+                },
+                "retryability": {
+                  "enum": [
+                    "retryable",
+                    "permanent",
+                    "reconcile"
+                  ]
+                }
+              },
+              "required": [
+                "code",
+                "message",
+                "step",
+                "retryability"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "kind",
+        "id",
+        "workspaceId",
+        "jobId",
+        "jobRevisionId",
+        "releaseId",
+        "releaseBundleDigest",
+        "mode",
+        "acceptedAt",
+        "startedAt",
+        "completedAt",
+        "trigger",
+        "runAs",
+        "execution",
+        "item",
+        "followUp",
+        "reviewId",
+        "error"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "execution": {
+                "const": "completed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "completedAt": {
+                "$ref": "#/$defs/timestamp"
+              },
+              "startedAt": {
+                "$ref": "#/$defs/timestamp"
+              },
+              "error": {
+                "type": "null"
+              },
+              "item": {
+                "properties": {
+                  "inputSnapshot": {
+                    "$ref": "#/$defs/artifact"
+                  },
+                  "decisionRecord": {
+                    "$ref": "#/$defs/artifact"
+                  },
+                  "disposition": {
+                    "$ref": "#/$defs/artifact"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "followUp": {
+                "const": "needs-input"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reviewId": {
+                "$ref": "#/$defs/id"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "execution": {
+                "enum": [
+                  "failed",
+                  "interrupted"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "error": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "review": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": "0.1-design"
+        },
+        "kind": {
+          "const": "review"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/id"
+        },
+        "runId": {
+          "$ref": "#/$defs/id"
+        },
+        "itemId": {
+          "$ref": "#/$defs/id"
+        },
+        "releaseBundleDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "inputSnapshotDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "type": {
+          "const": "missing-input"
+        },
+        "state": {
+          "enum": [
+            "open",
+            "requested",
+            "resolved",
+            "dismissed"
+          ]
+        },
+        "assignedTo": {
+          "$ref": "#/$defs/actor"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requiredEvidence": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "resolutionRunId": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "kind",
+        "id",
+        "workspaceId",
+        "runId",
+        "itemId",
+        "releaseBundleDigest",
+        "inputSnapshotDigest",
+        "type",
+        "state",
+        "assignedTo",
+        "createdAt",
+        "reason",
+        "requiredEvidence",
+        "resolutionRunId"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "resolved"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "resolutionRunId": {
+                "$ref": "#/$defs/id"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

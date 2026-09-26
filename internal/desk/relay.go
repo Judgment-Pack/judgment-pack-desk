@@ -29,14 +29,16 @@ const (
 	outBuffer = 64
 )
 
-// conn is one browser connection. Every write to the socket goes through out,
-// so the relay's stdout pump and the file watcher's broadcast never interleave
-// two frames.
+// conn tracks one browser connection for shutdown. MCP relay writes go through
+// out so subprocess output and file-watcher broadcasts cannot interleave frames.
+// Silent agent sockets own their writer and do not receive those broadcasts.
 type conn struct {
-	ws   *websocket.Conn
-	out  chan []byte
-	once sync.Once
-	done chan struct{}
+	ws     *websocket.Conn
+	silent bool // Agent sockets do not receive MCP file-watcher notifications.
+	out    chan []byte
+	once   sync.Once
+	done   chan struct{}
+	cancel context.CancelFunc
 }
 
 func (c *conn) send(msg []byte) {
@@ -52,16 +54,22 @@ func (c *conn) send(msg []byte) {
 
 func (c *conn) stop() { c.once.Do(func() { close(c.done) }) }
 
-func (s *Server) register(c *conn) {
+func (s *Server) register(c *conn) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.closing {
+		return false
+	}
+	s.relayWork.Add(1)
 	s.conns[c] = struct{}{}
+	return true
 }
 
 func (s *Server) unregister(c *conn) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.conns, c)
+	s.relayWork.Done()
 }
 
 // broadcastFileChange sends the one message this chassis originates: a
@@ -80,7 +88,9 @@ func (s *Server) broadcastFileChange(relPath string) {
 	s.mu.Lock()
 	targets := make([]*conn, 0, len(s.conns))
 	for c := range s.conns {
-		targets = append(targets, c)
+		if !c.silent {
+			targets = append(targets, c)
+		}
 	}
 	s.mu.Unlock()
 	for _, c := range targets {
@@ -126,8 +136,11 @@ func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
-	c := &conn{ws: ws, out: make(chan []byte, outBuffer), done: make(chan struct{})}
-	s.register(c)
+	c := &conn{ws: ws, out: make(chan []byte, outBuffer), done: make(chan struct{}), cancel: cancel}
+	if !s.register(c) {
+		_ = ws.CloseNow()
+		return
+	}
 	defer s.unregister(c)
 	defer c.stop()
 

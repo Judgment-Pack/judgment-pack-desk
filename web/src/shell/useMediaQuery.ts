@@ -15,7 +15,7 @@ import { useCallback, useSyncExternalStore } from 'react'
 
 /** Below this the rail is an overlay drawer rather than a column. */
 export const RAIL_DRAWER_BELOW = '(max-width: 899px)'
-/** Below this the inspector is an overlay drawer rather than a column. */
+/** Initial fallback before measuring the workspace; measured capacity decides docking. */
 export const INSPECTOR_DRAWER_BELOW = '(max-width: 1099px)'
 
 function hasMatchMedia(): boolean {

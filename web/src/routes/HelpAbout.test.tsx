@@ -93,6 +93,15 @@ describe('Help & About', () => {
     expect(summary.textContent).toContain('"status": "ready"')
   })
 
+  it.each(['ready', 'external', 'unavailable'] as const)('only labels a running local gateway: %s', status => {
+    renderHelp(stubClient(PACKS), {}, effectiveConfig(undefined, undefined, undefined, {
+      path: '/private/desk.json', present: false,
+      localGateway: { status, build: { version: 'v0.3.1', revision: '1ab277d127ba6ed60a4ede2c970742b04121d247' } }
+    }))
+    expect(screen.queryByText('v0.3.1') !== null).toBe(status === 'ready')
+    expect(screen.queryByText('1ab277d127ba6ed60a4ede2c970742b04121d247') !== null).toBe(status === 'ready')
+  })
+
   it('says the desk has not named a runtime binary rather than composing one', () => {
     renderHelp(stubClient(PACKS))
     expect(screen.getByText(/the desk has not said/)).toBeTruthy()
@@ -112,7 +121,7 @@ describe('Help & About', () => {
 
   it('states the one place Escape does close a pane', () => {
     renderHelp(stubClient(PACKS))
-    expect(screen.getByText(/closes the Inspector when it appears as a drawer below 1100px/)).toBeTruthy()
+    expect(screen.getByText(/dismisses an open drawer/)).toBeTruthy()
   })
 
   it('renders the runtime’s author_pack text verbatim where it is advertised', async () => {
@@ -129,12 +138,8 @@ describe('Help & About', () => {
 
   it('carries the true sentence about how this desk is authorized', () => {
     renderHelp(stubClient(PACKS))
-    // The launch redirects and the handoff is spent on load, so the secret
-    // leaves the address bar at load and no cookie authorizes anything after
-    // the first request. `TestLaunchSetsAHandoffAndNoSession` and
-    // `TestNoCookieAuthorizesAnyGatedRoute` hold the two halves.
-    expect(screen.getByText(/single-use, 60-second handoff/)).toBeTruthy()
-    expect(screen.getByText(/no cookie authorizes anything afterwards/)).toBeTruthy()
+    expect(screen.getByText('One owner per local Desk. Source connections are managed separately.')).toBeTruthy()
+    expect(screen.getByText(/jpack-desk --reset-sign-in/)).toBeTruthy()
     expect(screen.queryByText(/session token/)).toBeNull()
   })
 })

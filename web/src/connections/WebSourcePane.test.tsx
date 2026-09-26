@@ -1,3 +1,4 @@
+import { memoryDraftPersistence } from '../testing/draftPersistence'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ChatStore } from '../chat/store'
@@ -10,7 +11,7 @@ vi.mock('./catalog', () => ({ useConnections: () => ({ web: m.web }) }))
 let store: ChatStore, id: string
 beforeEach(async () => {
  m.web = true
- store = new ChatStore('/synthetic', { read: async () => ({ project:'/synthetic', sha256:'absent', content:{version:1,chats:[]} }), write: vi.fn() })
+ store = new ChatStore('/synthetic', { read: async () => ({ project:'/synthetic', sha256:'absent', content:{version:1,chats:[]} }), write: vi.fn() }, memoryDraftPersistence('/synthetic'))
  await store.load(); id = store.startChat().id
  store.update(id, { composer: 'Keep this draft' })
  m.snapshot = { ...store.getSnapshot(), store }

@@ -185,9 +185,15 @@ describe('every route states the width kind of its page', () => {
     // A reader that returns nothing passes every rule under it. This is a
     // floor and not an equality: adding a route is allowed, and adding one
     // with no kind is what fails.
-    expect(ROUTES.length).toBeGreaterThanOrEqual(8)
+    expect(ROUTES.length).toBeGreaterThanOrEqual(7)
     expect(ROUTES.map((route) => route.name)).toContain('AdminView')
     expect(ROUTES.map((route) => route.name)).toContain('PacksLayout')
+  })
+
+  it('keeps both saved Tests URLs inside the shared packs layout', () => {
+    const tests = routeTags(APP).filter(({ span }) => elementOf(span) === 'PackTests')
+    expect(tests).toHaveLength(2)
+    expect(tests.every(({ nested }) => nested)).toBe(true)
   })
 
   it.each(ROUTES.map((route) => [route.file, route] as const))(

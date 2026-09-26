@@ -160,6 +160,8 @@ export interface ModelRequest {
 export type ModelCall = (suffix: string, request: ModelRequest) => Promise<Response>
 
 export interface AssistantSession {
+  /** Test design proposes reviewed cases rather than a replacement pack. */
+  purpose?: 'test-design' | 'brief'
   /** Reply language captured for this turn; wire keys and source quotations remain exact. */
   replyLanguage?: Language
   /** The runtime's prompt text, from `prompts/get`. */
@@ -238,7 +240,13 @@ export type AssistantEvent =
   | { type: 'error'; message: string }
   | { type: 'end' }
 
+export type AgentAssistantSession = Omit<AssistantSession, 'model' | 'thinking'> & {
+  agent: { model: string; run: import('./agent').AgentRun }
+  effort?: import('./agent').CodexEffort
+}
+export type EngineSession = AssistantSession | AgentAssistantSession
+
 export interface Engine {
   readonly id: AssistantEngine
-  start(session: AssistantSession): AsyncIterable<AssistantEvent>
+  start(session: EngineSession): AsyncIterable<AssistantEvent>
 }

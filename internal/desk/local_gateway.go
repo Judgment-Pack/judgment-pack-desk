@@ -19,17 +19,27 @@ import (
 	"time"
 )
 
-const GatewayRevision = "8361c0b1b1e6c913d4990d529a425c53e49fdcd4"
+// Gateway v0.3.1: bounded PDF opening and reconstruction, including timeout records.
+const GatewayVersion = "v0.3.1"
+const GatewayRevision = "1ab277d127ba6ed60a4ede2c970742b04121d247"
 const localAuthority = "gateway:desk-local"
+
+type gatewayBuild struct {
+	Version  string `json:"version,omitempty"`
+	Revision string `json:"revision"`
+}
 
 // LocalGatewayStatus carries public, effective settings only. The signing seed
 // remains in the existing credential custody root and never reaches the page.
 type LocalGatewayStatus struct {
+	Build   *gatewayBuild    `json:"build,omitempty"`
 	Status  string           `json:"status"`
 	Gateway *localGatewayPin `json:"gateway,omitempty"`
 	Problem string           `json:"problem,omitempty"`
 }
 type localGatewayPin struct {
+	// Captured at launch; later bundle replacements cannot relabel this process.
+	build     *gatewayBuild
 	URL       string      `json:"url"`
 	Authority string      `json:"authority"`
 	Signer    localSigner `json:"signer"`
@@ -224,6 +234,16 @@ func (g *localGateway) start(store *assistantStore) (*localGatewayPin, error) {
 	if err := verifyGatewayBundle(g.bundle); err != nil {
 		return nil, err
 	}
+	manifest, err := os.Open(filepath.Join(g.bundle, "gateway-bundle.json"))
+	if err != nil {
+		return nil, err
+	}
+	var build gatewayBuild
+	err = json.NewDecoder(io.LimitReader(manifest, 8192)).Decode(&build)
+	manifest.Close()
+	if err != nil {
+		return nil, err
+	}
 	public, err := localIdentity(store)
 	if err != nil {
 		return nil, err
@@ -280,6 +300,7 @@ func (g *localGateway) start(store *assistantStore) (*localGatewayPin, error) {
 		if reply.Pin.Authority != localAuthority || reply.Pin.Signer.Public != public || reply.Pin.Signer.Algorithm != "ed25519" || !strings.HasPrefix(reply.Pin.URL, "http://127.0.0.1:") {
 			return nil, errors.New("local processing returned an unexpected identity")
 		}
+		reply.Pin.build = &build
 		return reply.Pin, nil
 	case <-time.After(10 * time.Second):
 		return nil, errors.New("local processing did not become ready")
@@ -303,7 +324,7 @@ func (s *Server) localGatewayStatus(data []byte) *LocalGatewayStatus {
 	if err != nil {
 		return &LocalGatewayStatus{Status: "unavailable", Problem: err.Error()}
 	}
-	return &LocalGatewayStatus{Status: "ready", Gateway: pin}
+	return &LocalGatewayStatus{Status: "ready", Gateway: pin, Build: pin.build}
 }
 func (s *Server) localResearch(documents *documentSourceConfig) (researchGateway, error) {
 	if s.localGateway == nil {

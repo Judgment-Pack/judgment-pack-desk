@@ -1,3 +1,4 @@
+import { memoryDraftPersistence } from '../testing/draftPersistence'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ChatStore, type ChatPersistence } from './store'
 import { INITIAL_STATE } from '../research/run'
@@ -8,7 +9,7 @@ afterEach(() => { stores.forEach(store => store.dispose()); stores.length = 0; s
 function setup(io?: Partial<ChatPersistence>) {
   const read = vi.fn(async () => ({ project: '/project', sha256: 'absent', content: { version: 1, chats: [] } }))
   const write = vi.fn(async (document: unknown) => ({ project: '/project', sha256: 'saved', content: document }))
-  const store = new ChatStore('/project', { read, write, ...io }); stores.push(store)
+  const store = new ChatStore('/project', { read, write, ...io }, memoryDraftPersistence('/project')); stores.push(store)
   return { store, read, write }
 }
 describe('project conversation history', () => {
@@ -52,7 +53,7 @@ describe('project conversation history', () => {
   it('does not confuse a different project’s unsent home draft with this project', async () => {
     const { store } = setup(); await store.load()
     const draft = store.startChat(); store.update(draft.id, { composer: 'Private to this project' })
-    const other = new ChatStore('/other', { read: async () => ({ project: '/other', sha256: 'absent', content: { version: 1, chats: [] } }), write: vi.fn() })
+    const other = new ChatStore('/other', { read: async () => ({ project: '/other', sha256: 'absent', content: { version: 1, chats: [] } }), write: vi.fn() }, memoryDraftPersistence('/other'))
     stores.push(other); await other.load()
     expect(other.startChat().composer).toBe('')
     expect(other.getSnapshot().chats).toHaveLength(0)
@@ -151,6 +152,17 @@ it('allows upgrading a draft to research but never downgrading a research candid
   expect(store.getSnapshot().chats[0]!.mode).toBe('research')
 })
 
+it('retains the selected folder across an unsent draft reload and saved history',async()=>{
+ const {store,write}=setup();await store.load()
+ const draft=store.startChat();store.update(draft.id,{targetFolderId:'finance'})
+ const restored=setup();await restored.store.load()
+ expect(restored.store.startChat().targetFolderId).toBe('finance')
+ const saved=store.create();store.update(saved.id,{targetFolderId:'legal'});await store.flush()
+ const history=setup({read:async()=>({project:'/project',sha256:'saved',content:write.mock.calls.at(-1)![0]})})
+ await history.store.load()
+ expect(history.store.getSnapshot().chats.find(chat=>chat.id===saved.id)?.targetFolderId).toBe('legal')
+})
+
 it('keeps the link a read document came from and refuses a malformed one', async () => {
   const base = setup(); await base.store.load(); const chat = base.store.create()
   const reference = { id: '12345678-1234-1234-1234-123456789abc', digest: `sha256:${'a'.repeat(64)}`, pages: [1], allowPartial: false }
@@ -180,4 +192,17 @@ it('restores bounded website references without embedding the crawl results in c
  const restore=async(websites:unknown)=>{const value=setup({read:async()=>({project:'/project',sha256:'x',content:{version:1,chats:[{...chat,websites}]}})});await value.store.load();return value}
  expect((await restore([ref])).store.getSnapshot().chats[0]!.websites).toEqual([ref])
  for(const bad of [[{...ref,seed:'http://example.com/'}],[{...ref,digest:'bad'}],[ref,ref],Array(17).fill(ref)])expect((await restore(bad)).store.getSnapshot().ready).toBe(false)
+})
+
+
+it('saves response work without advancing the independent pack artifact generation', async () => {
+  const {store}=setup();await store.load();const chat=store.create()
+  const state={...INITIAL_STATE,phase:'review' as const,status:'ready' as const,candidates:[{revision:1,text:'{"title":"Policy"}',document:{title:'Policy'},digest:'a'.repeat(64),producedBy:'conversation' as const}]}
+  const binding={state,sources:[],blocked:'',model:'model',researchConfigured:false,run:null,ledger:null}
+  store.report(chat.id,binding)
+  const artifact=store.getSnapshot().packDrafts[0]!
+  const responses=[{id:'response',messageId:'message',documents:[],websites:[],sourceIds:[],work:{items:[{id:'call',name:'read_link',status:'complete' as const}],notices:[]}}]
+  store.report(chat.id,{...binding,state:{...state,responses}})
+  expect(store.getSnapshot().packDrafts[0]?.generation).toBe(artifact.generation)
+  expect(store.getSnapshot().chats[0]?.checkpoint?.state.responses).toEqual(responses)
 })

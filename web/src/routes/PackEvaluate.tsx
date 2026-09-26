@@ -117,7 +117,7 @@ export function PackEvaluate() {
   }
 
   return (
-    <article data-measure="wide" data-layout="page">
+    <article data-layout="page">
       <PackHeader packId={packId ?? ''} document={pack.data?.document} current="test" />
       <PageBody width="wide">
       <PackQuestion document={pack.data?.document} />

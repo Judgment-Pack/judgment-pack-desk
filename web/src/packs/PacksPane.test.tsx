@@ -13,7 +13,7 @@ import { McpContext } from '../mcp/McpProvider'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { PacksPane } from './PacksPane'
 
-const packLinks = () => screen.queryAllByRole('link').filter(link => link.getAttribute('href')?.startsWith('/packs/'))
+const packLinks = () => screen.queryAllByRole('link').filter(link => link.getAttribute('href')?.startsWith('/packs/') && link.getAttribute('href') !== '/packs/new')
 
 afterEach(() => {
   cleanup()

@@ -1,3 +1,8 @@
+import { citedAttachments } from '../chat/messageOwnership'
+import { summarizeWork, mergeReferences, type ResponseHistory } from '../chat/responseHistory'
+import type { ChatAttachment } from '../chat/store'
+import type { WebsiteReference } from '../documents/website'
+import { runtimeProbes, type RuntimeProbe } from './runtimeProbes'
 import { sourceMessage } from '../i18n/source'
 /**
  * The research-backed authoring run: research and draft, establish test cases
@@ -19,7 +24,7 @@ import { sourceMessage } from '../i18n/source'
  */
 import { canonicalProposal } from '../assistant/useAssistantRun'
 import type { AssistantEvent, CallTool, HostTool } from '../assistant/engine'
-import { isCancelled } from '../assistant/engines/contract'
+import { isCancelled, recoverableProposal } from '../assistant/engines/contract'
 import { checkCandidate, digestOf, jsonIdentity, type AuthoringCase, type CandidateCheck } from './checkCandidate'
 import { findingSummary, validateExpectations } from './expectations'
 import type { Ledger, SourceRecord } from './ledger'
@@ -31,6 +36,9 @@ export type Phase = 'idle' | 'research' | 'cases' | 'check' | 'repair' | 'conver
 export type Status = 'idle' | 'running' | 'complete' | 'ready' | 'needs-input' | 'budget' | 'stalled' | 'stopped' | 'failed'
 
 export interface Turn {
+  id?: string
+  /** Exact attachments selected when this message was submitted. */
+  attachments?: ChatAttachment[]
   role: 'user' | 'assistant'
   kind: 'brief' | 'message' | 'unknowns' | 'note'
   text: string
@@ -42,12 +50,15 @@ export interface Turn {
 }
 
 export interface Candidate {
+  responseId?: string
   revision: number
   document: unknown
   text: string
   digest: string
   producedBy: 'research' | 'repair' | 'conversation'
   check?: CandidateCheck
+  /** Last recorded check, for display only after reload. */
+  previousCheck?: CandidateCheck
 }
 
 /** One `sources[]` entry of the candidate, traced to the ledger or not. */
@@ -91,12 +102,15 @@ export interface RunState {
   detail: string
   /** Ephemeral prose for the current engine step; never a trusted candidate. */
   streaming?: string
+  streamingId?: string
   brief: string
   seedUrls: string[]
   turns: Turn[]
+  responses?: ResponseHistory[]
   events: AssistantEvent[]
   candidates: Candidate[]
   cases: AuthoringCase[]
+  probes?: RuntimeProbe[]
   droppedCases: { id: string; reason: string }[]
   /** A screened proposal awaiting validation, never an established case. */
   heldProposal: HeldProposal | null
@@ -296,9 +310,28 @@ export class AuthoringRun {
   }
 
   private lastMessage: string | null = null
+  private responseId: string | undefined
+  private responseEvents: AssistantEvent[] = []
+  private updateResponse(patch: Partial<ResponseHistory>): void {
+    if (!this.responseId) return
+    this.set({ responses: (this.state.responses ?? []).map(row => row.id === this.responseId ? {...row, ...patch} : row) })
+  }
+  recordDocument(file: ChatAttachment): void {
+    const row = this.state.responses?.find(row => row.id === this.responseId)
+    if (row) this.updateResponse({documents: mergeReferences(row.documents, [structuredClone(file)])})
+  }
+  recordWebsite(reference: WebsiteReference): void {
+    const row = this.state.responses?.find(row => row.id === this.responseId)
+    if (row) this.updateResponse({websites: [...row.websites.filter(w => w.id !== reference.id), structuredClone(reference)]})
+  }
+  private finishResponse(): void {
+    this.updateResponse({work: summarizeWork(this.responseEvents, false)})
+    this.responseId = undefined
+    this.responseEvents = []
+  }
 
-  private addTurn(turn: Omit<Turn, 'at'>): void {
-    this.set({ turns: [...this.state.turns, { ...turn, at: this.stamp() }] })
+  private addTurn(turn: Omit<Turn, 'at'>, patch: Partial<RunState> = {}): void {
+    this.set({ ...patch, turns: [...this.state.turns, { ...turn, id: turn.id ?? crypto.randomUUID(), at: this.stamp() }] })
   }
 
   get running(): boolean {
@@ -337,10 +370,12 @@ export class AuthoringRun {
     if (this.running || this.state.phase !== 'idle') throw new Error(sourceMessage("Cannot replace an active conversation"))
     const candidates = await Promise.all(saved.candidates.map(async item => ({
       revision: item.revision, text: item.text, document: deepFreeze(JSON.parse(item.text)) as unknown,
-      digest: await digestOf(item.text), producedBy: item.producedBy
+      digest: await digestOf(item.text), producedBy: item.producedBy, responseId: item.responseId,
+      ...(item.previousCheck?.documentDigest === await digestOf(item.text) ? { previousCheck: item.previousCheck } : {})
     })))
     this.set({ ...INITIAL_STATE, brief: saved.brief, seedUrls: saved.seedUrls,
-      turns: saved.turns, candidates, cases: structuredClone(saved.cases),
+      turns: saved.turns.map((turn, index) => ({...turn, id: turn.id ?? `legacy-turn-${index}`})),
+      responses: saved.responses?.map(row => ({...row, work: {...row.work, items: row.work.items.map(item => item.status === 'working' ? {...item, status: 'interrupted' as const} : item)}})), candidates, probes: saved.probes ?? [], cases: structuredClone(saved.cases),
       expectationIssues: saved.expectationIssues.map(item => ({ id: item.id, original: structuredClone(item.original),
         message: item.message, ...(item.resolved ? { resolved: structuredClone(item.resolved) } : {}) })),
       unknowns: saved.unknowns, revisionsUsed: saved.revisionsUsed, sessions: saved.sessions,
@@ -352,6 +387,29 @@ export class AuthoringRun {
       detail: candidates.length ? sourceMessage("Saved draft. Recheck its sources and tests before creating it.")
         : saved.status === 'running' || saved.status === 'stopped' || saved.status === 'failed' || saved.status === 'budget' || saved.turns.at(-1)?.role === 'user'
           ? sourceMessage("This response was interrupted. Send a message to continue; nothing restarted automatically.") : '' })
+  }
+
+  /** Recover a complete proposal from an older assistant reply, without a model call. */
+  recoverDraft(text: string): void {
+    if (this.running || this.latest() || !this.state.turns.some(turn => turn.role === 'assistant' && turn.kind === 'message' && turn.text === text)) return
+    const proposal = recoverableProposal(text)
+    if (!proposal) return
+    this.arm()
+    const responseId = crypto.randomUUID()
+    const owner = this.state.turns.find(turn => turn.role === 'assistant' && turn.text === text)
+    this.set({responses: [...(this.state.responses ?? []), {id: responseId, messageId: owner?.id, documents: [], websites: [], sourceIds: [], work: {items: [], notices: []}}]})
+    this.set({ status: 'running', phase: 'check', detail: sourceMessage("Validating the draft through the runtime.") })
+    void this.drive(async signal => {
+      const text = JSON.stringify(proposal.document, null, 2)
+      const digest = await digestOf(text)
+      this.check(signal)
+      this.set({ candidates: [{ responseId, revision: 1, document: proposal.document, text, digest, producedBy: 'conversation' }], unknowns: proposal.unknowns, citations: traceCitations(proposal.document, this.ports.ledger) })
+      // Recovery never starts source acquisition, a paid reviewer or repair.
+      const check = await checkCandidate(text, [], this.ports.callTool, signal)
+      this.set({ candidates: this.state.candidates.map(candidate => ({ ...candidate, check })) })
+      if (this.ports.mode === 'draft') this.settleReview('The draft needs corrections before it can be created.')
+      else this.set({ status: 'needs-input', phase: 'review', detail: sourceMessage("No saved cases can be rechecked. Send a message to continue research.") })
+    })
   }
 
   /** Explicit, model-free recovery. A reload cannot restart paid or repair work. */
@@ -390,12 +448,12 @@ export class AuthoringRun {
   }
 
   /** Begin: the brief, the URLs to read first, and the research turn. */
-  start(brief: string, seedUrls: string[], display = brief): void {
+  start(brief: string, seedUrls: string[], display = brief, attachments: ChatAttachment[] = []): void {
     if (this.running) return
     this.arm()
     this.lastMessage = brief
     this.state = { ...INITIAL_STATE, brief, seedUrls, phase: 'research', status: 'running', detail: 'Working…' }
-    this.addTurn({ role: 'user', kind: 'brief', text: display + (seedUrls.length ? `\n\nRead first:\n${seedUrls.join('\n')}` : ''), ...(brief !== display ? { input: brief } : {}) })
+    this.addTurn({ role: 'user', kind: 'brief', attachments: structuredClone(attachments), text: display + (seedUrls.length ? `\n\nRead first:\n${seedUrls.join('\n')}` : ''), ...(brief !== display ? { input: brief } : {}) })
     void this.drive(async (signal) => {
       await this.researchTurn(signal)
       await this.casesAndCheck(signal)
@@ -403,12 +461,12 @@ export class AuthoringRun {
   }
 
   /** A message from the person, at any rest state. */
-  send(message: string, display = message, retry = false): void {
+  send(message: string, display = message, retry = false, attachments: ChatAttachment[] = []): void {
     if (this.running || this.state.phase === 'idle') return
     this.arm()
     const previous = { status: this.state.status, phase: this.state.phase, detail: this.state.detail }
     this.lastMessage = message
-    if (!retry) this.addTurn({ role: 'user', kind: 'message', text: display, ...(message !== display ? { input: message } : {}) })
+    if (!retry) this.addTurn({ role: 'user', kind: 'message', attachments: structuredClone(attachments), text: display, ...(message !== display ? { input: message } : {}) })
     this.set({ status: 'running', phase: 'conversation', detail: 'Working…', events: [], streaming: '' })
     void this.drive(async (signal) => {
       const before = this.latest()?.digest
@@ -567,7 +625,7 @@ export class AuthoringRun {
     try {
       await work(controller.signal)
     } catch (cause) {
-      if (this.state.streaming?.trim()) this.addTurn({ role: 'assistant', kind: 'message', text: this.state.streaming, interrupted: true })
+      if (this.state.streaming?.trim()) this.addTurn({ id: this.state.streamingId, role: 'assistant', kind: 'message', text: this.state.streaming, interrupted: true }, {streaming: '', streamingId: undefined})
       this.set({ streaming: '' })
       if (isCancelled(cause) || cause instanceof Stopped) {
         if (this.outOfTime) {
@@ -579,6 +637,11 @@ export class AuthoringRun {
         this.set({ status: 'failed', detail: this.alsoUndone((cause as Error)?.message ?? String(cause)) })
       }
     } finally {
+      if (this.responseId) {
+        const last = this.state.turns.at(-1)
+        if (last?.interrupted) this.updateResponse({messageId: last.id})
+        this.finishResponse()
+      }
       this.undone = null
       if (this.controller === controller) this.controller = null
       if (!this.running) this.disarm()
@@ -674,6 +737,11 @@ export class AuthoringRun {
   ): Promise<{ document: unknown; unknowns: string[] } | null> {
     this.check(signal)
     if (prompt.length > 200_000) throw new Error(sourceMessage("This conversation exceeds the 200,000-character context limit. Start a new chat with the relevant text, or attach a smaller excerpt. Nothing was sent to the model."))
+    if (this.responseId) this.finishResponse()
+    this.responseId = crypto.randomUUID()
+    this.responseEvents = []
+    this.set({responses: [...(this.state.responses ?? []), {id: this.responseId, afterTurnId: this.state.turns.at(-1)?.id,
+      documents: [], websites: [], sourceIds: [], work: {items: [], notices: []}}]})
     const session = this.ports.newSession()
     this.ports.ledger.openSession(session)
     this.set({ sessions: [...this.state.sessions, session] })
@@ -690,18 +758,40 @@ export class AuthoringRun {
           : RESEARCH_INSTRUCTIONS].join('\n\n')
         : 'Pack authoring is unavailable until the runtime authoring prompt is available. You can still answer questions; do not invent a pack format.' }], isError: !this.ports.authorPrompt })
     }
-    this.set({ streaming: '' })
+    this.set({ streaming: '', streamingId: crypto.randomUUID() })
+    const observed: AssistantEvent[] = []
+    const responseId = this.responseId
     await this.ports.turn({ prompt, hostTools: reviewer ? hostTools : [instructions, ...hostTools], reviewer, conversation: !reviewer && producedBy !== 'repair' }, signal, (incoming) => {
+      if (signal.aborted || this.responseId !== responseId) return
+      if (incoming.type === 'tool_call' || incoming.type === 'tool_result') observed.push(incoming)
       const event = incoming.type === 'proposal' ? canonicalProposal(incoming) : incoming
       if (event.type === 'message' && event.text.trim()) spoke = true
       if (event.type === 'message_progress') { this.set({ streaming: event.text }); return }
-      this.set({ events: [...this.state.events, event], ...(event.type === 'message' ? { streaming: '' } : {}) })
-      if (event.type === 'message') this.addTurn({ role: 'assistant', kind: 'message', text: event.text })
+      this.set({ events: [...this.state.events, event] })
+      this.responseEvents.push(event)
+      if (event.type === 'message') {
+        const messageId = this.state.streamingId ?? crypto.randomUUID()
+        this.addTurn({ id: messageId, role: 'assistant', kind: 'message', text: event.text }, {streaming: '', streamingId: undefined})
+        this.updateResponse({messageId})
+        const known = [...this.state.turns.flatMap(turn => turn.attachments ?? []), ...(this.state.responses ?? []).flatMap(row => row.documents)]
+        for (const file of citedAttachments(event.text, known)) this.recordDocument(file)
+      }
+      if (event.type === 'tool_result' && !event.isError && ['read_source', 'cite_excerpt'].includes(event.name)) {
+        const data = event.structured as {sourceId?: unknown} | undefined
+        if (typeof data?.sourceId === 'string' && this.ports.ledger.byId(data.sourceId)?.document) {
+          const row = this.state.responses?.find(row => row.id === this.responseId)
+          this.updateResponse({sourceIds: [...new Set([...(row?.sourceIds ?? []), data.sourceId])]})
+        }
+      }
+      this.updateResponse({work: summarizeWork(this.responseEvents, true)})
       if (event.type === 'proposal') proposal = { document: event.document, unknowns: event.unknowns }
       if (event.type === 'error') failure = event.message
     })
     this.check(signal)
     this.set({ streaming: '' })
+    const probes = await runtimeProbes(observed, (this.ports.now?.() ?? new Date()).toISOString())
+    this.check(signal)
+    if (probes.length) this.set({ probes: [...(this.state.probes ?? []), ...probes].slice(-64) })
     await this.verifyAcquisitions(session, signal)
     // A verdict is also an answer to `withheld()`, and the only one the
     // readiness key cannot carry: a cited source whose receipt failed withholds
@@ -712,7 +802,7 @@ export class AuthoringRun {
     const withholds = this.state.readiness === '' ? null : this.withheld()
     if (withholds !== null) { this.set({ readiness: '' }); this.undone = withholds }
     if (failure !== null) throw new Error(failure)
-    if (proposal === null && spoke && !reviewer && producedBy !== 'repair') return null
+    if (proposal === null && spoke && !reviewer && producedBy !== 'repair') { this.finishResponse(); return null }
     if (proposal === null) throw new Error(sourceMessage("the assistant ended without a proposal"))
     const taken = proposal as { document: unknown; unknowns: string[] }
     if (!reviewer) {
@@ -720,7 +810,7 @@ export class AuthoringRun {
       const digest = await digestOf(text)
       const identity = jsonIdentity(taken.document)
       const repeated = this.state.candidates.some((candidate) => jsonIdentity(candidate.document) === identity)
-      const candidate: Candidate = { revision: this.state.candidates.length + 1, document: taken.document, text, digest, producedBy }
+      const candidate: Candidate = { responseId: this.responseId, revision: this.state.candidates.length + 1, document: taken.document, text, digest, producedBy }
       if (!repeated) {
         this.set({
           candidates: [...this.state.candidates, candidate],
@@ -741,6 +831,7 @@ export class AuthoringRun {
       }
       if (taken.unknowns.length) this.addTurn({ role: 'assistant', kind: 'unknowns', text: taken.unknowns.map((line) => `• ${line}`).join('\n') })
     }
+    this.finishResponse()
     return taken
   }
 
@@ -1105,6 +1196,11 @@ export function researchRecord(state: RunState, ledger: Ledger, packDigest: stri
   })
   return {
     researchRecordVersion: '1',
+    recordedAt: new Date().toISOString(),
+    testHistory: state.candidates.flatMap(candidate => {
+      const check=candidate.check ?? candidate.previousCheck
+      return check ? [{text:candidate.text,check}] : []
+    }),
     packSha256: packDigest,
     // The digest of the bytes these cases were actually checked against, beside
     // the digest of the pack that was written. Create shapes four members of the

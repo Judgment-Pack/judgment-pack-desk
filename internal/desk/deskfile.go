@@ -71,6 +71,7 @@ type deskDecode struct {
 	// See the note at the end of `decodeDeskFile` for why it is carried out of
 	// a refused decode rather than dropped.
 	Endpoint *assistantEndpoint
+	Agent    *AssistantAgentConfig
 	// Engine and Thinking are the two settings beside the endpoint, with the
 	// defaults applied where the file names neither.
 	//
@@ -343,6 +344,7 @@ func decodeDeskFile(text []byte) deskDecode {
 	// `configuredEndpoint` is the only caller and does exactly that.
 	return deskDecode{
 		Endpoint:    slot.endpoint,
+		Agent:       slot.agent,
 		Engine:      slot.engine,
 		Thinking:    slot.thinking,
 		Notices:     notices,
@@ -973,7 +975,7 @@ func acceptableIssuer(issuer string) bool {
 // too, so an unknown engine authorises no outbound request either.
 func decodeAssistant(value any) (assistantSlot, []deskProblem) {
 	slot := assistantSlot{engine: defaultAssistantEngine, thinking: defaultAssistantThinking}
-	record, problems := object(value, "assistant", []string{"endpoint", "engine", "thinking"})
+	record, problems := object(value, "assistant", []string{"endpoint", "engine", "thinking", "agent"})
 	if record == nil {
 		return slot, problems
 	}
@@ -993,6 +995,14 @@ func decodeAssistant(value any) (assistantSlot, []deskProblem) {
 	problems = append(problems, oneOf(record, "assistant", "thinking", AssistantThinkingTiers)...)
 	if named, ok := record["thinking"].(string); ok && contains(AssistantThinkingTiers, named) {
 		slot.thinking = named
+	}
+	if value, present := record["agent"]; present && value != nil {
+		var found []deskProblem
+		slot.agent, found = decodeAssistantAgent(value)
+		problems = append(problems, found...)
+	}
+	if slot.engine == "codex" && slot.agent == nil {
+		problems = append(problems, deskProblem{Key: "assistant.agent", Reason: "required when the Codex engine is selected"})
 	}
 	endpoint, present := record["endpoint"]
 	if !present || endpoint == nil {

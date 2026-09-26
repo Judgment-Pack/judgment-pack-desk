@@ -156,7 +156,7 @@ export type AssistantTool = (typeof ASSISTANT_TOOLS)[number]
  * Mirrored from `AssistantEngines` in `internal/desk/assistant.go` and held to
  * it by a test that reads that file.
  */
-export const ASSISTANT_ENGINES = ['vercel'] as const
+export const ASSISTANT_ENGINES = ['vercel', 'codex'] as const
 export type AssistantEngine = (typeof ASSISTANT_ENGINES)[number]
 
 /**
@@ -277,7 +277,16 @@ export interface AssistantEndpointConfig {
  * each is one string from a closed list, on the identity slot's precedent, and
  * an unknown value refuses the whole file by name.
  */
+export const CODEX_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
+export interface AssistantAgentConfig {
+  provider: 'openai'
+  authMethod: 'subscription'
+  model: string | null
+  tools: AssistantTool[]
+  effort?: (typeof CODEX_EFFORTS)[number]
+}
 export interface AssistantConfig {
+  agent?: AssistantAgentConfig
   endpoint: AssistantEndpointConfig | null
   engine: AssistantEngine
   thinking: ThinkingTier
@@ -478,7 +487,7 @@ export const DESK_DEFAULTS: DeskConfig = {
   project: { file: null },
   appearance: { theme: 'system', density: 'comfortable' },
   panes: {
-    left: { mode: 'expanded', width: 244 },
+    left: { mode: 'expanded', width: 220 },
     inspector: { open: false, width: 360 },
     console: { open: false, height: 240 }
   },
@@ -778,11 +787,14 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
     const assistant = section(
       record.assistant,
       'assistant',
-      ['endpoint', 'engine', 'thinking'],
+      ['endpoint', 'engine', 'thinking', 'agent'],
       problems
     )
     if (assistant) {
+      const agent = assistant.agent == null ? undefined : agentValue(assistant.agent, problems)
+      if (assistant.engine === 'codex' && !agent) problems.push({ key: 'assistant.agent', reason: 'required when the Codex engine is selected' })
       values.assistant = {
+        ...(agent ? { agent } : {}),
         endpoint: endpointValue(assistant.endpoint, problems, notices),
         engine: engineValue(assistant.engine, problems, notices),
         thinking:
@@ -2177,6 +2189,7 @@ export interface DeskLevelRead {
 }
 
 export interface LocalGatewayStatus {
+  build?: { version?: string; revision: string }
   status: 'ready' | 'unavailable' | 'external'
   gateway?: ResearchGatewayConfig
   problem?: string
@@ -2390,4 +2403,25 @@ export function effectiveConfig(
             decoded: desk.decoded
           }
   }
+}
+
+/** Credential-free provider target. Unknown fields refuse the whole file. */
+function agentValue(value: unknown, problems: ConfigProblem[]): AssistantAgentConfig | undefined {
+  const a = section(value, 'assistant.agent', ['provider', 'authMethod', 'model', 'tools', 'effort'], problems)
+  if (!a) return undefined
+  if (a.provider !== 'openai') problems.push({ key: 'assistant.agent.provider', reason: 'must be openai' })
+  if (a.authMethod !== 'subscription') problems.push({ key: 'assistant.agent.authMethod', reason: 'must be subscription' })
+  let model: string | null = null
+  if (a.model != null) {
+    if (typeof a.model !== 'string' || !a.model.trim() || new TextEncoder().encode(a.model).byteLength > 128 || /[\r\n\0]/.test(a.model)) problems.push({ key: 'assistant.agent.model', reason: 'must be a non-empty model ID of at most 128 characters, or null' })
+    else model = a.model.trim()
+  }
+  const validTools = Array.isArray(a.tools) && a.tools.every(tool => typeof tool === 'string' && (ASSISTANT_TOOLS as readonly string[]).includes(tool))
+  if (!validTools) problems.push({ key: 'assistant.agent.tools', reason: 'must be an explicit array of allowed assistant tools' })
+  let effort: AssistantAgentConfig['effort']
+  if (a.effort !== undefined) {
+    if (typeof a.effort !== 'string' || !(CODEX_EFFORTS as readonly string[]).includes(a.effort)) problems.push({ key: 'assistant.agent.effort', reason: 'must be a supported Codex reasoning effort' })
+    else effort = a.effort as AssistantAgentConfig['effort']
+  }
+  return { provider: 'openai', authMethod: 'subscription', model, tools: validTools ? a.tools as AssistantTool[] : [], ...(effort ? { effort } : {}) }
 }

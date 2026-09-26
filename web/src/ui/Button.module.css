@@ -99,3 +99,8 @@
 .danger:not(:disabled):active {
   background: var(--danger-soft);
 }
+
+/* Icon actions retain the control hit area without text-button side padding. */
+.icon { flex-shrink: 0; width: var(--density-control); padding: 0; }
+.button > svg { flex-shrink: 0; }
+.quiet:disabled, .inline:disabled { background: none; border-color: transparent; }

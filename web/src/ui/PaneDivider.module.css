@@ -10,6 +10,10 @@
   touch-action: none;
   outline: none;
 }
+.divider[data-pane-side="start"][data-orientation="vertical"] {
+  inset-inline-start: auto;
+  inset-inline-end: calc(-0.5 * var(--space-3));
+}
 .divider::after {
   content: '';
   position: absolute;

@@ -26,7 +26,7 @@ import { msg, useLocale } from '../i18n'
 import { SourceCard, type SourceStatus } from '../admin/SourceCard'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { NO_MODEL_CHOSEN, type DeskLevelSummary } from '../config/deskConfig'
-import { EndpointForm } from './EndpointForm'
+import { AssistantSettings } from './AssistantSettings'
 import { useAssistantSlot } from './useAssistantSlot'
 
 export function AssistantSection({
@@ -78,7 +78,7 @@ export function AssistantSection({
         )
       }
       status={under !== undefined && setupOnly ? under : status}
-      save={<EndpointForm unavailable={slot.state === 'unavailable'} />}
+      save={<AssistantSettings unavailable={slot.state === 'unavailable'} />}
     />
   )
 }

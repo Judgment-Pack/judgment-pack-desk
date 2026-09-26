@@ -4,6 +4,7 @@
   justify-content: space-between;
   gap: 0.5rem;
   width: 100%;
+  min-width: 0;
   height: var(--density-control);
   padding: 0 0.75rem;
   border: 1px solid var(--border);
@@ -31,13 +32,15 @@
 
 .icon {
   display: inline-flex;
+  flex-shrink: 0;
   color: var(--ink-faint);
 }
 
 .content {
-  z-index: var(--z-dialog);
+  z-index: var(--z-menu);
   overflow: hidden;
-  min-width: var(--radix-select-trigger-width);
+  min-width: min(var(--radix-select-trigger-width), var(--radix-select-content-available-width));
+  max-width: var(--radix-select-content-available-width);
   max-height: var(--radix-select-content-available-height);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -57,6 +60,7 @@
   color: var(--ink);
   cursor: pointer;
   user-select: none;
+  overflow-wrap: anywhere;
 }
 
 .item[data-highlighted] {
@@ -78,3 +82,5 @@
 
 .trigger[data-quiet] { background: transparent; border-color: transparent; padding-inline: var(--space-2); }
 .trigger[data-quiet]:not(:disabled):hover { background: var(--accent-soft); }
+
+.trigger > [data-value] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

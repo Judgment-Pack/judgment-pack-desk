@@ -1,0 +1,12 @@
+.settings { display: grid; gap: var(--density-section); min-width: 0; }
+.subscription { display: grid; gap: var(--density-block); min-width: 0; }
+.subscription h3, .subscription p { margin: 0; }
+.subscription h3 { font-size: var(--text-body); font-weight: 600; margin-bottom: var(--space-2); }
+.subscription p { font-size: var(--text-sm); line-height: 1.5; overflow-wrap: anywhere; }
+.connection, .actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.connection > [role="status"] { flex: 1; font-size: var(--text-body); }
+.challenge { display: grid; gap: var(--space-2); padding: var(--density-block); border: 1px solid var(--border); border-radius: var(--radius); }
+.subscription summary { color: var(--ink-soft); cursor: pointer; font-size: var(--text-sm); padding-block: var(--space-2); }
+
+.tools { display: grid; gap: var(--space-2); margin-block: var(--space-2); }
+.tools label { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); }

@@ -1,0 +1,185 @@
+[
+  {
+    "schemaVersion": "0.1-design",
+    "kind": "release",
+    "id": "rel_contribution_1",
+    "workspaceId": "ws_example",
+    "createdAt": "2026-09-24T18:00:00Z",
+    "createdBy": {
+      "issuer": "urn:unveil:local-installation:example",
+      "subject": "owner"
+    },
+    "target": {
+      "kind": "pack",
+      "id": "contribution-acceptance",
+      "label": "0.1.0 \u00b7 Release 1"
+    },
+    "bundle": {
+      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mediaType": "application/json",
+      "byteLength": 1024
+    },
+    "runtime": {
+      "version": "0.22.0",
+      "binaryDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "machineOutputVersion": "2",
+      "evaluatorSpecVersion": "0.2.0-draft",
+      "experimental": true
+    },
+    "checks": {
+      "bundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "validationReport": {
+        "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "mediaType": "application/json",
+        "byteLength": 1024
+      },
+      "testStatus": "passed",
+      "testReport": {
+        "digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "mediaType": "application/json",
+        "byteLength": 1024
+      }
+    }
+  },
+  {
+    "schemaVersion": "0.1-design",
+    "kind": "job",
+    "id": "job_contribution",
+    "workspaceId": "ws_example",
+    "name": "Contribution intake review",
+    "owner": {
+      "issuer": "urn:unveil:local-installation:example",
+      "subject": "owner"
+    },
+    "state": "active",
+    "activeRevisionId": "jrev_contribution_3",
+    "createdAt": "2026-09-24T18:10:00Z"
+  },
+  {
+    "schemaVersion": "0.1-design",
+    "kind": "job-revision",
+    "id": "jrev_contribution_3",
+    "workspaceId": "ws_example",
+    "jobId": "job_contribution",
+    "revision": 3,
+    "releaseId": "rel_contribution_1",
+    "releaseBundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "createdAt": "2026-09-24T18:20:00Z",
+    "createdBy": {
+      "issuer": "urn:unveil:local-installation:example",
+      "subject": "owner"
+    },
+    "runAs": {
+      "issuer": "urn:unveil:local-installation:example",
+      "subject": "owner"
+    },
+    "inputs": {
+      "kind": "connected",
+      "mapping": {
+        "digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "mediaType": "application/json",
+        "byteLength": 1024
+      },
+      "binding": {
+        "digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "mediaType": "application/json",
+        "byteLength": 1024
+      },
+      "grantId": "grant_intake_read"
+    },
+    "trigger": {
+      "kind": "schedule",
+      "cron": "0 9 * * 1-5",
+      "timeZone": "America/Toronto",
+      "missedRuns": "skip",
+      "dstGap": "skip",
+      "dstOverlap": "once"
+    },
+    "handling": {
+      "onOutcome": "record",
+      "onUnresolved": "review",
+      "reviewer": {
+        "issuer": "urn:unveil:local-installation:example",
+        "subject": "owner"
+      },
+      "externalActions": "none"
+    },
+    "limits": {
+      "concurrency": 1,
+      "queueCapacity": 100,
+      "maxReadRetries": 2,
+      "stepTimeoutSeconds": 60
+    }
+  },
+  {
+    "schemaVersion": "0.1-design",
+    "kind": "run",
+    "id": "run_1042",
+    "workspaceId": "ws_example",
+    "jobId": "job_contribution",
+    "jobRevisionId": "jrev_contribution_3",
+    "releaseId": "rel_contribution_1",
+    "releaseBundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "mode": "operational",
+    "acceptedAt": "2026-09-25T13:00:00Z",
+    "startedAt": "2026-09-25T13:00:00Z",
+    "completedAt": "2026-09-25T13:00:04Z",
+    "trigger": {
+      "kind": "schedule",
+      "requestedBy": {
+        "issuer": "urn:unveil:local-installation:example",
+        "subject": "owner"
+      },
+      "requestKeyDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "runAs": {
+      "issuer": "urn:unveil:local-installation:example",
+      "subject": "owner"
+    },
+    "execution": "completed",
+    "item": {
+      "id": "item_1042",
+      "businessKey": "submission-1042",
+      "inputSnapshot": {
+        "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "mediaType": "application/json",
+        "byteLength": 1024
+      },
+      "decisionRecord": {
+        "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "mediaType": "application/json",
+        "byteLength": 1024
+      },
+      "disposition": {
+        "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+        "mediaType": "application/json",
+        "byteLength": 1024
+      }
+    },
+    "followUp": "needs-input",
+    "reviewId": "review_1042",
+    "error": null
+  },
+  {
+    "schemaVersion": "0.1-design",
+    "kind": "review",
+    "id": "review_1042",
+    "workspaceId": "ws_example",
+    "runId": "run_1042",
+    "itemId": "item_1042",
+    "releaseBundleDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "inputSnapshotDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "type": "missing-input",
+    "state": "open",
+    "assignedTo": {
+      "issuer": "urn:unveil:local-installation:example",
+      "subject": "owner"
+    },
+    "createdAt": "2026-09-25T13:00:04Z",
+    "reason": "Missing required evidence",
+    "requiredEvidence": [
+      "privacy-scan-log"
+    ],
+    "resolutionRunId": null
+  }
+]

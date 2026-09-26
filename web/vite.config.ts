@@ -3,13 +3,9 @@ import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { defineConfig, type Plugin } from 'vite'
 
-// The dev server proxies /launch, /ws and /api to the chassis so the page talks
-// to a real `jpack mcp` — and to the real file API — while Vite handles hot
-// reload. Start the chassis first:
-//   go run . --dev-token dev --port 8791 <projectDir>
-// then open http://localhost:5173/launch?secret=dev once: the chassis sets a
-// sixty-second, single-use handoff for the dev origin and redirects to Vite's
-// own `/`, where the page spends it for a session id it holds itself.
+// Vite proxies Desk APIs and sockets. Open the plain localhost URL; initial
+// owner setup uses the code printed by Desk. Configured sign-in redirects to
+// the provider and returns through the backend loopback callback to this tab.
 const CHASSIS = process.env.JPACK_DESK_CHASSIS ?? 'http://127.0.0.1:8791'
 
 /**
@@ -44,28 +40,20 @@ export default defineConfig({
       // With this shape the two differ, the check fires, and only --dev-token
       // permits the dev origin. `internal/desk` has a test modelling exactly
       // these headers, in both modes.
-      // The launch exchange. Without it `http://localhost:5173/launch?secret=…`
-      // is a client-side route Vite answers with index.html, no handoff is set
-      // for the dev origin, and nothing under `npm run dev` is authorized.
-      //
-      // The redirect it answers with is `Location: /#`, which is a *relative*
-      // location and therefore resolves against the dev server the browser is
-      // talking to rather than against the chassis — so the browser lands on
-      // Vite's own `/` holding the **handoff** cookie, which the browser scoped
-      // to the dev origin it was set from. That cookie is not a session: the
-      // page spends it once at `POST /api/session` for a session id it holds
-      // itself, and no cookie authorizes anything afterwards.
-      //
-      // **This proxy sees the session, and that is worth knowing.** `/ws` below
-      // carries the id in the `Sec-WebSocket-Protocol` offer, so under
-      // `npm run dev` the dev server handles it. In production nothing sits
-      // between the page and the chassis; under this configuration something
-      // does. See README §Security model.
+      // Legacy local tooling uses /launch only before sign-in activation.
+      // This proxy handles credentials in request headers; never log them.
       '/launch': {
         target: CHASSIS,
         changeOrigin: true
       },
       '/ws': {
+        target: CHASSIS,
+        ws: true,
+        changeOrigin: true
+      },
+      // The agent uses a duplex route under /api; match it before the HTTP
+      // prefix and retain the browser Origin and session subprotocol offer.
+      '/api/agent/run': {
         target: CHASSIS,
         ws: true,
         changeOrigin: true

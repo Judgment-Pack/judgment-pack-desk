@@ -13,7 +13,7 @@ describe('readable inspector and main widths', () => {
   })
   it('uses a drawer if even the minimum would squeeze the map', () => {
     expect(inspectorGeometry(1024, 360, 768, false).drawer).toBe(true)
-    expect(inspectorGeometry(1664, 360, 768, true).drawer).toBe(true)
+    expect(inspectorGeometry(780, 360, 480, true).drawer).toBe(true)
   })
   it('never lets the inspector dominate main on routes without a width claim', () => {
     const layout = inspectorGeometry(1144, 640, 0, false)
@@ -26,4 +26,11 @@ describe('readable inspector and main widths', () => {
     expect(inspectorGeometry(1184, 640, 768, false).width).toBe(414)
     expect(inspectorGeometry(1664, 640, 768, false).width).toBe(640)
   })
+})
+
+it('uses measured workspace capacity even below the old viewport breakpoint',()=>{
+ expect(inspectorGeometry(960,480,560,true)).toEqual({drawer:false,width:398,min:320,max:398})
+ expect(inspectorGeometry(undefined,480,560,true).drawer).toBe(true)
+ expect(inspectorGeometry(0,480,560,true).drawer).toBe(true)
+ expect(inspectorGeometry(880,480,560,false).drawer).toBe(true)
 })

@@ -28,7 +28,11 @@ export function Tabs({
   onValueChange,
   tabs,
   scrollable = false,
-  resetScrollKey
+  resetScrollKey,
+  keepMounted = false,
+  tools,
+  fillPanel,
+  variant = 'pane'
 }: {
   /** The tab list's accessible name. */
   label: string
@@ -39,31 +43,37 @@ export function Tabs({
   scrollable?: boolean
   /** A new inspected item starts at its heading, independent of prior scroll. */
   resetScrollKey?: string
+  keepMounted?: boolean
+  tools?: ReactNode
+  fillPanel?: string
+  /** Document tabs share the page gutter; nested panes keep their compact inset. */
+  variant?: 'pane' | 'page'
 }) {
   const root = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
-    if (!scrollable) return
+    if (!scrollable || keepMounted) return
     const active = root.current?.querySelector<HTMLElement>('[data-pane-scroll][data-state="active"]')
     if (active) active.scrollTop = 0
-  }, [scrollable, resetScrollKey, value])
+  }, [scrollable, resetScrollKey, value, keepMounted])
   return (
     <RadixTabs.Root
       ref={root}
       className={styles.root}
       data-pane-tabs={scrollable || undefined}
+      data-variant={variant}
       value={value}
       onValueChange={onValueChange}
       activationMode="automatic"
     >
-      <RadixTabs.List className={styles.list} aria-label={label}>
+      <div className={styles.heading}><RadixTabs.List className={styles.list} aria-label={label}>
         {tabs.map((tab) => (
           <RadixTabs.Trigger key={tab.value} className={styles.trigger} value={tab.value}>
             {tab.label}
           </RadixTabs.Trigger>
         ))}
-      </RadixTabs.List>
+      </RadixTabs.List>{tools}</div>
       {tabs.map((tab) => (
-        <RadixTabs.Content key={tab.value} className={styles.content} data-pane-scroll={scrollable || undefined} value={tab.value}>
+        <RadixTabs.Content key={tab.value} forceMount={keepMounted || undefined} hidden={value !== tab.value} data-fill={fillPanel === tab.value || undefined} className={styles.content} data-pane-scroll={scrollable || undefined} value={tab.value}>
           {tab.panel}
         </RadixTabs.Content>
       ))}

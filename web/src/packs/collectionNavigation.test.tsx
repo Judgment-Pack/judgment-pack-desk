@@ -1,3 +1,4 @@
+import { INITIAL_STATE } from '../research/run'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
@@ -8,7 +9,9 @@ import { InspectorSlotContext, type InspectorSlot } from '../shell/InspectorSlot
 import { PacksLayout } from '../routes/PacksLayout'
 import { PacksIndex } from '../routes/PacksIndex'
 
-afterEach(() => { cleanup(); document.getElementById('preview-test-slot')?.remove() })
+const artifacts=vi.hoisted(()=>({drafts:[] as import('./drafts/model').PackDraft[]}))
+vi.mock('../chat/ChatProvider',()=>({useChats:()=>({packDrafts:artifacts.drafts,deletedDrafts:[],ready:true})}))
+afterEach(() => { artifacts.drafts=[]; cleanup(); document.getElementById('preview-test-slot')?.remove() })
 function setup() {
   const target = document.createElement('div'); target.id = 'preview-test-slot'; document.body.append(target)
   const reveal = vi.fn()
@@ -19,7 +22,7 @@ function setup() {
   ] }) }) })
   const queryClient = testQueryClient()
   const router = createMemoryRouter([{ path: '/packs', element: <PacksLayout />, children: [
-    { index: true, element: <PacksIndex /> }, { path: ':packId', element: <h1>Pack document</h1> }
+    { index: true, element: <PacksIndex /> }, { path: ':packId', element: <h1>Pack document</h1> }, { path: 'drafts/:draftId', element: <h1>Draft document</h1> }
   ] }], { initialEntries: ['/packs'] })
   render(<QueryClientProvider client={queryClient}><McpContext.Provider value={connected({ client: stub.client })}>
     <InspectorSlotContext.Provider value={slot}><RouterProvider router={router} /></InspectorSlotContext.Provider>
@@ -75,6 +78,31 @@ it('clears obsolete preview metadata when the search excludes that pack', async 
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'no-match' } })
   expect(screen.getByRole('heading', { name: 'No matching packs' })).toBeTruthy()
   expect(within(target).queryByRole('heading', { name: 'alpha' })).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: 'Clear search' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Reset filters' }))
   await screen.findByRole('link', { name: /alpha/ })
+})
+
+it('filters lifecycle before sorting, keeps finalized artifacts unique, and retains the status when returning from a draft',async()=>{
+  const candidate={document:{title:'Vendor draft'},text:'{"title":"Vendor draft"}',digest:'',revision:1,producedBy:'conversation' as const}
+  const draft={generation:1,id:'draft-example',title:'Vendor draft',folderId:'home-local',createdAt:'2026-09-20',updatedAt:'2026-09-20',mode:'draft' as const,checkpoint:{sources:[],state:{...INITIAL_STATE,candidates:[candidate]}},documents:[]}
+  artifacts.drafts=[draft,{...draft,id:'draft-completed',finalized:{id:'alpha',path:'packs/alpha.json',digest:'saved'}}]
+  const {router}=setup()
+  await screen.findByRole('link',{name:/Vendor draft/})
+  const status=screen.getByRole('combobox',{name:'Status'}),sort=screen.getByLabelText('Sort packs')
+  expect(status.compareDocumentPosition(sort)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  fireEvent.keyDown(status,{key:'Enter'});fireEvent.click(await screen.findByRole('option',{name:/^Draft$/}))
+  fireEvent.change(screen.getByRole('searchbox'),{target:{value:'Vendor'}})
+  expect(within(screen.getByRole('navigation',{name:'Packs'})).getAllByRole('link')).toHaveLength(1)
+  fireEvent.click(screen.getByRole('link',{name:/Vendor draft/}));await screen.findByRole('heading',{name:'Draft document'})
+  expect(router.state.location.pathname).toBe('/packs/drafts/draft-example')
+  await act(async()=>{await router.navigate(-1)})
+  expect(screen.getByRole('combobox',{name:'Status'}).textContent).toBe('Draft')
+  expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('Vendor')
+  fireEvent.keyDown(screen.getByRole('combobox',{name:'Status'}),{key:'Enter'});fireEvent.click(await screen.findByRole('option',{name:'Finalized'}))
+  expect(screen.queryByRole('link',{name:/Vendor draft/})).toBeNull()
+  fireEvent.change(screen.getByRole('searchbox'),{target:{value:'no match'}})
+  expect(screen.getByRole('heading',{name:'No matching packs'})).toBeTruthy()
+  fireEvent.click(screen.getByRole('button',{name:'Reset filters'}))
+  expect(screen.getByRole('combobox',{name:'Status'}).textContent).toBe('All statuses')
+  expect(within(screen.getByRole('navigation',{name:'Packs'})).getAllByRole('link')).toHaveLength(3)
 })

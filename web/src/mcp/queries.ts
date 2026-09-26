@@ -226,17 +226,16 @@ export function useValidate(
  * and it is why this one may be cached. Views disable automatic execution
  * and refetch only after a Run tests command.
  *
- * Passing a decision id runs that pack's matrix alone. Omitting the key runs
- * every declared pack — and the key is omitted rather than sent empty, because
- * a present-but-empty `pack_id` is refused rather than read as absent.
+ * A pack ID is required. Desk exposes saved tests within a pack and never
+ * omits pack_id to request the runtime's project-wide suite.
  */
-export function usePackMatrix(packId?: string, enabled = true): UseQueryResult<PackTest, Error> {
+export function usePackMatrix(packId: string, enabled = true): UseQueryResult<PackTest, Error> {
   const { client, status, connectionEpoch } = useMcp()
   return useQuery({
-    queryKey: ['experimental_test_packs', packId ?? null, connectionEpoch],
+    queryKey: ['experimental_test_packs', packId, connectionEpoch],
     enabled: enabled && status === 'ready' && client !== null,
     queryFn: async ({ signal }) => {
-      const args = packId === undefined ? {} : { pack_id: packId }
+      const args = { pack_id: packId }
       const { parsed } = await callToolJSON<PackTest>(client!, 'experimental_test_packs', args, signal)
       return parsed
     }

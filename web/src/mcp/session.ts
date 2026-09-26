@@ -1,3 +1,4 @@
+import { finishSignIn } from '../auth/flow'
 import { SourceError, sourceMessage } from '../i18n/source'
 /**
  * The session this page holds, and the **one** bootstrap that gets it.
@@ -128,6 +129,8 @@ let bootstrapping: Promise<string | null> | null = null
  * whether that answer is still usable.
  */
 let forgotten: string | null = null
+let unavailable = false
+export function bootstrapUnavailable(): boolean { return unavailable }
 
 /**
  * The one subscription a session's end is published on.
@@ -225,6 +228,20 @@ export function forgetSession(reason: string = NO_SESSION_MESSAGE): void {
   }
 }
 
+/** End only the presented local session; failure never claims it was revoked. */
+export async function signOut(): Promise<void> {
+  const id = await sessionBearer()
+  const response = await fetch('/api/session', {
+    method: 'DELETE', headers: { Authorization: `Bearer ${id}` },
+    credentials: 'omit', redirect: 'error', signal: AbortSignal.timeout(10_000)
+  })
+  await discardBody(response)
+  if (response.status !== 204 && !(response.status === 401 && refusalCode(response) === 'unauthorized')) {
+    throw new Error('session revocation failed')
+  }
+  forgetSession()
+}
+
 /**
  * The exchange itself: one `POST /api/session`, and what to do with each answer.
  *
@@ -245,12 +262,20 @@ export function forgetSession(reason: string = NO_SESSION_MESSAGE): void {
  */
 async function beginSession(): Promise<string | null> {
   const stored = storedSessionID()
+  const returned = await finishSignIn(stored)
+  if (returned.handled) {
+    if (returned.id) hold(returned.id)
+    else { try { sessionStorage.removeItem(sessionStorageKey()) } catch { /* No usable session. */ } }
+    return returned.id
+  }
   let answered: Response
   try {
-    answered = await fetch('/api/session', { method: 'POST', credentials: 'same-origin' })
+    answered = await fetch('/api/session', { method: 'POST', ...(stored ? { headers: { Authorization: `Bearer ${stored}` } } : {}), credentials: 'same-origin', redirect: 'error', signal: AbortSignal.timeout(10_000) })
   } catch {
+    unavailable = true
     return stored
   }
+  unavailable = answered.status >= 500 && refusalCode(answered) !== 'sessions-full'
   if (!answered.ok) return await refusedExchange(answered, stored)
   let id: unknown
   try {
@@ -395,6 +420,7 @@ function hold(id: string): void {
 export function resetSessionForTesting(): void {
   bootstrapping = null
   forgotten = null
+  unavailable = false
   // **The subscriptions too.** A listener that outlived its own test would be
   // told about the next test's session ending, and would tear down a component
   // that is no longer mounted. `whenSessionEnds` returns an unsubscribe and
@@ -416,5 +442,12 @@ export function resetSessionForTesting(): void {
  */
 export function giveThisPageASessionForTesting(id: string): void {
   bootstrapping = Promise.resolve(id)
+  unavailable = false
   forgotten = null
+}
+
+/** A backend-issued owner setup session is persisted before a full page reload. */
+export function keepSetupSession(id: string): void {
+  if (!/^[a-f0-9]{48}$/.test(id)) throw new Error('invalid setup session')
+  window.sessionStorage.setItem(sessionStorageKey(), id)
 }

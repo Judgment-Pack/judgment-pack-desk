@@ -50,6 +50,7 @@ describe('the desk shortcuts', () => {
       'Mod+B',
       'Mod+Alt+I',
       'Mod+Alt+J',
+      'Mod+K',
       'Mod+S'
     ])
   })

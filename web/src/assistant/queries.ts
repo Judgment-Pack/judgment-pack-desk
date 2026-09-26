@@ -39,9 +39,10 @@ export const ASSISTANT_KEY_QUERY_KEY = ['assistant-key'] as const
  * when this page changes it, and the two mutations below write the result they
  * were given straight into the cache rather than asking again.
  */
-export function useAssistantKey(): UseQueryResult<AssistantKeyState, Error> {
+export function useAssistantKey(enabled = true): UseQueryResult<AssistantKeyState, Error> {
   return useQuery({
     queryKey: ASSISTANT_KEY_QUERY_KEY,
+    enabled,
     staleTime: Infinity,
     retry: false,
     queryFn: ({ signal }) => readAssistantKey(signal)

@@ -1,8 +1,7 @@
 import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
-import { Tooltip } from '../ui/Tooltip'
 /**
- * The 28px strip: the console's collapsed face, and today's footer sentence.
+ * The 28px strip: persistent connection and configuration status.
  *
  * It is its own grid row and a direct child of the grid, so it is the
  * `contentinfo` landmark `.app-foot` was — and it carries the same two
@@ -32,7 +31,6 @@ import { Tooltip } from '../ui/Tooltip'
 import { Link } from 'react-router-dom'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { connectionSays, useMcp } from '../mcp/McpProvider'
-import { IconPanelBottom } from './icons'
 
 export const CONFIG_REFUSED_CUE = 'configuration refused — see Admin'
 
@@ -60,13 +58,7 @@ export const CONFIG_UNREAD_CUE = 'configuration could not be read — see Admin'
 export const CONFIG_REFUSED_SHORT = 'config refused'
 export const CONFIG_UNREAD_SHORT = 'config unread'
 
-export function StatusStrip({
-  consoleOpen,
-  onToggleConsole
-}: {
-  consoleOpen: boolean
-  onToggleConsole: () => void
-}) {
+export function StatusStrip() {
   useLocale()
   const { status, server } = useMcp()
   const { problems, readFailure, desk } = useEffectiveConfig()
@@ -92,16 +84,7 @@ export function StatusStrip({
           <ConfigCue full={msg(CONFIG_UNREAD_CUE)} short={msg(CONFIG_UNREAD_SHORT)} />
         )}
       </span>
-      <Tooltip content={consoleOpen ? msg("Collapse Console") : msg("Expand Console")}><button
-        type="button"
-        className="desk-icon-button"
-        aria-label={consoleOpen ? msg("Collapse console") : msg("Expand console")}
-        aria-expanded={consoleOpen}
-        aria-controls="desk-console"
-        onClick={onToggleConsole}
-      >
-        <IconPanelBottom />
-      </button></Tooltip>
+
     </footer>
   )
 }

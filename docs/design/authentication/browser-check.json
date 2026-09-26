@@ -1,0 +1,109 @@
+{
+  "results": [
+    {
+      "screen": "local",
+      "theme": "dark",
+      "viewport": "1440x960",
+      "width": 1440,
+      "scroll": 1440,
+      "bodyHeight": 960
+    },
+    {
+      "screen": "signin",
+      "theme": "dark",
+      "viewport": "1440x960",
+      "width": 1440,
+      "scroll": 1440,
+      "bodyHeight": 960
+    },
+    {
+      "screen": "setup",
+      "theme": "dark",
+      "viewport": "1440x960",
+      "width": 1440,
+      "scroll": 1440,
+      "bodyHeight": 960
+    },
+    {
+      "screen": "local",
+      "theme": "light",
+      "viewport": "1440x960",
+      "width": 1440,
+      "scroll": 1440,
+      "bodyHeight": 960
+    },
+    {
+      "screen": "signin",
+      "theme": "light",
+      "viewport": "1440x960",
+      "width": 1440,
+      "scroll": 1440,
+      "bodyHeight": 960
+    },
+    {
+      "screen": "setup",
+      "theme": "light",
+      "viewport": "1440x960",
+      "width": 1440,
+      "scroll": 1440,
+      "bodyHeight": 960
+    },
+    {
+      "screen": "local",
+      "theme": "dark",
+      "viewport": "390x844",
+      "width": 390,
+      "scroll": 390
+    },
+    {
+      "screen": "signin",
+      "theme": "dark",
+      "viewport": "390x844",
+      "width": 390,
+      "scroll": 390
+    },
+    {
+      "screen": "setup",
+      "theme": "dark",
+      "viewport": "390x844",
+      "width": 390,
+      "scroll": 390
+    },
+    {
+      "screen": "local",
+      "theme": "dark",
+      "viewport": "320x844",
+      "width": 320,
+      "scroll": 320
+    },
+    {
+      "screen": "signin",
+      "theme": "dark",
+      "viewport": "320x844",
+      "width": 320,
+      "scroll": 320
+    },
+    {
+      "screen": "setup",
+      "theme": "dark",
+      "viewport": "320x844",
+      "width": 320,
+      "scroll": 320
+    }
+  ],
+  "errors": [],
+  "forbiddenRequests": [],
+  "storage": {
+    "session": 0,
+    "local": 0
+  },
+  "checks": [
+    "Guide expands inline",
+    "Pane close and Escape restore focus",
+    "SSO form replaces entry",
+    "Local steps expand inline",
+    "Provider and test actions only announce preview",
+    "No API/launch/external requests",
+    "No browser storage changes"
+  ]
+}

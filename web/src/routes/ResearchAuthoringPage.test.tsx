@@ -149,7 +149,7 @@ describe('Research and draft', () => {
     binding.state = { ...binding.state, readiness: readinessKey(binding.state) }
     const router = mount()
     expect(screen.getByText('I read the IRCC page.')).not.toBeNull()
-    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Sources (2)' }), { button: 0 })
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Sources (3)' }), { button: 0 })
     expect(screen.getByText('receipt verified')).not.toBeNull()
     expect(screen.getByText('retrieval failed')).not.toBeNull()
     expect(screen.getByText('1 excerpt')).not.toBeNull()

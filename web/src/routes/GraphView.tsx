@@ -6,7 +6,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { PageHeader, PageBody } from '../ui/PageLayout'
 import { Button, ButtonLink } from '../ui/Button'
-import { PacksNavigation } from '../packs/PacksNavigation'
 import { recordActivity } from '../shell/consoleLog'
 import { useLatestFlowResult } from '../packs/flows/useLatestFlowResult'
 import { FlowExplorer } from '../packs/flows/FlowExplorer'
@@ -52,51 +51,51 @@ export function GraphView() {
   const run = () => {
     if (status !== 'ready' || isFetching) return
     setSearch(previous => { const next = new URLSearchParams(previous); next.set('view', 'tests'); return next })
-    recordActivity(sourceMessage('Flow tests started.'))
-    void refetch().then(result => recordActivity(result.error ? sourceMessage('Flow tests failed.') : result.data?.status ? sourceMessage('Flow tests completed: {{status}}.', { status: result.data.status }) : sourceMessage('Flow tests returned no result.')))
+    recordActivity(sourceMessage('Graph tests started.'))
+    void refetch().then(result => recordActivity(result.error ? sourceMessage('Graph tests failed.') : result.data?.status ? sourceMessage('Graph tests completed: {{status}}.', { status: result.data.status }) : sourceMessage('Graph tests returned no result.')))
   }
 
   return <article className="detail" data-measure="full" data-layout="page">
-    <PageHeader variant={graphId ? 'context' : 'collection'} title={graphId ? msg("Pack flows") : msg("Packs")} context={graphId} titleHref={graphId ? "/graphs" : undefined}
+    <PageHeader title={msg("Graphs")} context={graphId} titleHref={graphId ? "/graphs" : undefined}
       actions={<Button onClick={run} disabled={status !== 'ready' || isFetching}>
-        {isFetching ? msg("Running…") : graphId ? msg("Run tests") : msg("Run all flow tests")}
+        {isFetching ? msg("Running…") : graphId ? msg("Run tests") : msg("Run all graph tests")}
       </Button>}
-      navigation={graphId ? <nav className={workspace.navigation} aria-label={msg("Pack flow sections")}>
+      navigation={graphId ? <nav className={workspace.navigation} aria-label={msg("Graph sections")}>
         <Link to={`/graphs/${encodeURIComponent(graphId)}`} aria-current={!tests ? 'page' : undefined}>{msg("Diagram")}</Link>
         <Link to={`/graphs/${encodeURIComponent(graphId)}?view=tests`} aria-current={tests ? 'page' : undefined}>{msg("Tests")}</Link>
-      </nav> : <PacksNavigation current="flows" />} />
+      </nav> : undefined} />
     <PageBody width="full">
       {!graphId && <p className="quiet">{msg("Connect packs and see how their results feed into the next decision.")}</p>}
       {!graphId && graphInventorySupported && (inventory.error
-        ? <ErrorBox title={msg("Could not list pack flows")} error={inventory.error} />
-        : inventory.isPending ? <Loading what={msg("pack flows")} />
+        ? <ErrorBox title={msg("Could not list graphs")} error={inventory.error} />
+        : inventory.isPending ? <Loading what={msg("graphs")} />
         : listing && !tests && <ConfiguredGraphs inventory={listing} />)}
-      {!graphId && !graphInventorySupported && <p className="note">{msg("This runtime cannot list pack flows without running their tests. Choose Run all flow tests to discover their test results, or connect a newer runtime to browse their diagrams.")}</p>}
+      {!graphId && !graphInventorySupported && <p className="note">{msg("This runtime cannot list graphs without running their tests. Choose Run all graph tests to discover their test results, or connect a newer runtime to browse their diagrams.")}</p>}
       {graphId && !tests && <FlowExplorer key={graphId} graphId={graphId} />}
-      {tests && <section aria-label={msg("Flow tests")}>
-        {!graphId && <ButtonLink variant="quiet" to="/graphs">{msg("Back to pack flows")}</ButtonLink>}
-        <h2 className="section-title">{graphId ? msg("Flow tests") : msg("All flow tests")}</h2>
+      {tests && <section aria-label={msg("Graph tests")}>
+        {!graphId && <ButtonLink variant="quiet" to="/graphs">{msg("Back to graphs")}</ButtonLink>}
+        <h2 className="section-title">{graphId ? msg("Graph tests") : msg("All graph tests")}</h2>
         {graphTracesSupported && <label className="checkbox trace-ask">
           <input type="checkbox" checked={includeTraces} disabled={isFetching}
             onChange={event => setIncludeTraces(event.target.checked)} />
           <span>{msg("Include detailed traces")}</span>
         </label>}
-        {isFetching && <Loading what={msg("flow test results")} />}
+        {isFetching && <Loading what={msg("graph test results")} />}
         {error && asked && <p className="note note-warn"><Message text={"This run requested detailed traces. <0/>"} slots={[retainedUntraced
             ? msg("Turn off detailed traces to view the previous untraced result.")
             : msg("Turn off detailed traces and run tests to try without them.")]} /></p>}
-        {error ? <ErrorBox title={msg("Could not run flow tests")} error={error} />
+        {error ? <ErrorBox title={msg("Could not run graph tests")} error={error} />
           : !data ? !isFetching && <Empty>{msg("Run tests to check saved cases and coverage. Opening this view does not run tests.")}</Empty>
           : <>
             <p className="ids"><Pill tone={statusTone(data.status)}>{data.status}</Pill>
               <span><Message text={"<0/> of <1/> cases passed"} slots={[data.summary.passed, data.summary.total]} /></span>
               <span className="quiet"><Message text={"Last run<0/>"} slots={[asked ? msg(" · detailed traces") : '']} /></span>
             </p>
-            {(data.graphs ?? []).length === 0 ? <Empty>{msg("No flow test results were reported.")}</Empty>
+            {(data.graphs ?? []).length === 0 ? <Empty>{msg("No graph test results were reported.")}</Empty>
               : data.graphs!.map(entry => <GraphEntry key={entry.id} entry={entry} matrixSettled={!isFetching} />)}
             {data.label && <p className="note">{data.label}</p>}
           </>}
-        <p className="quiet">{msg("Pack flows use the runtime’s experimental graph format. Test results describe the supplied cases.")}</p>
+        <p className="quiet">{msg("Judgment Graphs use the runtime’s experimental graph format. Test results describe the supplied cases.")}</p>
       </section>}
     </PageBody>
   </article>
@@ -118,14 +117,14 @@ function ConfiguredGraphs({ inventory, only }: { inventory: GraphInventory; only
   const all = inventory.graphs ?? []
   const rows = only ? all.filter((row) => row.id === only) : all
   return (
-    <Section title={msg("Pack flows")} count={rows.length}>
+    <Section title={msg("Judgment Graphs")} count={rows.length}>
       <>
         {inventory.note && <p className="note">{inventory.note}</p>}
         {rows.length === 0 ? (
           <Empty>
             {only
               ? msg("The project's configuration declares no graph with the id {{value0}}.", { value0: only })
-              : msg("No pack flows are configured.")}
+              : msg("No graphs are configured.")}
           </Empty>
         ) : (
           <ul className="cards">

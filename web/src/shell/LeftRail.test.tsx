@@ -27,7 +27,8 @@ function renderRail(
   stub: ReturnType<typeof stubClient>,
   overrides: Partial<McpConnection> = {},
   path = '/',
-  header = false
+  header = false,
+  mode: 'expanded' | 'icons' = 'expanded'
 ) {
   const value = connected({ client: stub.client, ...overrides })
   const router = createMemoryRouter(
@@ -37,11 +38,9 @@ function renderRail(
         element: (
           <McpContext.Provider value={value}>
             <Tooltip.Provider>
-              {header && <HeaderBar inspectorOpen={false} inspectorIsDrawer={false} consoleOpen={false}
-                onToggleInspector={() => {}} onToggleConsole={() => {}} railIsDrawer={false} railDrawerOpen={false} onOpenRail={() => {}} />}
+              {header && <HeaderBar railIsDrawer={false} railOpen onToggleRail={() => {}} />}
               <LeftRail
-                mode="expanded"
-                onToggle={() => {}}
+                mode={mode}
                 asDrawer={false}
                 drawerOpen={false}
                 onDrawerOpenChange={() => {}}
@@ -95,7 +94,7 @@ describe('the left rail', () => {
     const stub = packs([])
     renderRail(stub, { graphInventorySupported: true })
     await screen.findByRole('link', { name: /^Packs/ })
-    for (const name of ['Author', 'Graphs', 'Matrix and coverage']) expect(screen.queryByRole('link', { name })).toBeNull()
+    for (const name of ['Author', 'Matrix and coverage']) expect(screen.queryByRole('link', { name })).toBeNull()
     expect(screen.queryByRole('button', { name: 'New chat' })).toBeNull()
     expect(screen.queryByRole('region', { name: 'Recent chats' })).toBeNull()
     expect(screen.queryByRole('link', { name: 'Chat history' })).toBeNull()
@@ -137,13 +136,24 @@ describe('the left rail', () => {
     expect(link.getAttribute('aria-label')).toBe('Packs')
   })
 
-  it.each(['/packs', '/packs/vendor', '/matrix', '/graphs', '/graphs/onboarding'])('marks Packs active at %s', async path => {
+  it.each(['/packs', '/packs/vendor', '/packs/vendor/matrix'])('marks Packs active at %s', async path => {
     renderRail(packs([]), {}, path)
     await waitFor(() =>
       expect(
         screen.getByRole('link', { name: /^Packs/ }).getAttribute('aria-current')
       ).toBe('page')
     )
+  })
+
+  it.each(['expanded', 'icons'] as const)('places Graphs immediately below Packs in %s navigation', async mode => {
+    const stub = packs(['intake'])
+    renderRail(stub, {}, '/graphs/onboarding', false, mode)
+    await waitFor(() => expect(stub.calls).toHaveLength(1))
+    const links = screen.getAllByRole('link')
+    expect(links.slice(0, 2).map(link => link.getAttribute('href'))).toEqual(['/packs', '/graphs'])
+    expect(screen.getByRole('link', { name: 'Graphs' }).getAttribute('aria-current')).toBe('page')
+    expect(screen.getByRole('link', { name: /^Packs/ }).getAttribute('aria-current')).toBeNull()
+    expect(stub.calls.map(call => call.name)).toEqual(['list_packs'])
   })
 
   it('shows a dot in the project menu trigger exactly while the buffer is dirty', async () => {
@@ -200,7 +210,7 @@ describe('the left rail', () => {
       'Storage & data',
       'Assistant',
       'Connections',
-      'Identity provider'
+      'Sign-in & access'
     ])
   })
 })

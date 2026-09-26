@@ -27,8 +27,8 @@
     /* Geometry. Every one is pixel-exact, which is why collapse is a custom
        property on a grid and not a percentage in a resize library. */
     --header-h: 48px;
-    --rail-w: 244px;
-    --rail-w-icon: 56px;
+    --rail-w: 220px;
+    --rail-w-icon: 52px;
     --inspector-w: 360px;
     --console-h: 240px;
     --strip-h: 28px;
@@ -207,7 +207,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
-    padding: 1rem 0.75rem;
+    padding: var(--space-3);
     overflow: hidden auto;
     position: relative;
     background: var(--sidebar);
@@ -218,6 +218,8 @@
      status strip stays outside it. Closing either pane leaves the frame and
      the main route mounted, with the same corners and content gutter. */
   .desk-workspace {
+    /* No temporary drag override until the shared divider supplies one. */
+    --overlay-preview: initial;
     --console-track: min(
       var(--console-current),
       max(var(--console-cap), min(var(--console-floor), var(--console-room)))
@@ -576,6 +578,11 @@
     cursor: pointer;
   }
 
+  .desk-icon-button[data-compact] {
+    width: 24px;
+    height: 24px;
+  }
+
   .desk-icon-button:disabled {
     opacity: 0.45;
     cursor: default;
@@ -621,8 +628,8 @@
   }
 
   .desk-nav-item > svg {
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
     flex-shrink: 0;
   }
 
@@ -631,7 +638,7 @@
     align-items: center;
     gap: 0.5rem;
     min-height: var(--density-control);
-    padding: 0.375rem 0.625rem;
+    padding: var(--space-1) 0.375rem;
     border-radius: var(--radius);
     border-left: 0;
     color: var(--sidebar-ink);
@@ -700,10 +707,10 @@
     flex: 0 0 auto;
   }
 
-  /* Icon mode: 56px, labels gone, tooltips and aria-labels carrying them. */
+  /* Keep the same 12px rail inset and icon column in both modes. The 28px
+     icon slot is centered under the header's navigation control. */
   .desk-rail[data-mode='icons'] {
     align-items: center;
-    padding: 0.75rem 0.5rem;
   }
 
   .desk-rail[data-mode='icons'] .desk-nav-label,
@@ -712,13 +719,13 @@
   }
 
   .desk-rail[data-mode='icons'] .desk-nav-item {
-    width: 32px;
+    width: 28px;
     justify-content: center;
-    padding: 0.4rem 0;
+    padding: var(--space-1) 0;
   }
 
-  /* At 56px the rail has 40px of inner width, which will not hold a 32px nav
-     item and a 24px trigger side by side. The sections menu is hidden there
+  /* The compact rail has one 28px icon slot, which cannot also hold a
+     separate sections trigger. The sections menu is hidden there
      rather than squeezed: every one of its destinations is a heading on the
      page the Admin link itself opens, so nothing is unreachable. */
   .desk-rail[data-mode='icons'] .desk-admin-row .desk-icon-button {
@@ -862,16 +869,19 @@
     border-right: 1px solid var(--border);
   }
 
-  .desk-drawer-right {
+  .desk-pane-drawer {
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    right: var(--workspace-edge);
+    padding: 0;
+    background: var(--surface);
     top: var(--workspace-edge);
     bottom: var(--workspace-edge);
     border: 1px solid var(--border);
     border-radius: var(--radius-panel);
   }
+
+  .desk-drawer-right { right: var(--workspace-edge); }
 
   .desk-menu {
     position: relative;
@@ -999,3 +1009,63 @@
 }
 
 .desk-console-body[data-reading] { overflow: hidden; min-height: 0; padding: 0; }
+
+/* Workspace tools share one persistent, resizable pane. */
+.desk-workspace[data-workspace-tools] { grid-template-columns: minmax(0, 1fr) var(--inspector-current) 40px; }
+.desk-tool-rail { grid-column: 3; grid-row: 1 / -1; display: flex; flex-direction: column; align-items: center; gap: var(--space-2); padding-block: var(--space-3); border-inline-start: 1px solid var(--border); background: var(--bg); }
+.desk-tool-rail > :last-child { margin-top: auto; }
+.desk-tool-rail button[aria-pressed="true"] { background: var(--accent-soft); color: var(--ink); }
+.desk-tool-rail svg { display: block; }
+.desk-tool-content { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
+.desk-tool-content > .desk-inspector-retained { flex-direction: column; }
+.desk-right-details { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: auto; }
+.desk-right-details > .desk-details-slot { min-height: 0; flex: 1; }
+.desk-right-details[data-reading] { overflow: hidden; }
+.desk-tool-activity { position: relative; display: flex; flex-direction: column; min-height: 0; flex: 1; overflow: auto; }
+.desk-tool-log { padding: var(--space-3); }
+.desk-workspace[data-tool-takeover] { grid-template-columns: 0 minmax(0, 1fr) 40px; }
+.desk-workspace[data-tool-takeover] > .desk-main { visibility: hidden; pointer-events: none; }
+
+.desk-pane-actions { display: flex; align-items: center; gap: var(--space-1); margin-inline-start: auto; flex: 0 0 auto; }
+.desk-right-details:has([data-detail-workspace]) { overflow: hidden; }
+.desk-details-slot:has(> [data-detail-workspace]) { display: flex; flex-direction: column; min-height: 0; }
+
+.desk-drawer-left > .desk-drawer-head { justify-content: flex-start; }
+
+/* Expansion layers the same pane over the existing pack column. The main
+   column keeps its split-view width, so canvas positions and text do not reflow. */
+.desk-workspace[data-tool-overlay] > .desk-inspector {
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
+  position: absolute;
+  inset-block: var(--space-2);
+  inset-inline-end: 40px;
+  width: var(--overlay-preview, var(--overlay-w));
+  max-width: calc(100% - 40px - var(--overlay-peek));
+  z-index: var(--z-drawer);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  box-shadow: calc(-1 * var(--space-2)) 0 var(--space-5) var(--shadow);
+  overflow: visible;
+}
+.desk-workspace[data-tool-overlay] > .desk-inspector > .desk-pane-head { border-start-start-radius: var(--radius-panel); border-start-end-radius: var(--radius-panel); }
+.desk-workspace[data-tool-overlay] > .desk-inspector > .desk-tool-content { border-end-start-radius: var(--radius-panel); border-end-end-radius: var(--radius-panel); }
+.desk-pane-backdrop {
+  position: absolute;
+  inset: 0 40px 0 0;
+  z-index: calc(var(--z-page-header) + 1);
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: var(--overlay);
+  opacity: .4;
+  cursor: pointer;
+}
+.desk-pane-context { color: var(--ink-soft); font-weight: 400; padding-inline-start: var(--space-2); border-inline-start: 1px solid var(--border); }
+.desk-pane-heading > span:first-of-type { flex-shrink: 0; }
+.desk-pane-return { white-space: nowrap; }
+.desk-workspace[data-tool-takeover] .desk-pane-context { display: none; }
+
+.desk-brief-retained { flex: 1; min-height: 0; height: 100%; overflow: hidden; }
+
+.desk-brief-head { display: flex; justify-content: flex-end; }

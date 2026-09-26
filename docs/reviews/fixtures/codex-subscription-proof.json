@@ -1,0 +1,518 @@
+{
+  "date": "2026-09-25",
+  "scope": "local scripted-model protocol checks, not authenticated subscription certification",
+  "runs": [
+    {
+      "run": "proof-report.json",
+      "model": "gpt-5.5",
+      "binarySHA256": "a2a05dafaa1acb002a45eaec0a462de5b13694fcfcd7bc43305f14781ce7be14",
+      "passed": true,
+      "results": [
+        {
+          "scenario": "host-tool",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.145.0",
+          "accountAbsent": true,
+          "noMcpServers": true,
+          "toolCallback": true,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "jps_probe",
+            "skills.list",
+            "skills.read",
+            "update_plan"
+          ],
+          "unexpectedTools": [],
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [
+            "item/tool/call"
+          ],
+          "toolOutputs": [
+            "JPS_FIXTURE_OK"
+          ],
+          "passed": true
+        },
+        {
+          "scenario": "private-image",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.145.0",
+          "accountAbsent": true,
+          "noMcpServers": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "jps_probe",
+            "skills.list",
+            "skills.read",
+            "update_plan"
+          ],
+          "unexpectedTools": [],
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: view_image"
+          ],
+          "passed": true
+        },
+        {
+          "scenario": "write",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.145.0",
+          "accountAbsent": true,
+          "noMcpServers": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "jps_probe",
+            "skills.list",
+            "skills.read",
+            "update_plan"
+          ],
+          "unexpectedTools": [],
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported custom tool call: apply_patch"
+          ],
+          "passed": true
+        },
+        {
+          "scenario": "shell",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.145.0",
+          "accountAbsent": true,
+          "noMcpServers": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "jps_probe",
+            "skills.list",
+            "skills.read",
+            "update_plan"
+          ],
+          "unexpectedTools": [],
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: exec_command"
+          ],
+          "passed": true
+        },
+        {
+          "scenario": "web",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.145.0",
+          "accountAbsent": true,
+          "noMcpServers": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "jps_probe",
+            "skills.list",
+            "skills.read",
+            "update_plan"
+          ],
+          "unexpectedTools": [],
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: web.run"
+          ],
+          "passed": true
+        },
+        {
+          "scenario": "subagent",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.145.0",
+          "accountAbsent": true,
+          "noMcpServers": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "jps_probe",
+            "skills.list",
+            "skills.read",
+            "update_plan"
+          ],
+          "unexpectedTools": [],
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: spawn_agent"
+          ],
+          "passed": true
+        },
+        {
+          "scenario": "skills-list",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.145.0",
+          "accountAbsent": true,
+          "noMcpServers": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "jps_probe",
+            "skills.list",
+            "skills.read",
+            "update_plan"
+          ],
+          "unexpectedTools": [],
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "{\"skills\":[],\"warnings\":[]}"
+          ],
+          "passed": true
+        },
+        {
+          "scenario": "skills-read",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.145.0",
+          "accountAbsent": true,
+          "noMcpServers": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "jps_probe",
+            "skills.list",
+            "skills.read",
+            "update_plan"
+          ],
+          "unexpectedTools": [],
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "skill package is not available from the requested authority"
+          ],
+          "passed": true
+        }
+      ]
+    },
+    {
+      "run": "proof-report-sol.json",
+      "model": "gpt-6-sol",
+      "binarySHA256": "a2a05dafaa1acb002a45eaec0a462de5b13694fcfcd7bc43305f14781ce7be14",
+      "passed": true,
+      "results": [
+        {
+          "scenario": "host-tool",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.145.0",
+          "accountAbsent": true,
+          "noMcpServers": true,
+          "toolCallback": true,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "jps_probe",
+            "skills.list",
+            "skills.read",
+            "update_plan"
+          ],
+          "unexpectedTools": [],
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [
+            "item/tool/call"
+          ],
+          "toolOutputs": [
+            "JPS_FIXTURE_OK"
+          ],
+          "passed": true
+        },
+        {
+          "scenario": "private-image",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.145.0",
+          "accountAbsent": true,
+          "noMcpServers": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "jps_probe",
+            "skills.list",
+            "skills.read",
+            "update_plan"
+          ],
+          "unexpectedTools": [],
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: view_image"
+          ],
+          "passed": true
+        },
+        {
+          "scenario": "write",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.145.0",
+          "accountAbsent": true,
+          "noMcpServers": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "jps_probe",
+            "skills.list",
+            "skills.read",
+            "update_plan"
+          ],
+          "unexpectedTools": [],
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported custom tool call: apply_patch"
+          ],
+          "passed": true
+        },
+        {
+          "scenario": "shell",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.145.0",
+          "accountAbsent": true,
+          "noMcpServers": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "jps_probe",
+            "skills.list",
+            "skills.read",
+            "update_plan"
+          ],
+          "unexpectedTools": [],
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: exec_command"
+          ],
+          "passed": true
+        },
+        {
+          "scenario": "web",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.145.0",
+          "accountAbsent": true,
+          "noMcpServers": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "jps_probe",
+            "skills.list",
+            "skills.read",
+            "update_plan"
+          ],
+          "unexpectedTools": [],
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: web.run"
+          ],
+          "passed": true
+        },
+        {
+          "scenario": "subagent",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.145.0",
+          "accountAbsent": true,
+          "noMcpServers": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "jps_probe",
+            "skills.list",
+            "skills.read",
+            "update_plan"
+          ],
+          "unexpectedTools": [],
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: spawn_agent"
+          ],
+          "passed": true
+        },
+        {
+          "scenario": "skills-list",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.145.0",
+          "accountAbsent": true,
+          "noMcpServers": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "jps_probe",
+            "skills.list",
+            "skills.read",
+            "update_plan"
+          ],
+          "unexpectedTools": [],
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "{\"skills\":[],\"warnings\":[]}"
+          ],
+          "passed": true
+        },
+        {
+          "scenario": "skills-read",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.145.0",
+          "accountAbsent": true,
+          "noMcpServers": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "jps_probe",
+            "skills.list",
+            "skills.read",
+            "update_plan"
+          ],
+          "unexpectedTools": [],
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "skill package is not available from the requested authority"
+          ],
+          "passed": true
+        }
+      ]
+    },
+    {
+      "run": "proof-negative.json",
+      "model": "gpt-5.5",
+      "binarySHA256": "a2a05dafaa1acb002a45eaec0a462de5b13694fcfcd7bc43305f14781ce7be14",
+      "passed": false,
+      "results": [
+        {
+          "scenario": "host-tool",
+          "environmentEnabled": true,
+          "version": "codex-cli 0.145.0",
+          "accountAbsent": true,
+          "noMcpServers": true,
+          "toolCallback": true,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "apply_patch",
+            "jps_probe",
+            "update_plan",
+            "view_image"
+          ],
+          "unexpectedTools": [
+            "apply_patch",
+            "view_image"
+          ],
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [
+            "item/tool/call"
+          ],
+          "toolOutputs": [
+            "JPS_FIXTURE_OK"
+          ],
+          "passed": false
+        }
+      ]
+    },
+    {
+      "run": "proof-sandbox.json",
+      "model": "gpt-5.5",
+      "binarySHA256": "a2a05dafaa1acb002a45eaec0a462de5b13694fcfcd7bc43305f14781ce7be14",
+      "passed": false,
+      "results": [
+        {
+          "scenario": "private-image",
+          "environmentEnabled": true,
+          "version": "codex-cli 0.145.0",
+          "accountAbsent": true,
+          "noMcpServers": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "apply_patch",
+            "jps_probe",
+            "update_plan",
+            "view_image"
+          ],
+          "unexpectedTools": [
+            "apply_patch",
+            "view_image"
+          ],
+          "expectedResult": false,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "synthetic private-image read denied by filesystem permissions"
+          ],
+          "passed": false
+        }
+      ]
+    }
+  ]
+}

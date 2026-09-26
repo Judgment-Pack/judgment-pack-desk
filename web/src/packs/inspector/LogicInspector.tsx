@@ -1,3 +1,5 @@
+import { DetailsWithAssistant } from '../../chat/AssistantReference'
+import { useDetailsSlot } from '../../shell/DetailsSlot'
 import { Message } from '../../i18n/Message'
 import { msg, useLocale } from '../../i18n'
 import type { ReactNode } from 'react'
@@ -21,6 +23,7 @@ export function LogicInspector({ model, at, groupId, onSelect, trace, advanced, 
   trace?: readonly TraceEntry[]; advanced: ReactNode
 }) {
   useLocale()
+  const details = useDetailsSlot()
   const selected = selectedItem(model, at)
   const row = (group: LogicGroup, item: LogicItem) => {
     const observation = itemTrace(group, item, trace)
@@ -43,8 +46,9 @@ export function LogicInspector({ model, at, groupId, onSelect, trace, advanced, 
   const pointer = selected?.item.pointer ?? at
   const observed = selected && itemTrace(selected.group, selected.item, trace)
   const group = model.groups.find(g => '/' + g.id === at)
-  return <div className={styles.details}>
-    <h2>{selected?.item.label ?? group?.label ?? fieldLabel(at.slice(1) || 'Document')}</h2>
+  const label = selected?.item.label ?? group?.label ?? fieldLabel(at.slice(1) || 'Document')
+  return <DetailsWithAssistant key={`${model.document.id}:${pointer}`} reference={{ label, text: JSON.stringify({ path: pointer, definition: value }, null, 2), onOpen: () => { onSelect(pointer); details.reveal() } }}><div className={styles.details}>
+    <h2>{label}</h2>
     {!mainContent && <p className={styles.meta}>{packTerm(pointer.slice(1))?.description ?? selected?.group.description}</p>}
     {!mainContent && observed && <p className={styles.observation}><Message text={"Recorded condition: <0/>"} slots={[<strong>{observed}</strong>]} /></p>}
     {condition !== undefined && (!mainContent || (!conditionsVisible && selected?.group.id !== 'applicability')) && <section className={styles.group}><h3>{msg("Condition")}</h3>
@@ -61,13 +65,13 @@ export function LogicInspector({ model, at, groupId, onSelect, trace, advanced, 
     {isRecord(value) && typeof value.rationale === 'string' && <section className={styles.group}><h3>{msg("Reasoning")}</h3><p>{value.rationale}</p></section>}
     {group && !selected && <section className={styles.group}>{group.items.map(item => row(group, item))}{!group.items.length && <p>{msg("None declared.")}</p>}</section>}
     {!mainContent && condition === undefined && pointer !== '/fallbackOutcome' && !group && <Definition value={value} />}
-    <Disclosure className={styles.group} title={msg("Technical details")}>
+    <Disclosure key={pointer} className={styles.group} title={msg("Technical details")}>
       <p className={styles.meta}><Message text={"Document path: <0/>"} slots={[<code>{pointer || '/'}</code>]} /></p>
-      <h3><Message text={"Exact <0/> JSON"} slots={[condition !== undefined ? msg("condition") : msg("definition")]} /></h3>
-      <CodeBlock text={JSON.stringify(condition ?? value, null, 2) ?? msg("Not declared")} />
+      <h3>{msg("Exact definition JSON")}</h3>
+      <CodeBlock text={JSON.stringify(value, null, 2) ?? msg("Not declared")} />
     </Disclosure>
     <section className={styles.group} aria-label={msg("References, checks and metadata")}>{advanced}</section>
-  </div>
+  </div></DetailsWithAssistant>
 }
 
 function Definition({ value }: { value: unknown }) {

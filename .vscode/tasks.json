@@ -8,6 +8,7 @@
   "tasks": [
     {
       "label": "desk: chassis (dev)",
+      "options": { "env": { "JPACK_DESK_LOCAL_ACCESS": "1" } },
       "detail": "Rebuilds Desk beside its gateway companions in bin; install the complete bundle first. Restart this task after a Go change.",
       "type": "shell",
       "command": "go build -trimpath -o bin/jpack-desk . && exec ./bin/jpack-desk --dev-token dev --port 8790 --jpack \"${config:jpackDesk.jpack}\" \"${config:jpackDesk.project}\"",
@@ -43,7 +44,7 @@
     },
     {
       "label": "desk: dev",
-      "detail": "the chassis and Vite together; then open http://localhost:5173/launch?secret=dev",
+      "detail": "the chassis and Vite together; then open http://localhost:5173/",
       "dependsOn": ["desk: chassis (dev)", "desk: vite (hot reload)"],
       "dependsOrder": "parallel",
       "problemMatcher": [],
@@ -51,9 +52,9 @@
     },
     {
       "label": "desk: open (hot reload)",
-      "detail": "starts both and opens the launch URL in the browser (wslview on WSL, xdg-open elsewhere)",
+      "detail": "starts both and opens the Desk URL in the browser (wslview on WSL, xdg-open elsewhere)",
       "type": "shell",
-      "command": "sh -c 'sleep 2; url=http://localhost:5173/launch?secret=dev; if command -v wslview >/dev/null 2>&1; then wslview \"$url\"; else xdg-open \"$url\"; fi'",
+      "command": "sh -c 'sleep 2; url=http://localhost:5173/; if command -v wslview >/dev/null 2>&1; then wslview \"$url\"; else xdg-open \"$url\"; fi'",
       "dependsOn": ["desk: chassis (dev)", "desk: vite (hot reload)"],
       "dependsOrder": "parallel",
       "problemMatcher": [],

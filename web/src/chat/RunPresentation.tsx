@@ -1,44 +1,24 @@
 import { Message } from '../i18n/Message'
 import { msg, useLocale, systemMessage } from '../i18n'
-import type { AssistantEvent } from '../assistant/engine'
+import { workItems, summarizeWork, type WorkRecord } from './responseHistory'
 import type { RunState } from '../research/run'
 import { statusLine } from '../research/ui/Conversation'
 import { TOOL_LABELS } from './toolLabels'
 import styles from './ChatWorkspace.module.css'
 import { Disclosure } from '../ui/Disclosure'
+import { RunStatus } from '../ui/RunStatus'
 
-export interface WorkItem { id: string; name: string; status: 'working' | 'complete' | 'failed' | 'interrupted' }
-/** Pair by invocation identity, never by a tool name (parallel calls may repeat). */
-export function workItems(events: readonly AssistantEvent[], running: boolean): WorkItem[] {
-  const rows: WorkItem[] = []
-  const pending = new Map<string, WorkItem>()
-  events.forEach((event, index) => {
-    if (event.type === 'tool_call' && event.callId) {
-      const row: WorkItem = { id: event.callId, name: event.name, status: running ? 'working' : 'interrupted' }
-      rows.push(row); pending.set(event.callId, row)
-    } else if (event.type === 'tool_result') {
-      const row = event.callId ? pending.get(event.callId) : undefined
-      const status = event.isError ? 'failed' : 'complete'
-      if (row) { row.status = status; pending.delete(event.callId!) }
-      else rows.push({ id: `result-${index}`, name: event.name, status })
-    }
-  })
-  return rows
-}
-
-export function WorkSummary({ state }: { state: RunState }) {
+export { workItems } from './responseHistory'
+export function WorkSummary({ state, work }: { state?: RunState; work?: WorkRecord }) {
   useLocale()
-  const rows = workItems(state.events, state.status === 'running')
-  const notices = [...new Set(state.events.flatMap(event =>
-    event.type === 'guardrail' && event.action !== 'narrowed' ? [event.detail]
-    : event.type === 'thinking_unavailable' ? [event.detail] : []))]
-  const critique = [...state.events].reverse().find(event => event.type === 'critique')
+  const saved = work ?? summarizeWork(state?.events ?? [], state?.status === 'running')
+  const rows = saved.items, notices = saved.notices, critique = saved.critique
   if (!rows.length && !notices.length && !critique) return null
   const failures = rows.filter(row => row.status === 'failed').length
   return <Disclosure className={styles.work} title={<>{rows.length ? msg("Work · {{count}} steps", { count: rows.length }) + (failures ? msg(" · {{count}} failed", { count: failures }) : "") : msg("Assistant notice")}</>}>
     {rows.length > 0 && <ol>{rows.map(row => <li key={row.id}><span>{TOOL_LABELS[row.name] ?? row.name}</span><span>{row.status === 'complete' ? msg("Done") : row.status === 'failed' ? msg("Failed") : row.status === 'interrupted' ? msg("Interrupted") : msg("Working…")}</span></li>)}</ol>}
     {notices.map(notice => <p key={notice}>{systemMessage(notice)}</p>)}
-    {critique && <p><Message text={"Adversarial review: <0/>"} slots={[critique.text]} /></p>}
+    {critique && <p><Message text={"Adversarial review: <0/>"} slots={[critique]} /></p>}
   </Disclosure>
 }
 
@@ -46,10 +26,9 @@ export function WorkSummary({ state }: { state: RunState }) {
 export function TaskStatus({ state }: { state: RunState }) {
   useLocale()
   if (state.status === 'idle' || state.status === 'complete' || state.status === 'ready') return null
-  if (state.streaming) return null
   const active = state.status === 'running' ? workItems(state.events, true).filter(item => item.status === 'working') : []
   const message = active.length ? `${TOOL_LABELS[active[0]!.name] ?? active[0]!.name}…` : systemMessage(state.detail) || statusLine(state)
-  return <div className={styles.runStatus} role="status">{message}</div>
+  return <RunStatus className={styles.runStatus} running={state.status === 'running'} error={state.status === 'failed'}>{message}</RunStatus>
 }
 
 export function candidateSummary(state: RunState): string {

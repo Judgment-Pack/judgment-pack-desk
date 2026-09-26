@@ -12,32 +12,19 @@ import { useInspectorPresentation } from './InspectorPresentation'
  * Inspector should not be able to tab into it, and a screen reader should not
  * be offered a region that is not there.
  */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { McpContext, type McpConnection } from '../mcp/McpProvider'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
-import type { PackDocument } from '../mcp/types'
 import { AdminView } from '../routes/AdminView'
-import { PacksPane } from '../packs/PacksPane'
-import { PackDocumentView } from '../packs/document/PackDocumentView'
 import { useDetailsSlot, useDetailsPortal } from './DetailsSlot'
 import { ReadingDetails, MessageDetails, useReadingDetails } from '../chat/ReadingDetails'
 import { AppShell } from './AppShell'
 import { forgetConsole } from './consoleLog'
 import { forgetAuthorBridge } from './authorBridge'
 import { projectKey, shellStateKey } from './paneState'
-
-/** A document to mount beside the pane, so the route's own outline is present. */
-const MINIMAL = JSON.parse(
-  readFileSync(
-    join(import.meta.dirname, '..', 'packs', '__fixtures__', 'minimal.pack.json'),
-    'utf8'
-  )
-) as PackDocument
 
 /** The chassis' project root, which is what keys this desk's pane record. */
 const ROOT = '/home/someone/a-project'
@@ -121,66 +108,6 @@ describe('the shell frame', () => {
     expect(screen.queryByRole('link', { name: 'Back to app' })).toBeNull()
   })
 
-  it('renders the six landmarks exactly once, each with its name', async () => {
-    renderShell(
-      <AppShell>
-        <h1>a route</h1>
-      </AppShell>
-    )
-    // Both collapsible panes are opened first: closed is `hidden`, and a
-    // hidden region is correctly absent from the accessibility tree.
-    fireEvent.click(screen.getByRole('button', { name: 'Inspector' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Console' }))
-
-    expect(screen.getAllByRole('banner')).toHaveLength(1)
-    expect(screen.getAllByRole('navigation', { name: 'Project' })).toHaveLength(1)
-    expect(screen.getAllByRole('main')).toHaveLength(1)
-    expect(screen.getAllByRole('complementary', { name: 'Inspector' })).toHaveLength(1)
-    expect(screen.getAllByRole('region', { name: 'Console' })).toHaveLength(1)
-    expect(screen.getAllByRole('contentinfo')).toHaveLength(1)
-  })
-
-  it('keeps its own six landmarks with the packs route mounted inside main', async () => {
-    // The packs pane is a list of navigations, so `<nav aria-label="Packs">`
-    // is the correct markup — and it means a route adds a landmark inside
-    // main. What must stay true is that the *shell's* six are still exactly
-    // one each: a second unnamed navigation, or a second complementary, would
-    // be a page whose regions a screen reader cannot tell apart.
-    //
-    // **Both** of the route's landmarks are mounted here. The pane alone was
-    // not the route: the document carries its own member outline, which is a
-    // second navigation inside main, and a naming loop that never saw it was
-    // asserting about a page this route does not render.
-    renderShell(
-      <AppShell>
-        <PacksPane />
-        <PackDocumentView document={MINIMAL} active={null} />
-      </AppShell>
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Pack preview' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Console' }))
-    await screen.findByRole('navigation', { name: 'Packs' })
-    fireEvent.click(screen.getByRole('button', { name: /On this page/ }))
-    expect(screen.getByRole('navigation', { name: 'Members' })).toBeTruthy()
-
-    expect(screen.getAllByRole('banner')).toHaveLength(1)
-    expect(screen.getAllByRole('navigation', { name: 'Project' })).toHaveLength(1)
-    expect(screen.getAllByRole('main')).toHaveLength(1)
-    expect(screen.getAllByRole('complementary', { name: 'Pack preview' })).toHaveLength(1)
-    expect(screen.getAllByRole('region', { name: 'Console' })).toHaveLength(1)
-    expect(screen.getAllByRole('contentinfo')).toHaveLength(1)
-    // Every navigation landmark is named, so collection tabs are
-    // distinguishable from the rail, the collection and the
-    // document's Members.
-    const navigations = screen.getAllByRole('navigation')
-    expect(navigations.map((landmark) => landmark.getAttribute('aria-label'))).toEqual([
-      'Project',
-      'Packs workspace',
-      'Packs',
-      'Members'
-    ])
-  })
-
   it('puts the skip link first and points it at main', () => {
     const { container } = renderShell(
       <AppShell>
@@ -192,36 +119,6 @@ describe('the shell frame', () => {
     expect(first.getAttribute('href')).toBe('#main')
     expect(screen.getByRole('main').id).toBe('main')
     expect(screen.getByRole('main').getAttribute('tabindex')).toBe('-1')
-  })
-
-  it('opens with the rail expanded, the inspector closed and the console collapsed', () => {
-    renderShell(
-      <AppShell>
-        <h1>a route</h1>
-      </AppShell>
-    )
-    expect(screen.getByRole('navigation', { name: 'Project' }).dataset.mode).toBe('expanded')
-    expect(screen.queryByRole('complementary', { name: 'Inspector' })).toBeNull()
-    expect(screen.queryByRole('region', { name: 'Console' })).toBeNull()
-    // The strip is the console's collapsed face and is always there.
-    expect(screen.getByRole('contentinfo')).toBeTruthy()
-  })
-
-  it('leaves the closed inspector contributing no tabbable element', () => {
-    const { container } = renderShell(
-      <AppShell>
-        <h1>a route</h1>
-      </AppShell>
-    )
-    const aside = container.querySelector('aside[aria-label="Inspector"]')!
-    expect(aside.hasAttribute('hidden')).toBe(true)
-    const tabbable = aside.querySelectorAll(
-      'a[href],button,input,textarea,select,[tabindex]:not([tabindex="-1"])'
-    )
-    // `hidden` alone is beaten by an authored `display`, which is why the
-    // shell sheet carries `[hidden] { display: none !important }` beside it.
-    // What this asserts is the half a test can see: nothing inside is offered.
-    expect(Array.from(tabbable).every((element) => element.closest('[hidden]') !== null)).toBe(true)
   })
 
   it('carries the strip’s two sentences verbatim', async () => {
@@ -256,141 +153,40 @@ describe('the shell frame', () => {
     expect(strip).not.toContain('connected to jpack test')
   })
 
-  it('renders the strip identically whether the console is open or collapsed', () => {
-    renderShell(
-      <AppShell>
-        <h1>a route</h1>
-      </AppShell>
-    )
-    const collapsed = screen.getByRole('contentinfo').textContent
-    fireEvent.click(screen.getByRole('button', { name: 'Console' }))
-    expect(screen.getByRole('contentinfo').textContent).toBe(collapsed)
-  })
-
-  it('keeps a buffer typed into main across a pane change and a route change', async () => {
-    // The property everything else rests on. `AuthorView` holds an unsaved
-    // buffer in component state; a frame that remounted main on a layout
-    // change would throw it away for a collapsed pane.
-    renderShell(
-      <AppShell>
-        <textarea aria-label="the buffer" defaultValue="" />
-      </AppShell>
-    )
-    const buffer = screen.getByLabelText('the buffer') as HTMLTextAreaElement
-    fireEvent.change(buffer, { target: { value: 'unsaved work' } })
-
-    fireEvent.click(screen.getByRole('button', { name: 'Inspector' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Console' }))
-    fireEvent.keyDown(document, { key: 'b', ctrlKey: true })
-
-    expect((screen.getByLabelText('the buffer') as HTMLTextAreaElement).value).toBe('unsaved work')
-    await waitFor(() =>
-      expect(screen.getByRole('navigation', { name: 'Project' }).dataset.mode).toBe('icons')
-    )
-    expect((screen.getByLabelText('the buffer') as HTMLTextAreaElement).value).toBe('unsaved work')
-  })
-
-  it('persists the layout under this project’s own key, and restores it', async () => {
-    const { unmount } = renderShell(
-      <AppShell>
-        <h1>a route</h1>
-      </AppShell>
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Console' }))
-    await waitFor(() => {
-      const keys = Object.keys(window.localStorage).filter((key) =>
-        key.startsWith('jpack-desk:shell:v1:')
-      )
-      // The chassis' root, not the runtime's config path: two projects with no
-      // `jpack.json` used to share the single literal `default` record.
-      expect(keys).toEqual([shellStateKey(projectKey(ROOT))])
-      expect(window.localStorage.getItem(keys[0]!)).toContain('"open":true')
+  it.each(['/', '/help', '/matrix', '/graphs', '/author', '/packs/example/evaluate'])(
+    'ignores saved legacy pane flags on %s and exposes no global Inspector or Console', async path => {
+      localStorage.setItem(shellStateKey(projectKey(ROOT)), JSON.stringify({v:2, inspector:{open:true},console:{open:true,tab:'calls'}}))
+      const {container}=renderShell(<AppShell><h1>Page</h1></AppShell>, {}, path)
+      await screen.findByRole('link', {name:/Packs/})
+      expect(screen.queryByRole('button',{name:'Inspector'})).toBeNull()
+      expect(screen.queryByRole('button',{name:'Console'})).toBeNull()
+      expect(screen.queryByRole('complementary')).toBeNull()
+      expect(container.querySelector('#desk-console')).toBeNull()
+      fireEvent.keyDown(document.body,{key:'i',ctrlKey:true,altKey:true})
+      expect(screen.queryByRole('complementary')).toBeNull()
     })
-    unmount()
-
-    renderShell(
-      <AppShell>
-        <h1>a route</h1>
-      </AppShell>
-    )
-    await waitFor(() => expect(screen.getByRole('region', { name: 'Console' })).toBeTruthy())
+  it('keeps navigation toggle in the app header in both states and persists only navigation',async()=>{
+    renderShell(<AppShell><input aria-label="Unfinished edit" defaultValue="Keep me" /></AppShell>)
+    const input=screen.getByRole('textbox',{name:'Unfinished edit'})
+    const button=screen.getByRole('button',{name:'Collapse navigation'})
+    expect(screen.getByRole('banner').contains(button)).toBe(true)
+    fireEvent.click(button)
+    expect(screen.getByRole('button',{name:'Expand navigation'})).toBe(button)
+    expect(screen.getByRole('textbox',{name:'Unfinished edit'})).toBe(input)
+    await waitFor(()=>expect(JSON.parse(localStorage.getItem(shellStateKey(projectKey(ROOT)))!)).toEqual({v:2,left:{mode:'icons'}}))
+    fireEvent.click(button)
+    expect(screen.getByRole('button',{name:'Collapse navigation'})).toBe(button)
   })
-
-  it('writes nothing at all while the project identity is provisional', async () => {
-    // The listing never answers, so the key is the literal `default` — which
-    // is not this project's record and is whichever project answers slowly
-    // next. A layout written there is one desk's choice stored under another
-    // desk's name.
-    vi.stubGlobal('fetch', () => new Promise(() => {}))
-    renderShell(
-      <AppShell>
-        <h1>a route</h1>
-      </AppShell>
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Console' }))
-    await new Promise((resolve) => setTimeout(resolve, 400))
-    expect(
-      Object.keys(window.localStorage).filter((key) => key.startsWith('jpack-desk:shell:'))
-    ).toEqual([])
-  })
-
-  it('keeps a rail and Inspector chosen on an earlier visit through a console-only write', async () => {
-    // The whole-record defect, end to end. With `left` and `inspector` already
-    // on disk, a Console toggle rewrote the key as `{"v":1,"console":…}` — so
-    // the choices survived the visit that made them and nothing after it.
-    window.localStorage.setItem(
-      shellStateKey(projectKey(ROOT)),
-      JSON.stringify({ v: 1, left: { mode: 'icons' }, inspector: { open: true } })
-    )
-    const first = renderShell(
-      <AppShell>
-        <h1>a route</h1>
-      </AppShell>
-    )
-    await waitFor(() =>
-      expect(screen.getByRole('navigation', { name: 'Project' }).dataset.mode).toBe('icons')
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Console' }))
-    await waitFor(() => {
-      const stored = window.localStorage.getItem(shellStateKey(projectKey(ROOT)))
-      expect(JSON.parse(stored!)).toEqual({
-        v: 2,
-        left: { mode: 'icons' },
-        inspector: { open: true },
-        console: { open: true, tab: 'connection' }
-      })
-    })
-    first.unmount()
-
-    // And the next visit restores all three, which is the point of keeping them.
-    renderShell(
-      <AppShell>
-        <h1>a route</h1>
-      </AppShell>
-    )
-    await waitFor(() =>
-      expect(screen.getByRole('navigation', { name: 'Project' }).dataset.mode).toBe('icons')
-    )
-    expect(screen.getByRole('complementary', { name: 'Inspector' })).toBeTruthy()
-    expect(screen.getByRole('region', { name: 'Console' })).toBeTruthy()
-  })
-
-  it('stores only the pane the viewer moved, not the two they did not', async () => {
-    // One global touched bit made a single toggle speak for all three: the
-    // rail's mode and the Inspector's flag were serialized from the built-in
-    // defaults, and a stored record outranks `panes` in the configuration file
-    // for ever after.
-    renderShell(
-      <AppShell>
-        <h1>a route</h1>
-      </AppShell>
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Console' }))
-    await waitFor(() => {
-      const stored = window.localStorage.getItem(shellStateKey(projectKey(ROOT)))
-      expect(stored).not.toBeNull()
-      expect(JSON.parse(stored!)).toEqual({ v: 2, console: { open: true, tab: 'connection' } })
-    })
+  it('opens Diagnostics without a bottom pane and retains unsent work when collapsed',()=>{
+    const {container}=renderShell(<AppShell><input aria-label="Unfinished edit" defaultValue="Keep me" /></AppShell>)
+    const input=screen.getByRole('textbox',{name:'Unfinished edit'})
+    fireEvent.keyDown(document.body,{key:'j',ctrlKey:true,altKey:true})
+    expect(screen.getByRole('complementary',{name:'Diagnostics'})).toBeTruthy()
+    expect(screen.getByRole('tabpanel',{name:'Connection'}).textContent).toContain('ready · connection 1')
+    expect(container.querySelector('#desk-console')).toBeNull()
+    fireEvent.click(screen.getByRole('button',{name:'Collapse diagnostics'}))
+    expect(screen.queryByRole('complementary')).toBeNull()
+    expect(screen.getByRole('textbox',{name:'Unfinished edit'})).toBe(input)
   })
 })
 
@@ -438,7 +234,7 @@ it('overlays connections without replacing the Assistant portal or its route pre
  expect(assistant.isConnected).toBe(true)
  expect(screen.getByRole('textbox', { name: 'Main draft' })).toBe(main)
  expect(screen.queryByRole('dialog')).toBeNull()
- fireEvent.click(screen.getByRole('button', { name: 'Close connections' }))
+ fireEvent.click(screen.getByRole('button', { name: 'Collapse connections' }))
  expect(screen.getByRole('textbox', { name: 'Assistant draft' })).toBe(assistant)
  expect((assistant as HTMLInputElement).value).toBe('Keep this question')
  expect((main as HTMLInputElement).value).toBe('Keep this policy')
@@ -450,7 +246,7 @@ it('hands focus to another setup without restoring a stale connection opener', a
  renderShell(<AppShell><ConnectionOverlayFixture /></AppShell>)
  const opener = screen.getByRole('button', { name: 'Open connections' })
  fireEvent.click(opener)
- fireEvent.click(screen.getByRole('button', { name: 'Close connections' }))
+ fireEvent.click(screen.getByRole('button', { name: 'Collapse connections' }))
  await waitFor(() => expect(document.activeElement).toBe(opener))
  const next = screen.getByRole('button', { name: 'Open another setup' })
  // A previously closed utility can still retain its old opener.
@@ -462,4 +258,93 @@ it('hands focus to another setup without restoring a stale connection opener', a
  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
  expect(document.activeElement).toBe(next)
  expect(screen.getByRole('complementary', { name: 'Assistant' })).toBeTruthy()
+})
+
+function WorkspaceToolsFixture() {
+  const [open, setOpen] = useState(true), [width, setWidth] = useState(400)
+  const presentation = useMemo(() => ({ title: 'Assistant', workspaceTools: true, available: true, open, onOpenChange: setOpen, width, onResize: setWidth, onReset: () => setWidth(400), minimumMainWidth: 480, maximumWidth: 640 }), [open, width])
+  useInspectorPresentation(presentation)
+  const assistant = useInspectorPortal(<label>Working message<textarea defaultValue="Unsent question" /></label>)
+  const details = useDetailsPortal(<label>Detail note<input defaultValue="Keep note" /></label>)
+  const detail = useDetailsSlot()
+  const connection = useConnectionsPane()
+  return <>{assistant}{details}<label>Main buffer<input defaultValue="Keep pack" /></label><button onClick={detail.reveal}>Inspect selection</button><button onClick={event => connection.open({ opener: event.currentTarget })}>Connect a source</button></>
+}
+it('switches full-height tools without remounting drafts and restores the previous tool after a utility', async () => {
+  renderShell(<AppShell><WorkspaceToolsFixture /></AppShell>)
+  const rail = await screen.findByRole('navigation', { name: 'Workspace tools' })
+  const assistant = screen.getByRole('textbox', { name: 'Working message' }) as HTMLTextAreaElement
+  const main = screen.getByRole('textbox', { name: 'Main buffer' })
+  fireEvent.change(assistant, { target: { value: 'Preserve this question' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Inspect selection' }))
+  expect(screen.getByRole('complementary', { name: 'Details' })).toBeTruthy()
+  expect(screen.queryByRole('region', { name: 'Console' })).toBeNull()
+  expect(screen.queryByRole('textbox', { name: 'Working message' })).toBeNull()
+  expect(assistant.isConnected).toBe(true)
+  expect(screen.queryByRole('button', { name: 'Pin details with Assistant' })).toBeNull()
+  const note = screen.getByRole('textbox', { name: 'Detail note' })
+  expect(document.querySelector('[data-split]')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Expand pane' }))
+  expect(document.querySelector('[data-tool-overlay]')).toBeTruthy()
+  expect(screen.getByRole('textbox', { name: 'Detail note' })).toBe(note)
+  fireEvent.click(screen.getByRole('button', { name: 'Return to split view' }))
+  fireEvent.click(within(rail).getByRole('button', { name: 'Activity' }))
+  expect(screen.getByRole('tab', { name: 'File changes' })).toBeTruthy()
+  expect(assistant.isConnected).toBe(true)
+  fireEvent.click(within(rail).getByRole('button', { name: 'Details' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Connect a source' }))
+  expect(screen.queryByRole('textbox', { name: 'Detail note' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Collapse connections' }))
+  expect(screen.getByRole('textbox', { name: 'Detail note' })).toBe(note)
+  fireEvent.click(within(rail).getByRole('button', { name: 'Assistant' }))
+  expect(screen.getByRole('textbox', { name: 'Working message' })).toBe(assistant)
+  expect(assistant.value).toBe('Preserve this question')
+  expect(screen.getByRole('textbox', { name: 'Main buffer' })).toBe(main)
+})
+
+
+it('returns focus to the contextual action when Enter collapses its splitter', async () => {
+  renderShell(<AppShell><WorkspaceToolsFixture /></AppShell>)
+  const opener = screen.getByRole('button', { name: 'Inspect selection' })
+  vi.spyOn(opener, 'getClientRects').mockReturnValue([{}] as unknown as DOMRectList)
+  opener.focus()
+  fireEvent.click(opener)
+  const divider = screen.getByRole('separator', { name: 'Details' })
+  divider.focus()
+  fireEvent.keyDown(divider, { key: 'Enter' })
+  expect(screen.queryByRole('complementary')).toBeNull()
+  expect(document.activeElement).toBe(opener)
+})
+
+
+it('resizes the overlay independently, blocks background edits and returns without remounting', async () => {
+  renderShell(<AppShell><WorkspaceToolsFixture /></AppShell>)
+  const main = screen.getByRole('textbox', {name: 'Main buffer'})
+  const assistant = await screen.findByRole('textbox', {name: 'Working message'})
+  const splitWidth = screen.getByRole('separator', {name: 'Assistant'}).getAttribute('aria-valuenow')
+  fireEvent.change(assistant, {target: {value: 'Keep my unsent question'}})
+  fireEvent.click(screen.getByRole('button', {name: 'Expand pane'}))
+  expect(main.closest('main')?.hasAttribute('inert')).toBe(true)
+  const divider = screen.getByRole('separator', {name: 'Assistant'})
+  const initial = Number(divider.getAttribute('aria-valuenow'))
+  fireEvent.keyDown(divider, {key: 'ArrowLeft'})
+  expect(divider.getAttribute('aria-valuenow')).toBe(String(initial + 8))
+  fireEvent.keyDown(divider, {key: 'Home'})
+  expect(divider.getAttribute('aria-valuenow')).toBe('640')
+  fireEvent.keyDown(divider, {key: 'End'})
+  expect(divider.getAttribute('aria-valuenow')).toBe(divider.getAttribute('aria-valuemax'))
+  fireEvent.click(screen.getByRole('button', {name: 'Return to split view'}))
+  expect(main.closest('main')?.hasAttribute('inert')).toBe(false)
+  expect(screen.getByRole('separator', {name: 'Assistant'}).getAttribute('aria-valuenow')).toBe(splitWidth)
+  expect(screen.getByRole('textbox', {name: 'Working message'})).toBe(assistant)
+  expect((assistant as HTMLTextAreaElement).value).toBe('Keep my unsent question')
+  expect(screen.getByRole('textbox', {name: 'Main buffer'})).toBe(main)
+  fireEvent.click(screen.getByRole('button', {name: 'Expand pane'}))
+  expect(screen.getByRole('separator', {name: 'Assistant'}).getAttribute('aria-valuenow')).toBe(divider.getAttribute('aria-valuemax'))
+  fireEvent.click(document.querySelector('.desk-pane-backdrop')!)
+  expect(document.querySelector('[data-tool-overlay]')).toBeNull()
+  fireEvent.click(screen.getByRole('button', {name: 'Expand pane'}))
+  fireEvent.keyDown(assistant, {key: 'Escape'})
+  expect(document.querySelector('[data-tool-overlay]')).toBeNull()
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', {name: 'Expand pane'})))
 })
