@@ -39,6 +39,7 @@ func InstalledRunnerBinary() string {
 
 type jobsCompanion struct {
 	mu                                  sync.Mutex
+	profiles                            json.RawMessage
 	bin, runtime, dir, workspace, owner string
 	cmd                                 *exec.Cmd
 	input                               io.WriteCloser
@@ -52,7 +53,7 @@ func (s *Server) initJobs() {
 	if s.cfg.RunnerBin == "" || !s.assistant.usable() {
 		return
 	}
-	s.jobs = &jobsCompanion{bin: s.cfg.RunnerBin, runtime: s.cfg.JpackBin, dir: filepath.Join(s.configDir, "jobs", digestOf([]byte(s.projectDir))), workspace: digestOf([]byte(s.projectDir)), owner: "local-owner:" + digestOf([]byte(s.configDir)), stop: make(chan struct{})}
+	s.jobs = &jobsCompanion{profiles: append(json.RawMessage(nil), s.cfg.RunnerInputProfiles...), bin: s.cfg.RunnerBin, runtime: s.cfg.JpackBin, dir: filepath.Join(s.configDir, "jobs", digestOf([]byte(s.projectDir))), workspace: digestOf([]byte(s.projectDir)), owner: "local-owner:" + digestOf([]byte(s.configDir)), stop: make(chan struct{})}
 	// Resume durable queued work when Desk starts, without requiring an open tab.
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
@@ -114,7 +115,10 @@ func (j *jobsCompanion) endpoint() (string, string, error) {
 	}
 	done := make(chan struct{})
 	go func() { _ = cmd.Wait(); close(done) }()
-	boot := map[string]string{"dir": j.dir, "runtime": j.runtime, "workspace": j.workspace, "owner": j.owner, "token": j.token}
+	boot := map[string]any{"dir": j.dir, "runtime": j.runtime, "workspace": j.workspace, "owner": j.owner, "token": j.token}
+	if len(j.profiles) > 0 {
+		boot["inputProfiles"] = j.profiles
+	}
 	if err = json.NewEncoder(input).Encode(boot); err != nil {
 		input.Close()
 		cmd.Process.Kill()
@@ -168,7 +172,7 @@ func (j *jobsCompanion) close() {
 	}
 }
 
-var jobsPath = regexp.MustCompile(`^(status|previews|inputs/preview|jobs|jobs/job_[a-f0-9]{32}|jobs/job_[a-f0-9]{32}/runs|runs/run_[a-f0-9]{32}|jobs/job_[a-f0-9]{32}/briefs|runs/run_[a-f0-9]{32}/briefs)$`)
+var jobsPath = regexp.MustCompile(`^(status|input-profiles|previews|inputs/preview|inputs/next|jobs|jobs/job_[a-f0-9]{32}|jobs/job_[a-f0-9]{32}/runs|runs/run_[a-f0-9]{32}|runs/run_[a-f0-9]{32}/verification|jobs/job_[a-f0-9]{32}/briefs|runs/run_[a-f0-9]{32}/briefs)$`)
 
 func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	if !s.guard(w, r) {
@@ -228,4 +232,26 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(response.StatusCode)
 	w.Write(body)
+}
+
+// LoadRunnerInputProfiles reads a file explicitly chosen by the installation
+// owner. The Runner validates the profile schema and trust conflicts at boot.
+func LoadRunnerInputProfiles(path string) (json.RawMessage, error) {
+	if path == "" {
+		return nil, nil
+	}
+	if !filepath.IsAbs(path) {
+		return nil, errors.New("runner input profiles must use an absolute installation-owned path")
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	data, err := readBounded(f, 48<<10)
+	var profiles []json.RawMessage
+	if err != nil || json.Unmarshal(data, &profiles) != nil || profiles == nil {
+		return nil, errors.New("runner input profiles must be a JSON array up to 48 KiB")
+	}
+	return data, nil
 }

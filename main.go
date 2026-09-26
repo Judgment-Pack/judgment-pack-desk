@@ -46,13 +46,14 @@ func run() error {
 		return desk.RunLocalGatewayWorker(os.Stdin, os.Stdout)
 	}
 	var (
-		port        = flag.Int("port", 8791, "loopback TCP port to listen on; 0 lets the kernel choose one, and the printed URL names it")
-		codexBin    = flag.String("codex", "", "advanced Codex override: absolute executable path, or off to disable; default manages the compatible runtime automatically")
-		runnerBin   = flag.String("runner", desk.InstalledRunnerBinary(), "path to the optional local Jobs runner companion")
-		jpackBin    = flag.String("jpack", "jpack", "path to the judgment-pack runtime binary")
-		devToken    = flag.String("dev-token", "", "fixed owner setup code for local development; also permits the Vite dev-server origin. Leave empty in normal use so a random secret is generated.")
-		resetSignIn = flag.Bool("reset-sign-in", false, "reset this computer’s sign-in policy; stop Desk first, then restart and configure a new owner")
-		open        = flag.Bool("print-url", true, "print the Desk URL and initial owner setup code at startup")
+		port           = flag.Int("port", 8791, "loopback TCP port to listen on; 0 lets the kernel choose one, and the printed URL names it")
+		codexBin       = flag.String("codex", "", "advanced Codex override: absolute executable path, or off to disable; default manages the compatible runtime automatically")
+		runnerProfiles = flag.String("runner-input-profiles", "", "absolute path to installation-owned Jobs input trust profiles (JSON)")
+		runnerBin      = flag.String("runner", desk.InstalledRunnerBinary(), "path to the optional local Jobs runner companion")
+		jpackBin       = flag.String("jpack", "jpack", "path to the judgment-pack runtime binary")
+		devToken       = flag.String("dev-token", "", "fixed owner setup code for local development; also permits the Vite dev-server origin. Leave empty in normal use so a random secret is generated.")
+		resetSignIn    = flag.Bool("reset-sign-in", false, "reset this computer’s sign-in policy; stop Desk first, then restart and configure a new owner")
+		open           = flag.Bool("print-url", true, "print the Desk URL and initial owner setup code at startup")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(), "usage: jpack-desk [flags] [projectDir]\n\nWithout projectDir, the desk opens the project named by project.file in this machine's\ndesk configuration file, and the current directory where that names none.\n\nflags:\n")
@@ -97,6 +98,10 @@ func run() error {
 		return err
 	}
 
+	profiles, err := desk.LoadRunnerInputProfiles(*runnerProfiles)
+	if err != nil {
+		return fmt.Errorf("loading Jobs input profiles: %w", err)
+	}
 	runnerExecutable := ""
 	if *runnerBin != "" {
 		runnerExecutable, err = desk.ResolveRuntime(*runnerBin)
@@ -135,11 +140,12 @@ func run() error {
 	}
 
 	srv, err := desk.New(desk.Config{
-		RunnerBin:          runnerExecutable,
-		CodexBin:           *codexBin,
-		Root:               project,
-		JpackBin:           runtimeBin,
-		LocalGatewayBundle: desk.LocalGatewayBundleDir(),
+		RunnerBin:           runnerExecutable,
+		RunnerInputProfiles: profiles,
+		CodexBin:            *codexBin,
+		Root:                project,
+		JpackBin:            runtimeBin,
+		LocalGatewayBundle:  desk.LocalGatewayBundleDir(),
 		// The port this listener binds, handed over because the handoff
 		// cookie's name carries it: a cookie's origin has no port, so two
 		// desks on one host would otherwise share one handoff.
