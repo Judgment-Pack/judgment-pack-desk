@@ -49,7 +49,7 @@ func TestRunHelper(t *testing.T) {
 		reply := func(v any) { write(map[string]any{"id": f.ID, "result": v}) }
 		switch f.Method {
 		case "initialize":
-			reply(map[string]string{"userAgent": "jps_desk/0.156.0 (Linux)"})
+			reply(map[string]string{"userAgent": "jps_desk/0.157.1 (Linux)"})
 		case "initialized":
 		case "account/read":
 			var account any
@@ -61,6 +61,16 @@ func TestRunHelper(t *testing.T) {
 			_ = os.Remove(filepath.Join(os.Getenv("CODEX_HOME"), "account.fixture"))
 			reply(map[string]any{})
 		case "model/list":
+			var params struct {
+				IncludeHidden bool `json:"includeHidden"`
+			}
+			_ = json.Unmarshal(f.Params, &params)
+			if params.IncludeHidden {
+				// The launch check lists everything; discovery below lists the
+				// visible models this scenario offers.
+				reply(map[string]any{"data": catalogRows()})
+				continue
+			}
 			if mode == "models-cycle" {
 				reply(map[string]any{"data": []any{}, "nextCursor": "again"})
 				continue

@@ -2080,7 +2080,9 @@ prepares its compatible official Codex runtime on the first connection. No
 separate CLI installation, executable path or setup restart is required.
 **Test connection** explicitly runs a schema read; it never runs automatically.
 
-Managed installation currently supports Linux x86-64 and pins Codex `0.156.0`.
+Managed installation currently supports Linux x86-64 and pins Codex `0.157.1`
+with a model catalog Desk supplies, so the models offered are that release's
+listed models with their tool-mode metadata removed.
 Downloads are verified and cached privately; progress can be canceled or retried.
 Desk keeps its own login and does not import terminal credentials. API settings
 remain available when explicitly switching back. Advanced installation owners

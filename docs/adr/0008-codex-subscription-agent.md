@@ -18,11 +18,16 @@ subscription-to-API translation.
 
 The candidate native boundary is `environments: []` on both thread and turn,
 a private profile, a private empty working directory, restricted named
-permissions, and disabled ambient integrations. Native planning and the empty
-orchestrator-skills utilities are the only exceptions to Desk-supplied tools;
-they grant no JPS, shell, filesystem, browser, or subagent capability. The
-[local proof](../reviews/codex-subscription-proof.md) records the exact inventory
-and adversarial call results, including a failing negative control.
+permissions, disabled ambient integrations, and a model catalog Desk supplies.
+Codex takes a model's tool mode and sub-agent version from the catalog before
+it reads the disabled features, and a signed-in client fetches the catalog from
+the account; Desk's copy of the pinned release's catalog clears that metadata
+for every listed model, and a launched process must list exactly those models.
+The empty orchestrator-skills utilities are the only exception to Desk-supplied
+tools; they grant no JPS, shell, filesystem, browser, or subagent capability.
+The [local proof](../reviews/codex-subscription-proof.md) records the exact
+inventory for every listed model and adversarial call results, including
+failing negative controls.
 
 This ADR remains proposed pending authenticated release evidence. The private
 account bridge, bounded run transport, configuration and setup UI are implemented

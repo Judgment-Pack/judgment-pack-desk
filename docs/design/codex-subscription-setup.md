@@ -49,9 +49,9 @@ its runtime and completed account across restarts. Opening settings may start
 an installed runtime to read account status, but cannot trigger inference.
 
 The first managed artifact targets Linux x86-64 and pins official Codex
-`0.156.0`. Its fixed GitHub release URL, archive byte count/SHA-256 and extracted
+`0.157.1`. Its fixed GitHub release URL, archive byte count/SHA-256 and extracted
 binary byte count/SHA-256 live in `internal/codexbridge/runtime.go`. The private
-cache is `<DeskConfigDir>/codex/runtime/codex-0.156.0`. There is no PATH lookup,
+cache is `<DeskConfigDir>/codex/runtime/codex-0.157.1`. There is no PATH lookup,
 project-local executable discovery, package-manager command or downloaded
 version manifest. No terminal login or installation is read or changed.
 
@@ -196,25 +196,61 @@ restarted, and no commit or real account sign-in was performed.
 
 ### Runtime pin update — 2026-09-26
 
-The managed pin moved from `0.145.0` to `0.156.0` (release `rust-v0.156.0`;
+The managed pin moved from `0.145.0` to `0.157.1` (release `rust-v0.157.1`;
 archive and binary digests in `internal/codexbridge/runtime.go`). The records
-above were made against `0.145.0`. For `0.156.0`, the generated app-server
+above were made against `0.145.0`. For `0.157.1`, the generated app-server
 schemas show only additive changes (new plan types and optional members) to the
 methods and fields the bridge sends or reads. The real client's initialize
-reply has the `jps_desk/0.156.0 (` form. The bridge race tests passed with the
+reply has the `jps_desk/0.157.1 (` form. The bridge race tests passed with the
 real binary and an empty private profile, including absent-account status and
 signed-out logout. The managed-archive smoke test passed with the official
-archive served by a local fixture, and failed when either pinned digest was
-changed. The scripted-model probe now counts every tool list in a model
-request and passed all eight scenarios for both model selections; the
+archive served by a local fixture, and failed when either pinned digest or the
+archive size was changed. The scripted-model probe now counts every tool list
+in a model request and passed all eight scenarios for each of the seven models
+the release lists, with the model catalog described below; the
 [proof record](../reviews/codex-subscription-proof.md) has the results.
 
-An existing profile's next Connect prepares `0.156.0`. Its account files are
-left in place; whether `0.156.0` accepts a sign-in made with `0.145.0` was not
-tested, since no real sign-in was performed. The `0.145.0` executable stays in
-the private cache, because staging cleanup never removes a published version.
+A profile the earlier Desk prepared carries a `config.toml` that names no
+catalog. Desk recognises exactly that configuration on the next open and
+rewrites it, writing the catalog beside it and keeping the account files; a
+configuration that differs in any other way is refused as before. The next
+Connect then prepares `0.157.1`. Whether `0.157.1` accepts a sign-in made with
+`0.145.0` was not tested, since no real sign-in was performed. The `0.145.0`
+executable stays in the private cache, because staging cleanup never removes a
+published version.
 
-Newer releases were not pinned. From `0.156.1`, `gpt-6-sol` requests carry an
-`additional_tools` input item that advertises code-mode `exec` and `wait`,
-`request_user_input_async`, `clock.sleep` and `collaboration.*` agent tools,
-which the probe refuses.
+`0.157.1` registers no skills utility and no `update_plan` without an
+environment, where `0.145.0` registered all three. The probe accepts either
+form. The `0.156.x` releases were probed with the release catalog only; none was
+pinned.
+
+### Model catalog
+
+Codex decides a model's tool mode, sub-agent version and experimental tools
+from the model catalog before it reads the feature flags in `config.toml`, and
+a signed-in client fetches that catalog from the account. With the release's own
+catalog, every listed model except `gpt-5.5` selects code mode: the model
+requests advertise code-mode `exec` and `wait` and, for most of them, the
+sub-agent tools, although those features are disabled. This held at `0.145.0`
+as well, where `gpt-5.2` was the other model without a tool mode; the earlier
+proof had probed `gpt-5.5` and one name outside the catalog.
+
+Desk therefore supplies its own catalog through `model_catalog_json`:
+`internal/codexbridge/model-catalog.json`, which `scripts/codex-model-catalog.py`
+derives from the pinned release's bundled catalog
+(`codex-rs/models-manager/models.json` at `rust-v0.157.1`, SHA-256
+`0178d235c589a31abd6ed0ea1e870935dc5819240eb0e813e178d3ebedf534f4`, Apache-2.0)
+with the hidden models dropped and `tool_mode`, `multi_agent_version` and
+`experimental_supported_tools` cleared for each listed model. Everything else,
+including each model's instructions, is as published. The bridge embeds the
+catalog, writes it into the private profile beside `config.toml`, refuses a
+changed copy before every launch, and refuses a launched process that does not
+list exactly the catalog's models.
+
+A supplied catalog is static: Codex never refreshes it from the account, so the
+models Desk offers are the pinned release's listed models until the pin moves,
+whatever the account's server catalog says. Whether the account's plan admits a
+run with a listed model is decided upstream and is not checked locally. For the
+models that select code mode by default, the host tool is advertised inside a
+`functions` namespace and the tool call arrives without a namespace; the probe
+accepts both forms of the name.

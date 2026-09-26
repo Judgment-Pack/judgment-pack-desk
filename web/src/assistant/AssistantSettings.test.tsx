@@ -23,7 +23,7 @@ function setup(options:{connected?:boolean;enabled?:boolean;modelError?:boolean;
     const path=new URL(input,'http://localhost').pathname, method=init.method??'GET', body=typeof init.body==='string'?JSON.parse(init.body):null
     calls.push({path,method,body})
     let value:unknown={},status=200
-    if(path==='/api/model-providers')value={providers:[{id:'openai',authMethod:'subscription',agent:'codex',configured:options.enabled!==false,enabled:options.enabled!==false,engineReady:options.enabled!==false,requiredVersion:'codex-cli 0.156.0',availability:options.enabled===false?'disabled':'available',loginMethods:['browser','device']}]}
+    if(path==='/api/model-providers')value={providers:[{id:'openai',authMethod:'subscription',agent:'codex',configured:options.enabled!==false,enabled:options.enabled!==false,engineReady:options.enabled!==false,requiredVersion:'codex-cli 0.157.1',availability:options.enabled===false?'disabled':'available',loginMethods:['browser','device']}]}
     else if(path.endsWith('/status'))value={provider:'openai',authMethod:'subscription',agent:'codex',runtime:prepared?'available':'not-installed',account:connected?'connected':pending?'login-pending':'signed-out',...(pending?{login:{id:'attempt',state:'pending',expiresAt:new Date(Date.now()+60_000).toISOString()}}:{})}
     else if(path.endsWith('/models')) {value=options.modelError?{error:'provider-unavailable'}:{models:[{id:'model',name:'Account model',efforts:['medium','high'],defaultEffort:'medium'}]};if(options.modelError)status=503}
     else if(path.endsWith('/login')){

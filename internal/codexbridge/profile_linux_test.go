@@ -1,6 +1,7 @@
 package codexbridge
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -26,25 +27,90 @@ func TestPrivateProfileLeaseIsolationAndConfiguration(t *testing.T) {
 	if strings.Contains(strings.Join(m.profile.command(options.Binary).Env, "\n"), "PRIVATE_SENTINEL") {
 		t.Fatal("inherited provider override")
 	}
-	for _, path := range []string{"managed", "lease", "profile/config.toml"} {
+	for _, path := range []string{"managed", "lease", "profile/config.toml", "profile/model-catalog.json"} {
 		info, err := os.Stat(filepath.Join(options.ProfileDir, path))
 		if err != nil || info.Mode().Perm() != 0600 {
 			t.Fatalf("unsafe file %s: %v %v", path, info, err)
 		}
 	}
+	catalogPath := filepath.Join(options.ProfileDir, "profile/model-catalog.json")
+	config, err := os.ReadFile(filepath.Join(options.ProfileDir, "profile/config.toml"))
+	if err != nil || !strings.Contains(string(config), "\nmodel_catalog_json = \""+catalogPath+"\"\n") {
+		t.Fatalf("configuration does not name the closed catalog: %v\n%s", err, config)
+	}
+	if written, err := os.ReadFile(catalogPath); err != nil || !bytes.Equal(written, modelCatalog) {
+		t.Fatalf("catalog written to the profile differs from the embedded one: %v", err)
+	}
 	m.Close()
 	m = reopenAccountManager(t, options, "pending")
 	m.Close()
-	// A replaced managed configuration is refused, never silently repaired.
-	if err := os.WriteFile(filepath.Join(options.ProfileDir, "profile/config.toml"), []byte("model_provider = \"other\""), 0600); err != nil {
+	// A replaced managed file is refused, never silently repaired: the catalog
+	// with one member changed, then the configuration.
+	changed := bytes.Replace(modelCatalog, []byte(`"tool_mode": null`), []byte(`"tool_mode": "code_mode_only"`), 1)
+	if bytes.Equal(changed, modelCatalog) {
+		t.Fatal("catalog has no tool_mode member to change")
+	}
+	for _, tamper := range []struct {
+		path, name string
+		data       []byte
+	}{
+		{catalogPath, "catalog", changed},
+		{catalogPath, "catalog", modelCatalog[:len(modelCatalog)-2]},
+		{filepath.Join(options.ProfileDir, "profile/config.toml"), "config", []byte("model_provider = \"other\"")},
+	} {
+		original, err := os.ReadFile(tamper.path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(tamper.path, tamper.data, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if other, err := NewManager(options); !errors.Is(err, ErrProfile) {
+			if other != nil {
+				other.Close()
+			}
+			t.Fatalf("adopted modified %s: %v", tamper.name, err)
+		}
+		if err := os.WriteFile(tamper.path, original, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The configuration an earlier Desk wrote, which names no catalog, is
+	// rewritten on the next open; the same text with any other change is not.
+	configPath := filepath.Join(options.ProfileDir, "profile/config.toml")
+	previous := bytes.Replace(modelCatalogConfig(t, configPath), []byte("\nmodel_catalog_json = \""+catalogPath+"\"\n"), []byte("\n"), 1)
+	if err := os.WriteFile(configPath, append(previous, []byte("web_search = \"live\"\n")...), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if other, err := NewManager(options); !errors.Is(err, ErrProfile) {
 		if other != nil {
 			other.Close()
 		}
-		t.Fatalf("adopted modified config: %v", err)
+		t.Fatalf("adopted an earlier configuration with an addition: %v", err)
 	}
+	if err := os.WriteFile(configPath, previous, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(catalogPath); err != nil {
+		t.Fatal(err)
+	}
+	m = reopenAccountManager(t, options, "pending")
+	m.Close()
+	if current, err := os.ReadFile(configPath); err != nil || !bytes.Contains(current, []byte("\nmodel_catalog_json = \""+catalogPath+"\"\n")) {
+		t.Fatalf("earlier configuration not rewritten: %v\n%s", err, current)
+	}
+	if written, err := os.ReadFile(catalogPath); err != nil || !bytes.Equal(written, modelCatalog) {
+		t.Fatalf("catalog not written with the rewrite: %v", err)
+	}
+}
+
+func modelCatalogConfig(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }
 
 func TestProfileRejectsProjectSymlinksPermissionsAndForeignState(t *testing.T) {

@@ -34,7 +34,7 @@ func TestProtocolHelper(t *testing.T) {
 				fmt.Printf(`{"id":%s,"result":{"userAgent":"jps_desk/0.146.0 (Linux)"}}`+"\n", req.ID)
 				continue
 			}
-			fmt.Printf(`{"id":%s,"result":{"userAgent":"jps_desk/0.156.0 (Linux)"}}`+"\n", req.ID)
+			fmt.Printf(`{"id":%s,"result":{"userAgent":"jps_desk/0.157.1 (Linux)"}}`+"\n", req.ID)
 		case "answer":
 			fmt.Printf(`{"id":%s,"result":{"value":42}}`+"\n", req.ID)
 		case "fail":

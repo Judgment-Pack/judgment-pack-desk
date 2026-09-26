@@ -70,7 +70,7 @@ func TestAccountHelper(t *testing.T) {
 		}
 		switch req.Method {
 		case "initialize":
-			reply(map[string]string{"userAgent": "jps_desk/0.156.0 (Linux)"})
+			reply(map[string]string{"userAgent": "jps_desk/0.157.1 (Linux)"})
 		case "initialized":
 		case "account/read":
 			var params struct {
@@ -121,11 +121,34 @@ func TestAccountHelper(t *testing.T) {
 			}
 			_ = os.Remove(fixture)
 			reply(map[string]any{})
+		case "model/list":
+			rows := catalogRows()
+			if mode == "catalog-mismatch" {
+				// One model the release carries but Desk's catalog does not.
+				rows = append(rows[1:], map[string]any{"model": "gpt-5.4", "displayName": "GPT-5.4", "hidden": true,
+					"defaultReasoningEffort": "medium", "supportedReasoningEfforts": []any{map[string]string{"reasoningEffort": "medium"}}})
+			}
+			reply(map[string]any{"data": rows})
 		default:
 			fail()
 		}
 	}
 	os.Exit(0)
+}
+
+// A process that lists any model outside Desk's catalog did not apply it, so
+// no account or run operation may use that process.
+func TestAProcessListingOtherModelsIsRefused(t *testing.T) {
+	m, _ := accountManager(t, "catalog-mismatch")
+	defer m.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := m.Status(ctx, "test", false); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("status through a process with a foreign model list: %v", err)
+	}
+	if m.client != nil {
+		t.Fatal("the refused process was kept")
+	}
 }
 
 func accountManager(t *testing.T, mode string) (*Manager, Options) {

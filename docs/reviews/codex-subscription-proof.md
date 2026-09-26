@@ -1,17 +1,25 @@
 # Codex subscription bridge: isolated milestone 1
 
 **Runtime pin note (2026-09-26).** Desk's managed Codex pin has moved from
-`0.145.0` to `0.156.0`. The protocol results, the configuration qualification,
-the fixture and the pinned references below now describe `0.156.0`. The rest
-of this record, including its verification lists and milestone updates, was
-recorded against `0.145.0`; the `0.145.0` fixture remains in the repository
-history. The probe now counts every tool list in each model request, including
-`additional_tools` input items. `0.156.0` is the newest stable release whose
-tool inventory passes. From `0.156.1`, `gpt-6-sol` requests have no top-level
-`tools` member; an `additional_tools` item advertises code-mode `exec`/`wait`,
-`request_user_input_async`, `clock.sleep` and `collaboration.*` agent tools,
-although the profile disables code mode, multi-agent work and the experimental
-user-input tool. This is a local scripted-model check, not a certification.
+`0.145.0` to `0.157.1`, and the profile now supplies Desk's own model catalog.
+The protocol results, the configuration qualification, the fixture and the
+pinned references below describe `0.157.1` with that catalog. The rest of this
+record, including its verification lists and milestone updates, was recorded
+against `0.145.0`; the `0.145.0` fixture remains in the repository history.
+
+The earlier proof had probed two model names, `gpt-5.5` and `gpt-6-sol`, and
+read only the top-level `tools` member of each model request. Neither choice
+held: `gpt-6-sol` was outside the `0.145.0` catalog, and the other listed models
+select code mode through their catalog metadata, which Codex reads before the
+disabled features. With the release's own catalog, every listed model except
+`gpt-5.5` (and, at `0.145.0`, `gpt-5.2`) advertises code-mode `exec`/`wait`,
+most also the `collaboration.*` sub-agent tools, and the `gpt-6` models
+`clock.sleep` and `request_user_input_async`, through an `additional_tools`
+input item. The
+probe now counts every tool list in each request, probes every model the
+process lists, and runs the release catalog as a control that must fail. The
+[setup record](../design/codex-subscription-setup.md) describes the catalog.
+This is a local scripted-model check, not a certification.
 
 Date: 2026-09-25. Status: local protocol proof and Go foundation; **not a usable
 or certified subscription feature**.
@@ -52,17 +60,21 @@ Login lifecycle, engine integration, and setup UI remain unfinished.
 
 ## Local protocol results
 
-The binary reports `codex-cli 0.156.0`; its SHA-256 is
-`78a11f06e0a2dda42d13fba1d50dc62e8cbdb2d5f69789722f4d4d99b5cdbe30`.
+The binary reports `codex-cli 0.157.1`; its SHA-256 is
+`3e2584f3f3829a43a0495011a1cecb2facbe64a2403e2b682351fd9c2983f970`.
 The generated experimental schema and matching upstream release source were
 used to interpret its behavior. Newer clients require a fresh certification.
 
-All eight scenarios passed under each of two model metadata selections
-(`gpt-5.5` and `gpt-6-sol`). These names select native metadata for a scripted
-local response; **they are not evidence of account entitlement or live model
-availability**. Every model request advertised exactly `jps_probe` in its
-`tools` member and `skills.list`/`skills.read` in a `skills` namespace there;
-no other tool list appeared.
+With Desk's catalog in the profile, the process listed exactly the catalog's
+seven models (`gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`,
+`gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`), and all eight scenarios passed for
+each of them: 56 of 56. These names select native metadata for a scripted local
+response; **they are not evidence of account entitlement or live model
+availability**. Every request advertised the host tool and nothing else:
+`gpt-5.5` as `jps_probe` in the top-level `tools` member, the other six as
+`jps_probe` inside a `functions` namespace carried by an `additional_tools`
+input item. The tool call itself arrived without a namespace in every case.
+This release registers no skills utility and no `update_plan`.
 
 | Scenario | Observed result |
 | --- | --- |
@@ -72,12 +84,17 @@ no other tool list appeared.
 | Shell | `exec_command` call rejected as unsupported |
 | Web | No advertised web tool; synthetic `web.run` call rejected |
 | Subagent | `spawn_agent` call rejected as unsupported |
-| Skills listing | Empty enabled orchestrator catalog, with a null `next_cursor` |
-| Forged skill read | Unavailable package refused (`skill package is not available`) |
+| Skills listing | No skills tool registered; forged `skills.list` call rejected as unsupported |
+| Forged skill read | No skills tool registered; forged `skills.read` call rejected as unsupported |
 
-The negative control retains a local execution environment. The same probe
-correctly fails because `apply_patch` and `view_image` reappear. This catches the
-mistake of treating read-only permissions as a tool allow-list.
+Two controls must fail, and do. With the release's own catalog left in place,
+the process lists eleven models, hidden ones included, and nine of them
+advertise code-mode `exec`/`wait` and more; only `gpt-5.5` and `gpt-5.4`, whose
+metadata names no tool mode, stay closed. With Desk's catalog but a local
+execution environment retained, `apply_patch` and `view_image` reappear for
+`gpt-5.5`. The second catches the mistake of treating read-only permissions as
+a tool allow-list; the first shows the catalog, not the feature flags, is what
+closes the inventory.
 
 A separate diagnostic used the installed bubblewrap executable and the named
 permissions profile. An attempted synthetic private-image read returned
@@ -99,16 +116,21 @@ profile, no escalation, no ambient MCP servers, no apps/plugins/hooks, no
 browser/computer/image-generation tools, and no subagents. The host constructs
 these fields; they must never come from a browser's raw RPC request.
 
-The strict “only host tools exist” wording in the initial plan needs a narrow
-qualification: the no-environment mode also advertises `skills.list` and
-`skills.read`. At `0.145.0`, `update_plan` was advertised as well. At `0.156.0`
-it is registered only when `tools.update_plan.enabled` is set, which defaults
-to false, and the probe now refuses it.
-There is no supported general built-in-tool allow-list in this tested version.
-The fixed utilities were audited and explicitly tested, rather than silently
-ignored by the probe. Planning is internal progress; the skills catalog has no
-authority with the selected integrations disabled. The eventual adapter must
-count/bound native work and refuse configuration that makes the catalog live.
+Supply Desk's model catalog through `model_catalog_json`, and refuse a process
+that lists any other model. The feature flags alone do not close the inventory:
+a model whose catalog metadata names a tool mode gets code mode, and with it
+the sub-agent and other tools, whatever the flags say. The catalog is the
+pinned release's with that metadata removed, so the models offered are fixed
+with the pin.
+
+The strict “only host tools exist” wording in the initial plan holds at
+`0.157.1` with that catalog. At `0.145.0` the no-environment mode also
+advertised `skills.list`, `skills.read` and `update_plan`; `0.157.1` registers
+none of them, and the probe still allows the two skills utilities should a
+release register them again, since each can only address the disabled
+orchestrator catalog. There is no supported general built-in-tool allow-list
+in this tested version. The eventual adapter must count/bound native work and
+refuse configuration that makes the catalog live.
 
 This is a local candidate boundary, not proof for every OS, future model
 catalog, managed host configuration, or authenticated subscription. No real
@@ -229,7 +251,7 @@ backend processes and unrelated working-tree changes were preserved.
 
 - [Official App Server protocol](https://learn.chatgpt.com/docs/app-server)
 - [Official Codex authentication](https://learn.chatgpt.com/docs/auth)
-- [Pinned native tool registration](https://github.com/openai/codex/blob/rust-v0.156.0/codex-rs/core/src/tools/spec_plan.rs)
-- [Pinned orchestrator skill authority checks](https://github.com/openai/codex/blob/rust-v0.156.0/codex-rs/ext/skills/src/tools/read.rs)
-- [Pinned configuration schema](https://github.com/openai/codex/blob/rust-v0.156.0/codex-rs/core/config.schema.json)
-- [Pinned official browser login implementation](https://github.com/openai/codex/blob/rust-v0.156.0/codex-rs/login/src/server.rs)
+- [Pinned native tool registration](https://github.com/openai/codex/blob/rust-v0.157.1/codex-rs/core/src/tools/spec_plan.rs)
+- [Pinned orchestrator skill authority checks](https://github.com/openai/codex/blob/rust-v0.157.1/codex-rs/ext/skills/src/tools/read.rs)
+- [Pinned configuration schema](https://github.com/openai/codex/blob/rust-v0.157.1/codex-rs/core/config.schema.json)
+- [Pinned official browser login implementation](https://github.com/openai/codex/blob/rust-v0.157.1/codex-rs/login/src/server.rs)
