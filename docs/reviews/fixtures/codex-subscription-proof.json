@@ -35,6 +35,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -60,6 +61,7 @@
           "noMcpServers": true,
           "catalogApplied": true,
           "accountAbsent": true,
+          "privateImageDenied": false,
           "toolCallback": false,
           "turnCompleted": true,
           "modelRequests": 2,
@@ -68,6 +70,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -99,6 +102,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -130,6 +134,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -161,6 +166,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -192,6 +198,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -223,6 +230,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -254,6 +262,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -286,6 +295,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -311,6 +321,7 @@
           "noMcpServers": true,
           "catalogApplied": true,
           "accountAbsent": true,
+          "privateImageDenied": false,
           "toolCallback": false,
           "turnCompleted": true,
           "modelRequests": 2,
@@ -319,6 +330,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -350,6 +362,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -381,6 +394,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -412,6 +426,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -443,6 +458,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -474,6 +490,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -505,6 +522,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -537,6 +555,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -562,6 +581,7 @@
           "noMcpServers": true,
           "catalogApplied": true,
           "accountAbsent": true,
+          "privateImageDenied": false,
           "toolCallback": false,
           "turnCompleted": true,
           "modelRequests": 2,
@@ -570,6 +590,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -601,6 +622,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -632,6 +654,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -663,6 +686,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -694,6 +718,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -725,6 +750,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -756,6 +782,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -788,6 +815,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -813,6 +841,7 @@
           "noMcpServers": true,
           "catalogApplied": true,
           "accountAbsent": true,
+          "privateImageDenied": false,
           "toolCallback": false,
           "turnCompleted": true,
           "modelRequests": 2,
@@ -821,6 +850,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -852,6 +882,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -883,6 +914,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -914,6 +946,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -945,6 +978,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -976,6 +1010,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -1007,6 +1042,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -1039,6 +1075,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -1064,6 +1101,7 @@
           "noMcpServers": true,
           "catalogApplied": true,
           "accountAbsent": true,
+          "privateImageDenied": false,
           "toolCallback": false,
           "turnCompleted": true,
           "modelRequests": 2,
@@ -1072,6 +1110,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -1103,6 +1142,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -1134,6 +1174,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -1165,6 +1206,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -1196,6 +1238,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -1227,6 +1270,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -1258,6 +1302,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -1290,6 +1335,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -1315,6 +1361,7 @@
           "noMcpServers": true,
           "catalogApplied": true,
           "accountAbsent": true,
+          "privateImageDenied": false,
           "toolCallback": false,
           "turnCompleted": true,
           "modelRequests": 2,
@@ -1323,6 +1370,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -1354,6 +1402,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -1385,6 +1434,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -1416,6 +1466,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -1447,6 +1498,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -1478,6 +1530,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -1509,6 +1562,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "functions.jps_probe": [
               "input[:additional_tools].tools[].tools[]"
@@ -1541,6 +1595,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "jps_probe": [
               "tools[]"
@@ -1566,6 +1621,7 @@
           "noMcpServers": true,
           "catalogApplied": true,
           "accountAbsent": true,
+          "privateImageDenied": false,
           "toolCallback": false,
           "turnCompleted": true,
           "modelRequests": 2,
@@ -1574,6 +1630,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "jps_probe": [
               "tools[]"
@@ -1605,6 +1662,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "jps_probe": [
               "tools[]"
@@ -1636,6 +1694,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "jps_probe": [
               "tools[]"
@@ -1667,6 +1726,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "jps_probe": [
               "tools[]"
@@ -1698,6 +1758,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "jps_probe": [
               "tools[]"
@@ -1729,6 +1790,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "jps_probe": [
               "tools[]"
@@ -1760,6 +1822,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "jps_probe": [
               "tools[]"
@@ -1835,6 +1898,18 @@
             "functions.request_user_input_async",
             "functions.wait"
           ],
+          "advertisedUnexpected": [
+            "clock.sleep",
+            "collaboration.followup_task",
+            "collaboration.interrupt_agent",
+            "collaboration.list_agents",
+            "collaboration.send_message",
+            "collaboration.spawn_agent",
+            "collaboration.wait_agent",
+            "functions.exec",
+            "functions.request_user_input_async",
+            "functions.wait"
+          ],
           "toolChannels": {
             "clock.sleep": [
               "input[:additional_tools].tools[].tools[]"
@@ -1905,6 +1980,18 @@
           ],
           "hostToolAdvertised": false,
           "unexpectedTools": [
+            "clock.sleep",
+            "collaboration.followup_task",
+            "collaboration.interrupt_agent",
+            "collaboration.list_agents",
+            "collaboration.send_message",
+            "collaboration.spawn_agent",
+            "collaboration.wait_agent",
+            "functions.exec",
+            "functions.request_user_input_async",
+            "functions.wait"
+          ],
+          "advertisedUnexpected": [
             "clock.sleep",
             "collaboration.followup_task",
             "collaboration.interrupt_agent",
@@ -1997,6 +2084,18 @@
             "functions.request_user_input_async",
             "functions.wait"
           ],
+          "advertisedUnexpected": [
+            "clock.sleep",
+            "collaboration.followup_task",
+            "collaboration.interrupt_agent",
+            "collaboration.list_agents",
+            "collaboration.send_message",
+            "collaboration.spawn_agent",
+            "collaboration.wait_agent",
+            "functions.exec",
+            "functions.request_user_input_async",
+            "functions.wait"
+          ],
           "toolChannels": {
             "clock.sleep": [
               "input[:additional_tools].tools[].tools[]"
@@ -2065,6 +2164,16 @@
           ],
           "hostToolAdvertised": false,
           "unexpectedTools": [
+            "collaboration.followup_task",
+            "collaboration.interrupt_agent",
+            "collaboration.list_agents",
+            "collaboration.send_message",
+            "collaboration.spawn_agent",
+            "collaboration.wait_agent",
+            "functions.exec",
+            "functions.wait"
+          ],
+          "advertisedUnexpected": [
             "collaboration.followup_task",
             "collaboration.interrupt_agent",
             "collaboration.list_agents",
@@ -2145,6 +2254,16 @@
             "functions.exec",
             "functions.wait"
           ],
+          "advertisedUnexpected": [
+            "collaboration.followup_task",
+            "collaboration.interrupt_agent",
+            "collaboration.list_agents",
+            "collaboration.send_message",
+            "collaboration.spawn_agent",
+            "collaboration.wait_agent",
+            "functions.exec",
+            "functions.wait"
+          ],
           "toolChannels": {
             "collaboration.followup_task": [
               "input[:additional_tools].tools[].tools[]"
@@ -2204,6 +2323,10 @@
             "functions.exec",
             "functions.wait"
           ],
+          "advertisedUnexpected": [
+            "functions.exec",
+            "functions.wait"
+          ],
           "toolChannels": {
             "functions.exec": [
               "input[:additional_tools].tools[].tools[]"
@@ -2248,6 +2371,16 @@
           ],
           "hostToolAdvertised": false,
           "unexpectedTools": [
+            "collaboration.followup_task",
+            "collaboration.interrupt_agent",
+            "collaboration.list_agents",
+            "collaboration.send_message",
+            "collaboration.spawn_agent",
+            "collaboration.wait_agent",
+            "functions.exec",
+            "functions.wait"
+          ],
+          "advertisedUnexpected": [
             "collaboration.followup_task",
             "collaboration.interrupt_agent",
             "collaboration.list_agents",
@@ -2328,6 +2461,16 @@
             "functions.exec",
             "functions.wait"
           ],
+          "advertisedUnexpected": [
+            "collaboration.followup_task",
+            "collaboration.interrupt_agent",
+            "collaboration.list_agents",
+            "collaboration.send_message",
+            "collaboration.spawn_agent",
+            "collaboration.wait_agent",
+            "functions.exec",
+            "functions.wait"
+          ],
           "toolChannels": {
             "collaboration.followup_task": [
               "input[:additional_tools].tools[].tools[]"
@@ -2383,6 +2526,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "jps_probe": [
               "tools[]"
@@ -2417,6 +2561,7 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
           "toolChannels": {
             "jps_probe": [
               "tools[]"
@@ -2452,6 +2597,10 @@
           ],
           "hostToolAdvertised": false,
           "unexpectedTools": [
+            "functions.exec",
+            "functions.wait"
+          ],
+          "advertisedUnexpected": [
             "functions.exec",
             "functions.wait"
           ],
@@ -2514,6 +2663,9 @@
           "unexpectedTools": [
             "view_image"
           ],
+          "advertisedUnexpected": [
+            "view_image"
+          ],
           "toolChannels": {
             "jps_probe": [
               "tools[]"
@@ -2561,6 +2713,7 @@
           "noMcpServers": true,
           "catalogApplied": true,
           "accountAbsent": true,
+          "privateImageDenied": true,
           "toolCallback": false,
           "turnCompleted": true,
           "modelRequests": 2,
@@ -2570,6 +2723,9 @@
           ],
           "hostToolAdvertised": true,
           "unexpectedTools": [
+            "view_image"
+          ],
+          "advertisedUnexpected": [
             "view_image"
           ],
           "toolChannels": {

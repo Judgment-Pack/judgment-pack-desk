@@ -16,8 +16,10 @@ unknown tool, word for word, with no native request reaching the host.
 --bundled-catalog leaves the release's own catalog in place and
 --negative-control retains an environment (with the image-view feature left
 on, so the environment has a tool to register): each is a control that must fail,
-and exits 0 only when it failed for the right reason, by advertising a tool
-beyond the host's after every scenario ran to completion.
+and exits 0 only when it failed for the right reason: a tool beyond the host's
+advertised through a definition channel, with every scenario's ordinary
+evidence intact, the sandbox diagnostic's being the denial of the private
+fixture's own path.
 """
 import argparse
 import base64
@@ -99,18 +101,31 @@ def tool_inventory(request):
 
 
 def advertised(request):
-    """Return the inventory of the request's definition channels only.
+    """Return {qualified tool name: definitions} for the request's definition channels only.
 
     A tool is offered to the model through the top-level `tools` member or an
-    `additional_tools` input item. Only those count as an advertisement; the
-    wider scan above may also see tool-shaped data inside a result, which can
-    fail a scenario but never pass one.
+    `additional_tools` input item, plainly or inside a namespace's `tools`.
+    Only those count as an advertisement; nothing else in a definition (a
+    schema's examples, say) or elsewhere in the request does. The wider scan
+    above may see tool-shaped data anywhere, which can fail a scenario but
+    never pass one.
     """
-    channels = {'tools': request.get('tools', [])}
-    for i, item in enumerate(request.get('input', [])):
-        if isinstance(item, dict) and item.get('type') == 'additional_tools':
-            channels['input[%d:additional_tools].tools' % i] = item.get('tools', [])
-    return tool_inventory(channels)
+    found = {}
+    def definitions(tools, prefix):
+        for tool in tools:
+            if not isinstance(tool, dict):
+                continue
+            name = tool.get('name') if isinstance(tool.get('name'), str) else None
+            if tool.get('type') == 'namespace' and name and isinstance(tool.get('tools'), list):
+                definitions(tool['tools'], prefix + name + '.')
+            elif name:
+                found[prefix + name] = found.get(prefix + name, 0) + 1
+    if isinstance(request.get('tools'), list):
+        definitions(request['tools'], '')
+    for item in request.get('input', []):
+        if isinstance(item, dict) and item.get('type') == 'additional_tools' and isinstance(item.get('tools'), list):
+            definitions(item['tools'], '')
+    return found
 
 
 class Probe:
@@ -407,13 +422,15 @@ enabled = false
                         elif message.get('method') == 'turn/completed':
                             completed = message['params']['turn']['status'] == 'completed'
                             break
-                    tools, channels, host_each = set(), {}, []
+                    tools, channels, host_each, offered_extra = set(), {}, [], set()
                     for request in self.requests:
                         inventory = tool_inventory(request)
                         # Each request must advertise the host tool exactly once,
                         # in exactly one of its two forms, through a definition
                         # channel; anything else found anywhere is unexpected.
-                        host_each.append(sum(len(paths) for name, paths in advertised(request).items() if name in HOST_TOOLS) == 1)
+                        offered = advertised(request)
+                        host_each.append(sum(n for name, n in offered.items() if name in HOST_TOOLS) == 1)
+                        offered_extra.update(name for name in offered if name not in HOST_TOOLS)
                         for name, paths in inventory.items():
                             tools.add(name)
                             channels.setdefault(name, set()).update(
@@ -430,10 +447,17 @@ enabled = false
                         # The router's own unknown-tool refusal, and no native
                         # request of any kind reached the host.
                         expected = REJECTIONS[self.scenario] in results and not self.server_requests
+                    if self.scenario == 'private-image':
+                        # The sandbox diagnostic's evidence: the image tool ran and
+                        # the permission profile denied the private fixture's own
+                        # path, with no native request reaching the host.
+                        denied = 'unable to locate image at `%s`: Permission denied' % self.private_image
+                        summary['privateImageDenied'] = any(str(x).startswith(denied) for x in results) and not self.server_requests
                     summary.update({'toolCallback': called, 'turnCompleted': completed,
                         'modelRequests': len(self.requests), 'advertisedTools': sorted(tools),
                         'hostToolAdvertised': bool(host_each) and all(host_each),
                         'unexpectedTools': sorted(tools - HOST_TOOLS),
+                        'advertisedUnexpected': sorted(offered_extra),
                         'toolChannels': {k: sorted(v) for k, v in sorted(channels.items())},
                         'expectedResult': bool(expected), 'privateImageReachedModel': any(
                             'data:image/' in json.dumps(r.get('input')) for r in self.requests),
@@ -485,24 +509,24 @@ def main():
     report['passed'] = all(r['passed'] for r in results) and report.get('catalogListed', True)
     control = args.bundled_catalog or args.negative_control
     if control:
-        # A control holds only when every scenario ran to completion with its
-        # own evidence intact, the catalog was applied and listed as expected,
-        # and at least one scenario advertised a tool beyond the host's; any
-        # other failure is the probe's, not the boundary's.
+        # A control holds only when every scenario ran with its ordinary
+        # evidence intact (the sandbox diagnostic's being the denial of the
+        # private fixture's own path), the catalog was applied and listed as
+        # expected, and a tool beyond the host's was advertised through a
+        # definition channel; any other failure is the probe's, not the
+        # boundary's.
         def evidence(r):
-            outputs = '\n'.join(str(o) for o in r.get('toolOutputs', []))
-            if r['scenario'] == 'host-tool':
-                return r.get('toolCallback') and 'JPS_FIXTURE_OK' in outputs
             if r['scenario'] == 'private-image' and args.sandbox_bin:
                 # The diagnostic lets the image tool run so that the permission
                 # profile, not the router, is what denies the private read.
-                return 'Permission denied' in outputs and not r.get('privateImageReachedModel')
-            return REJECTIONS[r['scenario']] in r.get('toolOutputs', [])
+                return r.get('privateImageDenied')
+            return r.get('expectedResult')
         intact = ('accountAbsent', 'noMcpServers', 'catalogApplied', 'turnCompleted', 'workspaceUnchanged')
         listed = report['catalogListed'] if catalog is not None else set(models) > set(m['slug'] for m in json.loads(args.catalog.read_bytes())['models'])
         report['controlHeld'] = bool(results) and listed and all(
-            not r.get('error') and not r.get('canaryWritten') and all(r.get(k) for k in intact) and evidence(r)
-            for r in results) and any(r.get('unexpectedTools') for r in results)
+            not r.get('error') and not r.get('canaryWritten') and not r.get('privateImageReachedModel') and
+            all(r.get(k) for k in intact) and evidence(r) for r in results) and any(
+            r.get('advertisedUnexpected') for r in results)
     report['results'] = results
     serialized = json.dumps(report, indent=2) + '\n'
     if args.output:
