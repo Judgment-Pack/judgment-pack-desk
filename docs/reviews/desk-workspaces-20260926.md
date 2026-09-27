@@ -22,6 +22,9 @@ and Runtime (acceptance of an empty initial project).
   desk-name link, shared dirty-state guard, retained file editor and scoped relay.
 - CI pinned companions that predated durable triggers and empty initial projects.
   The integration job now builds the exact tested revisions.
+- The browser layout gate omitted the Runs route, expected the previous footer
+  gap, and tried to open nested input JSON before its parent disclosure. It now
+  checks the centered footer band and follows the current wizard.
 - Documentation still described cloud acquisition as future work and drafts as a
   separate section. It now describes installed cloud connections and table rows.
 
@@ -31,9 +34,15 @@ Local checks cover Runtime tests and conformance, Runner race tests against the
 real Runtime, Desk Go race tests with both companions, TypeScript, translation
 coverage, source-message audit, production build and mutation needle validation.
 The initial full web run found five style-guard failures; the corrected styles and
-file/identity flows passed a focused 619-test run. A separate browser fixture
-checks named desk switching, draft recovery, favicon persistence and the complete
-scheduled run path. CI and browser outcomes are recorded on the pull request.
+file/identity flows passed a focused 619-test run. The full CI run passed all 238 frontend test files (4,457 tests passed, one skipped).
+An isolated browser fixture passed named desk switching, typed discard, draft
+save/reload/resume, logo and favicon persistence, and separation of files,
+conversations and jobs. Two mapped local files supplied facts and evidence. After
+one file changed, a one-time schedule completed with the browser closed, producing
+a different decision and preserving the new inputs and lineage. The run and brief
+survived a server restart and rendered in a fresh browser. Brief text was synthetic;
+this check exercised shared persistence and rendering without an AI provider call.
+The responsive layout sweep and final CI outcomes are recorded on the pull request.
 
 The Google relay-to-Runner path is tested with a local cloud transport. No cloud
 account is provisioned, and this is not a claim of a deployed Google scheduler.

@@ -36,7 +36,7 @@
  * 6. No page error and no console error. The collector is reset before each
  *    row, so what it holds is that row's.
  * 7. The workspace keeps four 12px corners, a complete 1px border, clipped
- *    square-edged panes, and an 8px gap above the external status strip.
+ *    square-edged panes, and status centered in the external footer band.
  *
  * **The widths.** The widths are derived from every breakpoint the sheets
  * author, so an override scoped to a width this gate never enters cannot exist
@@ -384,6 +384,7 @@ const routesFor = (pack, graph, job = '/jobs/job-containment', run = '/jobs/job-
   `${pack}/matrix`,
   '/admin',
   '/jobs',
+  '/jobs/runs',
   `/jobs/new?pack=${encodeURIComponent(pack.split('/').pop())}`,
   `/jobs/new?pack=${encodeURIComponent(pack.split('/').pop())}&containment=mapped`,
   job,
@@ -540,7 +541,17 @@ const MEASURE = (panes) => {
         frameFailures.push('inspector drawer does not retain its 12px inset')
       }
     }
-    if (Math.abs(strip.getBoundingClientRect().top - outer.bottom - 8) > 0.5) frameFailures.push('status strip gap is not 8px')
+    const band = strip.getBoundingClientRect()
+    if (Math.abs(band.top - outer.bottom) > 0.5 || Math.abs(band.bottom - innerHeight) > 0.5) {
+      frameFailures.push('status strip does not span the footer band')
+    }
+    const connection = strip.querySelector('.desk-strip-connection')
+    if (connection) {
+      const status = connection.getBoundingClientRect()
+      if (Math.abs((status.top + status.bottom) / 2 - (band.top + band.bottom) / 2) > 0.5) {
+        frameFailures.push('connection status is not vertically centered')
+      }
+    }
     const main = document.querySelector('.desk-main')
     const divider = document.querySelector('[role="separator"][aria-controls="desk-inspector"]')
     const inspector = document.querySelector('.desk-inspector:not([hidden])')
@@ -589,6 +600,7 @@ async function go(path) {
     await page.getByLabel('Job name', { exact: true }).fill('Containment sample')
     await page.getByRole('button', { name: 'Continue', exact: true }).click()
     await page.getByRole('heading', { name: 'Where inputs come from', exact: true }).waitFor()
+    await page.locator('summary').filter({hasText: 'Inputs supplied with each run'}).click()
     await page.locator('summary').filter({hasText: 'Case inputs (JSON)'}).click()
     await page.getByLabel('Case inputs (JSON)', { exact: true }).waitFor()
     await settle()
