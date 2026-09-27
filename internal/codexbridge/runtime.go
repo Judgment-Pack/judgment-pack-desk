@@ -24,7 +24,7 @@ var (
 )
 
 // Release metadata is pinned in Desk, never supplied by a project, request or
-// downloaded manifest. Digests were checked against OpenAI's rust-v0.145.0
+// downloaded manifest. Digests were checked against OpenAI's rust-v0.157.1
 // release asset and its extracted executable. Updating it needs protocol tests.
 type runtimeArtifact struct {
 	URL, Member, ArchiveSHA256, BinarySHA256 string
@@ -32,14 +32,14 @@ type runtimeArtifact struct {
 }
 
 var linuxAMD64Runtime = runtimeArtifact{
-	URL:           "https://github.com/openai/codex/releases/download/rust-v0.145.0/codex-x86_64-unknown-linux-musl.tar.gz",
+	URL:           "https://github.com/openai/codex/releases/download/rust-v0.157.1/codex-x86_64-unknown-linux-musl.tar.gz",
 	Member:        "codex-x86_64-unknown-linux-musl",
-	ArchiveSHA256: "bfaf13c9ba34f2ad764e4a916c49cf7177aeba329cf0f719e2227566fc8d662a",
-	BinarySHA256:  "a2a05dafaa1acb002a45eaec0a462de5b13694fcfcd7bc43305f14781ce7be14",
-	ArchiveSize:   113724150, BinarySize: 310730800,
+	ArchiveSHA256: "e98c1e8e028e8137fa2d2415c82ec58e7b3701a627e3554aace5b3ca31454af2",
+	BinarySHA256:  "3e2584f3f3829a43a0495011a1cecb2facbe64a2403e2b682351fd9c2983f970",
+	ArchiveSize:   107868387, BinarySize: 285340072,
 }
 
-const runtimeFilename = "codex-0.145.0"
+const runtimeFilename = "codex-0.157.1"
 
 func ManagedRuntimeSupported() bool { return runtime.GOOS == "linux" && runtime.GOARCH == "amd64" }
 

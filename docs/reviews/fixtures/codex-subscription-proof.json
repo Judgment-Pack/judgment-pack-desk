@@ -1,29 +1,46 @@
 {
-  "date": "2026-09-25",
+  "date": "2026-09-26",
   "scope": "local scripted-model protocol checks, not authenticated subscription certification",
   "runs": [
     {
       "run": "proof-report.json",
-      "model": "gpt-5.5",
-      "binarySHA256": "a2a05dafaa1acb002a45eaec0a462de5b13694fcfcd7bc43305f14781ce7be14",
+      "binarySHA256": "3e2584f3f3829a43a0495011a1cecb2facbe64a2403e2b682351fd9c2983f970",
+      "catalogSHA256": "3dbf61ed5f0c8d726ecfc138033c134a22f39817cc7b4df587f739ddb8698d7a",
+      "models": [
+        "gpt-6-astra",
+        "gpt-6-sol",
+        "gpt-6-luna",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
+        "gpt-5.5"
+      ],
+      "catalogListed": true,
       "passed": true,
       "results": [
         {
+          "model": "gpt-6-astra",
           "scenario": "host-tool",
           "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
-          "accountAbsent": true,
+          "version": "codex-cli 0.157.1",
           "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "hostCallNamespace": null,
           "toolCallback": true,
           "turnCompleted": true,
           "modelRequests": 2,
           "advertisedTools": [
-            "jps_probe",
-            "skills.list",
-            "skills.read",
-            "update_plan"
+            "functions.jps_probe"
           ],
+          "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
           "expectedResult": true,
           "privateImageReachedModel": false,
           "canaryWritten": false,
@@ -37,21 +54,28 @@
           "passed": true
         },
         {
+          "model": "gpt-6-astra",
           "scenario": "private-image",
           "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
-          "accountAbsent": true,
+          "version": "codex-cli 0.157.1",
           "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "privateImageDenied": false,
           "toolCallback": false,
           "turnCompleted": true,
           "modelRequests": 2,
           "advertisedTools": [
-            "jps_probe",
-            "skills.list",
-            "skills.read",
-            "update_plan"
+            "functions.jps_probe"
           ],
+          "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
           "expectedResult": true,
           "privateImageReachedModel": false,
           "canaryWritten": false,
@@ -63,21 +87,27 @@
           "passed": true
         },
         {
+          "model": "gpt-6-astra",
           "scenario": "write",
           "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
-          "accountAbsent": true,
+          "version": "codex-cli 0.157.1",
           "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
           "toolCallback": false,
           "turnCompleted": true,
           "modelRequests": 2,
           "advertisedTools": [
-            "jps_probe",
-            "skills.list",
-            "skills.read",
-            "update_plan"
+            "functions.jps_probe"
           ],
+          "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
           "expectedResult": true,
           "privateImageReachedModel": false,
           "canaryWritten": false,
@@ -89,21 +119,27 @@
           "passed": true
         },
         {
+          "model": "gpt-6-astra",
           "scenario": "shell",
           "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
-          "accountAbsent": true,
+          "version": "codex-cli 0.157.1",
           "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
           "toolCallback": false,
           "turnCompleted": true,
           "modelRequests": 2,
           "advertisedTools": [
-            "jps_probe",
-            "skills.list",
-            "skills.read",
-            "update_plan"
+            "functions.jps_probe"
           ],
+          "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
           "expectedResult": true,
           "privateImageReachedModel": false,
           "canaryWritten": false,
@@ -115,21 +151,27 @@
           "passed": true
         },
         {
+          "model": "gpt-6-astra",
           "scenario": "web",
           "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
-          "accountAbsent": true,
+          "version": "codex-cli 0.157.1",
           "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
           "toolCallback": false,
           "turnCompleted": true,
           "modelRequests": 2,
           "advertisedTools": [
-            "jps_probe",
-            "skills.list",
-            "skills.read",
-            "update_plan"
+            "functions.jps_probe"
           ],
+          "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
           "expectedResult": true,
           "privateImageReachedModel": false,
           "canaryWritten": false,
@@ -141,21 +183,27 @@
           "passed": true
         },
         {
+          "model": "gpt-6-astra",
           "scenario": "subagent",
           "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
-          "accountAbsent": true,
+          "version": "codex-cli 0.157.1",
           "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
           "toolCallback": false,
           "turnCompleted": true,
           "modelRequests": 2,
           "advertisedTools": [
-            "jps_probe",
-            "skills.list",
-            "skills.read",
-            "update_plan"
+            "functions.jps_probe"
           ],
+          "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
           "expectedResult": true,
           "privateImageReachedModel": false,
           "canaryWritten": false,
@@ -167,81 +215,2323 @@
           "passed": true
         },
         {
+          "model": "gpt-6-astra",
           "scenario": "skills-list",
           "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
-          "accountAbsent": true,
+          "version": "codex-cli 0.157.1",
           "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
           "toolCallback": false,
           "turnCompleted": true,
           "modelRequests": 2,
           "advertisedTools": [
-            "jps_probe",
-            "skills.list",
-            "skills.read",
-            "update_plan"
+            "functions.jps_probe"
           ],
+          "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
           "expectedResult": true,
           "privateImageReachedModel": false,
           "canaryWritten": false,
           "workspaceUnchanged": true,
           "serverRequests": [],
           "toolOutputs": [
-            "{\"skills\":[],\"warnings\":[]}"
+            "unsupported call: skillslist"
           ],
           "passed": true
         },
         {
+          "model": "gpt-6-astra",
           "scenario": "skills-read",
           "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
-          "accountAbsent": true,
+          "version": "codex-cli 0.157.1",
           "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
           "toolCallback": false,
           "turnCompleted": true,
           "modelRequests": 2,
           "advertisedTools": [
-            "jps_probe",
-            "skills.list",
-            "skills.read",
-            "update_plan"
+            "functions.jps_probe"
           ],
+          "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
           "expectedResult": true,
           "privateImageReachedModel": false,
           "canaryWritten": false,
           "workspaceUnchanged": true,
           "serverRequests": [],
           "toolOutputs": [
-            "skill package is not available from the requested authority"
+            "unsupported call: skillsread"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-6-sol",
+          "scenario": "host-tool",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "hostCallNamespace": null,
+          "toolCallback": true,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [
+            "item/tool/call"
+          ],
+          "toolOutputs": [
+            "JPS_FIXTURE_OK"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-6-sol",
+          "scenario": "private-image",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "privateImageDenied": false,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: view_image"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-6-sol",
+          "scenario": "write",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported custom tool call: apply_patch"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-6-sol",
+          "scenario": "shell",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: exec_command"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-6-sol",
+          "scenario": "web",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: web.run"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-6-sol",
+          "scenario": "subagent",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: spawn_agent"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-6-sol",
+          "scenario": "skills-list",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: skillslist"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-6-sol",
+          "scenario": "skills-read",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: skillsread"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-6-luna",
+          "scenario": "host-tool",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "hostCallNamespace": null,
+          "toolCallback": true,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [
+            "item/tool/call"
+          ],
+          "toolOutputs": [
+            "JPS_FIXTURE_OK"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-6-luna",
+          "scenario": "private-image",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "privateImageDenied": false,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: view_image"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-6-luna",
+          "scenario": "write",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported custom tool call: apply_patch"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-6-luna",
+          "scenario": "shell",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: exec_command"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-6-luna",
+          "scenario": "web",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: web.run"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-6-luna",
+          "scenario": "subagent",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: spawn_agent"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-6-luna",
+          "scenario": "skills-list",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: skillslist"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-6-luna",
+          "scenario": "skills-read",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: skillsread"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.6-sol",
+          "scenario": "host-tool",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "hostCallNamespace": null,
+          "toolCallback": true,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [
+            "item/tool/call"
+          ],
+          "toolOutputs": [
+            "JPS_FIXTURE_OK"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.6-sol",
+          "scenario": "private-image",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "privateImageDenied": false,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: view_image"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.6-sol",
+          "scenario": "write",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported custom tool call: apply_patch"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.6-sol",
+          "scenario": "shell",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: exec_command"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.6-sol",
+          "scenario": "web",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: web.run"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.6-sol",
+          "scenario": "subagent",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: spawn_agent"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.6-sol",
+          "scenario": "skills-list",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: skillslist"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.6-sol",
+          "scenario": "skills-read",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: skillsread"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.6-terra",
+          "scenario": "host-tool",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "hostCallNamespace": null,
+          "toolCallback": true,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [
+            "item/tool/call"
+          ],
+          "toolOutputs": [
+            "JPS_FIXTURE_OK"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.6-terra",
+          "scenario": "private-image",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "privateImageDenied": false,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: view_image"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.6-terra",
+          "scenario": "write",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported custom tool call: apply_patch"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.6-terra",
+          "scenario": "shell",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: exec_command"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.6-terra",
+          "scenario": "web",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: web.run"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.6-terra",
+          "scenario": "subagent",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: spawn_agent"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.6-terra",
+          "scenario": "skills-list",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: skillslist"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.6-terra",
+          "scenario": "skills-read",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: skillsread"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.6-luna",
+          "scenario": "host-tool",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "hostCallNamespace": null,
+          "toolCallback": true,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [
+            "item/tool/call"
+          ],
+          "toolOutputs": [
+            "JPS_FIXTURE_OK"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.6-luna",
+          "scenario": "private-image",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "privateImageDenied": false,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: view_image"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.6-luna",
+          "scenario": "write",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported custom tool call: apply_patch"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.6-luna",
+          "scenario": "shell",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: exec_command"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.6-luna",
+          "scenario": "web",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: web.run"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.6-luna",
+          "scenario": "subagent",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: spawn_agent"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.6-luna",
+          "scenario": "skills-list",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: skillslist"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.6-luna",
+          "scenario": "skills-read",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "functions.jps_probe": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: skillsread"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.5",
+          "scenario": "host-tool",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "hostCallNamespace": null,
+          "toolCallback": true,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "jps_probe": [
+              "tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [
+            "item/tool/call"
+          ],
+          "toolOutputs": [
+            "JPS_FIXTURE_OK"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.5",
+          "scenario": "private-image",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "privateImageDenied": false,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "jps_probe": [
+              "tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: view_image"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.5",
+          "scenario": "write",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "jps_probe": [
+              "tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported custom tool call: apply_patch"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.5",
+          "scenario": "shell",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "jps_probe": [
+              "tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: exec_command"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.5",
+          "scenario": "web",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "jps_probe": [
+              "tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: web.run"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.5",
+          "scenario": "subagent",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "jps_probe": [
+              "tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: spawn_agent"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.5",
+          "scenario": "skills-list",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "jps_probe": [
+              "tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: skillslist"
+          ],
+          "passed": true
+        },
+        {
+          "model": "gpt-5.5",
+          "scenario": "skills-read",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "toolCallback": false,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "jps_probe"
+          ],
+          "hostToolAdvertised": true,
+          "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "jps_probe": [
+              "tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [],
+          "toolOutputs": [
+            "unsupported call: skillsread"
           ],
           "passed": true
         }
       ]
     },
     {
-      "run": "proof-report-sol.json",
-      "model": "gpt-6-sol",
-      "binarySHA256": "a2a05dafaa1acb002a45eaec0a462de5b13694fcfcd7bc43305f14781ce7be14",
-      "passed": true,
+      "run": "proof-bundled-catalog.json",
+      "binarySHA256": "3e2584f3f3829a43a0495011a1cecb2facbe64a2403e2b682351fd9c2983f970",
+      "catalogSHA256": null,
+      "models": [
+        "gpt-6-astra",
+        "gpt-6-sol",
+        "gpt-6-luna",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
+        "gpt-daybreak-blue-latest",
+        "gpt-daybreak-red-latest",
+        "gpt-5.5",
+        "gpt-5.4",
+        "codex-auto-review"
+      ],
+      "catalogListed": null,
+      "passed": false,
+      "controlHeld": true,
       "results": [
         {
+          "model": "gpt-6-astra",
           "scenario": "host-tool",
           "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
-          "accountAbsent": true,
+          "version": "codex-cli 0.157.1",
           "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "hostCallNamespace": null,
           "toolCallback": true,
           "turnCompleted": true,
           "modelRequests": 2,
           "advertisedTools": [
-            "jps_probe",
-            "skills.list",
-            "skills.read",
-            "update_plan"
+            "clock.sleep",
+            "collaboration.followup_task",
+            "collaboration.interrupt_agent",
+            "collaboration.list_agents",
+            "collaboration.send_message",
+            "collaboration.spawn_agent",
+            "collaboration.wait_agent",
+            "functions.exec",
+            "functions.request_user_input_async",
+            "functions.wait"
           ],
+          "hostToolAdvertised": false,
+          "unexpectedTools": [
+            "clock.sleep",
+            "collaboration.followup_task",
+            "collaboration.interrupt_agent",
+            "collaboration.list_agents",
+            "collaboration.send_message",
+            "collaboration.spawn_agent",
+            "collaboration.wait_agent",
+            "functions.exec",
+            "functions.request_user_input_async",
+            "functions.wait"
+          ],
+          "advertisedUnexpected": [
+            "clock.sleep",
+            "collaboration.followup_task",
+            "collaboration.interrupt_agent",
+            "collaboration.list_agents",
+            "collaboration.send_message",
+            "collaboration.spawn_agent",
+            "collaboration.wait_agent",
+            "functions.exec",
+            "functions.request_user_input_async",
+            "functions.wait"
+          ],
+          "toolChannels": {
+            "clock.sleep": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.followup_task": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.interrupt_agent": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.list_agents": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.send_message": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.spawn_agent": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.wait_agent": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "functions.exec": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "functions.request_user_input_async": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "functions.wait": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [
+            "item/tool/call"
+          ],
+          "toolOutputs": [
+            "JPS_FIXTURE_OK"
+          ],
+          "passed": false
+        },
+        {
+          "model": "gpt-6-sol",
+          "scenario": "host-tool",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "hostCallNamespace": null,
+          "toolCallback": true,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "clock.sleep",
+            "collaboration.followup_task",
+            "collaboration.interrupt_agent",
+            "collaboration.list_agents",
+            "collaboration.send_message",
+            "collaboration.spawn_agent",
+            "collaboration.wait_agent",
+            "functions.exec",
+            "functions.request_user_input_async",
+            "functions.wait"
+          ],
+          "hostToolAdvertised": false,
+          "unexpectedTools": [
+            "clock.sleep",
+            "collaboration.followup_task",
+            "collaboration.interrupt_agent",
+            "collaboration.list_agents",
+            "collaboration.send_message",
+            "collaboration.spawn_agent",
+            "collaboration.wait_agent",
+            "functions.exec",
+            "functions.request_user_input_async",
+            "functions.wait"
+          ],
+          "advertisedUnexpected": [
+            "clock.sleep",
+            "collaboration.followup_task",
+            "collaboration.interrupt_agent",
+            "collaboration.list_agents",
+            "collaboration.send_message",
+            "collaboration.spawn_agent",
+            "collaboration.wait_agent",
+            "functions.exec",
+            "functions.request_user_input_async",
+            "functions.wait"
+          ],
+          "toolChannels": {
+            "clock.sleep": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.followup_task": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.interrupt_agent": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.list_agents": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.send_message": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.spawn_agent": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.wait_agent": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "functions.exec": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "functions.request_user_input_async": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "functions.wait": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [
+            "item/tool/call"
+          ],
+          "toolOutputs": [
+            "JPS_FIXTURE_OK"
+          ],
+          "passed": false
+        },
+        {
+          "model": "gpt-6-luna",
+          "scenario": "host-tool",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "hostCallNamespace": null,
+          "toolCallback": true,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "clock.sleep",
+            "collaboration.followup_task",
+            "collaboration.interrupt_agent",
+            "collaboration.list_agents",
+            "collaboration.send_message",
+            "collaboration.spawn_agent",
+            "collaboration.wait_agent",
+            "functions.exec",
+            "functions.request_user_input_async",
+            "functions.wait"
+          ],
+          "hostToolAdvertised": false,
+          "unexpectedTools": [
+            "clock.sleep",
+            "collaboration.followup_task",
+            "collaboration.interrupt_agent",
+            "collaboration.list_agents",
+            "collaboration.send_message",
+            "collaboration.spawn_agent",
+            "collaboration.wait_agent",
+            "functions.exec",
+            "functions.request_user_input_async",
+            "functions.wait"
+          ],
+          "advertisedUnexpected": [
+            "clock.sleep",
+            "collaboration.followup_task",
+            "collaboration.interrupt_agent",
+            "collaboration.list_agents",
+            "collaboration.send_message",
+            "collaboration.spawn_agent",
+            "collaboration.wait_agent",
+            "functions.exec",
+            "functions.request_user_input_async",
+            "functions.wait"
+          ],
+          "toolChannels": {
+            "clock.sleep": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.followup_task": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.interrupt_agent": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.list_agents": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.send_message": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.spawn_agent": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.wait_agent": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "functions.exec": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "functions.request_user_input_async": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "functions.wait": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [
+            "item/tool/call"
+          ],
+          "toolOutputs": [
+            "JPS_FIXTURE_OK"
+          ],
+          "passed": false
+        },
+        {
+          "model": "gpt-5.6-sol",
+          "scenario": "host-tool",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "hostCallNamespace": null,
+          "toolCallback": true,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "collaboration.followup_task",
+            "collaboration.interrupt_agent",
+            "collaboration.list_agents",
+            "collaboration.send_message",
+            "collaboration.spawn_agent",
+            "collaboration.wait_agent",
+            "functions.exec",
+            "functions.wait"
+          ],
+          "hostToolAdvertised": false,
+          "unexpectedTools": [
+            "collaboration.followup_task",
+            "collaboration.interrupt_agent",
+            "collaboration.list_agents",
+            "collaboration.send_message",
+            "collaboration.spawn_agent",
+            "collaboration.wait_agent",
+            "functions.exec",
+            "functions.wait"
+          ],
+          "advertisedUnexpected": [
+            "collaboration.followup_task",
+            "collaboration.interrupt_agent",
+            "collaboration.list_agents",
+            "collaboration.send_message",
+            "collaboration.spawn_agent",
+            "collaboration.wait_agent",
+            "functions.exec",
+            "functions.wait"
+          ],
+          "toolChannels": {
+            "collaboration.followup_task": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.interrupt_agent": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.list_agents": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.send_message": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.spawn_agent": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.wait_agent": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "functions.exec": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "functions.wait": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [
+            "item/tool/call"
+          ],
+          "toolOutputs": [
+            "JPS_FIXTURE_OK"
+          ],
+          "passed": false
+        },
+        {
+          "model": "gpt-5.6-terra",
+          "scenario": "host-tool",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "hostCallNamespace": null,
+          "toolCallback": true,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "collaboration.followup_task",
+            "collaboration.interrupt_agent",
+            "collaboration.list_agents",
+            "collaboration.send_message",
+            "collaboration.spawn_agent",
+            "collaboration.wait_agent",
+            "functions.exec",
+            "functions.wait"
+          ],
+          "hostToolAdvertised": false,
+          "unexpectedTools": [
+            "collaboration.followup_task",
+            "collaboration.interrupt_agent",
+            "collaboration.list_agents",
+            "collaboration.send_message",
+            "collaboration.spawn_agent",
+            "collaboration.wait_agent",
+            "functions.exec",
+            "functions.wait"
+          ],
+          "advertisedUnexpected": [
+            "collaboration.followup_task",
+            "collaboration.interrupt_agent",
+            "collaboration.list_agents",
+            "collaboration.send_message",
+            "collaboration.spawn_agent",
+            "collaboration.wait_agent",
+            "functions.exec",
+            "functions.wait"
+          ],
+          "toolChannels": {
+            "collaboration.followup_task": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.interrupt_agent": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.list_agents": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.send_message": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.spawn_agent": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.wait_agent": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "functions.exec": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "functions.wait": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [
+            "item/tool/call"
+          ],
+          "toolOutputs": [
+            "JPS_FIXTURE_OK"
+          ],
+          "passed": false
+        },
+        {
+          "model": "gpt-5.6-luna",
+          "scenario": "host-tool",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "hostCallNamespace": null,
+          "toolCallback": true,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "functions.exec",
+            "functions.wait"
+          ],
+          "hostToolAdvertised": false,
+          "unexpectedTools": [
+            "functions.exec",
+            "functions.wait"
+          ],
+          "advertisedUnexpected": [
+            "functions.exec",
+            "functions.wait"
+          ],
+          "toolChannels": {
+            "functions.exec": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "functions.wait": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [
+            "item/tool/call"
+          ],
+          "toolOutputs": [
+            "JPS_FIXTURE_OK"
+          ],
+          "passed": false
+        },
+        {
+          "model": "gpt-daybreak-blue-latest",
+          "scenario": "host-tool",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "hostCallNamespace": null,
+          "toolCallback": true,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "collaboration.followup_task",
+            "collaboration.interrupt_agent",
+            "collaboration.list_agents",
+            "collaboration.send_message",
+            "collaboration.spawn_agent",
+            "collaboration.wait_agent",
+            "functions.exec",
+            "functions.wait"
+          ],
+          "hostToolAdvertised": false,
+          "unexpectedTools": [
+            "collaboration.followup_task",
+            "collaboration.interrupt_agent",
+            "collaboration.list_agents",
+            "collaboration.send_message",
+            "collaboration.spawn_agent",
+            "collaboration.wait_agent",
+            "functions.exec",
+            "functions.wait"
+          ],
+          "advertisedUnexpected": [
+            "collaboration.followup_task",
+            "collaboration.interrupt_agent",
+            "collaboration.list_agents",
+            "collaboration.send_message",
+            "collaboration.spawn_agent",
+            "collaboration.wait_agent",
+            "functions.exec",
+            "functions.wait"
+          ],
+          "toolChannels": {
+            "collaboration.followup_task": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.interrupt_agent": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.list_agents": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.send_message": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.spawn_agent": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.wait_agent": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "functions.exec": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "functions.wait": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [
+            "item/tool/call"
+          ],
+          "toolOutputs": [
+            "JPS_FIXTURE_OK"
+          ],
+          "passed": false
+        },
+        {
+          "model": "gpt-daybreak-red-latest",
+          "scenario": "host-tool",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "hostCallNamespace": null,
+          "toolCallback": true,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "collaboration.followup_task",
+            "collaboration.interrupt_agent",
+            "collaboration.list_agents",
+            "collaboration.send_message",
+            "collaboration.spawn_agent",
+            "collaboration.wait_agent",
+            "functions.exec",
+            "functions.wait"
+          ],
+          "hostToolAdvertised": false,
+          "unexpectedTools": [
+            "collaboration.followup_task",
+            "collaboration.interrupt_agent",
+            "collaboration.list_agents",
+            "collaboration.send_message",
+            "collaboration.spawn_agent",
+            "collaboration.wait_agent",
+            "functions.exec",
+            "functions.wait"
+          ],
+          "advertisedUnexpected": [
+            "collaboration.followup_task",
+            "collaboration.interrupt_agent",
+            "collaboration.list_agents",
+            "collaboration.send_message",
+            "collaboration.spawn_agent",
+            "collaboration.wait_agent",
+            "functions.exec",
+            "functions.wait"
+          ],
+          "toolChannels": {
+            "collaboration.followup_task": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.interrupt_agent": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.list_agents": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.send_message": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.spawn_agent": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "collaboration.wait_agent": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "functions.exec": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "functions.wait": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
+          "expectedResult": true,
+          "privateImageReachedModel": false,
+          "canaryWritten": false,
+          "workspaceUnchanged": true,
+          "serverRequests": [
+            "item/tool/call"
+          ],
+          "toolOutputs": [
+            "JPS_FIXTURE_OK"
+          ],
+          "passed": false
+        },
+        {
+          "model": "gpt-5.5",
+          "scenario": "host-tool",
+          "environmentEnabled": false,
+          "version": "codex-cli 0.157.1",
+          "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "hostCallNamespace": null,
+          "toolCallback": true,
+          "turnCompleted": true,
+          "modelRequests": 2,
+          "advertisedTools": [
+            "jps_probe"
+          ],
+          "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "jps_probe": [
+              "tools[]"
+            ]
+          },
           "expectedResult": true,
           "privateImageReachedModel": false,
           "canaryWritten": false,
@@ -255,214 +2545,135 @@
           "passed": true
         },
         {
-          "scenario": "private-image",
+          "model": "gpt-5.4",
+          "scenario": "host-tool",
           "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
-          "accountAbsent": true,
+          "version": "codex-cli 0.157.1",
           "noMcpServers": true,
-          "toolCallback": false,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "hostCallNamespace": null,
+          "toolCallback": true,
           "turnCompleted": true,
           "modelRequests": 2,
           "advertisedTools": [
-            "jps_probe",
-            "skills.list",
-            "skills.read",
-            "update_plan"
+            "jps_probe"
           ],
+          "hostToolAdvertised": true,
           "unexpectedTools": [],
+          "advertisedUnexpected": [],
+          "toolChannels": {
+            "jps_probe": [
+              "tools[]"
+            ]
+          },
           "expectedResult": true,
           "privateImageReachedModel": false,
           "canaryWritten": false,
           "workspaceUnchanged": true,
-          "serverRequests": [],
+          "serverRequests": [
+            "item/tool/call"
+          ],
           "toolOutputs": [
-            "unsupported call: view_image"
+            "JPS_FIXTURE_OK"
           ],
           "passed": true
         },
         {
-          "scenario": "write",
+          "model": "codex-auto-review",
+          "scenario": "host-tool",
           "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
-          "accountAbsent": true,
+          "version": "codex-cli 0.157.1",
           "noMcpServers": true,
-          "toolCallback": false,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "hostCallNamespace": null,
+          "toolCallback": true,
           "turnCompleted": true,
           "modelRequests": 2,
           "advertisedTools": [
-            "jps_probe",
-            "skills.list",
-            "skills.read",
-            "update_plan"
+            "functions.exec",
+            "functions.wait"
           ],
-          "unexpectedTools": [],
+          "hostToolAdvertised": false,
+          "unexpectedTools": [
+            "functions.exec",
+            "functions.wait"
+          ],
+          "advertisedUnexpected": [
+            "functions.exec",
+            "functions.wait"
+          ],
+          "toolChannels": {
+            "functions.exec": [
+              "input[:additional_tools].tools[].tools[]"
+            ],
+            "functions.wait": [
+              "input[:additional_tools].tools[].tools[]"
+            ]
+          },
           "expectedResult": true,
           "privateImageReachedModel": false,
           "canaryWritten": false,
           "workspaceUnchanged": true,
-          "serverRequests": [],
+          "serverRequests": [
+            "item/tool/call"
+          ],
           "toolOutputs": [
-            "unsupported custom tool call: apply_patch"
+            "JPS_FIXTURE_OK"
           ],
-          "passed": true
-        },
-        {
-          "scenario": "shell",
-          "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
-          "accountAbsent": true,
-          "noMcpServers": true,
-          "toolCallback": false,
-          "turnCompleted": true,
-          "modelRequests": 2,
-          "advertisedTools": [
-            "jps_probe",
-            "skills.list",
-            "skills.read",
-            "update_plan"
-          ],
-          "unexpectedTools": [],
-          "expectedResult": true,
-          "privateImageReachedModel": false,
-          "canaryWritten": false,
-          "workspaceUnchanged": true,
-          "serverRequests": [],
-          "toolOutputs": [
-            "unsupported call: exec_command"
-          ],
-          "passed": true
-        },
-        {
-          "scenario": "web",
-          "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
-          "accountAbsent": true,
-          "noMcpServers": true,
-          "toolCallback": false,
-          "turnCompleted": true,
-          "modelRequests": 2,
-          "advertisedTools": [
-            "jps_probe",
-            "skills.list",
-            "skills.read",
-            "update_plan"
-          ],
-          "unexpectedTools": [],
-          "expectedResult": true,
-          "privateImageReachedModel": false,
-          "canaryWritten": false,
-          "workspaceUnchanged": true,
-          "serverRequests": [],
-          "toolOutputs": [
-            "unsupported call: web.run"
-          ],
-          "passed": true
-        },
-        {
-          "scenario": "subagent",
-          "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
-          "accountAbsent": true,
-          "noMcpServers": true,
-          "toolCallback": false,
-          "turnCompleted": true,
-          "modelRequests": 2,
-          "advertisedTools": [
-            "jps_probe",
-            "skills.list",
-            "skills.read",
-            "update_plan"
-          ],
-          "unexpectedTools": [],
-          "expectedResult": true,
-          "privateImageReachedModel": false,
-          "canaryWritten": false,
-          "workspaceUnchanged": true,
-          "serverRequests": [],
-          "toolOutputs": [
-            "unsupported call: spawn_agent"
-          ],
-          "passed": true
-        },
-        {
-          "scenario": "skills-list",
-          "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
-          "accountAbsent": true,
-          "noMcpServers": true,
-          "toolCallback": false,
-          "turnCompleted": true,
-          "modelRequests": 2,
-          "advertisedTools": [
-            "jps_probe",
-            "skills.list",
-            "skills.read",
-            "update_plan"
-          ],
-          "unexpectedTools": [],
-          "expectedResult": true,
-          "privateImageReachedModel": false,
-          "canaryWritten": false,
-          "workspaceUnchanged": true,
-          "serverRequests": [],
-          "toolOutputs": [
-            "{\"skills\":[],\"warnings\":[]}"
-          ],
-          "passed": true
-        },
-        {
-          "scenario": "skills-read",
-          "environmentEnabled": false,
-          "version": "codex-cli 0.145.0",
-          "accountAbsent": true,
-          "noMcpServers": true,
-          "toolCallback": false,
-          "turnCompleted": true,
-          "modelRequests": 2,
-          "advertisedTools": [
-            "jps_probe",
-            "skills.list",
-            "skills.read",
-            "update_plan"
-          ],
-          "unexpectedTools": [],
-          "expectedResult": true,
-          "privateImageReachedModel": false,
-          "canaryWritten": false,
-          "workspaceUnchanged": true,
-          "serverRequests": [],
-          "toolOutputs": [
-            "skill package is not available from the requested authority"
-          ],
-          "passed": true
+          "passed": false
         }
       ]
     },
     {
       "run": "proof-negative.json",
-      "model": "gpt-5.5",
-      "binarySHA256": "a2a05dafaa1acb002a45eaec0a462de5b13694fcfcd7bc43305f14781ce7be14",
+      "binarySHA256": "3e2584f3f3829a43a0495011a1cecb2facbe64a2403e2b682351fd9c2983f970",
+      "catalogSHA256": "3dbf61ed5f0c8d726ecfc138033c134a22f39817cc7b4df587f739ddb8698d7a",
+      "models": [
+        "gpt-6-astra",
+        "gpt-6-sol",
+        "gpt-6-luna",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
+        "gpt-5.5"
+      ],
+      "catalogListed": true,
       "passed": false,
+      "controlHeld": true,
       "results": [
         {
+          "model": "gpt-5.5",
           "scenario": "host-tool",
           "environmentEnabled": true,
-          "version": "codex-cli 0.145.0",
-          "accountAbsent": true,
+          "version": "codex-cli 0.157.1",
           "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "hostCallNamespace": null,
           "toolCallback": true,
           "turnCompleted": true,
           "modelRequests": 2,
           "advertisedTools": [
-            "apply_patch",
             "jps_probe",
-            "update_plan",
             "view_image"
           ],
+          "hostToolAdvertised": true,
           "unexpectedTools": [
-            "apply_patch",
             "view_image"
           ],
+          "advertisedUnexpected": [
+            "view_image"
+          ],
+          "toolChannels": {
+            "jps_probe": [
+              "tools[]"
+            ],
+            "view_image": [
+              "tools[]"
+            ]
+          },
           "expectedResult": true,
           "privateImageReachedModel": false,
           "canaryWritten": false,
@@ -479,36 +2690,59 @@
     },
     {
       "run": "proof-sandbox.json",
-      "model": "gpt-5.5",
-      "binarySHA256": "a2a05dafaa1acb002a45eaec0a462de5b13694fcfcd7bc43305f14781ce7be14",
+      "binarySHA256": "3e2584f3f3829a43a0495011a1cecb2facbe64a2403e2b682351fd9c2983f970",
+      "catalogSHA256": "3dbf61ed5f0c8d726ecfc138033c134a22f39817cc7b4df587f739ddb8698d7a",
+      "models": [
+        "gpt-6-astra",
+        "gpt-6-sol",
+        "gpt-6-luna",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
+        "gpt-5.5"
+      ],
+      "catalogListed": true,
       "passed": false,
+      "controlHeld": true,
       "results": [
         {
+          "model": "gpt-5.5",
           "scenario": "private-image",
           "environmentEnabled": true,
-          "version": "codex-cli 0.145.0",
-          "accountAbsent": true,
+          "version": "codex-cli 0.157.1",
           "noMcpServers": true,
+          "catalogApplied": true,
+          "accountAbsent": true,
+          "privateImageDenied": true,
           "toolCallback": false,
           "turnCompleted": true,
           "modelRequests": 2,
           "advertisedTools": [
-            "apply_patch",
             "jps_probe",
-            "update_plan",
             "view_image"
           ],
+          "hostToolAdvertised": true,
           "unexpectedTools": [
-            "apply_patch",
             "view_image"
           ],
+          "advertisedUnexpected": [
+            "view_image"
+          ],
+          "toolChannels": {
+            "jps_probe": [
+              "tools[]"
+            ],
+            "view_image": [
+              "tools[]"
+            ]
+          },
           "expectedResult": false,
           "privateImageReachedModel": false,
           "canaryWritten": false,
           "workspaceUnchanged": true,
           "serverRequests": [],
           "toolOutputs": [
-            "synthetic private-image read denied by filesystem permissions"
+            "unable to locate image at `<private profile>/secret-fixture.png`: Permission denied (os error 13)"
           ],
           "passed": false
         }

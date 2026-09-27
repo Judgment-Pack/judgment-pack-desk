@@ -14,7 +14,7 @@ Desk lazily acquires the private-profile account manager and its run interface.
 The managed runtime is prepared on Connect; `--codex` is an advanced installation
 override, with `off` available to disable subscription access. Account endpoints
 and run transport share one manager and one profile lease. Only Linux and the
-pinned `codex-cli 0.145.0` initialization contract are accepted at this stage.
+pinned `codex-cli 0.157.1` initialization contract are accepted at this stage.
 See [account lifecycle](codex-account-lifecycle.md) for credential ownership and
 restart cleanup.
 
@@ -47,10 +47,12 @@ directory, `approvalPolicy: never`, and the restricted `jps` permissions profile
 It explicitly disables environments on both thread and turn. The returned
 thread metadata must match the requested model, provider, directory and policy.
 
-The fixed native planning/empty-skill utilities remain the qualification in the
-[isolation proof](../reviews/codex-subscription-proof.md). They are not exposed as
-JPS tools. Unknown native RPC requests, including permission approvals, fail the
-run; Desk never grants them.
+At this pin no native tool is advertised without an environment, as the
+[isolation proof](../reviews/codex-subscription-proof.md) records, and the
+probe allows none. The models a run may name are those of Desk's closed model catalog,
+which the private profile supplies and every launched process must list; the
+[setup record](codex-subscription-setup.md) explains why. Unknown native RPC
+requests, including permission approvals, fail the run; Desk never grants them.
 
 ## Tools and presentation
 

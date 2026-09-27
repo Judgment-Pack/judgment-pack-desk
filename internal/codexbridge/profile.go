@@ -84,14 +84,21 @@ func openProfile(dir, project string) (*profile, error) {
 			return fail(ErrProfile)
 		}
 	}
-	config := p.config()
-	if _, err = root.Lstat("profile/config.toml"); errors.Is(err, os.ErrNotExist) {
-		err = p.writeNew("profile/config.toml", config)
-	} else if data, readErr := p.readSmall("profile/config.toml"); readErr != nil || !bytes.Equal(data, config) {
-		err = ErrProfile
-	}
-	if err != nil {
-		return fail(ErrProfile)
+	for _, file := range p.managedFiles() {
+		if _, err = root.Lstat(file.name); errors.Is(err, os.ErrNotExist) {
+			err = p.writeManaged(file.name, file.data)
+		} else if data, readErr := p.readBounded(file.name, len(file.data)); readErr != nil || !bytes.Equal(data, file.data) {
+			err = ErrProfile
+			if readErr == nil && file.name == "profile/config.toml" && p.previousConfig(data) {
+				// Desk's own earlier configuration, from before it named the
+				// catalog: an upgrade, not a replaced file. Anything else stays
+				// refused.
+				err = p.writeManaged(file.name, file.data)
+			}
+		}
+		if err != nil {
+			return fail(ErrProfile)
+		}
 	}
 	if err = p.check(); err != nil {
 		return fail(err)
@@ -118,9 +125,11 @@ func (p *profile) check() error {
 			return ErrProfile
 		}
 	}
-	data, err := p.readSmall("profile/config.toml")
-	if err != nil || !bytes.Equal(data, p.config()) {
-		return ErrProfile
+	for _, file := range p.managedFiles() {
+		data, err := p.readBounded(file.name, len(file.data))
+		if err != nil || !bytes.Equal(data, file.data) {
+			return ErrProfile
+		}
 	}
 	for _, name := range []string{"profile/auth.json", "cleanup"} {
 		info, err := p.root.Lstat(name)
@@ -134,9 +143,43 @@ func (p *profile) check() error {
 	return nil
 }
 
-func (p *profile) readSmall(name string) ([]byte, error) {
+// managedFiles are written once and must read back byte for byte before every
+// launch: the configuration, and the closed model catalog it names.
+func (p *profile) managedFiles() []struct {
+	name string
+	data []byte
+} {
+	return []struct {
+		name string
+		data []byte
+	}{{"profile/config.toml", p.config()}, {"profile/" + catalogFilename, modelCatalog}}
+}
+
+// writeManaged stages the complete file beside its name and renames it into
+// place, so an interrupted write leaves the old file or none, never a partial
+// one that every later open would refuse. A stale staging file from an
+// interrupted earlier attempt is discarded first.
+func (p *profile) writeManaged(name string, data []byte) error {
+	staged := name + ".new"
+	if err := p.root.Remove(staged); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return ErrProfile
+	}
+	if err := p.writeNew(staged, data); err != nil {
+		_ = p.root.Remove(staged)
+		return err
+	}
+	if err := p.root.Rename(staged, name); err != nil {
+		_ = p.root.Remove(staged)
+		return ErrProfile
+	}
+	return p.sync()
+}
+
+func (p *profile) readSmall(name string) ([]byte, error) { return p.readBounded(name, 16384) }
+
+func (p *profile) readBounded(name string, limit int) ([]byte, error) {
 	info, err := p.root.Lstat(name)
-	if err != nil || !privateInfo(info, false) || info.Size() > 16384 {
+	if err != nil || !privateInfo(info, false) || info.Size() > int64(limit) {
 		return nil, ErrProfile
 	}
 	f, err := p.root.OpenFile(name, os.O_RDONLY|noFollow, 0)
@@ -144,8 +187,8 @@ func (p *profile) readSmall(name string) ([]byte, error) {
 		return nil, ErrProfile
 	}
 	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, 16385))
-	if err != nil || len(data) > 16384 {
+	data, err := io.ReadAll(io.LimitReader(f, int64(limit)+1))
+	if err != nil || len(data) > limit {
 		return nil, ErrProfile
 	}
 	return data, nil
@@ -226,10 +269,26 @@ func (p *profile) command(binary string) *exec.Cmd {
 	return cmd
 }
 
+func quote(v string) string { b, _ := json.Marshal(v); return string(b) }
+
+func (p *profile) catalogLine() string {
+	return "model_catalog_json = " + quote(filepath.Join(p.codex, catalogFilename)) + "\n"
+}
+
+// previousConfig reports whether data is exactly the configuration the Desk
+// before the model catalog wrote for this profile: today's without the
+// catalog line and without the two features it also switched off.
+func (p *profile) previousConfig(data []byte) bool {
+	previous := strings.Replace(string(p.config()), p.catalogLine(), "", 1)
+	for _, line := range []string{"view_image = false\n", "token_budget = false\n"} {
+		previous = strings.Replace(previous, line, "", 1)
+	}
+	return string(data) == previous
+}
+
 func (p *profile) config() []byte {
-	quote := func(v string) string { b, _ := json.Marshal(v); return string(b) }
 	return []byte(`model_provider = "openai"
-approval_policy = "never"
+` + p.catalogLine() + `approval_policy = "never"
 forced_login_method = "chatgpt"
 cli_auth_credentials_store = "file"
 web_search = "disabled"
@@ -278,5 +337,7 @@ image_generation = false
 code_mode = false
 code_mode_host = false
 enable_request_compression = false
+view_image = false
+token_budget = false
 `)
 }
