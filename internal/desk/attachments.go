@@ -179,7 +179,7 @@ func (s *Server) handleAttachment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer store.root.Close()
-	conversation, err := resolveConversationName(store.root, s.projectDir)
+	conversation, err := resolveConversationName(store.root, s.conversationIdentity())
 	if err != nil {
 		storageFailure(w, err)
 		return

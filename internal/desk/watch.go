@@ -21,11 +21,12 @@ const debounce = 150 * time.Millisecond
 // skipDirs are never watched. They are large, they churn constantly, and
 // nothing under them is a Judgment Pack document.
 var skipDirs = map[string]bool{
-	".git":         true,
-	"node_modules": true,
-	"dist":         true,
-	".venv":        true,
-	"vendor":       true,
+	".desk-private": true, // Chat artifacts and runner state are not editable project documents.
+	".git":          true,
+	"node_modules":  true,
+	"dist":          true,
+	".venv":         true,
+	"vendor":        true,
 }
 
 // watcher reports changes under the project tree as project-relative paths.

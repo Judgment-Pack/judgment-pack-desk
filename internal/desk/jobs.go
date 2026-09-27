@@ -40,6 +40,8 @@ func InstalledRunnerBinary() string {
 type jobsCompanion struct {
 	mu                                  sync.Mutex
 	profiles                            json.RawMessage
+	connections                         json.RawMessage
+	inputRoot                           string
 	bin, runtime, dir, workspace, owner string
 	cmd                                 *exec.Cmd
 	input                               io.WriteCloser
@@ -53,7 +55,16 @@ func (s *Server) initJobs() {
 	if s.cfg.RunnerBin == "" || !s.assistant.usable() {
 		return
 	}
-	s.jobs = &jobsCompanion{profiles: append(json.RawMessage(nil), s.cfg.RunnerInputProfiles...), bin: s.cfg.RunnerBin, runtime: s.cfg.JpackBin, dir: filepath.Join(s.configDir, "jobs", digestOf([]byte(s.projectDir))), workspace: digestOf([]byte(s.projectDir)), owner: "local-owner:" + digestOf([]byte(s.configDir)), stop: make(chan struct{})}
+	connections, err := runnerConnectionsForDesk(s.cfg.RunnerConnections, s.cfg.deskID, s.cfg.parent == nil)
+	if err != nil {
+		s.log.Printf("desk: Jobs background connections are invalid: %v", err)
+		return
+	}
+	s.jobs = &jobsCompanion{connections: connections, inputRoot: s.projectDir, profiles: append(json.RawMessage(nil), s.cfg.RunnerInputProfiles...), bin: s.cfg.RunnerBin, runtime: s.cfg.JpackBin, dir: filepath.Join(s.configDir, "jobs", digestOf([]byte(s.projectDir))), workspace: digestOf([]byte(s.projectDir)), owner: "local-owner:" + digestOf([]byte(s.configDir)), stop: make(chan struct{})}
+	if s.cfg.deskID != "" {
+		s.jobs.dir = filepath.Join(s.projectDir, ".desk-private", "jobs")
+		s.jobs.workspace = s.cfg.deskID
+	}
 	// Resume durable queued work when Desk starts, without requiring an open tab.
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
@@ -115,7 +126,25 @@ func (j *jobsCompanion) endpoint() (string, string, error) {
 	}
 	done := make(chan struct{})
 	go func() { _ = cmd.Wait(); close(done) }()
-	boot := map[string]any{"dir": j.dir, "runtime": j.runtime, "workspace": j.workspace, "owner": j.owner, "token": j.token}
+	boot := map[string]any{"dir": j.dir, "runtime": j.runtime, "workspace": j.workspace, "owner": j.owner, "token": j.token, "inputRoot": j.inputRoot}
+	if len(j.connections) > 0 {
+		var connections struct {
+			Cloud   json.RawMessage `json:"cloud"`
+			Gateway json.RawMessage `json:"gateway"`
+		}
+		if err = json.Unmarshal(j.connections, &connections); err != nil {
+			input.Close()
+			cmd.Process.Kill()
+			<-done
+			return "", "", errors.New("invalid background connections")
+		}
+		if len(connections.Cloud) > 0 {
+			boot["cloudConnections"] = connections.Cloud
+		}
+		if len(connections.Gateway) > 0 {
+			boot["gatewayConnections"] = connections.Gateway
+		}
+	}
 	if len(j.profiles) > 0 {
 		boot["inputProfiles"] = j.profiles
 	}
@@ -172,7 +201,7 @@ func (j *jobsCompanion) close() {
 	}
 }
 
-var jobsPath = regexp.MustCompile(`^(status|input-profiles|previews|inputs/preview|inputs/next|jobs|jobs/job_[a-f0-9]{32}|jobs/job_[a-f0-9]{32}/runs|runs/run_[a-f0-9]{32}|runs/run_[a-f0-9]{32}/verification|jobs/job_[a-f0-9]{32}/briefs|runs/run_[a-f0-9]{32}/briefs)$`)
+var jobsPath = regexp.MustCompile(`^(status|background-connections|input-profiles|previews|inputs/preview|inputs/next|jobs|runs|jobs/job_[a-f0-9]{32}|jobs/job_[a-f0-9]{32}/runs|runs/run_[a-f0-9]{32}|jobs/job_[a-f0-9]{32}/triggers|jobs/job_[a-f0-9]{32}/triggers/preview|jobs/job_[a-f0-9]{32}/occurrences|triggers/trg_[a-f0-9]{32}/state|triggers/trg_[a-f0-9]{32}/rotate-key|runs/run_[a-f0-9]{32}/verification|jobs/job_[a-f0-9]{32}/briefs|runs/run_[a-f0-9]{32}/briefs)$`)
 
 func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	if !s.guard(w, r) {
@@ -183,6 +212,18 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, 404, CodeBadRequest, "Unknown Jobs operation.")
 		return
 	}
+	s.proxyJobs(w, r, tail, "")
+}
+func (s *Server) handleJobEvent(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("trigger")
+	auth := r.Header.Get("Authorization")
+	if r.Method != http.MethodPost || r.Header.Get("Origin") != "" || !regexp.MustCompile(`^trg_[a-f0-9]{32}$`).MatchString(id) || !strings.HasPrefix(auth, "Bearer ") || len(strings.TrimPrefix(auth, "Bearer ")) != 64 {
+		writeJSONCoded(w, 401, CodeBadRequest, "A trigger-scoped event credential is required.")
+		return
+	}
+	s.proxyJobs(w, r, "triggers/"+id+"/events", strings.TrimPrefix(auth, "Bearer "))
+}
+func (s *Server) proxyJobs(w http.ResponseWriter, r *http.Request, tail, eventToken string) {
 	w.Header().Set("Cache-Control", "no-store")
 	if s.jobs == nil {
 		writeJSONCoded(w, 503, CodeBadRequest, "Jobs requires the local runner companion. Install jpack-runner beside Desk or start Desk with --runner.")
@@ -204,12 +245,17 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	query := url.Values{}
-	if after := r.URL.Query().Get("after"); after != "" {
-		query.Set("after", after)
+	for _, key := range []string{"after", "q", "state", "review"} {
+		if value := r.URL.Query().Get(key); value != "" {
+			query.Set(key, value)
+		}
 	}
 	request.URL.RawQuery = query.Encode()
 	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set("Content-Type", "application/json")
+	if eventToken != "" {
+		request.Header.Set("X-Trigger-Token", eventToken)
+	}
 	request.Header.Set("Idempotency-Key", r.Header.Get("Idempotency-Key"))
 	// Release checks perform four bounded Runtime invocations in sequence.
 	timeout := 40 * time.Second
@@ -254,4 +300,83 @@ func LoadRunnerInputProfiles(path string) (json.RawMessage, error) {
 		return nil, errors.New("runner input profiles must be a JSON array up to 48 KiB")
 	}
 	return data, nil
+}
+
+// Only an installation-owned file can authorize unattended network connections.
+// The browser sees connection IDs, subscription names and profile IDs only.
+func LoadRunnerConnections(path string) (json.RawMessage, error) {
+	if path == "" {
+		return nil, nil
+	}
+	if !filepath.IsAbs(path) {
+		return nil, errors.New("background connections need an absolute installation-owned path")
+	}
+	f, e := os.Open(path)
+	if e != nil {
+		return nil, e
+	}
+	defer f.Close()
+	st, e := f.Stat()
+	if e != nil || !st.Mode().IsRegular() {
+		return nil, errors.New("background connections must be a regular file")
+	}
+	raw, e := readBounded(f, 16<<10)
+	if e != nil {
+		return nil, errors.New("background connections exceed 16 KiB")
+	}
+	if _, e = parseRunnerConnections(raw); e != nil {
+		return nil, e
+	}
+	return raw, nil
+}
+
+// A pull subscription belongs to exactly one desk. Unscoped entries retain
+// their original startup-desk meaning; new desks never become competing consumers.
+type runnerCloudConnection struct {
+	ID              string `json:"id"`
+	Subscription    string `json:"subscription"`
+	CredentialsFile string `json:"credentialsFile"`
+	Desk            string `json:"desk,omitempty"`
+}
+type runnerConnectionConfig struct {
+	Cloud   []runnerCloudConnection `json:"cloud,omitempty"`
+	Gateway []json.RawMessage       `json:"gateway,omitempty"`
+}
+
+func parseRunnerConnections(raw []byte) (runnerConnectionConfig, error) {
+	var config runnerConnectionConfig
+	if decodeDataJSON(raw, &config) != nil || len(config.Cloud) > 8 || len(config.Gateway) > 32 || strings.TrimSpace(string(raw)) == "null" {
+		return config, errors.New("invalid background connections configuration")
+	}
+	subscriptions := make(map[string]bool)
+	for _, connection := range config.Cloud {
+		if connection.Desk != "" && !deskIDPattern.MatchString(connection.Desk) {
+			return config, errors.New("cloud connection desk must be a registered desk ID")
+		}
+		if connection.Subscription == "" || subscriptions[connection.Subscription] {
+			return config, errors.New("each cloud subscription must belong to exactly one desk")
+		}
+		subscriptions[connection.Subscription] = true
+	}
+	return config, nil
+}
+
+func runnerConnectionsForDesk(raw json.RawMessage, id string, startup bool) (json.RawMessage, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	config, err := parseRunnerConnections(raw)
+	if err != nil {
+		return nil, err
+	}
+	selected := runnerConnectionConfig{Gateway: config.Gateway}
+	for _, connection := range config.Cloud {
+		if connection.Desk == "" && !startup || connection.Desk != "" && connection.Desk != id {
+			continue
+		}
+		// The selector is Desk's concern, not part of Runner's connection API.
+		connection.Desk = ""
+		selected.Cloud = append(selected.Cloud, connection)
+	}
+	return json.Marshal(selected)
 }

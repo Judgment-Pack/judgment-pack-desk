@@ -26,7 +26,7 @@ type conversationReply struct {
 }
 
 func (s *Server) conversationName() string {
-	return "conversations-" + digestOf([]byte(s.projectDir)) + ".json"
+	return "conversations-" + digestOf([]byte(s.conversationIdentity())) + ".json"
 }
 func validateConversations(data []byte) error {
 	if !validUTF8(data) || !json.Valid(data) {
@@ -171,7 +171,7 @@ func (s *Server) handleWorkspaceRecord(w http.ResponseWriter, r *http.Request, d
 	}
 	defer store.root.Close()
 	root := store.root
-	recordName, err := resolveConversationName(root, s.projectDir)
+	recordName, err := resolveConversationName(root, s.conversationIdentity())
 	if err != nil {
 		storageFailure(w, err)
 		return
@@ -314,4 +314,11 @@ func writeConversationReply(w http.ResponseWriter, reply conversationReply) {
 	encoder := json.NewEncoder(w)
 	encoder.SetEscapeHTML(false)
 	_ = encoder.Encode(reply)
+}
+
+func (s *Server) conversationIdentity() string {
+	if s.cfg.deskID != "" {
+		return "desk:" + s.cfg.deskID
+	}
+	return s.projectDir
 }

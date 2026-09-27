@@ -40,6 +40,7 @@ type chatDataStore struct {
 	legacy   bool
 }
 type storageStatus struct {
+	Managed         bool   `json:"managed,omitempty"`
 	Path            string `json:"path"`
 	RecommendedPath string `json:"recommendedPath"`
 	Revision        string `json:"revision"`
@@ -55,6 +56,9 @@ type storageStatus struct {
 }
 
 func (s *Server) defaultChatDataPath() string {
+	if s.cfg.deskID != "" {
+		return filepath.Join(s.projectDir, ".desk-private", "data")
+	}
 	// Keep hermetic server fixtures inside their supplied private root.
 	if s.cfg.DeskConfigDir != "" {
 		return filepath.Join(s.configDir, "data")
@@ -90,21 +94,33 @@ func storageEntries(root *os.Root) ([]os.DirEntry, error) {
 	return entries, nil
 }
 
-func (s *Server) storageOwner() string { return digestOf([]byte(s.configDir)) }
+func (s *Server) storageOwner() string {
+	if s.cfg.deskID != "" {
+		return s.cfg.deskID
+	}
+	return digestOf([]byte(s.configDir))
+}
 
 // Read the storage pointer under the cross-process lock on every operation.
 // Another Desk may have moved the store since this server's last request.
 func (s *Server) openChatData() (*chatDataStore, error) {
-	data, err := readPrivateData(s.assistant.root, dataLocationName, 16<<10)
+	settings, err := s.storageSettingsRoot()
+	if err != nil {
+		return nil, err
+	}
+	defer settings.Close()
+	data, err := readPrivateData(settings, dataLocationName, 16<<10)
 	if errors.Is(err, os.ErrNotExist) {
-		entries, err := storageEntries(s.assistant.root)
+		entries, err := storageEntries(settings)
 		if err != nil {
 			return nil, err
 		}
 		path := s.defaultChatDataPath()
 		for _, entry := range entries {
 			if conversationFileName.MatchString(entry.Name()) {
-				path = s.configDir
+				if s.cfg.deskID == "" {
+					path = s.configDir
+				}
 				break
 			}
 		}
@@ -113,8 +129,8 @@ func (s *Server) openChatData() (*chatDataStore, error) {
 		if err != nil {
 			return nil, err
 		}
-		data, _ = json.Marshal(location)
-		if err = writePrivateData(s.assistant.root, dataLocationName, data); err != nil {
+		data = s.encodeDataLocation(location)
+		if err = writePrivateData(settings, dataLocationName, data); err != nil {
 			store.root.Close()
 			return nil, err
 		}
@@ -125,14 +141,32 @@ func (s *Server) openChatData() (*chatDataStore, error) {
 		return nil, err
 	}
 	var location dataLocation
-	if err = decodeDataJSON(data, &location); err != nil || location.Version != 1 || !filepath.IsAbs(location.Path) || filepath.Clean(location.Path) != location.Path {
+	if err = decodeDataJSON(data, &location); err != nil || location.Version != 1 {
+		return nil, errors.New("chat storage settings are invalid")
+	}
+	if s.cfg.deskID != "" {
+		if filepath.IsAbs(location.Path) || !filepath.IsLocal(location.Path) {
+			return nil, errors.New("desk storage must stay inside its folder")
+		}
+		location.Path = filepath.Join(s.projectDir, ".desk-private", location.Path)
+		if location.Previous != "" {
+			if !filepath.IsLocal(location.Previous) {
+				return nil, errors.New("invalid recovery location")
+			}
+			location.Previous = filepath.Join(s.projectDir, ".desk-private", location.Previous)
+		}
+	}
+	if !filepath.IsAbs(location.Path) || filepath.Clean(location.Path) != location.Path {
 		return nil, errors.New("chat storage settings are invalid; the existing files have not been changed")
 	}
 	return s.openChatDataAt(location, digestOf(data), false)
 }
 
 func (s *Server) openChatDataAt(location dataLocation, revision string, create bool) (*chatDataStore, error) {
-	if location.Path != s.configDir && pathContains(s.projectDir, location.Path) {
+	if s.cfg.deskID != "" && !pathContains(filepath.Join(s.projectDir, ".desk-private"), location.Path) {
+		return nil, errors.New("desk data must stay inside its folder")
+	}
+	if s.cfg.deskID == "" && location.Path != s.configDir && pathContains(s.projectDir, location.Path) {
 		return nil, errors.New("private chat storage must be outside the project")
 	}
 	var root *os.Root
@@ -188,7 +222,7 @@ func (s *Server) describeStorage(store *chatDataStore) (storageStatus, error) {
 	if err != nil {
 		return status, err
 	}
-	recordName, err := resolveConversationName(store.root, s.projectDir)
+	recordName, err := resolveConversationName(store.root, s.conversationIdentity())
 	if err != nil {
 		status.Problem = err.Error()
 	}
@@ -239,6 +273,7 @@ func (s *Server) handleStorage(w http.ResponseWriter, r *http.Request) {
 	}
 	defer store.root.Close()
 	status, err := s.describeStorage(store)
+	status.Managed = s.cfg.deskID != ""
 	if err != nil {
 		storageFailure(w, err)
 		return
@@ -279,6 +314,16 @@ func validMoveRequest(request moveChatData) bool {
 
 // Moves and restores share the same locked copy/verify/cutover protocol.
 func (s *Server) changeChatStorage(w http.ResponseWriter, r *http.Request, request moveChatData, copyData func(context.Context, *chatDataStore, *chatDataStore, *[]string) error) {
+	settings, err := s.storageSettingsRoot()
+	if err != nil {
+		storageFailure(w, err)
+		return
+	}
+	defer settings.Close()
+	if s.cfg.deskID != "" && !pathContains(filepath.Join(s.projectDir, ".desk-private"), request.Path) {
+		writeJSONCoded(w, 400, CodeBadRequest, "Choose a private data folder inside this desk.")
+		return
+	}
 	request.Path = filepath.Clean(request.Path)
 	work, err := s.privateDataFileLock(".data-work.lock", true)
 	if err != nil {
@@ -304,7 +349,7 @@ func (s *Server) changeChatStorage(w http.ResponseWriter, r *http.Request, reque
 		storageFailure(w, withCode(CodeStale, errors.New("the location changed; reload storage settings before moving data")))
 		return
 	}
-	if request.Path == store.location.Path || pathContains(request.Path, store.location.Path) || pathContains(store.location.Path, request.Path) || pathContains(s.projectDir, request.Path) || pathContains(request.Path, s.projectDir) || request.Path == s.configDir {
+	if request.Path == store.location.Path || pathContains(request.Path, store.location.Path) || pathContains(store.location.Path, request.Path) || (s.cfg.deskID == "" && pathContains(s.projectDir, request.Path)) || pathContains(request.Path, s.projectDir) || request.Path == s.configDir {
 		// A legacy config root may migrate to its dedicated child data folder.
 		if !(store.legacy && request.Path == s.defaultChatDataPath() && request.Path != s.configDir && !pathContains(s.projectDir, request.Path)) {
 			storageFailure(w, withCode(CodeBadRequest, errors.New("choose a separate private folder outside the project and current data folder")))
@@ -363,7 +408,7 @@ func (s *Server) changeChatStorage(w http.ResponseWriter, r *http.Request, reque
 		storageFailure(w, err)
 		return
 	}
-	current, err := readPrivateData(s.assistant.root, dataLocationName, 16<<10)
+	current, err := readPrivateData(settings, dataLocationName, 16<<10)
 	if err != nil || digestOf(current) != store.revision {
 		storageFailure(w, withCode(CodeStale, errors.New("storage settings changed during the move; the original is still available")))
 		return
@@ -372,11 +417,11 @@ func (s *Server) changeChatStorage(w http.ResponseWriter, r *http.Request, reque
 		storageFailure(w, err)
 		return
 	}
-	updated, _ := json.Marshal(target.location)
-	if err = writePrivateData(s.assistant.root, dataLocationName, updated); err != nil {
+	updated := s.encodeDataLocation(target.location)
+	if err = writePrivateData(settings, dataLocationName, updated); err != nil {
 		// A rename may have landed before a read-back/fsync error. Retain the
 		// destination if it is authoritative; never delete its copied files.
-		landed, readErr := readPrivateData(s.assistant.root, dataLocationName, 16<<10)
+		landed, readErr := readPrivateData(settings, dataLocationName, 16<<10)
 		committed = readErr != nil || bytes.Equal(landed, updated)
 		storageFailure(w, err)
 		return
@@ -425,4 +470,21 @@ func copyChatData(ctx context.Context, source, target *chatDataStore, copied *[]
 		}
 	}
 	return validateStoredBindings(target.root)
+}
+
+func (s *Server) storageSettingsRoot() (*os.Root, error) {
+	if s.cfg.deskID != "" {
+		return s.root.OpenRoot(".desk-private")
+	}
+	return s.assistant.root.OpenRoot(".")
+}
+func (s *Server) encodeDataLocation(location dataLocation) []byte {
+	if s.cfg.deskID != "" {
+		location.Path, _ = filepath.Rel(filepath.Join(s.projectDir, ".desk-private"), location.Path)
+		if location.Previous != "" {
+			location.Previous, _ = filepath.Rel(filepath.Join(s.projectDir, ".desk-private"), location.Previous)
+		}
+	}
+	data, _ := json.Marshal(location)
+	return data
 }
