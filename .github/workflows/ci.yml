@@ -113,7 +113,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Judgment-Pack/judgment-pack-runner
-          ref: ecf26924e7d3125bc48771ed78f9d3b341bf9b1c
+          ref: 2cb7aa06ffa1406913e1f530669bfa78c9a218ca
           path: .ci-runner
           persist-credentials: false
       - name: Check out tested Runtime

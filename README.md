@@ -5563,14 +5563,33 @@ Switching desks checks unsaved work and does not stop another desk's runner. Exi
 
 ### Waiting for job sources
 
-For the matching Runner/Gateway builds, set `"durable": true` on Gateway entries
-in the installation-owned `--runner-connections` file. Example:
+Long source reads use Runner's independent **source worker**, which retains the
+request and acquisition proof in private caller storage. Gateway continues to
+use its ordinary acquisition API and never retains commitment salts. Building
+Desk with `--runner-checkout` includes `jpack-source-worker` alongside Runner;
+installation does not start it, connect sources or enable triggers.
 
-```json
-{"gateway":[{"profile":"vendor-registry","url":"http://127.0.0.1:8787","durable":true}]}
+Run the worker separately from Desk/Runner, pointing it at an existing persistent
+Gateway. Its state directory must be outside the Gateway store:
+
+```sh
+jpack-source-worker --store /absolute/private/source-worker --gateway http://127.0.0.1:8787 --port 8792
 ```
 
-**Job → Runs** now shows source preparations before an evaluation run exists.
+The worker creates an owner-only `source-worker.token`. Set `"durable": true` on
+Gateway entries in the installation-owned `--runner-connections` file, with the
+separate worker URL and token file. Example:
+
+```json
+{"gateway":[{"profile":"vendor-registry","url":"http://127.0.0.1:8787","durable":true,"operationsUrl":"http://127.0.0.1:8792","operationsTokenFile":"/absolute/private/source-worker/source-worker.token"}]}
+```
+
+Install the matching verified input trust profile with `--runner-input-profiles`.
+Credentials stay in private files, never browser settings or URLs. See Runner's
+[durable source waiting setup](../judgment-pack-runner/README.md#durable-source-waiting)
+for authenticated Gateway configuration and backup requirements.
+
+**Job → Runs** shows source preparations before an evaluation run exists.
 Expand Sources for individual operation status, start time and deadline. The
 Triggers history retains completed preparation details. Cancellation uses the
 shared modal and requires typing **Yes**; it blocks late results locally while
@@ -5582,15 +5601,18 @@ from queue expiry (default one hour, up to seven days). Configuration preview
 makes no provider call and clearly says inputs will be fetched when the trigger
 runs. Completed inputs still require receipt, argument, freshness and mapping
 verification. The operator must also configure suitable Gateway source and MCP
-adapter timeouts.
+adapter timeouts; the Gateway default remains 30 seconds.
 
-Runner restarts resume waiting preparations. Gateway retains completed responses;
-an interrupted provider call without a retained result needs attention. Native
-provider job resumption, callbacks, and recovery of browser-initiated acquisition
-are outside this first implementation. Existing connections without `durable`
-retain their current bounded synchronous behavior. These changes require the
-matching Runner and Gateway builds. The bundled Gateway is pinned to an exact
-development commit that includes the operations API; this is not a new tagged
-Gateway release. Background acquisition still requires an installation-owned,
-persistent Gateway connection and a matching input trust profile. The temporary
-managed Gateway used for interactive research is not a background connection.
+Runner restarts resume waiting preparations while the independent worker keeps
+acquiring. Completed worker responses survive its own restart. An interrupted
+worker or Gateway without a retained result needs attention; it is never replayed
+automatically. Native provider job resumption, callbacks and recovery of
+browser-initiated acquisition are outside this implementation. Existing
+connections without `durable` retain their bounded synchronous behavior.
+
+The bundled Gateway is pinned to an exact development commit with an extended
+source timeout ceiling; this is not a new tagged Gateway release. Background
+acquisition requires a persistent Gateway and separately running source worker.
+The temporary managed Gateway used for interactive research is not a background
+connection. Keep the worker's private database and backups separate from the
+Gateway receipt corpus.
