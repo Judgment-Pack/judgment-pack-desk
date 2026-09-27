@@ -248,3 +248,26 @@ func TestRunnerCloudSubscriptionsBelongToOneDesk(t *testing.T) {
 		t.Fatal("invalid desk selector accepted")
 	}
 }
+
+// Filtering has to reach Runner before pagination: otherwise a page of completed
+// occurrences can hide a waiting preparation and leave no visible next-page link.
+func TestJobsForwardsPreparationFilter(t *testing.T) {
+	requests := make(chan string, 1)
+	companion := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests <- r.URL.RequestURI()
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"items":[],"next":0}`))
+	}))
+	defer companion.Close()
+	s := &Server{jobs: &jobsCompanion{url: companion.URL, token: "test-private", done: make(chan struct{})}}
+	tail := "jobs/job_" + strings.Repeat("0", 32) + "/occurrences"
+	r := httptest.NewRequest("GET", "/api/operations/"+tail+"?preparations=1&after=40&untrusted=ignored", nil)
+	w := httptest.NewRecorder()
+	s.proxyJobs(w, r, tail, "")
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body)
+	}
+	if got := <-requests; got != "/v1/"+tail+"?after=40&preparations=1" {
+		t.Fatal("preparation filter lost at Desk boundary", got)
+	}
+}

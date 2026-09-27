@@ -1,3 +1,4 @@
+import {SourcePreparations} from './SourcePreparations'
 import { useDirtyGuard } from '../shell/useDirtyGuard'
 import { useConfirmDiscard } from '../shell/UnsavedChanges'
 import { loadJobDraft, saveJobDraft, useJobDrafts, type JobDraftValues, type MappedDraft, type SavedJobDraft } from './drafts'
@@ -210,6 +211,7 @@ function CreateJobEditor({initial}: {initial?: SavedJobDraft}) {
   </>
 }
 function JobView({ jobId }: { jobId: string }) {
+  const [hasPreparations,setHasPreparations]=useState(false)
   const query = useQuery({ queryKey: ['job', jobId], queryFn: () => jobsAPI<{ job: Job; release: Release }>(`jobs/${jobId}`) })
   const runs = usePages<Run>(`jobs/${jobId}/runs`)
   const [params,setParams]=useSearchParams()
@@ -224,9 +226,9 @@ function JobView({ jobId }: { jobId: string }) {
       {data && <><div hidden={showInputs||tab!=='release'} className={styles.release}><h2>{data.release.title}</h2><p className="quiet">{msg('Fixed version {{version}}', { version: data.release.packVersion })}</p>{data.release.inputMapping && <p className={styles.note}>{data.release.inputMapping.version === 2 ? msg('Mapped sources') : data.release.inputMapping.provider === 'local-file' ? msg('Local JSON file · Fixed input mapping') : msg('Google Drive · Fixed input mapping')}</p>}<ReleaseReadiness release={data.release} />{data.release.inputMapping?.version === 2 && <MappingReview mapping={data.release.inputMapping} profiles={data.release.inputProfiles} warnings={data.release.mappingWarnings} />}<Disclosure title={msg('Release details')}><dl className={styles.properties}><div><dt>{msg('Pack digest')}</dt><dd><code>{data.release.packDigest}</code></dd></div><div><dt>{msg('Runtime digest')}</dt><dd><code>{data.release.runtimeDigest}</code></dd></div></dl><p className={styles.note}>{msg('To use a changed pack, create a new job and review its new release.')}</p></Disclosure></div>
         {!showInputs&&tab==='triggers'&&<TriggersView jobId={jobId} release={data.release}/>}
         {showInputs && <RunForm job={data.job} release={data.release} />}
-        <section hidden={showInputs||tab!=='runs'} className={styles.stack}><h2>{msg('Run history')}</h2>
+        <section hidden={showInputs||tab!=='runs'} className={styles.stack}>{!showInputs&&tab==='runs'&&<SourcePreparations jobId={jobId} onHasItems={setHasPreparations}/>}<h2>{msg('Run history')}</h2>
           {runs.isPending && <p role="status">{msg('Loading runs…')}</p>}
-          {!runs.isPending && !runs.error && runs.data?.pages.every(p => p.items.length === 0) && <p className="quiet">{msg('No runs yet. Run this job with a new input to record its first decision.')}</p>}
+          {!hasPreparations && !runs.isPending && !runs.error && runs.data?.pages.every(p => p.items.length === 0) && <p className="quiet">{msg('No runs yet. Run this job with a new input to record its first decision.')}</p>}
           {runs.data?.pages.some(p=>p.items.length>0)&&<RunTable runs={runs.data.pages.flatMap(p=>p.items)}/>}
           <More {...runs} />
         </section>

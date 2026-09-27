@@ -5531,8 +5531,8 @@ are not created by choosing this option. See the Runner's
 [Google deployment and setup guide](../judgment-pack-runner/deploy/google-cloud/README.md).
 
 Version 2 operation mappings can use fresh persistent Gateway connections on local
-schedule and cloud triggers. Preview makes real source calls; enabling authorizes
-future calls and possible provider charges. Interactive file picker grants remain
+schedule and cloud triggers. Synchronous previews make real source calls; enabling
+authorizes future calls and possible provider charges. Interactive file picker grants remain
 single-use and cannot power background jobs. Details are in the Runner's
 [background acquisition design](../judgment-pack-runner/docs/design/google-cloud-triggers.md).
 
@@ -5559,3 +5559,38 @@ See [unsaved-work behavior](docs/design/unsaved-work.md) for coverage and limits
 Use the desk name beside the brand to switch desks or **Create desk…**. Each new desk keeps its packs, source documents, chats, drafts, tests, briefs, jobs, and run artifacts in its own folder. Its private data lives under `.desk-private/`, excluded from the project file editor. Machine credentials remain in protected settings. The browser title uses the desk name and keeps `*` while edits are unsaved; the favicon follows the configured brand.
 
 Switching desks checks unsaved work and does not stop another desk's runner. Existing projects retain their storage locations; creating a desk does not migrate existing data. Use the paired runtime update, which accepts an empty project until its first pack is created. See [named desk storage and lifecycle](docs/design/named-desks.md).
+
+
+### Waiting for job sources
+
+For the matching Runner/Gateway builds, set `"durable": true` on Gateway entries
+in the installation-owned `--runner-connections` file. Example:
+
+```json
+{"gateway":[{"profile":"vendor-registry","url":"http://127.0.0.1:8787","durable":true}]}
+```
+
+**Job → Runs** now shows source preparations before an evaluation run exists.
+Expand Sources for individual operation status, start time and deadline. The
+Triggers history retains completed preparation details. Cancellation uses the
+shared modal and requires typing **Yes**; it blocks late results locally while
+provider cancellation remains best effort. **Check status** reconciles the same
+operation after an interruption, without submitting a new provider attempt.
+
+For durable mappings, **Execution policy → Source wait (minutes)** is separate
+from queue expiry (default one hour, up to seven days). Configuration preview
+makes no provider call and clearly says inputs will be fetched when the trigger
+runs. Completed inputs still require receipt, argument, freshness and mapping
+verification. The operator must also configure suitable Gateway source and MCP
+adapter timeouts.
+
+Runner restarts resume waiting preparations. Gateway retains completed responses;
+an interrupted provider call without a retained result needs attention. Native
+provider job resumption, callbacks, and recovery of browser-initiated acquisition
+are outside this first implementation. Existing connections without `durable`
+retain their current bounded synchronous behavior. These changes require the
+matching Runner and Gateway builds. The bundled Gateway is pinned to an exact
+development commit that includes the operations API; this is not a new tagged
+Gateway release. Background acquisition still requires an installation-owned,
+persistent Gateway connection and a matching input trust profile. The temporary
+managed Gateway used for interactive research is not a background connection.
