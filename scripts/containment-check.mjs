@@ -422,6 +422,11 @@ const context = await browser.newContext({
   colorScheme: 'light'
 })
 const page = await context.newPage()
+// This disposable fixture intentionally leaves edited wizard samples between routes.
+page.on('dialog', async dialog => {
+  if (dialog.type() !== 'beforeunload') problems.push(`unexpected dialog: ${dialog.type()}`)
+  await dialog.accept()
+})
 // Short enough that a locator which no longer matches ends the route it was
 // sampling rather than the run's patience.
 page.setDefaultTimeout(8000)
@@ -581,8 +586,10 @@ async function go(path) {
   await page.waitForSelector('.desk', { timeout: 30000 })
   await settle(1100)
   if (new URL(at(path)).searchParams.get('containment') === 'mapped') {
-    await page.getByLabel('Input source', { exact: true }).click()
-    await page.getByRole('option', { name: 'Mapped sources', exact: true }).click()
+    await page.getByLabel('Job name', { exact: true }).fill('Containment sample')
+    await page.getByRole('button', { name: 'Continue', exact: true }).click()
+    await page.getByRole('heading', { name: 'Where inputs come from', exact: true }).waitFor()
+    await page.locator('summary').filter({hasText: 'Case inputs (JSON)'}).click()
     await page.getByLabel('Case inputs (JSON)', { exact: true }).waitFor()
     await settle()
   }

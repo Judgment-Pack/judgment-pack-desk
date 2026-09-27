@@ -80,7 +80,7 @@ admission, wrong subject/arguments/signatures, changed relay/profile pins,
 cancellation/late replies, frozen mappings, lossless wire bytes, and real isolated
 Desk-to-Runner boot/planning. No real provider credentials are required by tests.
 
-The Jobs companion CI check builds Runner `2361b58` and Runtime `6842494`, then
+The Jobs companion CI check builds Runner `68e01c4` and Runtime `cbb0d91`, then
 runs actual boot, recovery, profile and planning tests through Desk's authenticated
 proxy. These are compatibility pins for the integration test, not automatic
 installation or download settings.
