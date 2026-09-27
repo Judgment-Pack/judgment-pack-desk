@@ -113,14 +113,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Judgment-Pack/judgment-pack-runner
-          ref: 68e01c4f92ba2ee393bc2b61ae48ba5acac8c8fe
+          ref: 8807720b25a5c41ba65db89266be5de63dc5be3d
           path: .ci-runner
           persist-credentials: false
       - name: Check out tested Runtime
         uses: actions/checkout@v4
         with:
           repository: Judgment-Pack/judgment-pack-runtime
-          ref: cbb0d91b7819bc191031310c44a930a4287bd343
+          ref: 87d9880824944981dfeed9a8907509138c751ca0
           path: .ci-runtime
           persist-credentials: false
       - name: Build companions

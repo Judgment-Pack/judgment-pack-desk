@@ -5531,8 +5531,8 @@ are not created by choosing this option. See the Runner's
 [Google deployment and setup guide](../judgment-pack-runner/deploy/google-cloud/README.md).
 
 Version 2 operation mappings can use fresh persistent Gateway connections on local
-schedule and cloud triggers. Preview makes real source calls; enabling authorizes
-future calls and possible provider charges. Interactive file picker grants remain
+schedule and cloud triggers. Synchronous previews make real source calls; enabling
+authorizes future calls and possible provider charges. Interactive file picker grants remain
 single-use and cannot power background jobs. Details are in the Runner's
 [background acquisition design](../judgment-pack-runner/docs/design/google-cloud-triggers.md).
 
@@ -5559,3 +5559,60 @@ See [unsaved-work behavior](docs/design/unsaved-work.md) for coverage and limits
 Use the desk name beside the brand to switch desks or **Create desk…**. Each new desk keeps its packs, source documents, chats, drafts, tests, briefs, jobs, and run artifacts in its own folder. Its private data lives under `.desk-private/`, excluded from the project file editor. Machine credentials remain in protected settings. The browser title uses the desk name and keeps `*` while edits are unsaved; the favicon follows the configured brand.
 
 Switching desks checks unsaved work and does not stop another desk's runner. Existing projects retain their storage locations; creating a desk does not migrate existing data. Use the paired runtime update, which accepts an empty project until its first pack is created. See [named desk storage and lifecycle](docs/design/named-desks.md).
+
+
+### Waiting for job sources
+
+Long source reads use Runner's independent **source worker**, which retains the
+request and acquisition proof in private caller storage. Gateway continues to
+use its ordinary acquisition API and never retains commitment salts. Building
+Desk with `--runner-checkout` includes `jpack-source-worker` alongside Runner;
+installation does not start it, connect sources or enable triggers.
+
+Run the worker separately from Desk/Runner, pointing it at an existing persistent
+Gateway. Its state directory must be outside the Gateway store:
+
+```sh
+jpack-source-worker --store /absolute/private/source-worker --gateway http://127.0.0.1:8787 --port 8792
+```
+
+The worker creates an owner-only `source-worker.token`. Set `"durable": true` on
+Gateway entries in the installation-owned `--runner-connections` file, with the
+separate worker URL and token file. Example:
+
+```json
+{"gateway":[{"profile":"vendor-registry","url":"http://127.0.0.1:8787","durable":true,"operationsUrl":"http://127.0.0.1:8792","operationsTokenFile":"/absolute/private/source-worker/source-worker.token"}]}
+```
+
+Install the matching verified input trust profile with `--runner-input-profiles`.
+Credentials stay in private files, never browser settings or URLs. See Runner's
+[durable source waiting setup](../judgment-pack-runner/README.md#durable-source-waiting)
+for authenticated Gateway configuration and backup requirements.
+
+**Job → Runs** shows source preparations before an evaluation run exists.
+Expand Sources for individual operation status, start time and deadline. The
+Triggers history retains completed preparation details. Cancellation uses the
+shared modal and requires typing **Yes**; it blocks late results locally while
+provider cancellation remains best effort. **Check status** reconciles the same
+operation after an interruption, without submitting a new provider attempt.
+
+For durable mappings, **Execution policy → Source wait (minutes)** is separate
+from queue expiry (default one hour, up to seven days). Configuration preview
+makes no provider call and clearly says inputs will be fetched when the trigger
+runs. Completed inputs still require receipt, argument, freshness and mapping
+verification. The operator must also configure suitable Gateway source and MCP
+adapter timeouts; the Gateway default remains 30 seconds.
+
+Runner restarts resume waiting preparations while the independent worker keeps
+acquiring. Completed worker responses survive its own restart. An interrupted
+worker or Gateway without a retained result needs attention; it is never replayed
+automatically. Native provider job resumption, callbacks and recovery of
+browser-initiated acquisition are outside this implementation. Existing
+connections without `durable` retain their bounded synchronous behavior.
+
+The bundled Gateway is pinned to an exact development commit with an extended
+source timeout ceiling; this is not a new tagged Gateway release. Background
+acquisition requires a persistent Gateway and separately running source worker.
+The temporary managed Gateway used for interactive research is not a background
+connection. Keep the worker's private database and backups separate from the
+Gateway receipt corpus.

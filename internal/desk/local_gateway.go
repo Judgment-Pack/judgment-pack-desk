@@ -19,9 +19,9 @@ import (
 	"time"
 )
 
-// Gateway v0.3.1: bounded PDF opening and reconstruction, including timeout records.
-const GatewayVersion = "v0.3.1"
-const GatewayRevision = "1ab277d127ba6ed60a4ede2c970742b04121d247"
+// Exact Gateway development build: extended source deadline, unchanged signer custody.
+const GatewayVersion = "v0.3.1-dev+ec03dc0"
+const GatewayRevision = "ec03dc0e1e68bc2adf5d50735bc0fb95788c108c"
 const localAuthority = "gateway:desk-local"
 
 type gatewayBuild struct {
