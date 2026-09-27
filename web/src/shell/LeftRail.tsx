@@ -7,7 +7,7 @@ import { type ReactElement } from 'react'
 /** Primary navigation stays about destinations. Packs and Judgment Graphs have separate entries; tests live
  * inside each pack or graph; project file editing is available from the project menu.
  * The shell never runs tests or fetches graph inventory to draw navigation. */
-import { Dialog, DropdownMenu, Separator, VisuallyHidden } from 'radix-ui'
+import { Dialog, DropdownMenu, VisuallyHidden } from 'radix-ui'
 import { type RefObject } from 'react'
 import { Link, NavLink, useLocation, useMatch } from 'react-router-dom'
 import { usePacks } from '../mcp/queries'
@@ -130,7 +130,6 @@ function RailBody({
       </Labelled>
 
       <div className="desk-spacer" />
-      <Separator.Root className="desk-rule-h" decorative />
 
       <div className="desk-admin-row">
         <Labelled icons={icons} label={msg("Admin")}>

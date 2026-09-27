@@ -1,3 +1,4 @@
+import { deskSocketURL } from '../desks/scope'
 import { chassisUrl } from '../files/client'
 import { socketProtocols } from '../mcp/McpProvider'
 import { sessionBearer, whenSessionEnds } from '../mcp/session'
@@ -12,7 +13,7 @@ const failure = () => new Error('The Codex connection ended before the run compl
  * one selected model and a fixed route; never retries a run or changes engines. */
 export function bindAgentRun(model: string): AgentRun {
   const Socket = globalThis.WebSocket
-  const url = new URL(chassisUrl('/api/agent/run'), globalThis.location.href)
+  const url = new URL(deskSocketURL(chassisUrl('/api/agent/run')), globalThis.location.href)
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
   return async (request, callbacks) => {
     if (callbacks.signal.aborted) throw new RunCancelled()

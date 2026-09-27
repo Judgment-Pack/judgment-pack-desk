@@ -145,13 +145,14 @@ function FolderEditor({state,inline}:{state:FolderState;inline:boolean}) {
  const options=state.document.folders.filter(folder=>edit.kind!=='move'||!inFolder(state.document,folder.id,edit.id!,true)).map(folder=>({value:folder.id,label:folderPath(state.document,folder.id)})).sort((a,b)=>a.label.localeCompare(b.label))
  if(edit.kind!=='pack')options.unshift({value:WORKSPACE_ROOT,label:msg('Workspace folders')})
  const visible=options.filter(option=>option.value===destination||option.label.toLocaleLowerCase().includes(filter.toLocaleLowerCase()))
- const close=()=>{if(!state.mutation.isPending){state.setEditing(null);state.setMessage('');state.opener.current?.focus()}}
+ const close=()=>{if(!state.mutation.isPending)void state.closeEditor()}
  const submit=async(event:React.FormEvent)=>{
   event.preventDefault(); if(state.mutation.isPending)return
   try {
    const id=crypto.randomUUID()
    const action=edit.kind==='create'?{type:'create' as const,id,name,parentId:edit.parentId??null}:edit.kind==='rename'?{type:'rename' as const,id:edit.id!,name}:edit.kind==='move'?{type:'move' as const,id:edit.id!,parentId:destination===WORKSPACE_ROOT?null:destination}:{type:'assign' as const,packId:edit.id!,folderId:destination}
    await state.saveEdit(action)
+   state.clearGuard()
    if(edit.kind==='create'){state.preferences({selected:id,expanded:[...new Set([...state.prefs.expanded,...(edit.parentId?folderTrail(state.document,edit.parentId).map(folder=>folder.id):[])])]});state.select(id)}
    state.setEditing(null)
    state.opener.current?.focus()

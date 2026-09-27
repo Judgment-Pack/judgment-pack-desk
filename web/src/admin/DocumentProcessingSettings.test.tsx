@@ -1,3 +1,6 @@
+import { UnsavedChangesProvider } from '../shell/UnsavedChanges'
+import { respondToDiscardDialogs } from '../testing/discardDialogs'
+respondToDiscardDialogs()
 import { QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
@@ -14,7 +17,7 @@ const research = { gateway, sources: { read: { source: 'read', dialect: 'jina-re
 function setup(extra = {}, localGateway?: LocalGatewayStatus) {
   const content = JSON.stringify({ deskConfigVersion: 1, research: { ...research, ...extra } })
   const effective = effectiveConfig(undefined, undefined, undefined, { localGateway, path: '/private/desk.json', present: true, sha256: 'revision-one', text: content, decoded: decodeDeskConfig(content, 'desk') })
-  return render(<MemoryRouter><QueryClientProvider client={testQueryClient()}><DeskConfigFixture value={effective}><DocumentProcessingSettings /></DeskConfigFixture></QueryClientProvider></MemoryRouter>)
+  return render(<MemoryRouter><UnsavedChangesProvider><QueryClientProvider client={testQueryClient()}><DeskConfigFixture value={effective}><DocumentProcessingSettings /></DeskConfigFixture></QueryClientProvider></UnsavedChangesProvider></MemoryRouter>)
 }
 function openPDF() { fireEvent.click(screen.getByRole('button', { name: 'Manage PDF processing' })) }
 function save() { fireEvent.click(screen.getByRole('button', { name: 'Save changes' })) }
@@ -101,6 +104,7 @@ it('confirms discarding changes and returns focus to the opener', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }))
   expect((screen.getByLabelText('Enable PDF processing') as HTMLInputElement).checked).toBe(true)
   fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+  fireEvent.change(screen.getByLabelText('Type Yes to confirm.'),{target:{value:'Yes'}})
   fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }))
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Manage PDF processing' })))
   openPDF(); expect((screen.getByLabelText('Enable PDF processing') as HTMLInputElement).checked).toBe(false)

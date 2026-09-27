@@ -23,6 +23,7 @@ import { useBriefSubject } from '../../briefs/context'
 import { caseSnapshot } from '../../briefs/model'
 import { useDetailsPortal, useDetailsSlot } from '../../shell/DetailsSlot'
 import { useShellState } from '../../shell/paneState'
+import { TypedConfirmation, useConfirmDiscard } from '../../shell/UnsavedChanges'
 import { useDirtyGuard } from '../../shell/useDirtyGuard'
 import { Button } from '../../ui/Button'
 import { Tooltip, OverflowTooltip } from '../../ui/Tooltip'
@@ -167,7 +168,8 @@ export function TestsContent({
   const briefCase = working && suite.cases.find(c => c.id === working.id)
   useBriefSubject(active ? { id: briefCase ? `case:${owner}:${briefCase.id}` : `case:${owner}:select`, path: '/api/briefs', title, owner, caseId: briefCase?.id,
     ...(briefCase ? { snapshot: caseSnapshot(text, briefCase, suite) } : { unavailable: msg('Select a saved test case to read or generate its brief. Save a new case first.') }) } : null)
-  const dirty = !!working && jsonIdentity(working) !== baseline
+  const [unwritten,setUnwritten]=useState(false)
+  const dirty = unwritten || !!working && jsonIdentity(working) !== baseline
   const savedProposalCases =
     (suite.proposals?.find((p) => p.id === reviewing?.id) ?? reviewing)?.savedCases ?? {}
   const reviewDirty =
@@ -177,7 +179,10 @@ export function TestsContent({
         !Object.hasOwn(savedProposalCases, c.id) &&
         jsonIdentity(c) !== jsonIdentity(proposalCases(reviewing).find((p) => p.id === c.id)),
     )
-  useDirtyGuard(active && (dirty || reviewDirty), msg('Leave without saving these test changes?'))
+  const confirmDiscard = useConfirmDiscard()
+  const [deleteTyped, setDeleteTyped] = useState('')
+  useEffect(() => { setDeleteTyped('') }, [pendingDelete?.id])
+  useDirtyGuard(dirty || reviewDirty, msg('Leave without saving these test changes?'), { name: working?.name, busy })
   useEffect(() => {
     mounted.current = true
     return () => {
@@ -278,8 +283,8 @@ export function TestsContent({
       })
       .catch((e) => setError((e as Error).message))
   }, [storage.query.isSuccess, chats.ready, recoveryKey])
-  function select(c: TestCase, reveal = true) {
-    if (dirty && !window.confirm(msg('Discard unsaved changes to this case?'))) return false
+  async function select(c: TestCase, reveal = true) {
+    if (dirty && !await confirmDiscard(msg('Discard unsaved changes to this case?'), { name: working?.name, busy })) return false
     const next = structuredClone(c)
     setWorking(next)
     setBaseline(jsonIdentity(next))
@@ -288,9 +293,9 @@ export function TestsContent({
     if (reveal) details.reveal()
     return true
   }
-  function startNew() {
+  async function startNew() {
     const next = newCase()
-    if (select(next)) setBaseline('')
+    if (await select(next)) setBaseline('')
   }
   function requestAI(fill = false) {
     setAISources(working?.sources ?? aiSources)
@@ -311,13 +316,13 @@ export function TestsContent({
     setOpen(true)
     assistant.reveal?.()
   }
-  function review(proposal: TestProposal) {
+  async function review(proposal: TestProposal) {
     if (busy) return
     if (reviewing?.id === proposal.id) {
       assistant.revealMain?.()
       return
     }
-    if ((dirty || reviewDirty) && !window.confirm(msg('Discard unsaved test changes?'))) return
+    if ((dirty || reviewDirty) && !await confirmDiscard(msg('Discard unsaved test changes?'), { name: working?.name, busy })) return
     setWorking(null)
     setBaseline('')
     setReviewEditing(false)
@@ -326,8 +331,8 @@ export function TestsContent({
     setReviewing(proposal)
     assistant.revealMain?.()
   }
-  function closeReview() {
-    if ((dirty || reviewDirty) && !window.confirm(msg('Discard unsaved test changes?'))) return
+  async function closeReview() {
+    if ((dirty || reviewDirty) && !await confirmDiscard(msg('Discard unsaved test changes?'), { name: working?.name, busy })) return
     setWorking(null)
     setBaseline('')
     setReviewEditing(false)
@@ -584,7 +589,7 @@ export function TestsContent({
       setError((e as Error).message)
     }
   }
-  function openTrial(r: TestRun) {
+  async function openTrial(r: TestRun) {
     if (!r.trial) return
     const c = newCase()
     c.name =
@@ -595,7 +600,7 @@ export function TestsContent({
     c.origin = 'draft'
     c.row.facts = r.trial.facts
     if (r.trial.evidence !== undefined) c.row.evidenceAvailability = r.trial.evidence
-    if (select(c)) setBaseline('')
+    if (await select(c)) setBaseline('')
   }
   const caseEditor = working ? (
     <CaseEditor
@@ -604,8 +609,10 @@ export function TestsContent({
       document={doc}
       value={working}
       onChange={setWorking}
+      onUnwritten={setUnwritten}
       onSave={() => void save()}
-      onDiscard={() => {
+      onDiscard={async () => {
+        if (dirty && !await confirmDiscard(msg('Discard unsaved changes to this case?'), { name: working?.name, busy })) return
         setWorking(null)
         setBaseline('')
         setError('')
@@ -801,13 +808,13 @@ export function TestsContent({
             >
               {msg('Cancel')}
             </Button>
-            <Button variant="danger" disabled={busy} onClick={() => void remove()}>
+            <Button variant="danger" disabled={busy || deleteTyped.trim() !== (pendingDelete?.name || msg('Yes'))} onClick={() => void remove()}>
               {busy ? msg('Deleting…') : msg('Delete case')}
             </Button>
           </DialogActions>
         }
       >
-        <p className={styles.deleteCaseName}>{pendingDelete?.name}</p>
+        <p className={styles.deleteCaseName}>{pendingDelete?.name}</p><TypedConfirmation confirmation={pendingDelete?.name || msg('Yes')} value={deleteTyped} onChange={setDeleteTyped} disabled={busy} />
         {deleteError && (
           <p role="alert" className={styles.error}>
             {deleteError}
@@ -845,8 +852,8 @@ export function TestsContent({
               busy={busy}
               stale={!digest || reviewing.packDigest !== digest || status !== 'ready'}
               error={error}
-              onEdit={(c) => {
-                if (select(c, false)) {
+              onEdit={async (c) => {
+                if (await select(c, false)) {
                   setReviewEditing(true)
                   setError('')
                 }
@@ -1066,10 +1073,10 @@ export function TestsContent({
                                         size="icon"
                                         aria-label={msg('Duplicate case')}
                                         disabled={busy}
-                                        onClick={() => {
+                                        onClick={async () => {
                                           const id = 'case-' + crypto.randomUUID()
                                           if (
-                                            select({
+                                            await select({
                                               ...structuredClone(c),
                                               id,
                                               row: { ...c.row, id },

@@ -38,6 +38,7 @@ import {
   decodeDeskConfig,
   effectiveConfig,
   type ChassisPaths,
+  type ComponentBuilds,
   type DeskLevelRead,
   type LocalGatewayStatus,
   type EffectiveConfig
@@ -47,6 +48,7 @@ export const DESK_CONFIG_QUERY_KEY = ['desk-config'] as const
 
 /** What `GET /api/desk-config` answers. Absence is a 200, not a 404. */
 interface DeskLevelAnswer {
+  builds?: ComponentBuilds
   localGateway?: LocalGatewayStatus
   path: string
   present: boolean
@@ -79,7 +81,8 @@ function chassisPaths(answered: DeskLevelAnswer): ChassisPaths | undefined {
   return {
     projectDir: answered.project.dir,
     projectFile: answered.project.file,
-    runtimeBin: answered.runtime.bin
+    runtimeBin: answered.runtime.bin,
+    ...(answered.builds ? { builds: answered.builds } : {})
   }
 }
 

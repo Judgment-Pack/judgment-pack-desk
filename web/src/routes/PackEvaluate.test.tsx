@@ -35,7 +35,7 @@ describe('the pack testing workspace', () => {
   it('binds Explain on map to the exact submitted pack bytes and retains that run on return', async () => {
     const packBytes = '{"title":"Snapshot pack","version":"1","decision":{"question":"Approve?"}}\n'
     const { calls, router, queryClient } = draw(() => answer, packBytes)
-    await screen.findByRole('heading', { name: 'Snapshot pack' })
+    await screen.findByRole('heading', { name: 'Snapshot pack 1' })
     fireEvent.change(screen.getByLabelText('Facts'), { target: { value: '{"amount":"20"}' } })
     fireEvent.click(screen.getByRole('button', { name: 'Run evaluation' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Explain on map' }))

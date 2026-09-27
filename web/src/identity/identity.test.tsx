@@ -12,7 +12,6 @@ import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DeskConfigFixture } from '../config/DeskConfigProvider'
 import {
-  DESK_FALLBACK_NAME,
   effectiveConfig,
   type DeskConfig,
   type IdentityProviderConfig
@@ -129,19 +128,39 @@ function renderHeaderIn(
   }
 }
 
-describe('the header’s organization identity', () => {
-  it('falls back to the desk’s own name, with the non-breaking hyphen intact', () => {
-    renderHeader()
-    const brand = screen.getByRole('link', { name: DESK_FALLBACK_NAME })
-    // U+2011. A plain hyphen here would be a silent regression from the
-    // original `.brand` string.
-    expect(brand.textContent).toBe('judgment‑pack desk')
-    expect(brand.textContent).not.toContain('judgment-pack desk')
+describe('the header’s desk identity', () => {
+  it('uses the JPS mark and the desk name while its directory is loading', () => {
+    const { container } = renderHeader()
+    expect(screen.getByRole('link', { name: 'Desk' })).toBeTruthy()
+    expect(container.querySelector('img.desk-orgmark')?.getAttribute('src')).toBe('/favicon.svg')
+    expect(screen.getByRole('button', { name: 'Switch desk' })).toBeTruthy()
   })
 
-  it('renders the configured organization name', () => {
-    renderHeader({ organization: { name: 'Acme Co.', mark: null } })
-    expect(screen.getByRole('link', { name: 'Acme Co.' })).toBeTruthy()
+  it('applies the configured logo without adding the organization name to navigation', () => {
+    const mark = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>'
+    const favicon = document.createElement('link'); favicon.id = 'desk-favicon'; document.head.append(favicon)
+    const { container } = renderHeader({ organization: { name: 'Acme Co.', mark } })
+    expect(screen.queryByRole('link', { name: 'Acme Co.' })).toBeNull()
+    expect(container.querySelector('img.desk-orgmark')?.getAttribute('src')).toBe(markToDataUri(mark))
+    expect(favicon.getAttribute('href')).toBe(markToDataUri(mark))
+    favicon.remove()
+  })
+
+  it('keeps a favicon override independent of the logo, then follows the logo when cleared', () => {
+    const icon = document.createElement('link'); icon.id = 'desk-favicon'; icon.type = 'image/svg+xml'; document.head.append(icon)
+    const favicon = 'data:image/png;base64,aW1hZ2U='
+    const first = renderHeader({ organization: { name:'Acme', mark:'<svg id="first"/>', favicon } })
+    expect(icon.getAttribute('href')).toBe(favicon)
+    expect(icon.type).toBe('image/png')
+    expect(first.container.querySelector('img.desk-orgmark')?.getAttribute('src')).toBe(markToDataUri('<svg id="first"/>'))
+    first.unmount()
+    const changed = renderHeader({ organization: { name:'Acme', mark:'<svg id="second"/>', favicon } })
+    expect(icon.getAttribute('href')).toBe(favicon)
+    changed.unmount()
+    renderHeader({ organization: { name:'Acme', mark:'<svg id="second"/>', favicon:null } })
+    expect(icon.getAttribute('href')).toBe(markToDataUri('<svg id="second"/>'))
+    expect(icon.type).toBe('image/svg+xml')
+    icon.remove()
   })
 
   it('encodes an inline SVG mark rather than injecting it', () => {
@@ -161,21 +180,19 @@ describe('the header’s organization identity', () => {
     // query refetches, `/ws` drops — and the chassis kills the runtime
     // subprocess when the socket that started it closes, so clicking the desk's
     // own name respawned `jpack mcp`.
-    const brand = screen.queryByRole('link', { name: DESK_FALLBACK_NAME })
+    const brand = screen.queryByRole('link', { name: 'Desk' })
     expect(brand).toBeNull()
     const { router } = renderHeaderIn('/admin')
-    fireEvent.click(screen.getByRole('link', { name: DESK_FALLBACK_NAME }))
+    fireEvent.click(screen.getByRole('link', { name: 'Desk' }))
     await waitFor(() => expect(router.state.location.pathname).toBe('/'))
   })
 
-  it('offers project files and explains how to open another project', async () => {
+  it('offers project files and named desk creation from the arrow', async () => {
     renderHeader()
-    fireEvent.keyDown(screen.getByRole('button', { name: /this project/ }), { key: 'Enter' })
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Switch desk' }), { key: 'Enter' })
     const menu = await screen.findByRole('menu')
-    expect(menu.textContent).toContain('To open another project, start Desk')
+    expect(menu.textContent).toContain('Create desk…')
     expect(screen.getByRole('menuitem', { name: 'Project files' }).getAttribute('href')).toBe('/author')
-    expect(menu.textContent).not.toContain('workspace')
-    expect(menu.textContent).not.toContain('tenant')
   })
 })
 
@@ -614,7 +631,7 @@ describe('the user control, a provider configured', () => {
     renderHeader({ identity: { provider: { ...PROVIDER, label: 'Globex Incorporated' } } })
     // The header still reads the desk's own fallback: an issuer's label for a
     // customer is not the customer's brand.
-    expect(screen.getByRole('link', { name: DESK_FALLBACK_NAME })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Desk' })).toBeTruthy()
     expect(screen.queryByRole('link', { name: 'Globex Incorporated' })).toBeNull()
   })
 })

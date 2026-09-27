@@ -1,3 +1,4 @@
+import { deskHeaders } from '../desks/scope'
 import { NoSession, discardBody, forgetSession, refusalCode, sessionBearer } from '../mcp/session'
 
 /**
@@ -216,6 +217,7 @@ export async function deskFetch(input: string, init: RequestInit = {}): Promise<
     credentials: 'omit',
     headers: {
       ...(init.headers as Record<string, string> | undefined),
+      ...deskHeaders(),
       Authorization: `Bearer ${id}`
     }
   })

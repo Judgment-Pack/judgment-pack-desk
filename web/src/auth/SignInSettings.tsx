@@ -1,3 +1,4 @@
+import { useDirtyGuard } from '../shell/useDirtyGuard'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { msg, useLocale } from '../i18n'
 import { forgetSession, sessionBearer } from '../mcp/session'
@@ -39,17 +40,19 @@ export function SignInSettings() {
     }).catch(cause => { if (active) setError(cause) })
     return () => { active = false }
   }, [])
+  const clearGuard=useDirtyGuard(!!settings && JSON.stringify(provider)!==JSON.stringify(settings.provider??empty),msg('Discard unsaved sign-in settings?'),{busy})
   const unchanged = !!settings?.testId && provider.label === settings.provider?.label && provider.issuer === settings.provider?.issuer && provider.clientId === settings.provider?.clientId && !provider.clientSecret
   async function test() {
     setBusy(true); setError('')
     try {
-      await beginSignIn('test', { provider, keepSecret: !!settings?.hasSecret && !provider.clientSecret }, await sessionBearer())
+      await beginSignIn('test', { provider, keepSecret: !!settings?.hasSecret && !provider.clientSecret }, await sessionBearer(), clearGuard)
     } catch (cause) { setError(cause); setBusy(false) }
   }
   async function enable() {
     setBusy(true); setError('')
     try {
       await authCall('enable', { testId: settings?.testId }, await sessionBearer())
+      clearGuard()
       forgetSession()
       window.location.assign('/')
     } catch (cause) { setError(cause); setBusy(false) }

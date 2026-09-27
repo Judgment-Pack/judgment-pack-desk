@@ -851,7 +851,8 @@ describe('the guided reading workspace', () => {
     const { router, calls } = draw(SERVED, {}, `/packs/vendor-onboarding${search}`, { inspector: true })
     const overview = await screen.findByRole('region', { name: 'Pack overview' })
     expect(within(overview).getByText('Approve')).toBeTruthy()
-    expect(within(overview).getByText('Decline')).toBeTruthy()
+    expect(within(overview).getByRole('button', { name: 'Decline' })).toBeTruthy()
+    expect(within(overview).getAllByText('Fallback')).toHaveLength(2)
     expect(within(overview).queryByText('Fallback outcome')).toBeNull()
     expect(within(overview).queryByText('Handoff target')).toBeNull()
     expect(within(overview).queryByRole('button', { name: 'View conditions' })).toBeNull()
@@ -872,6 +873,11 @@ describe('the guided reading workspace', () => {
   it('shows a condition in the Inspector only when its main definition is unavailable', async () => {
     const { revealed } = draw(SERVED, {}, '/packs/vendor-onboarding?view=logic&layout=list&at=/rules/1', { inspector: true })
     await screen.findByRole('radio', { name: 'List' })
+    // The compact list leaves exact conditions in Details until explicitly expanded.
+    await waitFor(() => expect(slotTarget!.querySelector('[data-condition-tree]')).not.toBeNull())
+    fireEvent.click(screen.getByRole('button', { name: 'View' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Show list conditions' }))
+    fireEvent.keyDown(screen.getByRole('checkbox', { name: 'Show list conditions' }), { key: 'Escape' })
     await waitFor(() => expect(slotTarget!.querySelector('[data-condition-tree]')).toBeNull())
     fireEvent.change(screen.getByRole('searchbox', { name: 'Find pack item' }), { target: { value: 'no-matching-rule' } })
     await waitFor(() => expect(slotTarget!.querySelector('[data-condition-tree]')).not.toBeNull())

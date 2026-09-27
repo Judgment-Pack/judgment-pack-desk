@@ -11,6 +11,8 @@ import { PageHeader } from '../ui/PageLayout'
 import { ExpandableText } from '../ui/ExpandableText'
 import { InspectionRow } from '../ui/InspectionRow'
 import { PACK_TERMS } from './terminology'
+import { Disclosure } from '../ui/Disclosure'
+import { outcomeLabel } from './logicModel'
 import { Popover } from '../ui/Popover'
 import { IconMore } from '../shell/icons'
 import { entries, text } from './logicModel'
@@ -33,9 +35,9 @@ export function PackNavigation({ packId, current }: { packId: string; current: P
   useLocale()
   const base = `/packs/${encodeURIComponent(packId)}`
   const link = usePackLink()
-  const active = current === 'rules' || current === 'evidence' ? 'logic' : current
+  const active = current === 'rules' ? 'logic' : current
   return <nav className={styles.navigation} aria-label={msg("Pack sections")}>
-    {([['overview', msg('Overview')], ['logic', msg('Logic')], ['test', msg('Tests')]] as const).map(([value, label]) =>
+    {([['overview', msg('Overview')], ['logic', msg('Logic')], ['evidence', msg('Sources')], ['test', msg('Tests')]] as const).map(([value, label]) =>
       <Link key={value} to={link(value === 'test' ? `${base}/evaluate` : `${base}?view=${value}`)}
         aria-current={active === value ? 'page' : undefined}>{label}</Link>)}
     {current === 'document' && <Link to={link(`${base}?view=document`)} aria-current="page">{msg("Full document")}</Link>}
@@ -49,7 +51,7 @@ export function PackHeader({ packId, document: doc, current, actions, hasMatrix 
   useLocale()
   const base = `/packs/${encodeURIComponent(packId)}`
   const link = usePackLink()
-  return <PageHeader variant="title" title={text(doc?.title, packId)}
+  return <PageHeader variant="title" title={text(doc?.title, packId)} meta={text(doc?.version, '')}
     navigation={<PackNavigation packId={packId} current={current} />}
     actions={<div className={styles.actions}>{actions}
       <Popover title={msg("Pack details")} triggerTooltip={msg("More pack actions")} trigger={<Button size="icon" variant="quiet" aria-label={msg("More pack actions")}><IconMore /></Button>}>
@@ -82,11 +84,11 @@ export function PackOverview({ document: doc, packId = '', logicHref, onViewLogi
   const question = text(decision?.question, '').trim()
   const context = [...new Set([text(decision?.intent, ''), text(doc.description, '')].map(value => value.trim()).filter(value => value && value !== question))]
   return <section className={styles.overview} aria-label={msg("Pack overview")}>
-    {context.length > 0 && <section><h2>{msg("About this pack")}</h2>{context.map((paragraph, index) => <p key={index}>{paragraph}</p>)}</section>}
+    {context.length > 0 && <section><h2>{msg("About this pack")}</h2>{<p>{context[0]}</p>}{context.length > 1 && <Disclosure title={msg('Description')}>{context.slice(1).map((paragraph,index)=><p key={index}>{paragraph}</p>)}</Disclosure>}</section>}
     <section className={styles.group} aria-label={PACK_TERMS.outcomes.label}>
       <h2>{PACK_TERMS.outcomes.label}</h2>
       <ul className={styles.outcomes}>{outcomes.slice(0, 4).map((value, index) =>
-        <li key={index}>{isRecord(value) ? text(value.label, text(value.id)) : msg("Unrecognized outcome")}</li>)}</ul>
+        <li key={index}>{isRecord(value) ? text(value.label, text(value.id)) : msg("Unrecognized outcome")}{isRecord(value) && doc.fallbackOutcome === value.id && <span className={styles.fallback}>{msg('Fallback')}</span>}</li>)}</ul>
       <div>
         {outcomes.length > 4 && <p className={styles.muted}><Message text={"<0/> more outcomes in Logic."} slots={[outcomes.length - 4]} /></p>}
         {outcomes.length === 0 && <p>{msg("No outcomes are declared.")}</p>}
@@ -97,8 +99,11 @@ export function PackOverview({ document: doc, packId = '', logicHref, onViewLogi
         <>{onViewLogic ? <Button variant="quiet" onClick={onViewLogic}>{msg("View logic")}</Button> : packId ? <ButtonLink variant="quiet" to={logicHref ?? `/packs/${encodeURIComponent(packId)}?view=logic`}>{msg("View logic")}</ButtonLink> : null}</>
       </div>
       <dl className={styles.metadata}>
+        <div><dt>{msg('Scope')}</dt><dd><Button variant="inline" onClick={() => select('/applicability')}>{doc.applicability ? msg('Restricted by a condition') : msg('No scope restriction')}</Button></dd></div>
         <div><dt>{msg("Evidence needed")}</dt><dd><Message text={"<0/> required · <1/> optional"} slots={[evidence.filter(x => isRecord(x) && x.required === true).length, evidence.filter(x => isRecord(x) && x.required === false).length]} /></dd></div>
         <div><dt>{msg("Decision logic")}</dt><dd><Message text={"<0/> rules · <1/> special cases"} slots={[entries(doc.rules).length, entries(doc.exceptions).length]} /></dd></div>
+        <div><dt>{msg('Fallback')}</dt><dd><Button variant="inline" onClick={() => select('/fallbackOutcome')}>{doc.fallbackOutcome ? outcomeLabel(doc, doc.fallbackOutcome) : msg('Not declared')}</Button></dd></div>
+        <div><dt>{msg('Handoff')}</dt><dd><Button variant="inline" onClick={() => select('/escalation')}>{isRecord(doc.escalation?.target) ? text(doc.escalation.target.name) : msg('Not declared')}</Button></dd></div>
       </dl>
     </section>
     <section>

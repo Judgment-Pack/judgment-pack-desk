@@ -1,3 +1,4 @@
+import { loadJobDraft } from './drafts'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Tooltip } from 'radix-ui'
@@ -6,6 +7,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { CreateJobContent } from './JobsView'
 import { jobsAPI } from './client'
 import { readReleaseTests } from './releaseTests'
+vi.mock('./drafts',async original=>({...await original<typeof import('./drafts')>(),loadJobDraft:vi.fn()}))
+vi.mock('./MappedInputFields',()=>({MappedInputFields:()=>null}))
 vi.mock('./client', () => ({ jobsAPI: vi.fn() }))
 vi.mock('./releaseTests', () => ({ readReleaseTests: vi.fn() }))
 const { pack, packs } = vi.hoisted(() => ({
@@ -23,15 +26,17 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); vi.resetAllMocks() })
 function renderCreate() { return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><Tooltip.Provider><MemoryRouter initialEntries={['/jobs/new?pack=pack']}><CreateJobContent /></MemoryRouter></Tooltip.Provider></QueryClientProvider>) }
+function next(){fireEvent.click(screen.getByRole('button',{name:'Continue'}));const input=screen.queryByRole('combobox',{name:'Input configuration'});if(input){fireEvent.keyDown(input,{key:'Enter'});fireEvent.click(screen.getByRole('option',{name:'Manual / API'}))}}
+function toReview(){fireEvent.change(screen.getByLabelText('Job name'),{target:{value:'Intake'}});next();next();next()}
 async function check() {
- fireEvent.change(screen.getByLabelText('Job name'), { target: { value: 'Intake' } })
+ toReview()
  fireEvent.click(screen.getByRole('button', { name: 'Check release' }))
  await screen.findByText('Review this release')
 }
 const button = () => screen.getByRole('button', { name: 'Create job' }) as HTMLButtonElement
 const review = () => screen.getByLabelText('I reviewed this release, its test status and sample result.') as HTMLInputElement
 it('runs saved expectations against the current pack and requires explicit review, invalidating it when sample inputs change', async () => {
- renderCreate(); expect(button().disabled).toBe(true)
+ renderCreate(); expect(screen.queryByRole('button',{name:'Create job'})).toBeNull()
  await check()
  expect(jobsAPI).toHaveBeenCalledWith('previews', { pack: pack.data.raw, input: { facts: {} }, matrix: saved.matrix, testSource: source })
  expect(readReleaseTests).toHaveBeenCalledWith('pack', 'cases.json')
@@ -42,12 +47,12 @@ it('runs saved expectations against the current pack and requires explicit revie
  expect(jobsAPI).toHaveBeenCalledTimes(1)
 })
 it('rejects malformed sample input before invoking the runner and preserves omitted evidence', async () => {
- renderCreate()
+ renderCreate();fireEvent.change(screen.getByLabelText('Job name'),{target:{value:'Intake'}});next()
  fireEvent.change(screen.getByLabelText('Facts (JSON)'), { target: { value: '{' } })
- fireEvent.click(screen.getByRole('button', { name: 'Check release' }))
+ expect((screen.getByRole('button',{name:'Continue'}) as HTMLButtonElement).disabled).toBe(true)
  await screen.findByRole('alert'); expect(jobsAPI).not.toHaveBeenCalled()
  fireEvent.change(screen.getByLabelText('Facts (JSON)'), { target: { value: '{"active":false}' } })
- fireEvent.click(screen.getByRole('button', { name: 'Check release' }))
+ next();next();fireEvent.click(screen.getByRole('button', { name: 'Check release' }))
  await waitFor(() => expect(jobsAPI).toHaveBeenCalledWith('previews', expect.objectContaining({ input: { facts: { active: false } } })))
 })
 it.each(['failed','error'])('blocks creating a job after a %s check', async tests => {
@@ -74,7 +79,7 @@ it.each(['tests','pack','project'])('rechecks %s before creating and refuses a s
 })
 it('does not silently release untested when reading saved tests fails', async () => {
  vi.mocked(readReleaseTests).mockRejectedValue(new Error('Cannot read saved tests'))
- renderCreate(); fireEvent.click(screen.getByRole('button', { name: 'Check release' }))
+ renderCreate(); toReview();fireEvent.click(screen.getByRole('button', { name: 'Check release' }))
  await screen.findByText('Cannot read saved tests'); expect(jobsAPI).not.toHaveBeenCalled(); expect(button().disabled).toBe(true)
 })
 it('creates the immutable reviewed release after checking freshness again', async () => {
@@ -83,4 +88,46 @@ it('creates the immutable reviewed release after checking freshness again', asyn
  fireEvent.click(button())
  await waitFor(() => expect(jobsAPI).toHaveBeenCalledWith('jobs', { name: 'Intake', releaseId: 'release', reviewed: true }))
  expect(readReleaseTests).toHaveBeenCalledTimes(2)
+})
+
+it('starts an operational run with fresh facts and omitted evidence',async()=>{
+ const {JobsContent}=await import('./JobsView')
+ const {Routes,Route}=await import('react-router-dom')
+ vi.mocked(jobsAPI).mockImplementation(async(path:string)=>{
+  if(path==='jobs/job-one')return {job:{id:'job-one',name:'Intake'},release:{...release,title:'Policy',sample:{facts:{secret:'release sample'},evidence:{proof:'present'}}}} as never
+  if(path.startsWith('jobs/job-one/runs?'))return {items:[]} as never
+  if(path==='jobs/job-one/runs')return {id:'run-new',jobId:'job-one'} as never
+  return {} as never
+ })
+ render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><Tooltip.Provider><MemoryRouter initialEntries={['/jobs/job-one?run=new']}><Routes><Route path="/jobs/:jobId" element={<JobsContent/>}/><Route path="/jobs/:jobId/runs/:runId" element={<span/>}/></Routes></MemoryRouter></Tooltip.Provider></QueryClientProvider>)
+ await screen.findByRole('button',{name:'Submit run'})
+ expect((screen.getByLabelText('Facts (JSON)') as HTMLTextAreaElement).value).toBe('{}')
+ expect((screen.getByLabelText('Supply evidence availability') as HTMLInputElement).checked).toBe(false)
+ fireEvent.click(screen.getByRole('button',{name:'Submit run'}))
+ await waitFor(()=>expect(jobsAPI).toHaveBeenCalledWith('jobs/job-one/runs',{facts:{}},expect.any(String)))
+})
+it('sends global run search and attention filters to the runner',async()=>{
+ const {JobsContent}=await import('./JobsView')
+ vi.mocked(jobsAPI).mockImplementation(async path=>({items:path==='runs?after=0'?[{id:'run-one',jobId:'job-one',jobName:'Intake',state:'completed',createdAt:'2026-09-26T12:00:00Z'}]:[]}) as never)
+ render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><Tooltip.Provider><MemoryRouter initialEntries={['/jobs/runs']}><JobsContent/></MemoryRouter></Tooltip.Provider></QueryClientProvider>)
+ await waitFor(()=>expect(jobsAPI).toHaveBeenCalledWith('runs?after=0'))
+ fireEvent.change(await screen.findByLabelText('Search runs'),{target:{value:'vendor'}})
+ fireEvent.click(screen.getByLabelText('Needs attention'))
+ await waitFor(()=>expect(jobsAPI).toHaveBeenCalledWith('runs?q=vendor&review=true&after=0'))
+ await screen.findByText('No matches')
+ expect(screen.getByLabelText('Search runs')).toBeTruthy()
+})
+
+it('keeps a resumed job editor and its unsaved fields through failed background reads',async()=>{
+ const values={name:'Saved job',packId:'pack',inputMode:'manual' as const,facts:'{}',supplied:false,evidence:'{}'}
+ vi.mocked(loadJobDraft).mockResolvedValueOnce({file:{path:'.desk/job-drafts/example.json',content:'{}',bytes:2,sha256:'base'},draft:{version:1,id:'example',updatedAt:'2026-09-26T12:00:00Z',status:'draft',values}}).mockRejectedValue(Error('File unavailable'))
+ const query=new QueryClient({defaultOptions:{queries:{retry:false}}})
+ render(<QueryClientProvider client={query}><MemoryRouter initialEntries={['/jobs/new?draft=example']}><CreateJobContent/></MemoryRouter></QueryClientProvider>)
+ const name=await screen.findByLabelText('Job name')
+ expect((name as HTMLInputElement).value).toBe('Saved job')
+ fireEvent.change(name,{target:{value:'My unsaved change'}})
+ await query.invalidateQueries({queryKey:['job-draft','example']})
+ await waitFor(()=>expect(loadJobDraft).toHaveBeenCalledTimes(2))
+ expect(screen.getByLabelText('Job name')).toBe(name)
+ expect((name as HTMLInputElement).value).toBe('My unsaved change')
 })

@@ -9,3 +9,5 @@
 .definition { display: grid; gap: var(--space-3); }
 .definition dt { font-size: var(--text-xs); color: var(--ink-soft); }
 .definition dd { margin: var(--space-1) 0 0; overflow-wrap: anywhere; }
+
+.editAction { position:sticky; bottom:0; display:flex; justify-content:flex-end; padding-block:var(--space-3); background:var(--surface); margin-top:var(--space-4); }

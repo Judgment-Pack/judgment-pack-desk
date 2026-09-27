@@ -1,0 +1,7 @@
+import type { JobInput } from './client'
+export interface Schedule {kind:'interval'|'daily'|'weekly'|'once';everySeconds?:number;timezone:string;time?:string;weekday?:number;startAt:string;endAt?:string}
+export interface AutomaticInput {kind:'constant'|'input-file'|'mapped-files'|'mapped-sources';value?:string;path?:string;case?:Record<string,unknown>;files?:Record<string,string>}
+export interface TriggerConfig {name:string;kind:'schedule'|'event'|'file'|'cloud';cloud?:{connection:string;subscription:string;job:string};schedule?:Schedule;input?:AutomaticInput;missed:'skip'|'latest';overlap:'skip'|'queue';queueSeconds:number;watchPath?:string;stableSeconds?:number}
+export interface Trigger {id:string;jobId:string;revision:number;authority:'local'|'google-cloud';config:TriggerConfig;paused:boolean;createdAt:string;updatedAt:string;nextAt?:string;hasKey:boolean;problem?:string}
+export interface Occurrence {id:string;jobId:string;releaseId:string;jobRevision:number;triggerId:string;triggerRevision:number;kind:string;eventId?:string;scheduledAt?:string;receivedAt:string;expiresAt:string;inputDigest?:string;state:'accepted'|'preparing'|'submitted'|'skipped'|'failed'|'expired';runId?:string;reason?:string;missedFrom?:string;missedThrough?:string;input?:JobInput}
+export interface TriggerOrigin {occurrenceId:string;triggerId:string;triggerRevision:number;kind:string;scheduledAt?:string;eventId?:string;inputDigest?:string;expiresAt?:string}

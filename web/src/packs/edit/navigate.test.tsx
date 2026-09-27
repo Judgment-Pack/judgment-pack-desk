@@ -1,3 +1,5 @@
+import { respondToDiscardDialogs } from '../../testing/discardDialogs'
+respondToDiscardDialogs()
 /**
  * Moving from one pack to another, on the route that does not remount.
  *

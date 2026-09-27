@@ -301,3 +301,21 @@ it('offers credential replacement for a key error without starting OAuth',async(
  render(view('fixture-files'));await screen.findByRole('button',{name:'Update credentials'})
  expect(screen.getByLabelText('Access key')).toBeTruthy();expect(mocks.authorize).not.toHaveBeenCalled()
 })
+
+it('returns from job setup explicitly without fetching attachments or promoting composer shortcuts',()=>{
+ const connected=vi.fn()
+ render(<QueryClientProvider client={client()}><ConnectionsPane request={{provider:'obsidian',purpose:'job-source',onConnected:connected,opener:null}} target={document.body} onProvider={mocks.provider} onClose={mocks.close} onBusy={mocks.onBusy}/></QueryClientProvider>)
+ expect(mocks.call).not.toHaveBeenCalled()
+ expect(mocks.source).not.toHaveBeenCalled()
+ expect(screen.queryByRole('button',{name:'Pin to composer'})).toBeNull()
+ expect(localStorage.getItem(CONNECTION_PREFERENCES_KEY)).toBeNull()
+ expect(connected).not.toHaveBeenCalled()
+ fireEvent.click(screen.getByRole('button',{name:'Return to job'}))
+ expect(connected).toHaveBeenCalledWith('obsidian')
+})
+it('does not offer blocked providers or a return action that claims they are connected',()=>{
+ state='blocked'
+ render(<QueryClientProvider client={client()}><ConnectionsPane request={{purpose:'job-source',onConnected:vi.fn(),opener:null}} target={document.body} onProvider={mocks.provider} onClose={mocks.close} onBusy={mocks.onBusy}/></QueryClientProvider>)
+ expect(screen.queryByRole('button',{name:/Manage:/})).toBeNull()
+ expect(screen.queryByRole('button',{name:'Return to job'})).toBeNull()
+})

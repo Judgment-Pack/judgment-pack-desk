@@ -65,6 +65,7 @@ import { useDetailsPortal, useDetailsSlot } from '../shell/DetailsSlot'
 import { PackDocumentView } from '../packs/document/PackDocumentView'
 import { describe as describeShape, isRecord } from '../packs/document/MisshapenMember'
 import { SelectionContext } from '../packs/document/Block'
+import { SelectedLogicEditor } from '../packs/edit/SelectedLogicEditor'
 import { PackEditHeader } from '../packs/edit/PackEditHeader'
 import { Dialog, DialogActions } from '../ui/Dialog'
 import {
@@ -88,6 +89,7 @@ import { pointerFromHash } from '../packs/pointers'
 import { useDocumentSpy } from '../packs/useDocumentSpy'
 import { useInspectorPortal, useInspectorControls } from '../shell/InspectorSlot'
 import { usePublishedDirty } from '../shell/authorBridge'
+import { TypedConfirmation, useConfirmDiscard } from '../shell/UnsavedChanges'
 import { useDirtyGuard } from '../shell/useDirtyGuard'
 import { useMeasuredBox } from '../shell/measured'
 import { PackLogic } from '../packs/PackLogic'
@@ -163,6 +165,9 @@ export function PackView() {
   const exitHelpId = useId()
   const returnLocation = useRef({ packId, search: new URLSearchParams(withEditing(params, false)).toString(), hash })
   const [exitOpen, setExitOpen] = useState(false)
+  const [exitTyped, setExitTyped] = useState('')
+  const confirmDiscard = useConfirmDiscard()
+  useEffect(() => { setExitTyped('') }, [exitOpen])
   const [savedExit, setSavedExit] = useState<{ path: string; generation: number; content: string } | null>(null)
   const wasEditing = useRef(editing)
   useEffect(() => {
@@ -410,7 +415,8 @@ export function PackView() {
    * about the same bytes by construction.
    */
   const requested = params.get('view')
-  const section: PackSection = editing || hash !== '' || (at !== null && !requested)
+  const itemEdit = editing && shape === 'form' && formAvailable && /^\/(rules|exceptions)\/\d+$/.test(params.get('editItem') ?? '') ? params.get('editItem') : null
+  const section: PackSection = itemEdit ? 'logic' : editing || hash !== '' || (at !== null && !requested)
     ? 'document' : requested === 'logic' || requested === 'rules' ? 'logic'
       : requested === 'evidence' || requested === 'document' ? requested : 'overview'
 
@@ -833,7 +839,7 @@ export function PackView() {
   }
 
   usePublishedDirty(path ?? `pack:${packId ?? ''}`, hasWork)
-  useDirtyGuard(hasWork, msg(LEAVING))
+  useDirtyGuard(hasWork, msg(LEAVING), { name: drawn?.title })
 
   /* Try it ----------------------------------------------------------------- */
 
@@ -903,10 +909,19 @@ export function PackView() {
       />
     )
 
-  const details = useDetailsPortal(inspectorNode === null ? null :
-    !editing && (section === 'logic' || section === 'overview') && model && formAvailable ?
-      <LogicInspector model={model} at={at} groupId={groupId}
-        onSelect={select} mainContent={section === 'logic' && mode !== 'map' && (!logic.query.trim()
+  const editItem = (pointer: string) => {
+    returnLocation.current = { packId, search: location.search.replace(/^\?/, ''), hash }
+    const next = withEditing(params, true); next.set('editItem', pointer); next.set('at', pointer); next.delete('group'); next.set('view','logic')
+    setParams(next, { replace: true }); detailsSlot.reveal()
+  }
+  const inspectItem = (pointer: string) => {
+    if(itemEdit && model) { const selected=selectedItem(model,pointer); if(selected && ['rules','exceptions'].includes(selected.group.id)) { const next=new URLSearchParams(params);next.set('at',selected.item.pointer);next.set('editItem',selected.item.pointer);next.delete('group');setParams(next,{replace:true});detailsSlot.reveal();return } }
+    select(pointer)
+  }
+  const details = useDetailsPortal(itemEdit && model && selectedItem(model, at)?.item.pointer === itemEdit ? <SelectedLogicEditor key={itemEdit} model={model} pointer={itemEdit}/> : inspectorNode === null ? null :
+    (!editing || itemEdit) && (section === 'logic' || section === 'overview') && model && formAvailable ?
+      <LogicInspector model={model} at={at} groupId={groupId} onEdit={itemEdit ? inspectItem : editItem}
+        onSelect={itemEdit ? inspectItem : select} mainContent={section === 'logic' && mode !== 'map' && (!logic.query.trim()
           || model.groups.some(group => matchingItems(group, logic.query).some(item => item.pointer === selectedItem(model, at)?.item.pointer)))}
         conditionsVisible={logic.display.conditions || Boolean(logic.query.trim())}
         trace={runTrace} advanced={inspectorNode} /> : inspectorNode)
@@ -1030,24 +1045,25 @@ export function PackView() {
             })
           }}
           onUndo={buffer.undo}
-          onDiscard={discardAll}
+          onDiscard={async () => { if (await confirmDiscard(msg(LEAVING), { name: drawn?.title })) discardAll() }}
         /> : <PackHeader packId={packId ?? ''} document={drawn} current={section} actions={elsewhere} details={strip} hasMatrix={Boolean(summary?.matrix || summary?.matrixPath)} />}
         <Dialog open={exitOpen} onOpenChange={setExitOpen} title={msg("Save changes before leaving?")}
           description={msg("Your changes have not been saved to the pack.")} openerRef={editing ? backButton : editButton}>
+          <TypedConfirmation confirmation={drawn?.title || msg('Yes')} value={exitTyped} onChange={setExitTyped} disabled={savePending} />
           {unwritten > 0 && <p id={exitHelpId}>{msg("Finish or discard unfinished fields before saving and returning.")}</p>}
           <DialogActions>
             <Button onClick={() => setExitOpen(false)}>{msg("Keep editing")}</Button>
-            <Button variant="danger" disabled={savePending} onClick={() => { discardAll(); returnToPack() }}>{msg("Discard and return")}</Button>
+            <Button variant="danger" disabled={savePending || exitTyped.trim() !== (drawn?.title || msg('Yes'))} onClick={() => { discardAll(); returnToPack() }}>{msg("Discard and return")}</Button>
             <Button variant="primary" disabled={!dirty || unwritten > 0 || savePending || !onPath}
               aria-describedby={unwritten > 0 ? exitHelpId : undefined}
               onClick={() => { setExitOpen(false); save(false, true) }}>{msg("Save and return")}</Button>
           </DialogActions>
         </Dialog>
-        <PageBody fill={!editing && section === 'logic'} width={section === 'logic' ? 'full' : 'wide'}>
-        {(editing || section !== 'logic') && <PackQuestion document={drawn} />}
+        <PageBody fill={section === 'logic'} width={section === 'logic' ? 'full' : 'wide'}>
+        {section !== 'logic' && <PackQuestion document={drawn} />}
         <div
           className={styles.workspace}
-          data-logic={!editing && section === 'logic' || undefined}
+          data-logic={section === 'logic' || undefined}
           ref={setFrame}
           style={{ '--tryit-pane-width': `${PANE_WIDTH}px` } as CSSProperties}
         >
@@ -1069,7 +1085,7 @@ export function PackView() {
               <AlertPanel
                 heading={msg("This page is now about a different file")}
                 actions={
-                  <Button variant="quiet" onClick={buffer.takeWaiting}>{msg("Open it and lose these changes")}</Button>
+                  <Button variant="quiet" onClick={async () => { if (!hasWork || await confirmDiscard(msg(LEAVING), { name: drawn?.title })) buffer.takeWaiting() }}>{msg("Open it and lose these changes")}</Button>
                 }
               >
                 <p><Message text={"The editor is holding unsaved changes to<0/><1/>, and this address now names<2/><3/>. Nothing has been replaced and nothing has been written."} slots={[' ', <code>{buffer.base?.path ?? msg("a file")}</code>, ' ', <code>{buffer.waiting.path}</code>]} /></p>
@@ -1085,7 +1101,7 @@ export function PackView() {
               <AlertPanel
                 heading={msg("The file on disk has changed since this was loaded")}
                 actions={
-                  <Button variant="quiet" onClick={reloadNow}>
+                  <Button variant="quiet" onClick={async () => { if (!hasWork || await confirmDiscard(msg('Reload and discard changes?'), {name:drawn?.title})) reloadNow() }}>
                     {/*
                       **What Reload discards is work, not bytes.** An operand
                       holding text that is not JSON yet moves no bytes, so a
@@ -1110,7 +1126,7 @@ export function PackView() {
               <AlertPanel
                 heading={msg("This save finished, and this page has no account of it")}
                 actions={
-                  <Button variant="quiet" onClick={reloadNow}>
+                  <Button variant="quiet" onClick={async () => { if (!hasWork || await confirmDiscard(msg('Reload and discard changes?'), {name:drawn?.title})) reloadNow() }}>
                     {hasWork ? msg("Reload, losing these changes") : msg("Reload")}
                   </Button>
                 }
@@ -1122,7 +1138,7 @@ export function PackView() {
               <StaleWriteAlert
                 stale={staleWrite}
                 pending={editor.write.isPending}
-                onReload={reloadNow}
+                onReload={async () => { if (!hasWork || await confirmDiscard(msg('Reload and discard changes?'), {name:drawn?.title})) reloadNow() }}
                 onOverwrite={() => save(true)}
               />
             )}
@@ -1177,12 +1193,12 @@ export function PackView() {
                       <Button variant="quiet" onClick={() => { const next = new URLSearchParams(params); next.delete('run'); retainInspectorOnNavigation.current = true; setParams(next, { replace: true }) }}>{msg("Structure only")}</Button>
                       <ButtonLink variant="quiet" to={`/packs/${encodeURIComponent(packId ?? '')}/evaluate`}>{msg("Back to Tests")}</ButtonLink>
                     </div>}
-                    <PackLogic model={model} at={at} groupId={groupId} select={selectInMain} inspect={select} mode={mode} onMode={changeMode}
+                    <PackLogic model={model} at={at} groupId={groupId} select={selectInMain} inspect={inspectItem} mode={mode} onMode={changeMode}
                       query={logic.query} onQuery={logic.setQuery} display={logic.display} onDisplay={logic.setDisplay}
                       viewport={logic.viewport} onViewport={logic.setViewport} nodePositions={logic.nodePositions} onNodePositionsChange={logic.setNodePositions} listScroll={logic.listScroll}
                       trace={runTrace} mapUnavailable={!formAvailable ? msg("The document cannot be interpreted unambiguously.")
-                        : stale || !report ? msg("A current validation is needed before displaying a complete map.")
-                        : report.status !== 'valid' ? msg("This document is invalid or requires unsupported semantics. Inspect its definitions and validation details in List.") : undefined} />
+                        : !itemEdit && (stale || !report) ? msg("A current validation is needed before displaying a complete map.")
+                        : !itemEdit && report?.status !== 'valid' ? msg("This document is invalid or requires unsupported semantics. Inspect its definitions and validation details in List.") : undefined} />
                   </>}
                 </> : <PackDocumentView key={section} document={drawn} active={active}
                   members={section === 'evidence' ? PACK_GROUPS.evidence : undefined}

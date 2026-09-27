@@ -1,32 +1,6 @@
-import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
-/**
- * The 28px strip: persistent connection and configuration status.
- *
- * It is its own grid row and a direct child of the grid, so it is the
- * `contentinfo` landmark `.app-foot` was — and it carries the same two
- * sentences, character for character, read from `useMcp()` **directly**.
- *
- * It derives nothing. This is the shell's persistent connection indicator;
- * actionable connection failures also appear in the main area's notices.
- *
- * The one other thing it carries is a **cue that the project's configuration
- * was refused**. A refused file is the built-in defaults, and that is correct;
- * what was missing is that it was indistinguishable from having no file at
- * all. Admin names every problem, but nothing outside `/admin` said there was
- * one, so an operator who wrote `jpack-desk.json` and mistyped a key saw the
- * fallback name and no reason. This is not a verdict the shell computed: it is
- * the decoder's own refusal, counted and linked to the page that explains it.
- *
- * There is a second cue beside it, for the case the first one missed entirely:
- * a read that **could not produce a file**. A 413, a permission error, a
- * non-UTF-8 body or a dead socket all resolved to the built-in defaults with
- * the reason recorded where nothing rendered it, so a desk that could not open
- * its own file looked exactly like a desk with no file. Absence stays silent —
- * that is the ordinary case — and this does not. The cue says only that the
- * read failed: a chassis refusal says something about a file, while a socket
- * that never answered establishes only that absence was not established, and
- * the strip is not the place to tell those apart. Admin is.
+/** Connection health stays compact; component versions live in Help & About.
+ * Configuration warnings remain visible on every route.
  */
 import { Link } from 'react-router-dom'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
@@ -60,7 +34,7 @@ export const CONFIG_UNREAD_SHORT = 'config unread'
 
 export function StatusStrip() {
   useLocale()
-  const { status, server } = useMcp()
+  const { status } = useMcp()
   const { problems, readFailure, desk } = useEffectiveConfig()
   // **Either file, one cue.** The strip's job is to stop a mistyped key
   // looking exactly like having written no file at all, and that argument does
@@ -70,21 +44,14 @@ export function StatusStrip() {
   return (
     <footer className="desk-strip">
       <span className="desk-strip-left">
-        {/* The verdict is the status, and the name is only said where the
-            connection is actually up: `server` is retained across a reconnect,
-            so naming it off its presence said "connected to" while the socket
-            was down. */}
-        {status === 'ready' && server ? (
-          <span className="desk-strip-connection"><Message text={"connected to <0/> <1/>"} slots={[<code>{server.name}</code>, server.version]} /></span>
-        ) : (
-          <span className="desk-strip-connection">{connectionSays(status)}</span>
-        )}
         {refused && <ConfigCue full={msg(CONFIG_REFUSED_CUE)} short={msg(CONFIG_REFUSED_SHORT)} />}
         {!refused && unread && (
           <ConfigCue full={msg(CONFIG_UNREAD_CUE)} short={msg(CONFIG_UNREAD_SHORT)} />
         )}
       </span>
-
+      <Link to="/help" className="desk-strip-connection" aria-label={`${msg('Help & About')}: ${connectionSays(status)}`}>
+        {connectionSays(status)}
+      </Link>
     </footer>
   )
 }

@@ -1,3 +1,5 @@
+import { respondToDiscardDialogs } from '../testing/discardDialogs'
+respondToDiscardDialogs()
 import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
 import { Route, Routes } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -121,7 +123,7 @@ describe('the authoring shell', () => {
     chassis({ files: () => ({ status: 200, body: LISTING }), file: () => ({ status: 200, body: READ }) })
     const { container } = render()
     const box = await openTheFile()
-    expect(box.value).toBe(LOADED)
+    await waitFor(()=>expect(box.value).toBe(LOADED))
     expect(container.textContent).toContain('saved')
     expect(container.textContent).not.toContain('unsaved changes')
 
@@ -145,7 +147,7 @@ describe('the authoring shell', () => {
     const before = calls.length
 
     fireEvent.click(screen.getByText('Discard changes'))
-    expect(box.value).toBe(LOADED)
+    await waitFor(()=>expect(box.value).toBe(LOADED))
     expect(container.textContent).not.toContain('unsaved changes')
     expect(calls).toHaveLength(before)
   })
@@ -524,7 +526,7 @@ describe('the authoring shell, not losing an edit', () => {
     fireEvent.change(box, { target: { value: EDITED } })
 
     fireEvent.click(screen.getByText('jpack.json'))
-    expect(confirm).toHaveBeenCalledOnce()
+    await waitFor(()=>expect(confirm).toHaveBeenCalledOnce())
     // Refused, so the edit is still open and still here.
     expect((screen.getByLabelText('File contents') as HTMLTextAreaElement).value).toBe(EDITED)
     expect(container.textContent).toContain('unsaved changes')
@@ -930,6 +932,45 @@ describe('the open-request bridge', () => {
     act(() => requestOpen('packs/vendor-onboarding.pack.json'))
 
     const box = (await screen.findByLabelText('File contents')) as HTMLTextAreaElement
-    expect(box.value).toBe(LOADED)
+    await waitFor(()=>expect(box.value).toBe(LOADED))
+  })
+})
+
+
+describe('project file panes', () => {
+  afterEach(() => { vi.restoreAllMocks(); localStorage.clear() })
+
+  it('resizes and collapses the browser without remounting or saving the edited file', async () => {
+    const calls = chassis({ files: () => ({ status: 200, body: LISTING }), file: () => ({ status: 200, body: READ }) })
+    render()
+    const box = await openTheFile()
+    fireEvent.change(box, { target: { value: EDITED } })
+    const separator = screen.getByRole('separator', { name: 'Resize file pane' })
+    fireEvent.keyDown(separator, { key: 'ArrowRight', shiftKey: true })
+    expect(separator.getAttribute('aria-valuenow')).toBe('312')
+    expect(localStorage.getItem('jpack.files-pane.v1:/project')).toBe('312')
+    fireEvent.keyDown(separator, { key: 'Enter' })
+    expect(screen.queryByRole('complementary', { name: 'Browse files' })).toBeNull()
+    expect(screen.getByLabelText('File contents')).toBe(box)
+    fireEvent.click(screen.getByRole('button', { name: 'Expand files' }))
+    expect(screen.getByRole('separator').getAttribute('aria-valuenow')).toBe('312')
+    expect(box.value).toBe(EDITED)
+    expect(calls.filter(call => call.method === 'PUT')).toHaveLength(0)
+  })
+
+  it('keeps an unfinished buffer when a narrow screen returns to browsing', async () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({x:0,y:0,top:0,left:0,bottom:800,right:390,width:390,height:800,toJSON(){}})
+    chassis({ files: () => ({ status: 200, body: LISTING }), file: () => ({ status: 200, body: READ }) })
+    render()
+    const box = await openTheFile()
+    fireEvent.change(box, { target: { value: EDITED } })
+    expect(screen.queryByRole('separator')).toBeNull()
+    expect(screen.queryByRole('complementary', { name: 'Browse files' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Files' }))
+    expect(screen.getByRole('complementary', { name: 'Browse files' })).toBeTruthy()
+    expect(screen.queryByRole('region', { name: 'Editor' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: READ.path }))
+    expect(screen.getByLabelText('File contents')).toBe(box)
+    expect(box.value).toBe(EDITED)
   })
 })

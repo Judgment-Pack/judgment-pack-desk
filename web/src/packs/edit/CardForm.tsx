@@ -20,6 +20,9 @@ import { msg, useLocale } from '../../i18n'
  * land on and for the author to fill.
  */
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { isRecord } from '../document/MisshapenMember'
+import { conditionSummary } from '../LogicSummary'
+import { Disclosure } from '../../ui/Disclosure'
 import { Button } from '../../ui/Button'
 import { valueAt } from '../pointers'
 import { ConditionBuilder } from './ConditionBuilder'
@@ -41,14 +44,14 @@ import styles from './CardForm.module.css'
 const ID_HINT = 'lowercase letters, digits and hyphens; starts with a letter.'
 
 /** One rule's card, as its form. */
-export function RuleForm({ at }: { at: string }) {
+export function RuleForm({ at, compact = false }: { at: string; compact?: boolean }) {
   useLocale()
   const { ids } = useEditing()
   return (
     <div className={styles.form}>
-      <StringField pointer={`${at}/id`} label={msg("id")} hint={msg(ID_HINT)} />
+      {compact ? <Disclosure title={msg('Identifier')}><StringField pointer={`${at}/id`} label={msg("id")} hint={msg(ID_HINT)} /></Disclosure> : <StringField pointer={`${at}/id`} label={msg("id")} hint={msg(ID_HINT)} />}
       <TextField pointer={`${at}/description`} label={msg("description")} />
-      <WhenField at={at} />
+      {compact ? <CompactWhen at={at}/> : <WhenField at={at} />}
       <div className={styles.row}>
         <IdRefField pointer={`${at}/outcome`} label={msg("outcome")} ids={ids.outcomes} />
         <EnumField pointer={`${at}/onUnknown`} label={msg("on unknown")} options={ENUMS.onUnknown} />
@@ -65,14 +68,14 @@ export function RuleForm({ at }: { at: string }) {
 }
 
 /** One exception's card, as its form. */
-export function ExceptionForm({ at }: { at: string }) {
+export function ExceptionForm({ at, compact = false }: { at: string; compact?: boolean }) {
   useLocale()
   const { ids } = useEditing()
   return (
     <div className={styles.form}>
-      <StringField pointer={`${at}/id`} label={msg("id")} hint={msg(ID_HINT)} />
+      {compact ? <Disclosure title={msg('Identifier')}><StringField pointer={`${at}/id`} label={msg("id")} hint={msg(ID_HINT)} /></Disclosure> : <StringField pointer={`${at}/id`} label={msg("id")} hint={msg(ID_HINT)} />}
       <TextField pointer={`${at}/description`} label={msg("description")} />
-      <WhenField at={at} />
+      {compact ? <CompactWhen at={at}/> : <WhenField at={at} />}
       <div className={styles.row}>
         <EnumField pointer={`${at}/effect`} label={msg("effect")} options={ENUMS.effect} />
         <IdRefField pointer={`${at}/targetRule`} label={msg("target rule")} ids={ids.rules} optional />
@@ -82,6 +85,15 @@ export function ExceptionForm({ at }: { at: string }) {
       <StringListField pointer={`${at}/sourceRefs`} label={msg("sources")} candidates={ids.sources} />
     </div>
   )
+}
+
+function CompactWhen({at}:{at:string}) {
+  const {buffer}=useEditing(), value=valueAt(buffer.index.value,`${at}/when`)
+  if(!isRecord(value)||!['all','any'].includes(String(value.op))||!Array.isArray(value.conditions))return <Disclosure title={conditionSummary(value)}><WhenField at={at}/></Disclosure>
+  return <section className={styles.compactConditions}><p>{conditionSummary(value)}</p>
+    {value.conditions.map((condition,index)=><Disclosure key={index} title={conditionSummary(condition)}><ConditionBuilder at={`${at}/when/conditions/${index}`}/></Disclosure>)}
+    <Disclosure title={msg('Edit condition structure')}><WhenField at={at}/></Disclosure>
+  </section>
 }
 
 /**

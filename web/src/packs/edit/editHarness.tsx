@@ -1,3 +1,4 @@
+import { UnsavedChangesProvider } from '../../shell/UnsavedChanges'
 import { msg, useLocale } from '../../i18n'
 /**
  * The pack route, standing up, with the chassis and the runtime both stubbed.
@@ -326,12 +327,12 @@ export function drawPack(
       <McpContext.Provider
         value={connected({ client: stub.client, validateSupported: true, ...options.connection })}
       >
-        <InspectorSlotContext.Provider value={{ ...details, target: null }}>
+        <UnsavedChangesProvider><InspectorSlotContext.Provider value={{ ...details, target: null }}>
           <DetailsSlotContext.Provider value={details}>
           {children}
           <PackView />
           </DetailsSlotContext.Provider>
-        </InspectorSlotContext.Provider>
+        </InspectorSlotContext.Provider></UnsavedChangesProvider>
       </McpContext.Provider>
     )
   }

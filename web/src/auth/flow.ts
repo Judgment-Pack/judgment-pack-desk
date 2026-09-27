@@ -29,7 +29,7 @@ export async function authCall<T>(path: string, body?: unknown, bearer?: string,
   if (!response.ok) throw new SignInError(typeof value?.error === 'string' ? value.error : 'unavailable')
   return value as T
 }
-export async function beginSignIn(kind: 'login' | 'test', body: unknown, bearer?: string) {
+export async function beginSignIn(kind: 'login' | 'test', body: unknown, bearer?: string, beforeRedirect?: () => void) {
   const reply = await authCall<{ attemptId: string; proof: string; authorizationUrl: string }>(kind === 'test' ? 'test' : 'start', body, bearer)
   const target = new URL(reply.authorizationUrl)
   if (typeof reply.attemptId !== 'string' || !/^[a-f0-9]{48}$/.test(reply.attemptId) ||
@@ -39,6 +39,7 @@ export async function beginSignIn(kind: 'login' | 'test', body: unknown, bearer?
   }
   try { sessionStorage.setItem(ATTEMPT_KEY, JSON.stringify({ id: reply.attemptId, proof: reply.proof, kind, at: Date.now() })) }
   catch { throw new SignInError('browser-storage') }
+  beforeRedirect?.()
   window.location.assign(target.href)
 }
 function replacePath(path: string) {

@@ -1,3 +1,5 @@
+import { respondToDiscardDialogs } from '../testing/discardDialogs'
+respondToDiscardDialogs()
 /**
  * Admin: a navigation column, one open section, and the file in the right pane.
  *
@@ -1283,7 +1285,7 @@ describe('one section at a time', () => {
         .filter((label) => label !== '')
     for (const [fragment, expected] of [
       ['project', ['Use this project as the default']],
-      ['organization', ['Save']],
+      ['organization', ['Upload file', 'Reset to default', 'Upload file', 'Use logo', 'Save']],
       ['storage', ['Save', 'Set up', 'Manage']],
       [
         // **No Test connection here**, and that is the section reading
@@ -1425,7 +1427,7 @@ describe('a section’s own write', () => {
 
     fireEvent.change(screen.getByDisplayValue('Unveiled'), { target: { value: 'Renamed' } })
     fireEvent.click(
-      document.getElementById('organization')!.closest('section')!.querySelector('form button')!
+      document.getElementById('organization')!.closest('section')!.querySelector('form button[type="submit"]')!
     )
     await waitFor(() => expect(statusOf('organization')).toContain('writing'))
     expect(statusOf('organization')).toBe('writing — nothing is written until the desk answers')
@@ -1443,7 +1445,7 @@ describe('a section’s own write', () => {
     await waitFor(() => expect(screen.getByDisplayValue('https://acme.example/d/')).toBeTruthy())
     fireEvent.change(screen.getByLabelText('Packs go to'), { target: { value: '../escape' } })
     fireEvent.click(
-      document.getElementById('storage')!.closest('section')!.querySelector('form button')!
+      document.getElementById('storage')!.closest('section')!.querySelector('form button[type="submit"]')!
     )
     await waitFor(() => expect(statusOf('storage')).toContain('not written:'))
     expect(statusOf('storage')).toContain('storage.packs.dir')
@@ -1455,7 +1457,7 @@ describe('a section’s own write', () => {
     await waitFor(() => expect(screen.getByDisplayValue('Unveiled')).toBeTruthy())
     fireEvent.change(screen.getByDisplayValue('Unveiled'), { target: { value: 'Renamed' } })
     fireEvent.click(
-      document.getElementById('organization')!.closest('section')!.querySelector('form button')!
+      document.getElementById('organization')!.closest('section')!.querySelector('form button[type="submit"]')!
     )
     await waitFor(() =>
       expect(statusOf('organization')).toBe('the file changed on disk — nothing was written')
@@ -1754,7 +1756,7 @@ describe('Admin carries no narration', () => {
     await waitFor(() => expect(screen.getByDisplayValue('https://acme.example/d/')).toBeTruthy())
     fireEvent.change(screen.getByLabelText('Packs go to'), { target: { value: '../escape' } })
     fireEvent.click(
-      document.getElementById('storage')!.closest('section')!.querySelector('form button')!
+      document.getElementById('storage')!.closest('section')!.querySelector('form button[type="submit"]')!
     )
     await waitFor(() => expect(statusOf('storage')).toContain('not written:'))
     sweep(refused.container, 'a refusal this page made')
@@ -1767,7 +1769,7 @@ describe('Admin carries no narration', () => {
     await waitFor(() => expect(screen.getByDisplayValue('Unveiled')).toBeTruthy())
     fireEvent.change(screen.getByDisplayValue('Unveiled'), { target: { value: 'Renamed' } })
     fireEvent.click(
-      document.getElementById('organization')!.closest('section')!.querySelector('form button')!
+      document.getElementById('organization')!.closest('section')!.querySelector('form button[type="submit"]')!
     )
     await waitFor(() => expect(statusOf('organization')).toContain('writing'))
     sweep(pending.container, 'a write in the air')
@@ -1780,7 +1782,7 @@ describe('Admin carries no narration', () => {
     await waitFor(() => expect(screen.getByDisplayValue('Unveiled')).toBeTruthy())
     fireEvent.change(screen.getByDisplayValue('Unveiled'), { target: { value: 'Renamed' } })
     fireEvent.click(
-      document.getElementById('organization')!.closest('section')!.querySelector('form button')!
+      document.getElementById('organization')!.closest('section')!.querySelector('form button[type="submit"]')!
     )
     await waitFor(() => expect(statusOf('organization')).toContain('changed on disk'))
     sweep(stale.container, 'a stale write')

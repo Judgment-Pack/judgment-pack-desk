@@ -4,11 +4,12 @@ import { Message } from '../../i18n/Message'
 import { msg, useLocale } from '../../i18n'
 import type { ReactNode } from 'react'
 import type { TraceEntry } from '../../mcp/types'
+import { Button } from '../../ui/Button'
 import { InspectionRow } from '../../ui/InspectionRow'
 import { Disclosure } from '../../ui/Disclosure'
 import { CodeBlock } from '../../ui/CodeBlock'
 import { InfoHelp } from '../../ui/InfoHelp'
-import { fieldLabel, packTerm, PACK_TERMS, TERM_HELP, valueLabel } from '../terminology'
+import { fieldLabel, PACK_TERMS, TERM_HELP, valueLabel } from '../terminology'
 import { MemberValue } from './MemberValue'
 import { ConditionTree } from '../document/ConditionTree'
 import { isRecord } from '../document/MisshapenMember'
@@ -16,9 +17,10 @@ import { valueAt } from '../pointers'
 import { itemTrace, outcomeLabel, selectedItem, text, type LogicGroup, type LogicItem, type LogicProjection } from '../logicModel'
 import styles from './LogicInspector.module.css'
 
-export function LogicInspector({ model, at, groupId, onSelect, trace, advanced, mainContent = false, conditionsVisible = true }: {
+export function LogicInspector({ model, at, groupId, onSelect, trace, advanced, mainContent = false, conditionsVisible = true, onEdit }: {
   model: LogicProjection; at: string | null
   groupId?: string | null
+  onEdit?: (pointer: string) => void
   onSelect: (pointer: string) => void; mainContent?: boolean; conditionsVisible?: boolean
   trace?: readonly TraceEntry[]; advanced: ReactNode
 }) {
@@ -48,8 +50,9 @@ export function LogicInspector({ model, at, groupId, onSelect, trace, advanced, 
   const group = model.groups.find(g => '/' + g.id === at)
   const label = selected?.item.label ?? group?.label ?? fieldLabel(at.slice(1) || 'Document')
   return <DetailsWithAssistant key={`${model.document.id}:${pointer}`} reference={{ label, text: JSON.stringify({ path: pointer, definition: value }, null, 2), onOpen: () => { onSelect(pointer); details.reveal() } }}><div className={styles.details}>
+    {selected && <p className={styles.meta}>{selected.group.id === 'rules' ? msg('Rule') : selected.group.id === 'exceptions' ? msg('Special case') : selected.group.label}</p>}
     <h2>{label}</h2>
-    {!mainContent && <p className={styles.meta}>{packTerm(pointer.slice(1))?.description ?? selected?.group.description}</p>}
+
     {!mainContent && observed && <p className={styles.observation}><Message text={"Recorded condition: <0/>"} slots={[<strong>{observed}</strong>]} /></p>}
     {condition !== undefined && (!mainContent || (!conditionsVisible && selected?.group.id !== 'applicability')) && <section className={styles.group}><h3>{msg("Condition")}</h3>
       <ConditionTree readOnly structured condition={condition} at={selected?.group.id === 'applicability' ? "/applicability" : `${pointer}/when`} />
@@ -65,12 +68,14 @@ export function LogicInspector({ model, at, groupId, onSelect, trace, advanced, 
     {isRecord(value) && typeof value.rationale === 'string' && <section className={styles.group}><h3>{msg("Reasoning")}</h3><p>{value.rationale}</p></section>}
     {group && !selected && <section className={styles.group}>{group.items.map(item => row(group, item))}{!group.items.length && <p>{msg("None declared.")}</p>}</section>}
     {!mainContent && condition === undefined && pointer !== '/fallbackOutcome' && !group && <Definition value={value} />}
+    {isRecord(value) && Array.isArray(value.sourceRefs) && value.sourceRefs.length > 0 && <section className={styles.group}><h3>{msg('Supporting references')}</h3>{value.sourceRefs.map(id => { const source = model.groups.find(g => g.id === 'sources')?.items.find(s => isRecord(s.value) && s.value.id === id); return source ? <InspectionRow key={String(id)} label={source.label} onClick={() => onSelect(source.pointer)} /> : <p key={String(id)}>{String(id)}</p> })}</section>}
     <Disclosure key={pointer} className={styles.group} title={msg("Technical details")}>
       <p className={styles.meta}><Message text={"Document path: <0/>"} slots={[<code>{pointer || '/'}</code>]} /></p>
       <h3>{msg("Exact definition JSON")}</h3>
       <CodeBlock text={JSON.stringify(value, null, 2) ?? msg("Not declared")} />
     </Disclosure>
-    <section className={styles.group} aria-label={msg("References, checks and metadata")}>{advanced}</section>
+    <Disclosure className={styles.group} title={msg('References, checks and metadata')}>{advanced}</Disclosure>
+    {onEdit && selected && ['rules','exceptions'].includes(selected.group.id) && <div className={styles.editAction}><Button onClick={() => onEdit(pointer)}>{selected.group.id === 'rules' ? msg('Edit rule') : msg('Edit special case')}</Button></div>}
   </div></DetailsWithAssistant>
 }
 

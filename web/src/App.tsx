@@ -34,6 +34,7 @@ export function App() {
           <Route path="/matrix" element={<Navigate to="/packs" replace />} />
           <Route path="/author" element={<AuthorView />} />
           <Route path="/jobs" element={<JobsView />} />
+          <Route path="/jobs/runs" element={<JobsView />} />
           <Route path="/jobs/new" element={<JobsView />} />
           <Route path="/jobs/:jobId" element={<JobsView />} />
           <Route path="/jobs/:jobId/runs/:runId" element={<JobsView />} />

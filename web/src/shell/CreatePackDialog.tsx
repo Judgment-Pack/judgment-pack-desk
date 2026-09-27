@@ -1,3 +1,5 @@
+import { useDirtyGuard } from './useDirtyGuard'
+import { useConfirmDiscard } from './UnsavedChanges'
 import { Message } from '../i18n/Message'
 import { msg, systemMessage, useLocale } from '../i18n'
 import { sourceMessage } from '../i18n/source'
@@ -272,7 +274,10 @@ export function CreatePackDialog({
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<{ lead: string; reason?: string } | undefined>(undefined)
 
-  useEffect(() => { onDirtyChange?.(name !== '' || description !== '' || describe.typed !== '' || draft !== undefined) }, [name, description, describe.typed, draft, onDirtyChange])
+  const creationDirty = name !== (reviewDraft?.name ?? handover?.name ?? '') || description !== (reviewDraft?.description ?? handover?.description ?? '') || describe.typed !== '' || draft !== undefined
+  const confirmDiscard = useConfirmDiscard()
+  const clearGuard = useDirtyGuard(open && presentation !== 'page' && creationDirty, msg('Leave without creating this pack? Your draft will be discarded.'), {name,busy})
+  useEffect(() => { onDirtyChange?.(creationDirty) }, [creationDirty,onDirtyChange])
   useEffect(() => { onWritingChange?.(busy) }, [busy, onWritingChange])
 
   useEffect(() => {
@@ -641,7 +646,8 @@ export function CreatePackDialog({
    * about a session is persisted, and a dialog that reopened one would be
    * re-offering a document nobody accepted.
    */
-  const close = (next: boolean) => {
+  const close = async (next: boolean, completed = false) => {
+    if (!next && !completed && presentation !== 'page' && creationDirty && !await confirmDiscard(msg('Discard unsaved pack changes?'), {name,busy})) return
     if (!next && presentation !== 'page') describe.discard()
     onOpenChange(next)
   }
@@ -867,11 +873,12 @@ export function CreatePackDialog({
       // (3) Everything that answered before this pack existed.
       invalidate([['desk-files'], ['desk-file', PROJECT_FILE], ['list_packs'], ['desk-config']])
       completed = true
+      clearGuard()
       recordActivity(sourceMessage('Pack created and registered.'))
       if (presentation === 'page' || presentation === 'review') {
         describe.discard()
         onCreated?.()
-      } else close(false)
+      } else void close(false, true)
       // The handover is spent, and the history entry has to say so. It rode in
       // on this entry's router state and stays there through the push below, so
       // a Back re-presents the same reviewed document: renamed, it writes a
@@ -943,7 +950,7 @@ export function CreatePackDialog({
     if (page === shownAt.current) return
     shownAt.current = page
     if (busy) return
-    closeNow.current(false)
+    void closeNow.current(false, true)
   }, [page, open, busy, presentation])
 
   if (presentation === 'review') return <form className={flow.flow} noValidate onSubmit={event => { event.preventDefault(); void create() }}>

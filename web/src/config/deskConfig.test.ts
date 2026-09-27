@@ -796,3 +796,16 @@ describe('the default project', () => {
     expect(effective.sources.project).toBe('desk file')
   })
 })
+
+
+describe('optional favicon configuration', () => {
+  it('preserves old configs and explicit automatic or custom favicon choices', () => {
+    const decode = (organization: unknown) => decodeDeskConfig(JSON.stringify({deskConfigVersion:1,organization}), 'project')
+    expect(decode({mark:'<svg/>'}).values?.organization?.favicon).toBeUndefined()
+    expect(decode({favicon:null}).values?.organization?.favicon).toBeNull()
+    expect(decode({favicon:'data:image/x-icon;base64,aWNv'}).values?.organization?.favicon).toBe('data:image/x-icon;base64,aWNv')
+    for (const favicon of ['/favicon.ico', 42, '<svg>'+ 'あ'.repeat(30000) + '</svg>']) {
+      expect(decode({favicon}).problems.map(problem => problem.key)).toEqual(['organization.favicon'])
+    }
+  })
+})

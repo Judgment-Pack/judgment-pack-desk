@@ -1,3 +1,5 @@
+import { useConfirmDiscard } from '../shell/UnsavedChanges'
+import { useNavigate } from 'react-router-dom'
 import { msg, useLocale } from '../i18n'
 import { useState, type RefObject } from 'react'
 import { AssistantSettings } from '../assistant/AssistantSettings'
@@ -10,12 +12,13 @@ export function ConfigureAssistant({ open, onOpenChange, openerRef }: { open: bo
   useLocale()
   const slot = useAssistantSlot()
   const [dirty, setDirty] = useState(false)
-  const close = () => {
-    if (dirty && !window.confirm(msg('Close Assistant settings and discard the unsaved changes?'))) return false
+  const confirmDiscard = useConfirmDiscard(), navigate = useNavigate()
+  const close = async () => {
+    if (dirty && !await confirmDiscard(msg('Close Assistant settings and discard the unsaved changes?'))) return false
     setDirty(false); onOpenChange(false); return true
   }
   return <Dialog open={open} onOpenChange={next => { if (next) onOpenChange(true); else close() }} title={msg("Configure Assistant")} description={msg("Connect a provider and choose a model.")} openerRef={openerRef}>
     <AssistantSettings unavailable={slot.state === 'unavailable'} onDirtyChange={setDirty} />
-    <DialogActions><ButtonLink to="/admin#assistant" onClick={event => { if (!close()) event.preventDefault() }} variant="quiet">{msg("Open Admin settings")}</ButtonLink><Button onClick={close}>{msg("Done")}</Button></DialogActions>
+    <DialogActions><ButtonLink to="/admin#assistant" onClick={async event => { event.preventDefault(); if (await close()) navigate('/admin#assistant') }} variant="quiet">{msg("Open Admin settings")}</ButtonLink><Button onClick={close}>{msg("Done")}</Button></DialogActions>
   </Dialog>
 }

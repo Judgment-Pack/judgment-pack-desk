@@ -10,12 +10,12 @@ export function initialLogicMode(): LogicMode {
 }
 export function rememberLogicMode(mode: LogicMode) { try { localStorage.setItem(KEY, mode) } catch { /* Preference only. */ } }
 const DISPLAY_KEY = 'jp-desk:pack-logic-display:v1'
-export function initialLogicDisplay(defaultConditions = true): { conditions: boolean; grouped: boolean } {
+export function initialLogicDisplay(defaultConditions = false): { conditions: boolean; grouped: boolean } {
   try {
     const value = JSON.parse(localStorage.getItem(DISPLAY_KEY) ?? 'null')
     if (value && typeof value.conditions === 'boolean' && typeof value.grouped === 'boolean') return { conditions: value.conditions, grouped: value.grouped }
   } catch { /* Malformed or unavailable preferences do not hide pack conditions. */ }
-  return { conditions: defaultConditions, grouped: false }
+  return { conditions: defaultConditions, grouped: true }
 }
 export function rememberLogicDisplay(value: ReturnType<typeof initialLogicDisplay>) {
   try { localStorage.setItem(DISPLAY_KEY, JSON.stringify(value)) } catch { /* Preference only. */ }

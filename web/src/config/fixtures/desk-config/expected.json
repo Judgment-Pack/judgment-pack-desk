@@ -81,6 +81,38 @@
     ],
     "model": "a-model"
   },
+  "accepted-codex-no-model": {
+    "accepted": true,
+    "keys": [],
+    "engine": "codex",
+    "thinking": "off",
+    "agent": {
+      "provider": "openai",
+      "authMethod": "subscription",
+      "model": null,
+      "tools": [
+        "get_schema",
+        "validate"
+      ],
+      "effort": "high"
+    }
+  },
+  "accepted-codex-subscription": {
+    "accepted": true,
+    "keys": [],
+    "engine": "codex",
+    "thinking": "off",
+    "agent": {
+      "provider": "openai",
+      "authMethod": "subscription",
+      "model": "model",
+      "tools": [
+        "get_schema",
+        "validate"
+      ],
+      "effort": "high"
+    }
+  },
   "accepted-documents-defaults": {
     "accepted": true,
     "engine": "vercel",
@@ -387,6 +419,22 @@
     ],
     "model": "a-model"
   },
+  "accepted-inactive-agent": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off",
+    "agent": {
+      "provider": "openai",
+      "authMethod": "subscription",
+      "model": "model",
+      "tools": [
+        "get_schema",
+        "validate"
+      ],
+      "effort": "high"
+    }
+  },
   "accepted-minimal": {
     "accepted": true,
     "keys": [],
@@ -394,6 +442,30 @@
     "thinking": "off"
   },
   "accepted-null-endpoint": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off"
+  },
+  "accepted-organization-favicon-automatic": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off"
+  },
+  "accepted-organization-favicon-ico": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off"
+  },
+  "accepted-organization-favicon-png": {
+    "accepted": true,
+    "keys": [],
+    "engine": "vercel",
+    "thinking": "off"
+  },
+  "accepted-organization-favicon-svg": {
     "accepted": true,
     "keys": [],
     "engine": "vercel",
@@ -676,6 +748,54 @@
     "accepted": false,
     "keys": [
       "assistant.thinking"
+    ]
+  },
+  "refused-codex-api-auth": {
+    "accepted": false,
+    "keys": [
+      "assistant.agent.authMethod"
+    ]
+  },
+  "refused-codex-blank-model": {
+    "accepted": false,
+    "keys": [
+      "assistant.agent.model"
+    ]
+  },
+  "refused-codex-credentials": {
+    "accepted": false,
+    "keys": [
+      "assistant.agent.apiKey"
+    ]
+  },
+  "refused-codex-missing-agent": {
+    "accepted": false,
+    "keys": [
+      "assistant.agent"
+    ]
+  },
+  "refused-codex-native-tool": {
+    "accepted": false,
+    "keys": [
+      "assistant.agent.tools"
+    ]
+  },
+  "refused-codex-no-tools": {
+    "accepted": false,
+    "keys": [
+      "assistant.agent.tools"
+    ]
+  },
+  "refused-codex-other-provider": {
+    "accepted": false,
+    "keys": [
+      "assistant.agent.provider"
+    ]
+  },
+  "refused-codex-ultra": {
+    "accepted": false,
+    "keys": [
+      "assistant.agent.effort"
     ]
   },
   "refused-documents-array": {
@@ -1108,6 +1228,18 @@
       ""
     ]
   },
+  "refused-organization-favicon-number": {
+    "accepted": false,
+    "keys": [
+      "organization.favicon"
+    ]
+  },
+  "refused-organization-favicon-path": {
+    "accepted": false,
+    "keys": [
+      "organization.favicon"
+    ]
+  },
   "refused-organization-mark-number": {
     "accepted": false,
     "keys": [
@@ -1479,102 +1611,6 @@
     "accepted": false,
     "keys": [
       "deskConfigVersion"
-    ]
-  },
-  "accepted-codex-subscription": {
-    "accepted": true,
-    "keys": [],
-    "engine": "codex",
-    "thinking": "off",
-    "agent": {
-      "provider": "openai",
-      "authMethod": "subscription",
-      "model": "model",
-      "tools": [
-        "get_schema",
-        "validate"
-      ],
-      "effort": "high"
-    }
-  },
-  "accepted-codex-no-model": {
-    "accepted": true,
-    "keys": [],
-    "engine": "codex",
-    "thinking": "off",
-    "agent": {
-      "provider": "openai",
-      "authMethod": "subscription",
-      "model": null,
-      "tools": [
-        "get_schema",
-        "validate"
-      ],
-      "effort": "high"
-    }
-  },
-  "accepted-inactive-agent": {
-    "accepted": true,
-    "keys": [],
-    "engine": "vercel",
-    "thinking": "off",
-    "agent": {
-      "provider": "openai",
-      "authMethod": "subscription",
-      "model": "model",
-      "tools": [
-        "get_schema",
-        "validate"
-      ],
-      "effort": "high"
-    }
-  },
-  "refused-codex-missing-agent": {
-    "accepted": false,
-    "keys": [
-      "assistant.agent"
-    ]
-  },
-  "refused-codex-api-auth": {
-    "accepted": false,
-    "keys": [
-      "assistant.agent.authMethod"
-    ]
-  },
-  "refused-codex-other-provider": {
-    "accepted": false,
-    "keys": [
-      "assistant.agent.provider"
-    ]
-  },
-  "refused-codex-credentials": {
-    "accepted": false,
-    "keys": [
-      "assistant.agent.apiKey"
-    ]
-  },
-  "refused-codex-no-tools": {
-    "accepted": false,
-    "keys": [
-      "assistant.agent.tools"
-    ]
-  },
-  "refused-codex-native-tool": {
-    "accepted": false,
-    "keys": [
-      "assistant.agent.tools"
-    ]
-  },
-  "refused-codex-ultra": {
-    "accepted": false,
-    "keys": [
-      "assistant.agent.effort"
-    ]
-  },
-  "refused-codex-blank-model": {
-    "accepted": false,
-    "keys": [
-      "assistant.agent.model"
     ]
   }
 }

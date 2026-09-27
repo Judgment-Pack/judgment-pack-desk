@@ -1,3 +1,5 @@
+import { useDirtyGuard } from '../shell/useDirtyGuard'
+import { TypedConfirmation, useConfirmDiscard } from '../shell/UnsavedChanges'
 import { sourceMessage } from '../i18n/source'
 import { Message } from '../i18n/Message'
 import { msg, useLocale, systemMessage } from '../i18n'
@@ -21,6 +23,10 @@ export function ChatBackupSettings({ status, blocked, onRestored }: { status: Ch
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const opener = useRef<HTMLButtonElement>(null)
+  const [confirmed,setConfirmed]=useState(''),confirmDiscard=useConfirmDiscard()
+  const formDirty=open&&(!!path||!!file)
+  const clearGuard=useDirtyGuard(formDirty,msg('Discard this restore setup?'),{busy:busy==='restore'})
+  async function close(){if(busy!=='restore'&&(!formDirty||await confirmDiscard(msg('Discard this restore setup?'))))setOpen(false)}
   async function download() {
     if (busy || blocked) return
     setBusy('backup'); setError(''); setNotice('')
@@ -38,14 +44,14 @@ export function ChatBackupSettings({ status, blocked, onRestored }: { status: Ch
     finally { setBusy(null) }
   }
   async function restore() {
-    if (!file || !path.trim() || busy || blocked) return
+    if (!file || !path.trim() || busy || blocked || confirmed.trim()!==msg('Yes')) return
     setBusy('restore'); setError(''); setNotice('')
     try {
       const body = new FormData()
       body.append('settings', JSON.stringify({ path: path.trim(), revision }))
       body.append('backup', file)
       await answer(await deskFetch('/api/storage/restore', { method: "POST", body }))
-      onRestored()
+      clearGuard(); setOpen(false); onRestored()
     } catch (cause) { setError((cause as Error).message); setBusy(null) }
   }
   const tooLarge = Boolean(file && file.size > status.maxBackupBytes + 2 * 1024 ** 2)
@@ -54,28 +60,29 @@ export function ChatBackupSettings({ status, blocked, onRestored }: { status: Ch
       <p className={styles.caption}>{msg("Backups are unencrypted and may contain private messages and source material. Keep them in a private location.")}</p>
       <div className={styles.actions}>
         <Button disabled={blocked || busy !== null || status.bytes > status.maxBackupBytes || Boolean(status.problem)} onClick={() => void download()}>{busy === 'backup' ? msg("Preparing backup…") : msg("Download workspace backup")}</Button>
-        <Button ref={opener} disabled={blocked || busy !== null} onClick={() => { setOpen(true); setRevision(status.revision); setFile(null); setPath(''); setError(''); setNotice('') }}>{msg("Restore backup…")}</Button>
+        <Button ref={opener} disabled={blocked || busy !== null} onClick={() => { setConfirmed(''); setOpen(true); setRevision(status.revision); setFile(null); setPath(status.managed ? `${status.recommendedPath}-restored-${Date.now()}` : ''); setError(''); setNotice('') }}>{msg("Restore backup…")}</Button>
       </div>
       <p className={styles.caption}><Message text={"Saved data only; unsent messages are kept in this browser. Backup limit: <0/>."} slots={[formatStorageBytes(status.maxBackupBytes)]} /></p>
       {notice && <p role="status" className={styles.caption}>{systemMessage(notice)}</p>}
       {error && !open && <p role="alert">{systemMessage(error)}</p>}
     </div>
-    <Dialog open={open} onOpenChange={value => { if (busy !== 'restore') setOpen(value) }} title={msg("Restore chat backup")} openerRef={opener}
-      description={msg("Restore replaces the active chat store for all projects. Current files remain in their original folder for recovery. Desk reloads after switching to the restored data.")}>
+    <Dialog open={open} onOpenChange={value => { if (!value) void close() }} title={msg("Restore chat backup")} openerRef={opener}
+      description={status.managed ? msg("Restore replaces this desk’s saved conversations and documents. Current files stay in the desk folder for recovery.") : msg("Restore replaces the active chat store for all projects. Current files remain in their original folder for recovery. Desk reloads after switching to the restored data.")}>
       <form onSubmit={event => { event.preventDefault(); void restore() }}>
         <FieldGroup>
           <Field label={msg("Chat backup")} error={tooLarge ? msg("This backup exceeds the supported size.") : undefined}>
             {wiring => <Input {...wiring} type="file" accept=".zip,application/zip" disabled={busy === 'restore'} onChange={event => setFile(event.target.files?.[0] ?? null)} />}
           </Field>
-          <Field label={msg("Restore into")} hint={msg("Use a new or empty private folder on the computer running Desk, outside the project and current data folder.")}>
+          <Field label={msg("Restore into")} hint={status.managed ? msg("This desk keeps its conversations and documents inside its own folder. API keys remain in protected machine settings.") : msg("Use a new or empty private folder on the computer running Desk, outside the project and current data folder.")}>
             {wiring => <Input {...wiring} value={path} autoComplete="off" spellCheck={false} disabled={busy === 'restore'} onChange={event => setPath(event.target.value)} />}
           </Field>
-          <p className={styles.caption}>{msg("Existing chats are not merged. Chats keep their project association. After moving a project, use its previous folder path to recover its history.")}</p>
+          {!status.managed && <p className={styles.caption}>{msg("Existing chats are not merged. Chats keep their project association. After moving a project, use its previous folder path to recover its history.")}</p>}
+          <TypedConfirmation value={confirmed} onChange={setConfirmed} disabled={busy==='restore'} />
           {error && <p role="alert">{systemMessage(error)}</p>}
           {busy === 'restore' && <p role="status" className={styles.caption}>{msg("Uploading, verifying and restoring chat data…")}</p>}
         </FieldGroup>
-        <DialogActions><Button disabled={busy === 'restore'} onClick={() => setOpen(false)}>{msg("Cancel")}</Button>
-          <Button type="submit" variant="primary" disabled={blocked || busy !== null || !file || !path.trim() || path.trim() === status.path || tooLarge}>{busy === 'restore' ? msg("Restoring…") : msg("Restore and reload")}</Button></DialogActions>
+        <DialogActions><Button disabled={busy === 'restore'} onClick={()=>void close()}>{msg("Cancel")}</Button>
+          <Button type="submit" variant="primary" disabled={blocked || busy !== null || !file || !path.trim() || path.trim() === status.path || tooLarge || confirmed.trim()!==msg('Yes')}>{busy === 'restore' ? msg("Restoring…") : msg("Restore and reload")}</Button></DialogActions>
       </form>
     </Dialog>
   </SettingsSection>

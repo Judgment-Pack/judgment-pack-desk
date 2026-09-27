@@ -22,6 +22,7 @@ export function AssistantSettings({ unavailable, onDirtyChange }: { unavailable:
   const [access, setAccess] = useState(config.assistant.engine)
   const [apiDirty,setApiDirty]=useState(false), [agentDirty,setAgentDirty]=useState(false)
   useEffect(()=>{ if (!apiDirty && !agentDirty) setAccess(config.assistant.engine) },[config.assistant.engine])
+  useUnsavedChanges(access!==config.assistant.engine)
   useEffect(()=>onDirtyChange?.(apiDirty || agentDirty || access!==config.assistant.engine),[apiDirty,agentDirty,access,config.assistant.engine,onDirtyChange])
   return <div className={styles.settings}>
     <Field label={msg('Access')}>
@@ -51,7 +52,7 @@ function SubscriptionSettings({active,unavailable,onDirtyChange}:{active:boolean
   const [dirty,setDirty]=useState(false)
   const mounted=useRef(true), generation=useRef(0), operation=useRef<AbortController|null>(null)
   const disconnectButton=useRef<HTMLButtonElement>(null)
-  useUnsavedChanges(active && dirty)
+  useUnsavedChanges(dirty)
   useEffect(()=>{onDirtyChange(dirty);return()=>onDirtyChange(false)},[dirty,onDirtyChange])
   useEffect(()=>{if(!dirty){setModel(config.assistant.agent?.model??'');setEffort(config.assistant.agent?.effort??'');setTools(config.assistant.agent?.tools??[...ASSISTANT_TOOLS])}},[config.assistant.agent,dirty])
   useEffect(()=>{

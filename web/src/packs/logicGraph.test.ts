@@ -48,3 +48,15 @@ it('lays out variable-height nodes without overlap at enlarged text sizes', () =
     expect(positions.get('outcome')!.x).toBeGreaterThan(positions.get('long')!.x + sizes.long.width)
   }
 })
+
+it('groups only special cases with the same forced outcome and preserves their exact members',()=>{
+ const doc=fixture('minimal')
+ doc.exceptions=[0,1].map(i=>({id:`force-${i}`,description:`Force case ${i}`,effect:'force-outcome',outcome:'proceed',when:{op:'literal',value:true},onUnknown:'escalate'}))
+ const model=projectLogic(doc),graph=projectLogicGraph(model,true)
+ const group=graph.nodes.find(n=>n.group.id==='exceptions')!
+ expect(group.items.map(i=>i.pointer)).toEqual(['/exceptions/0','/exceptions/1'])
+ expect(graph.edges.find(e=>e.source===group.id)).toMatchObject({target:'/outcomes/0',semantic:'forces'})
+ const expanded=projectLogicGraph(model,true,new Set([group.id]))
+ expect(expanded.nodes.filter(n=>n.group.id==='exceptions')).toHaveLength(2)
+ expect(expanded.edges.filter(e=>e.semantic==='forces')).toHaveLength(2)
+})

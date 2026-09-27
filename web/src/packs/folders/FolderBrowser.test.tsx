@@ -39,6 +39,8 @@ it('defaults existing packs to home, scopes nested search, and carries destinati
  expect(screen.queryByRole('link',{name:/home-pack/})).toBeNull()
  fireEvent.click(screen.getByRole('link',{name:/department-pack/}))
  await screen.findByText('Pack content')
+ expect(screen.queryByRole('navigation',{name:'Folder navigation'})).toBeNull()
+ fireEvent.click(screen.getByRole('button',{name:'Expand folders'}))
  fireEvent.click(within(screen.getByRole('navigation',{name:'Folder navigation'})).getByRole('button',{name:'Operations'}))
  expect(router.state.location.pathname).toBe('/packs')
 })
@@ -86,6 +88,8 @@ it('shows all packs and disables mutations when folder metadata cannot be read',
 it('restores a direct pack link to its folder and expanded ancestors',async()=>{
  setup({path:'/packs/department-pack'})
  await waitFor(()=>expect(screen.getByRole('navigation',{name:'Folder location'}).textContent).toContain('Intake'))
+ expect(screen.queryByRole('navigation',{name:'Folder navigation'})).toBeNull()
+ fireEvent.click(screen.getByRole('button',{name:'Expand folders'}))
  const tree=screen.getByRole('navigation',{name:'Folder navigation'})
  expect(within(tree).getByRole('button',{name:'Intake'}).getAttribute('aria-current')).toBe('location')
  await act(async()=>{})

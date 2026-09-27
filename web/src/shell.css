@@ -349,12 +349,11 @@
     min-height: 0;
   }
 
-  /* Its own grid row, and a direct child of the grid — so it is the
-     `contentinfo` landmark that `.app-foot` was. The declarations are
-     `.app-foot`'s, carried over. */
+  /* Center status across the full band beneath the workspace, including
+     the reserved gap, so the space above and below the text is balanced. */
   .desk-strip {
     grid-column: 2;
-    grid-row: 4;
+    grid-row: 3 / -1;
     margin-inline-end: var(--workspace-edge);
     display: flex;
     align-items: center;
@@ -366,22 +365,26 @@
   }
 
   .desk-strip-left {
+    flex: 0 0 auto;
     display: inline-flex;
     align-items: center;
     gap: 0.75rem;
     min-width: 0;
   }
 
-  /* The connection sentence is the part that gives way. It used to be the
-     other way round: `overflow: hidden` sat on the lane and the nowrap
-     connection text came first, so at a phone width the cue that the
-     configuration was refused was the half pushed out of sight — a warning
-     that disappears exactly where the screen is smallest. */
+  /* Keep connection health at the right edge; warnings retain their space. */
   .desk-strip-connection {
+    margin-inline-start: auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    color: var(--ink-faint);
+    text-decoration: none;
+  }
+
+  .desk-strip-connection:hover {
+    color: var(--ink-soft);
   }
 
   /* The configuration cue. A link, because it goes to the page that names the
@@ -425,7 +428,6 @@
       gap: var(--space-1);
     }
 
-    .desk-head .desk-orgmark,
     .desk-head .desk-brand,
     .desk-head .desk-rule,
     .desk-head .desk-user-name,
@@ -464,26 +466,9 @@
     margin-left: auto;
   }
 
-  .desk-orgmark {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    flex: 0 0 auto;
-    border-radius: var(--radius-sm);
-    background: var(--brand-fill);
-    color: var(--brand-label);
-    font-size: 10px;
-    font-weight: 700;
-    overflow: hidden;
-  }
-
-  .desk-orgmark img {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-  }
+  .desk-identity { display: inline-flex; align-items: center; gap: var(--space-1); min-width: 0; }
+  .desk-orgmark { display: block; width: 24px; height: 24px; flex: 0 0 auto; border-radius: var(--radius-sm); object-fit: contain; }
+  .desk-menu-trigger { flex: 0 0 auto; width: 24px; }
 
   .desk-chip {
     display: inline-flex;
@@ -500,6 +485,8 @@
     font-size: var(--text-sm);
     cursor: pointer;
   }
+
+  .desk-chip { text-decoration: none; font-weight: 500; color: var(--ink); }
 
   .desk-chip:hover {
     border-color: var(--border);
