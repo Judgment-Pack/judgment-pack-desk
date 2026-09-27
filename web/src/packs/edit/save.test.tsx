@@ -1,3 +1,5 @@
+import { respondToDiscardDialogs } from '../../testing/discardDialogs'
+respondToDiscardDialogs()
 /**
  * Saving: what is sent, what is compared, and what is never allowed to decide.
  *
@@ -251,10 +253,14 @@ describe('a save that was refused for some other reason', () => {
     // The first Reload is held…
     const releaseFirst = log.hold(PACK_PATH)
     fireEvent.click(within(alert, 'Reload'))
+    await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull())
+    await act(async()=>{})
     // …the file moves on disk, and a second Reload is held behind it.
     log.write(PACK_PATH, `${PACK_TEXT}// the newer bytes\n`)
     const releaseSecond = log.hold(PACK_PATH)
     fireEvent.click(within(screen.getByRole('alert'), 'Reload'))
+    await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull())
+    await act(async()=>{})
 
     // The later read answers first, and the earlier one lands after it.
     releaseSecond()

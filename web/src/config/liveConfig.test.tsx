@@ -21,7 +21,7 @@ import { AppShell } from '../shell/AppShell'
 import { appearanceKey } from '../shell/appearanceState'
 import { projectKey } from '../shell/paneState'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
-import { DeskConfigProvider } from './DeskConfigProvider'
+import { DeskConfigProvider, useEffectiveConfig } from './DeskConfigProvider'
 
 afterEach(() => {
   cleanup()
@@ -103,6 +103,10 @@ function serveConfig(answer: unknown, status = 200, delayMs = 0, listingDelayMs 
         text: async () => JSON.stringify({ root: PROJECT_ROOT, files: [] })
       }
     }
+    if (String(url).includes('/api/desk-config')) return {
+      ok: true, status: 200, statusText: '',
+      text: async () => JSON.stringify({path:'/desk.json', present:false, sha256:'', project:{dir:PROJECT_ROOT,file:`${PROJECT_ROOT}/jpack-desk.json`},runtime:{bin:'jpack'}})
+    }
     if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs))
     return {
       ok: status >= 200 && status < 300,
@@ -126,7 +130,7 @@ function renderDesk() {
             <DeskConfigProvider>
               <IdentityProvider>
                 <AppShell>
-                  <h1>a route</h1>
+                  <h1>a route</h1><ConfigProbe />
                 </AppShell>
               </IdentityProvider>
             </DeskConfigProvider>
@@ -159,13 +163,13 @@ describe('the desk reading jpack-desk.json', () => {
     // desk that could not read its own desk-level configuration, and it is
     // this read that changed rather than the file API.
     expect(asked.some((url) => url.includes('/api/desk-config'))).toBe(true)
-    // And still no others: three endpoints, all of them the chassis'.
+    // Project files, configuration, and the named desk directory use the chassis.
     expect(
       asked.every(
         (url) =>
           url.includes('/api/file?') ||
           url.includes('/api/files') ||
-          url.includes('/api/desk-config')
+          url.includes('/api/desk-config') || url === '/api/desks'
       )
     ).toBe(true)
   })
@@ -203,12 +207,13 @@ describe('the desk reading jpack-desk.json', () => {
     expect(desk.style.getPropertyValue('--rail-current')).toBe('var(--rail-w)')
   })
 
-  it('paints the configured organization name in the header', async () => {
+  it('keeps the project name in navigation when organization settings load', async () => {
     serveConfig(LIVE_ANSWER)
     renderDesk()
     // Before the query answers, the desk's own fallback stands.
-    expect(screen.getByRole('link', { name: 'judgment‑pack desk' })).toBeTruthy()
-    expect(await screen.findByRole('link', { name: 'Acme Co.' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Desk' })).toBeTruthy()
+    expect(await screen.findByRole('link', { name: 'a-project' })).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'Acme Co.' })).toBeNull()
   })
 
   it('paints the configured display name in the user control', async () => {
@@ -220,7 +225,7 @@ describe('the desk reading jpack-desk.json', () => {
 
   it('ignores the obsolete configured Console open flag', async () => {
     serveConfig(LIVE_ANSWER);renderDesk()
-    await screen.findByRole('link',{name:'Acme Co.'})
+    await waitForOrganization('Acme Co.')
     expect(screen.queryByRole('region',{name:'Console'})).toBeNull()
     expect(screen.queryByRole('button',{name:'Console'})).toBeNull()
   })
@@ -228,7 +233,7 @@ describe('the desk reading jpack-desk.json', () => {
   it('does not re-seed navigation after the viewer has changed it', async () => {
     serveConfig(LIVE_ANSWER,200,100);renderDesk()
     fireEvent.click(screen.getByRole('button',{name:'Collapse navigation'}))
-    await screen.findByRole('link',{name:'Acme Co.'})
+    await waitForOrganization('Acme Co.')
     expect(screen.getByRole('navigation',{name:'Project'}).dataset.mode).toBe('icons')
   })
 
@@ -236,7 +241,7 @@ describe('the desk reading jpack-desk.json', () => {
     serveConfig(LIVE_ANSWER,200,600);renderDesk()
     await wait(PAST_THE_DEBOUNCE)
     expect(screen.queryByRole('region',{name:'Console'})).toBeNull()
-    await screen.findByRole('link',{name:'Acme Co.'},{timeout:2000})
+    await waitForOrganization('Acme Co.')
     expect(screen.queryByRole('region',{name:'Console'})).toBeNull()
   })
 
@@ -247,7 +252,7 @@ describe('the desk reading jpack-desk.json', () => {
     // once before the file existed.
     serveConfig({ error: 'no such file' }, 404)
     renderDesk()
-    await screen.findByRole('link', { name: 'judgment‑pack desk' })
+    await screen.findByRole('link', { name: 'a-project' })
     await wait(PAST_THE_DEBOUNCE)
     expect(shellRecords()).toEqual([])
   })
@@ -257,14 +262,14 @@ describe('the desk reading jpack-desk.json', () => {
     // console is open. Deterministic — no timing at all.
     serveConfig({ error: 'no such file' }, 404)
     const first = renderDesk()
-    await screen.findByRole('link', { name: 'judgment‑pack desk' })
+    await screen.findByRole('link', { name: 'a-project' })
     await wait(PAST_THE_DEBOUNCE)
     first.unmount()
 
     vi.unstubAllGlobals()
     serveConfig(LIVE_ANSWER)
     renderDesk()
-    await screen.findByRole('link',{name:'Acme Co.'})
+    await waitForOrganization('Acme Co.')
     expect(screen.queryByRole('region',{name:'Console'})).toBeNull()
   })
 
@@ -272,7 +277,7 @@ describe('the desk reading jpack-desk.json', () => {
     // The other half of the same rule: the gate is on *choice*, not on writes.
     serveConfig({ error: 'no such file' }, 404)
     const first = renderDesk()
-    await screen.findByRole('link', { name: 'judgment‑pack desk' })
+    await screen.findByRole('link', { name: 'a-project' })
     fireEvent.click(screen.getByRole('button', { name: 'Collapse navigation' }))
     await waitFor(() => expect(shellRecords()).toHaveLength(1))
     expect(shellRecords()[0]![1]).toContain('"mode":"icons"')
@@ -296,7 +301,7 @@ describe('the desk reading jpack-desk.json', () => {
     renderDesk()
     // LIVE_ANSWER asks for `system`, which is the absence of the attribute —
     // `prefers-color-scheme` answers instead.
-    await screen.findByRole('link', { name: 'Acme Co.' })
+    await waitForOrganization('Acme Co.')
     expect(document.documentElement.hasAttribute('data-theme')).toBe(false)
   })
 
@@ -502,7 +507,7 @@ describe('the desk reading jpack-desk.json', () => {
   it('says nothing about the configuration where the file is simply absent', async () => {
     serveConfig({ error: 'no such file' }, 404)
     renderDesk()
-    await screen.findByRole('link', { name: 'judgment‑pack desk' })
+    await screen.findByRole('link', { name: 'a-project' })
     expect(screen.queryByText(/configuration could not be read/)).toBeNull()
     expect(screen.queryByText(/configuration refused/)).toBeNull()
   })
@@ -510,7 +515,7 @@ describe('the desk reading jpack-desk.json', () => {
   it('says nothing about the configuration where there is no problem with it', async () => {
     serveConfig(LIVE_ANSWER)
     renderDesk()
-    await screen.findByRole('link', { name: 'Acme Co.' })
+    await waitForOrganization('Acme Co.')
     expect(screen.queryByText(/configuration refused/)).toBeNull()
   })
 
@@ -518,7 +523,7 @@ describe('the desk reading jpack-desk.json', () => {
     serveConfig({ error: 'no such file' }, 404)
     renderDesk()
     await waitFor(() =>
-      expect(screen.getByRole('link', { name: 'judgment‑pack desk' })).toBeTruthy()
+      expect(screen.getByRole('link', { name: 'a-project' })).toBeTruthy()
     )
     // Defaults, with no banner and no error over the desk.
     expect(screen.queryByRole('alert')).toBeNull()
@@ -532,10 +537,18 @@ describe('the desk reading jpack-desk.json', () => {
     })
     renderDesk()
     await waitFor(() =>
-      expect(screen.getByRole('link', { name: 'judgment‑pack desk' })).toBeTruthy()
+      expect(screen.getByRole('link', { name: 'a-project' })).toBeTruthy()
     )
     // One unknown key refuses the whole file, so the name it also carried is
     // not applied — and the problem travels to Admin rather than a banner.
     expect(screen.queryByRole('link', { name: 'Acme Co.' })).toBeNull()
   })
 })
+
+function ConfigProbe() {
+  const {config} = useEffectiveConfig()
+  return <output data-testid="configuration-name">{config.organization.name ?? 'judgment‑pack desk'}</output>
+}
+async function waitForOrganization(name: string) {
+  await waitFor(() => expect(screen.getByTestId('configuration-name').textContent).toBe(name), {timeout:2000})
+}

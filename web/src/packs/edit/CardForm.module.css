@@ -52,3 +52,7 @@
   font-size: var(--text-xs);
   color: var(--ink-soft);
 }
+
+.compactConditions { display:grid; gap:var(--space-1); min-width:0; }
+.compactConditions > p { font-weight:500; }
+.compactConditions > details { border-bottom:1px solid var(--border); padding-block:var(--space-1); }

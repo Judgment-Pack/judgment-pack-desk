@@ -152,6 +152,7 @@ describe('every colour token has a dark value', () => {
  * rather than omitted, so the gap is a decision and not an oversight.
  */
 const PAIRS: { front: string; back: string; least: number; why: string }[] = [
+  ...['rule', 'exception', 'outcome'].map(kind => ({ front: `--logic-${kind}`, back: '--surface', least: 4.5, why: `the ${kind} label and icon on a logic card` })),
   { front: '--ink', back: '--bg', least: 4.5, why: 'primary text on the page' },
   { front: '--ink', back: '--surface', least: 4.5, why: 'primary text on a card' },
   { front: '--ink', back: '--surface-raised', least: 4.5, why: 'primary text in a menu' },

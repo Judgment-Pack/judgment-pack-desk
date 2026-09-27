@@ -17,6 +17,7 @@ it('requires a file and separate destination before restoring and reloads only o
  const file = new File(['backup'], 'data.zip', { type: 'application/zip' })
  fireEvent.change(screen.getByLabelText('Chat backup'), { target: { files: [file] } })
  fireEvent.change(screen.getByLabelText('Restore into'), { target: { value: '/private/restored' } })
+ fireEvent.change(screen.getByLabelText('Type Yes to confirm.'),{target:{value:'Yes'}})
  fireEvent.click(screen.getByRole('button', { name: 'Restore and reload' }))
  expect(fetch).toHaveBeenCalledTimes(1)
  const [url,init] = fetch.mock.calls[0]
@@ -34,6 +35,7 @@ it('keeps the restore dialog and selected path after the backend rejects the bac
  fireEvent.click(screen.getByRole('button', { name: 'Restore backup…' }))
  fireEvent.change(screen.getByLabelText('Chat backup'), { target: { files: [new File(['broken'], 'backup.zip')] } })
  fireEvent.change(screen.getByLabelText('Restore into'), { target: { value: '/private/new' } })
+ fireEvent.change(screen.getByLabelText('Type Yes to confirm.'),{target:{value:'Yes'}})
  fireEvent.click(screen.getByRole('button', { name: 'Restore and reload' }))
  await screen.findByText('Backup checksum mismatch.')
  expect((screen.getByLabelText('Restore into') as HTMLInputElement).value).toBe('/private/new')

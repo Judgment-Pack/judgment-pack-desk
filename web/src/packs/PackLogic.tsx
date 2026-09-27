@@ -13,6 +13,9 @@ import { useMeasuredBox } from '../shell/measured'
 import { useInspectorWorkingWidth } from '../shell/InspectorSlot'
 import { evidenceSummary, itemTrace, matchingItems, selectedItem, type LogicGroup, type LogicItem, type LogicProjection } from './logicModel'
 import { projectLogicGraph } from './logicGraph'
+import { LogicSummary } from './LogicSummary'
+import { isRecord } from './document/MisshapenMember'
+import { entries, outcomeLabel, text } from './logicModel'
 import { LogicDetails } from './LogicDetails'
 import { PackJumpTo } from './PackJumpTo'
 import { initialLogicDisplay, rememberLogicDisplay, type LogicMode } from './logicState'
@@ -79,15 +82,17 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
     })
     const observed = aggregate ? [...observations].map(([label, count]) => `${count} ${label}`).join(' · ') : itemTrace(node.group, item, trace)
     return { id: node.id, title: node.title, column: node.column,
+      kind: (node.group.id === 'rules' ? 'rule' : node.group.id === 'exceptions' ? 'exception' : 'outcome') as 'rule' | 'exception' | 'outcome',
+      kindLabel: node.group.id === 'rules' ? msg('Rule') : node.group.id === 'exceptions' ? msg('Special case') : msg('Outcome'),
       selected: node.items.some(i => i.pointer === current?.item.pointer),
       matched: searching && node.items.some(i => matchPointers.has(i.pointer)),
       observation: observed ? aggregate ? msg('Recorded conditions: {{observed}}', { observed }) : msg('Recorded condition: {{observed}}', { observed }) : undefined,
-      action: aggregate ? msg('Expand rules') : msg('View details'),
+      action: aggregate ? msg('Expand group') : msg('View details'),
       content: aggregate ? <div className={styles.groupPreview}>
         <ul>{node.items.slice(0, 3).map(i => <li key={i.pointer}>{i.label}</li>)}</ul>
-        {node.items.length > 3 && <p><Message text={"+ <0/> more rules"} slots={[node.items.length - 3]} /></p>}
-        <p>{msg("Expand to read each rule’s conditions.")}</p>
-      </div> : <LogicDetails document={model.document} group={node.group.id} item={item} conditions={display.conditions || searching} compact /> }
+        {node.items.length > 3 && <p><Message text={"+ <0/> more items"} slots={[node.items.length - 3]} /></p>}
+        <p>{msg("Expand to inspect each item.")}</p>
+      </div> : <LogicSummary document={model.document} group={node.group.id} item={item} /> }
   }), [graph, current?.item.pointer, searching, matchPointers, trace, model.document, display.conditions, locale])
   const updateDisplay = (next: typeof display) => { onDisplay(next); rememberLogicDisplay(next) }
   const requestMatch = () => {
@@ -135,16 +140,22 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
         <Input type="search" aria-label={msg("Find pack item")} value={query} onChange={e => onQuery(e.target.value)} placeholder={mode === 'map' ? msg("Find in map…") : msg("Filter items…")} />
       </form>
       {searching && <Button variant="quiet" onClick={requestMatch} disabled={!matchPointers.size}>{msg("Next match")}</Button>}
-      <Popover title={msg("Display options")} trigger={<Button variant="quiet">{msg("Display")}</Button>}>
-        <label className={styles.option}><Message text={"<0/>Show conditions"} slots={[<input type="checkbox" checked={display.conditions} onChange={e => updateDisplay({ ...display, conditions: e.target.checked })} />]} /></label>
-        <label className={styles.option}><Message text={"<0/>Group map rules by outcome"} slots={[<input type="checkbox" checked={display.grouped} onChange={e => { setExpanded(new Set()); updateDisplay({ ...display, grouped: e.target.checked }) }} />]} /></label>
-        <p className={styles.note}>{msg("Display preferences are remembered. Search always reveals matching conditions.")}</p>
+      <Popover title={msg("Display options")} trigger={<Button variant="quiet">{msg("View")}</Button>}>
+        <label className={styles.option}><Message text={"<0/>Show list conditions"} slots={[<input type="checkbox" checked={display.conditions} onChange={e => updateDisplay({ ...display, conditions: e.target.checked })} />]} /></label>
+        <label className={styles.option}><Message text={"<0/>Group map items by effect"} slots={[<input type="checkbox" checked={display.grouped} onChange={e => { setExpanded(new Set()); updateDisplay({ ...display, grouped: e.target.checked }) }} />]} /></label>
+        <p className={styles.note}>{msg("Display preferences are remembered. Exact map conditions are available in Details.")}</p>
       </Popover>
       <PackJumpTo model={model} at={at} onJump={pointer => { onQuery(''); if (mode === 'map' && !graph.nodes.some(node => node.items.some(item => item.pointer === pointer))) inspect(pointer); else { select(pointer); setJump(pointer) } }} />
     </div>
   return <section ref={root} className={styles.logic} data-mode={mode} aria-label={msg("Pack logic")}>
     <span ref={setRuler} className={styles.ruler} aria-hidden="true" />
     {toolbar}
+    {mode === 'map' && <div className={styles.contextStrip} aria-label={msg('Policy context')}>
+      <Button variant="quiet" onClick={() => inspect('/applicability')}>{model.document.applicability ? msg('Scope: restricted') : msg('Scope: unrestricted')}</Button>
+      <Button variant="quiet" onClick={() => inspect('/evidenceRequirements')}>{msg('Evidence: {{count}} required', { count: entries(model.document.evidenceRequirements).filter(e => isRecord(e) && e.required === true).length })}</Button>
+      <Button variant="quiet" onClick={() => inspect('/fallbackOutcome')}>{msg('Fallback: {{outcome}}', { outcome: model.document.fallbackOutcome ? outcomeLabel(model.document, model.document.fallbackOutcome) : msg('Not declared') })}</Button>
+      <Button variant="quiet" onClick={() => inspect('/escalation')}>{msg('Handoff: {{target}}', { target: isRecord(model.document.escalation?.target) ? text(model.document.escalation.target.name) : msg('Not declared') })}</Button>
+    </div>}
     {searching && <p className={styles.searchStatus} role="status">{matchPointers.size ? msg("{{value0}} matching items", { value0: matchPointers.size }) : msg("No items match “{{value0}}”.", { value0: query })}</p>}
     {mode === 'map' ? mapUnavailable ? <div className={styles.unavailable} role="status">
       <h2>{msg("Map unavailable")}</h2><p>{mapUnavailable}</p><Button onClick={() => onMode('list')}>{msg("Read List")}</Button>
@@ -154,7 +165,7 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
           const node = graph.nodes.find(n => n.id === id)
           if (!node) return
           if (node.items.length > 1) setExpanded(previous => new Set([...previous, id]))
-          else select(node.items[0]!.pointer)
+          else inspect(node.items[0]!.pointer)
         }} onInspect={id => {
           const node = graph.nodes.find(n => n.id === id)
           if (node && node.items.length > 1) setExpanded(previous => new Set([...previous, id]))

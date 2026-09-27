@@ -1,3 +1,4 @@
+import { UnsavedChangesProvider } from '../shell/UnsavedChanges'
 /**
  * Standing one connected desk up without a socket.
  *
@@ -175,10 +176,10 @@ export function renderConnected(
       setValue(next)
     }
     return (
-      <McpContext.Provider value={value}>
+      <McpContext.Provider value={value}><UnsavedChangesProvider>
         {options.nav && <Link to="/elsewhere">go elsewhere</Link>}
         {ui}
-      </McpContext.Provider>
+      </UnsavedChangesProvider></McpContext.Provider>
     )
   }
   const router = createMemoryRouter([{ path: '*', element: <Shell /> }], {

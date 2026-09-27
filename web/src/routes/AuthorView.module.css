@@ -1,0 +1,38 @@
+.frame { display: flex; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+.browser { position: relative; display: flex; flex-direction: column; flex: 0 0 var(--files-width, 280px); min-width: 0; min-height: 0; border-inline-end: 1px solid var(--border); background: var(--surface); }
+.browser > [data-page-header] { padding-inline: var(--space-4); justify-content: flex-start; gap: var(--space-2); background: var(--surface); }
+.fileScroll { position: relative; flex: 1; min-height: 0; overflow: auto; overflow-x: hidden; padding: var(--space-2); scrollbar-gutter: stable; }
+.fileScroll :global(.note), .fileScroll :global(.empty) { margin: var(--space-2); overflow-wrap: anywhere; }
+.fileList { list-style: none; margin: 0; padding: 0; }
+.fileList > li { margin: var(--space-1) 0; min-width: 0; }
+.fileEntry { appearance: none; display: flex; align-items: center; gap: var(--space-2); width: 100%; min-width: 0; min-height: 36px; padding: var(--space-2); border-style: none; border-radius: var(--radius-sm); background: transparent; color: var(--ink-soft); font: inherit; font-size: var(--text-sm); text-align: start; cursor: pointer; }
+.fileEntry > svg { flex: 0 0 16px; }
+.fileEntry:hover, .fileEntry[aria-current] { background: var(--accent-soft); color: var(--ink); }
+.fileEntry:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.fileText { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.fileText > span, .fileText > small { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fileText > small { font-size: var(--text-xs); color: var(--ink-faint); }
+.detail { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+.detail > [data-page-header] h1 { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+.editorBody { position: relative; display: flex; flex-direction: column; gap: var(--space-2); flex: 1; min-height: 0; min-width: 0; overflow: auto; padding: var(--space-4) var(--density-gutter); }
+.fileMeta { display: flex; align-items: center; gap: var(--space-3); flex: 0 0 auto; min-width: 0; color: var(--ink-faint); font-size: var(--text-xs); }
+.fileMeta > code:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fileMeta > span, .digest { flex: 0 0 auto; }
+.frame[data-compact] .fileMeta { flex-wrap: wrap; }
+.frame[data-compact] .fileMeta > code:first-child { flex-basis: 100%; }
+.editorLabel { color: var(--ink-soft); font-size: var(--text-xs); }
+.buffer:global(.code-editor) { flex: 1 0 12rem; min-height: 12rem; resize: none; tab-size: 2; }
+.buffer:focus-visible { outline-offset: 0; }
+.editorActions { display: flex; flex-wrap: wrap; gap: var(--space-2); flex: 0 0 auto; }
+.notices:empty { display: none; }
+.notices { flex: 0 0 auto; overflow-wrap: anywhere; }
+.notices :global(.note) { margin: 0; }
+.notices :global(.note) + :global(.note) { margin-top: var(--space-2); }
+.feedback { padding: var(--density-gutter); }
+.empty { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-2); padding: var(--density-gutter); color: var(--ink-faint); font-size: var(--text-sm); }
+.empty p { margin: 0; }
+.browser[hidden], .detail[hidden] { display: none; }
+.frame[data-compact] .browser { flex: 1; border-style: none; }
+.frame[data-compact] .detail > [data-page-header] { justify-content: start; flex-wrap: wrap; }
+.frame[data-compact] .detail > [data-page-header] h1 { flex: 1; }
+.frame[data-compact] .detail > [data-page-header] [data-page-actions] { margin-inline-start: auto; }

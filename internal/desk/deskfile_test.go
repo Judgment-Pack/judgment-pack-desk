@@ -499,3 +499,18 @@ func sameNotices(got, want []deskNotice) bool {
 	}
 	return true
 }
+
+func TestFaviconImageBoundAndProblemKey(t *testing.T) {
+	for _, field := range []string{"mark", "favicon"} {
+		valid := "data:image/png;base64," + strings.Repeat("a", maxMarkBytes-len("data:image/png;base64,"))
+		if problems := decodeOrganization(map[string]any{field: valid}); len(problems) != 0 {
+			t.Fatalf("%s at bound refused: %v", field, problems)
+		}
+		for _, invalid := range []any{valid + "a", "<svg>" + strings.Repeat("あ", 30000) + "</svg>", "https://example.invalid/icon.png", 42} {
+			problems := decodeOrganization(map[string]any{field: invalid})
+			if len(problems) != 1 || problems[0].Key != "organization."+field {
+				t.Fatalf("%s invalid image: %v", field, problems)
+			}
+		}
+	}
+}

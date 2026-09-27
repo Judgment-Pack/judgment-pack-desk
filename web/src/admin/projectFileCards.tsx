@@ -36,12 +36,11 @@ import {
   ID_BASE_NORMALISES,
   ID_BASE_SAYS,
   NO_CONTROL_CHARACTERS,
-  ORGANIZATION_MARK_SAYS,
   STORAGE_KIND_SAYS
 } from '../config/deskConfig'
 import { Field } from '../ui/Field'
 import { Input } from '../ui/Input'
-import { TextArea } from '../ui/TextArea'
+import { LogoField } from './LogoField'
 import { CardField } from './SourceCard'
 import { ProjectFileForm, problemAt, useProjectFileDraft } from './ProjectFileForm'
 import type { MemberEdit } from './useProjectFileSave'
@@ -61,6 +60,7 @@ function orNull(value: string): string | null {
 interface OrganizationDraft {
   name: string
   mark: string
+  favicon: string
 }
 
 export function OrganizationForm() {
@@ -68,20 +68,22 @@ export function OrganizationForm() {
   const { config } = useEffectiveConfig()
   const seed: OrganizationDraft = {
     name: config.organization.name ?? '',
-    mark: config.organization.mark ?? ''
+    mark: config.organization.mark ?? '',
+    favicon: config.organization.favicon ?? ''
   }
   const state = useProjectFileDraft('/organization', seed, (draft, from) => {
     const edits: MemberEdit[] = []
     if (draft.name !== from.name) edits.push({ path: ['name'], value: orNull(draft.name) })
     if (draft.mark !== from.mark) edits.push({ path: ['mark'], value: orNull(draft.mark) })
+    if (draft.favicon !== from.favicon) edits.push({ path: ['favicon'], value: orNull(draft.favicon) })
     return edits
   })
   const { draft, set, save } = state
   return (
-    <ProjectFileForm state={state} placed={['organization.name', 'organization.mark']}>
+    <ProjectFileForm state={state} placed={['organization.name', 'organization.mark', 'organization.favicon']}>
       <Field
         label={msg("Name")}
-        hint={msg("Blank writes none, and the header then shows the desk's own name.")}
+        hint={msg("Used for organization branding. The header shows the desk name.")}
         error={problemAt(save, 'organization.name')}
       >
         {(wiring) => (
@@ -93,17 +95,8 @@ export function OrganizationForm() {
           />
         )}
       </Field>
-      <Field label={msg("Mark")} hint={systemMessage(ORGANIZATION_MARK_SAYS)} error={problemAt(save, 'organization.mark')}>
-        {(wiring) => (
-          <TextArea
-            {...wiring}
-            value={draft.mark}
-            rows={3}
-            spellCheck={false}
-            onChange={(event) => set({ ...draft, mark: event.target.value })}
-          />
-        )}
-      </Field>
+      <LogoField value={draft.mark} onChange={mark => set({ ...draft, mark })} error={problemAt(save, 'organization.mark')} />
+      <LogoField kind="favicon" value={draft.favicon} fallbackMark={draft.mark} onChange={favicon => set({ ...draft, favicon })} error={problemAt(save, 'organization.favicon')} />
     </ProjectFileForm>
   )
 }

@@ -1,3 +1,4 @@
+import { useDirtyGuard } from '../shell/useDirtyGuard'
 import { useTestStorage } from '../packs/test-workspace/store'
 import { TestsContent, carryDraftTests } from '../packs/test-workspace/TestsWorkspace'
 import { useReadingDetails } from '../chat/ReadingDetails'
@@ -6,7 +7,7 @@ import { systemMessage } from '../i18n'
 import { sourceMessage } from '../i18n/source'
 import { msg, useLocale } from '../i18n'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useBlocker, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ChatPanel } from '../chat/ChatPanel'
 import { useChats } from '../chat/ChatProvider'
 import { chatHref } from '../chat/ChatHistory'
@@ -89,14 +90,7 @@ export function DraftWorkspace({ chat, artifact, fallback }: { chat: Chat; artif
   const [writing, setWriting] = useState(false)
   const writingRef = useRef(false)
   const writingChanged = useCallback((value: boolean) => { writingRef.current = value; setWriting(value) }, [])
-  const blocker = useBlocker(() => writingRef.current)
-  useEffect(() => { if (blocker.state === 'blocked') blocker.reset() }, [blocker])
-  useEffect(() => {
-    if (!writing) return
-    const warn = (event: BeforeUnloadEvent) => event.preventDefault()
-    window.addEventListener('beforeunload', warn)
-    return () => window.removeEventListener('beforeunload', warn)
-  }, [writing])
+  useDirtyGuard(writing, msg('Saving…'), { busy: writing, shouldBlock: () => true })
   const shell = useShellState()
   const width = shell.inspectorWidth ?? 400
   const [rightOpen, setRightOpen] = useState(true)
@@ -123,7 +117,7 @@ export function DraftWorkspace({ chat, artifact, fallback }: { chat: Chat; artif
     matrix: matrixDocument(state,binding.ledger), research: researchRecord(state,binding.ledger,'')
   } : undefined
   return <div className={styles.packWorkspace} data-draft-workspace>
-    <PageHeader leading={<ShowFolders/>} title={msg("Packs")} titleHref="/packs" context={artifact.title} meta={<>{msg('Draft')} · {latest ? msg('revision {{value0}}', { value0: latest.revision }) : msg('no revision yet')}</>} actions={<>
+    <PageHeader variant="title" leading={<ShowFolders/>} title={artifact.title} meta={<>{msg('Draft')} · {latest ? msg('revision {{value0}}', { value0: latest.revision }) : msg('no revision yet')}</>} actions={<>
       <DraftActions draft={artifact} onChat={() => store?.getSnapshot().chats.some(item=>item.id===chat.id) ? navigate(chatHref(chat)) : navigate('/',{state:{homeChatId:chat.id}})}><MovePackButton id={artifact.id}/></DraftActions>
       <Tooltip content={msg('Focus on canvas')}><Button size="icon" variant="quiet" aria-label={msg('Focus on canvas')} onClick={() => assistant.close?.()}><IconFocus /></Button></Tooltip>
       {state.restored && <Button disabled={state.status==='running'} onClick={() => binding.run?.recheck()}>{msg('Recheck saved draft')}</Button>}

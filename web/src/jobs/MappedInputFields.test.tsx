@@ -4,11 +4,13 @@ import { Tooltip } from 'radix-ui'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { MappedInputFields } from './MappedInputFields'
 import { jobsAPI } from './client'
+import { localSnapshot } from './sourceInputs'
 import { prepareMappedInputs } from './mappedInputs'
 import type { PackDocument } from '../mcp/types'
 import type { MappingV2 } from './mappingTypes'
 vi.mock('./client',()=>({jobsAPI:vi.fn()}))
 vi.mock('./mappedInputs',async original=>({...await original<object>(),prepareMappedInputs:vi.fn()}))
+vi.mock('./sourceInputs',async original=>({...await original<object>(),localSnapshot:vi.fn()}))
 const doc={rules:[{condition:{op:'fact',path:'/score',value:7}}],evidenceRequirements:[]} as unknown as PackDocument
 const mapping: MappingV2={version:2,case:{facts:[{target:'/score',source:'/facts/score'}],evidence:[]},sources:[]}
 const source={mapping,case:{facts:{score:7}},sources:{},mappingDigest:'digest'}
@@ -27,7 +29,7 @@ it('never acquires on mount; explicit preview enables submission and edits inval
  fireEvent.click(screen.getByRole('button',{name:'Read sources and preview'}))
  await screen.findByText('Mapped inputs')
  expect(onChange).toHaveBeenLastCalledWith(source)
- fireEvent.change(screen.getByLabelText('Case inputs (JSON)'),{target:{value:'{"facts":{"score":8}}'}})
+ fireEvent.click(screen.getByText('Case inputs (JSON)',{selector:'summary span'}));fireEvent.change(screen.getByLabelText('Case inputs (JSON)'),{target:{value:'{"facts":{"score":8}}'}})
  expect(onChange).toHaveBeenLastCalledWith(undefined)
  expect(screen.queryByText('Mapped inputs')).toBeNull()
 })
@@ -35,6 +37,7 @@ it('locks a released mapping and starts without retained case values or files',a
  await view({...mapping,sources:undefined})
  expect(screen.queryByText('Edit mapping')).toBeNull()
  expect(screen.queryByRole('button',{name:'Add local file'})).toBeNull()
+ fireEvent.click(screen.getByText('Case inputs (JSON)',{selector:'summary span'}))
  expect((screen.getByLabelText('Case inputs (JSON)') as HTMLTextAreaElement).value).toBe('{"facts": {}, "evidence": {}}')
 })
 it('cancel and unmount discard late preparation results',async()=>{
@@ -54,4 +57,37 @@ it('does not allow malformed mapping text to trigger acquisition',async()=>{
  fireEvent.change(screen.getByLabelText('Mapping JSON'),{target:{value:'{"version":2,"sources":{}}'}})
  expect((screen.getByRole('button',{name:'Read sources and preview'}) as HTMLButtonElement).disabled).toBe(true)
  expect(prepareMappedInputs).not.toHaveBeenCalled()
+})
+
+it('keeps a selected file when an output pointer changes, while requiring a new preview',async()=>{
+ const snapshot={original:{name:'sample.json'},content:'{"score":7}'}
+ vi.mocked(localSnapshot).mockResolvedValue(snapshot as never)
+ const {onChange}=await view()
+ fireEvent.click(screen.getByRole('button',{name:'Add source'}))
+ fireEvent.click(await screen.findByRole('button',{name:/Local JSON file/}))
+ fireEvent.change(await screen.findByLabelText('Choose JSON file for source1'),{target:{files:[new File(['{}'],'sample.json',{type:'application/json'})]}})
+ await screen.findByText('sample.json')
+ fireEvent.click(screen.getByRole('button',{name:'Configure score'}))
+ fireEvent.click(screen.getByRole('combobox',{name:'Source'}))
+ fireEvent.click(await screen.findByRole('option',{name:'source1'}))
+ fireEvent.change(screen.getByLabelText('Source path'),{target:{value:'/score'}})
+ expect(onChange).toHaveBeenLastCalledWith(undefined)
+ fireEvent.click(screen.getByRole('button',{name:'Configure source'}))
+ expect(await screen.findByText('sample.json')).toBeTruthy()
+ fireEvent.click(screen.getByRole('button',{name:'Read sources and preview'}))
+ await waitFor(()=>expect(prepareMappedInputs).toHaveBeenCalledWith(expect.objectContaining({files:{source1:snapshot},mapping:expect.objectContaining({sources:[expect.objectContaining({name:'source1',read:{copy:{facts:[{target:'/score',source:'/score'}],evidence:[]}}})]})})))
+})
+
+it('requires pending request edits to be applied before replacing the source mapping',async()=>{
+ await view()
+ fireEvent.click(screen.getByText('Edit mapping'))
+ fireEvent.change(screen.getByLabelText('Mapping JSON'),{target:{value:JSON.stringify({...mapping,sources:[{name:'records',kind:'operation',profile:'registry',arguments:{tool:'read',arguments:{}},read:{copy:{facts:[],evidence:[]}}}]})}})
+ fireEvent.click(await screen.findByRole('button',{name:'records'}))
+ fireEvent.change(screen.getByLabelText('Request parameters (JSON)'),{target:{value:'{"case":"pending"}'}})
+ expect((screen.getByRole('button',{name:'Add source'}) as HTMLButtonElement).disabled).toBe(true)
+ expect((screen.getByLabelText('Mapping JSON') as HTMLTextAreaElement).disabled).toBe(true)
+ expect((screen.getByRole('button',{name:'Read sources and preview'}) as HTMLButtonElement).disabled).toBe(true)
+ fireEvent.click(screen.getByRole('button',{name:'Apply configuration'}))
+ await waitFor(()=>expect((screen.getByRole('button',{name:'Add source'}) as HTMLButtonElement).disabled).toBe(false))
+ expect(JSON.parse((screen.getByLabelText('Mapping JSON') as HTMLTextAreaElement).value).sources[0].arguments.arguments).toEqual({case:'pending'})
 })

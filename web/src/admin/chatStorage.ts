@@ -1,4 +1,5 @@
 export interface ChatStorageStatus {
+  managed?: boolean
   path: string
   recommendedPath: string
   revision: string

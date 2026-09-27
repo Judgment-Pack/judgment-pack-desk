@@ -1,3 +1,5 @@
+import { respondToDiscardDialogs } from '../../testing/discardDialogs'
+respondToDiscardDialogs()
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'

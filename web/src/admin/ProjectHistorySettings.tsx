@@ -1,3 +1,5 @@
+import { useDirtyGuard } from '../shell/useDirtyGuard'
+import { useConfirmDiscard } from '../shell/UnsavedChanges'
 import { Message } from '../i18n/Message'
 import { msg, useLocale, systemMessage } from '../i18n'
 import { useRef, useState } from 'react'
@@ -15,7 +17,9 @@ export function ProjectHistorySettings({ blocked, onLinked }: { blocked: boolean
   const [preview, setPreview] = useState<Preview | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const opener = useRef<HTMLButtonElement>(null)
+  const opener = useRef<HTMLButtonElement>(null),confirmDiscard=useConfirmDiscard()
+  const clearGuard=useDirtyGuard(open&&!!path,msg('Discard this history setup?'),{busy})
+  async function close(){if(!busy&&(!path||await confirmDiscard(msg('Discard this history setup?'))))setOpen(false)}
   async function submit() {
     if (busy || blocked || !path.trim()) return
     setBusy(true); setError('')
@@ -24,14 +28,14 @@ export function ProjectHistorySettings({ blocked, onLinked }: { blocked: boolean
         method: "POST", headers: { 'Content-Type': "application/json" },
         body: JSON.stringify({ previousProject: path.trim(), sourceRevision: preview?.sourceRevision ?? '', bindingsRevision: preview?.bindingsRevision ?? '' })
       }))
-      if (preview) { onLinked(); return }
+      if (preview) { clearGuard(); setOpen(false); onLinked(); return }
       setPreview(data)
     } catch (cause) { setError((cause as Error).message); setPreview(null) }
     setBusy(false)
   }
   return <>
     <Button ref={opener} variant="quiet" disabled={blocked} onClick={() => { setOpen(true); setPath(''); setPreview(null); setError('') }}>{msg("Recover project history…")}</Button>
-    <Dialog open={open} onOpenChange={value => { if (!busy) setOpen(value) }} title={msg("Recover project history")} openerRef={opener}
+    <Dialog open={open} onOpenChange={value => { if (!value) void close() }} title={msg("Recover project history")} openerRef={opener}
       description={msg("If this project moved to a different folder, link it to its previous chat history. No histories are combined.")}>
       <form onSubmit={event => { event.preventDefault(); void submit() }}>
         <FieldGroup>
@@ -44,7 +48,7 @@ export function ProjectHistorySettings({ blocked, onLinked }: { blocked: boolean
           </div>}
           {error && <p role="alert">{systemMessage(error)}</p>}
         </FieldGroup>
-        <DialogActions><Button disabled={busy} onClick={() => setOpen(false)}>{msg("Cancel")}</Button>
+        <DialogActions><Button disabled={busy} onClick={()=>void close()}>{msg("Cancel")}</Button>
           <Button type="submit" variant="primary" disabled={blocked || busy || !path.trim()}>{busy ? msg("Working…") : preview ? msg("Link history and reload") : msg("Find history")}</Button></DialogActions>
       </form>
     </Dialog>

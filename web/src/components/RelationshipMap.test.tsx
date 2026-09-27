@@ -6,6 +6,7 @@ import { RelationshipMap } from './RelationshipMap'
 const captured = vi.hoisted(() => ({ props: null as ReactFlowProps | null }))
 vi.mock('@xyflow/react', () => ({
   ReactFlow: (props: ReactFlowProps) => { captured.props = props; return <div /> },
+  ViewportPortal: () => null,
   Handle: () => null, Position: { Left: 'left', Right: 'right' }, MarkerType: { ArrowClosed: 'arrowclosed' }
 }))
 afterEach(cleanup)

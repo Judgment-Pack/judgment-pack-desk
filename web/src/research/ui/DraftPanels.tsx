@@ -8,7 +8,7 @@ import { Fragment, useMemo, useRef, useState } from 'react'
 import type { PackDocument } from '../../mcp/types'
 import { PackLogic } from '../../packs/PackLogic'
 import { projectLogic } from '../../packs/logicModel'
-import { initialLogicDisplay, type LogicMode } from '../../packs/logicState'
+import { initialLogicDisplay, initialLogicMode, rememberLogicMode, type LogicMode } from '../../packs/logicState'
 import { PackOverview, PackQuestion } from '../../packs/PackWorkspace'
 import { Button } from '../../ui/Button'
 import { CodeBlock } from '../../ui/CodeBlock'
@@ -346,7 +346,7 @@ function DraftLogic({ state, selection, onSelect, onInspect, active }: { state: 
   const locale = useLocale()
   const document = state.candidates.at(-1)?.document
   const model = useMemo(() => document && isRecord(document) ? projectLogic(document as unknown as PackDocument) : null, [document, locale])
-  const [mode, setMode] = useState<LogicMode>('map')
+  const [mode, setMode] = useState<LogicMode>(initialLogicMode)
   const [query, setQuery] = useState('')
   const [display, setDisplay] = useState(() => initialLogicDisplay(false))
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 })
@@ -355,7 +355,7 @@ function DraftLogic({ state, selection, onSelect, onInspect, active }: { state: 
   if (!model) return <p className={styles.empty}>{msg("No draft yet.")}</p>
   const select = (id: string) => onSelect({ kind: 'logic', id })
   return <div className={styles.logicPanel} data-mode={mode}><PackLogic active={active} model={model} at={selection?.kind === 'logic' ? selection.id : null} groupId={null}
-    select={select} inspect={id => onInspect({ kind: 'logic', id })} mode={mode} onMode={setMode} query={query} onQuery={setQuery} display={display} onDisplay={setDisplay}
+    select={select} inspect={id => onInspect({ kind: 'logic', id })} mode={mode} onMode={next=>{rememberLogicMode(next);setMode(next)}} query={query} onQuery={setQuery} display={display} onDisplay={setDisplay}
     viewport={viewport} onViewport={setViewport} nodePositions={nodePositions} onNodePositionsChange={setNodePositions} listScroll={scroll} /></div>
 }
 

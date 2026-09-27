@@ -404,7 +404,7 @@ func object(value any, key string, allowed []string) (map[string]any, []deskProb
 }
 
 func decodeOrganization(value any) []deskProblem {
-	record, problems := object(value, "organization", []string{"name", "mark"})
+	record, problems := object(value, "organization", []string{"name", "mark", "favicon"})
 	if record == nil {
 		return problems
 	}
@@ -415,24 +415,27 @@ func decodeOrganization(value any) []deskProblem {
 				Reason: fmt.Sprintf("must be a non-empty string or null; found %s", describe(name))})
 		}
 	}
-	if mark, present := record["mark"]; present && mark != nil {
-		text, ok := mark.(string)
-		if !ok {
-			problems = append(problems, deskProblem{Key: "organization.mark",
-				Reason: fmt.Sprintf(
-					"must be an inline SVG string, a data: URI, or null; found %s", describe(mark))})
-		} else {
-			trimmed := strings.TrimSpace(text)
-			if !strings.HasPrefix(trimmed, "<svg") && !strings.HasPrefix(trimmed, "data:image/") {
-				problems = append(problems, deskProblem{Key: "organization.mark",
-					Reason: `must begin with "<svg" or "data:image/" — a file path is not accepted`})
-			} else if len(text) > maxMarkBytes {
-				problems = append(problems, deskProblem{Key: "organization.mark",
-					Reason: fmt.Sprintf("must be at most %d bytes of UTF-8; found %d",
-						maxMarkBytes, len(text))})
+	for _, field := range []string{"mark", "favicon"} {
+		if mark, present := record[field]; present && mark != nil {
+			text, ok := mark.(string)
+			if !ok {
+				problems = append(problems, deskProblem{Key: "organization." + field,
+					Reason: fmt.Sprintf(
+						"must be an inline SVG string, a data: URI, or null; found %s", describe(mark))})
+			} else {
+				trimmed := strings.TrimSpace(text)
+				if !strings.HasPrefix(trimmed, "<svg") && !strings.HasPrefix(trimmed, "data:image/") {
+					problems = append(problems, deskProblem{Key: "organization." + field,
+						Reason: `must begin with "<svg" or "data:image/" — a file path is not accepted`})
+				} else if len(text) > maxMarkBytes {
+					problems = append(problems, deskProblem{Key: "organization." + field,
+						Reason: fmt.Sprintf("must be at most %d bytes of UTF-8; found %d",
+							maxMarkBytes, len(text))})
+				}
 			}
 		}
 	}
+
 	return problems
 }
 

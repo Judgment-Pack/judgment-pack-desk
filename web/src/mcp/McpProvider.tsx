@@ -1,3 +1,4 @@
+import { deskSocketURL } from '../desks/scope'
 import { SourceError, sourceMessage } from '../i18n/source'
 import { msg } from '../i18n'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -38,7 +39,7 @@ export interface McpConnection extends RuntimeCapabilities {
   client: Client | null
   status: ConnectionStatus
   error: Error | null
-  /** The runtime that answered initialize, for the status bar. */
+  /** The runtime that answered initialize, shown in Help & About. */
   server: { name: string; version: string } | null
   /**
    * Which connection this is: 0 before the first, then one more for each
@@ -128,7 +129,7 @@ if (typeof window !== 'undefined') removeTheLaunchHash()
  */
 export function socketURL(): string {
   const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${scheme}//${window.location.host}/ws`
+  return deskSocketURL(`${scheme}//${window.location.host}/ws`)
 }
 
 /**

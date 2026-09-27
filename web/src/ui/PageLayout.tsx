@@ -28,7 +28,7 @@ export function PageHeader({ title, titleHref, context, leading, meta, actions, 
     <h1 className={styles.title}>{titleHref ? <Link className={styles.titleLink} to={titleHref}>{title}</Link> : title}{context && <>
       <span className={styles.separator} aria-hidden="true">/</span>
       <OverflowTooltip><span className={styles.context} data-page-context>{context}</span></OverflowTooltip>
-    </>}{meta !== undefined && <span className={styles.meta}>{meta}</span>}</h1>
+    </>}{meta !== undefined && <> <span className={styles.meta}>{meta}</span></>}</h1>
     {actions && <div className={styles.actions} data-page-actions>{actions}</div>}
     {description && <div className={styles.description}>{description}</div>}
     </div>

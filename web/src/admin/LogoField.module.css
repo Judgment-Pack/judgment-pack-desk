@@ -1,0 +1,7 @@
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.preview { display: block; width: 40px; height: 40px; flex: 0 0 auto; object-fit: contain; border-radius: var(--radius-sm); margin-inline-end: var(--space-2); }
+.advanced { color: var(--ink-soft); font-size: var(--text-sm); }
+.advanced > summary { cursor: pointer; padding-block: var(--space-2); }
+.advanced[open] > summary { margin-bottom: var(--space-2); }
+
+.faviconPreview { display: block; width: 16px; height: 16px; object-fit: contain; flex: 0 0 auto; margin: 12px calc(12px + var(--space-2)) 12px 12px; }

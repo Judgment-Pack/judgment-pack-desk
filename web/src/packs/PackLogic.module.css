@@ -15,7 +15,8 @@
 .listGroup[data-group='outcomes'] .items, .listGroup[data-group='resolution'] .items { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .item { min-width: 0; scroll-margin-top: var(--space-7); }
 .rules .item { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-2); }
-.item[data-current], .item[data-search-match] { background: var(--accent-soft); border-radius: var(--radius-sm); }
+.item[data-current] { outline:1px solid var(--border-strong); border-radius:var(--radius-sm); }
+.item[data-search-match] { box-shadow:inset 3px 0 var(--accent); }
 .itemBody { padding: var(--space-1) var(--space-2) var(--space-2); min-width: 0; }
 .trace { font-size: var(--text-xs); margin: var(--space-2) 0 0; border-top: 1px solid var(--border); padding-top: var(--space-2); }
 .note, .searchStatus { margin: 0; color: var(--ink-soft); font-size: var(--text-xs); overflow-wrap: anywhere; }
@@ -32,3 +33,6 @@
 .jumpSearch { width: 100%; }
 .jumpItems { display: grid; gap: var(--space-3); margin-top: var(--space-3); }
 .jumpItems h3 { font-size: var(--text-xs); color: var(--ink-soft); margin: 0 0 var(--space-1); }
+
+.contextStrip { display:flex; flex-wrap:wrap; align-items:center; gap:0 var(--space-2); padding:var(--space-1) var(--density-gutter); }
+.contextStrip button { font-size:var(--text-xs); color:var(--ink-soft); min-height:28px; height:auto; white-space:normal; text-align:start; }

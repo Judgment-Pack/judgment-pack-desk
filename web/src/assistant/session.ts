@@ -1,3 +1,4 @@
+import { deskHeaders } from '../desks/scope'
 import { currentLanguage } from '../i18n/locales'
 /**
  * One assistant session: its own connection, its own gate, one event stream.
@@ -316,7 +317,7 @@ export function bindModelCall(family: EndpointKind): ModelCall {
         // admits. A `GET` carries no body: `fetch` refuses one that does, and
         // the model listing is the only caller that asks for either.
         method: request.method ?? 'POST',
-        headers: { ...headers, Authorization: `Bearer ${id}` },
+        headers: { ...headers, ...deskHeaders(), Authorization: `Bearer ${id}` },
         body: request.method === 'GET' ? undefined : request.body,
         signal: request.signal
       })

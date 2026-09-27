@@ -1,3 +1,5 @@
+import { respondToDiscardDialogs } from '../../testing/discardDialogs'
+respondToDiscardDialogs()
 /**
  * Edit mode: one buffer, two views of it, and the diagnostics that land on the
  * field.

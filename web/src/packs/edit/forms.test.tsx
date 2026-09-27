@@ -1,3 +1,5 @@
+import { respondToDiscardDialogs } from '../../testing/discardDialogs'
+respondToDiscardDialogs()
 /**
  * What a form does about a member that is **not there**, and what it says about
  * text it has not written.

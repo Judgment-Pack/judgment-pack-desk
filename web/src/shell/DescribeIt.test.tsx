@@ -1,3 +1,6 @@
+import { UnsavedChangesProvider } from './UnsavedChanges'
+import { respondToDiscardDialogs } from '../testing/discardDialogs'
+respondToDiscardDialogs()
 /**
  * **Describe it**, inside the dialog that would write what it proposes.
  *
@@ -324,7 +327,7 @@ function Mounted({
     })
   })
   return (
-    <McpContext.Provider value={connection}>
+    <McpContext.Provider value={connection}><UnsavedChangesProvider>
       <button type="button" onClick={() => setLive(config({ endpoint: null }))}>
         Drop the endpoint
       </button>
@@ -340,7 +343,7 @@ function Mounted({
           open && <CreatePackDialog open onOpenChange={setOpen} presentation={page ? 'page' : 'dialog'} />
         )}
       </DeskConfigFixture>
-    </McpContext.Provider>
+    </UnsavedChangesProvider></McpContext.Provider>
   )
 }
 
@@ -701,6 +704,7 @@ describe('stopping', () => {
     await propose()
     await screen.findByRole('region', { name: 'The proposal' }, { timeout: 15_000 })
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull())
     fireEvent.click(screen.getByRole('button', { name: 'Reopen' }))
     await openIt()
     expect(screen.queryByRole('region', { name: 'The proposal' })).toBeNull()

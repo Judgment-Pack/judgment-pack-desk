@@ -40,11 +40,16 @@ var devOrigins = []string{
 
 // Config is the chassis' whole configuration.
 type Config struct {
+	// Managed desks share installation credentials and authentication, never data roots.
+	parent *Server
+	deskID string
+
 	// RunnerBin is a trusted installed executable, never project configuration.
 	RunnerBin string
 	// RunnerInputProfiles contains installation-authorized public trust metadata.
 	// It must never come from project configuration or a browser request.
 	RunnerInputProfiles json.RawMessage
+	RunnerConnections   json.RawMessage
 	// CodexBin is an advanced installation override: empty manages the runtime,
 	// "off" disables it, otherwise an absolute trusted executable path.
 	// It is never read from project configuration or browser requests.
@@ -119,8 +124,13 @@ type Config struct {
 
 // Server is the HTTP handler and the owner of the file watcher.
 type Server struct {
-	jobs  *jobsCompanion
-	codex providerAccountManager
+	desksMu     sync.Mutex
+	desks       map[string]*Server
+	desksClosed bool
+
+	builds ComponentBuilds
+	jobs   *jobsCompanion
+	codex  providerAccountManager
 
 	localGateway        *localGateway
 	providerMu          sync.Mutex
@@ -184,7 +194,7 @@ type Server struct {
 	// one per path: a per-path key is a *spelling*, and two spellings of one
 	// file on a case-insensitive filesystem would take different locks and both
 	// commit. Desk-scale contention is not worth a correctness argument.
-	writes sync.Mutex
+	writes *sync.Mutex
 	// launchCookie is this desk's handoff cookie, port and all. Computed once,
 	// here, so that the name a launch sets and the name the exchange reads
 	// cannot drift apart. It is the **only** cookie this chassis has.
@@ -253,6 +263,19 @@ func New(cfg Config) (*Server, error) {
 			return nil, fmt.Errorf("desk: project directory: %w", err)
 		}
 	}
+
+	if cfg.deskID == "" {
+		data, err := readPrivateData(pinned.own.root, deskManifest, 4096)
+		if err == nil {
+			var record deskRecord
+			if json.Unmarshal(data, &record) != nil || !deskIDPattern.MatchString(record.ID) || !validDeskName(record.Name) {
+				return nil, errors.New("desk metadata is invalid")
+			}
+			cfg.deskID = record.ID
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+	}
 	sessions, serr := newSessionStore()
 	if serr != nil {
 		return nil, fmt.Errorf("desk: session store: %w", serr)
@@ -261,7 +284,13 @@ func New(cfg Config) (*Server, error) {
 	if lerr != nil {
 		return nil, fmt.Errorf("desk: launch store: %w", lerr)
 	}
+	writes := &sync.Mutex{}
+	if cfg.parent != nil {
+		writes = cfg.parent.writes
+	}
 	s := &Server{
+		writes:        writes,
+		builds:        componentBuilds(cfg.JpackBin, cfg.RunnerBin),
 		cfg:           cfg,
 		mux:           http.NewServeMux(),
 		log:           cfg.Logger,
@@ -291,7 +320,12 @@ func New(cfg Config) (*Server, error) {
 		// use to read a pack; what is withdrawn is the ability to keep a key.
 		s.log.Printf("desk: no assistant key will be kept: %v", s.assistant.problem)
 	}
-	s.openSignIn()
+	if cfg.parent != nil {
+		s.sessions = cfg.parent.sessions
+		s.signIn = cfg.parent.signIn
+	} else {
+		s.openSignIn()
+	}
 	s.registerSignIn()
 	if cfg.LocalGatewayBundle != "" {
 		executable, _ := os.Executable()
@@ -320,12 +354,15 @@ func New(cfg Config) (*Server, error) {
 	// identity provider fills in. There is no `DELETE`: see `handleSession`.
 	s.mux.HandleFunc("/api/session", s.handleSession)
 	s.mux.HandleFunc("/api/operations/{rest...}", s.handleJobs)
+	s.mux.HandleFunc("/api/job-events/{trigger}", s.handleJobEvent)
 	s.mux.HandleFunc("/api/agent/run", s.handleAgentRun)
 	s.mux.HandleFunc("/api/model-providers", s.handleModelProviders)
 	s.mux.HandleFunc("/api/model-providers/openai/{action}", s.handleModelProviders)
 	// The file API (issue #14, phase 1). Everything else the desk shows comes
 	// over the relay; writes cannot, because the runtime has no write tools by
 	// design. See files.go for what this does and does not decide.
+	s.mux.HandleFunc("/api/desks", s.handleDesks)
+	s.mux.HandleFunc("/api/desks/{desk}/job-events/{trigger}", s.handleDeskJobEvent)
 	s.mux.HandleFunc("GET /api/files", s.handleFiles)
 	s.mux.HandleFunc("GET /api/file", s.handleFileRead)
 	s.mux.HandleFunc("PUT /api/file", s.handleFileWrite)
@@ -398,6 +435,9 @@ func New(cfg Config) (*Server, error) {
 	}
 	s.initJobs()
 	s.initModelProviders()
+	if cfg.parent == nil {
+		s.resumeDesks()
+	}
 	return s, nil
 }
 
@@ -414,6 +454,7 @@ func (s *Server) Close() error {
 }
 
 func (s *Server) closeAll() error {
+	s.closeDesks()
 	// Stop admission before waiting: upgraded sockets are not tracked by
 	// http.Server.Shutdown, and a relay may still be starting its subprocess.
 	s.mu.Lock()
@@ -428,8 +469,10 @@ func (s *Server) closeAll() error {
 	if s.codex != nil {
 		s.codex.Close()
 	}
-	s.sessions.close()
-	if s.signIn != nil {
+	if s.cfg.parent == nil {
+		s.sessions.close()
+	}
+	if s.cfg.parent == nil && s.signIn != nil {
 		s.signIn.mu.Lock()
 		s.signIn.cancelEpoch()
 		s.signIn.mu.Unlock()
@@ -489,6 +532,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			cancel()
 		}
 		r = r.WithContext(ctx)
+	}
+	if s.routeDesk(w, r) {
+		return
 	}
 	s.mux.ServeHTTP(w, r)
 }

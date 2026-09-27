@@ -20,7 +20,9 @@ export function JsonInput({
   onChange,
   label,
   onValid,
+  parseJSON = JSON.parse,
 }: {
+  parseJSON?: (text: string) => unknown
   value: unknown
   onChange: (v: unknown) => void
   label: string
@@ -50,7 +52,7 @@ export function JsonInput({
               const t = e.target.value
               setText(t)
               try {
-                const v = JSON.parse(t)
+                const v = parseJSON(t)
                 setError('')
                 onValid?.(true)
                 emitted.current = JSON.stringify(v)
@@ -72,49 +74,59 @@ function ScalarInput({
   label,
   onChange,
   onValid,
+  parseJSON = JSON.parse,
 }: {
+  parseJSON?: (text: string) => unknown
   value: string | number
   type: string
   label: string
   onChange: (v: unknown) => void
   onValid: (valid: boolean) => void
 }) {
+  const [invalid,setInvalid]=useState(false)
   const [text, setText] = useState(String(value)),
     emitted = useRef(value)
   useEffect(() => {
     if (value !== emitted.current) {
       emitted.current = value
       setText(String(value))
+      setInvalid(false)
       onValid(true)
     }
   }, [value])
   return (
     <Input
       aria-label={label}
+      aria-invalid={invalid || undefined}
       inputMode={type === 'number' ? 'decimal' : undefined}
       value={text}
       onChange={(e) => {
         const next = e.target.value
         setText(next)
         if (type === 'number' && (!next.trim() || !Number.isFinite(Number(next)))) {
+          setInvalid(true)
           onValid(false)
           return
         }
-        const parsed = type === 'number' ? Number(next) : next
+        let parsed: string | number
+        try { parsed = type === 'number' ? parseJSON(next) as number : next } catch { setInvalid(true); onValid(false); return }
         emitted.current = parsed
-        onValid(true)
+        setInvalid(false)
+      onValid(true)
         onChange(parsed)
       }}
     />
   )
 }
-function FactInput({
+export function FactInput({
   value,
   type,
   onChange,
   label,
   onValid,
+  parseJSON = JSON.parse,
 }: {
+  parseJSON?: (text: string) => unknown
   value: unknown
   type: string
   onChange: (v: unknown) => void
@@ -129,7 +141,7 @@ function FactInput({
     ['boolean', 'number', 'string'].includes(type) &&
     typeof value !== type
   )
-    return <JsonInput label={label} value={value} onChange={onChange} onValid={onValid} />
+    return <JsonInput parseJSON={parseJSON} label={label} value={value} onChange={onChange} onValid={onValid} />
   if (type === 'boolean')
     return (
       <Select
@@ -175,6 +187,7 @@ function FactInput({
       {kind === 'value' &&
         (type === 'string' || type === 'number' ? (
           <ScalarInput
+            parseJSON={parseJSON}
             label={label}
             type={type}
             value={value as string | number}
@@ -182,7 +195,7 @@ function FactInput({
             onValid={onValid}
           />
         ) : (
-          <JsonInput label={label} value={value} onChange={onChange} onValid={onValid} />
+          <JsonInput parseJSON={parseJSON} label={label} value={value} onChange={onChange} onValid={onValid} />
         ))}
     </div>
   )
@@ -192,6 +205,7 @@ export function CaseEditor({
   document,
   value,
   onChange,
+  onUnwritten,
   onSave,
   onDiscard,
   onAddSource,
@@ -206,6 +220,7 @@ export function CaseEditor({
   document: unknown
   value: TestCase
   onChange: (c: TestCase) => void
+  onUnwritten?: (unwritten: boolean) => void
   onSave: () => void
   onDiscard: () => void
   onAddSource: (el: HTMLElement) => void
@@ -230,6 +245,7 @@ export function CaseEditor({
   }, [details.open])
   const [invalid, setInvalid] = useState<Record<string, boolean>>({})
   const valid = !Object.values(invalid).some(Boolean)
+  useEffect(()=>{onUnwritten?.(!valid);return()=>onUnwritten?.(false)},[valid,onUnwritten])
   const validity = (key: string) => (ok: boolean) =>
     setInvalid((prior) => (prior[key] === !ok ? prior : { ...prior, [key]: !ok }))
   const row = value.row

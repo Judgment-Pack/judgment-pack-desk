@@ -230,3 +230,7 @@ export function IconFolder() { return <Glyph><path d="M1.5 4V3.5h5L8 5h6.5v7.5h-
 export function IconInfo() { return <Glyph><circle cx="8" cy="8" r="6.25" /><path d="M8 7.5V11M8 4.75h.01" /></Glyph> }
 
 export function IconSearch() { return <Glyph><circle cx="6.5" cy="6.5" r="4.5"/><path d="m10 10 4 4"/></Glyph> }
+
+export function IconRule() { return <Glyph><path d="M3 2v12M3 5h5l5-3M8 5l5 3M3 11h10" /></Glyph> }
+export function IconException() { return <Glyph><path d="m8 1 7 7-7 7-7-7Z" /><path d="M8 4v4M8 11h.01" /></Glyph> }
+export function IconOutcome() { return <Glyph><rect x="1.5" y="2" width="13" height="12" rx="5" /><path d="m5 8 2 2 4-4" /></Glyph> }

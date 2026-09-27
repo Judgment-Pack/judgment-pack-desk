@@ -15,6 +15,7 @@ import { Select } from '../ui/Select'
 import { Input } from '../ui/Input'
 import { SettingRow } from '../ui/SettingRow'
 import { SettingsSection } from '../ui/SettingsSection'
+import { TypedConfirmation, useConfirmDiscard } from '../shell/UnsavedChanges'
 import { useUnsavedChanges } from '../shell/DraftScope'
 import { formatStorageBytes } from './chatStorage'
 import styles from './DocumentProcessingSettings.module.css'
@@ -47,6 +48,9 @@ export function DocumentProcessingSettings() {
   const [advanced, setAdvanced] = useState(false), [discard, setDiscard] = useState(false)
   const gatewayOpener = useRef<HTMLButtonElement>(null), pdfOpener = useRef<HTMLButtonElement>(null)
   const opener = useRef<HTMLElement | null>(null)
+  const [discardTyped, setDiscardTyped] = useState('')
+  const confirmDiscard = useConfirmDiscard()
+  useEffect(() => { setDiscardTyped('') }, [discard])
   const dirty = editor !== null && JSON.stringify(draft) !== JSON.stringify(editable(base.research, local))
   useUnsavedChanges(dirty)
   useEffect(() => { setCurrent(snapshot(effective)) }, [effective])
@@ -67,7 +71,7 @@ export function DocumentProcessingSettings() {
     }))
   }
   async function reload() {
-    if (busy) return
+    if (busy || dirty && !await confirmDiscard(msg('Reload and discard changes?'))) return
     setBusy(true)
     try {
       const read = await loadDeskLevelConfig()
@@ -124,8 +128,9 @@ export function DocumentProcessingSettings() {
       title={discard ? msg('Discard changes?') : editor === 'gateway' ? msg('Gateway') : msg('PDF processing')}
       description={discard ? msg('Your unsaved changes will be lost.') : editor === 'gateway' ? msg('Used by research and PDF processing on this computer.') : msg('Process new PDF uploads through your gateway.')}
       footer={<DialogActions>{discard ? <>
-        <Button onClick={() => setDiscard(false)}>{msg('Keep editing')}</Button><Button onClick={() => { setEditor(null); setDiscard(false) }}>{msg('Discard changes')}</Button>
+        <Button onClick={() => setDiscard(false)}>{msg('Keep editing')}</Button><Button variant="danger" disabled={discardTyped.trim() !== msg('Yes')} onClick={() => { setEditor(null); setDiscard(false) }}>{msg('Discard changes')}</Button>
       </> : <><Button disabled={busy} onClick={close}>{msg('Cancel')}</Button><Button type="submit" form={formId} variant="primary" disabled={!dirty || busy || base.digest === undefined}>{busy ? msg('Saving…') : msg('Save changes')}</Button></>}</DialogActions>}>
+      {discard && <TypedConfirmation value={discardTyped} onChange={setDiscardTyped} />}
       {!discard && <form id={formId} noValidate onSubmit={event => { event.preventDefault(); void save() }}><FieldGroup>
         {editor === 'gateway' ? <>
           {local && <Field label={msg('Connection')}>{w => <Select {...w} value={draft.mode} disabled={busy} onValueChange={mode => change({ mode })} options={[{ value: 'local', label: msg('Local (automatic)') }, { value: 'external', label: msg('Existing gateway') }]} />}</Field>}

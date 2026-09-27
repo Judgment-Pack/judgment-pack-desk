@@ -44,6 +44,7 @@ export function withEditing(params: URLSearchParams, editing: boolean): URLSearc
     // The shape is a fact about editing, so it leaves with it rather than
     // sitting in the address of a page that is not being edited.
     next.delete(SHAPE_PARAM)
+    next.delete('editItem')
   }
   return next
 }
@@ -53,5 +54,6 @@ export function withShape(params: URLSearchParams, shape: EditShape): URLSearchP
   const next = new URLSearchParams(params)
   if (shape === 'json') next.set(SHAPE_PARAM, 'json')
   else next.delete(SHAPE_PARAM)
+    next.delete('editItem')
   return next
 }

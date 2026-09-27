@@ -737,7 +737,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "an absent desk-level file is a refusal" "$A" \
     '	if !present {
 		writeJSON(w, http.StatusOK, DeskLevelConfig{
-			Path: path, Present: false, Project: s.projectPaths(), Runtime: s.runtimePaths(), LocalGateway: s.localGatewayStatus(nil)})
+			Builds: s.builds, Path: path, Present: false, Project: s.projectPaths(), Runtime: s.runtimePaths(), LocalGateway: s.localGatewayStatus(nil)})
 		return
 	}' \
     '	if !present {
@@ -1990,9 +1990,9 @@ function usePacks() { useConfiguredGraphs(); return readPacks() }'
     inspector: { open: viewport.inspectorIsDrawer ? false : merged.inspector.open },' \
     '    left: merged.left,
     inspector: merged.inspector,'
-  mutate web 'the strip stops naming the runtime' web/src/shell/StatusStrip.tsx \
-    '<Message text={"connected to <0/> <1/>"} slots={[<code>{server.name}</code>, server.version]} />' \
-    '<Message text={"connected to <0/>"} slots={[<code>{server.name}</code>]} />'
+  mutate web 'the strip calls a reconnecting runtime connected' web/src/shell/StatusStrip.tsx \
+    '        {connectionSays(status)}' \
+    '        {connectionSays("ready")}'
   # A refused configuration is the built-in defaults — correct, and until this
   # cue it was indistinguishable from having no configuration file at all
   # anywhere except /admin.
@@ -2027,9 +2027,9 @@ function usePacks() { useConfiguredGraphs(); return readPacks() }'
   mutate web "the provider object admits a discriminator" "$D" \
     "    ['label', 'issuer', 'clientId', 'scopes', 'audience', 'claims', 'showRemoteAvatar', 'signOut']," \
     "    ['label', 'issuer', 'clientId', 'scopes', 'audience', 'claims', 'showRemoteAvatar', 'signOut', 'kind', 'mode', 'operator', 'vendor', 'clientSecret'],"
-  mutate web "the header invents an organization name" "$H" \
-    "  const name = config.organization.name ?? DESK_FALLBACK_NAME" \
-    "  const name = config.organization.name ?? 'Acme Co.'"
+  mutate web 'the header ignores the selected desk name' 'web/src/desks/DeskSwitcher.tsx' \
+    '  const label = directory.data?.current.name ?? fallback' \
+    '  const label = '"'"'Acme Co.'"'"''
   mutate web 'the NONE menu offers a Sign out' web/src/identity/UserControl.tsx \
     '          <DropdownMenu.Item asChild className="desk-menu-item">
             <Link to="/help">{msg("About")}</Link>
@@ -2056,9 +2056,9 @@ function usePacks() { useConfiguredGraphs(); return readPacks() }'
     '            id="desk-inspector"
             aria-label={title}' \
     '            aria-label={title}'
-  mutate web "the brand leaves the router on every click" "$H" \
-    '        <Link className="desk-brand" to="/">' \
-    '        <Link className="desk-brand" to="/" reloadDocument>'
+  mutate web 'the brand leaves the router on every click' 'web/src/desks/DeskSwitcher.tsx' \
+    '      <Link className="desk-chip" to="/">' \
+    '      <Link className="desk-chip" to="/" reloadDocument>'
   mutate web "an empty organization name is accepted" "$D" \
     "      const name = organizationName(organization.name, problems)" \
     "      const name = optionalString(organization.name, 'organization.name', problems)"
@@ -2121,12 +2121,12 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "verification compares against the live buffer" "$FE" \
     '            setOutcome({ submitted, landed })' \
     '            setOutcome({ submitted: landed.content, landed })'
-  mutate web "a deleted file unmounts the editor" "$A" \
-    '          {selected ? (' \
-    '          {selected && listedNow ? ('
-  mutate web "a failed listing refresh unmounts the editor" "$A" \
-    '      {listing.error && !listing.data ? (' \
-    '      {listing.error ? ('
+  mutate web 'a deleted file unmounts the editor' 'web/src/routes/AuthorView.tsx' \
+    '{selected ? <FileEditor' \
+    '{selected && listedNow ? <FileEditor'
+  mutate web 'a failed listing refresh unmounts the editor' 'web/src/routes/AuthorView.tsx' \
+    '{selected ? <FileEditor' \
+    '{selected && !listing.error ? <FileEditor'
   # REMOVED: "a failed reload installs stale cached bytes". Broken at main
   # (441a99c) and broken here — its needle, `if (result.isSuccess && result.data)`,
   # appears nowhere in AuthorView.tsx and did not before this branch either, so
@@ -2137,12 +2137,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # `refetch()` and is caught by "reloads from its own request, not from
   # whatever the cache holds". A row whose claim is covered twice, once
   # inoperably, is one row.
-  mutate web "in-app navigation is not blocked" "$DGD" \
-    '  const blocker = useBlocker(
-    ({ currentLocation, nextLocation }) =>
-      dirty && currentLocation.pathname !== nextLocation.pathname
-  )' \
-    '  const blocker = useBlocker(() => false)'
+  mutate web 'in-app navigation is not blocked' 'web/src/shell/UnsavedChanges.tsx' \
+    '    return affected.current.length > 0' \
+    '    return false'
   mutate web "the caches are left disagreeing with the read-back" "$FE" \
     "$(printf '            queryClient.setQueryData([%sdesk-file%s, input.path], landed)' "'" "'")" \
     '            void landed'
@@ -2154,13 +2151,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '              setBuffer(base.content)
               editing.reset()' \
     '              setBuffer(base.content)'
-  mutate web "switching files does not ask about unsaved work" "$A" \
-    '    if (
-      dirty &&
-      !window.confirm(' \
-    '    if (
-      false &&
-      !window.confirm('
+  mutate web 'switching files does not ask about unsaved work' 'web/src/routes/AuthorView.tsx' \
+    '    if (dirty && !await confirmDiscard(msg('"'"'Discard unsaved changes to this file?'"'"'), { name: selected })) return' \
+    '    void dirty'
   mutate web "reload is available during an in-flight write" "$A" \
     '            disabled={write.isPending}
             onClick={reload}' \
@@ -2174,12 +2167,12 @@ function usePacks() { useExampleListing(); return readPacks() }'
     throw new StaleWrite(body as ConstructorParameters<typeof StaleWrite>[0])
   }' \
     ''
-  mutate web "a partial listing is reported as an empty project" "$A" \
-    '            {files.length === 0 && partial.length === 0 ? (' \
-    '            {files.length === 0 ? ('
-  mutate web "the partial warning is not shown" "$A" \
-    '            {partial.length > 0 && (' \
-    '            {false && ('
+  mutate web 'a partial listing is reported as an empty project' 'web/src/routes/AuthorView.tsx' \
+    '{partial.length === 0 ? msg("This project directory contains no files.")' \
+    '{true ? msg("This project directory contains no files.")'
+  mutate web 'the partial warning is not shown' 'web/src/routes/AuthorView.tsx' \
+    '{partial.length > 0 && <p' \
+    '{false && <p'
   mutate web "the save read-back installs over a newer read" "$FE" \
     '            if (state !== undefined && state.dataUpdatedAt > startedAt) return' \
     '            void state'
@@ -3917,11 +3910,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '  const listed = paths.length >= 0'
 
   # The mode is a search parameter for exactly one reason.
-  mutate web "a mode toggle prompts about unsaved bytes" "$DGD" \
-    '      dirty && currentLocation.pathname !== nextLocation.pathname' \
-    '      dirty &&
-      (currentLocation.pathname !== nextLocation.pathname ||
-        currentLocation.search !== nextLocation.search)'
+  mutate web 'a mode toggle prompts about unsaved bytes' 'web/src/shell/UnsavedChanges.tsx' \
+    'entry.shouldBlock ? entry.shouldBlock(args) : args.currentLocation.pathname !== args.nextLocation.pathname' \
+    'entry.shouldBlock ? entry.shouldBlock(args) : (args.currentLocation.pathname !== args.nextLocation.pathname || args.currentLocation.search !== args.nextLocation.search)'
   mutate web "the rail dot is one global flag again" "$ABR" \
     '  if (next) dirtyPaths.set(path, true)
   else dirtyPaths.delete(path)' \
@@ -6209,10 +6200,9 @@ export function assistantTransport(id: string): Transport {
 
   # The rail mounts this dialog above the route, so a Back leaves it standing
   # over another page with its run alive.
-  mutate web "a route change is not a dismissal" "$X" \
-    '    closeNow.current(false)' \
+  mutate web 'a route change is not a dismissal' 'web/src/shell/CreatePackDialog.tsx' \
+    '    void closeNow.current(false, true)' \
     '    void closeNow'
-
   # And the other half: a fragment is not a page. Keyed on `location.key` this
   # closes over a hash the document's own outline writes, which this desk
   # defines as not a navigation.
@@ -7489,9 +7479,9 @@ export function assistantTransport(id: string): Transport {
   # on the branch this replaces, so every model listing and every generation
   # turn answered 401 the moment the session stopped being a cookie — and the
   # builder's own drive never reached either path.
-  mutate web "the assistant's relay sends no bearer" "$ASN2" \
-    '        headers: { ...headers, Authorization: `Bearer ${id}` },' \
-    '        headers,'
+  mutate web 'the assistant'"'"'s relay sends no bearer' 'web/src/assistant/session.ts' \
+    '        headers: { ...headers, ...deskHeaders(), Authorization: `Bearer ${id}` },' \
+    '        headers: { ...headers, ...deskHeaders() },'
   # **A response nobody reads is a request nobody closes.** A body stream that
   # is neither consumed nor cancelled leaves the request in flight for the life
   # of the page: invisible in using the desk, and caught by the containment

@@ -45,6 +45,8 @@ export interface OrganizationConfig {
    * logo.
    */
   mark: string | null
+  /** Omitted or null follows the logo automatically. */
+  favicon?: string | null
 }
 
 export interface UserConfig {
@@ -665,7 +667,7 @@ function withoutRedundantReasons(problems: ConfigProblem[]): ConfigProblem[] {
  * character costs two UTF-16 code units, so it is 2:1, and the worst case is
  * the three-byte character that costs one.
  */
-const MAX_MARK_BYTES = 65536
+export const MAX_MARK_BYTES = 65536
 
 export interface DecodedConfig {
   /** Presentation provenance; never part of the configuration document. */
@@ -747,13 +749,15 @@ export function decodeDeskConfig(text: string, location: ConfigLocation): Decode
   const values: Partial<DeskConfig> = {}
 
   if ('organization' in record) {
-    const organization = section(record.organization, 'organization', ['name', 'mark'], problems)
+    const organization = section(record.organization, 'organization', ['name', 'mark', 'favicon'], problems)
     if (organization) {
       const name = organizationName(organization.name, problems)
       const mark = markValue(organization.mark, problems)
+      const favicon = markValue(organization.favicon, problems, 'organization.favicon')
       values.organization = {
         name: name ?? DESK_DEFAULTS.organization.name,
-        mark: mark ?? DESK_DEFAULTS.organization.mark
+        mark: mark ?? DESK_DEFAULTS.organization.mark,
+        ...(favicon !== undefined ? { favicon } : {})
       }
     }
   }
@@ -1064,7 +1068,7 @@ function storageKind(
  * reports it as the pack location, and every create fails at the write with a
  * sentence about a directory nobody chose to look at.
  */
-export const EXCLUDED_DIRECTORIES = ['.git', 'node_modules', 'dist', '.venv', 'vendor']
+export const EXCLUDED_DIRECTORIES = ['.desk-private', '.git', 'node_modules', 'dist', '.venv', 'vendor']
 export const STAGING_PREFIX = '.jpack-desk-'
 
 /**
@@ -1493,25 +1497,25 @@ function organizationName(
 export const ORGANIZATION_MARK_SAYS =
   sourceMessage("must begin with \"<svg\" or \"data:image/\" — a file path is not accepted")
 
-function markValue(value: unknown, problems: ConfigProblem[]): string | null | undefined {
+function markValue(value: unknown, problems: ConfigProblem[], key = 'organization.mark'): string | null | undefined {
   if (value === undefined) return undefined
   if (value === null) return null
   if (typeof value !== 'string') {
     problems.push({
-      key: 'organization.mark',
+      key,
       reason: sourceMessage("must be an inline SVG string, a data: URI, or null; found {{value0}}", { value0: describe(value) })
     })
     return undefined
   }
   const trimmed = value.trim()
   if (!trimmed.startsWith('<svg') && !trimmed.startsWith('data:image/')) {
-    problems.push({ key: 'organization.mark', reason: ORGANIZATION_MARK_SAYS })
+    problems.push({ key, reason: ORGANIZATION_MARK_SAYS })
     return undefined
   }
   const bytes = new TextEncoder().encode(value).length
   if (bytes > MAX_MARK_BYTES) {
     problems.push({
-      key: 'organization.mark',
+      key,
       reason: sourceMessage("must be at most {{value0}} bytes of UTF-8; found {{value1}}", { value0: MAX_MARK_BYTES, value1: bytes })
     })
     return undefined
@@ -2135,7 +2139,11 @@ export type ValueSource = 'project file' | 'desk file' | 'default'
  * executes the binary it was given, so a config-supplied path would be a way to
  * run code on that machine by editing a file.
  */
+export interface BuildIdentity { moduleVersion?: string; revision?: string; modified?: boolean }
+export interface ComponentBuilds { desk: BuildIdentity; runtime: BuildIdentity; runner?: BuildIdentity }
+
 export interface ChassisPaths {
+  builds?: ComponentBuilds
   projectDir: string
   projectFile: string
   runtimeBin: string

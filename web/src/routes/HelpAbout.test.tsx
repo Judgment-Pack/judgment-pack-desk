@@ -102,6 +102,34 @@ describe('Help & About', () => {
     expect(screen.queryByText('1ab277d127ba6ed60a4ede2c970742b04121d247') !== null).toBe(status === 'ready')
   })
 
+  it('shows component identities separately and keeps full startup metadata available', () => {
+    renderHelp(stubClient(PACKS), { server: { name: 'jpack', version: '0.22.0-dev+6842494' } }, effectiveConfig(undefined, undefined, undefined, {
+      path: '/config/desk.json', present: false,
+      chassis: { projectDir: '/p', projectFile: '/p/jpack-desk.json', runtimeBin: '/bin/jpack', builds: {
+        desk: { moduleVersion: 'v0.0.0-20260926030000-798ef45c6275+dirty', revision: '798ef45c6275', modified: true },
+        runtime: { revision: '6842494ff049' }, runner: { revision: '9b739a344e25' }
+      } }
+    }))
+    expect(screen.getByText('798ef45')).toBeTruthy()
+    expect(screen.getByText('9b739a3')).toBeTruthy()
+    expect(screen.getByText(/Local changes/)).toBeTruthy()
+    expect(screen.getByText(/^Runtime:/).textContent).toContain('0.22.0-dev+6842494')
+    expect(screen.getByText(/"revision": "798ef45c6275"/)).toBeTruthy()
+  })
+
+  it('distinguishes an unconfigured Runner from unavailable build metadata', () => {
+    const config = effectiveConfig(undefined, undefined, undefined, {
+      path: '/config/desk.json', present: false,
+      chassis: { projectDir: '/p', projectFile: '/p/jpack-desk.json', runtimeBin: '/bin/jpack', builds: { desk: { moduleVersion: 'v1.2.3' }, runtime: {} } }
+    })
+    renderHelp(stubClient(PACKS), {}, config)
+    expect(screen.getByText('v1.2.3')).toBeTruthy()
+    expect(screen.getByText(/Runner:/).textContent).toBe('Runner: Not configured')
+    cleanup()
+    renderHelp(stubClient(PACKS))
+    expect(screen.getByText(/Runner:/).textContent).toBe('Runner: Unknown')
+  })
+
   it('says the desk has not named a runtime binary rather than composing one', () => {
     renderHelp(stubClient(PACKS))
     expect(screen.getByText(/the desk has not said/)).toBeTruthy()

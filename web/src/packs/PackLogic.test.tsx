@@ -18,7 +18,7 @@ vi.mock('../components/RelationshipMap', () => ({
     </div>)}</div>
 }))
 
-afterEach(() => { cleanup(); localStorage.clear() })
+afterEach(() => { cleanup(); localStorage.clear(); vi.clearAllMocks() })
 const base = JSON.parse(readFileSync(join(import.meta.dirname, '__fixtures__', 'minimal.pack.json'), 'utf8')) as PackDocument
 const doc = { ...base, applicability: { op: 'fact', path: '/case/type', operator: 'in', value: ['a', 'b', 'c', 'd'] },
   rules: [true, false].map((value, i) => ({ id: `rule-${i}`, description: 'A declared rule', onUnknown: 'escalate', outcome: i ? 'hold' : 'proceed',
@@ -40,11 +40,12 @@ function Example({ document = doc, mode: initial = 'list', trace }: { document?:
   const [model] = useState(() => projectLogic(document))
   return <PackLogic model={model} at={at} groupId={null}
     select={pointer => { select(pointer); setAt(pointer) }} mode={mode} onMode={setMode}
-    query={query} onQuery={setQuery} inspect={inspect} display={display} onDisplay={setDisplay}
+    query={query} onQuery={setQuery} inspect={pointer=>{inspect(pointer);setAt(pointer)}} display={display} onDisplay={setDisplay}
     viewport={{ x: 0, y: 24, zoom: 1 }} onViewport={() => {}} listScroll={{ current: 0 }} trace={trace} />
 }
 
 it('makes scope, evidence, conditions, outcomes and handoff readable without inspection', () => {
+  rememberLogicDisplay({conditions:true,grouped:false})
   render(<Example />)
   const rules = screen.getByRole('region', { name: 'Decision rules' })
   expect(within(rules).getAllByText('Case correction applied')).toHaveLength(2)
@@ -67,11 +68,11 @@ it('selects each real map item directly without a group or Outline step', async 
     const button = screen.getByRole('button', { name: id })
     fireEvent.click(button)
     expect(button.getAttribute('aria-current')).toBe('true')
-    expect(select).toHaveBeenLastCalledWith(id)
+    expect(inspect).toHaveBeenLastCalledWith(id)
   }
-  expect(inspect).not.toHaveBeenCalled()
-  expect(screen.getByText('true')).toBeTruthy()
-  expect(screen.getByText('false')).toBeTruthy()
+  expect(select).not.toHaveBeenCalled()
+  expect(screen.getAllByText('All 3 conditions')).toHaveLength(2)
+  expect(screen.queryByText('Case correction applied')).toBeNull()
 })
 
 it('remembers an optional compact display, while search exposes matching conditions', () => {
@@ -103,7 +104,7 @@ it('expands a large outcome group on the main canvas', async () => {
   render(<Example mode="map" document={{ ...doc, rules: Array.from({ length: 80 }, (_, i) => ({ ...doc.rules[0]!, id: `rule-${i}` })) }} />)
   fireEvent.click(await screen.findByRole('button', { name: 'rules:"proceed"' }))
   expect(await screen.findByRole('button', { name: '/rules/79' })).toBeTruthy()
-  expect(screen.getAllByText('Case correction applied')).toHaveLength(80)
+  expect(screen.getAllByText('All 3 conditions')).toHaveLength(80)
   expect(inspect).not.toHaveBeenCalled()
 })
 
@@ -122,15 +123,15 @@ it('keeps mixed recorded observations explicit in a grouped map', async () => {
   expect(await screen.findByText('Recorded conditions: 1 Met · 1 Cannot determine · 1 Unreported')).toBeTruthy()
 })
 
-it('defaults to detailed List and honors saved choices and unavailable storage', () => {
+it('defaults to compact List and honors saved choices and unavailable storage', () => {
   expect(initialLogicMode()).toBe('list')
-  expect(initialLogicDisplay()).toEqual({ conditions: true, grouped: false })
+  expect(initialLogicDisplay()).toEqual({ conditions: false, grouped: true })
   rememberLogicMode('map')
   expect(initialLogicMode()).toBe('map')
   localStorage.setItem('jp-desk:pack-logic-display:v1', '{broken')
-  expect(initialLogicDisplay()).toEqual({ conditions: true, grouped: false })
+  expect(initialLogicDisplay()).toEqual({ conditions: false, grouped: true })
   const unavailable = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('Unavailable') })
-  expect(initialLogicDisplay()).toEqual({ conditions: true, grouped: false })
+  expect(initialLogicDisplay()).toEqual({ conditions: false, grouped: true })
   expect(initialLogicMode()).toBe('list')
   unavailable.mockRestore()
 })

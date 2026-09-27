@@ -121,13 +121,14 @@ describe('the shell frame', () => {
     expect(screen.getByRole('main').getAttribute('tabindex')).toBe('-1')
   })
 
-  it('carries the strip’s two sentences verbatim', async () => {
+  it('keeps status compact and links to component versions in Help & About', async () => {
     const { unmount } = renderShell(
       <AppShell>
         <h1>a route</h1>
       </AppShell>
     )
-    expect(screen.getByRole('contentinfo').textContent).toContain('connected to jpack test')
+    expect(screen.getByRole('contentinfo').textContent).toBe('connected')
+    expect(screen.getByRole('link', { name: 'Help & About: connected' }).getAttribute('href')).toBe('/help')
     expect(screen.getByRole('banner').textContent).not.toContain('connected')
     unmount()
     // **The verdict is the status, not the metadata.** `server` is retained
@@ -150,7 +151,7 @@ describe('the shell frame', () => {
     )
     const strip = screen.getByRole('contentinfo').textContent ?? ''
     expect(strip).toContain('reconnecting')
-    expect(strip).not.toContain('connected to jpack test')
+    expect(strip).not.toContain('jpack test')
   })
 
   it.each(['/', '/help', '/matrix', '/graphs', '/author', '/packs/example/evaluate'])(

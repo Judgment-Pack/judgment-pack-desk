@@ -13,12 +13,13 @@ import { jobsAPI, type InputMapping, type InputPreview, type SourceInput } from 
 import { initialMapping, localSnapshot, sourcePaths, sourceText, verifySource } from './sourceInputs'
 import styles from './JobsView.module.css'
 
-export function SourceInputFields({ doc, provider, fixed, disabled, onChange }: { doc: PackDocument; provider: InputMapping['provider']; fixed?: InputMapping; disabled: boolean; onChange: (source: SourceInput | undefined) => void }) {
+export function SourceInputFields({ doc, provider, fixed, disabled, onChange, onWorkChange }: { doc: PackDocument; provider: InputMapping['provider']; fixed?: InputMapping; disabled: boolean; onChange: (source: SourceInput | undefined) => void; onWorkChange?: (dirty: boolean) => void }) {
   useLocale()
   const config = useEffectiveConfig().config.research, connections = useConnectionsPane()
   const [snapshot, setSnapshot] = useState<SourceInput['snapshot']>(), [mapping, setMapping] = useState<InputMapping>()
   const [preview, setPreview] = useState<InputPreview>(), [error, setError] = useState(''), [progress, setProgress] = useState('')
   const operation = useRef<AbortController | null>(null), upload = useRef<HTMLInputElement>(null)
+  useEffect(() => { onWorkChange?.(!!snapshot || !!mapping) }, [snapshot,mapping,onWorkChange])
   const context = JSON.stringify([config.gateway, config.documents, provider, fixed])
   useEffect(() => { setSnapshot(undefined); setMapping(undefined); setPreview(undefined); setError(''); setProgress(''); onChange(undefined); return () => { operation.current?.abort(); operation.current = null } }, [context, onChange])
   const paths = useMemo(() => snapshot ? sourcePaths(snapshot) : [], [snapshot])

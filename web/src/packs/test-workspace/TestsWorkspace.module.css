@@ -58,12 +58,6 @@
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
 }
-.table td:first-child {
-  padding-left: 0;
-}
-.table th:first-child {
-  padding-left: 0;
-}
 .table tr[data-selected='true'] {
   background: var(--surface-raised);
 }
@@ -500,8 +494,7 @@
 .casesTable th:nth-child(2) { width: 7.5rem; }
 .casesTable th:nth-child(3) { width: 6rem; }
 .casesTable th:nth-child(4) { width: 4rem; }
-.casesTable th:last-child { width: calc(2 * var(--density-control) + var(--space-1) + var(--density-cell-x)); }
-.casesTable td:last-child { padding-inline-end: 0; }
+.casesTable th:last-child { width: calc(2 * var(--density-control) + var(--space-1) + 2 * var(--density-cell-x)); }
 .rowActions { display: flex; justify-content: flex-end; gap: var(--space-1); }
 .savedCaseName { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; max-width: 100%; }
 .sourceMenu h3 { margin: 0; font-size: var(--text-heading); }

@@ -1479,8 +1479,8 @@ of route above it; at 109px it renders 33px, which is everything there is. A
 as always.
 
 Every key is optional except `deskConfigVersion`. `organization.name` is a
-non-empty string or `null`; `null` is how a file asks for the desk's own name,
-and `""` is refused by name rather than rendering a blank brand. `appearance` is
+non-empty string or `null`; `null` uses the built-in organization fallback,
+and `""` is refused. This organization label is separate from a desk's name. `appearance` is
 decoded and validated, and it is the **default** rather than the answer: what
 this desk paints is the viewer's own preference where they have one, set from
 the user menu and held in their browser. `theme` is applied as above and
@@ -1492,9 +1492,25 @@ four-byte astral character costs two UTF-16 units and is therefore only 2:1,
 while the three-byte character that costs one unit is the worst case), carried in the JSON
 itself and encoded to a `data:` URI in the browser — **never** injected as
 markup, and never a file path (the file API refuses non-UTF-8, so it could not
-carry a raster image, and no endpoint is being added for a logo). Absent an
-organization name, the header reads `judgment‑pack desk` — never an invented
-company, and never a name taken from a token claim.
+carry a raster image, and no endpoint is being added for a logo).
+
+The header shows the desk name with a separate dropdown for Project files,
+switching desks, and creating a desk. The name links home. Its default logo and
+favicon use the same bundled mark as [the JPS website](https://judgmentpack.org).
+Admin → Organization → Logo accepts SVG, PNG, JPEG, and WebP uploads, previews
+the settings draft, and restores the JPS mark with Reset to default. Custom
+logos are saved in `organization.mark` through the existing verified settings
+write; uploads never leave the local desk. The encoded value retains the
+65,536-byte limit. Organization names do not replace desk names in navigation.
+
+The favicon follows the current logo automatically; the browser scales the
+image for its tab. **Admin → Organization → Favicon** optionally uploads a
+separate SVG, PNG, or ICO image, with a tab-size preview. Save stores that
+choice as `organization.favicon`, independently of the header logo. **Use logo**
+clears the override on Save, and later logo changes update the favicon again.
+Omitting `favicon` or setting it to `null` keeps automatic behavior. Overrides
+use the same inline-image format and 65,536-byte limit as the logo. The browser
+icon's MIME hint follows the selected image format.
 
 **`storage.packs` is where a new pack goes**, and it is the whole reason the
 Create-pack dialog has no path field: the name gives the id, and the id gives
@@ -1755,6 +1771,12 @@ status line, Help & About and the status strip; the runtime is named only where
 the connection is actually up. It replaced a **Runtime** card whose four slots held nothing anybody
 could edit; the card's own content is in **Help & About**, which is where a
 reader goes to ask what they are connected to.
+
+The footer shows connection status only and links to **Help & About**. That page
+keeps Desk, Runtime, Runner and available Gateway identities together. Development
+builds show their source commit, with local changes marked explicitly; absent build
+metadata stays unknown. The collapsed **Build information** section contains public
+compiler metadata captured at startup, without compiler flags or environment values.
 
 **Neither configuration file is on that line**, and the omission is the point:
 the section that is *about* a file names it, and naming a file twice is what
@@ -5457,6 +5479,83 @@ Jobs also supports **Mapped sources**: named case, local-file, selected Drive an
 MCP inputs with Runner-verified receipts, derivation, release review and retained
 lineage. Source reads are explicit; artifacts remain local. Configure trusted
 profiles with the installation-only `--runner-input-profiles /absolute/file.json`
-flag. The current mapping editor exposes advanced rules and request templates as
-JSON. See [the Mapping v2 workflow](docs/design/jobs-mapping-v2.md) for setup,
+flag. The mapping table assigns each fact and evidence requirement to case inputs
+or a named source. Source configuration opens in Details. Advanced rules and
+request templates remain available as JSON. See [the Mapping v2 workflow](docs/design/jobs-mapping-v2.md) for setup,
 verification, compatibility and remaining scope.
+
+
+### Jobs and Runs workspace
+
+See the [implementation scope and verification](docs/design/jobs-workspace-phase1.md).
+
+The Jobs tab lists immutable pack releases and five recent execution states; the
+Runs tab searches the complete run history and filters execution state or items
+needing attention. Filtering happens in Runner before pagination. A completed
+execution can still reject a case or request review; execution and decision are
+separate columns. List responses omit retained inputs and audit bodies.
+
+Create job has four steps: Job, Inputs, Trigger and Review. Manual inputs use
+fields inferred from the pack, with exact JSON available in disclosures. Unknown,
+null, false and zero remain distinct. Evidence availability is explicit and does
+not follow automatically from attaching a document. A preview runs the saved tests
+against the exact pack snapshot; changes invalidate review. Every operational run
+starts with fresh case inputs and fresh file selection, never the release sample.
+
+Jobs now supports durable local schedules, stable project JSON file changes and
+authenticated event delivery. Configure them in **Create job → Trigger** or
+**Job → Triggers**. Changes save paused and enabling requires review. Occurrence
+history distinguishes admission, skips and expiry from evaluation results.
+See [local trigger behavior and verification](docs/design/jobs-local-triggers.md).
+Google Cloud Scheduler and persistent Gateway operations are available with the
+installation-owned connections described below.
+Job and run briefs remain in the right rail. Run storage and artifacts remain local.
+
+
+Jobs background connections are installed with
+`--runner-connections /absolute/path/to/connections.json`. This host-owned JSON
+object contains optional `cloud` and `gateway` arrays. Cloud entries name an `id`,
+a dedicated full Pub/Sub `subscription`, and an absolute local ADC
+`credentialsFile`. An omitted `desk` assigns that subscription to the startup desk
+only. To assign it to a named desk, set `desk` to its stable 32-character ID from
+`GET /api/desks`. Use a separate subscription per desk; duplicate subscription
+assignments are refused. Gateway entries bind an installed input `profile` to a trusted
+Gateway origin `url`; use `--runner-input-profiles` for the matching public trust
+profiles. Credential contents and Gateway addresses are not returned to the UI.
+Restart Desk after installation configuration changes.
+
+Google Cloud Scheduler appears in Jobs → Triggers. Local execution continues while
+the browser is closed, but needs the host awake and Desk running. Google controls
+schedule timing; Desk shows local listening and admission history. Cloud resources
+are not created by choosing this option. See the Runner's
+[Google deployment and setup guide](../judgment-pack-runner/deploy/google-cloud/README.md).
+
+Version 2 operation mappings can use fresh persistent Gateway connections on local
+schedule and cloud triggers. Preview makes real source calls; enabling authorizes
+future calls and possible provider charges. Interactive file picker grants remain
+single-use and cannot power background jobs. Details are in the Runner's
+[background acquisition design](../judgment-pack-runner/docs/design/google-cloud-triggers.md).
+
+### Unsaved work and job drafts
+
+Desk marks the browser tab with `*` while work is unsaved. In-app exits and
+destructive editor actions use a styled confirmation: type the displayed name,
+or `Yes` for unnamed work. Saving, discarding, or returning to the saved values
+clears the marker. Reloading or closing the browser uses its native warning.
+
+The job wizard offers **Save draft** and **Save draft and leave**. Resume from
+the **Jobs** table, where drafts carry a **Draft** badge. Drafts are ordinary project files under
+`.desk/job-drafts/`, saved through the authenticated file API with revision
+checks and verified read-back. Include that directory in project backups; chat
+backups do not contain these files. Drafts store configuration and sample inputs,
+not file grants, source snapshots, preview receipts, or release approvals.
+Reselect files, preview inputs, and check the release after resuming. A draft
+never runs or enables a trigger. Finish unapplied source fields before saving.
+
+See [unsaved-work behavior](docs/design/unsaved-work.md) for coverage and limits.
+
+### Named desks
+
+Use the desk name beside the brand to switch desks or **Create desk…**. Each new desk keeps its packs, source documents, chats, drafts, tests, briefs, jobs, and run artifacts in its own folder. Its private data lives under `.desk-private/`, excluded from the project file editor. Machine credentials remain in protected settings. The browser title uses the desk name and keeps `*` while edits are unsaved; the favicon follows the configured brand.
+
+Switching desks checks unsaved work and does not stop another desk's runner. Existing projects retain their storage locations; creating a desk does not migrate existing data. Use the paired runtime update, which accepts an empty project until its first pack is created. See [named desk storage and lifecycle](docs/design/named-desks.md).

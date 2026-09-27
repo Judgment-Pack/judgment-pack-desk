@@ -56,6 +56,9 @@
   --ink: #23252a;
   --ink-soft: #5b5b5d;
   --ink-faint: #68686b;
+  --logic-outcome: #28665c;
+  --logic-exception: #805516;
+  --logic-rule: #555a60;
   --ink-inverse: #fefeff;
 
   /* Green links/selections and the primary action hover/pressed fills. The **focus ring is
@@ -287,6 +290,9 @@
     --ink: #e2e3e5;
     --ink-soft: #a0a0a4;
     --ink-faint: #97979a;
+  --logic-outcome: #91c1b6;
+  --logic-exception: #d4b578;
+  --logic-rule: #afb3bb;
     --ink-inverse: #fefeff;
     --accent: #a7c8bc;
     --accent-hover: #39786e;
@@ -324,6 +330,9 @@
   --ink: #e2e3e5;
   --ink-soft: #a0a0a4;
   --ink-faint: #97979a;
+  --logic-outcome: #91c1b6;
+  --logic-exception: #d4b578;
+  --logic-rule: #afb3bb;
   --ink-inverse: #fefeff;
   --accent: #a7c8bc;
   --accent-hover: #39786e;
@@ -1439,66 +1448,6 @@ fieldset {
   flex-wrap: wrap;
 }
 
-/* Authoring (issue #14, phase 1) -------------------------------------------
-   The file list and the editor sit side by side where there is room, and stack
-   where there is not. Nothing here is a form: phase 1 edits bytes. */
-
-.authoring-panes {
-  display: grid;
-  grid-template-columns: minmax(200px, 15rem) minmax(0, 1fr);
-  gap: var(--density-section);
-  align-items: start;
-}
-
-@media (max-width: 52rem) {
-  .authoring-panes {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-.file-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 0.15rem;
-  max-height: 30rem;
-  overflow-y: auto;
-  position: relative;
-}
-
-.file-entry {
-  appearance: none;
-  width: 100%;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.35rem 0.5rem;
-  border: 0;
-  border-left: 2px solid transparent;
-  border-radius: var(--radius);
-  background: none;
-  font: inherit;
-  font-size: var(--text-sm);
-  text-align: left;
-  cursor: pointer;
-}
-
-.file-entry code {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.file-entry > span {
-  flex-shrink: 0;
-  font-size: var(--text-xs);
-  white-space: nowrap;
-}
-
-.file-entry:focus-visible,
 .disclosure > summary:focus-visible,
 .code-editor:focus-visible {
   outline: 2px solid var(--accent);
@@ -1520,15 +1469,6 @@ fieldset {
   margin-bottom: var(--space-2);
 }
 
-.file-entry:hover {
-  background: var(--surface);
-}
-
-.file-entry-on {
-  border-left-color: var(--accent);
-  background: var(--surface);
-}
-
 .stale-write .actions {
   margin-top: 0.6rem;
 }
@@ -1536,12 +1476,6 @@ fieldset {
 .stale-write p {
   margin: 0 0 0.35rem;
   color: var(--ink);
-}
-
-/* A notice that spans both authoring panes rather than sitting in one. */
-.authoring-wide {
-  grid-column: 1 / -1;
-  margin-bottom: 0;
 }
 
 /* The assistant form's tool grant -------------------------------------------

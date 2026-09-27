@@ -1,3 +1,4 @@
+import { useDirtyGuard } from '../shell/useDirtyGuard'
 import { msg, useLocale } from '../i18n'
 /**
  * Research and draft: the authoring conversation that researches sources
@@ -14,7 +15,7 @@ import { msg, useLocale } from '../i18n'
  * which names it, validates the bytes and writes them exactly as it always has.
  */
 import { useEffect, useState } from 'react'
-import { useBlocker, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { Conversation, statusLine } from '../research/ui/Conversation'
 import { DraftTabs, type Selection } from '../research/ui/DraftPanels'
 import { SourceInspector } from '../research/ui/SourceInspector'
@@ -63,12 +64,7 @@ export function ResearchAuthoringPage() {
   // Leaving the page ends the run: nothing about it is persisted, and a run
   // nobody is watching is a run spending budget for nobody.
   useEffect(() => () => run?.stop(), [run])
-  const blocker = useBlocker(({ currentLocation, nextLocation }) => running && currentLocation.pathname !== nextLocation.pathname)
-  useEffect(() => {
-    if (blocker.state !== 'blocked') return
-    if (window.confirm(msg('Leave and stop the research run? The draft so far will be discarded.'))) blocker.proceed()
-    else blocker.reset()
-  }, [blocker])
+  useDirtyGuard(running, msg('Leave and stop the research run? The draft so far will be discarded.'))
 
   const select = (next: Selection) => {
     setSelection(next)

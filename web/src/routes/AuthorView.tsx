@@ -1,15 +1,30 @@
 import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
-import { PageHeader, PageBody } from '../ui/PageLayout'
+import { PageHeader } from '../ui/PageLayout'
 import { Button } from '../ui/Button'
 import { OverflowTooltip } from '../ui/Tooltip'
-import { useEffect, useMemo, useState } from 'react'
-import { Empty, ErrorBox, Loading, Pill, Section } from '../components/primitives'
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { Empty, ErrorBox, Loading, Pill } from '../components/primitives'
 import { StaleWrite, type FileContent } from '../files/client'
 import { useFileContent, useFileListing } from '../files/queries'
 import { useFileEditing } from '../files/useFileEditing'
 import { useOpenRequests, usePublishedDirty } from '../shell/authorBridge'
+import { useConfirmDiscard } from '../shell/UnsavedChanges'
 import { useDirtyGuard } from '../shell/useDirtyGuard'
+import { IconChevronLeft, IconDetails } from '../shell/icons'
+import { PaneToggle } from '../shell/PaneToggle'
+import { PaneDivider } from '../ui/PaneDivider'
+import styles from './AuthorView.module.css'
+
+const DEFAULT_FILES_WIDTH = 280
+const MIN_FILES_WIDTH = 220
+function storedWidth(key: string): number {
+  try {
+    const value = Number(localStorage.getItem(key))
+    if (Number.isFinite(value) && value >= MIN_FILES_WIDTH && value <= 480) return value
+  } catch { /* Browser storage is optional. */ }
+  return DEFAULT_FILES_WIDTH
+}
 
 /**
  * The authoring shell: pick a file, edit its bytes, save them (issue #14,
@@ -43,6 +58,43 @@ export function AuthorView() {
   const listing = useFileListing()
   const [selected, setSelected] = useState<string | undefined>(undefined)
   const [dirty, setDirty] = useState(false)
+  const frame = useRef<HTMLDivElement>(null), paneId = useId()
+  const [room, setRoom] = useState<number>()
+  const [width, setWidth] = useState(DEFAULT_FILES_WIDTH)
+  const [browsing, setBrowsing] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
+  const expandButton = useRef<HTMLButtonElement>(null)
+  const widthKey = listing.data ? `jpack.files-pane.v1:${listing.data.root}` : undefined
+  useEffect(() => { if (widthKey) setWidth(storedWidth(widthKey)) }, [widthKey])
+  useEffect(() => {
+    const element = frame.current
+    if (!element) return
+    const measure = () => {
+      const available = element.getBoundingClientRect().width
+      if (available > 0) setRoom(available)
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+  const compact = room !== undefined && room < 640
+  const maxWidth = Math.min(480, Math.max(MIN_FILES_WIDTH, (room ?? 1200) - 360))
+  const paneWidth = Math.min(width, maxWidth)
+  const resize = (value: number) => {
+    setWidth(value)
+    try { if (widthKey) localStorage.setItem(widthKey, String(value)) } catch { /* Keep the session preference. */ }
+  }
+  const showBrowser = compact && (browsing || !selected)
+  const browse = () => {
+    setBrowsing(true)
+    requestAnimationFrame(() => frame.current?.querySelector<HTMLButtonElement>('button[aria-current="true"]')?.focus())
+  }
+  const collapse = () => {
+    setCollapsed(true)
+    requestAnimationFrame(() => expandButton.current?.focus())
+  }
+  const leading = compact ? <Button variant="quiet" onClick={browse}><IconChevronLeft />{msg('Files')}</Button> : collapsed ? <PaneToggle compact label={msg('Expand files')} expanded={false} controls={paneId} buttonRef={expandButton} onClick={() => setCollapsed(false)} /> : undefined
 
   const files = listing.data?.files ?? []
   const partial = listing.data?.partial ?? []
@@ -60,20 +112,15 @@ export function AuthorView() {
   // Two guards, because they cover two different exits and neither covers the
   // other — both now in `shell/useDirtyGuard.ts`, so the pack editor holds the
   // same pair rather than a second spelling of it.
-  useDirtyGuard(dirty, msg('This file has unsaved changes that will be lost. Leave anyway?'))
+  const confirmDiscard = useConfirmDiscard()
+  useDirtyGuard(dirty, msg('This file has unsaved changes that will be lost. Leave anyway?'), { name: selected })
 
-  const choose = (path: string) => {
-    if (path === selected) return
-    if (
-      dirty &&
-      !window.confirm(
-        msg('{{current}} has unsaved changes that will be lost. Open {{next}} anyway?', { current: selected, next: path })
-      )
-    ) {
-      return
-    }
+  const choose = async (path: string) => {
+    if (path === selected) { setBrowsing(false); return }
+    if (dirty && !await confirmDiscard(msg('Discard unsaved changes to this file?'), { name: selected })) return
     setDirty(false)
     setSelected(path)
+    setBrowsing(false)
   }
 
   // Routed through `choose`, so the dirty-buffer question is asked for a file
@@ -83,67 +130,44 @@ export function AuthorView() {
 
   return (
     <article className="detail authoring" data-measure="full" data-layout="page">
-      <PageHeader title={msg("Project files")} />
-      <PageBody width="full">
-      <p className="quiet">{msg("Edit configuration, inputs and source files in this project.")}</p>
-      {/* An error replaces the pane only when there is nothing behind it.
-          TanStack keeps the previous listing after a failed refetch, and the
-          file watcher refetches on every change — so treating any error as
-          fatal would unmount an open editor, and its buffer with it, because
-          something unrelated failed once. */}
-      {listing.error && !listing.data ? (
-        <ErrorBox title={msg("Could not list the project's files")} error={listing.error} />
-      ) : listing.isPending ? (
-        <Loading what={msg("the project's files")} />
-      ) : (
-        <div className="authoring-panes">
-          {listing.error && (
-            <p className="note note-warn authoring-wide" role="status"><Message text={"<0/> —<1/><2/>. What is shown is the last listing that answered; your edit is untouched."} slots={[<strong>{msg("The file list could not be refreshed")}</strong>, ' ', listing.error.message]} /></p>
-          )}
-          <Section title={msg("Files")} count={files.length}>
-            {partial.length > 0 && (
-              <p className="note note-warn" role="status"><Message text={"<0/> The desk could not read everything in the project:<1/><2/>"} slots={[<strong>{msg("This list is incomplete.")}</strong>, <br />, partial.map((problem) => (
-                  <code key={problem} className="partial-reason">
-                    {problem}
-                  </code>
-                ))]} /></p>
-            )}
-            {files.length === 0 && partial.length === 0 ? (
-              <Empty>{msg("This project directory contains no files.")}</Empty>
-            ) : files.length === 0 ? (
-              // Not "no files" — nothing readable. The difference is the whole
-              // reason `partial` exists, and stating the definite version here
-              // would report a permission error as an empty project.
-              <Empty>{msg("Nothing in this project could be read; see above.")}</Empty>
-            ) : (
-              <ul className="file-list">
-                {files.map((file) => (
-                  <li key={file.path}>
-                    <OverflowTooltip selector="code"><button
-                      type="button"
-                      className={`file-entry${file.path === selected ? ' file-entry-on' : ''}`}
-                      aria-current={file.path === selected ? 'true' : undefined}
-                      onClick={() => choose(file.path)}
-                    >
-                      <code>{file.path}</code>
-                      <span className="quiet"><Message text={"<0/> bytes"} slots={[file.bytes]} /></span>
-                    </button></OverflowTooltip>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Section>
-
-          {selected ? (
-            <FileEditor key={selected} path={selected} listed={listedNow} onDirty={setDirty} />
-          ) : (
-            <Section title={msg("Editor")}>
-              <Empty>{msg("Choose a file to edit.")}</Empty>
-            </Section>
-          )}
-        </div>
-      )}
-      </PageBody>
+      <div ref={frame} className={styles.frame} data-compact={compact || undefined}
+        style={{ '--files-width': `${paneWidth}px` } as CSSProperties}>
+        <aside id={paneId} className={styles.browser} aria-label={msg('Browse files')} hidden={compact ? !showBrowser : collapsed}>
+          <PageHeader title={msg('Project files')} meta={files.length} leading={!compact && <PaneToggle compact label={msg('Collapse files')} expanded controls={paneId} onClick={collapse} />} />
+          <div className={styles.fileScroll}>
+            {listing.error && !listing.data ? <ErrorBox title={msg("Could not list the project's files")} error={listing.error} />
+              : listing.isPending ? <Loading what={msg("the project's files")} /> : <>
+              {listing.error && <p className="note note-warn" role="status"><Message text={"<0/> —<1/><2/>. What is shown is the last listing that answered; your edit is untouched."} slots={[<strong>{msg("The file list could not be refreshed")}</strong>, ' ', listing.error.message]} /></p>}
+              {partial.length > 0 && <p className="note note-warn" role="status"><Message text={"<0/> The desk could not read everything in the project:<1/><2/>"} slots={[<strong>{msg("This list is incomplete.")}</strong>, <br />, partial.map(problem => <code key={problem} className="partial-reason">{problem}</code>)]} /></p>}
+              {files.length === 0 ? <Empty>{partial.length === 0 ? msg("This project directory contains no files.") : msg("Nothing in this project could be read; see above.")}</Empty> :
+                <nav aria-label={msg('Files')}><ul className={styles.fileList}>
+                  {files.map(file => <li key={file.path}>
+                    <OverflowTooltip selector="[data-file-label]" content={file.path}>
+                      <button type="button" className={styles.fileEntry} aria-label={file.path}
+                        aria-current={file.path === selected ? true : undefined} onClick={() => void choose(file.path)}>
+                        <IconDetails />
+                        <span className={styles.fileText}>
+                          <span data-file-label>{file.path.split('/').at(-1)}</span>
+                          {file.path.includes('/') && <small data-file-label>{file.path}</small>}
+                        </span>
+                      </button>
+                    </OverflowTooltip>
+                  </li>)}
+                </ul></nav>}
+            </>}
+          </div>
+          {!compact && !collapsed && <PaneDivider paneSide="start" label={msg('Resize file pane')} controls={paneId}
+            value={paneWidth} min={MIN_FILES_WIDTH} max={maxWidth} onChange={resize}
+            onReset={() => resize(Math.min(DEFAULT_FILES_WIDTH, maxWidth))} onCollapse={collapse}
+            preview={{element:frame.current, property:'--files-width'}} />}
+        </aside>
+        <section className={styles.detail} aria-label={msg('Editor')} hidden={showBrowser}>
+          {selected ? <FileEditor key={selected} path={selected} listed={listedNow} onDirty={setDirty} leading={leading} /> : <>
+            <PageHeader title={msg('Editor')} leading={leading} />
+            <div className={styles.empty}><IconDetails /><p>{msg('Choose a file to edit.')}</p></div>
+          </>}
+        </section>
+      </div>
     </article>
   )
 }
@@ -163,14 +187,17 @@ export function AuthorView() {
 function FileEditor({
   path,
   listed,
-  onDirty
+  onDirty,
+  leading
 }: {
   path: string
   /** Whether the current listing still carries this path. */
   listed: boolean
   onDirty: (dirty: boolean) => void
+  leading?: ReactNode
 }) {
   useLocale()
+  const confirmDiscard = useConfirmDiscard()
   const loaded = useFileContent(path)
   // The base revision, the save and its proof — `files/useFileEditing.ts`,
   // which is this editor's own discipline lifted out so the pack editor holds
@@ -210,7 +237,8 @@ function FileEditor({
     base !== undefined && loaded.data !== undefined && loaded.data.sha256 !== base.sha256
   const deleted = base !== undefined && (!listed || loaded.isError)
 
-  const reload = () => {
+  const reload = async () => {
+    if (dirty && !await confirmDiscard(msg('Reload and discard changes?'), { name: path })) return
     // This editor is remounted per file (`key={selected}`), so there is no
     // other document a late answer could land in: it takes every read it asked
     // for, and says so.
@@ -234,29 +262,33 @@ function FileEditor({
 
   if (loaded.error && base === undefined) {
     return (
-      <Section title={msg("Editor")}>
+      <><PageHeader title={path.split('/').at(-1)!} leading={leading} /><div className={styles.feedback}>
         <ErrorBox title={msg("Could not read {{value0}}", { value0: path })} error={loaded.error} />
-      </Section>
+      </div></>
     )
   }
   if (base === undefined || buffer === undefined) {
     return (
-      <Section title={msg("Editor")}>
+      <><PageHeader title={path.split('/').at(-1)!} leading={leading} /><div className={styles.feedback}>
         <Loading what={path} />
-      </Section>
+      </div></>
     )
   }
 
   return (
-    <Section title={msg("Editor")}>
-      <>
-        <p className="meta">
-          <code>{path}</code>
+    <>
+      <PageHeader title={path.split('/').at(-1)!} leading={leading}
+        meta={dirty ? <Pill tone="danger">{msg('unsaved changes')}</Pill> : <span>{msg('saved')}</span>}
+        actions={<Button variant="primary" disabled={!dirty || write.isPending} onClick={() => save(false)}>
+          {write.isPending ? msg('Saving…') : msg('Save')}
+        </Button>} />
+      <div className={styles.editorBody}>
+        <div className={styles.fileMeta}>
+          <OverflowTooltip><code tabIndex={0}>{path}</code></OverflowTooltip>
           <span><Message text={"<0/> bytes"} slots={[base.bytes]} /></span>
-          <code>sha256 {base.sha256.slice(0, 12)}…</code>
-          {dirty ? <Pill tone="danger">{msg("unsaved changes")}</Pill> : <Pill tone="quiet">{msg("saved")}</Pill>}
-        </p>
-
+          <code className={styles.digest} title={`sha256 ${base.sha256}`}>sha256 {base.sha256.slice(0, 12)}…</code>
+        </div>
+        <div className={styles.notices}>
         {deleted && (
           <p className="note note-warn" role="alert"><Message text={"<0/> Something else deleted or moved it. Your edit is still here and nothing has been written; saving will recreate the file, and will be refused first because the bytes this edit started from are gone."} slots={[<strong>{msg("This file is no longer in the project.")}</strong>]} /></p>
         )}
@@ -264,28 +296,22 @@ function FileEditor({
           <p className="note note-warn"><Message text={"<0/> Your edit is still against the bytes you loaded, and saving will be refused rather than overwrite the change. Reload to start from what is there now — that discards what is in the box."} slots={[<strong>{msg("This file changed on disk since you opened it.")}</strong>]} /></p>
         )}
 
-        <label className="editor-label" htmlFor="authoring-buffer">{msg("File contents")}</label>
+        </div>
+        <label className={styles.editorLabel} htmlFor="authoring-buffer">{msg("File contents")}</label>
         <textarea
           id="authoring-buffer"
-          className="code-editor"
-          rows={22}
+          className={`code-editor ${styles.buffer}`}
           spellCheck={false}
           value={buffer}
           onChange={(event) => setBuffer(event.target.value)}
         />
 
-        <div className="actions">
-          <Button
-            variant="primary"
-            disabled={!dirty || write.isPending}
-            onClick={() => save(false)}
-          >
-            {write.isPending ? msg("Saving…") : msg("Save")}
-          </Button>
+        <div className={styles.editorActions}>
           <Button
             variant="quiet"
             disabled={!dirty || write.isPending}
-            onClick={() => {
+            onClick={async () => {
+              if (!await confirmDiscard(msg('Discard unsaved changes to this file?'), { name: path })) return
               // Discard puts the buffer back *and* clears what the last attempt
               // said about it. A stale conflict notice with a live "Overwrite
               // anyway" beside a buffer that no longer differs is an offer to
@@ -304,6 +330,7 @@ function FileEditor({
           >{msg("Reload from disk")}</Button>
         </div>
 
+        <div className={styles.notices}>
         {stale && (
           <StaleNotice
             stale={stale}
@@ -326,8 +353,9 @@ function FileEditor({
             )}
           </p>
         )}
-      </>
-    </Section>
+        </div>
+      </div>
+    </>
   )
 }
 

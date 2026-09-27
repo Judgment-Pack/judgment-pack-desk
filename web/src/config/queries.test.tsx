@@ -204,6 +204,13 @@ describe('what the chassis says about this process', () => {
     expect(effective.desk!.text).toBe('{"deskConfigVersion":1}')
   })
 
+  it.each([false, true])('preserves startup build identities when configuration present is %s', async present => {
+    const builds = { desk: { revision: 'desk-revision', modified: true }, runtime: { revision: 'runtime-revision' }, runner: { revision: 'runner-revision' } }
+    answers({ path: '/config/desk.json', present, ...(present ? { content: '{"deskConfigVersion":1}' } : {}), project: { dir: '/p', file: '/p/jpack-desk.json' }, runtime: { bin: 'jpack' }, builds })
+    const effective = await loadDeskConfig()
+    expect(effective.desk?.chassis?.builds).toEqual(builds)
+  })
+
   it('says nothing about them where the chassis did not', async () => {
     // Undefined rather than empty strings: a page that filled these in would
     // be naming paths it never learned.

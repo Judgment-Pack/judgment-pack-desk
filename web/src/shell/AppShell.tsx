@@ -1,3 +1,6 @@
+import { useChats } from '../chat/ChatProvider'
+import { useDirtyGuard } from './useDirtyGuard'
+import { UnsavedChangesProvider } from './UnsavedChanges'
 import { AssistantReferenceProvider } from '../chat/AssistantReference'
 import { msg, useLocale } from '../i18n'
 import { InspectorPresentationContext, type InspectorPresentation } from './InspectorPresentation'
@@ -103,11 +106,11 @@ export function AppShell({ children }: { children: ReactNode }) {
         projectDefault={config.appearance}
         projectDefaultKnown={configRead}
       >
-        <TooltipProvider>
+        <TooltipProvider><UnsavedChangesProvider><ChatSaveIndicator />
           <ShellFrame railIsDrawer={railIsDrawer} inspectorIsDrawer={inspectorIsDrawer}>
             {children}
           </ShellFrame>
-        </TooltipProvider>
+        </UnsavedChangesProvider></TooltipProvider>
       </AppearanceProvider>
     </ShellStateProvider>
   )
@@ -118,6 +121,13 @@ export function AppShell({ children }: { children: ReactNode }) {
  * rather than in the rail — a control inside a closed drawer opens nothing.
  * That is why `railIsDrawer` is threaded into `HeaderBar` at all.
  */
+function ChatSaveIndicator() {
+  const {dirty}=useChats()
+  // Chat state survives route changes; only closing the document risks losing a pending write.
+  useDirtyGuard(dirty,msg('Chat changes have not been saved.'),{shouldBlock:()=>false})
+  return null
+}
+
 function ShellFrame({
   railIsDrawer,
   inspectorIsDrawer: defaultInspectorIsDrawer,
@@ -201,7 +211,7 @@ function ShellFrame({
     close: (options?: { restoreFocus?: boolean }) => closeConnection(false, options?.restoreFocus ?? true)
   }), [openConnection, busyChatId, connection?.chatId, closeConnection])
   const presentation: InspectorPresentation | null = connection ? {
-    title: connection.source === 'web' ? msg('Add link') : connection.provider ? providerName(connection.provider, connection.descriptor) : msg('Connections'),
+    title: connection.source === 'web' ? msg('Add link') : connection.provider ? providerName(connection.provider, connection.descriptor) : connection.purpose === 'job-source' ? msg('Add integration') : msg('Connections'),
     available: true, open: true, onOpenChange: open => { if (!open) closeConnection() },
     width: connectionWidth, onResize: setConnectionWidth, onReset: () => setConnectionWidth(480),
     minimumMainWidth: 560, maximumWidth: 560, closeOnEscape: true, restoreFocusRef: connectionOpener

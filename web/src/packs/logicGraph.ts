@@ -22,22 +22,29 @@ export function projectLogicGraph(model: LogicProjection, grouped = false, expan
     const key = typeof outcome === 'string' ? JSON.stringify(outcome) : item.pointer
     buckets.set(key, [...(buckets.get(key) ?? []), item])
   }
+  const exceptionBuckets = new Map<string, LogicItem[]>()
+  for (const item of exceptions.items) {
+    if (!isRecord(item.value) || item.value.effect !== 'force-outcome' || typeof item.value.outcome !== 'string') continue
+    const key=JSON.stringify(item.value.outcome)
+    exceptionBuckets.set(key,[...(exceptionBuckets.get(key)??[]),item])
+  }
   for (const group of [exceptions, rules, outcomes]) {
     const seen = new Set<string>()
     for (const item of group.items) {
       const outcome = isRecord(item.value) ? item.value.outcome : undefined
       const key = typeof outcome === 'string' ? JSON.stringify(outcome) : item.pointer
-      const id = `rules:${key}`
-      const bucket = buckets.get(key) ?? [item]
+      const id = `${group.id}:${key}`
+      const bucket = (group === exceptions ? exceptionBuckets : buckets).get(key) ?? [item]
       // An exclusion must point to its exact rule, never a group suggesting
       // every rule contributing that outcome is excluded.
-      const aggregate = group === rules && grouped && bucket.length > 1 && !expanded.has(id)
-        && !bucket.some(child => isRecord(child.value) && targetedRules.has(child.value.id))
+      const aggregate = grouped && bucket.length > 1 && !expanded.has(id) && (
+        group === rules && !bucket.some(child => isRecord(child.value) && targetedRules.has(child.value.id)) ||
+        group === exceptions && isRecord(item.value) && item.value.effect === 'force-outcome')
       if (aggregate && seen.has(key)) continue
       seen.add(key)
       const items = aggregate ? bucket : [item]
       const nodeId = aggregate ? id : item.pointer
-      nodes.push({ id: nodeId, group, items, title: aggregate ? msg('{{outcome}} · {{count}} rules', { outcome: item.effect, count: items.length }) : item.label,
+      nodes.push({ id: nodeId, group, items, title: aggregate ? group === exceptions ? msg('{{effect}} · {{count}} special cases', {effect:item.effect,count:items.length}) : msg('{{outcome}} · {{count}} rules', { outcome: item.effect, count: items.length }) : item.label,
         column: group === exceptions ? 0 : group === rules ? ruleColumn : ruleColumn + 1 })
       items.forEach(child => itemNodes.set(child.pointer, nodeId))
     }
@@ -53,6 +60,7 @@ export function projectLogicGraph(model: LogicProjection, grouped = false, expan
     const source = itemNodes.get(item.pointer)!, target = itemNodes.get(targetItem.pointer)!
     const id = JSON.stringify([source, target])
     if (!edges.some(e => e.id === id)) edges.push({ id, source, target,
+      semantic: suppressed ? 'excludes' : group === exceptions ? 'forces' : 'contributes',
       label: suppressed ? msg('Excludes') : group === exceptions ? msg('Forces') : msg('Contributes') })
   }
   return { nodes, edges }

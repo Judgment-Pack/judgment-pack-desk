@@ -29,6 +29,7 @@ describe('the desk icons', () => {
       'IconClose',
       'IconCopy',
       'IconDetails',
+      'IconException',
       'IconFocus',
       'IconFolder',
       'IconGear',
@@ -41,6 +42,7 @@ describe('the desk icons', () => {
       'IconMail',
       'IconMatrix',
       'IconMore',
+      'IconOutcome',
       'IconPack',
       'IconPanelBottom',
       'IconPanelLeft',
@@ -50,6 +52,7 @@ describe('the desk icons', () => {
       'IconPin',
       'IconPlus',
       'IconPreview',
+      'IconRule',
       'IconSearch', 'IconSend',
       'IconStop',
       'IconTrash'

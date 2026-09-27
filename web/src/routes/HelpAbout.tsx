@@ -19,6 +19,7 @@ import { msg, useLocale } from '../i18n'
  */
 import { Json, Section } from '../components/primitives'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
+import type { BuildIdentity } from '../config/deskConfig'
 import { connectionSays, useMcp } from '../mcp/McpProvider'
 import { AUTHOR_PACK_PROMPT, usePromptNames, usePromptText } from '../mcp/prompts'
 import { usePacks } from '../mcp/queries'
@@ -35,6 +36,7 @@ export function HelpAbout() {
   const mcp = useMcp()
   const { status, server, known } = mcp
   const { desk } = useEffectiveConfig()
+  const builds = desk?.chassis?.builds
   const { data } = usePacks()
   const prompts = usePromptNames()
   const advertised = (prompts.data ?? []).includes(AUTHOR_PACK_PROMPT)
@@ -52,6 +54,7 @@ export function HelpAbout() {
 
       <Section title={msg("This connection")}>
         <Button variant="quiet" onClick={diagnostics}>{msg("Diagnostics")}</Button>
+        <p>{msg('Desk')}: <ComponentVersion build={builds?.desk} /></p>
         <p><Message text={"Runtime:<0/><1/><2/>Runtime binary:<3/><4/><5/>Tool listing: <6/><7/><8/>"} slots={[' ', status === 'ready' && server ? (
             <>
               <code>{server.name}</code> {server.version}
@@ -65,11 +68,17 @@ export function HelpAbout() {
           ), <br />, known ? msg("read") : msg("not read — every capability below is unknown, not absent"), <br />, data?.configPath && (
             <><Message text={"Project configuration: <0/><1/>"} slots={[<code>{data.configPath}</code>, <br />]} /></>
           )]} /></p>
+        <p>{msg('Runner')}: {builds && !builds.runner ? msg('Not configured') : <ComponentVersion build={builds?.runner} />}</p>
         {desk?.localGateway?.status === 'ready' && desk.localGateway.build && (
           <p>{msg('Gateway')}: <code>{desk.localGateway.build.version || desk.localGateway.build.revision}</code>
             {desk.localGateway.build.version && <> · <code>{desk.localGateway.build.revision}</code></>}
           </p>
         )}
+        {builds && <details className="disclosure">
+          <summary>{msg('Build information')}</summary>
+          <p className="quiet">{msg('Build information recorded when Desk started. Development builds are identified by their source commit.')}</p>
+          <Json label={msg('Build information')} value={builds} />
+        </details>}
         <details className="disclosure">
           <summary>{msg("Connection capabilities")}</summary>
           <Json label={msg("This connection, and what this runtime advertises")} value={connectionSummary(mcp)} />
@@ -150,4 +159,12 @@ function connectionSummary(mcp: ReturnType<typeof useMcp>) {
     error: error === null ? null : error.message,
     capabilitiesError: capabilitiesError === null ? null : capabilitiesError.message
   }
+}
+
+function ComponentVersion({ build }: { build?: BuildIdentity }) {
+  if (!build?.revision && !build?.moduleVersion) return <>{msg('Unknown')}</>
+  // Prefer a short source identity over a long Go pseudo-version. Full public
+  // metadata remains available in the Build information disclosure.
+  const release = build.moduleVersion && !/(?:-|\.)\d{14}-[0-9a-f]+/.test(build.moduleVersion) ? build.moduleVersion : undefined
+  return <><code>{release ?? build.revision?.slice(0, 7) ?? build.moduleVersion}</code>{build.modified && <> · {msg('Local changes')}</>}</>
 }

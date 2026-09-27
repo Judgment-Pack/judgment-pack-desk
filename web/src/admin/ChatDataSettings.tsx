@@ -1,3 +1,5 @@
+import { useDirtyGuard } from '../shell/useDirtyGuard'
+import { useConfirmDiscard } from '../shell/UnsavedChanges'
 import { sourceMessage } from '../i18n/source'
 import { Message } from '../i18n/Message'
 import { msg, useLocale, systemMessage } from '../i18n'
@@ -30,6 +32,9 @@ export function ChatDataSettings() {
   const opener = useRef<HTMLButtonElement>(null)
   const pendingWork = Boolean(store?.running || saving || dirty)
   const blocked = pendingWork || Boolean(chatError)
+  const formDirty=!!edit && path!==edit.path, confirmDiscard=useConfirmDiscard()
+  useDirtyGuard(formDirty,msg('Discard these storage changes?'),{busy:moving})
+  async function close(){if(!moving&&(!formDirty||await confirmDiscard(msg('Discard these storage changes?'))))setEdit(null)}
   const status = query.data
   async function move() {
     if (!edit || moving || blocked || !path.trim() || path.trim() === edit.path) return
@@ -54,18 +59,18 @@ export function ChatDataSettings() {
       <CardField label={msg("Location")}><code>{status.path}</code></CardField>
       <CardField label={msg("Usage")}>{formatStorageBytes(status.bytes)} · {status.projectCount} {status.projectCount === 1 ? msg("project") : msg("projects")}</CardField>
       <CardField label={msg("This project")}>{formatStorageBytes(status.projectBytes)}</CardField>
-      <p className={styles.caption}>{msg("This is a folder on the computer running Desk. Chats stay separate from project files. API keys remain in protected settings.")}</p>
+      <p className={styles.caption}>{status.managed ? msg("This desk keeps its conversations and documents inside its own folder. API keys remain in protected machine settings.") : msg("This is a folder on the computer running Desk. Chats stay separate from project files. API keys remain in protected settings.")}</p>
       <p className={styles.caption}>{msg('Removing a file from a message does not erase its retained original. Unsent and canceled uploads also remain in private storage and backups.')}</p>
       {status.legacy && <p className={styles.caption}>{msg("Your existing history is still in the settings folder. You can move it to a dedicated data folder.")}</p>}
       {status.previousPath && <p className={styles.caption}><Message text={"Recovery copy: <0/>. New changes are saved only to the current location."} slots={[<code>{status.previousPath}</code>]} /></p>}
-      <div className={styles.actions}><Button ref={opener} disabled={blocked || query.isFetching || query.isError || Boolean(status.problem)} onClick={() => { setEdit(status); setPath(status.legacy ? status.recommendedPath : ''); setError('') }}>{msg("Change location…")}</Button>
+      <div className={styles.actions}><Button ref={opener} disabled={status.managed || blocked || query.isFetching || query.isError || Boolean(status.problem)} onClick={() => { setEdit(status); setPath(status.legacy ? status.recommendedPath : ''); setError('') }}>{msg("Change location…")}</Button>
         <Button variant="quiet" disabled={query.isFetching} onClick={() => void query.refetch()}>{msg("Refresh usage")}</Button>
-        {status.projectBytes === 0 && <ProjectHistorySettings blocked={blocked || moving} onLinked={() => window.location.reload()} />}</div>
+        {!status.managed && status.projectBytes === 0 && <ProjectHistorySettings blocked={blocked || moving} onLinked={() => window.location.reload()} />}</div>
       {blocked && <p className={styles.caption}>{msg("Finish or stop active work and save chat changes before moving data.")}</p>}
     </div>}
     {(chatError || status?.problem) && <p role="alert">{chatError || status?.problem}</p>}
     {notice && <p role="status" className={styles.caption}>{systemMessage(notice)}</p>}
-    <Dialog open={edit !== null} onOpenChange={open => { if (!open && !moving) setEdit(null) }} title={msg("Move chat data")} openerRef={opener}
+    <Dialog open={edit !== null} onOpenChange={open => { if (!open && !moving) void close() }} title={msg("Move chat data")} openerRef={opener}
       description={msg("All saved chats move together. Desk verifies the copy before switching locations and keeps the original folder for recovery.")}>
       <form onSubmit={event => { event.preventDefault(); void move() }}>
         <FieldGroup>
@@ -77,7 +82,7 @@ export function ChatDataSettings() {
           {error && <div role="alert"><p>{systemMessage(error)}</p><Button disabled={moving || query.isFetching} onClick={() => { void query.refetch().then(result => { if (result.data) { setEdit(result.data); setError('') } }) }}>{msg("Reload settings")}</Button></div>}
           {moving && <p role="status" className={styles.caption}>{msg("Copying and verifying chat data…")}</p>}
         </FieldGroup>
-        <DialogActions><Button disabled={moving} onClick={() => setEdit(null)}>{msg("Cancel")}</Button>
+        <DialogActions><Button disabled={moving} onClick={()=>void close()}>{msg("Cancel")}</Button>
           <Button type="submit" variant="primary" disabled={moving || blocked || !path.trim() || path.trim() === edit?.path || Boolean(edit && edit.bytes > edit.maxMoveBytes)}>{moving ? msg("Moving…") : msg("Move data")}</Button></DialogActions>
       </form>
     </Dialog>
