@@ -911,6 +911,7 @@
   .desk-switcher-menu { width: 20rem; }
 
   .desk-switcher-list {
+    position: relative;
     max-height: min(20rem, calc(var(--radix-dropdown-menu-content-available-height, 100dvh) - 8rem));
     overflow-y: auto;
     overscroll-behavior: contain;
