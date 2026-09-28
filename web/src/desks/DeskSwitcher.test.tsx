@@ -18,10 +18,10 @@ beforeEach(()=>{flush.mockResolvedValue(true);vi.mocked(deskFetch).mockImplement
 afterEach(()=>{cleanup();vi.clearAllMocks()})
 function Dirty(){useRegisteredChanges(true,'Discard this job?',{name:'Unsaved job'});return null}
 function show(dirty=false){render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter><UnsavedChangesProvider>{dirty&&<Dirty/>}<DeskSwitcher/></UnsavedChangesProvider></MemoryRouter></QueryClientProvider>)}
-async function menu(){await screen.findByText('Operations');fireEvent.keyDown(screen.getByRole('button',{name:'Switch desk'}),{key:'Enter'})}
+async function menu(){await screen.findByText('Operations');fireEvent.keyDown(screen.getByRole('button',{name:'Operations · Switch desk'}),{key:'Enter'})}
 it('shows the named desk, updates the title, and flushes chats before switching',async()=>{
  show();await menu();await waitFor(()=>expect(document.title).toBe('Operations · Unveil'))
- fireEvent.click(await screen.findByRole('menuitem',{name:'Review'}));await waitFor(()=>expect(openDesk).toHaveBeenCalledWith(next.id));expect(flush).toHaveBeenCalled()
+ fireEvent.click(await screen.findByRole('menuitemradio',{name:'Review'}));await waitFor(()=>expect(openDesk).toHaveBeenCalledWith(next.id));expect(flush).toHaveBeenCalled()
 })
 it('creates a named desk through the server before opening it',async()=>{
  show();await menu();fireEvent.click(await screen.findByRole('menuitem',{name:'Create desk…'}))
@@ -32,30 +32,35 @@ it('creates a named desk through the server before opening it',async()=>{
 })
 it('preserves the asterisk and requires the item name before abandoning edits',async()=>{
  show(true);await menu();expect(document.title).toBe('* Operations · Unveil')
- fireEvent.click(await screen.findByRole('menuitem',{name:'Review'}));await screen.findByRole('dialog',{name:'Unsaved changes'})
+ fireEvent.click(await screen.findByRole('menuitemradio',{name:'Review'}));await screen.findByRole('dialog',{name:'Unsaved changes'})
  expect(openDesk).not.toHaveBeenCalled()
  fireEvent.change(screen.getByLabelText('Type Unsaved job to confirm.'),{target:{value:'Yes'}})
  expect((screen.getByRole('button',{name:'Discard changes'}) as HTMLButtonElement).disabled).toBe(true)
  fireEvent.click(screen.getByRole('button',{name:'Keep editing'}));expect(openDesk).not.toHaveBeenCalled()
 })
 it('stays in the current desk if saving the conversation fails',async()=>{
- flush.mockResolvedValue(false);show();await menu();fireEvent.click(await screen.findByRole('menuitem',{name:'Review'}))
+ flush.mockResolvedValue(false);show();await menu();fireEvent.click(await screen.findByRole('menuitemradio',{name:'Review'}))
  await screen.findByText('Save the conversation before switching desks.');expect(openDesk).not.toHaveBeenCalled()
 })
 
-it('keeps the home link separate from its dropdown and puts Project files inside the menu',async()=>{
- show();const home=await screen.findByRole('link',{name:'Operations'})
+it('uses the logo for home and the desk name for its menu',async()=>{
+ show();const home=await screen.findByRole('link',{name:'Desk home'})
+ expect(home.querySelector('img')).not.toBeNull()
+ expect((await screen.findByRole('button',{name:'Operations · Switch desk'})).textContent).toBe('Operations')
  expect(home.getAttribute('href')).toBe('/')
  expect(home.querySelector('button')).toBeNull()
  expect(screen.queryByRole('link',{name:'Project files'})).toBeNull()
  await menu()
+ expect(screen.getByRole('menuitemradio',{name:'Operations'}).getAttribute('aria-checked')).toBe('true')
+ expect(screen.getAllByRole('menuitemradio')[0].textContent).toBe('Operations')
+ expect(screen.queryByText('/projects/startup')).toBeNull()
  expect(screen.getByRole('menuitem',{name:'Project files'}).getAttribute('href')).toBe('/author')
 })
 
-it('the desk home link asks before leaving unsaved work', async () => {
+it('the logo home link asks before leaving unsaved work', async () => {
  const router=createMemoryRouter([{path:'*',element:<UnsavedChangesProvider><Dirty/><DeskSwitcher/></UnsavedChangesProvider>}],{initialEntries:['/jobs/new']})
  render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><RouterProvider router={router}/></QueryClientProvider>)
- fireEvent.click(await screen.findByRole('link',{name:/Operations/}))
+ fireEvent.click(await screen.findByRole('link',{name:'Desk home'}))
  await screen.findByRole('dialog',{name:'Unsaved changes'})
  expect(router.state.location.pathname).toBe('/jobs/new')
  fireEvent.click(screen.getByRole('button',{name:'Keep editing'}))

@@ -9,7 +9,7 @@ import { useChats } from '../chat/ChatProvider'
 import { deskFetch } from '../files/client'
 import { useFileListing } from '../files/queries'
 import { msg, useLocale } from '../i18n'
-import { IconChevronDown, IconFolder } from '../shell/icons'
+import { IconCheck, IconFolder, IconPlus } from '../shell/icons'
 import { useConfirmDeskExit, useConfirmDiscard, useDeskTitle, useHasUnsavedChanges } from '../shell/UnsavedChanges'
 import { Button } from '../ui/Button'
 import { Dialog, DialogActions } from '../ui/Dialog'
@@ -41,19 +41,21 @@ export function DeskSwitcher() {
   const dirty = registeredDirty || authorDirty
   const opener = useRef<HTMLButtonElement>(null)
   const management = useDeskManagement(opener)
+  const [menuOpen, setMenuOpen] = useState(false)
   return <>
     <div className="desk-identity">
-      <BrandMark mark={config.organization.mark} className="desk-orgmark" />
-      <Link className="desk-chip" to="/">
-        <span className="desk-chip-name">{label}</span>{dirty&&<span className="desk-dirty" aria-label={msg('unsaved changes')} role="img"/>}
-      </Link>
-      <DropdownMenu.Root>
-        <Tooltip content={msg('Switch desk')}>
-          <DropdownMenu.Trigger ref={opener} className="desk-icon-button desk-menu-trigger" aria-label={msg('Switch desk')}><IconChevronDown /></DropdownMenu.Trigger>
+      <Tooltip content={msg('Desk home')} side="bottom" disabled={menuOpen}>
+        <Link className="desk-home" to="/" aria-label={msg('Desk home')}>
+          <BrandMark mark={config.organization.mark} className="desk-orgmark" />
+        </Link>
+      </Tooltip>
+      <DropdownMenu.Root open={menuOpen} onOpenChange={setMenuOpen}>
+        <Tooltip content={`${label} · ${msg('Switch desk')}`} side="bottom" disabled={menuOpen}>
+          <DropdownMenu.Trigger ref={opener} className="desk-chip" aria-label={`${label} · ${msg('Switch desk')}`}>
+            <span className="desk-chip-name">{label}</span>{dirty&&<span className="desk-dirty" aria-label={msg('unsaved changes')} role="img"/>}
+          </DropdownMenu.Trigger>
         </Tooltip>
-        <DropdownMenu.Portal><DropdownMenu.Content className="desk-menu desk-header-menu" align="start" sideOffset={6} collisionPadding={16}>
-          <DropdownMenu.Item asChild className="desk-menu-item"><Link to="/author"><IconFolder />{msg('Project files')}</Link></DropdownMenu.Item>
-          <DropdownMenu.Separator className="desk-menu-separator" />
+        <DropdownMenu.Portal><DropdownMenu.Content className="desk-menu desk-switcher-menu" align="start" alignOffset={-32} sideOffset={6} collisionPadding={12}>
           {management.items}
         </DropdownMenu.Content></DropdownMenu.Portal>
       </DropdownMenu.Root>
@@ -95,13 +97,20 @@ function useDeskManagement(opener: RefObject<HTMLButtonElement | null>) {
     if (name.trim() && !(await discard(msg('Discard this desk name?'),{name:name.trim()}))) return
     setCreating(false);setName('');setError('')
   }
+  const desks = [...(directory.data?.desks ?? [])].sort((a, b) =>
+    Number(b.id === activeDeskId) - Number(a.id === activeDeskId) || a.name.localeCompare(b.name))
   const items = <>
-        <DropdownMenu.Label className="desk-menu-note">{msg('Desks')}</DropdownMenu.Label>
-        {directory.data?.desks.map(desk => <DropdownMenu.Item className="desk-menu-item" key={desk.id} disabled={desk.id===activeDeskId} onSelect={()=>void switchTo(desk.id)}>{desk.name}{desk.id===activeDeskId?' ✓':''}</DropdownMenu.Item>)}
+        <DropdownMenu.Label className="desk-menu-note">{msg('Switch desk')}</DropdownMenu.Label>
+        <DropdownMenu.RadioGroup value={activeDeskId} onValueChange={id=>void switchTo(id)} className="desk-switcher-list">
+          {desks.map(desk => <DropdownMenu.RadioItem className="desk-menu-item desk-switcher-choice" key={desk.id} value={desk.id}>
+            <span className="desk-switcher-name">{desk.name}</span>
+            <span className="desk-switcher-check"><DropdownMenu.ItemIndicator><IconCheck /></DropdownMenu.ItemIndicator></span>
+          </DropdownMenu.RadioItem>)}
+        </DropdownMenu.RadioGroup>
         {!directory.data&&activeDeskId&&<DropdownMenu.Item className="desk-menu-item" onSelect={()=>void switchTo('')}>{msg('Open startup desk')}</DropdownMenu.Item>}
-        <DropdownMenu.Item className="desk-menu-item" disabled={!directory.data} onSelect={()=>{setError('');setCreating(true)}}>{msg('Create desk…')}</DropdownMenu.Item>
-        <DropdownMenu.Separator className="desk-menu-separator"/>
-        {directory.data&&<DropdownMenu.Label className="desk-menu-note"><code>{directory.data.current.folder}</code></DropdownMenu.Label>}
+        <DropdownMenu.Separator className="desk-switcher-separator" />
+        <DropdownMenu.Item asChild className="desk-menu-item"><Link to="/author"><IconFolder />{msg('Project files')}</Link></DropdownMenu.Item>
+        <DropdownMenu.Item className="desk-menu-item" disabled={!directory.data} onSelect={()=>{setError('');setCreating(true)}}><IconPlus />{msg('Create desk…')}</DropdownMenu.Item>
         {directory.error&&<DropdownMenu.Label className="desk-menu-note">{msg('Desk management is unavailable. Restart Desk after updating.')}</DropdownMenu.Label>}
     </>
   const dialogs = <>

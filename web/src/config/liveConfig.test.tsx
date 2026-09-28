@@ -211,9 +211,9 @@ describe('the desk reading jpack-desk.json', () => {
     serveConfig(LIVE_ANSWER)
     renderDesk()
     // Before the query answers, the desk's own fallback stands.
-    expect(screen.getByRole('link', { name: 'Desk' })).toBeTruthy()
-    expect(await screen.findByRole('link', { name: 'a-project' })).toBeTruthy()
-    expect(screen.queryByRole('link', { name: 'Acme Co.' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Desk · Switch desk' })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: 'a-project · Switch desk' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Acme Co. · Switch desk' })).toBeNull()
   })
 
   it('paints the configured display name in the user control', async () => {
@@ -252,7 +252,7 @@ describe('the desk reading jpack-desk.json', () => {
     // once before the file existed.
     serveConfig({ error: 'no such file' }, 404)
     renderDesk()
-    await screen.findByRole('link', { name: 'a-project' })
+    await screen.findByRole('button', { name: 'a-project · Switch desk' })
     await wait(PAST_THE_DEBOUNCE)
     expect(shellRecords()).toEqual([])
   })
@@ -262,7 +262,7 @@ describe('the desk reading jpack-desk.json', () => {
     // console is open. Deterministic — no timing at all.
     serveConfig({ error: 'no such file' }, 404)
     const first = renderDesk()
-    await screen.findByRole('link', { name: 'a-project' })
+    await screen.findByRole('button', { name: 'a-project · Switch desk' })
     await wait(PAST_THE_DEBOUNCE)
     first.unmount()
 
@@ -277,7 +277,7 @@ describe('the desk reading jpack-desk.json', () => {
     // The other half of the same rule: the gate is on *choice*, not on writes.
     serveConfig({ error: 'no such file' }, 404)
     const first = renderDesk()
-    await screen.findByRole('link', { name: 'a-project' })
+    await screen.findByRole('button', { name: 'a-project · Switch desk' })
     fireEvent.click(screen.getByRole('button', { name: 'Collapse navigation' }))
     await waitFor(() => expect(shellRecords()).toHaveLength(1))
     expect(shellRecords()[0]![1]).toContain('"mode":"icons"')
@@ -507,7 +507,7 @@ describe('the desk reading jpack-desk.json', () => {
   it('says nothing about the configuration where the file is simply absent', async () => {
     serveConfig({ error: 'no such file' }, 404)
     renderDesk()
-    await screen.findByRole('link', { name: 'a-project' })
+    await screen.findByRole('button', { name: 'a-project · Switch desk' })
     expect(screen.queryByText(/configuration could not be read/)).toBeNull()
     expect(screen.queryByText(/configuration refused/)).toBeNull()
   })
@@ -523,7 +523,7 @@ describe('the desk reading jpack-desk.json', () => {
     serveConfig({ error: 'no such file' }, 404)
     renderDesk()
     await waitFor(() =>
-      expect(screen.getByRole('link', { name: 'a-project' })).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'a-project · Switch desk' })).toBeTruthy()
     )
     // Defaults, with no banner and no error over the desk.
     expect(screen.queryByRole('alert')).toBeNull()
@@ -537,11 +537,11 @@ describe('the desk reading jpack-desk.json', () => {
     })
     renderDesk()
     await waitFor(() =>
-      expect(screen.getByRole('link', { name: 'a-project' })).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'a-project · Switch desk' })).toBeTruthy()
     )
     // One unknown key refuses the whole file, so the name it also carried is
     // not applied — and the problem travels to Admin rather than a banner.
-    expect(screen.queryByRole('link', { name: 'Acme Co.' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Acme Co. · Switch desk' })).toBeNull()
   })
 })
 
