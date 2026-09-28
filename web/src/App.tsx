@@ -5,6 +5,7 @@ import { ChatWorkspace } from './routes/ChatWorkspace'
 import { ChatHistoryPage } from './routes/ChatHistoryPage'
 
 import { AdminView } from './routes/AdminView'
+import { StorageFilesView } from './routes/StorageFilesView'
 import { AuthorView } from './routes/AuthorView'
 import { GraphView } from './routes/GraphView'
 import { HelpAbout } from './routes/HelpAbout'
@@ -32,6 +33,7 @@ export function App() {
         <Routes>
           <Route path="/" element={<ChatWorkspace />} />
           <Route path="/matrix" element={<Navigate to="/packs" replace />} />
+          <Route path="/connections/:provider/files" element={<StorageFilesView />} />
           <Route path="/author" element={<AuthorView />} />
           <Route path="/jobs" element={<JobsView />} />
           <Route path="/jobs/runs" element={<JobsView />} />

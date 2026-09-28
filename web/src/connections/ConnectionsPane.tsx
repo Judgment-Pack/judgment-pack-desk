@@ -7,7 +7,7 @@ import { readResourcePage, RESOURCE_MAX_BYTES } from './resourceProtocol'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { useChats } from '../chat/ChatProvider'
 import { useChatAttachments } from '../chat/useChatAttachments'
-import { Button } from '../ui/Button'
+import { Button, ButtonLink } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { Alert } from '../ui/Alert'
 import { Disclosure } from '../ui/Disclosure'
@@ -211,6 +211,7 @@ export function ConnectionsPane({ request, target, onProvider, onClose, onBusy, 
     <Button variant="quiet" aria-pressed={pinned} disabled={!pinned && pinLimit} onClick={() => pinConnection(provider, !pinned, catalog.entries.map(item => item.descriptor.id))}>{pinned ? msg('Unpin from composer') : msg('Pin to composer')}</Button>
     {!pinned && pinLimit && <p className={styles.description}>{msg('You can pin up to five connections.')}</p>}
    </div>}
+   {state === 'connected' && descriptor?.operations.includes('files-list') && <ButtonLink to={`/connections/${provider}/files`} onClick={onClose}>{msg('Manage files')}</ButtonLink>}
    {state === 'connected' && <Disclosure title={msg('Connection settings')}><p>{jobSetup ? msg('Disconnecting makes this integration unavailable to future job reads.') : msg('Disconnecting does not delete documents already attached to chats.') }</p><Button variant="quiet" disabled={working} onClick={() => void disconnect()}>{msg('Disconnect')}</Button></Disclosure>}
   </div>
   <footer className={styles.footer}>

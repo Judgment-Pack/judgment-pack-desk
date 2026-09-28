@@ -251,6 +251,8 @@ describe('(3) no issuer literal in the source — a WEAK, enumerated guard', () 
       const literals = [...source.text.matchAll(/https:\/\/[^\s'"`)]+/g)].map((match) => match[0])
       for (const literal of literals) {
         expect(
+          // A user-initiated source-navigation link, never an API endpoint or issuer.
+          (source.path === 'routes/StorageFilesView.tsx' && literal === 'https://drive.google.com/open?id=${encodeURIComponent(selected.id') ||
           allowed.some((prefix) => literal.startsWith(prefix)),
           `${source.path} carries the literal ${literal}`
         ).toBe(true)
