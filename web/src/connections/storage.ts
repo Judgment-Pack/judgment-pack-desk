@@ -27,8 +27,18 @@ export function encodeBytes(bytes: Uint8Array): string {
 export function decodeText(value: string): string | undefined {
  try {
   const bytes = Uint8Array.from(atob(value), char => char.charCodeAt(0))
-  const text = new TextDecoder('utf-8', {fatal:true}).decode(bytes)
+  const text = new TextDecoder('utf-8', {fatal:true,ignoreBOM:true}).decode(bytes)
   // Binary data is downloadable/uploadable, never coerced through a text editor.
   return /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(text) ? undefined : text
  } catch { return undefined }
+}
+
+// Keep uploaded bytes unchanged until the editor actually changes them. Textareas
+// normalize line endings; preserve a source's uniform CRLF convention when editing.
+export function encodeEditedText(text: string, original?: string): string {
+ const decoded=original===undefined?undefined:decodeText(original)
+ const normalized=text.replace(/\r\n/g,'\n')
+ if(decoded!==undefined&&decoded.replace(/\r\n/g,'\n')===normalized)return original!
+ const edited=decoded?.includes('\r\n')&&!/(?<!\r)\n/.test(decoded)?normalized.replace(/\n/g,'\r\n'):text
+ return encodeBytes(new TextEncoder().encode(edited))
 }

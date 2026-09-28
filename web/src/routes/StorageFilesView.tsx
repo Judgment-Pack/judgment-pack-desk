@@ -5,7 +5,8 @@ import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { useConnections } from '../connections/catalog'
 import { ConnectionRequestError } from '../connections/client'
 import { providerName } from '../connections/registry'
-import { decodeText, encodeBytes, storageCall, storageError, STORAGE_MAX_BYTES, type StorageFile, type StoragePage, type StorageRead, type StoragePlan } from '../connections/storage'
+import { decodeText, encodeBytes, encodeEditedText, storageCall, storageError, STORAGE_MAX_BYTES, type StorageFile, type StoragePage, type StorageRead, type StoragePlan } from '../connections/storage'
+import { activeDeskId } from '../desks/scope'
 import { useDirtyGuard } from '../shell/useDirtyGuard'
 import { TypedConfirmation, useConfirmDiscard } from '../shell/UnsavedChanges'
 import { IconDetails, IconFolder } from '../shell/icons'
@@ -19,8 +20,10 @@ import styles from './AuthorView.module.css'
 import own from './StorageFilesView.module.css'
 
 export function StorageFilesView() {
- const {provider = ''} = useParams()
- return <StorageFiles key={provider} provider={provider} />
+  const {provider = ''} = useParams()
+  return <article className="detail authoring" data-measure="full" data-layout="page">
+    <StorageFiles key={provider} provider={provider} />
+  </article>
 }
 export function StorageFiles({provider}: {provider:string}) {
  useLocale()
@@ -39,19 +42,30 @@ export function StorageFiles({provider}: {provider:string}) {
  const [room,setRoom]=useState(1000), [width,setWidth]=useState(280), [browsing,setBrowsing]=useState(true), [collapsed,setCollapsed]=useState(false), [createFolder,setCreateFolder]=useState(''), [createContext,setCreateContext]=useState('')
  const compact=room<640, maxWidth=Math.min(480,Math.max(220,room-360)), paneWidth=Math.min(width,maxWidth)
  const confirmDiscard=useConfirmDiscard()
- const currentContent=()=>buffer===undefined?content:encodeBytes(new TextEncoder().encode(buffer))
+ const currentContent=()=>buffer===undefined?content:encodeEditedText(buffer,content)
  const dirty=creating ? Boolean(name || content || buffer) : selected!==undefined && (buffer!==undefined ? buffer!==decodeText(base??'') : content!==base)
  useDirtyGuard(dirty,msg('This file has unsaved changes that will be lost. Leave anyway?'),{name:creating?name:selected?.name,busy})
- const pendingKey=`jpack.storage-plan.v1:${provider}`
+ const pendingKey=`jpack.storage-plan.v1:${activeDeskId || "default"}:${provider}`
  const remember=(value:StoragePlan|undefined)=>{setPlan(value);try {if(value)sessionStorage.setItem(pendingKey,value.id);else sessionStorage.removeItem(pendingKey)}catch{/* Optional recovery hint; Gateway owns the durable plan. */}}
  useEffect(()=>{alive.current=true; const el=frame.current;if(!el)return;const observer=new ResizeObserver(()=>setRoom(el.getBoundingClientRect().width));observer.observe(el);return()=>{alive.current=false;observer.disconnect()}},[])
  async function run(work:()=>Promise<void>) {if(lock.current)return;lock.current=true;setBusy(true);setError('');try{await work()}catch(e){if(alive.current)setError(storageError(e))}finally{lock.current=false;if(alive.current)setBusy(false)}}
  async function list(q={folder,query},pageToken='') {const result=await storageCall<StoragePage>(provider,'files-list',{...q,pageToken});if(alive.current){setPage(result);setSubmitted(q)}}
- useEffect(()=>{if(!ready)return;void run(async()=>{await list({folder:'',query:''});let id:string|null=null;try{id=sessionStorage.getItem(pendingKey)}catch{/* Optional */}if(id){try{const p=await storageCall<StoragePlan>(provider,'files-status',{id});remember(p);setReview(true)}catch(cause){
-    if(cause instanceof ConnectionRequestError && ['selection-expired','source-changed'].includes(cause.code)) remember(undefined)
-    else { remember({id,action:'update',target:'',name:title,revision:'',sizeBytes:0,state:'needs-attention',expires:'',confirmation:'',effect:'write',error:'operation-uncertain'});setReview(true) }
-    throw cause
-   }}})},[ready])
+ useEffect(()=>{if(!ready)return;void run(async()=>{
+   let id:string|null=null, recoveryError:unknown
+   try{id=sessionStorage.getItem(pendingKey)}catch{/* Optional */}
+   // Recover before browsing: listing failure must never hide an unresolved write.
+   if(id){try{
+     const p=await storageCall<StoragePlan>(provider,'files-status',{id})
+     if(p.state==='completed'){remember(undefined);setNotice(msg('Change completed.'))}
+     else {remember(p);setReview(true)}
+    }catch(cause){
+     if(cause instanceof ConnectionRequestError && ['selection-expired','source-changed'].includes(cause.code)) remember(undefined)
+     else {remember({id,action:'update',target:'',name:title,revision:'',sizeBytes:0,state:'needs-attention',expires:'',confirmation:'',effect:'write',error:'operation-uncertain'});setReview(true)}
+     recoveryError=cause
+    }}
+   await list({folder:'',query:''})
+   if(recoveryError)throw recoveryError
+  })},[ready])
  const canLeave=()=>!dirty?Promise.resolve(true):confirmDiscard(msg('Discard unsaved changes to this file?'),{name:creating?name:selected?.name})
  function clearEditor(){setSelected(undefined);setCreating(false);setName('');setBase(undefined);setContent(undefined);setBuffer(undefined);setNotice('')}
  async function choose(file:StorageFile) {if(busy||!await canLeave())return;void run(async()=>{clearEditor();if(file.kind==='folder'){setFolder(file.id);setQuery('');await list({folder:file.id,query:''});return}setSelected(file);setBrowsing(false);setMedia(file.mediaType);const read=await storageCall<StorageRead>(provider,'files-read',{id:file.id,revision:file.revision,context:file.context});if(!alive.current)return;setSelected(read.file);setMedia(read.file.mediaType);setBase(read.contentBase64);setContent(read.contentBase64);setBuffer(decodeText(read.contentBase64))})}
@@ -74,7 +88,7 @@ export function StorageFiles({provider}: {provider:string}) {
  function download(){if(base===undefined||!selected)return;const bytes=Uint8Array.from(atob(base),c=>c.charCodeAt(0));const url=URL.createObjectURL(new Blob([bytes],{type:'application/octet-stream'}));const link=document.createElement('a');link.href=url;link.download=selected.name.split('/').at(-1)!;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
  const blocked=busy||!ready||Boolean(plan), editor=selected||creating
  const status=plan?.state==='needs-attention'?msg('The result is uncertain. Check the file at its source before making another change.'):plan?.state==='refused'?msg('This change was refused. Reload the file before trying again.'):undefined
- return <article className="detail authoring" data-measure="full" data-layout="page">
+ return <>
   <div ref={frame} className={styles.frame} data-compact={compact||undefined} style={{'--files-width':`${paneWidth}px`} as CSSProperties}>
    <aside className={styles.browser} id="storage-browser" aria-label={msg('Browse files')} hidden={compact?!browsing:collapsed}>
     <PageHeader title={title} actions={<ButtonLink variant="quiet" to="/admin#connections">{msg('Connections')}</ButtonLink>}/>
@@ -126,5 +140,5 @@ export function StorageFiles({provider}: {provider:string}) {
    {status&&<p role="status" className="note note-warn">{status}</p>}
    {error&&<p role="alert" className="note note-warn">{systemMessage(error)}</p>}
   </Dialog>
- </article>
+ </>
 }

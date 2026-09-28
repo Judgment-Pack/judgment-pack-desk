@@ -103,6 +103,8 @@ func (c *connectionCompanion) call(ctx context.Context, bundle, dir, method stri
 	limit := 64 << 10
 	if method == "files-read" {
 		limit = 6 << 20
+	} else if method == "files-list" {
+		limit = 512 << 10
 	}
 	go func(reader *bufio.Reader) {
 		raw, err := readConnectionLine(reader, limit)

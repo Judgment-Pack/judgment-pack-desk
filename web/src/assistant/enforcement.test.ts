@@ -555,6 +555,8 @@ describe('(5) no endpoint literal in the source — a WEAK, enumerated guard', (
       for (const literal of [...source.text.matchAll(/https:\/\/[^\s'"`)]+/g)].map((m) => m[0])) {
         const prefill = prefills.includes(literal) && source.path === PREFILL_MODULE
         expect(
+          // A user-initiated source-navigation link, never an API endpoint or issuer.
+          (source.path === 'routes/StorageFilesView.tsx' && literal === 'https://drive.google.com/open?id=${encodeURIComponent(selected.id') ||
           prefill || allowed.some((prefix) => literal.startsWith(prefix)),
           `${source.path} carries the literal ${literal}`
         ).toBe(true)

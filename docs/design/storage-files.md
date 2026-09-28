@@ -56,3 +56,9 @@ The authenticated Desk relay performs no provider IO: the Gateway companion owns
 credentials, traversal, version checks and mutations. Storage management does not
 create verified evidence/action receipts and must not be added to the assistant's
 tool registry. Runner source acquisition continues using the existing read path.
+
+Review hardening: recovery hints are scoped to each Desk and provider and checked
+before listing. Completed changes release the editor; unresolved changes remain
+blocked even when listing or status calls fail. Uploaded UTF-8 BOM bytes and
+unchanged source line endings are retained. Bounded metadata replies allow
+512 KiB for a page of long JSON-escaped keys; read replies remain capped at 6 MiB.

@@ -2,6 +2,7 @@ package desk
 
 import (
 	"bufio"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -155,10 +156,25 @@ func TestConnectionLineBoundsAndFraming(t *testing.T) {
 	if err != nil || string(raw) != "next\n" {
 		t.Fatal("framing", err)
 	}
-	for _, limit := range []int{64 << 10, 6 << 20} {
+	for _, limit := range []int{64 << 10, 512 << 10, 6 << 20} {
 		_, err = readConnectionLine(bufio.NewReaderSize(strings.NewReader(strings.Repeat("x", limit)+"\n"), 1024), limit)
 		if err == nil {
 			t.Fatal("unbounded line", limit)
 		}
+	}
+}
+
+func TestStorageMetadataPageEscapingFitsBound(t *testing.T) {
+	items := make([]map[string]string, 24)
+	for i := range items {
+		items[i] = map[string]string{"id": strings.Repeat("&", 1024), "name": strings.Repeat("&", 1024)}
+	}
+	raw, _ := json.Marshal(map[string]any{"id": "request", "result": map[string]any{"items": items}})
+	if len(raw) <= 64<<10 {
+		t.Fatal("fixture must exceed ordinary reply bound")
+	}
+	line, err := readConnectionLine(bufio.NewReaderSize(strings.NewReader(string(raw)+"\n"), 64<<10), 512<<10)
+	if err != nil || len(line) != len(raw)+1 {
+		t.Fatal("legal metadata page refused", err)
 	}
 }
