@@ -2057,8 +2057,8 @@ function usePacks() { useConfiguredGraphs(); return readPacks() }'
             aria-label={title}' \
     '            aria-label={title}'
   mutate web 'the brand leaves the router on every click' 'web/src/desks/DeskSwitcher.tsx' \
-    '      <Link className="desk-chip" to="/">' \
-    '      <Link className="desk-chip" to="/" reloadDocument>'
+    '<Link className="desk-home" to="/"' \
+    '<Link className="desk-home" to="/" reloadDocument'
   mutate web "an empty organization name is accepted" "$D" \
     "      const name = organizationName(organization.name, problems)" \
     "      const name = optionalString(organization.name, 'organization.name', problems)"
