@@ -10,7 +10,7 @@ import { PaneToggle } from './PaneToggle'
 import { DEFAULT_DESK_LOGO, markToDataUri } from '../ui/BrandMark'
 export { markToDataUri } from '../ui/BrandMark'
 
-/** The desk name is navigation; organization branding supplies only its mark. */
+/** The logo opens Desk home; the name opens desk navigation and switching. */
 export function HeaderBar({ railIsDrawer, railOpen, onToggleRail, railOpenerRef }: {
   railIsDrawer: boolean
   railOpen: boolean

@@ -131,9 +131,9 @@ function renderHeaderIn(
 describe('the header’s desk identity', () => {
   it('uses the JPS mark and the desk name while its directory is loading', () => {
     const { container } = renderHeader()
-    expect(screen.getByRole('link', { name: 'Desk' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Desk home' })).toBeTruthy()
     expect(container.querySelector('img.desk-orgmark')?.getAttribute('src')).toBe('/favicon.svg')
-    expect(screen.getByRole('button', { name: 'Switch desk' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Desk · Switch desk' })).toBeTruthy()
   })
 
   it('applies the configured logo without adding the organization name to navigation', () => {
@@ -179,17 +179,17 @@ describe('the header’s desk identity', () => {
     // An `<a href="/">` here is a full document load: the SPA restarts, every
     // query refetches, `/ws` drops — and the chassis kills the runtime
     // subprocess when the socket that started it closes, so clicking the desk's
-    // own name respawned `jpack mcp`.
-    const brand = screen.queryByRole('link', { name: 'Desk' })
+    // logo respawned `jpack mcp`.
+    const brand = screen.queryByRole('link', { name: 'Desk home' })
     expect(brand).toBeNull()
     const { router } = renderHeaderIn('/admin')
-    fireEvent.click(screen.getByRole('link', { name: 'Desk' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Desk home' }))
     await waitFor(() => expect(router.state.location.pathname).toBe('/'))
   })
 
-  it('offers project files and named desk creation from the arrow', async () => {
+  it('offers project files and named desk creation from the desk name', async () => {
     renderHeader()
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Switch desk' }), { key: 'Enter' })
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Desk · Switch desk' }), { key: 'Enter' })
     const menu = await screen.findByRole('menu')
     expect(menu.textContent).toContain('Create desk…')
     expect(screen.getByRole('menuitem', { name: 'Project files' }).getAttribute('href')).toBe('/author')
@@ -631,7 +631,7 @@ describe('the user control, a provider configured', () => {
     renderHeader({ identity: { provider: { ...PROVIDER, label: 'Globex Incorporated' } } })
     // The header still reads the desk's own fallback: an issuer's label for a
     // customer is not the customer's brand.
-    expect(screen.getByRole('link', { name: 'Desk' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Desk home' })).toBeTruthy()
     expect(screen.queryByRole('link', { name: 'Globex Incorporated' })).toBeNull()
   })
 })

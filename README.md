@@ -1505,9 +1505,13 @@ itself and encoded to a `data:` URI in the browser — **never** injected as
 markup, and never a file path (the file API refuses non-UTF-8, so it could not
 carry a raster image, and no endpoint is being added for a logo).
 
-The header shows the desk name with a separate dropdown for Project files,
-switching desks, and creating a desk. The name links home. Its default logo and
-favicon use the same bundled mark as [the JPS website](https://judgmentpack.org).
+The header logo links to the current desk's home. Click the desk name to open
+the switcher: the current desk appears first with a check, followed by other desks
+in alphabetical order. Project files and Create desk sit below a divider. The
+name has a tooltip and truncates only when space requires it; there is no separate
+arrow button. Keyboard navigation and unsaved-change confirmation remain available.
+The default logo and favicon use the same bundled mark as
+[the JPS website](https://judgmentpack.org).
 Admin → Organization → Logo accepts SVG, PNG, JPEG, and WebP uploads, previews
 the settings draft, and restores the JPS mark with Reset to default. Custom
 logos are saved in `organization.mark` through the existing verified settings
