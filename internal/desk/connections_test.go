@@ -1,6 +1,7 @@
 package desk
 
 import (
+	"bufio"
 	"io"
 	"net/http"
 	"strings"
@@ -111,5 +112,53 @@ func TestGmailRoutesStayAuthenticatedAndCannotFallback(t *testing.T) {
 	status, body = sendJSON(t, ts, "POST", "/api/connections/gmail/cancel", map[string]string{"id": strings.Repeat("a", 64)})
 	if status != 200 || body["state"] != "canceled" || s.gmailConnections.cmd != nil || s.connections.cmd != nil {
 		t.Fatal("unexpected companion", status, body)
+	}
+}
+
+func TestStorageRelayAuthenticationAndBounds(t *testing.T) {
+	_, ts, _ := assistantServer(t)
+	for _, method := range []string{"files-list", "files-read", "files-prepare", "files-commit", "files-status"} {
+		req, _ := http.NewRequest("POST", ts.URL+"/api/connections/aws-s3/"+method, strings.NewReader(`{}`))
+		res, err := ts.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != 401 {
+			t.Fatalf("%s: unauthenticated %d", method, res.StatusCode)
+		}
+	}
+	for _, tc := range []struct {
+		method string
+		size   int
+	}{{"files-list", 33 << 10}, {"files-commit", 33 << 10}, {"files-prepare", (6 << 20) + 1}} {
+		req, _ := http.NewRequest("POST", ts.URL+"/api/connections/aws-s3/"+tc.method, strings.NewReader(strings.Repeat(" ", tc.size)))
+		authorizeAsPage(t, ts, req)
+		res, err := ts.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != 413 {
+			t.Fatalf("%s: oversized %d", tc.method, res.StatusCode)
+		}
+	}
+}
+func TestConnectionLineBoundsAndFraming(t *testing.T) {
+	body := strings.Repeat("a", 5<<20) + "\n"
+	reader := bufio.NewReaderSize(strings.NewReader(body+"next\n"), 64<<10)
+	raw, err := readConnectionLine(reader, 6<<20)
+	if err != nil || string(raw) != body {
+		t.Fatal("file response", len(raw), err)
+	}
+	raw, err = readConnectionLine(reader, 64<<10)
+	if err != nil || string(raw) != "next\n" {
+		t.Fatal("framing", err)
+	}
+	for _, limit := range []int{64 << 10, 6 << 20} {
+		_, err = readConnectionLine(bufio.NewReaderSize(strings.NewReader(strings.Repeat("x", limit)+"\n"), 1024), limit)
+		if err == nil {
+			t.Fatal("unbounded line", limit)
+		}
 	}
 }

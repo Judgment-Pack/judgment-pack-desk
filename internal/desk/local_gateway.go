@@ -19,9 +19,9 @@ import (
 	"time"
 )
 
-// Exact Gateway development build: extended source deadline, unchanged signer custody.
-const GatewayVersion = "v0.3.1-dev+ec03dc0"
-const GatewayRevision = "ec03dc0e1e68bc2adf5d50735bc0fb95788c108c"
+// Exact Gateway development build: bounded storage controls and durable source reads.
+const GatewayVersion = "v0.3.1-dev+759898a"
+const GatewayRevision = "759898a587a1d1de602ca5f6301365d9aa10539f"
 const localAuthority = "gateway:desk-local"
 
 type gatewayBuild struct {

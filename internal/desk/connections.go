@@ -100,10 +100,17 @@ func (c *connectionCompanion) call(ctx context.Context, bundle, dir, method stri
 		err error
 	}
 	reply := make(chan response, 1)
-	go func(reader *bufio.Reader) { raw, err := reader.ReadSlice('\n'); reply <- response{raw, err} }(c.output)
+	limit := 64 << 10
+	if method == "files-read" {
+		limit = 6 << 20
+	}
+	go func(reader *bufio.Reader) {
+		raw, err := readConnectionLine(reader, limit)
+		reply <- response{raw, err}
+	}(c.output)
 	select {
 	case r := <-reply:
-		if r.err != nil || len(r.raw) > 64<<10 {
+		if r.err != nil || len(r.raw) > limit {
 			c.stop()
 			return nil, errors.New("gateway connection service unavailable")
 		}
@@ -158,7 +165,7 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch method {
-	case "catalog", "status", "configure", "connect", "pick", "poll", "cancel", "disconnect", "search", "select":
+	case "catalog", "status", "configure", "connect", "pick", "poll", "cancel", "disconnect", "search", "select", "files-list", "files-read", "files-prepare", "files-commit", "files-status":
 	default:
 		writeJSONCoded(w, 400, CodeBadRequest, "unknown connection operation")
 		return
@@ -167,7 +174,11 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, 400, CodeBadRequest, "connection operations carry no query")
 		return
 	}
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 32<<10))
+	bodyLimit := int64(32 << 10)
+	if method == "files-prepare" {
+		bodyLimit = 6 << 20
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, bodyLimit))
 	if err != nil {
 		writeJSONCoded(w, 413, CodeTooLarge, "connection request too large")
 		return
@@ -281,4 +292,20 @@ func (s *Server) connectionCompanion(provider string, create bool) *connectionCo
 		s.providerConnections[provider] = c
 	}
 	return c
+}
+
+// Read a bounded line without allocating the file-response limit for ordinary RPCs.
+func readConnectionLine(reader *bufio.Reader, limit int) ([]byte, error) {
+	var raw []byte
+	for {
+		part, err := reader.ReadSlice('\n')
+		if len(raw)+len(part) > limit {
+			return nil, errors.New("connection response too large")
+		}
+		raw = append(raw, part...)
+		if err == bufio.ErrBufferFull {
+			continue
+		}
+		return raw, err
+	}
 }

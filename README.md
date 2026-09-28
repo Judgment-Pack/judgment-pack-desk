@@ -60,6 +60,17 @@ no plugin or account is required. Both retain verified source snapshots for chat
 citations. See the [connection interface and rollout plan](docs/design/connections.md)
 for the common interaction and the remaining integration backlog.
 
+Connected Google Drive, S3 and local Obsidian vaults expose **Manage files** in
+their connection pane when the installed Gateway advertises file operations.
+This opens a resizable browser/editor: bounded name or provider-index search,
+selected-file download, text editing and binary upload (up to 4 MiB). Create and
+update use reviewed change plans. Delete requires typing the exact filename or
+S3 key in a styled confirmation dialog. Drive/local deletion moves to trash;
+S3 deletion can be permanent. Unsaved buffers use the shared navigation guard
+and browser-tab `*`. See [storage file management](docs/design/storage-files.md)
+for permissions, scope and uncertain-outcome recovery. These controls are manual;
+they are not exposed as autonomous assistant or scheduled-job write tools.
+
 Here, **local** means the bundled gateway extracts the PDF's embedded text on
 your computer. It does not use an LLM, render page images, or include an OCR
 engine. Scanned pages without readable text are marked **Needs OCR**. A separately
