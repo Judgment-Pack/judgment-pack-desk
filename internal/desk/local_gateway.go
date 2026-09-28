@@ -20,8 +20,8 @@ import (
 )
 
 // Exact Gateway development build: bounded storage controls and durable source reads.
-const GatewayVersion = "v0.3.1-dev+df57ec6"
-const GatewayRevision = "df57ec6232c0e0b46c63323356fd72c4286aff47"
+const GatewayVersion = "v0.3.1-dev+450ce8b"
+const GatewayRevision = "450ce8b133d6ca055f1e133e918b8ae01f265a7b"
 const localAuthority = "gateway:desk-local"
 
 type gatewayBuild struct {
