@@ -1,0 +1,64 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    ":gitSignOff"
+  ],
+  "enabledManagers": [
+    "custom.regex"
+  ],
+  "dependencyDashboard": true,
+  "dependencyDashboardTitle": "Desk component release updates",
+  "automerge": false,
+  "timezone": "Etc/UTC",
+  "schedule": [
+    "* 8-11 * * *"
+  ],
+  "prConcurrentLimit": 1,
+  "prHourlyLimit": 1,
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^internal/releaseplan/components\\.json$/"
+      ],
+      "matchStrings": [
+        "\"repository\"\\s*:\\s*\"(?<depName>Judgment-Pack/judgment-pack-(?:runtime|runner|gateway))\",\\s*\"version\"\\s*:\\s*\"(?<currentValue>v[^\"\\s]+)\",\\s*\"revision\"\\s*:\\s*\"(?<currentDigest>[0-9a-f]{40})\",\\s*\"channel\"\\s*:\\s*\"(?<depType>stable|preview)\""
+      ],
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver",
+      "autoReplaceStringTemplate": "\"repository\": \"{{{depName}}}\",\n      \"version\": \"{{{newValue}}}\",\n      \"revision\": \"{{{newDigest}}}\",\n      \"channel\": \"stable\""
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Only published stable component releases; update version and commit together.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDatasources": [
+        "github-releases"
+      ],
+      "allowedVersions": "/^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$/",
+      "ignoreUnstable": true,
+      "respectLatest": true,
+      "pinDigests": true,
+      "groupName": "Desk component releases",
+      "groupSlug": "desk-components",
+      "prBodyNotes": [
+        "Updates published component releases and their exact commits together. CI verifies release identities and runs compatibility checks. Existing job releases retain their pinned Runtime. Merge requires review."
+      ]
+    },
+    {
+      "description": "A moved tag requires investigation, not an automatic same-version repin.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchUpdateTypes": [
+        "digest",
+        "pinDigest"
+      ],
+      "enabled": false
+    }
+  ],
+  "rollbackPrs": false
+}
