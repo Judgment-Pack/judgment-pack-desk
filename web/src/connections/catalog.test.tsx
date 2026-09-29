@@ -16,7 +16,7 @@ it('requires the supported protocol and complete operations without inventing mi
  wire.providers[1]!.operations = ['status']
  wire.providers.push({ ...wire.providers[2]!, id: 'future-provider' })
  expect(parseConnectionCatalog(wire).providers.map(item => item.id)).toEqual(['notion', 'obsidian'])
- expect(parseConnectionCatalog({ version: 2, providers: [], sources: [] })).toEqual({ providers: [], web: false, discovery: false })
+ expect(parseConnectionCatalog({ version: 2, providers: [], sources: [] })).toEqual({ providers: [], web: false, discovery: false, webSearch: false })
 })
 
 it.each([null, {}, { version: 2, providers: [] }, { version: 1, providers: [], sources: [] }, { ...fixture(), providers: null }, { ...fixture(), providers: Array(33).fill({}) }, { ...fixture(), providers: [connectionCatalogFixture.providers[0], connectionCatalogFixture.providers[0]] }, { ...fixture(), providers: [{ ...connectionCatalogFixture.providers[0], operations: ['status', 'status'] }] }, { ...fixture(), providers: [{ ...connectionCatalogFixture.providers[0], queryRequired: undefined }] }])('refuses malformed discovery: %j', raw => {

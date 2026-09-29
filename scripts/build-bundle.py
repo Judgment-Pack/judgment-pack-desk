@@ -18,9 +18,9 @@ import tarfile
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-REVISION = re.search(r'const GatewayRevision = "([a-f0-9]{40})"', (ROOT / 'internal/desk/local_gateway.go').read_text())[1]
-
-VERSION = re.search(r'const GatewayVersion = "([^"]+)"', (ROOT / 'internal/desk/local_gateway.go').read_text())[1]
+PLAN = json.loads((ROOT / 'internal/releaseplan/components.json').read_text())
+REVISION = PLAN['components']['gateway']['revision']
+VERSION = PLAN['components']['gateway']['version']
 
 def run(args, cwd=None, **kwargs):
     return subprocess.run(args, cwd=cwd, check=True, **kwargs)
@@ -69,7 +69,8 @@ def main():
         files = {}
         for name, module, package in [('gateway', 'go', '.'), ('adapter-document', 'adapters', './cmd/adapter-document'), ('gateway-connections', 'adapters', './cmd/gateway-connections'), ('adapter-drive', 'adapters', './cmd/adapter-drive'), ('adapter-gmail', 'adapters', './cmd/adapter-gmail'), ('adapter-sources', 'adapters', './cmd/adapter-sources'), ('adapter-web', 'adapters', './cmd/adapter-web')]:
             artifact = temp / (name + suffix)
-            run(['go', 'build', '-buildvcs=false', '-trimpath', '-o', str(artifact), package], source / module)
+            flags = ['-ldflags', '-X main.releaseVersion=' + VERSION] if name == 'gateway' and revision == REVISION and PLAN['components']['gateway']['channel'] == 'stable' else []
+            run(['go', 'build', '-buildvcs=false', '-trimpath', *flags, '-o', str(artifact), package], source / module, env=dict(os.environ, CGO_ENABLED='0', GOWORK='off'))
             files[artifact.name] = hashlib.sha256(artifact.read_bytes()).hexdigest()
             # Replace the inode atomically: a running companion may still have
             # the previous executable open during a local rebuild.
@@ -84,7 +85,7 @@ def main():
         licenses = target / 'gateway-licenses'
         licenses.mkdir(exist_ok=True)
         for path in source.rglob('*'):
-            if path.is_file() and (path.name.upper().startswith(('LICENSE', 'NOTICE', 'COPYING', 'PATENTS'))):
+            if path.is_file() and (path.name.upper().startswith(('LICENSE', 'NOTICE', 'COPYING', 'PATENTS', 'THIRD_PARTY_NOTICES'))):
                 destination = licenses / path.relative_to(source)
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(path, destination)

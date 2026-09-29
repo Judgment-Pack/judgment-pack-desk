@@ -63,5 +63,16 @@ export function projectLogicGraph(model: LogicProjection, grouped = false, expan
       semantic: suppressed ? 'excludes' : group === exceptions ? 'forces' : 'contributes',
       label: suppressed ? msg('Excludes') : group === exceptions ? msg('Forces') : msg('Contributes') })
   }
+  const handoff = model.groups.find(group => group.id === 'resolution')?.items.find(item => item.pointer === '/escalation')
+  const target = model.document.escalation?.target
+  const requests = exceptions.items.filter(item => isRecord(item.value) && item.value.effect === 'escalate')
+  if (handoff && isRecord(target) && typeof target.name === 'string' && requests.length) {
+    const group: LogicGroup = { id: 'handoff', label: msg('Handoff'), description: '', items: [handoff] }
+    nodes.push({ id: handoff.pointer, group, items: [handoff], title: target.name, column: ruleColumn + 1 })
+    for (const item of requests) {
+      const source = itemNodes.get(item.pointer)!
+      edges.push({ id: JSON.stringify([source, handoff.pointer]), source, target: handoff.pointer, semantic: 'requests-handoff', label: msg('Requests handoff') })
+    }
+  }
   return { nodes, edges }
 }

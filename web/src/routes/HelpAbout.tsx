@@ -1,3 +1,4 @@
+import { Updates } from '../updates/Updates'
 import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
 /**
@@ -8,7 +9,8 @@ import { msg, useLocale } from '../i18n'
  * Where the runtime advertises `author_pack`, this page renders that prompt's
  * text verbatim for a person to carry to whatever agent they run —
  * `prompts.go` is explicit that the client's model executes it with the
- * client's key, and this desk is not that client. Nothing on this page runs.
+ * client's key. Update controls use the authenticated release-check API and
+ * managed installation helper; they do not run an authoring prompt.
  *
  * **This is where the Runtime card's content went.** Admin used to carry a
  * card whose four slots reported the binary the chassis was launched with, the
@@ -52,6 +54,7 @@ export function HelpAbout() {
         <p className="quiet">{msg("A local web desk for a Judgment Pack project. The browser is the MCP client; the Go program is a chassis with no per-feature endpoints that parses none of the traffic it carries.")}</p>
       </header>
 
+      <Updates />
       <Section title={msg("This connection")}>
         <Button variant="quiet" onClick={diagnostics}>{msg("Diagnostics")}</Button>
         <p>{msg('Desk')}: <ComponentVersion build={builds?.desk} /></p>

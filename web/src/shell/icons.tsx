@@ -233,4 +233,9 @@ export function IconSearch() { return <Glyph><circle cx="6.5" cy="6.5" r="4.5"/>
 
 export function IconRule() { return <Glyph><path d="M3 2v12M3 5h5l5-3M8 5l5 3M3 11h10" /></Glyph> }
 export function IconException() { return <Glyph><path d="m8 1 7 7-7 7-7-7Z" /><path d="M8 4v4M8 11h.01" /></Glyph> }
-export function IconOutcome() { return <Glyph><rect x="1.5" y="2" width="13" height="12" rx="5" /><path d="m5 8 2 2 4-4" /></Glyph> }
+export function IconOutcome() { return <Glyph><circle cx="8" cy="8" r="5" /></Glyph> }
+
+/** Restore the relationship map's measured column layout. */
+export function IconAutoArrange() {
+  return <Glyph><rect x="1.5" y="2" width="4" height="4" rx=".7" /><rect x="1.5" y="10" width="4" height="4" rx=".7" /><rect x="10.5" y="6" width="4" height="4" rx=".7" /><path d="M5.5 4H8v8H5.5M8 8h2.5" /></Glyph>
+}

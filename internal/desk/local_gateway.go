@@ -17,11 +17,14 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Judgment-Pack/judgment-pack-desk/internal/releaseplan"
 )
 
-// Exact Gateway development build: bounded storage controls and durable source reads.
-const GatewayVersion = "v0.3.1-dev+73177a3"
-const GatewayRevision = "73177a36c497ab759de041698dee1debd0a60ef1"
+// Exact Gateway release pinned by the shared component lock.
+var GatewayVersion = releaseplan.Locked.Components["gateway"].Version
+var GatewayRevision = releaseplan.Locked.Components["gateway"].Revision
+
 const localAuthority = "gateway:desk-local"
 
 type gatewayBuild struct {

@@ -1,3 +1,4 @@
+import { validSearchReference, type SearchReference } from '../search/results'
 import type { AssistantEvent } from '../assistant/engine'
 import type { ChatAttachment } from './store'
 import { validWebURL } from '../documents/record'
@@ -31,6 +32,7 @@ export interface ResponseHistory {
   afterTurnId?: string
   documents: ChatAttachment[]
   websites: WebsiteReference[]
+  searches?: SearchReference[]
   sourceIds: string[]
   work: WorkRecord
 }
@@ -60,7 +62,7 @@ export function readAttachments(value: unknown, limit = 256): ChatAttachment[] {
     if (!object(file) || typeof file.id !== 'string' || typeof file.name !== 'string' || typeof file.text !== 'string' || file.text.length > 200_000) return invalid()
     const ref = file.document
     if (ref !== undefined && (!object(ref) || ref.id !== file.id || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(file.id) || typeof ref.digest !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(ref.digest) || !Array.isArray(ref.pages) || ref.pages.length > 500 || ref.pages.some(n => !Number.isSafeInteger(n) || n < 1) || new Set(ref.pages).size !== ref.pages.length || typeof ref.allowPartial !== 'boolean' || file.text !== '')) return invalid()
-    if (file.link !== undefined && (!ref || !object(file.link) || !validWebURL(file.link.url) || file.link.anchor !== undefined && (typeof file.link.anchor !== 'string' || new TextEncoder().encode(file.link.anchor).length > 4096 || /[\x00-\x1f\x7f]/.test(file.link.anchor)))) return invalid()
+    if (file.link !== undefined && (!ref || !object(file.link) || !validWebURL(file.link.url) || file.link.resolvedUrl!==undefined&&!validWebURL(file.link.resolvedUrl) || file.link.anchor !== undefined && (typeof file.link.anchor !== 'string' || new TextEncoder().encode(file.link.anchor).length > 4096 || /[\x00-\x1f\x7f]/.test(file.link.anchor)))) return invalid()
     return structuredClone(file) as unknown as ChatAttachment
   })
   if (new Set(files.map(attachmentKey)).size !== files.length) return invalid()
@@ -70,13 +72,13 @@ export function readResponseHistory(value: unknown): ResponseHistory[] {
   if (value === undefined) return []
   if (!Array.isArray(value)) return invalid()
   const records = value.map(row => {
-    if (!object(row) || !id(row.id) || !Array.isArray(row.websites) || row.websites.length > 16 || !row.websites.every(validWebsiteReference)
+    if (!object(row) || row.searches!==undefined && (!Array.isArray(row.searches)||row.searches.length>64||!row.searches.every(validSearchReference)) || !id(row.id) || !Array.isArray(row.websites) || row.websites.length > 16 || !row.websites.every(validWebsiteReference)
       || !Array.isArray(row.sourceIds) || row.sourceIds.some(s => typeof s !== 'string' || !/^src-\d+$/.test(s)) || !object(row.work)
       || !Array.isArray(row.work.items) || !Array.isArray(row.work.notices) || row.work.notices.some(n => typeof n !== 'string')
       || row.work.critique !== undefined && typeof row.work.critique !== 'string') return invalid()
     for (const item of row.work.items) if (!object(item) || typeof item.id !== 'string' || typeof item.name !== 'string' || !['working','complete','failed','interrupted'].includes(String(item.status))) return invalid()
     return {id: row.id, messageId: readMessageId(row.messageId), afterTurnId: readMessageId(row.afterTurnId), documents: readAttachments(row.documents),
-      websites: structuredClone(row.websites), sourceIds: [...row.sourceIds], work: {items: structuredClone(row.work.items) as WorkItem[], notices: [...row.work.notices] as string[], ...(typeof row.work.critique === 'string' ? {critique: row.work.critique} : {})}}
+      ...(row.searches ? {searches:structuredClone(row.searches) as SearchReference[]} : {}), websites: structuredClone(row.websites), sourceIds: [...row.sourceIds], work: {items: structuredClone(row.work.items) as WorkItem[], notices: [...row.work.notices] as string[], ...(typeof row.work.critique === 'string' ? {critique: row.work.critique} : {})}}
   })
   if (new Set(records.map(r => r.id)).size !== records.length) return invalid()
   return records

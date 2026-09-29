@@ -1,64 +1,125 @@
 {
-  // Hot-reload development: the chassis (Go) once, Vite for the page.
-  // Set two settings first (user or workspace):
-  //   "jpackDesk.jpack":   "/path/to/jpack"       — the runtime binary
-  //   "jpackDesk.project": "/path/to/project"     — a directory with jpack.json
-  // Then run "desk: open (hot reload)" — Ctrl+Shift+B runs "desk: dev".
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "desk: chassis (dev)",
-      "options": { "env": { "JPACK_DESK_LOCAL_ACCESS": "1" } },
-      "detail": "Rebuilds Desk beside its gateway companions in bin; install the complete bundle first. Restart this task after a Go change.",
-      "type": "shell",
-      "command": "go build -trimpath -o bin/jpack-desk . && exec ./bin/jpack-desk --dev-token dev --port 8790 --jpack \"${config:jpackDesk.jpack}\" \"${config:jpackDesk.project}\"",
-      "isBackground": true,
-      "problemMatcher": {
-        "owner": "jpack-desk",
-        "pattern": { "regexp": "^$" },
-        "background": {
-          "activeOnStart": true,
-          "beginsPattern": "judgment-pack desk",
-          "endsPattern": "open:"
-        }
+      "label": "desk: start",
+      "type": "process",
+      "command": "python3",
+      "args": [
+        "${workspaceFolder}/scripts/desk-dev.py",
+        "start"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
       },
-      "presentation": { "panel": "dedicated", "reveal": "always", "group": "desk" }
+      "detail": "Build and start Desk + Vite; keep the saved project and runtime. Safe to run again.",
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "shared",
+        "reveal": "always",
+        "clear": true
+      },
+      "runOptions": {
+        "instanceLimit": 1
+      }
     },
     {
-      "label": "desk: vite (hot reload)",
-      "detail": "npm --prefix web run dev — picks Node 22 through nvm and .nvmrc where nvm exists; proxies /launch, /ws and /api to the dev chassis on 8790",
-      "type": "shell",
-      "command": "if [ -s \"$HOME/.nvm/nvm.sh\" ]; then . \"$HOME/.nvm/nvm.sh\" >/dev/null 2>&1; { nvm use >/dev/null 2>&1 || nvm use 22 >/dev/null; }; fi; npm --prefix web run dev",
-      "options": { "env": { "JPACK_DESK_CHASSIS": "http://127.0.0.1:8790" } },
-      "isBackground": true,
-      "problemMatcher": {
-        "owner": "vite",
-        "pattern": { "regexp": "^$" },
-        "background": {
-          "activeOnStart": true,
-          "beginsPattern": "VITE",
-          "endsPattern": "Local:"
-        }
+      "label": "desk: stop",
+      "type": "process",
+      "command": "python3",
+      "args": [
+        "${workspaceFolder}/scripts/desk-dev.py",
+        "stop"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
       },
-      "presentation": { "panel": "dedicated", "reveal": "always", "group": "desk" }
+      "detail": "Stop only the development servers started by these tasks; preserve workspace files.",
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "shared",
+        "reveal": "always",
+        "clear": true
+      },
+      "runOptions": {
+        "instanceLimit": 1
+      }
+    },
+    {
+      "label": "desk: restart",
+      "type": "process",
+      "command": "python3",
+      "args": [
+        "${workspaceFolder}/scripts/desk-dev.py",
+        "restart"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "detail": "Rebuild Desk, then restart both servers. A build failure leaves the current session running.",
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "shared",
+        "reveal": "always",
+        "clear": true
+      },
+      "runOptions": {
+        "instanceLimit": 1
+      }
+    },
+    {
+      "label": "desk: status",
+      "type": "process",
+      "command": "python3",
+      "args": [
+        "${workspaceFolder}/scripts/desk-dev.py",
+        "status"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "detail": "Show development server status and the log directory.",
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "shared",
+        "reveal": "always",
+        "clear": true
+      },
+      "runOptions": {
+        "instanceLimit": 1
+      }
     },
     {
       "label": "desk: dev",
-      "detail": "the chassis and Vite together; then open http://localhost:5173/",
-      "dependsOn": ["desk: chassis (dev)", "desk: vite (hot reload)"],
-      "dependsOrder": "parallel",
+      "detail": "Start Desk + Vite (alias for desk: start).",
+      "dependsOn": [
+        "desk: start"
+      ],
       "problemMatcher": [],
-      "group": { "kind": "build", "isDefault": true }
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
     },
     {
       "label": "desk: open (hot reload)",
-      "detail": "starts both and opens the Desk URL in the browser (wslview on WSL, xdg-open elsewhere)",
-      "type": "shell",
-      "command": "sh -c 'sleep 2; url=http://localhost:5173/; if command -v wslview >/dev/null 2>&1; then wslview \"$url\"; else xdg-open \"$url\"; fi'",
-      "dependsOn": ["desk: chassis (dev)", "desk: vite (hot reload)"],
-      "dependsOrder": "parallel",
+      "type": "process",
+      "command": "python3",
+      "args": [
+        "${workspaceFolder}/scripts/desk-dev.py",
+        "start",
+        "--open"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "detail": "Start Desk if needed, wait until ready, and open the browser.",
       "problemMatcher": [],
-      "presentation": { "reveal": "silent" }
+      "presentation": {
+        "panel": "shared",
+        "reveal": "always",
+        "clear": true
+      }
     }
   ]
 }

@@ -1,0 +1,43 @@
+name: Component release updates
+on:
+  schedule:
+    - cron: '23 8 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: component-release-updates
+  cancel-in-progress: false
+jobs:
+  propose:
+    runs-on: ubuntu-latest
+    # PRs made with a dedicated bot token trigger ordinary PR CI. GITHUB_TOKEN
+    # PR workflows can require approval, so never silently fall back.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Check automation credential
+        env:
+          GH_TOKEN: ${{ secrets.COMPONENT_UPDATE_TOKEN }}
+        run: test -n "$GH_TOKEN" || { echo 'Set COMPONENT_UPDATE_TOKEN to a bot token with contents and pull-request write permissions.'; exit 1; }
+      - name: Propose newer stable pins
+        env:
+          GH_TOKEN: ${{ secrets.COMPONENT_UPDATE_TOKEN }}
+        run: python3 scripts/component-releases.py propose
+      - name: Open dependency PR
+        env:
+          GH_TOKEN: ${{ secrets.COMPONENT_UPDATE_TOKEN }}
+        run: |
+          if git diff --quiet -- internal/releaseplan/components.json; then exit 0; fi
+          gh auth setup-git
+          git config user.name 'Desk release maintenance'
+          git config user.email 'release-maintenance@users.noreply.github.com'
+          git checkout -b automation/component-releases
+          git add internal/releaseplan/components.json
+          git commit -m 'Update tested component release candidates'
+          git push --force-with-lease origin HEAD:automation/component-releases
+          if ! gh pr view automation/component-releases --json number >/dev/null 2>&1; then
+            gh pr create --base main --head automation/component-releases --title 'Update component release pins' --body-file .github/component-update-body.md
+          fi

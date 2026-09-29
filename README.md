@@ -21,6 +21,13 @@ machine-held credential to the browser as a model id. See
 [Where the assistant key lives](#where-the-assistant-key-lives).
 
 
+## Releases and updates
+
+**Help & About → Updates** shows release availability and installed-build status.
+Managed installations can prepare a verified complete bundle and opt into updates
+on launch. Source checkouts remain under developer control. Component pins, CI
+and packaging share one manifest. See [installation, automation and rollback](docs/updates.md).
+
 ## Automatic local PDF processing
 
 Build a complete local installation with Node 22+, Python 3.8.17+ and Go (the
@@ -128,6 +135,15 @@ Google consent is required; setup cannot authorize an account automatically.
 Web research credentials and OCR are not installed. See
 [managed local processing](docs/adr/0005-managed-local-gateway.md) for identity
 preservation, receipt storage and platform boundaries.
+
+## Web search connections
+
+**Admin → Storage & data → Web search** configures named Tavily and Google Cloud
+Search grounding connections. Select a desk default or override it in Chat's
+Assistant settings. Auto research can search, read verified results and explore
+related website pages; Provided sources only disables new discovery. Credentials
+stay in Gateway, and search leads remain distinct from fetched page citations.
+See [setup, limits and conversation behavior](docs/web-search.md).
 
 ## Private workspace storage and recovery
 
@@ -1123,6 +1139,28 @@ The optional Outline navigates the same items. **Test pack** opens
 `/packs/:id/evaluate`; **Saved cases** is available where the listing declares a
 matrix. More contains pack metadata, successful validation details and
 **Full document**, preserving existing deep links and the original editor.
+
+Outcomes use distinct category colors by default; Desk does not infer approval,
+rejection, or risk from their names. An outcome's detail pane offers an optional
+**Decision appearance** setting: a category color or an explicit Proceed,
+Review, Hold, Handoff, or Neutral meaning, paired with a label and symbol.
+These settings save to `jpack-presentation.json` in the desk folder, keyed by
+pack and outcome IDs. They are shared presentation metadata and do not change
+pack bytes, version, or evaluation. The first edit saves the current color
+assignments; eight category colors are available, with labels distinguishing
+larger sets. Concurrent edits require a reload instead of overwriting changes.
+A special case that forces an outcome inherits its appearance; an explicit
+handoff is violet, and rule suppression stays neutral with a dashed connection.
+
+Selecting a map node highlights every upstream and downstream declared path
+through it, including branches and merges, without selecting unrelated sibling
+paths. **Auto arrange** restores measured column spacing after dragging and
+fits the map while retaining selection. Drag any part of a card to move it; its
+buttons remain clickable. Dragging and panning update the canvas locally, with
+positions committed to the page when the gesture ends. **Fit highlighted path** frames only the
+selected relationships; Escape or clicking
+the canvas clears selection. This is a relationship view, not an execution
+trace or a claim that every highlighted condition ran.
 
 The map uses React Flow at native readable size, with explicit pan/zoom and
 neutral selected surfaces. It represents declared relationships, not a
@@ -3565,13 +3603,33 @@ Node 22 or newer is required (`web/package.json` says so, `.nvmrc` says `22`, an
 `npm run dev` and `npm run build` refuse an older Node with a sentence rather than
 Vite's stack trace): run `nvm use` in the repository first.
 
-**In VS Code**, `.vscode/tasks.json` carries this as tasks. Set `jpackDesk.jpack`
-(the runtime binary) and `jpackDesk.project` (a directory with `jpack.json`) in
-your settings, then run **desk: open (hot reload)**: it starts the chassis on
-port 8790 with `JPACK_DESK_LOCAL_ACCESS=1` and the development token `dev`, starts
-Vite with its proxy pointed at that port, and opens `http://localhost:5173/`. Page edits
-reload in place; a Go change means restarting the **desk: chassis (dev)** task,
-and the URL is the same afterwards.
+**In VS Code on Linux or WSL**, use **Terminal → Run Task**:
+
+- **desk: start** builds Desk and starts it with Vite at <http://localhost:5173/>.
+  Running it again keeps the existing servers.
+- **desk: stop** stops the servers and their child processes, preserving workspace files.
+- **desk: restart** rebuilds and restarts both servers for Go changes. If the build
+  fails, the current session keeps running. Frontend changes hot reload automatically.
+- **desk: status** shows the tracked processes and log directory.
+- **desk: open (hot reload)** starts Desk if needed, waits for readiness, and opens
+  the browser. **Ctrl+Shift+B** runs **desk: dev**, an alias for **desk: start**.
+
+The tasks use `python3 scripts/desk-dev.py` (Python 3, Go, and Node 22+ required).
+Install frontend dependencies with `npm --prefix web ci` and the complete local
+bundle above first. They use `jpack` on `PATH` and Desk's saved project by default;
+optional environment variables `JPACK_DESK_JPACK` and `JPACK_DESK_PROJECT` select
+another runtime executable and project. No VS Code settings are required. If VS
+Code has an older Node on `PATH`, the helper selects an installed Node 22 (or newer)
+from nvm without installing anything.
+
+The backend listens on `127.0.0.1:8790` with `JPACK_DESK_LOCAL_ACCESS=1` and development
+token `dev`; Vite uses port `5173` and proxies to that backend. These processes keep
+running after the task finishes; use **desk: stop** when done. PID identity checks
+and a per-checkout lock keep lifecycle commands scoped to the servers they started.
+An occupied port belonging to an untracked server produces an error, without killing
+it. Logs and process state are stored in the printed `jpack-desk-dev-…` directory
+under the system temporary directory. The helper never rewrites workspace files,
+changes the saved default desk, or replaces the installed `jpack` runtime.
 
 Before OIDC activation, check an isolated development chassis with the desk's client code. These legacy secret-based smoke commands are refused after activation. The
 origin and the secret are separate arguments, because a credential does not ride

@@ -18,7 +18,7 @@
    theme attribute never reaches. */
 
 :root {
-  /* Judgment Pack: judgmentpack.org. Green and gold are the only chromatic accents.
+  /* Judgment Pack: judgmentpack.org. Green and gold are the brand accents; decision colors identify authored outcomes.
      Page, panel, field, border and text surfaces retain the neutral palette. */
   color-scheme: light;
 
@@ -59,6 +59,14 @@
   --logic-outcome: #28665c;
   --logic-exception: #805516;
   --logic-rule: #555a60;
+  --decision-blue: #335f99;
+  --decision-violet: #77509a;
+  --decision-cyan: #176b76;
+  --decision-rose: #984557;
+  --decision-amber: #805516;
+  --decision-green: #286647;
+  --decision-indigo: #585ba0;
+  --decision-slate: #555f71;
   --ink-inverse: #fefeff;
 
   /* Green links/selections and the primary action hover/pressed fills. The **focus ring is
@@ -293,6 +301,14 @@
   --logic-outcome: #91c1b6;
   --logic-exception: #d4b578;
   --logic-rule: #afb3bb;
+  --decision-blue: #93b9ec;
+  --decision-violet: #c3a1e1;
+  --decision-cyan: #7ec7d1;
+  --decision-rose: #e2a0ad;
+  --decision-amber: #d4b578;
+  --decision-green: #91c1a8;
+  --decision-indigo: #aeb0eb;
+  --decision-slate: #b0bacb;
     --ink-inverse: #fefeff;
     --accent: #a7c8bc;
     --accent-hover: #39786e;
@@ -333,6 +349,14 @@
   --logic-outcome: #91c1b6;
   --logic-exception: #d4b578;
   --logic-rule: #afb3bb;
+  --decision-blue: #93b9ec;
+  --decision-violet: #c3a1e1;
+  --decision-cyan: #7ec7d1;
+  --decision-rose: #e2a0ad;
+  --decision-amber: #d4b578;
+  --decision-green: #91c1a8;
+  --decision-indigo: #aeb0eb;
+  --decision-slate: #b0bacb;
   --ink-inverse: #fefeff;
   --accent: #a7c8bc;
   --accent-hover: #39786e;

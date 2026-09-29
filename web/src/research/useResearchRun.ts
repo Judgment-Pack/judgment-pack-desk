@@ -1,3 +1,4 @@
+import { conversationMode, type AuthoringMode } from './mode'
 import { bindExecution } from '../assistant/target'
 import { selectedAssistant } from '../assistant/target'
 import { assistantReady } from '../assistant/useAssistantSlot'
@@ -43,6 +44,7 @@ export const MAX_REVISIONS = 4
  * person sent in the message being answered is already among them.
  */
 export interface DraftToolContext {
+  recordSearch?: (reference: import('../search/results').SearchReference) => void
   recordDocument?: (file: import('../chat/store').ChatAttachment) => void
   recordWebsite?: (reference: import('../documents/website').WebsiteReference) => void
   turns: () => readonly Turn[]
@@ -76,7 +78,7 @@ function callToolThrough(client: NonNullable<ReturnType<typeof useMcp>['client']
  */
 export function researchBlockedReason(state: {
   slot: { state: string; endpoint: unknown; keyStatus: string; keyPresent: boolean; engine?: string; unusable?: string; agent?: unknown }
-  mode?: 'draft' | 'research'
+  mode?: AuthoringMode
   modelPicked: boolean
   advertised: boolean
   authorPromptRead: boolean
@@ -97,7 +99,7 @@ export function researchBlockedReason(state: {
           ? sourceMessage("No API key is stored for the assistant. Save one in Admin › Assistant.")
           : !state.modelPicked
             ? sourceMessage("Choose an enabled model in Admin › Assistant.")
-            : state.mode === 'draft' ? ''
+            : conversationMode(state.mode) ? ''
             : !state.advertised
               ? sourceMessage("This runtime does not offer the authoring prompt.")
               : !state.authorPromptRead
@@ -117,9 +119,10 @@ export function researchBlockedReason(state: {
 
 export function useResearchRun(options?: {
   model?: string
-  mode?: 'draft' | 'research'
+  mode?: AuthoringMode
   adversarialReview?: boolean
-  /** The tools a draft (ordinary chat) turn is offered, built per turn; research keeps the gateway's three. */
+  /** Per-message policy for Chat and web Research; legacy research keeps its source-led contract. */
+  researchPolicy?:()=>string
   draftTools?: (context: DraftToolContext) => HostTool[]
 }): ResearchRunBinding {
   useLocale()
@@ -152,8 +155,8 @@ export function useResearchRun(options?: {
   const ledger = ledgerRef.current
 
   // The settings a turn reads, as of the moment it starts.
-  const settings = useRef({ slot, picked, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, draftTools: options?.draftTools })
-  settings.current = { slot, picked, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, draftTools: options?.draftTools }
+  const settings = useRef({ slot, picked, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools })
+  settings.current = { slot, picked, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools }
 
   const run = useMemo(() => {
     const log = (text: string) => recordActivity(text, 'research')
@@ -179,7 +182,7 @@ export function useResearchRun(options?: {
         await runAssistantSession(
           engine,
           {
-            prompt: request.prompt,
+            prompt: [request.prompt,conversationMode(settings.current.mode)?settings.current.researchPolicy?.():undefined].filter(Boolean).join('\n\n'),
             ...(request.conversation ? { allowConversation: true } : {}),
             interactive: true,
             adversarialReview: !request.reviewer && settings.current.adversarialReview === true,
@@ -213,7 +216,7 @@ export function useResearchRun(options?: {
     // so far; the context reads the run that is about to be built, which
     // exists by the time any turn asks.
     let built: AuthoringRun | null = null
-    const context: DraftToolContext = { turns: () => built?.getSnapshot().turns ?? [], recordDocument: file => built?.recordDocument(file), recordWebsite: reference => built?.recordWebsite(reference) }
+    const context: DraftToolContext = { turns: () => built?.getSnapshot().turns ?? [], recordDocument: file => built?.recordDocument(file), recordWebsite: reference => built?.recordWebsite(reference), recordSearch:reference=>built?.recordSearch(reference) }
     built = new AuthoringRun({
       turn,
       get mode() { return settings.current.mode ?? 'research' },
@@ -226,7 +229,7 @@ export function useResearchRun(options?: {
       },
       ledger,
       get researchTools() {
-        return settings.current.mode === 'draft' ? (settings.current.draftTools?.(context) ?? []) : toolsFor()
+        return conversationMode(settings.current.mode) ? (settings.current.draftTools?.(context) ?? []) : toolsFor()
       },
       seal: async (session, signal) => {
         await seal(session, signal)

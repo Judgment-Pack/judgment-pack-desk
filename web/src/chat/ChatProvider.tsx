@@ -1,3 +1,4 @@
+import { useSearchConnections, useSearchPreference } from '../search/connections'
 import { sourceMessage } from '../i18n/source'
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
@@ -46,10 +47,19 @@ function ChatWorker({ store, chat }: { store: ChatStore; chat: Chat }) {
   const catalog = useConnections(local)
   const readable = linkReadable(research, { local, catalogWeb: catalog.web })
   const discovery=websiteReadable(research,{local,catalogWeb:catalog.web,catalogDiscovery:catalog.discovery})
-  const latest = useRef({ research, readable, discovery })
-  latest.current = { research, readable, discovery }
+  const searchConnections=useSearchConnections(), searchPreference=useSearchPreference()
+  const researchEnabled=!!searchPreference.data&&!searchPreference.isError&&(chat.researchMode??searchPreference.data.value.mode)==='auto'
+  const connection=searchConnections.available&&!searchConnections.isError&&searchConnections.data?.connections.find(c=>c.id===(chat.searchConnection??searchPreference.data?.value.connection)) || undefined
+  const latest = useRef({ research, readable, discovery, researchEnabled, connection, mode: chat.mode })
+  latest.current = { research, readable, discovery, researchEnabled, connection, mode: chat.mode }
   const draftTools = useMemo(() => linkReading({
     available: () => latest.current.readable,
+    researchEnabled:()=>latest.current.researchEnabled,
+    search:{
+      connection:()=>latest.current.connection,
+      references:()=>chatOf(store,chat.id)?.searches??[],
+      add:ref=>{const current=chatOf(store,chat.id);if(current)store.update(chat.id,{searches:[...(current.searches??[]),ref]})}
+    },
     discoveryAvailable:()=>latest.current.discovery,
     websites:()=>chatOf(store,chat.id)?.websites??[],
     addWebsite:ref=>{const current=chatOf(store,chat.id);if(current)store.update(chat.id,{websites:[...(current.websites??[]).filter(w=>w.seed!==ref.seed),ref]})},
@@ -61,7 +71,9 @@ function ChatWorker({ store, chat }: { store: ChatStore; chat: Chat }) {
     },
     log: text => recordActivity(text, 'research')
   }), [store, chat.id])
-  const binding = useResearchRun({ model: chat.model, mode: chat.mode, adversarialReview: chat.adversarialReview, draftTools })
+  const binding = useResearchRun({ model: chat.model, mode: chat.mode, adversarialReview: chat.adversarialReview, researchPolicy:()=>!latest.current.researchEnabled
+    ? 'WEB RESEARCH POLICY: Use only sources supplied in this conversation. Web search and website exploration are disabled for this conversation; do not request configuration as a workaround.'
+    : `WEB RESEARCH POLICY: ${latest.current.mode === 'web-research' ? 'Research requested. For substantive research requests, use the available web tools and cite sources actually read. Ask for a source or explain a missing capability when necessary.' : 'Auto. Choose web tools when the request needs research, verification or current sources.'} ${latest.current.connection?'The configured search connection is '+latest.current.connection.provider+'.':'No web-search connection is configured. Supplied-link reading and website exploration may still be available; check your tool list.'}`, draftTools })
   const initial = useRef(chat.checkpoint)
   const restoring = useRef(false)
   const [restored, setRestored] = useState(!initial.current)

@@ -101,3 +101,13 @@ it('does not let a conversation with an older generation replace newer expectati
  expect(store.getSnapshot().packDrafts[0]!.checkpoint.state.unknowns).toEqual(['Newly established requirement'])
  expect(store.perform(older.id,()=>{})).toBe(false)
 })
+
+it('retains the web Research lifecycle on artifacts through reload and new conversations', async () => {
+ const original = {...chat('web'), mode: 'web-research' as const}
+ const {store, io, draftIO} = await setup([original])
+ expect(await store.flush()).toBe(true)
+ const reloaded = (await setup([], draftIO, io)).store
+ const artifact = reloaded.getSnapshot().packDrafts[0]!
+ expect(artifact.mode).toBe('web-research')
+ expect(reloaded.startChat(undefined, undefined, true, artifact.id).mode).toBe('web-research')
+})

@@ -94,7 +94,7 @@ describe('read_link', () => {
     const { tool, ingested, documents } = harness({ turns: [user('what does the policy say?'), assistant('See https://invented.example/policy for details.')] })
     const result = await tool.execute({ url: 'https://invented.example/policy' }, signal)
     expect(result.isError).toBe(true)
-    expect(said(result)).toContain('that link was not given in this chat or verified by website discovery')
+    expect(said(result)).toContain('that link was not supplied or verified by search or discovery')
     expect(ingested).toEqual([])
     expect(documents).toHaveLength(0)
   })
@@ -104,7 +104,7 @@ describe('read_link', () => {
     await tool.execute({ url: INCIDENT }, signal)
     const result = await tool.execute({ url: 'https://other.example/next' }, signal)
     expect(result.isError).toBe(true)
-    expect(said(result)).toContain('not given in this chat')
+    expect(said(result)).toContain('not supplied or verified')
     expect(ingested).toEqual([FETCHED])
   })
 
@@ -469,4 +469,24 @@ it('records a successful cached read for each response and only the pages actual
   expect(h.documents).toHaveLength(1)
   await h.factory({turns:()=>h.turns,recordDocument:second})[0]!.execute({url:'https://unprovided.example'},signal)
   expect(second).toHaveBeenCalledOnce()
+})
+
+it('authorizes a verified redirect destination for exploration and checks it again after reload',async()=>{
+ const original='https://vertexaisearch.cloud.google.com/grounding-api-redirect/example',destination='https://example.org/policy'
+ const read=webDocument('Original page text',original);read.document.record.provenance.source.url=destination
+ const docs:ChatAttachment[]=[],discover=vi.fn(async()=>{throw new Error('fixture exploration')})
+ const load=vi.fn(async()=>read.document)
+ const deps:LinkReadingDeps={available:()=>true,discoveryAvailable:()=>true,config:()=>CONFIG,documents:()=>docs,addDocument:d=>docs.push(d),log:()=>{},ingest:async()=>read,load,discover}
+ const context={turns:()=>[user(original)]}
+ const tools=linkReading(deps)(context)
+ await tools.find(t=>t.name===READ_LINK)!.execute({url:original},signal)
+ expect(docs[0]!.link?.resolvedUrl).toBe(destination)
+ await tools.find(t=>t.name===EXPLORE_WEBSITE)!.execute({url:destination},signal)
+ expect(discover).toHaveBeenCalledTimes(1)
+ const restored=linkReading(deps)(context)
+ await restored.find(t=>t.name===EXPLORE_WEBSITE)!.execute({url:destination},signal)
+ expect(load).toHaveBeenCalledTimes(1);expect(discover).toHaveBeenCalledTimes(2)
+ docs[0]!.link!.resolvedUrl='https://forged.example/'
+ await linkReading(deps)(context).find(t=>t.name===EXPLORE_WEBSITE)!.execute({url:'https://forged.example/'},signal)
+ expect(discover).toHaveBeenCalledTimes(2)
 })

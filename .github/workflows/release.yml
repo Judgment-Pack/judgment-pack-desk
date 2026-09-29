@@ -1,0 +1,52 @@
+name: Release Desk
+on:
+  push:
+    tags: ['v*.*.*']
+permissions:
+  contents: read
+concurrency:
+  group: desk-release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  compatibility:
+    uses: ./.github/workflows/ci.yml
+  publish:
+    needs: compatibility
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm --prefix web ci
+      - name: Build the tested release bundle
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 scripts/package-release.py "${RELEASE_TAG#v}" --output "$RUNNER_TEMP/release"
+      - name: Verify and smoke-test the built archive
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 scripts/check-release.py "$RUNNER_TEMP/release" "${RELEASE_TAG#v}"
+      - name: Publish once
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          notes="docs/releases/$RELEASE_TAG.md"
+          if test -f "$notes"; then
+            gh release create "$RELEASE_TAG" "$RUNNER_TEMP/release/"* --verify-tag --notes-file "$notes" --latest
+          else
+            gh release create "$RELEASE_TAG" "$RUNNER_TEMP/release/"* --verify-tag --generate-notes --latest
+          fi

@@ -1938,8 +1938,8 @@ if [ "$which" = all ] || [ "$which" = web ]; then
   mutate web "a link's fragment reaches the gateway" "$LK" \
     '  const fetchUrl = `${parsed.origin}${parsed.pathname}${parsed.search}`' \
     '  const fetchUrl = `${parsed.origin}${parsed.pathname}${parsed.search}${parsed.hash}`'
-  mutate web "read_link reads a link the person never gave" "$LT" \
-    'if(!site&&!givenInChat(link.fetchUrl,context.turns(),deps.documents()))' \
+  mutate web "read_link reads a link without supplied or verified provenance" "$LT" \
+    'if(!site&&!givenInChat(link.fetchUrl,context.turns(),deps.documents())&&!await searched(link.fetchUrl,signal))' \
     'if(false)'
   mutate web "read_link hands the model the whole page" "$LT" \
     '  const end = Math.min(start + READ_WINDOW, joined.length)' \

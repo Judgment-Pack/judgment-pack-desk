@@ -21,7 +21,7 @@ it('keeps exclusion and forced-outcome edges exact even when grouping is enabled
   doc.exceptions!.forEach((item, i) => {
     if (item.effect === 'suppress-rule') expect(graph.edges).toContainEqual(expect.objectContaining({ source: `/exceptions/${i}`, target: `/rules/${doc.rules.findIndex(rule => rule.id === item.targetRule)}`, label: 'Excludes' }))
     if (item.effect === 'force-outcome') expect(graph.edges).toContainEqual(expect.objectContaining({ source: `/exceptions/${i}`, target: `/outcomes/${doc.outcomes.findIndex(outcome => outcome.id === item.outcome)}`, label: 'Forces' }))
-    if (item.effect === 'escalate') expect(graph.edges.some(edge => edge.source === `/exceptions/${i}`)).toBe(false)
+    if (item.effect === 'escalate') expect(graph.edges).toContainEqual(expect.objectContaining({ source: `/exceptions/${i}`, target: '/escalation', semantic: 'requests-handoff' }))
   })
 })
 it('groups large packs by exact outcome IDs, preserves order and expands real item pointers', () => {
@@ -59,4 +59,11 @@ it('groups only special cases with the same forced outcome and preserves their e
  const expanded=projectLogicGraph(model,true,new Set([group.id]))
  expect(expanded.nodes.filter(n=>n.group.id==='exceptions')).toHaveLength(2)
  expect(expanded.edges.filter(e=>e.semantic==='forces')).toHaveLength(2)
+})
+
+it('does not invent a handoff destination when none is declared',()=>{
+ const doc=fixture('exceptions'); delete doc.escalation
+ const graph=projectLogicGraph(projectLogic(doc))
+ expect(graph.nodes.some(node=>node.group.id==='handoff')).toBe(false)
+ expect(graph.edges.some(edge=>edge.semantic==='requests-handoff')).toBe(false)
 })

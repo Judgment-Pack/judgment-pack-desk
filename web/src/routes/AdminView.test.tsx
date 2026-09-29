@@ -1286,7 +1286,7 @@ describe('one section at a time', () => {
     for (const [fragment, expected] of [
       ['project', ['Use this project as the default']],
       ['organization', ['Upload file', 'Reset to default', 'Upload file', 'Use logo', 'Save']],
-      ['storage', ['Save', 'Set up', 'Manage']],
+      ['storage', ['Save', 'Set up', 'Manage', 'Add connection']],
       [
         // **No Test connection here**, and that is the section reading
         // truthfully: this desk has no endpoint saved and no key stored, and

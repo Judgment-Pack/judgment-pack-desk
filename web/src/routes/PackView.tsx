@@ -93,6 +93,9 @@ import { TypedConfirmation, useConfirmDiscard } from '../shell/UnsavedChanges'
 import { useDirtyGuard } from '../shell/useDirtyGuard'
 import { useMeasuredBox } from '../shell/measured'
 import { PackLogic } from '../packs/PackLogic'
+import { useDecisionAppearance } from '../packs/decisionAppearanceStorage'
+import { outcomeAppearances, lookupAppearance } from '../packs/decisionAppearance'
+import { DecisionAppearanceEditor } from '../packs/DecisionAppearanceEditor'
 import { LogicInspector } from '../packs/inspector/LogicInspector'
 import { matchingItems, projectLogic, selectedItem, text } from '../packs/logicModel'
 import { useLogicState, rememberLogicMode, type LogicMode } from '../packs/logicState'
@@ -421,6 +424,13 @@ export function PackView() {
       : requested === 'evidence' || requested === 'document' ? requested : 'overview'
 
   const model = useMemo(() => drawn ? projectLogic(drawn) : undefined, [drawn, locale])
+  const appearance = useDecisionAppearance(model?.document.id)
+  const appearances = useMemo(() => model ? outcomeAppearances(model.document, appearance.saved) : {}, [model, appearance.saved])
+  const clearMapSelection = () => {
+    if (itemEdit) return
+    const next = new URLSearchParams(params); next.delete('at'); next.delete('group')
+    retainInspectorOnNavigation.current = true; setParams(next, { replace: true })
+  }
   useEffect(() => {
     if (!model || editing || (section !== 'logic' && section !== 'overview')) return
     const value = selectedItem(model, at)?.item.value
@@ -920,7 +930,10 @@ export function PackView() {
   }
   const details = useDetailsPortal(itemEdit && model && selectedItem(model, at)?.item.pointer === itemEdit ? <SelectedLogicEditor key={itemEdit} model={model} pointer={itemEdit}/> : inspectorNode === null ? null :
     (!editing || itemEdit) && (section === 'logic' || section === 'overview') && model && formAvailable ?
-      <LogicInspector model={model} at={at} groupId={groupId} onEdit={itemEdit ? inspectItem : editItem}
+      <LogicInspector appearanceEditor={id => {
+        const selected = lookupAppearance(appearances, id)
+        return selected ? <DecisionAppearanceEditor appearance={selected} state={appearance} onChange={next => appearance.change(id, next, appearances)} /> : null
+      }} model={model} at={at} groupId={groupId} onEdit={itemEdit ? inspectItem : editItem}
         onSelect={itemEdit ? inspectItem : select} mainContent={section === 'logic' && mode !== 'map' && (!logic.query.trim()
           || model.groups.some(group => matchingItems(group, logic.query).some(item => item.pointer === selectedItem(model, at)?.item.pointer)))}
         conditionsVisible={logic.display.conditions || Boolean(logic.query.trim())}
@@ -1193,7 +1206,7 @@ export function PackView() {
                       <Button variant="quiet" onClick={() => { const next = new URLSearchParams(params); next.delete('run'); retainInspectorOnNavigation.current = true; setParams(next, { replace: true }) }}>{msg("Structure only")}</Button>
                       <ButtonLink variant="quiet" to={`/packs/${encodeURIComponent(packId ?? '')}/evaluate`}>{msg("Back to Tests")}</ButtonLink>
                     </div>}
-                    <PackLogic model={model} at={at} groupId={groupId} select={selectInMain} inspect={inspectItem} mode={mode} onMode={changeMode}
+                    <PackLogic appearanceOverrides={appearance.saved} onClearSelection={itemEdit ? undefined : clearMapSelection} model={model} at={at} groupId={groupId} select={selectInMain} inspect={inspectItem} mode={mode} onMode={changeMode}
                       query={logic.query} onQuery={logic.setQuery} display={logic.display} onDisplay={logic.setDisplay}
                       viewport={logic.viewport} onViewport={logic.setViewport} nodePositions={logic.nodePositions} onNodePositionsChange={logic.setNodePositions} listScroll={logic.listScroll}
                       trace={runTrace} mapUnavailable={!formAvailable ? msg("The document cannot be interpreted unambiguously.")

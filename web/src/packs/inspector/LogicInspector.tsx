@@ -17,10 +17,11 @@ import { valueAt } from '../pointers'
 import { itemTrace, outcomeLabel, selectedItem, text, type LogicGroup, type LogicItem, type LogicProjection } from '../logicModel'
 import styles from './LogicInspector.module.css'
 
-export function LogicInspector({ model, at, groupId, onSelect, trace, advanced, mainContent = false, conditionsVisible = true, onEdit }: {
+export function LogicInspector({ model, at, groupId, onSelect, trace, advanced, mainContent = false, conditionsVisible = true, onEdit, appearanceEditor }: {
   model: LogicProjection; at: string | null
   groupId?: string | null
   onEdit?: (pointer: string) => void
+  appearanceEditor?: (outcomeId: string) => ReactNode
   onSelect: (pointer: string) => void; mainContent?: boolean; conditionsVisible?: boolean
   trace?: readonly TraceEntry[]; advanced: ReactNode
 }) {
@@ -69,6 +70,7 @@ export function LogicInspector({ model, at, groupId, onSelect, trace, advanced, 
     {group && !selected && <section className={styles.group}>{group.items.map(item => row(group, item))}{!group.items.length && <p>{msg("None declared.")}</p>}</section>}
     {!mainContent && condition === undefined && pointer !== '/fallbackOutcome' && !group && <Definition value={value} />}
     {isRecord(value) && Array.isArray(value.sourceRefs) && value.sourceRefs.length > 0 && <section className={styles.group}><h3>{msg('Supporting references')}</h3>{value.sourceRefs.map(id => { const source = model.groups.find(g => g.id === 'sources')?.items.find(s => isRecord(s.value) && s.value.id === id); return source ? <InspectionRow key={String(id)} label={source.label} onClick={() => onSelect(source.pointer)} /> : <p key={String(id)}>{String(id)}</p> })}</section>}
+    {selected?.group.id === 'outcomes' && isRecord(value) && typeof value.id === 'string' && appearanceEditor?.(value.id)}
     <Disclosure key={pointer} className={styles.group} title={msg("Technical details")}>
       <p className={styles.meta}><Message text={"Document path: <0/>"} slots={[<code>{pointer || '/'}</code>]} /></p>
       <h3>{msg("Exact definition JSON")}</h3>

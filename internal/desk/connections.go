@@ -167,7 +167,7 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch method {
-	case "catalog", "status", "configure", "connect", "pick", "poll", "cancel", "disconnect", "search", "select", "files-list", "files-read", "files-prepare", "files-commit", "files-status":
+	case "catalog", "status", "configure", "connect", "pick", "poll", "cancel", "disconnect", "search", "select", "files-list", "files-read", "files-prepare", "files-commit", "files-status", "test":
 	default:
 		writeJSONCoded(w, 400, CodeBadRequest, "unknown connection operation")
 		return
