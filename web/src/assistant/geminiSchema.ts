@@ -7,11 +7,10 @@
  * schema literal — because the model is shown the contract the runtime enforces
  * or it is shown nothing.
  *
- * The native Gemini wire cannot keep that promise whole. A function
- * declaration's `parameters` is an **OpenAPI subset**, not JSON Schema, and an
- * endpoint answers 400 to keywords an ordinary schema carries — the runtime's
- * own five all carry `additionalProperties: false`, so on this family the
- * choice is between removing something and not running at all.
+ * Gemini retains the desk's compatibility policy originally introduced for
+ * the OpenAPI `parameters` field. The current SDK uses `parametersJsonSchema`
+ * and preserves the schema after that policy; this dependency update does not
+ * broaden the desk's separate removal list.
  *
  * **So: a closed, documented removal list, on this family only, and nothing
  * else is rewritten.** The keywords below are taken off; every other keyword
@@ -37,10 +36,9 @@
  * The keywords removed from a served schema on the `gemini` family, and the
  * whole of them.
  *
- * Read against the API reference's function-declaration section on 2026-09-06
- * (see the README for the pages and the date): `parameters` is "a subset of the
- * OpenAPI schema", and these six are the JSON-Schema keywords a runtime's
- * schema realistically carries that the subset has no place for.
+ * Established against the API reference's OpenAPI `parameters` field on
+ * 2026-09-06 (see the README). This remains the desk's compatibility policy;
+ * it is not a claim that `parametersJsonSchema` requires these removals.
  *
  * `oneOf` is deliberately **absent**. It is refused by some models and not
  * others, which makes it exactly the case this list must not grow to cover: a
@@ -58,70 +56,17 @@ export const GEMINI_SCHEMA_REMOVALS: readonly string[] = [
 ]
 
 /**
- * What the **SDK-backed engine** removes on top of the desk's own list, at the
- * pinned `@ai-sdk/google@4.0.64`.
+ * Extra keywords removed by the pinned `@ai-sdk/google@4.0.82`: none.
  *
- * **Declared, because the alternative is a silent narrowing.** That provider
- * does not send the schema it is given: it rebuilds it through
- * `convertJSONSchemaToOpenAPISchema`, which copies an allow-list of keywords and
- * drops the rest. So `pattern`, `maximum`, `uniqueItems`, the conditionals and
- * the annotations below never reach the model on that engine, and the desk's
- * closed six-keyword ruling was true of a loop that sends the served schema
- * itself and false of this one — two engines showing the model two different
- * contracts, which is the exact cross-engine contradiction the ruling exists to
- * prevent.
- *
- * The desk cannot stop it: the conversion is inside the provider, below the one
- * seam this adapter has. What it can do is **say so** — here, in the README, and
- * to the author on the stream (`narrowingNotice`) — and hold the statement to
- * the version that is installed.
- *
- * **What is held, and what is not.** The conformance session derives this set
- * from what that engine actually puts on the wire, over a fixture whose keyword
- * vocabulary is pinned to the **recorded runtime 0.19.0's own** — the schemas it
- * served on `tools/list` and the pack schema its `get_schema` answered. Every
- * keyword in that vocabulary is measured, and an SDK that starts or stops
- * dropping one is a red test. The remaining entries below were measured the same
- * way against a wider synthetic schema and are kept because they are true and
- * useful, but they are **outside the provenance lock**: a runtime that never
- * emits `maximum` gives this desk no way to notice if the provider stopped
- * dropping it. The README states that boundary rather than leaving it implied.
+ * Since 4.0.70 the provider sends `parametersJsonSchema` unchanged, including
+ * references and empty-object schemas. Conformance derives this set from the
+ * actual wire and asserts whole-schema equality over the recorded runtime's
+ * tools and vocabulary, so a provider regression cannot silently widen it.
  */
-export const SDK_SCHEMA_REMOVALS: readonly string[] = [
-  '$comment',
-  // **A rewrite seen from a keyword's point of view.** The provider inlines a
-  // `$ref` and drops the `$defs` it resolved, so the *constraint* survives and
-  // these two keywords do not. They are declared because what this list states
-  // is which keywords reach the model, and neither of them does; the README
-  // names them as the rewrite they are.
-  '$defs',
-  '$ref',
-  'contains',
-  'default',
-  'dependentRequired',
-  'deprecated',
-  'else',
-  'exclusiveMaximum',
-  'exclusiveMinimum',
-  'if',
-  'maxLength',
-  'maximum',
-  'minimum',
-  'multipleOf',
-  'not',
-  'nullable',
-  'pattern',
-  'prefixItems',
-  'propertyNames',
-  'readOnly',
-  'then',
-  'title',
-  'uniqueItems',
-  'writeOnly'
-]
+export const SDK_SCHEMA_REMOVALS: readonly string[] = []
 
 /**
- * **What `@ai-sdk/google@4.0.64` does with a thought part that has no text**, and
+ * **What `@ai-sdk/google@4.0.82` does with a thought part that has no text**, and
  * it is not "carry it": it drops the part and the signature on it.
  *
  * Measured, not assumed: the provider turns a `text` part into a reasoning part
@@ -254,30 +199,6 @@ export function keywordsNotShown(engine: string, family: string): readonly strin
 }
 
 /**
- * **The second thing the SDK-backed engine's provider does, and it is not a
- * keyword.** A schema that declares an object with no properties is dropped
- * whole: the tool is declared to the model with no `parameters` member at all.
- *
- * The runtime's `list_examples` is exactly that shape, so this is a rule with a
- * subject rather than one waiting for a hypothetical — and stating it is the
- * difference between "the model is shown the contract minus these keywords" and
- * a sentence that is false for one tool in five. Mirrored from the provider's
- * own `isEmptyObjectSchema` at the pinned version, and held to it by the
- * derivation leg, which asserts deep equality against what actually arrived.
- */
-function isEmptyObjectSchema(schema: unknown): boolean {
-  if (!isRecord(schema)) return false
-  const properties = schema.properties
-  return (
-    schema.type === 'object' &&
-    (properties === undefined ||
-      properties === null ||
-      (isRecord(properties) && Object.keys(properties).length === 0)) &&
-    !schema.additionalProperties
-  )
-}
-
-/**
  * The schema this engine's model is actually shown, out of the one the runtime
  * served.
  *
@@ -289,26 +210,8 @@ function isEmptyObjectSchema(schema: unknown): boolean {
 export function schemaShown(engine: string, family: string, served: unknown): unknown {
   const removals = keywordsNotShown(engine, family)
   if (removals.length === 0) return served
-  if (engine === 'vercel' && isEmptyObjectSchema(served)) return undefined
   return withoutKeywords(served, removals)
 }
-
-/**
- * Whether this engine declares the tool with no `parameters` at all.
- *
- * A different sentence from "these keywords are missing", because it is a
- * different thing: the model is shown a tool that takes nothing, where the
- * runtime declared one that takes an object.
- */
-export function shownWithoutParameters(engine: string, family: string, served: unknown): boolean {
-  return keywordsNotShown(engine, family).length > 0 && engine === 'vercel' && isEmptyObjectSchema(served)
-}
-
-/** The line the author reads where a tool is declared with no parameters. */
-export const NO_PARAMETERS_NOTICE =
-  'declared to the model with no parameters at all: this wire takes an OpenAPI subset and ' +
-  'this engine omits an object schema with no properties. The ToolGate and the runtime hold ' +
-  'the contract the runtime actually enforces, whatever the model was shown.'
 
 /**
  * The keywords one tool loses **beyond the desk's own declared ruling**, or none.
@@ -347,8 +250,8 @@ export function keywordsLost(engine: string, family: string, served: unknown): s
  */
 export function narrowingNotice(keywords: readonly string[]): string {
   return (
-    `shown to the model without: ${[...keywords].sort().join(', ')}. This wire takes an ` +
-    `OpenAPI subset, so those keywords cannot travel; the ToolGate and the runtime hold the ` +
+    `shown to the model without: ${[...keywords].sort().join(', ')}. This engine removes ` +
+    `those keywords; the ToolGate and the runtime hold the ` +
     `contract the runtime actually enforces, whatever the model was shown.`
   )
 }

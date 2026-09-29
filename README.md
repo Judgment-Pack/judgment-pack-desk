@@ -2823,13 +2823,16 @@ The scripted endpoint refuses a continuation that dropped, truncated or
 misplaced a signed part, so every Gemini thinking leg **gates** on the replay
 rather than merely reporting it — at all three placements.
 
-### Gemini's schema subset, and what the model is shown
+### Gemini's tool schemas, and what the model is shown
 
-`tools[].functionDeclarations[].parameters` on the native Gemini wire is an
-**OpenAPI subset**, not JSON Schema, and an endpoint answers 400 to keywords an
-ordinary schema carries. Every one of the runtime's own five declares
-`additionalProperties: false`, so on this family the choice is between removing
-something and not running at all.
+The pinned `@ai-sdk/google@4.0.82` sends function declarations through
+`tools[].functionDeclarations[].parametersJsonSchema`. Since version 4.0.70,
+the provider preserves the JSON Schema passed to it instead of converting it
+to the older OpenAPI `parameters` format.
+
+Desk retains the compatibility policy originally established for that older
+format. This dependency update does not change the policy; the six removals
+below are Desk's choice, not additional restrictions imposed by the current SDK.
 
 **The ruling: a closed, documented removal list, on this family only.** The
 keywords are `$schema`, `$id`, `additionalProperties`, `const`, `examples` and
@@ -2856,63 +2859,21 @@ desk actually sent becomes an `error` event naming it, with the closed list
 quoted, rather than the desk widening its idea of the runtime's contract on
 being refused. The engine carries that rule and has a conformance leg for it.
 
-**This engine does not show the model the contract the desk composed, and the
-desk says so.** `@ai-sdk/google` does not send the schema it is given: it rebuilds it
-through its own converter, which copies an allow-list of keywords and drops the
-rest. So on the `vercel` engine `pattern`, `maximum`, `uniqueItems`, the
-conditionals and the annotations below never reach the model either, and a tool
-whose schema declares an object with no properties is declared with **no
-`parameters` member at all**. That is the SDK's behaviour and not this desk's,
-and it is below the one seam this adapter has — but it is exactly the
-cross-engine contradiction the closed list exists to prevent, so it is declared
-rather than discovered:
+**The current SDK makes no additional removals or rewrites.** It preserves
+references (`$ref` and `$defs`), bare enums, constraints and empty-object schemas
+after Desk's six-keyword policy. A tool with no properties still has its object
+schema on the wire. `SDK_SCHEMA_REMOVALS` is therefore empty, and runs produce
+no additional schema-narrowing notices with this provider version.
 
-| what shows it | what the model is not shown, on `gemini` |
-| --- | --- |
-| the desk's own closed ruling | `$schema`, `$id`, `additionalProperties`, `const`, `examples`, `patternProperties` — and nothing else |
-| `vercel`, on top of it | all of those, **plus** `$comment`, `$defs`, `$ref`, `contains`, `default`, `dependentRequired`, `deprecated`, `else`, `exclusiveMaximum`, `exclusiveMinimum`, `if`, `maxLength`, `maximum`, `minimum`, `multipleOf`, `not`, `nullable`, `pattern`, `prefixItems`, `propertyNames`, `readOnly`, `then`, `title`, `uniqueItems`, `writeOnly` — and a tool whose schema declares an object with no properties is declared with no `parameters` at all |
-| either, on the other two families | nothing: those wires take JSON Schema as written |
-
-
-Three things hold that table honest, and one boundary is stated rather than
-glossed.
-
-**It is derived, not copied — over the recorded runtime's own vocabulary.** A
-conformance leg sends a fixture whose keyword union is pinned, by a test that
-computes both unions, to **every keyword the recorded runtime 0.19.0 emits in
-its tool and pack schemas** — the five `inputSchema`s it served on `tools/list`,
-and the pack schema its own `get_schema` answered, which is in the conformance
-fixture with its bytes, its sha256 and its provenance beside it. What the leg
-reads back is what the installed provider actually did with each of them, and it
-is asserted equal to this table. An SDK that starts or stops dropping one of
-*those* keywords is a red test.
-
-**The rest of the `vercel` row is outside that lock**, and that is the boundary:
-`maximum`, `multipleOf`, `contains` and the other keywords the recorded runtime
-does not emit were measured the same way against a wider synthetic schema, and
-they are true — but a runtime that never emits them gives this desk no way to
-notice if the provider stopped dropping one. The first version of this section
-said "every keyword the runtime could emit", which was a claim about a schema
-somebody made up rather than about the runtime's own.
-
-**The wire is asserted whole**: every leg requires the schema that arrived to be
-**deep-equal** to what this table says arrives — not that three keywords are
-present and six absent, which is what the first version checked and is a claim
-about a handful of words.
-
-**And the author is told**: a run opens with one line per tool that lost
-something **beyond the desk's own list**, naming the tool and the keywords. Over
-the runtime's own five that is exactly one line, for the tool whose schema this
-provider drops whole. A notice about `additionalProperties` would be the desk
-warning about the rule it wrote down.
-
-Two things the SDK does are **rewrites** rather than removals: it inlines a
-`$ref` (dropping the `$defs` it resolved, so the constraint survives and the two
-keywords do not) and it infers a `type` for a bare `enum`. The first is declared
-above, because from a keyword's point of view those two names do not reach the
-model; the deep-equality assertion therefore runs over the runtime's own five,
-which carry no reference, and over the vocabulary fixture only for the engine
-that rewrites nothing.
+Conformance tests verify this against requests captured from the installed SDK,
+for both streaming and whole responses. They derive the extra removal set from
+a fixture pinned to **every keyword in the recorded runtime 0.19.0's tool and
+pack schemas**, and require full schema equality for both that fixture and the
+runtime's five tool declarations. This catches changed values and references as
+well as missing keywords. The fixture is bounded to that recorded vocabulary;
+it is not a claim that every schema or endpoint accepts every JSON Schema
+feature. An endpoint refusal is still reported instead of silently removing
+more constraints.
 
 **One more thing that provider does, and it is not about schemas.** It surfaces
 a thought part only when its text is non-empty, so an **empty signed thought** —
@@ -2920,9 +2881,8 @@ which the wire emits when a summary was not streamed — never reaches the desk:
 it cannot be ledgered, cannot be replayed, and cannot be counted as reasoning.
 Against an endpoint that emits one and enforces the wire's rule that signed
 parts come back, a `vercel` session is refused and ends with the endpoint's
-status; *this model always thinks* cannot be inferred from one there either. The
-built-in engine has neither limit, because it reads the wire itself. Both halves
-are conformance legs, written to go red the day the provider starts carrying
+status; *this model always thinks* cannot be inferred from one there either.
+The conformance legs are written to go red the day the provider starts carrying
 them.
 
 **The Gemini API reference these rules were written against**, read on
