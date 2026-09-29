@@ -6406,38 +6406,22 @@ export function assistantTransport(id: string): Transport {
   # **The declaration is derived, or it is a sentence that rots.** Widening it by
   # hand is the failure this leg exists for.
   mutate web "the declared SDK removal set is widened by hand" "$GS" \
-    "  'uniqueItems',
-  'writeOnly'
-]" \
-    "  'uniqueItems',
-  'writeOnly',
-  'format'
-]"
-  # …and narrowing it is the same failure the other way.
-  mutate web "the declared SDK removal set loses a keyword" "$GS" \
-    "  'pattern',
-  'prefixItems'," \
-    "  'prefixItems',"
-  # The empty-object omission is not a keyword and is declared separately: a
-  # tool with no properties is declared to the model with no parameters at all.
-  mutate web "the empty-schema omission is not declared" "$GS" \
-    "  if (engine === 'vercel' && isEmptyObjectSchema(served)) return undefined" \
-    '  if (false) return undefined'
-  # **Deep equality, or the claim is about a handful of words.** Retargeted from
-  # the assertion onto the code it holds: a row that weakens a *test* cannot
-  # discriminate, because a weakened test is exactly a test that does not fail.
-  # What the leg has to catch is the desk saying one thing and the engine doing
-  # another, and this is that — the declared narrowing not applied at all.
+    'export const SDK_SCHEMA_REMOVALS: readonly string[] = []' \
+    "export const SDK_SCHEMA_REMOVALS: readonly string[] = ['propertyNames']"
+  # @ai-sdk/google 4.0.82 preserves empty-object schemas. The wire equality
+  # must catch a declaration that still models the old provider's omission.
+  mutate web "the empty-schema omission is incorrectly declared" "$GS" \
+    '  return withoutKeywords(served, removals)' \
+    "  if (isRecord(served) && isRecord(served.properties) && Object.keys(served.properties).length === 0) return undefined
+  return withoutKeywords(served, removals)"
+  # Whole-schema equality also holds the desk's own compatibility policy.
   mutate web "the declared narrowing is not applied to what the model is shown" "$GS" \
-    '  if (engine === '"'"'vercel'"'"' && isEmptyObjectSchema(served)) return undefined
-  return withoutKeywords(served, removals)' \
-    '  if (engine === '"'"'vercel'"'"' && isEmptyObjectSchema(served)) return undefined
-  return served'
-  # **Never silent.** An author reading a proposal should not have to discover
-  # that the model saw a wider contract than the runtime enforces.
-  mutate web "the narrowing is not reported to the author" "$EC" \
-    '    events.push({ type: '"'"'guardrail'"'"', tool: tool.name, action: '"'"'narrowed'"'"', detail: narrowingNotice(lost) })' \
-    '    void narrowingNotice(lost)'
+    '  return withoutKeywords(served, removals)' \
+    '  return served'
+  # Retired: narrowing an already empty SDK removal set, and suppressing a
+  # provider-loss notice. The current provider loses nothing beyond Desk's
+  # policy, so neither mutation has a real subject. The conformance legs now
+  # require full schema preservation and no false narrowing notices.
 
   # ---- Round 2's four findings, each broken again ---------------------------
 

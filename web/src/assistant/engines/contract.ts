@@ -13,13 +13,7 @@
  * are each adapter's own, and an engine that needed a helper from another
  * engine would be an engine the slot did not really separate.
  */
-import {
-  NO_PARAMETERS_NOTICE,
-  keywordsLost,
-  narrowingNotice,
-  shownWithoutParameters,
-  withoutUnsupportedKeywords
-} from '../geminiSchema'
+import { keywordsLost, narrowingNotice, withoutUnsupportedKeywords } from '../geminiSchema'
 import type { EndpointKind } from '../../config/deskConfig'
 import type { AssistantEvent, AssistantSession, CallTool, McpTool, McpToolResult } from '../engine'
 
@@ -454,9 +448,9 @@ export function servedSchema(tool: McpTool): unknown {
  * **Two families are shown the runtime's schema and the third is shown it minus
  * a closed list.** `servedSchema` above is the rule — the contract the runtime
  * enforces, or nothing — and this is the one documented exception to it: the
- * native Gemini wire takes an OpenAPI subset in `parameters` and refuses
- * keywords an ordinary JSON Schema carries, `additionalProperties` among them,
- * which every one of the runtime's five declares.
+ * Gemini family retains its closed compatibility policy from the OpenAPI
+ * `parameters` wire. The current SDK carries that result unchanged in
+ * `parametersJsonSchema`, including empty-object schemas.
  *
  * The removal list, what it costs and why an unlisted keyword is an error
  * rather than a strip are all `assistant/geminiSchema.ts`'s, in one place, so
@@ -488,15 +482,6 @@ export function narrowingEvents(
     // it always did — one line above the model call rather than out of the
     // notice pass, which runs before the loop's own error handling exists.
     if (tool.inputSchema === undefined || tool.inputSchema === null) continue
-    if (shownWithoutParameters(engine, family, servedSchemaFor(family, tool))) {
-      events.push({
-        type: 'guardrail',
-        tool: tool.name,
-        action: 'narrowed',
-        detail: NO_PARAMETERS_NOTICE
-      })
-      continue
-    }
     const lost = keywordsLost(engine, family, tool.inputSchema)
     if (lost.length === 0) continue
     events.push({ type: 'guardrail', tool: tool.name, action: 'narrowed', detail: narrowingNotice(lost) })

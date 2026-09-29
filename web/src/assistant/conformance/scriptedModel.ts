@@ -511,11 +511,17 @@ function geminiModelParts(contents: unknown[]): unknown[][] {
     .map((content) => ((content as { parts?: unknown[] }).parts ?? []))
 }
 
-/** Each declaration's `parameters`, whole, in the order they were declared. */
+/** The schema actually sent, using either Gemini declaration format. */
 function geminiSchemas(tools: unknown[]): unknown[] {
   return (tools ?? []).flatMap((tool) =>
-    ((tool as { functionDeclarations?: { parameters?: unknown }[] }).functionDeclarations ?? []).map(
-      (declared) => declared.parameters
+    ((tool as { functionDeclarations?: Record<string, unknown>[] }).functionDeclarations ?? []).map(
+      (declared) => {
+        if ('parametersJsonSchema' in declared) {
+          if ('parameters' in declared) throw new Error('Gemini schema fields are mutually exclusive')
+          return declared.parametersJsonSchema
+        }
+        return declared.parameters
+      }
     )
   )
 }
@@ -540,12 +546,7 @@ function geminiSchemaKeywords(tools: unknown[]): string[] {
       walk(inner, key === 'properties' || key === '$defs')
     }
   }
-  for (const tool of tools ?? []) {
-    for (const declared of (tool as { functionDeclarations?: unknown[] }).functionDeclarations ??
-      []) {
-      walk((declared as { parameters?: unknown }).parameters, false)
-    }
-  }
+  for (const schema of geminiSchemas(tools)) walk(schema, false)
   return [...found].sort()
 }
 
