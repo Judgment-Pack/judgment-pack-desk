@@ -37,6 +37,11 @@ jobs:
           python3 scripts/needle-check_test.py
           scripts/needle-check.sh .
 
+      - name: Verify published component identities
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/component-releases.py verify
+
       - name: go vet
         run: go vet ./...
 

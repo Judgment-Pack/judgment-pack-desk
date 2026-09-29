@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the release lock, or propose newer stable component releases.
+"""Validate published component pins, or manually propose newer stable releases.
 
 Development pins are deliberately held: a stable tag must not replace newer,
 unreleased local work. Promotion requires a reviewed lock edit.
@@ -16,6 +16,7 @@ import urllib.request
 ROOT = Path(__file__).resolve().parents[1]
 LOCK = ROOT / 'internal/releaseplan/components.json'
 REPOS = {name: 'Judgment-Pack/judgment-pack-' + name for name in ('runtime', 'runner', 'gateway')}
+VERSION = r'v\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9.+-]+)?'
 
 def read_plan():
     plan = json.loads(LOCK.read_text())
@@ -24,7 +25,7 @@ def read_plan():
     for name, component in plan['components'].items():
         if component.get('repository') != REPOS[name] or not re.fullmatch('[0-9a-f]{40}', component.get('revision', '')):
             raise ValueError('Invalid component pin: ' + name)
-        if not re.fullmatch(r'v\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9.+-]+)?', component.get('version', '')) or component.get('channel') not in ('stable', 'preview', 'development'):
+        if not re.fullmatch(VERSION, component.get('version', '')) or component.get('channel') not in ('stable', 'preview', 'development'):
             raise ValueError('Invalid version/channel: ' + name)
         if component['channel'] == 'stable' and stable_version(component['version']) is None:
             raise ValueError('Stable component requires a stable version: ' + name)
@@ -41,8 +42,11 @@ def should_update(current, latest):
     prior = stable_version(current['version'].split('-')[0].split('+')[0])
     return prior is not None and (candidate > prior or candidate == prior and current['channel'] == 'preview')
 
-def get_release(repo):
-    req = urllib.request.Request('https://api.github.com/repos/' + repo + '/releases/latest', headers={'Accept': 'application/vnd.github+json', 'User-Agent': 'Desk-release-maintenance', **({'Authorization': 'Bearer ' + os.environ['GH_TOKEN']} if os.environ.get('GH_TOKEN') else {})})
+def get_release(repo, tag=None):
+    if repo not in REPOS.values() or tag is not None and not re.fullmatch(VERSION, tag):
+        raise ValueError('Invalid release reference')
+    endpoint = '/releases/tags/' + tag if tag else '/releases/latest'
+    req = urllib.request.Request('https://api.github.com/repos/' + repo + endpoint, headers={'Accept': 'application/vnd.github+json', 'User-Agent': 'Desk-release-maintenance', **({'Authorization': 'Bearer ' + os.environ['GH_TOKEN']} if os.environ.get('GH_TOKEN') else {})})
     try:
         with urllib.request.urlopen(req, timeout=20) as reply:
             data = reply.read(2 * 1024 * 1024 + 1)
@@ -54,20 +58,36 @@ def get_release(repo):
 
 def tag_commit(repo, tag):
     # No ref taken from release prose or target_commitish (which can be a branch).
-    if stable_version(tag) is None: raise ValueError('Expected stable tag')
+    if repo not in REPOS.values() or not re.fullmatch(VERSION, tag): raise ValueError('Invalid component tag')
     ref = 'refs/tags/' + tag
-    result = subprocess.check_output(['git', 'ls-remote', 'https://github.com/' + repo + '.git', ref, ref + '^{}'], text=True)
+    result = subprocess.check_output(['git', 'ls-remote', 'https://github.com/' + repo + '.git', ref, ref + '^{}'], text=True, timeout=30)
     refs = dict(line.split()[::-1] for line in result.splitlines())
     commit = refs.get(ref + '^{}', refs.get(ref, ''))
     if not re.fullmatch('[0-9a-f]{40}', commit): raise ValueError('Tag did not resolve to a commit')
     return commit
 
+def verify_plan(plan):
+    for name, component in plan['components'].items():
+        if component['channel'] == 'development':
+            print(name + ': development pin held; no published release asserted')
+            continue
+        release = get_release(component['repository'], component['version'])
+        if not release or release.get('draft') or release.get('tag_name') != component['version']:
+            raise ValueError('Missing or mismatched published release: ' + name)
+        if component['channel'] == 'stable' and release.get('prerelease') is not False:
+            raise ValueError('Stable pin requires a stable published release: ' + name)
+        if tag_commit(component['repository'], component['version']) != component['revision']:
+            raise ValueError('Component version tag disagrees with locked commit: ' + name)
+        print(name + ': published version and commit verified')
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('check', 'propose', 'ci'))
+    parser.add_argument('action', choices=('check', 'verify', 'propose', 'ci'))
     args = parser.parse_args()
     plan = read_plan()
-    if args.action == 'ci':
+    if args.action == 'verify':
+        verify_plan(plan)
+    elif args.action == 'ci':
         for name, component in plan['components'].items(): print(name + '=' + component['revision'])
     elif args.action == 'propose':
         changes = []

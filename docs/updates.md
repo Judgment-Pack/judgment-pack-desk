@@ -13,13 +13,37 @@ are held rather than replaced with an older published release. A stable Desk
 release refuses development pins. Runner may remain on its explicitly reviewed
 preview pin until a stable Runner release exists.
 
-`component-updates.yml` checks daily and on manual dispatch, then proposes newer
-stable pins in a PR. It never merges its own changes. Configure
-`COMPONENT_UPDATE_TOKEN` as a bot token with repository contents and pull-request
-write permissions. This lets ordinary PR CI run automatically; using the default
-workflow token can require a human to approve the resulting PR workflows.
-Automation is active after the workflow reaches the default branch and the bot
-credential is configured. Repository rules and review requirements still apply.
+Dependency updates use two bots with separate responsibilities:
+
+- **Dependabot** (`.github/dependabot.yml`) checks Go modules, the `web` npm
+  dependencies and GitHub Actions weekly. Related AI SDK, React and localization
+  packages are grouped to keep compatible libraries together.
+- **Renovate** (`.github/renovate.json`) only manages the three component release
+  pins. It looks for published stable GitHub releases during its daily UTC
+  maintenance window, resolves the underlying tag commit, and updates the
+  version, revision and channel together in one grouped PR. A reviewed preview
+  can advance to a stable release; further previews and development pins are
+  excluded. Same-version digest changes are not proposed automatically.
+
+Both configurations must reach the default branch. GitHub hosts Dependabot;
+public dependencies need no additional credential. For component updates, install
+or enable the [Renovate GitHub App](https://github.com/apps/renovate/installations/new)
+on **Judgment-Pack/judgment-pack-desk**. Select only that repository if other
+repositories should remain unaffected. The App installation grants Renovate its
+own access; no personal token or `COMPONENT_UPDATE_TOKEN` secret is needed. This
+replaces the custom token-based workflow shipped in v0.2.0.
+
+Renovate is limited to the custom component file so it does not duplicate
+Dependabot PRs. Its component dashboard shows pending updates and lookup errors.
+The hosted App controls run timing; the configured window is not a guaranteed
+execution time. Configuration alone does not install the App. Without it,
+component updates remain manual: run
+`python3 scripts/component-releases.py propose`, inspect the diff, and open a PR.
+
+Neither bot is configured to merge its own PRs. Review and compatibility CI are
+required. CI verifies each non-development pin against its published release and
+peeled version tag alongside companion builds, so an updated version with a stale
+or missing commit cannot pass. Existing job releases remain unchanged.
 
 CI uses the lock for actual Gateway lifecycle/PDF checks and Runner recovery and
 input-profile checks, plus Go tests, frontend tests and localization checks.
