@@ -2811,7 +2811,7 @@ arrived. A signature rides on one of two parts here: a thought summary that
 still has its text, or the **first `functionCall` part** of a turn, which is
 where function calling puts it and where later parallel calls do not. The
 `vercel` engine cannot make its SDK reassemble one (`vercel/ai#19663`, still
-present at `ai@7.0.93` and measured by this repository's own suite), so the desk
+present at `ai@7.0.116` and measured by this repository's own suite), so the desk
 **detects** the truncation instead: fragments are ledgered as they arrive — under
 `anthropic.signature` on one wire and `google.thoughtSignature` on the other,
 from one table — each outgoing body is compared with them, a block whose
@@ -3283,7 +3283,7 @@ it does not know. The five a real `jpack mcp` serves all carry one.
 
 | engine | what runs the loop | added download (gzip) | what it guards | what it does not do |
 | --- | --- | --- | --- | --- |
-| `vercel` | Vercel AI SDK v7 — `ai` 7.0.93, `@ai-sdk/openai-compatible` 3.0.44, `@ai-sdk/anthropic` 4.0.49, all pinned exactly | **96.0 KiB** for the lazy chunk, plus what the main chunk grows by | the rehearsal hook named as a key of the SDK's own options type, so an upstream rename is a compile error rather than a guard that fails open; the desk's gate handed the call **as the model made it**; a placeholder origin the adapter never resolves, and a query refused at both layers; the SDK's own retries off; the truncated thinking signature it carries back (`vercel/ai#19663`), detected and degraded rather than sent | reassemble a split signature: it detects the truncation instead, and the session degrades once with the reason; and it cannot carry an empty signed thought part back across a tool turn on the Gemini wire |
+| `vercel` | Vercel AI SDK v7 — `ai` 7.0.116, `@ai-sdk/openai-compatible` 3.0.57, `@ai-sdk/anthropic` 4.0.65, `@ai-sdk/google` 4.0.82, all pinned exactly | **139.1 KiB** for the lazy chunk, plus what the main chunk grows by | the rehearsal hook named as a key of the SDK's own options type, so an upstream rename is a compile error rather than a guard that fails open; the desk's gate handed the call **as the model made it**; a placeholder origin the adapter never resolves, and a query refused at both layers; the SDK's own retries off; the truncated thinking signature it carries back (`vercel/ai#19663`), detected and degraded rather than sent | reassemble a split signature: it detects the truncation instead, and the session degrades once with the reason; and it cannot carry an empty signed thought part back across a tool turn on the Gemini wire |
 
 The keyless fallback that stood in this table, `builtin` — the bake-off's
 control loop by hand, two SSE parsers, no new dependency — was **withdrawn** on
