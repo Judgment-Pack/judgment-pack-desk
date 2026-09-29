@@ -35,6 +35,10 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: python3 scripts/package-release.py "${RELEASE_TAG#v}" --output "$RUNNER_TEMP/release"
+      - name: Verify and smoke-test the built archive
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 scripts/check-release.py "$RUNNER_TEMP/release" "${RELEASE_TAG#v}"
       - name: Publish once
         env:
           GH_TOKEN: ${{ github.token }}
