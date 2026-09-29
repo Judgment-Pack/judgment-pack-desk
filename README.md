@@ -3506,7 +3506,7 @@ inference and the immediate refusal.
 
 ## Requirements
 
-- Go 1.25 or newer (`go.mod` declares it; CI reads that file)
+- Go 1.26 or newer (`go.mod` declares it; CI reads that file)
 - Node 22 or newer (`web/package.json` declares `engines.node >= 22`)
 - A `jpack` binary — the [judgment-pack runtime](https://github.com/Judgment-Pack/judgment-pack-runtime)
 
