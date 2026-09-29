@@ -20,6 +20,7 @@ describe('the desk icons', () => {
     expect(exported.map(([name]) => name).sort()).toEqual([
       'IconActivity',
       'IconAssistant',
+      'IconAutoArrange',
       'IconBrief',
       'IconCheck',
       'IconChevronDown',

@@ -58,6 +58,7 @@ export function parseConnectionCatalog(raw: unknown) {
   seen.add(item.id)
   if (value.version === 3) {
    if (!validPresentation(item)) throw new Error('Invalid connection catalog')
+   if (item.protocol === "web-search-v1" && item.source?.id === "web-search" && item.source.record === "web-search-v1") continue
    if (supported(item)) providers.push(item); else unsupported.push(item)
    continue
   }
@@ -70,7 +71,8 @@ export function parseConnectionCatalog(raw: unknown) {
  if (sources.length > 32 || new Set(sources.map(s => s?.id)).size !== sources.length || sources.some(s => !s || typeof s.id !== 'string' || !/^[a-z][a-z0-9-]{0,47}$/.test(s.id) || typeof s.input !== 'string' || !Array.isArray(s.mediaTypes) || !Number.isSafeInteger(s.maxBytes))) throw new Error('Invalid source catalog')
  const web = sources.some(s => s.id === 'web' && s.input === 'url' && s.maxBytes === 4 << 20 && ['text/html','text/plain','application/pdf'].every(type => (s.mediaTypes as string[]).includes(type)))
  const discovery = sources.some(s=>s.id==='web-discovery' && s.input==='url' && s.maxBytes===1<<20 && (s.mediaTypes as string[]).includes('application/vnd.jpack.web-discovery+json'))
- return { providers, web, discovery, ...(unsupported.length ? { unsupported } : {}) }
+ const webSearch = sources.some(s=>s.id==='web-search' && s.input==='query' && s.maxBytes===1<<20 && (s.mediaTypes as string[]).includes('application/vnd.jpack.web-search+json'))
+ return { providers, web, discovery, webSearch, ...(unsupported.length ? { unsupported } : {}) }
 }
 
 export function useConnections(enabled: boolean) {
@@ -82,7 +84,7 @@ export function useConnections(enabled: boolean) {
  const descriptors = enabled && !catalog.isError ? catalog.data?.providers ?? [] : []
  const statuses = useQueries({ queries: descriptors.map(provider => connectionStatusOptions(provider.id, true, provider.source?.record === 'resource-v1')) })
  const entries = descriptors.map((descriptor, index) => ({ descriptor, status: statuses[index]! }))
- return { ...catalog, entries, discovery: Boolean(enabled && !catalog.isError && catalog.data?.discovery), unsupported: enabled && !catalog.isError ? catalog.data?.unsupported ?? [] : [], web: Boolean(enabled && !catalog.isError && catalog.data?.web), loading: enabled && catalog.isPending }
+ return { ...catalog, entries, webSearch: Boolean(enabled && !catalog.isError && catalog.data?.webSearch), discovery: Boolean(enabled && !catalog.isError && catalog.data?.discovery), unsupported: enabled && !catalog.isError ? catalog.data?.unsupported ?? [] : [], web: Boolean(enabled && !catalog.isError && catalog.data?.web), loading: enabled && catalog.isPending }
 }
 
 export function validConnectionIcon(icon: unknown): icon is string {

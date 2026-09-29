@@ -1,3 +1,4 @@
+import { WebSearchSettings } from '../search/WebSearchSettings'
 import { DESK_LEVEL_PATH_UNKNOWN } from '../config/queries'
 import { msg, useLocale } from '../i18n'
 import { OverflowTooltip } from '../ui/Tooltip'
@@ -242,6 +243,7 @@ ${effective.desk.chassis.runtimeBin}`} />
                 />
                 <ChatDataSettings />
                 <DocumentProcessingSettings />
+                <WebSearchSettings />
               </RetainedPanel>
               <RetainedPanel active={open.id === 'assistant'}>
                 <AssistantSection

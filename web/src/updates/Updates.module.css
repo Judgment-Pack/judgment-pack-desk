@@ -1,0 +1,6 @@
+.versions { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 24px; row-gap: 8px; margin: 16px 0; }
+.versions dt { color: var(--ink-soft); }
+.versions dd { margin: 0; overflow-wrap: anywhere; }
+.actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+.option { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
+@media (max-width: 480px) { .versions { column-gap: 12px; } }

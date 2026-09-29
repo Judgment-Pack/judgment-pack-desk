@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "stateEpoch": 1,
+  "components": {
+    "runtime": {
+      "repository": "Judgment-Pack/judgment-pack-runtime",
+      "version": "v0.23.1",
+      "revision": "5098060c86de1f9f7e315a0f3f93a358c7864872",
+      "channel": "stable"
+    },
+    "runner": {
+      "repository": "Judgment-Pack/judgment-pack-runner",
+      "version": "v0.1.0-rc.1",
+      "revision": "5c672567f1a88fc7eefc678fb0fc069ed9bb7601",
+      "channel": "preview"
+    },
+    "gateway": {
+      "repository": "Judgment-Pack/judgment-pack-gateway",
+      "version": "v0.5.0",
+      "revision": "775176e6bc92470e45f70d89ee9275aac544532f",
+      "channel": "stable"
+    }
+  }
+}

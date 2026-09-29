@@ -39,3 +39,11 @@ it('lets ordinary chat answer when authoring and runtime checks are unavailable'
     mcp: { status: 'failed', client: null, validateSupported: false, expectationValidationSupported: false } })).toBe('')
   expect(researchBlockedReason({ ...ready, mode: 'draft', slot: { ...ready.slot, keyPresent: false } })).toContain('No API key')
 })
+
+it('allows web Research with a managed Gateway and no legacy source fields', () => {
+  const state = { ...ready, research: { gateway: {}, sources: { search: null, read: null } } }
+  expect(researchBlockedReason({ ...state, mode: 'web-research' })).toBe('')
+  // Existing source-led authoring still requires its own sources and checks.
+  expect(researchBlockedReason({ ...state, mode: 'research' })).toContain('names no search or read source')
+  expect(researchBlockedReason({ ...state, mode: 'web-research', slot: { ...ready.slot, keyPresent: false } })).toContain('No API key')
+})

@@ -2,6 +2,7 @@ import { msg } from '../i18n'
 import type { PackDocument } from '../mcp/types'
 import { isRecord } from './document/MisshapenMember'
 import { humanId, text, type LogicItem } from './logicModel'
+import { decisionAccent, lookupAppearance, type OutcomeAppearances } from './decisionAppearance'
 import styles from './LogicDetails.module.css'
 
 /** Describe the declared operator without flattening nested ALL/ANY logic. */
@@ -17,9 +18,10 @@ export function conditionSummary(value: unknown): string {
   return msg('Condition: {{operator}}', { operator: text(value.op) })
 }
 
-export function LogicSummary({ document, group, item }: { document: PackDocument; group: string; item: LogicItem }) {
+export function LogicSummary({ document, group, item, appearances = {} }: { document: PackDocument; group: string; item: LogicItem; appearances?: OutcomeAppearances }) {
   const value = item.value
   if (!isRecord(value)) return <p className={styles.note}>{msg('Unrecognized entry')}</p>
   if (group === 'outcomes') return document.fallbackOutcome === value.id ? <span className={styles.fallback}>{msg('Fallback')}</span> : null
-  return <div className={styles.content}><p className={styles.note}>{conditionSummary(value.when)}</p><p>{item.effect}</p></div>
+  const appearance = lookupAppearance(appearances, value.outcome)
+  return <div className={styles.content}><p className={styles.note}>{conditionSummary(value.when)}</p><p style={appearance ? { color: decisionAccent(appearance) } : undefined}>{item.effect}</p></div>
 }

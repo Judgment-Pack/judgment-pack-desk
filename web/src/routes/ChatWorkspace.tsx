@@ -48,7 +48,7 @@ export function ChatWorkspace() {
   const [params] = useSearchParams()
   const requestedFolder = params.get('folder')
   const targetFolderId = !home && requestedFolder && /^[a-zA-Z0-9-]{1,80}$/.test(requestedFolder) ? requestedFolder : undefined
-  const initialMode = params.get('mode') === 'research' ? 'research' : undefined
+  const initialMode = params.get('mode') === 'research' ? 'web-research' : undefined
   const { store, chats, drafts, ready, error } = useChats()
   const navigate = useNavigate()
   const created = useRef<string | null>(null)

@@ -23,6 +23,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Judgment-Pack/judgment-pack-desk/internal/releaseplan"
 )
 
 // ShutdownGrace bounds how long an interrupted server waits for in-flight
@@ -128,9 +130,10 @@ type Server struct {
 	desks       map[string]*Server
 	desksClosed bool
 
-	builds ComponentBuilds
-	jobs   *jobsCompanion
-	codex  providerAccountManager
+	updates *updateService
+	builds  ComponentBuilds
+	jobs    *jobsCompanion
+	codex   providerAccountManager
 
 	localGateway        *localGateway
 	providerMu          sync.Mutex
@@ -371,6 +374,15 @@ func New(cfg Config) (*Server, error) {
 	// file is outside the project's pinned root, the key must never be pasted
 	// into a project file, and the key must never reach the page. See
 	// assistant.go for the whole argument.
+	if s.cfg.parent != nil {
+		s.updates = s.cfg.parent.updates
+	} else {
+		s.updates = newUpdateService(s.cfg.DevMode || s.builds.Desk.Modified || releaseplan.Version == "development")
+		s.updates.start()
+	}
+	s.mux.HandleFunc("GET /api/updates", s.handleUpdates)
+	s.mux.HandleFunc("POST /api/updates", s.handleUpdates)
+
 	s.mux.HandleFunc("GET /api/desk-config", s.handleDeskConfig)
 	s.mux.HandleFunc("POST /api/connections/{method}", s.handleConnections)
 	s.mux.HandleFunc("POST /api/connections/{provider}/{method}", s.handleConnections)
@@ -471,6 +483,9 @@ func (s *Server) closeAll() error {
 	}
 	if s.cfg.parent == nil {
 		s.sessions.close()
+		if s.updates != nil && s.updates.cancel != nil {
+			s.updates.cancel()
+		}
 	}
 	if s.cfg.parent == nil && s.signIn != nil {
 		s.signIn.mu.Lock()

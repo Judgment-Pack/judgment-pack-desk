@@ -1,3 +1,4 @@
+import type { AuthoringMode } from '../mode'
 import { DraftSources, declaredSources } from './DraftSources'
 import { DraftComparison } from '../../packs/DraftComparison'
 import type { ComponentProps, ReactNode } from 'react'
@@ -111,14 +112,14 @@ function RuntimeChecks({ state }: { state: RunState }) {
   </>
 }
 
-export function TestsPanel({ state, onSelect, mode = 'research', ...actions }: ExpectationReviewActions & { mode?: 'draft' | 'research'; state: RunState; onSelect: (next: Selection) => void }) {
+export function TestsPanel({ state, onSelect, mode = 'research', ...actions }: ExpectationReviewActions & { mode?: AuthoringMode; state: RunState; onSelect: (next: Selection) => void }) {
   useLocale()
   const latest = state.candidates.at(-1)
   const check = latest?.check ?? latest?.previousCheck
   const checks = <RuntimeChecks state={state} />
   const byId = new Map((check?.cases ?? []).map((row) => [row.id, row]))
   if (state.cases.length === 0 && state.droppedCases.length === 0 && state.expectationIssues.length === 0) {
-    return <div className={styles.panel}>{checks}<p className={styles.empty}>{(state.probes ?? []).some(probe => probe.documentDigest === latest?.digest) ? `${msg('Test cases')}: 0` : mode === 'draft' ? msg("Tests have not been run. Chat drafts receive a structure check. After creating the pack, use Tests to check its decisions.") : msg("No test cases yet. Research establishes cases from cited sources once a draft exists.")}</p></div>
+    return <div className={styles.panel}>{checks}<p className={styles.empty}>{(state.probes ?? []).some(probe => probe.documentDigest === latest?.digest) ? `${msg('Test cases')}: 0` : mode !== 'research' ? msg("Tests have not been run. Chat drafts receive a structure check. After creating the pack, use Tests to check its decisions.") : msg("No test cases yet. Research establishes cases from cited sources once a draft exists.")}</p></div>
   }
   return (
     <div className={styles.panel}>
@@ -246,7 +247,7 @@ export function DraftPanel({ state, onSelect, onViewLogic, onViewSources }: { st
   )
 }
 
-export function ReviewPanel({ state, sources, onCreate, onSelect, showCreateAction = true, mode = 'research' }: { testsPanel?: ReactNode; onTabChange?: (tab: string) => void; hideHeader?: boolean; onSelectInMain?: (next: Selection) => void; showCreateAction?: boolean; mode?: 'draft' | 'research'; state: RunState; sources: readonly SourceRecord[]; onCreate: () => void; onSelect: (next: Selection) => void }) {
+export function ReviewPanel({ state, sources, onCreate, onSelect, showCreateAction = true, mode = 'research' }: { testsPanel?: ReactNode; onTabChange?: (tab: string) => void; hideHeader?: boolean; onSelectInMain?: (next: Selection) => void; showCreateAction?: boolean; mode?: AuthoringMode; state: RunState; sources: readonly SourceRecord[]; onCreate: () => void; onSelect: (next: Selection) => void }) {
   useLocale()
   const latest = state.candidates.at(-1)
   const check = latest?.check
@@ -328,7 +329,7 @@ export function ReviewPanel({ state, sources, onCreate, onSelect, showCreateActi
         <h3>{msg("Create")}</h3>
         <p className={styles.detail}>
           {passing
-            ? mode === 'research' ? msg("Review the name and open questions, then create the pack with its checked cases and research record.") : msg("The runtime validated the structure. Review the draft before creating. Source research and behavioral tests have not been run.")
+            ? mode === 'research' ? msg("Review the name and open questions, then create the pack with its checked cases and research record.") : msg("Structure validated. Review the draft before creating it. Research and test results are reported separately.")
             : msg("Create is offered once every established case agrees with the runtime and the draft is valid.")}
         </p>
         <p className={styles.hint}>
@@ -359,7 +360,7 @@ function DraftLogic({ state, selection, onSelect, onInspect, active }: { state: 
     viewport={viewport} onViewport={setViewport} nodePositions={nodePositions} onNodePositionsChange={setNodePositions} listScroll={scroll} /></div>
 }
 
-export function DraftTabs({ testsPanel, onTabChange, state, sources, selection, onSelect, onCreate, showCreateAction = true, mode = 'research', hideHeader = false, onSelectInMain, documents = [], files = [], onRead, ...actions }: ExpectationReviewActions & Omit<ComponentProps<typeof DraftSources>, 'document'> & { testsPanel?: ReactNode; onTabChange?: (tab: string) => void; hideHeader?: boolean; onSelectInMain?: (next: Selection) => void; showCreateAction?: boolean; mode?: 'draft' | 'research'; state: RunState; sources: readonly SourceRecord[]; selection: Selection; onSelect: (next: Selection) => void; onCreate: () => void }) {
+export function DraftTabs({ testsPanel, onTabChange, state, sources, selection, onSelect, onCreate, showCreateAction = true, mode = 'research', hideHeader = false, onSelectInMain, documents = [], files = [], onRead, ...actions }: ExpectationReviewActions & Omit<ComponentProps<typeof DraftSources>, 'document'> & { testsPanel?: ReactNode; onTabChange?: (tab: string) => void; hideHeader?: boolean; onSelectInMain?: (next: Selection) => void; showCreateAction?: boolean; mode?: AuthoringMode; state: RunState; sources: readonly SourceRecord[]; selection: Selection; onSelect: (next: Selection) => void; onCreate: () => void }) {
   useLocale()
   const [tab, setTabState] = useState('draft')
   const setTab = (next: string) => { setTabState(next); onTabChange?.(next) }

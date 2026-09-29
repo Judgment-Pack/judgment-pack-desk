@@ -1,6 +1,8 @@
+import { conversationMode, type AuthoringMode } from '../research/mode'
+import { useSearchConnections, useSearchPreference } from '../search/connections'
 import { Message } from '../i18n/Message'
 import { systemMessage, msg, useLocale } from '../i18n'
-import { useRef, useState } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useFileListing } from '../files/queries'
 import { useMcp } from '../mcp/McpProvider'
@@ -18,8 +20,8 @@ import { ConfigureAssistant } from './ConfigureAssistant'
 import styles from './ChatWorkspace.module.css'
 
 /** One compact settings summary, shared by the home and pack conversations. */
-export function AssistantOptions({ thinking, tools, mode = 'draft', review = false, onReview, disabled, notice, linkReading = false, websiteExploration=false }: {
-  thinking: ThinkingTier; tools: readonly string[]; mode?: 'draft' | 'research'; review?: boolean
+export function AssistantOptions({ researchMode, searchConnection, searchOptions, thinking, tools, mode = 'draft', review = false, onReview, disabled, notice, linkReading = false, websiteExploration=false }: {
+  researchMode?:'auto'|'provided'; searchConnection?:string; searchOptions?:ReactNode; thinking: ThinkingTier; tools: readonly string[]; mode?: AuthoringMode; review?: boolean
   onReview?: (value: boolean) => void; disabled?: boolean; notice?: string
   /** Whether an ordinary chat may read links the person gives (the gateway offers the web source). */
   linkReading?: boolean; websiteExploration?:boolean
@@ -36,9 +38,12 @@ export function AssistantOptions({ thinking, tools, mode = 'draft', review = fal
     queryFn: () => listAllTools(mcp.client!), staleTime: 60_000 })
   const available = mcp.status === 'ready' ? tools.filter(name => listed.data?.some(tool => tool.name === name)) : []
   const research = config.research
+  const searchConnections=useSearchConnections(),searchPreference=useSearchPreference()
+  const auto=!!searchPreference.data&&!searchPreference.isError&&(researchMode??searchPreference.data.value.mode)==='auto'
+  const webSearch=auto&&searchConnections.available&&!searchConnections.isError&&searchConnections.data?.connections.some(c=>c.id===(searchConnection??searchPreference.data?.value.connection))
   const host = mode === 'research' && research.gateway ? [
     ...(research.sources.search ? ['search_sources'] : []), ...(research.sources.read ? ['read_source', 'cite_excerpt'] : [])]
-    : mode === 'draft' && linkReading ? [READ_LINK,...(websiteExploration?[EXPLORE_WEBSITE]:[])] : []
+    : conversationMode(mode) && linkReading ? [...(webSearch?['search_sources']:[]),READ_LINK,...(auto&&websiteExploration?[EXPLORE_WEBSITE]:[])] : []
   const trigger = useRef<HTMLButtonElement>(null)
   const configureButton = useRef<HTMLButtonElement>(null)
   return <>
@@ -48,6 +53,7 @@ export function AssistantOptions({ thinking, tools, mode = 'draft', review = fal
       onCloseAutoFocus={event => { if (configure) event.preventDefault() }}
       trigger={<button ref={trigger} className="desk-icon-button" type="button" aria-label={msg("Assistant settings")}><IconGear /></button>}>
       <div className={styles.settingsBody}>
+        {searchOptions}
         <dl className={styles.setting}><dt>{config.assistant.engine === "codex" ? msg("Codex reasoning") : msg("Thinking requested")}</dt><dd>{config.assistant.engine === "codex" ? config.assistant.agent?.effort ?? msg("Model default") : thinking === 'off' ? msg("Off") : thinking === 'ultra' ? msg("Ultra") : msg("On")}</dd></dl>
         <p className={styles.caption}>{(notice ? systemMessage(notice) : undefined) || msg("Reasoning support depends on the selected model.")}</p>
         {onReview && <label className={styles.reviewOption}><Message text={"<0/> Adversarial review"} slots={[<input type="checkbox" checked={review} disabled={disabled || !reviewAvailable} onChange={event => onReview(event.target.checked)} />]} /></label>}

@@ -19,18 +19,20 @@ import { entries, outcomeLabel, text } from './logicModel'
 import { LogicDetails } from './LogicDetails'
 import { PackJumpTo } from './PackJumpTo'
 import { initialLogicDisplay, rememberLogicDisplay, type LogicMode } from './logicState'
+import { decisionAccent, lookupAppearance, outcomeAppearances, type OutcomeAppearances } from './decisionAppearance'
+import { meaningLabel } from './DecisionAppearanceEditor'
 import styles from './PackLogic.module.css'
 
 const RelationshipMap = lazy(() => import('../components/RelationshipMap').then(module => ({ default: module.RelationshipMap })))
 
 export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, query, onQuery, display, onDisplay,
-  viewport, onViewport, nodePositions, onNodePositionsChange, listScroll, mapUnavailable, trace, active = true }: {
+  viewport, onViewport, nodePositions, onNodePositionsChange, listScroll, mapUnavailable, trace, active = true, appearanceOverrides, onClearSelection }: {
   model: LogicProjection; at: string | null; groupId: string | null; select: (pointer: string) => void
   mode: LogicMode; onMode: (mode: LogicMode) => void; query: string; onQuery: (query: string) => void
   inspect: (pointer: string) => void; display: ReturnType<typeof initialLogicDisplay>; onDisplay: (display: ReturnType<typeof initialLogicDisplay>) => void
   viewport: Viewport; onViewport: (v: Viewport) => void
   nodePositions?: NodePositions; onNodePositionsChange?: (positions: NodePositions) => void
-  active?: boolean
+  active?: boolean; appearanceOverrides?: OutcomeAppearances; onClearSelection?: () => void
   listScroll: MutableRefObject<number>; mapUnavailable?: string; trace?: readonly TraceEntry[]
 }) {
   const locale = useLocale()
@@ -56,6 +58,7 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
     return () => body.removeEventListener('scroll', remember)
   }, [mode, listScroll])
   const current = selectedItem(model, at)
+  const appearances = useMemo(() => outcomeAppearances(model.document, appearanceOverrides), [model.document, appearanceOverrides])
   const graph = useMemo(() => projectLogicGraph(model, display.grouped && !query.trim(), expanded), [model, display.grouped, expanded, query])
   useLayoutEffect(() => {
     if (jump === null) return
@@ -81,9 +84,16 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
       if (observation) observations.set(observation, (observations.get(observation) ?? 0) + 1)
     })
     const observed = aggregate ? [...observations].map(([label, count]) => `${count} ${label}`).join(' · ') : itemTrace(node.group, item, trace)
+    const value = isRecord(item.value) ? item.value : {}
+    const kind = node.group.id === 'rules' ? 'rule' : node.group.id === 'exceptions' ? 'exception' : node.group.id === 'handoff' ? 'handoff' : 'outcome'
+    const appearance = kind === 'outcome' ? lookupAppearance(appearances, value.id) : value.effect === 'force-outcome' ? lookupAppearance(appearances, value.outcome) : undefined
+    const handoff = kind === 'handoff' || value.effect === 'escalate'
     return { id: node.id, title: node.title, column: node.column,
-      kind: (node.group.id === 'rules' ? 'rule' : node.group.id === 'exceptions' ? 'exception' : 'outcome') as 'rule' | 'exception' | 'outcome',
-      kindLabel: node.group.id === 'rules' ? msg('Rule') : node.group.id === 'exceptions' ? msg('Special case') : msg('Outcome'),
+      kind: kind as 'rule' | 'exception' | 'outcome' | 'handoff',
+      accent: appearance ? decisionAccent(appearance) : handoff ? 'var(--decision-violet)' : kind === 'exception' ? 'var(--decision-slate)' : undefined,
+      meaning: handoff ? 'handoff' as const : appearance?.meaning,
+      meaningLabel: kind === 'outcome' && appearance && appearance.meaning !== 'categorical' ? meaningLabel(appearance.meaning) : undefined,
+      kindLabel: node.group.id === 'rules' ? msg('Rule') : node.group.id === 'exceptions' ? msg('Special case') : kind === 'handoff' ? msg('Handoff') : msg('Outcome'),
       selected: node.items.some(i => i.pointer === current?.item.pointer),
       matched: searching && node.items.some(i => matchPointers.has(i.pointer)),
       observation: observed ? aggregate ? msg('Recorded conditions: {{observed}}', { observed }) : msg('Recorded condition: {{observed}}', { observed }) : undefined,
@@ -92,8 +102,8 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
         <ul>{node.items.slice(0, 3).map(i => <li key={i.pointer}>{i.label}</li>)}</ul>
         {node.items.length > 3 && <p><Message text={"+ <0/> more items"} slots={[node.items.length - 3]} /></p>}
         <p>{msg("Expand to inspect each item.")}</p>
-      </div> : <LogicSummary document={model.document} group={node.group.id} item={item} /> }
-  }), [graph, current?.item.pointer, searching, matchPointers, trace, model.document, display.conditions, locale])
+      </div> : kind === 'handoff' ? null : <LogicSummary document={model.document} group={node.group.id} item={item} appearances={appearances} /> }
+  }), [graph, current?.item.pointer, searching, matchPointers, trace, model.document, display.conditions, locale, appearances])
   const updateDisplay = (next: typeof display) => { onDisplay(next); rememberLogicDisplay(next) }
   const requestMatch = () => {
     if (!searching) return
@@ -114,6 +124,7 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
   const renderItem = (group: LogicGroup, item: LogicItem) => {
     const observation = itemTrace(group, item, trace)
     return <article key={item.pointer} className={styles.item} data-logic-pointer={item.pointer}
+      style={group.id === 'outcomes' && isRecord(item.value) && lookupAppearance(appearances, item.value.id) ? { borderInlineStart: `3px solid ${decisionAccent(lookupAppearance(appearances, item.value.id)!)}`, paddingInlineStart: 'var(--space-2)' } : undefined}
       data-current={current?.item.pointer === item.pointer || undefined} data-search-match={searching && matchPointers.has(item.pointer) || undefined}>
       <InspectionRow label={item.label} aria-label={msg("View details: {{value0}}", { value0: item.label })} current={current?.item.pointer === item.pointer}
         description={group.id === 'evidenceRequirements' ? evidenceSummary(item.value) : undefined}
@@ -160,7 +171,7 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
     {mode === 'map' ? mapUnavailable ? <div className={styles.unavailable} role="status">
       <h2>{msg("Map unavailable")}</h2><p>{mapUnavailable}</p><Button onClick={() => onMode('list')}>{msg("Read List")}</Button>
     </div> : <>
-      <div className={styles.canvas} data-logic-canvas><Suspense fallback={<p role="status">{msg("Loading map…")}</p>}><RelationshipMap nodePositions={nodePositions} onNodePositionsChange={onNodePositionsChange} nodes={graphNodes} edges={graph.edges} unit={rem} nodeWidth={16 * rem} columnGap={3} viewport={viewport}
+      <div className={styles.canvas} data-logic-canvas><Suspense fallback={<p role="status">{msg("Loading map…")}</p>}><RelationshipMap onClearSelection={onClearSelection} nodePositions={nodePositions} onNodePositionsChange={onNodePositionsChange} nodes={graphNodes} edges={graph.edges} unit={rem} nodeWidth={16 * rem} columnGap={3} viewport={viewport}
         focusRequest={focusRequest} onViewportChange={onViewport} onSelect={id => {
           const node = graph.nodes.find(n => n.id === id)
           if (!node) return
@@ -171,7 +182,7 @@ export function PackLogic({ model, at, groupId, select, inspect, mode, onMode, q
           if (node && node.items.length > 1) setExpanded(previous => new Set([...previous, id]))
           else inspect(id)
         }} /></Suspense></div>
-      <p className={styles.caption}>{trace ? msg("Recorded observations on these pack bytes.") : msg("Declared logic. No test results are shown.")} {model.groups.find(g => g.id === 'exceptions')!.items.length === 0 && msg("No special cases.")}</p>
+      <p className={styles.caption}>{trace ? msg("Recorded observations on these pack bytes.") : msg("Declared logic. No test results are shown.")} {current && msg('Highlighted paths show declared relationships, not execution.')} {model.groups.find(g => g.id === 'exceptions')!.items.length === 0 && msg("No special cases.")}</p>
     </> : <div ref={listBody} className={styles.listBody} data-logic-list>
       <div className={styles.context}>{renderGroup('applicability')}{renderGroup('evidenceRequirements')}</div>
       {renderGroup('rules')}{renderGroup('exceptions')}{renderGroup('outcomes')}{renderGroup('resolution')}{renderGroup('sources')}

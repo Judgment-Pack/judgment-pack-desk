@@ -69,7 +69,7 @@ const dark: Tokens = new Map([...light, ...attributeDark])
 describe.each([['light', light], ['dark', dark]] as const)('%s uses only neutral, green and gold colors', (_name, palette) => {
   it('keeps every chromatic token within the brand families', () => {
     for (const [name, value] of palette) {
-      if (!/^#[\da-f]{6}$/i.test(value)) continue
+      if (name.startsWith('--decision-') || !/^#[\da-f]{6}$/i.test(value)) continue
       const [r, g, b] = [1, 3, 5].map((offset) => parseInt(value.slice(offset, offset + 2), 16)) as [number, number, number]
       const max = Math.max(r, g, b), min = Math.min(r, g, b), delta = max - min
       // The existing neutral surfaces have a small cool bias. Preserve them.
@@ -78,6 +78,14 @@ describe.each([['light', light], ['dark', dark]] as const)('%s uses only neutral
       expect((hue >= 25 && hue <= 55) || (hue >= 100 && hue <= 190), `${name}: ${value} has hue ${hue.toFixed(1)}`).toBe(true)
     }
   })
+})
+
+describe.each([['light', light], ['dark', dark]] as const)('%s decision accents remain readable', (_name, palette) => {
+  for (const token of colourTokens.filter(name => name.startsWith('--decision-'))) {
+    it(token, () => {
+      for (const background of ['--bg', '--surface', '--surface-raised']) expect(contrastRatio(colour(palette, token), colour(palette, background))).toBeGreaterThanOrEqual(4.5)
+    })
+  }
 })
 
 describe('every colour token has a dark value', () => {

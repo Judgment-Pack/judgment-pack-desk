@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read
@@ -28,6 +29,10 @@ jobs:
 
       - name: mutation needle guards
         run: |
+          python3 scripts/component-releases.py check
+          python3 scripts/component-releases_test.py
+          python3 scripts/desk-update_test.py
+          python3 scripts/package-release_test.py
           python3 scripts/build-bundle_test.py
           python3 scripts/needle-check_test.py
           scripts/needle-check.sh .
@@ -109,18 +114,21 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.x'
+      - name: Read component lock
+        id: pins
+        run: python3 scripts/component-releases.py ci >> "$GITHUB_OUTPUT"
       - name: Check out tested Runner
         uses: actions/checkout@v4
         with:
           repository: Judgment-Pack/judgment-pack-runner
-          ref: 8807720b25a5c41ba65db89266be5de63dc5be3d
+          ref: ${{ steps.pins.outputs.runner }}
           path: .ci-runner
           persist-credentials: false
       - name: Check out tested Runtime
         uses: actions/checkout@v4
         with:
           repository: Judgment-Pack/judgment-pack-runtime
-          ref: 87d9880824944981dfeed9a8907509138c751ca0
+          ref: ${{ steps.pins.outputs.runtime }}
           path: .ci-runtime
           persist-credentials: false
       - name: Build companions

@@ -1,3 +1,5 @@
+import { SearchSources } from '../search/SearchSources'
+import type { SearchReference } from '../search/results'
 import type { ReactNode } from 'react'
 import type { ChatAttachment } from './store'
 import type { WebsiteReference } from '../documents/website'
@@ -20,19 +22,20 @@ export function SentAttachments({files, onRead}: {files: ChatAttachment[]; onRea
     ? <SourceReader name={file.name} reference={file.document} link={file.link}/>
     : <section><h3>{file.name}</h3><CodeBlock text={file.text} label={msg('Attachment')}/></section>, event.currentTarget)}>{file.name}</Button></li>)}</ul>
 }
-export function SourceList({chatId, documents, websites = [], sourceIds = [], binding, onRead}: {
-  chatId: string; documents: ChatAttachment[]; websites?: WebsiteReference[]; sourceIds?: string[]; binding?: ResearchRunBinding; onRead: ReadMessageDetail
+export function SourceList({chatId, documents, websites = [], searches = [], sourceIds = [], binding, onRead}: {
+  chatId: string; documents: ChatAttachment[]; websites?: WebsiteReference[]; searches?: SearchReference[]; sourceIds?: string[]; binding?: ResearchRunBinding; onRead: ReadMessageDetail
 }) {
   useLocale()
   return <div className={styles.documentList}>
     {documents.map(file => <Button variant="inline" key={attachmentKey(file)} onClick={event => onRead(<SourceReader name={file.name} reference={file.document!} link={file.link}/>, event.currentTarget)}>{file.name}</Button>)}
     {sourceIds.map(id => <Button variant="inline" key={id} onClick={event => binding?.ledger && onRead(<SourceInspector selection={{kind:'source',id}} ledger={binding.ledger} state={binding.state}/>, event.currentTarget)}>{binding?.ledger?.byId(id)?.document?.title || id}</Button>)}
+    {searches.map(reference=><Button variant="inline" key={reference.id} onClick={event=>onRead(<SearchSources reference={reference}/>,event.currentTarget)}>{msg('Web search')} · {reference.request.query}</Button>)}
     {websites.map(reference => <Button variant="inline" key={reference.id} onClick={event => onRead(<WebsiteSources chatId={chatId} reference={reference} documents={documents} onRead={onRead}/>, event.currentTarget)}>{msg('Website sources')} · {new URL(reference.seed).hostname}</Button>)}
   </div>
 }
 export function MessageSources(props: Parameters<typeof SourceList>[0]) {
   useLocale()
-  const count = props.documents.length + (props.sourceIds?.length ?? 0)
+  const count = props.documents.length + (props.sourceIds?.length ?? 0) + (props.searches?.length ?? 0)
   if (!count && !props.websites?.length) return null
   return <Disclosure title={count ? `${msg('Sources')} · ${count}` : msg('Website sources')}><SourceList {...props}/></Disclosure>
 }

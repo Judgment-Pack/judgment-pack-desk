@@ -53,7 +53,7 @@ export function NewPackView() {
   const locale=useLocale(), {store,ready,chats,drafts}=useChats(), [params]=useSearchParams(), navigate=useNavigate()
   const folders=usePackFolders(), shell=useShellState()
   const folderId=params.get('folder') ?? (folders?.selected==='all'?HOME_FOLDER:folders?.selected) ?? HOME_FOLDER
-  const mode=params.get('mode')==='research'?'research':'draft'
+  const mode=params.get('mode')==='research'?'web-research':'draft'
   const created=useRef<string|null>(null), [id,setId]=useState<string|null>(null), [open,setOpen]=useState(true)
   useEffect(()=>{
     if(!store||!ready||created.current)return

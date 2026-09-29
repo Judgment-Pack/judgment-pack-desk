@@ -1370,12 +1370,12 @@ describe('chat workspace modes and checkpoint recovery', () => {
     expect(h.requests).toHaveLength(1); expect(h.runtime.calls).toHaveLength(0)
     expect(state.events.some(event => event.type === 'error')).toBe(false)
   })
-  it('validates basic drafts without claiming source verification or behavioral testing', async () => {
-    const h = harness([async (_request,_signal,emit) => emit({ type: 'proposal', document: PACK, unknowns: [] })],{ mode: 'draft' })
+  it.each(['draft', 'web-research'] as const)('validates %s drafts without fabricating source-grounded cases', async mode => {
+    const h = harness([async (_request,_signal,emit) => emit({ type: 'proposal', document: PACK, unknowns: [] })],{ mode })
     h.run.start('Draft from these supplied facts',[])
     const state = await settled(h.run)
     expect(state.status).toBe('ready'); expect(h.runtime.calls).toEqual(['validate'])
-    expect(state.detail).toContain('No source research or behavioral tests')
+    expect(state.detail).toContain('Research and test results are reported separately')
     expect(canCreateResearchDraft(state)).toBe(false)
   })
   it('restores transcripts and candidate bytes, discards trusted state, and requires a fresh model-free check', async () => {
@@ -1417,7 +1417,7 @@ it('does not revive saved research authority when its current registry is unavai
 })
 
 describe('conversation-first task lifecycle', () => {
-  it.each(['draft', 'research'] as const)('completes a greeting without an authoring prompt or checks in %s', async mode => {
+  it.each(['draft', 'web-research', 'research'] as const)('completes a greeting without an authoring prompt or checks in %s', async mode => {
     const h = harness([async (request, _signal, emit) => {
       expect(request.prompt).not.toContain('RUNTIME AUTHORING ONLY')
       expect(request.conversation).toBe(true)

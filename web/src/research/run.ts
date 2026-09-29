@@ -1,3 +1,5 @@
+import { conversationMode, type AuthoringMode } from './mode'
+import type { SearchReference } from '../search/results'
 import { citedAttachments } from '../chat/messageOwnership'
 import { summarizeWork, mergeReferences, type ResponseHistory } from '../chat/responseHistory'
 import type { ChatAttachment } from '../chat/store'
@@ -136,7 +138,7 @@ export interface TurnRequest {
 }
 
 export interface RunPorts {
-  mode?: 'draft' | 'research'
+  mode?: AuthoringMode
   /** One engine run to completion; events arrive in order, `end` last. */
   turn(request: TurnRequest, signal: AbortSignal, onEvent: (event: AssistantEvent) => void): Promise<void>
   /** The desk's own runtime connection, for validate and rehearsal. */
@@ -324,6 +326,10 @@ export class AuthoringRun {
     const row = this.state.responses?.find(row => row.id === this.responseId)
     if (row) this.updateResponse({websites: [...row.websites.filter(w => w.id !== reference.id), structuredClone(reference)]})
   }
+  recordSearch(reference: SearchReference): void {
+    const row = this.state.responses?.find(row => row.id === this.responseId)
+    if (row) this.updateResponse({searches: [...(row.searches ?? []).filter(s => s.id !== reference.id), structuredClone(reference)]})
+  }
   private finishResponse(): void {
     this.updateResponse({work: summarizeWork(this.responseEvents, false)})
     this.responseId = undefined
@@ -407,7 +413,7 @@ export class AuthoringRun {
       // Recovery never starts source acquisition, a paid reviewer or repair.
       const check = await checkCandidate(text, [], this.ports.callTool, signal)
       this.set({ candidates: this.state.candidates.map(candidate => ({ ...candidate, check })) })
-      if (this.ports.mode === 'draft') this.settleReview('The draft needs corrections before it can be created.')
+      if (conversationMode(this.ports.mode)) this.settleReview('The draft needs corrections before it can be created.')
       else this.set({ status: 'needs-input', phase: 'review', detail: sourceMessage("No saved cases can be rechecked. Send a message to continue research.") })
     })
   }
@@ -419,14 +425,14 @@ export class AuthoringRun {
     this.set({ status: 'running', phase: 'check', detail: sourceMessage("Rechecking the saved draft.") })
     void this.drive(async signal => {
       await this.recheckRestored(signal)
-      if (this.ports.mode !== 'draft' && !this.state.cases.length && !this.state.expectationIssues.length) throw new Error(sourceMessage("No saved cases can be rechecked. Send a message to continue research."))
+      if (!conversationMode(this.ports.mode) && !this.state.cases.length && !this.state.expectationIssues.length) throw new Error(sourceMessage("No saved cases can be rechecked. Send a message to continue research."))
       await this.casesAndCheck(signal, false)
     })
   }
 
   private async recheckRestored(signal: AbortSignal): Promise<void> {
     if (!this.state.restored) return
-    if (this.ports.mode !== 'draft') {
+    if (!conversationMode(this.ports.mode)) {
       for (const session of new Set(this.ports.ledger.sources.map(source => source.session))) await this.verifyAcquisitions(session, signal, false)
       const saved = this.state.cases
       const { admitted, dropped } = admitCases({ cases: saved }, this.ports.ledger, [])
@@ -472,7 +478,7 @@ export class AuthoringRun {
       const before = this.latest()?.digest
       const proposal = await this.continuingTurn(signal, 'conversation', this.conversationPrompt(message), this.ports.researchTools)
       if (!this.latest()) this.set({ phase: 'conversation', status: 'complete', detail: '' })
-      else if (this.latest()?.digest !== before || proposal && this.ports.mode !== 'draft' && !this.latest()?.check?.cases.length) {
+      else if (this.latest()?.digest !== before || proposal && !conversationMode(this.ports.mode) && !this.latest()?.check?.cases.length) {
         if (this.state.restored) await this.recheckRestored(signal)
         await this.casesAndCheck(signal)
       } else if (previous.status === 'ready') this.settleReview(sourceMessage("The candidate needs review."))
@@ -697,7 +703,7 @@ export class AuthoringRun {
     const candidate = this.latest()!
     return [
       this.ports.authorPrompt,
-      this.ports.mode === 'draft' ? 'For a question or clarification, answer naturally without a JSON fence. When proposing a pack, return the required single JSON fence. Draft only from information supplied in this chat. Do not claim source research or behavioral testing. List open questions and assumptions.' : RESEARCH_INSTRUCTIONS,
+      conversationMode(this.ports.mode) ? 'For a question or clarification, answer naturally without a JSON fence. When proposing a pack, return the required single JSON fence. Use supplied information and verified sources actually read with available tools. Claim research or behavioral testing only when the tool results establish it. List open questions and assumptions.' : RESEARCH_INSTRUCTIONS,
       REPAIR_INSTRUCTIONS,
       `CANDIDATE\n${candidate.text}`,
       `CHECK\n${JSON.stringify({ valid: candidate.check?.valid, diagnostics: candidate.check?.diagnostics, cases: candidate.check?.cases })}`,
@@ -753,8 +759,8 @@ export class AuthoringRun {
       description: 'Read the runtime contract before creating or changing a pack. Not needed for greetings, explanations or ordinary questions.',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       execute: async () => ({ content: [{ type: 'text', text: this.ports.authorPrompt
-        ? [this.ports.authorPrompt, this.ports.mode === 'draft'
-          ? 'Draft only from information supplied by the person. Do not claim web research or behavioral tests. List assumptions and open questions.'
+        ? [this.ports.authorPrompt, conversationMode(this.ports.mode)
+          ? 'Use supplied information and verified sources actually read with available tools. Claim web research or behavioral tests only when tool results establish it. List assumptions and open questions.'
           : RESEARCH_INSTRUCTIONS].join('\n\n')
         : 'Pack authoring is unavailable until the runtime authoring prompt is available. You can still answer questions; do not invent a pack format.' }], isError: !this.ports.authorPrompt })
     }
@@ -903,7 +909,7 @@ export class AuthoringRun {
       this.set({ phase: 'conversation', status: 'complete', detail: '' })
       return
     }
-    if (candidate && this.ports.mode === 'draft') {
+    if (candidate && conversationMode(this.ports.mode)) {
       this.set({ phase: 'check', detail: sourceMessage("Validating the draft through the runtime.") })
       const check = await checkCandidate(candidate.text, [], this.ports.callTool, signal)
       this.set({ candidates: this.state.candidates.map(item => item.digest === candidate.digest ? { ...item, check } : item) })
@@ -1028,11 +1034,11 @@ export class AuthoringRun {
    * citations it names are the ones on hand.
    */
   private settleReview(notPassing: string): void {
-    if (this.ports.mode === 'draft') {
+    if (conversationMode(this.ports.mode)) {
       const candidate = this.latest()
       const valid = candidate?.check?.valid === true && candidate.check.documentDigest === candidate.digest
       this.set({ phase: 'review', status: valid ? 'ready' : 'needs-input', detail: valid
-        ? sourceMessage("Structure validated. Review the draft before creating it. No source research or behavioral tests have been run.")
+        ? sourceMessage("Structure validated. Review the draft before creating it. Research and test results are reported separately.")
         : sourceMessage("The draft needs corrections before it can be created.") })
       return
     }

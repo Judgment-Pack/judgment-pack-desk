@@ -206,3 +206,37 @@ it('saves response work without advancing the independent pack artifact generati
   expect(store.getSnapshot().packDrafts[0]?.generation).toBe(artifact.generation)
   expect(store.getSnapshot().chats[0]?.checkpoint?.state.responses).toEqual(responses)
 })
+it('retains a search connection, policy and response-owned search reference through save and reload',async()=>{
+ const {store,write}=setup();await store.load();const chat=store.create()
+ const search={id:'12345678-1234-1234-1234-123456789abc',digest:'sha256:'+'a'.repeat(64),request:{connection:'demo',revision:'ab'.repeat(32),query:'policy',maxResults:5}}
+ store.update(chat.id,{searchConnection:'demo',researchMode:'provided',searches:[search],checkpoint:{sources:[],state:{...INITIAL_STATE,responses:[{id:'response-1',searches:[search],documents:[],websites:[],sourceIds:[],work:{items:[],notices:[]}}]}}})
+ await store.flush()
+ const saved=write.mock.calls.at(-1)![0]
+ const restored=setup({read:async()=>({project:'/project',sha256:'saved',content:saved})});await restored.store.load()
+ expect(restored.store.getSnapshot().error).toBe('')
+ expect(restored.store.getSnapshot().chats[0]).toMatchObject({searchConnection:'demo',researchMode:'provided',searches:[search],checkpoint:{state:{responses:[{id:'response-1',searches:[search]}]}}})
+})
+
+it('persists web Research and upgrades only an unsubmitted legacy selection', async () => {
+  const { store, write } = setup(); await store.load()
+  const draft = store.startChat(undefined, 'research')
+  store.update(draft.id, { composer: 'Please research this subject' })
+  const reopened = setup(); await reopened.store.load()
+  expect(reopened.store.startChat()).toMatchObject({ mode: 'web-research', composer: 'Please research this subject' })
+  const chat = store.create(undefined, 'web-research')
+  await store.flush()
+  const saved = write.mock.calls.at(-1)![0]
+  const restored = setup({ read: async () => ({ project: '/project', sha256: 'saved', content: saved }) })
+  await restored.store.load()
+  expect(restored.store.getSnapshot().chats.find(c => c.id === chat.id)?.mode).toBe('web-research')
+})
+
+it('keeps saved research checkpoints on their source-led lifecycle', async () => {
+  const { store, write } = setup(); await store.load()
+  const chat = store.create(undefined, 'research')
+  store.update(chat.id, { checkpoint: { state: INITIAL_STATE, sources: [] } })
+  await store.flush()
+  const restored = setup({ read: async () => ({ project: '/project', sha256: 'saved', content: write.mock.calls.at(-1)![0] }) })
+  await restored.store.load()
+  expect(restored.store.getSnapshot().chats.find(c => c.id === chat.id)?.mode).toBe('research')
+})
