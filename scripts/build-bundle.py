@@ -85,7 +85,7 @@ def main():
         licenses = target / 'gateway-licenses'
         licenses.mkdir(exist_ok=True)
         for path in source.rglob('*'):
-            if path.is_file() and (path.name.upper().startswith(('LICENSE', 'NOTICE', 'COPYING', 'PATENTS'))):
+            if path.is_file() and (path.name.upper().startswith(('LICENSE', 'NOTICE', 'COPYING', 'PATENTS', 'THIRD_PARTY_NOTICES'))):
                 destination = licenses / path.relative_to(source)
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(path, destination)

@@ -30,7 +30,7 @@ def source(component, destination):
 
 def licenses(source_dir, target):
     for file in source_dir.rglob('*'):
-        if '.git' not in file.parts and file.is_file() and file.name.upper().startswith(('LICENSE', 'NOTICE', 'COPYING', 'PATENTS')):
+        if '.git' not in file.parts and file.is_file() and file.name.upper().startswith(('LICENSE', 'NOTICE', 'COPYING', 'PATENTS', 'THIRD_PARTY_NOTICES')):
             out = target / file.relative_to(source_dir); out.parent.mkdir(parents=True, exist_ok=True); shutil.copyfile(file, out)
 
 def validate_release(version, plan):
@@ -83,9 +83,9 @@ def main():
         for name, item in plan['components'].items():
             repos[name] = tmp / name; source(item, repos[name])
         run(['python3', 'scripts/build-bundle.py', '--gateway-checkout', str(repos['gateway']), '--output', str(bundle)])
-        env = dict(os.environ, CGO_ENABLED='0')
+        env = dict(os.environ, CGO_ENABLED='0', GOWORK='off')
         for name in ('jpack-runner', 'jpack-source-worker'):
-            run(['go', 'build', '-trimpath', '-o', str(bundle / name), './cmd/' + name], repos['runner'], env=env)
+            run(['go', 'build', '-trimpath', '-ldflags', '-s -w -X github.com/Judgment-Pack/judgment-pack-runner/internal/buildinfo.releaseVersion=' + plan['components']['runner']['version'], '-o', str(bundle / name), './cmd/' + name], repos['runner'], env=env)
         version = plan['components']['runtime']['version'].lstrip('v')
         run(['go', 'build', '-trimpath', '-ldflags', '-s -w -X github.com/Judgment-Pack/judgment-pack-runtime/internal/result.CLIVersion=' + version, '-o', str(bundle / 'jpack'), './cmd/jpack'], repos['runtime'], env=env)
         run(['go', 'build', '-trimpath', '-ldflags', '-X github.com/Judgment-Pack/judgment-pack-desk/internal/releaseplan.Version=' + args.version, '-o', str(bundle / 'jpack-desk'), '.'], env=env)

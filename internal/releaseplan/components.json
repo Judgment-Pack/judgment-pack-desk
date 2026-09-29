@@ -11,7 +11,7 @@
     "runner": {
       "repository": "Judgment-Pack/judgment-pack-runner",
       "version": "v0.1.0-rc.1",
-      "revision": "5c672567f1a88fc7eefc678fb0fc069ed9bb7601",
+      "revision": "08371c7729414e4dc3694ff7bb64f932a50c1712",
       "channel": "preview"
     },
     "gateway": {
