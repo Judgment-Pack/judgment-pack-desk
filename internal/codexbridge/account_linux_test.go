@@ -234,7 +234,14 @@ func awaitAccount(t *testing.T, m *Manager, account, login string) Status {
 }
 func signalAccount(t *testing.T, m *Manager, event string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(m.profile.temp, "event"), []byte(event), 0600); err != nil {
+	// Publish only the complete signal: the helper removes the file as soon as
+	// it can read it, including the empty file visible during os.WriteFile.
+	path := filepath.Join(m.profile.temp, "event")
+	staged := path + ".pending"
+	if err := os.WriteFile(staged, []byte(event), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(staged, path); err != nil {
 		t.Fatal(err)
 	}
 }
