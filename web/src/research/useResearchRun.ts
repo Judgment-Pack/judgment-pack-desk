@@ -32,6 +32,8 @@ import { AUTHOR_PACK_PROMPT, TEST_PACK_PROMPT, usePromptNames, usePromptText } f
 import { sessionBearer } from '../mcp/session'
 import { recordActivity } from '../shell/consoleLog'
 import { acquire, newResearchSession, registry, seal } from './gatewayClient'
+import { loadDocument } from '../documents/client'
+import type { ChatAttachment } from '../chat/store'
 import { Ledger, type SourceRecord } from './ledger'
 import { AuthoringRun, INITIAL_STATE, type RunState, type Turn, type TurnRequest } from './run'
 import { researchTools } from './tools'
@@ -124,6 +126,8 @@ export function useResearchRun(options?: {
   /** Per-message policy for Chat and web Research; legacy research keeps its source-led contract. */
   researchPolicy?:()=>string
   draftTools?: (context: DraftToolContext) => HostTool[]
+  /** The documents kept in this chat, read when a draft's citations are traced. */
+  documents?: () => readonly ChatAttachment[]
 }): ResearchRunBinding {
   useLocale()
   const slot = useAssistantSlot()
@@ -155,8 +159,8 @@ export function useResearchRun(options?: {
   const ledger = ledgerRef.current
 
   // The settings a turn reads, as of the moment it starts.
-  const settings = useRef({ slot, picked, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools })
-  settings.current = { slot, picked, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools }
+  const settings = useRef({ slot, picked, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools, documents: options?.documents })
+  settings.current = { slot, picked, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools, documents: options?.documents }
 
   const run = useMemo(() => {
     const log = (text: string) => recordActivity(text, 'research')
@@ -228,6 +232,13 @@ export function useResearchRun(options?: {
         return callToolThrough(client)(name, name === 'experimental_evaluate' ? { ...args, rehearsal: true } : args)
       },
       ledger,
+      documents: () => settings.current.documents?.() ?? [],
+      // Verified under the pin as it is when the trace runs, never a saved one.
+      loadDocument: async (reference, signal) => {
+        const pin = settings.current.research.gateway
+        if (pin === null) throw new Error('no gateway is configured to verify documents')
+        return loadDocument(reference, pin, signal)
+      },
       get researchTools() {
         return conversationMode(settings.current.mode) ? (settings.current.draftTools?.(context) ?? []) : toolsFor()
       },

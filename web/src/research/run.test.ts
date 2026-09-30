@@ -5,14 +5,18 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { AssistantEvent, CallTool, McpToolResult } from '../assistant/engine'
 import { Ledger } from './ledger'
-import { AuthoringRun, admitCases, canCreateResearchDraft, factPaths, matrixDocument, researchRecord, traceCitations, type Candidate, type RunPorts, type RunState, type TurnRequest } from './run'
+import { AuthoringRun, admitCases, canCreateDraft, canCreateResearchDraft, factPaths, matrixDocument, readinessKey, researchRecord, traceCitations, type Candidate, type RunPorts, type RunState, type TurnRequest } from './run'
 import { digestOf, type AuthoringCase, type CandidateCheck } from './checkCandidate'
 import { researchTools } from './tools'
 import { TEST_PUBLIC_KEY, fakeGateway } from './__fixtures__/fakeGateway'
 import { fixtureExpectations } from './__fixtures__/expectationRuntime'
 import { EXPECTATION_TOOL } from './expectations'
 import { parseJsonText } from './verify/canon'
-import { canRetryExpectationValidation } from './run'
+import { canRetryExpectationValidation, INITIAL_STATE } from './run'
+import type { ChatAttachment } from '../chat/store'
+import type { VerifiedDocument } from '../documents/client'
+import type { DocumentRecord } from '../documents/record'
+import webSnapshot from '../documents/__fixtures__/web-snapshot.json'
 
 const answers = JSON.parse(readFileSync(join(import.meta.dirname, '__fixtures__', 'provider-answers.json'), 'utf8')) as Record<string, unknown>
 const PUBLIC_KEY = TEST_PUBLIC_KEY
@@ -50,6 +54,12 @@ const PACK = {
   ],
   fallbackOutcome: 'does-not-meet',
   escalation: { triggers: ['unknown'], target: { kind: 'human-role', name: 'Screening officer' } }
+}
+
+/** The same pack citing nothing, as a draft resting on what the person said. */
+const UNCITED = {
+  ...Object.fromEntries(Object.entries(PACK).filter(([key]) => key !== 'sources')),
+  rules: PACK.rules.map(({ sourceRefs: _refs, ...rule }) => rule)
 }
 
 const CASES = {
@@ -1374,9 +1384,14 @@ describe('chat workspace modes and checkpoint recovery', () => {
     const h = harness([async (_request,_signal,emit) => emit({ type: 'proposal', document: PACK, unknowns: [] })],{ mode })
     h.run.start('Draft from these supplied facts',[])
     const state = await settled(h.run)
-    expect(state.status).toBe('ready'); expect(h.runtime.calls).toEqual(['validate'])
-    expect(state.detail).toContain('Research and test results are reported separately')
+    expect(h.runtime.calls).toEqual(['validate']); expect(h.requests).toHaveLength(1)
+    expect(state.cases).toEqual([])
+    // The ledger excerpt id this pack cites is no page of a document read in
+    // this chat, so the draft is validated and not ready.
+    expect(state.status).toBe('needs-input')
+    expect(state.citations).toMatchObject([{ sourceId: 'ircc-fswp', traced: false, reason: 'citation.location is not a page of a document read in this chat' }])
     expect(canCreateResearchDraft(state)).toBe(false)
+    expect(canCreateDraft(state, mode)).toBe(false)
   })
   it('restores transcripts and candidate bytes, discards trusted state, and requires a fresh model-free check', async () => {
     const { checkpoint, decodeCheckpoint, restoreLedger } = await import('../chat/checkpoint')
@@ -1438,7 +1453,7 @@ describe('conversation-first task lifecycle', () => {
       const instructions = request.hostTools.find(tool => tool.name === 'get_authoring_instructions')!
       const answer = await instructions.execute({}, signal)
       expect(answer.content?.[0]?.text).toContain('RUNTIME AUTHORING ONLY')
-      emit({ type: 'proposal', document: PACK, unknowns: [] })
+      emit({ type: 'proposal', document: UNCITED, unknowns: [] })
     }], { mode: 'draft', authorPrompt: 'RUNTIME AUTHORING ONLY' })
     h.run.start('Draft this decision', [])
     expect((await settled(h.run)).status).toBe('ready')
@@ -1516,4 +1531,195 @@ it('retains attachment and pack context for follow-up questions and restores it 
   await settled(next.run)
   expect(next.run.getSnapshot().turns[2]?.text).not.toContain('A supplied policy requirement.')
   expect(next.requests).toHaveLength(1)
+})
+
+describe('conversation draft citations', () => {
+  const QUOTE = 'At least 1,560 hours of paid work in the last ten years.'
+  const PAGE_TEXT = `Eligibility\n\nYou need ${QUOTE} Part-time work counts.`
+  let minted = 0
+  /** A verified web document kept in the chat, as read_link keeps one, with the given pages. */
+  function kept(pages: string[] = [PAGE_TEXT], partial = false): { file: ChatAttachment; document: VerifiedDocument } {
+    const record = structuredClone(webSnapshot) as unknown as DocumentRecord
+    const first = record.content.pages[0]!
+    record.content.pages = pages.map((body, index) => ({ ...first, number: index + 1, text: body, chars: [...body].length }))
+    record.content.pageCount = pages.length
+    if (partial) record.processing.status = 'partial'
+    minted += 1
+    const digest = `sha256:${minted.toString(16).padStart(64, '0')}`
+    const id = `12345678-1234-1234-1234-${minted.toString().padStart(12, '0')}`
+    const reference = { id, digest, pages: pages.map((_, index) => index + 1), allowPartial: false }
+    return { file: { id, name: 'Eligibility', text: '', document: reference, link: { url: PAGE_URL } }, document: { record, digest, object: { version: 1, original: { name: 'Eligibility', mediaType: 'text/plain', bytes: '', sha256: record.document.id } } } }
+  }
+  const citing = (location: string, excerpt = QUOTE) => ({ ...PACK, sources: [{ ...PACK.sources[0]!, citation: { location, excerpt } }] })
+  const pageOf = (file: ChatAttachment, page = 1) => `attachment:${file.document!.id}/${file.document!.digest}/page/${page}`
+  /** A conversation run whose chat keeps the given documents, each loading as given. */
+  function chat(mode: 'draft' | 'web-research', document: unknown, files: { file: ChatAttachment; document: VerifiedDocument }[], load?: RunPorts['loadDocument']) {
+    const loads: string[] = []
+    return {
+      loads,
+      ...harness([async (_request, _signal, emit) => emit({ type: 'proposal', document, unknowns: [] })], {
+        mode,
+        documents: () => files.map(item => item.file),
+        loadDocument: load ?? (async (reference) => {
+          loads.push(reference.id)
+          const found = files.find(item => item.file.document!.id === reference.id)
+          if (!found) throw new Error('not stored')
+          return found.document
+        })
+      })
+    }
+  }
+
+  it.each(['draft', 'web-research'] as const)('traces a %s citation to the quoted page of a document kept in the chat, and is then ready', async mode => {
+    const page = kept()
+    const h = chat(mode, citing(pageOf(page.file)), [page])
+    h.run.start('Draft from the page I shared', [])
+    const state = await settled(h.run)
+    expect(state.citations).toEqual([{ sourceId: 'ircc-fswp', location: pageOf(page.file), excerptId: null, url: PAGE_URL, traced: true, reason: '', quote: QUOTE }])
+    expect(state.status, state.detail).toBe('ready')
+    expect(state.detail).toContain('every citation is traced to a page read in this chat')
+    expect(state.readiness).toBe(readinessKey(state))
+    expect(canCreateDraft(state, mode)).toBe(true)
+    // Traced when the candidate was set and again at the settle.
+    expect(h.loads).toEqual([page.file.document!.id, page.file.document!.id])
+  })
+
+  const untraced: [string, (page: { file: ChatAttachment }) => unknown, string][] = [
+    ['a bare URL', () => ({ ...PACK, sources: [{ ...PACK.sources[0]!, citation: undefined }] }), 'citation.location is not a page of a document read in this chat'],
+    ['an excerpt id the ledger does not hold', () => PACK, 'citation.location is not a page of a document read in this chat'],
+    ['a document the chat does not keep', page => citing(pageOf(page.file).replace(/-\d{12}\//, '-999999999999/')), 'is not a page kept in this chat'],
+    ['a page that was not selected', page => citing(pageOf(page.file, 2)), 'page 2 of document'],
+    ['a quote that is not on the page', page => citing(pageOf(page.file), 'At least 1,000 hours of paid work.'), 'citation.excerpt is not on page 1 of the document it cites'],
+    ['a locator naming another page than the one quoted', page => {
+      const pack = citing(pageOf(page.file))
+      return { ...pack, sources: [{ ...pack.sources[0]!, locator: { kind: 'uri', value: 'https://example.org/another-page' } }] }
+    }, 'locator.value is not the URL the excerpt was read from']
+  ]
+  it.each(untraced)('does not trace %s, and the draft is not ready', async (_name, draft, reason) => {
+    const page = kept()
+    const h = chat('draft', draft(page), [page])
+    h.run.start('Draft this', [])
+    const state = await settled(h.run)
+    expect(state.citations).toHaveLength(1)
+    expect(state.citations[0]!.traced).toBe(false)
+    expect(state.citations[0]!.reason).toContain(reason)
+    expect(state.status).toBe('needs-input')
+    expect(state.readiness).toBe('')
+    // The detail names the citation and says what to do about it.
+    expect(state.detail).toContain('(ircc-fswp)')
+    expect(state.detail).toContain('read the page with read_link')
+    expect(canCreateDraft(state, 'draft')).toBe(false)
+  })
+
+  it('does not trace a citation whose document does not verify under the gateway pin', async () => {
+    const page = kept()
+    const h = chat('web-research', citing(pageOf(page.file)), [page], async () => { throw new Error('receipt signature does not verify') })
+    h.run.start('Research this', [])
+    const state = await settled(h.run)
+    expect(state.citations[0]).toMatchObject({ traced: false, reason: `The document ${page.file.document!.id} did not verify under the current gateway pin, so its quote is withheld.` })
+    expect(state.status).toBe('needs-input')
+    expect(canCreateDraft(state, 'web-research')).toBe(false)
+  })
+
+  it('does not trace a quote from a partial extraction whose pages the person never confirmed', async () => {
+    const page = kept([PAGE_TEXT], true)
+    const h = chat('draft', citing(pageOf(page.file)), [page])
+    h.run.start('Draft this', [])
+    const state = await settled(h.run)
+    expect(state.citations[0]).toMatchObject({ traced: false, reason: `page 1 of document ${page.file.document!.id} is not a page kept in this chat` })
+    expect(canCreateDraft(state, 'draft')).toBe(false)
+  })
+
+  it('reads the document again at the settle, so one that stops verifying withholds the draft', async () => {
+    const page = kept()
+    let calls = 0
+    const h = chat('draft', citing(pageOf(page.file)), [page], async () => {
+      if (calls++ === 0) return page.document
+      throw new Error('the pin changed')
+    })
+    h.run.start('Draft this', [])
+    const state = await settled(h.run)
+    expect(calls).toBe(2)
+    expect(state.citations[0]!.traced).toBe(false)
+    expect(state.status).toBe('needs-input')
+  })
+
+  it('makes a draft that cites nothing ready in draft mode and says what it rests on, and not in web research', async () => {
+    const draft = chat('draft', UNCITED, [])
+    draft.run.start('Draft from what I tell you', [])
+    const drafted = await settled(draft.run)
+    expect(drafted.status).toBe('ready')
+    expect(drafted.detail).toContain('This pack cites no source; it rests on what you told the assistant.')
+    expect(canCreateDraft(drafted, 'draft')).toBe(true)
+    const researched = chat('web-research', UNCITED, [])
+    researched.run.start('Research this', [])
+    const state = await settled(researched.run)
+    expect(state.status).toBe('needs-input')
+    expect(state.detail).toContain('A web research draft rests on pages read in this chat')
+    expect(canCreateDraft(state, 'web-research')).toBe(false)
+  })
+
+  it('holds every mode to one rule over the same settled state', () => {
+    const digest = 'fixture-digest'
+    const base: RunState = { ...INITIAL_STATE, status: 'ready', phase: 'review',
+      candidates: [{ revision: 1, producedBy: 'conversation', document: UNCITED, text: '{}', digest, check: { documentDigest: digest, valid: true, diagnostics: [], cases: [] } }] }
+    const settledAt = (state: RunState): RunState => ({ ...state, readiness: readinessKey(state) })
+    const none = settledAt(base)
+    expect([canCreateDraft(none, 'draft'), canCreateDraft(none, 'web-research'), canCreateDraft(none, 'research')]).toEqual([true, false, false])
+    const traced = settledAt({ ...base, citations: [{ sourceId: 'a', location: 'attachment:x', excerptId: null, url: null, traced: true, reason: '', quote: 'q' }] })
+    expect([canCreateDraft(traced, 'draft'), canCreateDraft(traced, 'web-research')]).toEqual([true, true])
+    const open = settledAt({ ...base, citations: [...traced.citations, { sourceId: 'b', location: null, excerptId: null, url: null, traced: false, reason: 'r' }] })
+    expect([canCreateDraft(open, 'draft'), canCreateDraft(open, 'web-research'), canCreateDraft(open, 'research')]).toEqual([false, false, false])
+    // While the citations are being traced they say nothing, and nothing is ready.
+    expect(canCreateDraft({ ...none, tracing: true }, 'draft')).toBe(false)
+    expect(canCreateDraft({ ...traced, tracing: true }, 'web-research')).toBe(false)
+    // An invalid or stale check is never ready.
+    expect(canCreateDraft({ ...none, candidates: [{ ...none.candidates[0]!, check: { ...none.candidates[0]!.check!, valid: false } }] }, 'draft')).toBe(false)
+    expect(canCreateDraft({ ...none, candidates: [{ ...none.candidates[0]!, check: { ...none.candidates[0]!.check!, documentDigest: 'other' } }] }, 'draft')).toBe(false)
+  })
+
+  it('traces a reopened draft again before anything reads its citations', async () => {
+    const { checkpoint, decodeCheckpoint } = await import('../chat/checkpoint')
+    const page = kept()
+    const first = chat('draft', citing(pageOf(page.file)), [page])
+    first.run.start('Draft this', [])
+    const ready = await settled(first.run)
+    expect(ready.status).toBe('ready')
+    const saved = decodeCheckpoint(JSON.parse(JSON.stringify(checkpoint(ready, []))))
+    expect(saved.state.citations).toEqual([])
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const reopened = chat('draft', citing(pageOf(page.file)), [page], async () => { await gate; return page.document })
+    await reopened.run.restore(saved.state)
+    // Tracing: not "cites nothing", and not ready.
+    expect(reopened.run.getSnapshot()).toMatchObject({ tracing: true, citations: [], restored: true })
+    expect(canCreateDraft(reopened.run.getSnapshot(), 'draft')).toBe(false)
+    release()
+    await until(() => reopened.run.getSnapshot().tracing === false, 'the reopened trace landed')
+    expect(reopened.run.getSnapshot().citations).toMatchObject([{ sourceId: 'ircc-fswp', traced: true }])
+    // Reopening checks and changes nothing else; the person rechecks.
+    expect(reopened.requests).toEqual([])
+    expect(reopened.runtime.calls).toEqual([])
+    expect(canCreateDraft(reopened.run.getSnapshot(), 'draft')).toBe(false)
+  })
+
+  it('tells the model how a chat draft cites, only in the conversation modes', async () => {
+    const text = async (mode: 'draft' | 'web-research' | 'research') => {
+      let said = ''
+      const h = harness([async (request, signal, emit) => {
+        const answer = await request.hostTools.find(tool => tool.name === 'get_authoring_instructions')!.execute({}, signal)
+        said = answer.content?.[0]?.text ?? ''
+        emit({ type: 'message', text: 'Read.' })
+      }], { mode })
+      h.run.start('Draft', [])
+      await settled(h.run)
+      return said
+    }
+    for (const mode of ['draft', 'web-research'] as const) {
+      const said = await text(mode)
+      expect(said).toContain('attachment:<id>/<digest>/page/<n>')
+      expect(said).toContain('the exact quote from that page')
+    }
+    expect(await text('research')).not.toContain('attachment:<id>/<digest>/page/<n>')
+  })
 })
