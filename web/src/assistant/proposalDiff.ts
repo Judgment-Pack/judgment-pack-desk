@@ -23,7 +23,7 @@ import { sourceMessage } from '../i18n/source'
  * nothing: it is not used for matching, and the elements carrying it are
  * reported as a removal and an addition rather than paired with each other.
  *
- * Pure functions, no React. `ProposalDiff.tsx` renders what they return and
+ * Pure functions, no React. `ProposalDiffView.tsx` renders what they return and
  * `acceptProposal.ts` writes it.
  */
 import { agreesWithParse, indexDocument } from '../packs/documentText'
