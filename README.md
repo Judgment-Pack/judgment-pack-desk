@@ -177,108 +177,30 @@ the old `/matrix` collection route returns to Packs. Project files is available
 in the header’s project menu at `/author`. Pack IDs such as `tests` and `flows`
 remain valid; collection views reserve no pack IDs.
 
-**A shell around all of it.** A header, navigation, a contextual right pane and
-a status strip — described under [Shell](#shell). Create pack in the Packs
-collection asks three things: a **name**, a **description**, and a
-**template**. The name gives the id, the id gives the file name, and where that
-file goes is `storage.packs` in `jpack-desk.json` — configuration, not a
-question for whoever is creating a pack. The templates are the runtime's own
-examples plus an empty pack derived from the runtime's own schema; the desk
-ships none of its own, because a desk-authored skeleton would be the desk
-asserting what a pack is.
+**Create pack through a conversation.** `/create-pack` redirects to `/packs/new`,
+which asks “What should this pack decide?” and opens the Assistant pane. Configure
+an assistant provider and model before sending a request. Describe the decision,
+its inputs and possible outcomes; the first proposal becomes a draft in Packs.
+The conversation, draft revisions and trial runs stay with that draft.
 
-The id is derived live and shown under the field: diacritics folded, every run
-outside `a–z0–9` becoming one `-`. A name that cannot become the runtime's
-`decisionId` is refused rather than repaired, and the refusal states the
-alphabet — a name written in another script is made of letters, and telling its
-author otherwise would be false. A Latin letter that neither decomposes nor has
-a standard transliteration is **named in the refusal rather than deleted**:
-`Łódź` is `lodz` and `Straße` is `strasse`, but `Azərbaycan` is refused saying
-which letter it could not carry, because silently dropping one produces an id
-nobody would recognise as their own name.
+**Review and finalize** opens the create dialog in its review presentation. Review
+the name, description, destination folder and declared unknowns, then finalize
+the checked draft. The configured `storage.packs` location determines the pack's
+file path. The dialog validates the exact document it will write, refuses name
+collisions and registers the saved file in `jpack.json`. Saved draft cases and
+trial history are carried into the pack's Tests workspace. If saving or
+registration fails, the dialog reports what was written and what remains to do.
 
-The empty pack is offered **only once `get_schema` has actually answered with a
-skeleton that carries a `specVersion`** — not on the strength of the tool being
-advertised, which is a claim about a tool rather than about a template, and a
-file with no `specVersion` is not an incomplete pack but one nothing can read
-as a pack at all. While either listing is still being asked the field says so
-and selects nothing; a listing the runtime *refused* says that instead, in the
-runtime's own words. Nothing is said about what checks will make of the result:
-that is the runtime's verdict to report, on the page this opens.
-
-**Or describe it.** Beside the template choice is a disclosure — *Describe it
-instead* — where you type what the pack should decide in your own words and
-press **Propose**. The desk runs the runtime's own `author_pack` prompt through
-the assistant, and the dialog shows what it did — every tool call, every
-guardrail, every failure — and then the proposal: the document summarised, the
-unknowns it declared, the `validate` report and the rehearsal evaluation quoted
-as the runtime wrote them, and the whole document behind *Show document*.
-**Create** then writes that document exactly as it writes a template.
-
-What it never does. **No file exists until Create is pressed** — the section
-proposes and nothing else, which is ADR-0001's rule that the proposal is the
-only sink. **The name field wins**: the id and the title come from what was
-typed, whatever the proposal called itself, and the dialog says so in one line
-where the two differ. **The document that is written is the desk's after
-shaping** — applied to the frozen snapshot that was on screen, so what was
-shown is what was written.
-
-**A proposal belongs to the submission that produced it.** Pressing Propose
-again withdraws the previous one at the press, and so does an `error` after a
-proposal: an engine that proposes a document and then fails has said the work
-does not stand. So a second Propose whose prompt is refused, or which is
-stopped while the prompt is still being read, leaves nothing on offer — and
-Create is *held* rather than quietly falling back to a template nobody chose.
-Whatever the section is holding it for is in the button's own `title`: a run in
-flight, a refused prompt, a run that ended without a document, a proposal that
-could not be read as JSON data.
-
-**The runtime says whether a proposal is a pack, before either write.** The
-desk fills the four members the dialog asked about — the name, the id, the
-version and the description — and leaves everything else exactly as the model
-wrote it, `specVersion` included. Nothing is stripped and nothing is repaired
-in silence: what the assistant proposed is what the runtime is asked about. The
-exact bytes that would be written go to `validate`, Create is offered only
-where the answer is `valid` for those bytes, and a refusal shows the check
-strip's own sentence and **every** diagnostic the runtime returned, in the same
-rendering the Checks panel uses — `code`, `codeStability`, `layer`, `severity`,
-the message and the pointer, each as the runtime gave it and none of them
-reworded. Where the answer sets `diagnosticsTruncated`, the runtime stopped at
-its own limit and the desk says so in a line of its own naming that limit; the
-sentence is the desk's, and the number in it is the desk's copy of the
-runtime's cap rather than a figure the answer carries. A proposal is refused
-outright where the connection serves no `validate` to ask.
-
-**Losing the assistant ends the session**, it does not merely hide it: the key
-leaving this machine or the endpoint leaving the file stops the run through the
-run hook — one terminal event, one connection close — discards the proposal and
-holds Create with a sentence saying so. **A route change is a dismissal**: this
-dialog is mounted by the rail, above the route, so a Back or a Forward would
-otherwise leave it standing over another page with its run alive; it closes on
-one, exactly as Escape does. Closing ends the session and discards the proposal;
-nothing about it is persisted. Without an endpoint and a key the section is one
-line saying where those are configured, and the runtime's prompts still run in
-any chat client you already use.
-
-Two writes, in this order, and nothing is sent until everything that could
-refuse has been asked. The pack is written with `PUT /api/file`,
-`baseSha256: ""` and `createParents: true` — so a file already under that name
-is refused rather than overwritten, and **the missing configured parent
-directory** is created: `storage.packs.dir`, whatever it is set to and however
-deeply it nests, not the literal `packs/`. Then
-`jpack.json` is amended with one entry, written against the digest the read
-that answered the id question returned, so a change made while the dialog was
-open is refused rather than overwritten. Where the second write fails, the pack
-file is on disk and nothing names it: the dialog says exactly that and stays on
-screen to say it, because the file API has no delete verb and claiming an
-unwind would be worse than the residue.
+The template-based `CreatePackPage` remains in the source tree but is mounted by
+no route. Its example and empty-skeleton choices are not the current Create pack
+entry point.
 
 **A pack browser:**
 
 - `/packs` lists the project's packs in a pane beside the document, and
   `/packs/:id` reads one — the whole document, in the order the file writes it,
   with every member the file leaves out stated as left out, and links from it to
-  the what-if view and the test matrix. Described under
+  its Tests workspace. Described under
   [Pack view](#pack-view).
 
 Conditions use an indented tree with shared, plain-language labels for known
@@ -286,62 +208,34 @@ operators and fields. These are presentation mappings: exact keys, identifiers,
 operand types and author values remain unchanged. Technical details expose the
 original JSON. Unknown operators retain their original spelling.
 
-**An evaluation and trace view:**
+**Evaluate in the Tests workspace.** `/packs/:id/evaluate` and
+`/packs/:id/matrix` both mount the pack's Tests workspace. Create a case, supply
+facts and evidence availability, and run it explicitly. A case without an
+expectation runs `experimental_evaluate` as a rehearsal against the loaded pack
+snapshot; it does not append an audit record. Add an expected result to make the
+case a repeatable test.
 
-- `/packs/:id/evaluate` runs the pack over documents you supply, through the
-  runtime's `experimental_evaluate` tool, and renders the payload it returns.
+The workspace retains run history with the pack snapshot and case inputs. Open a
+run to inspect its observed result or its expected and actual test results,
+including handoff target assertions where supplied. Draft trial runs can be
+reviewed and reused as case inputs. A requested handoff does not establish that
+anything was delivered to its target.
 
-That view keeps three things apart, because the payload does:
-
-- The **disposition** is the portable JPS Core §8.3 answer and the authoritative
-  part of the payload. It gets the first panel and a frame of its own: kind,
-  outcome id, the retained reason set, and the handoff state with what triggered
-  it.
-- The **handoff target** is shown *beside* the disposition and never inside it,
-  because §8.3 keeps it outside one. It is what the pack configures. No delivery
-  is observed, and the desk claims none.
-- The **trace** is informative. It is rendered as the staged walk it is —
-  applicability, then exceptions, then rules, in the payload's own order — with
-  each entry's id, its condition verdict colour-coded across `true`, `false` and
-  `unknown`, the effect or outcome where the entry carries one, and badges for
-  `skipped`, `suppressed` and `onUnknown`. It decides nothing.
-
-The envelope panel reports the facts about the run rather than about the answer:
-the `experimental` flag, the specVersion the pack declares beside the
-evaluatorSpecVersion of the contract applied to it, the packId and packVersion
-read off the document that was evaluated, the bundled artifact digest, and
-`conformanceClaimReference` — displayed as what it is, a locator for the file
-that states the runtime's claim, and not a claim the payload itself makes.
-
-Nothing is invented: a member the payload omits is absent from the view rather
-than filled in, and a verdict is shown as the payload spells it. A refused
-evaluation carries no disposition at all, so a refusal is reported as its §8.4
-class and phase with the runtime's diagnostics, and never as a substitute
-answer.
-
-**A what-if loop.** `experimental_evaluate` takes the facts and evidence
-documents as JSON text rather than as paths, so the loop needs nothing from the
-chassis: edit the documents in the page, press **Re-evaluate**, and a *What
-changed* table puts the previous disposition beside the current one — kind,
-outcome id, reasons, handoff state, what triggered it, and the handoff target.
-Unchanged members are listed too, so the diff never hides what held. The trace
-is not diffed: a trace that moved while the disposition held is not a change in
-the answer.
-
-The two editors keep the tri-state the tool asks for. Leaving the evidence box
-unchecked omits the key entirely, which is what "no evidence document at all"
-means; a key present with an empty string would be a *supplied* empty document,
-and is refused as malformed-input.
+`PackEvaluate` and its `DispositionDiff` “What changed” table remain in the source
+tree and their tests, but no route mounts them. The current Tests workspace does
+not offer that page's previous-versus-current disposition comparison.
 
 **Pack tests and coverage:**
 
-- `/packs/:id/matrix` opens one pack’s saved cases. **Run tests** requests its matrix
-  through `experimental_test_packs` with that pack’s ID.
+- `/packs/:id/matrix` and `/packs/:id/evaluate` open one pack's saved cases.
+  **Run tests** calls `experimental_test_cases` with the loaded pack text and a
+  version 3 matrix of saved cases that have expectations. Results describe that
+  snapshot; they do not silently select a newer pack from disk.
 - The duplicate collection Tests page and **Run all tests** action have been removed.
   Legacy `/matrix` bookmarks redirect to `/packs` without running tests.
 - Opening a Tests page, changing files, window focus and reconnecting do not run
-  tests. Completed results are retained for the current connection and labeled
-  Last run. Diagnostics records command progress without input payloads.
+  tests. Completed runs are saved in the pack's test history with their input
+  snapshots. Diagnostics records command progress without input payloads.
 
 Two things are on that page, and they answer different questions.
 
