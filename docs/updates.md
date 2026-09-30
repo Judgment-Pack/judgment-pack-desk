@@ -49,10 +49,23 @@ CI uses the lock for actual Gateway lifecycle/PDF checks and Runner recovery and
 input-profile checks, plus Go tests, frontend tests and localization checks.
 A pushed `vX.Y.Z` tag runs that same CI before publishing. The packager requires a
 clean tree and that exact tag, fetches the locked commits, builds a complete
-bundle, and publishes `release-manifest.json` and `checksums.txt`. The manifest
-records component identities, platform, state compatibility epoch and every
-bundled file digest. Stable publishing is Linux/amd64 initially. The installer
-reports unavailable assets on other platforms rather than selecting another CPU.
+bundle for Linux/amd64, macOS/arm64 and macOS/amd64, and runs each archive on
+its native host before publication. The same packaging and smoke checks run on
+pull requests with a disposable, local-only tag; those artifacts are not releases.
+The release waits for all three platform checks before publishing once.
+
+Each archive has `release-manifest_<os>_<arch>.json` beside it and an internal
+`release-manifest.json`. A combined `checksums.txt` covers all archives and
+manifests. The historical public `release-manifest.json` remains an alias of the
+Linux manifest. Manifests record component identities, platform, state compatibility
+epoch and every bundled file digest. The installer selects the current OS and
+CPU, reports a missing archive instead of falling back, and checks the platform
+on staging, activation, rollback and every launch.
+
+macOS archives are not Developer ID signed or notarized; see the
+[macOS opening instructions](../README.md#release-platforms). Native smoke tests
+do not exercise Gatekeeper's downloaded-file dialogs. Windows has no published
+archive and remains untested; managed installation refuses non-POSIX hosts.
 
 ## Install and run a managed release
 

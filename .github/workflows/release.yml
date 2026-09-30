@@ -10,8 +10,13 @@ concurrency:
 jobs:
   compatibility:
     uses: ./.github/workflows/ci.yml
-  publish:
+  archives:
     needs: compatibility
+    uses: ./.github/workflows/release-build.yml
+    with:
+      tag: ${{ github.ref_name }}
+  publish:
+    needs: archives
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -19,34 +24,20 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v7
+      - uses: actions/download-artifact@v8
         with:
-          go-version: '1.26.x'
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.12'
-      - run: npm --prefix web ci
-      - name: Build the tested release bundle
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: python3 scripts/package-release.py "${RELEASE_TAG#v}" --output "$RUNNER_TEMP/release"
-      - name: Verify and smoke-test the built archive
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: python3 scripts/check-release.py "$RUNNER_TEMP/release" "${RELEASE_TAG#v}"
+          name: desk-release-complete
+          path: ${{ runner.temp }}/release
       - name: Publish once
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          notes="docs/releases/$RELEASE_TAG.md"
-          if test -f "$notes"; then
-            gh release create "$RELEASE_TAG" "$RUNNER_TEMP/release/"* --verify-tag --notes-file "$notes" --latest
+          notes="$RUNNER_TEMP/release-notes.md"
+          if test -f "docs/releases/$RELEASE_TAG.md"; then
+            cat "docs/releases/$RELEASE_TAG.md" > "$notes"
           else
-            gh release create "$RELEASE_TAG" "$RUNNER_TEMP/release/"* --verify-tag --generate-notes --latest
+            printf 'Desk %s\n' "$RELEASE_TAG" > "$notes"
           fi
+          cat docs/releases/platforms.md >> "$notes"
+          gh release create "$RELEASE_TAG" "$RUNNER_TEMP/release/"* --repo Judgment-Pack/judgment-pack-desk --verify-tag --notes-file "$notes" --latest

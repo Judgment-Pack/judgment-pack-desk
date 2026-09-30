@@ -82,8 +82,8 @@ def main():
         repos = {}
         for name, item in plan['components'].items():
             repos[name] = tmp / name; source(item, repos[name])
-        run(['python3', 'scripts/build-bundle.py', '--gateway-checkout', str(repos['gateway']), '--output', str(bundle)])
-        env = dict(os.environ, CGO_ENABLED='0', GOWORK='off')
+        env = dict(os.environ, CGO_ENABLED='0', GOWORK='off', GOOS=os_name, GOARCH=arch)
+        run(['python3', 'scripts/build-bundle.py', '--gateway-checkout', str(repos['gateway']), '--output', str(bundle)], env=env)
         for name in ('jpack-runner', 'jpack-source-worker'):
             run(['go', 'build', '-trimpath', '-ldflags', '-s -w -X github.com/Judgment-Pack/judgment-pack-runner/internal/buildinfo.releaseVersion=' + plan['components']['runner']['version'], '-o', str(bundle / name), './cmd/' + name], repos['runner'], env=env)
         version = plan['components']['runtime']['version'].lstrip('v')
@@ -108,6 +108,7 @@ def main():
         asset = output / ('judgment-pack-desk_' + args.version + '_' + os_name + '_' + arch + '.tar.gz')
         with tarfile.open(asset, 'w:gz') as archive:
             for item in sorted(bundle.iterdir()): archive.add(item, arcname=item.name)
-        shutil.copyfile(bundle / 'release-manifest.json', output / 'release-manifest.json')
-        (output / 'checksums.txt').write_text('\n'.join(hashlib.sha256(p.read_bytes()).hexdigest() + '  ' + p.name for p in (asset, output / 'release-manifest.json')) + '\n')
+        published_manifest = output / ('release-manifest_' + os_name + '_' + arch + '.json')
+        shutil.copyfile(bundle / 'release-manifest.json', published_manifest)
+        (output / 'checksums.txt').write_text('\n'.join(hashlib.sha256(p.read_bytes()).hexdigest() + '  ' + p.name for p in (asset, published_manifest)) + '\n')
 if __name__ == '__main__': main()

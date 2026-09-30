@@ -33,6 +33,7 @@ jobs:
           python3 scripts/component-releases_test.py
           python3 scripts/desk-update_test.py
           python3 scripts/package-release_test.py
+          python3 scripts/assemble-release_test.py
           python3 scripts/build-bundle_test.py
           python3 scripts/needle-check_test.py
           scripts/needle-check.sh .
@@ -144,3 +145,10 @@ jobs:
         run: |
           JPACK_RUNNER_TEST_BIN="$RUNNER_TEMP/jpack-runner" JPACK_BIN="$RUNNER_TEMP/jpack" \
             go test -race ./internal/desk -run 'TestJobs|TestRunnerInputProfiles' -count=1
+
+  release-archives:
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/release-build.yml
+    with:
+      tag: v0.0.0
+      snapshot: true

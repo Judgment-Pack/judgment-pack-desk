@@ -24,13 +24,18 @@ def main():
     archives = list(artifacts.glob('judgment-pack-desk_' + args.version + '_*.tar.gz'))
     if len(archives) != 1:
         raise ValueError('Expected exactly one platform archive')
+    platform_name = updater.host_platform()
+    suffix = platform_name.replace('/', '_')
+    if archives[0].name != 'judgment-pack-desk_' + args.version + '_' + suffix + '.tar.gz':
+        raise ValueError('Archive name does not match this smoke-test host')
+    manifest_name = 'release-manifest_' + suffix + '.json'
     expected = {}
     for line in (artifacts / 'checksums.txt').read_text().splitlines():
         digest, name = line.split()
         if name in expected or not updater.SHA.fullmatch(digest):
             raise ValueError('Invalid or duplicate checksum')
         expected[name] = digest
-    if set(expected) != {archives[0].name, 'release-manifest.json'}:
+    if set(expected) != {archives[0].name, manifest_name}:
         raise ValueError('Incomplete release checksums')
     for name, digest in expected.items():
         if updater.digest_file(artifacts / name) != digest:
@@ -38,7 +43,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix='desk-release-check-') as temp:
         bundle = Path(temp)
         updater.unpack(archives[0], bundle)
-        manifest = updater.verify(bundle, {'version': args.version, 'manifestDigest': expected['release-manifest.json']})
+        manifest = updater.verify(bundle, {'version': args.version, 'manifestDigest': expected[manifest_name]})
         plan = json.loads((ROOT / 'internal/releaseplan/components.json').read_text())
         for name, component in plan['components'].items():
             if manifest.get(name) != component:

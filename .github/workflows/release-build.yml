@@ -1,0 +1,85 @@
+name: Build Desk archives
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+      snapshot:
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  archive:
+    name: Archive (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux_amd64
+          - os: macos-15
+            platform: darwin_arm64
+          - os: macos-15-intel
+            platform: darwin_amd64
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.x'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Tag the disposable CI checkout for the packaging smoke test
+        if: inputs.snapshot
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: git tag "$RELEASE_TAG" HEAD
+      - name: Check native installer selection and platform refusals
+        run: python3 scripts/desk-update_test.py
+      - run: npm --prefix web ci
+      - name: Build the pinned native release bundle
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: python3 scripts/package-release.py "${RELEASE_TAG#v}" --output "$RUNNER_TEMP/release"
+      - name: Verify and run the archive on its native architecture
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: python3 scripts/check-release.py "$RUNNER_TEMP/release" "${RELEASE_TAG#v}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desk-release-${{ matrix.platform }}
+          path: ${{ runner.temp }}/release/*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+  assemble:
+    needs: archive
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: desk-release-*
+          path: ${{ runner.temp }}/platforms
+      - name: Check the complete platform set and combine checksums
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: python3 scripts/assemble-release.py "$RUNNER_TEMP/platforms" "${RELEASE_TAG#v}" --output "$RUNNER_TEMP/release"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desk-release-complete
+          path: ${{ runner.temp }}/release/*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
