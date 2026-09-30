@@ -3,9 +3,10 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { UnsavedChangesProvider } from '../shell/UnsavedChanges'
 import { StorageFiles } from './StorageFilesView'
+import { ConnectionRequestError, authorizeDrive } from '../connections/client'
 import { decodeText, encodeBytes, encodeEditedText } from '../connections/storage'
-const mocks=vi.hoisted(()=>({call:vi.fn()}))
-vi.mock('../connections/client',async()=>({...await vi.importActual('../connections/client'),connectionCall:mocks.call}))
+const mocks=vi.hoisted(()=>({call:vi.fn(),authorize:vi.fn()}))
+vi.mock('../connections/client',async()=>({...await vi.importActual('../connections/client'),connectionCall:mocks.call,authorizeDrive:mocks.authorize}))
 vi.mock('../config/DeskConfigProvider',()=>({useEffectiveConfig:()=>({desk:{localGateway:{status:'ready'}}})}))
 vi.mock('../connections/catalog',()=>({useConnections:()=>({loading:false,entries:['obsidian','google-drive'].map(id=>({descriptor:{id,operations:['files-list']},status:{data:{state:'connected'}}}))})}))
 const file={context:'scope-1',id:'notes/policy.txt',name:'policy.txt',kind:'file',sizeBytes:8,revision:'r1',mediaType:'text/plain',editable:true,deletable:true}
@@ -175,4 +176,18 @@ it("does not consume another desk's recovery hint",async()=>{
  open();await screen.findByRole('button',{name:/policy.txt/})
  expect(sessionStorage.getItem(other)).toBe(plan.id)
  expect(mocks.call.mock.calls.some(c=>c[0]==='files-status')).toBe(false)
+})
+
+it('offers explicit Drive reconnect after scope migration while preserving an edited buffer',async()=>{
+ render(<MemoryRouter><UnsavedChangesProvider><StorageFiles provider="google-drive"/></UnsavedChangesProvider></MemoryRouter>)
+ fireEvent.click(await screen.findByRole('button',{name:/policy.txt/}))
+ fireEvent.change(await screen.findByRole('textbox',{name:'File contents'}),{target:{value:'unsaved text'}})
+ mocks.call.mockRejectedValueOnce(new ConnectionRequestError('reconnect-required','google-drive'))
+ fireEvent.click(screen.getByRole('button',{name:'Search'}))
+ const reconnect=await screen.findByRole('button',{name:'Reconnect'})
+ expect(authorizeDrive).not.toHaveBeenCalled()
+ fireEvent.click(reconnect)
+ await waitFor(()=>expect(authorizeDrive).toHaveBeenCalledWith('connect',expect.any(AbortSignal),'google-drive',undefined))
+ expect((screen.getByRole('textbox',{name:'File contents'}) as HTMLTextAreaElement).value).toBe('unsaved text')
+ expect(mocks.call.mock.calls.some(c=>c[0]==='disconnect'||c[0]==='files-commit')).toBe(false)
 })

@@ -63,13 +63,15 @@ Local Drive setup is described separately below.
 ## Personal Google Drive
 
 The complete bundle includes gateway-owned connection and retrieval companions.
-In Admin → Storage & data, choose Google Drive → Set up. Register a Google Cloud
-Desktop app with Drive and Picker APIs enabled and choose its downloaded
+In Admin → Connections, choose Google Drive → Set up. Register a Google Cloud
+Desktop app with Google Drive API enabled and choose its downloaded
 credentials JSON. The gateway stores the registration privately. Then choose
 Manage → Connect, or Google Drive in the chat attachment menu, and complete
-Google consent. Select individual files through Google's browser picker.
+Google consent. Search and select individual files in Desk. An empty query shows recently
+changed files. Search metadata does not enter model context before selection.
 
-Only selected-file access is requested (`drive.file`). The gateway handles tokens,
+Whole-Drive access is requested (`drive`). Existing `drive.file` connections
+need explicit reconnection when the gateway reports `reconnect-required`. The gateway handles tokens,
 refresh, revocation and retrieval. Desk receives account display information and
 short-lived file grants, never Google access/refresh tokens. Disconnect removes
 local access and attempts upstream revocation; a failed revocation is reported.

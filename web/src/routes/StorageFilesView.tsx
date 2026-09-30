@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom'
 import { msg, systemMessage, useLocale } from '../i18n'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { useConnections } from '../connections/catalog'
-import { ConnectionRequestError } from '../connections/client'
+import { ConnectionRequestError, authorizeDrive } from '../connections/client'
 import { providerName } from '../connections/registry'
 import { decodeText, encodeBytes, encodeEditedText, storageCall, storageError, STORAGE_MAX_BYTES, type StorageFile, type StoragePage, type StorageRead, type StoragePlan } from '../connections/storage'
 import { activeDeskId } from '../desks/scope'
@@ -32,6 +32,7 @@ export function StorageFiles({provider}: {provider:string}) {
  const catalog = useConnections(available), entry = catalog.entries.find(item=>item.descriptor.id===provider)
  const ready = Boolean(available && entry?.status.data?.state==='connected' && entry.descriptor.operations.includes('files-list'))
  const title = providerName(provider, entry?.descriptor)
+ const [reconnect,setReconnect]=useState(false), reconnectTask=useRef<AbortController|null>(null)
  const [page,setPage]=useState<StoragePage>(), [folder,setFolder]=useState(''), [query,setQuery]=useState('')
  const [submitted,setSubmitted]=useState({folder:'',query:''})
  const [selected,setSelected]=useState<StorageFile>(), [creating,setCreating]=useState(false), [name,setName]=useState('')
@@ -47,8 +48,9 @@ export function StorageFiles({provider}: {provider:string}) {
  useDirtyGuard(dirty,msg('This file has unsaved changes that will be lost. Leave anyway?'),{name:creating?name:selected?.name,busy})
  const pendingKey=`jpack.storage-plan.v1:${activeDeskId || "default"}:${provider}`
  const remember=(value:StoragePlan|undefined)=>{setPlan(value);try {if(value)sessionStorage.setItem(pendingKey,value.id);else sessionStorage.removeItem(pendingKey)}catch{/* Optional recovery hint; Gateway owns the durable plan. */}}
- useEffect(()=>{alive.current=true; const el=frame.current;if(!el)return;const observer=new ResizeObserver(()=>setRoom(el.getBoundingClientRect().width));observer.observe(el);return()=>{alive.current=false;observer.disconnect()}},[])
- async function run(work:()=>Promise<void>) {if(lock.current)return;lock.current=true;setBusy(true);setError('');try{await work()}catch(e){if(alive.current)setError(storageError(e))}finally{lock.current=false;if(alive.current)setBusy(false)}}
+ useEffect(()=>{alive.current=true; const el=frame.current;if(!el)return;const observer=new ResizeObserver(()=>setRoom(el.getBoundingClientRect().width));observer.observe(el);return()=>{alive.current=false;reconnectTask.current?.abort();observer.disconnect()}},[])
+ async function run(work:()=>Promise<void>) {if(lock.current)return;lock.current=true;setBusy(true);setError('');try{await work()}catch(e){if(alive.current){setError(storageError(e));if(provider==='google-drive' && e instanceof ConnectionRequestError && e.reconnectRequired)setReconnect(true)}}finally{lock.current=false;if(alive.current)setBusy(false)}}
+ async function connectAgain(){void run(async()=>{const task=new AbortController();reconnectTask.current=task;try{await authorizeDrive('connect',task.signal,provider,entry?.descriptor.authorizationEndpoints);if(!alive.current)return;setReconnect(false);await list(submitted)}finally{if(reconnectTask.current===task)reconnectTask.current=null}})}
  async function list(q={folder,query},pageToken='') {const result=await storageCall<StoragePage>(provider,'files-list',{...q,pageToken});if(alive.current){setPage(result);setSubmitted(q)}}
  useEffect(()=>{if(!ready)return;void run(async()=>{
    let id:string|null=null, recoveryError:unknown
@@ -86,7 +88,7 @@ export function StorageFiles({provider}: {provider:string}) {
  async function prepare(action:'create'|'update'|'delete') {opener.current=document.activeElement as HTMLElement;void run(async()=>{const p=await storageCall<StoragePlan>(provider,'files-prepare',action==='delete'?{action,id:selected!.id,revision:selected!.revision,context:selected!.context}:{action,...(action==='create'?{folder:createFolder,name:name.trim(),context:createContext}:{id:selected!.id,revision:selected!.revision,context:selected!.context}),mediaType:media,contentBase64:currentContent()});remember(p);setTyped('');setReview(true)})}
  async function commit(check=false){if(!plan)return;void run(async()=>{let p:StoragePlan;try{p=await storageCall<StoragePlan>(provider,check?'files-status':'files-commit',{id:plan.id,...(!check&&plan.action==='delete'?{confirmation:typed}:{})})}catch(e){if(!check){remember({...plan,state:'needs-attention',error:'operation-uncertain'})}throw e}remember(p);if(p.state==='completed'){remember(undefined);setReview(false);clearEditor();setBrowsing(true);setNotice(msg('Change completed.'));await list(submitted)}})}
  function download(){if(base===undefined||!selected)return;const bytes=Uint8Array.from(atob(base),c=>c.charCodeAt(0));const url=URL.createObjectURL(new Blob([bytes],{type:'application/octet-stream'}));const link=document.createElement('a');link.href=url;link.download=selected.name.split('/').at(-1)!;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
- const blocked=busy||!ready||Boolean(plan), editor=selected||creating
+ const blocked=busy||!ready||reconnect||Boolean(plan), editor=selected||creating
  const status=plan?.state==='needs-attention'?msg('The result is uncertain. Check the file at its source before making another change.'):plan?.state==='refused'?msg('This change was refused. Reload the file before trying again.'):undefined
  return <>
   <div ref={frame} className={styles.frame} data-compact={compact||undefined} style={{'--files-width':`${paneWidth}px`} as CSSProperties}>
@@ -95,11 +97,12 @@ export function StorageFiles({provider}: {provider:string}) {
     <form className={own.search} onSubmit={e=>{e.preventDefault();void run(()=>list())}}>
      <label>{provider==='aws-s3'?msg('Prefix'):msg('Folder')}<Input value={folder} onChange={e=>setFolder(e.target.value)} disabled={busy} /></label>
      <label>{msg('Search files')}<Input value={query} onChange={e=>setQuery(e.target.value)} disabled={busy} /></label>
-     <div className={styles.editorActions}><Button type="submit" disabled={busy||!ready}>{msg('Search')}</Button><Button disabled={blocked} onClick={()=>void fresh()}>{msg('New file')}</Button></div>
-     <p className="meta">{provider==='google-drive'?msg('Only files authorized for this app. Search uses the Drive index.'):msg('Search matches file names within this location. Contents load only when opened.')}</p>
+     <div className={styles.editorActions}><Button type="submit" disabled={busy||!ready||reconnect}>{msg('Search')}</Button><Button disabled={blocked} onClick={()=>void fresh()}>{msg('New file')}</Button></div>
+     <p className="meta">{provider==='google-drive'?msg('Search uses the Drive index. Contents load only when opened.'):msg('Search matches file names within this location. Contents load only when opened.')}</p>
     </form>
     <div className={styles.fileScroll}>
      {!ready&&<p className="note">{catalog.loading?msg('Loading…'):msg('Connect a supported storage integration in Admin → Connections.')}</p>}
+     {reconnect && <div className="note"><p>{msg('Reconnect Google Drive to continue.')}</p><Button disabled={busy} onClick={()=>void connectAgain()}>{msg('Reconnect')}</Button></div>}
      {ready&&page&&<><ul className={styles.fileList}>{page.items.map(file=><li key={file.id}><button className={styles.fileEntry} disabled={busy} aria-current={selected?.id===file.id?true:undefined} onClick={()=>void choose(file)}>{file.kind==='folder'?<IconFolder/>:<IconDetails/>}<span className={styles.fileText}><span title={file.name}>{file.name}</span><small title={file.id}>{submitted.query?file.id:file.kind==='file'?formatStorageBytes(file.sizeBytes):msg('Folder')}</small></span></button></li>)}</ul>
       {page.items.length===0&&<p className="note">{msg('No files on this page.')}</p>}
       {page.truncated&&<p className="note note-warn">{msg('Results are incomplete. Narrow the folder or search.')}</p>}

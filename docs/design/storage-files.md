@@ -33,7 +33,8 @@ Deletion always opens the shared styled dialog and requires the exact filename,
 or full S3 object key. No browser `confirm`, blanket consent, recursive directory
 delete or model-call commit exists. Existing grants are not broadened. S3 IAM must
 separately allow PutObject/DeleteObject for writes; readonly credentials can still
-browse/read. Drive uses `drive.file`; it is not account-wide storage access.
+browse/read. Drive uses the whole-Drive `drive` scope as of Gateway v0.7.0.
+Its listings report `account-files`; search metadata is not model context.
 
 A lost mutation response offers **Check status**, which asks only for the durable
 Gateway state. It does not repeat a write. The Gateway claims a plan before sending

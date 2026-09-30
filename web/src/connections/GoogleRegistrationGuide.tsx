@@ -6,7 +6,7 @@ import styles from './GoogleRegistrationGuide.module.css'
 export function GoogleRegistrationGuide({ provider }: { provider: ConnectionProvider }) {
   useLocale()
   const name = provider === 'gmail' ? msg('Gmail') : msg('Google Drive')
-  const scope = `https://www.googleapis.com/auth/${provider === 'gmail' ? 'gmail.readonly' : 'drive.file'}`
+  const scope = `https://www.googleapis.com/auth/${provider === 'gmail' ? 'gmail.readonly' : 'drive'}`
   return <section className={styles.guide}>
     <ol className={styles.steps}>
       <li><h3>{msg('Create a Google Cloud project')}</h3>
@@ -14,7 +14,7 @@ export function GoogleRegistrationGuide({ provider }: { provider: ConnectionProv
         <a href="https://console.cloud.google.com/" target="_blank" rel="noreferrer">{msg('Open Google Cloud Console')}</a>
       </li>
       <li><h3>{msg('Enable the APIs')}</h3>
-        <p>{provider === 'gmail' ? msg('In APIs & Services → Library, enable Gmail API.') : msg('In APIs & Services → Library, enable Google Drive API and Google Picker API.')}</p>
+        <p>{provider === 'gmail' ? msg('In APIs & Services → Library, enable Gmail API.') : msg('In APIs & Services → Library, enable Google Drive API.')}</p>
       </li>
       <li><h3>{msg('Configure the consent screen')}</h3>
         <p>{msg('In Google Auth Platform → Branding, enter your app name and contact email.')}</p>
@@ -24,7 +24,8 @@ export function GoogleRegistrationGuide({ provider }: { provider: ConnectionProv
       </li>
       <li><h3>{msg('Choose access permissions')}</h3>
         <p>{msg('In Data Access, add this scope:')}</p><code>{scope}</code>
-        <p>{provider === 'gmail' ? msg('Gmail read-only access lets Desk read email; only messages you select are attached to chat.') : msg('Desk uses this permission for files you select in Google Picker.')}</p>
+        <p>{provider === 'gmail' ? msg('Gmail read-only access lets Desk read email; only messages you select are attached to chat.') : msg('This permission allows access to your whole Drive. Only files you select in Desk are attached to chat.')}</p>
+        {provider !== 'gmail' && <p>{msg('Google restricts this scope. Personal use, internal organization use and named test users can qualify for verification exceptions. Public apps require verification.')}</p>}
       </li>
       <li><h3>{msg('Create desktop credentials')}</h3>
         <p>{msg('In Google Auth Platform → Clients, choose Create client, select Desktop app, then download the credentials JSON.')}</p>
@@ -33,6 +34,6 @@ export function GoogleRegistrationGuide({ provider }: { provider: ConnectionProv
         <p>{msg('Choose credentials file below to upload the downloaded JSON. Then open the chat + menu and select {{provider}} to sign in with Google.', { provider: name })}</p>
       </li>
     </ol>
-    <footer className={styles.footer}><a href="https://developers.google.com/workspace/guides/create-credentials#desktop-app" target="_blank" rel="noreferrer">{msg('Official Google documentation')}</a></footer>
+    <footer className={styles.footer}><a href={provider === 'gmail' ? 'https://developers.google.com/workspace/guides/create-credentials#desktop-app' : 'https://developers.google.com/workspace/drive/api/guides/api-specific-auth'} target="_blank" rel="noreferrer">{msg('Official Google documentation')}</a></footer>
   </section>
 }

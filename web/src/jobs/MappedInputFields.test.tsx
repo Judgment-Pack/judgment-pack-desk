@@ -2,6 +2,12 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Tooltip } from 'radix-ui'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import type { ComponentProps } from 'react'
+import type { DriveFilePicker } from '../connections/DriveFilePicker'
+const picker=vi.hoisted(()=>({props:undefined as ComponentProps<typeof DriveFilePicker>|undefined}))
+vi.mock('../connections/DriveFilePicker',()=>({DriveFilePicker:(props:ComponentProps<typeof DriveFilePicker>)=>{picker.props=props;return null}}))
+import { authorizeDrive, ConnectionRequestError } from '../connections/client'
+vi.mock('../connections/client',async original=>({...await original<object>(),authorizeDrive:vi.fn()}))
 import { MappedInputFields } from './MappedInputFields'
 import { jobsAPI } from './client'
 import { localSnapshot } from './sourceInputs'
@@ -90,4 +96,39 @@ it('requires pending request edits to be applied before replacing the source map
  fireEvent.click(screen.getByRole('button',{name:'Apply configuration'}))
  await waitFor(()=>expect((screen.getByRole('button',{name:'Add source'}) as HTMLButtonElement).disabled).toBe(false))
  expect(JSON.parse((screen.getByLabelText('Mapping JSON') as HTMLTextAreaElement).value).sources[0].arguments.arguments).toEqual({case:'pending'})
+})
+
+it('maps an explicitly selected Drive resource to fileId only for the selected mapping source',async()=>{
+ await view({...mapping,sources:[{name:'drive',kind:'selected-file',provider:'google-drive',read:{copy:{facts:[],evidence:[]}}}]})
+ fireEvent.click(screen.getByRole('button',{name:'Choose from Google Drive'}))
+ expect(prepareMappedInputs).not.toHaveBeenCalled()
+ await act(()=>picker.props!.onSelect([{resourceId:'chosen',grant:'a'.repeat(64)}],new AbortController().signal))
+ await screen.findByText('Selected')
+ fireEvent.click(screen.getByRole('button',{name:'Read sources and preview'}))
+ await waitFor(()=>expect(prepareMappedInputs).toHaveBeenCalledWith(expect.objectContaining({selections:{drive:{fileId:'chosen',grant:'a'.repeat(64)}}})))
+})
+
+it.each(['complete','cancel','unmount'] as const)('offers explicit reconnect for delayed Drive preview failure and handles %s without losing case edits',async action=>{
+ const fixed={...mapping,sources:[{name:'drive',kind:'selected-file' as const,provider:'google-drive' as const,read:{copy:{facts:[],evidence:[]}}}]}
+ const ui=await view(fixed)
+ fireEvent.click(screen.getByText('Case inputs (JSON)',{selector:'summary span'}));fireEvent.change(screen.getByLabelText('Case inputs (JSON)'),{target:{value:'{"facts":{"score":8}}'}})
+ fireEvent.click(screen.getByRole('button',{name:'Choose from Google Drive'}))
+ await act(()=>picker.props!.onSelect([{resourceId:'chosen',grant:'a'.repeat(64)}],new AbortController().signal))
+ vi.mocked(prepareMappedInputs).mockRejectedValue(new ConnectionRequestError('reconnect-required','google-drive'))
+ fireEvent.click(screen.getByRole('button',{name:'Read sources and preview'}))
+ const reconnect=await screen.findByRole('button',{name:'Reconnect'})
+ expect(authorizeDrive).not.toHaveBeenCalled()
+ let finish!:()=>void
+ vi.mocked(authorizeDrive).mockReturnValue(new Promise(resolve=>{finish=resolve}))
+ fireEvent.click(reconnect)
+ const signal=vi.mocked(authorizeDrive).mock.calls[0]![1]
+ if(action==='cancel')fireEvent.click(screen.getByRole('button',{name:'Cancel'}))
+ if(action==='unmount')ui.unmount()
+ if(action!=='complete')expect(signal.aborted).toBe(true)
+ await act(async()=>finish())
+ if(action==='unmount')return
+ expect((screen.getByLabelText('Case inputs (JSON)') as HTMLTextAreaElement).value).toBe('{"facts":{"score":8}}')
+ expect(screen.queryByText('Mapped inputs')).toBeNull()
+ if(action==='cancel'){expect(screen.getByText('Selected')).toBeTruthy();expect(screen.getByRole('button',{name:'Reconnect'})).toBeTruthy()}
+ else {expect(screen.queryByText('Selected')).toBeNull();expect(screen.getByText('This selection expired. Search again and reselect your sources.')).toBeTruthy()}
 })

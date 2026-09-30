@@ -1,10 +1,11 @@
 import type { AttachmentDestination } from "../chat/useChatAttachments"
 import { createContext, useContext, useEffect } from 'react'
 import type { ConnectionDescriptor } from './catalog'
-import type { ConnectionProvider } from './client'
+import type { ConnectionProvider, SourceSelection } from './client'
 
 /** Metadata only. The shell owns the temporary surface, not a chat's portal. */
 export interface ConnectionPaneRequest {
+ selection?: { limit: 1; onSelect: (items: SourceSelection[], signal: AbortSignal) => Promise<void> }
  purpose?: 'job-source'
  onConnected?: (provider: ConnectionProvider) => void
  destination?: AttachmentDestination

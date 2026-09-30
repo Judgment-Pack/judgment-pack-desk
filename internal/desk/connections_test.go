@@ -81,7 +81,7 @@ func TestCancelDoesNotStartALocalCompanionAfterGatewaySwitch(t *testing.T) {
 func TestGmailRoutesStayAuthenticatedAndCannotFallback(t *testing.T) {
 	s, ts, _ := assistantServer(t)
 	writeDeskConfig(t, s, researchDeskFile("http://127.0.0.1:1"))
-	for _, path := range []string{"/api/connections/gmail/search", "/api/connections/gmail/select", "/api/connections/gmail/configure"} {
+	for _, path := range []string{"/api/connections/gmail/search", "/api/connections/gmail/select", "/api/connections/gmail/configure", "/api/connections/search", "/api/connections/select", "/api/connections/google-drive/search", "/api/connections/google-drive/select"} {
 		request, _ := http.NewRequest("POST", ts.URL+path, strings.NewReader(`{}`))
 		response, err := ts.Client().Do(request)
 		if err != nil {
@@ -96,7 +96,7 @@ func TestGmailRoutesStayAuthenticatedAndCannotFallback(t *testing.T) {
 			t.Fatal(path, status)
 		}
 	}
-	for _, path := range []string{"/api/connections/gmail/send", "/api/connections/gmail/pick", "/api/connections/google-drive/search"} {
+	for _, path := range []string{"/api/connections/gmail/send", "/api/connections/gmail/pick", "/api/connections/google-drive/pick", "/api/connections/pick"} {
 		status, _ := sendJSON(t, ts, "POST", path, map[string]string{})
 		if status != 400 {
 			t.Fatal(path, status)

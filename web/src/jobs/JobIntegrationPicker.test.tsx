@@ -11,7 +11,7 @@ vi.mock('./client',()=>({jobsAPI:vi.fn().mockResolvedValue({gatewayProfiles:['re
 const entry:ProfileEntry={digest:'digest',profile:{id:'registry',shape:'mcp',source:'registry',class:'record',authority:'gateway',publicKey:'key',adapter:{name:'mcp',version:'1',digest:'digest'},endpoint:null,tools:['read_case']}}
 beforeEach(()=>{
  mock.config={desk:{localGateway:{status:'ready'}},config:{research:{gateway:{authority:'gateway',signer:{public:'key'}},documents:{enabled:true},managedLocal:true}}}
- mock.catalog.mockReturnValue({entries:[{descriptor:{id:'google-drive',registration:'google-desktop',operations:['connect'],selection:'browser-picker'},status:{data:{state:'not-connected'}}}],loading:false,isError:false,refetch:vi.fn()})
+ mock.catalog.mockReturnValue({entries:[{descriptor:{id:'google-drive',registration:'google-desktop',operations:['connect'],selection:'source-search'},status:{data:{state:'not-connected'}}}],loading:false,isError:false,refetch:vi.fn()})
 })
 afterEach(()=>{cleanup();vi.clearAllMocks()})
 function view(profiles=[entry],disabled=false){const onPick=vi.fn();render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><JobIntegrationPicker profiles={profiles} disabled={disabled} onPick={onPick}/></QueryClientProvider>);return onPick}

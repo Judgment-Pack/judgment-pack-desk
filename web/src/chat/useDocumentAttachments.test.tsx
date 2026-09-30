@@ -10,7 +10,7 @@ import { readDocumentRecord } from '../documents/record'
 import partial from '../documents/__fixtures__/partial-ocr-failed.json'
 const mocked = vi.hoisted(() => ({ ingest: vi.fn(), load: vi.fn(), pick: vi.fn(), drive: vi.fn() }))
 vi.mock('../documents/client', async original => ({...await original<typeof import('../documents/client')>(), ingestDocument:mocked.ingest,loadDocument:mocked.load,ingestDrive:mocked.drive}))
-vi.mock('../connections/client', () => ({ authorizeDrive: mocked.pick }))
+vi.mock('../connections/client', async original => ({...await original<object>(), authorizeDrive:mocked.pick}))
 const stores: ChatStore[] = []
 afterEach(()=>{cleanup();stores.forEach(s=>s.dispose());stores.length=0;sessionStorage.clear();vi.clearAllMocks()})
 async function setup(enabled = true) {
@@ -73,7 +73,7 @@ it('requires consent before using partial extraction and re-verifies before ever
 
 it('refuses Drive selection before consent when document processing is disabled', async () => {
  const s = await setup(false)
- await act(() => s.result.current.attachDrive())
+ await act(() => s.result.current.attachDrive([{fileId:'selected-file',grant:'ab'.repeat(32)}]))
  expect(mocked.pick).not.toHaveBeenCalled()
  expect(mocked.drive).not.toHaveBeenCalled()
  expect(s.result.current.error).toContain('Enable document processing')
@@ -84,7 +84,7 @@ it.each(['cancel', 'switch', 'unmount'] as const)('does not attach a Drive resul
  let finish!: (value: unknown) => void
  mocked.drive.mockReturnValue(new Promise(resolve => { finish = resolve }))
  let work!: ReturnType<ReturnType<typeof useChatAttachments>['attachDrive']>
- await act(async () => { work = s.result.current.attachDrive(); await Promise.resolve() })
+ await act(async () => { work = s.result.current.attachDrive([{fileId:'selected-file',grant:'ab'.repeat(32)}]); await Promise.resolve() })
  const signal = mocked.drive.mock.calls[0]![2] as AbortSignal
  if (how === 'cancel') act(() => s.result.current.cancel())
  if (how === 'switch') {const other=s.store.startChat({id:'other',path:'other.json',digest:'x'});s.rerender({id:other.id})}
