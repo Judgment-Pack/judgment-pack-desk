@@ -244,7 +244,13 @@ export function CaseEditor({
     if (details.open && body.current) body.current.scrollTop = scrollPosition.current
   }, [details.open])
   const [invalid, setInvalid] = useState<Record<string, boolean>>({})
-  const valid = !Object.values(invalid).some(Boolean)
+  const [targetRemoved, setTargetRemoved] = useState(false)
+  const target = value.row.expectedHandoffTarget
+  const targetValid = target === undefined || target === null ||
+    (object(target) && typeof target.kind === 'string' && target.kind.length > 0 &&
+      typeof target.name === 'string' && target.name.length > 0)
+  const jsonValid = !Object.values(invalid).some(Boolean)
+  const valid = jsonValid && targetValid
   useEffect(()=>{onUnwritten?.(!valid);return()=>onUnwritten?.(false)},[valid,onUnwritten])
   const validity = (key: string) => (ok: boolean) =>
     setInvalid((prior) => (prior[key] === !ok ? prior : { ...prior, [key]: !ok }))
@@ -255,6 +261,7 @@ export function CaseEditor({
   const outcomes = Array.isArray(doc.outcomes) ? doc.outcomes.filter(object) : []
   const evidence = Array.isArray(doc.evidenceRequirements) ? doc.evidenceRequirements.filter(object) : []
   const expected = object(row.expectedDisposition) ? row.expectedDisposition : undefined
+  const requestsHandoff = expected && object(expected.handoff) && expected.handoff.state === 'requested'
   const selected = row.expectedErrorClass
     ? 'refusal'
     : expected?.kind === 'outcome'
@@ -480,7 +487,6 @@ export function CaseEditor({
                       delete next.expectedDisposition
                       delete next.expectedErrorClass
                       delete next.expectedErrorPhase
-                      delete next.expectedHandoffTarget
                       if (v.startsWith('outcome:'))
                         next.expectedDisposition = {
                           kind: 'outcome',
@@ -500,6 +506,15 @@ export function CaseEditor({
                           reasons: ['unknown'],
                           handoff: { state: 'none' },
                         }
+                      if (object(next.expectedDisposition)) {
+                        if (requestsHandoff)
+                          next.expectedDisposition.handoff = {
+                            state: 'requested', triggeredBy: next.expectedDisposition.reasons,
+                          }
+                      } else if (Object.hasOwn(next, 'expectedHandoffTarget')) {
+                        delete next.expectedHandoffTarget
+                        setTargetRemoved(true)
+                      }
                       if (v === 'refusal') next.expectedErrorClass = 'malformed-input'
                       setInvalid((prior) => ({ ...prior, expectation: false, triggers: false }))
                       patch({ row: next })
@@ -546,24 +561,61 @@ export function CaseEditor({
                         { value: 'none', label: msg('No handoff') },
                         { value: 'requested', label: msg('Handoff requested') },
                       ]}
-                      onValueChange={(v) =>
-                        patchRow({
-                          expectedDisposition: {
-                            ...expected,
-                            handoff:
-                              v === 'none'
-                                ? { state: 'none' }
-                                : {
-                                    state: 'requested',
-                                    triggeredBy: Array.isArray(expected.reasons) ? expected.reasons : [],
-                                  },
+                      onValueChange={(v) => {
+                        const next = { ...row, expectedDisposition: {
+                          ...expected,
+                          handoff: v === 'none' ? { state: 'none' } : {
+                            state: 'requested',
+                            triggeredBy: Array.isArray(expected.reasons) ? expected.reasons : [],
                           },
-                        })
-                      }
+                        } }
+                        // null asserts no target and remains meaningful without a handoff.
+                        if (v === 'none' && target !== undefined && target !== null) {
+                          delete next.expectedHandoffTarget
+                          setTargetRemoved(true)
+                        }
+                        patch({ row: next })
+                      }}
                     />
                   )}
                 </Field>
               )}
+              {(requestsHandoff || Object.hasOwn(row, 'expectedHandoffTarget')) && (
+                <>
+                  <Field label={msg('Expected handoff target')} hint={msg('Kind and name must match exactly. This does not assert delivery.')}>
+                    {(w) => (
+                      <Select {...w} value={target === undefined ? 'unchecked' : target === null ? 'none' : 'named'}
+                        options={[
+                          { value: 'unchecked', label: msg('Do not check the target') },
+                          { value: 'none', label: msg('Expect no target') },
+                          { value: 'named', label: msg('Expect a named target') },
+                        ]}
+                        onValueChange={(v) => {
+                          const next = { ...row }
+                          if (v === 'unchecked') delete next.expectedHandoffTarget
+                          else next.expectedHandoffTarget = v === 'none' ? null : { kind: '', name: '' }
+                          setTargetRemoved(false)
+                          patch({ row: next })
+                        }}
+                      />
+                    )}
+                  </Field>
+                  {target !== undefined && target !== null && (
+                    <>
+                      <Field label={msg('Target kind')}>
+                        {(w) => <Input {...w} required value={object(target) && typeof target.kind === 'string' ? target.kind : ''}
+                          onChange={(e) => patchRow({ expectedHandoffTarget: { ...(object(target) ? target : {}), kind: e.target.value } })} />}
+                      </Field>
+                      <Field label={msg('Target name')}>
+                        {(w) => <Input {...w} required value={object(target) && typeof target.name === 'string' ? target.name : ''}
+                          onChange={(e) => patchRow({ expectedHandoffTarget: { ...(object(target) ? target : {}), name: e.target.value } })} />}
+                      </Field>
+                    </>
+                  )}
+                  {!targetValid && <p role="alert">{msg('Enter both a target kind and a target name.')}</p>}
+                </>
+              )}
+              {targetRemoved && <p role="status">{msg('The expected handoff target assertion was removed because the result no longer requests a handoff.')}</p>}
               {expected && object(expected.handoff) && expected.handoff.state === 'requested' && (
                 <JsonInput
                   label={msg('Handoff triggers')}
@@ -641,7 +693,7 @@ export function CaseEditor({
               ))}
             </div>
           </Disclosure>
-          {!valid && <p role="alert">{msg('Correct the invalid JSON field before saving or running.')}</p>}
+          {!jsonValid && <p role="alert">{msg('Correct the invalid JSON field before saving or running.')}</p>}
           {error && (
             <p role="alert" className={styles.error}>
               {error}
