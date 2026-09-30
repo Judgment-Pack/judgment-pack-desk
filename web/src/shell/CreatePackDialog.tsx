@@ -54,6 +54,7 @@ import { useValidate } from '../mcp/queries'
 import { anchor, layersReached, truncationNote } from '../packs/checks'
 import { DiagnosticList } from '../packs/DiagnosticList'
 import { useIdleCheck } from '../packs/edit/useIdleCheck'
+import { EVALUATOR_SPEC_VERSION } from '../mcp/evaluatorVersion'
 import { RuntimeRefusal, useExample, useExampleListing, useSchema } from '../mcp/starters'
 import {
   existingPackKeys,
@@ -472,6 +473,10 @@ export function CreatePackDialog({
       return { problem: reasonOf(cause) }
     }
   }, [source, name, description, slug, idBase])
+  const redeclarationNotice = source?.kind === 'template' && !isEmpty && (() => {
+    try { return JSON.parse(source.text).specVersion === '0.1.0-draft' }
+    catch { return false }
+  })() ? msg('This example will declare specVersion {{version}} for the installed evaluator. No rules or other policy fields are changed.', { version: EVALUATOR_SPEC_VERSION }) : undefined
   const shapedText = proposed !== undefined && 'text' in proposed ? proposed.text : undefined
   // The editor's own instrument: a call per keystroke is a call per keystroke,
   // so what is sent is a snapshot the field settles on, and `behind` is what
@@ -499,7 +504,9 @@ export function CreatePackDialog({
             : checked.data === undefined || checked.data.checkedBytes !== shapedText
               ? msg(CHECKING)
               : checked.data.report.status === 'valid'
-                ? undefined
+                ? JSON.parse(proposed.text).specVersion === EVALUATOR_SPEC_VERSION
+                  ? undefined
+                  : msg('This draft must declare specVersion {{version}} before it can be finalized. Return to the draft and recheck it.', { version: EVALUATOR_SPEC_VERSION })
                 : msg("The runtime will not call this document a pack — {{value0}}", { value0: layersReached(checked.data.report, msg).text })
 
   /**
@@ -1025,6 +1032,7 @@ export function CreatePackDialog({
               <p className={flow.hint}><Message text={"Or research first: <0/> lets the assistant search and read official pages through the gateway, cite them, and test the draft before you create it."} slots={[<ButtonLink to="/create-pack/research" variant="inline">{msg("Research and draft with sources")}</ButtonLink>]} /></p>
             </> : null}
             </FieldGroup>
+            {redeclarationNotice && <p role="status">{redeclarationNotice}</p>}
             {draft !== undefined && <p className={flow.hint}>{msg("Your draft is retained. Edit its name, description, and other fields in Build → Full document.")}</p>}
           </>}
           {/*
@@ -1136,6 +1144,7 @@ export function CreatePackDialog({
           )}
         </Field>
 
+        {redeclarationNotice && <p role="status">{redeclarationNotice}</p>}
         {renamed && <p className="quiet">{msg(RENAMED)}</p>}
         {proposalRefusal !== undefined && <p id={createWhyHere === proposalRefusal ? createHelpId : undefined} className="quiet">{proposalRefusal}</p>}
         {/*

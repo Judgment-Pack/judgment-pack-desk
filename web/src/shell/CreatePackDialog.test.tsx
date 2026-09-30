@@ -1572,3 +1572,66 @@ describe('the create page’s own steps', () => {
     expect((screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement).disabled).toBe(true)
   })
 })
+
+describe('the evaluator version of newly written packs', () => {
+  const legacy = JSON.stringify({ ...JSON.parse(TEMPLATE), specVersion: '0.1.0-draft' })
+  function pinnedRuntime() {
+    return stubClient({
+      list_examples: () => ({ text: EXAMPLES }),
+      get_example: () => ({ text: legacy }),
+      get_schema: (args) => ({ text: args.spec_version === '0.2.0-draft' ? SCHEMA : SCHEMA.replace('0.2.0-draft', '0.1.0-draft') }),
+      validate: () => ({ text: JSON.stringify({ status: 'valid', layers: [], diagnostics: [] }) }),
+    })
+  }
+  it.each(['dialog', 'page'] as const)('re-declares the legacy example and discloses it in %s presentation', async presentation => {
+    const sent = serveProject({ project: PROJECT }), stub = pinnedRuntime()
+    renderDialog(stub, { ...FULL_CAPS, validateSupported: true }, effectiveConfig(undefined), { presentation })
+    fireEvent.change(screen.getByLabelText('Name (required)'), { target: { value: 'Versioned example' } })
+    expect(await screen.findByText(/This example will declare specVersion 0.2.0-draft/)).toBeTruthy()
+    if (presentation === 'page') await reviewHandedDraft()
+    else await waitFor(() => expect(createButton().disabled).toBe(false))
+    fireEvent.click(createButton())
+    await waitFor(() => expect(sent.length).toBe(2))
+    const written = JSON.parse(sent[0]!.body.content as string)
+    expect(written.specVersion).toBe('0.2.0-draft')
+    expect(written.rules).toEqual(JSON.parse(legacy).rules)
+    expect(written.outcomes).toEqual(JSON.parse(legacy).outcomes)
+    expect(stub.calls.find(call => call.name === 'get_example')!.args).toEqual({ name: 'minimal-expense-approval' })
+  })
+  it.each(['dialog', 'page'] as const)('requests the evaluator schema and writes its declaration for the skeleton in %s', async presentation => {
+    const sent = serveProject({ project: PROJECT }), stub = pinnedRuntime()
+    renderDialog(stub, { schemaSupported: true, exampleSupported: false, validateSupported: true }, effectiveConfig(undefined), { presentation })
+    fireEvent.change(screen.getByLabelText('Name (required)'), { target: { value: 'Empty decision' } })
+    if (presentation === 'page') await reviewHandedDraft()
+    else await waitFor(() => expect(createButton().disabled).toBe(false))
+    fireEvent.click(createButton())
+    await waitFor(() => expect(sent.length).toBe(2))
+    expect(stub.calls.find(call => call.name === 'get_schema')!.args).toEqual({ spec_version: '0.2.0-draft' })
+    expect(JSON.parse(sent[0]!.body.content as string).specVersion).toBe('0.2.0-draft')
+  })
+  it.each(['0.2.0-draft', '0.1.0-draft'])('review finalization with declaration %s only writes an evaluator-compatible draft', async specVersion => {
+    const sent = serveProject({ project: PROJECT }), stub = pinnedRuntime(), onSaved = vi.fn()
+    const router = createMemoryRouter([{ path: '*', element:
+      <McpContext.Provider value={connected({ client: stub.client, ...FULL_CAPS, validateSupported: true })}>
+        <DeskConfigFixture value={effectiveConfig(undefined)}>
+          <CreatePackDialog open presentation="review" onOpenChange={() => {}} onSaved={onSaved}
+            reviewDraft={{ name: 'Reviewed example', description: '', unknowns: [], document: { ...JSON.parse(TEMPLATE), specVersion } }} />
+        </DeskConfigFixture>
+      </McpContext.Provider>
+    }])
+    render(<QueryClientProvider client={testQueryClient()}><RouterProvider router={router}/></QueryClientProvider>)
+    if (specVersion === '0.1.0-draft') {
+      expect(await screen.findByText(/This draft must declare specVersion/)).toBeTruthy()
+      expect(createButton().disabled).toBe(true)
+      fireEvent.click(createButton())
+      expect(sent).toEqual([])
+      expect(onSaved).not.toHaveBeenCalled()
+    } else {
+      await waitFor(() => expect(createButton().disabled).toBe(false))
+      fireEvent.click(createButton())
+      await waitFor(() => expect(sent.length).toBe(2))
+      expect(JSON.parse(sent[0]!.body.content as string).specVersion).toBe('0.2.0-draft')
+      expect(stub.calls.some(call => call.name === 'validate' && call.args.document === sent[0]!.body.content)).toBe(true)
+    }
+  })
+})

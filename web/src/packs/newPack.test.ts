@@ -1,3 +1,5 @@
+import { redeclareExample } from './newPack'
+import { EVALUATOR_SPEC_VERSION } from '../mcp/evaluatorVersion'
 /**
  * The slug, the collision, and the two ways a first document is arrived at.
  *
@@ -474,5 +476,21 @@ describe('emptyPackFrom', () => {
     expect(document.title).toBe('Vendor Onboarding')
     expect(document.id).toBe('https://example.invalid/judgment-packs/vendor-onboarding')
     expect(document.version).toBe('0.1.0')
+  })
+})
+
+describe('legacy example re-declaration', () => {
+  it('changes only specVersion and leaves the source untouched', () => {
+    const original = Object.freeze({ specVersion: '0.1.0-draft', title: 'Example',
+      rules: [{ id: 'rule', condition: { op: 'fact', path: '/x' } }], extra: { retained: true } })
+    const next = redeclareExample(original)
+    expect(next).toEqual({ ...original, specVersion: EVALUATOR_SPEC_VERSION })
+    expect(next.rules).toBe(original.rules)
+    expect(next.extra).toBe(original.extra)
+    expect(original.specVersion).toBe('0.1.0-draft')
+  })
+  it('does not repair an unknown declaration', () => {
+    const source = { specVersion: '99' }
+    expect(redeclareExample(source)).toBe(source)
   })
 })

@@ -14,6 +14,7 @@
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { useQuery, type UseQueryResult } from '@tanstack/react-query'
 import { useMcp } from './McpProvider'
+import { EVALUATOR_SPEC_VERSION } from './evaluatorVersion'
 
 /** One example, as `list_examples` reports it. */
 export interface ExampleSummary {
@@ -100,8 +101,8 @@ export function useExample(name: string | undefined): UseQueryResult<string, Err
 export function useSchema(enabled: boolean): UseQueryResult<string, Error> {
   const { client, status, schemaSupported } = useMcp()
   return useQuery({
-    queryKey: ['get_schema'],
+    queryKey: ['get_schema', EVALUATOR_SPEC_VERSION],
     enabled: enabled && status === 'ready' && client !== null && schemaSupported,
-    queryFn: ({ signal }) => callText(client!, 'get_schema', {}, signal)
+    queryFn: ({ signal }) => callText(client!, 'get_schema', { spec_version: EVALUATOR_SPEC_VERSION }, signal)
   })
 }
