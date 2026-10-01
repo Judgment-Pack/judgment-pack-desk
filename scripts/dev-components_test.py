@@ -2,6 +2,7 @@
 """Companion drift, cache verification and failed-update isolation."""
 import copy
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -236,6 +237,23 @@ class IdentityTests(unittest.TestCase):
                     (root / 'scripts' / name).write_text(name + ' changed')
                     self.assertNotEqual(REAL_IDENTITY(plan), original, name)
                     (root / 'scripts' / name).write_text(name)
+
+
+
+class CommandTests(unittest.TestCase):
+    def test_an_argument_prints_usage_and_never_builds(self):
+        for argv, code in [(['--help'], 0), (['-h'], 0), (['--rebuild'], 2), (['--help', 'x'], 2)]:
+            with self.subTest(argv=argv), patch.object(c, 'synchronize') as synchronize, \
+                    patch('sys.stderr', new_callable=io.StringIO) as err:
+                self.assertEqual(c.main(argv), code)
+                synchronize.assert_not_called()
+                self.assertTrue(err.getvalue().startswith('usage: dev-components.py'))
+
+    def test_no_argument_synchronizes_and_prints_the_directory(self):
+        with patch.object(c, 'synchronize', return_value=Path('/set')), \
+                patch('sys.stdout', new_callable=io.StringIO) as out:
+            self.assertEqual(c.main([]), 0)
+        self.assertEqual(out.getvalue(), '/set\n')
 
 
 if __name__ == '__main__':

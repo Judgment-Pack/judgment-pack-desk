@@ -171,5 +171,21 @@ def install(bundle, destination):
         raise RuntimeError('Copied companions failed verification; the running Desk is unchanged.')
 
 
-if __name__ == '__main__':
+USAGE = '''usage: dev-components.py
+
+Builds, or reuses, the companions the component lock pins, and prints their
+directory. It takes no arguments.'''
+
+
+def main(argv):
+    # An argument never starts a build: a mistyped option would otherwise fetch
+    # and build every companion.
+    if argv:
+        print(USAGE, file=sys.stderr)
+        return 0 if argv in (['-h'], ['--help']) else 2
     print(synchronize())
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))
