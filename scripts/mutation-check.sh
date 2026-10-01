@@ -5353,12 +5353,8 @@ export function assistantTransport(id: string): Transport {
     this.settleReview(notPassing)' \
     '    this.settleReview(notPassing)'
   mutate web "a chat draft settles at ready over an untraced citation" "$RR" \
-    "      const withheld = this.withheld()
-      if (withheld !== null) {
-        this.set({ phase: 'review', status: 'needs-input', detail: withheld, readiness: '' })
-        return
-      }" \
-    '      void 0'
+    '      return citationGap(this.state.citations, this.ports.mode)' \
+    '      return null'
   mutate web "a web research chat draft settles at ready citing nothing" "$RR" \
     "  if (citations.length === 0 && mode === 'web-research') {" \
     '  if (false) {'
@@ -5384,11 +5380,71 @@ export function assistantTransport(id: string): Transport {
     '            : mode === '"'"'draft'"'"' && latest && state.citations.length === 0 && declaredSources(latest.document).length === 0 ? msg("This pack cites no source. It rests on what you told the assistant.")' \
     '            : false ? msg("This pack cites no source. It rests on what you told the assistant.")'
   mutate web "a chat draft's traced page citation opens nothing" "$RDP" \
-    'onReadPage={readPage}' \
-    'onReadPage={undefined}'
+    'onSelect={onSelect} onReadPage={readPage} onEstablishCases' \
+    'onSelect={onSelect} onReadPage={undefined} onEstablishCases'
   mutate web "the creation dialog does not say what a chat draft cites" "$X" \
-    '    {reviewDraft?.citations && <p className={flow.hint}>' \
-    '    {false && <p className={flow.hint}>'
+    '      {reviewDraft.citations && (reviewDraft.citations.total === 0' \
+    '      {false && (reviewDraft.citations.total === 0'
+
+  # ---- A chat draft's cases, written without its rules (#155) ---------------
+  #
+  # A chat draft's cases rest on what the conversation holds -- the person's
+  # own messages, and the pages the draft cites and traced -- and are written
+  # by a reviewer shown neither the draft's rules nor the assistant's turns. A
+  # disagreement goes to the person, never to a repair turn, and a saved
+  # chat's cases are grounded again only in the messages it was saved with.
+  CG=web/src/research/ui/ExpectationGround.tsx
+  TM=web/src/packs/test-workspace/model.ts
+  mutate web "a chat case rests on a message the person never sent" "$RR" \
+    '(grounds.statements.has(source) || grounds.citations.some' \
+    "(source.startsWith('you-') || grounds.citations.some"
+  mutate web "a chat case rests on a page the draft did not trace" "$RR" \
+    '|| grounds.citations.some(citation => citation.traced && citation.location === source))' \
+    '|| grounds.citations.some(citation => citation.location === source))'
+  mutate web "a chat case's reviewer is shown the draft's rules" "$RR" \
+    '      CONVERSATION_CASES_INSTRUCTIONS,
+      `OUTCOMES' \
+    '      CONVERSATION_CASES_INSTRUCTIONS, JSON.stringify(document),
+      `OUTCOMES'
+  mutate web "a chat case's reviewer is shown the assistant's turns" "$RR" \
+    "  return turns.filter(turn => turn.role === 'user' && turn.kind !== 'note')" \
+    "  return turns.filter(turn => turn.kind !== 'note')"
+  mutate web "a chat case disagreement is repaired without the person" "$RR" \
+    '      repair = false' \
+    '      void repair'
+  mutate web "a chat draft is ready without a chat case" "$RR" \
+    '    !state.expectationIssues.some(issue => !issue.resolved) && completeCurrentCheck(state) &&' \
+    '    (conversationMode(mode) || !state.expectationIssues.some(issue => !issue.resolved) && completeCurrentCheck(state)) &&'
+  mutate web "a recheck writes a chat case with the model" "$RR" \
+    '      await this.casesAndCheck(signal, false, false)' \
+    '      await this.casesAndCheck(signal, false)'
+  mutate web "a saved chat case is grounded in a message sent after it" "$RR" \
+    'statements: this.savedStatements ?? statementsOf(this.state.turns)' \
+    'statements: statementsOf(this.state.turns)'
+  mutate web "a saved chat case suite is kept smaller" "$RR" \
+    '      this.set({ cases: [], expectationIssues: [], heldProposal: null, restored: false,' \
+    '      this.set({ cases: admitted, expectationIssues: [], heldProposal: null, restored: false,'
+  mutate web "the correction reviewer is not shown a chat case's message" "$RR" \
+    "    if (statement !== undefined) return" \
+    "    if (false) return"
+  mutate web "the record leaves out the message a chat case rests on" "$RR" \
+    '    ...(statements.length ? { statements } : {}),' \
+    '    void 0,'
+  mutate web "a chat case check carried and repeated is shown twice" "$TM" \
+    '    if (next.runs.some((run) => run.id.endsWith(carried))) continue' \
+    '    void carried'
+  mutate web "writing a chat case is offered over established ones" "$RR" \
+    'latest.check.documentDigest === latest.digest && state.cases.length === 0 && state.expectationIssues.length === 0' \
+    'latest.check.documentDigest === latest.digest && state.expectationIssues.length === 0'
+  mutate web "a chat case's message reads as a link into the Inspector" "$CG" \
+    '  if (said) {' \
+    '  if (false) {'
+  mutate web "the creation dialog does not say how a chat case suite agrees" "$X" \
+    "      {reviewDraft.cases && msg(" \
+    "      {false && msg("
+  mutate web "a chat case's blocked expectation cannot be reached" "$RDP" \
+    '{casesInReview && <TestsPanel' \
+    '{false && <TestsPanel'
 
   # **Both halves at once, because either alone holds it.** A connection whose
   # setup is still in flight is releasable two ways: the run records the handle

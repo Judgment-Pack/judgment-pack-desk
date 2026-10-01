@@ -5,11 +5,14 @@ import { CodeBlock } from '../../ui/CodeBlock'
 import { Disclosure } from '../../ui/Disclosure'
 import type { RunState } from '../run'
 import type { Selection } from './DraftPanels'
+import { ExpectationGround, groundedInChat, type ReadPage } from './ExpectationGround'
 import styles from './ResearchAuthoring.module.css'
 
 export interface ExpectationReviewActions {
   onProposeCorrection?: (id: string) => void
   onApproveCorrection?: (id: string, token: string) => void
+  /** Opens a page a chat draft cites, for a case resting on one. */
+  onReadPage?: ReadPage
 }
 
 /**
@@ -25,7 +28,7 @@ function Expectation({ disposition, target, label }: { disposition: unknown; tar
   </>
 }
 
-export function ExpectationReview({ state, onSelect, onProposeCorrection, onApproveCorrection }: ExpectationReviewActions & { state: RunState; onSelect: (selection: Selection) => void }) {
+export function ExpectationReview({ state, onSelect, onProposeCorrection, onApproveCorrection, onReadPage }: ExpectationReviewActions & { state: RunState; onSelect: (selection: Selection) => void }) {
   useLocale()
   if (state.expectationIssues.length === 0) return null
   const pending = state.expectationIssues.filter(issue => !issue.resolved)
@@ -36,7 +39,9 @@ export function ExpectationReview({ state, onSelect, onProposeCorrection, onAppr
       <div className={styles.rowHead}><strong>{issue.id}</strong><span className={styles.badge}>{issue.resolved ? msg("Correction approved") : msg("Blocked expectation")}</span></div>
       <p className={styles.detail}>{systemMessage(issue.message)}</p>
       <p className={styles.hint}>{issue.original.rationale}</p>
-      <div><Button variant="inline" onClick={() => onSelect({ kind: 'excerpt', id: issue.original.expectationSource })}><Message text={"View source <0/>"} slots={[issue.original.expectationSource]} /></Button></div>
+      <div>{groundedInChat(issue.original.expectationSource, state)
+        ? <ExpectationGround source={issue.original.expectationSource} state={state} onSelect={onSelect} onReadPage={onReadPage} />
+        : <Button variant="inline" onClick={() => onSelect({ kind: 'excerpt', id: issue.original.expectationSource })}><Message text={"View source <0/>"} slots={[issue.original.expectationSource]} /></Button>}</div>
       {issue.resolved ? <Disclosure title={msg("Correction history")}>
         <Expectation disposition={issue.original.expectedDisposition} target={issue.original.expectedHandoffTarget} label={msg("Original expectation")} />
         <Expectation disposition={issue.resolved.replacement.expectedDisposition} target={issue.resolved.replacement.expectedHandoffTarget} label={msg("Approved expectation")} />

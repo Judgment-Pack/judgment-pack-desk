@@ -11,8 +11,10 @@ const file: ChatAttachment = {id:'12345678-1234-1234-1234-123456789012',name:'Po
 const citation = (page: number) => `attachment:${file.id}/${file.document!.digest}/page/${page}`
 const doc = {specVersion:'0.2.0-draft',id:'https://example.org/p',title:'Policy'}
 const at = '2026-09-24T12:00:00Z'
+// These drafts stop at the structure check, so no reviewer turn joins the
+// responses whose ownership is under test here.
 function ports(turn: RunPorts['turn']): RunPorts { return {mode:'draft',turn,ledger:new Ledger('s'),researchTools:[],authorPrompt:'contract',maxRevisions:0,seconds:30,gateway:null,
-  callTool:vi.fn(async()=>({structuredContent:{status:'valid',diagnostics:[]}})),seal:vi.fn(),registry:vi.fn(),newSession:()=>crypto.randomUUID(),log:vi.fn()} }
+  callTool:vi.fn(async()=>({structuredContent:{status:'invalid',diagnostics:[]}})),seal:vi.fn(),registry:vi.fn(),newSession:()=>crypto.randomUUID(),log:vi.fn()} }
 const settled = async (run: AuthoringRun) => vi.waitFor(() => expect(run.getSnapshot().status).not.toBe('running'))
 it('keeps each submitted selection, work, used source and candidate with its response across sends and reload', async () => {
   let calls = 0

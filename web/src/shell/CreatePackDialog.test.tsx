@@ -1325,20 +1325,23 @@ describe('creating a reviewed research handover', () => {
 
   it.each([
     [{ traced: 0, total: 0 }, 'This pack cites no source. It rests on what you told the assistant.'],
-    [{ traced: 2, total: 2 }, 'Citations traced to their sources: 2 of 2.']
-  ])('states what a chat draft cites beside Create (%o)', (citations, said) => {
+    [{ traced: 2, total: 2 }, 'Citations traced to their sources: 2 of 2.'],
+    [{ traced: 2, total: 2 }, "Test cases written without the draft's rules: 3 of 3 agree."]
+  ])('states what a chat draft rests on beside Create (%o)', (citations, said) => {
     serveProject({ project: PROJECT })
     const handover = researchHandover(), stub = handoverStub()
     const router = createMemoryRouter([{ path: '*', element:
       <McpContext.Provider value={connected({ client: stub.client, ...FULL_CAPS, validateSupported: true })}>
         <DeskConfigFixture value={effectiveConfig(undefined)}>
           <CreatePackDialog open presentation="review" onOpenChange={() => {}}
-            reviewDraft={{ document: handover.document, name: 'Reviewed pack', description: '', unknowns: [], citations }} />
+            reviewDraft={{ document: handover.document, name: 'Reviewed pack', description: '', unknowns: [], citations, cases: { agreeing: 3, total: 3 } }} />
         </DeskConfigFixture>
       </McpContext.Provider>
     }])
     render(<QueryClientProvider client={testQueryClient()}><RouterProvider router={router} /></QueryClientProvider>)
-    const line = screen.getByText(said)
+    // One line beside the button, the cases and the citations together.
+    const line = screen.getByText(said, { exact: false })
+    expect(line.textContent).toContain("Test cases written without the draft's rules: 3 of 3 agree.")
     // Beside the button: in the form that submits it, ahead of its actions.
     expect(line.closest('form')).toBe(createButton().closest('form'))
     expect(line.compareDocumentPosition(createButton()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
