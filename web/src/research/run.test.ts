@@ -13,6 +13,7 @@ import { fixtureExpectations } from './__fixtures__/expectationRuntime'
 import { EXPECTATION_TOOL } from './expectations'
 import { parseJsonText } from './verify/canon'
 import { canRetryExpectationValidation, INITIAL_STATE } from './run'
+import type { AuthoringMode } from './mode'
 import type { ChatAttachment } from '../chat/store'
 import type { VerifiedDocument } from '../documents/client'
 import type { DocumentRecord } from '../documents/record'
@@ -62,6 +63,9 @@ const UNCITED = {
   ...Object.fromEntries(Object.entries(PACK).filter(([key]) => key !== 'sources')),
   rules: PACK.rules.map(({ sourceRefs: _refs, ...rule }) => rule)
 }
+
+/** The rule asked with the basis the state's citations were traced on, for a test that moves nothing. */
+const onItsBasis = (state: RunState, mode: AuthoringMode) => canCreateDraft(state, mode, state.tracedBasis ?? '')
 
 const CASES = {
   cases: [
@@ -1392,7 +1396,7 @@ describe('chat workspace modes and checkpoint recovery', () => {
     expect(state.status).toBe('needs-input')
     expect(state.citations).toMatchObject([{ sourceId: 'ircc-fswp', traced: false, reason: 'citation.location is not a page of a document read in this chat' }])
     expect(canCreateResearchDraft(state)).toBe(false)
-    expect(canCreateDraft(state, mode)).toBe(false)
+    expect(onItsBasis(state, mode)).toBe(false)
   })
   it('restores transcripts and candidate bytes, discards trusted state, and requires a fresh model-free check', async () => {
     const { checkpoint, decodeCheckpoint, restoreLedger } = await import('../chat/checkpoint')
@@ -1590,7 +1594,7 @@ describe('conversation draft citations', () => {
     expect(state.status, state.detail).toBe('ready')
     expect(state.detail).toContain('every citation is traced to a page read in this chat')
     expect(state.readiness).toBe(readinessKey(state))
-    expect(canCreateDraft(state, mode)).toBe(true)
+    expect(onItsBasis(state, mode)).toBe(true)
     // Traced when the candidate was set and again at the settle.
     expect(h.loads).toEqual([page.file.document!.id, page.file.document!.id])
   })
@@ -1625,7 +1629,7 @@ describe('conversation draft citations', () => {
     // The detail names the citation and says what to do about it.
     expect(state.detail).toContain('(ircc-fswp)')
     expect(state.detail).toContain('read the page with read_link')
-    expect(canCreateDraft(state, 'draft')).toBe(false)
+    expect(onItsBasis(state, 'draft')).toBe(false)
   })
 
   it('does not trace a citation whose document does not verify under the gateway pin', async () => {
@@ -1635,7 +1639,7 @@ describe('conversation draft citations', () => {
     const state = await settled(h.run)
     expect(state.citations[0]).toMatchObject({ traced: false, reason: `The document ${page.file.document!.id} did not verify under the current gateway pin, so its quote is withheld.` })
     expect(state.status).toBe('needs-input')
-    expect(canCreateDraft(state, 'web-research')).toBe(false)
+    expect(onItsBasis(state, 'web-research')).toBe(false)
   })
 
   it('does not trace a quote from a partial extraction whose pages the person never confirmed', async () => {
@@ -1644,7 +1648,7 @@ describe('conversation draft citations', () => {
     h.run.start('Draft this', [])
     const state = await settled(h.run)
     expect(state.citations[0]).toMatchObject({ traced: false, reason: `page 1 of document ${page.file.document!.id} is not a page kept in this chat` })
-    expect(canCreateDraft(state, 'draft')).toBe(false)
+    expect(onItsBasis(state, 'draft')).toBe(false)
   })
 
   it('reads the document again at the settle, so one that stops verifying withholds the draft', async () => {
@@ -1667,35 +1671,37 @@ describe('conversation draft citations', () => {
     const drafted = await settled(draft.run)
     expect(drafted.status).toBe('ready')
     expect(drafted.detail).toContain('This pack cites no source; it rests on what you told the assistant.')
-    expect(canCreateDraft(drafted, 'draft')).toBe(true)
+    expect(onItsBasis(drafted, 'draft')).toBe(true)
     const researched = chat('web-research', UNCITED, [])
     researched.run.start('Research this', [])
     const state = await settled(researched.run)
     expect(state.status).toBe('needs-input')
     expect(state.detail).toContain('A web research draft rests on pages read in this chat')
-    expect(canCreateDraft(state, 'web-research')).toBe(false)
+    expect(onItsBasis(state, 'web-research')).toBe(false)
   })
 
   it('holds every mode to one rule over the same settled state', () => {
     const digest = 'fixture-digest'
-    const base: RunState = { ...INITIAL_STATE, status: 'ready', phase: 'review',
+    const base: RunState = { ...INITIAL_STATE, status: 'ready', phase: 'review', tracedBasis: 'basis-1',
       candidates: [{ revision: 1, producedBy: 'conversation', document: UNCITED, text: '{}', digest, check: { documentDigest: digest, valid: true, diagnostics: [], cases: [] } }] }
     const settledAt = (state: RunState): RunState => ({ ...state, readiness: readinessKey(state) })
     const none = settledAt(base)
-    expect([canCreateDraft(none, 'draft'), canCreateDraft(none, 'web-research'), canCreateDraft(none, 'research')]).toEqual([true, false, false])
+    expect([onItsBasis(none, 'draft'), onItsBasis(none, 'web-research'), canCreateDraft(none, 'research')]).toEqual([true, false, false])
     const traced = settledAt({ ...base, citations: [{ sourceId: 'a', location: 'attachment:x', excerptId: null, url: null, traced: true, reason: '', quote: 'q' }] })
-    expect([canCreateDraft(traced, 'draft'), canCreateDraft(traced, 'web-research')]).toEqual([true, true])
+    expect([onItsBasis(traced, 'draft'), onItsBasis(traced, 'web-research')]).toEqual([true, true])
     const open = settledAt({ ...base, citations: [...traced.citations, { sourceId: 'b', location: null, excerptId: null, url: null, traced: false, reason: 'r' }] })
-    expect([canCreateDraft(open, 'draft'), canCreateDraft(open, 'web-research'), canCreateDraft(open, 'research')]).toEqual([false, false, false])
-    // Asked with the basis standing now, a readiness reached on another is none.
-    const onBasis = settledAt({ ...base, tracedBasis: 'basis-1' })
-    expect([canCreateDraft(onBasis, 'draft', 'basis-1'), canCreateDraft(onBasis, 'draft', 'basis-2')]).toEqual([true, false])
+    expect([onItsBasis(open, 'draft'), onItsBasis(open, 'web-research'), canCreateDraft(open, 'research')]).toEqual([false, false, false])
+    // Asked with the basis standing now, a readiness reached on another is
+    // none; asked with none, the answer is no.
+    expect([canCreateDraft(none, 'draft', 'basis-1'), canCreateDraft(none, 'draft', 'basis-2'), canCreateDraft(none, 'draft')]).toEqual([true, false, false])
+    // Research reads no such basis.
+    expect(canCreateDraft({ ...none, citations: [{ sourceId: 'a', location: 'src-1#e1', excerptId: 'src-1#e1', url: null, traced: true, reason: '' }] }, 'research')).toBe(false)
     // While the citations are being traced they say nothing, and nothing is ready.
-    expect(canCreateDraft({ ...none, tracing: true }, 'draft')).toBe(false)
-    expect(canCreateDraft({ ...traced, tracing: true }, 'web-research')).toBe(false)
+    expect(onItsBasis({ ...none, tracing: true }, 'draft')).toBe(false)
+    expect(onItsBasis({ ...traced, tracing: true }, 'web-research')).toBe(false)
     // An invalid or stale check is never ready.
-    expect(canCreateDraft({ ...none, candidates: [{ ...none.candidates[0]!, check: { ...none.candidates[0]!.check!, valid: false } }] }, 'draft')).toBe(false)
-    expect(canCreateDraft({ ...none, candidates: [{ ...none.candidates[0]!, check: { ...none.candidates[0]!.check!, documentDigest: 'other' } }] }, 'draft')).toBe(false)
+    expect(onItsBasis({ ...none, candidates: [{ ...none.candidates[0]!, check: { ...none.candidates[0]!.check!, valid: false } }] }, 'draft')).toBe(false)
+    expect(onItsBasis({ ...none, candidates: [{ ...none.candidates[0]!, check: { ...none.candidates[0]!.check!, documentDigest: 'other' } }] }, 'draft')).toBe(false)
   })
 
   it('traces a reopened draft again before anything reads its citations', async () => {
@@ -1713,14 +1719,14 @@ describe('conversation draft citations', () => {
     await reopened.run.restore(saved.state)
     // Tracing: not "cites nothing", and not ready.
     expect(reopened.run.getSnapshot()).toMatchObject({ tracing: true, citations: [], restored: true })
-    expect(canCreateDraft(reopened.run.getSnapshot(), 'draft')).toBe(false)
+    expect(onItsBasis(reopened.run.getSnapshot(), 'draft')).toBe(false)
     release()
     await until(() => reopened.run.getSnapshot().tracing === false, 'the reopened trace landed')
     expect(reopened.run.getSnapshot().citations).toMatchObject([{ sourceId: 'ircc-fswp', traced: true }])
     // Reopening checks and changes nothing else; the person rechecks.
     expect(reopened.requests).toEqual([])
     expect(reopened.runtime.calls).toEqual([])
-    expect(canCreateDraft(reopened.run.getSnapshot(), 'draft')).toBe(false)
+    expect(onItsBasis(reopened.run.getSnapshot(), 'draft')).toBe(false)
   })
 
   it('leaves nothing traced, and the draft not ready, when a Stop interrupts the settle\'s trace', async () => {
@@ -1739,7 +1745,7 @@ describe('conversation draft citations', () => {
     const state = await settled(h.run)
     expect(state.status).toBe('stopped')
     expect(state.citations).toEqual([expect.objectContaining({ sourceId: 'ircc-fswp', traced: false, reason: 'The citation check was interrupted. Recheck the draft.' })])
-    expect(canCreateDraft(state, 'draft')).toBe(false)
+    expect(onItsBasis(state, 'draft')).toBe(false)
   })
 
   it('does not keep the readiness of an earlier trace when a later one is interrupted', async () => {
@@ -1753,7 +1759,7 @@ describe('conversation draft citations', () => {
     })
     h.run.start('Draft this', [])
     const ready = await settled(h.run)
-    expect(canCreateDraft(ready, 'draft')).toBe(true)
+    expect(onItsBasis(ready, 'draft')).toBe(true)
     hold = true
     h.run.recheck()
     await loading
@@ -1762,7 +1768,7 @@ describe('conversation draft citations', () => {
     expect(state.status).toBe('stopped')
     expect(state.readiness).toBe(ready.readiness)
     expect(state.citations[0]!.traced).toBe(false)
-    expect(canCreateDraft(state, 'draft')).toBe(false)
+    expect(onItsBasis(state, 'draft')).toBe(false)
   })
 
   it('does not keep an earlier readiness when a recheck of a reopened draft is interrupted mid-trace', async () => {
@@ -1794,7 +1800,7 @@ describe('conversation draft citations', () => {
     reopened.run.stop()
     const state = await settled(reopened.run)
     expect(state.citations.every(citation => !citation.traced)).toBe(true)
-    expect(canCreateDraft(state, 'draft')).toBe(false)
+    expect(onItsBasis(state, 'draft')).toBe(false)
   })
 
   it('traces again when the pin moves under a trace, and lands only on the basis it began on', async () => {
@@ -1814,7 +1820,7 @@ describe('conversation draft citations', () => {
     expect(calls).toBe(3)
     expect(state.citations[0]!.traced).toBe(false)
     expect(state.status).toBe('needs-input')
-    expect(canCreateDraft(state, 'draft')).toBe(false)
+    expect(onItsBasis(state, 'draft')).toBe(false)
   })
 
   it('gives up a trace whose basis keeps moving after three attempts, and says so', async () => {
@@ -1825,7 +1831,7 @@ describe('conversation draft citations', () => {
     h.run.start('Draft this', [])
     const state = await settled(h.run)
     expect(state.citations[0]).toMatchObject({ traced: false, reason: "The gateway pin or this chat's documents changed while the citations were checked. Recheck the draft." })
-    expect(canCreateDraft(state, 'draft')).toBe(false)
+    expect(onItsBasis(state, 'draft')).toBe(false)
     // Two traces, when the candidate was set and at the settle, each three attempts.
     expect(loads).toBe(6)
   })
@@ -1851,7 +1857,7 @@ describe('conversation draft citations', () => {
     h.run.start('Draft this', [])
     const state = await settled(h.run)
     expect(state.citations.map(citation => [citation.sourceId, citation.traced])).toEqual([['one', true], ['two', false]])
-    expect(canCreateDraft(state, 'draft')).toBe(false)
+    expect(onItsBasis(state, 'draft')).toBe(false)
   })
 
   it('withdraws readiness at once when the basis moves at rest, and settles again on what the new basis holds', async () => {
@@ -1861,26 +1867,26 @@ describe('conversation draft citations', () => {
     const h = chat('draft', citing(pageOf(page.file)), [page], undefined, () => pinOf(current))
     h.run.start('Draft this', [])
     const ready = await settled(h.run)
-    expect(canCreateDraft(ready, 'draft')).toBe(true)
+    expect(onItsBasis(ready, 'draft')).toBe(true)
     const before = h.loads.length
     // Nothing moved: nothing is traced again.
     h.run.basisChanged()
     expect(h.loads).toHaveLength(before)
-    expect(canCreateDraft(h.run.getSnapshot(), 'draft')).toBe(true)
+    expect(onItsBasis(h.run.getSnapshot(), 'draft')).toBe(true)
     // A pin the document is also signed under: withdrawn while it is traced, then ready again.
     current = 'gateway-a2'
     signers.set(page.file.document!.id, 'gateway-a2')
     h.run.basisChanged()
     expect(h.run.getSnapshot().readiness).toBe('')
-    expect(canCreateDraft(h.run.getSnapshot(), 'draft')).toBe(false)
+    expect(onItsBasis(h.run.getSnapshot(), 'draft')).toBe(false)
     await until(() => !h.run.getSnapshot().tracing && h.run.getSnapshot().readiness !== '', 'settled again on the new pin')
-    expect(canCreateDraft(h.run.getSnapshot(), 'draft')).toBe(true)
+    expect(onItsBasis(h.run.getSnapshot(), 'draft')).toBe(true)
     // A pin it is not signed under: not ready, and the citation says why.
     current = 'gateway-b'
     h.run.basisChanged()
     await until(() => !h.run.getSnapshot().tracing && h.run.getSnapshot().status === 'needs-input', 'settled again on the other pin')
     expect(h.run.getSnapshot().citations[0]!.traced).toBe(false)
-    expect(canCreateDraft(h.run.getSnapshot(), 'draft')).toBe(false)
+    expect(onItsBasis(h.run.getSnapshot(), 'draft')).toBe(false)
     expect(h.requests).toHaveLength(1)
   })
 
@@ -1901,13 +1907,13 @@ describe('conversation draft citations', () => {
       }
     ], { mode: 'draft', pin: () => pinOf('gateway-a'), documents: () => files.map(item => item.file), loadDocument: async () => { loads += 1; return page.document } })
     h.run.start('Draft this', [])
-    expect(canCreateDraft(await settled(h.run), 'draft')).toBe(true)
+    expect(onItsBasis(await settled(h.run), 'draft')).toBe(true)
     h.run.send('And another thing.')
     await answering
     // The chat keeps another document, mid-action.
     files.push(other)
     h.run.basisChanged()
-    expect(canCreateDraft(h.run.getSnapshot(), 'draft')).toBe(false)
+    expect(onItsBasis(h.run.getSnapshot(), 'draft')).toBe(false)
     const before = loads
     if (end === 'stop') h.run.stop()
     else finish()
@@ -1921,7 +1927,46 @@ describe('conversation draft citations', () => {
     expect(loads()).toBe(before)
     expect(h.run.getSnapshot().tracing).toBeFalsy()
     expect(h.run.getSnapshot().citations[0]).toMatchObject({ traced: false, reason: "The gateway pin or this chat's documents changed while the citations were checked. Recheck the draft." })
-    expect(canCreateDraft(h.run.getSnapshot(), 'draft')).toBe(false)
+    expect(onItsBasis(h.run.getSnapshot(), 'draft')).toBe(false)
+  })
+
+  it('starts no new work after a Stop even where the action then ends with an ordinary error', async () => {
+    const page = kept(), other = kept()
+    const files = [page]
+    let loads = 0
+    let hold = false
+    let started!: () => void
+    const validating = new Promise<void>(resolve => { started = resolve })
+    let fail!: () => void
+    const runtime = fakeRuntime()
+    const h = harness([async (_request, _signal, emit) => emit({ type: 'proposal', document: citing(pageOf(page.file)), unknowns: [] })], {
+      mode: 'draft', pin: () => pinOf('gateway-a'), documents: () => files.map(item => item.file), loadDocument: async () => { loads += 1; return page.document },
+      callTool: async (name, args) => {
+        if (name === 'validate' && hold) {
+          started()
+          // The runtime answers after the Stop with a failure of its own.
+          await new Promise<void>(resolve => { fail = resolve })
+          throw new Error('the runtime connection was lost')
+        }
+        return runtime.callTool(name, args)
+      }
+    })
+    h.run.start('Draft this', [])
+    expect(onItsBasis(await settled(h.run), 'draft')).toBe(true)
+    hold = true
+    h.run.recheck()
+    await validating
+    files.push(other)
+    h.run.basisChanged()
+    h.run.stop()
+    const before = loads
+    fail()
+    const state = await settled(h.run)
+    expect(state.status).toBe('failed')
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(loads).toBe(before)
+    expect(h.run.getSnapshot().citations[0]!.traced).toBe(false)
+    expect(canCreateDraft(h.run.getSnapshot(), 'draft', h.run.basisNow())).toBe(false)
   })
 
   it('traces again when an action that saw the basis move ends otherwise, and keeps its readiness withdrawn', async () => {
@@ -1983,7 +2028,7 @@ describe('conversation draft citations', () => {
       } })
     hold = false
     h.run.start('Draft this', [])
-    expect(canCreateDraft(await settled(h.run), 'draft')).toBe(true)
+    expect(onItsBasis(await settled(h.run), 'draft')).toBe(true)
     hold = true
     files.push(kept())
     h.run.basisChanged()
@@ -2007,7 +2052,7 @@ describe('conversation draft citations', () => {
       return page.document
     }, () => pinOf(current))
     h.run.start('Draft this', [])
-    expect(canCreateDraft(await settled(h.run), 'draft')).toBe(true)
+    expect(onItsBasis(await settled(h.run), 'draft')).toBe(true)
     hold = true
     current = 'gateway-a2'
     h.run.basisChanged()
@@ -2029,7 +2074,7 @@ describe('conversation draft citations', () => {
       return page.document
     }, () => pinOf(current))
     h.run.start('Draft this', [])
-    expect(canCreateDraft(await settled(h.run), 'draft')).toBe(true)
+    expect(onItsBasis(await settled(h.run), 'draft')).toBe(true)
     hold = true
     current = 'gateway-a2'
     h.run.basisChanged()
@@ -2039,7 +2084,7 @@ describe('conversation draft citations', () => {
     expect(h.run.getSnapshot().citations[0]).toMatchObject({ traced: false, reason: 'The citation check was interrupted. Recheck the draft.' })
     await new Promise(resolve => setTimeout(resolve, 20))
     expect(h.run.getSnapshot().readiness).toBe('')
-    expect(canCreateDraft(h.run.getSnapshot(), 'draft')).toBe(false)
+    expect(onItsBasis(h.run.getSnapshot(), 'draft')).toBe(false)
   })
 
   it('keys a trace to the pin and to every kept document\'s identity and pages', () => {

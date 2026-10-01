@@ -339,6 +339,8 @@ export async function tracePageCitations(
     }
     const reference = file.document
     const key = `${reference.id}/${reference.digest}`
+    // A trace that was stopped or superseded loads nothing more.
+    signal.throwIfAborted()
     if (!loads.has(key)) loads.set(key, Promise.resolve().then(() => load(reference, signal)))
     let verified: VerifiedDocument
     try {
@@ -827,13 +829,14 @@ export class AuthoringRun {
       if (!this.running) this.disarm()
       // The pin or the documents moved while this ran, and its own settle did
       // not trace the draft on the basis they moved to. Stopped, or out of
-      // time, it starts no new work: none of its citations counts as traced
-      // until the person checks the draft again. Otherwise it is traced now.
+      // time -- whatever the action then ended with -- it starts no new work:
+      // none of its citations counts as traced until the person checks the
+      // draft again. Otherwise it is traced now.
       if (!this.running && this.retracePending) {
         this.retracePending = false
         const latest = this.latest()
         if (latest && this.basisNow() !== this.state.tracedBasis) {
-          if (this.state.status === 'stopped' || this.state.status === 'budget') {
+          if (controller.signal.aborted || this.state.status === 'stopped' || this.state.status === 'budget') {
             this.set({ citations: unchecked(latest.document, sourceMessage("The gateway pin or this chat's documents changed while the citations were checked. Recheck the draft.")), tracedBasis: undefined })
           } else this.traceAtRest()
         }
@@ -1714,8 +1717,9 @@ export function canCreateDraft(state: RunState, mode: AuthoringMode = 'research'
   if (state.tracing) return false
   // And a chat draft's citations hold only on the pin and the documents they
   // were traced on. Asked with the basis standing now, a readiness reached on
-  // another is no readiness, whether or not anything has noticed the move.
-  if (conversationMode(mode) && basis !== undefined && state.tracedBasis !== basis) return false
+  // another is no readiness, whether or not anything has noticed the move;
+  // asked without one, it cannot say, and the answer is no.
+  if (conversationMode(mode) && (basis === undefined || state.tracedBasis !== basis)) return false
   const latest = state.candidates.at(-1)
   const cases = conversationMode(mode) || !state.expectationIssues.some(issue => !issue.resolved) && completeCurrentCheck(state)
   return state.readiness !== '' && state.readiness === readinessKey(state) &&

@@ -5299,11 +5299,21 @@ export function assistantTransport(id: string): Transport {
     '          } else this.traceAtRest()' \
     '          } else void 0'
   mutate web "a Stop starts new work on a chat draft whose basis moved" "$RR" \
-    "          if (this.state.status === 'stopped' || this.state.status === 'budget') {" \
+    "          if (controller.signal.aborted || this.state.status === 'stopped' || this.state.status === 'budget') {" \
     '          if (false) {'
+  mutate web "a Stop that ends in an error starts new work on a chat draft" "$RR" \
+    "          if (controller.signal.aborted || this.state.status === 'stopped'" \
+    "          if (this.state.status === 'stopped'"
+  mutate web "a superseded chat draft trace goes on loading" "$RR" \
+    '    signal.throwIfAborted()
+    if (!loads.has(key))' \
+    '    if (!loads.has(key))'
   mutate web "Create answers on a chat draft's old basis" "$RR" \
-    '  if (conversationMode(mode) && basis !== undefined && state.tracedBasis !== basis) return false' \
+    '  if (conversationMode(mode) && (basis === undefined || state.tracedBasis !== basis)) return false' \
     '  void basis'
+  mutate web "Create answers a chat draft asked without a basis" "$RR" \
+    '(basis === undefined || state.tracedBasis !== basis)' \
+    '(basis !== undefined && state.tracedBasis !== basis)'
   mutate web "a chat draft settles at ready on a moved basis" "$RR" \
     '      if (this.state.tracedBasis !== this.basisNow()) return sourceMessage(' \
     '      if (false) return sourceMessage('
