@@ -33,7 +33,7 @@ import { isCancelled, recoverableProposal } from '../assistant/engines/contract'
 import { checkCandidate, digestOf, jsonIdentity, type AuthoringCase, type CandidateCheck } from './checkCandidate'
 import { findingSummary, validateExpectations } from './expectations'
 import type { Ledger, SourceRecord } from './ledger'
-import { CASES_INSTRUCTIONS, CONTINUE_INSTRUCTIONS, CONVERSATION_CITATION_INSTRUCTIONS, CONVERSATION_INSTRUCTIONS, REPAIR_INSTRUCTIONS, RESEARCH_INSTRUCTIONS } from './prompts'
+import { CASES_INSTRUCTIONS, CONTINUE_INSTRUCTIONS, CONVERSATION_CASES_INSTRUCTIONS, CONVERSATION_CITATION_INSTRUCTIONS, CONVERSATION_INSTRUCTIONS, REPAIR_INSTRUCTIONS, RESEARCH_INSTRUCTIONS } from './prompts'
 import { memberOf, parseJsonText, stringMember, type JsonNode } from './verify/canon'
 import { verifySession, type Finding, type HeldReceipt, type SessionVerdict } from './verify/session'
 
@@ -396,11 +396,40 @@ export function citationGap(citations: readonly Citation[], mode: AuthoringMode 
   return null
 }
 
-/** Screen source-grounded case proposals; runtime expectation validation must follow before admission. */
+/**
+ * The person's own statements in a conversation, by id: every message of
+ * theirs, `you-1` onwards, in the order they sent them. The text is what they
+ * sent, context they supplied included. Never an assistant turn, which
+ * paraphrases the draft, and never a note Desk wrote on the person's behalf.
+ */
+export function statementsOf(turns: readonly Turn[]): Map<string, string> {
+  return new Map(statementTurns(turns).map(({ id, turn }) => [id, turn.input ?? turn.text]))
+}
+
+/** The turns `statementsOf` reads, by the id it gives each, for a panel to show as they were sent. */
+export function statementTurns(turns: readonly Turn[]): { id: string; turn: Turn }[] {
+  return turns.filter(turn => turn.role === 'user' && turn.kind !== 'note').map((turn, index) => ({ id: `you-${index + 1}`, turn }))
+}
+
+/** What a chat draft's cases may rest on besides a recorded excerpt. */
+export interface CaseGrounds {
+  /** The person's own statements, by id. See `statementsOf`. */
+  statements: ReadonlyMap<string, string>
+  /** The draft's citations as traced at admission; only a traced one grounds a case. */
+  citations: readonly Citation[]
+}
+
+/**
+ * Screen source-grounded case proposals; runtime expectation validation must
+ * follow before admission. A case rests on a recorded, verified excerpt; in a
+ * chat draft, given `grounds`, it may instead rest on one of the person's
+ * statements or on a page the draft cites and traced.
+ */
 export function admitCases(
   proposed: unknown,
   ledger: Ledger,
-  established: AuthoringCase[]
+  established: AuthoringCase[],
+  grounds?: CaseGrounds
 ): { admitted: AuthoringCase[]; dropped: { id: string; reason: string }[] } {
   const cases = (proposed as { cases?: unknown })?.cases
   const admitted: AuthoringCase[] = []
@@ -414,10 +443,17 @@ export function admitCases(
     if (seen.has(id)) return dropped.push({ id, reason: sourceMessage("a case with this id is already established and is never rewritten") })
     if (row.facts === null || typeof row.facts !== 'object' || Array.isArray(row.facts)) return dropped.push({ id, reason: sourceMessage("facts must be an object") })
     const source = typeof row.expectationSource === 'string' ? row.expectationSource : ''
-    if (!EXCERPT_ID.test(source) || !ledger.excerpt(source)) {
+    // A chat draft's case may rest on what the person said, or on a page the
+    // draft cites and traced as it stands now; anything else must be a
+    // recorded, verified excerpt, as in `research`.
+    const grounded = grounds !== undefined && (grounds.statements.has(source) || grounds.citations.some(citation => citation.traced && citation.location === source))
+    if (!grounded && grounds !== undefined && !EXCERPT_ID.test(source)) {
+      return dropped.push({ id, reason: sourceMessage("expectationSource {{value0}} is neither one of your messages nor a page the draft cites and traced", { value0: JSON.stringify(source) }) })
+    }
+    if (!grounded && (!EXCERPT_ID.test(source) || !ledger.excerpt(source))) {
       return dropped.push({ id, reason: sourceMessage("expectationSource {{value0}} is not an excerpt recorded in this run", { value0: JSON.stringify(source) }) })
     }
-    if (!ledger.verifiedExcerpt(source)) {
+    if (!grounded && !ledger.verifiedExcerpt(source)) {
       return dropped.push({ id, reason: sourceMessage("expectationSource {{value0}} is from a source whose receipt did not verify, so it grounds nothing", { value0: source }) })
     }
     seen.add(id)
@@ -458,6 +494,14 @@ export class AuthoringRun {
   private background: AbortController | null = null
   /** The run's owner is gone: no trace at rest starts. See `detach`. */
   private detached = false
+  /**
+   * The person's statements as the saved conversation held them, which a saved
+   * chat draft's cases are grounded again in. Taken when it is restored, so a
+   * message sent afterwards -- numbered from one in a chat opened from the
+   * pack, which keeps no turns -- never stands in for one a case was written
+   * from.
+   */
+  private savedStatements: Map<string, string> | null = null
 
   constructor(private readonly ports: RunPorts) {}
 
@@ -560,6 +604,7 @@ export class AuthoringRun {
       detail: candidates.length ? sourceMessage("Saved draft. Recheck its sources and tests before creating it.")
         : saved.status === 'running' || saved.status === 'stopped' || saved.status === 'failed' || saved.status === 'budget' || saved.turns.at(-1)?.role === 'user'
           ? sourceMessage("This response was interrupted. Send a message to continue; nothing restarted automatically.") : '' })
+    this.savedStatements = statementsOf(this.state.turns)
     // A checkpoint keeps no citations, so a reopened conversation draft is
     // traced again before anything reads them: one that cites is never shown
     // as citing nothing. Nothing else is checked or changed here.
@@ -585,7 +630,9 @@ export class AuthoringRun {
       // Recovery never starts source acquisition, a paid reviewer or repair.
       const check = await checkCandidate(text, [], this.ports.callTool, signal)
       this.set({ candidates: this.state.candidates.map(candidate => ({ ...candidate, check })) })
-      if (conversationMode(this.ports.mode)) await this.settle(signal, 'The draft needs corrections before it can be created.')
+      // A recovered chat draft has no cases yet; establishing them is a model
+      // call, and the person asks for it.
+      if (conversationMode(this.ports.mode)) await this.settle(signal, check.valid ? this.withoutCases() : sourceMessage("The draft needs corrections before it can be created."))
       else this.set({ status: 'needs-input', phase: 'review', detail: sourceMessage("No saved cases can be rechecked. Send a message to continue research.") })
     })
   }
@@ -598,31 +645,66 @@ export class AuthoringRun {
     void this.drive(async signal => {
       await this.recheckRestored(signal)
       if (!conversationMode(this.ports.mode) && !this.state.cases.length && !this.state.expectationIssues.length) throw new Error(sourceMessage("No saved cases can be rechecked. Send a message to continue research."))
+      // Model-free: a chat draft saved without cases is checked and told so,
+      // and its cases are established only on the person's own request.
+      await this.casesAndCheck(signal, false, false)
+    })
+  }
+
+  /**
+   * Establish test cases for a checked chat draft that has none, on the
+   * person's request: a reviewer turn, given what the conversation holds and
+   * never the draft's rules, then the same validation and check as `research`.
+   */
+  establishCases(): void {
+    if (this.running || !canEstablishCases(this.state, this.ports.mode)) return
+    this.arm()
+    this.addTurn({ role: 'user', kind: 'note', text: sourceMessage("Asked for test cases written without the draft's rules.") })
+    this.set({ phase: 'cases', status: 'running', detail: sourceMessage("Establishing test cases without the draft's rules.") })
+    void this.drive(async signal => {
       await this.casesAndCheck(signal, false)
     })
   }
 
   private async recheckRestored(signal: AbortSignal): Promise<void> {
     if (!this.state.restored) return
-    if (!conversationMode(this.ports.mode)) {
-      for (const session of new Set(this.ports.ledger.sources.map(source => source.session))) await this.verifyAcquisitions(session, signal, false)
-      const saved = this.state.cases
-      const { admitted, dropped } = admitCases({ cases: saved }, this.ports.ledger, [])
-      if (dropped.length || admitted.length !== saved.length) throw new Error(sourceMessage("Saved test cases could not be grounded again. Start a new research chat; the original history is preserved."))
-      const checked = await validateExpectations(admitted.map(row => row.expectedDisposition), this.ports.callTool, signal)
-      const cases: AuthoringCase[] = []
-      const issues = this.state.expectationIssues.map(item => ({ ...item, proposal: undefined }))
-      admitted.forEach((row, index) => {
-        const finding = checked[index]!
-        const problem = finding.status === 'invalid' ? findingSummary(finding) : targetContradiction(finding.canonical, row.expectedHandoffTarget)
-        if (problem) issues.push({ id: row.id, original: row, message: problem, proposal: undefined })
-        else cases.push(deepFreeze(structuredClone(row)))
-      })
-      this.set({ cases, expectationIssues: issues })
-      // Do not generate replacement cases on a model-free recovery action.
-
+    const conversation = conversationMode(this.ports.mode)
+    // A chat draft's cases rest on its statements, which come back with its
+    // turns, and on the pages it cites, traced again here before anything is
+    // grounded on them.
+    if (conversation) await this.traceConversation(signal)
+    if (!conversation) for (const session of new Set(this.ports.ledger.sources.map(source => source.session))) await this.verifyAcquisitions(session, signal, false)
+    const saved = this.state.cases
+    const grounds = conversation ? { statements: this.savedStatements ?? statementsOf(this.state.turns), citations: this.state.citations } : undefined
+    const { admitted, dropped } = admitCases({ cases: saved }, this.ports.ledger, [], grounds)
+    if (conversation && (dropped.length || admitted.length !== saved.length || this.state.expectationIssues.some(issue => !admitCases({ cases: [issue.original] }, this.ports.ledger, [], grounds).admitted.length))) {
+      // A chat opened from the pack keeps none of the messages its cases were
+      // written from, and a page may no longer trace. What cannot be grounded
+      // again is not kept, and neither is the rest: a smaller suite is the
+      // one thing this step exists to refuse. The person establishes new
+      // cases from what this conversation holds.
+      const reasons = new Map(dropped.map(row => [row.id, row.reason]))
+      this.set({ cases: [], expectationIssues: [], heldProposal: null, restored: false,
+        droppedCases: [...saved, ...this.state.expectationIssues.map(issue => issue.original)].map(row => ({ id: row.id,
+          reason: reasons.get(row.id) ?? sourceMessage("set aside with the saved cases that could not be grounded again") })) })
+      this.savedStatements = null
+      this.addTurn({ role: 'assistant', kind: 'note', text: sourceMessage("The saved test cases rest on messages or pages this conversation cannot ground again, so they were set aside. Establish new ones before creating the pack.") })
+      return
     }
+    if (dropped.length || admitted.length !== saved.length) throw new Error(sourceMessage("Saved test cases could not be grounded again. Start a new research chat; the original history is preserved."))
+    const checked = await validateExpectations(admitted.map(row => row.expectedDisposition), this.ports.callTool, signal)
+    const cases: AuthoringCase[] = []
+    const issues = this.state.expectationIssues.map(item => ({ ...item, proposal: undefined }))
+    admitted.forEach((row, index) => {
+      const finding = checked[index]!
+      const problem = finding.status === 'invalid' ? findingSummary(finding) : targetContradiction(finding.canonical, row.expectedHandoffTarget)
+      if (problem) issues.push({ id: row.id, original: row, message: problem, proposal: undefined })
+      else cases.push(deepFreeze(structuredClone(row)))
+    })
+    this.set({ cases, expectationIssues: issues })
+    // Do not generate replacement cases on a model-free recovery action.
     this.set({ restored: false })
+    this.savedStatements = null
   }
 
   /** Begin: the brief, the URLs to read first, and the research turn. */
@@ -675,15 +757,15 @@ export class AuthoringRun {
     this.set({ phase: 'review', status: 'running', detail: sourceMessage("Reviewing the expectation for {{value0}}.", { value0: id }),
       expectationIssues: this.state.expectationIssues.map(item => item.id === id ? { ...item, proposal: undefined, proposalError: undefined } : item) })
     void this.drive(async signal => {
-      const excerpt = this.ports.ledger.verifiedExcerpt(issue.original.expectationSource)
-      if (!excerpt) throw new Error(sourceMessage("The expectation source is no longer verified. Restore its verification before reviewing the expectation."))
+      const ground = this.groundOf(issue.original.expectationSource)
+      if (!ground) throw new Error(sourceMessage("The expectation source is no longer verified. Restore its verification before reviewing the expectation."))
       const candidate = this.latest()!
       const document = candidate.document as Record<string, unknown>
       // No authoring prompt here: this turn reviews one expectation against the
       // source and the contract, and pack-authoring guidance is not its brief.
       const prompt = ['CORRECT AN INVALID EXPECTATION. Preserve the case id, facts, evidence availability, source and intended behavior. Propose only a complete expectedDisposition and a rationale explaining the correction under JPS §8.3. Empty reasons is valid only for outcome; unresolved must retain its reason(s). Do not remove a case, change the pack, or weaken the assertion to fit a candidate. If the cited source and contract do not settle the correction, return unknowns and no correction. The person must approve any correction before it is used.',
         `CASE\n${JSON.stringify(issue.original)}`, `VALIDATOR FINDING\n${issue.message}`,
-        `SOURCE EXCERPT\n${JSON.stringify(excerpt)}`, `DECLARED OUTCOMES\n${JSON.stringify(document.outcomes)}`,
+        `${ground.label}\n${JSON.stringify(ground.value)}`, `DECLARED OUTCOMES\n${JSON.stringify(document.outcomes)}`,
         `HANDOFF CONFIGURATION\n${JSON.stringify(document.escalation ?? null)}`,
         `EXPECTED HANDOFF TARGET (asserted with the disposition and unchanged by this correction)\n${JSON.stringify(issue.original.expectedHandoffTarget ?? null)}`,
         'Answer with prose and exactly one fenced JSON block: {"proposal":{"document":{"expectedDisposition":{...},"rationale":"..."},"unknowns":[]}}.'
@@ -721,7 +803,7 @@ export class AuthoringRun {
     this.arm()
     this.set({ phase: 'review', status: 'running', detail: sourceMessage("Validating the approved correction for {{value0}}.", { value0: id }) })
     void this.drive(async signal => {
-      if (!this.ports.ledger.verifiedExcerpt(issue.original.expectationSource)) throw new Error(sourceMessage("The expectation source is no longer verified; the correction was not applied."))
+      if (!this.groundOf(issue.original.expectationSource)) throw new Error(sourceMessage("The expectation source is no longer verified; the correction was not applied."))
       const [finding] = await validateExpectations([proposal.expectedDisposition], this.ports.callTool, signal)
       if (finding!.status !== 'valid') throw new Error(sourceMessage("The correction is no longer valid: {{value0}}", { value0: findingSummary(finding) }))
       // The exact expectation is the pair. A corrected disposition that no
@@ -886,6 +968,27 @@ export class AuthoringRun {
       `EVIDENCE REQUIREMENTS\n${JSON.stringify(evidence)}`,
       `FACT PATHS THE PACK READS\n${JSON.stringify(factPaths(document))}`,
       `EXCERPTS\n${JSON.stringify(excerpts, null, 1)}`
+    ].join('\n\n')
+  }
+
+  /**
+   * The cases prompt for a chat draft: what the conversation holds and nothing
+   * of how the draft decides. The pages it cites are given by their quotes,
+   * which is all a citation holds; the person's messages by their own words.
+   * Never the draft's rules or exceptions, and never an assistant turn.
+   */
+  private conversationCasesPrompt(document: unknown): string {
+    const outcomes = ((document as { outcomes?: unknown })?.outcomes ?? []) as unknown[]
+    const evidence = ((document as { evidenceRequirements?: unknown })?.evidenceRequirements ?? []) as unknown[]
+    const pages = this.state.citations.filter(citation => citation.traced).map(citation => ({ id: citation.location, url: citation.url, text: citation.quote }))
+    const statements = [...statementsOf(this.state.turns)].map(([id, text]) => ({ id, text }))
+    return [
+      CONVERSATION_CASES_INSTRUCTIONS,
+      `OUTCOMES\n${JSON.stringify(outcomes)}`,
+      `EVIDENCE REQUIREMENTS\n${JSON.stringify(evidence)}`,
+      `FACT PATHS THE PACK READS\n${JSON.stringify(factPaths(document))}`,
+      `QUOTED PAGES THE DRAFT CITES\n${JSON.stringify(pages, null, 1)}`,
+      `THE PERSON'S MESSAGES\n${JSON.stringify(statements, null, 1)}`
     ].join('\n\n')
   }
 
@@ -1084,28 +1187,45 @@ export class AuthoringRun {
    * verdict.
    */
   private async proposeCases(signal: AbortSignal, candidate: Candidate): Promise<HeldProposal> {
-    this.set({ phase: 'cases', detail: sourceMessage("Establishing test cases from the sources.") })
-    this.ports.log(sourceMessage("cases: a reviewer establishes expectations from the excerpts"))
-    const proposal = await this.engineTurn(signal, 'research', this.casesPrompt(candidate.document), [], true)
-    const { admitted, dropped } = admitCases(proposal?.document, this.ports.ledger, this.state.cases)
+    const conversation = conversationMode(this.ports.mode)
+    this.set({ phase: 'cases', detail: conversation ? sourceMessage("Establishing test cases without the draft's rules.") : sourceMessage("Establishing test cases from the sources.") })
+    this.ports.log(conversation ? sourceMessage("cases: a reviewer establishes expectations from your messages and the pages the draft cites") : sourceMessage("cases: a reviewer establishes expectations from the excerpts"))
+    // What a chat draft's cases rest on is read as it stands now: the pages
+    // it cites are traced again before the reviewer is shown their quotes.
+    if (conversation) await this.traceConversation(signal)
+    const proposal = await this.engineTurn(signal, 'research', conversation ? this.conversationCasesPrompt(candidate.document) : this.casesPrompt(candidate.document), [], true)
+    const { admitted, dropped } = admitCases(proposal?.document, this.ports.ledger, this.state.cases, this.grounds())
     const held: HeldProposal = { candidateDigest: candidate.digest, admitted, dropped, unknowns: proposal?.unknowns ?? [] }
     this.set({ heldProposal: held })
     return held
   }
 
-  /** Establish cases where none are, then check, and repair until the budget. */
-  private async casesAndCheck(signal: AbortSignal, repair = true): Promise<void> {
+  /**
+   * Establish cases where none are, then check, and repair until the budget.
+   *
+   * A chat draft takes the same path with two differences. Its structure is
+   * validated first, so no reviewer turn is spent on a draft that is not a
+   * pack; and nothing repairs it: a disagreement between the draft and cases
+   * written without its rules goes to the person, as its instructions say.
+   * `establish` false keeps the path model-free, for a recheck.
+   */
+  private async casesAndCheck(signal: AbortSignal, repair = true, establish = true): Promise<void> {
     const candidate = this.latest()
     if (!candidate) {
       this.set({ phase: 'conversation', status: 'complete', detail: '' })
       return
     }
-    if (candidate && conversationMode(this.ports.mode)) {
-      this.set({ phase: 'check', detail: sourceMessage("Validating the draft through the runtime.") })
-      const check = await checkCandidate(candidate.text, [], this.ports.callTool, signal)
-      this.set({ candidates: this.state.candidates.map(item => item.digest === candidate.digest ? { ...item, check } : item) })
-      await this.settle(signal, 'The draft needs corrections before it can be created.')
-      return
+    if (conversationMode(this.ports.mode)) {
+      repair = false
+      if (this.state.cases.length === 0 && this.state.expectationIssues.length === 0 && this.state.heldProposal?.candidateDigest !== candidate.digest) {
+        this.set({ phase: 'check', detail: sourceMessage("Validating the draft through the runtime.") })
+        const check = await checkCandidate(candidate.text, [], this.ports.callTool, signal)
+        this.set({ candidates: this.state.candidates.map(item => item.digest === candidate.digest ? { ...item, check } : item) })
+        if (!check.valid || !establish) {
+          await this.settle(signal, check.valid ? this.withoutCases() : sourceMessage("The draft needs corrections before it can be created."))
+          return
+        }
+      }
     }
     if (!candidate) throw new Error(sourceMessage("no candidate to check"))
     if (this.state.cases.length === 0 && this.state.expectationIssues.length === 0) {
@@ -1150,7 +1270,9 @@ export class AuthoringRun {
       if (admitted.length === 0) {
         // Where nothing grounded a case because the sources did not verify,
         // that is the sentence, not the absence of cases.
-        this.set({ status: 'needs-input', phase: 'review', detail: this.withheld() ?? sourceMessage("No test case could be grounded in a cited excerpt. Cite the requirements, or say what the cases should be.") })
+        this.set({ status: 'needs-input', phase: 'review', detail: this.withheld() ?? (conversationMode(this.ports.mode)
+          ? sourceMessage("No test case could be grounded in your messages or in a page the draft cites. Tell the assistant how the pack should decide a case, or have it read and cite the pages the pack rests on.")
+          : sourceMessage("No test case could be grounded in a cited excerpt. Cite the requirements, or say what the cases should be.")) })
         return
       }
       this.ports.log(sourceMessage("cases: {{value0}} established, {{value1}} invalid expectations, {{value2}} dropped", { value0: cases.length, value1: issues.length, value2: dropped.length }))
@@ -1175,7 +1297,7 @@ export class AuthoringRun {
         // verify: a source whose receipt failed, or a citation the run cannot
         // trace, withholds `ready` -- the draft is shown, and what stands in
         // its way is said.
-        this.settleReview('')
+        await this.settle(signal, '')
         return
       }
       if (!repair) {
@@ -1225,27 +1347,6 @@ export class AuthoringRun {
    * citations it names are the ones on hand.
    */
   private settleReview(notPassing: string): void {
-    if (conversationMode(this.ports.mode)) {
-      const candidate = this.latest()
-      const valid = candidate?.check?.valid === true && candidate.check.documentDigest === candidate.digest
-      if (!valid) {
-        this.set({ phase: 'review', status: 'needs-input', detail: sourceMessage("The draft needs corrections before it can be created."), readiness: '' })
-        return
-      }
-      // A valid draft is not yet a ready one: what it cites must be traced to a
-      // page read in this chat, as `research` holds its citations to excerpts.
-      const withheld = this.withheld()
-      if (withheld !== null) {
-        this.set({ phase: 'review', status: 'needs-input', detail: withheld, readiness: '' })
-        return
-      }
-      this.set({ phase: 'review', status: 'ready', detail: this.state.citations.length
-        ? sourceMessage("Structure validated, and every citation is traced to a page read in this chat. Review the draft before creating it. Test results are reported separately.")
-        : sourceMessage("Structure validated. This pack cites no source; it rests on what you told the assistant. Review the draft before creating it. Test results are reported separately."),
-      readiness: readinessKey(this.state) })
-      return
-    }
-
     // The same refusal `casesAndCheck` makes before it checks anything, kept
     // here as a backup: no path rests at `ready` with an expectation open. It
     // fires only where a passing check and an open issue coexist, which no run
@@ -1259,16 +1360,47 @@ export class AuthoringRun {
       this.set({ phase: 'review', status: 'needs-input', detail: notPassing, readiness: '' })
       return
     }
-    // Sources may have been verified, or failed, since the last trace.
+    // Sources may have been verified, or failed, since the last trace. A chat
+    // draft's citations were traced as its settle began, against the
+    // documents as they are now.
     const latest = this.latest()
-    if (latest) this.set({ citations: traceCitations(latest.document, this.ports.ledger) })
+    if (latest && !conversationMode(this.ports.mode)) this.set({ citations: traceCitations(latest.document, this.ports.ledger) })
     const withheld = this.withheld()
     if (withheld !== null) {
       this.set({ phase: 'review', status: 'needs-input', detail: withheld, readiness: '' })
       return
     }
-    this.set({ phase: 'review', status: 'ready', detail: sourceMessage("Every established case agrees. Review the draft, its sources and the unknowns before creating the pack."),
+    this.set({ phase: 'review', status: 'ready', detail: !conversationMode(this.ports.mode)
+      ? sourceMessage("Every established case agrees. Review the draft, its sources and the unknowns before creating the pack.")
+      : this.state.citations.length
+        ? sourceMessage("Every test case written without the draft's rules agrees, and every citation is traced to a page read in this chat. Review the draft and the unknowns before creating the pack.")
+        : sourceMessage("Every test case written without the draft's rules agrees. This pack cites no source; it rests on what you told the assistant. Review the draft and the unknowns before creating the pack."),
       readiness: readinessKey(this.state) })
+  }
+
+  /** What a chat draft's cases may rest on now: the person's messages and its traced citations. */
+  private grounds(): CaseGrounds | undefined {
+    return conversationMode(this.ports.mode) ? { statements: statementsOf(this.state.turns), citations: this.state.citations } : undefined
+  }
+
+  /** Why a checked chat draft without cases is not ready, and what completes it. */
+  private withoutCases(): string {
+    return sourceMessage("This draft has no test cases written without its rules yet. Establish them before creating the pack; nothing is created or changed until you do.")
+  }
+
+  /**
+   * What an expectation rests on while it still rests on it: a verified
+   * excerpt, or in a chat draft one of the person's messages or a page the
+   * draft cites and traced. Null where it no longer does.
+   */
+  private groundOf(source: string): { label: string; value: unknown } | null {
+    const excerpt = this.ports.ledger.verifiedExcerpt(source)
+    if (excerpt) return { label: 'SOURCE EXCERPT', value: excerpt }
+    const grounds = this.grounds()
+    const statement = grounds?.statements.get(source)
+    if (statement !== undefined) return { label: "THE PERSON'S STATEMENT", value: { id: source, text: statement } }
+    const page = grounds?.citations.find(citation => citation.traced && citation.location === source)
+    return page ? { label: 'SOURCE EXCERPT', value: { id: source, url: page.url, text: page.quote } } : null
   }
 
   /** Settle at review, a conversation draft's citations traced as they stand now. */
@@ -1494,6 +1626,12 @@ export function factPaths(document: unknown): string[] {
  * holding the gateway's public key -- and the record says which key id.
  */
 export function researchRecord(state: RunState, ledger: Ledger, packDigest: string): unknown {
+  // A chat draft's case may rest on the person's own words, and the transcript
+  // does not travel with the pack, so the record keeps each message a case or
+  // an expectation issue rests on, under the id the case names.
+  const said = statementsOf(state.turns)
+  const statements = [...new Set([...state.cases, ...state.expectationIssues.map(issue => issue.original)].map(row => row.expectationSource))]
+    .filter(id => said.has(id)).map(id => ({ id, text: said.get(id)! }))
   const sourceOf = (record: SourceRecord) => ({
     id: record.id,
     kind: record.kind,
@@ -1583,6 +1721,7 @@ export function researchRecord(state: RunState, ledger: Ledger, packDigest: stri
     registries: state.registries,
     citations: state.citations,
     cases: state.cases,
+    ...(statements.length ? { statements } : {}),
     droppedCases: state.droppedCases,
     expectationIssues: state.expectationIssues,
     unknowns: state.unknowns,
@@ -1698,8 +1837,9 @@ export function readinessKey(state: RunState): string {
  * it makes must be traced -- a failed receipt or an unverified document
  * withholds it. A draft that rests on sources must make at least one citation;
  * only `draft` may cite nothing, because the person's own statements are then
- * its basis. In `research` every intended, admitted case must also have a
- * current passing result.
+ * its basis. And every intended, admitted case -- written without the draft's
+ * rules, from its sources or the person's own words -- must have a current
+ * passing result, with no expectation left open.
  *
  * Not `status === 'ready'`: the status reports the last action, so a Stop, a
  * spent budget or a failed follow-up turn withdrew a Create that the candidate
@@ -1721,10 +1861,21 @@ export function canCreateDraft(state: RunState, mode: AuthoringMode = 'research'
   // asked without one, it cannot say, and the answer is no.
   if (conversationMode(mode) && (basis === undefined || state.tracedBasis !== basis)) return false
   const latest = state.candidates.at(-1)
-  const cases = conversationMode(mode) || !state.expectationIssues.some(issue => !issue.resolved) && completeCurrentCheck(state)
   return state.readiness !== '' && state.readiness === readinessKey(state) &&
-    latest?.check?.valid === true && latest.check.documentDigest === latest.digest && cases &&
+    latest?.check?.valid === true && latest.check.documentDigest === latest.digest &&
+    !state.expectationIssues.some(issue => !issue.resolved) && completeCurrentCheck(state) &&
     (mode === 'draft' || state.citations.length > 0) && state.citations.every(citation => citation.traced)
+}
+
+/**
+ * Whether a checked chat draft without cases may ask for them: a model call,
+ * offered only at rest, on a draft whose current check is valid and which has
+ * neither cases nor an expectation waiting on the person.
+ */
+export function canEstablishCases(state: RunState, mode: AuthoringMode | undefined): boolean {
+  const latest = state.candidates.at(-1)
+  return conversationMode(mode) && state.status !== 'running' && !state.restored && latest?.check?.valid === true &&
+    latest.check.documentDigest === latest.digest && state.cases.length === 0 && state.expectationIssues.length === 0
 }
 
 /** The rule for `research`, which the source-led page reads. */

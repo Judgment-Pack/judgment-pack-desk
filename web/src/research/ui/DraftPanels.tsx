@@ -18,8 +18,9 @@ import { CodeBlock } from '../../ui/CodeBlock'
 import { Disclosure } from '../../ui/Disclosure'
 import { Tabs } from '../../ui/Tabs'
 import type { SourceRecord } from '../ledger'
-import { canCreateDraft, citationGap, citedPage, type Citation, type RunState } from '../run'
+import { canCreateDraft, canEstablishCases, citationGap, citedPage, type Citation, type RunState } from '../run'
 import { ExpectationReview, type ExpectationReviewActions } from './ExpectationReview'
+import { ExpectationGround } from './ExpectationGround'
 import styles from './ResearchAuthoring.module.css'
 
 /** What the Inspector shows: a source, an excerpt within it, or a rule of the draft. */
@@ -114,18 +115,19 @@ function RuntimeChecks({ state }: { state: RunState }) {
   </>
 }
 
-export function TestsPanel({ state, onSelect, mode = 'research', ...actions }: ExpectationReviewActions & { mode?: AuthoringMode; state: RunState; onSelect: (next: Selection) => void }) {
+export function TestsPanel({ state, onSelect, mode = 'research', withChecks = true, ...actions }: ExpectationReviewActions & { mode?: AuthoringMode; state: RunState; onSelect: (next: Selection) => void; withChecks?: boolean }) {
   useLocale()
   const latest = state.candidates.at(-1)
   const check = latest?.check ?? latest?.previousCheck
-  const checks = <RuntimeChecks state={state} />
+  const checks = withChecks ? <RuntimeChecks state={state} /> : null
   const byId = new Map((check?.cases ?? []).map((row) => [row.id, row]))
   if (state.cases.length === 0 && state.droppedCases.length === 0 && state.expectationIssues.length === 0) {
-    return <div className={styles.panel}>{checks}<p className={styles.empty}>{(state.probes ?? []).some(probe => probe.documentDigest === latest?.digest) ? `${msg('Test cases')}: 0` : mode !== 'research' ? msg("Tests have not been run. Chat drafts receive a structure check. After creating the pack, use Tests to check its decisions.") : msg("No test cases yet. Research establishes cases from cited sources once a draft exists.")}</p></div>
+    return <div className={styles.panel}>{checks}<p className={styles.empty}>{(state.probes ?? []).some(probe => probe.documentDigest === latest?.digest) ? `${msg('Test cases')}: 0` : mode !== 'research' ? msg("No test cases yet. A chat draft's cases are written without its rules once the draft validates.") : msg("No test cases yet. Research establishes cases from cited sources once a draft exists.")}</p></div>
   }
   return (
     <div className={styles.panel}>
       {checks}
+      {!withChecks && <section className={styles.section}><h3>{msg("Test cases written without the draft's rules")}</h3></section>}
       <ExpectationReview state={state} onSelect={onSelect} {...actions} />
       {check && (
         <p className={styles.detail}><Message text={"Revision <0/>: <1/> to the runtime; <2/> of <3/> cases agree with their expectations. Rehearsal only; no decision was recorded."} slots={[latest?.revision, check.valid ? msg("valid") : msg("invalid"), check.cases.filter((c) => c.passed).length, check.cases.length]} /></p>
@@ -173,9 +175,7 @@ export function TestsPanel({ state, onSelect, mode = 'research', ...actions }: E
                       )}
                     </td>
                     <td>
-                      <Button variant="inline" onClick={() => onSelect({ kind: 'excerpt', id: row.expectationSource })}>
-                        {row.expectationSource}
-                      </Button>
+                      <ExpectationGround source={row.expectationSource} state={state} onSelect={onSelect} onReadPage={actions.onReadPage} />
                     </td>
                   </tr>
                   {differs && (
@@ -249,7 +249,7 @@ export function DraftPanel({ state, onSelect, onViewLogic, onViewSources }: { st
   )
 }
 
-export function ReviewPanel({ state, sources, onCreate, onSelect, onReadPage, basis, showCreateAction = true, mode = 'research' }: { testsPanel?: ReactNode; onTabChange?: (tab: string) => void; hideHeader?: boolean; onSelectInMain?: (next: Selection) => void; showCreateAction?: boolean; mode?: AuthoringMode; state: RunState; sources: readonly SourceRecord[]; onCreate: () => void; onSelect: (next: Selection) => void; onReadPage?: (citation: Citation, opener: HTMLElement) => void; basis?: string }) {
+export function ReviewPanel({ state, sources, onCreate, onSelect, onReadPage, onEstablishCases, basis, showCreateAction = true, mode = 'research' }: { testsPanel?: ReactNode; onTabChange?: (tab: string) => void; hideHeader?: boolean; onSelectInMain?: (next: Selection) => void; showCreateAction?: boolean; mode?: AuthoringMode; state: RunState; sources: readonly SourceRecord[]; onCreate: () => void; onSelect: (next: Selection) => void; onReadPage?: (citation: Citation, opener: HTMLElement) => void; onEstablishCases?: () => void; basis?: string }) {
   useLocale()
   const latest = state.candidates.at(-1)
   const check = latest?.check
@@ -262,6 +262,8 @@ export function ReviewPanel({ state, sources, onCreate, onSelect, onReadPage, ba
   // traced -- and never "cites no source" for a draft that declares some.
   const unread = latest !== undefined && state.citations.length === 0 && declaredSources(latest.document).length > 0
   const gap = conversation && latest && !state.tracing && !unread ? citationGap(state.citations, mode) : null
+  // A checked chat draft with no cases, a saved one most of all, gets them only on request.
+  const establish = canEstablishCases(state, mode)
   return (
     <div className={styles.panel}>
       <section className={styles.section}>
@@ -340,11 +342,13 @@ export function ReviewPanel({ state, sources, onCreate, onSelect, onReadPage, ba
         <h3>{msg("Create")}</h3>
         <p className={styles.detail}>
           {passing
-            ? mode === 'research' ? msg("Review the name and open questions, then create the pack with its checked cases and research record.") : msg("Structure validated. Review the draft before creating it. Research and test results are reported separately.")
+            ? msg("Review the name and open questions, then create the pack with its checked cases and research record.")
             : gap !== null ? systemMessage(gap)
-            : conversation ? msg("Create is offered once the draft is valid and every citation it makes is traced to a page read in this chat.")
+            : establish ? msg("This draft has no test cases written without its rules yet. Establish them before creating the pack; nothing is created or changed until you do.")
+            : conversation ? msg("Create is offered once the draft is valid, every citation it makes is traced to a page read in this chat, and every test case written without its rules agrees.")
             : msg("Create is offered once every established case agrees with the runtime and the draft is valid.")}
         </p>
+        {establish && onEstablishCases && <div><Button disabled={state.status === 'running'} onClick={onEstablishCases}>{msg("Write test cases without the rules")}</Button></div>}
         <p className={styles.hint}>
           {mode === 'research' && <>{msg("A verified receipt establishes that the gateway signed these bytes and sealed the session; it does not establish that a page is true, current, legally authoritative, or that it came from the site its URL names.")}</>}
         </p>
@@ -373,7 +377,7 @@ function DraftLogic({ state, selection, onSelect, onInspect, active }: { state: 
     viewport={viewport} onViewport={setViewport} nodePositions={nodePositions} onNodePositionsChange={setNodePositions} listScroll={scroll} /></div>
 }
 
-export function DraftTabs({ testsPanel, onTabChange, state, sources, selection, onSelect, onCreate, basis, showCreateAction = true, mode = 'research', hideHeader = false, onSelectInMain, documents = [], files = [], onRead, ...actions }: ExpectationReviewActions & Omit<ComponentProps<typeof DraftSources>, 'document'> & { testsPanel?: ReactNode; onTabChange?: (tab: string) => void; hideHeader?: boolean; onSelectInMain?: (next: Selection) => void; showCreateAction?: boolean; mode?: AuthoringMode; state: RunState; sources: readonly SourceRecord[]; selection: Selection; onSelect: (next: Selection) => void; onCreate: () => void; basis?: string }) {
+export function DraftTabs({ testsPanel, onTabChange, state, sources, selection, onSelect, onCreate, onEstablishCases, basis, showCreateAction = true, mode = 'research', hideHeader = false, onSelectInMain, documents = [], files = [], onRead, ...actions }: ExpectationReviewActions & Omit<ComponentProps<typeof DraftSources>, 'document'> & { testsPanel?: ReactNode; onTabChange?: (tab: string) => void; hideHeader?: boolean; onSelectInMain?: (next: Selection) => void; showCreateAction?: boolean; mode?: AuthoringMode; state: RunState; sources: readonly SourceRecord[]; selection: Selection; onSelect: (next: Selection) => void; onCreate: () => void; onEstablishCases?: () => void; basis?: string }) {
   useLocale()
   const [tab, setTabState] = useState('draft')
   const setTab = (next: string) => { setTabState(next); onTabChange?.(next) }
@@ -388,6 +392,10 @@ export function DraftTabs({ testsPanel, onTabChange, state, sources, selection, 
   }
   const pending = state.expectationIssues.filter(issue => !issue.resolved).length
   const total = state.cases.length + pending
+  // Where Tests is the pack's own test workspace, the cases written without
+  // the draft's rules, and any expectation waiting on the person, are reviewed
+  // beside readiness instead.
+  const casesInReview = testsPanel !== undefined && (state.cases.length > 0 || state.expectationIssues.length > 0 || state.droppedCases.length > 0)
   const document = state.candidates.at(-1)?.document
   const sourceCount = sources.length + documents.length + files.length + declaredSources(document).length
   return (
@@ -396,7 +404,7 @@ export function DraftTabs({ testsPanel, onTabChange, state, sources, selection, 
         <span>{typeof (state.candidates.at(-1)?.document as { title?: unknown })?.title === 'string' ? (state.candidates.at(-1)!.document as { title: string }).title : msg("Draft")}</span>
         <span className={styles.status}>{state.candidates.length === 0 ? msg("no revision yet") : msg("revision {{value0}}", { value0: state.candidates.at(-1)!.revision })}</span>
       </header>}
-      {pending > 0 && <div className={styles.panel} role="status"><span>{msg("{{count}} invalid expectations · testing paused", { count: pending })}</span><div><Button variant="quiet" onClick={() => setTab('tests')}>{msg("Review expectations")}</Button></div></div>}
+      {pending > 0 && <div className={styles.panel} role="status"><span>{msg("{{count}} invalid expectations · testing paused", { count: pending })}</span><div><Button variant="quiet" onClick={() => setTab(testsPanel === undefined ? 'tests' : 'review')}>{msg("Review expectations")}</Button></div></div>}
       <Tabs
         scrollable keepMounted fillPanel={tab === 'tests' && testsPanel ? 'tests' : 'logic'}
         variant={hideHeader ? 'page' : 'pane'}
@@ -407,8 +415,11 @@ export function DraftTabs({ testsPanel, onTabChange, state, sources, selection, 
           { value: 'draft', label: msg("Overview"), panel: <DraftPanel state={state} onSelect={onSelect} onViewLogic={() => setTab('logic')} onViewSources={() => setTab('sources')} /> },
           { value: 'logic', label: msg("Logic"), panel: <DraftLogic state={state} selection={selection} onSelect={onSelectInMain ?? onSelect} onInspect={onSelect} active={tab === 'logic'} /> },
           { value: 'sources', label: sourceCount ? msg('Sources ({{count}})', { count: sourceCount }) : msg('Sources'), panel: <div className={styles.panel}><DraftSources document={document} documents={documents} files={files} onRead={onRead} />{(sources.length > 0 || sourceCount === 0) && <SourcesPanel sources={sources} selection={selection} onSelect={onSelect} />}</div> },
-          { value: 'tests', label: total ? msg('Tests ({{count}})', { count: total }) : msg('Tests'), panel: testsPanel ?? <TestsPanel mode={mode} state={state} onSelect={onSelect} {...actions} /> },
-          { value: 'review', label: msg("Review"), panel: <ReviewPanel showCreateAction={showCreateAction} mode={mode} state={state} sources={sources} onCreate={onCreate} onSelect={onSelect} onReadPage={readPage} basis={basis} /> }
+          { value: 'tests', label: total ? msg('Tests ({{count}})', { count: total }) : msg('Tests'), panel: testsPanel ?? <TestsPanel mode={mode} state={state} onSelect={onSelect} {...actions} onReadPage={readPage} /> },
+          { value: 'review', label: msg("Review"), panel: <>
+            <ReviewPanel showCreateAction={showCreateAction} mode={mode} state={state} sources={sources} onCreate={onCreate} onSelect={onSelect} onReadPage={readPage} onEstablishCases={onEstablishCases} basis={basis} />
+            {casesInReview && <TestsPanel mode={mode} state={state} onSelect={onSelect} withChecks={false} {...actions} onReadPage={readPage} />}
+          </> }
         ]}
       />
     </section>

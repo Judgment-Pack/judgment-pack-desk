@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { AssistantEvent, CallTool, McpToolResult } from '../assistant/engine'
 import { Ledger } from './ledger'
-import { AuthoringRun, admitCases, canCreateDraft, canCreateResearchDraft, documentBasis, factPaths, matrixDocument, readinessKey, researchRecord, traceCitations, type Candidate, type RunPorts, type RunState, type TurnRequest } from './run'
+import { AuthoringRun, admitCases, canCreateDraft, canCreateResearchDraft, canEstablishCases, documentBasis, factPaths, statementsOf, matrixDocument, readinessKey, researchRecord, traceCitations, type Candidate, type RunPorts, type RunState, type TurnRequest } from './run'
 import { digestOf, type AuthoringCase, type CandidateCheck } from './checkCandidate'
 import { researchTools } from './tools'
 import { TEST_PUBLIC_KEY, fakeGateway } from './__fixtures__/fakeGateway'
@@ -66,6 +66,20 @@ const UNCITED = {
 
 /** The rule asked with the basis the state's citations were traced on, for a test that moves nothing. */
 const onItsBasis = (state: RunState, mode: AuthoringMode) => canCreateDraft(state, mode, state.tracedBasis ?? '')
+
+const MEETS = { kind: 'outcome', outcomeId: 'meets', reasons: [], handoff: { state: 'none' } }
+const MISSES = { kind: 'outcome', outcomeId: 'does-not-meet', reasons: [], handoff: { state: 'none' } }
+/** Cases a chat draft's reviewer writes from the person's first message. */
+const STATEMENT_CASES = { cases: [
+  { id: 'at-the-threshold', facts: { work: { hours: '1560' } }, expectedDisposition: MEETS, expectationSource: 'you-1', rationale: 'You said 1,560 hours qualify.' },
+  { id: 'just-under', facts: { work: { hours: '1559' } }, expectedDisposition: MISSES, expectationSource: 'you-1', rationale: 'One hour short does not.' }
+] }
+/** The reviewer turn of a chat draft: no tools, and the given cases. */
+const chatReviewer = (cases: unknown = STATEMENT_CASES): Script => async (request, _signal, emit) => {
+  expect(request.reviewer).toBe(true)
+  expect(request.hostTools).toEqual([])
+  emit({ type: 'proposal', document: cases, unknowns: [] })
+}
 
 const CASES = {
   cases: [
@@ -1385,14 +1399,20 @@ describe('chat workspace modes and checkpoint recovery', () => {
     expect(h.requests).toHaveLength(1); expect(h.runtime.calls).toHaveLength(0)
     expect(state.events.some(event => event.type === 'error')).toBe(false)
   })
-  it.each(['draft', 'web-research'] as const)('validates %s drafts without fabricating source-grounded cases', async mode => {
-    const h = harness([async (_request,_signal,emit) => emit({ type: 'proposal', document: PACK, unknowns: [] })],{ mode })
-    h.run.start('Draft from these supplied facts',[])
+  it.each(['draft', 'web-research'] as const)('validates %s drafts and grounds their cases only in what the chat holds', async mode => {
+    const h = harness([async (_request,_signal,emit) => emit({ type: 'proposal', document: PACK, unknowns: [] }), chatReviewer({ cases: [
+      ...STATEMENT_CASES.cases,
+      { ...STATEMENT_CASES.cases[0]!, id: 'from-an-excerpt', expectationSource: 'src-1#e1' }
+    ] })],{ mode })
+    h.run.start('Screen applicants: 1,560 hours of work qualify.',[])
     const state = await settled(h.run)
-    expect(h.runtime.calls).toEqual(['validate']); expect(h.requests).toHaveLength(1)
-    expect(state.cases).toEqual([])
+    expect(h.requests.map(request => request.reviewer === true)).toEqual([false, true])
+    expect(h.runtime.calls).toEqual(['validate', EXPECTATION_TOOL, 'validate', 'experimental_evaluate', 'experimental_evaluate'])
+    expect(state.cases.map(row => [row.id, row.expectationSource])).toEqual([['at-the-threshold', 'you-1'], ['just-under', 'you-1']])
+    // The ledger holds no excerpt in a chat, so a case citing one grounds nothing.
+    expect(state.droppedCases).toEqual([{ id: 'from-an-excerpt', reason: 'expectationSource "src-1#e1" is not an excerpt recorded in this run' }])
     // The ledger excerpt id this pack cites is no page of a document read in
-    // this chat, so the draft is validated and not ready.
+    // this chat: its cases agree, and the draft is still not ready.
     expect(state.status).toBe('needs-input')
     expect(state.citations).toMatchObject([{ sourceId: 'ircc-fswp', traced: false, reason: 'citation.location is not a page of a document read in this chat' }])
     expect(canCreateResearchDraft(state)).toBe(false)
@@ -1459,10 +1479,10 @@ describe('conversation-first task lifecycle', () => {
       const answer = await instructions.execute({}, signal)
       expect(answer.content?.[0]?.text).toContain('RUNTIME AUTHORING ONLY')
       emit({ type: 'proposal', document: UNCITED, unknowns: [] })
-    }], { mode: 'draft', authorPrompt: 'RUNTIME AUTHORING ONLY' })
-    h.run.start('Draft this decision', [])
+    }, chatReviewer()], { mode: 'draft', authorPrompt: 'RUNTIME AUTHORING ONLY' })
+    h.run.start('Draft this decision: 1,560 hours of work qualify.', [])
     expect((await settled(h.run)).status).toBe('ready')
-    expect(h.runtime.calls).toEqual(['validate'])
+    expect(h.runtime.calls[0]).toBe('validate')
   })
 
   it('answers a question beside a restored draft without restarting paid work or checks', async () => {
@@ -1566,11 +1586,11 @@ describe('conversation draft citations', () => {
   const citing = (location: string, excerpt = QUOTE) => ({ ...PACK, sources: [{ ...PACK.sources[0]!, citation: { location, excerpt } }] })
   const pageOf = (file: ChatAttachment, page = 1) => `attachment:${file.document!.id}/${file.document!.digest}/page/${page}`
   /** A conversation run whose chat keeps the given documents, each loading as given. */
-  function chat(mode: 'draft' | 'web-research', document: unknown, files: { file: ChatAttachment; document: VerifiedDocument }[], load?: RunPorts['loadDocument'], pin: () => ResearchGatewayConfig | null = () => pinOf('gateway-a')) {
+  function chat(mode: 'draft' | 'web-research', document: unknown, files: { file: ChatAttachment; document: VerifiedDocument }[], load?: RunPorts['loadDocument'], pin: () => ResearchGatewayConfig | null = () => pinOf('gateway-a'), cases: unknown = STATEMENT_CASES) {
     const loads: string[] = []
     return {
       loads,
-      ...harness([async (_request, _signal, emit) => emit({ type: 'proposal', document, unknowns: [] })], {
+      ...harness([async (_request, _signal, emit) => emit({ type: 'proposal', document, unknowns: [] }), chatReviewer(cases)], {
         mode,
         pin,
         documents: () => files.map(item => item.file),
@@ -1595,8 +1615,8 @@ describe('conversation draft citations', () => {
     expect(state.detail).toContain('every citation is traced to a page read in this chat')
     expect(state.readiness).toBe(readinessKey(state))
     expect(onItsBasis(state, mode)).toBe(true)
-    // Traced when the candidate was set and again at the settle.
-    expect(h.loads).toEqual([page.file.document!.id, page.file.document!.id])
+    // Traced when the candidate was set, before its cases were written, and at the settle.
+    expect(h.loads).toEqual([page.file.document!.id, page.file.document!.id, page.file.document!.id])
   })
 
   const untraced: [string, (page: { file: ChatAttachment }) => unknown, string][] = [
@@ -1660,7 +1680,7 @@ describe('conversation draft citations', () => {
     })
     h.run.start('Draft this', [])
     const state = await settled(h.run)
-    expect(calls).toBe(2)
+    expect(calls).toBe(3)
     expect(state.citations[0]!.traced).toBe(false)
     expect(state.status).toBe('needs-input')
   })
@@ -1682,10 +1702,18 @@ describe('conversation draft citations', () => {
 
   it('holds every mode to one rule over the same settled state', () => {
     const digest = 'fixture-digest'
-    const base: RunState = { ...INITIAL_STATE, status: 'ready', phase: 'review', tracedBasis: 'basis-1',
-      candidates: [{ revision: 1, producedBy: 'conversation', document: UNCITED, text: '{}', digest, check: { documentDigest: digest, valid: true, diagnostics: [], cases: [] } }] }
+    const row = { ...STATEMENT_CASES.cases[0]! }
+    const base: RunState = { ...INITIAL_STATE, status: 'ready', phase: 'review', tracedBasis: 'basis-1', cases: [row],
+      candidates: [{ revision: 1, producedBy: 'conversation', document: UNCITED, text: '{}', digest, check: { documentDigest: digest, valid: true, diagnostics: [], cases: [{ id: row.id, passed: true, expected: {}, actual: {} }] } }] }
     const settledAt = (state: RunState): RunState => ({ ...state, readiness: readinessKey(state) })
     const none = settledAt(base)
+    // Cases join the rule in every mode: none, or one disagreeing, or one left
+    // open for the person, and nothing is ready.
+    const caseless = settledAt({ ...base, cases: [], candidates: [{ ...base.candidates[0]!, check: { ...base.candidates[0]!.check!, cases: [] } }] })
+    expect([onItsBasis(caseless, 'draft'), onItsBasis(caseless, 'web-research')]).toEqual([false, false])
+    const disagreeing = settledAt({ ...base, candidates: [{ ...base.candidates[0]!, check: { ...base.candidates[0]!.check!, cases: [{ id: row.id, passed: false, expected: {}, actual: {} }] } }] })
+    expect(onItsBasis(disagreeing, 'draft')).toBe(false)
+    expect(onItsBasis(settledAt({ ...base, expectationIssues: [{ id: 'open', original: row, message: 'invalid' }] }), 'draft')).toBe(false)
     expect([onItsBasis(none, 'draft'), onItsBasis(none, 'web-research'), canCreateDraft(none, 'research')]).toEqual([true, false, false])
     const traced = settledAt({ ...base, citations: [{ sourceId: 'a', location: 'attachment:x', excerptId: null, url: null, traced: true, reason: '', quote: 'q' }] })
     expect([onItsBasis(traced, 'draft'), onItsBasis(traced, 'web-research')]).toEqual([true, true])
@@ -1811,13 +1839,13 @@ describe('conversation draft citations', () => {
       calls += 1
       // The settle's first load: verified under the old pin, which is replaced
       // before the trace lands. Under the new one the document does not verify.
-      if (calls === 2) current = 'gateway-b'
+      if (calls === 3) current = 'gateway-b'
       if (under.authority !== 'gateway-a') throw new Error('does not verify under the new pin')
       return page.document
     }, () => pinOf(current))
     h.run.start('Draft this', [])
     const state = await settled(h.run)
-    expect(calls).toBe(3)
+    expect(calls).toBe(4)
     expect(state.citations[0]!.traced).toBe(false)
     expect(state.status).toBe('needs-input')
     expect(onItsBasis(state, 'draft')).toBe(false)
@@ -1832,8 +1860,9 @@ describe('conversation draft citations', () => {
     const state = await settled(h.run)
     expect(state.citations[0]).toMatchObject({ traced: false, reason: "The gateway pin or this chat's documents changed while the citations were checked. Recheck the draft." })
     expect(onItsBasis(state, 'draft')).toBe(false)
-    // Two traces, when the candidate was set and at the settle, each three attempts.
-    expect(loads).toBe(6)
+    // Three traces -- when the candidate was set, before its cases were written,
+    // and at the settle -- each three attempts.
+    expect(loads).toBe(9)
   })
 
   it('verifies every document of one attempt under the one pin it began with', async () => {
@@ -1887,7 +1916,7 @@ describe('conversation draft citations', () => {
     await until(() => !h.run.getSnapshot().tracing && h.run.getSnapshot().status === 'needs-input', 'settled again on the other pin')
     expect(h.run.getSnapshot().citations[0]!.traced).toBe(false)
     expect(onItsBasis(h.run.getSnapshot(), 'draft')).toBe(false)
-    expect(h.requests).toHaveLength(1)
+    expect(h.requests).toHaveLength(2)
   })
 
   /** A ready chat draft whose follow-up turn is in flight when the basis moves, and ends as `end` says. */
@@ -1900,6 +1929,7 @@ describe('conversation draft citations', () => {
     let finish!: () => void
     const h = harness([
       async (_request, _signal, emit) => emit({ type: 'proposal', document: citing(pageOf(page.file)), unknowns: [] }),
+      chatReviewer(),
       async (_request, signal) => {
         started()
         await new Promise<void>((resolve, reject) => { finish = resolve; signal.addEventListener('abort', () => reject(new DOMException('stopped', 'AbortError'))) })
@@ -1939,7 +1969,7 @@ describe('conversation draft citations', () => {
     const validating = new Promise<void>(resolve => { started = resolve })
     let fail!: () => void
     const runtime = fakeRuntime()
-    const h = harness([async (_request, _signal, emit) => emit({ type: 'proposal', document: citing(pageOf(page.file)), unknowns: [] })], {
+    const h = harness([async (_request, _signal, emit) => emit({ type: 'proposal', document: citing(pageOf(page.file)), unknowns: [] }), chatReviewer()], {
       mode: 'draft', pin: () => pinOf('gateway-a'), documents: () => files.map(item => item.file), loadDocument: async () => { loads += 1; return page.document },
       callTool: async (name, args) => {
         if (name === 'validate' && hold) {
@@ -1984,7 +2014,7 @@ describe('conversation draft citations', () => {
     const page = kept()
     let current = 'gateway-a'
     const files = [page]
-    const h = harness([async (_request, _signal, emit) => emit({ type: 'proposal', document: citing(pageOf(page.file)), unknowns: [] })],
+    const h = harness([async (_request, _signal, emit) => emit({ type: 'proposal', document: citing(pageOf(page.file)), unknowns: [] }), chatReviewer()],
       { mode: 'draft', pin: () => pinOf(current), documents: () => files.map(item => item.file), loadDocument: async () => page.document })
     h.run.start('Draft this', [])
     const ready = await settled(h.run)
@@ -2005,7 +2035,8 @@ describe('conversation draft citations', () => {
     let tracing = false
     h.run.subscribe(() => {
       const now = h.run.getSnapshot().tracing === true
-      if (tracing && !now && ++traces === 2) current = 'gateway-b'
+      // The third trace lands: when the candidate was set, before its cases were written, and at the settle.
+      if (tracing && !now && ++traces === 3) current = 'gateway-b'
       tracing = now
     })
     h.run.start('Draft this', [])
@@ -2021,7 +2052,7 @@ describe('conversation draft citations', () => {
     let hold = true
     let release!: () => void
     const held = new Promise<void>(resolve => { release = resolve })
-    const h = harness([async (_request, _signal, emit) => emit({ type: 'proposal', document: citing(pageOf(page.file)), unknowns: [] })],
+    const h = harness([async (_request, _signal, emit) => emit({ type: 'proposal', document: citing(pageOf(page.file)), unknowns: [] }), chatReviewer()],
       { mode: 'draft', pin: () => pinOf('gateway-a'), documents: () => files.map(item => item.file), loadDocument: async (_reference, _pin, signal) => {
         if (hold) await new Promise<void>((resolve, reject) => { held.then(resolve); signal.addEventListener('abort', () => reject(new DOMException('superseded', 'AbortError'))) })
         return page.document
@@ -2095,6 +2126,205 @@ describe('conversation draft citations', () => {
     expect(documentBasis({ public: 'a' }, [])).not.toBe(base)
     expect(documentBasis({ public: 'a' }, [{ ...page.file, document: { ...page.file.document!, pages: [] } }])).not.toBe(base)
     expect(documentBasis({ public: 'a' }, [{ ...page.file, document: { ...page.file.document!, allowPartial: true } }])).not.toBe(base)
+  })
+
+  // ---- cases written without the rules, in the conversation modes ----------
+
+  it('writes a chat draft\'s cases from its pages and the person\'s messages, never from its rules or the assistant\'s turns', async () => {
+    const page = kept()
+    const RULE = { id: 'rule-zq-hours-floor', description: 'Description-zq of the hours floor', when: { op: 'fact', path: '/work/hours', operator: 'greater-than-or-equal', value: '1560' }, outcome: 'meets', onUnknown: 'escalate', sourceRefs: ['ircc-fswp'] }
+    const EXCEPTION = { id: 'exception-zq-veteran', when: { op: 'fact', path: '/work/veteran', operator: 'equals', value: 'yes-zq' }, outcome: 'does-not-meet', sourceRefs: ['ircc-fswp'] }
+    const pack = { ...citing(pageOf(page.file)), rules: [RULE], exceptions: [EXCEPTION] }
+    const PARAPHRASE = 'ASSISTANT-ZQ: the floor rule compares hours against 1560 exactly.'
+    let prompt = ''
+    const h = harness([
+      async (_request, _signal, emit) => { emit({ type: 'message', text: PARAPHRASE }); emit({ type: 'proposal', document: pack, unknowns: [] }) },
+      async (request, signal, emit) => { prompt = request.prompt; await chatReviewer()(request, signal, emit) }
+    ], { mode: 'web-research', pin: () => pinOf('gateway-a'), documents: () => [page.file], loadDocument: async () => page.document })
+    h.run.start('Screen applicants against the page I shared.', [])
+    const state = await settled(h.run)
+    expect(prompt).not.toBe('')
+    // What the reviewer may rest on: the quoted page by its citation, and the person's words by id.
+    expect(prompt).toContain(pageOf(page.file))
+    expect(prompt).toContain(QUOTE)
+    expect(prompt).toContain('"id": "you-1"')
+    expect(prompt).toContain('Screen applicants against the page I shared.')
+    expect(prompt).toContain('"/work/hours"')
+    // Never how the draft decides, and never the assistant's turns.
+    for (const leak of [RULE.id, RULE.description, JSON.stringify(RULE.when), EXCEPTION.id, JSON.stringify(EXCEPTION.when), PARAPHRASE, '"rules"', '"exceptions"']) expect(prompt).not.toContain(leak)
+    expect(state.turns.some(turn => turn.text === PARAPHRASE)).toBe(true)
+  })
+
+  it('admits a statement or a traced page as a chat case\'s ground, and nothing else', () => {
+    const ledger = new Ledger('unset')
+    const traced = { sourceId: 'page', location: 'attachment:a/sha256:b/page/1', excerptId: null, url: null, traced: true, reason: '', quote: QUOTE }
+    const grounds = { statements: new Map([['you-1', 'People with 1,560 hours qualify.']]), citations: [traced, { ...traced, sourceId: 'other', location: 'attachment:c/sha256:d/page/2', traced: false }] }
+    const row = (id: string, expectationSource: string) => ({ ...STATEMENT_CASES.cases[0]!, id, expectationSource })
+    const { admitted, dropped } = admitCases({ cases: [row('said', 'you-1'), row('quoted', traced.location), row('never-said', 'you-9'), row('untraced-page', 'attachment:c/sha256:d/page/2'), row('excerpt', 'src-1#e1')] }, ledger, [], grounds)
+    expect(admitted.map(item => [item.id, item.expectationSource])).toEqual([['said', 'you-1'], ['quoted', traced.location]])
+    expect(dropped).toEqual([
+      { id: 'never-said', reason: 'expectationSource "you-9" is neither one of your messages nor a page the draft cites and traced' },
+      { id: 'untraced-page', reason: 'expectationSource "attachment:c/sha256:d/page/2" is neither one of your messages nor a page the draft cites and traced' },
+      { id: 'excerpt', reason: 'expectationSource "src-1#e1" is not an excerpt recorded in this run' }
+    ])
+    // Research admits neither: its cases rest on recorded excerpts only.
+    expect(admitCases({ cases: [row('said', 'you-1')] }, ledger, []).dropped).toEqual([{ id: 'said', reason: 'expectationSource "you-1" is not an excerpt recorded in this run' }])
+  })
+
+  it.each(['draft', 'web-research'] as const)('takes a %s draft that disagrees with its cases to the person, never to a repair turn', async mode => {
+    const page = kept()
+    const wrong = { cases: [{ ...STATEMENT_CASES.cases[0]!, expectedDisposition: MISSES }] }
+    const h = chat(mode, citing(pageOf(page.file)), [page], undefined, undefined, wrong)
+    h.run.start('People with 1,560 hours do not qualify.', [])
+    const state = await settled(h.run)
+    expect(h.requests.map(request => request.reviewer === true)).toEqual([false, true])
+    expect(state.revisionsUsed).toBe(0)
+    expect(state.phase).toBe('review')
+    expect(state.status).toBe('needs-input')
+    expect(state.detail).toBe('The unchanged draft disagrees with the reviewed expectations. Review the results or request a pack change.')
+    expect(state.candidates).toHaveLength(1)
+    expect(onItsBasis(state, mode)).toBe(false)
+  })
+
+  it('does not make ready a draft whose messages and pages ground no case', async () => {
+    const h = chat('draft', UNCITED, [], undefined, undefined, { cases: [{ ...STATEMENT_CASES.cases[0]!, expectationSource: 'you-7' }] })
+    h.run.start('Draft something.', [])
+    const state = await settled(h.run)
+    expect(state.cases).toEqual([])
+    expect(state.status).toBe('needs-input')
+    expect(state.detail).toBe('No test case could be grounded in your messages or in a page the draft cites. Tell the assistant how the pack should decide a case, or have it read and cite the pages the pack rests on.')
+    expect(onItsBasis(state, 'draft')).toBe(false)
+  })
+
+  it('round-trips a statement-grounded case through a saved chat, into the matrix and the record', async () => {
+    const { checkpoint, decodeCheckpoint, restoreLedger } = await import('../chat/checkpoint')
+    const BRIEF = 'People with 1,560 hours qualify; fewer do not.'
+    const first = chat('draft', UNCITED, [])
+    first.run.start(BRIEF, [])
+    const ready = await settled(first.run)
+    expect(ready.status, ready.detail).toBe('ready')
+    const saved = decodeCheckpoint(JSON.parse(JSON.stringify(checkpoint(ready, first.ledger.sources))))
+    expect(saved.state.cases.map(row => row.expectationSource)).toEqual(['you-1', 'you-1'])
+    const reopened = harness([async () => { throw new Error('Reload and recheck must not call the model') }], { mode: 'draft' })
+    restoreLedger(reopened.ledger, saved.sources)
+    await reopened.run.restore(saved.state)
+    reopened.run.recheck()
+    const checked = await settled(reopened.run)
+    expect(checked.status, checked.detail).toBe('ready')
+    expect(onItsBasis(checked, 'draft')).toBe(true)
+    expect(reopened.requests).toEqual([])
+    expect(checked.cases).toEqual(ready.cases)
+    const matrix = matrixDocument(checked, reopened.ledger) as { cases: { id: string; focus: string; cites?: unknown }[] }
+    expect(matrix.cases.map(row => [row.id, row.focus, row.cites])).toEqual([
+      ['at-the-threshold', 'You said 1,560 hours qualify. [you-1]', undefined],
+      ['just-under', 'One hour short does not. [you-1]', undefined]
+    ])
+    const record = researchRecord(checked, reopened.ledger, 'abc') as { statements?: unknown }
+    expect(record.statements).toEqual([{ id: 'you-1', text: BRIEF }])
+  })
+
+  it('sets aside saved cases a chat opened from the pack cannot ground again, and a later message never stands in for them', async () => {
+    const { checkpoint, decodeCheckpoint } = await import('../chat/checkpoint')
+    const { artifactCheckpoint } = await import('../packs/drafts/model')
+    const first = chat('draft', UNCITED, [])
+    first.run.start('People with 1,560 hours qualify; fewer do not.', [])
+    expect((await settled(first.run)).status).toBe('ready')
+    // A pack's draft keeps its candidates and cases, and none of the turns.
+    const artifact = artifactCheckpoint(decodeCheckpoint(JSON.parse(JSON.stringify(checkpoint(first.run.getSnapshot(), [])))))
+    expect(artifact.state.turns).toEqual([])
+    const opened = harness([async (_request, _signal, emit) => emit({ type: 'message', text: 'Noted.' })], { mode: 'draft' })
+    await opened.run.restore(artifact.state)
+    // The first message of the new chat is `you-1` here too, and grounds nothing saved.
+    opened.run.send('Something else entirely.')
+    await settled(opened.run)
+    expect(statementsOf(opened.run.getSnapshot().turns).get('you-1')).toBe('Something else entirely.')
+    opened.run.recheck()
+    const state = await settled(opened.run)
+    expect(state.cases).toEqual([])
+    expect(state.expectationIssues).toEqual([])
+    expect(state.droppedCases.map(row => row.id)).toEqual(['at-the-threshold', 'just-under'])
+    expect(state.droppedCases[0]!.reason).toBe('expectationSource "you-1" is neither one of your messages nor a page the draft cites and traced')
+    expect(state.turns.some(turn => turn.kind === 'note' && turn.text.startsWith('The saved test cases rest on messages'))).toBe(true)
+    expect(onItsBasis(state, 'draft')).toBe(false)
+  })
+
+  it('keeps no smaller suite when only some saved cases can be grounded again', async () => {
+    const { checkpoint, decodeCheckpoint } = await import('../chat/checkpoint')
+    const { artifactCheckpoint } = await import('../packs/drafts/model')
+    const page = kept()
+    const mixed = { cases: [
+      { ...STATEMENT_CASES.cases[0]!, id: 'from-the-page', expectationSource: pageOf(page.file) },
+      { ...STATEMENT_CASES.cases[1]!, id: 'from-what-you-said', expectationSource: 'you-1' }
+    ] }
+    const first = chat('draft', citing(pageOf(page.file)), [page], undefined, undefined, mixed)
+    first.run.start('People with 1,560 hours qualify; fewer do not.', [])
+    expect((await settled(first.run)).cases.map(row => row.id)).toEqual(['from-the-page', 'from-what-you-said'])
+    const artifact = artifactCheckpoint(decodeCheckpoint(JSON.parse(JSON.stringify(checkpoint(first.run.getSnapshot(), [])))))
+    // The page still traces in the chat opened from the pack; the message is not in it.
+    const opened = chat('draft', citing(pageOf(page.file)), [page])
+    await opened.run.restore(artifact.state)
+    opened.run.recheck()
+    const state = await settled(opened.run)
+    expect(state.cases).toEqual([])
+    expect(state.droppedCases).toEqual([
+      { id: 'from-the-page', reason: 'set aside with the saved cases that could not be grounded again' },
+      { id: 'from-what-you-said', reason: 'expectationSource "you-1" is neither one of your messages nor a page the draft cites and traced' }
+    ])
+    expect(opened.requests).toEqual([])
+    expect(canEstablishCases(state, 'draft')).toBe(true)
+  })
+
+  it('rechecks a saved chat draft without cases without a model, and establishes them only when asked', async () => {
+    const { checkpoint, decodeCheckpoint } = await import('../chat/checkpoint')
+    const recovered = harness([async () => { throw new Error('No model before the person asks') }, chatReviewer()], { mode: 'draft' })
+    const reply = '```json\n' + JSON.stringify({ proposal: { document: UNCITED, unknowns: [] } }) + '\n```'
+    await recovered.run.restore({ ...INITIAL_STATE, status: 'complete', turns: [
+      { id: 't1', role: 'user', kind: 'brief', text: 'People with 1,560 hours qualify; fewer do not.', at: '2026-09-30T00:00:00Z' },
+      { id: 't2', role: 'assistant', kind: 'message', text: reply, at: '2026-09-30T00:00:01Z' }
+    ] })
+    recovered.run.recoverDraft(reply)
+    const saved = decodeCheckpoint(JSON.parse(JSON.stringify(checkpoint(await settled(recovered.run), []))))
+    expect(saved.state.cases).toEqual([])
+    const h = harness([chatReviewer()], { mode: 'draft' })
+    await h.run.restore(saved.state)
+    expect(canEstablishCases(h.run.getSnapshot(), 'draft')).toBe(false)
+    h.run.establishCases()
+    expect(h.requests).toEqual([])
+    h.run.recheck()
+    const checked = await settled(h.run)
+    expect(h.requests).toEqual([])
+    expect(checked.status).toBe('needs-input')
+    expect(checked.detail).toBe('This draft has no test cases written without its rules yet. Establish them before creating the pack; nothing is created or changed until you do.')
+    expect(canEstablishCases(checked, 'draft')).toBe(true)
+    expect(onItsBasis(checked, 'draft')).toBe(false)
+    h.run.establishCases()
+    const established = await settled(h.run)
+    expect(h.requests.map(request => request.reviewer)).toEqual([true])
+    expect(established.status, established.detail).toBe('ready')
+    expect(established.cases.map(row => row.expectationSource)).toEqual(['you-1', 'you-1'])
+    expect(canEstablishCases(established, 'draft')).toBe(false)
+    expect(canEstablishCases(established, 'research')).toBe(false)
+  })
+
+  it('gives the correction reviewer the person\'s message where a case rests on one', async () => {
+    const blocked = { cases: [{ ...STATEMENT_CASES.cases[0]!, id: 'missing-hours', facts: {}, expectedDisposition: { kind: 'unresolved', reasons: [], handoff: { state: 'requested', triggeredBy: ['unknown'] } } }] }
+    let prompt = ''
+    const h = harness([
+      async (_request, _signal, emit) => emit({ type: 'proposal', document: UNCITED, unknowns: [] }),
+      chatReviewer(blocked),
+      async (request, _signal, emit) => {
+        prompt = request.prompt
+        emit({ type: 'proposal', document: { expectedDisposition: { kind: 'unresolved', reasons: ['unknown'], handoff: { state: 'requested', triggeredBy: ['unknown'] } }, rationale: 'A missing fact retains unknown.' }, unknowns: [] })
+      }
+    ], { mode: 'draft' })
+    h.run.start('Without the hours, a person must decide.', [])
+    const state = await settled(h.run)
+    expect(state.expectationIssues.map(issue => issue.id)).toEqual(['missing-hours'])
+    h.run.proposeExpectationCorrection('missing-hours')
+    const proposed = await settled(h.run)
+    expect(prompt).toContain("THE PERSON'S STATEMENT\n" + JSON.stringify({ id: 'you-1', text: 'Without the hours, a person must decide.' }))
+    expect(prompt).not.toContain('SOURCE EXCERPT')
+    expect(proposed.expectationIssues[0]!.proposal).toBeDefined()
   })
 
   it('tells the model how a chat draft cites, only in the conversation modes', async () => {

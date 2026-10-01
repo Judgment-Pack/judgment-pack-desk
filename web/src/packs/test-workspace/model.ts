@@ -474,6 +474,11 @@ export async function recoverResearchRecord(
       continue
     const digest = await digestOf(entry.text)
     if (entry.check.documentDigest !== digest) continue
+    // A check the draft already carried into this suite when the pack was
+    // created is the same check: the record repeats it for a reader of the
+    // file, and a second run would show one check twice.
+    const carried = ':check:' + entry.check.documentDigest + ':' + (await digestOf(jsonIdentity(entry.check.cases)))
+    if (next.runs.some((run) => run.id.endsWith(carried))) continue
     // Only display the old report. This is not a fresh runtime check or current case result.
     const draft = {
       id: key + ':' + index,

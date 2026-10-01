@@ -191,7 +191,7 @@ export function CreatePackDialog({
 }: {
   submitLabel?: string
   presentation?: 'dialog' | 'page' | 'review'
-  reviewDraft?: { trialCount?: number; caseCount?: number; document: unknown; name: string; description: string; unknowns: string[]; research?: ResearchHandover; citations?: { traced: number; total: number } }
+  reviewDraft?: { trialCount?: number; caseCount?: number; document: unknown; name: string; description: string; unknowns: string[]; research?: ResearchHandover; citations?: { traced: number; total: number }; cases?: { agreeing: number; total: number } }
   onSaved?: (pack: { id: string; path: string; digest: string }) => string | void | Promise<string | void>
   initialFolderId?: string
   onFolderChange?: (id:string) => void
@@ -972,7 +972,11 @@ export function CreatePackDialog({
       <label><Message text={"<0/> I reviewed these open questions and assumptions."} slots={[<input type="checkbox" checked={reviewedUnknowns} disabled={busy} onChange={event => setReviewedUnknowns(event.target.checked)} />]} /></label>
     </section>}
     <p className={flow.hint}>{handover ? msg("{{value0}} checked cases and the research record will be saved with this pack.", { value0: caseCount(handover) }) : msg("Structure validated. {{cases}} saved cases and {{trials}} recorded draft trials stay with this pack.", { cases: reviewDraft?.caseCount ?? 0, trials: reviewDraft?.trialCount ?? 0 })}</p>
-    {reviewDraft?.citations && <p className={flow.hint}>{reviewDraft.citations.total === 0 ? msg("This pack cites no source. It rests on what you told the assistant.") : msg("Citations traced to their sources: {{traced}} of {{total}}.", reviewDraft.citations)}</p>}
+    {(reviewDraft?.cases || reviewDraft?.citations) && <p className={flow.hint}>
+      {reviewDraft.cases && msg("Test cases written without the draft's rules: {{agreeing}} of {{total}} agree.", reviewDraft.cases)}
+      {reviewDraft.cases && reviewDraft.citations && ' '}
+      {reviewDraft.citations && (reviewDraft.citations.total === 0 ? msg("This pack cites no source. It rests on what you told the assistant.") : msg("Citations traced to their sources: {{traced}} of {{total}}.", reviewDraft.citations))}
+    </p>}
     {createWhy && <p role="status">{createWhy}</p>}
     {refused && <DiagnosticList diagnostics={anchor(refused, new Set())} label={msg("Validation details")} />}
     {(failure ?? blocked) && <Alert reason={(failure ?? blocked)!.reason ? systemMessage((failure ?? blocked)!.reason!) : undefined}>{systemMessage((failure ?? blocked)!.lead)}</Alert>}

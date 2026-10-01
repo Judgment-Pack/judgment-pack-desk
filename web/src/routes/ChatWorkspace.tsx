@@ -114,7 +114,9 @@ export function DraftWorkspace({ chat, artifact, fallback }: { chat: Chat; artif
     <SourceInspector selection={selection} ledger={binding.ledger} state={state} onSelect={setSelection} /> : null)
   const select = (next: Selection) => { setSelection(next); if (next) details.reveal() }
   const candidate = latest?.document as { title?: unknown; description?: unknown; decision?: { question?: unknown } } | undefined
-  const research = latest && binding?.ledger && chat.mode === 'research' && passing ? {
+  // A ready draft has established cases in every mode, and the created pack
+  // carries them as its matrix rows beside the record of what they rest on.
+  const research = latest && binding?.ledger && passing ? {
     document: latest.document, name: typeof candidate?.title === 'string' ? candidate.title : '',
     description: typeof candidate?.description === 'string' ? candidate.description : '', unknowns: state.unknowns,
     matrix: matrixDocument(state,binding.ledger), research: researchRecord(state,binding.ledger,'')
@@ -136,9 +138,11 @@ export function DraftWorkspace({ chat, artifact, fallback }: { chat: Chat; artif
           onFolderChange={targetFolderId => store?.update(chat.id,{targetFolderId})}
           canCreate={() => { const snapshot=store?.getSnapshot(); const current=snapshot?.packDrafts.find(item=>item.id===artifact.id); const active=binding.run?.getSnapshot(); return !snapshot?.dirty && !snapshot?.error && current?.checkpoint.state.candidates.at(-1)?.text===active?.candidates.at(-1)?.text && !!active && active.candidates.at(-1)?.digest===reviewDigest.current && draftReady(chat,active,binding.run?.basisNow()) }}
           reviewDraft={{ trialCount: state.probes?.length ?? 0, caseCount: new Set([...state.cases.map(c=>c.id),...savedTests.suite.cases.map(c=>c.id)]).size, document: latest.document, name: artifact.title, description: typeof candidate?.description === 'string' ? candidate.description : '', unknowns: state.unknowns, research,
-            citations: { traced: state.citations.filter(c=>c.traced).length, total: state.citations.length } }}
+            citations: { traced: state.citations.filter(c=>c.traced).length, total: state.citations.length },
+            cases: { agreeing: latest.check?.cases.filter(c=>c.passed).length ?? 0, total: state.cases.length } }}
           onSaved={async pack => { await carryDraftTests({...artifact,checkpoint:{...artifact.checkpoint,state}},pack.id); store?.finalizeDraft(artifact.id,pack); if(!await store?.flush()) throw new Error(sourceMessage('The pack was finalized, but its draft link could not be saved. Retry saving before leaving.')); writingChanged(false); return `/packs/${encodeURIComponent(pack.id)}` }} />
       </div> : <DraftTabs onTabChange={tab=>setTestActive(tab==='tests')} testsPanel={latest && candidate ? <TestsContent owner={artifact.id} document={latest.document as import('../mcp/types').PackDocument} text={latest.text} title={artifact.title} active={testActive && !review} draft={{...artifact,checkpoint:{...artifact.checkpoint,state}}}/> : undefined} documents={artifact.documents} files={artifact.sourceFiles} onRead={readSource} hideHeader onSelectInMain={setSelection} state={state} mode={chat.mode} basis={basis} sources={binding?.sources ?? []} selection={selection} onSelect={select} onCreate={beginReview} showCreateAction={false}
+        onEstablishCases={() => store?.perform(chat.id, active => active.run?.establishCases())}
         onProposeCorrection={id => store?.perform(chat.id, active => active.run?.proposeExpectationCorrection(id))}
         onApproveCorrection={(id,token) => store?.perform(chat.id, active => active.run?.approveExpectationCorrection(id,token), false)} />}
     </div>

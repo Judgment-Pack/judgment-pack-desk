@@ -229,3 +229,24 @@ it('retains a research handover report only under its original candidate digest'
   bad.testHistory[0]!.check.documentDigest = 'other'
   expect((await recoverResearchRecord(emptySuite(), bad, 'companion')).runs).toEqual([])
 })
+
+it('does not show a check twice when the draft carried it and the research record repeats it', async () => {
+  const { draft, text, digest } = await fixture()
+  const check = {
+    documentDigest: digest,
+    valid: true,
+    diagnostics: [],
+    cases: [{ id: 'r', passed: true, expected: { disposition: expected }, actual: { disposition: expected } }],
+  }
+  draft.checkpoint.state.probes = []
+  draft.checkpoint.state.candidates[0] = { ...draft.checkpoint.state.candidates[0]!, previousCheck: check }
+  // What creation leaves: the draft's checks carried into the pack's suite...
+  const carried = await recoverDraft(emptySuite(), draft)
+  expect(carried.runs).toHaveLength(1)
+  // ...and the research record written beside the pack, whose history repeats them.
+  const record = { researchRecordVersion: '1', recordedAt: at, testHistory: [{ text, check }] }
+  const opened = await recoverResearchRecord(carried, record, 'research:abc')
+  expect(opened.runs).toHaveLength(1)
+  // A check the draft never carried still comes back from the record.
+  expect((await recoverResearchRecord(emptySuite(), record, 'research:abc')).runs).toHaveLength(1)
+})
