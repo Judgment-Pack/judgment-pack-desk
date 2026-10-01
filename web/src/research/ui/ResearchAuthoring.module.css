@@ -33,8 +33,16 @@
 .badge[data-state="passed"] { color: var(--true); border-color: var(--true); }
 .badge[data-state="disagrees"] { color: var(--danger); border-color: var(--danger); }
 .table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
-.table th, .table td { text-align: left; vertical-align: top; padding: var(--space-1) var(--space-2); border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
-.table th { font-weight: 600; color: var(--ink-soft); font-size: var(--text-xs); }
+/* `break-word`, not `anywhere`: a word too long for its line still breaks, but
+   it does not shrink a column's smallest width to one letter, so a header or a
+   value such as `does-not-meet` wraps only between words. The free-text
+   columns (a case's id and rationale, what its expectation rests on) can hold
+   an id, a digest or a URL with nowhere to break: they break anywhere, from a
+   floor wide enough that their prose still wraps between words. */
+.table th, .table td { text-align: left; vertical-align: top; padding: var(--space-1) var(--space-2); border-bottom: 1px solid var(--border); overflow-wrap: break-word; }
+.table th { font-weight: 600; color: var(--ink-soft); font-size: var(--text-xs); word-break: keep-all; }
+.table code { overflow-wrap: anywhere; }
+.table .textCell { min-width: 7rem; overflow-wrap: anywhere; }
 .tableWrap { position: relative; overflow-x: auto; }
 .mono { font-family: var(--mono); font-size: var(--text-xs); overflow-wrap: anywhere; word-break: break-all; }
 .excerpt { margin: 0; padding: var(--space-2) var(--space-3); border-left: 3px solid var(--border); background: var(--code-surface); font-size: var(--text-sm); white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -57,9 +57,22 @@ it('requires review before enabling and displays a scoped credential only after 
  fireEvent.click(within(dialog).getByLabelText('I reviewed this trigger and its execution policy.'));fireEvent.click(confirm)
  const tokenDialog=await screen.findByRole('dialog',{name:'Event token'})
  expect((within(tokenDialog).getByLabelText('Event token') as HTMLInputElement).value).toBe('a'.repeat(64))
+ // What the token may do, both of it: deliver, and read the occurrences it delivered.
+ expect(tokenDialog.textContent).toContain('It is shown once. It authorizes deliveries to this trigger, and reading the results of the occurrences it delivered.')
  fireEvent.click(within(tokenDialog).getByRole('button',{name:'Done'}))
  await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull())
  expect(screen.queryByDisplayValue('a'.repeat(64))).toBeNull()
+})
+it('names the occurrence read beside the delivery route in the event endpoint',async()=>{
+ vi.mocked(jobsAPI).mockImplementation(async path=>{
+  if(path==='jobs/job_test/triggers')return {items:[{...trigger,paused:false,hasKey:true}],localFiles:true} as never
+  if(path.startsWith('jobs/job_test/occurrences'))return {items:[],next:0} as never
+  throw Error(path)
+ })
+ shell(<TriggersView jobId="job_test" release={release}/>)
+ const endpoint=(await screen.findByText('Event endpoint')).closest('details')!
+ expect([...endpoint.querySelectorAll('pre')].map(pre=>pre.textContent)).toEqual([`${location.origin}/api/job-events/trg_test`,`GET ${location.origin}/api/job-events/trg_test/occurrences/occ_<id>`])
+ expect(endpoint.textContent).toContain("The token that delivered an event can read that occurrence's result here: send a GET with the same Authorization header")
 })
 it('cannot enable a schedule whose fresh input preview fails',async()=>{
  vi.mocked(jobsAPI).mockImplementation(async path=>{
