@@ -47,3 +47,17 @@ it('retains the integration chooser and pending request when the details portal 
  expect(dock.querySelector('textarea')).toBeNull();expect(drawer.querySelector('textarea')).toBeTruthy()
  ui.unmount();dock.remove();drawer.remove()
 })
+
+it('explains calculator binding setup on adding a source and keeps ordinary source details unchanged',async()=>{
+ const {setSourceIntegration}=await import('./jobIntegrations')
+ const calculator={digest:'digest',profile:{id:'fx',shape:'mcp' as const,source:'finance',class:'record' as const,authority:'gateway',publicKey:'key',adapter:{name:'mcp',version:'1',digest:'digest'},endpoint:null,tools:['convert'],calculator:{name:'fx-convert',version:'2.1.0'}}}
+ const query=new QueryClient({defaultOptions:{queries:{retry:false}}})
+ const props={doc:{} as PackDocument,profiles:[calculator],disabled:false,onChange:vi.fn(),onInvalid:vi.fn(),onDirty:vi.fn()}
+ const draw=(mapping:MappingV2)=><QueryClientProvider client={query}><MappingEditor {...props} mapping={mapping}/></QueryClientProvider>
+ const ui=render(draw({version:2,sources:[]}))
+ ui.rerender(draw(setSourceIntegration({version:2},calculator)))
+ expect(await screen.findByText('This source is a calculator. In Advanced mapping → Edit mapping, bind each reported input to a parameter and set a maximum age for each table it reads. Empty bindings reject answers that report inputs or tables.')).toBeTruthy()
+ expect(screen.getByLabelText('Request parameters (JSON)')).toBeTruthy()
+ ui.rerender(draw(setSourceIntegration({version:2})))
+ expect(screen.queryByText(/This source is a calculator/)).toBeNull()
+})

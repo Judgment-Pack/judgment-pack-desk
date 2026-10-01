@@ -24,9 +24,9 @@ export function setSourceIntegration(mapping: MappingV2, entry?: ProfileEntry, r
  while(next.sources.some(s=>s.name===`source${n}`))n++
  const name=previous?.name ?? `source${n}`
  const read={copy:previous?.read.copy ?? {facts:[],evidence:[]}}
- const source = !entry ? {name,kind:'selected-file' as const,provider:'local-file' as const,read} : entry.profile.source==='drive' ? {
+ const source = !entry ? {name,kind:'selected-file' as const,provider:'local-file' as const,read} : entry.profile.source==='drive' && !entry.profile.calculator ? {
   name,kind:'selected-file' as const,provider:'google-drive' as const,profile:entry.profile.id,profileDigest:entry.digest,maxAge:300,arguments:{fileId:{$param:`${name}File`},grant:{$param:`${name}Grant`}},read
- } : {name,kind:'operation' as const,profile:entry.profile.id,profileDigest:entry.digest,maxAge:300,arguments:{tool:entry.profile.tools![0],arguments:{}},read}
+ } : {name,kind:'operation' as const,profile:entry.profile.id,profileDigest:entry.digest,maxAge:300,arguments:{tool:entry.profile.tools![0],arguments:{}},read,...(entry.profile.calculator?{calculation:{inputs:{},tables:{}}}:{})}
  if(previous)next.sources=next.sources.map(s=>s.name===name?source:s)
  else next.sources.push(source)
  // Retire only this picker’s generated parameters, never arbitrary user bindings.

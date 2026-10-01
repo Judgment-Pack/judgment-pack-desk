@@ -2696,6 +2696,7 @@
   "This sign-in attempt is no longer available. Start again.": "Questo tentativo di accesso non è più disponibile. Ricomincia.",
   "This source changed while being read. Search again and reselect it.": "Questa fonte è stata modificata durante la lettura. Cercala e selezionala di nuovo.",
   "This source exceeds the connection size limit. Choose a smaller source.": "Questa fonte supera il limite di dimensione della connessione. Scegline una più piccola.",
+  "This source is a calculator. In Advanced mapping → Edit mapping, bind each reported input to a parameter and set a maximum age for each table it reads. Empty bindings reject answers that report inputs or tables.": "Questa origine è un calcolatore. In Mappatura avanzata → Modifica mappatura, associa ogni input dichiarato a un parametro e imposta un’anzianità massima per ogni tabella letta. Le associazioni vuote rifiutano le risposte che dichiarano input o tabelle.",
   "This source is not available to read with this connection.": "Questa connessione non consente di leggere la fonte.",
   "This stops active Codex work and signs out the account stored by this Desk.": "Questo interrompe le attività Codex in corso e disconnette l’account salvato da questo Desk.",
   "This store exceeds the supported move size of <0/>.": "Questo archivio supera il limite di spostamento di <0/>.",
