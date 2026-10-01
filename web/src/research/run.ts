@@ -47,8 +47,10 @@ export interface Turn {
   role: 'user' | 'assistant'
   kind: 'brief' | 'message' | 'unknowns' | 'note'
   text: string
-  /** Full user input, including explicitly supplied context; display text stays readable. */
+  /** Full main-assistant input, including Desk context; never a case-writing ground. */
   input?: string
+  /** The person's text and supplied file material, excluding Desk-appended context. */
+  statement?: string
   /** Desk annotation; kept separate from the model's verbatim response. */
   interrupted?: boolean
   at: string
@@ -399,11 +401,15 @@ export function citationGap(citations: readonly Citation[], mode: AuthoringMode 
 /**
  * The person's own statements in a conversation, by id: every message of
  * theirs, `you-1` onwards, in the order they sent them. The text is what they
- * sent, context they supplied included. Never an assistant turn, which
+ * typed, supplied file material included. Older augmented turns cannot be
+ * separated reliably and provide no statement; ordinary text-only turns do. Never an assistant turn, which
  * paraphrases the draft, and never a note Desk wrote on the person's behalf.
  */
 export function statementsOf(turns: readonly Turn[]): Map<string, string> {
-  return new Map(statementTurns(turns).map(({ id, turn }) => [id, turn.input ?? turn.text]))
+  return new Map(statementTurns(turns).flatMap(({ id, turn }) => {
+    const text = turn.statement ?? (turn.input === undefined ? turn.text : undefined)
+    return text === undefined ? [] : [[id, text] as const]
+  }))
 }
 
 /** The turns `statementsOf` reads, by the id it gives each, for a panel to show as they were sent. */
@@ -708,12 +714,12 @@ export class AuthoringRun {
   }
 
   /** Begin: the brief, the URLs to read first, and the research turn. */
-  start(brief: string, seedUrls: string[], display = brief, attachments: ChatAttachment[] = []): void {
+  start(brief: string, seedUrls: string[], display = brief, attachments: ChatAttachment[] = [], statement = display): void {
     if (this.running) return
     this.arm()
     this.lastMessage = brief
     this.state = { ...INITIAL_STATE, brief, seedUrls, phase: 'research', status: 'running', detail: 'Working…' }
-    this.addTurn({ role: 'user', kind: 'brief', attachments: structuredClone(attachments), text: display + (seedUrls.length ? `\n\nRead first:\n${seedUrls.join('\n')}` : ''), ...(brief !== display ? { input: brief } : {}) })
+    this.addTurn({ role: 'user', kind: 'brief', statement, attachments: structuredClone(attachments), text: display + (seedUrls.length ? `\n\nRead first:\n${seedUrls.join('\n')}` : ''), ...(brief !== display ? { input: brief } : {}) })
     void this.drive(async (signal) => {
       await this.researchTurn(signal)
       await this.casesAndCheck(signal)
@@ -721,12 +727,12 @@ export class AuthoringRun {
   }
 
   /** A message from the person, at any rest state. */
-  send(message: string, display = message, retry = false, attachments: ChatAttachment[] = []): void {
+  send(message: string, display = message, retry = false, attachments: ChatAttachment[] = [], statement = display): void {
     if (this.running || this.state.phase === 'idle') return
     this.arm()
     const previous = { status: this.state.status, phase: this.state.phase, detail: this.state.detail }
     this.lastMessage = message
-    if (!retry) this.addTurn({ role: 'user', kind: 'message', attachments: structuredClone(attachments), text: display, ...(message !== display ? { input: message } : {}) })
+    if (!retry) this.addTurn({ role: 'user', kind: 'message', statement, attachments: structuredClone(attachments), text: display, ...(message !== display ? { input: message } : {}) })
     this.set({ status: 'running', phase: 'conversation', detail: 'Working…', events: [], streaming: '' })
     void this.drive(async (signal) => {
       const before = this.latest()?.digest

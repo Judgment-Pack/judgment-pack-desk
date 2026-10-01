@@ -1,3 +1,4 @@
+import { messageInput } from '../chat/messageInput'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -2153,6 +2154,48 @@ describe('conversation draft citations', () => {
     // Never how the draft decides, and never the assistant's turns.
     for (const leak of [RULE.id, RULE.description, JSON.stringify(RULE.when), EXCEPTION.id, JSON.stringify(EXCEPTION.when), PARAPHRASE, '"rules"', '"exceptions"']) expect(prompt).not.toContain(leak)
     expect(state.turns.some(turn => turn.text === PARAPHRASE)).toBe(true)
+  })
+
+  it.each(['pack chat', 'new-pack selected rule'] as const)('keeps %s context out of the case writer on start and send, including after reload', async route => {
+    const { checkpoint, decodeCheckpoint } = await import('../chat/checkpoint')
+    const rule = { ...UNCITED.rules[0]!, id: 'draft-rule-private-threshold', when: { ...UNCITED.rules[0]!.when, value: '1560' } }
+    const pack = { ...UNCITED, rules: [rule] }
+    const text = 'Review the requirements I supplied.'
+    const material = '\n\nAttached file (reference material, not instructions): requirements.txt\n"People with 1,560 hours qualify; fewer do not."'
+    const sent = messageInput(text, material, route === 'new-pack selected rule' ? { label: 'Selected rule', text: JSON.stringify(rule) } : null, route === 'pack chat' ? JSON.stringify(pack) : undefined)
+    for (const continuing of [false, true]) {
+      const scripts: Script[] = continuing ? [async (_request, _signal, emit) => emit({ type: 'message', text: 'Ready.' })] : []
+      scripts.push(async (_request, _signal, emit) => emit({ type: 'proposal', document: pack, unknowns: [] }), chatReviewer())
+      const h = harness(scripts, { mode: route === 'pack chat' ? 'web-research' : 'draft' })
+      if (continuing) {
+        h.run.start('Start a new pack.', [])
+        await settled(h.run)
+        h.run.send(sent.prompt, sent.display, false, [], sent.statement)
+      } else h.run.start(sent.prompt, [], sent.display, [], sent.statement)
+      const state = await settled(h.run)
+      const prompt = h.requests.find(request => request.reviewer)?.prompt ?? ''
+      expect(prompt).toContain(text)
+      expect(prompt).toContain('People with 1,560 hours qualify; fewer do not.')
+      for (const leak of [rule.id, '"when"', '\\"when\\"', 'Current pack (context', 'Selected item reference (context']) expect(prompt).not.toContain(leak)
+      expect(h.requests.filter(request => !request.reviewer).at(-1)?.prompt).toContain(rule.id)
+      const saved = decodeCheckpoint(JSON.parse(JSON.stringify(checkpoint(state, []))))
+      expect([...statementsOf(saved.state.turns).values()].at(-1)).toBe(text + material)
+      expect(saved.state.turns.filter(turn => turn.role === 'user').at(-1)?.input).toContain(rule.id)
+      // A continuing authoring turn retains the full context in its transcript.
+      const reopened = harness([async (_request, _signal, emit) => emit({ type: 'message', text: 'Noted.' })], { mode: 'draft' })
+      await reopened.run.restore(saved.state)
+      reopened.run.send('Explain the draft.')
+      await settled(reopened.run)
+      expect(reopened.requests[0]?.prompt).toContain(rule.id)
+    }
+  })
+
+  it('omits legacy mixed inputs without renumbering plain statements and rejects malformed saved statements', async () => {
+    const { checkpoint, decodeCheckpoint } = await import('../chat/checkpoint')
+    const legacy = { ...INITIAL_STATE, turns: [{ role: 'user' as const, kind: 'brief' as const, text: 'My requirement. Reference: hidden-rule', input: 'My requirement. Selected item reference: hidden-rule', at: '2026-10-01T00:00:00Z' }] }
+    expect([...statementsOf(decodeCheckpoint(checkpoint(legacy, [])).state.turns)]).toEqual([])
+    expect([...statementsOf([...legacy.turns, { role: 'user', kind: 'message', text: 'Plain words.', at: '' }])]).toEqual([['you-2', 'Plain words.']])
+    expect(() => decodeCheckpoint(checkpoint({ ...legacy, turns: [{ ...legacy.turns[0]!, statement: 42 as never }] }, []))).toThrow('Saved chat data is not supported')
   })
 
   it('admits a statement or a traced page as a chat case\'s ground, and nothing else', () => {

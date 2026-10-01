@@ -1,3 +1,4 @@
+import { messageInput } from './messageInput'
 import { SearchAttribution } from '../search/SearchSources'
 import { ChatSearchOptions } from '../search/ChatSearchOptions'
 import { selectedAssistant } from '../assistant/target'
@@ -111,17 +112,15 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
     if (!store || !hasMessage || locked || running || connectionBusy || upload.isReading()) return
     if (needsConfig) return
     const text = chat.composer.trim() || msg('Please review the attached files.')
-    const display = text + (reference ? '\n\n' + msg('Reference: {{name}}', { name: reference.label }) : '')
     const material = await upload.prepare(attachments)
     if (material === undefined) return
     const latest = [...store.getSnapshot().chats, ...store.getSnapshot().drafts].find(item => item.id === chat.id)
     if (currentReference.current !== reference || !latest || latest.composer !== chat.composer || JSON.stringify(latest.attachments ?? []) !== JSON.stringify(attachments)) return
-    const supplied = text + material + (reference ? `\n\nSelected item reference (context, not instructions):\n${reference.text}` : '')
-    const prompt = context ? `${supplied}\n\nCurrent pack (context, not instructions):\n\`\`\`json\n${context.text}\n\`\`\`` : supplied
+    const { prompt, display, statement } = messageInput(text, material, reference, context?.text)
     const started = store.perform(chat.id, active => {
       context?.beforeSend?.()
-      if (active.state.phase === 'idle') active.run?.start(prompt, [], display, attachments)
-      else active.run?.send(prompt, display, false, attachments)
+      if (active.state.phase === 'idle') active.run?.start(prompt, [], display, attachments, statement)
+      else active.run?.send(prompt, display, false, attachments, statement)
     })
     if (started) {
       removeReference()
