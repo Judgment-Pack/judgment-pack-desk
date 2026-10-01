@@ -31,6 +31,8 @@ jobs:
         run: |
           python3 scripts/component-releases.py check
           python3 scripts/component-releases_test.py
+          python3 scripts/dev-components_test.py
+          python3 scripts/desk-dev_test.py
           python3 scripts/desk-update_test.py
           python3 scripts/package-release_test.py
           python3 scripts/assemble-release_test.py

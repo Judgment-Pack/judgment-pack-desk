@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Validate published component pins, or manually propose newer stable releases.
+"""Validate published component pins, report or manually propose newer stable releases.
 
 Development pins are deliberately held: a stable tag must not replace newer,
-unreleased local work. Promotion requires a reviewed lock edit.
+unreleased local work. Promotion requires a reviewed lock edit. `status` only
+reports; it exits non-zero while a newer stable release is unadopted or a
+lookup fails.
 """
 import argparse
 import json
@@ -80,11 +82,52 @@ def verify_plan(plan):
             raise ValueError('Component version tag disagrees with locked commit: ' + name)
         print(name + ': published version and commit verified')
 
+def freshness(plan):
+    """Read-only: compare each published pin with its repository's latest stable release.
+
+    A lookup that fails, or returns anything but a release that says it is
+    neither a draft nor a prerelease with a stable tag, is reported as failed,
+    never as current. Development pins are not looked up.
+    Only lock values and validated stable tags reach the report.
+    """
+    rows, attention = [], False
+    for name, component in plan['components'].items():
+        if component['channel'] == 'development':
+            rows.append((name, component['version'], 'not checked', 'development pin held'))
+            continue
+        try:
+            release = get_release(component['repository'])
+        except Exception:
+            release = None
+        latest = release.get('tag_name') if isinstance(release, dict) else None
+        if not isinstance(latest, str) or release.get('draft') is not False or release.get('prerelease') is not False or stable_version(latest) is None:
+            rows.append((name, component['version'], 'unknown', 'lookup failed'))
+            attention = True
+        elif should_update(component, latest):
+            rows.append((name, component['version'], latest, 'newer stable release not adopted'))
+            attention = True
+        else:
+            rows.append((name, component['version'], latest, 'no newer stable release'))
+    return rows, attention
+
+def report_freshness(plan):
+    rows, attention = freshness(plan)
+    report = '## Component release freshness\n\n| Component | Locked | Latest stable | Status |\n| --- | --- | --- | --- |\n'
+    report += ''.join('| ' + ' | '.join(row) + ' |\n' for row in rows)
+    report += '\n' + ('Adopt newer releases through the component update PR, or run `python3 scripts/component-releases.py propose`. A failed lookup is not evidence that a pin is current.' if attention else 'Every published pin matches its latest stable release or is newer.') + '\nThis check does not change the lock.\n'
+    print(report)
+    if os.environ.get('GITHUB_STEP_SUMMARY'):
+        with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+            summary.write(report)
+    return 1 if attention else 0
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('check', 'verify', 'propose', 'ci'))
+    parser.add_argument('action', choices=('check', 'verify', 'propose', 'ci', 'status'))
     args = parser.parse_args()
     plan = read_plan()
+    if args.action == 'status':
+        raise SystemExit(report_freshness(plan))
     if args.action == 'verify':
         verify_plan(plan)
     elif args.action == 'ci':

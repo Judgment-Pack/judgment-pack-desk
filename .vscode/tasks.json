@@ -12,7 +12,7 @@
       "options": {
         "cwd": "${workspaceFolder}"
       },
-      "detail": "Build and start Desk + Vite; keep the saved project and runtime. Safe to run again.",
+      "detail": "Build companions from the component lock if needed, then build and start Desk + Vite; keep the saved project. Safe to run again.",
       "problemMatcher": [],
       "presentation": {
         "panel": "shared",
@@ -46,6 +46,28 @@
       }
     },
     {
+      "label": "desk: prune",
+      "type": "process",
+      "command": "python3",
+      "args": [
+        "${workspaceFolder}/scripts/desk-dev.py",
+        "prune"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "detail": "With Desk stopped, remove old launch directories under bin/dev-launches, keeping the one the last start used. Refuses while servers these tasks started run; trusts bin/dev-launches as written only by this launcher.",
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "shared",
+        "reveal": "always",
+        "clear": true
+      },
+      "runOptions": {
+        "instanceLimit": 1
+      }
+    },
+    {
       "label": "desk: restart",
       "type": "process",
       "command": "python3",
@@ -56,7 +78,7 @@
       "options": {
         "cwd": "${workspaceFolder}"
       },
-      "detail": "Rebuild Desk, then restart both servers. A build failure leaves the current session running.",
+      "detail": "Rebuild Desk (and companions if the lock changed), then restart both servers. A build failure leaves the current session running.",
       "problemMatcher": [],
       "presentation": {
         "panel": "shared",

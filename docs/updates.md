@@ -25,8 +25,8 @@ Dependency updates use two bots with separate responsibilities:
   dependencies and GitHub Actions weekly. Related AI SDK, React and localization
   packages are grouped to keep compatible libraries together.
 - **Renovate** (`.github/renovate.json`) only manages the three component release
-  pins. It looks for published stable GitHub releases during its daily UTC
-  maintenance window, resolves the underlying tag commit, and updates the
+  pins. On each hosted run it looks for published stable GitHub releases,
+  resolves the underlying tag commit, and updates the
   version, revision and channel together in one grouped PR. A reviewed preview
   can advance to a stable release; further previews and development pins are
   excluded. Same-version digest changes are not proposed automatically.
@@ -41,10 +41,21 @@ replaces the custom token-based workflow shipped in v0.2.0.
 
 Renovate is limited to the custom component file so it does not duplicate
 Dependabot PRs. Its component dashboard shows pending updates and lookup errors.
-The hosted App controls run timing; the configured window is not a guaranteed
-execution time. Configuration alone does not install the App. Without it,
-component updates remain manual: run
+The hosted App controls run timing; the repository sets no time window. In the
+Mend Renovate app, the repository must be in **Interactive** mode for Renovate to
+open PRs; **Silent** mode only scans. Configuration alone does not install or
+enable the App. Without it, component updates remain manual: run
 `python3 scripts/component-releases.py propose`, inspect the diff, and open a PR.
+
+The **Component release freshness** workflow runs
+`python3 scripts/component-releases.py status` twice daily and on manual
+dispatch. It compares each published pin with its repository's latest stable
+release and writes a table to the workflow summary. The run fails while a newer
+stable release is unadopted or a lookup fails; a failed lookup is never reported
+as current. Development pins are held and not looked up. The check is read-only:
+it does not edit the lock, push, open PRs or gate a release, and it uses only the
+workflow's read-only token. It makes a stalled bot, or an update PR left
+unreviewed, visible. Run the same command locally for the same report.
 
 Neither bot is configured to merge its own PRs. Review and compatibility CI are
 required. CI verifies each non-development pin against its published release and
@@ -138,3 +149,57 @@ Development builds display **Local development build** and cannot stage updates
 or enable automatic installation. Commit, review, merge and publish local changes
 before expecting them to appear in the stable channel. No updater can retrieve an
 unpublished local change from GitHub.
+
+## Development start and restart
+
+The VS Code `desk: start` and `desk: restart` tasks (`scripts/desk-dev.py`)
+synchronize Runtime, Runner, its source worker, Gateway and adapters from the
+same lock before building Desk (`scripts/dev-components.py`). They no longer use
+`jpack` from `PATH` or companions left in `bin`.
+
+On a cache miss, each locked commit is fetched into a temporary checkout and
+checked against its version tag. Sibling repositories are never pulled, reset or
+built. Runtime, Runner and the source worker must carry the locked commit, with no
+local modification, in their Go build stamp; Gateway and adapters are built from
+the locked commit's archive. These builds ignore `go.work` and any `GOFLAGS`
+saved with `go env -w`. Each completed set records its lock, build-recipe
+digests, host platform and file hashes under `bin/dev-components`. Every reuse
+rechecks that record and the Go build stamps of Runtime, Runner and the source
+worker. A matching set works offline. The record guards against accidental
+change; it is no defence against someone who can write to the checkout, who
+could as well change the scripts. A changed lock or recipe, a missing, non-executable or unlisted file, or
+a checksum mismatch requires a fresh build into a new directory; if that fails,
+startup stops before the running Desk is stopped. The first start after a lock
+change needs network access, Git and Go, and takes several minutes.
+
+Each start builds Desk into its own `bin/dev-launches` directory beside a copy of
+the verified set. The copy is verified again and shares no file with the cache,
+so nothing done to the cache changes what a running Desk, Gateway or Runner
+executes. The default Runtime and Runner paths are passed explicitly.
+
+Starts never delete anything, so each leaves its launch directory, more than
+100 MB, behind, and a failed build leaves its marked `.building-*` staging
+directory. Remove old ones explicitly with Desk stopped:
+`python3 scripts/desk-dev.py prune`, or the **desk: prune** task. It refuses
+while servers this launcher started are running, keeps the launch the last start
+used, removes only directories the launcher marked as launches in this
+checkout's `bin/dev-launches`, and never follows a link: `bin`,
+`bin/dev-launches` and each launch are opened without following one, and
+everything is removed through those descriptors. It trusts `bin/dev-launches` as
+yours, written only by this launcher; it cannot see a Desk or companion started
+some other way from an old launch directory, so stop any such process first.
+
+Sets in `bin/dev-components` are kept, one per lock and recipe, for switching
+branches; an unused one can be deleted at any time, since launches hold copies.
+
+`JPACK_DESK_JPACK` remains an explicit Runtime override and is reported as outside
+the lock. An inherited `JPACK_DESK_GATEWAY_MANIFEST_SHA256` is cleared so the
+synchronized Gateway is checked against the locked revision.
+`desk-dev.py status` reports the versions the running backend was launched with
+and flags a changed lock as requiring a restart.
+
+`start` stays idempotent while Desk is already running; use `restart` after
+updating the checkout. The launcher does not pull or merge source changes. A
+restart is an explicit interruption; scheduled work should use a managed
+installation and its normal maintenance process. Existing job releases and user
+data are never rewritten by synchronization.

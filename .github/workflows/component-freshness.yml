@@ -1,0 +1,29 @@
+name: Component release freshness
+
+# Read-only report: is any locked component behind its latest published stable
+# release? Renovate proposes the update; this run fails while a newer release
+# is unadopted or a lookup fails, so a stalled bot or an unreviewed update PR
+# stays visible. It never edits the lock, pushes or opens a PR.
+on:
+  schedule:
+    - cron: '23 6,18 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  status:
+    name: Compare the component lock with published releases
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # The token only raises the API rate limit for public release metadata.
+      - name: Report unadopted component releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/component-releases.py status
