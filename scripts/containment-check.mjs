@@ -383,6 +383,7 @@ const routesFor = (pack, graph, job = '/jobs/job-containment', run = '/jobs/job-
   `${pack}/evaluate`,
   `${pack}/matrix`,
   '/admin',
+  '/connections/google-drive/files',
   '/jobs',
   '/jobs/runs',
   `/jobs/new?pack=${encodeURIComponent(pack.split('/').pop())}`,

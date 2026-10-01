@@ -156,18 +156,13 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	if provider == "" {
 		provider = "google-drive"
 	}
-	// Preserve legacy endpoint refusals even when no companion is available.
-	if method == "pick" && (provider == "gmail" || provider == "notion" || provider == "obsidian") || (method == "search" || method == "select") && provider == "google-drive" {
-		writeJSONCoded(w, 400, CodeBadRequest, "unknown connection operation")
-		return
-	}
 	if !catalogIdentifier.MatchString(provider) {
 		writeJSONCoded(w, 400, CodeBadRequest, "unknown connection provider")
 		return
 	}
 
 	switch method {
-	case "catalog", "status", "configure", "connect", "pick", "poll", "cancel", "disconnect", "search", "select", "files-list", "files-read", "files-prepare", "files-commit", "files-status", "test":
+	case "catalog", "status", "configure", "connect", "poll", "cancel", "disconnect", "search", "select", "files-list", "files-read", "files-prepare", "files-commit", "files-status", "test":
 	default:
 		writeJSONCoded(w, 400, CodeBadRequest, "unknown connection operation")
 		return

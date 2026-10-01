@@ -3,7 +3,7 @@ import type { ResearchConfig } from '../config/deskConfig'
 import { acquire, newResearchSession, seal } from '../research/gatewayClient'
 import { canonicalize, parseJsonText } from '../research/verify/canon'
 import { readDocumentRecord } from '../documents/record'
-import type { DriveSelection } from '../connections/client'
+import { connectionFailure, type DriveSelection } from '../connections/client'
 import type { SourceInput, InputPreview } from './client'
 import { jobsAPI } from './client'
 import type { InputPlan, MappingV2, ProfileEntry, SourceV2 } from './mappingTypes'
@@ -84,7 +84,13 @@ export async function prepareMappedInputs(options: {
    if (!profile || next.source !== profile.source || !next.arguments) throw Error(msg('The inputs could not be mapped.'))
    if (declared.provider === 'google-drive' && (next.arguments.fileId !== options.selections[next.name]?.fileId || next.arguments.grant !== options.selections[next.name]?.grant)) throw Error(msg('The inputs could not be mapped.'))
    calledGateway = true
-   const response = await acquire(session, profile.source, next.arguments, 1 << 20, signal, declared.provider === 'google-drive' ? 'local-documents' : undefined)
+   const response = await acquire(session, profile.source, next.arguments, 1 << 20, signal, declared.provider === 'google-drive' ? 'local-documents' : undefined).catch(cause => {
+    if (declared.provider === 'google-drive') {
+     const failure = connectionFailure(cause, 'google-drive')
+     if (failure.reconnectRequired) throw failure
+    }
+    throw cause
+   })
    signal.throwIfAborted()
    if (declared.kind === 'operation') source.sources[next.name] = {response:new RetainedJSON(response.text)}
    else {

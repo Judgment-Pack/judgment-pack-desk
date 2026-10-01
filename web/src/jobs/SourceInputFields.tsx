@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { msg, useLocale } from '../i18n'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { useConnectionsPane } from '../connections/ConnectionPaneContext'
-import { authorizeDrive } from '../connections/client'
+import type { SourceSelection } from '../connections/client'
+import { DriveFilePicker } from '../connections/DriveFilePicker'
 import { ingestDrive } from '../documents/client'
 import { factFields } from '../packs/test-workspace/model'
 import type { PackDocument } from '../mcp/types'
@@ -16,35 +17,37 @@ import styles from './JobsView.module.css'
 export function SourceInputFields({ doc, provider, fixed, disabled, onChange, onWorkChange }: { doc: PackDocument; provider: InputMapping['provider']; fixed?: InputMapping; disabled: boolean; onChange: (source: SourceInput | undefined) => void; onWorkChange?: (dirty: boolean) => void }) {
   useLocale()
   const config = useEffectiveConfig().config.research, connections = useConnectionsPane()
+  const [choosing, setChoosing] = useState(false), pickerOpener = useRef<HTMLElement | null>(null)
   const [snapshot, setSnapshot] = useState<SourceInput['snapshot']>(), [mapping, setMapping] = useState<InputMapping>()
   const [preview, setPreview] = useState<InputPreview>(), [error, setError] = useState(''), [progress, setProgress] = useState('')
   const operation = useRef<AbortController | null>(null), upload = useRef<HTMLInputElement>(null)
   useEffect(() => { onWorkChange?.(!!snapshot || !!mapping) }, [snapshot,mapping,onWorkChange])
   const context = JSON.stringify([config.gateway, config.documents, provider, fixed])
-  useEffect(() => { setSnapshot(undefined); setMapping(undefined); setPreview(undefined); setError(''); setProgress(''); onChange(undefined); return () => { operation.current?.abort(); operation.current = null } }, [context, onChange])
+  useEffect(() => { setChoosing(false); setSnapshot(undefined); setMapping(undefined); setPreview(undefined); setError(''); setProgress(''); onChange(undefined); return () => { operation.current?.abort(); operation.current = null } }, [context, onChange])
   const paths = useMemo(() => snapshot ? sourcePaths(snapshot) : [], [snapshot])
   const originalText = useMemo(() => snapshot ? sourceText(snapshot) : '', [snapshot])
   function invalidate() { setPreview(undefined); onChange(undefined); setError('') }
-  async function select(file?: File) {
+  async function select(file?: File, selections?: SourceSelection[], signal?: AbortSignal) {
     if (operation.current || disabled) return
     const active = new AbortController(); operation.current = active
+    const abort = () => active.abort(); signal?.addEventListener('abort', abort, {once:true})
+    if (signal?.aborted) active.abort()
     invalidate(); setSnapshot(undefined); setMapping(undefined); setProgress(msg('Reading files…'))
     try {
       let chosen: SourceInput['snapshot']
       if (provider === 'local-file') { if (!file) return; chosen = await localSnapshot(file) }
       else {
         if (!config.gateway || !config.documents?.enabled) throw Error(msg('Enable document processing in Admin → Storage & data before attaching Drive files.'))
-        setProgress(msg('Continue in the Google sign-in window.'))
-        const selected = await authorizeDrive('pick', active.signal)
+        const selected = selections ?? []
         active.signal.throwIfAborted()
         if (selected.length !== 1) throw Error(msg('Choose one JSON file up to 200 KB.'))
-        chosen = (await ingestDrive(selected[0]!, config, active.signal, message => { if (operation.current === active) setProgress(message) })).document.object
+        chosen = (await ingestDrive({fileId:selected[0]!.resourceId, grant:selected[0]!.grant}, config, active.signal, message => { if (operation.current === active) setProgress(message) })).document.object
       }
       const candidates = sourcePaths(chosen)
       active.signal.throwIfAborted()
       setSnapshot(chosen); setMapping(fixed ?? initialMapping(doc, provider, candidates))
-    } catch (e) { if (!active.signal.aborted) setError(e instanceof Error ? e.message : msg('The file could not be read.')) }
-    finally { if (operation.current === active) { operation.current = null; setProgress('') } }
+    } catch (e) { if (!active.signal.aborted) setError(e instanceof Error ? e.message : msg('The file could not be read.')); if (signal) throw e }
+    finally { signal?.removeEventListener('abort', abort); if (operation.current === active) { operation.current = null; setProgress('') } }
   }
   function change(kind: 'facts' | 'evidence', target: string, source: string) {
     if (!mapping) return
@@ -66,10 +69,11 @@ export function SourceInputFields({ doc, provider, fixed, disabled, onChange, on
   }
   const busy = disabled || Boolean(progress)
   return <section className={styles.fields}>
+    {choosing && !disabled && <DriveFilePicker openerRef={pickerOpener} onClose={() => setChoosing(false)} onSelect={(items,signal) => select(undefined,items,signal)} />}
     <p className={styles.note}>{provider === 'local-file' ? msg('Choose a JSON file from this computer. Inputs and run records stay in local storage.') : msg('Read one selected JSON file from Google Drive. Copies and run records stay in local storage; nothing is written to Drive.')}</p>
     <div className={styles.actions}>
       <input ref={upload} type="file" accept=".json,application/json" hidden aria-label={msg('Choose JSON file')} onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void select(file) }} />
-      <Button disabled={busy} onClick={() => provider === 'local-file' ? upload.current?.click() : void select()}>{snapshot ? msg('Choose another file') : provider === 'local-file' ? msg('Choose JSON file') : msg('Choose from Google Drive')}</Button>
+      <Button disabled={busy} onClick={e => { if (provider === 'local-file') upload.current?.click(); else { pickerOpener.current=e.currentTarget; setChoosing(true) } }}>{snapshot ? msg('Choose another file') : provider === 'local-file' ? msg('Choose JSON file') : msg('Choose from Google Drive')}</Button>
       {provider === 'google-drive' && <Button variant="quiet" disabled={busy} onClick={e => connections.open({ provider: 'google-drive', opener: e.currentTarget })}>{msg('Manage connection')}</Button>}
       {progress && <Button variant="quiet" onClick={() => { operation.current?.abort(); operation.current = null; setProgress(''); invalidate() }}>{msg('Cancel')}</Button>}
     </div>

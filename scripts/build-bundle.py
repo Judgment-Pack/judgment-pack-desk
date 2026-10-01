@@ -67,7 +67,7 @@ def main():
         require_unregistered_gateway(source)
         suffix = '.exe' if os.environ.get('GOOS', '') == 'windows' or os.name == 'nt' else ''
         files = {}
-        for name, module, package in [('gateway', 'go', '.'), ('adapter-document', 'adapters', './cmd/adapter-document'), ('gateway-connections', 'adapters', './cmd/gateway-connections'), ('adapter-drive', 'adapters', './cmd/adapter-drive'), ('adapter-gmail', 'adapters', './cmd/adapter-gmail'), ('adapter-sources', 'adapters', './cmd/adapter-sources'), ('adapter-web', 'adapters', './cmd/adapter-web')]:
+        for name, module, package in [('gateway', 'go', '.'), ('adapter-document', 'adapters', './cmd/adapter-document'), ('gateway-connections', 'adapters', './cmd/gateway-connections'), ('adapter-drive', 'adapters', './cmd/adapter-drive'), ('adapter-gmail', 'adapters', './cmd/adapter-gmail'), ('adapter-sources', 'adapters', './cmd/adapter-sources'), ('adapter-web', 'adapters', './cmd/adapter-web'), ('adapter-render', 'adapters', './cmd/adapter-render')]:
             artifact = temp / (name + suffix)
             flags = ['-ldflags', '-X main.releaseVersion=' + VERSION] if name == 'gateway' and revision == REVISION and PLAN['components']['gateway']['channel'] == 'stable' else []
             run(['go', 'build', '-buildvcs=false', '-trimpath', *flags, '-o', str(artifact), package], source / module, env=dict(os.environ, CGO_ENABLED='0', GOWORK='off'))

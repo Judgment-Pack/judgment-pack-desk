@@ -127,7 +127,7 @@ Google documentation link. **Choose credentials file** stays visible below the
 scrolling instructions. Upload progress, errors and success stay in this pane;
 **Done** closes it without starting account sign-in.
 
-1. Create your own Google Cloud project. Enable Drive API and Google Picker API
+1. Create your own Google Cloud project. Enable Google Drive API
    for Drive, and Gmail API for Gmail.
 2. In Google Auth Platform → Branding, enter your app name and contact email.
    Open **Audience** separately in the sidebar. Choose **External** for personal
@@ -136,6 +136,11 @@ scrolling instructions. Upload progress, errors and success stay in this pane;
    add your account under **Test users** and expect to reconnect Drive or Gmail
    after seven days. Personal-use apps can qualify for a verification exemption;
    Google may still show an unverified-app warning.
+   In **Data access**, add `https://www.googleapis.com/auth/drive` for Drive
+   or `https://www.googleapis.com/auth/gmail.readonly` for Gmail. Drive uses a
+   restricted, whole-Drive scope. Personal use, internal organization use and
+   named test users can qualify for verification exceptions; a public registration
+   requires verification. Google Picker API is no longer needed.
 3. Create a **Desktop app** OAuth client and download its registration JSON.
 4. In **Admin → Connections**, choose **Set up** for the provider and select that
    JSON file. Configure each provider you want to use; both can use the same app.
@@ -150,12 +155,18 @@ accounts are preserved by updates. Disconnect an account in **My connections**
 before replacing its registration in Admin.
 
 See [desktop OAuth](https://developers.google.com/identity/protocols/oauth2/native-app),
-[Drive Picker for desktop apps](https://developers.google.com/workspace/drive/picker/guides/desktop-mobile-picker)
+[Drive scopes](https://developers.google.com/workspace/drive/api/guides/api-specific-auth)
 and [Gmail scopes](https://developers.google.com/workspace/gmail/api/auth/scopes)
 for Google's setup and applicable verification requirements.
 Google also documents the [personal-use verification exception](https://developers.google.com/identity/protocols/oauth2/production-readiness/restricted-scope-verification#personal-use)
 and [Testing's seven-day refresh-token limit](https://developers.google.com/identity/protocols/oauth2#expiration).
 Google consent is required; setup cannot authorize an account automatically.
+Connections made with the former `drive.file` scope must reconnect when Drive
+requests report `reconnect-required`; status alone can still say connected.
+Chat and job inputs use Desk search-and-select. An empty query shows recently
+changed files; refine the query when more results exist. Search metadata stays
+out of model context until the person selects files. Jobs select one file; chat
+accepts up to four. Storage browsing uses separate bounded, paginated listings.
 Web research credentials and OCR are not installed. See
 [managed local processing](docs/adr/0005-managed-local-gateway.md) for identity
 preservation, receipt storage and platform boundaries.

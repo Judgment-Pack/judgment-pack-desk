@@ -4,6 +4,7 @@ import { jobsRequest, RetainedJSON } from './wire'
 import { jobsAPI } from './client'
 import { acquire, seal } from '../research/gatewayClient'
 import type { Acquired } from '../research/gatewayClient'
+import { ConnectionRequestError } from '../connections/client'
 import { DESK_DEFAULTS } from '../config/deskConfig'
 import type { MappingV2, ProfileEntry } from './mappingTypes'
 vi.mock('./client',()=>({jobsAPI:vi.fn()}))
@@ -62,4 +63,12 @@ it('places picker values only at explicit typed case parameters',()=>{
  drive.case!.parameters!.file!.pointer='/__proto__/polluted'
  expect(()=>mappedCase(drive,{}, {drive:{fileId:'selected',grant:'grant'}})).toThrow()
  expect(({} as Record<string,unknown>).polluted).toBeUndefined()
+})
+
+it('normalizes a Drive acquisition reconnect refusal and still seals the abandoned session',async()=>{
+ const drive:MappingV2={version:2,case:{parameters:{file:{pointer:'/id',type:'string'},grant:{pointer:'/grant',type:'string'}},facts:[],evidence:[]},sources:[{name:'drive',kind:'selected-file',provider:'google-drive',profile:'records',profileDigest:profile.digest,arguments:{fileId:{$param:'file'},grant:{$param:'grant'}},read:{copy:{facts:[],evidence:[]}}}]}
+ vi.mocked(jobsAPI).mockResolvedValue({next:{name:'drive',kind:'selected-file',provider:'google-drive',profile:'records',source:'records',arguments:{fileId:'chosen',grant:'grant'}}})
+ vi.mocked(acquire).mockRejectedValue(Error('source failed: reconnect-required'))
+ await expect(prepareMappedInputs({...options(),mapping:drive,selections:{drive:{fileId:'chosen',grant:'grant'}},config:{...config,managedLocal:true,documents:{enabled:true,source:'documents',maxFileBytes:200000,maxRequestBytes:1000000,maxResponseBytes:1000000}}})).rejects.toEqual(new ConnectionRequestError('reconnect-required','google-drive'))
+ expect(seal).toHaveBeenCalledWith('one-session',expect.any(AbortSignal),'local-documents')
 })

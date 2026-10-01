@@ -7,7 +7,7 @@ export interface ConnectionDescriptor {
  id: ConnectionProvider
  auth: 'oauth' | 'local-folder' | 'credentials'
  registration: 'google-desktop' | 'automatic' | 'none' | 'form'
- selection: 'browser-picker' | 'mail-search' | 'source-search'
+ selection: 'mail-search' | 'source-search'
  queryRequired: boolean
  operations: string[]
  queryMode?: 'text' | 'prefix'
@@ -43,7 +43,7 @@ function supported(item: ConnectionDescriptor) {
 // Local handler contracts, not an availability list. Unknown protocols never
 // choose an endpoint, a component, or an operation for the browser to execute.
 const handlers = {
- 'google-drive': { auth: 'oauth', registration: 'google-desktop', selection: 'browser-picker', operations: ['status', 'configure', 'connect', 'pick', 'poll', 'cancel', 'disconnect'] },
+ 'google-drive': { auth: 'oauth', registration: 'google-desktop', selection: 'source-search', operations: ['status', 'configure', 'connect', 'poll', 'cancel', 'disconnect', 'search', 'select'] },
  gmail: { auth: 'oauth', registration: 'google-desktop', selection: 'mail-search', operations: ['status', 'configure', 'connect', 'poll', 'cancel', 'disconnect', 'search', 'select'] },
  notion: { auth: 'oauth', registration: 'automatic', selection: 'source-search', operations: ['status', 'connect', 'poll', 'cancel', 'disconnect', 'search', 'select'] },
  obsidian: { auth: 'local-folder', registration: 'none', selection: 'source-search', operations: ['status', 'configure', 'disconnect', 'search', 'select'] },

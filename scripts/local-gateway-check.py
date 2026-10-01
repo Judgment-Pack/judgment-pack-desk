@@ -87,6 +87,14 @@ def main():
         try:
             first, desk, answer = start()
             installed = json.loads((bundle / 'gateway-bundle.json').read_text())
+            # Exercise the actual plan, including every executable it requires.
+            # Gateway v0.6 adds render; omitting it disables the whole local plan.
+            plan = json.loads(subprocess.check_output([str(bundle / 'gateway-connections'), '--local-plan'], text=True, timeout=15))
+            render = next(source for source in plan['sources'] if source['id'] == 'render')
+            assert render['executable'] == 'adapter-render'
+            assert render['executable'] in installed['files']
+            for source in plan['sources']:
+                assert source['executable'] in installed['files'], source['id']
             assert answer['localGateway']['build']['revision'] == installed['revision']
             assert answer['localGateway']['build'].get('version') == installed.get('version')
             gateway = answer['localGateway']['gateway']
@@ -104,13 +112,26 @@ def main():
             assert request(other_desk + '/api/connections/status', {})['state'] == 'not-connected'
             invalid = request(desk + '/api/connections/status', {'principal': 'different-principal'})
             assert invalid.get('error'), 'caller principal override accepted'
-            flow = request(desk + '/api/connections/pick', {})
+            flow = request(desk + '/api/connections/connect', {})
             from urllib.parse import urlsplit, parse_qs
             auth = urlsplit(flow['url']); params = parse_qs(auth.query)
             assert auth.netloc == 'accounts.google.com'
-            assert params['scope'] == ['https://www.googleapis.com/auth/drive.file']
+            assert params['scope'] == ['https://www.googleapis.com/auth/drive']
             assert params['code_challenge_method'] == ['S256']
-            assert params['trigger_onepick'] == ['true']
+            assert 'trigger_onepick' not in params
+            catalog = request(desk + '/api/connections/catalog', {})
+            drive = next(p for p in catalog['providers'] if p['id'] == 'google-drive')
+            assert drive['selection'] == 'source-search' and drive['queryRequired'] is False
+            assert {'search', 'select'} <= set(drive['operations']) and 'pick' not in drive['operations']
+            for method, arguments in [('search', {'query': ''}), ('select', {'resourceIds': ['not-selected'], 'selectionContext': 'invalid'})]:
+                refusal = request(desk + '/api/connections/' + method, arguments)
+                assert refusal.get('error'), 'unconnected Drive operation succeeded'
+            try:
+                request(desk + '/api/connections/pick', {})
+            except urllib.error.HTTPError as error:
+                assert error.code == 400
+            else:
+                raise AssertionError('removed Drive picker route accepted')
             callback = params['redirect_uri'][0]
             cancel = request(desk + '/api/connections/cancel', {'id': flow['id']})
             assert cancel['state'] == 'canceled'

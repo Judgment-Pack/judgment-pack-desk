@@ -3,7 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import { msg } from '../i18n'
 import type { MappedDraft } from './drafts'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
-import { authorizeDrive, type DriveSelection } from '../connections/client'
+import { authorizeDrive, ConnectionRequestError, type DriveSelection } from '../connections/client'
+import { DriveFilePicker } from '../connections/DriveFilePicker'
 import { factFields } from '../packs/test-workspace/model'
 import type { PackDocument } from '../mcp/types'
 import { Button } from '../ui/Button'
@@ -31,6 +32,8 @@ export function MappedInputFields({doc, fixed, disabled, active=true, onChange, 
  const connections=useConnections(localConnections)
  const profiles = useQuery({queryKey:['job-input-profiles'],queryFn:({signal}) => jobsAPI<ProfileEntry[]>('input-profiles',undefined,undefined,signal)})
  const [text,setText] = useState(() => draft?.text ?? JSON.stringify(fixed ?? starter(doc),null,2)), [caseText,setCaseText] = useState(draft?.caseText ?? '{"facts": {}, "evidence": {}}')
+ const [reconnect,setReconnect]=useState(false)
+ const [choosing,setChoosing] = useState<string>(), pickerOpener=useRef<HTMLElement|null>(null)
  const [files,setFiles] = useState<Record<string,SourceInput['snapshot']>>({}), [selections,setSelections] = useState<Record<string,DriveSelection>>({})
  const [preview,setPreview] = useState<InputPreview>(), [error,setError] = useState(''), [progress,setProgress] = useState('')
  const [editorInvalid,setEditorInvalid]=useState(false),[caseValid,setCaseValid]=useState(true)
@@ -44,7 +47,7 @@ export function MappedInputFields({doc, fixed, disabled, active=true, onChange, 
  const context = JSON.stringify([config.gateway,config.documents,config.managedLocal,profiles.data?.filter(p=>mapping?.sources?.some(s=>s.profile===p.profile.id)),fixed,connections.entries.filter(e=>mapping?.sources?.some(s=>s.provider==='google-drive'&&e.descriptor.id==='google-drive'||profiles.data?.some(p=>p.profile.id===s.profile&&p.profile.source===(e.descriptor.source?.id??e.descriptor.id)))).map(e=>[e.descriptor.id,e.status.data?.state,e.status.data?.account?.id,e.status.data?.resource?.id]),connections.isError])
  const busy = disabled || Boolean(progress)
  function invalidate() {setPreview(undefined); onChange(undefined); setError('')}
- useEffect(() => {setPreview(undefined); onChange(undefined); setSelections({}); setProgress(''); setError(''); return () => {operation.current?.abort(); operation.current=null}},[context,onChange])
+ useEffect(() => {setReconnect(false);setChoosing(undefined);setPreview(undefined); onChange(undefined); setSelections({}); setProgress(''); setError(''); return () => {operation.current?.abort(); operation.current=null}},[context,onChange])
  useEffect(() => {if(fixed) {setText(JSON.stringify(fixed,null,2));setFiles({});setSelections({})}},[fixed])
  function updateMapping(next: MappingV2) {
   invalidate(); setText(JSON.stringify(next,null,2))
@@ -58,12 +61,11 @@ export function MappedInputFields({doc, fixed, disabled, active=true, onChange, 
   if(!mapping)return
   try {updateMapping(setSourceIntegration(mapping,profile))} catch {setError(msg('The inputs could not be mapped.'))}
  }
- async function select(name: string, file?: File) {
+ async function select(name: string, file: File) {
   if(operation.current || disabled) return
   const active = new AbortController();operation.current=active;invalidate();setProgress(msg('Reading files…'))
   try {
-   if(file) {const snapshot=await localSnapshot(file);active.signal.throwIfAborted();setFiles(v=>({...v,[name]:snapshot}));onTransientChange?.()}
-   else {const selected=await authorizeDrive('pick',active.signal);active.signal.throwIfAborted();if(selected.length!==1)throw Error(msg('Choose one JSON file up to 200 KB.'));setSelections(v=>({...v,[name]:selected[0]!}));onTransientChange?.()}
+   const snapshot=await localSnapshot(file);active.signal.throwIfAborted();setFiles(v=>({...v,[name]:snapshot}));onTransientChange?.()
   } catch(e) {if(!active.signal.aborted)setError(e instanceof Error?e.message:msg('The file could not be read.'))}
   finally {if(operation.current===active){operation.current=null;setProgress('')}}
  }
@@ -76,11 +78,21 @@ export function MappedInputFields({doc, fixed, disabled, active=true, onChange, 
    const result=await prepareMappedInputs({mapping,caseValue:parseMappedObject(caseText),files,selections,profiles:trusted.data ?? [],config,signal:active.signal,progress:name=>setProgress(msg('Reading {{source}}…',{source:name}))})
    active.signal.throwIfAborted();setPreview(result)
    if(result.input.source && isSourceV2(result.input.source))onChange(result.input.source)
-  } catch(e) {if(!active.signal.aborted)setError(e instanceof Error?e.message:msg('The inputs could not be mapped.'))}
+  } catch(e) {if(!active.signal.aborted){setError(e instanceof Error?e.message:msg('The inputs could not be mapped.'));if(e instanceof ConnectionRequestError && e.provider==='google-drive' && e.reconnectRequired)setReconnect(true)}}
   finally {if(operation.current===active){operation.current=null;setProgress('')}}
  }
- const fileControls=mapping?.sources?.filter(s=>s.kind==='selected-file').map(s=><div key={s.name} className={styles.mappingRow}><div><strong>{s.name}</strong><p className={styles.note}>{files[s.name]?.original.name ?? (selections[s.name] ? msg('Selected') : msg('Not supplied'))}</p></div>{s.provider==='local-file' ? <><input hidden ref={el=>{uploads.current[s.name]=el}} type="file" accept=".json,application/json" aria-label={msg('Choose JSON file for {{source}}',{source:s.name})} disabled={busy} onChange={e=>{const file=e.target.files?.[0];e.target.value='';if(file)void select(s.name,file)}}/><Button disabled={busy} onClick={()=>uploads.current[s.name]?.click()}>{files[s.name] ? msg('Choose another file') : msg('Choose JSON file')}</Button></> : <Button disabled={busy} onClick={()=>void select(s.name)}>{msg('Choose from Google Drive')}</Button>}</div>)
+ async function connectAgain() {
+  if(operation.current || disabled)return
+  const task=new AbortController();operation.current=task;setProgress(msg('Continue in the Google sign-in window.'));setError('')
+  try {
+   await authorizeDrive('connect',task.signal,'google-drive',connections.entries.find(e=>e.descriptor.id==='google-drive')?.descriptor.authorizationEndpoints)
+   task.signal.throwIfAborted();setReconnect(false);setSelections({});setError(msg('This selection expired. Search again and reselect your sources.'))
+  } catch(e) {if(!task.signal.aborted)setError(e instanceof Error?e.message:msg('The file could not be read.'))}
+  finally {if(operation.current===task){operation.current=null;setProgress('')}}
+ }
+ const fileControls=mapping?.sources?.filter(s=>s.kind==='selected-file').map(s=><div key={s.name} className={styles.mappingRow}><div><strong>{s.name}</strong><p className={styles.note}>{files[s.name]?.original.name ?? (selections[s.name] ? msg('Selected') : msg('Not supplied'))}</p></div>{s.provider==='local-file' ? <><input hidden ref={el=>{uploads.current[s.name]=el}} type="file" accept=".json,application/json" aria-label={msg('Choose JSON file for {{source}}',{source:s.name})} disabled={busy} onChange={e=>{const file=e.target.files?.[0];e.target.value='';if(file)void select(s.name,file)}}/><Button disabled={busy} onClick={()=>uploads.current[s.name]?.click()}>{files[s.name] ? msg('Choose another file') : msg('Choose JSON file')}</Button></> : <Button disabled={busy} onClick={e=>{pickerOpener.current=e.currentTarget;setChoosing(s.name)}}>{msg('Choose from Google Drive')}</Button>}</div>)
  return <section className={styles.fields}>
+  {choosing && active && !disabled && mapping?.sources?.some(s=>s.name===choosing&&s.kind==='selected-file'&&s.provider==='google-drive') && <DriveFilePicker openerRef={pickerOpener} onClose={()=>setChoosing(undefined)} onSelect={async(items,signal)=>{signal.throwIfAborted();if(items.length!==1)throw Error(msg('Choose one JSON file up to 200 KB.'));invalidate();setSelections(v=>({...v,[choosing]:{fileId:items[0]!.resourceId,grant:items[0]!.grant}}));onTransientChange?.()}}/>}
 
   {!fixed && <div className={styles.actions}><JobIntegrationPicker profiles={profiles.data??[]} disabled={busy||editorInvalid||!mapping||(mapping.sources??[]).length>=16} onPick={addSource}/></div>}
   {mapping && (fixed ? <MappingReview details mapping={mapping} profiles={profiles.data?.map(p=>p.profile)}/> : <MappingEditor active={active} fileControls={source=>fileControls?.find(el=>el.key===source.name)} doc={doc} mapping={mapping} profiles={profiles.data??[]} disabled={busy} onChange={updateMapping} onInvalid={setEditorInvalid} onDirty={invalidate}/>)}
@@ -95,8 +107,9 @@ export function MappedInputFields({doc, fixed, disabled, active=true, onChange, 
 
   {!mapping && <p role="alert" className={styles.problem}>{msg('The inputs could not be mapped.')}</p>}
   {(error || profiles.error) && <p role="alert" className={styles.problem}>{error || String(profiles.error)}</p>}
+  {reconnect && <Button disabled={busy} onClick={()=>void connectAgain()}>{msg('Reconnect')}</Button>}
   {progress && <p role="status" className={styles.note}>{progress}</p>}
-  <div className={styles.actions}><Button disabled={busy || editorInvalid || !caseValid || !mapping || profiles.isPending || Boolean(profiles.error)} onClick={()=>void check()}>{msg('Read sources and preview')}</Button>{progress && <Button variant="quiet" onClick={()=>{operation.current?.abort();operation.current=null;setProgress('');invalidate()}}>{msg('Cancel')}</Button>}</div>
+  <div className={styles.actions}><Button disabled={busy || reconnect || editorInvalid || !caseValid || !mapping || profiles.isPending || Boolean(profiles.error)} onClick={()=>void check()}>{msg('Read sources and preview')}</Button>{progress && <Button variant="quiet" onClick={()=>{operation.current?.abort();operation.current=null;setProgress('');invalidate()}}>{msg('Cancel')}</Button>}</div>
   {preview && <><p role="status" className={styles.previewStatus}>{msg('Input preview complete. Review mapped values before continuing.')}</p><Disclosure title={msg('Mapped inputs')}><pre className={styles.json}>{preview.factsText}</pre><pre className={styles.json}>{preview.evidenceText || msg('Not supplied')}</pre></Disclosure>{preview.input.preparation && <InputLineage preparation={preview.input.preparation}/>}</>}
  </section>
 }

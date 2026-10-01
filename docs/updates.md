@@ -13,6 +13,12 @@ are held rather than replaced with an older published release. A stable Desk
 release refuses development pins. Runner may remain on its explicitly reviewed
 preview pin until a stable Runner release exists.
 
+Gateway is pinned to `v0.7.0` and includes `adapter-render`, required by its
+local source plan. Its Drive connection uses whole-Drive consent and Desk
+search-and-select. Upgrade the catalog, selection UI and relay together with
+the pin. Older Drive connections may report `reconnect-required` even while
+status says connected; reconnect explicitly to grant the new scope.
+
 Dependency updates use two bots with separate responsibilities:
 
 - **Dependabot** (`.github/dependabot.yml`) checks Go modules, the `web` npm

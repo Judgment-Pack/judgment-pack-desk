@@ -4,14 +4,16 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { SourceInputFields } from './SourceInputFields'
 import { jobsAPI } from './client'
 import { localSnapshot } from './sourceInputs'
-import { authorizeDrive } from '../connections/client'
+import type { ComponentProps } from 'react'
+import type { DriveFilePicker } from '../connections/DriveFilePicker'
+const picker=vi.hoisted(()=>({props:undefined as ComponentProps<typeof DriveFilePicker>|undefined}))
+vi.mock('../connections/DriveFilePicker',()=>({DriveFilePicker:(props:ComponentProps<typeof DriveFilePicker>)=>{picker.props=props;return null}}))
 import { ingestDrive } from '../documents/client'
 import { DeskConfigFixture } from '../config/DeskConfigProvider'
 import { effectiveConfig } from '../config/deskConfig'
 import type { PackDocument } from '../mcp/types'
 import { signedInput } from './__fixtures__/signedInput'
 vi.mock('./client', () => ({ jobsAPI: vi.fn() }))
-vi.mock('../connections/client', async original => ({ ...await original<object>(), authorizeDrive: vi.fn() }))
 vi.mock('../documents/client', async original => ({ ...await original<object>(), ingestDrive: vi.fn() }))
 vi.mock('./sourceInputs', async original => ({ ...await original<object>(), localSnapshot: vi.fn() }))
 const doc = { rules: [{ condition: { op: 'fact', path: '/request/type', value: 'data-access' } }], evidenceRequirements: [{ id: 'receipt', description: 'Receipt' }] } as unknown as PackDocument
@@ -52,10 +54,12 @@ it('reports a refused mapping and never enables dependent submission', async () 
 it('opens the explicit Drive picker, verifies the receipt and submits only retained source inputs', async () => {
  const { object, pin } = await signedInput(), config = effectiveConfig(undefined), onChange = vi.fn()
  config.config.research = { ...config.config.research, gateway: pin, documents: { enabled: true, source: 'documents', maxFileBytes: 200000, maxRequestBytes: 1000000, maxResponseBytes: 1000000 } }
- vi.mocked(authorizeDrive).mockResolvedValue([object.proof!.drive!]); vi.mocked(ingestDrive).mockResolvedValue({ document: { object } } as Awaited<ReturnType<typeof ingestDrive>>)
+ vi.mocked(ingestDrive).mockResolvedValue({ document: { object } } as Awaited<ReturnType<typeof ingestDrive>>)
  render(<DeskConfigFixture value={config}><Tooltip.Provider><SourceInputFields doc={doc} provider="google-drive" disabled={false} onChange={onChange} /></Tooltip.Provider></DeskConfigFixture>)
- fireEvent.click(screen.getByRole('button', { name: 'Choose from Google Drive' })); await screen.findByText('input.json')
- expect(authorizeDrive).toHaveBeenCalledWith('pick', expect.any(AbortSignal))
+ fireEvent.click(screen.getByRole('button', { name: 'Choose from Google Drive' })); expect(ingestDrive).not.toHaveBeenCalled()
+ await act(()=>picker.props!.onSelect([{resourceId:object.proof!.drive!.fileId,grant:object.proof!.drive!.grant}],new AbortController().signal))
+ await screen.findByText('input.json')
+ expect(ingestDrive).toHaveBeenCalledWith(object.proof!.drive,config.config.research,expect.any(AbortSignal),expect.any(Function))
  fireEvent.click(screen.getByRole('button', { name: 'Preview mapping' })); await screen.findByText('Mapped inputs')
  expect(jobsAPI).toHaveBeenLastCalledWith('inputs/preview', { source: { snapshot: object, mapping: { ...mapping, provider: 'google-drive' } } }, undefined, expect.any(AbortSignal))
 })

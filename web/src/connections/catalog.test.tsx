@@ -78,3 +78,9 @@ it('offers discovery only for the exact bounded manifest contract',()=>{
  expect(catalog(source).discovery).toBe(true)
  for(const changed of [{...source,id:'other'},{...source,input:'text'},{...source,mediaTypes:['text/html']},{...source,maxBytes:4<<20}])expect(catalog(changed).discovery).toBe(false)
 })
+
+it('accepts released Drive source search and rejects the former browser-picker contract',()=>{
+ const next=fixture(), drive=next.providers[0]!
+ expect(parseConnectionCatalog(next).providers.find(p=>p.id==='google-drive')?.selection).toBe('source-search')
+ expect(parseConnectionCatalog({...next,providers:[{...drive,selection:'browser-picker',operations:drive.operations.filter(op=>!['search','select'].includes(op)).concat('pick')}]}).providers).toHaveLength(0)
+})

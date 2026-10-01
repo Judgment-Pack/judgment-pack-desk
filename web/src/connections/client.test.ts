@@ -7,12 +7,12 @@ it('never navigates the authorization tab to a provider-supplied foreign URL', a
  const tab = {opener: {},location: {href: 'about:blank'},close: vi.fn()}
  vi.spyOn(window,'open').mockReturnValue(tab as unknown as Window)
  fetch.mockResolvedValue(Response.json({id:'aa'.repeat(32),state:'pending',url:'https://evil.example/steal'}))
- await expect(authorizeDrive('pick', new AbortController().signal)).rejects.toThrow()
+ await expect(authorizeDrive('connect', new AbortController().signal)).rejects.toThrow()
  expect(tab.location.href).toBe('about:blank');expect(tab.opener).toBeNull();expect(tab.close).toHaveBeenCalled()
 })
 it('reports popup blocking without starting an authorization', async () => {
  vi.spyOn(window,'open').mockReturnValue(null)
- await expect(authorizeDrive('pick', new AbortController().signal)).rejects.toThrow('Allow pop-ups')
+ await expect(authorizeDrive('connect', new AbortController().signal)).rejects.toThrow('Allow pop-ups')
  expect(fetch).not.toHaveBeenCalled()
 })
 it('maps gateway refusal codes to UI text instead of rendering raw provider errors',async () => {
@@ -43,7 +43,7 @@ it('uses the declared endpoint for a new provider without a named authorization 
  fetch.mockResolvedValueOnce(Response.json({id:'aa'.repeat(32),state:'pending',url:'https://accounts.example.com/authorize?state=fixture'})).mockResolvedValueOnce(Response.json({state:'complete'}))
  const result=authorizeDrive('connect',new AbortController().signal,'fixture-files',['https://accounts.example.com/authorize'])
  await vi.advanceTimersByTimeAsync(1100)
- await expect(result).resolves.toEqual([])
+ await expect(result).resolves.toBeUndefined()
  expect(tab.location.href).toBe('https://accounts.example.com/authorize?state=fixture')
  expect(tab.opener).toBeNull();expect(tab.close).toHaveBeenCalled()
 })

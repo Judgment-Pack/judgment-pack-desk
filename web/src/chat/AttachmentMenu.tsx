@@ -39,7 +39,7 @@ export function AttachmentMenu({ disabled, onUpload, connections = [], triggerRe
         {visible.map(item => {
           const current = connections.find(connection => connection.provider === item.provider)
           return <DropdownMenu.Item key={item.provider} className={`desk-menu-item ${styles.item}`} textValue={providerName(item.provider, item.descriptor)} disabled={!current} onSelect={current ? () => { rememberConnection(current.provider); current.onSelect() } : undefined}>
-            <ProviderIcon provider={item.provider} descriptor={item.descriptor} /><span className={styles.copy}><span>{providerName(item.provider, item.descriptor)}</span><span className={styles.description}>{!current ? msg('Unavailable') : item.selection === 'browser-picker' ? msg('Choose files') : item.selection === 'mail-search' ? msg('Choose emails') : item.descriptor?.source?.record === 'resource-v1' ? msg('Choose files') : msg('Choose notes')}</span></span>
+            <ProviderIcon provider={item.provider} descriptor={item.descriptor} /><span className={styles.copy}><span>{providerName(item.provider, item.descriptor)}</span><span className={styles.description}>{!current ? msg('Unavailable') : item.provider === 'google-drive' ? msg('Choose files') : item.selection === 'mail-search' ? msg('Choose emails') : item.descriptor?.source?.record === 'resource-v1' ? msg('Choose files') : msg('Choose notes')}</span></span>
           </DropdownMenu.Item>
         })}
         {onMore && <><DropdownMenu.Separator className="desk-menu-separator" /><DropdownMenu.Item className="desk-menu-item" onSelect={onMore}>{msg('More connections')}</DropdownMenu.Item></>}

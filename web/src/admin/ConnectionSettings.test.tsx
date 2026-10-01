@@ -142,10 +142,10 @@ it.each([
   const instructions = within(pane).getByText('Setup instructions').closest('details')!
   expect(instructions.open).toBe(true)
   expect(within(pane).getAllByRole('listitem')).toHaveLength(6)
-  const scope = title === 'Gmail' ? 'gmail.readonly' : 'drive.file'
+  const scope = title === 'Gmail' ? 'gmail.readonly' : 'drive'
   expect(within(pane).getByText(`https://www.googleapis.com/auth/${scope}`)).toBeTruthy()
   const official = within(pane).getByRole('link', { name: 'Official Google documentation' })
-  expect(official.getAttribute('href')).toBe('https://developers.google.com/workspace/guides/create-credentials#desktop-app')
+  expect(official.getAttribute('href')).toBe(title === 'Gmail' ? 'https://developers.google.com/workspace/guides/create-credentials#desktop-app' : 'https://developers.google.com/workspace/drive/api/guides/api-specific-auth')
   expect(official.getAttribute('target')).toBe('_blank')
   expect(fetch.mock.calls.every(([url]) => /\/(catalog|status)$/.test(url))).toBe(true)
   fireEvent.click(instructions.querySelector('summary')!)

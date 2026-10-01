@@ -6,7 +6,7 @@ import { ChatStore } from './store'
 import { useChatAttachments } from './useChatAttachments'
 import { DESK_DEFAULTS, DOCUMENT_DEFAULTS } from '../config/deskConfig'
 const mocked = vi.hoisted(() => ({ pick: vi.fn(), ingest: vi.fn() }))
-vi.mock('../connections/client', () => ({ authorizeDrive: mocked.pick }))
+vi.mock('../connections/client', async original => ({...await original<object>(), authorizeDrive:mocked.pick}))
 vi.mock('../documents/client', () => ({ ingestDrive: mocked.ingest, ingestDocument: vi.fn(), loadDocument: vi.fn(), documentContext: vi.fn() }))
 afterEach(() => { cleanup(); vi.clearAllMocks(); sessionStorage.clear() })
 it.each(['disabled', 'external'] as const)('cancels pending selection when document configuration becomes %s', async mode => {
@@ -16,17 +16,16 @@ it.each(['disabled', 'external'] as const)('cancels pending selection when docum
  const config = {...DESK_DEFAULTS.research, gateway:{url:'http://127.0.0.1:9001',authority:'gateway:desk-local',signer:{algorithm:'ed25519' as const,public:'ab'.repeat(32)}},documents:{...DOCUMENT_DEFAULTS,enabled:true}}
  const hook = renderHook(({current}) => useChatAttachments(store, chat.id, false, current), {initialProps:{current:config}})
  let finish!: (value: unknown) => void
- mocked.pick.mockReturnValue(new Promise(resolve => { finish = resolve }))
- mocked.ingest.mockRejectedValue(new Error('review stopped before network'))
+ mocked.ingest.mockReturnValue(new Promise(resolve => { finish = resolve }))
  let work!: ReturnType<ReturnType<typeof useChatAttachments>['attachDrive']>
- act(() => { work = hook.result.current.attachDrive() })
- const signal = mocked.pick.mock.calls[0]![1] as AbortSignal
+ act(() => { work = hook.result.current.attachDrive([{fileId:'synthetic-file',grant:'aa'.repeat(32)}]) })
+ const signal = mocked.ingest.mock.calls[0]![2] as AbortSignal
  const changed = mode === 'disabled' ? {...config,documents:{...config.documents,enabled:false}} : {...config,gateway:{...config.gateway,url:'https://external.example',authority:'gateway:external'}}
  hook.rerender({current:changed})
- await act(async () => { finish([{fileId:'synthetic-file',grant:'aa'.repeat(32)}]); await work })
+ await act(async () => { finish({reference:{id:'late'},document:{record:{document:{name:'late.pdf'}}}}); await work })
  store.dispose()
  expect(signal.aborted).toBe(true)
- expect(mocked.ingest).not.toHaveBeenCalled()
+ expect(store.getSnapshot().drafts.every(item=>!item.attachments?.length)).toBe(true)
 })
 
 it('imports a first-use picker result without opening Google authorization a second time', async () => {

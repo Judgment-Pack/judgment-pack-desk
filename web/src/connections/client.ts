@@ -12,7 +12,7 @@ export interface MailPreview { id: string; subject: string; from: string; date: 
 export interface MailSearch { selectionContext: string; messages: MailPreview[]; nextPageToken?: string }
 export interface ConnectionStatus { version: 1; provider: ConnectionProvider; state: 'setup-required'|'not-connected'|'connected'|'blocked'|'unavailable'; account?: { id: string; email: string; name: string }; resource?: {id: string; name: string}; maxFileBytes: number; maxFiles: number }
 export interface DriveSelection { fileId: string; grant: string }
-export interface ConnectionFlow { id: string; state: 'pending'|'complete'|'failed'|'canceled'; url?: string; error?: string; selections?: DriveSelection[] }
+export interface ConnectionFlow { id: string; state: 'pending'|'complete'|'failed'|'canceled'; url?: string; error?: string }
 export const CONNECTIONS_KEY = ['gateway-connections'] as const
 export class ConnectionRequestError extends Error {
  constructor(readonly code: string, readonly provider: ConnectionProvider) {
@@ -87,7 +87,7 @@ export function connectionStatusOptions(provider: ConnectionProvider, enabled = 
 }
 /** Open synchronously from the user's click. Only a declared authorization
  * endpoint reaches this tab; credentials and the callback are gateway-owned. */
-export async function authorizeDrive(mode: 'connect'|'pick', signal: AbortSignal, provider: ConnectionProvider = 'google-drive', authorizationEndpoints?: string[]): Promise<DriveSelection[]> {
+export async function authorizeDrive(mode: 'connect', signal: AbortSignal, provider: ConnectionProvider = 'google-drive', authorizationEndpoints?: string[]): Promise<void> {
  const tab = window.open('about:blank', '_blank')
  if (!tab) throw new Error(sourceMessage('Allow pop-ups to open the sign-in window.'))
  tab.opener = null
@@ -105,7 +105,7 @@ export async function authorizeDrive(mode: 'connect'|'pick', signal: AbortSignal
     if (signal.aborted) { clearTimeout(timer); reject(signal.reason) } else signal.addEventListener('abort', cancel, { once: true })
    })
    const result = await connectionCall<ConnectionFlow>('poll', { id }, signal, provider)
-   if (result.state === 'complete') { done = true; return result.selections ?? [] }
+   if (result.state === 'complete') { done = true; return }
    if (result.state !== 'pending') { done = true; throw new ConnectionRequestError(result.error ?? 'canceled', provider) }
    if (tab.closed) throw new Error(sourceMessage('Canceled.'))
   }

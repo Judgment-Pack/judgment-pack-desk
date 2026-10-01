@@ -39,16 +39,16 @@ export function ConnectionsPane({ request, target, onProvider, onClose, onBusy, 
  const provider = request.provider, entry = catalog.entries.find(item => item.descriptor.id === provider)
  const status = entry?.status, descriptor = entry?.descriptor
  const generic = descriptor?.source?.record === 'resource-v1', prefix = descriptor?.queryMode === 'prefix'
- const fileLimit = Math.min(status?.data?.maxFileBytes ?? RESOURCE_MAX_BYTES, effective.config.research.documents?.maxFileBytes ?? RESOURCE_MAX_BYTES)
+ const fileLimit = Math.min(request.selection ? 200_000 : RESOURCE_MAX_BYTES, status?.data?.maxFileBytes ?? RESOURCE_MAX_BYTES, effective.config.research.documents?.maxFileBytes ?? RESOURCE_MAX_BYTES)
  const state = !available || catalog.isError || (!catalog.loading && !entry && Boolean(provider)) || status?.isError ? 'unavailable' : status?.data?.state
  // Also promote a service first connected from this pane, after setup succeeds.
  useEffect(() => { if (provider && hasDestination && state === 'connected') rememberConnection(provider) }, [provider, request.chatId, state])
  const { store, chats, drafts, bindings } = useChats()
  const chat = [...chats, ...drafts].find(item => item.id === request.chatId)
- const hasDestination = Boolean(request.chatId || request.destination)
+ const hasDestination = Boolean(request.chatId || request.destination || request.selection)
  const running = Boolean(request.chatId && bindings.get(request.chatId)?.run?.running)
  const upload = useChatAttachments(store, request.chatId ?? '', running, effective.config.research, request.destination)
- const capacity = Math.max(0, Math.min(4, status?.data?.maxFiles ?? 4) - (request.destination?.current()?.length ?? chat?.attachments?.length ?? 0))
+ const capacity = request.selection?.limit ?? Math.max(0, Math.min(4, status?.data?.maxFiles ?? 4) - (request.destination?.current()?.length ?? chat?.attachments?.length ?? 0))
  const [query, setQuery] = useState(''), [vault, setVault] = useState('')
  const [setup, setSetup] = useState<Record<string,string>>({})
  const needsSetup = descriptor?.registration === 'form' && (state === 'setup-required' || descriptor.auth !== 'oauth')
@@ -117,7 +117,7 @@ export function ConnectionsPane({ request, target, onProvider, onClose, onBusy, 
   finally { finish(task) }
  }
  async function search(pageToken?: string) {
-  if (!provider || !descriptor || descriptor.selection === 'browser-picker' || descriptor.queryRequired && !(pageToken ? submitted : query).trim()) return
+  if (!provider || !descriptor || descriptor.queryRequired && !(pageToken ? submitted : query).trim()) return
   const task = begin(); if (!task) return
   setRows(null); setNextPage(undefined)
   if (!pageToken) { setSelected([]); setSubmitted(query); visitedPages.current.clear() }
@@ -155,14 +155,20 @@ export function ConnectionsPane({ request, target, onProvider, onClose, onBusy, 
     else sources.push(...await connectionCall<SourceSelection[]>('select', { resourceIds: ids, selectionContext }, task.signal, provider))
    }
    if (!current(task)) return
-   const attached = provider === 'gmail' ? await upload.attachGmail(mail) : provider === 'google-drive' ? false : await (descriptor?.source?.record === 'resource-v1' ? upload.attachSource(provider, sources, descriptor) : upload.attachSource(provider, sources))
+   if (provider === 'google-drive' && (sources.length !== selected.length || new Set(sources.map(item=>item.resourceId)).size !== sources.length || sources.some(item=>!selected.some(row=>row.id===item.resourceId) || !/^[a-f0-9]{64}$/.test(item.grant)))) throw new Error(msg('The connection returned an invalid response. Try again.'))
+   if (request.selection) {
+    await request.selection.onSelect(sources, task.signal)
+    if (current(task)) onAttached()
+    return
+   }
+   const attached = provider === 'gmail' ? await upload.attachGmail(mail) : provider === 'google-drive' ? await upload.attachDrive(sources.map(({resourceId, grant}) => ({fileId: resourceId, grant}))) : await (descriptor?.source?.record === 'resource-v1' ? upload.attachSource(provider, sources, descriptor) : upload.attachSource(provider, sources))
    if (current(task) && attached) onAttached()
   } catch (cause) { if (current(task)) reportFailure(cause) }
   finally { finish(task) }
  }
  const unavailable = state === 'unavailable' || state === 'blocked'
  const working = busy || upload.reading
- const canAttach = Boolean((chat || request.destination?.current()) && effective.config.research.documents?.enabled)
+ const canAttach = Boolean((chat || request.destination?.current() || request.selection) && effective.config.research.documents?.enabled)
  // Opening a source picker is already a browse gesture. Notion requires a
  // query; Gmail and a local vault can show their first bounded page directly.
  useEffect(() => {
@@ -170,7 +176,7 @@ export function ConnectionsPane({ request, target, onProvider, onClose, onBusy, 
   const browseContext = JSON.stringify([provider, request.chatId, request.destination?.id, status?.data?.account?.id, context])
   // Configuration can refresh status before its request finishes. Browse once
   // it finishes, without restarting a canceled or failed search automatically.
-  if (!working && canAttach && descriptor && descriptor.selection !== 'browser-picker' && !descriptor.queryRequired && autoBrowse.current !== browseContext) {
+  if (!working && canAttach && descriptor && !descriptor.queryRequired && autoBrowse.current !== browseContext) {
    autoBrowse.current = browseContext
    void search()
   }
@@ -191,8 +197,8 @@ export function ConnectionsPane({ request, target, onProvider, onClose, onBusy, 
      <p>{descriptor?.presentation ? localized(descriptor.presentation.instructions) : provider === 'obsidian' ? msg('In Obsidian, open Manage vaults and copy the folder path shown below your vault name. Paste that full path here. No plugin is needed.') : msg('Connect your account, then choose the sources to attach. Connecting does not add anything to your chat.')}</p>
     </Disclosure>
    </> : hasDestination ? <>
-    <p className={styles.description}>{msg('Up to {{count}} files · {{size}} per file', {count: Math.min(4, status?.data?.maxFiles ?? 4), size: formatStorageBytes(fileLimit)})}</p>
-    {!canAttach ? <p>{msg('Enable document processing in Admin → Storage & data before attaching sources.')}</p> : provider !== 'google-drive' && <>
+    {!request.selection && <p className={styles.description}>{msg('Up to {{count}} files · {{size}} per file', {count: Math.min(4, status?.data?.maxFiles ?? 4), size: formatStorageBytes(fileLimit)})}</p>}
+    {!canAttach ? <p>{msg('Enable document processing in Admin → Storage & data before attaching sources.')}</p> : <>
      <form className={styles.search} onSubmit={event => { event.preventDefault(); void search() }}>
       <Input value={query} onChange={event => setQuery(event.target.value)} disabled={working} maxLength={1024} aria-label={prefix ? msg('Path starts with…') : msg('Search {{provider}}', { provider: providerName(provider, descriptor ?? unsupported) })} placeholder={prefix ? msg('Path starts with…') : msg('Search {{provider}}', { provider: providerName(provider, descriptor ?? unsupported) })} />
       <Button type="submit" disabled={working || descriptor?.queryRequired && !query.trim()}>{prefix ? msg('Browse') : msg('Search')}</Button>
@@ -207,11 +213,11 @@ export function ConnectionsPane({ request, target, onProvider, onClose, onBusy, 
     </>}
    </> : <p>{jobSetup ? msg('Connected. Job operations and background access are checked separately.') : msg('Connected. Choose sources from the chat attachment menu.')}</p>}
    {!jobSetup && !descriptor?.presentation && provider === 'notion' && <p className={styles.description}>{msg('Notion may include connected workspace sources in search. Only Notion pages you select are attached to chat.')}</p>}
-   {!jobSetup && (state === 'connected' || pinned) && <div className={styles.pin}>
+   {!jobSetup && !request.selection && (state === 'connected' || pinned) && <div className={styles.pin}>
     <Button variant="quiet" aria-pressed={pinned} disabled={!pinned && pinLimit} onClick={() => pinConnection(provider, !pinned, catalog.entries.map(item => item.descriptor.id))}>{pinned ? msg('Unpin from composer') : msg('Pin to composer')}</Button>
     {!pinned && pinLimit && <p className={styles.description}>{msg('You can pin up to five connections.')}</p>}
    </div>}
-   {state === 'connected' && descriptor?.operations.includes('files-list') && <ButtonLink to={`/connections/${provider}/files`} onClick={onClose}>{msg('Manage files')}</ButtonLink>}
+   {!request.selection && state === 'connected' && descriptor?.operations.includes('files-list') && <ButtonLink to={`/connections/${provider}/files`} onClick={onClose}>{msg('Manage files')}</ButtonLink>}
    {state === 'connected' && <Disclosure title={msg('Connection settings')}><p>{jobSetup ? msg('Disconnecting makes this integration unavailable to future job reads.') : msg('Disconnecting does not delete documents already attached to chats.') }</p><Button variant="quiet" disabled={working} onClick={() => void disconnect()}>{msg('Disconnect')}</Button></Disclosure>}
   </div>
   <footer className={styles.footer}>
@@ -223,7 +229,7 @@ export function ConnectionsPane({ request, target, onProvider, onClose, onBusy, 
     {jobSetup && !working && !reconnect && state === 'connected' && request.onConnected && <Button variant="primary" onClick={()=>request.onConnected?.(provider)}>{msg('Return to job')}</Button>}
     {working ? <Button variant="quiet" onClick={() => { cancel(); if (upload.reading) upload.cancel() }}>{msg('Cancel')}</Button> : unavailable ? <Button onClick={() => { void catalog.refetch(); void status?.refetch() }} disabled={!available}>{msg('Retry')}</Button> : reconnect ? <Button variant="primary" disabled={descriptor?.registration === 'form' ? missingSetup : provider === 'obsidian' && !vault.trim()} onClick={() => void connect()}>{descriptor?.auth === 'credentials' ? msg('Update credentials') : msg('Reconnect')}</Button> : state === 'not-connected' || state === 'setup-required' && descriptor?.registration === 'form' ?
      <Button variant="primary" disabled={descriptor?.registration === 'form' ? missingSetup : provider === 'obsidian' && !vault.trim()} onClick={() => void connect()}>{descriptor?.protocol ? state === 'setup-required' ? msg('Save') : descriptor.auth === 'oauth' ? msg('Continue with {{provider}}', {provider:providerName(provider,descriptor)}) : msg('Connect') : provider === 'obsidian' ? msg('Connect vault') : provider === 'notion' ? msg('Continue with Notion') : msg('Continue with Google')}</Button> : state === 'connected' && hasDestination &&
-     <Button variant="primary" disabled={!canAttach || capacity === 0 || provider !== 'google-drive' && (selected.length === 0 || selected.length > capacity)} onClick={() => { if (provider === 'google-drive') void upload.attachDrive().then(done => { if (done) onAttached() }); else void attach() }}>{provider === 'google-drive' ? msg('Choose files') : msg('Attach {{count}} items', { count: selected.length })}</Button>}
+     <Button variant="primary" disabled={!canAttach || capacity === 0 || selected.length === 0 || selected.length > capacity} onClick={() => void attach()}>{request.selection ? msg('Use selected file') : msg('Attach {{count}} items', { count: selected.length })}</Button>}
    </div>
   </footer>
  </section>
