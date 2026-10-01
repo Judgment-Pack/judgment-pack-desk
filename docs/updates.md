@@ -175,23 +175,21 @@ change needs network access, Git and Go, and takes several minutes.
 Each start builds Desk into its own `bin/dev-launches` directory beside a copy of
 the verified set. The copy is verified again and shares no file with the cache,
 so nothing done to the cache changes what a running Desk, Gateway or Runner
-executes. The default Runtime and Runner paths are passed explicitly. A start
-removes launch directories it marked as its own that no running process
-executes from, matched by file identity so a rename does not hide one; the
-running session's directory survives a failed rebuild, and so does an older
-launch holding an explicit `JPACK_DESK_JPACK`. `bin`, `bin/dev-launches` and each
-candidate are opened once without following links, and every check and removal
-goes through those descriptors, so replacing a path cannot redirect a deletion.
-Nothing is removed when `bin` or `bin/dev-launches` is a link, or when the
-process scan does not settle: a process of this user disappeared mid-scan (it
-may have handed off to a child the scan did not list) or is alive with no
-readable executable, over five passes a moment apart. The launcher then says
-which process stopped it. A process the kernel refuses to inspect, such as
-systemd's `(sd-pam)`, is passed over: running an ordinary readable file, as every
-launch file is, makes a process inspectable, and no companion gives that up. A process started by hand from an old launch directory while a start runs is
-not protected, and `bin/dev-launches` holds nothing but launches. Sets in
-`bin/dev-components` are kept, one per lock and recipe, for switching branches;
-an unused one can be deleted at any time.
+executes. The default Runtime and Runner paths are passed explicitly.
+
+Starts never delete anything, so each leaves its launch directory, more than
+100 MB, behind. Remove old ones explicitly with Desk stopped:
+`python3 scripts/desk-dev.py prune`, or the **desk: prune** task. It refuses
+while servers this launcher started are running, keeps the launch the last start
+used, removes only directories the launcher marked as launches in this
+checkout's `bin/dev-launches`, and never follows a link: `bin`,
+`bin/dev-launches` and each launch are opened without following one, and
+everything is removed through those descriptors. It trusts `bin/dev-launches` as
+yours, written only by this launcher; it cannot see a Desk or companion started
+some other way from an old launch directory, so stop any such process first.
+
+Sets in `bin/dev-components` are kept, one per lock and recipe, for switching
+branches; an unused one can be deleted at any time, since launches hold copies.
 
 `JPACK_DESK_JPACK` remains an explicit Runtime override and is reported as outside
 the lock. An inherited `JPACK_DESK_GATEWAY_MANIFEST_SHA256` is cleared so the

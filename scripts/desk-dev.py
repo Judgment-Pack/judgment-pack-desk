@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Start, stop, or restart the local Desk + Vite development servers (Linux/WSL)."""
+"""Start, stop, restart or check the local Desk + Vite development servers, or prune old launches (Linux/WSL)."""
 import argparse
 import fcntl
 import hashlib
@@ -131,109 +131,11 @@ def node_environment():
     return str(node), env
 
 
-# Written into every launch directory this launcher creates; pruning removes
-# nothing without it.
+# Written into every launch directory this launcher creates; prune removes
+# nothing without it. The last launch a start used is named in LAST_LAUNCH.
 LAUNCH_MARKER = '.desk-dev-launch'
+LAST_LAUNCH = '.last-launch'
 DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
-
-
-def scan_executables(proc, uid, blocked):
-    """One pass over `proc`: (found, settled).
-
-    Not settled when a listed process disappeared before it was inspected (it
-    may have handed off to a child this pass did not list), or when a live
-    process of this user could not be inspected; that entry is added to
-    `blocked`. A process in the middle of exiting looks like the latter for a
-    moment, so the caller tries again.
-    """
-    found, settled = set(), True
-    for entry in [entry for entry in proc.iterdir() if entry.name.isdigit()]:
-        try:
-            executable = os.stat(entry / 'exe')
-            found.add((executable.st_dev, executable.st_ino))
-            continue
-        except PermissionError:
-            # The kernel refuses another user's process, or one that is not
-            # dumpable (systemd's "(sd-pam)", for one). Executing an ordinary
-            # readable file, as every launch file is, makes a process dumpable,
-            # and no companion gives that up, so this one runs no launch file.
-            continue
-        except OSError:
-            pass  # gone, a zombie, a kernel thread, exiting, or a dead leader
-        try:
-            owner = entry.stat().st_uid
-        except FileNotFoundError:
-            settled = False
-            continue
-        except OSError:
-            blocked.append(entry)
-            settled = False
-            continue
-        if owner != uid:
-            continue
-        try:
-            state = (entry / 'stat').read_text().rsplit(')', 1)[1].split()[0]
-            threads = len(os.listdir(entry / 'task'))
-        except FileNotFoundError:
-            settled = False
-            continue
-        except (OSError, IndexError):
-            blocked.append(entry)
-            settled = False
-            continue
-        if state != 'Z' or threads > 1:
-            blocked.append(entry)
-            settled = False
-    return found, settled
-
-
-def executables_in_use(proc=Path('/proc'), uid=None, attempts=5, blocked=None):
-    """(device, inode) of every running process's executable, or None when the
-    scan does not settle.
-
-    Identity by inode survives renames and links. A process of this user whose
-    executable cannot be read keeps the scan unsettled unless it is a plain
-    zombie: a leader that exited while other threads run is still live. After
-    `attempts` unsettled passes, a short pause apart, the answer is None, and
-    `blocked` names what could not be inspected in the last pass.
-    """
-    uid = os.getuid() if uid is None else uid
-    blocked = [] if blocked is None else blocked
-    for attempt in range(attempts):
-        if attempt:
-            time.sleep(0.05)
-        del blocked[:]
-        found, settled = scan_executables(proc, uid, blocked)
-        if settled:
-            return found
-    return None
-
-
-def blocking(blocked):
-    """Names the process that stopped pruning, from its world-readable name."""
-    if not blocked:
-        return 'running processes kept changing during the check'
-    try:
-        name = (blocked[-1] / 'comm').read_text().strip()
-    except OSError:
-        name = 'unknown'
-    return 'process ' + blocked[-1].name + ' (' + name + ') could not be inspected'
-
-
-def file_ids(descriptor):
-    """(device, inode) of every regular file below an open directory, never following a link."""
-    ids = set()
-    for entry in os.listdir(descriptor):
-        info = os.stat(entry, dir_fd=descriptor, follow_symlinks=False)
-        if stat.S_ISDIR(info.st_mode):
-            child = os.open(entry, DIRECTORY, dir_fd=descriptor)
-            try:
-                ids |= file_ids(child)
-            finally:
-                os.close(child)
-        elif stat.S_ISREG(info.st_mode):
-            ids.add((info.st_dev, info.st_ino))
-    return ids
 
 
 def clear(descriptor):
@@ -250,63 +152,82 @@ def clear(descriptor):
             os.unlink(entry, dir_fd=descriptor)
 
 
-def prune_launches(launches, keep=()):
-    """Remove launch directories this launcher made that no process executes from.
+def record_launch(directory):
+    """Name the launch directory a start used, so prune keeps it."""
+    staged = directory.parent / (LAST_LAUNCH + '.tmp')
+    staged.write_text(directory.name + '\n')
+    staged.replace(directory.parent / LAST_LAUNCH)
 
-    Every start gets a new launch directory, so old ones would accumulate a
-    copy of the companions per restart. `bin` and `bin/dev-launches` are opened
-    without following links before anything is inspected, and each candidate
-    is opened once: its marker, its files and its removal all go through that
-    one descriptor, so replacing any of these paths cannot redirect a deletion.
-    Only directories carrying the launcher's marker are removed, never one
-    holding a running executable or a file named in `keep`, and nothing when a
-    live process of this user cannot be inspected. A process started by hand
-    from an old launch directory while a start is running is outside this.
-    """
+
+def last_launch(launches):
+    """The launch directory name the last start recorded, or None."""
     try:
-        parent = os.open(str(launches.parent), DIRECTORY)
+        descriptor = os.open(LAST_LAUNCH, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=launches)
     except OSError:
-        print('Launch directories are not pruned: bin is a link or unreadable.', flush=True)
-        return
+        return None
+    try:
+        name = os.read(descriptor, 256).decode('utf-8', 'replace').strip()
+    finally:
+        os.close(descriptor)
+    if not name or name in ('.', '..') or '/' in name or '\0' in name:
+        return None
+    return name
+
+
+def prune_launches(processes):
+    """Remove old launch directories; run it with Desk stopped.
+
+    Starts never delete anything: each leaves its own launch directory behind.
+    This removes them, explicitly. It trusts this checkout's `bin/dev-launches`
+    as yours, written only by this launcher, and removes only directories the
+    launcher marked there, except the one the last start used. It refuses
+    while servers this launcher started are running, but it cannot see Desk or
+    a companion started some other way from an old launch directory. Links are
+    never followed: `bin`, `bin/dev-launches` and each launch are opened without
+    following one, and everything is removed through those descriptors.
+    Returns (removed, kept) directory names.
+    """
+    running = sorted(name for name, record in processes.items() if alive(record))
+    if running:
+        raise RuntimeError('Desk development servers are running (' + ', '.join(running) + '). Stop them first with: python3 scripts/desk-dev.py stop. Nothing was removed.')
+    try:
+        parent = os.open(str(ROOT / 'bin'), DIRECTORY)
+    except FileNotFoundError:
+        return [], None
+    except OSError as error:
+        raise RuntimeError('bin is a link or cannot be opened; nothing was removed.') from error
     try:
         try:
-            root = os.open(launches.name, DIRECTORY, dir_fd=parent)
-        except OSError:
-            print('Launch directories are not pruned: bin/dev-launches is a link or unreadable.', flush=True)
-            return
+            launches = os.open('dev-launches', DIRECTORY, dir_fd=parent)
+        except FileNotFoundError:
+            return [], None
+        except OSError as error:
+            raise RuntimeError('bin/dev-launches is a link or cannot be opened; nothing was removed.') from error
         try:
-            blocked = []
-            in_use = executables_in_use(blocked=blocked)
-            if in_use is None:
-                print('Older launch directories were kept: ' + blocking(blocked) + '. Remove unused ones under bin/dev-launches while Desk is stopped.', flush=True)
-                return
-            for path in keep:
+            kept = last_launch(launches)
+            removed = []
+            for name in sorted(os.listdir(launches)):
+                if name == kept:
+                    continue
                 try:
-                    info = os.stat(path)
-                    in_use.add((info.st_dev, info.st_ino))
+                    candidate = os.open(name, DIRECTORY, dir_fd=launches)
                 except OSError:
-                    pass
-            for name in os.listdir(root):
+                    continue  # a link, a file, or gone: not a launch
                 try:
-                    candidate = os.open(name, DIRECTORY, dir_fd=root)
-                except OSError:
-                    continue  # a link or not a directory: keep it
-                try:
-                    if not stat.S_ISREG(os.stat(LAUNCH_MARKER, dir_fd=candidate, follow_symlinks=False).st_mode):
+                    try:
+                        marker = os.stat(LAUNCH_MARKER, dir_fd=candidate, follow_symlinks=False)
+                    except FileNotFoundError:
                         continue
-                    if file_ids(candidate) & in_use:
+                    if not stat.S_ISREG(marker.st_mode):
                         continue
                     clear(candidate)
-                except OSError:
-                    continue  # changed meanwhile: keep what is left
                 finally:
                     os.close(candidate)
-                try:
-                    os.rmdir(name, dir_fd=root)  # only ever removes an empty directory
-                except OSError:
-                    pass
+                os.rmdir(name, dir_fd=launches)
+                removed.append(name)
+            return removed, kept
         finally:
-            os.close(root)
+            os.close(launches)
     finally:
         os.close(parent)
 
@@ -329,8 +250,7 @@ def prepare():
     print('Building Desk…', flush=True)
     launches = ROOT / 'bin/dev-launches'
     launches.mkdir(parents=True, exist_ok=True)
-    # An explicit Runtime override inside an older launch keeps that launch.
-    prune_launches(launches, keep=[runtime] if runtime else [])
+    # Nothing is deleted here; `desk-dev.py prune` removes old launches.
     with tempfile.TemporaryDirectory(prefix='.building-', dir=launches) as temp:
         # Marked first, so a build interrupted here is still recognisably ours.
         (Path(temp) / LAUNCH_MARKER).touch()
@@ -445,7 +365,11 @@ def interrupted(_signum, _frame):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('start', 'stop', 'restart', 'status'))
+    parser.add_argument('action', choices=('start', 'stop', 'restart', 'status', 'prune'),
+                        help='prune removes old launch directories under bin/dev-launches. Run it with Desk stopped: it '
+                             'refuses while servers this launcher started are running, keeps the launch the last start '
+                             'used, removes only directories the launcher marked, and never follows a link. It trusts '
+                             'bin/dev-launches as yours and cannot see a Desk started some other way.')
     parser.add_argument('--open', action='store_true', help='Open the browser after starting.')
     args = parser.parse_args()
     signal.signal(signal.SIGTERM, interrupted)
@@ -465,6 +389,11 @@ def main():
             stop(processes)
             print('Desk development servers stopped. Saved workspace files are unchanged.')
             return
+        if args.action == 'prune':
+            removed, kept = prune_launches(processes)
+            print(f'Removed {len(removed)} old launch director' + ('y' if len(removed) == 1 else 'ies') +
+                  (f'; kept {kept}, used by the last start.' if kept else '.'))
+            return
         running = all(alive(processes.get(name)) for name in ('backend', 'frontend'))
         if args.action == 'start' and running:
             print('Desk is already running.')
@@ -474,6 +403,7 @@ def main():
             stop(processes)
             require_free_ports()
             processes = launch(commands)
+            record_launch(Path(commands[0][1][0]).parent)
         show(processes)
         if args.open:
             open_browser()

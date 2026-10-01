@@ -3500,6 +3500,9 @@ Vite's stack trace): run `nvm use` in the repository first.
 - **desk: restart** rebuilds and restarts both servers for Go changes. If the build
   fails, the current session keeps running. Frontend changes hot reload automatically.
 - **desk: status** shows the tracked processes and log directory.
+- **desk: prune**, with Desk stopped, removes old launch directories under
+  `bin/dev-launches` (each start leaves one, more than 100 MB) and keeps the one the
+  last start used. It refuses while these servers run.
 - **desk: open (hot reload)** starts Desk if needed, waits for readiness, and opens
   the browser. **Ctrl+Shift+B** runs **desk: dev**, an alias for **desk: start**.
 

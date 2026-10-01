@@ -46,6 +46,28 @@
       }
     },
     {
+      "label": "desk: prune",
+      "type": "process",
+      "command": "python3",
+      "args": [
+        "${workspaceFolder}/scripts/desk-dev.py",
+        "prune"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "detail": "With Desk stopped, remove old launch directories under bin/dev-launches, keeping the one the last start used. Refuses while these servers run.",
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "shared",
+        "reveal": "always",
+        "clear": true
+      },
+      "runOptions": {
+        "instanceLimit": 1
+      }
+    },
+    {
       "label": "desk: restart",
       "type": "process",
       "command": "python3",

@@ -168,7 +168,6 @@ class LifecycleTests(unittest.TestCase):
         with patch.object(dev, 'ROOT', root), patch.object(dev, 'node_environment', return_value=('/node', inherited)), \
              patch.object(dev.shutil, 'which', side_effect=which), patch.object(dev.components, 'synchronize', return_value=bundle), \
              patch.object(dev.components, 'install', side_effect=install), \
-             patch.object(dev, 'executables_in_use', return_value=set()), \
              patch.dict(dev.os.environ, environ), patch.object(dev.subprocess, 'run', side_effect=build or compile_desk), \
              contextlib.redirect_stdout(io.StringIO()) as out:
             return dev.prepare(), out.getvalue()
@@ -212,253 +211,132 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(sorted(path.name for path in bundle.iterdir()), ['gateway-bundle.json', 'jpack', 'jpack-runner', 'jpack-source-worker'])
         self.assertEqual((bundle / 'jpack').read_text(), 'verified companion')
 
-    def launches(self, root=None):
-        launches = (root or self.state) / 'bin/dev-launches'
+    def test_starts_never_delete_old_launches(self):
+        root, bundle, path_jpack = self.checkout()
+        old = root / 'bin/dev-launches/old'; old.mkdir(parents=True)
+        (old / dev.LAUNCH_MARKER).touch()
+        override = old / 'jpack'; override.write_text('#!/bin/sh\n'); override.chmod(0o755)
+        for environ in ({'JPACK_DESK_JPACK': ''}, {'JPACK_DESK_JPACK': str(override)}):
+            self.prepare(root, bundle, path_jpack, environ)
+        self.assertTrue(override.exists())
+        self.assertEqual(len([path for path in old.parent.iterdir() if path.is_dir()]), 3)
+
+    def test_a_start_records_the_launch_it_used(self):
+        root = self.state / 'checkout'
+        used = root / 'bin/dev-launches/fresh'; used.mkdir(parents=True)
+        commands = [('backend', [str(used / 'jpack-desk')], root, {}, 'unused')]
+        with patch.object(dev, 'ROOT', root), patch.object(dev, 'prepare', return_value=commands), \
+             patch.object(dev, 'require_free_ports'), patch.object(dev, 'launch', return_value={}):
+            self.main('restart')
+        self.assertEqual((used.parent / dev.LAST_LAUNCH).read_text(), 'fresh\n')
+        failed = [('backend', [str(root / 'bin/dev-launches/broken/jpack-desk')], root, {}, 'unused')]
+        with patch.object(dev, 'ROOT', root), patch.object(dev, 'prepare', return_value=failed), \
+             patch.object(dev, 'require_free_ports'), patch.object(dev, 'launch', side_effect=RuntimeError('did not start')):
+            with self.assertRaises(RuntimeError):
+                self.main('restart')
+        self.assertEqual((used.parent / dev.LAST_LAUNCH).read_text(), 'fresh\n')
+
+    def launches(self):
+        root = Path(tempfile.mkdtemp(dir=self.state))
+        launches = root / 'bin/dev-launches'
         made = {}
-        for name in ('running', 'stopped', '.building-crashed'):
+        for name in ('old', 'older', '.building-crashed', 'current'):
             made[name] = launches / name
-            made[name].mkdir(parents=True)
+            (made[name] / 'licenses').mkdir(parents=True)
+            (made[name] / 'licenses/LICENSE').write_text('text')
+            (made[name] / 'jpack').write_text('companion')
             (made[name] / dev.LAUNCH_MARKER).touch()
-        # Look like launches, but the launcher did not make them.
-        for name in ('foreign', '.building-foreign'):
-            made[name] = launches / name
-            made[name].mkdir()
-            (made[name] / dev.components.MANIFEST).write_text('{}')
-        return launches, made
+        made['foreign'] = launches / 'foreign'
+        made['foreign'].mkdir()
+        (made['foreign'] / dev.components.MANIFEST).write_text('{}')  # looks like one, not marked
+        (launches / 'notes.txt').write_text('a file, not a launch')
+        (launches / dev.LAST_LAUNCH).write_text('current\n')
+        return root, launches, made
 
-    def run_from(self, directory):
-        """Start a real process from `directory`, and limit what pruning sees to
-        it: the host's own process table is not this test's subject."""
-        shutil.copy2(shutil.which('sleep'), directory / 'sleep')
-        child = subprocess.Popen([str(directory / 'sleep'), '30'])
-        self.children.append(child)
-        proc = Path(tempfile.mkdtemp(dir=self.state)) / 'proc'
-        proc.mkdir()
-        self.entry = proc / str(child.pid)
-        self.entry.symlink_to('/proc/' + str(child.pid))
-        target = os.stat(directory / 'sleep')
-        deadline = time.monotonic() + 5
-        while (target.st_dev, target.st_ino) not in (dev.executables_in_use(proc) or ()) and time.monotonic() < deadline:
-            time.sleep(0.02)
-        scan = dev.executables_in_use
-        self.scan = patch.object(dev, 'executables_in_use', side_effect=lambda **kwargs: scan(proc, **kwargs))
-        self.scan.start()
-        self.addCleanup(self.scan.stop)
-        return child
+    def prune(self, root):
+        out = io.StringIO()
+        with patch.object(dev, 'ROOT', root), patch.object(sys, 'argv', ['desk-dev.py', 'prune']), contextlib.redirect_stdout(out):
+            dev.main()
+        return out.getvalue()
 
-    def test_prune_removes_only_marked_launches_no_process_executes_from(self):
-        launches, made = self.launches()
-        outside = self.state / 'outside'; outside.mkdir(); (outside / dev.LAUNCH_MARKER).touch()
-        (launches / 'linked').symlink_to(outside)
-        child = self.run_from(made['running'])
-        dev.prune_launches(launches)
-        self.assertTrue((made['running'] / 'sleep').exists())
-        self.assertFalse(made['stopped'].exists())
-        self.assertFalse(made['.building-crashed'].exists())
-        self.assertTrue(made['foreign'].exists() and made['.building-foreign'].exists())
-        self.assertTrue((outside / dev.LAUNCH_MARKER).exists() and (launches / 'linked').is_symlink())
+    def test_prune_removes_only_marked_launches_and_keeps_the_last_one_used(self):
+        root, launches, made = self.launches()
+        out = self.prune(root)
+        self.assertEqual(sorted(path.name for path in launches.iterdir()), sorted([dev.LAST_LAUNCH, 'current', 'foreign', 'notes.txt']))
+        self.assertTrue((made['current'] / 'licenses/LICENSE').exists())
+        self.assertIn('Removed 3 old launch directories; kept current', out)
+        self.assertIn('Removed 0 old launch directories; kept current', self.prune(root))
+
+    def test_prune_refuses_while_servers_this_launcher_started_run(self):
+        root, launches, made = self.launches()
+        child = self.spawn()
+        with patch.object(dev, 'ROOT', root):
+            dev.write_state({'backend': dev.identity(child.pid)})
+        with self.assertRaisesRegex(RuntimeError, 'backend.*Nothing was removed'):
+            self.prune(root)
+        self.assertTrue(all(directory.exists() for directory in made.values()))
         child.kill(); child.wait()
-        self.entry.unlink()  # as the kernel's own entry goes once the child is reaped
-        dev.prune_launches(launches)
-        self.assertFalse(made['running'].exists())
+        self.assertIn('Removed 3', self.prune(root))
 
-    def test_a_launch_stays_in_use_after_it_is_renamed(self):
-        launches, made = self.launches()
-        child = self.run_from(made['running'])
-        moved = launches / 'moved'
-        made['running'].rename(moved)
-        dev.prune_launches(launches)
-        self.assertTrue((moved / 'sleep').exists())
+    def test_prune_ignores_a_malformed_or_linked_record(self):
+        for record in ('../current', '', 'a/b', 'linked'):
+            with self.subTest(record=record):
+                root, launches, made = self.launches()
+                (launches / dev.LAST_LAUNCH).unlink()
+                if record == 'linked':
+                    (self.state / 'record').write_text('current\n')
+                    (launches / dev.LAST_LAUNCH).symlink_to(self.state / 'record')
+                else:
+                    (launches / dev.LAST_LAUNCH).write_text(record)
+                self.prune(root)
+                self.assertFalse(made['current'].exists())
 
-    def test_prune_never_follows_a_linked_launch_root(self):
+    def test_prune_never_follows_a_link(self):
+        root, launches, made = self.launches()
+        outside = self.state / 'outside'; (outside / 'inner').mkdir(parents=True)
+        (outside / dev.LAUNCH_MARKER).touch(); (outside / 'inner/keep').write_text('not ours')
+        (launches / 'linked').symlink_to(outside)                       # a linked launch
+        (made['old'] / 'escape').symlink_to(outside)                    # a link inside a launch
+        unmarked = launches / 'link-marked'; unmarked.mkdir()
+        (unmarked / dev.LAUNCH_MARKER).symlink_to(outside / dev.LAUNCH_MARKER)  # a linked marker
+        self.prune(root)
+        self.assertTrue((outside / 'inner/keep').exists() and (outside / dev.LAUNCH_MARKER).exists())
+        self.assertTrue((launches / 'linked').is_symlink() and unmarked.exists())
+        self.assertFalse(made['old'].exists())
         for linked in ('bin', 'bin/dev-launches'):
             with self.subTest(linked=linked):
                 target = Path(tempfile.mkdtemp(dir=self.state))
-                elsewhere = target / 'dev-launches/valuable' if linked == 'bin' else target / 'valuable'
+                elsewhere = (target / 'dev-launches/valuable') if linked == 'bin' else (target / 'valuable')
                 elsewhere.mkdir(parents=True)
                 (elsewhere / dev.LAUNCH_MARKER).touch()
-                root = Path(tempfile.mkdtemp(dir=self.state))
+                other = Path(tempfile.mkdtemp(dir=self.state))
                 if linked == 'bin':
-                    (root / 'bin').symlink_to(target)
+                    (other / 'bin').symlink_to(target)
                 else:
-                    (root / 'bin').mkdir(); (root / 'bin/dev-launches').symlink_to(target)
-                with contextlib.redirect_stdout(io.StringIO()):
-                    dev.prune_launches(root / 'bin/dev-launches')
+                    (other / 'bin').mkdir(); (other / 'bin/dev-launches').symlink_to(target)
+                with self.assertRaisesRegex(RuntimeError, 'is a link'):
+                    self.prune(other)
                 self.assertTrue((elsewhere / dev.LAUNCH_MARKER).exists())
 
-    def test_replacing_the_launch_root_during_the_scan_cannot_redirect_deletion(self):
+    def test_replacing_the_launch_root_midway_cannot_redirect_deletion(self):
         for swapped in ('bin', 'bin/dev-launches'):
             with self.subTest(swapped=swapped):
-                root = Path(tempfile.mkdtemp(dir=self.state))
-                launches, made = self.launches(root)
+                root, launches, made = self.launches()
                 outside = Path(tempfile.mkdtemp(dir=self.state))
-                valuable = (outside / 'dev-launches/stopped') if swapped == 'bin' else (outside / 'stopped')
+                valuable = (outside / 'dev-launches/older') if swapped == 'bin' else (outside / 'older')
                 valuable.mkdir(parents=True)
-                (valuable / dev.LAUNCH_MARKER).touch()
-                def swap_then_scan(**kwargs):
-                    (root / swapped).rename(root / (swapped + '-moved'))
-                    (root / swapped).symlink_to(outside)
-                    return set()
-                with patch.object(dev, 'executables_in_use', side_effect=swap_then_scan):
-                    dev.prune_launches(launches)
-                self.assertTrue((valuable / dev.LAUNCH_MARKER).exists())
-
-    def test_replacing_a_launch_after_it_is_checked_cannot_redirect_deletion(self):
-        launches, made = self.launches()
-        replacement = self.state / 'replacement'; replacement.mkdir()
-        (replacement / 'valuable').write_text('must survive')
-        original, checked = dev.file_ids, os.stat(made['stopped']).st_ino
-        swapped = []
-        def swap_then_scan(descriptor):
-            # Once the marked launch has been opened and checked, put an
-            # unmarked directory with something valuable at its name.
-            if not swapped and os.fstat(descriptor).st_ino == checked:
-                made['stopped'].rename(launches.parent / 'retired')
-                replacement.rename(made['stopped'])
-                swapped.append(True)
-            return original(descriptor)
-        with patch.object(dev, 'file_ids', side_effect=swap_then_scan), patch.object(dev, 'executables_in_use', return_value=set()):
-            dev.prune_launches(launches)
-        self.assertEqual(swapped, [True])
-        self.assertEqual((made['stopped'] / 'valuable').read_text(), 'must survive')
-        self.assertEqual(list((launches.parent / 'retired').iterdir()), [])
-
-    def test_an_explicit_runtime_inside_an_old_launch_keeps_that_launch(self):
-        launches, made = self.launches()
-        runtime = made['stopped'] / 'jpack'; runtime.write_text('#!/bin/sh\n')
-        with patch.object(dev, 'executables_in_use', side_effect=lambda **kwargs: set()):
-            dev.prune_launches(launches, keep=[runtime])
-            self.assertTrue(runtime.exists())
-            self.assertFalse(made['.building-crashed'].exists())
-            dev.prune_launches(launches)
-            self.assertFalse(made['stopped'].exists())
-
-    def test_prepare_keeps_an_override_that_lives_in_an_old_launch(self):
-        root, bundle, path_jpack = self.checkout()
-        override = root / 'bin/dev-launches/previous/jpack'
-        override.parent.mkdir(parents=True)
-        override.write_text('#!/bin/sh\n'); override.chmod(0o755)
-        (override.parent / dev.LAUNCH_MARKER).touch()
-        commands, _ = self.prepare(root, bundle, path_jpack, {'JPACK_DESK_JPACK': str(override)})
-        selected = Path(commands[0][1][commands[0][1].index('--jpack') + 1])
-        self.assertEqual(selected, override.resolve())
-        self.assertTrue(selected.exists())
-
-    def test_prune_removes_nothing_when_a_process_cannot_be_inspected(self):
-        launches, made = self.launches()
-        with patch.object(dev, 'executables_in_use', return_value=None), contextlib.redirect_stdout(io.StringIO()) as out:
-            dev.prune_launches(launches)
-        self.assertIn('Older launch directories were kept', out.getvalue())
-        self.assertTrue(all(directory.exists() for directory in made.values()))
-
-    def test_the_host_scan_finds_a_real_process_or_names_what_blocks_it(self):
-        directory = self.state / 'host'; directory.mkdir()
-        shutil.copy2(shutil.which('sleep'), directory / 'sleep')
-        child = subprocess.Popen([str(directory / 'sleep'), '30'])
-        self.children.append(child)
-        target = os.stat(directory / 'sleep')
-        blocked = []
-        found = dev.executables_in_use(blocked=blocked)
-        if found is None:
-            reason = dev.blocking(blocked)
-            print('host process scan inconclusive: ' + reason, file=sys.stderr)
-            self.assertIn('could not be inspected', reason) if blocked else None
-            self.skipTest(reason)
-        deadline = time.monotonic() + 5
-        while (target.st_dev, target.st_ino) not in found and time.monotonic() < deadline:
-            time.sleep(0.02)
-            found = dev.executables_in_use() or found
-        self.assertIn((target.st_dev, target.st_ino), found)
-
-    def test_a_kept_launch_says_which_process_blocked_pruning(self):
-        launches, made = self.launches()
-        entry = self.state / 'proc/4242'; entry.mkdir(parents=True)
-        (entry / 'comm').write_text('keyring-daemon\n')
-        def blocked(blocked=None, **kwargs):
-            blocked.append(entry)
-            return None
-        out = io.StringIO()
-        with patch.object(dev, 'executables_in_use', side_effect=blocked), contextlib.redirect_stdout(out):
-            dev.prune_launches(launches)
-        self.assertIn('process 4242 (keyring-daemon) could not be inspected', out.getvalue())
-        self.assertTrue(made['stopped'].exists())
-
-    def test_a_process_vanishing_mid_scan_forces_another_pass(self):
-        proc = self.state / 'proc'
-        live = proc / '10'; (live / 'task/10').mkdir(parents=True)
-        (live / 'stat').write_text('10 (x) S 1 1')
-        executable = self.state / 'executable'; executable.write_text('')
-        (live / 'exe').symlink_to(executable)
-        info = os.stat(executable)
-        gone = proc / '20'  # listed, then gone before it is inspected
-        passes = []
-        class Proc:
-            def __init__(self, vanishing): self.vanishing = vanishing
-            def iterdir(self):
-                passes.append(1)
-                return iter([live] + ([gone] if len(passes) <= self.vanishing else []))
-        self.assertEqual(dev.executables_in_use(Proc(1)), {(info.st_dev, info.st_ino)})
-        self.assertEqual(len(passes), 2)
-        passes.clear()
-        self.assertIsNone(dev.executables_in_use(Proc(99), attempts=3))
-        self.assertEqual(len(passes), 3)
-
-    def test_a_process_the_kernel_refuses_to_inspect_runs_no_launch_file(self):
-        if os.geteuid() == 0:
-            self.skipTest('permissions do not bind root')
-        proc = self.state / 'proc'
-        locked = self.state / 'locked'; locked.mkdir()
-        (locked / 'executable').write_text('')
-        for pid, target in ((40, locked / 'executable'), (41, self.state / 'gone')):
-            entry = proc / str(pid); (entry / 'task' / str(pid)).mkdir(parents=True)
-            (entry / 'stat').write_text(f'{pid} (x) S 1 1')
-            (entry / 'exe').symlink_to(target)
-        locked.chmod(0)  # stat through the link is now refused, as for "(sd-pam)"
-        self.addCleanup(locked.chmod, 0o700)
-        shutil.rmtree(proc / '41')
-        self.assertEqual(dev.executables_in_use(proc), set())
-        # Whereas a live process of this user with no readable executable at all
-        # (exiting, or a leader that left live threads) keeps the scan unsettled.
-        entry = proc / '41'; (entry / 'task/41').mkdir(parents=True)
-        (entry / 'stat').write_text('41 (x) S 1 1')
-        (entry / 'exe').symlink_to(self.state / 'gone')
-        self.assertIsNone(dev.executables_in_use(proc, attempts=2))
-
-    def test_an_inconclusive_inspection_of_this_users_process_stops_pruning(self):
-        if os.geteuid() == 0:
-            self.skipTest('permissions do not bind root')
-        for unreadable in ('stat', 'task'):
-            with self.subTest(unreadable=unreadable):
-                proc = Path(tempfile.mkdtemp(dir=self.state)) / 'proc'
-                entry = proc / '30'; (entry / 'task/30').mkdir(parents=True)
-                (entry / 'stat').write_text('30 (x) Z 1 1')
-                (entry / unreadable).chmod(0)
-                self.addCleanup((entry / unreadable).chmod, 0o700)
-                self.assertIsNone(dev.executables_in_use(proc))
-
-    def test_only_a_plain_zombie_or_another_user_may_hide_its_executable(self):
-        proc = self.state / 'proc'
-        def process(pid, state, threads, executable=None):
-            entry = proc / str(pid)
-            (entry / 'task').mkdir(parents=True)
-            for thread in range(threads):
-                (entry / 'task' / str(pid + thread)).mkdir()
-            (entry / 'stat').write_text(f'{pid} (name with) spaces) {state} 1 1')
-            if executable:
-                (entry / 'exe').symlink_to(executable)
-            return entry
-        running = self.state / 'running-executable'; running.write_text('')
-        process(10, 'S', 1, running)
-        process(11, 'Z', 1)
-        (proc / 'self').mkdir(parents=True)
-        info = os.stat(running)
-        self.assertEqual(dev.executables_in_use(proc), {(info.st_dev, info.st_ino)})
-        for pid, state, threads in ((12, 'Z', 2), (13, 'S', 1)):
-            with self.subTest(pid=pid):
-                entry = process(pid, state, threads, self.state / 'missing')
-                self.assertIsNone(dev.executables_in_use(proc))
-                self.assertEqual(dev.executables_in_use(proc, uid=os.getuid() + 1), {(info.st_dev, info.st_ino)})
-                shutil.rmtree(entry)
+                (valuable / dev.LAUNCH_MARKER).touch(); (valuable / 'keep').write_text('not ours')
+                original, done = dev.clear, []
+                def swap_then_clear(descriptor):
+                    if not done:
+                        (root / swapped).rename(root / (swapped + '-moved'))
+                        (root / swapped).symlink_to(outside)
+                        done.append(True)
+                    return original(descriptor)
+                with patch.object(dev, 'clear', side_effect=swap_then_clear):
+                    self.prune(root)
+                self.assertEqual(done, [True])
+                self.assertTrue((valuable / 'keep').exists())
 
     def test_status_names_the_launched_set_and_a_changed_lock(self):
         pins = {name: {'version': 'v1.0.0', 'revision': name[0] * 40} for name in ('runtime', 'runner', 'gateway')}
@@ -483,7 +361,7 @@ class LifecycleTests(unittest.TestCase):
 
     def test_tasks_use_structured_arguments_and_no_missing_settings(self):
         tasks = json.loads((dev.ROOT / '.vscode/tasks.json').read_text())['tasks']
-        for action in ('start', 'stop', 'restart'):
+        for action in ('start', 'stop', 'restart', 'prune'):
             task = next(task for task in tasks if task['label'] == f'desk: {action}')
             self.assertEqual(task['type'], 'process')
             self.assertEqual(task['args'], ['${workspaceFolder}/scripts/desk-dev.py', action])
