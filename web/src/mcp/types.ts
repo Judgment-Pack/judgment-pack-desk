@@ -226,6 +226,22 @@ export interface HandoffTarget {
  * it exists so that an unknown resolution ignored stays visible. A pack's
  * applicability is one unnamed condition, so its entry carries no `id`.
  */
+export interface UnknownCause {
+  path?: string
+  within?: string
+  evidenceRequirement?: string
+  cause: string
+  factType?: string
+}
+export interface TypeMismatch {
+  path: string
+  within?: string
+  operator: string
+  factType: string
+  operandTypes: string[]
+}
+export interface UnmetEvidence { requirement: string; state: string }
+
 export interface TraceEntry {
   stage: string
   id?: string
@@ -235,6 +251,8 @@ export interface TraceEntry {
   suppressed?: boolean
   onUnknown?: string
   skipped?: boolean
+  unknownCauses?: UnknownCause[]
+  typeMismatches?: TypeMismatch[]
 }
 
 /** Present exactly when the evaluation ran under a draft-RFC grammar. */
@@ -277,6 +295,7 @@ export interface Evaluation {
   disposition: Disposition
   handoffTarget?: HandoffTarget
   trace: TraceEntry[]
+  unmetEvidence?: UnmetEvidence[]
   artifact?: EvaluationArtifact
 }
 

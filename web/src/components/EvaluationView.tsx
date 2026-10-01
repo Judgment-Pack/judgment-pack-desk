@@ -1,3 +1,4 @@
+import { EvaluationFindings } from './EvaluationFindings'
 import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
 import type { Disposition, Evaluation, HandoffTarget } from '../mcp/types'
@@ -30,6 +31,7 @@ export function EvaluationView({ payload }: { payload: Evaluation }) {
         disposition={payload.disposition}
         handoffTarget={payload.handoffTarget}
       />
+      <EvaluationFindings payload={payload} />
       {payload.draftPrototype && (
         <Section title={msg("Draft-RFC prototype")}>
           <div className="card card-warn">

@@ -1,5 +1,4 @@
 import { useDirtyGuard } from '../shell/useDirtyGuard'
-import { useTestStorage } from '../packs/test-workspace/store'
 import { TestsContent, carryDraftTests } from '../packs/test-workspace/TestsWorkspace'
 import { useReadingDetails } from '../chat/ReadingDetails'
 import { DraftActions } from '../packs/drafts/DraftActions'
@@ -79,7 +78,6 @@ export function DraftWorkspace({ chat, artifact, fallback }: { chat: Chat; artif
   const live = bindings.get(chat.id)
   const binding = live && chat.draftGeneration===artifact.generation && live.state.candidates.at(-1)?.text === artifact.checkpoint.state.candidates.at(-1)?.text ? live : fallback
   const state = binding.state
-  const savedTests=useTestStorage(artifact.id)
   const readSource = useReadingDetails(artifact.id)
   const navigate = useNavigate()
   const folders = usePackFolders()
@@ -137,7 +135,7 @@ export function DraftWorkspace({ chat, artifact, fallback }: { chat: Chat; artif
           initialFolderId={folderId}
           onFolderChange={targetFolderId => store?.update(chat.id,{targetFolderId})}
           canCreate={() => { const snapshot=store?.getSnapshot(); const current=snapshot?.packDrafts.find(item=>item.id===artifact.id); const active=binding.run?.getSnapshot(); return !snapshot?.dirty && !snapshot?.error && current?.checkpoint.state.candidates.at(-1)?.text===active?.candidates.at(-1)?.text && !!active && active.candidates.at(-1)?.digest===reviewDigest.current && draftReady(chat,active,binding.run?.basisNow()) }}
-          reviewDraft={{ trialCount: state.probes?.length ?? 0, caseCount: new Set([...state.cases.map(c=>c.id),...savedTests.suite.cases.map(c=>c.id)]).size, document: latest.document, name: artifact.title, description: typeof candidate?.description === 'string' ? candidate.description : '', unknowns: state.unknowns, research,
+          reviewDraft={{ trialCount: state.probes?.length ?? 0, caseCount: state.cases.length, document: latest.document, name: artifact.title, description: typeof candidate?.description === 'string' ? candidate.description : '', unknowns: state.unknowns, research,
             citations: { traced: state.citations.filter(c=>c.traced).length, total: state.citations.length },
             cases: { agreeing: latest.check?.cases.filter(c=>c.passed).length ?? 0, total: state.cases.length } }}
           onSaved={async pack => { await carryDraftTests({...artifact,checkpoint:{...artifact.checkpoint,state}},pack.id); store?.finalizeDraft(artifact.id,pack); if(!await store?.flush()) throw new Error(sourceMessage('The pack was finalized, but its draft link could not be saved. Retry saving before leaving.')); writingChanged(false); return `/packs/${encodeURIComponent(pack.id)}` }} />

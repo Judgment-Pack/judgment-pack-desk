@@ -1,0 +1,50 @@
+{
+  "specVersion": "0.2.0-draft",
+  "id": "https://example.org/packs/input-findings",
+  "version": "1.0.0",
+  "title": "Input findings",
+  "decision": {
+    "intent": "review",
+    "question": "Can the request proceed?"
+  },
+  "outcomes": [
+    {
+      "id": "proceed",
+      "label": "Proceed"
+    },
+    {
+      "id": "hold",
+      "label": "Hold"
+    }
+  ],
+  "fallbackOutcome": "hold",
+  "escalation": {
+    "triggers": [
+      "unknown",
+      "missing-required-evidence"
+    ],
+    "target": {
+      "kind": "human-role",
+      "name": "Reviewer"
+    }
+  },
+  "evidenceRequirements": [
+    {
+      "id": "approval",
+      "description": "Approval",
+      "required": false
+    }
+  ],
+  "rules": [
+    {
+      "id": "approval-check",
+      "when": {
+        "op": "evidence-present",
+        "evidenceRequirement": "approval"
+      },
+      "outcome": "proceed",
+      "onUnknown": "escalate",
+      "description": "approval-check"
+    }
+  ]
+}
