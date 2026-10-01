@@ -51,10 +51,12 @@ jobs:
       - name: Build the pinned native release bundle
         env:
           RELEASE_TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
         run: python3 scripts/package-release.py "${RELEASE_TAG#v}" --output "$RUNNER_TEMP/release"
       - name: Verify and run the archive on its native architecture
         env:
           RELEASE_TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
         run: python3 scripts/check-release.py "$RUNNER_TEMP/release" "${RELEASE_TAG#v}"
       - uses: actions/upload-artifact@v7
         with:

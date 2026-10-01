@@ -65,9 +65,14 @@ or missing commit cannot pass. Existing job releases remain unchanged.
 CI uses the lock for actual Gateway lifecycle/PDF checks and Runner recovery and
 input-profile checks, plus Go tests, frontend tests and localization checks.
 A pushed `vX.Y.Z` tag runs that same CI before publishing. The packager requires a
-clean tree and that exact tag, fetches the locked commits, builds a complete
-bundle for Linux/amd64, macOS/arm64 and macOS/amd64, and runs each archive on
-its native host before publication. The same packaging and smoke checks run on
+clean tree and that exact tag. It downloads the published Runtime, Runner,
+source worker, Gateway and adapter programs for Linux/amd64, macOS/arm64 and
+macOS/amd64. Each component archive must match its published `checksums.txt`
+and pass `gh attestation verify` against its repository, release workflow, tag
+and exact locked commit, on a GitHub-hosted runner. There is no rebuild fallback.
+Only Desk and its embedded web UI are built here. Each completed archive is
+checked again against the published component bytes and run on its native host
+before publication. The same packaging and smoke checks run on
 pull requests with a disposable, local-only tag; those artifacts are not releases.
 The release waits for all three platform checks before publishing once.
 
@@ -143,6 +148,30 @@ files, bounds compressed/expanded size and entry count, and verifies every file
 against the release manifest. Those files are checked again before execution.
 This trusts the repository's release publishing authority; checksum verification
 is not an independent publisher signature.
+
+New packaged bundles include `component-artifacts.json`: each upstream archive
+name and SHA-256, its signer workflow and pinned source identity, and the hashes
+of the programs and license notices copied from it. The packager authenticates
+these archives with GitHub build attestations; the end-user updater still trusts
+Desk's publishing authority as described above.
+
+A job release created with a packaged Desk Runtime freezes the **published
+Runtime executable's digest for that OS and architecture**. For `verify-run`,
+obtain that exact Runtime tag and platform archive from
+[Runtime releases](https://github.com/Judgment-Pack/judgment-pack-runtime/releases),
+verify its checksum and attestation, and compare the extracted `jpack` SHA-256
+with the record's frozen Runtime digest before replay. A matching version string
+alone is insufficient. `component-artifacts.json` and `release-manifest.json`
+identify the bytes Desk shipped. Different platforms can have different digests.
+
+This does not rewrite old job releases. Records made with earlier Desk bundles,
+a development build or an explicit Runtime override still need their original
+executable. Retain it with those records; upgrading Desk cannot make a different
+binary satisfy an old digest.
+
+See [release verification](release-verification.md) for the packaging checks and
+an example of checking the published Runtime archive.
+
 
 The verified bundle also refreshes the installation launcher on activation.
 Launcher changes within state epoch 1 must remain compatible with retained

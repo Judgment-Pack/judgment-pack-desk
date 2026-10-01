@@ -35,6 +35,7 @@ jobs:
           python3 scripts/desk-dev_test.py
           python3 scripts/desk-update_test.py
           python3 scripts/package-release_test.py
+          python3 scripts/published-components_test.py
           python3 scripts/assemble-release_test.py
           python3 scripts/build-bundle_test.py
           python3 scripts/needle-check_test.py

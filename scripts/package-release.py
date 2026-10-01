@@ -15,18 +15,10 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('components', ROOT / 'scripts/component-releases.py')
 components = importlib.util.module_from_spec(spec); spec.loader.exec_module(components)
+spec = importlib.util.spec_from_file_location('published', ROOT / 'scripts/published-components.py')
+published = importlib.util.module_from_spec(spec); spec.loader.exec_module(published)
 
 def run(args, cwd=ROOT, **kwargs): return subprocess.run(args, cwd=cwd, check=True, **kwargs)
-def source(component, destination):
-    run(['git', 'init', '-q', str(destination)])
-    run(['git', 'fetch', '--depth=1', 'https://github.com/' + component['repository'] + '.git', component['revision']], destination)
-    run(['git', 'checkout', '--detach', 'FETCH_HEAD'], destination)
-    actual = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=destination, text=True).strip()
-    if actual != component['revision']: raise ValueError('Component checkout disagrees with lock')
-    tag = 'refs/tags/' + component['version']
-    run(['git', 'fetch', '--depth=1', 'https://github.com/' + component['repository'] + '.git', tag], destination)
-    tagged = subprocess.check_output(['git', 'rev-parse', 'FETCH_HEAD^{commit}'], cwd=destination, text=True).strip()
-    if tagged != actual: raise ValueError('Component version tag disagrees with locked commit')
 
 def licenses(source_dir, target):
     for file in source_dir.rglob('*'):
@@ -79,24 +71,15 @@ def main():
     output = args.output.resolve(); output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='desk-release-') as tmp:
         tmp = Path(tmp); bundle = tmp / 'bundle'; bundle.mkdir()
-        repos = {}
-        for name, item in plan['components'].items():
-            repos[name] = tmp / name; source(item, repos[name])
+        components.verify_plan(plan)
+        published.install(plan, os_name + '/' + arch, bundle, tmp / 'downloads')
         env = dict(os.environ, CGO_ENABLED='0', GOWORK='off', GOOS=os_name, GOARCH=arch)
-        run(['python3', 'scripts/build-bundle.py', '--gateway-checkout', str(repos['gateway']), '--output', str(bundle)], env=env)
-        for name in ('jpack-runner', 'jpack-source-worker'):
-            run(['go', 'build', '-trimpath', '-ldflags', '-s -w -X github.com/Judgment-Pack/judgment-pack-runner/internal/buildinfo.releaseVersion=' + plan['components']['runner']['version'], '-o', str(bundle / name), './cmd/' + name], repos['runner'], env=env)
-        version = plan['components']['runtime']['version'].lstrip('v')
-        run(['go', 'build', '-trimpath', '-ldflags', '-s -w -X github.com/Judgment-Pack/judgment-pack-runtime/internal/result.CLIVersion=' + version, '-o', str(bundle / 'jpack'), './cmd/jpack'], repos['runtime'], env=env)
+        run(['npm', '--prefix', 'web', 'run', 'build'])
         run(['go', 'build', '-trimpath', '-ldflags', '-X github.com/Judgment-Pack/judgment-pack-desk/internal/releaseplan.Version=' + args.version, '-o', str(bundle / 'jpack-desk'), '.'], env=env)
-        for name, repo in {**repos, 'desk': ROOT}.items():
-            notices = bundle / (name + '-licenses')
-            if name == 'desk':
-                notices.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(ROOT / 'LICENSE', notices / 'LICENSE')
-            else: licenses(repo, notices)
-            modules = [repo] if name != 'gateway' else [repo / 'go', repo / 'adapters']
-            for module in modules: dependency_licenses(module, notices / 'dependencies')
+        notices = bundle / 'desk-licenses'
+        notices.mkdir(parents=True)
+        shutil.copyfile(ROOT / 'LICENSE', notices / 'LICENSE')
+        dependency_licenses(ROOT, notices / 'dependencies')
         web_licenses(bundle / 'web-licenses')
         shutil.copyfile(ROOT / 'scripts/desk-update.py', bundle / 'desk-update.py')
         shutil.copyfile(ROOT / 'LICENSE', bundle / 'LICENSE')
