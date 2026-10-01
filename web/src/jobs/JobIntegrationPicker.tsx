@@ -15,6 +15,7 @@ import { Input } from '../ui/Input'
 import { IconFolder, IconGear, IconPlus } from '../shell/icons'
 import { jobsAPI } from './client'
 import type { MappingSource, ProfileEntry } from './mappingTypes'
+import { calculatorLabel } from './calculatedValues'
 import { matchesJobGateway, supportsJobProfile } from './jobIntegrations'
 import styles from './JobsView.module.css'
 
@@ -36,7 +37,7 @@ export function JobIntegrationPicker({profiles,disabled,onPick,current,triggerTa
 
  const descriptorFor=(p:ProfileEntry)=>catalog.entries.find(e=>e.descriptor.source?.id===p.profile.source && e.descriptor.source.shape===p.profile.shape || !e.descriptor.source && (e.descriptor.id==='google-drive'?'drive':e.descriptor.id)===p.profile.source)
  const canAdd=available&&!catalog.loading&&!catalog.isError&&permitted.some(e=>profiles.some(p=>supportsJobProfile(p)&&matchesJobGateway(p,config)&&descriptorFor(p)?.descriptor.id===e.descriptor.id)&&['connected','not-connected','setup-required'].includes(connectionState(e)??''))
- const title=(p:ProfileEntry)=>{const entry=descriptorFor(p);return entry?`${providerName(entry.descriptor.id,entry.descriptor)} · ${p.profile.id}`:p.profile.id}
+ const title=(p:ProfileEntry)=>{const entry=descriptorFor(p),label=entry?`${providerName(entry.descriptor.id,entry.descriptor)} · ${p.profile.id}`:p.profile.id;return p.profile.calculator?`${label} · ${calculatorLabel(p.profile.calculator)}`:label}
  const matches=(value:string)=>value.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())
  function reason(p:ProfileEntry) {
   if(!supportsJobProfile(p))return msg('Jobs support is not available for this integration.')
