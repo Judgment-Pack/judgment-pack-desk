@@ -21,7 +21,11 @@ it('recovers the saved response, retains sources, validates, and reloads results
   run.recoverDraft('```json\n{"proposal":{"document":{}}}\n```')
   expect(run.getSnapshot().candidates).toHaveLength(0)
   run.recoverDraft(reply)
-  await vi.waitFor(() => expect(run.getSnapshot().status).toBe('ready'))
+  // Validated, and not ready: its one source carries no citation a page of this
+  // chat could trace, and the settle says which.
+  await vi.waitFor(() => expect(run.getSnapshot().status).toBe('needs-input'))
+  expect(run.getSnapshot().candidates[0]?.check?.valid).toBe(true)
+  expect(run.getSnapshot().detail).toContain('(policy)')
   expect(p.turn).not.toHaveBeenCalled()
   expect(p.callTool).toHaveBeenCalledExactlyOnceWith('validate', { document: JSON.stringify(doc, null, 2) })
   const current = run.getSnapshot(), disk = decodeCheckpoint(checkpoint(current, []))

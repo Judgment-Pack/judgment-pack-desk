@@ -4,6 +4,9 @@ import { citedAttachments } from '../chat/messageOwnership'
 import { summarizeWork, mergeReferences, type ResponseHistory } from '../chat/responseHistory'
 import type { ChatAttachment } from '../chat/store'
 import type { WebsiteReference } from '../documents/website'
+import { matchesPageQuote, type DocumentReference, type VerifiedDocument } from '../documents/client'
+import { needsPartialConsent } from '../documents/record'
+import type { ResearchGatewayConfig } from '../config/deskConfig'
 import { runtimeProbes, type RuntimeProbe } from './runtimeProbes'
 import { sourceMessage } from '../i18n/source'
 /**
@@ -30,7 +33,7 @@ import { isCancelled, recoverableProposal } from '../assistant/engines/contract'
 import { checkCandidate, digestOf, jsonIdentity, type AuthoringCase, type CandidateCheck } from './checkCandidate'
 import { findingSummary, validateExpectations } from './expectations'
 import type { Ledger, SourceRecord } from './ledger'
-import { CASES_INSTRUCTIONS, CONTINUE_INSTRUCTIONS, CONVERSATION_INSTRUCTIONS, REPAIR_INSTRUCTIONS, RESEARCH_INSTRUCTIONS } from './prompts'
+import { CASES_INSTRUCTIONS, CONTINUE_INSTRUCTIONS, CONVERSATION_CITATION_INSTRUCTIONS, CONVERSATION_INSTRUCTIONS, REPAIR_INSTRUCTIONS, RESEARCH_INSTRUCTIONS } from './prompts'
 import { memberOf, parseJsonText, stringMember, type JsonNode } from './verify/canon'
 import { verifySession, type Finding, type HeldReceipt, type SessionVerdict } from './verify/session'
 
@@ -71,6 +74,8 @@ export interface Citation {
   url: string | null
   traced: boolean
   reason: string
+  /** The quote a conversation draft's traced page citation was found by. */
+  quote?: string
 }
 
 export interface ExpectationIssue {
@@ -119,6 +124,10 @@ export interface RunState {
   expectationIssues: ExpectationIssue[]
   unknowns: string[]
   citations: Citation[]
+  /** A conversation draft's citations are being traced; they say nothing yet. */
+  tracing?: boolean
+  /** What a chat draft's citations were traced on, as `documentBasis` keys it; absent where no trace landed. */
+  tracedBasis?: string
   verdicts: Record<string, SessionVerdict>
   /** The registry text each session's verdict was reached with. */
   registries: Record<string, string>
@@ -146,6 +155,12 @@ export interface RunPorts {
   ledger: Ledger
   /** The research tools bound to the ledger, or none where research is not configured. */
   researchTools: HostTool[]
+  /** The documents kept in this chat, which a conversation draft's citations are traced to. */
+  documents?: () => readonly ChatAttachment[]
+  /** The gateway pin as it is now, which a chat draft's documents are verified under. */
+  pin?: () => ResearchGatewayConfig | null
+  /** Load a kept document and verify it under the given pin. */
+  loadDocument?: (reference: DocumentReference, pin: ResearchGatewayConfig, signal: AbortSignal) => Promise<VerifiedDocument>
   seal(session: string, signal: AbortSignal): Promise<void>
   registry(signal: AbortSignal): Promise<string>
   gateway: { authority: string; publicKeyHex: string } | null
@@ -240,6 +255,147 @@ export function traceCitations(document: unknown, ledger: Ledger): Citation[] {
   })
 }
 
+/** A page of a document kept in a chat, as the chat's reading tools and attachments give it to cite. */
+const PAGE_CITATION = /^attachment:([a-f0-9-]{36})\/(sha256:[a-f0-9]{64})\/page\/([1-9][0-9]*)$/
+
+/** One declared `sources[]` entry, as a citation reads it. */
+function declared(entry: unknown, index: number): { sourceId: string; url: string | null; location: string | null; quoted: string } {
+  const source = (entry ?? {}) as Record<string, unknown>
+  const locator = (source.locator ?? {}) as Record<string, unknown>
+  const citation = (source.citation ?? {}) as Record<string, unknown>
+  return {
+    sourceId: typeof source.id === 'string' ? source.id : `#${index}`,
+    url: typeof locator.value === 'string' ? locator.value : null,
+    location: typeof citation.location === 'string' ? citation.location : null,
+    quoted: typeof citation.excerpt === 'string' ? citation.excerpt : ''
+  }
+}
+
+/** Every citation a draft declares, none traced, for a trace that did not finish. */
+function unchecked(document: unknown, reason: string): Citation[] {
+  const sources = (document as { sources?: unknown })?.sources
+  if (!Array.isArray(sources)) return []
+  return sources.map((entry, index) => {
+    const { sourceId, url, location } = declared(entry, index)
+    return { sourceId, location, excerptId: null, url, traced: false, reason }
+  })
+}
+
+/**
+ * What a chat draft's trace rests on besides the draft: the gateway pin its
+ * documents verify under and the documents the chat keeps, as one key. A trace
+ * that ends on another basis than it began on is a trace of a moment that has
+ * passed.
+ */
+export function documentBasis(pin: unknown, kept: readonly ChatAttachment[]): string {
+  return JSON.stringify([pin ?? null, kept.map(file => file.document ? [file.document.id, file.document.digest, file.document.pages, file.document.allowPartial] : null)])
+}
+
+/** How many times a trace whose basis moved under it is taken again before it is given up. */
+const TRACE_ATTEMPTS = 3
+
+/** The document and page a conversation citation names, or null where it names none. */
+export function citedPage(location: string | null): { documentId: string; digest: string; page: number } | null {
+  const match = location === null ? null : PAGE_CITATION.exec(location)
+  return match ? { documentId: match[1]!, digest: match[2]!, page: Number(match[3]) } : null
+}
+
+/**
+ * A conversation draft's `sources[]`, each traced to a page of a document kept
+ * in this chat or not. The conversation modes read through the chat's own
+ * tools, which keep what they read as documents rather than ledger excerpts,
+ * so the ledger's trace can never find them. A citation here is traced when
+ * its location names a kept document by id and digest and one of that
+ * document's selected pages, the document verifies under the gateway pin as it
+ * is now, and the quoted excerpt is on that page -- the check the chat's own
+ * source reader makes when a person opens a citation.
+ *
+ * Only a Stop ends it early; a document that cannot be loaded or verified
+ * leaves its citations untraced and says so.
+ */
+export async function tracePageCitations(
+  document: unknown,
+  kept: readonly ChatAttachment[],
+  load: (reference: DocumentReference, signal: AbortSignal) => Promise<VerifiedDocument>,
+  signal: AbortSignal
+): Promise<Citation[]> {
+  const sources = (document as { sources?: unknown })?.sources
+  if (!Array.isArray(sources)) return []
+  // One load per document, however many sources quote it.
+  const loads = new Map<string, Promise<VerifiedDocument>>()
+  const citations: Citation[] = []
+  for (const [index, entry] of sources.entries()) {
+    const { sourceId, url, location, quoted } = declared(entry, index)
+    const untraced = (reason: string): Citation => ({ sourceId, location, excerptId: null, url, traced: false, reason })
+    const cited = citedPage(location)
+    if (!cited) {
+      citations.push(untraced(sourceMessage("citation.location is not a page of a document read in this chat")))
+      continue
+    }
+    const file = kept.find(item => item.document?.id === cited.documentId && item.document.digest === cited.digest)
+    if (!file?.document || !file.document.pages.includes(cited.page)) {
+      citations.push(untraced(sourceMessage("page {{value0}} of document {{value1}} is not a page kept in this chat", { value0: cited.page, value1: cited.documentId })))
+      continue
+    }
+    const reference = file.document
+    const key = `${reference.id}/${reference.digest}`
+    // A trace that was stopped or superseded loads nothing more.
+    signal.throwIfAborted()
+    if (!loads.has(key)) loads.set(key, Promise.resolve().then(() => load(reference, signal)))
+    let verified: VerifiedDocument
+    try {
+      verified = await loads.get(key)!
+    } catch (cause) {
+      if (signal.aborted) throw cause
+      citations.push(untraced(sourceMessage("The document {{value0}} did not verify under the current gateway pin, so its quote is withheld.", { value0: cited.documentId })))
+      continue
+    }
+    // A partial extraction is used only once the person confirmed its pages;
+    // until then its text was never evidence, as the chat never sent it.
+    if (needsPartialConsent(verified.record) && !reference.allowPartial) {
+      citations.push(untraced(sourceMessage("page {{value0}} of document {{value1}} is not a page kept in this chat", { value0: cited.page, value1: cited.documentId })))
+      continue
+    }
+    if (!quoted.trim() || !matchesPageQuote(verified, cited.page, quoted)) {
+      citations.push(untraced(sourceMessage("citation.excerpt is not on page {{value0}} of the document it cites", { value0: cited.page })))
+      continue
+    }
+    // A web page is declared under the address it was read from, as `research`
+    // holds a ledger citation to its page's URL: a quote from one page does
+    // not stand behind a pack that names another. Only the signed record says
+    // where that was; the chat's own note of the link is not signed.
+    const read = verified.record.provenance.source
+    if (read.kind === 'web' && (url === null || (url !== read.url && url !== read.requestedUrl))) {
+      citations.push(untraced(sourceMessage("locator.value is not the URL the excerpt was read from")))
+      continue
+    }
+    citations.push({ sourceId, location, excerptId: null, url, traced: true, reason: '', quote: quoted })
+  }
+  return citations
+}
+
+/** A loader for a run with no gateway to verify documents under. */
+const unverifiable = async (): Promise<never> => {
+  throw new Error('no gateway is configured to verify documents')
+}
+
+/**
+ * Why a conversation draft's citations keep it from being created, or null.
+ * Every citation must be traced; `web-research` must also make one, since the
+ * mode exists to rest a pack on what it read. `draft` may cite nothing: the
+ * person's own statements are then its basis.
+ */
+export function citationGap(citations: readonly Citation[], mode: AuthoringMode | undefined): string | null {
+  const untraced = citations.filter(citation => !citation.traced)
+  if (untraced.length > 0) {
+    return sourceMessage("{{value0}} citation(s) in the draft could not be traced to a page read in this chat ({{value1}}). Ask the assistant to read the page with read_link, or attach the document, and cite the page it quotes; or remove the citation.", { value0: untraced.length, value1: untraced.map(citation => citation.sourceId).join(', ') })
+  }
+  if (citations.length === 0 && mode === 'web-research') {
+    return sourceMessage("The draft cites no source. A web research draft rests on pages read in this chat: ask the assistant to read them with read_link and cite the page each rule quotes.")
+  }
+  return null
+}
+
 /** Screen source-grounded case proposals; runtime expectation validation must follow before admission. */
 export function admitCases(
   proposed: unknown,
@@ -292,6 +448,16 @@ export class AuthoringRun {
   private outOfTime = false
   /** What the action in flight took back, reported with whatever outcome it ends in. See `alsoUndone`. */
   private undone: string | null = null
+  /** The citation traces started, so only the last one lands. See `traceConversation`. */
+  private traces = 0
+  /** The basis moved during an action, so its citations are traced again when it ends. */
+  private retracePending = false
+  /** A readiness the basis moving withdrew, to be settled again once a trace lands. See `traceAtRest`. */
+  private pendingSettle = false
+  /** A trace taken at rest, which Stop, the next action and the next such trace end. */
+  private background: AbortController | null = null
+  /** The run's owner is gone: no trace at rest starts. See `detach`. */
+  private detached = false
 
   constructor(private readonly ports: RunPorts) {}
 
@@ -347,6 +513,7 @@ export class AuthoringRun {
   /** Stop the run at its last completed stage. */
   stop(): void {
     this.controller?.abort()
+    this.background?.abort()
   }
 
   /**
@@ -393,6 +560,10 @@ export class AuthoringRun {
       detail: candidates.length ? sourceMessage("Saved draft. Recheck its sources and tests before creating it.")
         : saved.status === 'running' || saved.status === 'stopped' || saved.status === 'failed' || saved.status === 'budget' || saved.turns.at(-1)?.role === 'user'
           ? sourceMessage("This response was interrupted. Send a message to continue; nothing restarted automatically.") : '' })
+    // A checkpoint keeps no citations, so a reopened conversation draft is
+    // traced again before anything reads them: one that cites is never shown
+    // as citing nothing. Nothing else is checked or changed here.
+    if (candidates.length) this.traceAtRest()
   }
 
   /** Recover a complete proposal from an older assistant reply, without a model call. */
@@ -409,11 +580,12 @@ export class AuthoringRun {
       const text = JSON.stringify(proposal.document, null, 2)
       const digest = await digestOf(text)
       this.check(signal)
-      this.set({ candidates: [{ responseId, revision: 1, document: proposal.document, text, digest, producedBy: 'conversation' }], unknowns: proposal.unknowns, citations: traceCitations(proposal.document, this.ports.ledger) })
+      this.set({ candidates: [{ responseId, revision: 1, document: proposal.document, text, digest, producedBy: 'conversation' }], unknowns: proposal.unknowns, citations: conversationMode(this.ports.mode) ? [] : traceCitations(proposal.document, this.ports.ledger) })
+      await this.traceConversation(signal)
       // Recovery never starts source acquisition, a paid reviewer or repair.
       const check = await checkCandidate(text, [], this.ports.callTool, signal)
       this.set({ candidates: this.state.candidates.map(candidate => ({ ...candidate, check })) })
-      if (conversationMode(this.ports.mode)) this.settleReview('The draft needs corrections before it can be created.')
+      if (conversationMode(this.ports.mode)) await this.settle(signal, 'The draft needs corrections before it can be created.')
       else this.set({ status: 'needs-input', phase: 'review', detail: sourceMessage("No saved cases can be rechecked. Send a message to continue research.") })
     })
   }
@@ -481,7 +653,7 @@ export class AuthoringRun {
       else if (this.latest()?.digest !== before || proposal && !conversationMode(this.ports.mode) && !this.latest()?.check?.cases.length) {
         if (this.state.restored) await this.recheckRestored(signal)
         await this.casesAndCheck(signal)
-      } else if (previous.status === 'ready') this.settleReview(sourceMessage("The candidate needs review."))
+      } else if (previous.status === 'ready') await this.settle(signal, sourceMessage("The candidate needs review."))
       else this.set(previous)
     })
   }
@@ -628,6 +800,10 @@ export class AuthoringRun {
   private async drive(work: (signal: AbortSignal) => Promise<void>): Promise<void> {
     const controller = new AbortController()
     this.controller = controller
+    // An action traces and settles for itself where it needs to; a trace at
+    // rest, and the settle it owed, are over.
+    this.background?.abort()
+    this.pendingSettle = false
     try {
       await work(controller.signal)
     } catch (cause) {
@@ -651,6 +827,20 @@ export class AuthoringRun {
       this.undone = null
       if (this.controller === controller) this.controller = null
       if (!this.running) this.disarm()
+      // The pin or the documents moved while this ran, and its own settle did
+      // not trace the draft on the basis they moved to. Stopped, or out of
+      // time -- whatever the action then ended with -- it starts no new work:
+      // none of its citations counts as traced until the person checks the
+      // draft again. Otherwise it is traced now.
+      if (!this.running && this.retracePending) {
+        this.retracePending = false
+        const latest = this.latest()
+        if (latest && this.basisNow() !== this.state.tracedBasis) {
+          if (controller.signal.aborted || this.state.status === 'stopped' || this.state.status === 'budget') {
+            this.set({ citations: unchecked(latest.document, sourceMessage("The gateway pin or this chat's documents changed while the citations were checked. Recheck the draft.")), tracedBasis: undefined })
+          } else this.traceAtRest()
+        }
+      }
     }
   }
 
@@ -760,7 +950,7 @@ export class AuthoringRun {
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       execute: async () => ({ content: [{ type: 'text', text: this.ports.authorPrompt
         ? [this.ports.authorPrompt, conversationMode(this.ports.mode)
-          ? 'Use supplied information and verified sources actually read with available tools. Claim web research or behavioral tests only when tool results establish it. List assumptions and open questions.'
+          ? 'Use supplied information and verified sources actually read with available tools. Claim web research or behavioral tests only when tool results establish it. List assumptions and open questions.\n\n' + CONVERSATION_CITATION_INSTRUCTIONS
           : RESEARCH_INSTRUCTIONS].join('\n\n')
         : 'Pack authoring is unavailable until the runtime authoring prompt is available. You can still answer questions; do not invent a pack format.' }], isError: !this.ports.authorPrompt })
     }
@@ -821,7 +1011,7 @@ export class AuthoringRun {
         this.set({
           candidates: [...this.state.candidates, candidate],
           unknowns: taken.unknowns,
-          citations: traceCitations(taken.document, this.ports.ledger),
+          citations: conversationMode(this.ports.mode) ? [] : traceCitations(taken.document, this.ports.ledger),
           expectationIssues: this.state.expectationIssues.map(issue => issue.resolved || !issue.proposal ? issue : {
             ...issue, proposal: undefined, proposalError: sourceMessage("The draft changed. Request a new correction before approving.")
           })
@@ -836,6 +1026,7 @@ export class AuthoringRun {
         throw new Stalled()
       }
       if (taken.unknowns.length) this.addTurn({ role: 'assistant', kind: 'unknowns', text: taken.unknowns.map((line) => `• ${line}`).join('\n') })
+      if (!repeated) await this.traceConversation(signal)
     }
     this.finishResponse()
     return taken
@@ -913,7 +1104,7 @@ export class AuthoringRun {
       this.set({ phase: 'check', detail: sourceMessage("Validating the draft through the runtime.") })
       const check = await checkCandidate(candidate.text, [], this.ports.callTool, signal)
       this.set({ candidates: this.state.candidates.map(item => item.digest === candidate.digest ? { ...item, check } : item) })
-      this.settleReview('The draft needs corrections before it can be created.')
+      await this.settle(signal, 'The draft needs corrections before it can be created.')
       return
     }
     if (!candidate) throw new Error(sourceMessage("no candidate to check"))
@@ -1037,9 +1228,21 @@ export class AuthoringRun {
     if (conversationMode(this.ports.mode)) {
       const candidate = this.latest()
       const valid = candidate?.check?.valid === true && candidate.check.documentDigest === candidate.digest
-      this.set({ phase: 'review', status: valid ? 'ready' : 'needs-input', detail: valid
-        ? sourceMessage("Structure validated. Review the draft before creating it. Research and test results are reported separately.")
-        : sourceMessage("The draft needs corrections before it can be created.") })
+      if (!valid) {
+        this.set({ phase: 'review', status: 'needs-input', detail: sourceMessage("The draft needs corrections before it can be created."), readiness: '' })
+        return
+      }
+      // A valid draft is not yet a ready one: what it cites must be traced to a
+      // page read in this chat, as `research` holds its citations to excerpts.
+      const withheld = this.withheld()
+      if (withheld !== null) {
+        this.set({ phase: 'review', status: 'needs-input', detail: withheld, readiness: '' })
+        return
+      }
+      this.set({ phase: 'review', status: 'ready', detail: this.state.citations.length
+        ? sourceMessage("Structure validated, and every citation is traced to a page read in this chat. Review the draft before creating it. Test results are reported separately.")
+        : sourceMessage("Structure validated. This pack cites no source; it rests on what you told the assistant. Review the draft before creating it. Test results are reported separately."),
+      readiness: readinessKey(this.state) })
       return
     }
 
@@ -1068,11 +1271,140 @@ export class AuthoringRun {
       readiness: readinessKey(this.state) })
   }
 
+  /** Settle at review, a conversation draft's citations traced as they stand now. */
+  private async settle(signal: AbortSignal, notPassing: string): Promise<void> {
+    await this.traceConversation(signal)
+    this.settleReview(notPassing)
+  }
+
+  /**
+   * Trace a conversation draft's citations against the documents kept in this
+   * chat, when a candidate is set, at settle, and when a saved draft is opened.
+   * Asynchronous, because a citation counts only where its document verifies
+   * under the gateway pin as it is now, and while it runs the draft is not
+   * ready and says its citations are being checked. The last trace started is
+   * the one that lands: an earlier one answering late would put back a trace
+   * of a moment that has passed.
+   */
+  private async traceConversation(signal: AbortSignal): Promise<void> {
+    const latest = this.latest()
+    if (!conversationMode(this.ports.mode) || !latest) return
+    const trace = ++this.traces
+    this.set({ tracing: true })
+    let citations: Citation[] | null = null
+    let landed: string | null = null
+    try {
+      // One pin and one list of kept documents for each attempt, taken as it
+      // begins: every document is verified under that pin, and the attempt
+      // lands only where the pin and the documents are still those when it
+      // ends. Where they moved it is taken again, a bounded number of times.
+      for (let attempt = 0; attempt < TRACE_ATTEMPTS && citations === null; attempt += 1) {
+        const pin = this.ports.pin?.() ?? null
+        const kept = this.ports.documents?.() ?? []
+        const basis = documentBasis(pin, kept)
+        const load = this.ports.loadDocument
+        const traced = await tracePageCitations(latest.document, kept, (reference, loading) => pin !== null && load ? load(reference, pin, loading) : unverifiable(), signal)
+        this.check(signal)
+        if (this.basisNow() === basis) {
+          citations = traced
+          landed = basis
+        }
+      }
+      citations ??= unchecked(latest.document, sourceMessage("The gateway pin or this chat's documents changed while the citations were checked. Recheck the draft."))
+    } catch (cause) {
+      // An interrupted trace says nothing about the draft: nothing it was
+      // checking counts as traced, and it never reads as citing nothing.
+      citations = unchecked(latest.document, sourceMessage("The citation check was interrupted. Recheck the draft."))
+      throw cause
+    } finally {
+      if (trace === this.traces) {
+        if (citations !== null && this.latest()?.digest === latest.digest) this.set({ citations, tracedBasis: landed ?? undefined })
+        this.set({ tracing: false })
+      }
+    }
+  }
+
+  /**
+   * What a chat draft's trace rests on now: the gateway pin and the documents
+   * the chat keeps. Create compares it with `tracedBasis` when it is asked.
+   * See `documentBasis`.
+   */
+  basisNow(): string {
+    return documentBasis(this.ports.pin?.() ?? null, this.ports.documents?.() ?? [])
+  }
+
+  /**
+   * Trace a chat draft at rest: when it is reopened, and when its basis moved.
+   * Bounded like any action, and ended by Stop, by the next action, by the
+   * next such trace and by its owner going away. A draft whose readiness the
+   * move withdrew is settled again, without a model, once a trace lands; a
+   * trace another superseded leaves that to the one that superseded it.
+   */
+  private traceAtRest(): void {
+    if (this.detached) return
+    this.background?.abort()
+    const controller = new AbortController()
+    this.background = controller
+    const deadline = setTimeout(() => controller.abort(), this.ports.seconds * 1000)
+    void this.traceConversation(controller.signal).then(() => {
+      if (this.pendingSettle && this.background === controller && !controller.signal.aborted && !this.running) {
+        this.pendingSettle = false
+        this.settleReview(sourceMessage("The candidate needs review."))
+      }
+    }, () => undefined).finally(() => {
+      clearTimeout(deadline)
+      if (this.background === controller) this.background = null
+    })
+  }
+
+  /** The run's owner is mounted, and traces at rest may run. */
+  attach(): void {
+    this.detached = false
+  }
+
+  /** The run's owner is gone: any trace at rest ends, and none starts. */
+  detach(): void {
+    this.detached = true
+    this.background?.abort()
+    this.pendingSettle = false
+    this.retracePending = false
+  }
+
+  /**
+   * The gateway pin or the chat's documents may have changed. Where they are
+   * no longer what the draft's citations were traced on, a readiness reached
+   * on them is withdrawn at once, and the citations are traced again: now at
+   * rest, settling a draft that was ready again without a model; or when the
+   * action in flight ends, unless its own settle traced them on the new basis.
+   */
+  basisChanged(): void {
+    if (this.detached || !conversationMode(this.ports.mode) || !this.latest() || this.basisNow() === this.state.tracedBasis) return
+    // Withdrawn at once either way. Settled again only at rest: an action in
+    // flight settles for itself, and one that ends without a settle keeps the
+    // outcome it ended with.
+    if (this.state.readiness !== '') {
+      if (!this.running) this.pendingSettle = true
+      this.set({ readiness: '' })
+    }
+    if (this.running) {
+      this.retracePending = true
+      return
+    }
+    this.traceAtRest()
+  }
+
   /** Why the candidate is not ready even where its cases agree, or null. */
   private withheld(): string | null {
     const failed = this.ports.ledger.sources.filter((record) => record.verification.state === 'failed' && record.excerpts.length > 0)
     if (failed.length > 0) {
       return sourceMessage("{{value0}} cited source(s) failed receipt verification ({{value1}}), so their excerpts are withheld and the draft is not ready.", { value0: failed.length, value1: failed.map((r) => r.id).join(', ') })
+    }
+    // A document that failed verification leaves its citations untraced, so
+    // the conversation modes withhold for it here -- and for a trace taken on
+    // a pin or documents that are no longer the ones standing.
+    if (conversationMode(this.ports.mode)) {
+      if (this.state.tracedBasis !== this.basisNow()) return sourceMessage("The gateway pin or this chat's documents changed while the citations were checked. Recheck the draft.")
+      return citationGap(this.state.citations, this.ports.mode)
     }
     const untraced = this.state.citations.filter((citation) => !citation.traced)
     if (untraced.length > 0) {
@@ -1128,7 +1460,7 @@ export class AuthoringRun {
     // Citations traced before the verdict were traced against unchecked
     // receipts; they are traced again now that the verdict is in.
     const latest = this.latest()
-    if (latest) this.set({ citations: traceCitations(latest.document, ledger) })
+    if (latest && !conversationMode(this.ports.mode)) this.set({ citations: traceCitations(latest.document, ledger) })
   }
 }
 
@@ -1355,25 +1687,47 @@ export function readinessKey(state: RunState): string {
   return JSON.stringify([
     state.candidates.at(-1)?.digest ?? '',
     state.cases.map(row => row.id),
-    state.citations.map(citation => [citation.sourceId, citation.location, citation.traced])
+    state.citations.map(citation => [citation.sourceId, citation.location, citation.traced]),
+    state.tracedBasis ?? ''
   ])
 }
 
 /**
- * Every intended, admitted case must have a current passing result before
- * Create -- and the run must have settled at `ready` about this candidate.
+ * The one rule Create reads, in every mode. The run must have settled at
+ * `ready` about this candidate, the candidate must be valid, and every citation
+ * it makes must be traced -- a failed receipt or an unverified document
+ * withholds it. A draft that rests on sources must make at least one citation;
+ * only `draft` may cite nothing, because the person's own statements are then
+ * its basis. In `research` every intended, admitted case must also have a
+ * current passing result.
+ *
  * Not `status === 'ready'`: the status reports the last action, so a Stop, a
  * spent budget or a failed follow-up turn withdrew a Create that the candidate
  * on hand still earns, and the panel then explained it with the one reason
  * that was not true.
  */
-export function canCreateResearchDraft(state: RunState): boolean {
+export function canCreateDraft(state: RunState, mode: AuthoringMode = 'research', basis?: string): boolean {
   // Never mid-turn. `status === 'ready'` made that impossible by construction,
   // and a rule that asks only about the candidate would answer yes while the
   // turn that is about to move it is still in flight. Both callers check it
   // already; the rule owns it, so the next caller inherits no trap.
   if (state.status === 'running') return false
+  // Nor while a conversation draft's citations are being traced: until the
+  // trace lands they say nothing, and none is a claim that it cites nothing.
+  if (state.tracing) return false
+  // And a chat draft's citations hold only on the pin and the documents they
+  // were traced on. Asked with the basis standing now, a readiness reached on
+  // another is no readiness, whether or not anything has noticed the move;
+  // asked without one, it cannot say, and the answer is no.
+  if (conversationMode(mode) && (basis === undefined || state.tracedBasis !== basis)) return false
+  const latest = state.candidates.at(-1)
+  const cases = conversationMode(mode) || !state.expectationIssues.some(issue => !issue.resolved) && completeCurrentCheck(state)
   return state.readiness !== '' && state.readiness === readinessKey(state) &&
-    !state.expectationIssues.some(issue => !issue.resolved) && completeCurrentCheck(state) &&
-    state.citations.length > 0 && state.citations.every(citation => citation.traced)
+    latest?.check?.valid === true && latest.check.documentDigest === latest.digest && cases &&
+    (mode === 'draft' || state.citations.length > 0) && state.citations.every(citation => citation.traced)
+}
+
+/** The rule for `research`, which the source-led page reads. */
+export function canCreateResearchDraft(state: RunState): boolean {
+  return canCreateDraft(state, 'research')
 }

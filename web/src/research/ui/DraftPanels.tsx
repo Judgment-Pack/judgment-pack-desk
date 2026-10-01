@@ -1,5 +1,7 @@
-import type { AuthoringMode } from '../mode'
+import { conversationMode, type AuthoringMode } from '../mode'
 import { DraftSources, declaredSources } from './DraftSources'
+import { useReadingDetails } from '../../chat/ReadingDetails'
+import { SourceReader } from '../../documents/SourceReader'
 import { DraftComparison } from '../../packs/DraftComparison'
 import type { ComponentProps, ReactNode } from 'react'
 import type { NodePositions } from '../../components/RelationshipMap'
@@ -16,7 +18,7 @@ import { CodeBlock } from '../../ui/CodeBlock'
 import { Disclosure } from '../../ui/Disclosure'
 import { Tabs } from '../../ui/Tabs'
 import type { SourceRecord } from '../ledger'
-import { canCreateResearchDraft, type RunState } from '../run'
+import { canCreateDraft, citationGap, citedPage, type Citation, type RunState } from '../run'
 import { ExpectationReview, type ExpectationReviewActions } from './ExpectationReview'
 import styles from './ResearchAuthoring.module.css'
 
@@ -247,14 +249,19 @@ export function DraftPanel({ state, onSelect, onViewLogic, onViewSources }: { st
   )
 }
 
-export function ReviewPanel({ state, sources, onCreate, onSelect, showCreateAction = true, mode = 'research' }: { testsPanel?: ReactNode; onTabChange?: (tab: string) => void; hideHeader?: boolean; onSelectInMain?: (next: Selection) => void; showCreateAction?: boolean; mode?: AuthoringMode; state: RunState; sources: readonly SourceRecord[]; onCreate: () => void; onSelect: (next: Selection) => void }) {
+export function ReviewPanel({ state, sources, onCreate, onSelect, onReadPage, basis, showCreateAction = true, mode = 'research' }: { testsPanel?: ReactNode; onTabChange?: (tab: string) => void; hideHeader?: boolean; onSelectInMain?: (next: Selection) => void; showCreateAction?: boolean; mode?: AuthoringMode; state: RunState; sources: readonly SourceRecord[]; onCreate: () => void; onSelect: (next: Selection) => void; onReadPage?: (citation: Citation, opener: HTMLElement) => void; basis?: string }) {
   useLocale()
   const latest = state.candidates.at(-1)
   const check = latest?.check
-  const passing = mode === 'research' ? canCreateResearchDraft(state) : state.status === 'ready' && !state.restored && check?.valid === true && check.documentDigest === latest?.digest
+  const passing = canCreateDraft(state, mode, basis)
   const verified = sources.filter((s) => s.verification.state === 'verified').length
   const failed = sources.filter((s) => s.verification.state === 'failed' || s.failure !== null).length
   const untraced = state.citations.filter((c) => !c.traced)
+  const conversation = conversationMode(mode)
+  // What keeps a conversation draft's citations from Create, once they are
+  // traced -- and never "cites no source" for a draft that declares some.
+  const unread = latest !== undefined && state.citations.length === 0 && declaredSources(latest.document).length > 0
+  const gap = conversation && latest && !state.tracing && !unread ? citationGap(state.citations, mode) : null
   return (
     <div className={styles.panel}>
       <section className={styles.section}>
@@ -268,7 +275,11 @@ export function ReviewPanel({ state, sources, onCreate, onSelect, showCreateActi
           <dt>{msg("Sources")}</dt>
           <dd><Message text={"<0/> recorded; <1/> with verified receipts; <2/> failed or unverified"} slots={[sources.length, verified, failed]} /></dd>
           <dt>{msg("Citations")}</dt>
-          <dd><Message text={"<0/> of <1/> traced to a recorded excerpt"} slots={[state.citations.length - untraced.length, state.citations.length]} /></dd>
+          <dd>{state.tracing ? msg("Checking the draft's citations…")
+            : mode === 'draft' && latest && state.citations.length === 0 && declaredSources(latest.document).length === 0 ? msg("This pack cites no source. It rests on what you told the assistant.")
+            : conversation && latest && state.citations.length === 0 && declaredSources(latest.document).length === 0 ? msg("This draft cites no source.")
+            : conversation ? <Message text={"<0/> of <1/> traced to a page read in this chat"} slots={[state.citations.length - untraced.length, state.citations.length]} />
+            : <Message text={"<0/> of <1/> traced to a recorded excerpt"} slots={[state.citations.length - untraced.length, state.citations.length]} />}</dd>
         </dl>
       </section>
       <DraftComparison candidates={state.candidates} />
@@ -303,10 +314,10 @@ export function ReviewPanel({ state, sources, onCreate, onSelect, showCreateActi
               .filter((c) => c.traced)
               .map((citation) => (
                 <li key={citation.sourceId} className={styles.row}>
-                  <button type="button" className={styles.rowButton} onClick={() => onSelect({ kind: 'excerpt', id: citation.excerptId! })}>
+                  <button type="button" className={styles.rowButton} onClick={event => citation.excerptId !== null ? onSelect({ kind: 'excerpt', id: citation.excerptId }) : onReadPage?.(citation, event.currentTarget)}>
                     <div className={styles.rowHead}>
                       <strong>{citation.sourceId}</strong>
-                      <span className={styles.badge}>{citation.excerptId}</span>
+                      <span className={styles.badge}>{citation.excerptId ?? msg('Page {{number}}', { number: citedPage(citation.location)?.page })}</span>
                     </div>
                     <div className={styles.url}>{citation.url}</div>
                   </button>
@@ -330,6 +341,8 @@ export function ReviewPanel({ state, sources, onCreate, onSelect, showCreateActi
         <p className={styles.detail}>
           {passing
             ? mode === 'research' ? msg("Review the name and open questions, then create the pack with its checked cases and research record.") : msg("Structure validated. Review the draft before creating it. Research and test results are reported separately.")
+            : gap !== null ? systemMessage(gap)
+            : conversation ? msg("Create is offered once the draft is valid and every citation it makes is traced to a page read in this chat.")
             : msg("Create is offered once every established case agrees with the runtime and the draft is valid.")}
         </p>
         <p className={styles.hint}>
@@ -360,10 +373,19 @@ function DraftLogic({ state, selection, onSelect, onInspect, active }: { state: 
     viewport={viewport} onViewport={setViewport} nodePositions={nodePositions} onNodePositionsChange={setNodePositions} listScroll={scroll} /></div>
 }
 
-export function DraftTabs({ testsPanel, onTabChange, state, sources, selection, onSelect, onCreate, showCreateAction = true, mode = 'research', hideHeader = false, onSelectInMain, documents = [], files = [], onRead, ...actions }: ExpectationReviewActions & Omit<ComponentProps<typeof DraftSources>, 'document'> & { testsPanel?: ReactNode; onTabChange?: (tab: string) => void; hideHeader?: boolean; onSelectInMain?: (next: Selection) => void; showCreateAction?: boolean; mode?: AuthoringMode; state: RunState; sources: readonly SourceRecord[]; selection: Selection; onSelect: (next: Selection) => void; onCreate: () => void }) {
+export function DraftTabs({ testsPanel, onTabChange, state, sources, selection, onSelect, onCreate, basis, showCreateAction = true, mode = 'research', hideHeader = false, onSelectInMain, documents = [], files = [], onRead, ...actions }: ExpectationReviewActions & Omit<ComponentProps<typeof DraftSources>, 'document'> & { testsPanel?: ReactNode; onTabChange?: (tab: string) => void; hideHeader?: boolean; onSelectInMain?: (next: Selection) => void; showCreateAction?: boolean; mode?: AuthoringMode; state: RunState; sources: readonly SourceRecord[]; selection: Selection; onSelect: (next: Selection) => void; onCreate: () => void; basis?: string }) {
   useLocale()
   const [tab, setTabState] = useState('draft')
   const setTab = (next: string) => { setTabState(next); onTabChange?.(next) }
+  const ownRead = useReadingDetails('draft-review')
+  // A conversation draft's traced citation is a page of a document kept in this
+  // chat, and opens in the source reader at its quote.
+  const readPage = (citation: Citation, opener: HTMLElement) => {
+    const cited = citedPage(citation.location)
+    const file = cited && documents.find(item => item.document?.id === cited.documentId && item.document.digest === cited.digest)
+    if (!cited || !file?.document) return
+    ;(onRead ?? ownRead)(<SourceReader name={file.name} reference={file.document} link={file.link} citation={{ page: cited.page, quote: citation.quote ?? '' }} />, opener)
+  }
   const pending = state.expectationIssues.filter(issue => !issue.resolved).length
   const total = state.cases.length + pending
   const document = state.candidates.at(-1)?.document
@@ -386,7 +408,7 @@ export function DraftTabs({ testsPanel, onTabChange, state, sources, selection, 
           { value: 'logic', label: msg("Logic"), panel: <DraftLogic state={state} selection={selection} onSelect={onSelectInMain ?? onSelect} onInspect={onSelect} active={tab === 'logic'} /> },
           { value: 'sources', label: sourceCount ? msg('Sources ({{count}})', { count: sourceCount }) : msg('Sources'), panel: <div className={styles.panel}><DraftSources document={document} documents={documents} files={files} onRead={onRead} />{(sources.length > 0 || sourceCount === 0) && <SourcesPanel sources={sources} selection={selection} onSelect={onSelect} />}</div> },
           { value: 'tests', label: total ? msg('Tests ({{count}})', { count: total }) : msg('Tests'), panel: testsPanel ?? <TestsPanel mode={mode} state={state} onSelect={onSelect} {...actions} /> },
-          { value: 'review', label: msg("Review"), panel: <ReviewPanel showCreateAction={showCreateAction} mode={mode} state={state} sources={sources} onCreate={onCreate} onSelect={onSelect} /> }
+          { value: 'review', label: msg("Review"), panel: <ReviewPanel showCreateAction={showCreateAction} mode={mode} state={state} sources={sources} onCreate={onCreate} onSelect={onSelect} onReadPage={readPage} basis={basis} /> }
         ]}
       />
     </section>

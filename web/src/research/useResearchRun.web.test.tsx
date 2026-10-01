@@ -4,7 +4,8 @@ import type { HostTool } from '../assistant/engine'
 import { useResearchRun } from './useResearchRun'
 import type { AuthoringMode } from './mode'
 
-const fake = vi.hoisted(() => ({ session: vi.fn(), tools: vi.fn(), policy: vi.fn(() => 'WEB POLICY FOR THIS MESSAGE') }))
+const fake = vi.hoisted(() => ({ session: vi.fn(), tools: vi.fn(), policy: vi.fn(() => 'WEB POLICY FOR THIS MESSAGE'), load: vi.fn(), gateway: { authority: 'test', signer: { public: 'test' } } }))
+vi.mock('../documents/client', async (original) => ({ ...(await original<typeof import('../documents/client')>()), loadDocument: fake.load }))
 vi.mock('../assistant/target', () => ({ bindExecution: () => ({}), selectedAssistant: () => ({ models: ['test-model'], model: 'test-model', tools: [] }) }))
 vi.mock('../assistant/useAssistantSlot', () => ({ assistantReady: () => true, useAssistantSlot: () => ({ state: 'ready', endpoint: 'https://example.invalid', keyStatus: 'stored', keyPresent: true, engine: 'test', thinking: 'off' }) }))
 vi.mock('../assistant/pickedModel', () => ({ usePickedModel: () => ({ model: 'test-model', models: ['test-model'] }) }))
@@ -14,7 +15,7 @@ vi.mock('../files/queries', () => ({ useFileListing: () => ({ data: { root: '/te
 vi.mock('../mcp/session', () => ({ sessionBearer: async () => 'test-session' }))
 vi.mock('../mcp/McpProvider', () => ({ useMcp: () => ({ status: 'disconnected', client: null }) }))
 vi.mock('../mcp/prompts', () => ({ AUTHOR_PACK_PROMPT: 'author_pack', TEST_PACK_PROMPT: 'test_pack', usePromptNames: () => ({ data: [] }), usePromptText: () => ({}) }))
-vi.mock('../config/DeskConfigProvider', () => ({ useEffectiveConfig: () => ({ config: { research: { gateway: { authority: 'test', signer: { public: 'test' } }, sources: { search: null, read: null }, limits: { seconds: 30 } } } }) }))
+vi.mock('../config/DeskConfigProvider', () => ({ useEffectiveConfig: () => ({ config: { research: { gateway: fake.gateway, sources: { search: null, read: null }, limits: { seconds: 30 } } } }) }))
 vi.mock('../shell/consoleLog', () => ({ recordActivity: () => {} }))
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
@@ -50,4 +51,98 @@ it('keeps supplied-link reading usable without a search provider', async () => {
   expect(result.current.blocked).toBe('')
   act(() => result.current.run!.start('Research this', []))
   await waitFor(() => expect(result.current.state.status).toBe('complete'))
+})
+
+it('asks a chat draft to trace its citations again whenever the documents the chat keeps change', async () => {
+  const { AuthoringRun } = await import('./run')
+  const changed = vi.spyOn(AuthoringRun.prototype, 'basisChanged')
+  const file = (pages: number[]) => [{ id: 'kept', name: 'Kept', text: '', document: { id: 'kept', digest: 'sha256:' + 'a'.repeat(64), pages, allowPartial: false } }]
+  const { rerender } = renderHook(({ pages }: { pages: number[] }) => useResearchRun({ mode: 'draft', draftTools: fake.tools, documents: () => file(pages) }), { initialProps: { pages: [1] } })
+  const after = changed.mock.calls.length
+  rerender({ pages: [1] })
+  expect(changed.mock.calls.length).toBe(after)
+  rerender({ pages: [1, 2] })
+  expect(changed.mock.calls.length).toBe(after + 1)
+  changed.mockRestore()
+})
+
+it('ends its run\'s traces at rest when its owner unmounts', async () => {
+  const { AuthoringRun } = await import('./run')
+  const detached = vi.spyOn(AuthoringRun.prototype, 'detach')
+  const attached = vi.spyOn(AuthoringRun.prototype, 'attach')
+  const { unmount } = renderHook(() => useResearchRun({ mode: 'draft', draftTools: fake.tools }))
+  expect(attached).toHaveBeenCalled()
+  expect(detached).not.toHaveBeenCalled()
+  unmount()
+  expect(detached).toHaveBeenCalledOnce()
+  detached.mockRestore()
+  attached.mockRestore()
+})
+
+it('traces a reopened chat draft through its own ports: the configured pin, the kept documents, and a load its unmount ends', async () => {
+  const fixture = (await import('../documents/__fixtures__/web-snapshot.json')).default
+  const record = structuredClone(fixture) as unknown as import('../documents/record').DocumentRecord
+  const quote = 'First fact & second.'
+  const reference = { id: '12345678-1234-1234-1234-000000000001', digest: 'sha256:' + '1'.repeat(64), pages: [1], allowPartial: false }
+  const kept = [{ id: reference.id, name: 'Example', text: '', document: reference }]
+  const pack = { specVersion: '0.2.0-draft', id: 'https://example.org/p', version: '0.1.0', title: 'Kept page', sources: [{ id: 'page', title: 'Page', locator: { kind: 'uri', value: record.provenance.source.url }, citation: { location: `attachment:${reference.id}/${reference.digest}/page/1`, excerpt: quote } }] }
+  const { INITIAL_STATE } = await import('./run')
+  const saved = { ...INITIAL_STATE, status: 'needs-input' as const, turns: [{ id: 't1', role: 'user' as const, kind: 'brief' as const, text: 'Draft it.', at: '2026-09-30T00:00:00Z' }],
+    candidates: [{ revision: 1, producedBy: 'conversation' as const, document: pack, text: JSON.stringify(pack), digest: '' }] }
+  let release!: () => void
+  const signals: AbortSignal[] = []
+  fake.load.mockImplementation((_reference: unknown, _pin: unknown, signal: AbortSignal) => {
+    signals.push(signal)
+    return new Promise((resolve) => { release = () => resolve({ record, digest: reference.digest, object: { version: 1, original: { name: 'Example', mediaType: 'text/plain', bytes: '', sha256: '' } } }) })
+  })
+  const { result, rerender, unmount } = renderHook(({ documents }: { documents: typeof kept }) => useResearchRun({ mode: 'draft', draftTools: fake.tools, documents: () => documents }), { initialProps: { documents: kept } })
+  await act(() => result.current.run!.restore(saved))
+  await waitFor(() => expect(fake.load).toHaveBeenCalledOnce())
+  // Verified under the pin the desk is configured with, as it stands.
+  expect(fake.load.mock.calls[0]![0]).toEqual(reference)
+  expect(fake.load.mock.calls[0]![1]).toEqual({ authority: 'test', signer: { public: 'test' } })
+  act(() => release())
+  await waitFor(() => expect(result.current.state.citations).toMatchObject([{ sourceId: 'page', traced: true }]))
+  // The chat stops keeping the document: traced again, through the hook alone.
+  rerender({ documents: [] })
+  await waitFor(() => expect(result.current.state.citations).toMatchObject([{ sourceId: 'page', traced: false }]))
+  // A load still held when the owner goes away is ended with it.
+  rerender({ documents: kept })
+  await waitFor(() => expect(fake.load).toHaveBeenCalledTimes(2))
+  expect(signals[1]!.aborted).toBe(false)
+  unmount()
+  expect(signals[1]!.aborted).toBe(true)
+})
+
+it('traces a reopened chat draft again under a pin that moves while it loads, and the trace it superseded loads nothing more', async () => {
+  const fixture = (await import('../documents/__fixtures__/web-snapshot.json')).default
+  const record = structuredClone(fixture) as unknown as import('../documents/record').DocumentRecord
+  const quote = 'First fact & second.'
+  const reference = (n: number) => ({ id: `12345678-1234-1234-1234-00000000000${n}`, digest: 'sha256:' + String(n).repeat(64), pages: [1], allowPartial: false })
+  const kept = [1, 2].map(n => ({ id: reference(n).id, name: `Example ${n}`, text: '', document: reference(n) }))
+  const pack = { specVersion: '0.2.0-draft', id: 'https://example.org/p', version: '0.1.0', title: 'Kept pages',
+    sources: [1, 2].map(n => ({ id: `page-${n}`, title: 'Page', locator: { kind: 'uri', value: record.provenance.source.url }, citation: { location: `attachment:${reference(n).id}/${reference(n).digest}/page/1`, excerpt: quote } })) }
+  const { INITIAL_STATE } = await import('./run')
+  const saved = { ...INITIAL_STATE, status: 'needs-input' as const, turns: [{ id: 't1', role: 'user' as const, kind: 'brief' as const, text: 'Draft it.', at: '2026-09-30T00:00:00Z' }],
+    candidates: [{ revision: 1, producedBy: 'conversation' as const, document: pack, text: JSON.stringify(pack), digest: '' }] }
+  const A = { authority: 'gateway-a', signer: { public: 'a' } }, B = { authority: 'gateway-b', signer: { public: 'b' } }
+  fake.gateway = A
+  let release!: () => void
+  const verified = (ref: { digest: string }) => ({ record, digest: ref.digest, object: { version: 1, original: { name: 'Example', mediaType: 'text/plain', bytes: '', sha256: '' } } })
+  fake.load.mockImplementation((ref: { id: string; digest: string }) => ref.id.endsWith('1') && fake.load.mock.calls.length === 1
+    ? new Promise(resolve => { release = () => resolve(verified(ref)) }) : Promise.resolve(verified(ref)))
+  const { result, rerender } = renderHook(() => useResearchRun({ mode: 'draft', draftTools: fake.tools, documents: () => kept }))
+  await act(() => result.current.run!.restore(saved))
+  await waitFor(() => expect(fake.load).toHaveBeenCalledOnce())
+  // The configured pin moves while the first document loads.
+  fake.gateway = B
+  rerender()
+  act(() => release())
+  await waitFor(() => expect(result.current.state.tracing).toBe(false))
+  // The move superseded the trace under A, which asked for nothing more once
+  // it was; the trace that landed verified both documents under B.
+  expect(fake.load.mock.calls.map(call => [(call[0] as { id: string }).id.slice(-1), (call[1] as { authority: string }).authority])).toEqual([['1', 'gateway-a'], ['1', 'gateway-b'], ['2', 'gateway-b']])
+  expect(result.current.state.citations.map(citation => citation.traced)).toEqual([true, true])
+  expect(result.current.state.tracedBasis).toBe(result.current.run!.basisNow())
+  fake.gateway = { authority: 'test', signer: { public: 'test' } }
 })

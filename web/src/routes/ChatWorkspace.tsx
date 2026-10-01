@@ -18,7 +18,7 @@ import { usePackFolders } from '../packs/folders/FolderContext'
 import { packFolder } from '../packs/folders/model'
 import { homeChatId } from '../chat/navigation'
 import type { Chat } from '../chat/store'
-import { INITIAL_STATE, canCreateResearchDraft, matrixDocument, researchRecord } from '../research/run'
+import { INITIAL_STATE, canCreateDraft, matrixDocument, researchRecord } from '../research/run'
 import { DraftTabs, type Selection } from '../research/ui/DraftPanels'
 import { SourceInspector } from '../research/ui/SourceInspector'
 import { useDetailsPortal, useDetailsSlot } from '../shell/DetailsSlot'
@@ -32,11 +32,13 @@ import { Button } from '../ui/Button'
 import { PageHeader } from '../ui/PageLayout'
 import styles from '../chat/ChatWorkspace.module.css'
 
-export function draftReady(chat: Chat, state: typeof INITIAL_STATE): boolean {
+/**
+ * Create's rule for a chat's draft: the one rule every mode reads, at rest on
+ * a fresh check, on the pin and documents standing now (`basis`).
+ */
+export function draftReady(chat: Chat, state: typeof INITIAL_STATE, basis: string | undefined): boolean {
   if (state.restored || state.status !== 'ready') return false
-  if (chat.mode === 'research') return canCreateResearchDraft(state)
-  const candidate = state.candidates.at(-1)
-  return Boolean(candidate?.check?.valid && candidate.check.documentDigest === candidate.digest)
+  return canCreateDraft(state, chat.mode, basis)
 }
 
 export function ChatWorkspace() {
@@ -98,7 +100,8 @@ export function DraftWorkspace({ chat, artifact, fallback }: { chat: Chat; artif
   const details = useDetailsSlot()
   const draft = true
   const latest = state.candidates.at(-1)
-  const passing = draftReady(chat,state) && !store?.getSnapshot().dirty && !store?.getSnapshot().error
+  const basis = binding.run?.basisNow()
+  const passing = draftReady(chat,state,basis) && !store?.getSnapshot().dirty && !store?.getSnapshot().error
   const beginReview = () => { reviewDigest.current = latest?.digest; setReviewNotice(''); setReview(true) }
   useEffect(() => {
     if (review && latest?.digest !== reviewDigest.current) { setReview(false); setReviewNotice(sourceMessage('The draft changed. Review the latest revision before creating it.')) }
@@ -131,10 +134,11 @@ export function DraftWorkspace({ chat, artifact, fallback }: { chat: Chat; artif
           onWritingChange={writingChanged}
           initialFolderId={folderId}
           onFolderChange={targetFolderId => store?.update(chat.id,{targetFolderId})}
-          canCreate={() => { const snapshot=store?.getSnapshot(); const current=snapshot?.packDrafts.find(item=>item.id===artifact.id); const active=binding.run?.getSnapshot(); return !snapshot?.dirty && !snapshot?.error && current?.checkpoint.state.candidates.at(-1)?.text===active?.candidates.at(-1)?.text && !!active && active.candidates.at(-1)?.digest===reviewDigest.current && draftReady(chat,active) }}
-          reviewDraft={{ trialCount: state.probes?.length ?? 0, caseCount: new Set([...state.cases.map(c=>c.id),...savedTests.suite.cases.map(c=>c.id)]).size, document: latest.document, name: artifact.title, description: typeof candidate?.description === 'string' ? candidate.description : '', unknowns: state.unknowns, research }}
+          canCreate={() => { const snapshot=store?.getSnapshot(); const current=snapshot?.packDrafts.find(item=>item.id===artifact.id); const active=binding.run?.getSnapshot(); return !snapshot?.dirty && !snapshot?.error && current?.checkpoint.state.candidates.at(-1)?.text===active?.candidates.at(-1)?.text && !!active && active.candidates.at(-1)?.digest===reviewDigest.current && draftReady(chat,active,binding.run?.basisNow()) }}
+          reviewDraft={{ trialCount: state.probes?.length ?? 0, caseCount: new Set([...state.cases.map(c=>c.id),...savedTests.suite.cases.map(c=>c.id)]).size, document: latest.document, name: artifact.title, description: typeof candidate?.description === 'string' ? candidate.description : '', unknowns: state.unknowns, research,
+            citations: { traced: state.citations.filter(c=>c.traced).length, total: state.citations.length } }}
           onSaved={async pack => { await carryDraftTests({...artifact,checkpoint:{...artifact.checkpoint,state}},pack.id); store?.finalizeDraft(artifact.id,pack); if(!await store?.flush()) throw new Error(sourceMessage('The pack was finalized, but its draft link could not be saved. Retry saving before leaving.')); writingChanged(false); return `/packs/${encodeURIComponent(pack.id)}` }} />
-      </div> : <DraftTabs onTabChange={tab=>setTestActive(tab==='tests')} testsPanel={latest && candidate ? <TestsContent owner={artifact.id} document={latest.document as import('../mcp/types').PackDocument} text={latest.text} title={artifact.title} active={testActive && !review} draft={{...artifact,checkpoint:{...artifact.checkpoint,state}}}/> : undefined} documents={artifact.documents} files={artifact.sourceFiles} onRead={readSource} hideHeader onSelectInMain={setSelection} state={state} mode={chat.mode} sources={binding?.sources ?? []} selection={selection} onSelect={select} onCreate={beginReview} showCreateAction={false}
+      </div> : <DraftTabs onTabChange={tab=>setTestActive(tab==='tests')} testsPanel={latest && candidate ? <TestsContent owner={artifact.id} document={latest.document as import('../mcp/types').PackDocument} text={latest.text} title={artifact.title} active={testActive && !review} draft={{...artifact,checkpoint:{...artifact.checkpoint,state}}}/> : undefined} documents={artifact.documents} files={artifact.sourceFiles} onRead={readSource} hideHeader onSelectInMain={setSelection} state={state} mode={chat.mode} basis={basis} sources={binding?.sources ?? []} selection={selection} onSelect={select} onCreate={beginReview} showCreateAction={false}
         onProposeCorrection={id => store?.perform(chat.id, active => active.run?.proposeExpectationCorrection(id))}
         onApproveCorrection={(id,token) => store?.perform(chat.id, active => active.run?.approveExpectationCorrection(id,token), false)} />}
     </div>

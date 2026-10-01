@@ -28,7 +28,7 @@ export function DraftPackView() {
 }
 function DraftReader({artifact}:{artifact:PackDraft}) {
   const {store,chats,drafts}=useChats(), [params]=useSearchParams()
-  const fallback=useResearchRun({mode:artifact.mode})
+  const fallback=useResearchRun({mode:artifact.mode,documents:()=>artifact.documents??[]})
   const restored=useRef(false), [problem,setProblem]=useState('')
   const available=[...chats,...drafts].filter(chat=>chat.draftId===artifact.id && !chat.archived)
   const selected=available.find(chat=>chat.id===params.get('chat')) ?? available.find(chat=>chat.draftGeneration===artifact.generation && chat.checkpoint?.state.candidates.at(-1)?.text===latestText(artifact))

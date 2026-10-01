@@ -18,7 +18,7 @@ import { systemMessage, useLocale } from '../i18n'
  * composed here per turn. Nothing new reaches an engine: the same session
  * contract, with the desk's host tools in their slot.
  */
-import { useMemo, useRef, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import { describeEvent } from '../assistant/EventList'
 import { loadEngine } from '../assistant/engines'
 import type { AssistantEvent, CallTool, HostTool, McpToolResult } from '../assistant/engine'
@@ -32,8 +32,10 @@ import { AUTHOR_PACK_PROMPT, TEST_PACK_PROMPT, usePromptNames, usePromptText } f
 import { sessionBearer } from '../mcp/session'
 import { recordActivity } from '../shell/consoleLog'
 import { acquire, newResearchSession, registry, seal } from './gatewayClient'
+import { loadDocument } from '../documents/client'
+import type { ChatAttachment } from '../chat/store'
 import { Ledger, type SourceRecord } from './ledger'
-import { AuthoringRun, INITIAL_STATE, type RunState, type Turn, type TurnRequest } from './run'
+import { AuthoringRun, INITIAL_STATE, documentBasis, type RunState, type Turn, type TurnRequest } from './run'
 import { researchTools } from './tools'
 
 export const MAX_REVISIONS = 4
@@ -124,6 +126,8 @@ export function useResearchRun(options?: {
   /** Per-message policy for Chat and web Research; legacy research keeps its source-led contract. */
   researchPolicy?:()=>string
   draftTools?: (context: DraftToolContext) => HostTool[]
+  /** The documents kept in this chat, read when a draft's citations are traced. */
+  documents?: () => readonly ChatAttachment[]
 }): ResearchRunBinding {
   useLocale()
   const slot = useAssistantSlot()
@@ -155,8 +159,8 @@ export function useResearchRun(options?: {
   const ledger = ledgerRef.current
 
   // The settings a turn reads, as of the moment it starts.
-  const settings = useRef({ slot, picked, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools })
-  settings.current = { slot, picked, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools }
+  const settings = useRef({ slot, picked, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools, documents: options?.documents })
+  settings.current = { slot, picked, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools, documents: options?.documents }
 
   const run = useMemo(() => {
     const log = (text: string) => recordActivity(text, 'research')
@@ -228,6 +232,11 @@ export function useResearchRun(options?: {
         return callToolThrough(client)(name, name === 'experimental_evaluate' ? { ...args, rehearsal: true } : args)
       },
       ledger,
+      documents: () => settings.current.documents?.() ?? [],
+      // The pin as it is when a trace runs, never a saved one; the run verifies
+      // every document of one trace under the one pin it took.
+      pin: () => settings.current.research.gateway,
+      loadDocument: (reference, pin, signal) => loadDocument(reference, pin, signal),
       get researchTools() {
         return conversationMode(settings.current.mode) ? (settings.current.draftTools?.(context) ?? []) : toolsFor()
       },
@@ -253,6 +262,16 @@ export function useResearchRun(options?: {
     // One run per page mount: the ledger and the budget are the run's.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ledger])
+
+  // A chat draft's citations rest on the gateway pin and on the documents the
+  // chat keeps; when either changes, they are traced again.
+  const basis = documentBasis(research.gateway, options?.documents?.() ?? [])
+  // Traces at rest run while this owner is mounted, and end when it goes.
+  useEffect(() => {
+    run.attach()
+    return () => run.detach()
+  }, [run])
+  useEffect(() => { run.basisChanged() }, [run, basis])
 
   const state = useSyncExternalStore(run.subscribe, run.getSnapshot, () => INITIAL_STATE)
   const sources = useSyncExternalStore(ledger.subscribe, ledger.getSnapshot, () => NO_SOURCES)

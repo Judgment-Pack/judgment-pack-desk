@@ -35,6 +35,15 @@ export const CONTINUE_INSTRUCTIONS = `CONTINUE
 
 Your previous turn ended before you wrote the proposal: the turn's step budget was spent on research. Everything you read and cited is listed below with its excerpt ids, and it is still recorded. A page already read can be re-opened with read_source giving its source_id and an offset: that is served from what was already retrieved and costs no budget. Do not read new URLs or search. Finish now: re-open a page only where a requirement you rely on is not yet cited, cite it with cite_excerpt, then write the short summary and the one fenced JSON block with the whole document.`
 
+/**
+ * How a chat draft cites, given with the authoring instructions. The chat's
+ * tools keep what they read as documents, and a draft's citation is traced to a
+ * page of one of them, so this is the form a traceable citation takes.
+ */
+export const CONVERSATION_CITATION_INSTRUCTIONS = `CITATIONS
+
+Declare in "sources" every source a rule or exception rests on, and reference it from that rule's "sourceRefs". A source is a page of a document in this chat: one the person attached, or one read with read_link. Give each "citation": {"location": <the citation the attached document or the read_link result gives for that page, attachment:<id>/<digest>/page/<n>>, "excerpt": <the exact quote from that page that states what the rule encodes>}, and "locator": {"kind": "uri", "value": <the page URL>} for a web page, or {"kind": "other", "value": <the document name>} for an attached file. Desk traces each citation to the page it names: a URL alone, an excerpt id or a paraphrase cannot be traced, and a draft with an untraced citation cannot be created. Where nothing read in this chat states a requirement, cite nothing for it and say in unknowns that it rests on what the person said.`
+
 export const CONVERSATION_INSTRUCTIONS = `CONVERSATION
 
 Answer the current request directly in prose. A greeting or explanation of stable concepts does not need a proposal or repeated checks. Use available web tools when the request needs research, current information, verification or finding sources: search_sources finds leads, read_link reads a supplied or verified discovered URL, and explore_website finds other pages when site-wide context is needed. Do not ask for every linked page separately. Read relevant pages before citing them; search snippets and generated grounding answers are not fetched page evidence. Respect requests not to browse. If a needed tool is unavailable, describe that specific limitation and point to Admin > Storage & data > Web search; do not claim there is a blanket restriction on navigating websites. Do not return the current document unchanged. If asked to create or change a pack, read get_authoring_instructions, then propose the complete updated document in the required envelope. Keep established test expectations fixed; disagreements need human review.`

@@ -1323,6 +1323,28 @@ describe('creating a reviewed research handover', () => {
     ])
   })
 
+  it.each([
+    [{ traced: 0, total: 0 }, 'This pack cites no source. It rests on what you told the assistant.'],
+    [{ traced: 2, total: 2 }, 'Citations traced to their sources: 2 of 2.']
+  ])('states what a chat draft cites beside Create (%o)', (citations, said) => {
+    serveProject({ project: PROJECT })
+    const handover = researchHandover(), stub = handoverStub()
+    const router = createMemoryRouter([{ path: '*', element:
+      <McpContext.Provider value={connected({ client: stub.client, ...FULL_CAPS, validateSupported: true })}>
+        <DeskConfigFixture value={effectiveConfig(undefined)}>
+          <CreatePackDialog open presentation="review" onOpenChange={() => {}}
+            reviewDraft={{ document: handover.document, name: 'Reviewed pack', description: '', unknowns: [], citations }} />
+        </DeskConfigFixture>
+      </McpContext.Provider>
+    }])
+    render(<QueryClientProvider client={testQueryClient()}><RouterProvider router={router} /></QueryClientProvider>)
+    const line = screen.getByText(said)
+    // Beside the button: in the form that submits it, ahead of its actions.
+    expect(line.closest('form')).toBe(createButton().closest('form'))
+    expect(line.compareDocumentPosition(createButton()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.queryByText(/0 of 0/)).toBeNull()
+  })
+
   it.each([false,true])('completes pack creation once when folder assignment fails=%s',async fail=>{
     const sent=serveProject({project:PROJECT}),handover=researchHandover(),stub=handoverStub()
     vi.spyOn(folderClient,'loadFolders').mockResolvedValue({document:defaultFolders(),digest:''})
