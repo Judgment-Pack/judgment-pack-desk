@@ -1840,6 +1840,25 @@ if [ "$which" = all ] || [ "$which" = go ]; then
 		return handoffAccepted
 	}
 	if how, ok := ls.finished[key]; ok {'
+  # **The source worker's identity is its own.** It is read from the file
+  # installed beside Runner; borrowing Runner's identity would call an older
+  # worker current whenever Runner matches.
+  mutate go "component versions: source worker borrows Runner's identity" internal/desk/builds.go \
+    '		worker := buildIdentity(info)' \
+    '		worker := runner'
+  mutate go "component versions: source worker read beside Runtime" internal/desk/builds.go \
+    'readBuildInfo(filepath.Join(filepath.Dir(runnerBin), executableName("jpack-source-worker")))' \
+    'readBuildInfo(filepath.Join(filepath.Dir(runtimeBin), executableName("jpack-source-worker")))'
+  # **A digest-approved Gateway was not checked against the lock.** Its manifest
+  # revision is the manifest's own claim, so it must reach the page unverified.
+  mutate go "component versions: digest-approved Gateway reported as checked" internal/desk/local_gateway.go \
+    '	_, build.Unverified = os.LookupEnv("JPACK_DESK_GATEWAY_MANIFEST_SHA256")' \
+    '	build.Unverified = false'
+  # **A FIFO in a companion's place cannot stall startup.** Opened blocking, a
+  # FIFO named like the worker waits for a writer that never comes.
+  mutate go "component versions: companion opened blocking" internal/desk/builds.go \
+    '	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)' \
+    '	file, err := os.OpenFile(path, os.O_RDONLY|0*syscall.O_NONBLOCK, 0)'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -7836,6 +7855,32 @@ export function assistantTransport(id: string): Transport {
           setStep(0)
           invalidate([['desk-files']])" \
     "          invalidate([['desk-files']])"
+
+  # **Component versions never claims a match it did not check.** Each row
+  # below removes one of the conditions under which the comparison says
+  # "Unknown" or "Different build" instead of "Matches release".
+  CV=web/src/updates/Updates.tsx
+  mutate web "component versions: digest-approved Gateway called matching" "$CV" \
+    "  if (!build?.revision || build.unverified) return 'unknown'" \
+    "  if (!build?.revision) return 'unknown'"
+  mutate web "component versions: modified build called matching" "$CV" \
+    "  return build.revision === revision && !build.modified ? 'matching' : 'different'" \
+    "  return build.revision === revision ? 'matching' : 'different'"
+  mutate web "component versions: pinned version shown for another build" "$CV" \
+    "{row.match==='matching' && release ? row.expected.version : row.build?.revision?.slice(0,12) || msg('Unknown')}" \
+    "{row.expected.version}"
+  mutate web "component versions: unconfigured Runner shown as Unknown" "$CV" \
+    "  const runner = !builds || !!builds.runner" \
+    "  const runner = true"
+  mutate web "component versions: a differing component raises no alert" "$CV" \
+    "{rows.some(row=>row.match==='different') && <p role=\"alert\">" \
+    "{false && <p role=\"alert\">"
+  mutate web "component versions: development pin called a release" "$CV" \
+    "            const release = row.expected.channel !== 'development'" \
+    "            const release = true"
+  mutate web "component versions: stopped Gateway compared as running" web/src/routes/HelpAbout.tsx \
+    "gateway={desk?.localGateway?.status === 'ready' ? desk.localGateway.build : undefined}" \
+    "gateway={desk?.localGateway?.build}"
 fi
 
 restore

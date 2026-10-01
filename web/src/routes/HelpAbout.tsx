@@ -54,7 +54,7 @@ export function HelpAbout() {
         <p className="quiet">{msg("A local web desk for a Judgment Pack project. The browser is the MCP client; the Go program is a chassis with no per-feature endpoints that parses none of the traffic it carries.")}</p>
       </header>
 
-      <Updates />
+      <Updates builds={builds} gateway={desk?.localGateway?.status === 'ready' ? desk.localGateway.build : undefined} />
       <Section title={msg("This connection")}>
         <Button variant="quiet" onClick={diagnostics}>{msg("Diagnostics")}</Button>
         <p>{msg('Desk')}: <ComponentVersion build={builds?.desk} /></p>

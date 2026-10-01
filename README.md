@@ -25,7 +25,8 @@ For private vulnerability reports, see the [security policy](SECURITY.md).
 
 ## Releases and updates
 
-**Help & About → Updates** shows release availability and installed-build status.
+**Help & About → Updates** shows release availability, installed-build status and
+whether each component Desk started with matches the commit this Desk build pins.
 Managed installations can prepare a verified complete bundle and opt into updates
 on launch. Source checkouts remain under developer control. Component pins, CI
 and packaging share one manifest. See [installation, automation and rollback](docs/updates.md).

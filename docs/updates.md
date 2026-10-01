@@ -109,6 +109,23 @@ before the next start. It is off by default. Managed Desk also checks daily whil
 running, without a browser. Download or network failures leave the current
 installation usable and are not reported as “up to date.”
 
+**Component versions**, under Updates, compares the companions Desk started with
+against the commits pinned by the lock built into this Desk. It does not say
+whether newer component releases exist. Runtime, Runner and source worker
+identities are the Go build stamps Desk read from the selected executables when
+it started, without running them; a file replaced on disk afterwards is not
+reflected until Desk restarts. The source worker is the one installed beside
+Runner, not a worker service started separately, and a FIFO or other non-regular
+file in a companion's place has no identity. The Gateway identity is the revision
+its verified bundle manifest records when the local Gateway starts, shown only
+while it runs. Missing metadata stays **Unknown**, as does a Gateway admitted by
+an operator manifest digest (`JPACK_DESK_GATEWAY_MANIFEST_SHA256`), whose
+recorded revision Desk did not check. A match is **Matches release**, or
+**Matches pinned commit** for a development pin, which has no published release.
+A modified build or another commit is **Different build**, shown by commit and
+never as matching, and the section then asks for a restart through the
+development launcher or a reinstall of the complete bundle.
+
 The launcher holds an installation lock while Desk runs. It switches the current
 release only before starting the next process, then explicitly launches that
 bundle's Runtime and Runner. There is no browser-triggered forced restart and no

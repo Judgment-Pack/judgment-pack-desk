@@ -30,6 +30,9 @@ const localAuthority = "gateway:desk-local"
 type gatewayBuild struct {
 	Version  string `json:"version,omitempty"`
 	Revision string `json:"revision"`
+	// Unverified marks a replacement admitted by the operator's manifest
+	// digest: its recorded revision was never checked against this Desk's lock.
+	Unverified bool `json:"unverified,omitempty"`
 }
 
 // LocalGatewayStatus carries public, effective settings only. The signing seed
@@ -237,13 +240,7 @@ func (g *localGateway) start(store *assistantStore) (*localGatewayPin, error) {
 	if err := verifyGatewayBundle(g.bundle); err != nil {
 		return nil, err
 	}
-	manifest, err := os.Open(filepath.Join(g.bundle, "gateway-bundle.json"))
-	if err != nil {
-		return nil, err
-	}
-	var build gatewayBuild
-	err = json.NewDecoder(io.LimitReader(manifest, 8192)).Decode(&build)
-	manifest.Close()
+	build, err := launchedGatewayBuild(g.bundle)
 	if err != nil {
 		return nil, err
 	}
@@ -308,6 +305,29 @@ func (g *localGateway) start(store *assistantStore) (*localGatewayPin, error) {
 	case <-time.After(10 * time.Second):
 		return nil, errors.New("local processing did not become ready")
 	}
+}
+
+// launchedGatewayBuild is the identity a verified bundle's manifest records.
+// Without an operator digest approval, verifyGatewayBundle admitted it only for
+// this Desk's locked revision; with one, the revision is the manifest's own claim.
+func launchedGatewayBuild(bundle string) (gatewayBuild, error) {
+	manifest, err := os.Open(filepath.Join(bundle, "gateway-bundle.json"))
+	if err != nil {
+		return gatewayBuild{}, err
+	}
+	defer manifest.Close()
+	// Only the manifest's own fields are read; whether it was checked is
+	// decided here, never by the manifest.
+	var recorded struct {
+		Version  string `json:"version"`
+		Revision string `json:"revision"`
+	}
+	if err := json.NewDecoder(io.LimitReader(manifest, 8192)).Decode(&recorded); err != nil {
+		return gatewayBuild{}, err
+	}
+	build := gatewayBuild{Version: recorded.Version, Revision: recorded.Revision}
+	_, build.Unverified = os.LookupEnv("JPACK_DESK_GATEWAY_MANIFEST_SHA256")
+	return build, nil
 }
 
 func (s *Server) localGatewayStatus(data []byte) *LocalGatewayStatus {
