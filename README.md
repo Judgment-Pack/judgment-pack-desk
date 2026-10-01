@@ -3503,11 +3503,14 @@ Vite's stack trace): run `nvm use` in the repository first.
 - **desk: open (hot reload)** starts Desk if needed, waits for readiness, and opens
   the browser. **Ctrl+Shift+B** runs **desk: dev**, an alias for **desk: start**.
 
-The tasks use `python3 scripts/desk-dev.py` (Python 3, Go, and Node 22+ required).
-Install frontend dependencies with `npm --prefix web ci` and the complete local
-bundle above first. They use `jpack` on `PATH` and Desk's saved project by default;
-optional environment variables `JPACK_DESK_JPACK` and `JPACK_DESK_PROJECT` select
-another runtime executable and project. No VS Code settings are required. If VS
+The tasks use `python3 scripts/desk-dev.py` (Python 3, Git, Go, and Node 22+
+required). Install frontend dependencies with `npm --prefix web ci` first. Runtime,
+Runner, its source worker, Gateway and adapters are built from the component lock
+on the first start after a lock change (network access needed) and reused offline
+after verification; see [development start and restart](docs/updates.md#development-start-and-restart).
+`jpack` on `PATH` is not used. Desk's saved project is used by default; optional
+environment variables `JPACK_DESK_JPACK` and `JPACK_DESK_PROJECT` select another
+runtime executable (reported as outside the lock) and project. No VS Code settings are required. If VS
 Code has an older Node on `PATH`, the helper selects an installed Node 22 (or newer)
 from nvm without installing anything.
 

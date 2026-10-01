@@ -3,6 +3,7 @@
 import argparse
 import fcntl
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -21,6 +22,9 @@ KEY = hashlib.sha256(str(ROOT).encode()).hexdigest()[:12]
 STATE = Path(tempfile.gettempdir()) / f'jpack-desk-dev-{os.getuid()}-{KEY}'
 BOOT = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
 URL = 'http://localhost:5173/'
+spec = importlib.util.spec_from_file_location('dev_components', ROOT / 'scripts/dev-components.py')
+components = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(components)
 
 
 def identity(pid):
@@ -126,29 +130,69 @@ def node_environment():
     return str(node), env
 
 
+def executable_directories():
+    """Directories holding the executable of every process this user can inspect."""
+    directories = set()
+    for entry in Path('/proc').iterdir():
+        if entry.name.isdigit():
+            try:
+                directories.add(Path(os.readlink(entry / 'exe')).parent)
+            except OSError:
+                continue
+    return directories
+
+
+def prune_launches(launches):
+    # Every start gets a new launch directory, so old ones would accumulate a
+    # Desk binary per restart. Only a directory that no inspectable process is
+    # executing from is removed: the running session's directory survives a
+    # failed rebuild. Companions there are links; the verified cache keeps its own.
+    in_use = executable_directories()
+    for directory in launches.iterdir():
+        if directory.is_symlink() or not directory.is_dir():
+            continue
+        resolved = directory.resolve()
+        if any(path == resolved or resolved in path.parents for path in in_use):
+            continue
+        shutil.rmtree(directory, ignore_errors=True)
+
+
 def prepare():
     node, env = node_environment()
-    runtime = os.environ.get('JPACK_DESK_JPACK') or shutil.which('jpack')
-    if not runtime or not Path(runtime).expanduser().is_file():
-        raise RuntimeError('Set JPACK_DESK_JPACK to your jpack executable, or put jpack on PATH.')
-    runtime = str(Path(runtime).expanduser().resolve())
-    if not os.access(runtime, os.X_OK):
-        raise RuntimeError('JPACK_DESK_JPACK must name an executable file.')
     vite = ROOT / 'web/node_modules/vite/bin/vite.js'
     if not vite.is_file():
         raise RuntimeError('Install frontend dependencies first: npm --prefix web ci')
     go = shutil.which('go')
     if not go:
         raise RuntimeError('Go must be on PATH to build Desk.')
+    runtime = os.environ.get('JPACK_DESK_JPACK')
+    if runtime:
+        runtime = str(Path(runtime).expanduser().resolve())
+        if not Path(runtime).is_file() or not os.access(runtime, os.X_OK):
+            raise RuntimeError('JPACK_DESK_JPACK must name an executable file.')
+        print('Runtime override enabled; this launch may differ from the tested component lock.', flush=True)
+    bundle = components.synchronize()
     print('Building Desk…', flush=True)
-    (ROOT / 'bin').mkdir(exist_ok=True)
-    subprocess.run([go, 'build', '-trimpath', '-o', str(ROOT / 'bin/jpack-desk'), '.'], cwd=ROOT, check=True)
-    backend = [str(ROOT / 'bin/jpack-desk'), '--dev-token', 'dev', '--port', '8790', '--jpack', runtime]
+    launches = ROOT / 'bin/dev-launches'
+    launches.mkdir(parents=True, exist_ok=True)
+    prune_launches(launches)
+    with tempfile.TemporaryDirectory(prefix='.building-', dir=launches) as temp:
+        staged = Path(temp) / 'bundle'
+        # Companions stay beside Desk. Hard links avoid copying large binaries;
+        # no verified bundle file is ever modified by this launcher.
+        shutil.copytree(bundle, staged, copy_function=os.link)
+        subprocess.run([go, 'build', '-trimpath', '-o', str(staged / 'jpack-desk'), '.'], cwd=ROOT, check=True)
+        installed = launches / Path(temp).name[len('.building-'):]
+        staged.rename(installed)
+    runtime = runtime or str(installed / 'jpack')
+    backend = [str(installed / 'jpack-desk'), '--dev-token', 'dev', '--port', '8790',
+               '--jpack', runtime, '--runner', str(installed / 'jpack-runner')]
     project = os.environ.get('JPACK_DESK_PROJECT')
     if project:
         backend.append(str(Path(project).expanduser().resolve()))
     # Omitting a project uses Desk's saved default; no user configuration is rewritten.
     backend_env = dict(env, JPACK_DESK_LOCAL_ACCESS='1')
+    backend_env.pop('JPACK_DESK_GATEWAY_MANIFEST_SHA256', None)
     frontend_env = dict(env, JPACK_DESK_CHASSIS='http://127.0.0.1:8790')
     return [
         ('backend', backend, ROOT, backend_env, 'http://127.0.0.1:8790/'),
@@ -201,7 +245,31 @@ def show(processes):
         print(f'{name}: ' + (f'running (PID {record["pid"]})' if alive(record) else 'stopped'))
     if all(alive(processes.get(name)) for name in ('backend', 'frontend')):
         print(f'Desk: {URL}')
+        show_components(processes['backend']['pid'])
     print(f'Logs: {STATE}')
+
+
+def component_lines(directory, arguments):
+    """The companion set a backend was launched with, against the current lock."""
+    record = json.loads((directory / components.MANIFEST).read_text())
+    expected = components.release.components.read_plan()['components']
+    runtime = arguments[arguments.index('--jpack') + 1] if '--jpack' in arguments else ''
+    lines = []
+    for name, item in record['identity']['components'].items():
+        if name == 'runtime' and runtime != str(directory / 'jpack'):
+            lines.append('runtime: explicit override (outside the component lock)')
+        else:
+            lines.append(name + ': ' + item['version'] + (' (locked)' if item == expected.get(name) else ' (restart required: component lock changed)'))
+    return lines + ['Companion directory: ' + str(directory)]
+
+
+def show_components(pid):
+    try:
+        directory = Path(os.readlink(f'/proc/{pid}/exe')).parent
+        arguments = Path(f'/proc/{pid}/cmdline').read_bytes().decode().split('\0')
+        print('\n'.join(component_lines(directory, arguments)))
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        print('Companions: not synchronized by this launcher; restart to apply the component lock.')
 
 
 def open_browser():

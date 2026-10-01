@@ -4,7 +4,9 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
+import shutil
 import signal
 import socket
 import subprocess
@@ -139,6 +141,112 @@ class LifecycleTests(unittest.TestCase):
         (self.state / 'processes.json').write_text(json.dumps({'version': 1, 'root': '/elsewhere', 'processes': {}}))
         with self.assertRaisesRegex(RuntimeError, 'no processes were stopped'):
             self.main('stop')
+
+    def checkout(self):
+        root = self.state / 'checkout'
+        vite = root / 'web/node_modules/vite/bin/vite.js'
+        vite.parent.mkdir(parents=True); vite.touch()
+        bundle = root / 'bin/dev-components/key-verified'
+        bundle.mkdir(parents=True)
+        for name in ('jpack', 'jpack-runner', 'jpack-source-worker', 'gateway-bundle.json'):
+            (bundle / name).write_text('verified companion')
+        # An executable jpack on PATH that the launcher must not pick up.
+        path_jpack = self.state / 'path/jpack'
+        path_jpack.parent.mkdir(); path_jpack.write_text('#!/bin/sh\n'); path_jpack.chmod(0o755)
+        return root, bundle, path_jpack
+
+    def prepare(self, root, bundle, path_jpack, environ, build=None):
+        def compile_desk(args, **kwargs):
+            Path(args[args.index('-o') + 1]).write_text('desk binary')
+        inherited = {'PATH': str(path_jpack.parent), 'JPACK_DESK_GATEWAY_MANIFEST_SHA256': 'a' * 64}
+        which = lambda name: str(path_jpack) if name == 'jpack' else '/go'
+        with patch.object(dev, 'ROOT', root), patch.object(dev, 'node_environment', return_value=('/node', inherited)), \
+             patch.object(dev.shutil, 'which', side_effect=which), patch.object(dev.components, 'synchronize', return_value=bundle), \
+             patch.dict(dev.os.environ, environ), patch.object(dev.subprocess, 'run', side_effect=build or compile_desk), \
+             contextlib.redirect_stdout(io.StringIO()) as out:
+            return dev.prepare(), out.getvalue()
+
+    def test_prepare_uses_isolated_locked_binaries_instead_of_path(self):
+        root, bundle, path_jpack = self.checkout()
+        commands, _ = self.prepare(root, bundle, path_jpack, {'JPACK_DESK_JPACK': ''})
+        backend = commands[0][1]
+        installed = Path(backend[0]).parent
+        self.assertEqual(installed.parent, root / 'bin/dev-launches')
+        self.assertEqual(backend[backend.index('--jpack') + 1], str(installed / 'jpack'))
+        self.assertNotIn(str(path_jpack), backend)
+        self.assertEqual(backend[backend.index('--runner') + 1], str(installed / 'jpack-runner'))
+        self.assertEqual((installed / 'jpack-source-worker').read_text(), 'verified companion')
+        self.assertEqual((installed / 'jpack').stat().st_ino, (bundle / 'jpack').stat().st_ino)
+        self.assertFalse((bundle / 'jpack-desk').exists())
+        self.assertNotIn('JPACK_DESK_GATEWAY_MANIFEST_SHA256', commands[0][3])
+        self.assertEqual(commands[0][3]['JPACK_DESK_LOCAL_ACCESS'], '1')
+
+    def test_runtime_override_is_used_and_reported_as_outside_the_lock(self):
+        root, bundle, path_jpack = self.checkout()
+        override = self.state / 'override-jpack'
+        override.write_text('#!/bin/sh\n'); override.chmod(0o755)
+        commands, out = self.prepare(root, bundle, path_jpack, {'JPACK_DESK_JPACK': str(override)})
+        backend = commands[0][1]
+        self.assertEqual(backend[backend.index('--jpack') + 1], str(override.resolve()))
+        self.assertIn('Runtime override enabled', out)
+        override.chmod(0o644)
+        with self.assertRaisesRegex(RuntimeError, 'JPACK_DESK_JPACK must name an executable'):
+            self.prepare(root, bundle, path_jpack, {'JPACK_DESK_JPACK': str(override)})
+
+    def test_failed_desk_build_leaves_no_launch_and_the_cache_unchanged(self):
+        root, bundle, path_jpack = self.checkout()
+        def fail(args, **kwargs):
+            Path(args[args.index('-o') + 1]).write_text('partial')
+            raise subprocess.CalledProcessError(1, 'go')
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.prepare(root, bundle, path_jpack, {'JPACK_DESK_JPACK': ''}, build=fail)
+        self.assertEqual(list((root / 'bin/dev-launches').iterdir()), [])
+        self.assertEqual(sorted(path.name for path in bundle.iterdir()), ['gateway-bundle.json', 'jpack', 'jpack-runner', 'jpack-source-worker'])
+        self.assertEqual((bundle / 'jpack').read_text(), 'verified companion')
+
+    def test_prune_removes_only_launches_no_process_executes_from(self):
+        launches = self.state / 'launches'
+        running, stopped, stale = launches / 'running', launches / 'stopped', launches / '.building-crashed'
+        for directory in (running, stopped, stale):
+            directory.mkdir(parents=True)
+            (directory / 'jpack').write_text('companion')
+        outside = self.state / 'outside'; outside.mkdir(); (outside / 'keep').write_text('not a launch')
+        (launches / 'linked').symlink_to(outside)
+        shutil.copy2(shutil.which('sleep'), running / 'sleep')
+        child = subprocess.Popen([str(running / 'sleep'), '30'])
+        self.children.append(child)
+        deadline = time.monotonic() + 5
+        while running.resolve() not in dev.executable_directories() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        dev.prune_launches(launches)
+        self.assertTrue((running / 'jpack').exists())
+        self.assertFalse(stopped.exists())
+        self.assertFalse(stale.exists())
+        self.assertTrue((outside / 'keep').exists())
+        child.kill(); child.wait()
+        dev.prune_launches(launches)
+        self.assertFalse(running.exists())
+
+    def test_status_names_the_launched_set_and_a_changed_lock(self):
+        pins = {name: {'version': 'v1.0.0', 'revision': name[0] * 40} for name in ('runtime', 'runner', 'gateway')}
+        changed = dict(pins, gateway={'version': 'v1.1.0', 'revision': 'f' * 40})
+        directory = self.state / 'launch'; directory.mkdir()
+        (directory / dev.components.MANIFEST).write_text(json.dumps({'identity': {'components': pins}}))
+        with patch.object(dev.components.release.components, 'read_plan', return_value={'components': changed}):
+            lines = dev.component_lines(directory, ['jpack-desk', '--jpack', str(directory / 'jpack')])
+            override = dev.component_lines(directory, ['jpack-desk', '--jpack', '/elsewhere/jpack'])
+        self.assertIn('runtime: v1.0.0 (locked)', lines)
+        self.assertIn('runner: v1.0.0 (locked)', lines)
+        self.assertIn('gateway: v1.0.0 (restart required: component lock changed)', lines)
+        self.assertIn('runtime: explicit override (outside the component lock)', override)
+        self.assertNotIn('runtime: v1.0.0 (locked)', override)
+
+    def test_status_of_a_backend_without_a_launch_record_is_not_called_locked(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            dev.show_components(os.getpid())
+        self.assertIn('not synchronized by this launcher', out.getvalue())
+        self.assertNotIn('(locked)', out.getvalue())
 
     def test_tasks_use_structured_arguments_and_no_missing_settings(self):
         tasks = json.loads((dev.ROOT / '.vscode/tasks.json').read_text())['tasks']
