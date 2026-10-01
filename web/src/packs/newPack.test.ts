@@ -1,5 +1,5 @@
 import { redeclareExample } from './newPack'
-import { EVALUATOR_SPEC_VERSION } from '../mcp/evaluatorVersion'
+import { FALLBACK_EVALUATOR_SPEC_VERSION } from '../mcp/evaluatorVersion'
 /**
  * The slug, the collision, and the two ways a first document is arrived at.
  *
@@ -222,7 +222,7 @@ describe('shapeTemplate', () => {
         description,
         slug: 'vendor-onboarding',
         idBase: 'https://example.invalid/judgment-packs/'
-      })
+      }, '0.2.0-draft')
     ) as Record<string, unknown>
 
   it('sets the four members the dialog asked about', () => {
@@ -270,7 +270,7 @@ describe('shapeTemplate', () => {
       description: '',
       slug: 'a',
       idBase: 'https://example.invalid/p/'
-    })
+    }, '0.2.0-draft')
     expect(text.endsWith('}\n')).toBe(true)
     expect(text).toContain('\n  "specVersion"')
   })
@@ -282,17 +282,17 @@ describe('shapeTemplate', () => {
         description: '',
         slug: 'a',
         idBase: 'https://example.invalid/p#'
-      })
+      }, '0.2.0-draft')
     ) as { id: string }
     expect(fragment.id).toBe('https://example.invalid/p#a')
   })
 
   it('says so when the template is not a JSON object', () => {
     expect(() =>
-      shapeTemplate('[]', { name: 'A', description: '', slug: 'a', idBase: 'https://e.invalid/' })
+      shapeTemplate('[]', { name: 'A', description: '', slug: 'a', idBase: 'https://e.invalid/' }, '0.2.0-draft')
     ).toThrow(/not a JSON object/)
     expect(() =>
-      shapeTemplate('{oops', { name: 'A', description: '', slug: 'a', idBase: 'https://e.invalid/' })
+      shapeTemplate('{oops', { name: 'A', description: '', slug: 'a', idBase: 'https://e.invalid/' }, '0.2.0-draft')
     ).toThrow(/not valid JSON/)
   })
 })
@@ -470,7 +470,7 @@ describe('emptyPackFrom', () => {
         description: '',
         slug: 'vendor-onboarding',
         idBase: 'https://example.invalid/judgment-packs/'
-      })
+      }, '0.2.0-draft')
     ) as Record<string, unknown>
     expect(document.specVersion).toBe('0.2.0-draft')
     expect(document.title).toBe('Vendor Onboarding')
@@ -483,14 +483,26 @@ describe('legacy example re-declaration', () => {
   it('changes only specVersion and leaves the source untouched', () => {
     const original = Object.freeze({ specVersion: '0.1.0-draft', title: 'Example',
       rules: [{ id: 'rule', condition: { op: 'fact', path: '/x' } }], extra: { retained: true } })
-    const next = redeclareExample(original)
-    expect(next).toEqual({ ...original, specVersion: EVALUATOR_SPEC_VERSION })
+    const next = redeclareExample(original, FALLBACK_EVALUATOR_SPEC_VERSION)
+    expect(next).toEqual({ ...original, specVersion: FALLBACK_EVALUATOR_SPEC_VERSION })
     expect(next.rules).toBe(original.rules)
     expect(next.extra).toBe(original.extra)
     expect(original.specVersion).toBe('0.1.0-draft')
   })
   it('does not repair an unknown declaration', () => {
     const source = { specVersion: '99' }
-    expect(redeclareExample(source)).toBe(source)
+    expect(redeclareExample(source, FALLBACK_EVALUATOR_SPEC_VERSION)).toBe(source)
+  })
+  // A runtime that reports its evaluator's version serves a set that already
+  // declares it, so there is nothing to re-declare and the dialog says nothing.
+  it('returns an example that already declares the evaluator version as it is', () => {
+    const served = { specVersion: '0.3.0-draft', title: 'Example' }
+    expect(redeclareExample(served, '0.3.0-draft')).toBe(served)
+  })
+  it('re-declares for the version it is given, not the fallback', () => {
+    const legacy = { specVersion: '0.1.0-draft', title: 'Example' }
+    expect(redeclareExample(legacy, '0.3.0-draft')).toEqual({ specVersion: '0.3.0-draft', title: 'Example' })
+    expect(JSON.parse(shapeTemplate(JSON.stringify(legacy),
+      { name: 'A', description: '', slug: 'a', idBase: 'https://e.invalid/' }, '0.3.0-draft')).specVersion).toBe('0.3.0-draft')
   })
 })

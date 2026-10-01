@@ -54,8 +54,7 @@ import { useValidate } from '../mcp/queries'
 import { anchor, layersReached, truncationNote } from '../packs/checks'
 import { DiagnosticList } from '../packs/DiagnosticList'
 import { useIdleCheck } from '../packs/edit/useIdleCheck'
-import { EVALUATOR_SPEC_VERSION } from '../mcp/evaluatorVersion'
-import { RuntimeRefusal, useExample, useExampleListing, useSchema } from '../mcp/starters'
+import { RuntimeRefusal, useEvaluatorVersion, useExample, useExampleListing, useSchema } from '../mcp/starters'
 import {
   existingPackKeys,
   existingPackPaths,
@@ -74,6 +73,7 @@ import {
   emptyPackFrom,
   packFromProposal,
   packPathFor,
+  redeclareExample,
   shapeTemplate,
   slugFor
 } from '../packs/newPack'
@@ -164,9 +164,9 @@ const DIALOG_DESCRIPTION =
  * same fact: a template is bytes the runtime served and a proposal is the
  * canonical frozen snapshot the run hook ingested, and the difference matters
  * exactly twice — which shaping function is called, and which sentence a
- * refusal gets.
+ * refusal gets. A template carries the evaluator version it is shaped for.
  */
-type Source = { kind: 'template'; text: string } | { kind: 'proposal'; document: unknown } | { kind: 'draft'; text: string }
+type Source = { kind: 'template'; text: string; evaluatorVersion: string } | { kind: 'proposal'; document: unknown } | { kind: 'draft'; text: string }
 
 /** How many cases a handover's matrix carries, for the sentences that say so. */
 function caseCount(handover: ResearchHandover): number {
@@ -223,6 +223,9 @@ export function CreatePackDialog({
   const listing = useFileListing()
   const project = useFileContent(PROJECT_FILE)
   const examples = useExampleListing()
+  // The version a written pack must declare: the runtime's where it reports
+  // one, the fallback where it does not, and unknown while that is being asked.
+  const evaluator = useEvaluatorVersion()
   // Asked as soon as the dialog is open rather than when Empty is picked: the
   // option cannot be offered until a skeleton has come out of it, so waiting
   // for the pick would mean the option never appears.
@@ -441,9 +444,9 @@ export function CreatePackDialog({
     ? describe.proposal === undefined
       ? undefined
       : { kind: 'proposal', document: describe.proposal.document }
-    : template === undefined
+    : template === undefined || evaluator === undefined
       ? undefined
-      : { kind: 'template', text: template }
+      : { kind: 'template', text: template, evaluatorVersion: evaluator.version }
 
   /** Whether the proposal calls itself something other than what was typed. */
   const renamed =
@@ -473,10 +476,15 @@ export function CreatePackDialog({
       return { problem: reasonOf(cause) }
     }
   }, [source, name, description, slug, idBase])
+  // Said only where the example is re-declared: one from a set that already
+  // declares the evaluator's version is written as the runtime served it.
   const redeclarationNotice = source?.kind === 'template' && !isEmpty && (() => {
-    try { return JSON.parse(source.text).specVersion === '0.1.0-draft' }
-    catch { return false }
-  })() ? msg('This example will declare specVersion {{version}} for the installed evaluator. No rules or other policy fields are changed.', { version: EVALUATOR_SPEC_VERSION }) : undefined
+    try {
+      const parsed: unknown = JSON.parse(source.text)
+      return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) &&
+        redeclareExample(parsed as Record<string, unknown>, source.evaluatorVersion) !== parsed
+    } catch { return false }
+  })() ? msg('This example will declare specVersion {{version}} for the installed evaluator. No rules or other policy fields are changed.', { version: source.evaluatorVersion }) : undefined
   const shapedText = proposed !== undefined && 'text' in proposed ? proposed.text : undefined
   // The editor's own instrument: a call per keystroke is a call per keystroke,
   // so what is sent is a snapshot the field settles on, and `behind` is what
@@ -504,9 +512,11 @@ export function CreatePackDialog({
             : checked.data === undefined || checked.data.checkedBytes !== shapedText
               ? msg(CHECKING)
               : checked.data.report.status === 'valid'
-                ? JSON.parse(proposed.text).specVersion === EVALUATOR_SPEC_VERSION
-                  ? undefined
-                  : msg('This draft must declare specVersion {{version}} before it can be finalized. Return to the draft and recheck it.', { version: EVALUATOR_SPEC_VERSION })
+                ? evaluator === undefined
+                  ? msg(CHECKING)
+                  : JSON.parse(proposed.text).specVersion === evaluator.version
+                    ? undefined
+                    : msg('This draft must declare specVersion {{version}} before it can be finalized. Return to the draft and recheck it.', { version: evaluator.version })
                 : msg("The runtime will not call this document a pack — {{value0}}", { value0: layersReached(checked.data.report, msg).text })
 
   /**
@@ -769,7 +779,7 @@ export function CreatePackDialog({
         content = validated.checkedBytes
       } else {
         try {
-          content = shapeTemplate(source.text, { name, description, slug, idBase })
+          content = shapeTemplate(source.text, { name, description, slug, idBase }, source.evaluatorVersion)
         } catch (cause) {
           setFailure({ lead: sourceMessage(TEMPLATE_UNUSABLE), reason: reasonOf(cause) })
           return
@@ -988,9 +998,11 @@ export function CreatePackDialog({
       if (step === 0) {
         if (slug === undefined || taken !== undefined || source === undefined || describe.blocking !== '') return
         try {
-          if (draft === undefined) setDraft(source.kind === 'proposal'
+          // Without a draft the source is never one; saying so lets the
+          // template branch carry its evaluator version.
+          if (draft === undefined && source.kind !== 'draft') setDraft(source.kind === 'proposal'
             ? packFromProposal(source.document, { name, description, slug, idBase })
-            : shapeTemplate(source.text, { name, description, slug, idBase }))
+            : shapeTemplate(source.text, { name, description, slug, idBase }, source.evaluatorVersion))
           if (source.kind === 'proposal') {
             setUnknowns(handover?.unknowns ?? describe.proposal?.unknowns ?? [])
             describe.discard()
