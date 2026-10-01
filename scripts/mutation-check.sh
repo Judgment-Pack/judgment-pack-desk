@@ -5253,24 +5253,24 @@ export function assistantTransport(id: string): Transport {
   # as it is now, the page is one it kept, and the quote is on that page. Each
   # row below counts a citation as traced without one of those, or lets a
   # draft reach Create around the trace.
-  mutate web "a chat citation is traced without its quote on the page" "$RR" \
+  mutate web "a chat draft's citation is traced without its quote on the page" "$RR" \
     '    if (!quoted.trim() || !matchesPageQuote(verified, cited.page, quoted)) {' \
     '    if (!quoted.trim()) {'
-  mutate web "a chat citation is traced on a document that did not verify" "$RR" \
+  mutate web "a chat draft's citation is traced on a document that did not verify" "$RR" \
     '      citations.push(untraced(sourceMessage("The document {{value0}} did not verify under the current gateway pin, so its quote is withheld.", { value0: cited.documentId })))' \
     "      citations.push({ sourceId, location, excerptId: null, url, traced: true, reason: '', quote: quoted })"
-  mutate web "a chat citation is traced on a page the chat did not keep" "$RR" \
+  mutate web "a chat draft's citation is traced on a page the chat did not keep" "$RR" \
     '    if (!file?.document || !file.document.pages.includes(cited.page)) {' \
     '    if (!file?.document) {'
-  mutate web "a chat citation is traced under a URL it was not read from" "$RR" \
+  mutate web "a chat draft's citation is traced under a URL it was not read from" "$RR" \
     "    if (read.kind === 'web' && (url === null || ![read.url, read.requestedUrl, file.link?.url, file.link?.resolvedUrl].includes(url))) {" \
     '    if (false) {'
-  mutate web "a chat citation is traced on pages nobody confirmed" "$RR" \
+  mutate web "a chat draft's citation is traced on pages nobody confirmed" "$RR" \
     '    if (needsPartialConsent(verified.record) && !reference.allowPartial) {' \
     '    if (false) {'
   # The settle reads the document again: a trace taken when the candidate was
   # set is a trace of a moment that has passed by the time Create is offered.
-  mutate web "the settle offers Create on a trace it did not take" "$RR" \
+  mutate web "a chat draft settles on a trace taken before the settle" "$RR" \
     '    await this.traceConversation(signal)
     this.settleReview(notPassing)' \
     '    this.settleReview(notPassing)'
@@ -5281,7 +5281,7 @@ export function assistantTransport(id: string): Transport {
         return
       }" \
     '      void 0'
-  mutate web "a web research draft settles at ready citing nothing" "$RR" \
+  mutate web "a web research chat draft settles at ready citing nothing" "$RR" \
     "  if (citations.length === 0 && mode === 'web-research') {" \
     '  if (false) {'
   # A checkpoint keeps no citations; without the trace on reopening, a draft
@@ -5290,22 +5290,22 @@ export function assistantTransport(id: string): Transport {
     '    if (candidates.length) void this.traceConversation(new AbortController().signal)' \
     '    void 0'
   # The rule's own clauses, each held by the rule's unit test over one state.
-  mutate web "Create is offered while the citations are being traced" "$RR" \
+  mutate web "Create is offered on a chat draft while its citations are traced" "$RR" \
     '  if (state.tracing) return false' \
     '  void 0'
-  mutate web "Create is offered over an untraced citation" "$RR" \
+  mutate web "Create is offered on a chat draft over an untraced citation" "$RR" \
     "(mode === 'draft' || state.citations.length > 0) && state.citations.every(citation => citation.traced)" \
     "(mode === 'draft' || state.citations.length > 0)"
-  mutate web "Create is offered to a web research draft citing nothing" "$RR" \
+  mutate web "Create is offered on a web research chat draft citing nothing" "$RR" \
     "(mode === 'draft' || state.citations.length > 0) && state.citations.every" \
     'true && state.citations.every'
   mutate web "the model is not told how a chat draft cites" "$RR" \
     ' + CONVERSATION_CITATION_INSTRUCTIONS' \
     " + ''"
-  mutate web "a draft citing nothing is shown as 0 of 0" "$RDP" \
+  mutate web "a chat draft citing nothing is shown as 0 of 0" "$RDP" \
     '            : mode === '"'"'draft'"'"' && latest && state.citations.length === 0 ? msg("This pack cites no source. It rests on what you told the assistant.")' \
     '            : false ? msg("This pack cites no source. It rests on what you told the assistant.")'
-  mutate web "a traced page citation opens nothing" "$RDP" \
+  mutate web "a chat draft's traced page citation opens nothing" "$RDP" \
     'onReadPage={readPage}' \
     'onReadPage={undefined}'
   mutate web "the creation dialog does not say what a chat draft cites" "$X" \
