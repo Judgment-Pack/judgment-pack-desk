@@ -5480,6 +5480,26 @@ Google Cloud Scheduler and persistent Gateway operations are available with the
 installation-owned connections described below.
 Job and run briefs remain in the right rail. Run storage and artifacts remain local.
 
+An authenticated event trigger has two non-browser routes, both taking only the
+trigger's token as `Authorization: Bearer <trigger-token>`. A sender delivers with
+`POST /api/job-events/trg_<id>`. The token can then read what became of an occurrence
+it created, and nothing else:
+
+```http
+GET /api/job-events/trg_<id>/occurrences/occ_<id>
+Authorization: Bearer <trigger-token>
+```
+
+The answer is the occurrence's `id` and `state`, its run's `state` once it has one, and
+once that run completed, `result.disposition` and `result.handoffTarget`. A token that
+is not the trigger's current one gets 401 `invalid_trigger_token`. An occurrence the
+token did not create gets 404 `occurrence_not_found`, the same answer as one that does
+not exist. Desk passes both refusals through unchanged. Named desks use the same paths
+under `/api/desks/<desk>`. Both routes refuse a browser `Origin`; the read also refuses
+a query, a body, and anything but one token. Desk forwards the read only to the Runner's
+`GET /v1/triggers/{trigger}/occurrences/{occurrence}`, built from the parsed identifiers,
+with its private owner bearer and `X-Trigger-Token`. The token reaches no owner API.
+
 
 Jobs background connections are installed with
 `--runner-connections /absolute/path/to/connections.json`. This host-owned JSON

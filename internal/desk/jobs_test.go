@@ -2,6 +2,7 @@ package desk
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -326,5 +327,137 @@ func TestJobsForwardsPreparationFilter(t *testing.T) {
 	}
 	if got := <-requests; got != "/v1/"+tail+"?after=40&preparations=1" {
 		t.Fatal("preparation filter lost at Desk boundary", got)
+	}
+}
+
+// A trigger token reads one thing through Desk: what became of an occurrence
+// it created. Desk forwards exactly that read, built from the parsed
+// identifiers, and passes the Runner's refusals through unchanged.
+func TestJobEventResultForwardsOnlyTheParsedRead(t *testing.T) {
+	trigger, occurrence := "trg_"+strings.Repeat("a1", 16), "occ_"+strings.Repeat("b2", 16)
+	token := strings.Repeat("c3", 32)
+	answer := `{"id":"` + occurrence + `","state":"submitted","run":{"state":"queued"}}`
+	invalid := `{"error":{"code":"invalid_trigger_token","message":"The event credential is invalid.","retryable":false}}`
+	missing := `{"error":{"code":"occurrence_not_found","message":"No occurrence with this ID was created with this credential.","retryable":false}}`
+	var forwarded []*http.Request
+	companion := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body.Close()
+		forwarded = append(forwarded, r)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Header.Get("X-Trigger-Token") != token:
+			w.WriteHeader(401)
+			w.Write([]byte(invalid))
+		case r.URL.Path != "/v1/triggers/"+trigger+"/occurrences/"+occurrence:
+			w.WriteHeader(404)
+			w.Write([]byte(missing))
+		default:
+			w.Write([]byte(answer))
+		}
+	}))
+	defer companion.Close()
+	s, ts, _ := assistantServer(t)
+	named := createTestDesk(t, ts, "Events")
+	s.desksMu.Lock()
+	child := s.desks[named.ID]
+	s.desksMu.Unlock()
+	fake := func() *jobsCompanion {
+		return &jobsCompanion{url: companion.URL, token: "owner-private", done: make(chan struct{}), stop: make(chan struct{})}
+	}
+	s.jobs, child.jobs = fake(), fake()
+	// Neither fake has a process to stop.
+	t.Cleanup(func() { s.jobs.closed, child.jobs.closed = true, true })
+	read := "/api/job-events/" + trigger + "/occurrences/" + occurrence
+	runnerRead := "/v1/triggers/" + trigger + "/occurrences/" + occurrence
+	call := func(method, target, body string, header http.Header) *httptest.ResponseRecorder {
+		t.Helper()
+		var reader io.Reader
+		if body != "" {
+			reader = strings.NewReader(body)
+		}
+		r := httptest.NewRequest(method, target, reader)
+		r.Header = header
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		return w
+	}
+	bearer := func(value string) http.Header { return http.Header{"Authorization": {"Bearer " + value}} }
+
+	for _, tc := range []struct {
+		name, target string
+		header       http.Header
+		status       int
+		body, runner string
+	}{
+		{"startup desk", read, bearer(token), 200, answer, runnerRead},
+		{"named desk", "/api/desks/" + named.ID + read[len("/api"):], bearer(token), 200, answer, runnerRead},
+		// Escaped identifiers are decided, and forwarded, as the values they parse to.
+		{"escaped identifiers", "/api/job-events/trg_%61" + trigger[5:] + "/occurrences/" + occurrence, bearer(token), 200, answer, runnerRead},
+		{"rotated token", read, bearer(strings.Repeat("d4", 32)), 401, invalid, runnerRead},
+		{"another occurrence", "/api/job-events/" + trigger + "/occurrences/occ_" + strings.Repeat("e5", 16), bearer(token), 404, missing, "/v1/triggers/" + trigger + "/occurrences/occ_" + strings.Repeat("e5", 16)},
+	} {
+		forwarded = nil
+		header := tc.header.Clone()
+		// Nothing else the caller sends travels with the read.
+		header.Set("X-Trigger-Token", strings.Repeat("f6", 32))
+		header.Set("Idempotency-Key", "caller-key")
+		header.Set("Cookie", "session=caller")
+		w := call("GET", tc.target, "", header)
+		if w.Code != tc.status || w.Body.String() != tc.body {
+			t.Fatalf("%s: %d %s", tc.name, w.Code, w.Body)
+		}
+		if len(forwarded) != 1 {
+			t.Fatalf("%s: forwarded %d requests", tc.name, len(forwarded))
+		}
+		got := forwarded[0]
+		if got.Method != "GET" || got.URL.RequestURI() != tc.runner || got.Header.Get("Authorization") != "Bearer owner-private" || got.Header.Get("X-Trigger-Token") != strings.TrimPrefix(tc.header.Get("Authorization"), "Bearer ") || got.Header.Get("Idempotency-Key") != "" || got.Header.Get("Cookie") != "" || got.ContentLength != 0 {
+			t.Fatalf("%s: forwarded %s %s %v", tc.name, got.Method, got.URL.RequestURI(), got.Header)
+		}
+	}
+
+	browser := bearer(token)
+	browser.Set("Origin", "http://localhost:5173")
+	emptyOrigin := bearer(token)
+	emptyOrigin["Origin"] = []string{""}
+	twice := bearer(token)
+	twice.Add("Authorization", "Bearer "+token)
+	session := bearer(token)
+	session.Set("X-Jpack-Desk", named.ID)
+	for _, tc := range []struct {
+		name, method, target, body string
+		header                     http.Header
+	}{
+		{"no credential", "GET", read, "", http.Header{}},
+		{"desk launch secret", "GET", read, "", bearer(testToken)},
+		{"short token", "GET", read, "", bearer(token[1:])},
+		{"token that is not hex", "GET", read, "", bearer(strings.ToUpper(token))},
+		{"another scheme", "GET", read, "", http.Header{"Authorization": {"Basic " + token}}},
+		{"two credentials", "GET", read, "", twice},
+		{"browser origin", "GET", read, "", browser},
+		{"empty origin", "GET", read, "", emptyOrigin},
+		{"desk selector", "GET", read, "", session},
+		{"query", "GET", read + "?after=1", "", bearer(token)},
+		{"body", "GET", read, "{}", bearer(token)},
+		{"delivery method", "POST", read, "{}", bearer(token)},
+		{"head", "HEAD", read, "", bearer(token)},
+		{"preflight", "OPTIONS", read, "", browser},
+		{"short trigger", "GET", "/api/job-events/" + trigger[:35] + "/occurrences/" + occurrence, "", bearer(token)},
+		{"another record kind", "GET", "/api/job-events/job_" + trigger[4:] + "/occurrences/" + occurrence, "", bearer(token)},
+		{"run for occurrence", "GET", "/api/job-events/" + trigger + "/occurrences/run_" + occurrence[4:], "", bearer(token)},
+		{"uppercase occurrence", "GET", "/api/job-events/" + trigger + "/occurrences/" + strings.ToUpper(occurrence), "", bearer(token)},
+		{"escaped separator", "GET", "/api/job-events/" + trigger + "/occurrences/" + occurrence + "%2Fcancel", "", bearer(token)},
+		{"escaped traversal", "GET", "/api/job-events/" + trigger + "/occurrences/..%2F..%2Fjobs", "", bearer(token)},
+		{"extra segment", "GET", read + "/cancel", "", bearer(token)},
+		{"trailing slash", "GET", read + "/", "", bearer(token)},
+		{"listing", "GET", "/api/job-events/" + trigger + "/occurrences", "", bearer(token)},
+		{"dot segment", "GET", "/api/job-events/" + trigger + "/occurrences/" + occurrence + "/../" + occurrence, "", bearer(token)},
+		{"unknown desk", "GET", "/api/desks/" + strings.Repeat("0", 32) + read[len("/api"):], "", bearer(token)},
+		{"named desk origin", "GET", "/api/desks/" + named.ID + read[len("/api"):], "", browser},
+	} {
+		forwarded = nil
+		w := call(tc.method, tc.target, tc.body, tc.header)
+		if len(forwarded) != 0 || w.Code < 300 {
+			t.Fatalf("%s: %d %s, forwarded %d", tc.name, w.Code, w.Body, len(forwarded))
+		}
 	}
 }
