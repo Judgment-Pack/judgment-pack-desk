@@ -21,6 +21,8 @@ machine-held credential to the browser as a model id. See
 [Where the assistant key lives](#where-the-assistant-key-lives).
 
 
+For private vulnerability reports, see the [security policy](SECURITY.md).
+
 ## Releases and updates
 
 **Help & About → Updates** shows release availability and installed-build status.
