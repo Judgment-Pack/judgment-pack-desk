@@ -52,6 +52,11 @@ type Config struct {
 	// It must never come from project configuration or a browser request.
 	RunnerInputProfiles json.RawMessage
 	RunnerConnections   json.RawMessage
+	// RunnerRequireTested is the installation's release policy: the Runner
+	// refuses a new job from a release whose saved tests were not run. Only the
+	// owner's startup flag sets it, never project configuration or a browser
+	// request, and every desk of the installation inherits it.
+	RunnerRequireTested bool
 	// CodexBin is an advanced installation override: empty manages the runtime,
 	// "off" disables it, otherwise an absolute trusted executable path.
 	// It is never read from project configuration or browser requests.

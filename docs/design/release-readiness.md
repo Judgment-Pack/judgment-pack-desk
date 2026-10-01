@@ -51,6 +51,13 @@ Direct API callers can omit the matrix and review a not-run release; Runner does
 claim to discover their project's complete suite. The installation owner is the trust
 boundary in this pilot.
 
+The owner can also refuse not-run releases: Desk's `--runner-require-tested-releases`
+startup flag puts `"requireTestedReleases": true` on every desk's Runner boot line, and
+POST /v1/jobs then answers 409 release_untested for a not-run release, with or without
+a first trigger. Without the flag the boot line omits the field. Create job keeps the
+untested warning and shows that refusal, in the Runner's words, in place of the job.
+No project file or browser request can set or clear it.
+
 ## Validation
 
 Real Runtime integration tests cover passing and failing matrices, advisory gaps,

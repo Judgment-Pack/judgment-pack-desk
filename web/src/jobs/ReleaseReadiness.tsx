@@ -5,7 +5,8 @@ import { CoverageReport } from '../components/CoverageReport'
 import type { Release } from './client'
 import styles from './JobsView.module.css'
 
-export function ReleaseReadiness({ release }: { release: Release }) {
+/** `refusal` is the runner's own answer to creating a job from this release. */
+export function ReleaseReadiness({ release, refusal }: { release: Release; refusal?: string }) {
   useLocale()
   const check = release.testEvidence
   const entry = check?.report?.packs?.[0]
@@ -32,5 +33,6 @@ export function ReleaseReadiness({ release }: { release: Release }) {
         {check.source && <div><dt>{msg('Test suite revision')}</dt><dd>{check.source.suiteRevision}</dd></div>}
       </dl><Disclosure title={msg('Saved expectations (JSON)')}><pre className={styles.json}>{check.matrix}</pre></Disclosure></Disclosure>}
     </>}
+    {refusal && <p className={styles.problem} role="alert">{refusal}</p>}
   </div>
 }

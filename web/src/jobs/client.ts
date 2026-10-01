@@ -14,10 +14,14 @@ export interface Release { inputMapping?: InputMapping | MappingV2; inputProfile
 export interface Job { initialTriggerId?:string; triggers?:{id:string;kind:string;paused:boolean;nextAt?:string}[]; id: string; name: string; releaseId: string; revision: number; createdAt: string; packTitle?: string; packVersion?: string; recentRuns?: Pick<Run, 'id' | 'state' | 'createdAt'>[] }
 export interface Run { trigger?:TriggerOrigin; jobName?: string; id: string; jobId: string; releaseId: string; revision: number; state: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted'; createdAt: string; startedAt?: string; finishedAt?: string; attempt: number; problem?: string; input?: JobInput; result?: Decision; audit?: unknown }
 export interface Page<T> { items: T[]; next: number }
+/** A refusal in the runner's words, with its code for the few refusals Desk shows differently. */
+export class JobsRequestError extends Error {
+  constructor(message: string, readonly status: number, readonly code?: string) { super(message); this.name = 'JobsRequestError' }
+}
 export async function jobsAPI<T>(path: string, body?: unknown, key?: string, signal?: AbortSignal): Promise<T> {
   const response = await deskFetch(`/api/operations/${path}`, body === undefined ? { signal } : { signal, method: 'POST', headers: { 'Content-Type': 'application/json', ...(key ? { 'Idempotency-Key': key } : {}) }, body: jobsRequest(body) })
   const result = await response.json()
-  if (!response.ok) throw new Error(result.error?.message ?? result.message ?? 'The local runner could not complete this request.')
+  if (!response.ok) throw new JobsRequestError(result.error?.message ?? result.message ?? 'The local runner could not complete this request.', response.status, typeof result.error?.code === 'string' ? result.error.code : undefined)
   return result as T
 }
 
