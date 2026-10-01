@@ -291,11 +291,83 @@ class LifecycleTests(unittest.TestCase):
                     dev.prune_launches(launches)
                 self.assertTrue((valuable / dev.LAUNCH_MARKER).exists())
 
+    def test_replacing_a_launch_after_it_is_checked_cannot_redirect_deletion(self):
+        launches, made = self.launches()
+        replacement = self.state / 'replacement'; replacement.mkdir()
+        (replacement / 'valuable').write_text('must survive')
+        original, checked = dev.file_ids, os.stat(made['stopped']).st_ino
+        swapped = []
+        def swap_then_scan(descriptor):
+            # Once the marked launch has been opened and checked, put an
+            # unmarked directory with something valuable at its name.
+            if not swapped and os.fstat(descriptor).st_ino == checked:
+                made['stopped'].rename(launches.parent / 'retired')
+                replacement.rename(made['stopped'])
+                swapped.append(True)
+            return original(descriptor)
+        with patch.object(dev, 'file_ids', side_effect=swap_then_scan):
+            dev.prune_launches(launches)
+        self.assertEqual(swapped, [True])
+        self.assertEqual((made['stopped'] / 'valuable').read_text(), 'must survive')
+        self.assertEqual(list((launches.parent / 'retired').iterdir()), [])
+
+    def test_an_explicit_runtime_inside_an_old_launch_keeps_that_launch(self):
+        launches, made = self.launches()
+        runtime = made['stopped'] / 'jpack'; runtime.write_text('#!/bin/sh\n')
+        dev.prune_launches(launches, keep=[runtime])
+        self.assertTrue(runtime.exists())
+        self.assertFalse(made['.building-crashed'].exists())
+        dev.prune_launches(launches)
+        self.assertFalse(made['stopped'].exists())
+
+    def test_prepare_keeps_an_override_that_lives_in_an_old_launch(self):
+        root, bundle, path_jpack = self.checkout()
+        override = root / 'bin/dev-launches/previous/jpack'
+        override.parent.mkdir(parents=True)
+        override.write_text('#!/bin/sh\n'); override.chmod(0o755)
+        (override.parent / dev.LAUNCH_MARKER).touch()
+        commands, _ = self.prepare(root, bundle, path_jpack, {'JPACK_DESK_JPACK': str(override)})
+        selected = Path(commands[0][1][commands[0][1].index('--jpack') + 1])
+        self.assertEqual(selected, override.resolve())
+        self.assertTrue(selected.exists())
+
     def test_prune_removes_nothing_when_a_process_cannot_be_inspected(self):
         launches, made = self.launches()
         with patch.object(dev, 'executables_in_use', return_value=None):
             dev.prune_launches(launches)
         self.assertTrue(all(directory.exists() for directory in made.values()))
+
+    def test_a_process_vanishing_mid_scan_forces_another_pass(self):
+        proc = self.state / 'proc'
+        live = proc / '10'; (live / 'task/10').mkdir(parents=True)
+        (live / 'stat').write_text('10 (x) S 1 1')
+        executable = self.state / 'executable'; executable.write_text('')
+        (live / 'exe').symlink_to(executable)
+        info = os.stat(executable)
+        gone = proc / '20'  # listed, then gone before it is inspected
+        passes = []
+        class Proc:
+            def __init__(self, vanishing): self.vanishing = vanishing
+            def iterdir(self):
+                passes.append(1)
+                return iter([live] + ([gone] if len(passes) <= self.vanishing else []))
+        self.assertEqual(dev.executables_in_use(Proc(1)), {(info.st_dev, info.st_ino)})
+        self.assertEqual(len(passes), 2)
+        passes.clear()
+        self.assertIsNone(dev.executables_in_use(Proc(99), attempts=3))
+        self.assertEqual(len(passes), 3)
+
+    def test_an_inconclusive_inspection_of_this_users_process_stops_pruning(self):
+        if os.geteuid() == 0:
+            self.skipTest('permissions do not bind root')
+        for unreadable in ('stat', 'task'):
+            with self.subTest(unreadable=unreadable):
+                proc = Path(tempfile.mkdtemp(dir=self.state)) / 'proc'
+                entry = proc / '30'; (entry / 'task/30').mkdir(parents=True)
+                (entry / 'stat').write_text('30 (x) Z 1 1')
+                (entry / unreadable).chmod(0)
+                self.addCleanup((entry / unreadable).chmod, 0o700)
+                self.assertIsNone(dev.executables_in_use(proc))
 
     def test_only_a_plain_zombie_or_another_user_may_hide_its_executable(self):
         proc = self.state / 'proc'

@@ -178,11 +178,14 @@ so nothing done to the cache changes what a running Desk, Gateway or Runner
 executes. The default Runtime and Runner paths are passed explicitly. A start
 removes launch directories it marked as its own that no running process
 executes from, matched by file identity so a rename does not hide one; the
-running session's directory survives a failed rebuild. `bin` and
-`bin/dev-launches` are opened without following links before anything is
-inspected, so replacing either cannot redirect a deletion. Nothing is removed
-when either is a link or when a live process of this user cannot be inspected.
-A process started by hand from an old launch directory while a start runs is not
+running session's directory survives a failed rebuild, and so does an older
+launch holding an explicit `JPACK_DESK_JPACK`. `bin`, `bin/dev-launches` and each
+candidate are opened once without following links, and every check and removal
+goes through those descriptors, so replacing a path cannot redirect a deletion.
+Nothing is removed when `bin` or `bin/dev-launches` is a link, when a live process
+of this user cannot be inspected, or when processes keep disappearing mid-scan
+(one that exits may have handed off to a child the scan did not list). A process
+started by hand from an old launch directory while a start runs is not
 protected, and `bin/dev-launches` holds nothing but launches. Sets in
 `bin/dev-components` are kept, one per lock and recipe, for switching branches;
 an unused one can be deleted at any time.
