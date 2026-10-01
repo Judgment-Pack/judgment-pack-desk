@@ -10,8 +10,8 @@ Runtime and pack. Upgrading Desk does not reinterpret those jobs.
 repository identities, exact commits and channels. Go embeds it; the Gateway
 builder, Jobs compatibility CI and release packager read it. Development pins
 are held rather than replaced with an older published release. A stable Desk
-release refuses development pins. Runner is pinned to its first stable release,
-`v0.2.0`.
+release refuses development pins. Runner is pinned to `v0.3.0`, including calculator profiles, bindings, and
+calculated input lineage.
 
 Gateway is pinned to `v0.8.0` and includes `adapter-render`, required by its
 local source plan. Its Drive connection uses whole-Drive consent and Desk
