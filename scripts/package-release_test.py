@@ -26,4 +26,10 @@ class ReleaseTest(unittest.TestCase):
             self.assertEqual(p.validate_release('1.2.3',self.plan),'a'*40)
         for version in ['v1.2.3','1.2.3-rc.1','main','01.2.3']:
             with self.assertRaisesRegex(ValueError,'stable version'):p.validate_release(version,self.plan)
+    def test_component_tag_must_match_commit(self):
+        component=self.plan['components']['gateway'];sha=component['revision']
+        with patch.object(p,'run'),patch.object(p.subprocess,'check_output',side_effect=[sha,'0'*40]):
+            with self.assertRaisesRegex(ValueError,'tag disagrees'):p.source(component,Path('/unused-test-path'))
+        with patch.object(p,'run'),patch.object(p.subprocess,'check_output',side_effect=[sha,sha]):
+            p.source(component,Path('/unused-test-path'))
 if __name__=='__main__':unittest.main()

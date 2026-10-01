@@ -20,6 +20,17 @@ published = importlib.util.module_from_spec(spec); spec.loader.exec_module(publi
 
 def run(args, cwd=ROOT, **kwargs): return subprocess.run(args, cwd=cwd, check=True, **kwargs)
 
+def source(component, destination):
+    run(['git', 'init', '-q', str(destination)])
+    run(['git', 'fetch', '--depth=1', 'https://github.com/' + component['repository'] + '.git', component['revision']], destination)
+    run(['git', 'checkout', '--detach', 'FETCH_HEAD'], destination)
+    actual = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=destination, text=True).strip()
+    if actual != component['revision']: raise ValueError('Component checkout disagrees with lock')
+    tag = 'refs/tags/' + component['version']
+    run(['git', 'fetch', '--depth=1', 'https://github.com/' + component['repository'] + '.git', tag], destination)
+    tagged = subprocess.check_output(['git', 'rev-parse', 'FETCH_HEAD^{commit}'], cwd=destination, text=True).strip()
+    if tagged != actual: raise ValueError('Component version tag disagrees with locked commit')
+
 def licenses(source_dir, target):
     for file in source_dir.rglob('*'):
         if '.git' not in file.parts and file.is_file() and file.name.upper().startswith(('LICENSE', 'NOTICE', 'COPYING', 'PATENTS', 'THIRD_PARTY_NOTICES')):
