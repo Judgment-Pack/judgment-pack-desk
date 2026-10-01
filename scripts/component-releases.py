@@ -85,8 +85,9 @@ def verify_plan(plan):
 def freshness(plan):
     """Read-only: compare each published pin with its repository's latest stable release.
 
-    A lookup that fails or returns anything but a published stable release is
-    reported as failed, never as current. Development pins are not looked up.
+    A lookup that fails, or returns anything but a release that says it is
+    neither a draft nor a prerelease with a stable tag, is reported as failed,
+    never as current. Development pins are not looked up.
     Only lock values and validated stable tags reach the report.
     """
     rows, attention = [], False
@@ -99,7 +100,7 @@ def freshness(plan):
         except Exception:
             release = None
         latest = release.get('tag_name') if isinstance(release, dict) else None
-        if not isinstance(latest, str) or release.get('draft') or release.get('prerelease') is not False or stable_version(latest) is None:
+        if not isinstance(latest, str) or release.get('draft') is not False or release.get('prerelease') is not False or stable_version(latest) is None:
             rows.append((name, component['version'], 'unknown', 'lookup failed'))
             attention = True
         elif should_update(component, latest):

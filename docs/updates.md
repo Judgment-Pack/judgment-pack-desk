@@ -163,20 +163,25 @@ built. Runtime, Runner and the source worker must carry the locked commit, with 
 local modification, in their Go build stamp; Gateway and adapters are built from
 the locked commit's archive. These builds ignore `go.work` and any `GOFLAGS`
 saved with `go env -w`. Each completed set records its lock, build-recipe
-digests, host platform and file hashes under `bin/dev-components`, and every
-reuse rechecks that record, including the source worker. A matching set works
-offline. A changed lock or recipe, a missing, non-executable or unlisted file, or
+digests, host platform and file hashes under `bin/dev-components`. Every reuse
+rechecks that record and the Go build stamps of Runtime, Runner and the source
+worker. A matching set works offline. The record guards against accidental
+change; it is no defence against someone who can write to the checkout, who
+could as well change the scripts. A changed lock or recipe, a missing, non-executable or unlisted file, or
 a checksum mismatch requires a fresh build into a new directory; if that fails,
 startup stops before the running Desk is stopped. The first start after a lock
 change needs network access, Git and Go, and takes several minutes.
 
-Each start builds Desk into its own `bin/dev-launches` directory beside hard links
-to the verified set, so the files a running Desk, Gateway or Runner selected are
-never rewritten. The default Runtime and Runner paths are passed explicitly. A
-start removes launch directories that no running process executes from; the
-running session's directory survives a failed rebuild. Sets in
-`bin/dev-components` are kept, one per lock and recipe, for switching branches;
-deleting an unused one is safe because launches hold their own links.
+Each start builds Desk into its own `bin/dev-launches` directory beside a copy of
+the verified set. The copy is verified again and shares no file with the cache,
+so nothing done to the cache changes what a running Desk, Gateway or Runner
+executes. The default Runtime and Runner paths are passed explicitly. A start
+removes launch directories it made that no running process executes from; the
+running session's directory survives a failed rebuild. Nothing is pruned when
+`bin` or `bin/dev-launches` is a link, or when a process of this user cannot be
+inspected. Do not run binaries from an old launch directory by hand during a
+start. Sets in `bin/dev-components` are kept, one per lock and recipe, for
+switching branches; an unused one can be deleted at any time.
 
 `JPACK_DESK_JPACK` remains an explicit Runtime override and is reported as outside
 the lock. An inherited `JPACK_DESK_GATEWAY_MANIFEST_SHA256` is cleared so the

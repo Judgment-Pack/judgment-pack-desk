@@ -5,6 +5,11 @@ Runtime, Runner, its source worker, Gateway and adapters are built from fresh
 checkouts of the exact locked commits (each checked against its version tag)
 into a new cache directory; a running installation or a sibling checkout is
 never changed. A verified cache works offline until the lock or recipe changes.
+
+The cache record guards against accidental change: every reuse rechecks file
+hashes and the Go build stamps of Runtime, Runner and the worker. It is not a
+defence against someone who can write to this checkout, who could as well
+change these scripts.
 """
 import hashlib
 import importlib.util
@@ -12,6 +17,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -24,6 +30,8 @@ MANIFEST = 'dev-components.json'
 EXECUTABLES = {'jpack', 'jpack-runner', 'jpack-source-worker', 'gateway',
                'gateway-connections', 'adapter-document', 'adapter-drive',
                'adapter-gmail', 'adapter-sources', 'adapter-web', 'adapter-render'}
+# Executables whose Go build stamp must name their component's locked commit.
+STAMPED = {'jpack': 'runtime', 'jpack-runner': 'runner', 'jpack-source-worker': 'runner'}
 
 
 def digest(path):
@@ -75,8 +83,11 @@ def verify(directory, expected):
             return False
         if any(files.get(name) != checksum for name, checksum in gateway['files'].items()):
             return False
-        return True
-    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        # The record sits beside the files it describes, so it cannot vouch for
+        # them alone; the stamps tie each Go executable to its locked commit.
+        return all(stamp(directory / binary) == (expected['components'][component]['revision'], 'false')
+                   for binary, component in STAMPED.items())
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, subprocess.SubprocessError):
         return False
 
 
@@ -116,7 +127,7 @@ def build(plan, output):
         ):
             subprocess.run(['go', 'build', '-trimpath', '-buildvcs=true', '-ldflags', '-X ' + symbol + '=' + version,
                             '-o', str(output / binary), './cmd/' + binary], cwd=sources[component], env=env, check=True)
-            if stamp(output / binary) != (plan['components'][component]['revision'], 'false'):
+            if stamp(output / binary) != (plan['components'][STAMPED[binary]]['revision'], 'false'):
                 raise RuntimeError('Built companion does not match its locked source: ' + binary)
         for name in ('runtime', 'runner'):
             release.licenses(sources[name], output / (name + '-licenses'))
@@ -146,6 +157,17 @@ def synchronize():
         destination = cache / (key + '-' + Path(temp).name[len('.building-'):])
         output.rename(destination)
     return destination
+
+
+def install(bundle, destination):
+    """Copy a verified set to a new directory and verify the copy.
+
+    A launch shares no file with the cache, so nothing done to the cache later
+    changes what a running Desk executes.
+    """
+    shutil.copytree(bundle, destination)
+    if not verify(destination, identity(release.components.read_plan())):
+        raise RuntimeError('Copied companions failed verification; the running Desk is unchanged.')
 
 
 if __name__ == '__main__':

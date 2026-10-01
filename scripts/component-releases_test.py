@@ -100,7 +100,9 @@ class FreshnessTest(unittest.TestCase):
 
     def test_failed_or_unusable_lookup_never_claims_current(self):
         failures = [None, {}, [], {'tag_name': None, 'prerelease': False}, self.stable('main'),
-                    {'tag_name': 'v1.0.0'}, {'tag_name': 'v2.0.0', 'prerelease': True},
+                    {'tag_name': 'v1.0.0'}, {'tag_name': 'v1.0.0', 'prerelease': False},
+                    {'tag_name': 'v1.0.0', 'draft': None, 'prerelease': False}, {'tag_name': 'v1.0.0', 'draft': 0, 'prerelease': False},
+                    {'tag_name': 'v1.0.0', 'draft': False, 'prerelease': None}, {'tag_name': 'v2.0.0', 'prerelease': True},
                     {'tag_name': 'v2.0.0', 'draft': True, 'prerelease': False},
                     self.stable('v2.0.0 | injected'), self.stable('v2.0.0-rc.1')]
         for release in failures:

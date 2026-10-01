@@ -27,11 +27,17 @@ class CompanionTests(unittest.TestCase):
             item.start(); self.addCleanup(item.stop)
         item = patch.object(c.release.components, 'read_plan', side_effect=lambda: self.plan)
         item.start(); self.addCleanup(item.stop)
+        # A fixture executable names its own stamp: "<name> <revision>".
+        def stamp(binary):
+            name, _, revision = binary.read_text().partition(' ')
+            return (revision, 'false') if name == binary.name else (None, None)
+        item = patch.object(c, 'stamp', side_effect=stamp)
+        item.start(); self.addCleanup(item.stop)
 
     def fixture_build(self, plan, output):
         for name in c.EXECUTABLES:
             file = output / name
-            file.write_text(name + plan['components']['runner']['revision'])
+            file.write_text(name + ' ' + plan['components'][c.STAMPED.get(name, 'gateway')]['revision'])
             file.chmod(0o700)
         gateway = {'revision': plan['components']['gateway']['revision'],
                    'files': {name: c.digest(output / name) for name in ('gateway', 'adapter-document', 'gateway-connections')}}
@@ -105,6 +111,30 @@ class CompanionTests(unittest.TestCase):
         (installed / 'jpack').symlink_to(external)
         self.assertFalse(c.verify(installed, self.identity))
 
+    def test_a_forged_record_cannot_vouch_for_an_unstamped_executable(self):
+        for binary in sorted(c.STAMPED):
+            with self.subTest(binary=binary):
+                installed = self.synchronize()
+                (installed / binary).write_text('a local build')
+                record = json.loads((installed / c.MANIFEST).read_text())
+                record['files'][binary] = c.digest(installed / binary)
+                (installed / c.MANIFEST).write_text(json.dumps(record))
+                self.assertFalse(c.verify(installed, self.identity))
+                self.assertNotEqual(self.synchronize(), installed)
+
+    def test_a_launch_is_a_verified_copy_sharing_no_file_with_the_cache(self):
+        cached = self.synchronize()
+        launch = self.root / 'launch'
+        c.install(cached, launch)
+        self.assertTrue(c.verify(launch, self.identity))
+        self.assertNotEqual((launch / 'jpack').stat().st_ino, (cached / 'jpack').stat().st_ino)
+        before = (launch / 'jpack').read_text()
+        with (cached / 'jpack').open('a') as file:
+            file.write(' changed in place')
+        self.assertEqual((launch / 'jpack').read_text(), before)
+        with self.assertRaisesRegex(RuntimeError, 'failed verification'):
+            c.install(cached, self.root / 'second-launch')
+
     def test_unlisted_files_are_not_copied_into_a_launch(self):
         installed = self.synchronize()
         (installed / 'unexpected').write_text('not verified')
@@ -138,11 +168,13 @@ class BuildTests(unittest.TestCase):
         self.output = Path(self.temp.name) / 'out'
         self.output.mkdir()
         self.plan = copy.deepcopy(c.release.components.read_plan())
-        self.runs, self.sources = [], []
+        self.runs, self.sources, self.checkouts = [], [], {}
 
-    def build(self, stamp):
+    def build(self, stamp, broken=None):
+        """Every binary gets a valid stamp except `broken`, which gets `stamp`'s."""
         def source(component, destination):
             self.sources.append(dict(component))
+            self.checkouts[component['repository']] = destination
             destination.mkdir(parents=True)
         def run(args, **kwargs):
             self.runs.append((args, kwargs))
@@ -150,8 +182,8 @@ class BuildTests(unittest.TestCase):
             if args[:2] == ['go', 'env']:
                 return 'linux\namd64\n'
             binary = Path(args[-1]).name
-            component = 'runtime' if binary == 'jpack' else 'runner'
-            return stamp(self.plan['components'][component]['revision'])
+            revision = self.plan['components'][c.STAMPED[binary]]['revision']
+            return stamp(revision) if broken in (None, binary) else go_version(revision, 'false')
         with patch.object(c.release, 'source', side_effect=source), patch.object(c.release, 'licenses'), \
              patch.object(c.subprocess, 'run', side_effect=run), patch.object(c.subprocess, 'check_output', side_effect=check_output), \
              patch.dict(c.os.environ, {'GOFLAGS': '-overlay=/elsewhere.json', 'GOWORK': '/elsewhere/go.work', 'GOOS': 'windows'}):
@@ -165,11 +197,15 @@ class BuildTests(unittest.TestCase):
             env = kwargs['env']
             self.assertEqual((env['GOFLAGS'], env['GOWORK'], env['CGO_ENABLED'], env['GOOS'], env['GOARCH']),
                              ('-mod=readonly', 'off', '0', 'linux', 'amd64'))
-        self.assertIn('--gateway-only', self.runs[0][0])
-        built = {args[args.index('-o') + 1]: args for args, _ in self.runs[1:]}
-        self.assertEqual(sorted(Path(name).name for name in built), ['jpack', 'jpack-runner', 'jpack-source-worker'])
-        for args in built.values():
+        gateway = self.runs[0][0]
+        self.assertIn('--gateway-only', gateway)
+        self.assertEqual(gateway[gateway.index('--gateway-checkout') + 1], str(self.checkouts[self.plan['components']['gateway']['repository']]))
+        built = {Path(args[args.index('-o') + 1]).name: (args, kwargs) for args, kwargs in self.runs[1:]}
+        self.assertEqual(sorted(built), sorted(c.STAMPED))
+        for binary, (args, kwargs) in built.items():
             self.assertIn('-buildvcs=true', args)
+            self.assertEqual(args[-1], './cmd/' + binary)
+            self.assertEqual(kwargs['cwd'], self.checkouts[self.plan['components'][c.STAMPED[binary]]['repository']])
 
     def test_refuses_a_companion_stamped_with_another_commit_or_local_changes(self):
         for stamp in (lambda revision: go_version('f' * 40, 'false'),
@@ -177,8 +213,10 @@ class BuildTests(unittest.TestCase):
                       lambda revision: go_version(revision + 'f', 'false'),
                       lambda revision: go_version(None, 'false'),
                       lambda revision: go_version(revision, 'false').replace('\tbuild\tvcs.modified', '\tbuild\tvcs.modified.note')):
-            with self.subTest(stamp=stamp), self.assertRaisesRegex(RuntimeError, 'does not match its locked source'):
-                self.build(stamp)
+            for binary in sorted(c.STAMPED):
+                with self.subTest(stamp=stamp, binary=binary), self.assertRaisesRegex(RuntimeError, 'does not match its locked source: ' + binary + '$'):
+                    self.runs.clear()
+                    self.build(stamp, broken=binary)
 
 
 class IdentityTests(unittest.TestCase):

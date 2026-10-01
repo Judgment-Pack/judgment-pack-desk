@@ -160,8 +160,11 @@ class LifecycleTests(unittest.TestCase):
             Path(args[args.index('-o') + 1]).write_text('desk binary')
         inherited = {'PATH': str(path_jpack.parent), 'JPACK_DESK_GATEWAY_MANIFEST_SHA256': 'a' * 64}
         which = lambda name: str(path_jpack) if name == 'jpack' else '/go'
+        # Verification of the copy is dev-components' own test; here it copies.
+        install = lambda source, destination: shutil.copytree(source, destination)
         with patch.object(dev, 'ROOT', root), patch.object(dev, 'node_environment', return_value=('/node', inherited)), \
              patch.object(dev.shutil, 'which', side_effect=which), patch.object(dev.components, 'synchronize', return_value=bundle), \
+             patch.object(dev.components, 'install', side_effect=install), \
              patch.dict(dev.os.environ, environ), patch.object(dev.subprocess, 'run', side_effect=build or compile_desk), \
              contextlib.redirect_stdout(io.StringIO()) as out:
             return dev.prepare(), out.getvalue()
@@ -176,7 +179,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertNotIn(str(path_jpack), backend)
         self.assertEqual(backend[backend.index('--runner') + 1], str(installed / 'jpack-runner'))
         self.assertEqual((installed / 'jpack-source-worker').read_text(), 'verified companion')
-        self.assertEqual((installed / 'jpack').stat().st_ino, (bundle / 'jpack').stat().st_ino)
+        self.assertNotEqual((installed / 'jpack').stat().st_ino, (bundle / 'jpack').stat().st_ino)
         self.assertFalse((bundle / 'jpack-desk').exists())
         self.assertNotIn('JPACK_DESK_GATEWAY_MANIFEST_SHA256', commands[0][3])
         self.assertEqual(commands[0][3]['JPACK_DESK_LOCAL_ACCESS'], '1')
@@ -204,28 +207,73 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(sorted(path.name for path in bundle.iterdir()), ['gateway-bundle.json', 'jpack', 'jpack-runner', 'jpack-source-worker'])
         self.assertEqual((bundle / 'jpack').read_text(), 'verified companion')
 
+    def launches(self):
+        launches = self.state / 'bin/dev-launches'
+        made = {}
+        for name in ('running', 'stopped', '.building-crashed'):
+            made[name] = launches / name
+            made[name].mkdir(parents=True)
+            if not name.startswith('.'):
+                (made[name] / dev.components.MANIFEST).write_text('{}')
+        made['foreign'] = launches / 'foreign'
+        made['foreign'].mkdir()
+        (made['foreign'] / 'keep').write_text('not made by the launcher')
+        return launches, made
+
     def test_prune_removes_only_launches_no_process_executes_from(self):
-        launches = self.state / 'launches'
-        running, stopped, stale = launches / 'running', launches / 'stopped', launches / '.building-crashed'
-        for directory in (running, stopped, stale):
-            directory.mkdir(parents=True)
-            (directory / 'jpack').write_text('companion')
-        outside = self.state / 'outside'; outside.mkdir(); (outside / 'keep').write_text('not a launch')
+        launches, made = self.launches()
+        outside = self.state / 'outside'; outside.mkdir(); (outside / dev.components.MANIFEST).write_text('{}')
         (launches / 'linked').symlink_to(outside)
-        shutil.copy2(shutil.which('sleep'), running / 'sleep')
-        child = subprocess.Popen([str(running / 'sleep'), '30'])
+        shutil.copy2(shutil.which('sleep'), made['running'] / 'sleep')
+        child = subprocess.Popen([str(made['running'] / 'sleep'), '30'])
         self.children.append(child)
         deadline = time.monotonic() + 5
-        while running.resolve() not in dev.executable_directories() and time.monotonic() < deadline:
+        while made['running'].resolve() not in (dev.executable_directories() or ()) and time.monotonic() < deadline:
             time.sleep(0.02)
         dev.prune_launches(launches)
-        self.assertTrue((running / 'jpack').exists())
-        self.assertFalse(stopped.exists())
-        self.assertFalse(stale.exists())
-        self.assertTrue((outside / 'keep').exists())
+        self.assertTrue((made['running'] / 'sleep').exists())
+        self.assertFalse(made['stopped'].exists())
+        self.assertFalse(made['.building-crashed'].exists())
+        self.assertTrue((made['foreign'] / 'keep').exists())
+        self.assertTrue((outside / dev.components.MANIFEST).exists())
         child.kill(); child.wait()
         dev.prune_launches(launches)
-        self.assertFalse(running.exists())
+        self.assertFalse(made['running'].exists())
+
+    def test_prune_never_follows_a_linked_launch_root(self):
+        for linked in ('bin', 'bin/dev-launches'):
+            with self.subTest(linked=linked):
+                target = Path(tempfile.mkdtemp(dir=self.state))
+                elsewhere = target / 'dev-launches/valuable' if linked == 'bin' else target / 'valuable'
+                elsewhere.mkdir(parents=True)
+                (elsewhere / dev.components.MANIFEST).write_text('{}')
+                root = Path(tempfile.mkdtemp(dir=self.state))
+                if linked == 'bin':
+                    (root / 'bin').symlink_to(target)
+                else:
+                    (root / 'bin').mkdir(); (root / 'bin/dev-launches').symlink_to(target)
+                with contextlib.redirect_stdout(io.StringIO()):
+                    dev.prune_launches(root / 'bin/dev-launches')
+                self.assertTrue((elsewhere / dev.components.MANIFEST).exists())
+
+    def test_prune_removes_nothing_when_a_process_cannot_be_inspected(self):
+        launches, made = self.launches()
+        with patch.object(dev, 'executable_directories', return_value=None):
+            dev.prune_launches(launches)
+        self.assertTrue(all(directory.exists() for directory in made.values()))
+
+    def test_an_uninspectable_process_of_this_user_stops_pruning(self):
+        entries = [Path('/proc/1'), Path('/proc/2')]
+        def readlink(path):
+            raise PermissionError(13, 'denied') if str(path).startswith('/proc/2') else FileNotFoundError(2, 'gone')
+        stat = unittest.mock.MagicMock(st_uid=dev.os.getuid())
+        with patch.object(dev.Path, 'iterdir', return_value=iter(entries)), patch.object(dev.os, 'readlink', side_effect=readlink), \
+             patch.object(dev.Path, 'stat', return_value=stat):
+            self.assertIsNone(dev.executable_directories())
+        other = unittest.mock.MagicMock(st_uid=dev.os.getuid() + 1)
+        with patch.object(dev.Path, 'iterdir', return_value=iter(entries)), patch.object(dev.os, 'readlink', side_effect=readlink), \
+             patch.object(dev.Path, 'stat', return_value=other):
+            self.assertEqual(dev.executable_directories(), set())
 
     def test_status_names_the_launched_set_and_a_changed_lock(self):
         pins = {name: {'version': 'v1.0.0', 'revision': name[0] * 40} for name in ('runtime', 'runner', 'gateway')}

@@ -131,25 +131,45 @@ def node_environment():
 
 
 def executable_directories():
-    """Directories holding the executable of every process this user can inspect."""
+    """Directories holding the executable of every running process, or None
+    when a process of this user cannot be inspected."""
     directories = set()
     for entry in Path('/proc').iterdir():
-        if entry.name.isdigit():
+        if not entry.name.isdigit():
+            continue
+        try:
+            directories.add(Path(os.readlink(entry / 'exe')).parent)
+        except FileNotFoundError:
+            continue  # exited, a zombie, or a kernel thread
+        except OSError:
             try:
-                directories.add(Path(os.readlink(entry / 'exe')).parent)
+                if entry.stat().st_uid == os.getuid():
+                    return None
             except OSError:
                 continue
     return directories
 
 
 def prune_launches(launches):
-    # Every start gets a new launch directory, so old ones would accumulate a
-    # Desk binary per restart. Only a directory that no inspectable process is
-    # executing from is removed: the running session's directory survives a
-    # failed rebuild. Companions there are links; the verified cache keeps its own.
+    """Remove launch directories this launcher made that nothing executes from.
+
+    Every start gets a new launch directory, so old ones would accumulate a copy
+    of the companions per restart. The running session's directory survives a
+    failed rebuild. Nothing is followed through a link, nothing this launcher
+    did not create is touched, and if any process of this user cannot be
+    inspected nothing is removed. Do not run binaries from an old launch
+    directory by hand while a start is in progress.
+    """
+    if launches.parent.is_symlink() or launches.is_symlink():
+        print('Launch directories are not pruned: bin or bin/dev-launches is a link.', flush=True)
+        return
     in_use = executable_directories()
+    if in_use is None:
+        return
     for directory in launches.iterdir():
         if directory.is_symlink() or not directory.is_dir():
+            continue
+        if not directory.name.startswith('.building-') and not (directory / components.MANIFEST).is_file():
             continue
         resolved = directory.resolve()
         if any(path == resolved or resolved in path.parents for path in in_use):
@@ -178,9 +198,9 @@ def prepare():
     prune_launches(launches)
     with tempfile.TemporaryDirectory(prefix='.building-', dir=launches) as temp:
         staged = Path(temp) / 'bundle'
-        # Companions stay beside Desk. Hard links avoid copying large binaries;
-        # no verified bundle file is ever modified by this launcher.
-        shutil.copytree(bundle, staged, copy_function=os.link)
+        # Companions stay beside Desk, as a verified copy that shares no file
+        # with the cache.
+        components.install(bundle, staged)
         subprocess.run([go, 'build', '-trimpath', '-o', str(staged / 'jpack-desk'), '.'], cwd=ROOT, check=True)
         installed = launches / Path(temp).name[len('.building-'):]
         staged.rename(installed)
