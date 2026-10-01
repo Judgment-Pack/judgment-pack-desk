@@ -2,8 +2,11 @@ package desk
 
 import (
 	"debug/buildinfo"
+	"errors"
+	"os"
 	"path/filepath"
 	"runtime/debug"
+	"syscall"
 )
 
 // BuildIdentity contains only public compiler metadata, never build flags or
@@ -41,8 +44,20 @@ func buildIdentity(info *debug.BuildInfo) BuildIdentity {
 	return identity
 }
 
-// readBuildInfo reads compiler metadata without executing the file.
-var readBuildInfo = buildinfo.ReadFile
+// readBuildInfo reads compiler metadata without executing the file. It opens
+// without blocking and reads only a regular file, so a FIFO or device in a
+// companion's place has no identity rather than stalling startup.
+var readBuildInfo = func(path string) (*debug.BuildInfo, error) {
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	if info, err := file.Stat(); err != nil || !info.Mode().IsRegular() {
+		return nil, errors.New("not a regular file")
+	}
+	return buildinfo.Read(file)
+}
 
 // Read installed companions once at startup, without executing them or reading
 // source checkouts. These describe the binaries selected by this installation.

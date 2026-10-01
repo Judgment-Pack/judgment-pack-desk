@@ -311,15 +311,21 @@ func (g *localGateway) start(store *assistantStore) (*localGatewayPin, error) {
 // Without an operator digest approval, verifyGatewayBundle admitted it only for
 // this Desk's locked revision; with one, the revision is the manifest's own claim.
 func launchedGatewayBuild(bundle string) (gatewayBuild, error) {
-	var build gatewayBuild
 	manifest, err := os.Open(filepath.Join(bundle, "gateway-bundle.json"))
 	if err != nil {
-		return build, err
+		return gatewayBuild{}, err
 	}
 	defer manifest.Close()
-	if err := json.NewDecoder(io.LimitReader(manifest, 8192)).Decode(&build); err != nil {
-		return build, err
+	// Only the manifest's own fields are read; whether it was checked is
+	// decided here, never by the manifest.
+	var recorded struct {
+		Version  string `json:"version"`
+		Revision string `json:"revision"`
 	}
+	if err := json.NewDecoder(io.LimitReader(manifest, 8192)).Decode(&recorded); err != nil {
+		return gatewayBuild{}, err
+	}
+	build := gatewayBuild{Version: recorded.Version, Revision: recorded.Revision}
 	_, build.Unverified = os.LookupEnv("JPACK_DESK_GATEWAY_MANIFEST_SHA256")
 	return build, nil
 }

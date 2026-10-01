@@ -1352,6 +1352,7 @@
   "Mark reviewed": "Mark reviewed",
   "Match limits to the gateway and document adapter. Canceling in Desk does not stop gateway work already in progress.": "Alignez les limites sur la passerelle et l’adaptateur de documents. Annuler dans Desk n’arrête pas le travail déjà lancé sur la passerelle.",
   "Match these limits to the gateway and document adapter. Allow time for extraction; canceling in Desk does not stop gateway work already in progress.": "Alignez ces limites sur la passerelle et l’adaptateur de documents. Prévoyez le temps d’extraction ; annuler dans Desk n’arrête pas le travail déjà lancé sur la passerelle.",
+  "Matches pinned commit": "Correspond au commit épinglé",
   "Matches release": "Conforme à la version",
   "Matching items": "Matching items",
   "Matrix digest": "Empreinte de la matrice",

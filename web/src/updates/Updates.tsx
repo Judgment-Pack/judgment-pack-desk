@@ -66,14 +66,19 @@ export function Updates({builds, gateway}: {builds?: ComponentBuilds; gateway?: 
       {rows.some(row=>row.match==='different') && <p role="alert">{msg('Some components differ from this Desk build. Restart using the development launcher or reinstall the complete release bundle.')}</p>}
       {rows.length>0 && <details className="disclosure">
         <summary>{msg('Component versions')}</summary>
+        <p className="quiet">{msg('Build information recorded when Desk started. Development builds are identified by their source commit.')}</p>
         <div className={styles.components}><table>
           <thead><tr><th scope="col">{msg('Component')}</th><th scope="col">{msg('Installed version')}</th><th scope="col">{msg('Expected')}</th><th scope="col">{msg('Status')}</th></tr></thead>
-          <tbody>{rows.map(row=><tr key={row.label}>
-            <th scope="row">{row.label}</th>
-            <td><code>{row.match==='matching' ? row.expected.version : row.build?.revision?.slice(0,12) || msg('Unknown')}</code></td>
-            <td><code>{row.expected.version}</code></td>
-            <td>{row.match==='matching' ? msg('Matches release') : row.match==='different' ? msg('Different build') : msg('Unknown')}</td>
-          </tr>)}</tbody>
+          <tbody>{rows.map(row=>{
+            // A development pin names a commit, not a published release.
+            const release = row.expected.channel !== 'development'
+            return <tr key={row.label}>
+              <th scope="row">{row.label}</th>
+              <td><code>{row.match==='matching' && release ? row.expected.version : row.build?.revision?.slice(0,12) || msg('Unknown')}</code></td>
+              <td><code>{row.expected.version}</code></td>
+              <td>{row.match==='matching' ? (release ? msg('Matches release') : msg('Matches pinned commit')) : row.match==='different' ? msg('Different build') : msg('Unknown')}</td>
+            </tr>
+          })}</tbody>
         </table></div>
       </details>}
       {data.development && <p className="quiet">{msg('Local changes are preserved. Updates apply only to managed installations.')}</p>}

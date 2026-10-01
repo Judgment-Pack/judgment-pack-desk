@@ -202,7 +202,8 @@ func TestLocalGatewayStatusKeepsLaunchedBuildIdentity(t *testing.T) {
 
 func TestDigestApprovedGatewayRevisionIsNotReportedAsChecked(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "gateway-bundle.json"), []byte(`{"version":"v0.8.0","revision":"`+GatewayRevision+`","unverified":false,"files":{}}`), 0600)
+	// A manifest field of the same name neither sets the flag nor breaks decoding.
+	os.WriteFile(filepath.Join(dir, "gateway-bundle.json"), []byte(`{"version":"v0.8.0","revision":"`+GatewayRevision+`","unverified":"extension","files":{}}`), 0600)
 	build, err := launchedGatewayBuild(dir)
 	if err != nil || build.Unverified || build.Revision != GatewayRevision || build.Version != "v0.8.0" {
 		t.Fatalf("revision-admitted bundle: %+v, %v", build, err)

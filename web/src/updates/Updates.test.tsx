@@ -112,6 +112,19 @@ it('omits Runner rows when Desk reports Runner as not configured',async()=>{
  expect(within(row('Runner')).getAllByText('Unknown')).toHaveLength(2)
 })
 
+it('calls a development pin a pinned commit, never a release, and says when identities were recorded',async()=>{
+ io.fetch.mockResolvedValue({development:true,managed:false,installedVersion:'development',components:{...lock,runner:{version:'v0.3.0-dev+bbbbbbb',revision:'b'.repeat(40),channel:'development'}}})
+ render(<QueryClientProvider client={testQueryClient()}><Updates builds={running}/></QueryClientProvider>)
+ await screen.findByText('Component versions')
+ expect(screen.getByText(/Build information recorded when Desk started/)).toBeTruthy()
+ for(const label of ['Runner','Source worker']){
+  expect(within(row(label)).getByText('Matches pinned commit')).toBeTruthy()
+  expect(within(row(label)).queryByText('Matches release')).toBeNull()
+  expect(within(row(label)).getByText('b'.repeat(12))).toBeTruthy()
+ }
+ expect(within(row('Runtime')).getByText('Matches release')).toBeTruthy()
+})
+
 it('shows no comparison when the chassis does not report its lock',async()=>{
  io.fetch.mockResolvedValue({development:true,managed:false,installedVersion:'development'})
  render(<QueryClientProvider client={testQueryClient()}><Updates builds={running}/></QueryClientProvider>)

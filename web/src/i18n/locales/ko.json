@@ -1350,6 +1350,7 @@
   "Mark reviewed": "Mark reviewed",
   "Match limits to the gateway and document adapter. Canceling in Desk does not stop gateway work already in progress.": "게이트웨이 및 문서 어댑터와 한도를 맞추세요. Desk에서 취소해도 진행 중인 게이트웨이 작업은 중단되지 않습니다.",
   "Match these limits to the gateway and document adapter. Allow time for extraction; canceling in Desk does not stop gateway work already in progress.": "게이트웨이 및 문서 어댑터와 한도를 맞추세요. 추출 시간을 충분히 확보하세요. Desk에서 취소해도 이미 진행 중인 게이트웨이 작업은 중단되지 않습니다.",
+  "Matches pinned commit": "고정된 커밋과 일치",
   "Matches release": "릴리스와 일치",
   "Matching items": "Matching items",
   "Matrix digest": "매트릭스 다이제스트",

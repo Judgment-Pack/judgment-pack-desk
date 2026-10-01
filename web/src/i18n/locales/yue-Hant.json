@@ -1350,6 +1350,7 @@
   "Mark reviewed": "Mark reviewed",
   "Match limits to the gateway and document adapter. Canceling in Desk does not stop gateway work already in progress.": "請將限制同閘道及文件介接器配合。喺 Desk 取消唔會停止已經開始嘅閘道工作。",
   "Match these limits to the gateway and document adapter. Allow time for extraction; canceling in Desk does not stop gateway work already in progress.": "請將呢啲限制同閘道及文件介接器配合，並預留擷取時間。喺 Desk 取消唔會停止已經開始嘅閘道工作。",
+  "Matches pinned commit": "同固定嘅提交一致",
   "Matches release": "同發行版本一致",
   "Matching items": "Matching items",
   "Matrix digest": "矩陣摘要",
