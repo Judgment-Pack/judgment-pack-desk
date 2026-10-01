@@ -1,4 +1,4 @@
-import hashlib
+import gzip
 import importlib.util
 import io
 import json
@@ -15,11 +15,14 @@ PLAN = json.loads((Path(__file__).resolve().parents[1] / 'internal/releaseplan/c
 
 
 def archive(path, entries):
-    with tarfile.open(path, 'w:gz') as stream:
-        for name, data in entries:
-            info = tarfile.TarInfo(name) if isinstance(name, str) else name
-            info.size = len(data)
-            stream.addfile(info, io.BytesIO(data))
+    # Two downloads of one published asset return the same bytes, even when
+    # the test crosses a wall-clock second or uses different temporary paths.
+    with path.open('wb') as output, gzip.GzipFile(fileobj=output, filename='', mode='wb', mtime=0) as compressed:
+        with tarfile.open(fileobj=compressed, mode='w') as stream:
+            for name, data in entries:
+                info = tarfile.TarInfo(name) if isinstance(name, str) else name
+                info.size = len(data)
+                stream.addfile(info, io.BytesIO(data))
 
 
 class PublishedComponentsTest(unittest.TestCase):
@@ -54,7 +57,8 @@ class PublishedComponentsTest(unittest.TestCase):
         for platform in ('linux/amd64', 'darwin/amd64', 'darwin/arm64'):
             with self.subTest(platform=platform), patch.object(p, 'run', side_effect=self.command):
                 bundle = self.root / platform / 'bundle'; bundle.mkdir(parents=True)
-                p.install(PLAN, platform, bundle, self.root / platform / 'downloads')
+                with patch('gzip.time.time', return_value=1000):
+                    p.install(PLAN, platform, bundle, self.root / platform / 'downloads')
                 for name in p.PROGRAMS:
                     for file in p.PROGRAMS[name]:
                         self.assertEqual((bundle / file).read_bytes(), ('published ' + file).encode())
@@ -65,7 +69,8 @@ class PublishedComponentsTest(unittest.TestCase):
                 self.assertEqual(set(manifest['files']), set(p.PROGRAMS['gateway']))
                 for file, digest in manifest['files'].items():
                     self.assertEqual(digest, p.digest(bundle / file))
-                p.verify_bundle(PLAN, platform, bundle, self.root / platform / 'checked')
+                with patch('gzip.time.time', return_value=1001):
+                    p.verify_bundle(PLAN, platform, bundle, self.root / platform / 'checked')
         for name, pin in PLAN['components'].items():
             verified = [call for call in self.calls if call[:3] == ['gh', 'attestation', 'verify'] and pin['repository'] in call]
             self.assertEqual(len(verified), 6)
