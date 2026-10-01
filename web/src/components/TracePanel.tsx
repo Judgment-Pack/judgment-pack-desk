@@ -99,6 +99,7 @@ export function TracePanel({
 
 function TraceRow({ entry }: { entry: TraceEntry }) {
   useLocale()
+  const FindingsWrapper = entry.typeMismatches?.length || entry.unknownCauses?.length ? 'div' : 'span'
   return (
     <li className={entry.skipped ? 'trace-entry trace-entry-skipped' : 'trace-entry'}>
       <span
@@ -106,14 +107,14 @@ function TraceRow({ entry }: { entry: TraceEntry }) {
       >
         {valueLabel('condition', entry.condition)}
       </span>
-      <div className="trace-id">
+      <FindingsWrapper className="trace-id">
         {entry.id ? (
           <code className="id">{entry.id}</code>
         ) : (
           <em className="quiet"><Message text={"unnamed <0/> condition"} slots={[entry.stage]} /></em>
         )}
         <ConditionFindings entry={entry} />
-      </div>
+      </FindingsWrapper>
       <span className="trace-badges">
         {entry.effect && <Pill>{valueLabel('effect', entry.effect)}</Pill>}
         {entry.outcome && <Pill tone="strong">→ {entry.outcome}</Pill>}
