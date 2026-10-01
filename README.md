@@ -3407,6 +3407,11 @@ change nobody made.
 
 ## Production mode
 
+Published Desk bundles carry the exact published Runtime, Runner, Gateway and
+adapter binaries for their platform. See [release verification](docs/release-verification.md)
+for provenance checks and replaying records with the matching Runtime digest.
+
+
 One binary with the SPA embedded:
 
 ```sh

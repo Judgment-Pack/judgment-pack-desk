@@ -12,6 +12,9 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('desk_updater', ROOT / 'scripts/desk-update.py')
 updater = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(updater)
+spec = importlib.util.spec_from_file_location('published', ROOT / 'scripts/published-components.py')
+published = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(published)
 
 
 def main():
@@ -48,6 +51,8 @@ def main():
         for name, component in plan['components'].items():
             if manifest.get(name) != component:
                 raise ValueError('Archive component disagrees with the release lock: ' + name)
+        with tempfile.TemporaryDirectory(prefix='desk-components-check-') as downloaded:
+            published.verify_bundle(plan, platform_name, bundle, Path(downloaded))
         commands = [
             ('jpack', '--version', 'jpack ' + plan['components']['runtime']['version'].lstrip('v')),
             ('gateway', 'version', 'gateway ' + plan['components']['gateway']['version']),
