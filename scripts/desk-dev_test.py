@@ -226,13 +226,23 @@ class LifecycleTests(unittest.TestCase):
         return launches, made
 
     def run_from(self, directory):
+        """Start a real process from `directory`, and limit what pruning sees to
+        it: the host's own process table is not this test's subject."""
         shutil.copy2(shutil.which('sleep'), directory / 'sleep')
         child = subprocess.Popen([str(directory / 'sleep'), '30'])
         self.children.append(child)
-        deadline = time.monotonic() + 5
+        proc = Path(tempfile.mkdtemp(dir=self.state)) / 'proc'
+        proc.mkdir()
+        self.entry = proc / str(child.pid)
+        self.entry.symlink_to('/proc/' + str(child.pid))
         target = os.stat(directory / 'sleep')
-        while (target.st_dev, target.st_ino) not in (dev.executables_in_use() or ()) and time.monotonic() < deadline:
+        deadline = time.monotonic() + 5
+        while (target.st_dev, target.st_ino) not in (dev.executables_in_use(proc) or ()) and time.monotonic() < deadline:
             time.sleep(0.02)
+        scan = dev.executables_in_use
+        self.scan = patch.object(dev, 'executables_in_use', side_effect=lambda **kwargs: scan(proc, **kwargs))
+        self.scan.start()
+        self.addCleanup(self.scan.stop)
         return child
 
     def test_prune_removes_only_marked_launches_no_process_executes_from(self):
@@ -247,6 +257,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertTrue(made['foreign'].exists() and made['.building-foreign'].exists())
         self.assertTrue((outside / dev.LAUNCH_MARKER).exists() and (launches / 'linked').is_symlink())
         child.kill(); child.wait()
+        self.entry.unlink()  # as the kernel's own entry goes once the child is reaped
         dev.prune_launches(launches)
         self.assertFalse(made['running'].exists())
 
@@ -283,9 +294,9 @@ class LifecycleTests(unittest.TestCase):
                 valuable = (outside / 'dev-launches/stopped') if swapped == 'bin' else (outside / 'stopped')
                 valuable.mkdir(parents=True)
                 (valuable / dev.LAUNCH_MARKER).touch()
-                def swap_then_scan():
+                def swap_then_scan(**kwargs):
                     (root / swapped).rename(root / (swapped + '-moved'))
-                    (root / swapped).symlink_to(outside if swapped == 'bin' else outside)
+                    (root / swapped).symlink_to(outside)
                     return set()
                 with patch.object(dev, 'executables_in_use', side_effect=swap_then_scan):
                     dev.prune_launches(launches)
@@ -333,9 +344,42 @@ class LifecycleTests(unittest.TestCase):
 
     def test_prune_removes_nothing_when_a_process_cannot_be_inspected(self):
         launches, made = self.launches()
-        with patch.object(dev, 'executables_in_use', return_value=None):
+        with patch.object(dev, 'executables_in_use', return_value=None), contextlib.redirect_stdout(io.StringIO()) as out:
             dev.prune_launches(launches)
+        self.assertIn('Older launch directories were kept', out.getvalue())
         self.assertTrue(all(directory.exists() for directory in made.values()))
+
+    def test_the_host_scan_finds_a_real_process_or_names_what_blocks_it(self):
+        directory = self.state / 'host'; directory.mkdir()
+        shutil.copy2(shutil.which('sleep'), directory / 'sleep')
+        child = subprocess.Popen([str(directory / 'sleep'), '30'])
+        self.children.append(child)
+        target = os.stat(directory / 'sleep')
+        blocked = []
+        found = dev.executables_in_use(blocked=blocked)
+        if found is None:
+            reason = dev.blocking(blocked)
+            print('host process scan inconclusive: ' + reason, file=sys.stderr)
+            self.assertIn('could not be inspected', reason) if blocked else None
+            self.skipTest(reason)
+        deadline = time.monotonic() + 5
+        while (target.st_dev, target.st_ino) not in found and time.monotonic() < deadline:
+            time.sleep(0.02)
+            found = dev.executables_in_use() or found
+        self.assertIn((target.st_dev, target.st_ino), found)
+
+    def test_a_kept_launch_says_which_process_blocked_pruning(self):
+        launches, made = self.launches()
+        entry = self.state / 'proc/4242'; entry.mkdir(parents=True)
+        (entry / 'comm').write_text('keyring-daemon\n')
+        def blocked(blocked=None, **kwargs):
+            blocked.append(entry)
+            return None
+        out = io.StringIO()
+        with patch.object(dev, 'executables_in_use', side_effect=blocked), contextlib.redirect_stdout(out):
+            dev.prune_launches(launches)
+        self.assertIn('process 4242 (keyring-daemon) could not be inspected', out.getvalue())
+        self.assertTrue(made['stopped'].exists())
 
     def test_a_process_vanishing_mid_scan_forces_another_pass(self):
         proc = self.state / 'proc'

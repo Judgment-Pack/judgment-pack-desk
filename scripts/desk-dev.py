@@ -137,58 +137,81 @@ LAUNCH_MARKER = '.desk-dev-launch'
 DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 
 
-def scan_executables(proc, uid):
-    """One pass over `proc`: (found, vanished), or None when a live process of
-    this user cannot be inspected."""
-    found, vanished = set(), False
+def scan_executables(proc, uid, blocked):
+    """One pass over `proc`: (found, settled).
+
+    Not settled when a listed process disappeared before it was inspected (it
+    may have handed off to a child this pass did not list), or when a live
+    process of this user could not be inspected; that entry is added to
+    `blocked`. A process in the middle of exiting looks like the latter for a
+    moment, so the caller tries again.
+    """
+    found, settled = set(), True
     for entry in [entry for entry in proc.iterdir() if entry.name.isdigit()]:
         try:
             executable = os.stat(entry / 'exe')
             found.add((executable.st_dev, executable.st_ino))
             continue
         except OSError:
-            pass  # gone, a zombie, a kernel thread, another user's, or a dead leader
+            pass  # gone, a zombie, a kernel thread, another user's, exiting, or a dead leader
         try:
             owner = entry.stat().st_uid
         except FileNotFoundError:
-            vanished = True
+            settled = False
             continue
         except OSError:
-            return None
+            blocked.append(entry)
+            settled = False
+            continue
         if owner != uid:
             continue
         try:
             state = (entry / 'stat').read_text().rsplit(')', 1)[1].split()[0]
             threads = len(os.listdir(entry / 'task'))
         except FileNotFoundError:
-            vanished = True
+            settled = False
             continue
         except (OSError, IndexError):
-            return None
+            blocked.append(entry)
+            settled = False
+            continue
         if state != 'Z' or threads > 1:
-            return None
-    return found, vanished
+            blocked.append(entry)
+            settled = False
+    return found, settled
 
 
-def executables_in_use(proc=Path('/proc'), uid=None, attempts=5):
-    """(device, inode) of every running process's executable, or None when a
-    live process of this user cannot be inspected.
+def executables_in_use(proc=Path('/proc'), uid=None, attempts=5, blocked=None):
+    """(device, inode) of every running process's executable, or None when the
+    scan does not settle.
 
     Identity by inode survives renames and links. A process of this user whose
-    executable cannot be read stops pruning unless it is a plain zombie: a
-    leader that exited while other threads run is still live. A process that
-    disappears during a pass may have handed off to a child the pass did not
-    list, so that pass is repeated; after `attempts` unsettled passes, None.
+    executable cannot be read keeps the scan unsettled unless it is a plain
+    zombie: a leader that exited while other threads run is still live. After
+    `attempts` unsettled passes, a short pause apart, the answer is None, and
+    `blocked` names what could not be inspected in the last pass.
     """
     uid = os.getuid() if uid is None else uid
-    for _ in range(attempts):
-        scanned = scan_executables(proc, uid)
-        if scanned is None:
-            return None
-        found, vanished = scanned
-        if not vanished:
+    blocked = [] if blocked is None else blocked
+    for attempt in range(attempts):
+        if attempt:
+            time.sleep(0.05)
+        del blocked[:]
+        found, settled = scan_executables(proc, uid, blocked)
+        if settled:
             return found
     return None
+
+
+def blocking(blocked):
+    """Names the process that stopped pruning, from its world-readable name."""
+    if not blocked:
+        return 'running processes kept changing during the check'
+    try:
+        name = (blocked[-1] / 'comm').read_text().strip()
+    except OSError:
+        name = 'unknown'
+    return 'process ' + blocked[-1].name + ' (' + name + ') could not be inspected'
 
 
 def file_ids(descriptor):
@@ -246,8 +269,10 @@ def prune_launches(launches, keep=()):
             print('Launch directories are not pruned: bin/dev-launches is a link or unreadable.', flush=True)
             return
         try:
-            in_use = executables_in_use()
+            blocked = []
+            in_use = executables_in_use(blocked=blocked)
             if in_use is None:
+                print('Older launch directories were kept: ' + blocking(blocked) + '. Remove unused ones under bin/dev-launches while Desk is stopped.', flush=True)
                 return
             for path in keep:
                 try:
