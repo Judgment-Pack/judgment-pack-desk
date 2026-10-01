@@ -19,7 +19,7 @@ const FIELDS: Record<string, string> = {
   id: 'ID', get title() { return msg("Title") }, get label() { return msg("Label") }, get description() { return msg("Description") }, get version() { return msg("Pack version") },
   get decision() { return msg("Decision") }, get question() { return msg("Decision question") }, get intent() { return msg("Purpose") }, get when() { return msg("Condition") },
   get outcome() { return msg("Outcome") }, get effect() { return msg("Effect") }, get targetRule() { return msg("Rule to exclude") }, get rationale() { return msg("Reasoning") },
-  get evidenceRequirementRefs() { return msg("Evidence references") }, get sourceRefs() { return msg("Source references") },
+  get evidenceRequirementRefs() { return msg("Cites evidence requirements") }, get sourceRefs() { return msg("Source references") },
   get evidenceRequirement() { return msg("Evidence item") }, get required() { return msg("Required") }, get kind() { return msg("Type") },
   get path() { return msg("Fact path") }, get operator() { return msg("Comparison") }, get value() { return msg("Value") }, get triggers() { return msg("Handoff triggers") },
   get target() { return msg("Recipient") }, get name() { return msg("Name") }, get message() { return msg("Handoff message") }, get locator() { return msg("Location") },

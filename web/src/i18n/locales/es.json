@@ -3503,5 +3503,8 @@
   "{{value}} pixels high": "{{value}} píxeles de alto",
   "{{value}} pixels wide": "{{value}} píxeles de ancho",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— un localizador del archivo del repositorio que hace la afirmación. Esta carga útil no hace ninguna. La afirmación trata del motor, no de este paquete, estos hechos ni de si es correcto actuar según la disposición.",
-  "… (truncated for display)": "… (recortado para mostrar)"
+  "… (truncated for display)": "… (recortado para mostrar)",
+  "Cites evidence requirements": "Cita requisitos de evidencia",
+  "References for readers and tools only. This field does not require evidence. Use an evidence-present condition or mark the requirement as required to gate evaluation.": "Solo referencias para lectores y herramientas. Este campo no exige evidencia. Use una condición evidence-present o marque el requisito como obligatorio para condicionar la evaluación.",
+  "Structure validated. {{cases}} independent test cases and {{trials}} recorded draft trials stay with this pack.": "Estructura validada. {{cases}} casos de prueba independientes y {{trials}} pruebas del borrador registradas permanecen con este pack."
 }

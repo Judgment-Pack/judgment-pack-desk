@@ -982,7 +982,7 @@ export function CreatePackDialog({
       <label><Message text={"<0/> I reviewed these open questions and assumptions."} slots={[<input type="checkbox" checked={reviewedUnknowns} disabled={busy} onChange={event => setReviewedUnknowns(event.target.checked)} />]} /></label>
     </section>}
     <div className={flow.status}>
-      <p className={flow.hint}>{handover ? msg("{{value0}} checked cases and the research record will be saved with this pack.", { value0: caseCount(handover) }) : msg("Structure validated. {{cases}} saved cases and {{trials}} recorded draft trials stay with this pack.", { cases: reviewDraft?.caseCount ?? 0, trials: reviewDraft?.trialCount ?? 0 })}</p>
+      <p className={flow.hint}>{handover ? msg("{{value0}} checked cases and the research record will be saved with this pack.", { value0: caseCount(handover) }) : msg("Structure validated. {{cases}} independent test cases and {{trials}} recorded draft trials stay with this pack.", { cases: reviewDraft?.caseCount ?? 0, trials: reviewDraft?.trialCount ?? 0 })}</p>
       {(reviewDraft?.cases || reviewDraft?.citations) && <p className={flow.hint}>
         {reviewDraft.cases && msg("Test cases written without the draft's rules: {{agreeing}} of {{total}} agree.", reviewDraft.cases)}
         {reviewDraft.cases && reviewDraft.citations && ' '}

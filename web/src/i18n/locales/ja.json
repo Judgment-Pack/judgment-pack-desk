@@ -3486,5 +3486,8 @@
   "{{value}} pixels high": "高さ {{value}} ピクセル",
   "{{value}} pixels wide": "幅 {{value}} ピクセル",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— 主張を記載したリポジトリ内ファイルの所在です。このペイロードは主張を行いません。ファイルの主張はランタイムに関するもので、このパックや事実、処置結果に従うことの正しさについてではありません。",
-  "… (truncated for display)": "…（表示用に省略）"
+  "… (truncated for display)": "…（表示用に省略）",
+  "Cites evidence requirements": "証拠要件への参照",
+  "References for readers and tools only. This field does not require evidence. Use an evidence-present condition or mark the requirement as required to gate evaluation.": "読者とツール向けの参照のみです。このフィールドは証拠を必須にしません。評価を証拠の有無に依存させるには、evidence-present 条件を使用するか、要件を必須に設定してください。",
+  "Structure validated. {{cases}} independent test cases and {{trials}} recorded draft trials stay with this pack.": "構造を検証しました。{{cases}} 件の独立したテストケースと {{trials}} 件の記録済みドラフト試行が、このパックに保存されます。"
 }

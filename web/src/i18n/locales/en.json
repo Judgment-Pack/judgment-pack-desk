@@ -3275,5 +3275,8 @@
   "{{value}} pixels high": "{{value}} pixels high",
   "{{value}} pixels wide": "{{value}} pixels wide",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.",
-  "… (truncated for display)": "… (truncated for display)"
+  "… (truncated for display)": "… (truncated for display)",
+  "Cites evidence requirements": "Cites evidence requirements",
+  "References for readers and tools only. This field does not require evidence. Use an evidence-present condition or mark the requirement as required to gate evaluation.": "References for readers and tools only. This field does not require evidence. Use an evidence-present condition or mark the requirement as required to gate evaluation.",
+  "Structure validated. {{cases}} independent test cases and {{trials}} recorded draft trials stay with this pack.": "Structure validated. {{cases}} independent test cases and {{trials}} recorded draft trials stay with this pack."
 }

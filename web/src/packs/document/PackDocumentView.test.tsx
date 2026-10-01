@@ -404,3 +404,9 @@ describe('reaching a member without a mouse', () => {
     expect(chosen).toEqual([])
   })
 })
+
+it('labels a rule evidence list as citations rather than an evidence gate', () => {
+ const {container} = draw(full)
+ const reference = container.querySelector('[data-pointer="/rules/0/evidenceRequirementRefs"]')!
+ expect(reference.textContent).toContain('Cites evidence requirements')
+})

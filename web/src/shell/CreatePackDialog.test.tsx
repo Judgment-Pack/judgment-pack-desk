@@ -1337,7 +1337,7 @@ describe('creating a reviewed research handover', () => {
       <McpContext.Provider value={connected({ client: stub.client, ...FULL_CAPS, validateSupported: true })}>
         <DeskConfigFixture value={effectiveConfig(undefined)}>
           <CreatePackDialog open presentation="review" onOpenChange={() => {}}
-            reviewDraft={{ document: handover.document, name: 'Reviewed pack', description: '', unknowns: [], citations, cases: { agreeing: 3, total: 3 } }} />
+            reviewDraft={{ document: handover.document, name: 'Reviewed pack', description: '', unknowns: [], citations, cases: { agreeing: 3, total: 3 }, caseCount: 3, trialCount: 1 }} />
         </DeskConfigFixture>
       </McpContext.Provider>
     }])
@@ -1345,6 +1345,7 @@ describe('creating a reviewed research handover', () => {
     // One line beside the button, the cases and the citations together.
     const line = screen.getByText(said, { exact: false })
     expect(line.textContent).toContain("Test cases written without the draft's rules: 3 of 3 agree.")
+    expect(screen.getByText('Structure validated. 3 independent test cases and 1 recorded draft trials stay with this pack.')).toBeTruthy()
     // Beside the button: in the form that submits it, ahead of its actions.
     expect(line.closest('form')).toBe(createButton().closest('form'))
     expect(line.compareDocumentPosition(createButton()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()

@@ -477,3 +477,11 @@ describe('the blank option', () => {
     expect(offenders).toEqual([])
   })
 })
+
+it('explains that evidence references cite requirements without requiring their presence', async () => {
+  await draft()
+  const field = document.getElementById('/rules/0/evidenceRequirementRefs')!
+  expect(within(field).getByText('Cites evidence requirements')).toBeTruthy()
+  expect(field.textContent).toContain('This field does not require evidence.')
+  expect(field.textContent).toContain('Use an evidence-present condition or mark the requirement as required to gate evaluation.')
+})

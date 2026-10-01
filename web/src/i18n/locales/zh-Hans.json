@@ -3486,5 +3486,8 @@
   "{{value}} pixels high": "高度 {{value}} 像素",
   "{{value}} pixels wide": "宽度 {{value}} 像素",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— 指向作出该声明的仓库文件的定位信息。此载荷不作声明。文件中的声明针对运行时，而非此规则包、这些事实或按处置结果行动是否正确。",
-  "… (truncated for display)": "…（已截断显示）"
+  "… (truncated for display)": "…（已截断显示）",
+  "Cites evidence requirements": "引用证据要求",
+  "References for readers and tools only. This field does not require evidence. Use an evidence-present condition or mark the requirement as required to gate evaluation.": "仅供读者和工具参考。此字段不要求提供证据。若要让求值取决于证据，请使用 evidence-present 条件或将该要求标记为必需。",
+  "Structure validated. {{cases}} independent test cases and {{trials}} recorded draft trials stay with this pack.": "结构已验证。{{cases}} 个独立测试案例和 {{trials}} 次已记录的草稿试运行会保留在此包中。"
 }
