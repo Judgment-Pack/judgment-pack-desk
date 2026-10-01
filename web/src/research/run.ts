@@ -156,6 +156,8 @@ export interface RunPorts {
   documents?: () => readonly ChatAttachment[]
   /** Load a kept document and verify it under the gateway pin as it is now. */
   loadDocument?: (reference: DocumentReference, signal: AbortSignal) => Promise<VerifiedDocument>
+  /** What a trace rests on besides the draft, as now. See `documentBasis`. */
+  traceBasis?: () => string
   seal(session: string, signal: AbortSignal): Promise<void>
   registry(signal: AbortSignal): Promise<string>
   gateway: { authority: string; publicKeyHex: string } | null
@@ -253,6 +255,42 @@ export function traceCitations(document: unknown, ledger: Ledger): Citation[] {
 /** A page of a document kept in a chat, as the chat's reading tools and attachments give it to cite. */
 const PAGE_CITATION = /^attachment:([a-f0-9-]{36})\/(sha256:[a-f0-9]{64})\/page\/([1-9][0-9]*)$/
 
+/** One declared `sources[]` entry, as a citation reads it. */
+function declared(entry: unknown, index: number): { sourceId: string; url: string | null; location: string | null; quoted: string } {
+  const source = (entry ?? {}) as Record<string, unknown>
+  const locator = (source.locator ?? {}) as Record<string, unknown>
+  const citation = (source.citation ?? {}) as Record<string, unknown>
+  return {
+    sourceId: typeof source.id === 'string' ? source.id : `#${index}`,
+    url: typeof locator.value === 'string' ? locator.value : null,
+    location: typeof citation.location === 'string' ? citation.location : null,
+    quoted: typeof citation.excerpt === 'string' ? citation.excerpt : ''
+  }
+}
+
+/** Every citation a draft declares, none traced, for a trace that did not finish. */
+function unchecked(document: unknown, reason: string): Citation[] {
+  const sources = (document as { sources?: unknown })?.sources
+  if (!Array.isArray(sources)) return []
+  return sources.map((entry, index) => {
+    const { sourceId, url, location } = declared(entry, index)
+    return { sourceId, location, excerptId: null, url, traced: false, reason }
+  })
+}
+
+/**
+ * What a chat draft's trace rests on besides the draft: the gateway pin its
+ * documents verify under and the documents the chat keeps, as one key. A trace
+ * that ends on another basis than it began on is a trace of a moment that has
+ * passed.
+ */
+export function documentBasis(pin: unknown, kept: readonly ChatAttachment[]): string {
+  return JSON.stringify([pin ?? null, kept.map(file => file.document ? [file.document.id, file.document.digest, file.document.pages, file.document.allowPartial] : null)])
+}
+
+/** How many times a trace whose basis moved under it is taken again before it is given up. */
+const TRACE_ATTEMPTS = 3
+
 /** The document and page a conversation citation names, or null where it names none. */
 export function citedPage(location: string | null): { documentId: string; digest: string; page: number } | null {
   const match = location === null ? null : PAGE_CITATION.exec(location)
@@ -284,13 +322,7 @@ export async function tracePageCitations(
   const loads = new Map<string, Promise<VerifiedDocument>>()
   const citations: Citation[] = []
   for (const [index, entry] of sources.entries()) {
-    const source = (entry ?? {}) as Record<string, unknown>
-    const sourceId = typeof source.id === 'string' ? source.id : `#${index}`
-    const locator = (source.locator ?? {}) as Record<string, unknown>
-    const url = typeof locator.value === 'string' ? locator.value : null
-    const citation = (source.citation ?? {}) as Record<string, unknown>
-    const location = typeof citation.location === 'string' ? citation.location : null
-    const quoted = typeof citation.excerpt === 'string' ? citation.excerpt : ''
+    const { sourceId, url, location, quoted } = declared(entry, index)
     const untraced = (reason: string): Citation => ({ sourceId, location, excerptId: null, url, traced: false, reason })
     const cited = citedPage(location)
     if (!cited) {
@@ -325,9 +357,10 @@ export async function tracePageCitations(
     }
     // A web page is declared under the address it was read from, as `research`
     // holds a ledger citation to its page's URL: a quote from one page does
-    // not stand behind a pack that names another.
+    // not stand behind a pack that names another. Only the signed record says
+    // where that was; the chat's own note of the link is not signed.
     const read = verified.record.provenance.source
-    if (read.kind === 'web' && (url === null || ![read.url, read.requestedUrl, file.link?.url, file.link?.resolvedUrl].includes(url))) {
+    if (read.kind === 'web' && (url === null || (url !== read.url && url !== read.requestedUrl))) {
       citations.push(untraced(sourceMessage("locator.value is not the URL the excerpt was read from")))
       continue
     }
@@ -1226,12 +1259,40 @@ export class AuthoringRun {
     if (!conversationMode(this.ports.mode) || !latest) return
     const trace = ++this.traces
     this.set({ tracing: true })
+    let citations: Citation[] | null = null
     try {
-      const citations = await tracePageCitations(latest.document, this.ports.documents?.() ?? [], this.ports.loadDocument ?? unverifiable, signal)
-      if (trace === this.traces && this.latest()?.digest === latest.digest) this.set({ citations })
+      // The pin and the kept documents can change while documents load. A
+      // trace lands only on the basis it began on, and is taken again where
+      // that moved, a bounded number of times.
+      for (let attempt = 0; attempt < TRACE_ATTEMPTS && citations === null; attempt += 1) {
+        const basis = this.ports.traceBasis?.()
+        const traced = await tracePageCitations(latest.document, this.ports.documents?.() ?? [], this.ports.loadDocument ?? unverifiable, signal)
+        this.check(signal)
+        if (this.ports.traceBasis?.() === basis) citations = traced
+      }
+      citations ??= unchecked(latest.document, sourceMessage("The gateway pin or this chat's documents changed while the citations were checked. Recheck the draft."))
+    } catch (cause) {
+      // An interrupted trace says nothing about the draft: nothing it was
+      // checking counts as traced, and it never reads as citing nothing.
+      citations = unchecked(latest.document, sourceMessage("The citation check was interrupted. Recheck the draft."))
+      throw cause
     } finally {
-      if (trace === this.traces) this.set({ tracing: false })
+      if (trace === this.traces) {
+        if (citations !== null && this.latest()?.digest === latest.digest) this.set({ citations })
+        this.set({ tracing: false })
+      }
     }
+  }
+
+  /**
+   * The gateway pin or the chat's documents changed: trace a chat draft's
+   * citations again, without a model, so a readiness reached on the old basis
+   * lapses wherever the new one does not hold it. At rest only; an action in
+   * flight traces again at its own settle.
+   */
+  retrace(): void {
+    if (this.running || !this.latest()) return
+    void this.traceConversation(new AbortController().signal)
   }
 
   /** Why the candidate is not ready even where its cases agree, or null. */

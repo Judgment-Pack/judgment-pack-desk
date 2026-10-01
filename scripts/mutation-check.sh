@@ -5263,8 +5263,34 @@ export function assistantTransport(id: string): Transport {
     '    if (!file?.document || !file.document.pages.includes(cited.page)) {' \
     '    if (!file?.document) {'
   mutate web "a chat draft's citation is traced under a URL it was not read from" "$RR" \
-    "    if (read.kind === 'web' && (url === null || ![read.url, read.requestedUrl, file.link?.url, file.link?.resolvedUrl].includes(url))) {" \
+    "    if (read.kind === 'web' && (url === null || (url !== read.url && url !== read.requestedUrl))) {" \
     '    if (false) {'
+  mutate web "a chat draft's citation is traced under the chat's unsigned note of its link" "$RR" \
+    "    if (read.kind === 'web' && (url === null || (url !== read.url && url !== read.requestedUrl))) {" \
+    "    if (read.kind === 'web' && (url === null || (url !== read.url && url !== read.requestedUrl && url !== file.link?.url))) {"
+  # A trace lands only on the basis it began on: a pin or a document list
+  # that moved under it is traced again, and a trace a Stop interrupted
+  # leaves nothing traced, never the readiness of the trace before it.
+  mutate web "a chat draft's trace lands on a basis that moved under it" "$RR" \
+    '        if (this.ports.traceBasis?.() === basis) citations = traced' \
+    '        citations = traced'
+  mutate web "a chat draft's interrupted trace keeps the last trace's readiness" "$RR" \
+    '      citations = unchecked(latest.document, sourceMessage("The citation check was interrupted. Recheck the draft."))' \
+    '      void unchecked'
+  mutate web "a chat draft's trace lands after a Stop" "$RR" \
+    '        const traced = await tracePageCitations(latest.document, this.ports.documents?.() ?? [], this.ports.loadDocument ?? unverifiable, signal)
+        this.check(signal)' \
+    '        const traced = await tracePageCitations(latest.document, this.ports.documents?.() ?? [], this.ports.loadDocument ?? unverifiable, signal)'
+  mutate web "a chat draft is not traced again when its pin or documents change" "$RR" \
+    '    if (this.running || !this.latest()) return
+    void this.traceConversation(new AbortController().signal)' \
+    '    return'
+  mutate web "a chat draft's basis ignores the pin" "$RR" \
+    '  return JSON.stringify([pin ?? null, kept.map(' \
+    '  return JSON.stringify([null, kept.map('
+  mutate web "a chat draft whose trace was cut short reads as citing nothing" "$RDP" \
+    "            : mode === 'draft' && latest && state.citations.length === 0 && declaredSources(latest.document).length === 0 ? msg(" \
+    "            : mode === 'draft' && latest && state.citations.length === 0 ? msg("
   mutate web "a chat draft's citation is traced on pages nobody confirmed" "$RR" \
     '    if (needsPartialConsent(verified.record) && !reference.allowPartial) {' \
     '    if (false) {'
@@ -5303,7 +5329,7 @@ export function assistantTransport(id: string): Transport {
     ' + CONVERSATION_CITATION_INSTRUCTIONS' \
     " + ''"
   mutate web "a chat draft citing nothing is shown as 0 of 0" "$RDP" \
-    '            : mode === '"'"'draft'"'"' && latest && state.citations.length === 0 ? msg("This pack cites no source. It rests on what you told the assistant.")' \
+    '            : mode === '"'"'draft'"'"' && latest && state.citations.length === 0 && declaredSources(latest.document).length === 0 ? msg("This pack cites no source. It rests on what you told the assistant.")' \
     '            : false ? msg("This pack cites no source. It rests on what you told the assistant.")'
   mutate web "a chat draft's traced page citation opens nothing" "$RDP" \
     'onReadPage={readPage}' \

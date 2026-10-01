@@ -30,6 +30,13 @@ describe('the review panel on a conversation draft', () => {
     expect((screen.getByRole('button', { name: /Review and create/ }) as HTMLButtonElement).disabled).toBe(false)
   })
 
+  it('never says a draft that declares sources cites nothing, whatever its trace left', () => {
+    const declares = settledDraft([], { readiness: '', status: 'stopped' })
+    declares.candidates = [{ ...declares.candidates[0]!, document: { sources: [{ id: 'eligibility' }] } }]
+    render(<ReviewPanel mode="draft" state={declares} sources={[]} onSelect={vi.fn()} onCreate={vi.fn()} />)
+    expect(screen.queryByText(/cites no source/)).toBeNull()
+  })
+
   it('says the citations are being checked while they are traced, and offers nothing', () => {
     render(<ReviewPanel mode="draft" state={settledDraft([], { tracing: true })} sources={[]} onSelect={vi.fn()} onCreate={vi.fn()} />)
     expect(citationsLine()).toBe("Checking the draft's citations…")
@@ -48,7 +55,8 @@ describe('the review panel on a conversation draft', () => {
 
   it('does not offer a web research draft that cites nothing', () => {
     render(<ReviewPanel mode="web-research" state={settledDraft([])} sources={[]} onSelect={vi.fn()} onCreate={vi.fn()} />)
-    expect(citationsLine()).toBe('0 of 0 traced to a page read in this chat')
+    expect(citationsLine()).toBe('This draft cites no source.')
+    expect(screen.queryByText(/0 of 0/)).toBeNull()
     expect(screen.getByText(/A web research draft rests on pages read in this chat/)).toBeTruthy()
     expect((screen.getByRole('button', { name: /Review and create/ }) as HTMLButtonElement).disabled).toBe(true)
   })

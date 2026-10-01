@@ -274,7 +274,8 @@ export function ReviewPanel({ state, sources, onCreate, onSelect, onReadPage, sh
           <dd><Message text={"<0/> recorded; <1/> with verified receipts; <2/> failed or unverified"} slots={[sources.length, verified, failed]} /></dd>
           <dt>{msg("Citations")}</dt>
           <dd>{state.tracing ? msg("Checking the draft's citations…")
-            : mode === 'draft' && latest && state.citations.length === 0 ? msg("This pack cites no source. It rests on what you told the assistant.")
+            : mode === 'draft' && latest && state.citations.length === 0 && declaredSources(latest.document).length === 0 ? msg("This pack cites no source. It rests on what you told the assistant.")
+            : conversation && latest && state.citations.length === 0 && declaredSources(latest.document).length === 0 ? msg("This draft cites no source.")
             : conversation ? <Message text={"<0/> of <1/> traced to a page read in this chat"} slots={[state.citations.length - untraced.length, state.citations.length]} />
             : <Message text={"<0/> of <1/> traced to a recorded excerpt"} slots={[state.citations.length - untraced.length, state.citations.length]} />}</dd>
         </dl>
