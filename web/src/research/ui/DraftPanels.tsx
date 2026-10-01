@@ -159,7 +159,7 @@ export function TestsPanel({ state, onSelect, mode = 'research', withChecks = tr
               return (
                 <Fragment key={row.id}>
                   <tr>
-                    <td>
+                    <td className={styles.textCell}>
                       <div>{row.id}</div>
                       <div className={styles.hint}>{row.rationale}</div>
                     </td>
@@ -174,7 +174,7 @@ export function TestsPanel({ state, onSelect, mode = 'research', withChecks = tr
                         </span>
                       )}
                     </td>
-                    <td>
+                    <td className={styles.textCell}>
                       <ExpectationGround source={row.expectationSource} state={state} onSelect={onSelect} onReadPage={actions.onReadPage} />
                     </td>
                   </tr>
@@ -349,9 +349,7 @@ export function ReviewPanel({ state, sources, onCreate, onSelect, onReadPage, on
             : msg("Create is offered once every established case agrees with the runtime and the draft is valid.")}
         </p>
         {establish && onEstablishCases && <div><Button disabled={state.status === 'running'} onClick={onEstablishCases}>{msg("Write test cases without the rules")}</Button></div>}
-        <p className={styles.hint}>
-          {mode === 'research' && <>{msg("A verified receipt establishes that the gateway signed these bytes and sealed the session; it does not establish that a page is true, current, legally authoritative, or that it came from the site its URL names.")}</>}
-        </p>
+        {mode === 'research' && <p className={styles.hint}>{msg("A verified receipt establishes that the gateway signed these bytes and sealed the session; it does not establish that a page is true, current, legally authoritative, or that it came from the site its URL names.")}</p>}
         {showCreateAction && <div>
           <Button variant="primary" disabled={!passing || state.status === 'running'} onClick={onCreate}>{msg("Review and create")}</Button>
         </div>}
