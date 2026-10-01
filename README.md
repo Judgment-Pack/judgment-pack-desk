@@ -30,6 +30,28 @@ Managed installations can prepare a verified complete bundle and opt into update
 on launch. Source checkouts remain under developer control. Component pins, CI
 and packaging share one manifest. See [installation, automation and rollback](docs/updates.md).
 
+### Release platforms
+
+Complete archives are built for Linux/amd64, macOS Apple Silicon (`darwin_arm64`)
+and macOS Intel (`darwin_amd64`). Each contains Desk and its pinned Runtime,
+Runner, source worker, Gateway and adapters for the same platform. The release
+workflow smoke-tests each archive on its native GitHub-hosted runner before
+publication. Each has a platform-specific manifest and shares the release's
+`checksums.txt`; the historical `release-manifest.json` sidecar remains a copy of
+the Linux manifest. The manifest inside every archive keeps that original name.
+
+macOS binaries are not Developer ID signed or notarized. After extracting the
+archive, keep its files together and run `./jpack-desk --jpack ./jpack --runner
+./jpack-runner /path/to/project` from Terminal. If Gatekeeper blocks a downloaded
+executable because its developer cannot be verified, first verify the release
+and checksums, then follow Apple's [Privacy & Security → Open Anyway instructions](https://support.apple.com/en-us/102445)
+for that executable. This may also apply to bundled companion executables.
+No global Gatekeeper bypass is required. The Codex subscription subprocess bridge
+remains Linux-only; publishing a macOS archive does not enable that bridge.
+
+No Windows archive is published; Windows execution is untested, and the managed
+installer explicitly supports only Linux and macOS.
+
 ## Automatic local PDF processing
 
 Build a complete local installation with Node 22+, Python 3.8.17+ and Go (the

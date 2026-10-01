@@ -103,20 +103,24 @@ def request(url, limit):
     if len(data) > limit: raise ValueError('Release response exceeded its size limit')
     return data
 
+def host_platform():
+    os_name = {'Linux': 'linux', 'Darwin': 'darwin'}.get(platform.system())
+    arch = {'x86_64': 'amd64', 'aarch64': 'arm64', 'arm64': 'arm64'}.get(platform.machine())
+    if not os_name or not arch: raise ValueError('Unsupported installation platform')
+    return os_name + '/' + arch
+
 def latest_release():
     doc = json.loads(request(API, 2 * 1024 * 1024))
     tag = doc.get('tag_name', '')
     semver(tag)
     if doc.get('draft') or doc.get('prerelease'): raise ValueError('Expected a published stable release')
-    os_name = {'Linux': 'linux', 'Darwin': 'darwin'}.get(platform.system())
-    arch = {'x86_64': 'amd64', 'aarch64': 'arm64', 'arm64': 'arm64'}.get(platform.machine())
-    if not os_name or not arch: raise ValueError('Unsupported installation platform')
-    suffix = os_name + '_' + arch
+    platform_name = host_platform()
+    suffix = platform_name.replace('/', '_')
     name = 'judgment-pack-desk_' + tag.lstrip('v') + '_' + suffix + '.tar.gz'
     assets = {a['name']: a for a in doc.get('assets', [])}
     asset = assets.get(name)
     return {'version': tag.lstrip('v'), 'url': 'https://github.com/' + REPO + '/releases/tag/' + tag,
-            'platform': os_name + '/' + arch, 'asset': name if asset else None,
+            'platform': platform_name, 'asset': name if asset else None,
             'assetDigest': asset.get('digest') if asset else None, 'tag': tag}
 
 def checked(root, force=False):
@@ -170,7 +174,8 @@ def verify(directory, expected, platform_name=None):
     if manifest_path.stat().st_size > 2 * 1024 * 1024: raise ValueError('Oversized release manifest')
     doc = json.loads(manifest_path.read_text())
     if doc.get('version') != expected['version'] or doc.get('stateEpoch', 1) != 1: raise ValueError('Release needs an explicit data migration')
-    if platform_name and doc.get('platform') != platform_name: raise ValueError('Wrong release platform')
+    if doc.get('platform') != host_platform() or (platform_name and doc.get('platform') != platform_name):
+        raise ValueError('Wrong release platform')
     files = doc.get('files', {})
     if not isinstance(files, dict) or len(files) > 10000 or not {'jpack-desk', 'jpack', 'jpack-runner', 'jpack-source-worker', 'gateway', 'gateway-bundle.json'} <= set(files): raise ValueError('Incomplete release bundle')
     if doc.get('desk', {}).get('repository') != 'https://github.com/' + REPO: raise ValueError('Wrong release repository')

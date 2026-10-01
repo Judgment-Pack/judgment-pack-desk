@@ -18,7 +18,7 @@ class UpdatesTest(unittest.TestCase):
         folder=self.root/'releases'/version;folder.mkdir()
         names=['jpack-desk','jpack','jpack-runner','jpack-source-worker','gateway','gateway-bundle.json']
         for name in names: (folder/name).write_text('binary '+name)
-        manifest={'version':version,'platform':'linux/amd64','stateEpoch':1,'desk':{'repository':'https://github.com/'+u.REPO},'files':{name:u.digest_file(folder/name) for name in names}}
+        manifest={'version':version,'platform':u.host_platform(),'stateEpoch':1,'desk':{'repository':'https://github.com/'+u.REPO},'files':{name:u.digest_file(folder/name) for name in names}}
         (folder/'release-manifest.json').write_text(json.dumps(manifest))
         return folder,{'version':version,'manifestDigest':u.digest_file(folder/'release-manifest.json')}
     def test_stage_is_not_activation_and_rollback_keeps_data(self):
@@ -82,8 +82,8 @@ class UpdatesTest(unittest.TestCase):
         archive=Path(self.temp.name)/'bundle.tar.gz'
         with tarfile.open(archive,'w:gz') as out:
             for file in folder.iterdir():out.add(file,arcname=file.name)
-        checksum=u.digest_file(archive);name='judgment-pack-desk_2.0.0_linux_amd64.tar.gz'
-        release={'version':'2.0.0','tag':'v2.0.0','platform':'linux/amd64','asset':name,'assetDigest':'sha256:'+checksum}
+        checksum=u.digest_file(archive);name='judgment-pack-desk_2.0.0_'+u.host_platform().replace('/','_')+'.tar.gz'
+        release={'version':'2.0.0','tag':'v2.0.0','platform':u.host_platform(),'asset':name,'assetDigest':'sha256:'+checksum}
         class Reply(io.BytesIO):url='https://release-assets.githubusercontent.com/example'
         with patch.object(u,'latest_release',return_value=release),patch.object(u,'request',return_value=(checksum+'  '+name+'\n').encode()),patch.object(u.urllib.request,'urlopen',return_value=Reply(archive.read_bytes())):
             state=u.stage(self.root)
@@ -96,4 +96,47 @@ class UpdatesTest(unittest.TestCase):
             self.assertEqual(start.call_args.args[0],[str(folder/'jpack-desk'),'--jpack',str(folder/'jpack'),'--runner',str(folder/'jpack-runner'),'/project'])
         for override in ['--jpack','-jpack','--runner=/other','-runner=/other','-dev-token=secret','--local-gateway-worker']:
             with self.assertRaisesRegex(ValueError,'overrides'):u.launch(self.root,[override])
+    def test_selects_only_the_native_archive(self):
+        assets=[{'name':'judgment-pack-desk_2.0.0_'+p+'.tar.gz','digest':'sha256:'+'a'*64}
+                for p in ['linux_amd64','darwin_arm64','darwin_amd64']]
+        reply=json.dumps({'tag_name':'v2.0.0','assets':assets}).encode()
+        for system, machine, expected in [('Linux','x86_64','linux/amd64'),('Darwin','arm64','darwin/arm64'),('Darwin','x86_64','darwin/amd64')]:
+            with self.subTest(platform=expected), patch.object(u.platform,'system',return_value=system), patch.object(u.platform,'machine',return_value=machine), patch.object(u,'request',return_value=reply):
+                release=u.latest_release()
+                self.assertEqual(release['platform'],expected)
+                self.assertEqual(release['asset'],'judgment-pack-desk_2.0.0_'+expected.replace('/','_')+'.tar.gz')
+        with patch.object(u.platform,'system',return_value='Darwin'), patch.object(u.platform,'machine',return_value='arm64'), patch.object(u,'request',return_value=json.dumps({'tag_name':'v2.0.0','assets':[assets[0],assets[2]]}).encode()):
+            self.assertIsNone(u.latest_release()['asset'])
+
+    def test_foreign_platform_refused_on_verify_activation_rollback_and_launch(self):
+        folder,selected=self.bundle()
+        native=u.host_platform()
+        foreign='darwin/arm64' if native!='darwin/arm64' else 'darwin/amd64'
+        doc=json.loads((folder/'release-manifest.json').read_text());doc['platform']=foreign
+        (folder/'release-manifest.json').write_text(json.dumps(doc));selected['manifestDigest']=u.digest_file(folder/'release-manifest.json')
+        state=u.read_state(self.root);state.update(pending=selected,previous=selected);u.atomic_json(self.root/'installation.json',state)
+        for action in [lambda:u.verify(folder,selected),lambda:u.verify(folder,selected,foreign),lambda:u.activate(self.root),lambda:u.activate(self.root,True)]:
+            with self.assertRaisesRegex(ValueError,'Wrong release platform'):action()
+            self.assertIsNone(u.read_state(self.root)['current'])
+        state.update(current=selected,pending=None);u.atomic_json(self.root/'installation.json',state)
+        with patch.object(u.subprocess,'Popen') as start:
+            with self.assertRaisesRegex(ValueError,'Wrong release platform'):u.launch(self.root,[])
+            start.assert_not_called()
+
+    def test_wrong_platform_download_never_stages(self):
+        folder,selected=self.bundle('2.0.0')
+        doc=json.loads((folder/'release-manifest.json').read_text())
+        doc['platform']='darwin/amd64' if u.host_platform()!='darwin/amd64' else 'linux/amd64'
+        (folder/'release-manifest.json').write_text(json.dumps(doc))
+        archive=Path(self.temp.name)/'foreign.tar.gz'
+        with tarfile.open(archive,'w:gz') as out:
+            for file in folder.iterdir():out.add(file,arcname=file.name)
+        checksum=u.digest_file(archive);name='judgment-pack-desk_2.0.0_'+u.host_platform().replace('/','_')+'.tar.gz'
+        release={'version':'2.0.0','tag':'v2.0.0','platform':u.host_platform(),'asset':name,'assetDigest':'sha256:'+checksum}
+        class Reply(io.BytesIO):url='https://release-assets.githubusercontent.com/example'
+        with patch.object(u,'latest_release',return_value=release),patch.object(u,'request',return_value=(checksum+'  '+name+'\n').encode()),patch.object(u.urllib.request,'urlopen',return_value=Reply(archive.read_bytes())):
+            with self.assertRaisesRegex(ValueError,'Wrong release platform'):u.stage(self.root)
+        self.assertIsNone(u.read_state(self.root)['pending'])
+        self.assertIsNone(u.read_state(self.root)['current'])
+
 if __name__=='__main__':unittest.main()
