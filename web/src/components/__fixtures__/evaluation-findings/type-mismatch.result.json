@@ -1,0 +1,46 @@
+{
+  "outputVersion": "2",
+  "tool": {
+    "name": "jpack",
+    "version": "0.24.0"
+  },
+  "command": "experimental evaluate",
+  "status": "evaluated",
+  "experimental": true,
+  "rehearsal": true,
+  "conformanceClaimReference": "CONFORMANCE.md",
+  "specVersion": "0.2.0-draft",
+  "evaluatorSpecVersion": "0.2.0-draft",
+  "packId": "https://example.org/packs/input-findings",
+  "packVersion": "1.0.0",
+  "disposition": {
+    "handoff": {
+      "state": "none"
+    },
+    "kind": "outcome",
+    "outcomeId": "hold",
+    "reasons": []
+  },
+  "trace": [
+    {
+      "stage": "rule",
+      "id": "flag-check",
+      "condition": "false",
+      "typeMismatches": [
+        {
+          "path": "/flag",
+          "operator": "equals",
+          "factType": "string",
+          "operandTypes": [
+            "boolean"
+          ]
+        }
+      ]
+    }
+  ],
+  "artifact": {
+    "specVersion": "0.2.0-draft",
+    "bundleDigest": "081cf18af9fe667a5da5acab465f4cf6118a00742bb6e5527d4d45fc09f25185",
+    "provenance": "immutable-git-ref"
+  }
+}

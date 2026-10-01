@@ -3489,5 +3489,22 @@
   "… (truncated for display)": "… (표시를 위해 잘림)",
   "Cites evidence requirements": "증거 요구사항 인용",
   "References for readers and tools only. This field does not require evidence. Use an evidence-present condition or mark the requirement as required to gate evaluation.": "독자와 도구를 위한 참조일 뿐입니다. 이 필드는 증거를 요구하지 않습니다. 평가를 증거에 따라 제한하려면 evidence-present 조건을 사용하거나 요구사항을 필수로 표시하세요.",
-  "Structure validated. {{cases}} independent test cases and {{trials}} recorded draft trials stay with this pack.": "구조가 검증되었습니다. 독립적인 테스트 사례 {{cases}}개와 기록된 초안 시험 {{trials}}개가 이 팩에 유지됩니다."
+  "Structure validated. {{cases}} independent test cases and {{trials}} recorded draft trials stay with this pack.": "구조가 검증되었습니다. 독립적인 테스트 사례 {{cases}}개와 기록된 초안 시험 {{trials}}개가 이 팩에 유지됩니다.",
+  "text": "텍스트",
+  "true or false": "참 또는 거짓",
+  "number": "숫자",
+  "list": "목록",
+  "object": "객체",
+  "Within collection {{path}}.": "컬렉션 {{path}} 내.",
+  "Fact {{path}} is {{factType}}; the comparison uses {{operandTypes}}. These JSON types cannot be equal.": "사실 {{path}}의 유형은 {{factType}}이며, 비교 대상은 {{operandTypes}}입니다. 이 JSON 유형은 서로 같을 수 없습니다.",
+  "No value was supplied for fact {{path}}.": "사실 {{path}}에 대한 값이 제공되지 않았습니다.",
+  "Fact {{path}} is {{factType}}; ordered comparisons require a decimal string.": "사실 {{path}}의 유형은 {{factType}}입니다. 순서 비교에는 십진수 문자열이 필요합니다.",
+  "Fact {{path}} is {{factType}}; this condition requires a list.": "사실 {{path}}의 유형은 {{factType}}입니다. 이 조건에는 목록이 필요합니다.",
+  "Evidence {{requirement}} has unknown availability.": "증거 {{requirement}}의 가용 여부를 알 수 없습니다.",
+  "The evaluator does not support this condition.": "평가기는 이 조건을 지원하지 않습니다.",
+  "Unknown cause: {{cause}}.": "알 수 없음의 원인: {{cause}}.",
+  "Input findings": "입력 관련 진단",
+  "Unmet required evidence": "충족되지 않은 필수 증거",
+  "Required evidence is absent.": "필수 증거가 없습니다.",
+  "Required evidence availability is unknown.": "필수 증거의 가용 여부를 알 수 없습니다."
 }

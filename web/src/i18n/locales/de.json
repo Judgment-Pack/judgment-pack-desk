@@ -3489,5 +3489,22 @@
   "… (truncated for display)": "… (für die Anzeige gekürzt)",
   "Cites evidence requirements": "Zitiert Nachweisanforderungen",
   "References for readers and tools only. This field does not require evidence. Use an evidence-present condition or mark the requirement as required to gate evaluation.": "Nur Verweise für Leser und Werkzeuge. Dieses Feld verlangt keinen Nachweis. Verwenden Sie eine evidence-present-Bedingung oder markieren Sie die Anforderung als erforderlich, um die Auswertung vom Nachweis abhängig zu machen.",
-  "Structure validated. {{cases}} independent test cases and {{trials}} recorded draft trials stay with this pack.": "Struktur validiert. {{cases}} unabhängige Testfälle und {{trials}} aufgezeichnete Entwurfsversuche bleiben bei diesem Pack."
+  "Structure validated. {{cases}} independent test cases and {{trials}} recorded draft trials stay with this pack.": "Struktur validiert. {{cases}} unabhängige Testfälle und {{trials}} aufgezeichnete Entwurfsversuche bleiben bei diesem Pack.",
+  "text": "Text",
+  "true or false": "wahr oder falsch",
+  "number": "Zahl",
+  "list": "Liste",
+  "object": "Objekt",
+  "Within collection {{path}}.": "Innerhalb der Sammlung {{path}}.",
+  "Fact {{path}} is {{factType}}; the comparison uses {{operandTypes}}. These JSON types cannot be equal.": "Der Fakt {{path}} hat den Typ {{factType}}; der Vergleich verwendet {{operandTypes}}. Diese JSON-Typen können nicht gleich sein.",
+  "No value was supplied for fact {{path}}.": "Für den Fakt {{path}} wurde kein Wert angegeben.",
+  "Fact {{path}} is {{factType}}; ordered comparisons require a decimal string.": "Der Fakt {{path}} hat den Typ {{factType}}; Größenvergleiche erfordern eine Dezimalzeichenfolge.",
+  "Fact {{path}} is {{factType}}; this condition requires a list.": "Der Fakt {{path}} hat den Typ {{factType}}; diese Bedingung erfordert eine Liste.",
+  "Evidence {{requirement}} has unknown availability.": "Die Verfügbarkeit des Nachweises {{requirement}} ist unbekannt.",
+  "The evaluator does not support this condition.": "Der Evaluator unterstützt diese Bedingung nicht.",
+  "Unknown cause: {{cause}}.": "Unbekannte Ursache: {{cause}}.",
+  "Input findings": "Feststellungen zu Eingaben",
+  "Unmet required evidence": "Nicht erfüllte Nachweisanforderungen",
+  "Required evidence is absent.": "Der erforderliche Nachweis fehlt.",
+  "Required evidence availability is unknown.": "Die Verfügbarkeit des erforderlichen Nachweises ist unbekannt."
 }

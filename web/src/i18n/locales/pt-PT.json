@@ -3506,5 +3506,22 @@
   "… (truncated for display)": "… (truncado para apresentação)",
   "Cites evidence requirements": "Cita requisitos de evidência",
   "References for readers and tools only. This field does not require evidence. Use an evidence-present condition or mark the requirement as required to gate evaluation.": "Apenas referências para leitores e ferramentas. Este campo não exige evidência. Use uma condição evidence-present ou marque o requisito como obrigatório para condicionar a avaliação.",
-  "Structure validated. {{cases}} independent test cases and {{trials}} recorded draft trials stay with this pack.": "Estrutura validada. {{cases}} casos de teste independentes e {{trials}} ensaios do rascunho registados permanecem com este pack."
+  "Structure validated. {{cases}} independent test cases and {{trials}} recorded draft trials stay with this pack.": "Estrutura validada. {{cases}} casos de teste independentes e {{trials}} ensaios do rascunho registados permanecem com este pack.",
+  "text": "texto",
+  "true or false": "verdadeiro ou falso",
+  "number": "número",
+  "list": "lista",
+  "object": "objeto",
+  "Within collection {{path}}.": "Na coleção {{path}}.",
+  "Fact {{path}} is {{factType}}; the comparison uses {{operandTypes}}. These JSON types cannot be equal.": "O facto {{path}} é do tipo {{factType}}; a comparação usa {{operandTypes}}. Estes tipos JSON não podem ser iguais.",
+  "No value was supplied for fact {{path}}.": "Não foi fornecido um valor para o facto {{path}}.",
+  "Fact {{path}} is {{factType}}; ordered comparisons require a decimal string.": "O facto {{path}} é do tipo {{factType}}; comparações de ordem exigem uma cadeia decimal.",
+  "Fact {{path}} is {{factType}}; this condition requires a list.": "O facto {{path}} é do tipo {{factType}}; esta condição exige uma lista.",
+  "Evidence {{requirement}} has unknown availability.": "A disponibilidade da evidência {{requirement}} é desconhecida.",
+  "The evaluator does not support this condition.": "O avaliador não suporta esta condição.",
+  "Unknown cause: {{cause}}.": "Causa desconhecida: {{cause}}.",
+  "Input findings": "Constatações sobre as entradas",
+  "Unmet required evidence": "Evidências obrigatórias não satisfeitas",
+  "Required evidence is absent.": "A evidência obrigatória está ausente.",
+  "Required evidence availability is unknown.": "A disponibilidade da evidência obrigatória é desconhecida."
 }
