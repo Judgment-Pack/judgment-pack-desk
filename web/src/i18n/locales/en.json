@@ -2498,6 +2498,7 @@
   "This sign-in attempt is no longer available. Start again.": "This sign-in attempt is no longer available. Start again.",
   "This source changed while being read. Search again and reselect it.": "This source changed while being read. Search again and reselect it.",
   "This source exceeds the connection size limit. Choose a smaller source.": "This source exceeds the connection size limit. Choose a smaller source.",
+  "This source is a calculator. In Advanced mapping → Edit mapping, bind each reported input to a parameter and set a maximum age for each table it reads. Empty bindings reject answers that report inputs or tables.": "This source is a calculator. In Advanced mapping → Edit mapping, bind each reported input to a parameter and set a maximum age for each table it reads. Empty bindings reject answers that report inputs or tables.",
   "This source is not available to read with this connection.": "This source is not available to read with this connection.",
   "This stops active Codex work and signs out the account stored by this Desk.": "This stops active Codex work and signs out the account stored by this Desk.",
   "This store exceeds the supported move size of <0/>.": "This store exceeds the supported move size of <0/>.",

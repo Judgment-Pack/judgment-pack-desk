@@ -2691,6 +2691,7 @@
   "This sign-in attempt is no longer available. Start again.": "此登入嘗試已無法使用。請重新開始。",
   "This source changed while being read. Search again and reselect it.": "此來源在讀取期間發生了變更。請重新搜尋並選取。",
   "This source exceeds the connection size limit. Choose a smaller source.": "此來源超出連線的大小限制。請選擇較小的來源。",
+  "This source is a calculator. In Advanced mapping → Edit mapping, bind each reported input to a parameter and set a maximum age for each table it reads. Empty bindings reject answers that report inputs or tables.": "此來源是計算工具。請在「進階映射」→「編輯對應」中，將每個回報的輸入綁定至參數，並設定其讀取的每個資料表的資料最長有效期。空白綁定會拒絕回報輸入或資料表的回應。",
   "This source is not available to read with this connection.": "此連線無法讀取該來源。",
   "This stops active Codex work and signs out the account stored by this Desk.": "這會停止進行中的 Codex 工作，並登出此 Desk 儲存的帳戶。",
   "This store exceeds the supported move size of <0/>.": "此儲存區超出支援的移動大小 <0/>。",

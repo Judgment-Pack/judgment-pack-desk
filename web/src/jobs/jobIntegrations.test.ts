@@ -45,3 +45,42 @@ it('clears retired Drive picker parameters and never overwrites an unrelated par
  expect(local.sources![0]!.profile).toBeUndefined()
  expect(()=>setSourceIntegration({...base,case:{...base.case!,parameters:{source1File:{pointer:'/unrelated',type:'string'}}}},drive)).toThrow()
 })
+
+const calculator={...entry,profile:{...entry.profile,id:'fx',tools:['convert'],calculator:{name:'fx-convert',version:'2.1.0'}}}
+it('creates a calculator source with empty bindings without guessing inputs, tables or request parameters',()=>{
+ const next=setSourceIntegration(base,calculator)
+ expect(next.sources![0]).toEqual({name:'source1',kind:'operation',profile:'fx',profileDigest:'new-digest',maxAge:300,arguments:{tool:'convert',arguments:{}},read:{copy:{facts:[],evidence:[]}},calculation:{inputs:{},tables:{}}})
+ expect(next.case).toEqual(base.case)
+ expect(base.sources).toEqual([])
+})
+it('replacing an ordinary source with a calculator adds empty bindings and keeps output assignments',()=>{
+ const previous=setSourceIntegration(base,entry)
+ previous.sources![0]!.read.copy!.facts=[{target:'/converted',source:'/result'}]
+ const next=setSourceIntegration(previous,calculator,'source1')
+ expect(next.sources![0]!.calculation).toEqual({inputs:{},tables:{}})
+ expect(next.sources![0]!.read).toEqual(previous.sources![0]!.read)
+ expect(previous.sources![0]).not.toHaveProperty('calculation')
+})
+it.each(['operation','local-file','google-drive'] as const)('replacing a calculator with %s removes calculation without changing the old mapping',kind=>{
+ const prior=setSourceIntegration(base,calculator)
+ const replacement=kind==='local-file'?undefined:kind==='google-drive'?{...entry,profile:{...entry.profile,source:'drive',shape:'http' as const}}:entry
+ const next=setSourceIntegration(prior,replacement,'source1')
+ expect(next.sources![0]).not.toHaveProperty('calculation')
+ expect(prior.sources![0]!.calculation).toEqual({inputs:{},tables:{}})
+})
+it('ordinary operation profiles still generate exactly the existing source shape',()=>{
+ expect(setSourceIntegration(base,entry).sources![0]).toEqual({name:'source1',kind:'operation',profile:'registry',profileDigest:'new-digest',maxAge:300,arguments:{tool:'read_case',arguments:{}},read:{copy:{facts:[],evidence:[]}}})
+})
+it('a calculator MCP profile stays an operation even if its source is named drive',()=>{
+ const result=setSourceIntegration(base,{...calculator,profile:{...calculator.profile,source:'drive'}})
+ expect(result.sources![0]).toMatchObject({kind:'operation',arguments:{tool:'convert',arguments:{}},calculation:{inputs:{},tables:{}}})
+ expect(result.sources![0]).not.toHaveProperty('provider')
+})
+it('switching calculators resets old bindings rather than guessing bindings for the new tool',()=>{
+ const prior=setSourceIntegration({...base,case:{...base.case!,parameters:{amount:{pointer:'/amount',type:'string'}}}},calculator)
+ prior.sources![0]!.calculation={inputs:{amount:'amount'},tables:{rates:86400}}
+ const next=setSourceIntegration(prior,{...calculator,profile:{...calculator.profile,id:'tax',tools:['tax'],calculator:{name:'tax',version:'1'}}},'source1')
+ expect(next.sources![0]!.calculation).toEqual({inputs:{},tables:{}})
+ expect(next.sources![0]!.arguments).toEqual({tool:'tax',arguments:{}})
+ expect(prior.sources![0]!.calculation).toEqual({inputs:{amount:'amount'},tables:{rates:86400}})
+})
