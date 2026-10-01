@@ -1,3 +1,4 @@
+import { EVALUATOR_SPEC_VERSION } from '../mcp/evaluatorVersion'
 import { sourceMessage } from '../i18n/source'
 /**
  * What a new pack is called, where it goes, and what its first bytes are.
@@ -182,9 +183,9 @@ export interface PackFields {
 /**
  * The template's own JSON, with the four members this dialog fills.
  *
- * Everything else the template carried is left exactly as the runtime served
- * it — `specVersion` above all, which is the runtime's statement about which
- * version of the format this document is written to and never the desk's.
+ * The pinned runtime's legacy examples are re-declared for its evaluator.
+ * That re-declaration changes only specVersion; identity shaping is separate.
+ * Unknown versions are not repaired.
  */
 export function shapeTemplate(templateJson: string, fields: PackFields): string {
   let parsed: unknown
@@ -196,7 +197,14 @@ export function shapeTemplate(templateJson: string, fields: PackFields): string 
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw new Error(sourceMessage("the template is not a JSON object"))
   }
-  return serialise(shapePack(parsed as Record<string, unknown>, fields))
+  return serialise(shapePack(redeclareExample(parsed as Record<string, unknown>), fields))
+}
+
+/** JPS §11 re-declaration: no member other than specVersion changes. */
+export function redeclareExample(document: Record<string, unknown>): Record<string, unknown> {
+  return document.specVersion === '0.1.0-draft'
+    ? { ...document, specVersion: EVALUATOR_SPEC_VERSION }
+    : document
 }
 
 /**

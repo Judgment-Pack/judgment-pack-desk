@@ -6187,10 +6187,8 @@ export function assistantTransport(id: string): Transport {
   # And the reading of the answer: a report that is not `valid` is a refusal,
   # not a formality.
   mutate web 'a document the runtime refused is treated as valid' web/src/shell/CreatePackDialog.tsx \
-    '              : checked.data.report.status === '"'"'valid'"'"'
-                ? undefined
-                : msg("The runtime will not call this document a pack — {{value0}}", { value0: layersReached(checked.data.report, msg).text })' \
-    '              : undefined'
+    "              : checked.data.report.status === 'valid'" \
+    '              : true'
 
   # Losing the slot used to hide the controls and leave the session running.
   mutate web 'the assistant going away only hides the controls' web/src/shell/DescribeIt.tsx \
