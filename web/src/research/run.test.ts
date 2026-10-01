@@ -16,6 +16,7 @@ import { canRetryExpectationValidation, INITIAL_STATE } from './run'
 import type { ChatAttachment } from '../chat/store'
 import type { VerifiedDocument } from '../documents/client'
 import type { DocumentRecord } from '../documents/record'
+import type { ResearchGatewayConfig } from '../config/deskConfig'
 import webSnapshot from '../documents/__fixtures__/web-snapshot.json'
 
 const answers = JSON.parse(readFileSync(join(import.meta.dirname, '__fixtures__', 'provider-answers.json'), 'utf8')) as Record<string, unknown>
@@ -1537,8 +1538,12 @@ describe('conversation draft citations', () => {
   const QUOTE = 'At least 1,560 hours of paid work in the last ten years.'
   const PAGE_TEXT = `Eligibility\n\nYou need ${QUOTE} Part-time work counts.`
   let minted = 0
+  /** A gateway pin, by the authority that signs under it. */
+  const pinOf = (authority: string) => ({ url: 'http://127.0.0.1:8787', authority, signer: { algorithm: 'ed25519', public: authority } }) as unknown as ResearchGatewayConfig
+  /** Which authority signed each kept document; a document verifies only under its own. */
+  const signers = new Map<string, string>()
   /** A verified web document kept in the chat, as read_link keeps one, with the given pages. */
-  function kept(pages: string[] = [PAGE_TEXT], partial = false): { file: ChatAttachment; document: VerifiedDocument } {
+  function kept(pages: string[] = [PAGE_TEXT], partial = false, signedBy = 'gateway-a'): { file: ChatAttachment; document: VerifiedDocument } {
     const record = structuredClone(webSnapshot) as unknown as DocumentRecord
     const first = record.content.pages[0]!
     record.content.pages = pages.map((body, index) => ({ ...first, number: index + 1, text: body, chars: [...body].length }))
@@ -1551,23 +1556,25 @@ describe('conversation draft citations', () => {
     const digest = `sha256:${minted.toString(16).padStart(64, '0')}`
     const id = `12345678-1234-1234-1234-${minted.toString().padStart(12, '0')}`
     const reference = { id, digest, pages: pages.map((_, index) => index + 1), allowPartial: false }
+    signers.set(id, signedBy)
     return { file: { id, name: 'Eligibility', text: '', document: reference, link: { url: 'https://example.org/what-the-chat-noted' } }, document: { record, digest, object: { version: 1, original: { name: 'Eligibility', mediaType: 'text/plain', bytes: '', sha256: record.document.id } } } }
   }
   const citing = (location: string, excerpt = QUOTE) => ({ ...PACK, sources: [{ ...PACK.sources[0]!, citation: { location, excerpt } }] })
   const pageOf = (file: ChatAttachment, page = 1) => `attachment:${file.document!.id}/${file.document!.digest}/page/${page}`
   /** A conversation run whose chat keeps the given documents, each loading as given. */
-  function chat(mode: 'draft' | 'web-research', document: unknown, files: { file: ChatAttachment; document: VerifiedDocument }[], load?: RunPorts['loadDocument'], basis: () => string = () => 'pin-1') {
+  function chat(mode: 'draft' | 'web-research', document: unknown, files: { file: ChatAttachment; document: VerifiedDocument }[], load?: RunPorts['loadDocument'], pin: () => ResearchGatewayConfig | null = () => pinOf('gateway-a')) {
     const loads: string[] = []
     return {
       loads,
       ...harness([async (_request, _signal, emit) => emit({ type: 'proposal', document, unknowns: [] })], {
         mode,
-        traceBasis: basis,
+        pin,
         documents: () => files.map(item => item.file),
-        loadDocument: load ?? (async (reference) => {
+        loadDocument: load ?? (async (reference, under) => {
           loads.push(reference.id)
           const found = files.find(item => item.file.document!.id === reference.id)
           if (!found) throw new Error('not stored')
+          if (signers.get(reference.id) !== under.authority) throw new Error('does not verify under this pin')
           return found.document
         })
       })
@@ -1732,7 +1739,30 @@ describe('conversation draft citations', () => {
     expect(canCreateDraft(state, 'draft')).toBe(false)
   })
 
-  it('does not keep an earlier readiness when a recheck is interrupted mid-trace', async () => {
+  it('does not keep the readiness of an earlier trace when a later one is interrupted', async () => {
+    const page = kept()
+    let hold = false
+    let started!: () => void
+    const loading = new Promise<void>(resolve => { started = resolve })
+    const h = chat('draft', citing(pageOf(page.file)), [page], async (_reference, _under, signal) => {
+      if (hold) { started(); await new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new DOMException('stopped', 'AbortError')))) }
+      return page.document
+    })
+    h.run.start('Draft this', [])
+    const ready = await settled(h.run)
+    expect(canCreateDraft(ready, 'draft')).toBe(true)
+    hold = true
+    h.run.recheck()
+    await loading
+    h.run.stop()
+    const state = await settled(h.run)
+    expect(state.status).toBe('stopped')
+    expect(state.readiness).toBe(ready.readiness)
+    expect(state.citations[0]!.traced).toBe(false)
+    expect(canCreateDraft(state, 'draft')).toBe(false)
+  })
+
+  it('does not keep an earlier readiness when a recheck of a reopened draft is interrupted mid-trace', async () => {
     const { checkpoint, decodeCheckpoint } = await import('../chat/checkpoint')
     const first = kept(), second = kept()
     const pack = { ...PACK, sources: [
@@ -1746,7 +1776,7 @@ describe('conversation draft citations', () => {
     let rechecking = false
     let started!: () => void
     const loading = new Promise<void>(resolve => { started = resolve })
-    const reopened = chat('draft', pack, [first, second], async (reference, signal) => {
+    const reopened = chat('draft', pack, [first, second], async (reference, _pin, signal) => {
       if (!rechecking) return reference.id === first.file.document!.id ? first.document : second.document
       if (reference.id === first.file.document!.id) throw new Error('no longer verifies')
       started()
@@ -1766,16 +1796,16 @@ describe('conversation draft citations', () => {
 
   it('traces again when the pin moves under a trace, and lands only on the basis it began on', async () => {
     const page = kept()
-    let pin = 'pin-1'
+    let current = 'gateway-a'
     let calls = 0
-    const h = chat('draft', citing(pageOf(page.file)), [page], async () => {
+    const h = chat('draft', citing(pageOf(page.file)), [page], async (_reference, under) => {
       calls += 1
       // The settle's first load: verified under the old pin, which is replaced
       // before the trace lands. Under the new one the document does not verify.
-      if (calls === 2) { pin = 'pin-2'; return page.document }
-      if (pin === 'pin-2') throw new Error('does not verify under the new pin')
+      if (calls === 2) current = 'gateway-b'
+      if (under.authority !== 'gateway-a') throw new Error('does not verify under the new pin')
       return page.document
-    }, () => pin)
+    }, () => pinOf(current))
     h.run.start('Draft this', [])
     const state = await settled(h.run)
     expect(calls).toBe(3)
@@ -1784,37 +1814,117 @@ describe('conversation draft citations', () => {
     expect(canCreateDraft(state, 'draft')).toBe(false)
   })
 
-  it('gives up a trace whose basis keeps moving, and says so', async () => {
+  it('gives up a trace whose basis keeps moving after three attempts, and says so', async () => {
     const page = kept()
-    let pin = 0
-    const h = chat('draft', citing(pageOf(page.file)), [page], async () => page.document, () => `pin-${pin++}`)
+    let moves = 0
+    let loads = 0
+    const h = chat('draft', citing(pageOf(page.file)), [page], async () => { loads += 1; return page.document }, () => pinOf(`gateway-${moves++}`))
     h.run.start('Draft this', [])
     const state = await settled(h.run)
     expect(state.citations[0]).toMatchObject({ traced: false, reason: "The gateway pin or this chat's documents changed while the citations were checked. Recheck the draft." })
     expect(canCreateDraft(state, 'draft')).toBe(false)
+    // Two traces, when the candidate was set and at the settle, each three attempts.
+    expect(loads).toBe(6)
   })
 
-  it('traces a ready draft again at rest when its basis changes, and Create lapses where it no longer holds', async () => {
+  it('verifies every document of one attempt under the one pin it began with', async () => {
+    // Two documents signed under different authorities, and a pin switched
+    // from A to B and back to A while the attempt loads them: what lands must
+    // hold under A, and the one signed under B does not.
+    const one = kept([PAGE_TEXT], false, 'gateway-a'), two = kept([PAGE_TEXT], false, 'gateway-b')
+    const pack = { ...PACK, sources: [
+      { ...PACK.sources[0]!, id: 'one', citation: { location: pageOf(one.file), excerpt: QUOTE } },
+      { ...PACK.sources[0]!, id: 'two', citation: { location: pageOf(two.file), excerpt: QUOTE } }
+    ] }
+    let current = 'gateway-a'
+    const h = chat('draft', pack, [one, two], async (reference, under) => {
+      // Switched to B as the second document loads, and back to A once it has.
+      if (reference.id === two.file.document!.id) current = 'gateway-b'
+      const verified = signers.get(reference.id) === under.authority
+      if (reference.id === two.file.document!.id) current = 'gateway-a'
+      if (!verified) throw new Error('does not verify under this pin')
+      return (reference.id === one.file.document!.id ? one : two).document
+    }, () => pinOf(current))
+    h.run.start('Draft this', [])
+    const state = await settled(h.run)
+    expect(state.citations.map(citation => [citation.sourceId, citation.traced])).toEqual([['one', true], ['two', false]])
+    expect(canCreateDraft(state, 'draft')).toBe(false)
+  })
+
+  it('withdraws readiness at once when the basis moves at rest, and settles again on what the new basis holds', async () => {
     const page = kept()
-    let verifies = true
-    const h = chat('draft', citing(pageOf(page.file)), [page], async () => {
-      if (!verifies) throw new Error('the pin changed')
-      return page.document
-    })
+    signers.set(page.file.document!.id, 'gateway-a')
+    let current = 'gateway-a'
+    const h = chat('draft', citing(pageOf(page.file)), [page], undefined, () => pinOf(current))
     h.run.start('Draft this', [])
     const ready = await settled(h.run)
     expect(canCreateDraft(ready, 'draft')).toBe(true)
-    h.run.retrace()
-    expect(canCreateDraft(h.run.getSnapshot(), 'draft')).toBe(false)
-    await until(() => h.run.getSnapshot().tracing === false, 'the retrace landed')
-    // Unchanged documents under an unchanged pin: still ready.
+    const before = h.loads.length
+    // Nothing moved: nothing is traced again.
+    h.run.basisChanged()
+    expect(h.loads).toHaveLength(before)
     expect(canCreateDraft(h.run.getSnapshot(), 'draft')).toBe(true)
-    verifies = false
-    h.run.retrace()
-    await until(() => h.run.getSnapshot().tracing === false, 'the second retrace landed')
+    // A pin the document is also signed under: withdrawn while it is traced, then ready again.
+    current = 'gateway-a2'
+    signers.set(page.file.document!.id, 'gateway-a2')
+    h.run.basisChanged()
+    expect(h.run.getSnapshot().readiness).toBe('')
+    expect(canCreateDraft(h.run.getSnapshot(), 'draft')).toBe(false)
+    await until(() => !h.run.getSnapshot().tracing && h.run.getSnapshot().readiness !== '', 'settled again on the new pin')
+    expect(canCreateDraft(h.run.getSnapshot(), 'draft')).toBe(true)
+    // A pin it is not signed under: not ready, and the citation says why.
+    current = 'gateway-b'
+    h.run.basisChanged()
+    await until(() => !h.run.getSnapshot().tracing && h.run.getSnapshot().status === 'needs-input', 'settled again on the other pin')
     expect(h.run.getSnapshot().citations[0]!.traced).toBe(false)
     expect(canCreateDraft(h.run.getSnapshot(), 'draft')).toBe(false)
     expect(h.requests).toHaveLength(1)
+  })
+
+  it('traces again when an action that saw the basis move ends without a settle, and keeps its readiness withdrawn', async () => {
+    const page = kept()
+    const files = [page]
+    let started!: () => void
+    const answering = new Promise<void>(resolve => { started = resolve })
+    const h = harness([
+      async (_request, _signal, emit) => emit({ type: 'proposal', document: citing(pageOf(page.file)), unknowns: [] }),
+      async (_request, signal) => { started(); await new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new DOMException('stopped', 'AbortError')))) }
+    ], { mode: 'draft', pin: () => pinOf('gateway-a'), documents: () => files.map(item => item.file), loadDocument: async () => page.document })
+    h.run.start('Draft this', [])
+    expect(canCreateDraft(await settled(h.run), 'draft')).toBe(true)
+    h.run.send('And another thing.')
+    await answering
+    // The chat no longer keeps the document, mid-action.
+    files.length = 0
+    h.run.basisChanged()
+    expect(canCreateDraft(h.run.getSnapshot(), 'draft')).toBe(false)
+    h.run.stop()
+    expect((await settled(h.run)).status).toBe('stopped')
+    await until(() => h.run.getSnapshot().citations[0]?.traced === false && !h.run.getSnapshot().tracing, 'traced again after the action')
+    expect(h.run.getSnapshot().citations[0]!.reason).toContain('is not a page kept in this chat')
+    expect(canCreateDraft(h.run.getSnapshot(), 'draft')).toBe(false)
+  })
+
+  it('ends a trace at rest with Stop, and it settles nothing afterwards', async () => {
+    const page = kept()
+    let current = 'gateway-a'
+    let hold = false
+    const h = chat('draft', citing(pageOf(page.file)), [page], async (_reference, _under, signal) => {
+      if (hold) await new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new DOMException('stopped', 'AbortError'))))
+      return page.document
+    }, () => pinOf(current))
+    h.run.start('Draft this', [])
+    expect(canCreateDraft(await settled(h.run), 'draft')).toBe(true)
+    hold = true
+    current = 'gateway-a2'
+    h.run.basisChanged()
+    await until(() => h.run.getSnapshot().tracing === true, 'the trace at rest is loading')
+    h.run.stop()
+    await until(() => h.run.getSnapshot().tracing === false, 'the trace at rest ended')
+    expect(h.run.getSnapshot().citations[0]).toMatchObject({ traced: false, reason: 'The citation check was interrupted. Recheck the draft.' })
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(h.run.getSnapshot().readiness).toBe('')
+    expect(canCreateDraft(h.run.getSnapshot(), 'draft')).toBe(false)
   })
 
   it('keys a trace to the pin and to every kept document\'s identity and pages', () => {

@@ -233,13 +233,10 @@ export function useResearchRun(options?: {
       },
       ledger,
       documents: () => settings.current.documents?.() ?? [],
-      // Verified under the pin as it is when the trace runs, never a saved one.
-      loadDocument: async (reference, signal) => {
-        const pin = settings.current.research.gateway
-        if (pin === null) throw new Error('no gateway is configured to verify documents')
-        return loadDocument(reference, pin, signal)
-      },
-      traceBasis: () => documentBasis(settings.current.research.gateway, settings.current.documents?.() ?? []),
+      // The pin as it is when a trace runs, never a saved one; the run verifies
+      // every document of one trace under the one pin it took.
+      pin: () => settings.current.research.gateway,
+      loadDocument: (reference, pin, signal) => loadDocument(reference, pin, signal),
       get researchTools() {
         return conversationMode(settings.current.mode) ? (settings.current.draftTools?.(context) ?? []) : toolsFor()
       },
@@ -269,7 +266,7 @@ export function useResearchRun(options?: {
   // A chat draft's citations rest on the gateway pin and on the documents the
   // chat keeps; when either changes, they are traced again.
   const basis = documentBasis(research.gateway, options?.documents?.() ?? [])
-  useEffect(() => { run.retrace() }, [run, basis])
+  useEffect(() => { run.basisChanged() }, [run, basis])
 
   const state = useSyncExternalStore(run.subscribe, run.getSnapshot, () => INITIAL_STATE)
   const sources = useSyncExternalStore(ledger.subscribe, ledger.getSnapshot, () => NO_SOURCES)

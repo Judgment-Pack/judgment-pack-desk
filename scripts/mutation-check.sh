@@ -5272,19 +5272,36 @@ export function assistantTransport(id: string): Transport {
   # that moved under it is traced again, and a trace a Stop interrupted
   # leaves nothing traced, never the readiness of the trace before it.
   mutate web "a chat draft's trace lands on a basis that moved under it" "$RR" \
-    '        if (this.ports.traceBasis?.() === basis) citations = traced' \
-    '        citations = traced'
+    '        if (this.currentBasis() === basis) {' \
+    '        if (true) {'
+  mutate web "a chat draft's documents are verified under the live pin" "$RR" \
+    '? load(reference, pin, loading) :' \
+    '? load(reference, this.ports.pin?.() ?? pin, loading) :'
   mutate web "a chat draft's interrupted trace keeps the last trace's readiness" "$RR" \
     '      citations = unchecked(latest.document, sourceMessage("The citation check was interrupted. Recheck the draft."))' \
     '      void unchecked'
   mutate web "a chat draft's trace lands after a Stop" "$RR" \
-    '        const traced = await tracePageCitations(latest.document, this.ports.documents?.() ?? [], this.ports.loadDocument ?? unverifiable, signal)
+    '        const traced = await tracePageCitations(latest.document, kept, (reference, loading) => pin !== null && load ? load(reference, pin, loading) : unverifiable(), signal)
         this.check(signal)' \
-    '        const traced = await tracePageCitations(latest.document, this.ports.documents?.() ?? [], this.ports.loadDocument ?? unverifiable, signal)'
+    '        const traced = await tracePageCitations(latest.document, kept, (reference, loading) => pin !== null && load ? load(reference, pin, loading) : unverifiable(), signal)'
   mutate web "a chat draft is not traced again when its pin or documents change" "$RR" \
-    '    if (this.running || !this.latest()) return
-    void this.traceConversation(new AbortController().signal)' \
-    '    return'
+    '    this.traceAtRest(wasReady)
+  }' \
+    '    void wasReady
+  }'
+  mutate web "a chat draft keeps its readiness when its pin or documents change" "$RR" \
+    "    if (wasReady) this.set({ readiness: '' })" \
+    '    void wasReady'
+  mutate web "a chat draft's action ends without tracing the basis that moved under it" "$RR" \
+    '        if (this.currentBasis() !== this.tracedBasis) this.traceAtRest(false)' \
+    '        void 0'
+  mutate web "a Stop leaves a chat draft's trace at rest running" "$RR" \
+    '    this.controller?.abort()
+    this.background?.abort()' \
+    '    this.controller?.abort()'
+  mutate web "a chat draft's citations are not traced again when its documents change" web/src/research/useResearchRun.ts \
+    '  useEffect(() => { run.basisChanged() }, [run, basis])' \
+    '  useEffect(() => { void basis }, [run, basis])'
   mutate web "a chat draft's basis ignores the pin" "$RR" \
     '  return JSON.stringify([pin ?? null, kept.map(' \
     '  return JSON.stringify([null, kept.map('
@@ -5313,7 +5330,7 @@ export function assistantTransport(id: string): Transport {
   # A checkpoint keeps no citations; without the trace on reopening, a draft
   # that cites reads as one that cites nothing.
   mutate web "a reopened chat draft is not traced again" "$RR" \
-    '    if (candidates.length) void this.traceConversation(new AbortController().signal)' \
+    '    if (candidates.length) this.traceAtRest(false)' \
     '    void 0'
   # The rule's own clauses, each held by the rule's unit test over one state.
   mutate web "Create is offered on a chat draft while its citations are traced" "$RR" \

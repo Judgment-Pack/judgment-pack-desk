@@ -6,6 +6,7 @@ import type { ChatAttachment } from '../chat/store'
 import type { WebsiteReference } from '../documents/website'
 import { matchesPageQuote, type DocumentReference, type VerifiedDocument } from '../documents/client'
 import { needsPartialConsent } from '../documents/record'
+import type { ResearchGatewayConfig } from '../config/deskConfig'
 import { runtimeProbes, type RuntimeProbe } from './runtimeProbes'
 import { sourceMessage } from '../i18n/source'
 /**
@@ -154,10 +155,10 @@ export interface RunPorts {
   researchTools: HostTool[]
   /** The documents kept in this chat, which a conversation draft's citations are traced to. */
   documents?: () => readonly ChatAttachment[]
-  /** Load a kept document and verify it under the gateway pin as it is now. */
-  loadDocument?: (reference: DocumentReference, signal: AbortSignal) => Promise<VerifiedDocument>
-  /** What a trace rests on besides the draft, as now. See `documentBasis`. */
-  traceBasis?: () => string
+  /** The gateway pin as it is now, which a chat draft's documents are verified under. */
+  pin?: () => ResearchGatewayConfig | null
+  /** Load a kept document and verify it under the given pin. */
+  loadDocument?: (reference: DocumentReference, pin: ResearchGatewayConfig, signal: AbortSignal) => Promise<VerifiedDocument>
   seal(session: string, signal: AbortSignal): Promise<void>
   registry(signal: AbortSignal): Promise<string>
   gateway: { authority: string; publicKeyHex: string } | null
@@ -445,6 +446,12 @@ export class AuthoringRun {
   private undone: string | null = null
   /** The citation traces started, so only the last one lands. See `traceConversation`. */
   private traces = 0
+  /** The basis the citations on hand were traced on, or null where no trace landed. See `basisChanged`. */
+  private tracedBasis: string | null = null
+  /** The basis moved during an action, so its citations are traced again when it ends. */
+  private retracePending = false
+  /** A trace taken at rest, which Stop, the next action and the next such trace end. */
+  private background: AbortController | null = null
 
   constructor(private readonly ports: RunPorts) {}
 
@@ -500,6 +507,7 @@ export class AuthoringRun {
   /** Stop the run at its last completed stage. */
   stop(): void {
     this.controller?.abort()
+    this.background?.abort()
   }
 
   /**
@@ -549,7 +557,7 @@ export class AuthoringRun {
     // A checkpoint keeps no citations, so a reopened conversation draft is
     // traced again before anything reads them: one that cites is never shown
     // as citing nothing. Nothing else is checked or changed here.
-    if (candidates.length) void this.traceConversation(new AbortController().signal)
+    if (candidates.length) this.traceAtRest(false)
   }
 
   /** Recover a complete proposal from an older assistant reply, without a model call. */
@@ -786,6 +794,8 @@ export class AuthoringRun {
   private async drive(work: (signal: AbortSignal) => Promise<void>): Promise<void> {
     const controller = new AbortController()
     this.controller = controller
+    // An action traces for itself where it needs to; a trace at rest is over.
+    this.background?.abort()
     try {
       await work(controller.signal)
     } catch (cause) {
@@ -809,6 +819,12 @@ export class AuthoringRun {
       this.undone = null
       if (this.controller === controller) this.controller = null
       if (!this.running) this.disarm()
+      // The pin or the documents moved while this ran, and its own settle did
+      // not trace the draft on the basis they moved to: trace it now.
+      if (!this.running && this.retracePending) {
+        this.retracePending = false
+        if (this.currentBasis() !== this.tracedBasis) this.traceAtRest(false)
+      }
     }
   }
 
@@ -1260,15 +1276,23 @@ export class AuthoringRun {
     const trace = ++this.traces
     this.set({ tracing: true })
     let citations: Citation[] | null = null
+    let landed: string | null = null
     try {
-      // The pin and the kept documents can change while documents load. A
-      // trace lands only on the basis it began on, and is taken again where
-      // that moved, a bounded number of times.
+      // One pin and one list of kept documents for each attempt, taken as it
+      // begins: every document is verified under that pin, and the attempt
+      // lands only where the pin and the documents are still those when it
+      // ends. Where they moved it is taken again, a bounded number of times.
       for (let attempt = 0; attempt < TRACE_ATTEMPTS && citations === null; attempt += 1) {
-        const basis = this.ports.traceBasis?.()
-        const traced = await tracePageCitations(latest.document, this.ports.documents?.() ?? [], this.ports.loadDocument ?? unverifiable, signal)
+        const pin = this.ports.pin?.() ?? null
+        const kept = this.ports.documents?.() ?? []
+        const basis = documentBasis(pin, kept)
+        const load = this.ports.loadDocument
+        const traced = await tracePageCitations(latest.document, kept, (reference, loading) => pin !== null && load ? load(reference, pin, loading) : unverifiable(), signal)
         this.check(signal)
-        if (this.ports.traceBasis?.() === basis) citations = traced
+        if (this.currentBasis() === basis) {
+          citations = traced
+          landed = basis
+        }
       }
       citations ??= unchecked(latest.document, sourceMessage("The gateway pin or this chat's documents changed while the citations were checked. Recheck the draft."))
     } catch (cause) {
@@ -1278,21 +1302,55 @@ export class AuthoringRun {
       throw cause
     } finally {
       if (trace === this.traces) {
-        if (citations !== null && this.latest()?.digest === latest.digest) this.set({ citations })
+        if (citations !== null && this.latest()?.digest === latest.digest) {
+          this.set({ citations })
+          this.tracedBasis = landed
+        }
         this.set({ tracing: false })
       }
     }
   }
 
+  /** What a chat draft's trace rests on now. See `documentBasis`. */
+  private currentBasis(): string {
+    return documentBasis(this.ports.pin?.() ?? null, this.ports.documents?.() ?? [])
+  }
+
   /**
-   * The gateway pin or the chat's documents changed: trace a chat draft's
-   * citations again, without a model, so a readiness reached on the old basis
-   * lapses wherever the new one does not hold it. At rest only; an action in
-   * flight traces again at its own settle.
+   * Trace a chat draft at rest: when it is reopened, and when its basis moved.
+   * Bounded like any action, and ended by Stop, by the next action and by the
+   * next such trace. `settleAgain` settles the draft again without a model
+   * once the trace lands, for a draft whose readiness the move withdrew.
    */
-  retrace(): void {
-    if (this.running || !this.latest()) return
-    void this.traceConversation(new AbortController().signal)
+  private traceAtRest(settleAgain: boolean): void {
+    this.background?.abort()
+    const controller = new AbortController()
+    this.background = controller
+    const deadline = setTimeout(() => controller.abort(), this.ports.seconds * 1000)
+    void this.traceConversation(controller.signal).then(() => {
+      if (settleAgain && !controller.signal.aborted && !this.running) this.settleReview(sourceMessage("The candidate needs review."))
+    }, () => undefined).finally(() => {
+      clearTimeout(deadline)
+      if (this.background === controller) this.background = null
+    })
+  }
+
+  /**
+   * The gateway pin or the chat's documents may have changed. Where they are
+   * no longer what the draft's citations were traced on, a readiness reached
+   * on them is withdrawn at once, and the citations are traced again: now at
+   * rest, settling a draft that was ready again without a model; or when the
+   * action in flight ends, unless its own settle traced them on the new basis.
+   */
+  basisChanged(): void {
+    if (!conversationMode(this.ports.mode) || !this.latest() || this.currentBasis() === this.tracedBasis) return
+    const wasReady = this.state.readiness !== ''
+    if (wasReady) this.set({ readiness: '' })
+    if (this.running) {
+      this.retracePending = true
+      return
+    }
+    this.traceAtRest(wasReady)
   }
 
   /** Why the candidate is not ready even where its cases agree, or null. */

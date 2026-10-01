@@ -51,3 +51,16 @@ it('keeps supplied-link reading usable without a search provider', async () => {
   act(() => result.current.run!.start('Research this', []))
   await waitFor(() => expect(result.current.state.status).toBe('complete'))
 })
+
+it('asks a chat draft to trace its citations again whenever the documents the chat keeps change', async () => {
+  const { AuthoringRun } = await import('./run')
+  const changed = vi.spyOn(AuthoringRun.prototype, 'basisChanged')
+  const file = (pages: number[]) => [{ id: 'kept', name: 'Kept', text: '', document: { id: 'kept', digest: 'sha256:' + 'a'.repeat(64), pages, allowPartial: false } }]
+  const { rerender } = renderHook(({ pages }: { pages: number[] }) => useResearchRun({ mode: 'draft', draftTools: fake.tools, documents: () => file(pages) }), { initialProps: { pages: [1] } })
+  const after = changed.mock.calls.length
+  rerender({ pages: [1] })
+  expect(changed.mock.calls.length).toBe(after)
+  rerender({ pages: [1, 2] })
+  expect(changed.mock.calls.length).toBe(after + 1)
+  changed.mockRestore()
+})

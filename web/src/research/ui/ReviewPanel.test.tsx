@@ -18,7 +18,8 @@ const untraced: Citation = { sourceId: 'rumour', location: 'https://example.org/
 function settledDraft(citations: Citation[], patch: Partial<RunState> = {}): RunState {
   const state: RunState = { ...INITIAL_STATE, phase: 'review', status: 'ready', citations,
     candidates: [{ revision: 1, producedBy: 'conversation', document: {}, text: '{}', digest, check: { documentDigest: digest, valid: true, diagnostics: [], cases: [] } }], ...patch }
-  return { ...state, readiness: readinessKey(state) }
+  // A settle records readiness only where it reached ready; a patch saying otherwise stands.
+  return { ...state, readiness: patch.readiness ?? readinessKey(state) }
 }
 const citationsLine = () => screen.getByText('Citations').nextElementSibling!.textContent
 
@@ -35,6 +36,7 @@ describe('the review panel on a conversation draft', () => {
     declares.candidates = [{ ...declares.candidates[0]!, document: { sources: [{ id: 'eligibility' }] } }]
     render(<ReviewPanel mode="draft" state={declares} sources={[]} onSelect={vi.fn()} onCreate={vi.fn()} />)
     expect(screen.queryByText(/cites no source/)).toBeNull()
+    expect((screen.getByRole('button', { name: /Review and create/ }) as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('says the citations are being checked while they are traced, and offers nothing', () => {
