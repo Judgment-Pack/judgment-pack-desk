@@ -51,3 +51,15 @@ it('blocks stale catalog actions on refresh failure while leaving local files us
  fireEvent.click(screen.getByRole('button',{name:/Local JSON file/}))
  expect(onPick).toHaveBeenCalledWith(undefined)
 })
+
+it('names and searches calculator profiles while keeping ordinary profile labels unchanged',async()=>{
+ const calculator={...entry,profile:{...entry.profile,id:'fx',calculator:{name:'fx-convert',version:'2.1.0'}}}
+ const onPick=view([entry,calculator])
+ fireEvent.click(screen.getByRole('button',{name:'Add source'}))
+ expect(screen.getByRole('button',{name:'registry'})).toBeTruthy()
+ expect(screen.getByRole('button',{name:'fx · Calculator: fx-convert · 2.1.0'})).toBeTruthy()
+ fireEvent.change(screen.getByRole('textbox',{name:'Search integrations…'}),{target:{value:'fx-convert'}})
+ expect(screen.queryByRole('button',{name:'registry'})).toBeNull()
+ fireEvent.click(screen.getByRole('button',{name:'fx · Calculator: fx-convert · 2.1.0'}))
+ expect(onPick).toHaveBeenCalledWith(calculator)
+})

@@ -1,15 +1,22 @@
 import type { InputMapping, SourceInput, JobInput } from './client'
 import type { RetainedJSON } from './wire'
+export interface CalculatorPin { name: string; version: string }
+export interface CalculationBinding { inputs: Record<string, string>; tables: Record<string, number> }
+export interface CalculationLineage {
+ calculator: CalculatorPin; status: 'computed' | 'input-missing' | 'cannot-compute';
+ inputs: {name: string; parameter: string; source: string; pointer: string}[];
+ asOf: Record<string, string>;
+}
 export interface InputProfile {
  id: string; publicKey: string; class: 'record' | 'generated'; source: string; authority: string; shape: 'mcp' | 'http' | 'command';
- adapter: {name: string; version: string; digest: string}; endpoint: string | null; tools?: string[];
+ adapter: {name: string; version: string; digest: string}; endpoint: string | null; tools?: string[]; calculator?: CalculatorPin;
 }
 export interface ProfileEntry { profile: InputProfile; digest: string }
 export interface Parameter { from?: string; pointer: string; type: 'integer' | 'string' | 'timestamp' }
 export interface CopyMapping { facts: InputMapping['facts']; evidence: InputMapping['evidence'] }
 export interface MappingSource {
  name: string; kind: 'operation' | 'selected-file'; provider?: InputMapping['provider']; profile?: string; profileDigest?: string; maxAge?: number;
- parameters?: Record<string, Parameter>; arguments?: Record<string, unknown>;
+ parameters?: Record<string, Parameter>; arguments?: Record<string, unknown>; calculation?: CalculationBinding;
  read: { unwrap?: string[]; copy?: CopyMapping; rule?: Record<string, unknown> };
 }
 export interface MappingV2 {
@@ -19,7 +26,7 @@ export interface MappingV2 {
 export interface SourceV2 { mapping: MappingV2; case: Record<string, unknown>; sources: Record<string, {snapshot?: SourceInput['snapshot']; response?: RetainedJSON | unknown}>; mappingDigest?: string }
 export interface Preparation {
  version: 2; verifiedAt: string; mappingDigest: string; verification: string;
- lineage: {target: string; kind: string; source: string; class: string; generatedInfluence: boolean; present: boolean; status: string; reason: string; receipt?: unknown}[];
+ lineage: {target: string; kind: string; source: string; class: string; generatedInfluence: boolean; present: boolean; status: string; reason: string; receipt?: unknown; calculation?: CalculationLineage}[];
  cites: unknown[]; outcomes: {name: string; status: string; reason: string}[];
 }
 export interface InputPlan { next?: {name: string; kind: string; provider?: string; profile?: string; source?: string; arguments?: Record<string, unknown>}; input?: JobInput; factsText?: string; evidenceText?: string }
