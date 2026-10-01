@@ -2818,12 +2818,12 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # a document that cannot be shaped is discovered after the write.)
   mutate web 'a template that is not a document is sent anyway' web/src/shell/CreatePackDialog.tsx \
     '        try {
-          content = shapeTemplate(source.text, { name, description, slug, idBase })
+          content = shapeTemplate(source.text, { name, description, slug, idBase }, source.evaluatorVersion)
         } catch (cause) {
           setFailure({ lead: sourceMessage(TEMPLATE_UNUSABLE), reason: reasonOf(cause) })
           return
         }' \
-    '        content = shapeTemplate(source.text, { name, description, slug, idBase })'
+    '        content = shapeTemplate(source.text, { name, description, slug, idBase }, source.evaluatorVersion)'
 
   # A listing that failed is not a project with no files in it.
   mutate web "a listing that failed is reported as a project with no jpack.json" "$X" \
@@ -2862,6 +2862,14 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "a refusal with no reason given is quoted at the user anyway" "$ST" \
     "    this.reported = text !== ''" \
     '    this.reported = true'
+  # The evaluator's version is the runtime's where it reports one, and a runtime
+  # that reports none is never sent the spec_version its example tools refuse.
+  mutate web "the evaluator version the runtime reports is ignored" "$ST" \
+    "  return typeof reported === 'string' && reported !== '' ? { version: reported, reported: true } : UNREPORTED" \
+    '  return UNREPORTED'
+  mutate web "spec_version is sent to example tools that do not take it" "$ST" \
+    'const UNREPORTED: EvaluatorVersion = { version: FALLBACK_EVALUATOR_SPEC_VERSION, reported: false }' \
+    'const UNREPORTED: EvaluatorVersion = { version: FALLBACK_EVALUATOR_SPEC_VERSION, reported: true }'
 
   # The slug rule, and the two sentences it says.
   mutate web "a name too long for the file it names is accepted" "$NP" \

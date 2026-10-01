@@ -506,10 +506,13 @@ describe('the templates it offers', () => {
     })
     renderDialog(collides, FULL_CAPS)
     fireEvent.click(await screen.findByLabelText('Template'))
-    const options = await screen.findAllByRole('option')
     // Two distinct options, and the labels are what the runtime and the desk
-    // each call theirs.
-    expect(options.map((option) => option.textContent)).toEqual(['empty', 'Empty pack'])
+    // each call theirs. The schema is asked once the listing has said which
+    // version to ask for, so the second can arrive after the first.
+    await waitFor(() =>
+      expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['empty', 'Empty pack'])
+    )
+    const options = screen.getAllByRole('option')
     fireEvent.click(options[0]!)
     await waitFor(() =>
       expect(collides.calls.some((call) => call.name === 'get_example')).toBe(true)
@@ -1600,10 +1603,14 @@ describe('the create page’s own steps', () => {
 
 describe('the evaluator version of newly written packs', () => {
   const legacy = JSON.stringify({ ...JSON.parse(TEMPLATE), specVersion: '0.1.0-draft' })
+  // A runtime before v0.24.0: its listing names no evaluator version, and its
+  // example tools refuse spec_version as an unknown member, as v0.23.1 does.
+  const unknownMember = (tool: string, accepted: string) => ({ isError: true,
+    text: `The "${tool}" arguments carry an unknown member "spec_version"; ${accepted}, spelled exactly.` })
   function pinnedRuntime() {
     return stubClient({
-      list_examples: () => ({ text: EXAMPLES }),
-      get_example: () => ({ text: legacy }),
+      list_examples: (args) => 'spec_version' in args ? unknownMember('list_examples', 'it accepts no members') : { text: EXAMPLES },
+      get_example: (args) => 'spec_version' in args ? unknownMember('get_example', 'the accepted member is "name"') : { text: legacy },
       get_schema: (args) => ({ text: args.spec_version === '0.2.0-draft' ? SCHEMA : SCHEMA.replace('0.2.0-draft', '0.1.0-draft') }),
       validate: () => ({ text: JSON.stringify({ status: 'valid', layers: [], diagnostics: [] }) }),
     })
@@ -1622,6 +1629,8 @@ describe('the evaluator version of newly written packs', () => {
     expect(written.rules).toEqual(JSON.parse(legacy).rules)
     expect(written.outcomes).toEqual(JSON.parse(legacy).outcomes)
     expect(stub.calls.find(call => call.name === 'get_example')!.args).toEqual({ name: 'minimal-expense-approval' })
+    expect(stub.calls.filter(call => call.name === 'list_examples').map(call => call.args)).toEqual([{}])
+    expect(stub.calls.find(call => call.name === 'get_schema')!.args).toEqual({ spec_version: '0.2.0-draft' })
   })
   it.each(['dialog', 'page'] as const)('requests the evaluator schema and writes its declaration for the skeleton in %s', async presentation => {
     const sent = serveProject({ project: PROJECT }), stub = pinnedRuntime()
@@ -1657,6 +1666,107 @@ describe('the evaluator version of newly written packs', () => {
       await waitFor(() => expect(sent.length).toBe(2))
       expect(JSON.parse(sent[0]!.body.content as string).specVersion).toBe('0.2.0-draft')
       expect(stub.calls.some(call => call.name === 'validate' && call.args.document === sent[0]!.body.content)).toBe(true)
+    }
+  })
+})
+
+describe('the evaluator version a runtime reports', () => {
+  const legacy = JSON.stringify({ ...JSON.parse(TEMPLATE), specVersion: '0.1.0-draft' })
+  /**
+   * A runtime from v0.24.0. The default listing names the evaluator's version
+   * beside its own, and asked for a version the example tools serve the set
+   * that declares it. `served` is what that set's example declares, so one case
+   * can serve an example that still needs re-declaring.
+   */
+  function reportingRuntime(evaluator: string, served = evaluator) {
+    const listing = (specVersion: string) =>
+      JSON.stringify({ ...JSON.parse(EXAMPLES), specVersion, evaluatorSpecVersion: evaluator })
+    return stubClient({
+      list_examples: (args) => ({ text: listing(typeof args.spec_version === 'string' ? args.spec_version : '0.1.0-draft') }),
+      get_example: (args) => ({ text: args.spec_version === undefined ? legacy : JSON.stringify({ ...JSON.parse(TEMPLATE), specVersion: served }) }),
+      get_schema: (args) => ({ text: SCHEMA.replace('0.2.0-draft', String(args.spec_version)) }),
+      validate: () => ({ text: JSON.stringify({ status: 'valid', layers: [], diagnostics: [] }) }),
+    })
+  }
+  const argsOf = (stub: ReturnType<typeof stubClient>, name: string) =>
+    stub.calls.filter(call => call.name === name).map(call => call.args)
+  async function settled(presentation: 'dialog' | 'page') {
+    const go = () => presentation === 'page' ? screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement : createButton()
+    await waitFor(() => expect(go().disabled).toBe(false))
+  }
+  async function create(presentation: 'dialog' | 'page', sent: Sent[]) {
+    if (presentation === 'page') await reviewHandedDraft()
+    else await waitFor(() => expect(createButton().disabled).toBe(false))
+    fireEvent.click(createButton())
+    await waitFor(() => expect(sent.length).toBe(2))
+    return JSON.parse(sent[0]!.body.content as string) as Record<string, unknown>
+  }
+
+  it.each(['dialog', 'page'] as const)('asks for the reported version and writes the example as served in %s presentation', async presentation => {
+    const sent = serveProject({ project: PROJECT }), stub = reportingRuntime('0.2.0-draft')
+    renderDialog(stub, { ...FULL_CAPS, validateSupported: true }, effectiveConfig(undefined), { presentation })
+    fireEvent.change(screen.getByLabelText('Name (required)'), { target: { value: 'Versioned example' } })
+    await settled(presentation)
+    expect(screen.queryByText(/This example will declare specVersion/)).toBeNull()
+    const written = await create(presentation, sent)
+    expect(written.specVersion).toBe('0.2.0-draft')
+    expect(written.rules).toEqual(JSON.parse(TEMPLATE).rules)
+    // The default listing is what said which version to ask for; everything
+    // after it names that version.
+    expect(argsOf(stub, 'list_examples')).toEqual([{}, { spec_version: '0.2.0-draft' }])
+    expect(argsOf(stub, 'get_example')).toEqual([{ name: 'minimal-expense-approval', spec_version: '0.2.0-draft' }])
+    expect(argsOf(stub, 'get_schema')).toEqual([{ spec_version: '0.2.0-draft' }])
+  })
+
+  it('uses an unknown future version the runtime reports, not the fallback', async () => {
+    const sent = serveProject({ project: PROJECT }), stub = reportingRuntime('0.3.0-draft')
+    renderDialog(stub, { ...FULL_CAPS, validateSupported: true })
+    await nameIt('Future example')
+    expect(screen.queryByText(/This example will declare specVersion/)).toBeNull()
+    const written = await create('dialog', sent)
+    expect(written.specVersion).toBe('0.3.0-draft')
+    expect(argsOf(stub, 'list_examples')).toEqual([{}, { spec_version: '0.3.0-draft' }])
+    expect(argsOf(stub, 'get_example')).toEqual([{ name: 'minimal-expense-approval', spec_version: '0.3.0-draft' }])
+    expect(argsOf(stub, 'get_schema')).toEqual([{ spec_version: '0.3.0-draft' }])
+  })
+
+  it('writes the skeleton of the reported version’s schema', async () => {
+    const sent = serveProject({ project: PROJECT }), stub = reportingRuntime('0.3.0-draft')
+    renderDialog(stub, { ...FULL_CAPS, validateSupported: true })
+    fireEvent.click(await screen.findByLabelText('Template'))
+    await waitFor(() => expect(screen.getAllByRole('option').map(option => option.textContent)).toContain('Empty pack'))
+    fireEvent.click(screen.getAllByRole('option').find(option => option.textContent === 'Empty pack')!)
+    await nameIt('Empty future')
+    expect((await create('dialog', sent)).specVersion).toBe('0.3.0-draft')
+  })
+
+  it.each([['0.2.0-draft', 'dialog'], ['0.3.0-draft', 'dialog'], ['0.3.0-draft', 'page']] as const)('still re-declares for a reported %s, and says so, where the set serves a legacy example (%s)', async (evaluator, presentation) => {
+    const sent = serveProject({ project: PROJECT }), stub = reportingRuntime(evaluator, '0.1.0-draft')
+    renderDialog(stub, { ...FULL_CAPS, validateSupported: true }, effectiveConfig(undefined), { presentation })
+    fireEvent.change(screen.getByLabelText('Name (required)'), { target: { value: 'Legacy example' } })
+    expect(await screen.findByText(`This example will declare specVersion ${evaluator} for the installed evaluator. No rules or other policy fields are changed.`)).toBeTruthy()
+    expect((await create(presentation, sent)).specVersion).toBe(evaluator)
+    expect(argsOf(stub, 'get_example')).toEqual([{ name: 'minimal-expense-approval', spec_version: evaluator }])
+  })
+
+  it.each([['0.3.0-draft', true], ['0.2.0-draft', false]] as const)('finalizes a reviewed draft declaring %s against the reported 0.3.0-draft: %s', async (specVersion, finalizes) => {
+    const sent = serveProject({ project: PROJECT }), stub = reportingRuntime('0.3.0-draft')
+    const router = createMemoryRouter([{ path: '*', element:
+      <McpContext.Provider value={connected({ client: stub.client, ...FULL_CAPS, validateSupported: true })}>
+        <DeskConfigFixture value={effectiveConfig(undefined)}>
+          <CreatePackDialog open presentation="review" onOpenChange={() => {}} onSaved={() => {}}
+            reviewDraft={{ name: 'Reviewed example', description: '', unknowns: [], document: { ...JSON.parse(TEMPLATE), specVersion } }} />
+        </DeskConfigFixture>
+      </McpContext.Provider>
+    }])
+    render(<QueryClientProvider client={testQueryClient()}><RouterProvider router={router}/></QueryClientProvider>)
+    if (finalizes) {
+      expect((await create('dialog', sent)).specVersion).toBe('0.3.0-draft')
+    } else {
+      expect(await screen.findByText(/This draft must declare specVersion 0.3.0-draft before it can be finalized/)).toBeTruthy()
+      expect(createButton().disabled).toBe(true)
+      fireEvent.click(createButton())
+      expect(sent).toEqual([])
     }
   })
 })

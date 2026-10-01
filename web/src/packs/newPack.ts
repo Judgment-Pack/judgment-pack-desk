@@ -1,4 +1,3 @@
-import { EVALUATOR_SPEC_VERSION } from '../mcp/evaluatorVersion'
 import { sourceMessage } from '../i18n/source'
 /**
  * What a new pack is called, where it goes, and what its first bytes are.
@@ -183,11 +182,11 @@ export interface PackFields {
 /**
  * The template's own JSON, with the four members this dialog fills.
  *
- * The pinned runtime's legacy examples are re-declared for its evaluator.
- * That re-declaration changes only specVersion; identity shaping is separate.
- * Unknown versions are not repaired.
+ * A legacy example is re-declared for the evaluator's version, the runtime's
+ * own where it reports one. That re-declaration changes only specVersion;
+ * identity shaping is separate. Unknown versions are not repaired.
  */
-export function shapeTemplate(templateJson: string, fields: PackFields): string {
+export function shapeTemplate(templateJson: string, fields: PackFields, evaluatorVersion: string): string {
   let parsed: unknown
   try {
     parsed = JSON.parse(templateJson)
@@ -197,13 +196,19 @@ export function shapeTemplate(templateJson: string, fields: PackFields): string 
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw new Error(sourceMessage("the template is not a JSON object"))
   }
-  return serialise(shapePack(redeclareExample(parsed as Record<string, unknown>), fields))
+  return serialise(shapePack(redeclareExample(parsed as Record<string, unknown>, evaluatorVersion), fields))
 }
 
-/** JPS §11 re-declaration: no member other than specVersion changes. */
-export function redeclareExample(document: Record<string, unknown>): Record<string, unknown> {
-  return document.specVersion === '0.1.0-draft'
-    ? { ...document, specVersion: EVALUATOR_SPEC_VERSION }
+/**
+ * JPS §11 re-declaration: no member other than specVersion changes.
+ *
+ * The same object comes back where nothing is re-declared — an example that
+ * already declares the evaluator's version, or one this rule does not know —
+ * so a caller can say whether it happened by identity.
+ */
+export function redeclareExample(document: Record<string, unknown>, evaluatorVersion: string): Record<string, unknown> {
+  return document.specVersion === '0.1.0-draft' && evaluatorVersion !== '0.1.0-draft'
+    ? { ...document, specVersion: evaluatorVersion }
     : document
 }
 
