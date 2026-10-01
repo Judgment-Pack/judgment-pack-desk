@@ -331,8 +331,19 @@ func (s *Server) routeDesk(w http.ResponseWriter, r *http.Request) bool {
 }
 
 // Event credentials belong to the trigger, not the browser session. Only
-// already-open registered desks can receive deliveries through this route.
+// already-open registered desks can receive deliveries, or answer the read of
+// a delivery's result, through these routes.
 func (s *Server) handleDeskJobEvent(w http.ResponseWriter, r *http.Request) {
+	if child := s.eventDesk(w, r); child != nil {
+		child.handleJobEvent(w, r)
+	}
+}
+func (s *Server) handleDeskJobEventResult(w http.ResponseWriter, r *http.Request) {
+	if child := s.eventDesk(w, r); child != nil {
+		child.handleJobEventResult(w, r)
+	}
+}
+func (s *Server) eventDesk(w http.ResponseWriter, r *http.Request) *Server {
 	owner := s.deskOwner()
 	id := r.PathValue("desk")
 	owner.desksMu.Lock()
@@ -340,7 +351,7 @@ func (s *Server) handleDeskJobEvent(w http.ResponseWriter, r *http.Request) {
 	owner.desksMu.Unlock()
 	if !deskIDPattern.MatchString(id) || child == nil {
 		writeJSONCoded(w, 404, CodeNotFound, "Unknown event endpoint.")
-		return
+		return nil
 	}
-	child.handleJobEvent(w, r)
+	return child
 }

@@ -363,6 +363,7 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("/api/session", s.handleSession)
 	s.mux.HandleFunc("/api/operations/{rest...}", s.handleJobs)
 	s.mux.HandleFunc("/api/job-events/{trigger}", s.handleJobEvent)
+	s.mux.HandleFunc("/api/job-events/{trigger}/occurrences/{occurrence}", s.handleJobEventResult)
 	s.mux.HandleFunc("/api/agent/run", s.handleAgentRun)
 	s.mux.HandleFunc("/api/model-providers", s.handleModelProviders)
 	s.mux.HandleFunc("/api/model-providers/openai/{action}", s.handleModelProviders)
@@ -371,6 +372,7 @@ func New(cfg Config) (*Server, error) {
 	// design. See files.go for what this does and does not decide.
 	s.mux.HandleFunc("/api/desks", s.handleDesks)
 	s.mux.HandleFunc("/api/desks/{desk}/job-events/{trigger}", s.handleDeskJobEvent)
+	s.mux.HandleFunc("/api/desks/{desk}/job-events/{trigger}/occurrences/{occurrence}", s.handleDeskJobEventResult)
 	s.mux.HandleFunc("GET /api/files", s.handleFiles)
 	s.mux.HandleFunc("GET /api/file", s.handleFileRead)
 	s.mux.HandleFunc("PUT /api/file", s.handleFileWrite)

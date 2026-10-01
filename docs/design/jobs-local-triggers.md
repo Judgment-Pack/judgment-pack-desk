@@ -36,6 +36,16 @@ to the exact Runner route alongside the private companion bearer. The scoped tok
 cannot access owner APIs. Identical event retries return the original occurrence;
 changed payloads with the same ID conflict. Token rotation revokes the old key.
 
+The same token can read the result of an occurrence it created at
+`GET /api/job-events/{trigger}/occurrences/{occurrence}`. Desk parses both identifiers
+(`trg_` and `occ_` with 32 lowercase hex digits), refuses any request that is not
+exactly that shape (another method, an Origin or `Sec-Fetch-*` header, any query, even
+an empty one, a body, or anything but one 64-hex-digit bearer token), and forwards a
+request built from the parsed identifiers alone to the Runner's
+`GET /v1/triggers/{trigger}/occurrences/{occurrence}`. The
+Runner's 401 `invalid_trigger_token` and 404 `occurrence_not_found` pass through
+unchanged, so Desk reveals nothing about whether an occurrence exists.
+
 Receipt verification remains bound to the admitted input and its recorded time.
 The queue expires before evaluation; no automatic reacquisition or external
 operation retry occurs. All artifacts and automation records stay local.

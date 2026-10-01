@@ -18,7 +18,7 @@ Existing projects keep their current storage locations. Opening this version doe
 
 Each document freezes its selected ID. HTTP requests carry `X-Jpack-Desk`; runtime and agent WebSockets carry the nonsecret `desk` selector. Authentication and origin checks precede desk selection. Authentication is installation-wide, including revocation. Model-relay requests carry the same selector. Switching reloads the document, clearing all query and editor state, after checking active assistant work, flushing pending chats, and confirming unsaved editors through the existing typed modal.
 
-Event senders use `/api/desks/<id>/job-events/<trigger>` with the trigger-scoped bearer. They do not acquire a browser session. The endpoint resolves only already registered desks and retains the runner's event admission checks.
+Event senders use `/api/desks/<id>/job-events/<trigger>` with the trigger-scoped bearer, and read an occurrence's result at `/api/desks/<id>/job-events/<trigger>/occurrences/<occurrence>`. They do not acquire a browser session. The endpoint resolves only already registered desks and retains the runner's event admission checks.
 
 Each registered desk owns its runtime relay and Jobs companion. Cloud pull subscriptions
 are assigned to one desk in the installation connections file using the optional

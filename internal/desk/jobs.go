@@ -220,14 +220,58 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	}
 	s.proxyJobs(w, r, tail, "")
 }
+
+var (
+	triggerIDPattern    = regexp.MustCompile(`^trg_[a-f0-9]{32}$`)
+	occurrenceIDPattern = regexp.MustCompile(`^occ_[a-f0-9]{32}$`)
+	eventTokenPattern   = regexp.MustCompile(`^[a-f0-9]{64}$`)
+)
+
 func (s *Server) handleJobEvent(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("trigger")
 	auth := r.Header.Get("Authorization")
-	if r.Method != http.MethodPost || r.Header.Get("Origin") != "" || !regexp.MustCompile(`^trg_[a-f0-9]{32}$`).MatchString(id) || !strings.HasPrefix(auth, "Bearer ") || len(strings.TrimPrefix(auth, "Bearer ")) != 64 {
+	if r.Method != http.MethodPost || r.Header.Get("Origin") != "" || !triggerIDPattern.MatchString(id) || !strings.HasPrefix(auth, "Bearer ") || len(strings.TrimPrefix(auth, "Bearer ")) != 64 {
 		writeJSONCoded(w, 401, CodeBadRequest, "A trigger-scoped event credential is required.")
 		return
 	}
 	s.proxyJobs(w, r, "triggers/"+id+"/events", strings.TrimPrefix(auth, "Bearer "))
+}
+
+// handleJobEventResult is the one read a trigger token has: what became of an
+// occurrence that token created. Desk decides on the parsed identifiers only.
+// A request that is not exactly this shape (another method, a browser's
+// marks, a query, even an empty one, a body, or anything but one bearer token)
+// is refused, never trimmed into it. The Runner decides which occurrence the
+// token may read; its 401 and 404 answers pass through unchanged, and no
+// answer of Desk's own depends on whether an occurrence exists.
+func (s *Server) handleJobEventResult(w http.ResponseWriter, r *http.Request) {
+	trigger, occurrence := r.PathValue("trigger"), r.PathValue("occurrence")
+	auth := r.Header.Values("Authorization")
+	if r.Method != http.MethodGet || browserMarked(r) || r.URL.RawQuery != "" || r.URL.ForceQuery || r.ContentLength != 0 || !triggerIDPattern.MatchString(trigger) || !occurrenceIDPattern.MatchString(occurrence) || len(auth) != 1 || !strings.HasPrefix(auth[0], "Bearer ") || !eventTokenPattern.MatchString(strings.TrimPrefix(auth[0], "Bearer ")) {
+		writeJSONCoded(w, 401, CodeBadRequest, "A trigger-scoped event credential is required.")
+		return
+	}
+	// A fresh request carries nothing of the caller's but its context: the
+	// Runner path is built from the parsed identifiers, and no caller path,
+	// query, body or header reaches it except the token.
+	read, err := http.NewRequestWithContext(r.Context(), http.MethodGet, "/", http.NoBody)
+	if err != nil {
+		writeJSONCoded(w, 400, CodeBadRequest, "Invalid Jobs request.")
+		return
+	}
+	s.proxyJobs(w, read, "triggers/"+trigger+"/occurrences/"+occurrence, strings.TrimPrefix(auth[0], "Bearer "))
+}
+
+// browserMarked reports what a browser adds and a script cannot: an Origin,
+// sent on every cross-origin request, or fetch metadata, which current
+// browsers send on every request, a same-origin GET without an Origin included.
+func browserMarked(r *http.Request) bool {
+	for name := range r.Header {
+		if name == "Origin" || strings.HasPrefix(name, "Sec-Fetch-") {
+			return true
+		}
+	}
+	return false
 }
 func (s *Server) proxyJobs(w http.ResponseWriter, r *http.Request, tail, eventToken string) {
 	w.Header().Set("Cache-Control", "no-store")
