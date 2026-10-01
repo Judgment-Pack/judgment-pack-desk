@@ -158,13 +158,13 @@ class LifecycleTests(unittest.TestCase):
     def prepare(self, root, bundle, path_jpack, environ, build=None):
         def compile_desk(args, **kwargs):
             output = Path(args[args.index('-o') + 1])
-            # An interrupted build is marked as the launcher's from the start.
-            self.assertTrue((output.parent.parent / dev.LAUNCH_MARKER).is_file())
+            # A build that fails here leaves a staging directory prune can remove.
+            self.assertTrue((output.parent / dev.LAUNCH_MARKER).is_file())
             output.write_text('desk binary')
         inherited = {'PATH': str(path_jpack.parent), 'JPACK_DESK_GATEWAY_MANIFEST_SHA256': 'a' * 64}
         which = lambda name: str(path_jpack) if name == 'jpack' else '/go'
         # Verification of the copy is dev-components' own test; here it copies.
-        install = lambda source, destination: shutil.copytree(source, destination)
+        install = lambda source, destination: shutil.copytree(source, destination, dirs_exist_ok=True)
         with patch.object(dev, 'ROOT', root), patch.object(dev, 'node_environment', return_value=('/node', inherited)), \
              patch.object(dev.shutil, 'which', side_effect=which), patch.object(dev.components, 'synchronize', return_value=bundle), \
              patch.object(dev.components, 'install', side_effect=install), \
@@ -200,16 +200,30 @@ class LifecycleTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'JPACK_DESK_JPACK must name an executable'):
             self.prepare(root, bundle, path_jpack, {'JPACK_DESK_JPACK': str(override)})
 
-    def test_failed_desk_build_leaves_no_launch_and_the_cache_unchanged(self):
+    def test_a_failed_build_deletes_nothing_and_leaves_its_staging_marked(self):
         root, bundle, path_jpack = self.checkout()
         def fail(args, **kwargs):
             Path(args[args.index('-o') + 1]).write_text('partial')
             raise subprocess.CalledProcessError(1, 'go')
         with self.assertRaises(subprocess.CalledProcessError):
             self.prepare(root, bundle, path_jpack, {'JPACK_DESK_JPACK': ''}, build=fail)
-        self.assertEqual(list((root / 'bin/dev-launches').iterdir()), [])
+        staged = list((root / 'bin/dev-launches').iterdir())
+        self.assertEqual(len(staged), 1)
+        self.assertTrue(staged[0].name.startswith('.building-'))
+        self.assertEqual((staged[0] / 'jpack-desk').read_text(), 'partial')
+        self.assertTrue((staged[0] / dev.LAUNCH_MARKER).is_file())
         self.assertEqual(sorted(path.name for path in bundle.iterdir()), ['gateway-bundle.json', 'jpack', 'jpack-runner', 'jpack-source-worker'])
         self.assertEqual((bundle / 'jpack').read_text(), 'verified companion')
+        # A copy that fails verification is marked for prune as well.
+        with patch.object(dev.components, 'install', side_effect=RuntimeError('Copied companions failed verification')), \
+             patch.object(dev, 'ROOT', root), patch.object(dev, 'node_environment', return_value=('/node', {})), \
+             patch.object(dev.shutil, 'which', return_value='/go'), patch.object(dev.components, 'synchronize', return_value=bundle), \
+             patch.dict(dev.os.environ, {'JPACK_DESK_JPACK': ''}), contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(RuntimeError, 'failed verification'):
+                dev.prepare()
+        staged = [path for path in (root / 'bin/dev-launches').iterdir()]
+        self.assertEqual(len(staged), 2)
+        self.assertTrue(all((path / dev.LAUNCH_MARKER).is_file() for path in staged))
 
     def test_starts_never_delete_old_launches(self):
         root, bundle, path_jpack = self.checkout()
@@ -221,20 +235,43 @@ class LifecycleTests(unittest.TestCase):
         self.assertTrue(override.exists())
         self.assertEqual(len([path for path in old.parent.iterdir() if path.is_dir()]), 3)
 
-    def test_a_start_records_the_launch_it_used(self):
-        root = self.state / 'checkout'
-        used = root / 'bin/dev-launches/fresh'; used.mkdir(parents=True)
-        commands = [('backend', [str(used / 'jpack-desk')], root, {}, 'unused')]
-        with patch.object(dev, 'ROOT', root), patch.object(dev, 'prepare', return_value=commands), \
-             patch.object(dev, 'require_free_ports'), patch.object(dev, 'launch', return_value={}):
-            self.main('restart')
-        self.assertEqual((used.parent / dev.LAST_LAUNCH).read_text(), 'fresh\n')
-        failed = [('backend', [str(root / 'bin/dev-launches/broken/jpack-desk')], root, {}, 'unused')]
-        with patch.object(dev, 'ROOT', root), patch.object(dev, 'prepare', return_value=failed), \
-             patch.object(dev, 'require_free_ports'), patch.object(dev, 'launch', side_effect=RuntimeError('did not start')):
-            with self.assertRaises(RuntimeError):
-                self.main('restart')
-        self.assertEqual((used.parent / dev.LAST_LAUNCH).read_text(), 'fresh\n')
+    def test_a_start_or_restart_records_the_launch_it_used(self):
+        for action in ('start', 'restart'):
+            with self.subTest(action=action):
+                (self.state / 'processes.json').unlink(missing_ok=True)  # state names one checkout
+                root = Path(tempfile.mkdtemp(dir=self.state))
+                used = root / 'bin/dev-launches/fresh'; used.mkdir(parents=True)
+                commands = [('backend', [str(used / 'jpack-desk')], root, {}, 'unused')]
+                with patch.object(dev, 'ROOT', root), patch.object(dev, 'prepare', return_value=commands), \
+                     patch.object(dev, 'require_free_ports'), patch.object(dev, 'launch', return_value={}):
+                    self.main(action)
+                self.assertEqual((used.parent / dev.LAST_LAUNCH).read_text(), 'fresh\n')
+                failed = [('backend', [str(root / 'bin/dev-launches/broken/jpack-desk')], root, {}, 'unused')]
+                with patch.object(dev, 'ROOT', root), patch.object(dev, 'prepare', return_value=failed), \
+                     patch.object(dev, 'require_free_ports'), patch.object(dev, 'launch', side_effect=RuntimeError('did not start')):
+                    with self.assertRaises(RuntimeError):
+                        self.main(action)
+                self.assertEqual((used.parent / dev.LAST_LAUNCH).read_text(), 'fresh\n')
+
+    def test_the_record_names_one_directory_or_nothing(self):
+        launches = self.state / 'records'; launches.mkdir()
+        descriptor = os.open(str(launches), os.O_RDONLY | os.O_DIRECTORY)
+        self.addCleanup(os.close, descriptor)
+        record = launches / dev.LAST_LAUNCH
+        self.assertIsNone(dev.last_launch(descriptor))
+        for content, expected in (('fresh\n', 'fresh'), ('', None), ('\n', None), ('.', None), ('..', None),
+                                  ('../fresh', None), ('a/b', None), ('a\0b', None)):
+            with self.subTest(content=content):
+                record.write_text(content)
+                self.assertEqual(dev.last_launch(descriptor), expected)
+        record.unlink()
+        (self.state / 'elsewhere').write_text('fresh\n')
+        record.symlink_to(self.state / 'elsewhere')
+        self.assertIsNone(dev.last_launch(descriptor))
+
+    def tree(self, path):
+        return sorted((str(item.relative_to(path)), item.is_symlink(), item.read_bytes() if item.is_file() and not item.is_symlink() else None)
+                      for item in path.rglob('*'))
 
     def launches(self):
         root = Path(tempfile.mkdtemp(dir=self.state))
@@ -267,16 +304,47 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn('Removed 3 old launch directories; kept current', out)
         self.assertIn('Removed 0 old launch directories; kept current', self.prune(root))
 
-    def test_prune_refuses_while_servers_this_launcher_started_run(self):
+    def test_prune_refuses_while_any_tracked_server_runs_and_changes_nothing(self):
+        for tracked in (('backend',), ('frontend',), ('backend', 'frontend'), ('another',)):
+            with self.subTest(tracked=tracked):
+                root, launches, made = self.launches()
+                before = self.tree(launches)
+                children = {name: self.spawn() for name in tracked}
+                with patch.object(dev, 'ROOT', root):
+                    dev.write_state({name: dev.identity(child.pid) for name, child in children.items()})
+                with self.assertRaisesRegex(RuntimeError, 'running.*Nothing was removed'):
+                    self.prune(root)
+                self.assertEqual(self.tree(launches), before)
+                for child in children.values():
+                    child.kill(); child.wait()
+                self.assertIn('Removed 3', self.prune(root))
+
+    def test_prune_waits_for_the_lock_and_then_reads_the_state(self):
         root, launches, made = self.launches()
-        child = self.spawn()
-        with patch.object(dev, 'ROOT', root):
-            dev.write_state({'backend': dev.identity(child.pid)})
-        with self.assertRaisesRegex(RuntimeError, 'backend.*Nothing was removed'):
-            self.prune(root)
-        self.assertTrue(all(directory.exists() for directory in made.values()))
-        child.kill(); child.wait()
-        self.assertIn('Removed 3', self.prune(root))
+        before = self.tree(launches)
+        script = (
+            'import importlib.util, sys\n'
+            'from pathlib import Path\n'
+            'spec = importlib.util.spec_from_file_location("dev", sys.argv[1]); dev = importlib.util.module_from_spec(spec); spec.loader.exec_module(dev)\n'
+            'dev.ROOT, dev.STATE = Path(sys.argv[2]), Path(sys.argv[3]); sys.argv = ["desk-dev.py", "prune"]\n'
+            'try:\n    dev.main()\n'
+            'except RuntimeError as error:\n    print(error); sys.exit(3)\n')
+        with (self.state / 'lock').open('a') as lock:
+            dev.fcntl.flock(lock, dev.fcntl.LOCK_EX)
+            pruner = subprocess.Popen([sys.executable, '-c', script, str(Path(dev.__file__)), str(root), str(self.state)],
+                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            self.children.append(pruner)
+            time.sleep(1)
+            self.assertIsNone(pruner.poll())  # waiting for the lock
+            self.assertEqual(self.tree(launches), before)
+            # A start that holds the lock records its servers before releasing it.
+            child = self.spawn()
+            with patch.object(dev, 'ROOT', root):
+                dev.write_state({'backend': dev.identity(child.pid)})
+        out, err = pruner.communicate(timeout=30)
+        self.assertEqual(pruner.returncode, 3, err)
+        self.assertIn('Nothing was removed', out)
+        self.assertEqual(self.tree(launches), before)
 
     def test_prune_ignores_a_malformed_or_linked_record(self):
         for record in ('../current', '', 'a/b', 'linked'):

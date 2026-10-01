@@ -3502,7 +3502,9 @@ Vite's stack trace): run `nvm use` in the repository first.
 - **desk: status** shows the tracked processes and log directory.
 - **desk: prune**, with Desk stopped, removes old launch directories under
   `bin/dev-launches` (each start leaves one, more than 100 MB) and keeps the one the
-  last start used. It refuses while these servers run.
+  last start used. It refuses while servers these tasks started are running. It
+  trusts `bin/dev-launches` as yours, written only by this launcher, and cannot see
+  a Desk or companion started some other way from an old launch directory.
 - **desk: open (hot reload)** starts Desk if needed, waits for readiness, and opens
   the browser. **Ctrl+Shift+B** runs **desk: dev**, an alias for **desk: start**.
 

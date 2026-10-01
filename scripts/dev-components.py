@@ -160,12 +160,13 @@ def synchronize():
 
 
 def install(bundle, destination):
-    """Copy a verified set to a new directory and verify the copy.
+    """Copy a verified set into a new or empty directory and verify the copy.
 
     A launch shares no file with the cache, so nothing done to the cache later
-    changes what a running Desk executes.
+    changes what a running Desk executes. Verification admits no file the set
+    does not list, so a destination that was not empty fails it.
     """
-    shutil.copytree(bundle, destination)
+    shutil.copytree(bundle, destination, dirs_exist_ok=True)
     if not verify(destination, identity(release.components.read_plan())):
         raise RuntimeError('Copied companions failed verification; the running Desk is unchanged.')
 

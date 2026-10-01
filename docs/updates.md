@@ -178,7 +178,8 @@ so nothing done to the cache changes what a running Desk, Gateway or Runner
 executes. The default Runtime and Runner paths are passed explicitly.
 
 Starts never delete anything, so each leaves its launch directory, more than
-100 MB, behind. Remove old ones explicitly with Desk stopped:
+100 MB, behind, and a failed build leaves its marked `.building-*` staging
+directory. Remove old ones explicitly with Desk stopped:
 `python3 scripts/desk-dev.py prune`, or the **desk: prune** task. It refuses
 while servers this launcher started are running, keeps the launch the last start
 used, removes only directories the launcher marked as launches in this

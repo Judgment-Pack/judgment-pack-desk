@@ -250,18 +250,19 @@ def prepare():
     print('Building Desk…', flush=True)
     launches = ROOT / 'bin/dev-launches'
     launches.mkdir(parents=True, exist_ok=True)
-    # Nothing is deleted here; `desk-dev.py prune` removes old launches.
-    with tempfile.TemporaryDirectory(prefix='.building-', dir=launches) as temp:
-        # Marked first, so a build interrupted here is still recognisably ours.
-        (Path(temp) / LAUNCH_MARKER).touch()
-        staged = Path(temp) / 'bundle'
-        # Companions stay beside Desk, as a verified copy that shares no file
-        # with the cache.
+    # A start deletes nothing, not even its own staging: a build that fails
+    # leaves its marked `.building-*` directory for `desk-dev.py prune`.
+    staged = Path(tempfile.mkdtemp(prefix='.building-', dir=launches))
+    # Companions stay beside Desk, as a verified copy that shares no file with
+    # the cache. The marker follows verification, which admits no extra file,
+    # and is written even when verification fails, so prune can remove the copy.
+    try:
         components.install(bundle, staged)
+    finally:
         (staged / LAUNCH_MARKER).touch()
-        subprocess.run([go, 'build', '-trimpath', '-o', str(staged / 'jpack-desk'), '.'], cwd=ROOT, check=True)
-        installed = launches / Path(temp).name[len('.building-'):]
-        staged.rename(installed)
+    subprocess.run([go, 'build', '-trimpath', '-o', str(staged / 'jpack-desk'), '.'], cwd=ROOT, check=True)
+    installed = launches / staged.name[len('.building-'):]
+    staged.rename(installed)
     runtime = runtime or str(installed / 'jpack')
     backend = [str(installed / 'jpack-desk'), '--dev-token', 'dev', '--port', '8790',
                '--jpack', runtime, '--runner', str(installed / 'jpack-runner')]
@@ -367,9 +368,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=('start', 'stop', 'restart', 'status', 'prune'),
                         help='prune removes old launch directories under bin/dev-launches. Run it with Desk stopped: it '
-                             'refuses while servers this launcher started are running, keeps the launch the last start '
-                             'used, removes only directories the launcher marked, and never follows a link. It trusts '
-                             'bin/dev-launches as yours and cannot see a Desk started some other way.')
+                             'refuses while servers this launcher started and tracks are running, keeps the launch the '
+                             'last start used, removes only directories the launcher marked, and never follows a link. '
+                             'It trusts bin/dev-launches as yours, written only by this launcher, and cannot see a Desk '
+                             'or companion started some other way from an old launch directory.')
     parser.add_argument('--open', action='store_true', help='Open the browser after starting.')
     args = parser.parse_args()
     signal.signal(signal.SIGTERM, interrupted)

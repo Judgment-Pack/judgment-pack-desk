@@ -56,7 +56,7 @@
       "options": {
         "cwd": "${workspaceFolder}"
       },
-      "detail": "With Desk stopped, remove old launch directories under bin/dev-launches, keeping the one the last start used. Refuses while these servers run.",
+      "detail": "With Desk stopped, remove old launch directories under bin/dev-launches, keeping the one the last start used. Refuses while servers these tasks started run; trusts bin/dev-launches as written only by this launcher.",
       "problemMatcher": [],
       "presentation": {
         "panel": "shared",
