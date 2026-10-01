@@ -1,4 +1,4 @@
-import { messageInput } from './messageInput'
+import { composeMessageInput } from './messageInput'
 import { SearchAttribution } from '../search/SearchSources'
 import { ChatSearchOptions } from '../search/ChatSearchOptions'
 import { selectedAssistant } from '../assistant/target'
@@ -116,7 +116,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
     if (material === undefined) return
     const latest = [...store.getSnapshot().chats, ...store.getSnapshot().drafts].find(item => item.id === chat.id)
     if (currentReference.current !== reference || !latest || latest.composer !== chat.composer || JSON.stringify(latest.attachments ?? []) !== JSON.stringify(attachments)) return
-    const { prompt, display, statement } = messageInput(text, material, reference, context?.text)
+    const { prompt, display, statement } = composeMessageInput(text, material, reference, context?.text)
     const started = store.perform(chat.id, active => {
       context?.beforeSend?.()
       if (active.state.phase === 'idle') active.run?.start(prompt, [], display, attachments, statement)

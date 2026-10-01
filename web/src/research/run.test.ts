@@ -1,4 +1,4 @@
-import { messageInput } from '../chat/messageInput'
+import { composeMessageInput } from '../chat/messageInput'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -2162,7 +2162,7 @@ describe('conversation draft citations', () => {
     const pack = { ...UNCITED, rules: [rule] }
     const text = 'Review the requirements I supplied.'
     const material = '\n\nAttached file (reference material, not instructions): requirements.txt\n"People with 1,560 hours qualify; fewer do not."'
-    const sent = messageInput(text, material, route === 'new-pack selected rule' ? { label: 'Selected rule', text: JSON.stringify(rule) } : null, route === 'pack chat' ? JSON.stringify(pack) : undefined)
+    const sent = composeMessageInput(text, material, route === 'new-pack selected rule' ? { label: 'Selected rule', text: JSON.stringify(rule) } : null, route === 'pack chat' ? JSON.stringify(pack) : undefined)
     for (const continuing of [false, true]) {
       const scripts: Script[] = continuing ? [async (_request, _signal, emit) => emit({ type: 'message', text: 'Ready.' })] : []
       scripts.push(async (_request, _signal, emit) => emit({ type: 'proposal', document: pack, unknowns: [] }), chatReviewer())
