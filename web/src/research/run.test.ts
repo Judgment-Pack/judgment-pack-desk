@@ -1687,6 +1687,9 @@ describe('conversation draft citations', () => {
     expect([canCreateDraft(traced, 'draft'), canCreateDraft(traced, 'web-research')]).toEqual([true, true])
     const open = settledAt({ ...base, citations: [...traced.citations, { sourceId: 'b', location: null, excerptId: null, url: null, traced: false, reason: 'r' }] })
     expect([canCreateDraft(open, 'draft'), canCreateDraft(open, 'web-research'), canCreateDraft(open, 'research')]).toEqual([false, false, false])
+    // Asked with the basis standing now, a readiness reached on another is none.
+    const onBasis = settledAt({ ...base, tracedBasis: 'basis-1' })
+    expect([canCreateDraft(onBasis, 'draft', 'basis-1'), canCreateDraft(onBasis, 'draft', 'basis-2')]).toEqual([true, false])
     // While the citations are being traced they say nothing, and nothing is ready.
     expect(canCreateDraft({ ...none, tracing: true }, 'draft')).toBe(false)
     expect(canCreateDraft({ ...traced, tracing: true }, 'web-research')).toBe(false)
@@ -1838,10 +1841,10 @@ describe('conversation draft citations', () => {
     ] }
     let current = 'gateway-a'
     const h = chat('draft', pack, [one, two], async (reference, under) => {
-      // Switched to B as the second document loads, and back to A once it has.
-      if (reference.id === two.file.document!.id) current = 'gateway-b'
       const verified = signers.get(reference.id) === under.authority
-      if (reference.id === two.file.document!.id) current = 'gateway-a'
+      // Switched to B once the first document has loaded, so B is the pin
+      // standing when the second is asked for; back to A once it has loaded.
+      current = reference.id === one.file.document!.id ? 'gateway-b' : 'gateway-a'
       if (!verified) throw new Error('does not verify under this pin')
       return (reference.id === one.file.document!.id ? one : two).document
     }, () => pinOf(current))
@@ -1881,28 +1884,140 @@ describe('conversation draft citations', () => {
     expect(h.requests).toHaveLength(1)
   })
 
-  it('traces again when an action that saw the basis move ends without a settle, and keeps its readiness withdrawn', async () => {
-    const page = kept()
+  /** A ready chat draft whose follow-up turn is in flight when the basis moves, and ends as `end` says. */
+  async function movedMidAction(end: 'stop' | 'fail') {
+    const page = kept(), other = kept()
     const files = [page]
+    let loads = 0
     let started!: () => void
     const answering = new Promise<void>(resolve => { started = resolve })
+    let finish!: () => void
     const h = harness([
       async (_request, _signal, emit) => emit({ type: 'proposal', document: citing(pageOf(page.file)), unknowns: [] }),
-      async (_request, signal) => { started(); await new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new DOMException('stopped', 'AbortError')))) }
-    ], { mode: 'draft', pin: () => pinOf('gateway-a'), documents: () => files.map(item => item.file), loadDocument: async () => page.document })
+      async (_request, signal) => {
+        started()
+        await new Promise<void>((resolve, reject) => { finish = resolve; signal.addEventListener('abort', () => reject(new DOMException('stopped', 'AbortError'))) })
+        throw new Error('the model answered with nothing usable')
+      }
+    ], { mode: 'draft', pin: () => pinOf('gateway-a'), documents: () => files.map(item => item.file), loadDocument: async () => { loads += 1; return page.document } })
     h.run.start('Draft this', [])
     expect(canCreateDraft(await settled(h.run), 'draft')).toBe(true)
     h.run.send('And another thing.')
     await answering
-    // The chat no longer keeps the document, mid-action.
-    files.length = 0
+    // The chat keeps another document, mid-action.
+    files.push(other)
     h.run.basisChanged()
     expect(canCreateDraft(h.run.getSnapshot(), 'draft')).toBe(false)
-    h.run.stop()
-    expect((await settled(h.run)).status).toBe('stopped')
-    await until(() => h.run.getSnapshot().citations[0]?.traced === false && !h.run.getSnapshot().tracing, 'traced again after the action')
-    expect(h.run.getSnapshot().citations[0]!.reason).toContain('is not a page kept in this chat')
+    const before = loads
+    if (end === 'stop') h.run.stop()
+    else finish()
+    return { h, before, loads: () => loads, state: await settled(h.run) }
+  }
+
+  it('starts no new work after a Stop when the basis moved during the action, and counts nothing traced', async () => {
+    const { h, before, loads, state } = await movedMidAction('stop')
+    expect(state.status).toBe('stopped')
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(loads()).toBe(before)
+    expect(h.run.getSnapshot().tracing).toBeFalsy()
+    expect(h.run.getSnapshot().citations[0]).toMatchObject({ traced: false, reason: "The gateway pin or this chat's documents changed while the citations were checked. Recheck the draft." })
     expect(canCreateDraft(h.run.getSnapshot(), 'draft')).toBe(false)
+  })
+
+  it('traces again when an action that saw the basis move ends otherwise, and keeps its readiness withdrawn', async () => {
+    const { h, before, loads, state } = await movedMidAction('fail')
+    expect(state.status).toBe('failed')
+    await until(() => loads() > before && !h.run.getSnapshot().tracing, 'traced again after the action')
+    expect(h.run.getSnapshot().citations[0]!.traced).toBe(true)
+    expect(h.run.getSnapshot().tracedBasis).toBe(h.run.basisNow())
+    // Traced again, and not made ready again: the action did not settle.
+    expect(h.run.getSnapshot().readiness).toBe('')
+    expect(canCreateDraft(h.run.getSnapshot(), 'draft', h.run.basisNow())).toBe(false)
+  })
+
+  it('answers Create on the basis standing when it is asked, before anything noticed the move', async () => {
+    const page = kept()
+    let current = 'gateway-a'
+    const files = [page]
+    const h = harness([async (_request, _signal, emit) => emit({ type: 'proposal', document: citing(pageOf(page.file)), unknowns: [] })],
+      { mode: 'draft', pin: () => pinOf(current), documents: () => files.map(item => item.file), loadDocument: async () => page.document })
+    h.run.start('Draft this', [])
+    const ready = await settled(h.run)
+    expect(canCreateDraft(ready, 'draft', h.run.basisNow())).toBe(true)
+    current = 'gateway-b'
+    expect(canCreateDraft(h.run.getSnapshot(), 'draft', h.run.basisNow())).toBe(false)
+    current = 'gateway-a'
+    files.length = 0
+    expect(canCreateDraft(h.run.getSnapshot(), 'draft', h.run.basisNow())).toBe(false)
+  })
+
+  it('does not settle at ready on a trace whose basis moved before the settle read it', async () => {
+    const page = kept()
+    let current = 'gateway-a'
+    let traces = 0
+    const h = chat('draft', citing(pageOf(page.file)), [page], async () => page.document, () => pinOf(current))
+    // The settle's trace lands, and the pin moves before the settle reads it.
+    let tracing = false
+    h.run.subscribe(() => {
+      const now = h.run.getSnapshot().tracing === true
+      if (tracing && !now && ++traces === 2) current = 'gateway-b'
+      tracing = now
+    })
+    h.run.start('Draft this', [])
+    const state = await settled(h.run)
+    expect(state.status).toBe('needs-input')
+    expect(state.detail).toBe("The gateway pin or this chat's documents changed while the citations were checked. Recheck the draft.")
+    expect(canCreateDraft(state, 'draft', h.run.basisNow())).toBe(false)
+  })
+
+  it('keeps the settle a moved basis owes when a later move supersedes its trace', async () => {
+    const page = kept()
+    const files = [page]
+    let hold = true
+    let release!: () => void
+    const held = new Promise<void>(resolve => { release = resolve })
+    const h = harness([async (_request, _signal, emit) => emit({ type: 'proposal', document: citing(pageOf(page.file)), unknowns: [] })],
+      { mode: 'draft', pin: () => pinOf('gateway-a'), documents: () => files.map(item => item.file), loadDocument: async (_reference, _pin, signal) => {
+        if (hold) await new Promise<void>((resolve, reject) => { held.then(resolve); signal.addEventListener('abort', () => reject(new DOMException('superseded', 'AbortError'))) })
+        return page.document
+      } })
+    hold = false
+    h.run.start('Draft this', [])
+    expect(canCreateDraft(await settled(h.run), 'draft')).toBe(true)
+    hold = true
+    files.push(kept())
+    h.run.basisChanged()
+    await until(() => h.run.getSnapshot().tracing === true, 'the first trace at rest is loading')
+    hold = false
+    files.push(kept())
+    h.run.basisChanged()
+    release()
+    await until(() => !h.run.getSnapshot().tracing && h.run.getSnapshot().readiness !== '', 'settled again by the later trace')
+    expect(h.run.getSnapshot().status).toBe('ready')
+    expect(canCreateDraft(h.run.getSnapshot(), 'draft', h.run.basisNow())).toBe(true)
+  })
+
+  it('ends a trace at rest when its owner goes away, and starts none', async () => {
+    const page = kept()
+    let current = 'gateway-a'
+    let aborted = false
+    let hold = false
+    const h = chat('draft', citing(pageOf(page.file)), [page], async (_reference, _under, signal) => {
+      if (hold) await new Promise((_resolve, reject) => signal.addEventListener('abort', () => { aborted = true; reject(new DOMException('gone', 'AbortError')) }))
+      return page.document
+    }, () => pinOf(current))
+    h.run.start('Draft this', [])
+    expect(canCreateDraft(await settled(h.run), 'draft')).toBe(true)
+    hold = true
+    current = 'gateway-a2'
+    h.run.basisChanged()
+    await until(() => h.run.getSnapshot().tracing === true, 'the trace at rest is loading')
+    h.run.detach()
+    await until(() => aborted && !h.run.getSnapshot().tracing, 'the trace at rest ended')
+    current = 'gateway-a3'
+    h.run.basisChanged()
+    expect(h.run.getSnapshot().tracing).toBe(false)
+    expect(canCreateDraft(h.run.getSnapshot(), 'draft', h.run.basisNow())).toBe(false)
   })
 
   it('ends a trace at rest with Stop, and it settles nothing afterwards', async () => {

@@ -31,10 +31,10 @@ describe('the review panel on a conversation draft', () => {
     expect((screen.getByRole('button', { name: /Review and create/ }) as HTMLButtonElement).disabled).toBe(false)
   })
 
-  it('never says a draft that declares sources cites nothing, whatever its trace left', () => {
+  it.each(['draft', 'web-research'] as const)('never says a %s draft that declares sources cites nothing, whatever its trace left', mode => {
     const declares = settledDraft([], { readiness: '', status: 'stopped' })
     declares.candidates = [{ ...declares.candidates[0]!, document: { sources: [{ id: 'eligibility' }] } }]
-    render(<ReviewPanel mode="draft" state={declares} sources={[]} onSelect={vi.fn()} onCreate={vi.fn()} />)
+    render(<ReviewPanel mode={mode} state={declares} sources={[]} onSelect={vi.fn()} onCreate={vi.fn()} />)
     expect(screen.queryByText(/cites no source/)).toBeNull()
     expect((screen.getByRole('button', { name: /Review and create/ }) as HTMLButtonElement).disabled).toBe(true)
   })

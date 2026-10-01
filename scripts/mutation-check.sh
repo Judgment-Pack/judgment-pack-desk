@@ -5272,7 +5272,7 @@ export function assistantTransport(id: string): Transport {
   # that moved under it is traced again, and a trace a Stop interrupted
   # leaves nothing traced, never the readiness of the trace before it.
   mutate web "a chat draft's trace lands on a basis that moved under it" "$RR" \
-    '        if (this.currentBasis() === basis) {' \
+    '        if (this.basisNow() === basis) {' \
     '        if (true) {'
   mutate web "a chat draft's documents are verified under the live pin" "$RR" \
     '? load(reference, pin, loading) :' \
@@ -5285,16 +5285,41 @@ export function assistantTransport(id: string): Transport {
         this.check(signal)' \
     '        const traced = await tracePageCitations(latest.document, kept, (reference, loading) => pin !== null && load ? load(reference, pin, loading) : unverifiable(), signal)'
   mutate web "a chat draft is not traced again when its pin or documents change" "$RR" \
-    '    this.traceAtRest(wasReady)
-  }' \
-    '    void wasReady
-  }'
+    '      return
+    }
+    this.traceAtRest()' \
+    '      return
+    }
+    void 0'
   mutate web "a chat draft keeps its readiness when its pin or documents change" "$RR" \
-    "    if (wasReady) this.set({ readiness: '' })" \
-    '    void wasReady'
+    "      if (!this.running) this.pendingSettle = true
+      this.set({ readiness: '' })" \
+    '      if (!this.running) this.pendingSettle = true'
   mutate web "a chat draft's action ends without tracing the basis that moved under it" "$RR" \
-    '        if (this.currentBasis() !== this.tracedBasis) this.traceAtRest(false)' \
-    '        void 0'
+    '          } else this.traceAtRest()' \
+    '          } else void 0'
+  mutate web "a Stop starts new work on a chat draft whose basis moved" "$RR" \
+    "          if (this.state.status === 'stopped' || this.state.status === 'budget') {" \
+    '          if (false) {'
+  mutate web "Create answers on a chat draft's old basis" "$RR" \
+    '  if (conversationMode(mode) && basis !== undefined && state.tracedBasis !== basis) return false' \
+    '  void basis'
+  mutate web "a chat draft settles at ready on a moved basis" "$RR" \
+    '      if (this.state.tracedBasis !== this.basisNow()) return sourceMessage(' \
+    '      if (false) return sourceMessage('
+  mutate web "a chat draft's superseded trace at rest drops the settle it owed" "$RR" \
+    '    }, () => undefined).finally(() => {' \
+    '    }, () => { this.pendingSettle = false }).finally(() => {'
+  mutate web "a chat draft's owner going away leaves its trace at rest running" "$RR" \
+    '    this.detached = true
+    this.background?.abort()' \
+    '    this.detached = true'
+  mutate web "a chat draft's run outlives its owner" web/src/research/useResearchRun.ts \
+    '    return () => run.detach()' \
+    '    return () => undefined'
+  mutate web "a web research chat draft whose trace was cut short reads as citing nothing" "$RDP" \
+    'const gap = conversation && latest && !state.tracing && !unread ?' \
+    'const gap = conversation && latest && !state.tracing ?'
   mutate web "a Stop leaves a chat draft's trace at rest running" "$RR" \
     '    this.controller?.abort()
     this.background?.abort()' \
@@ -5330,7 +5355,7 @@ export function assistantTransport(id: string): Transport {
   # A checkpoint keeps no citations; without the trace on reopening, a draft
   # that cites reads as one that cites nothing.
   mutate web "a reopened chat draft is not traced again" "$RR" \
-    '    if (candidates.length) this.traceAtRest(false)' \
+    '    if (candidates.length) this.traceAtRest()' \
     '    void 0'
   # The rule's own clauses, each held by the rule's unit test over one state.
   mutate web "Create is offered on a chat draft while its citations are traced" "$RR" \

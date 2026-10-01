@@ -64,3 +64,16 @@ it('asks a chat draft to trace its citations again whenever the documents the ch
   expect(changed.mock.calls.length).toBe(after + 1)
   changed.mockRestore()
 })
+
+it('ends its run\'s traces at rest when its owner unmounts', async () => {
+  const { AuthoringRun } = await import('./run')
+  const detached = vi.spyOn(AuthoringRun.prototype, 'detach')
+  const attached = vi.spyOn(AuthoringRun.prototype, 'attach')
+  const { unmount } = renderHook(() => useResearchRun({ mode: 'draft', draftTools: fake.tools }))
+  expect(attached).toHaveBeenCalled()
+  expect(detached).not.toHaveBeenCalled()
+  unmount()
+  expect(detached).toHaveBeenCalledOnce()
+  detached.mockRestore()
+  attached.mockRestore()
+})

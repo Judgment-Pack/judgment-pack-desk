@@ -266,6 +266,11 @@ export function useResearchRun(options?: {
   // A chat draft's citations rest on the gateway pin and on the documents the
   // chat keeps; when either changes, they are traced again.
   const basis = documentBasis(research.gateway, options?.documents?.() ?? [])
+  // Traces at rest run while this owner is mounted, and end when it goes.
+  useEffect(() => {
+    run.attach()
+    return () => run.detach()
+  }, [run])
   useEffect(() => { run.basisChanged() }, [run, basis])
 
   const state = useSyncExternalStore(run.subscribe, run.getSnapshot, () => INITIAL_STATE)

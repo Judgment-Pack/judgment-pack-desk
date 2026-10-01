@@ -21,7 +21,7 @@ export function checkpoint(state: RunState, sources: readonly SourceRecord[]): C
   // Derived views, events and verdicts are deliberately omitted. Reconstruct
   // candidates from their bytes; source records from the original wire reply.
   return {
-    state: { ...state, streaming: undefined, streamingId: undefined, events: [], verdicts: {}, registries: {}, citations: [], tracing: undefined,
+    state: { ...state, streaming: undefined, streamingId: undefined, events: [], verdicts: {}, registries: {}, citations: [], tracing: undefined, tracedBasis: undefined,
       candidates: state.candidates.map(({ check, ...candidate }) => ({ ...candidate, ...(check ? { previousCheck: check } : {}) })),
       expectationIssues: state.expectationIssues.map(({ proposal: _proposal, ...issue }) => issue) },
     sources: sources.map(source => ({ session: source.session, kind: source.kind, request: source.request,

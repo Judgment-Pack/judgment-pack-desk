@@ -249,17 +249,19 @@ export function DraftPanel({ state, onSelect, onViewLogic, onViewSources }: { st
   )
 }
 
-export function ReviewPanel({ state, sources, onCreate, onSelect, onReadPage, showCreateAction = true, mode = 'research' }: { testsPanel?: ReactNode; onTabChange?: (tab: string) => void; hideHeader?: boolean; onSelectInMain?: (next: Selection) => void; showCreateAction?: boolean; mode?: AuthoringMode; state: RunState; sources: readonly SourceRecord[]; onCreate: () => void; onSelect: (next: Selection) => void; onReadPage?: (citation: Citation, opener: HTMLElement) => void }) {
+export function ReviewPanel({ state, sources, onCreate, onSelect, onReadPage, basis, showCreateAction = true, mode = 'research' }: { testsPanel?: ReactNode; onTabChange?: (tab: string) => void; hideHeader?: boolean; onSelectInMain?: (next: Selection) => void; showCreateAction?: boolean; mode?: AuthoringMode; state: RunState; sources: readonly SourceRecord[]; onCreate: () => void; onSelect: (next: Selection) => void; onReadPage?: (citation: Citation, opener: HTMLElement) => void; basis?: string }) {
   useLocale()
   const latest = state.candidates.at(-1)
   const check = latest?.check
-  const passing = canCreateDraft(state, mode)
+  const passing = canCreateDraft(state, mode, basis)
   const verified = sources.filter((s) => s.verification.state === 'verified').length
   const failed = sources.filter((s) => s.verification.state === 'failed' || s.failure !== null).length
   const untraced = state.citations.filter((c) => !c.traced)
   const conversation = conversationMode(mode)
-  // What keeps a conversation draft's citations from Create, once they are traced.
-  const gap = conversation && latest && !state.tracing ? citationGap(state.citations, mode) : null
+  // What keeps a conversation draft's citations from Create, once they are
+  // traced -- and never "cites no source" for a draft that declares some.
+  const unread = latest !== undefined && state.citations.length === 0 && declaredSources(latest.document).length > 0
+  const gap = conversation && latest && !state.tracing && !unread ? citationGap(state.citations, mode) : null
   return (
     <div className={styles.panel}>
       <section className={styles.section}>
@@ -371,7 +373,7 @@ function DraftLogic({ state, selection, onSelect, onInspect, active }: { state: 
     viewport={viewport} onViewport={setViewport} nodePositions={nodePositions} onNodePositionsChange={setNodePositions} listScroll={scroll} /></div>
 }
 
-export function DraftTabs({ testsPanel, onTabChange, state, sources, selection, onSelect, onCreate, showCreateAction = true, mode = 'research', hideHeader = false, onSelectInMain, documents = [], files = [], onRead, ...actions }: ExpectationReviewActions & Omit<ComponentProps<typeof DraftSources>, 'document'> & { testsPanel?: ReactNode; onTabChange?: (tab: string) => void; hideHeader?: boolean; onSelectInMain?: (next: Selection) => void; showCreateAction?: boolean; mode?: AuthoringMode; state: RunState; sources: readonly SourceRecord[]; selection: Selection; onSelect: (next: Selection) => void; onCreate: () => void }) {
+export function DraftTabs({ testsPanel, onTabChange, state, sources, selection, onSelect, onCreate, basis, showCreateAction = true, mode = 'research', hideHeader = false, onSelectInMain, documents = [], files = [], onRead, ...actions }: ExpectationReviewActions & Omit<ComponentProps<typeof DraftSources>, 'document'> & { testsPanel?: ReactNode; onTabChange?: (tab: string) => void; hideHeader?: boolean; onSelectInMain?: (next: Selection) => void; showCreateAction?: boolean; mode?: AuthoringMode; state: RunState; sources: readonly SourceRecord[]; selection: Selection; onSelect: (next: Selection) => void; onCreate: () => void; basis?: string }) {
   useLocale()
   const [tab, setTabState] = useState('draft')
   const setTab = (next: string) => { setTabState(next); onTabChange?.(next) }
@@ -406,7 +408,7 @@ export function DraftTabs({ testsPanel, onTabChange, state, sources, selection, 
           { value: 'logic', label: msg("Logic"), panel: <DraftLogic state={state} selection={selection} onSelect={onSelectInMain ?? onSelect} onInspect={onSelect} active={tab === 'logic'} /> },
           { value: 'sources', label: sourceCount ? msg('Sources ({{count}})', { count: sourceCount }) : msg('Sources'), panel: <div className={styles.panel}><DraftSources document={document} documents={documents} files={files} onRead={onRead} />{(sources.length > 0 || sourceCount === 0) && <SourcesPanel sources={sources} selection={selection} onSelect={onSelect} />}</div> },
           { value: 'tests', label: total ? msg('Tests ({{count}})', { count: total }) : msg('Tests'), panel: testsPanel ?? <TestsPanel mode={mode} state={state} onSelect={onSelect} {...actions} /> },
-          { value: 'review', label: msg("Review"), panel: <ReviewPanel showCreateAction={showCreateAction} mode={mode} state={state} sources={sources} onCreate={onCreate} onSelect={onSelect} onReadPage={readPage} /> }
+          { value: 'review', label: msg("Review"), panel: <ReviewPanel showCreateAction={showCreateAction} mode={mode} state={state} sources={sources} onCreate={onCreate} onSelect={onSelect} onReadPage={readPage} basis={basis} /> }
         ]}
       />
     </section>
