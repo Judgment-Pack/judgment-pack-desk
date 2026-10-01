@@ -176,12 +176,16 @@ Each start builds Desk into its own `bin/dev-launches` directory beside a copy o
 the verified set. The copy is verified again and shares no file with the cache,
 so nothing done to the cache changes what a running Desk, Gateway or Runner
 executes. The default Runtime and Runner paths are passed explicitly. A start
-removes launch directories it made that no running process executes from; the
-running session's directory survives a failed rebuild. Nothing is pruned when
-`bin` or `bin/dev-launches` is a link, or when a process of this user cannot be
-inspected. Do not run binaries from an old launch directory by hand during a
-start. Sets in `bin/dev-components` are kept, one per lock and recipe, for
-switching branches; an unused one can be deleted at any time.
+removes launch directories it marked as its own that no running process
+executes from, matched by file identity so a rename does not hide one; the
+running session's directory survives a failed rebuild. `bin` and
+`bin/dev-launches` are opened without following links before anything is
+inspected, so replacing either cannot redirect a deletion. Nothing is removed
+when either is a link or when a live process of this user cannot be inspected.
+A process started by hand from an old launch directory while a start runs is not
+protected, and `bin/dev-launches` holds nothing but launches. Sets in
+`bin/dev-components` are kept, one per lock and recipe, for switching branches;
+an unused one can be deleted at any time.
 
 `JPACK_DESK_JPACK` remains an explicit Runtime override and is reported as outside
 the lock. An inherited `JPACK_DESK_GATEWAY_MANIFEST_SHA256` is cleared so the

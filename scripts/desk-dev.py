@@ -10,6 +10,7 @@ from pathlib import Path
 import shutil
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -130,51 +131,112 @@ def node_environment():
     return str(node), env
 
 
-def executable_directories():
-    """Directories holding the executable of every running process, or None
-    when a process of this user cannot be inspected."""
-    directories = set()
-    for entry in Path('/proc').iterdir():
+# Written into every launch directory this launcher creates; pruning removes
+# nothing without it.
+LAUNCH_MARKER = '.desk-dev-launch'
+DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+
+
+def executables_in_use(proc=Path('/proc'), uid=None):
+    """(device, inode) of every running process's executable, or None when a
+    live process of this user cannot be inspected.
+
+    Identity by inode survives renames and links. A process of this user whose
+    executable cannot be read is a reason to prune nothing, unless it is a
+    plain zombie: a leader that exited while other threads run is still live.
+    """
+    uid = os.getuid() if uid is None else uid
+    found = set()
+    for entry in proc.iterdir():
         if not entry.name.isdigit():
             continue
         try:
-            directories.add(Path(os.readlink(entry / 'exe')).parent)
-        except FileNotFoundError:
-            continue  # exited, a zombie, or a kernel thread
+            executable = os.stat(entry / 'exe')
+            found.add((executable.st_dev, executable.st_ino))
+            continue
         except OSError:
-            try:
-                if entry.stat().st_uid == os.getuid():
-                    return None
-            except OSError:
-                continue
-    return directories
+            pass
+        try:
+            owner = entry.stat().st_uid
+            state = (entry / 'stat').read_text().rsplit(')', 1)[1].split()[0]
+            threads = len(os.listdir(entry / 'task'))
+        except (OSError, IndexError):
+            continue  # gone
+        if owner == uid and (state != 'Z' or threads > 1):
+            return None
+    return found
+
+
+def file_ids(parent, name):
+    """(device, inode) of every regular file below a directory, never following a link."""
+    descriptor = os.open(name, DIRECTORY, dir_fd=parent)
+    try:
+        ids = set()
+        for entry in os.listdir(descriptor):
+            info = os.stat(entry, dir_fd=descriptor, follow_symlinks=False)
+            if stat.S_ISDIR(info.st_mode):
+                ids |= file_ids(descriptor, entry)
+            elif stat.S_ISREG(info.st_mode):
+                ids.add((info.st_dev, info.st_ino))
+        return ids
+    finally:
+        os.close(descriptor)
+
+
+def remove(parent, name):
+    """Remove a directory tree relative to an open directory, never following a link."""
+    descriptor = os.open(name, DIRECTORY, dir_fd=parent)
+    try:
+        for entry in os.listdir(descriptor):
+            if stat.S_ISDIR(os.stat(entry, dir_fd=descriptor, follow_symlinks=False).st_mode):
+                remove(descriptor, entry)
+            else:
+                os.unlink(entry, dir_fd=descriptor)
+    finally:
+        os.close(descriptor)
+    os.rmdir(name, dir_fd=parent)
 
 
 def prune_launches(launches):
-    """Remove launch directories this launcher made that nothing executes from.
+    """Remove launch directories this launcher made that no process executes from.
 
-    Every start gets a new launch directory, so old ones would accumulate a copy
-    of the companions per restart. The running session's directory survives a
-    failed rebuild. Nothing is followed through a link, nothing this launcher
-    did not create is touched, and if any process of this user cannot be
-    inspected nothing is removed. Do not run binaries from an old launch
-    directory by hand while a start is in progress.
+    Every start gets a new launch directory, so old ones would accumulate a
+    copy of the companions per restart. `bin` and `bin/dev-launches` are opened
+    without following links before anything is inspected, and every later step
+    is relative to those descriptors, so replacing either path cannot redirect
+    a deletion. Only directories carrying the launcher's marker are removed,
+    never one holding a running executable, and nothing when a live process of
+    this user cannot be inspected. A process started by hand from an old launch
+    directory while a start is running is outside this; do not do that.
     """
-    if launches.parent.is_symlink() or launches.is_symlink():
-        print('Launch directories are not pruned: bin or bin/dev-launches is a link.', flush=True)
+    try:
+        parent = os.open(str(launches.parent), DIRECTORY)
+    except OSError:
+        print('Launch directories are not pruned: bin is a link or unreadable.', flush=True)
         return
-    in_use = executable_directories()
-    if in_use is None:
-        return
-    for directory in launches.iterdir():
-        if directory.is_symlink() or not directory.is_dir():
-            continue
-        if not directory.name.startswith('.building-') and not (directory / components.MANIFEST).is_file():
-            continue
-        resolved = directory.resolve()
-        if any(path == resolved or resolved in path.parents for path in in_use):
-            continue
-        shutil.rmtree(directory, ignore_errors=True)
+    try:
+        try:
+            root = os.open(launches.name, DIRECTORY, dir_fd=parent)
+        except OSError:
+            print('Launch directories are not pruned: bin/dev-launches is a link or unreadable.', flush=True)
+            return
+        try:
+            in_use = executables_in_use()
+            if in_use is None:
+                return
+            for name in os.listdir(root):
+                try:
+                    if not stat.S_ISREG(os.stat(name + '/' + LAUNCH_MARKER, dir_fd=root, follow_symlinks=False).st_mode):
+                        continue
+                    if file_ids(root, name) & in_use:
+                        continue
+                    remove(root, name)
+                except OSError:
+                    continue  # not a directory, a link, or changed meanwhile: keep it
+        finally:
+            os.close(root)
+    finally:
+        os.close(parent)
 
 
 def prepare():
@@ -197,10 +259,13 @@ def prepare():
     launches.mkdir(parents=True, exist_ok=True)
     prune_launches(launches)
     with tempfile.TemporaryDirectory(prefix='.building-', dir=launches) as temp:
+        # Marked first, so a build interrupted here is still recognisably ours.
+        (Path(temp) / LAUNCH_MARKER).touch()
         staged = Path(temp) / 'bundle'
         # Companions stay beside Desk, as a verified copy that shares no file
         # with the cache.
         components.install(bundle, staged)
+        (staged / LAUNCH_MARKER).touch()
         subprocess.run([go, 'build', '-trimpath', '-o', str(staged / 'jpack-desk'), '.'], cwd=ROOT, check=True)
         installed = launches / Path(temp).name[len('.building-'):]
         staged.rename(installed)
