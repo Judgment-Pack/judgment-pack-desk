@@ -42,6 +42,7 @@ type jobsCompanion struct {
 	profiles                            json.RawMessage
 	connections                         json.RawMessage
 	inputRoot                           string
+	requireTested                       bool
 	bin, runtime, dir, workspace, owner string
 	cmd                                 *exec.Cmd
 	input                               io.WriteCloser
@@ -60,7 +61,7 @@ func (s *Server) initJobs() {
 		s.log.Printf("desk: Jobs background connections are invalid: %v", err)
 		return
 	}
-	s.jobs = &jobsCompanion{connections: connections, inputRoot: s.projectDir, profiles: append(json.RawMessage(nil), s.cfg.RunnerInputProfiles...), bin: s.cfg.RunnerBin, runtime: s.cfg.JpackBin, dir: filepath.Join(s.configDir, "jobs", digestOf([]byte(s.projectDir))), workspace: digestOf([]byte(s.projectDir)), owner: "local-owner:" + digestOf([]byte(s.configDir)), stop: make(chan struct{})}
+	s.jobs = &jobsCompanion{connections: connections, inputRoot: s.projectDir, requireTested: s.cfg.RunnerRequireTested, profiles: append(json.RawMessage(nil), s.cfg.RunnerInputProfiles...), bin: s.cfg.RunnerBin, runtime: s.cfg.JpackBin, dir: filepath.Join(s.configDir, "jobs", digestOf([]byte(s.projectDir))), workspace: digestOf([]byte(s.projectDir)), owner: "local-owner:" + digestOf([]byte(s.configDir)), stop: make(chan struct{})}
 	if s.cfg.deskID != "" {
 		s.jobs.dir = filepath.Join(s.projectDir, ".desk-private", "jobs")
 		s.jobs.workspace = s.cfg.deskID
@@ -147,6 +148,11 @@ func (j *jobsCompanion) endpoint() (string, string, error) {
 	}
 	if len(j.profiles) > 0 {
 		boot["inputProfiles"] = j.profiles
+	}
+	// Off is the Runner's default, so an installation without the policy
+	// sends the same boot line as before.
+	if j.requireTested {
+		boot["requireTestedReleases"] = true
 	}
 	if err = json.NewEncoder(input).Encode(boot); err != nil {
 		input.Close()

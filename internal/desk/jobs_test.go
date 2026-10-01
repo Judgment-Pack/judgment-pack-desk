@@ -149,6 +149,63 @@ func TestJobsV2PlannerAndProfilesThroughCompanion(t *testing.T) {
 	}
 }
 
+// The tested-release policy is the installation owner's startup choice. It
+// reaches every desk's Runner boot line only when set, so an installation
+// without it boots the Runner exactly as before.
+func TestRunnerRequireTestedReleasesReachesBootLine(t *testing.T) {
+	for _, required := range []bool{true, false} {
+		dir := t.TempDir()
+		received := filepath.Join(dir, "boot.json")
+		runner := filepath.Join(dir, "runner")
+		// Shell builtins only: Desk starts the Runner with an empty PATH.
+		script := "#!/bin/sh\nIFS= read -r line\nprintf '%s\\n' \"$line\" > " + received + "\nprintf '{\"protocol\":\"jobs/1\",\"url\":\"http://127.0.0.1:9\"}\\n'\nwhile IFS= read -r _; do :; done\n"
+		if err := os.WriteFile(runner, []byte(script), 0700); err != nil {
+			t.Fatal(err)
+		}
+		config := t.TempDir()
+		os.Chmod(config, 0700)
+		s, ts := startDesk(t, Config{RunnerBin: runner, JpackBin: filepath.Join(dir, "jpack"), RunnerRequireTested: required, ProjectDir: t.TempDir(), DeskConfigDir: config, Token: testToken})
+		t.Cleanup(func() { ts.Close(); s.Close() })
+		// The handshake follows the recorded line, so a returned endpoint
+		// means the line is complete on disk.
+		booted := func(companion *jobsCompanion) map[string]json.RawMessage {
+			t.Helper()
+			if companion == nil {
+				t.Fatal("Jobs companion was not configured")
+			}
+			if _, _, err := companion.endpoint(); err != nil {
+				t.Fatal(err)
+			}
+			raw, err := os.ReadFile(received)
+			var boot map[string]json.RawMessage
+			if err != nil || json.Unmarshal(raw, &boot) != nil {
+				t.Fatalf("boot line was not one JSON object: %v %q", err, raw)
+			}
+			value, present := boot["requireTestedReleases"]
+			if required && string(value) != "true" || !required && present {
+				t.Fatalf("requireTestedReleases=%v produced %s", required, raw)
+			}
+			for _, key := range []string{"dir", "runtime", "workspace", "owner", "token", "inputRoot"} {
+				if _, ok := boot[key]; !ok {
+					t.Fatalf("boot line lost %s: %s", key, raw)
+				}
+			}
+			return boot
+		}
+		booted(s.jobs)
+		named := createTestDesk(t, ts, "Named")
+		s.desksMu.Lock()
+		child := s.desks[named.ID]
+		s.desksMu.Unlock()
+		if child == nil {
+			t.Fatal("named desk is not open")
+		}
+		if boot := booted(child.jobs); string(boot["workspace"]) != `"`+named.ID+`"` {
+			t.Fatal("named desk's Runner was not the one recorded", string(boot["workspace"]))
+		}
+	}
+}
+
 func TestJobEventOnlyAcceptsScopedNonBrowserDelivery(t *testing.T) {
 	s, _ := newTestServer(t, false)
 	path := "/api/job-events/trg_" + strings.Repeat("0", 32)

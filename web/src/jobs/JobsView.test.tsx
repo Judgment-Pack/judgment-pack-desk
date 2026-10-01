@@ -5,11 +5,11 @@ import { Tooltip } from 'radix-ui'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { CreateJobContent } from './JobsView'
-import { jobsAPI } from './client'
+import { jobsAPI, JobsRequestError } from './client'
 import { readReleaseTests } from './releaseTests'
 vi.mock('./drafts',async original=>({...await original<typeof import('./drafts')>(),loadJobDraft:vi.fn()}))
 vi.mock('./MappedInputFields',()=>({MappedInputFields:()=>null}))
-vi.mock('./client', () => ({ jobsAPI: vi.fn() }))
+vi.mock('./client', async original => ({ ...await original<typeof import('./client')>(), jobsAPI: vi.fn() }))
 vi.mock('./releaseTests', () => ({ readReleaseTests: vi.fn() }))
 const { pack, packs } = vi.hoisted(() => ({
  pack: { data: { raw: '{"version":"1"}', document: { title: 'Example pack', version: '1' } }, refetch: vi.fn() },
@@ -81,6 +81,32 @@ it('does not silently release untested when reading saved tests fails', async ()
  vi.mocked(readReleaseTests).mockRejectedValue(new Error('Cannot read saved tests'))
  renderCreate(); toReview();fireEvent.click(screen.getByRole('button', { name: 'Check release' }))
  await screen.findByText('Cannot read saved tests'); expect(jobsAPI).not.toHaveBeenCalled(); expect(button().disabled).toBe(true)
+})
+const untested = 'This installation creates jobs only from releases whose saved tests ran and passed. Save tests for this pack, then check a new release.'
+function eventTrigger(){fireEvent.change(screen.getByLabelText('Job name'),{target:{value:'Intake'}});next();next()
+ const choice=screen.getByRole('combobox',{name:'Trigger'});fireEvent.keyDown(choice,{key:'Enter'});fireEvent.click(screen.getByRole('option',{name:'Authenticated event'}));next()}
+it.each([['plain creation', 'Create job', false], ['creation with a first trigger', 'Create paused job', true]] as const)('shows the runner refusing an untested release in place of a job, on %s', async (_, label, withTrigger) => {
+ vi.mocked(readReleaseTests).mockResolvedValue({ ...saved, matrix: undefined })
+ vi.mocked(jobsAPI).mockResolvedValue({ ...release, tests: 'not-run' })
+ renderCreate()
+ if (withTrigger) eventTrigger(); else toReview()
+ fireEvent.click(screen.getByRole('button', { name: 'Check release' })); await screen.findByText('Review this release')
+ fireEvent.click(review())
+ vi.mocked(jobsAPI).mockRejectedValue(new JobsRequestError(untested, 409, 'release_untested'))
+ const create = screen.getByRole('button', { name: label }) as HTMLButtonElement
+ fireEvent.click(create)
+ expect((await screen.findByRole('alert')).textContent).toBe(untested)
+ expect(jobsAPI).toHaveBeenLastCalledWith('jobs', { name: 'Intake', releaseId: 'release', reviewed: true, ...(withTrigger ? { trigger: expect.objectContaining({ kind: 'event' }) } : {}) })
+ expect(screen.getByText('No saved tests were run for this release. Review it as untested before creating a job.')).toBeTruthy()
+ expect(review().checked).toBe(false); expect(review().disabled).toBe(true); expect(create.disabled).toBe(true)
+})
+it('keeps other creation refusals as an ordinary problem', async () => {
+ vi.mocked(jobsAPI).mockResolvedValue({ ...release, tests: 'not-run' })
+ renderCreate(); await check(); fireEvent.click(review())
+ vi.mocked(jobsAPI).mockRejectedValue(new JobsRequestError('The release is not ready.', 409, 'release_not_ready'))
+ fireEvent.click(button())
+ await screen.findByText('The release is not ready.')
+ expect(review().disabled).toBe(false)
 })
 it('creates the immutable reviewed release after checking freshness again', async () => {
  renderCreate(); await check(); fireEvent.click(review())
