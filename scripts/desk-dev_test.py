@@ -168,6 +168,7 @@ class LifecycleTests(unittest.TestCase):
         with patch.object(dev, 'ROOT', root), patch.object(dev, 'node_environment', return_value=('/node', inherited)), \
              patch.object(dev.shutil, 'which', side_effect=which), patch.object(dev.components, 'synchronize', return_value=bundle), \
              patch.object(dev.components, 'install', side_effect=install), \
+             patch.object(dev, 'executables_in_use', return_value=set()), \
              patch.dict(dev.os.environ, environ), patch.object(dev.subprocess, 'run', side_effect=build or compile_desk), \
              contextlib.redirect_stdout(io.StringIO()) as out:
             return dev.prepare(), out.getvalue()
@@ -316,7 +317,7 @@ class LifecycleTests(unittest.TestCase):
                 replacement.rename(made['stopped'])
                 swapped.append(True)
             return original(descriptor)
-        with patch.object(dev, 'file_ids', side_effect=swap_then_scan):
+        with patch.object(dev, 'file_ids', side_effect=swap_then_scan), patch.object(dev, 'executables_in_use', return_value=set()):
             dev.prune_launches(launches)
         self.assertEqual(swapped, [True])
         self.assertEqual((made['stopped'] / 'valuable').read_text(), 'must survive')
@@ -325,11 +326,12 @@ class LifecycleTests(unittest.TestCase):
     def test_an_explicit_runtime_inside_an_old_launch_keeps_that_launch(self):
         launches, made = self.launches()
         runtime = made['stopped'] / 'jpack'; runtime.write_text('#!/bin/sh\n')
-        dev.prune_launches(launches, keep=[runtime])
-        self.assertTrue(runtime.exists())
-        self.assertFalse(made['.building-crashed'].exists())
-        dev.prune_launches(launches)
-        self.assertFalse(made['stopped'].exists())
+        with patch.object(dev, 'executables_in_use', side_effect=lambda **kwargs: set()):
+            dev.prune_launches(launches, keep=[runtime])
+            self.assertTrue(runtime.exists())
+            self.assertFalse(made['.building-crashed'].exists())
+            dev.prune_launches(launches)
+            self.assertFalse(made['stopped'].exists())
 
     def test_prepare_keeps_an_override_that_lives_in_an_old_launch(self):
         root, bundle, path_jpack = self.checkout()
@@ -400,6 +402,27 @@ class LifecycleTests(unittest.TestCase):
         passes.clear()
         self.assertIsNone(dev.executables_in_use(Proc(99), attempts=3))
         self.assertEqual(len(passes), 3)
+
+    def test_a_process_the_kernel_refuses_to_inspect_runs_no_launch_file(self):
+        if os.geteuid() == 0:
+            self.skipTest('permissions do not bind root')
+        proc = self.state / 'proc'
+        locked = self.state / 'locked'; locked.mkdir()
+        (locked / 'executable').write_text('')
+        for pid, target in ((40, locked / 'executable'), (41, self.state / 'gone')):
+            entry = proc / str(pid); (entry / 'task' / str(pid)).mkdir(parents=True)
+            (entry / 'stat').write_text(f'{pid} (x) S 1 1')
+            (entry / 'exe').symlink_to(target)
+        locked.chmod(0)  # stat through the link is now refused, as for "(sd-pam)"
+        self.addCleanup(locked.chmod, 0o700)
+        shutil.rmtree(proc / '41')
+        self.assertEqual(dev.executables_in_use(proc), set())
+        # Whereas a live process of this user with no readable executable at all
+        # (exiting, or a leader that left live threads) keeps the scan unsettled.
+        entry = proc / '41'; (entry / 'task/41').mkdir(parents=True)
+        (entry / 'stat').write_text('41 (x) S 1 1')
+        (entry / 'exe').symlink_to(self.state / 'gone')
+        self.assertIsNone(dev.executables_in_use(proc, attempts=2))
 
     def test_an_inconclusive_inspection_of_this_users_process_stops_pruning(self):
         if os.geteuid() == 0:

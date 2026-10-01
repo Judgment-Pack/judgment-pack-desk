@@ -152,8 +152,14 @@ def scan_executables(proc, uid, blocked):
             executable = os.stat(entry / 'exe')
             found.add((executable.st_dev, executable.st_ino))
             continue
+        except PermissionError:
+            # The kernel refuses another user's process, or one that is not
+            # dumpable (systemd's "(sd-pam)", for one). Executing an ordinary
+            # readable file, as every launch file is, makes a process dumpable,
+            # and no companion gives that up, so this one runs no launch file.
+            continue
         except OSError:
-            pass  # gone, a zombie, a kernel thread, another user's, exiting, or a dead leader
+            pass  # gone, a zombie, a kernel thread, exiting, or a dead leader
         try:
             owner = entry.stat().st_uid
         except FileNotFoundError:

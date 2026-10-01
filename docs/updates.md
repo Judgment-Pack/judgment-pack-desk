@@ -184,9 +184,11 @@ candidate are opened once without following links, and every check and removal
 goes through those descriptors, so replacing a path cannot redirect a deletion.
 Nothing is removed when `bin` or `bin/dev-launches` is a link, or when the
 process scan does not settle: a process of this user disappeared mid-scan (it
-may have handed off to a child the scan did not list) or could not be inspected,
-over five passes a moment apart. The launcher then says which process stopped
-it. A process started by hand from an old launch directory while a start runs is
+may have handed off to a child the scan did not list) or is alive with no
+readable executable, over five passes a moment apart. The launcher then says
+which process stopped it. A process the kernel refuses to inspect, such as
+systemd's `(sd-pam)`, is passed over: running an ordinary readable file, as every
+launch file is, makes a process inspectable, and no companion gives that up. A process started by hand from an old launch directory while a start runs is
 not protected, and `bin/dev-launches` holds nothing but launches. Sets in
 `bin/dev-components` are kept, one per lock and recipe, for switching branches;
 an unused one can be deleted at any time.
