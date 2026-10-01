@@ -88,13 +88,13 @@ export function RuleCard({
       {rule.evidenceRequirementRefs !== undefined && (
         <Shaped
           pointer={`${at}/evidenceRequirementRefs`}
-          label={msg("evidence")}
+          label={msg("Cites evidence requirements")}
           expects="list"
           value={rule.evidenceRequirementRefs}
         >
       {Array.isArray(rule.evidenceRequirementRefs) && rule.evidenceRequirementRefs!.length > 0 && (
         <Block pointer={`${at}/evidenceRequirementRefs`} as="p" className={styles.refs}>
-          <span className={styles.fieldLabel}>{msg("evidence")}</span>
+          <span className={styles.fieldLabel}>{msg("Cites evidence requirements")}</span>
           {rule.evidenceRequirementRefs!.map((ref) => (
             <code key={ref} className={styles.id}>
               {ref}

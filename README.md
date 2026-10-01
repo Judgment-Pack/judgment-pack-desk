@@ -5467,7 +5467,9 @@ verification, compatibility and remaining scope.
 
 See the [implementation scope and verification](docs/design/jobs-workspace-phase1.md).
 
-The Jobs tab lists immutable pack releases and five recent execution states; the
+The Jobs tab lists pack releases that Desk does not offer to edit and five recent
+execution states. The owner can still alter the underlying store; these releases
+do not provide tamper evidence against such changes. The
 Runs tab searches the complete run history and filters execution state or items
 needing attention. Filtering happens in Runner before pagination. A completed
 execution can still reject a case or request review; execution and decision are

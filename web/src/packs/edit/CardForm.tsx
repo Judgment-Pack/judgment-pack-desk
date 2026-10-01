@@ -58,7 +58,8 @@ export function RuleForm({ at, compact = false }: { at: string; compact?: boolea
       </div>
       <StringListField
         pointer={`${at}/evidenceRequirementRefs`}
-        label={msg("evidence")}
+        label={msg("Cites evidence requirements")}
+        hint={msg("References for readers and tools only. This field does not require evidence. Use an evidence-present condition or mark the requirement as required to gate evaluation.")}
         candidates={ids.evidence}
       />
       <StringListField pointer={`${at}/sourceRefs`} label={msg("sources")} candidates={ids.sources} />
