@@ -57,6 +57,8 @@ it('requires review before enabling and displays a scoped credential only after 
  fireEvent.click(within(dialog).getByLabelText('I reviewed this trigger and its execution policy.'));fireEvent.click(confirm)
  const tokenDialog=await screen.findByRole('dialog',{name:'Event token'})
  expect((within(tokenDialog).getByLabelText('Event token') as HTMLInputElement).value).toBe('a'.repeat(64))
+ // What the token may do, both of it: deliver, and read the occurrences it delivered.
+ expect(tokenDialog.textContent).toContain('It is shown once. It authorizes deliveries to this trigger, and reading the results of the occurrences it delivered.')
  fireEvent.click(within(tokenDialog).getByRole('button',{name:'Done'}))
  await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull())
  expect(screen.queryByDisplayValue('a'.repeat(64))).toBeNull()

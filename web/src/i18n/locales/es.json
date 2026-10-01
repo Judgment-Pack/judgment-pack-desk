@@ -620,7 +620,7 @@
   "Copy details": "Copiar detalles",
   "Copy digest": "Copiar resumen criptográfico",
   "Copy response": "Copiar respuesta",
-  "Copy this token now. It is shown once and only authorizes deliveries to this trigger.": "Copie este token ahora. Se muestra una sola vez y solo autoriza entregas a este disparador.",
+  "Copy this token now. It is shown once. It authorizes deliveries to this trigger, and reading the results of the occurrences it delivered.": "Copie este token ahora. Se muestra una sola vez. Autoriza entregas a este disparador y la lectura de los resultados de las ocurrencias que entregó.",
   "Copy token": "Copiar token",
   "Copy token to clipboard": "Copiar token al portapapeles",
   "Copy {{label}}": "Copiar {{label}}",

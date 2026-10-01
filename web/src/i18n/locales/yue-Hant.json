@@ -618,7 +618,7 @@
   "Copy details": "複製詳細資料",
   "Copy digest": "複製摘要值",
   "Copy response": "複製回覆",
-  "Copy this token now. It is shown once and only authorizes deliveries to this trigger.": "請立即複製此權杖。它僅顯示一次，且只允許向此觸發器傳送事件。",
+  "Copy this token now. It is shown once. It authorizes deliveries to this trigger, and reading the results of the occurrences it delivered.": "請即刻複製呢個權杖。佢只會顯示一次。佢允許向呢個觸發器傳送事件，同埋讀取佢傳送嘅觸發記錄嘅結果。",
   "Copy token": "複製權杖",
   "Copy token to clipboard": "將權杖複製到剪貼簿",
   "Copy {{label}}": "複製{{label}}",

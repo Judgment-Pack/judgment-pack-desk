@@ -618,7 +618,7 @@
   "Copy details": "Details kopieren",
   "Copy digest": "Prüfsumme kopieren",
   "Copy response": "Antwort kopieren",
-  "Copy this token now. It is shown once and only authorizes deliveries to this trigger.": "Kopieren Sie dieses Token jetzt. Es wird nur einmal angezeigt und erlaubt nur Zustellungen an diesen Auslöser.",
+  "Copy this token now. It is shown once. It authorizes deliveries to this trigger, and reading the results of the occurrences it delivered.": "Kopieren Sie dieses Token jetzt. Es wird nur einmal angezeigt. Es erlaubt Zustellungen an diesen Auslöser und das Lesen der Ergebnisse der Auslösungen, die es zugestellt hat.",
   "Copy token": "Token kopieren",
   "Copy token to clipboard": "Token in die Zwischenablage kopieren",
   "Copy {{label}}": "{{label}} kopieren",

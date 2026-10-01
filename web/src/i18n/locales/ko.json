@@ -618,7 +618,7 @@
   "Copy details": "상세 정보 복사",
   "Copy digest": "다이제스트 복사",
   "Copy response": "응답 복사",
-  "Copy this token now. It is shown once and only authorizes deliveries to this trigger.": "지금 이 토큰을 복사하세요. 한 번만 표시되며 이 트리거로의 전달만 허용합니다.",
+  "Copy this token now. It is shown once. It authorizes deliveries to this trigger, and reading the results of the occurrences it delivered.": "지금 이 토큰을 복사하세요. 한 번만 표시됩니다. 이 트리거로의 전달과, 이 토큰으로 전달한 발생 건의 결과 읽기를 허용합니다.",
   "Copy token": "토큰 복사",
   "Copy token to clipboard": "토큰을 클립보드에 복사",
   "Copy {{label}}": "{{label}} 복사",

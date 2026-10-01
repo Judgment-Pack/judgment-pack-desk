@@ -30,7 +30,7 @@ opens files beneath its pinned installation root, refuses symlink escape, limits
 sizes and preserves snapshot bytes/digests. Samples and previous inputs are never
 fallbacks. Invalid input is a visible occurrence failure without a decision.
 
-Event activation returns a random scoped token once. Desk accepts it only at
+Event activation returns a random scoped token once. Desk accepts it for delivery only at
 `POST /api/job-events/{trigger}`, refuses browser Origin headers, and forwards it
 to the exact Runner route alongside the private companion bearer. The scoped token
 cannot access owner APIs. Identical event retries return the original occurrence;

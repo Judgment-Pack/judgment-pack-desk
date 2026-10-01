@@ -618,7 +618,7 @@
   "Copy details": "詳細をコピー",
   "Copy digest": "ダイジェストをコピー",
   "Copy response": "回答をコピー",
-  "Copy this token now. It is shown once and only authorizes deliveries to this trigger.": "このトークンを今コピーしてください。一度だけ表示され、このトリガーへの送信のみを許可します。",
+  "Copy this token now. It is shown once. It authorizes deliveries to this trigger, and reading the results of the occurrences it delivered.": "このトークンを今コピーしてください。表示は一度だけです。このトリガーへの送信と、このトークンで送信したトリガー記録の結果の読み取りを許可します。",
   "Copy token": "トークンをコピー",
   "Copy token to clipboard": "トークンをクリップボードにコピー",
   "Copy {{label}}": "{{label}}をコピー",

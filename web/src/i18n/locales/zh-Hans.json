@@ -618,7 +618,7 @@
   "Copy details": "复制详情",
   "Copy digest": "复制摘要值",
   "Copy response": "复制回复",
-  "Copy this token now. It is shown once and only authorizes deliveries to this trigger.": "请立即复制此令牌。它仅显示一次，且只允许向此触发器发送事件。",
+  "Copy this token now. It is shown once. It authorizes deliveries to this trigger, and reading the results of the occurrences it delivered.": "请立即复制此令牌。它仅显示一次。它允许向此触发器发送事件，以及读取它所发送的触发记录的结果。",
   "Copy token": "复制令牌",
   "Copy token to clipboard": "将令牌复制到剪贴板",
   "Copy {{label}}": "复制{{label}}",
