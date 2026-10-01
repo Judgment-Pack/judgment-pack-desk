@@ -423,6 +423,10 @@ func TestJobEventResultForwardsOnlyTheParsedRead(t *testing.T) {
 	twice.Add("Authorization", "Bearer "+token)
 	session := bearer(token)
 	session.Set("X-Jpack-Desk", named.ID)
+	// A same-origin GET carries no Origin, only fetch metadata.
+	sameOrigin := bearer(token)
+	sameOrigin.Set("Sec-Fetch-Site", "same-origin")
+	sameOrigin.Set("Sec-Fetch-Mode", "cors")
 	for _, tc := range []struct {
 		name, method, target, body string
 		header                     http.Header
@@ -432,11 +436,15 @@ func TestJobEventResultForwardsOnlyTheParsedRead(t *testing.T) {
 		{"short token", "GET", read, "", bearer(token[1:])},
 		{"token that is not hex", "GET", read, "", bearer(strings.ToUpper(token))},
 		{"another scheme", "GET", read, "", http.Header{"Authorization": {"Basic " + token}}},
+		{"bare token", "GET", read, "", http.Header{"Authorization": {token}}},
 		{"two credentials", "GET", read, "", twice},
 		{"browser origin", "GET", read, "", browser},
 		{"empty origin", "GET", read, "", emptyOrigin},
+		{"same-origin browser", "GET", read, "", sameOrigin},
 		{"desk selector", "GET", read, "", session},
 		{"query", "GET", read + "?after=1", "", bearer(token)},
+		{"empty query", "GET", read + "?", "", bearer(token)},
+		{"named desk empty query", "GET", "/api/desks/" + named.ID + read[len("/api"):] + "?", "", bearer(token)},
 		{"body", "GET", read, "{}", bearer(token)},
 		{"delivery method", "POST", read, "{}", bearer(token)},
 		{"head", "HEAD", read, "", bearer(token)},
@@ -453,11 +461,25 @@ func TestJobEventResultForwardsOnlyTheParsedRead(t *testing.T) {
 		{"dot segment", "GET", "/api/job-events/" + trigger + "/occurrences/" + occurrence + "/../" + occurrence, "", bearer(token)},
 		{"unknown desk", "GET", "/api/desks/" + strings.Repeat("0", 32) + read[len("/api"):], "", bearer(token)},
 		{"named desk origin", "GET", "/api/desks/" + named.ID + read[len("/api"):], "", browser},
+		{"named desk same-origin browser", "GET", "/api/desks/" + named.ID + read[len("/api"):], "", sameOrigin},
 	} {
 		forwarded = nil
 		w := call(tc.method, tc.target, tc.body, tc.header)
 		if len(forwarded) != 0 || w.Code < 300 {
 			t.Fatalf("%s: %d %s, forwarded %d", tc.name, w.Code, w.Body, len(forwarded))
 		}
+	}
+
+	// The Runner path comes from the parsed identifiers, never from the
+	// incoming path string, whatever that string is.
+	forwarded = nil
+	r := httptest.NewRequest("GET", "/elsewhere/"+trigger+"/occurrences/occ_"+strings.Repeat("e5", 16), nil)
+	r.Header = bearer(token)
+	r.SetPathValue("trigger", trigger)
+	r.SetPathValue("occurrence", occurrence)
+	w := httptest.NewRecorder()
+	s.handleJobEventResult(w, r)
+	if w.Code != 200 || len(forwarded) != 1 || forwarded[0].URL.RequestURI() != runnerRead {
+		t.Fatalf("path not built from parsed identifiers: %d %s", w.Code, w.Body)
 	}
 }
