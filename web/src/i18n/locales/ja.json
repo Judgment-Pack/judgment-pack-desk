@@ -2691,7 +2691,7 @@
   "This sign-in attempt is no longer available. Start again.": "このサインイン試行は利用できなくなりました。最初からやり直してください。",
   "This source changed while being read. Search again and reselect it.": "読み取り中にソースが変更されました。もう一度検索して選択してください。",
   "This source exceeds the connection size limit. Choose a smaller source.": "このソースは接続のサイズ制限を超えています。より小さいソースを選択してください。",
-  "This source is a calculator. In Advanced mapping → Edit mapping, bind each reported input to a parameter and set a maximum age for each table it reads. Empty bindings reject answers that report inputs or tables.": "このソースは計算ツールです。「詳細なマッピング」→「マッピングを編集」で、報告される各入力をパラメーターに関連付け、読み取る各テーブルのデータの最大経過時間を設定してください。関連付けが空の場合、入力やテーブルを報告する応答は拒否されます。",
+  "This source is a calculator. In Advanced mapping → Edit mapping, bind each reported input to a parameter and set a maximum age for each table it reads. Empty bindings reject answers that report inputs or tables.": "このソースは計算ツールです。「高度なマッピング」→「マッピングを編集」で、報告される各入力をパラメーターに関連付け、読み取る各テーブルのデータの最大経過時間を設定してください。関連付けが空の場合、入力やテーブルを報告する応答は拒否されます。",
   "This source is not available to read with this connection.": "この接続ではこのソースを読み取れません。",
   "This stops active Codex work and signs out the account stored by this Desk.": "実行中の Codex の処理を停止し、この Desk に保存されたアカウントからサインアウトします。",
   "This store exceeds the supported move size of <0/>.": "この保存領域は移動可能なサイズ <0/> を超えています。",
