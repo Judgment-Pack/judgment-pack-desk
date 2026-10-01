@@ -5429,7 +5429,7 @@ export function assistantTransport(id: string): Transport {
     "    if (false) return"
   mutate web "the record leaves out the message a chat case rests on" "$RR" \
     '    ...(statements.length ? { statements } : {}),' \
-    '    void 0,'
+    '    ...{},'
   mutate web "a chat case check carried and repeated is shown twice" "$TM" \
     '    if (next.runs.some((run) => run.id.endsWith(carried))) continue' \
     '    void carried'
