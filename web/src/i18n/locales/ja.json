@@ -2528,6 +2528,7 @@
   "The test cases and research record would be written beside the pack, and one of those two names is taken. Nothing was written; try another name.": "テストケースと調査記録をパックと同じ場所に書き込む予定でしたが、どちらかの名前が使用済みです。何も書き込んでいません。別の名前を試してください。",
   "The test was refused:": "テストが拒否されました：",
   "The time budget of {{value0}} seconds is spent. The last completed stage is kept.": "制限時間の {{value0}} 秒を使い切りました。最後に完了した段階は保持されます。",
+  "The token that delivered an event can read that occurrence's result here: send a GET with the same Authorization header and the occurrence id from the delivery's response. Send it from a program, not a browser.": "イベントを送信したトークンは、ここでそのトリガー記録の結果を読み取れます。同じAuthorizationヘッダーと、送信の応答にあるトリガー記録のidを付けてGETを送信します。ブラウザーではなくプログラムから送信してください。",
   "The trigger is created paused. Enable it from the Triggers tab after reviewing its timing and inputs.": "トリガーは一時停止で作成されます。時刻と入力を確認した後、トリガータブで有効にしてください。",
   "The turn's step budget was spent before a proposal was written; continuing ({{value0}} of {{value1}}).": "提案を作成する前にこのターンのステップ上限に達しました。続行します（{{value0}} / {{value1}}）。",
   "The unchanged draft disagrees with the reviewed expectations. Review the results or request a pack change.": "変更のない下書きが、レビュー済みの期待値と一致していません。結果をレビューするか、パックの変更を依頼してください。",

@@ -2528,6 +2528,7 @@
   "The test cases and research record would be written beside the pack, and one of those two names is taken. Nothing was written; try another name.": "测试案例和研究记录将写在规则包旁，但其中一个名称已被占用。未写入任何内容，请尝试其他名称。",
   "The test was refused:": "测试被拒绝：",
   "The time budget of {{value0}} seconds is spent. The last completed stage is kept.": "{{value0}} 秒的时间预算已用尽。保留最后完成的阶段。",
+  "The token that delivered an event can read that occurrence's result here: send a GET with the same Authorization header and the occurrence id from the delivery's response. Send it from a program, not a browser.": "发送事件的令牌可以在此读取该次触发的结果：使用相同的 Authorization 标头和发送响应中的触发记录 id 发送 GET。请从程序发送，而不是从浏览器发送。",
   "The trigger is created paused. Enable it from the Triggers tab after reviewing its timing and inputs.": "触发器创建后处于暂停状态。检查时间和输入后，请在“触发器”选项卡中启用。",
   "The turn's step budget was spent before a proposal was written; continuing ({{value0}} of {{value1}}).": "本轮步骤预算在提案写出前已用尽；正在继续（{{value0}}/{{value1}}）。",
   "The unchanged draft disagrees with the reviewed expectations. Review the results or request a pack change.": "未更改的草稿与已审核的预期结果不一致。请审核结果或请求修改规则包。",

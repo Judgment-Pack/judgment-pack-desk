@@ -2528,6 +2528,7 @@
   "The test cases and research record would be written beside the pack, and one of those two names is taken. Nothing was written; try another name.": "테스트 사례와 조사 기록을 팩 옆에 저장하려 했지만 두 이름 중 하나가 이미 사용 중입니다. 기록하지 않았습니다. 다른 이름을 사용하세요.",
   "The test was refused:": "테스트가 거부되었습니다:",
   "The time budget of {{value0}} seconds is spent. The last completed stage is kept.": "제한 시간 {{value0}}초를 모두 사용했습니다. 마지막으로 완료된 단계는 유지됩니다.",
+  "The token that delivered an event can read that occurrence's result here: send a GET with the same Authorization header and the occurrence id from the delivery's response. Send it from a program, not a browser.": "이벤트를 전달한 토큰은 여기에서 해당 발생 건의 결과를 읽을 수 있습니다. 같은 Authorization 헤더와 전달 응답에 있는 발생 건 id로 GET을 보내세요. 브라우저가 아닌 프로그램에서 보내야 합니다.",
   "The trigger is created paused. Enable it from the Triggers tab after reviewing its timing and inputs.": "트리거는 일시 중지 상태로 생성됩니다. 시간과 입력을 검토한 후 트리거 탭에서 활성화하세요.",
   "The turn's step budget was spent before a proposal was written; continuing ({{value0}} of {{value1}}).": "제안을 작성하기 전에 이번 차례의 단계 한도를 모두 사용했습니다. 계속합니다({{value0}}/{{value1}}).",
   "The unchanged draft disagrees with the reviewed expectations. Review the results or request a pack change.": "변경되지 않은 초안이 검토한 예상 결과와 일치하지 않습니다. 결과를 검토하거나 팩 변경을 요청하세요.",
