@@ -1,3 +1,4 @@
+import { ConditionFindings } from './EvaluationFindings'
 import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
 /**
@@ -105,13 +106,14 @@ function TraceRow({ entry }: { entry: TraceEntry }) {
       >
         {valueLabel('condition', entry.condition)}
       </span>
-      <span className="trace-id">
+      <div className="trace-id">
         {entry.id ? (
           <code className="id">{entry.id}</code>
         ) : (
           <em className="quiet"><Message text={"unnamed <0/> condition"} slots={[entry.stage]} /></em>
         )}
-      </span>
+        <ConditionFindings entry={entry} />
+      </div>
       <span className="trace-badges">
         {entry.effect && <Pill>{valueLabel('effect', entry.effect)}</Pill>}
         {entry.outcome && <Pill tone="strong">→ {entry.outcome}</Pill>}

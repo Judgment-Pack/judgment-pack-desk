@@ -3486,5 +3486,22 @@
   "{{value}} pixels high": "高 {{value}} 像素",
   "{{value}} pixels wide": "闊 {{value}} 像素",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— 指向作出聲明嘅儲存庫檔案嘅定位資訊。呢份承載資料冇作出聲明。檔案嘅聲明針對執行環境，唔係呢個規則包、呢啲事實，亦唔係按處置結果行動係咪正確。",
-  "… (truncated for display)": "…（已截短顯示）"
+  "… (truncated for display)": "…（已截短顯示）",
+  "text": "文字",
+  "true or false": "真或假",
+  "number": "數字",
+  "list": "清單",
+  "object": "物件",
+  "Within collection {{path}}.": "喺集合 {{path}} 入面。",
+  "Fact {{path}} is {{factType}}; the comparison uses {{operandTypes}}. These JSON types cannot be equal.": "事實 {{path}} 嘅類型係 {{factType}}，比較用嘅係 {{operandTypes}}。呢啲 JSON 類型唔可能相等。",
+  "No value was supplied for fact {{path}}.": "未有提供事實 {{path}} 嘅值。",
+  "Fact {{path}} is {{factType}}; ordered comparisons require a decimal string.": "事實 {{path}} 嘅類型係 {{factType}}；大小比較需要十進位字串。",
+  "Fact {{path}} is {{factType}}; this condition requires a list.": "事實 {{path}} 嘅類型係 {{factType}}；呢個條件需要清單。",
+  "Evidence {{requirement}} has unknown availability.": "證據 {{requirement}} 嘅可用性未明。",
+  "The evaluator does not support this condition.": "求值器唔支援呢個條件。",
+  "Unknown cause: {{cause}}.": "未明原因：{{cause}}。",
+  "Input findings": "輸入診斷",
+  "Unmet required evidence": "未滿足嘅必要證據",
+  "Required evidence is absent.": "必要證據唔存在。",
+  "Required evidence availability is unknown.": "必要證據嘅可用性未明。"
 }

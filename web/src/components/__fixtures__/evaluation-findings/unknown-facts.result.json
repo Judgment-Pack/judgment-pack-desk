@@ -1,0 +1,56 @@
+{
+  "outputVersion": "2",
+  "tool": {
+    "name": "jpack",
+    "version": "0.24.0"
+  },
+  "command": "experimental evaluate",
+  "status": "evaluated",
+  "experimental": true,
+  "rehearsal": true,
+  "conformanceClaimReference": "CONFORMANCE.md",
+  "specVersion": "0.2.0-draft",
+  "evaluatorSpecVersion": "0.2.0-draft",
+  "packId": "https://example.org/packs/input-findings",
+  "packVersion": "1.0.0",
+  "disposition": {
+    "handoff": {
+      "state": "requested",
+      "triggeredBy": [
+        "unknown"
+      ]
+    },
+    "kind": "unresolved",
+    "reasons": [
+      "unknown"
+    ]
+  },
+  "handoffTarget": {
+    "kind": "human-role",
+    "name": "Reviewer"
+  },
+  "trace": [
+    {
+      "stage": "rule",
+      "id": "requirements",
+      "condition": "unknown",
+      "onUnknown": "escalate",
+      "unknownCauses": [
+        {
+          "path": "/missing",
+          "cause": "absent"
+        },
+        {
+          "path": "/amount",
+          "cause": "not-comparable",
+          "factType": "number"
+        }
+      ]
+    }
+  ],
+  "artifact": {
+    "specVersion": "0.2.0-draft",
+    "bundleDigest": "081cf18af9fe667a5da5acab465f4cf6118a00742bb6e5527d4d45fc09f25185",
+    "provenance": "immutable-git-ref"
+  }
+}

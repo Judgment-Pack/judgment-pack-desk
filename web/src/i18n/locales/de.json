@@ -3486,5 +3486,22 @@
   "{{value}} pixels high": "{{value}} Pixel hoch",
   "{{value}} pixels wide": "{{value}} Pixel breit",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— ein Verweis auf die Repository-Datei mit der Aussage. Diese Nutzdaten treffen keine solche Aussage. Die Datei bezieht sich auf die Laufzeit, nicht auf dieses Paket, diese Fakten oder die Richtigkeit einer Handlung nach der Disposition.",
-  "… (truncated for display)": "… (für die Anzeige gekürzt)"
+  "… (truncated for display)": "… (für die Anzeige gekürzt)",
+  "text": "Text",
+  "true or false": "wahr oder falsch",
+  "number": "Zahl",
+  "list": "Liste",
+  "object": "Objekt",
+  "Within collection {{path}}.": "Innerhalb der Sammlung {{path}}.",
+  "Fact {{path}} is {{factType}}; the comparison uses {{operandTypes}}. These JSON types cannot be equal.": "Der Fakt {{path}} hat den Typ {{factType}}; der Vergleich verwendet {{operandTypes}}. Diese JSON-Typen können nicht gleich sein.",
+  "No value was supplied for fact {{path}}.": "Für den Fakt {{path}} wurde kein Wert angegeben.",
+  "Fact {{path}} is {{factType}}; ordered comparisons require a decimal string.": "Der Fakt {{path}} hat den Typ {{factType}}; Größenvergleiche erfordern eine Dezimalzeichenfolge.",
+  "Fact {{path}} is {{factType}}; this condition requires a list.": "Der Fakt {{path}} hat den Typ {{factType}}; diese Bedingung erfordert eine Liste.",
+  "Evidence {{requirement}} has unknown availability.": "Die Verfügbarkeit des Nachweises {{requirement}} ist unbekannt.",
+  "The evaluator does not support this condition.": "Der Evaluator unterstützt diese Bedingung nicht.",
+  "Unknown cause: {{cause}}.": "Unbekannte Ursache: {{cause}}.",
+  "Input findings": "Feststellungen zu Eingaben",
+  "Unmet required evidence": "Nicht erfüllte Nachweisanforderungen",
+  "Required evidence is absent.": "Der erforderliche Nachweis fehlt.",
+  "Required evidence availability is unknown.": "Die Verfügbarkeit des erforderlichen Nachweises ist unbekannt."
 }
