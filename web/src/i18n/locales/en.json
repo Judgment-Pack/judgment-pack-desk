@@ -3275,5 +3275,22 @@
   "{{value}} pixels high": "{{value}} pixels high",
   "{{value}} pixels wide": "{{value}} pixels wide",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.",
-  "… (truncated for display)": "… (truncated for display)"
+  "… (truncated for display)": "… (truncated for display)",
+  "text": "text",
+  "true or false": "true or false",
+  "number": "number",
+  "list": "list",
+  "object": "object",
+  "Within collection {{path}}.": "Within collection {{path}}.",
+  "Fact {{path}} is {{factType}}; the comparison uses {{operandTypes}}. These JSON types cannot be equal.": "Fact {{path}} is {{factType}}; the comparison uses {{operandTypes}}. These JSON types cannot be equal.",
+  "No value was supplied for fact {{path}}.": "No value was supplied for fact {{path}}.",
+  "Fact {{path}} is {{factType}}; ordered comparisons require a decimal string.": "Fact {{path}} is {{factType}}; ordered comparisons require a decimal string.",
+  "Fact {{path}} is {{factType}}; this condition requires a list.": "Fact {{path}} is {{factType}}; this condition requires a list.",
+  "Evidence {{requirement}} has unknown availability.": "Evidence {{requirement}} has unknown availability.",
+  "The evaluator does not support this condition.": "The evaluator does not support this condition.",
+  "Unknown cause: {{cause}}.": "Unknown cause: {{cause}}.",
+  "Input findings": "Input findings",
+  "Unmet required evidence": "Unmet required evidence",
+  "Required evidence is absent.": "Required evidence is absent.",
+  "Required evidence availability is unknown.": "Required evidence availability is unknown."
 }

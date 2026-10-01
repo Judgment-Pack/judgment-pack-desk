@@ -3503,5 +3503,22 @@
   "{{value}} pixels high": "{{value}} pixels de haut",
   "{{value}} pixels wide": "{{value}} pixels de large",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— un localisateur du fichier du dépôt portant la déclaration. Cette charge utile n’en fait aucune. La déclaration concerne le moteur, pas ce pack, ces faits ni la pertinence d’agir selon la décision.",
-  "… (truncated for display)": "… (tronqué pour l’affichage)"
+  "… (truncated for display)": "… (tronqué pour l’affichage)",
+  "text": "texte",
+  "true or false": "vrai ou faux",
+  "number": "nombre",
+  "list": "liste",
+  "object": "objet",
+  "Within collection {{path}}.": "Dans la collection {{path}}.",
+  "Fact {{path}} is {{factType}}; the comparison uses {{operandTypes}}. These JSON types cannot be equal.": "Le fait {{path}} est de type {{factType}} ; la comparaison utilise {{operandTypes}}. Ces types JSON ne peuvent pas être égaux.",
+  "No value was supplied for fact {{path}}.": "Aucune valeur n’a été fournie pour le fait {{path}}.",
+  "Fact {{path}} is {{factType}}; ordered comparisons require a decimal string.": "Le fait {{path}} est de type {{factType}} ; les comparaisons d’ordre exigent une chaîne décimale.",
+  "Fact {{path}} is {{factType}}; this condition requires a list.": "Le fait {{path}} est de type {{factType}} ; cette condition exige une liste.",
+  "Evidence {{requirement}} has unknown availability.": "La disponibilité de la preuve {{requirement}} est inconnue.",
+  "The evaluator does not support this condition.": "L’évaluateur ne prend pas en charge cette condition.",
+  "Unknown cause: {{cause}}.": "Cause inconnue : {{cause}}.",
+  "Input findings": "Constats sur les entrées",
+  "Unmet required evidence": "Preuves requises non satisfaites",
+  "Required evidence is absent.": "La preuve requise est absente.",
+  "Required evidence availability is unknown.": "La disponibilité de la preuve requise est inconnue."
 }

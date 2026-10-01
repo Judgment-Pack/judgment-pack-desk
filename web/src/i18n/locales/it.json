@@ -3503,5 +3503,22 @@
   "{{value}} pixels high": "{{value}} pixel di altezza",
   "{{value}} pixels wide": "{{value}} pixel di larghezza",
   "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this pack, these facts, or whether acting on the disposition is correct.": "— un localizzatore del file del repository che contiene l’affermazione. Questo payload non ne fa alcuna. L’affermazione riguarda il motore, non questo pacchetto, questi fatti o la correttezza di agire in base alla disposizione.",
-  "… (truncated for display)": "… (troncato per la visualizzazione)"
+  "… (truncated for display)": "… (troncato per la visualizzazione)",
+  "text": "testo",
+  "true or false": "vero o falso",
+  "number": "numero",
+  "list": "elenco",
+  "object": "oggetto",
+  "Within collection {{path}}.": "Nella raccolta {{path}}.",
+  "Fact {{path}} is {{factType}}; the comparison uses {{operandTypes}}. These JSON types cannot be equal.": "Il fatto {{path}} è di tipo {{factType}}; il confronto usa {{operandTypes}}. Questi tipi JSON non possono essere uguali.",
+  "No value was supplied for fact {{path}}.": "Non è stato fornito un valore per il fatto {{path}}.",
+  "Fact {{path}} is {{factType}}; ordered comparisons require a decimal string.": "Il fatto {{path}} è di tipo {{factType}}; i confronti ordinati richiedono una stringa decimale.",
+  "Fact {{path}} is {{factType}}; this condition requires a list.": "Il fatto {{path}} è di tipo {{factType}}; questa condizione richiede un elenco.",
+  "Evidence {{requirement}} has unknown availability.": "La disponibilità della prova {{requirement}} è sconosciuta.",
+  "The evaluator does not support this condition.": "Il valutatore non supporta questa condizione.",
+  "Unknown cause: {{cause}}.": "Causa sconosciuta: {{cause}}.",
+  "Input findings": "Rilievi sugli input",
+  "Unmet required evidence": "Prove richieste non soddisfatte",
+  "Required evidence is absent.": "La prova richiesta è assente.",
+  "Required evidence availability is unknown.": "La disponibilità della prova richiesta è sconosciuta."
 }
