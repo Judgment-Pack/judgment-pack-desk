@@ -2,6 +2,7 @@ package desk
 
 import (
 	"debug/buildinfo"
+	"path/filepath"
 	"runtime/debug"
 )
 
@@ -15,9 +16,10 @@ type BuildIdentity struct {
 }
 
 type ComponentBuilds struct {
-	Desk    BuildIdentity  `json:"desk"`
-	Runtime BuildIdentity  `json:"runtime"`
-	Runner  *BuildIdentity `json:"runner,omitempty"`
+	Desk         BuildIdentity  `json:"desk"`
+	Runtime      BuildIdentity  `json:"runtime"`
+	Runner       *BuildIdentity `json:"runner,omitempty"`
+	SourceWorker *BuildIdentity `json:"sourceWorker,omitempty"`
 }
 
 func buildIdentity(info *debug.BuildInfo) BuildIdentity {
@@ -39,17 +41,25 @@ func buildIdentity(info *debug.BuildInfo) BuildIdentity {
 	return identity
 }
 
+// readBuildInfo reads compiler metadata without executing the file.
+var readBuildInfo = buildinfo.ReadFile
+
 // Read installed companions once at startup, without executing them or reading
 // source checkouts. These describe the binaries selected by this installation.
+// The source worker is the one installed beside Runner; a worker service
+// started separately elsewhere is not described here.
 func componentBuilds(runtimeBin, runnerBin string) ComponentBuilds {
 	info, _ := debug.ReadBuildInfo()
 	result := ComponentBuilds{Desk: buildIdentity(info)}
-	info, _ = buildinfo.ReadFile(runtimeBin)
+	info, _ = readBuildInfo(runtimeBin)
 	result.Runtime = buildIdentity(info)
 	if runnerBin != "" {
-		info, _ = buildinfo.ReadFile(runnerBin)
+		info, _ = readBuildInfo(runnerBin)
 		runner := buildIdentity(info)
 		result.Runner = &runner
+		info, _ = readBuildInfo(filepath.Join(filepath.Dir(runnerBin), executableName("jpack-source-worker")))
+		worker := buildIdentity(info)
+		result.SourceWorker = &worker
 	}
 	return result
 }

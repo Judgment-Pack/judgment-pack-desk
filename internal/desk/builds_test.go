@@ -41,7 +41,45 @@ func TestUnreadableBuildIsUnknownAndNeverExecuted(t *testing.T) {
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
 		t.Fatal("metadata inspection executed the companion")
 	}
-	if componentBuilds("", "").Runner != nil {
+	if builds.SourceWorker == nil || *builds.SourceWorker != (BuildIdentity{}) {
+		t.Fatal("missing source worker borrowed Runner identity")
+	}
+	if componentBuilds("", "").Runner != nil || componentBuilds("", "").SourceWorker != nil {
 		t.Fatal("unconfigured runner reported installed")
+	}
+}
+
+func TestSourceWorkerIdentityIsReadBesideRunnerAndNeverBorrowed(t *testing.T) {
+	dir := t.TempDir()
+	runner := filepath.Join(dir, executableName("jpack-runner"))
+	worker := filepath.Join(dir, executableName("jpack-source-worker"))
+	stamped := func(revision string) *debug.BuildInfo {
+		return &debug.BuildInfo{Main: debug.Module{Version: "(devel)"}, Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: revision}}}
+	}
+	read := map[string]*debug.BuildInfo{runner: stamped("runner-commit"), worker: stamped("worker-commit")}
+	defer func(original func(string) (*debug.BuildInfo, error)) { readBuildInfo = original }(readBuildInfo)
+	var asked []string
+	readBuildInfo = func(path string) (*debug.BuildInfo, error) {
+		asked = append(asked, path)
+		if info := read[path]; info != nil {
+			return info, nil
+		}
+		return nil, os.ErrNotExist
+	}
+	// Runtime lives elsewhere, so a worker looked up beside it is not found.
+	runtime := filepath.Join(t.TempDir(), executableName("jpack"))
+	builds := componentBuilds(runtime, runner)
+	if builds.Runner == nil || builds.Runner.Revision != "runner-commit" || builds.SourceWorker == nil || builds.SourceWorker.Revision != "worker-commit" {
+		t.Fatalf("runner and worker identities: %#v %#v", builds.Runner, builds.SourceWorker)
+	}
+	delete(read, worker)
+	builds = componentBuilds(runtime, runner)
+	if builds.SourceWorker == nil || *builds.SourceWorker != (BuildIdentity{}) {
+		t.Fatalf("missing worker reported as %#v", builds.SourceWorker)
+	}
+	for _, path := range asked {
+		if path != runtime && filepath.Dir(path) != dir {
+			t.Fatalf("read outside the installation: %s", path)
+		}
 	}
 }

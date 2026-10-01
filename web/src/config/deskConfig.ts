@@ -2140,7 +2140,7 @@ export type ValueSource = 'project file' | 'desk file' | 'default'
  * run code on that machine by editing a file.
  */
 export interface BuildIdentity { moduleVersion?: string; revision?: string; modified?: boolean }
-export interface ComponentBuilds { desk: BuildIdentity; runtime: BuildIdentity; runner?: BuildIdentity }
+export interface ComponentBuilds { desk: BuildIdentity; runtime: BuildIdentity; runner?: BuildIdentity; sourceWorker?: BuildIdentity }
 
 export interface ChassisPaths {
   builds?: ComponentBuilds
@@ -2197,7 +2197,8 @@ export interface DeskLevelRead {
 }
 
 export interface LocalGatewayStatus {
-  build?: { version?: string; revision: string }
+  /** `unverified`: admitted by an operator manifest digest; its revision was not checked against this Desk's lock. */
+  build?: { version?: string; revision: string; unverified?: boolean }
   status: 'ready' | 'unavailable' | 'external'
   gateway?: ResearchGatewayConfig
   problem?: string

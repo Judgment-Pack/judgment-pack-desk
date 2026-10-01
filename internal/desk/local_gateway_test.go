@@ -199,3 +199,22 @@ func TestLocalGatewayStatusKeepsLaunchedBuildIdentity(t *testing.T) {
 		t.Fatalf("local build attributed to external gateway: %+v", got)
 	}
 }
+
+func TestDigestApprovedGatewayRevisionIsNotReportedAsChecked(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "gateway-bundle.json"), []byte(`{"version":"v0.8.0","revision":"`+GatewayRevision+`","unverified":false,"files":{}}`), 0600)
+	build, err := launchedGatewayBuild(dir)
+	if err != nil || build.Unverified || build.Revision != GatewayRevision || build.Version != "v0.8.0" {
+		t.Fatalf("revision-admitted bundle: %+v, %v", build, err)
+	}
+	// Under a digest approval the manifest's revision is its own claim, and a
+	// manifest cannot vouch for itself.
+	t.Setenv("JPACK_DESK_GATEWAY_MANIFEST_SHA256", strings.Repeat("a", 64))
+	build, err = launchedGatewayBuild(dir)
+	if err != nil || !build.Unverified || build.Revision != GatewayRevision {
+		t.Fatalf("digest-approved bundle reported as checked: %+v, %v", build, err)
+	}
+	if _, err := launchedGatewayBuild(t.TempDir()); err == nil {
+		t.Fatal("missing manifest produced an identity")
+	}
+}
