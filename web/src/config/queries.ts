@@ -67,6 +67,8 @@ interface DeskLevelAnswer {
    */
   project?: { dir: string; file: string }
   runtime?: { bin: string }
+  /** The installation's Jobs policy. Read only where it is a boolean. */
+  jobs?: { requireTestedReleases?: unknown }
 }
 
 /**
@@ -82,7 +84,10 @@ function chassisPaths(answered: DeskLevelAnswer): ChassisPaths | undefined {
     projectDir: answered.project.dir,
     projectFile: answered.project.file,
     runtimeBin: answered.runtime.bin,
-    ...(answered.builds ? { builds: answered.builds } : {})
+    ...(answered.builds ? { builds: answered.builds } : {}),
+    ...(typeof answered.jobs?.requireTestedReleases === 'boolean'
+      ? { jobs: { requireTestedReleases: answered.jobs.requireTestedReleases } }
+      : {})
   }
 }
 

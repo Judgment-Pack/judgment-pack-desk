@@ -2,13 +2,16 @@ package desk
 
 import (
 	"encoding/json"
+	"flag"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestJobsUsesSessionAndOriginGuards(t *testing.T) {
@@ -150,9 +153,31 @@ func TestJobsV2PlannerAndProfilesThroughCompanion(t *testing.T) {
 	}
 }
 
+// The tested-releases policy is on unless the owner turns it off at startup
+// (ADR-0009), and `=false` is the way to turn it off.
+func TestRunnerTestedReleasesFlagIsOnByDefault(t *testing.T) {
+	for _, row := range []struct {
+		args []string
+		want bool
+	}{
+		{nil, true},
+		{[]string{"--runner-require-tested-releases"}, true},
+		{[]string{"--runner-require-tested-releases=true"}, true},
+		{[]string{"--runner-require-tested-releases=false"}, false},
+		{[]string{"-runner-require-tested-releases=false"}, false},
+	} {
+		flags := flag.NewFlagSet("jpack-desk", flag.ContinueOnError)
+		flags.SetOutput(io.Discard)
+		required := RunnerTestedReleasesFlag(flags)
+		if err := flags.Parse(row.args); err != nil || *required != row.want {
+			t.Fatalf("%v: required=%v, err=%v", row.args, *required, err)
+		}
+	}
+}
+
 // The tested-release policy is the installation owner's startup choice. It
-// reaches every desk's Runner boot line only when set, so an installation
-// without it boots the Runner exactly as before.
+// reaches every desk's Runner boot line either way, so turning it off does not
+// rest on the Runner's own default.
 func TestRunnerRequireTestedReleasesReachesBootLine(t *testing.T) {
 	for _, required := range []bool{true, false} {
 		dir := t.TempDir()
@@ -184,8 +209,7 @@ func TestRunnerRequireTestedReleasesReachesBootLine(t *testing.T) {
 			if err != nil || json.Unmarshal(raw, &boot) != nil {
 				t.Fatalf("boot line was not one JSON object: %v %q", err, raw)
 			}
-			value, present := boot["requireTestedReleases"]
-			if required && string(value) != "true" || !required && present {
+			if value, want := string(boot["requireTestedReleases"]), strconv.FormatBool(required); value != want {
 				t.Fatalf("requireTestedReleases=%v produced %s", required, raw)
 			}
 			for _, key := range []string{"dir", "runtime", "workspace", "owner", "token", "inputRoot"} {
@@ -206,6 +230,130 @@ func TestRunnerRequireTestedReleasesReachesBootLine(t *testing.T) {
 		if boot := booted(child.jobs); string(boot["workspace"]) != `"`+named.ID+`"` {
 			t.Fatal("named desk's Runner was not the one recorded", string(boot["workspace"]))
 		}
+	}
+}
+
+// End to end, with the pinned Runner and Runtime: with the policy on, Desk
+// passes the Runner's release_untested refusal of a new job through; turned
+// off with `=false`, the same kind of release becomes a job; and a job made
+// while it was off keeps running once it is on.
+func TestJobsRealCompanionTestedReleasePolicy(t *testing.T) {
+	bin, runtime := os.Getenv("JPACK_RUNNER_TEST_BIN"), os.Getenv("JPACK_BIN")
+	if bin == "" || runtime == "" {
+		t.Skip("set JPACK_RUNNER_TEST_BIN and JPACK_BIN for companion integration")
+	}
+	config, project := t.TempDir(), t.TempDir()
+	os.Chmod(config, 0700)
+	pack, _ := json.Marshal(`{"specVersion":"0.2.0-draft","id":"https://example.invalid/judgment-packs/minimal","version":"0.1.0","title":"A minimal pack","decision":{"intent":"Decide the one thing this pack decides.","question":"Does this request proceed?"},"outcomes":[{"id":"proceed","label":"Proceed"},{"id":"hold","label":"Hold"}],"rules":[{"id":"always","description":"Proceed.","when":{"op":"literal","value":true},"outcome":"proceed","onUnknown":"escalate"}]}`)
+	call := func(ts *httptest.Server, method, path, body string, header ...string) (int, []byte) {
+		t.Helper()
+		r, err := http.NewRequest(method, ts.URL+"/api/operations/"+path, strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.Header.Set("Authorization", "Bearer "+testToken)
+		r.Header.Set("Content-Type", "application/json")
+		for i := 0; i+1 < len(header); i += 2 {
+			r.Header.Set(header[i], header[i+1])
+		}
+		response, err := ts.Client().Do(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		data, err := io.ReadAll(response.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return response.StatusCode, data
+	}
+	untested := func(ts *httptest.Server) string {
+		t.Helper()
+		status, data := call(ts, "POST", "previews", `{"pack":`+string(pack)+`,"input":{"facts":{}}}`)
+		var release struct{ ID, Tests string }
+		if status != 201 || json.Unmarshal(data, &release) != nil || release.Tests != "not-run" || release.ID == "" {
+			t.Fatalf("preview: %d %s", status, data)
+		}
+		return release.ID
+	}
+	createJob := func(ts *httptest.Server, release string) (int, []byte) {
+		return call(ts, "POST", "jobs", `{"name":"Untested","releaseId":"`+release+`","reviewed":true}`)
+	}
+
+	off, offServer := startDesk(t, Config{RunnerBin: bin, JpackBin: runtime, RunnerRequireTested: false, ProjectDir: project, DeskConfigDir: config, Token: testToken})
+	earlier := untested(offServer)
+	status, data := createJob(offServer, earlier)
+	var job struct{ ID string }
+	if status != 201 || json.Unmarshal(data, &job) != nil || job.ID == "" {
+		t.Fatalf("policy off refused an untested release: %d %s", status, data)
+	}
+	offServer.Close()
+	off.Close()
+
+	on, onServer := startDesk(t, Config{RunnerBin: bin, JpackBin: runtime, RunnerRequireTested: true, ProjectDir: project, DeskConfigDir: config, Token: testToken})
+	defer onServer.Close()
+	defer on.Close()
+	status, data = createJob(onServer, untested(onServer))
+	var refusal struct {
+		Error struct{ Code, Message string } `json:"error"`
+	}
+	if status != 409 || json.Unmarshal(data, &refusal) != nil || refusal.Error.Code != "release_untested" || refusal.Error.Message == "" {
+		t.Fatalf("policy on created a job from an untested release: %d %s", status, data)
+	}
+	// The job made while the policy was off is the same job, and still runs.
+	status, data = createJob(onServer, earlier)
+	var again struct{ ID string }
+	if status != 201 || json.Unmarshal(data, &again) != nil || again.ID != job.ID {
+		t.Fatalf("earlier job refused: %d %s", status, data)
+	}
+	status, data = call(onServer, "POST", "jobs/"+job.ID+"/runs", `{"facts":{}}`, "Idempotency-Key", "after-policy")
+	var run struct{ ID, State string }
+	if status != 202 || json.Unmarshal(data, &run) != nil || run.ID == "" {
+		t.Fatalf("earlier job's run refused: %d %s", status, data)
+	}
+	deadline := time.Now().Add(60 * time.Second)
+	for run.State != "completed" {
+		if run.State == "failed" || run.State == "interrupted" || time.Now().After(deadline) {
+			t.Fatalf("earlier job's run did not complete: %s", data)
+		}
+		time.Sleep(200 * time.Millisecond)
+		if status, data = call(onServer, "GET", "runs/"+run.ID, ""); status != 200 || json.Unmarshal(data, &run) != nil {
+			t.Fatalf("run: %d %s", status, data)
+		}
+	}
+}
+
+// The page learns the installation's policy from the desk-config answer, on
+// every desk, whether or not a desk-level file exists. `false` is stated, not
+// left out, so the page can tell "off" from "not said".
+func TestDeskConfigReportsTestedReleasesPolicy(t *testing.T) {
+	for _, required := range []bool{true, false} {
+		config := t.TempDir()
+		os.Chmod(config, 0700)
+		s, ts := startDesk(t, Config{RunnerRequireTested: required, ProjectDir: t.TempDir(), DeskConfigDir: config, Token: testToken})
+		t.Cleanup(func() { ts.Close(); s.Close() })
+		policy := func(id, state string, present bool) {
+			t.Helper()
+			status, data := deskCall(t, ts, "GET", "/api/desk-config", id, "", true)
+			var answer struct {
+				Present bool                       `json:"present"`
+				Jobs    map[string]json.RawMessage `json:"jobs"`
+			}
+			if status != 200 || json.Unmarshal(data, &answer) != nil || answer.Present != present {
+				t.Fatalf("%s: %d %s", state, status, data)
+			}
+			if value, want := string(answer.Jobs["requireTestedReleases"]), strconv.FormatBool(required); value != want {
+				t.Fatalf("%s: requireTestedReleases=%v reported %q: %s", state, required, value, data)
+			}
+		}
+		named := createTestDesk(t, ts, "Named").ID
+		policy("", "no desk-level file", false)
+		policy(named, "a named desk, no desk-level file", false)
+		if err := os.WriteFile(s.deskConfigPath(), []byte(`{"deskConfigVersion":1}`), 0600); err != nil {
+			t.Fatal(err)
+		}
+		policy("", "a desk-level file", true)
+		policy(named, "a named desk, a desk-level file", true)
 	}
 }
 

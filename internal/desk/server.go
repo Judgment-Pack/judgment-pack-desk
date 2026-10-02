@@ -55,7 +55,8 @@ type Config struct {
 	// RunnerRequireTested is the installation's release policy: the Runner
 	// refuses a new job from a release whose saved tests were not run. Only the
 	// owner's startup flag sets it, never project configuration or a browser
-	// request, and every desk of the installation inherits it.
+	// request, and every desk of the installation inherits it. The flag is on
+	// by default (ADR-0009); `GET /api/desk-config` reports it to the page.
 	RunnerRequireTested bool
 	// CodexBin is an advanced installation override: empty manages the runtime,
 	// "off" disables it, otherwise an absolute trusted executable path.

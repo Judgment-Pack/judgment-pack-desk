@@ -736,7 +736,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "an absent desk-level file is a refusal" "$A" \
     '	if !present {
 		writeJSON(w, http.StatusOK, DeskLevelConfig{
-			Builds: s.builds, Path: path, Present: false, Project: s.projectPaths(), Runtime: s.runtimePaths(), LocalGateway: s.localGatewayStatus(nil)})
+			Builds: s.builds, Path: path, Present: false, Project: s.projectPaths(), Runtime: s.runtimePaths(), Jobs: s.jobsPolicy(), LocalGateway: s.localGatewayStatus(nil)})
 		return
 	}' \
     '	if !present {
@@ -2052,6 +2052,36 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "startup desk: the inherited JPACK_CONFIG is not said" internal/desk/server.go \
     '		s.log.Printf("desk: JPACK_CONFIG is set, so this project'"'"'s runtime reads %s, not the project'"'"'s own jpack.json; desks Desk made ignore it", path)' \
     '		_ = path'
+
+  # **Tested releases by default (ADR-0009).** The flag is on unless the owner
+  # passes `=false`; the boot line states the choice either way; and the
+  # desk-config answer reports it, `false` included, so the page can say which.
+  mutate go "tested releases: flag off by default" "$J" \
+    '	return flags.Bool("runner-require-tested-releases", true,' \
+    '	return flags.Bool("runner-require-tested-releases", false,'
+  mutate go "tested releases: =false still boots the Runner with the policy on" "$J" \
+    '	boot["requireTestedReleases"] = j.requireTested' \
+    '	boot["requireTestedReleases"] = true'
+  mutate go "tested releases: off left to the Runner's own default" "$J" \
+    '	boot["requireTestedReleases"] = j.requireTested' \
+    '	if j.requireTested {
+		boot["requireTestedReleases"] = true
+	}'
+  mutate go "tested releases: desk-config does not report the policy" internal/desk/assistant.go \
+    '	return JobsPolicy{RequireTestedReleases: s.cfg.RunnerRequireTested}' \
+    '	return JobsPolicy{}'
+  mutate go "tested releases: desk-config reports the policy on regardless" internal/desk/assistant.go \
+    '	return JobsPolicy{RequireTestedReleases: s.cfg.RunnerRequireTested}' \
+    '	return JobsPolicy{RequireTestedReleases: true}'
+  mutate go "tested releases: policy missing where there is no desk-level file" internal/desk/assistant.go \
+    'Runtime: s.runtimePaths(), Jobs: s.jobsPolicy(), LocalGateway: s.localGatewayStatus(nil)})' \
+    'Runtime: s.runtimePaths(), LocalGateway: s.localGatewayStatus(nil)})'
+  mutate go "tested releases: policy missing beside a desk-level file" internal/desk/assistant.go \
+    '		Project: s.projectPaths(), Runtime: s.runtimePaths(), Jobs: s.jobsPolicy()})' \
+    '		Project: s.projectPaths(), Runtime: s.runtimePaths()})'
+  mutate go "tested releases: policy off left out of the desk-config answer" internal/desk/assistant.go \
+    'RequireTestedReleases bool `json:"requireTestedReleases"`' \
+    'RequireTestedReleases bool `json:"requireTestedReleases,omitempty"`'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -8100,6 +8130,45 @@ export function assistantTransport(id: string): Transport {
   mutate web "component versions: stopped Gateway compared as running" web/src/routes/HelpAbout.tsx \
     "gateway={desk?.localGateway?.status === 'ready' ? desk.localGateway.build : undefined}" \
     "gateway={desk?.localGateway?.build}"
+
+  # **The untested-release note names the installation's policy (ADR-0009)**,
+  # only where Desk said what it is, and never tells an existing job it will be
+  # refused. Each row breaks one link from the desk-config answer to the note.
+  RR=web/src/jobs/ReleaseReadiness.tsx
+  mutate web "tested releases: config read drops the policy" web/src/config/queries.ts \
+    "    ...(typeof answered.jobs?.requireTestedReleases === 'boolean'
+      ? { jobs: { requireTestedReleases: answered.jobs.requireTestedReleases } }
+      : {})" \
+    "    ...({})"
+  mutate web "tested releases: config read takes a policy that is not a boolean" web/src/config/queries.ts \
+    "    ...(typeof answered.jobs?.requireTestedReleases === 'boolean'
+      ? { jobs: { requireTestedReleases: answered.jobs.requireTestedReleases } }" \
+    "    ...(answered.jobs !== undefined
+      ? { jobs: { requireTestedReleases: answered.jobs.requireTestedReleases as boolean } }"
+  mutate web "tested releases: page never reads the policy" "$RR" \
+    "  return useEffectiveConfig().desk?.chassis?.jobs?.requireTestedReleases" \
+    "  return useEffectiveConfig() && undefined"
+  mutate web "tested releases: note claims the policy on where Desk did not say" "$RR" \
+    "  if (requireTested === true) return msg('No saved tests were run for this release, and" \
+    "  if (requireTested !== false) return msg('No saved tests were run for this release, and"
+  mutate web "tested releases: note never says the policy is on" "$RR" \
+    "  if (requireTested === true) return msg('No saved tests were run for this release, and" \
+    "  if (false) return msg('No saved tests were run for this release, and"
+  mutate web "tested releases: note never says the policy is off" "$RR" \
+    "  if (requireTested === false) return msg(" \
+    "  if (false) return msg("
+  mutate web "tested releases: existing job told it predates a policy that is off" "$RR" \
+    "  if (job) return requireTested === true" \
+    "  if (job) return requireTested !== undefined"
+  mutate web "tested releases: existing job told it will be refused" web/src/jobs/JobsView.tsx \
+    "<ReleaseReadiness release={data.release} job />" \
+    "<ReleaseReadiness release={data.release} />"
+  mutate web "tested releases: Create job shown the existing-job note" web/src/jobs/JobsView.tsx \
+    "<ReleaseReadiness release={validPreview} refusal={refusal} />" \
+    "<ReleaseReadiness release={validPreview} refusal={refusal} job />"
+  mutate web "tested releases: Runner's refusal not shown in place of the job" web/src/jobs/JobsView.tsx \
+    "      if (e instanceof JobsRequestError && e.code === 'release_untested') {" \
+    "      if (e instanceof JobsRequestError && e.code === 'release_untested_never') {"
 fi
 
 restore

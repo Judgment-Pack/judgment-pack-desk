@@ -216,6 +216,18 @@ type DeskLevelConfig struct {
 	// machine by editing a file.
 	Project ProjectPaths `json:"project"`
 	Runtime RuntimePaths `json:"runtime"`
+	// Jobs is the installation's Jobs policy, another fact about this process.
+	Jobs JobsPolicy `json:"jobs"`
+}
+
+// JobsPolicy is what this process tells the Runner about job creation, so the
+// page can say what the Runner will do before it is asked. It is read-only
+// here: only the owner's startup flag sets it.
+type JobsPolicy struct {
+	// RequireTestedReleases is true where the Runner refuses a new job from a
+	// release whose saved tests were not run. Always present, so `false` is a
+	// statement that the policy is off, not a missing answer.
+	RequireTestedReleases bool `json:"requireTestedReleases"`
 }
 
 // ProjectPaths is the project this desk is open on, as the chassis resolved it.
@@ -320,7 +332,7 @@ func (s *Server) handleDeskConfig(w http.ResponseWriter, r *http.Request) {
 	// is no file" and is what a page sends back as `ifMatch` to create one.
 	if !present {
 		writeJSON(w, http.StatusOK, DeskLevelConfig{
-			Builds: s.builds, Path: path, Present: false, Project: s.projectPaths(), Runtime: s.runtimePaths(), LocalGateway: s.localGatewayStatus(nil)})
+			Builds: s.builds, Path: path, Present: false, Project: s.projectPaths(), Runtime: s.runtimePaths(), Jobs: s.jobsPolicy(), LocalGateway: s.localGatewayStatus(nil)})
 		return
 	}
 	if !validUTF8(data) {
@@ -330,7 +342,11 @@ func (s *Server) handleDeskConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, DeskLevelConfig{
 		Builds: s.builds, Path: path, Present: true, Content: string(data), SHA256: digestOf(data), LocalGateway: s.localGatewayStatus(data),
-		Project: s.projectPaths(), Runtime: s.runtimePaths()})
+		Project: s.projectPaths(), Runtime: s.runtimePaths(), Jobs: s.jobsPolicy()})
+}
+
+func (s *Server) jobsPolicy() JobsPolicy {
+	return JobsPolicy{RequireTestedReleases: s.cfg.RunnerRequireTested}
 }
 
 // projectPaths is the resolved root and the project file inside it.

@@ -2142,8 +2142,17 @@ export type ValueSource = 'project file' | 'desk file' | 'default'
 export interface BuildIdentity { moduleVersion?: string; revision?: string; modified?: boolean }
 export interface ComponentBuilds { desk: BuildIdentity; runtime: BuildIdentity; runner?: BuildIdentity; sourceWorker?: BuildIdentity }
 
+/**
+ * The installation's Jobs policy, as this process was started with it. Only
+ * the owner's startup flag sets it; the page reads it to say what the Runner
+ * will do with a release, and never decides anything from it.
+ */
+export interface JobsPolicy { requireTestedReleases: boolean }
+
 export interface ChassisPaths {
   builds?: ComponentBuilds
+  /** Undefined where the chassis did not say, which is not the policy being off. */
+  jobs?: JobsPolicy
   projectDir: string
   projectFile: string
   runtimeBin: string

@@ -50,7 +50,7 @@ func run() error {
 		codexBin          = flag.String("codex", "", "advanced Codex override: absolute executable path, or off to disable; default manages the compatible runtime automatically")
 		runnerConnections = flag.String("runner-connections", "", "absolute installation-owned Jobs background connections JSON file")
 		runnerProfiles    = flag.String("runner-input-profiles", "", "absolute path to installation-owned Jobs input trust profiles (JSON)")
-		runnerTested      = flag.Bool("runner-require-tested-releases", false, "installation-owned Jobs policy: refuse to create a job from a release whose saved tests were not run")
+		runnerTested      = desk.RunnerTestedReleasesFlag(flag.CommandLine)
 		runnerBin         = flag.String("runner", desk.InstalledRunnerBinary(), "path to the optional local Jobs runner companion")
 		jpackBin          = flag.String("jpack", "jpack", "path to the judgment-pack runtime binary")
 		devToken          = flag.String("dev-token", "", "fixed owner setup code for local development; also permits the Vite dev-server origin. Leave empty in normal use so a random secret is generated.")

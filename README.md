@@ -5451,12 +5451,15 @@ See [the implemented pilot](docs/design/operational-jobs-pilot.md) for its scope
 recovery, API, storage and verification. A bare Desk build without the companion
 shows an installation message on Jobs and continues to support the existing pages.
 
-An installation can refuse jobs from untested releases. Start Desk with the
-installation-only `--runner-require-tested-releases` flag and the Runner refuses
-to create a job, with or without a first trigger, from a release whose saved tests
-were not run. Create job keeps its untested warning and shows the Runner's refusal
-in place of the job. The flag applies to every desk of the installation; jobs
-created before it was set keep running. Restart Desk to change it.
+An installation refuses jobs from untested releases by default (ADR-0009). The
+Runner refuses to create a job, with or without a first trigger, from a release
+whose saved tests were not run. Create job's untested-release note says that this
+installation will refuse the job and how to turn the policy off, and Create job
+shows the Runner's refusal in place of the job. To allow untested releases, start
+Desk with the installation-only `--runner-require-tested-releases=false` flag; the
+note then says the policy is off. The flag applies to every desk of the
+installation; jobs created before the policy was on keep running. Restart Desk to
+change it.
 
 Jobs also supports **Mapped sources**: named case, local-file, selected Drive and
 MCP inputs with Runner-verified receipts, derivation, release review and retained

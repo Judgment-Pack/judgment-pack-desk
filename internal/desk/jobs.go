@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"flag"
 	"io"
 	"net/http"
 	"net/url"
@@ -35,6 +36,14 @@ func InstalledRunnerBinary() string {
 		return path
 	}
 	return ""
+}
+
+// RunnerTestedReleasesFlag registers the installation's tested-releases policy
+// for Jobs. It is on by default (ADR-0009): the Runner refuses a new job from a
+// release whose saved tests were not run. The owner turns it off for every desk
+// of the installation with `--runner-require-tested-releases=false`.
+func RunnerTestedReleasesFlag(flags *flag.FlagSet) *bool {
+	return flags.Bool("runner-require-tested-releases", true, "installation-owned Jobs policy, on by default: refuse to create a job from a release whose saved tests were not run; =false turns it off")
 }
 
 type jobsCompanion struct {
@@ -149,11 +158,9 @@ func (j *jobsCompanion) endpoint() (string, string, error) {
 	if len(j.profiles) > 0 {
 		boot["inputProfiles"] = j.profiles
 	}
-	// Off is the Runner's default, so an installation without the policy
-	// sends the same boot line as before.
-	if j.requireTested {
-		boot["requireTestedReleases"] = true
-	}
+	// The installation's choice goes on the boot line either way, so turning
+	// the policy off never rests on the Runner's own default.
+	boot["requireTestedReleases"] = j.requireTested
 	if err = json.NewEncoder(input).Encode(boot); err != nil {
 		input.Close()
 		cmd.Process.Kill()
