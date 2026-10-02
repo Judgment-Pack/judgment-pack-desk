@@ -2101,6 +2101,70 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "tested releases: policy off left out of the desk-config answer" internal/desk/assistant.go \
     'RequireTestedReleases bool `json:"requireTestedReleases"`' \
     'RequireTestedReleases bool `json:"requireTestedReleases,omitempty"`'
+
+  # **Review and lock (ADR-0009, section 2).** The review passes the
+  # runtime's findings through and shows an earlier copy only for exactly the
+  # bytes the lock names; the lock takes a confirmation this page sent, of
+  # exactly the files as they are, and anything that moves while the runtime
+  # locks puts the previous lock back. review_test.go drives a stand-in
+  # runtime by absolute path.
+  RV=internal/desk/review.go
+  mutate go "review: a cross-site request can lock" "$RV" \
+    '	if r.Header.Get("Sec-Fetch-Site") == "cross-site" {' \
+    '	if false {'
+  mutate go "review: a confirmation need not be JSON" "$RV" \
+    '	if err != nil || media != "application/json" {' \
+    '	if false {'
+  mutate go "review: a confirmation may carry other members" "$RV" \
+    '	if err != nil || decodeDataJSON(data, &request) != nil || request.Set == nil || len(request.Set.Entries) > reviewEntryLimit {' \
+    '	if err != nil || json.Unmarshal(data, &request) != nil || request.Set == nil || len(request.Set.Entries) > reviewEntryLimit {'
+  mutate go "review: a stale confirmation still locks" "$RV" \
+    '	if err != nil || !current.equal(confirmed) {' \
+    '	if err != nil {'
+  mutate go "review: the lock is not checked against the confirmation" "$RV" \
+    '			if pinned, _, err := lockedSet(after); err == nil && pinned.equal(current) {' \
+    '			if _, _, err := lockedSet(after); err == nil {'
+  mutate go "review: the previous lock is not put back" "$RV" \
+    '		return s.atomicWrite(runtimeLockName, previous)' \
+    '		return nil'
+  mutate go "review: a lock is left where there was none" "$RV" \
+    '	if err := s.root.Remove(runtimeLockName); err != nil && !errors.Is(err, fs.ErrNotExist) {' \
+    '	if err := error(nil); err != nil {'
+  mutate go "review: a refused lock is trusted" "$RV" \
+    '&& answer.Command == "packs lock" && answer.Status == "valid" && err == nil {' \
+    '&& answer.Command == "packs lock" {'
+  mutate go "review: no copies are kept" "$RV" \
+    '	if err := s.storeReviewedCopies(read, current); err != nil {' \
+    '	if err := error(nil); err != nil {'
+  mutate go "review: a copy of other bytes is shown" "$RV" \
+    '	if err != nil || sha256Digest(data) != digest {
+		return reviewSide{State: "no-copy"}' \
+    '	if err != nil {
+		return reviewSide{State: "no-copy"}'
+  mutate go "review: the copies folder is not owner-only" "$RV" \
+    '			if err = current.Mkdir(part, custodyDirMode); err != nil && !errors.Is(err, fs.ErrExist) {' \
+    '			if err = current.Mkdir(part, 0o755); err != nil && !errors.Is(err, fs.ErrExist) {'
+  mutate go "review: the copies folder does not ignore itself" "$RV" \
+    '	if made {' \
+    '	if false {'
+  mutate go "review: copies are kept through a link" "$RV" \
+    '		if err == nil && (!info.IsDir() || info.Mode()&fs.ModeSymlink != 0) {' \
+    '		if false {'
+  mutate go "review: the startup desk reviews another configuration" "$RV" \
+    '	return dir, fmt.Sprintf("This project'"'"'s runtime reads %s, which JPACK_CONFIG names, and not this project'"'"'s %s, so Desk does not review or lock it here.", named, runtimeConfigName)' \
+    '	return dir, ""'
+  mutate go "review: a JPACK_CONFIG naming the project's own file is refused" "$RV" \
+    '	if err == nil && ownErr == nil && os.SameFile(there, own) {' \
+    '	if false {'
+  mutate go "review: verify searches for its configuration" "$RV" \
+    '"packs", "verify", "--config", runtimeConfigName, "--format", "json")' \
+    '"packs", "verify", "--format", "json")'
+  mutate go "review: lock searches for its configuration" "$RV" \
+    '"packs", "lock", "--config", runtimeConfigName, "--format", "json")' \
+    '"packs", "lock", "--format", "json")'
+  mutate go "review: the runtime's detail is dropped" "$RV" \
+    '		finding := reviewFinding{Name: found.Name, Kind: found.Kind, ID: found.ID, Path: found.Path, Detail: found.Detail}' \
+    '		finding := reviewFinding{Name: found.Name, Kind: found.Kind, ID: found.ID, Path: found.Path}'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -8188,6 +8252,43 @@ export function assistantTransport(id: string): Transport {
   mutate web "tested releases: Runner's refusal not shown in place of the job" web/src/jobs/JobsView.tsx \
     "      if (e instanceof JobsRequestError && e.code === 'release_untested') {" \
     "      if (e instanceof JobsRequestError && e.code === 'release_untested_never') {"
+
+  # **Review and lock on the page.** The runtime's findings in plain words,
+  # never dropped; a diff only where the desk kept the locked bytes; and a
+  # lock only on the owner's confirmation, of exactly the set shown.
+  RF=web/src/packs/review/findings.ts
+  RC=web/src/packs/review/client.ts
+  RVV=web/src/packs/review/ReviewAndLockView.tsx
+  mutate web "review: a finding is given other words" "$RF" \
+    "    case 'document-drift': return msg('Changed since the last lock')" \
+    "    case 'document-drift': return name"
+  mutate web "review: an unknown finding is dropped" "$RF" \
+    "    default: return name" \
+    "    default: return ''"
+  mutate web "review: a graph's finding is shown beside a pack" "$RF" \
+    "    if (finding.kind !== 'pack' || !finding.id) continue" \
+    "    if (!finding.id) continue"
+  mutate web "review: the confirmation does not carry the set" "$RC" \
+    "body: JSON.stringify({ set }) })" \
+    "body: JSON.stringify({}) })"
+  mutate web "review: a stale confirmation reads as any failure" "$RC" \
+    "  return body.code === 'stale' ? new StaleReview(message) : new Error(message)" \
+    "  return new Error(message)"
+  mutate web "review: a diff is drawn without the locked bytes" "$RVV" \
+    "    {earlier.state === 'text' && now.state === 'text'" \
+    "    {now.state === 'text'"
+  mutate web "review: a lock is offered when every file matches" "$RVV" \
+    "            : review.set && !matches && <section" \
+    "            : review.set && <section"
+  mutate web "review: a lock is offered over unreadable files" "$RVV" \
+    "          {review.unreadable ? <Alert" \
+    "          {false ? <Alert"
+  mutate web "review: the step is not shown again after a stale confirmation" "$RVV" \
+    "      await client.invalidateQueries({ queryKey: REVIEW_KEY })" \
+    "      void client"
+  mutate web "review: no finding beside a pack's name" web/src/packs/PacksPane.tsx \
+    "                {pack.status!=='draft' && findings.get(pack.id)?.map(" \
+    "                {false && findings.get(pack.id)?.map("
 fi
 
 restore
