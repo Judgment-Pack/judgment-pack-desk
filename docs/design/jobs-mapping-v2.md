@@ -34,6 +34,17 @@ profiles and the release digest to check an export offline. Downloads contain
 private case, request and response data; the ordinary view keeps raw proof behind
 technical disclosure. Local storage remains the artifact store.
 
+The download asks Runner for verification export version 3, which carries the
+audit record's exact bytes, saves the answer as it comes, and names the file for
+the version Runner answered (`<run>-verification-v3.json`). Runner answers
+version 2 for a run that holds no such bytes, such as one recorded before Runner
+`v0.4.0`. `verify-run` reports the bytes' SHA-256 as `recordDigest`. Comparing
+it with a gateway receipt's `decision.recordDigest` is the reader's step:
+`verify-run` does not make it. Desk forwards `version` on this route only, as
+exactly one `2` or `3`, and refuses any other value itself. It reads an export,
+and the run it is made from, up to Runner's `MaxExportSize` (about 18.7 MiB),
+which is what `verify-run` reads; every other Runner answer stays within 16 MiB.
+
 ## Installation trust
 
 Install the matching Runner binary and pass an installation-owned JSON file:

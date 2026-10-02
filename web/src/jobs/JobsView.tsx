@@ -286,16 +286,29 @@ function RunView({ runId }: { runId: string }) {
   </>
 }
 
-function VerificationDownload({runId}: {runId: string}) {
- const [error,setError]=useState<unknown>(), [busy,setBusy]=useState(false)
+/** The version of a verification export, read from the export itself. Runner
+ answers version 2 for a run that holds no bytes of its audit record, whatever
+ was asked for, so what was asked for does not say what was saved. */
+function exportVersion(text: string): 2 | 3 | undefined {
+ try { const version=(JSON.parse(text) as {version?: unknown} | null)?.version; return version===2||version===3 ? version : undefined } catch { return undefined }
+}
+
+export function VerificationDownload({runId}: {runId: string}) {
+ const [error,setError]=useState<unknown>(), [busy,setBusy]=useState(false), [saved,setSaved]=useState<{file: string, version: 2 | 3}>()
  async function download() {
-  setBusy(true);setError(undefined)
+  setBusy(true);setError(undefined);setSaved(undefined)
   try {
-   const response=await deskFetch(`/api/operations/runs/${runId}/verification`)
+   const response=await deskFetch(`/api/operations/runs/${runId}/verification?version=3`)
    if(!response.ok) throw Error(msg('The local runner could not complete this request.'))
-   const url=URL.createObjectURL(await response.blob()), a=document.createElement('a')
-   a.href=url;a.download=`${runId}-verification.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)
+   // Saved as Runner sent it, byte for byte: nothing here encodes the export again.
+   const blob=await response.blob(), version=exportVersion(await blob.text())
+   if(!version) throw Error(msg('The local runner could not complete this request.'))
+   const file=`${runId}-verification-v${version}.json`, url=URL.createObjectURL(blob), a=document.createElement('a')
+   a.href=url;a.download=file;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)
+   setSaved({file,version})
   } catch(e){setError(e)} finally {setBusy(false)}
  }
- return <div><Button disabled={busy} onClick={()=>void download()}>{msg('Download verification record')}</Button><Problem error={error}/></div>
+ return <div className={styles.field}><div><Button disabled={busy} onClick={()=>void download()}>{msg('Download verification record')}</Button></div>
+  {saved && <p role="status" className={styles.note}>{saved.version===3 ? msg('Saved {{file}}: export version 3, with the audit record’s exact bytes. Their digest, which verify-run reports as recordDigest, can be compared with a gateway receipt’s decision.recordDigest; verify-run does not make that comparison.', {file: saved.file}) : msg('Saved {{file}}: export version 2, which carries no exact bytes of the audit record to compare with a gateway receipt.', {file: saved.file})}</p>}
+  <Problem error={error}/></div>
 }

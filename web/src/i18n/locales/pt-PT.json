@@ -2112,6 +2112,8 @@
   "Saved result. Recheck the draft before creating it.": "Resultado guardado. Verifique novamente o rascunho antes de o criar.",
   "Saved sources remain available. Future searches using this connection will stop.": "As fontes guardadas permanecem disponíveis. As futuras pesquisas com esta ligação serão interrompidas.",
   "Saved test cases could not be grounded again. Start a new research chat; the original history is preserved.": "Não foi possível fundamentar novamente os casos guardados. Inicie uma nova conversa de pesquisa; o histórico original é mantido.",
+  "Saved {{file}}: export version 2, which carries no exact bytes of the audit record to compare with a gateway receipt.": "{{file}} guardado: versão 2 da exportação, que não contém os bytes exatos do registo de auditoria para comparar com um comprovativo do gateway.",
+  "Saved {{file}}: export version 3, with the audit record’s exact bytes. Their digest, which verify-run reports as recordDigest, can be compared with a gateway receipt’s decision.recordDigest; verify-run does not make that comparison.": "{{file}} guardado: versão 3 da exportação, com os bytes exatos do registo de auditoria. O digest destes, que o verify-run indica como recordDigest, pode ser comparado com o decision.recordDigest de um comprovativo do gateway; o verify-run não faz essa comparação.",
   "Saved tests": "Testes guardados",
   "Saved, and the file was created. Nothing else is in it.": "Guardado num novo ficheiro. Não contém mais nada.",
   "Saved, and the read-back does not match.": "Guardado, mas a releitura não corresponde.",
