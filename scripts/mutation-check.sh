@@ -312,15 +312,14 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "the watcher reports success with no watches" internal/desk/watch.go \
     '	if watched == 0 {' \
     '	if watched < 0 {'
-  # Every replacement below keeps `shell` and `dirFile` in use: a mutation that
-  # does not compile is not one the suite survived.
+  # Every replacement below keeps `dirFile` in use: a mutation that does not
+  # compile is not one the suite survived. The relay's command is built by
+  # `runtimeCommandIn`, which the commands a new desk is made with share, so
+  # these replace the relay's call to it.
   mutate go "the runtime starts from the unresolved pathname" "$PL" \
-    '	cmd := exec.CommandContext(ctx, shell, "-c", runtimeTrampoline, binary, "mcp")
-	// **The documented contract**: this becomes descriptor 3 in the child,
-	// with close-on-exec cleared for it there and nowhere else.
-	cmd.ExtraFiles = []*os.File{dirFile}
-	return cmd, nil' \
-    '	_, _ = shell, dirFile
+    '	return runtimeCommandIn(ctx, s.cfg.JpackBin, dirFile, "mcp")' \
+    '	_ = dirFile
+	binary, _ := exec.LookPath(s.cfg.JpackBin)
 	cmd := exec.CommandContext(ctx, binary, "mcp")
 	cmd.Dir = s.cfg.ProjectDir
 	return cmd, nil'
@@ -1530,13 +1529,12 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # and round 4 refused: it works only while an ordering inside `os/exec`
   # happens to hold, and it is the parent's descriptor number.
   mutate go "the child is started from the pathname again" "$PL" \
-    '	cmd := exec.CommandContext(ctx, shell, "-c", runtimeTrampoline, binary, "mcp")
-	// **The documented contract**: this becomes descriptor 3 in the child,
-	// with close-on-exec cleared for it there and nowhere else.
-	cmd.ExtraFiles = []*os.File{dirFile}' \
-    '	_, _ = shell, dirFile
+    '	return runtimeCommandIn(ctx, s.cfg.JpackBin, dirFile, "mcp")' \
+    '	_ = dirFile
+	binary, _ := exec.LookPath(s.cfg.JpackBin)
 	cmd := exec.CommandContext(ctx, binary, "mcp")
-	cmd.Dir = s.projectDir'
+	cmd.Dir = s.projectDir
+	return cmd, nil'
   # The same for the watcher, which takes a path because inotify does.
   mutate go "the watcher is initialised from the pathname again" "$S" \
     '	watchRoot := pinned.dir
@@ -1903,6 +1901,82 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "verification export: limit past Runner's MaxExportSize" "$J" \
     'const runnerExportLimit = 8<<20 + len(`,"auditBytes":""`) + (8<<20+2)/3*4' \
     'const runnerExportLimit = 8<<20 + len(`,"auditBytes":""`) + (8<<20+2)/3*4 + 1'
+
+  # **A new desk starts gated (ADR-0009, section 1).** Its configuration is
+  # the one the runtime can hold it to, its audit folder is owner-only, and the
+  # runtime locks it before the manifest; a desk that cannot be locked is not
+  # made, and leaves no folder. The stand-in runtime in
+  # new_desk_gates_test.go answers each case by absolute path.
+  NDG=internal/desk/desks.go
+  NRT=internal/desk/runtime.go
+  mutate go "new desk: written at configVersion 3 again" "$NDG" \
+    '			runtimeConfigName: string(gates.config),' \
+    '			runtimeConfigName: "{\"configVersion\":\"3\",\"packs\":{}}\n",'
+  mutate go "new desk: a runtime that reads 5 gets the fallback" "$NDG" \
+    '	if slices.Contains(schema.supported, comparableFactsFromVersion) {' \
+    '	if false {'
+  mutate go "new desk: the fallback keeps requireComparableFacts" "$NDG" \
+    '	gatedDeskConfigVersion4    = `{"configVersion":"4","requireReviewed":true,"audit":{"dir":".desk-private/audit"},"packs":{}}` + "\n"' \
+    '	gatedDeskConfigVersion4    = `{"configVersion":"4","requireReviewed":true,"requireComparableFacts":true,"audit":{"dir":".desk-private/audit"},"packs":{}}` + "\n"'
+  mutate go "new desk: the fallback is not logged" "$NDG" \
+    '		if gates.notice != "" {
+			owner.log.Printf("desk: %s", gates.notice)
+		}' \
+    ''
+  mutate go "new desk: the fallback is not in the answer" "$NDG" \
+    '		}{record, gates.configVersion, gates.requireComparableFacts, gates.notice})' \
+    '		}{record, gates.configVersion, gates.requireComparableFacts, ""})'
+  mutate go "new desk: a runtime that reads neither 4 nor 5 gets a desk" "$NDG" \
+    '	if slices.Contains(schema.supported, reviewedFromVersion) {' \
+    '	if true {'
+  mutate go "new desk: no audit folder" "$NDG" \
+    '"sources", ".desk", ".desk/job-drafts", ".desk-private", deskAuditDir} {' \
+    '"sources", ".desk", ".desk/job-drafts", ".desk-private"} {'
+  mutate go "new desk: the audit folder is not owner-only" "$NDG" \
+    '			if err = folder.Mkdir(dir, 0700); err != nil {' \
+    '			if err = folder.Mkdir(dir, 0755); err != nil {'
+  mutate go "new desk: not locked" "$NDG" \
+    '		if err = lockRuntimeProject(r.Context(), bin, held, folder, gates.config); err != nil {' \
+    '		if err = error(nil); err != nil {'
+  mutate go "new desk: a failed lock still makes a desk" "$NDG" \
+    '		if err = lockRuntimeProject(r.Context(), bin, held, folder, gates.config); err != nil {
+			deskRuntimeFailure(w, err)
+			return
+		}' \
+    '		if err = lockRuntimeProject(r.Context(), bin, held, folder, gates.config); err != nil {
+			deskRuntimeFailure(w, err)
+		}'
+  mutate go "new desk: a failed creation leaves its folder" "$NDG" \
+    '		made := false' \
+    '		made := true'
+  mutate go "new desk: the runtime runs outside the new folder" "$NDG" \
+    '		held, err := holdDeskFolder(folder, filepath.Join(owner.configDir, "desks", id))' \
+    '		held, err := holdDeskFolder(root, filepath.Join(owner.configDir, "desks"))'
+  mutate go "new desk: the lock searches for its configuration" "$NRT" \
+    '"packs", "lock", "--config", runtimeConfigName, "--format", "json")' \
+    '"packs", "lock", "--format", "json")'
+  mutate go "new desk: a lock of other bytes is trusted" "$NRT" \
+    '	if answer.ConfigDigest != "sha256:"+digestOf(config) {' \
+    '	if false {'
+  mutate go "new desk: a reported lock is not looked for" "$NRT" \
+    '	if info, err := root.Lstat(runtimeLockName); err != nil || !info.Mode().IsRegular() {' \
+    '	if false {'
+  mutate go "new desk: the runtime's refusal is not named" "$NRT" \
+    '		case len(said) > 0:' \
+    '		case false:'
+  mutate go "new desk: a runtime's answer is read past the bound" "$NRT" \
+    '	if stdout.exceeded() {' \
+    '	if false {'
+  # **`io.Copy` prefers `ReadFrom` to `Write`.** This is the shape the buffer
+  # had with `bytes.Buffer` embedded, and the bound was never consulted.
+  mutate go "new desk: the answer's buffer reads around its bound" "$NRT" \
+    'func (b *cappedBuffer) exceeded() bool {' \
+    'func (b *cappedBuffer) ReadFrom(r io.Reader) (int64, error) { return b.buf.ReadFrom(r) }
+
+func (b *cappedBuffer) exceeded() bool {'
+  mutate go "new desk: a hung runtime is not bounded" "$NRT" \
+    '	ctx, cancel := context.WithTimeout(ctx, runtimeCommandTimeout)' \
+    '	ctx, cancel := context.WithCancel(ctx)'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx

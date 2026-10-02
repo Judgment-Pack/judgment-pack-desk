@@ -5,8 +5,19 @@ The header selects a named desk; the configuration filename is an advanced file 
 Create desk creates a fresh owner-only folder below the installation's `desks/` directory (normally `~/.config/jpack-desk/desks/<id>`). The name is independent of its opaque storage ID. New desks contain:
 
 - `jpack.json`, `jpack-desk.json`, `packs/`, and `sources/` for project documents and configuration.
+- `jpack.lock.json`, the runtime's reviewed-set lock of the new, empty project.
 - `.desk/job-drafts/` for saved job configurations.
-- `.desk-private/desk.json` for identity; `.desk-private/data/` for conversations, draft packs, tests, briefs, and retained attachments; `.desk-private/jobs/` for runner state, releases, captured inputs, and run records.
+- `.desk-private/desk.json` for identity; `.desk-private/data/` for conversations, draft packs, tests, briefs, and retained attachments; `.desk-private/jobs/` for runner state, releases, captured inputs, and run records; `.desk-private/audit/`, owner-only, for the runtime's audit trail of deciding runs.
+
+A new desk starts gated ([ADR-0009](../adr/0009-gates-on-by-default.md), section 1). Its `jpack.json` is:
+
+```json
+{"configVersion":"5","requireReviewed":true,"requireComparableFacts":true,"audit":{"dir":".desk-private/audit"},"packs":{}}
+```
+
+Before writing it, Desk asks the runtime it runs which configuration versions it reads (`packs schema --format json`, `supportedConfigVersions`). A runtime that reads `"4"` but not `"5"` gets `{"configVersion":"4","requireReviewed":true,"audit":{"dir":".desk-private/audit"},"packs":{}}`, without `requireComparableFacts`, and the creation's answer and Desk's log say so. A runtime that reads neither cannot hold a desk to its reviewed set, and no desk is created. Desk then runs `packs lock --config jpack.json` in the new folder, after writing `jpack.json` and before the manifest. Both commands are started like the relay's `jpack mcp`: the same binary and environment, and on Linux the same change of directory through a held descriptor. Each is bounded to 20 seconds. If either fails, the folder is removed and no desk is created.
+
+The empty lock reviews no pack. It pins only the configuration's bytes, so that a deciding run is refused for a draft rather than for every run. A deciding run of a pack Desk adds is refused until the project is locked again.
 
 The private directory is excluded from the file editor, file listing, and watcher. Restores use another private subfolder, verify the copy, retain the previous data, and update a relative storage pointer. Desk IDs keep conversation and runner identities stable when a folder is moved. A direct CLI launch recognizes the manifest. Credentials and installed executables remain machine-owned: source-system references and connection credentials are not copied into a desk folder.
 

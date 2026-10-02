@@ -59,26 +59,46 @@ func (s *Server) runtimeCommand(ctx context.Context) (*exec.Cmd, error) {
 	if !ok {
 		return nil, fmt.Errorf("this desk holds no descriptor for its project")
 	}
+	return runtimeCommandIn(ctx, s.cfg.JpackBin, dirFile, "mcp")
+}
+
+// runtimeCommandIn builds the command that runs the runtime with args, in the
+// directory dirFile holds.
+//
+// **Every runtime command this desk starts is built here**: the relay's
+// `jpack mcp`, and the commands a new desk is made with (`runtimeCommandAt`).
+// So each one has the same binary, resolved the same way, the same inherited
+// environment, and the same change of directory through a held descriptor.
+func runtimeCommandIn(ctx context.Context, bin string, dirFile *os.File, args ...string) (*exec.Cmd, error) {
 	shell, err := lookRuntimeShell(runtimeShellName)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"no %s to change into the project with, so no runtime was started: %w",
 			runtimeShellName, err)
 	}
-	binary, err := exec.LookPath(s.cfg.JpackBin)
+	binary, err := exec.LookPath(bin)
 	if err != nil {
-		return nil, fmt.Errorf("the runtime %q could not be found: %w", s.cfg.JpackBin, err)
+		return nil, fmt.Errorf("the runtime %q could not be found: %w", bin, err)
 	}
-	cmd := exec.CommandContext(ctx, shell, "-c", runtimeTrampoline, binary, "mcp")
+	cmd := exec.CommandContext(ctx, shell, append([]string{"-c", runtimeTrampoline, binary}, args...)...)
 	// **The documented contract**: this becomes descriptor 3 in the child,
 	// with close-on-exec cleared for it there and nowhere else.
 	cmd.ExtraFiles = []*os.File{dirFile}
 	return cmd, nil
 }
 
+// runtimeCommandAt builds a command that runs to completion in a directory
+// this desk holds. On Linux it is the relay's command with other arguments.
+func runtimeCommandAt(ctx context.Context, bin string, dir heldDir, args ...string) (*exec.Cmd, error) {
+	return runtimeCommandIn(ctx, bin, dir.file, args...)
+}
+
 // aimAtTheProject has nothing left to do on Linux: the command already carries
 // the descriptor, and the change of directory happens in the child.
 func (s *Server) aimAtTheProject(*exec.Cmd) error { return nil }
+
+// aimRuntimeAt has nothing left to do on Linux either, for the same reason.
+func aimRuntimeAt(*exec.Cmd, heldDir) error { return nil }
 
 // projectDescriptor is the pinned directory as an ordinary file.
 func (s *Server) projectDescriptor() (*os.File, bool) {

@@ -165,6 +165,8 @@ func TestRunnerRequireTestedReleasesReachesBootLine(t *testing.T) {
 		}
 		config := t.TempDir()
 		os.Chmod(config, 0700)
+		// Creating the named desk below runs the runtime; this stand-in answers.
+		writeStandInRuntime(t, filepath.Join(dir, "jpack"), reading(allConfigVersions), lockingAs(wantGatedConfig))
 		s, ts := startDesk(t, Config{RunnerBin: runner, JpackBin: filepath.Join(dir, "jpack"), RunnerRequireTested: required, ProjectDir: t.TempDir(), DeskConfigDir: config, Token: testToken})
 		t.Cleanup(func() { ts.Close(); s.Close() })
 		// The handshake follows the recorded line, so a returned endpoint
