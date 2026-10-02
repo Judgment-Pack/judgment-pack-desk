@@ -2147,9 +2147,28 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "review: the copies folder does not ignore itself" "$RV" \
     '	if made {' \
     '	if made && false {'
+  # **Two layers refuse a link, and each alone is enough**: the type check on
+  # the Lstat, and the identity check between what was inspected and what was
+  # opened, which also holds a swap between the two. So the row breaks both.
   mutate go "review: copies are kept through a link" "$RV" \
-    '		if err == nil && (!info.IsDir() || info.Mode()&fs.ModeSymlink != 0) {' \
-    '		if false {'
+    '		if err == nil && (!info.IsDir() || info.Mode()&fs.ModeSymlink != 0) {
+			err = fmt.Errorf("%s is not a directory Desk can keep copies in", part)
+		}
+		var next *os.Root
+		if err == nil {
+			next, err = current.OpenRoot(part)
+		}
+		if err == nil {
+			if held, statErr := next.Stat("."); statErr != nil || !os.SameFile(info, held) {' \
+    '		if _ = info; false {
+			err = fmt.Errorf("%s is not a directory Desk can keep copies in", part)
+		}
+		var next *os.Root
+		if err == nil {
+			next, err = current.OpenRoot(part)
+		}
+		if err == nil {
+			if held, statErr := next.Stat("."); statErr != nil && held == nil {'
   mutate go "review: the startup desk reviews another configuration" "$RV" \
     '	return dir, fmt.Sprintf("This project'"'"'s runtime reads %s, which JPACK_CONFIG names, and not this project'"'"'s %s, so Desk does not review or lock it here.", named, runtimeConfigName)' \
     '	return dir, ""'
