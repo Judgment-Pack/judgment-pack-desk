@@ -157,3 +157,17 @@ it('keeps a resumed job editor and its unsaved fields through failed background 
  expect(screen.getByLabelText('Job name')).toBe(name)
  expect((name as HTMLInputElement).value).toBe('My unsaved change')
 })
+
+it('uses the Desk AI origin in the test matrix sent with a job release preview', async () => {
+ const { importMatrix, emptySuite } = await import('../packs/test-workspace/model')
+ const storage = await import('../packs/test-workspace/store')
+ const actual = await vi.importActual<typeof import('./releaseTests')>('./releaseTests')
+ const cases = importMatrix({cases: [{id: 'proposed', origin: 'manual', facts: {}, expectedDisposition: {kind: 'outcome', outcomeId: 'accept', reasons: [], handoff: {state: 'none'}}}]}, 'ai')
+ const read = vi.spyOn(storage, 'readTests').mockResolvedValue({project: 'project', sha256: 'hash', content: {version: 1, suites: {pack: {...emptySuite(), cases, recovered: ['matrix:cases.json']}}}})
+ vi.mocked(readReleaseTests).mockImplementation(actual.readReleaseTests)
+ try {
+  renderCreate(); await check()
+  const preview = vi.mocked(jobsAPI).mock.calls.find(([path]) => path === 'previews')![1] as {matrix: string}
+  expect(JSON.parse(preview.matrix).cases[0].origin).toBe('ai')
+ } finally { read.mockRestore() }
+})

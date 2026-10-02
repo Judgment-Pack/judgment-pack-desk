@@ -250,3 +250,10 @@ it('does not show a check twice when the draft carried it and the research recor
   // A check the draft never carried still comes back from the record.
   expect((await recoverResearchRecord(emptySuite(), record, 'research:abc')).runs).toHaveLength(1)
 })
+
+it('keeps the Desk AI tag on exported rows while preserving file-import origins', () => {
+  const document = { matrixVersion: '3', cases: [{ id: 'proposed', origin: 'manual', facts: {}, expectedDisposition: expected }] }
+  expect(matrix(importMatrix(document, 'ai')).cases[0]?.origin).toBe('ai')
+  expect(matrix(importMatrix(document)).cases[0]?.origin).toBe('manual')
+  expect(document.cases[0]?.origin).toBe('manual')
+})

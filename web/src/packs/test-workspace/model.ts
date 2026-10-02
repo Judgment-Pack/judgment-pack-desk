@@ -198,7 +198,7 @@ export function matrix(cases: TestCase[]) {
       ...c.row,
       id: c.id,
       focus: c.rationale || c.row.focus,
-      origin: c.row.origin ?? c.origin,
+      origin: c.origin === 'ai' ? 'ai' : c.row.origin ?? c.origin,
     })),
   }
 }

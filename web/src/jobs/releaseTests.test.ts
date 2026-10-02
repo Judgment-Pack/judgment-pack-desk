@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import { readReleaseTests } from './releaseTests'
 import { readTests } from '../packs/test-workspace/store'
 import { readFile } from '../files/client'
-import { emptySuite, newCase, type TestSuite } from '../packs/test-workspace/model'
+import { emptySuite, importMatrix, newCase, type TestSuite } from '../packs/test-workspace/model'
 vi.mock('../packs/test-workspace/store', () => ({ readTests: vi.fn() }))
 vi.mock('../files/client', () => ({ readFile: vi.fn() }))
 const expected = { kind: 'outcome', outcomeId: 'accept', reasons: [], handoff: { state: 'none' } }
@@ -39,4 +39,9 @@ it('fails on unreadable or invalid registered cases rather than silently omittin
  await expect(readReleaseTests('pack','matrix.json')).rejects.toThrow('Unreadable')
  vi.mocked(readFile).mockResolvedValueOnce({ content: '{' } as Awaited<ReturnType<typeof readFile>>)
  await expect(readReleaseTests('pack','matrix.json')).rejects.toThrow()
+})
+
+it('sends the Desk AI origin in saved test matrices for job release checks', async () => {
+ suite.cases = importMatrix({ cases: [{ id: 'proposed', facts: {}, origin: 'manual', expectedDisposition: expected }] }, 'ai')
+ expect(JSON.parse((await readReleaseTests('pack')).matrix!).cases[0].origin).toBe('ai')
 })

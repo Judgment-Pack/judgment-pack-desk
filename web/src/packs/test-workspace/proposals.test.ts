@@ -7,7 +7,7 @@ import {
   proposalForMessage,
   type TestProposal,
 } from './proposals'
-import { decodeStore, emptySuite } from './model'
+import { decodeStore, emptySuite, matrix } from './model'
 const expected = { kind: 'outcome', outcomeId: 'accept', reasons: [], handoff: { state: 'none' } }
 const document = {
   matrixVersion: '3',
@@ -168,4 +168,12 @@ it('binds response references explicitly and recovers only unambiguous older ass
   expect(
     proposalForMessage({ ...suite, messages: [{ ...messages[2]!, proposalId: proposal.id }] }, 0)?.id,
   ).toBe(proposal.id)
+})
+
+it('exports reviewed proposal cases with the Desk AI origin despite the proposed row label', () => {
+  const { proposal } = reviewFixture()
+  proposal.attempts[0]!.document = { ...document, cases: [{ ...document.cases[0]!, origin: 'manual' }] }
+  const cases = proposalCases(proposal)
+  expect(cases[0]?.origin).toBe('ai')
+  expect(matrix(cases).cases[0]?.origin).toBe('ai')
 })
