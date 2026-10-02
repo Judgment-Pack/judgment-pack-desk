@@ -38,12 +38,28 @@ func InstalledRunnerBinary() string {
 	return ""
 }
 
-// RunnerTestedReleasesFlag registers the installation's tested-releases policy
-// for Jobs. It is on by default (ADR-0009): the Runner refuses a new job from a
-// release whose saved tests were not run. The owner turns it off for every desk
-// of the installation with `--runner-require-tested-releases=false`.
-func RunnerTestedReleasesFlag(flags *flag.FlagSet) *bool {
-	return flags.Bool("runner-require-tested-releases", true, "installation-owned Jobs policy, on by default: refuse to create a job from a release whose saved tests were not run; =false turns it off")
+// JobsPolicyFlags are the installation's Jobs policy flags. main registers
+// them before it parses the command line, and Apply writes what was parsed
+// into the Config it hands to New, so the whole step from the command line to
+// the Config is here, where it is tested, rather than an assignment in main.
+type JobsPolicyFlags struct {
+	requireTested *bool
+}
+
+// RegisterJobsPolicyFlags registers `--runner-require-tested-releases`. It is
+// on by default (ADR-0009): the Runner refuses a new job from a release whose
+// saved tests were not run. The owner turns it off for every desk of the
+// installation with `--runner-require-tested-releases=false`.
+func RegisterJobsPolicyFlags(flags *flag.FlagSet) *JobsPolicyFlags {
+	return &JobsPolicyFlags{
+		requireTested: flags.Bool("runner-require-tested-releases", true, "installation-owned Jobs policy, on by default: refuse to create a job from a release whose saved tests were not run; =false turns it off"),
+	}
+}
+
+// Apply returns cfg with the parsed Jobs policy set on it.
+func (f *JobsPolicyFlags) Apply(cfg Config) Config {
+	cfg.RunnerRequireTested = *f.requireTested
+	return cfg
 }
 
 type jobsCompanion struct {

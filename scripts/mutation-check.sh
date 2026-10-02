@@ -2057,8 +2057,16 @@ func (b *cappedBuffer) exceeded() bool {'
   # passes `=false`; the boot line states the choice either way; and the
   # desk-config answer reports it, `false` included, so the page can say which.
   mutate go "tested releases: flag off by default" "$J" \
-    '	return flags.Bool("runner-require-tested-releases", true,' \
-    '	return flags.Bool("runner-require-tested-releases", false,'
+    '		requireTested: flags.Bool("runner-require-tested-releases", true,' \
+    '		requireTested: flags.Bool("runner-require-tested-releases", false,'
+  # The step main uses from the command line to the Config, broken two ways.
+  mutate go "tested releases: parsed policy inverted on its way to the Config" "$J" \
+    '	cfg.RunnerRequireTested = *f.requireTested' \
+    '	cfg.RunnerRequireTested = !*f.requireTested'
+  mutate go "tested releases: parsed policy never reaches the Config" "$J" \
+    '	cfg.RunnerRequireTested = *f.requireTested
+	return cfg' \
+    '	return cfg'
   mutate go "tested releases: =false still boots the Runner with the policy on" "$J" \
     '	boot["requireTestedReleases"] = j.requireTested' \
     '	boot["requireTestedReleases"] = true'

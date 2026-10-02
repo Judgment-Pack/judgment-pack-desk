@@ -153,24 +153,57 @@ func TestJobsV2PlannerAndProfilesThroughCompanion(t *testing.T) {
 	}
 }
 
-// The tested-releases policy is on unless the owner turns it off at startup
-// (ADR-0009), and `=false` is the way to turn it off.
-func TestRunnerTestedReleasesFlagIsOnByDefault(t *testing.T) {
+// From the command line to the Runner's boot line, through the step main uses:
+// the policy is on unless the owner passes `=false`. No socket is opened: New
+// needs a port number, not a listener, and the recording Runner is reached over
+// its standard input and output.
+func TestJobsPolicyFlagsReachTheBootLine(t *testing.T) {
 	for _, row := range []struct {
 		args []string
-		want bool
+		want string
 	}{
-		{nil, true},
-		{[]string{"--runner-require-tested-releases"}, true},
-		{[]string{"--runner-require-tested-releases=true"}, true},
-		{[]string{"--runner-require-tested-releases=false"}, false},
-		{[]string{"-runner-require-tested-releases=false"}, false},
+		{nil, "true"},
+		{[]string{"--runner-require-tested-releases"}, "true"},
+		{[]string{"--runner-require-tested-releases=true"}, "true"},
+		{[]string{"--runner-require-tested-releases=false"}, "false"},
+		{[]string{"-runner-require-tested-releases=false"}, "false"},
 	} {
 		flags := flag.NewFlagSet("jpack-desk", flag.ContinueOnError)
 		flags.SetOutput(io.Discard)
-		required := RunnerTestedReleasesFlag(flags)
-		if err := flags.Parse(row.args); err != nil || *required != row.want {
-			t.Fatalf("%v: required=%v, err=%v", row.args, *required, err)
+		policy := RegisterJobsPolicyFlags(flags)
+		if err := flags.Parse(row.args); err != nil {
+			t.Fatalf("%v: %v", row.args, err)
+		}
+		dir := t.TempDir()
+		received := filepath.Join(dir, "boot.json")
+		runner := filepath.Join(dir, "runner")
+		// Shell builtins only: Desk starts the Runner with an empty PATH.
+		script := "#!/bin/sh\nIFS= read -r line\nprintf '%s\\n' \"$line\" > " + received + "\nprintf '{\"protocol\":\"jobs/1\",\"url\":\"http://127.0.0.1:9\"}\\n'\nwhile IFS= read -r _; do :; done\n"
+		if err := os.WriteFile(runner, []byte(script), 0700); err != nil {
+			t.Fatal(err)
+		}
+		config := t.TempDir()
+		os.Chmod(config, 0700)
+		s, err := New(policy.Apply(Config{RunnerBin: runner, JpackBin: filepath.Join(dir, "jpack"), ProjectDir: t.TempDir(), DeskConfigDir: config, Port: 1, Token: testToken}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { s.Close() })
+		if s.jobs == nil {
+			t.Fatal("Jobs companion was not configured")
+		}
+		// The handshake follows the recorded line, so a returned endpoint
+		// means the line is complete on disk.
+		if _, _, err := s.jobs.endpoint(); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := os.ReadFile(received)
+		var boot map[string]json.RawMessage
+		if err != nil || json.Unmarshal(raw, &boot) != nil {
+			t.Fatalf("%v: boot line was not one JSON object: %v %q", row.args, err, raw)
+		}
+		if got := string(boot["requireTestedReleases"]); got != row.want {
+			t.Fatalf("%v: requireTestedReleases=%s, want %s: %s", row.args, got, row.want, raw)
 		}
 	}
 }
