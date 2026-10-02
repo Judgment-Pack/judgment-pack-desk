@@ -51,11 +51,15 @@ Direct API callers can omit the matrix and review a not-run release; Runner does
 claim to discover their project's complete suite. The installation owner is the trust
 boundary in this pilot.
 
-The owner can also refuse not-run releases: Desk's `--runner-require-tested-releases`
-startup flag puts `"requireTestedReleases": true` on every desk's Runner boot line, and
-POST /v1/jobs then answers 409 release_untested for a not-run release, with or without
-a first trigger. Without the flag the boot line omits the field. Create job keeps the
-untested warning and shows that refusal, in the Runner's words, in place of the job.
+Desk refuses not-run releases by default (ADR-0009). Its `--runner-require-tested-releases`
+startup flag is on unless the owner starts Desk with `--runner-require-tested-releases=false`.
+Desk puts `"requireTestedReleases"` on every desk's Runner boot line, `true` or `false`,
+so turning the policy off does not rest on the Runner's own default. With it on,
+POST /v1/jobs answers 409 release_untested for a not-run release, with or without a
+first trigger; a job created earlier keeps running. Desk reports the setting to the
+page as `jobs.requireTestedReleases` on `GET /api/desk-config`. Create job's
+untested-release note then says whether this installation refuses the job, and how to
+turn the policy off, and shows the refusal, in the Runner's words, in place of the job.
 No project file or browser request can set or clear it.
 
 ## Validation

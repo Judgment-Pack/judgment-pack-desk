@@ -28,7 +28,9 @@ Runtime report, case names, suite revision, timestamp and pack/matrix/Runtime di
 Runtime owns test comparisons; Runner checks report completeness and identity. Passing
 suites can create jobs after review even with advisory coverage gaps. Failed or incomplete
 checks cannot create jobs, including through the API. No saved expectations remains
-**Not run**, allowed only after explicit review as untested. Existing jobs are unchanged.
+**Not run**. By default the installation refuses a job from it (ADR-0009); started with
+`--runner-require-tested-releases=false`, it is allowed only after explicit review as
+untested. Existing jobs are unchanged.
 Desk rereads saved inputs before checking and before creation; edits invalidate review.
 Registered matrices are read before their first Tests-page import; after import, the
 Tests workspace is authoritative. Unsaved proposals and exploratory cases are not tests.

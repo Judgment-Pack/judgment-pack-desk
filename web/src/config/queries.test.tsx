@@ -211,6 +211,23 @@ describe('what the chassis says about this process', () => {
     expect(effective.desk?.chassis?.builds).toEqual(builds)
   })
 
+  it.each([
+    [true, false], [false, false], [true, true], [false, true]
+  ])('carries the installation’s tested-releases policy %s, configuration present %s', async (required, present) => {
+    // `false` is carried as a statement, not dropped: the page says the policy
+    // is off only where Desk said so.
+    answers({ path: '/config/desk.json', present, ...(present ? { content: '{"deskConfigVersion":1}' } : {}), project: { dir: '/p', file: '/p/jpack-desk.json' }, runtime: { bin: 'jpack' }, jobs: { requireTestedReleases: required } })
+    const effective = await loadDeskConfig()
+    expect(effective.desk?.chassis?.jobs).toEqual({ requireTestedReleases: required })
+  })
+
+  it.each([undefined, {}, { requireTestedReleases: 'false' }, { requireTestedReleases: 1 }])('reads no policy from %j', async jobs => {
+    answers({ path: '/config/desk.json', present: false, project: { dir: '/p', file: '/p/jpack-desk.json' }, runtime: { bin: 'jpack' }, ...(jobs === undefined ? {} : { jobs }) })
+    const effective = await loadDeskConfig()
+    expect(effective.desk?.chassis?.projectDir).toBe('/p')
+    expect(effective.desk?.chassis?.jobs).toBeUndefined()
+  })
+
   it('says nothing about them where the chassis did not', async () => {
     // Undefined rather than empty strings: a page that filled these in would
     // be naming paths it never learned.

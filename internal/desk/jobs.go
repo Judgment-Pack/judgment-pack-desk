@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"flag"
 	"io"
 	"net/http"
 	"net/url"
@@ -37,6 +38,31 @@ func InstalledRunnerBinary() string {
 	return ""
 }
 
+// JobsPolicyFlags are the installation's Jobs policy flags. main registers
+// them before it parses the command line, and Apply writes what was parsed
+// into the Config it hands to New, so the whole step from the command line to
+// the Config is here, where it is tested, rather than an assignment in main.
+type JobsPolicyFlags struct {
+	requireTested *bool
+}
+
+// RegisterJobsPolicyFlags registers `--runner-require-tested-releases`. It is
+// on by default (ADR-0009): the Runner refuses a new job from a release whose
+// saved tests were not run. The owner turns it off for every desk of the
+// installation with `--runner-require-tested-releases=false`.
+func RegisterJobsPolicyFlags(flags *flag.FlagSet) *JobsPolicyFlags {
+	return &JobsPolicyFlags{
+		requireTested: flags.Bool("runner-require-tested-releases", true, "installation-owned Jobs policy, on by default: refuse to create a job from a release whose saved tests were not run; =false turns it off"),
+	}
+}
+
+// Apply returns cfg with the parsed Jobs policy set on it. Without it, a
+// Config keeps the policy on: only `=false` allows untested releases.
+func (f *JobsPolicyFlags) Apply(cfg Config) Config {
+	cfg.RunnerAllowUntestedReleases = !*f.requireTested
+	return cfg
+}
+
 type jobsCompanion struct {
 	mu                                  sync.Mutex
 	profiles                            json.RawMessage
@@ -61,7 +87,7 @@ func (s *Server) initJobs() {
 		s.log.Printf("desk: Jobs background connections are invalid: %v", err)
 		return
 	}
-	s.jobs = &jobsCompanion{connections: connections, inputRoot: s.projectDir, requireTested: s.cfg.RunnerRequireTested, profiles: append(json.RawMessage(nil), s.cfg.RunnerInputProfiles...), bin: s.cfg.RunnerBin, runtime: s.cfg.JpackBin, dir: filepath.Join(s.configDir, "jobs", digestOf([]byte(s.projectDir))), workspace: digestOf([]byte(s.projectDir)), owner: "local-owner:" + digestOf([]byte(s.configDir)), stop: make(chan struct{})}
+	s.jobs = &jobsCompanion{connections: connections, inputRoot: s.projectDir, requireTested: s.cfg.requireTestedReleases(), profiles: append(json.RawMessage(nil), s.cfg.RunnerInputProfiles...), bin: s.cfg.RunnerBin, runtime: s.cfg.JpackBin, dir: filepath.Join(s.configDir, "jobs", digestOf([]byte(s.projectDir))), workspace: digestOf([]byte(s.projectDir)), owner: "local-owner:" + digestOf([]byte(s.configDir)), stop: make(chan struct{})}
 	if s.cfg.deskID != "" {
 		s.jobs.dir = filepath.Join(s.projectDir, ".desk-private", "jobs")
 		s.jobs.workspace = s.cfg.deskID
@@ -149,11 +175,9 @@ func (j *jobsCompanion) endpoint() (string, string, error) {
 	if len(j.profiles) > 0 {
 		boot["inputProfiles"] = j.profiles
 	}
-	// Off is the Runner's default, so an installation without the policy
-	// sends the same boot line as before.
-	if j.requireTested {
-		boot["requireTestedReleases"] = true
-	}
+	// The installation's choice goes on the boot line either way, so turning
+	// the policy off never rests on the Runner's own default.
+	boot["requireTestedReleases"] = j.requireTested
 	if err = json.NewEncoder(input).Encode(boot); err != nil {
 		input.Close()
 		cmd.Process.Kill()

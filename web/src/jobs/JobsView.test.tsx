@@ -7,6 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { CreateJobContent } from './JobsView'
 import { jobsAPI, JobsRequestError } from './client'
 import { readReleaseTests } from './releaseTests'
+import { DeskConfigProvider } from '../config/DeskConfigProvider'
 vi.mock('./drafts',async original=>({...await original<typeof import('./drafts')>(),loadJobDraft:vi.fn()}))
 vi.mock('./MappedInputFields',()=>({MappedInputFields:()=>null}))
 vi.mock('./client', async original => ({ ...await original<typeof import('./client')>(), jobsAPI: vi.fn() }))
@@ -24,7 +25,7 @@ beforeEach(() => {
  vi.mocked(readReleaseTests).mockResolvedValue(saved)
  vi.mocked(jobsAPI).mockResolvedValue(release)
 })
-afterEach(() => { cleanup(); vi.resetAllMocks() })
+afterEach(() => { cleanup(); vi.resetAllMocks(); vi.unstubAllGlobals() })
 function renderCreate() { return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><Tooltip.Provider><MemoryRouter initialEntries={['/jobs/new?pack=pack']}><CreateJobContent /></MemoryRouter></Tooltip.Provider></QueryClientProvider>) }
 function next(){fireEvent.click(screen.getByRole('button',{name:'Continue'}));const input=screen.queryByRole('combobox',{name:'Input configuration'});if(input){fireEvent.keyDown(input,{key:'Enter'});fireEvent.click(screen.getByRole('option',{name:'Manual / API'}))}}
 function toReview(){fireEvent.change(screen.getByLabelText('Job name'),{target:{value:'Intake'}});next();next();next()}
@@ -99,6 +100,38 @@ it.each([['plain creation', 'Create job', false], ['creation with a first trigge
  expect(jobsAPI).toHaveBeenLastCalledWith('jobs', { name: 'Intake', releaseId: 'release', reviewed: true, ...(withTrigger ? { trigger: expect.objectContaining({ kind: 'event' }) } : {}) })
  expect(screen.getByText('No saved tests were run for this release. Review it as untested before creating a job.')).toBeTruthy()
  expect(review().checked).toBe(false); expect(review().disabled).toBe(true); expect(create.disabled).toBe(true)
+})
+/** Desk's desk-config answer, stating this installation's tested-releases policy. */
+function statePolicy(requireTestedReleases: boolean) {
+ vi.stubGlobal('fetch', async (url: string) => String(url).includes('/api/desk-config')
+  ? { ok: true, status: 200, statusText: '', text: async () => JSON.stringify({ path: '/desk.json', present: false, sha256: '', project: { dir: '/p', file: '/p/jpack-desk.json' }, runtime: { bin: 'jpack' }, jobs: { requireTestedReleases } }) }
+  : { ok: false, status: 404, statusText: '', text: async () => JSON.stringify({ error: 'no such file' }) })
+}
+const refusesNote = 'No saved tests were run for this release, and this installation refuses to create a job from an untested release. Save tests for this pack, then check a new release. To turn this policy off, restart Desk with --runner-require-tested-releases=false.'
+it('names the installation policy beside the runner refusing an untested release', async () => {
+ statePolicy(true)
+ vi.mocked(readReleaseTests).mockResolvedValue({ ...saved, matrix: undefined })
+ vi.mocked(jobsAPI).mockResolvedValue({ ...release, tests: 'not-run' })
+ render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><DeskConfigProvider><Tooltip.Provider><MemoryRouter initialEntries={['/jobs/new?pack=pack']}><CreateJobContent /></MemoryRouter></Tooltip.Provider></DeskConfigProvider></QueryClientProvider>)
+ await check()
+ expect(await screen.findByText(refusesNote)).toBeTruthy()
+ fireEvent.click(review())
+ vi.mocked(jobsAPI).mockRejectedValue(new JobsRequestError(untested, 409, 'release_untested'))
+ fireEvent.click(button())
+ expect((await screen.findByRole('alert')).textContent).toBe(untested)
+ expect(screen.getByText(refusesNote)).toBeTruthy(); expect(button().disabled).toBe(true)
+})
+it('tells a job made from an untested release that the policy does not stop it', async () => {
+ statePolicy(true)
+ const { JobsContent } = await import('./JobsView')
+ const { Routes, Route } = await import('react-router-dom')
+ vi.mocked(jobsAPI).mockImplementation(async (path: string) => {
+  if (path === 'jobs/job-one') return { job: { id: 'job-one', name: 'Intake' }, release: { ...release, title: 'Policy', tests: 'not-run', sample: { facts: {} } } } as never
+  return { items: [] } as never
+ })
+ render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><DeskConfigProvider><Tooltip.Provider><MemoryRouter initialEntries={['/jobs/job-one?tab=release']}><Routes><Route path="/jobs/:jobId" element={<JobsContent />} /></Routes></MemoryRouter></Tooltip.Provider></DeskConfigProvider></QueryClientProvider>)
+ expect(await screen.findByText('No saved tests were run for this release. This job was created before this installation refused untested releases, and it keeps running. A new job needs a release whose saved tests ran and passed.')).toBeTruthy()
+ expect(screen.queryByText(refusesNote)).toBeNull()
 })
 it('keeps other creation refusals as an ordinary problem', async () => {
  vi.mocked(jobsAPI).mockResolvedValue({ ...release, tests: 'not-run' })
