@@ -148,6 +148,12 @@ jobs:
         run: |
           JPACK_RUNNER_TEST_BIN="$RUNNER_TEMP/jpack-runner" JPACK_BIN="$RUNNER_TEMP/jpack" \
             go test -race ./internal/desk -run 'TestJobs|TestRunnerInputProfiles' -count=1
+      # The Go job has no runtime, so these skip there. Here they create a desk
+      # with the pinned runtime, check its lock, and drive its relay: a deciding
+      # run of a draft refused, a locked pack recorded, rehearsals unaffected.
+      - name: New desks under the pinned runtime
+        run: |
+          JPACK_BIN="$RUNNER_TEMP/jpack" go test ./internal/desk -run 'TestNewDeskWithTheRuntime' -count=1 -v
 
   release-archives:
     if: github.event_name == 'pull_request'

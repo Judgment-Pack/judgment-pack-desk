@@ -34,6 +34,25 @@ func (s *Server) aimAtTheProject(cmd *exec.Cmd) error {
 	return nil
 }
 
+// runtimeCommandAt builds a command that runs to completion in a directory
+// this desk holds: the relay's command with other arguments, aimed by
+// `aimRuntimeAt` immediately before the spawn.
+func runtimeCommandAt(ctx context.Context, bin string, _ heldDir, args ...string) (*exec.Cmd, error) {
+	return exec.CommandContext(ctx, bin, args...), nil
+}
+
+// aimRuntimeAt is `aimAtTheProject` for that directory: the pathname it was
+// opened at, re-checked by identity, with the same window and the same
+// statement of it.
+func aimRuntimeAt(cmd *exec.Cmd, dir heldDir) error {
+	where, err := runtimeWorkingDirByPathname(dir.path, dir.info)
+	if err != nil {
+		return err
+	}
+	cmd.Dir = where
+	return nil
+}
+
 // descriptorWorkingDir has no answer off Linux. `/proc/self/fd` is Linux's.
 func (p *ProjectRoot) descriptorWorkingDir() (string, bool) { return "", false }
 

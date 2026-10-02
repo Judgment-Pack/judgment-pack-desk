@@ -150,6 +150,7 @@ func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 		s.closeWith(ws, websocket.StatusInternalError, err.Error())
 		return
 	}
+	cmd.Env = s.runtimeEnv()
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		s.closeWith(ws, websocket.StatusInternalError, "cannot open runtime stdin")

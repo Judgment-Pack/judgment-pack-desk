@@ -47,8 +47,9 @@ func assistantServerIn(t *testing.T, config string) (*Server, *httptest.Server, 
 	t.Helper()
 	logged := &bytes.Buffer{}
 	s, ts := startDesk(t, Config{
-		ProjectDir:    t.TempDir(),
-		JpackBin:      "jpack",
+		ProjectDir: t.TempDir(),
+		// A stand-in by absolute path: creating a desk runs the runtime.
+		JpackBin:      standInRuntime(t),
 		Token:         testToken,
 		Logger:        log.New(logged, "", 0),
 		DeskConfigDir: config,

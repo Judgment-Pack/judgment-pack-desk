@@ -5564,6 +5564,8 @@ See [unsaved-work behavior](docs/design/unsaved-work.md) for coverage and limits
 
 Use the desk name beside the brand to switch desks or **Create desk…**. Each new desk keeps its packs, source documents, chats, drafts, tests, briefs, jobs, and run artifacts in its own folder. Its private data lives under `.desk-private/`, excluded from the project file editor. Machine credentials remain in protected settings. The browser title uses the desk name and keeps `*` while edits are unsaved; the favicon follows the configured brand.
 
+A new desk starts gated ([ADR-0009](docs/adr/0009-gates-on-by-default.md)). Its `jpack.json` sets `requireReviewed`, `requireComparableFacts` and an audit trail in `.desk-private/audit/`, and the runtime locks the empty project before the desk exists, in `jpack.lock.json`. A deciding run of a draft is then refused, while rehearsals and tests of it still answer. `requireComparableFacts` refuses any evaluation, rehearsals included, that reads a fact of a type no comparison in the pack can match. With a runtime older than 0.25.0, the desk is created without `requireComparableFacts`, and the creation says so. With one older than 0.24.0, or if the lock fails, no desk is created. A named desk's runtime always reads the desk's own `jpack.json`: a `JPACK_CONFIG` set where Desk was started applies only to the startup project.
+
 Switching desks checks unsaved work and does not stop another desk's runner. Existing projects retain their storage locations; creating a desk does not migrate existing data. Use the paired runtime update, which accepts an empty project until its first pack is created. See [named desk storage and lifecycle](docs/design/named-desks.md).
 
 

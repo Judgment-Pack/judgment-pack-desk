@@ -5,8 +5,23 @@ The header selects a named desk; the configuration filename is an advanced file 
 Create desk creates a fresh owner-only folder below the installation's `desks/` directory (normally `~/.config/jpack-desk/desks/<id>`). The name is independent of its opaque storage ID. New desks contain:
 
 - `jpack.json`, `jpack-desk.json`, `packs/`, and `sources/` for project documents and configuration.
+- `jpack.lock.json`, the runtime's reviewed-set lock of the new, empty project.
 - `.desk/job-drafts/` for saved job configurations.
-- `.desk-private/desk.json` for identity; `.desk-private/data/` for conversations, draft packs, tests, briefs, and retained attachments; `.desk-private/jobs/` for runner state, releases, captured inputs, and run records.
+- `.desk-private/desk.json` for identity; `.desk-private/data/` for conversations, draft packs, tests, briefs, and retained attachments; `.desk-private/jobs/` for runner state, releases, captured inputs, and run records; `.desk-private/audit/`, owner-only, for the runtime's audit trail of deciding runs.
+
+A new desk starts gated ([ADR-0009](../adr/0009-gates-on-by-default.md), section 1). Its `jpack.json` is:
+
+```json
+{"configVersion":"5","requireReviewed":true,"requireComparableFacts":true,"audit":{"dir":".desk-private/audit"},"packs":{}}
+```
+
+Before writing it, Desk asks the runtime it runs which configuration versions it reads (`packs schema --format json`, `supportedConfigVersions`). A runtime that reads `"4"` but not `"5"` gets `{"configVersion":"4","requireReviewed":true,"audit":{"dir":".desk-private/audit"},"packs":{}}`, without `requireComparableFacts`, and the creation's answer and Desk's log say so. A runtime that reads neither cannot hold a desk to its reviewed set, and no desk is created. Desk then runs `packs lock --config jpack.json` in the new folder, after writing `jpack.json` and before the manifest. Both commands are started like the relay's `jpack mcp`: the same binary, and on Linux the same change of directory through a held descriptor. Each is bounded to 20 seconds. The registry is not held while they run, so a slow runtime does not hold up other desks. A creation in progress counts toward the 256-desk bound, and one that finishes during shutdown is not published.
+
+If a command fails, no desk is created, and Desk removes what the creation made. It removes it through the directory it created, never through the folder's name, one item at a time and never recursively. It then removes the folder's entry with `rmdir`, which removes only an empty directory. So if the name was pointed at another desk meanwhile, that desk is untouched. Anything Desk cannot remove this way is left in place, and the answer and Desk's log say where. A folder left so has no manifest. It is not a desk: a start names it, and neither opens it nor counts it toward the bound.
+
+**A desk Desk made reads only its own configuration.** `jpack mcp` has no `--config` option. It reads `$JPACK_CONFIG`, then `./jpack.json`. Desk therefore removes `JPACK_CONFIG` from the environment of every named desk's runtime, and of the commands above, so the runtime reads `jpack.json` in the desk's own folder. This also changes existing named desks: none of them can mean to read another project's configuration. The startup project keeps an inherited `JPACK_CONFIG`, because there it is the owner's only way to choose one, and the launch logs it.
+
+The empty lock reviews no pack. It pins only the configuration's bytes, so that a deciding run is refused for a draft rather than for every run. A deciding run of a pack Desk adds is refused until the project is locked again.
 
 The private directory is excluded from the file editor, file listing, and watcher. Restores use another private subfolder, verify the copy, retain the previous data, and update a relative storage pointer. Desk IDs keep conversation and runner identities stable when a folder is moved. A direct CLI launch recognizes the manifest. Credentials and installed executables remain machine-owned: source-system references and connection credentials are not copied into a desk folder.
 
