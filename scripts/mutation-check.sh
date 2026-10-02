@@ -2840,6 +2840,12 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "verification export: comparison offered for version 2" "$JV" \
     '{saved.version===3 ? msg(' \
     '{saved.version>0 ? msg('
+  mutate web "verification export: saved as text decoded from the answer" "$JV" \
+    'url=URL.createObjectURL(blob)' \
+    'url=URL.createObjectURL(new Blob([await blob.text()]))'
+  mutate web "verification export: earlier saved line kept after a failed attempt" "$JV" \
+    'setBusy(true);setError(undefined);setSaved(undefined)' \
+    'setBusy(true);setError(undefined)'
 
   # 4. Admin printed a decoded number with nothing said about what bounds it,
   # what the frame does to it, or what is actually on screen.
