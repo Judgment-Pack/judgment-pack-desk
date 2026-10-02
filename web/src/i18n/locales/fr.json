@@ -2112,6 +2112,8 @@
   "Saved result. Recheck the draft before creating it.": "Résultat enregistré. Vérifiez à nouveau le brouillon avant de le créer.",
   "Saved sources remain available. Future searches using this connection will stop.": "Les sources enregistrées restent disponibles. Les futures recherches utilisant cette connexion cesseront.",
   "Saved test cases could not be grounded again. Start a new research chat; the original history is preserved.": "Les cas de test enregistrés n’ont pas pu être reliés à nouveau à leurs sources. Lancez une nouvelle recherche ; l’historique original est conservé.",
+  "Saved {{file}}: export version 2, which carries no exact bytes of the audit record to compare with a gateway receipt.": "{{file}} enregistré : version 2 de l’export, qui ne contient pas les octets exacts de la trace d’audit à comparer avec un reçu du gateway.",
+  "Saved {{file}}: export version 3, with the audit record’s exact bytes. Their digest, which verify-run reports as recordDigest, can be compared with a gateway receipt’s decision.recordDigest; verify-run does not make that comparison.": "{{file}} enregistré : version 3 de l’export, avec les octets exacts de la trace d’audit. Leur empreinte, que verify-run indique comme recordDigest, peut être comparée au decision.recordDigest d’un reçu du gateway ; verify-run ne fait pas cette comparaison.",
   "Saved tests": "Tests enregistrés",
   "Saved, and the file was created. Nothing else is in it.": "Enregistré dans un nouveau fichier. Il ne contient rien d’autre.",
   "Saved, and the read-back does not match.": "Enregistré, mais la relecture ne correspond pas.",

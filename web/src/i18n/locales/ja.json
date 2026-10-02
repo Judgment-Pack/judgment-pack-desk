@@ -2109,6 +2109,8 @@
   "Saved result. Recheck the draft before creating it.": "保存された結果です。作成前に下書きを再確認してください。",
   "Saved sources remain available. Future searches using this connection will stop.": "保存済みのソースは引き続き利用できます。この接続を使う今後の検索は停止します。",
   "Saved test cases could not be grounded again. Start a new research chat; the original history is preserved.": "保存済みテストケースの根拠を再確認できませんでした。新しい調査チャットを開始してください。元の履歴は保持されます。",
+  "Saved {{file}}: export version 2, which carries no exact bytes of the audit record to compare with a gateway receipt.": "{{file}} を保存しました。エクスポートのバージョン 2 で、ゲートウェイの受領記録と照合できる監査記録の正確なバイト列は含まれていません。",
+  "Saved {{file}}: export version 3, with the audit record’s exact bytes. Their digest, which verify-run reports as recordDigest, can be compared with a gateway receipt’s decision.recordDigest; verify-run does not make that comparison.": "{{file}} を保存しました。エクスポートのバージョン 3 で、監査記録の正確なバイト列を含みます。verify-run が recordDigest として報告するそのダイジェストは、ゲートウェイの受領記録の decision.recordDigest と照合できますが、verify-run 自体はこの照合を行いません。",
   "Saved tests": "保存済みテスト",
   "Saved, and the file was created. Nothing else is in it.": "保存してファイルを作成しました。他の内容は含まれていません。",
   "Saved, and the read-back does not match.": "保存されましたが、読み戻した内容が一致しません。",

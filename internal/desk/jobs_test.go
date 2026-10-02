@@ -330,6 +330,124 @@ func TestJobsForwardsPreparationFilter(t *testing.T) {
 	}
 }
 
+// The verification route forwards the export version a request asks for, as
+// Runner reads it, and no other route forwards one at all.
+func TestJobsForwardsVerificationVersionOnlyOnItsRoute(t *testing.T) {
+	requests := make(chan string, 1)
+	companion := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests <- r.URL.RequestURI()
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{}`))
+	}))
+	defer companion.Close()
+	s := &Server{jobs: &jobsCompanion{url: companion.URL, token: "test-private", done: make(chan struct{})}}
+	run := "runs/run_" + strings.Repeat("0", 32)
+	job := "jobs/job_" + strings.Repeat("0", 32)
+	for _, tc := range []struct{ tail, query, runner string }{
+		{run + "/verification", "version=3", "/v1/" + run + "/verification?version=3"},
+		{run + "/verification", "version=2", "/v1/" + run + "/verification?version=2"},
+		{run + "/verification", "", "/v1/" + run + "/verification"},
+		{run + "/verification", "untrusted=ignored&version=3", "/v1/" + run + "/verification?version=3"},
+		{run, "version=3", "/v1/" + run},
+		{run + "/briefs", "version=3", "/v1/" + run + "/briefs"},
+		{job + "/runs", "after=40&version=3", "/v1/" + job + "/runs?after=40"},
+		{"runs", "version=3&version=2", "/v1/runs"},
+	} {
+		r := httptest.NewRequest("GET", "/api/operations/"+tc.tail+"?"+tc.query, nil)
+		w := httptest.NewRecorder()
+		s.proxyJobs(w, r, tc.tail, "")
+		if w.Code != 200 {
+			t.Fatal(tc.tail, tc.query, w.Code, w.Body)
+		}
+		if got := <-requests; got != tc.runner {
+			t.Errorf("%s?%s: forwarded %s, want %s", tc.tail, tc.query, got, tc.runner)
+		}
+	}
+}
+
+// Desk forwards a version only when the request asks once for 2 or 3, in a
+// query that parses. Otherwise it refuses the request itself, and nothing
+// reaches Runner: a lenient reading would forward one of repeated values, or
+// the one value left after dropping a malformed pair.
+func TestJobsRefusesAnyOtherVerificationVersion(t *testing.T) {
+	forwarded := 0
+	companion := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		forwarded++
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{}`))
+	}))
+	defer companion.Close()
+	s := &Server{jobs: &jobsCompanion{url: companion.URL, token: "test-private", done: make(chan struct{})}}
+	tail := "runs/run_" + strings.Repeat("0", 32) + "/verification"
+	for _, query := range []string{
+		"version=3&version=2",
+		"version=2&version=3",
+		"version=3&version=3",
+		"version=",
+		"version",
+		"version=4",
+		"version=03",
+		"version=3%20",
+		"version=v3",
+		"version=%zz&version=3",
+		"version=3&other=%zz",
+		"version=3;other=1",
+	} {
+		forwarded = 0
+		r := httptest.NewRequest("GET", "/api/operations/"+tail+"?"+query, nil)
+		w := httptest.NewRecorder()
+		s.proxyJobs(w, r, tail, "")
+		if w.Code != 400 || forwarded != 0 || !strings.Contains(w.Body.String(), "version 2 or 3") {
+			t.Errorf("%s: %d %s, forwarded %d", query, w.Code, w.Body, forwarded)
+		}
+	}
+}
+
+// A verification export, and the run it is made from, are read up to
+// Runner's MaxExportSize: what verify-run reads of an export. Every other
+// route keeps the ordinary limit.
+func TestJobsReadsAnExportUpToRunnersLimit(t *testing.T) {
+	// Runner v0.4.0's MaxExportSize, read from its source. Desk cannot import it.
+	if runnerExportLimit != 19573436 {
+		t.Fatal("Runner's MaxExportSize is 19573436, not", runnerExportLimit)
+	}
+	size := 0
+	companion := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`"` + strings.Repeat("a", size-2) + `"`))
+	}))
+	defer companion.Close()
+	s := &Server{jobs: &jobsCompanion{url: companion.URL, token: "test-private", done: make(chan struct{})}}
+	run := "runs/run_" + strings.Repeat("0", 32)
+	for _, tc := range []struct {
+		tail   string
+		size   int
+		status int
+	}{
+		{run + "/verification", runnerAnswerLimit + 1, 200},
+		{run + "/verification", runnerExportLimit, 200},
+		{run + "/verification", runnerExportLimit + 1, 502},
+		{run, runnerAnswerLimit + 1, 200},
+		{run, runnerExportLimit, 200},
+		{run, runnerExportLimit + 1, 502},
+		{run + "/briefs", runnerAnswerLimit, 200},
+		{run + "/briefs", runnerAnswerLimit + 1, 502},
+		{"runs", runnerAnswerLimit + 1, 502},
+		{"jobs/job_" + strings.Repeat("0", 32) + "/runs", runnerAnswerLimit + 1, 502},
+	} {
+		size = tc.size
+		r := httptest.NewRequest("GET", "/api/operations/"+tc.tail, nil)
+		w := httptest.NewRecorder()
+		s.proxyJobs(w, r, tc.tail, "")
+		if w.Code != tc.status {
+			t.Errorf("%s, %d bytes: %d, want %d", tc.tail, tc.size, w.Code, tc.status)
+		}
+		if tc.status == 200 && w.Body.Len() != tc.size {
+			t.Errorf("%s: relayed %d of %d bytes", tc.tail, w.Body.Len(), tc.size)
+		}
+	}
+}
+
 // A trigger token reads one thing through Desk: what became of an occurrence
 // it created. Desk forwards exactly that read, built from the parsed
 // identifiers, and passes the Runner's refusals through unchanged.

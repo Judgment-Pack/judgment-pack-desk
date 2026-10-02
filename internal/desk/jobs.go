@@ -273,8 +273,69 @@ func browserMarked(r *http.Request) bool {
 	}
 	return false
 }
+
+var (
+	runPath          = regexp.MustCompile(`^runs/run_[a-f0-9]{32}$`)
+	verificationPath = regexp.MustCompile(`^runs/run_[a-f0-9]{32}/verification$`)
+)
+
+// runnerAnswerLimit is the most of a Runner answer Desk reads on most routes.
+const runnerAnswerLimit = 16 << 20
+
+// runnerExportLimit is Runner's MaxExportSize (v0.4.0, internal/runner/
+// audit_bytes.go), the most of a verification export its verify-run reads:
+// version 2's 8 MiB, and version 3's member carrying the audit record's bytes,
+// at most 8 MiB of them in base64. Desk saves the answer as it comes, so an
+// answer within this limit is a file that verify-run reads, by size, and a
+// larger one is not. A run is a member of its own version-3 export: it carries
+// the record twice, parsed and as those bytes, so it too can pass
+// runnerAnswerLimit, but never its export's size. It is read to the same
+// limit, since the download is on the run's page, which a run Desk refused
+// to read would leave out of reach.
+const runnerExportLimit = 8<<20 + len(`,"auditBytes":""`) + (8<<20+2)/3*4
+
+// verificationVersion is the export version a request on a run's verification
+// route asks Runner for: "" for none, which Runner answers with version 2, or
+// exactly one "2" or "3". Anything else is refused rather than forwarded, as
+// Runner refuses it. The query is parsed strictly, since a lenient reader
+// keeps one of repeated values and drops malformed pairs, and would forward a
+// version that the request did not ask for alone.
+func verificationVersion(rawQuery string) (string, error) {
+	query, err := url.ParseQuery(rawQuery)
+	switch version, asked := query["version"]; {
+	case err != nil:
+		// Refused below.
+	case !asked:
+		return "", nil
+	case len(version) == 1 && (version[0] == "2" || version[0] == "3"):
+		return version[0], nil
+	}
+	return "", errors.New("invalid verification export version")
+}
+
 func (s *Server) proxyJobs(w http.ResponseWriter, r *http.Request, tail, eventToken string) {
 	w.Header().Set("Cache-Control", "no-store")
+	query := url.Values{}
+	for _, key := range []string{"after", "q", "state", "review", "preparations"} {
+		if value := r.URL.Query().Get(key); value != "" {
+			query.Set(key, value)
+		}
+	}
+	limit := runnerAnswerLimit
+	switch {
+	case verificationPath.MatchString(tail):
+		version, err := verificationVersion(r.URL.RawQuery)
+		if err != nil {
+			writeJSONCoded(w, 400, CodeBadRequest, "Ask once for verification export version 2 or 3, in a well-formed query.")
+			return
+		}
+		if version != "" {
+			query.Set("version", version)
+		}
+		limit = runnerExportLimit
+	case runPath.MatchString(tail):
+		limit = runnerExportLimit
+	}
 	if s.jobs == nil {
 		writeJSONCoded(w, 503, CodeBadRequest, "Jobs requires the local runner companion. Install jpack-runner beside Desk or start Desk with --runner.")
 		return
@@ -293,12 +354,6 @@ func (s *Server) proxyJobs(w http.ResponseWriter, r *http.Request, tail, eventTo
 	if err != nil {
 		writeJSONCoded(w, 400, CodeBadRequest, "Invalid Jobs request.")
 		return
-	}
-	query := url.Values{}
-	for _, key := range []string{"after", "q", "state", "review", "preparations"} {
-		if value := r.URL.Query().Get(key); value != "" {
-			query.Set(key, value)
-		}
 	}
 	request.URL.RawQuery = query.Encode()
 	request.Header.Set("Authorization", "Bearer "+token)
@@ -320,7 +375,7 @@ func (s *Server) proxyJobs(w http.ResponseWriter, r *http.Request, tail, eventTo
 		return
 	}
 	defer response.Body.Close()
-	body, err := readBounded(response.Body, 16<<20)
+	body, err := readBounded(response.Body, limit)
 	if err != nil {
 		writeJSONCoded(w, 502, CodeBadRequest, "The runner response exceeded its limit.")
 		return

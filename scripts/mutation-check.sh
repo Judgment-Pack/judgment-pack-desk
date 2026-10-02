@@ -1859,6 +1859,50 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "component versions: companion opened blocking" internal/desk/builds.go \
     '	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)' \
     '	file, err := os.OpenFile(path, os.O_RDONLY|0*syscall.O_NONBLOCK, 0)'
+  # **A verification export is asked for once, plainly, and only there.** The
+  # version a request asks for reaches Runner from the verification route
+  # alone, as exactly one 2 or 3 in a query that parses; anything else is
+  # refused by Desk and never forwarded. Its answer, and the run's, are read up
+  # to Runner's MaxExportSize, and no other route's limit moves.
+  J=internal/desk/jobs.go
+  mutate go "verification export: version forwarded on every route" "$J" \
+    '	case verificationPath.MatchString(tail):' \
+    '	case verificationPath.MatchString(tail) || tail != "":'
+  mutate go "verification export: malformed query read leniently" "$J" \
+    '	query, err := url.ParseQuery(rawQuery)' \
+    '	query, err := url.ParseQuery(rawQuery)
+	err = nil'
+  mutate go "verification export: first of repeated versions forwarded" "$J" \
+    '	case len(version) == 1 && (version[0] == "2" || version[0] == "3"):' \
+    '	case len(version) >= 1 && (version[0] == "2" || version[0] == "3"):'
+  mutate go "verification export: any one version forwarded" "$J" \
+    '	case len(version) == 1 && (version[0] == "2" || version[0] == "3"):' \
+    '	case len(version) == 1:'
+  mutate go "verification export: empty version read as none" "$J" \
+    '	case !asked:' \
+    '	case !asked || version[0] == "":'
+  mutate go "verification export: refused version still forwarded" "$J" \
+    '			writeJSONCoded(w, 400, CodeBadRequest, "Ask once for verification export version 2 or 3, in a well-formed query.")
+			return' \
+    '			writeJSONCoded(w, 400, CodeBadRequest, "Ask once for verification export version 2 or 3, in a well-formed query.")'
+  mutate go "verification export: read to the ordinary limit" "$J" \
+    '			query.Set("version", version)
+		}
+		limit = runnerExportLimit' \
+    '			query.Set("version", version)
+		}
+		limit = runnerAnswerLimit'
+  mutate go "verification export: run read to the ordinary limit" "$J" \
+    '	case runPath.MatchString(tail):
+		limit = runnerExportLimit' \
+    '	case runPath.MatchString(tail):
+		limit = runnerAnswerLimit'
+  mutate go "verification export: every route read to the export limit" "$J" \
+    '	limit := runnerAnswerLimit' \
+    '	limit := runnerExportLimit'
+  mutate go "verification export: limit past Runner's MaxExportSize" "$J" \
+    'const runnerExportLimit = 8<<20 + len(`,"auditBytes":""`) + (8<<20+2)/3*4' \
+    'const runnerExportLimit = 8<<20 + len(`,"auditBytes":""`) + (8<<20+2)/3*4 + 1'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -2776,6 +2820,32 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "the registered row keeps the superseded rationale" "$RR" \
     '      const focus = corrected?.resolved?.rationale ?? row.rationale' \
     '      const focus = corrected ? row.rationale : row.rationale'
+  # **A saved verification export says which version it is, from its own
+  # body.** Runner answers version 2 for a run without the record's bytes
+  # whatever is asked, so the name comes from the answer, the bytes are saved
+  # as sent, and only a version-3 file is offered the receipt comparison.
+  JV=web/src/jobs/JobsView.tsx
+  mutate web "verification export: version 3 not asked for" "$JV" \
+    'deskFetch(`/api/operations/runs/${runId}/verification?version=3`)' \
+    'deskFetch(`/api/operations/runs/${runId}/verification`)'
+  mutate web "verification export: named for the version asked" "$JV" \
+    'const file=`${runId}-verification-v${version}.json`' \
+    'const file=`${runId}-verification-v3.json`'
+  mutate web "verification export: any version saved" "$JV" \
+    'return version===2||version===3 ? version : undefined' \
+    'return (version ?? 3) as 2 | 3'
+  mutate web "verification export: saved encoded again" "$JV" \
+    'url=URL.createObjectURL(blob)' \
+    'url=URL.createObjectURL(new Blob([JSON.stringify(JSON.parse(await blob.text()))]))'
+  mutate web "verification export: comparison offered for version 2" "$JV" \
+    '{saved.version===3 ? msg(' \
+    '{saved.version>0 ? msg('
+  mutate web "verification export: saved as text decoded from the answer" "$JV" \
+    'url=URL.createObjectURL(blob)' \
+    'url=URL.createObjectURL(new Blob([await blob.text()]))'
+  mutate web "verification export: earlier saved line kept after a failed attempt" "$JV" \
+    'setBusy(true);setError(undefined);setSaved(undefined)' \
+    'setBusy(true);setError(undefined)'
 
   # 4. Admin printed a decoded number with nothing said about what bounds it,
   # what the frame does to it, or what is actually on screen.

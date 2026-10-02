@@ -2109,6 +2109,8 @@
   "Saved result. Recheck the draft before creating it.": "已保存的结果。创建前请重新检查草稿。",
   "Saved sources remain available. Future searches using this connection will stop.": "已保存的来源仍可使用。今后通过此连接进行的搜索将停止。",
   "Saved test cases could not be grounded again. Start a new research chat; the original history is preserved.": "无法重新确认已保存测试案例的来源依据。请开始新的研究聊天；原始历史记录会保留。",
+  "Saved {{file}}: export version 2, which carries no exact bytes of the audit record to compare with a gateway receipt.": "已保存 {{file}}：导出版本 2，不含可与网关回执比对的审计记录确切字节。",
+  "Saved {{file}}: export version 3, with the audit record’s exact bytes. Their digest, which verify-run reports as recordDigest, can be compared with a gateway receipt’s decision.recordDigest; verify-run does not make that comparison.": "已保存 {{file}}：导出版本 3，包含审计记录的确切字节。verify-run 将其摘要报告为 recordDigest，可与网关回执的 decision.recordDigest 比对；verify-run 本身不做此比对。",
   "Saved tests": "已保存的测试",
   "Saved, and the file was created. Nothing else is in it.": "已保存并创建文件。文件中没有其他内容。",
   "Saved, and the read-back does not match.": "已保存，但回读内容不匹配。",
