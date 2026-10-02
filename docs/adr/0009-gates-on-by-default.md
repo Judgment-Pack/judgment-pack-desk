@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-02
 deciders: maintainer
 ---
@@ -8,8 +8,9 @@ deciders: maintainer
 
 Issue #182. The maintainer has decided that Desk turns its gates on by default.
 This record sets out the design, what each gate establishes and what it does
-not, every place Desk calls the runtime, and the questions still open. It is
-proposed: no code changes until the maintainer accepts it.
+not, every place Desk calls the runtime, and the maintainer's answers to the
+questions it raised. The maintainer accepted it on 2026-10-02, with the answers
+recorded under "The maintainer's answers".
 
 It was checked against Desk `main` at `975fd31`, which pins Runtime `v0.25.0`,
 Runner `v0.4.0` and Gateway `v0.8.1`. Every runtime behaviour quoted here was
@@ -70,11 +71,14 @@ Three facts about Desk shape the design.
 `POST /api/desks` writes this `jpack.json`:
 
 ```json
-{"configVersion":"4","requireReviewed":true,"audit":{"dir":".desk-private/audit"},"packs":{}}
+{"configVersion":"5","requireReviewed":true,"requireComparableFacts":true,"audit":{"dir":".desk-private/audit"},"packs":{}}
 ```
 
-If the maintainer answers question 1 with yes, it writes configVersion `"5"` and
-adds `"requireComparableFacts":true`.
+This is question 1's answer: configVersion `"5"`, with `requireComparableFacts`.
+It needs runtime 0.25.0 or later. Desk asks the runtime it runs which
+configuration versions it reads (`packs schema --format json`,
+`supportedConfigVersions`). If that runtime cannot read `"5"`, Desk writes `"4"`
+without `requireComparableFacts`, and says so.
 
 It also:
 
@@ -217,8 +221,8 @@ before this change. It appears once as a note on Packs that the owner can
 dismiss, and stays available in Admin → Project. It lists each change, what it
 writes, and why:
 
-1. **`jpack.json`:** `configVersion` moves to `"4"` (or `"5"`, by question 1),
-   with `requireReviewed` and the audit directory `.desk-private/audit`, created
+1. **`jpack.json`:** `configVersion` moves to `"5"`, with `requireReviewed` and
+   the audit directory `.desk-private/audit`, created
    owner-only if it is missing. A project that already declares an audit
    directory keeps it. Every other
    member, and the members' order, is carried through, as
@@ -226,6 +230,8 @@ writes, and why:
 2. **`.gitignore`:** add `.desk-private/` when the project is a Git work tree
    that does not already ignore it, so that records are not committed.
 3. **The first "Review and lock"** of the project's current packs.
+4. **`requireComparableFacts`**, as its own item (question 1). The owner can
+   take the rest and decline this one, which leaves it out of `jpack.json`.
 
 The rules:
 
@@ -369,10 +375,14 @@ PR E corrects these, except the last, which PR D corrects.
 - Bad: Desk's Go now depends on the output of `packs verify`, `packs lock` and
   `packs schema`. Their JSON output is versioned (`outputVersion` `"2"`).
 - Neutral: in Desk itself, `requireReviewed` refuses nothing and nothing is
-  recorded. Turning the gates on mainly holds other callers. If question 1 is
-  answered yes, Desk's own rehearsals can be refused for wrong-typed facts.
+  recorded. Turning the gates on mainly holds other callers. Under question 1's
+  answer, Desk's own rehearsals can be refused for wrong-typed facts.
 
-## Questions for the maintainer
+## The maintainer's answers
+
+The maintainer answered on 2026-10-02 with "go with all", read as agreeing with
+every recommendation below. Each answer is recorded after its question; the
+maintainer may overrule any of them.
 
 1. **Should new desks also set `requireComparableFacts`, at configVersion
    `"5"`?**
@@ -400,25 +410,30 @@ PR E corrects these, except the last, which PR D corrects.
      a detector written `equals true` answers its fallback when the fact arrives
      as `"true"`, `1` or `null`. The refusal names the fix. Apply the same answer
      to the upgrade offer, as its own item.
+   **Answered: yes.**
 2. **Should the new tested-releases default also apply to existing installations
    when they update?** It is an installation flag, not a project file, so the
    offer in section 4 does not cover it. **Recommendation: yes.** Existing jobs
    keep running, the refusal names the way out, and the release notes say how
    to turn it off.
+   **Answered: yes.**
 3. **The trail is in no backup and no version control. Accept that for now?**
    **Recommendation: yes,** with the review step saying so. Add a download of
    the trail's exact bytes with Desk #186's checkpoint hand-over, not in the
    chat backups of ADR-0003.
+   **Answered: yes.**
 4. **Should "Review this release" in Jobs show whether the pack's saved bytes are
    in the project's reviewed set?** Today a release is made from a draft as
    readily as from a reviewed pack, and Runner's own lock marks every Jobs
    record `reviewed: true`. **Recommendation: show it, as the runtime's
    `packs verify` finding for that pack, and refuse nothing.** Refusing would
    change Jobs, which this record keeps as they are.
+   **Answered: show it, and refuse nothing.**
 5. **Should Desk build an MCP endpoint for outside agents, served by Desk with
    the desk's configuration and no file access?** **Recommendation: not now.**
    Document the `jpack mcp` setup in section 6. Build the endpoint only for a
    concrete need, under its own ADR, because it is a new authenticated surface.
+   **Answered: not now.**
 
 ## Delivery, after acceptance
 
@@ -431,6 +446,7 @@ One PR each, in this order, each under Desk's review rules.
 | C | "Review and lock": the Go route for `packs verify` and `packs lock`, the reviewed copies, and the page |
 | D | The upgrade offer for existing desks |
 | E | The README and in-app help: what is gated, what is recorded, what is not bound, and the stale statements above |
+| F | Jobs' "Review this release" shows whether the pack's saved bytes are in the project's reviewed set, as `packs verify` finds it, and refuses nothing (question 4) |
 
 Not in this line: any part of runtime ADR-0047 or Desk #186, and the gateway's
 write policy (Desk sends no writes through `/act`).
