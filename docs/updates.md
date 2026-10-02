@@ -11,8 +11,8 @@ repository identities, exact commits and channels. Go embeds it; the Gateway
 builder, Jobs compatibility CI and release packager read it. Development pins
 are held rather than replaced with an older published release. A stable Desk
 release refuses development pins. Runner is pinned to `v0.4.0`, including calculator profiles, bindings,
-calculated input lineage and verification export version 3. Desk's verification download still
-saves version 2 (#188).
+calculated input lineage and verification export version 3, which Desk's verification download
+asks for.
 
 Gateway is pinned to `v0.8.1` and includes `adapter-render`, required by its
 local source plan. Its Drive connection uses whole-Drive consent and Desk
