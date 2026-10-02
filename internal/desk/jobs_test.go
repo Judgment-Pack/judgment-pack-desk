@@ -380,7 +380,10 @@ func TestDeskConfigReportsTestedReleasesPolicy(t *testing.T) {
 	for _, required := range []bool{true, false} {
 		config := t.TempDir()
 		os.Chmod(config, 0700)
-		s, ts := startDesk(t, Config{RunnerAllowUntestedReleases: !required, ProjectDir: t.TempDir(), DeskConfigDir: config, Token: testToken})
+		// Creating the named desk below runs the runtime; this stand-in answers.
+		runtime := filepath.Join(t.TempDir(), "jpack")
+		writeStandInRuntime(t, runtime, reading(allConfigVersions), lockingAs(wantGatedConfig))
+		s, ts := startDesk(t, Config{JpackBin: runtime, RunnerAllowUntestedReleases: !required, ProjectDir: t.TempDir(), DeskConfigDir: config, Token: testToken})
 		t.Cleanup(func() { ts.Close(); s.Close() })
 		policy := func(id, state string, present bool) {
 			t.Helper()
