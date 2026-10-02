@@ -2114,7 +2114,7 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if false {'
   mutate go "review: a confirmation need not be JSON" "$RV" \
     '	if err != nil || media != "application/json" {' \
-    '	if false {'
+    '	if _ = media; false {'
   mutate go "review: a confirmation may carry other members" "$RV" \
     '	if err != nil || decodeDataJSON(data, &request) != nil || request.Set == nil || len(request.Set.Entries) > reviewEntryLimit {' \
     '	if err != nil || json.Unmarshal(data, &request) != nil || request.Set == nil || len(request.Set.Entries) > reviewEntryLimit {'
@@ -2135,7 +2135,7 @@ func (b *cappedBuffer) exceeded() bool {'
     '&& answer.Command == "packs lock" {'
   mutate go "review: no copies are kept" "$RV" \
     '	if err := s.storeReviewedCopies(read, current); err != nil {' \
-    '	if err := error(nil); err != nil {'
+    '	if err := error(nil); err != nil || read == nil && false {'
   mutate go "review: a copy of other bytes is shown" "$RV" \
     '	if err != nil || sha256Digest(data) != digest {
 		return reviewSide{State: "no-copy"}' \
@@ -2146,7 +2146,7 @@ func (b *cappedBuffer) exceeded() bool {'
     '			if err = current.Mkdir(part, 0o755); err != nil && !errors.Is(err, fs.ErrExist) {'
   mutate go "review: the copies folder does not ignore itself" "$RV" \
     '	if made {' \
-    '	if false {'
+    '	if made && false {'
   mutate go "review: copies are kept through a link" "$RV" \
     '		if err == nil && (!info.IsDir() || info.Mode()&fs.ModeSymlink != 0) {' \
     '		if false {'
@@ -2155,7 +2155,7 @@ func (b *cappedBuffer) exceeded() bool {'
     '	return dir, ""'
   mutate go "review: a JPACK_CONFIG naming the project's own file is refused" "$RV" \
     '	if err == nil && ownErr == nil && os.SameFile(there, own) {' \
-    '	if false {'
+    '	if _, _, _, _ = there, own, err, ownErr; false {'
   mutate go "review: verify searches for its configuration" "$RV" \
     '"packs", "verify", "--config", runtimeConfigName, "--format", "json")' \
     '"packs", "verify", "--format", "json")'
