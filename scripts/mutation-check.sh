@@ -1981,12 +1981,16 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "new desk: a stopped creation removes nothing" "$NDG" \
     '	if err := unmakeDeskFolder(folder, entry); err != nil {' \
     '	if err := error(nil); err != nil {'
+  # Each replacement keeps `syscall` in use: a mutation that does not
+  # compile is not one the suite caught.
   mutate go "new desk: the folder is removed by its name, recursively" "$NDG" \
     '	return syscall.Rmdir(entry)' \
-    '	return os.RemoveAll(entry)'
+    '	_ = syscall.Rmdir
+	return os.RemoveAll(entry)'
   mutate go "new desk: the cleanup also removes the neighbouring desks" "$NDG" \
     '	return syscall.Rmdir(entry)' \
-    '	_ = os.RemoveAll(filepath.Dir(entry))
+    '	_ = syscall.Rmdir
+	_ = os.RemoveAll(filepath.Dir(entry))
 	return nil'
   mutate go "new desk: what was made is removed through the name" "$NDG" \
     '			if err := folder.Remove(name); err != nil && !errors.Is(err, fs.ErrNotExist) {' \
