@@ -183,10 +183,10 @@ export function PacksPane({ active = true }: { active?: boolean }) {
               <span className={styles.name}>
                 <span className={styles.nameText} data-overflow-text>{pack.title}</span>
                 {pack.status==='draft' && <small className={styles.draftBadge}>{msg('Draft')}</small>}
-                {pack.status!=='draft' && findings.get(pack.id)?.map(finding => <small key={finding.name} className={styles.reviewBadge} data-finding={finding.name}>{findingWords(finding.name)}</small>)}
                 {isSpelled(pack.detail) && <span className={styles.issue} role="img" aria-label={pack.detail}>!</span>}
               </span>
               <span className={isSpelled(pack.detail) ? styles.rowDetail : styles.description} data-overflow-text>
+                {pack.status!=='draft' && findings.get(pack.id)?.map(finding => <small key={finding.name} className={styles.reviewBadge} data-finding={finding.name}>{findingWords(finding.name)}</small>)}
                 {folders && (folderScope === ALL_PACKS || filter) && <>{folderPath(folders.document,packFolder(folders.document,pack.id))} · </>}{isSpelled(pack.detail) ? pack.detail : isSpelled(pack.description) ? pack.description : ''}
               </span>
               <span className={styles.version} data-overflow-text>{isSpelled(pack.packVersion) ? msg("v{{value0}}", { value0: pack.packVersion }) : '—'}</span>
