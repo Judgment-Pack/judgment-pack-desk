@@ -346,7 +346,7 @@ func (s *Server) handleDeskConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) jobsPolicy() JobsPolicy {
-	return JobsPolicy{RequireTestedReleases: s.cfg.RunnerRequireTested}
+	return JobsPolicy{RequireTestedReleases: s.cfg.requireTestedReleases()}
 }
 
 // projectPaths is the resolved root and the project file inside it.

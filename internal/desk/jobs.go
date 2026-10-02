@@ -56,9 +56,10 @@ func RegisterJobsPolicyFlags(flags *flag.FlagSet) *JobsPolicyFlags {
 	}
 }
 
-// Apply returns cfg with the parsed Jobs policy set on it.
+// Apply returns cfg with the parsed Jobs policy set on it. Without it, a
+// Config keeps the policy on: only `=false` allows untested releases.
 func (f *JobsPolicyFlags) Apply(cfg Config) Config {
-	cfg.RunnerRequireTested = *f.requireTested
+	cfg.RunnerAllowUntestedReleases = !*f.requireTested
 	return cfg
 }
 
@@ -86,7 +87,7 @@ func (s *Server) initJobs() {
 		s.log.Printf("desk: Jobs background connections are invalid: %v", err)
 		return
 	}
-	s.jobs = &jobsCompanion{connections: connections, inputRoot: s.projectDir, requireTested: s.cfg.RunnerRequireTested, profiles: append(json.RawMessage(nil), s.cfg.RunnerInputProfiles...), bin: s.cfg.RunnerBin, runtime: s.cfg.JpackBin, dir: filepath.Join(s.configDir, "jobs", digestOf([]byte(s.projectDir))), workspace: digestOf([]byte(s.projectDir)), owner: "local-owner:" + digestOf([]byte(s.configDir)), stop: make(chan struct{})}
+	s.jobs = &jobsCompanion{connections: connections, inputRoot: s.projectDir, requireTested: s.cfg.requireTestedReleases(), profiles: append(json.RawMessage(nil), s.cfg.RunnerInputProfiles...), bin: s.cfg.RunnerBin, runtime: s.cfg.JpackBin, dir: filepath.Join(s.configDir, "jobs", digestOf([]byte(s.projectDir))), workspace: digestOf([]byte(s.projectDir)), owner: "local-owner:" + digestOf([]byte(s.configDir)), stop: make(chan struct{})}
 	if s.cfg.deskID != "" {
 		s.jobs.dir = filepath.Join(s.projectDir, ".desk-private", "jobs")
 		s.jobs.workspace = s.cfg.deskID

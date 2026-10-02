@@ -52,12 +52,15 @@ type Config struct {
 	// It must never come from project configuration or a browser request.
 	RunnerInputProfiles json.RawMessage
 	RunnerConnections   json.RawMessage
-	// RunnerRequireTested is the installation's release policy: the Runner
-	// refuses a new job from a release whose saved tests were not run. Only the
-	// owner's startup flag sets it, never project configuration or a browser
-	// request, and every desk of the installation inherits it. The flag is on
-	// by default (ADR-0009); `GET /api/desk-config` reports it to the page.
-	RunnerRequireTested bool
+	// RunnerAllowUntestedReleases turns off the installation's release policy.
+	// The policy is on unless this is true: the Runner refuses a new job from
+	// a release whose saved tests were not run (ADR-0009). The zero value is
+	// the safe one, so a Config built without the startup flags, or a caller
+	// that forgets them, keeps the policy on. Only the owner's
+	// `--runner-require-tested-releases=false` sets it, never project
+	// configuration or a browser request, and every desk of the installation
+	// inherits it. `GET /api/desk-config` reports the policy to the page.
+	RunnerAllowUntestedReleases bool
 	// CodexBin is an advanced installation override: empty manages the runtime,
 	// "off" disables it, otherwise an absolute trusted executable path.
 	// It is never read from project configuration or browser requests.
@@ -239,6 +242,13 @@ func NewToken() (string, error) {
 }
 
 // New builds a server. The caller must Close it to release the file watcher.
+// requireTestedReleases is the installation's release policy, derived from
+// the one field that can turn it off. The boot line and the desk-config
+// answer both read it here.
+func (cfg Config) requireTestedReleases() bool {
+	return !cfg.RunnerAllowUntestedReleases
+}
+
 func New(cfg Config) (*Server, error) {
 	// **Adopted first, released on every failure.** This server owns the
 	// descriptor it was handed, so a refusal below has to close it rather than

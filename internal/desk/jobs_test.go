@@ -153,10 +153,44 @@ func TestJobsV2PlannerAndProfilesThroughCompanion(t *testing.T) {
 	}
 }
 
+// recordedBootLine builds a desk from cfg with a recording Runner and returns
+// the boot line Desk sends it. No socket is opened: New needs a port number,
+// not a listener, and the Runner is reached over its standard input and output.
+func recordedBootLine(t *testing.T, build func(Config) Config) map[string]json.RawMessage {
+	t.Helper()
+	dir := t.TempDir()
+	received := filepath.Join(dir, "boot.json")
+	runner := filepath.Join(dir, "runner")
+	// Shell builtins only: Desk starts the Runner with an empty PATH.
+	script := "#!/bin/sh\nIFS= read -r line\nprintf '%s\\n' \"$line\" > " + received + "\nprintf '{\"protocol\":\"jobs/1\",\"url\":\"http://127.0.0.1:9\"}\\n'\nwhile IFS= read -r _; do :; done\n"
+	if err := os.WriteFile(runner, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	config := t.TempDir()
+	os.Chmod(config, 0700)
+	s, err := New(build(Config{RunnerBin: runner, JpackBin: filepath.Join(dir, "jpack"), ProjectDir: t.TempDir(), DeskConfigDir: config, Port: 1, Token: testToken}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	if s.jobs == nil {
+		t.Fatal("Jobs companion was not configured")
+	}
+	// The handshake follows the recorded line, so a returned endpoint means
+	// the line is complete on disk.
+	if _, _, err := s.jobs.endpoint(); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(received)
+	var boot map[string]json.RawMessage
+	if err != nil || json.Unmarshal(raw, &boot) != nil {
+		t.Fatalf("boot line was not one JSON object: %v %q", err, raw)
+	}
+	return boot
+}
+
 // From the command line to the Runner's boot line, through the step main uses:
-// the policy is on unless the owner passes `=false`. No socket is opened: New
-// needs a port number, not a listener, and the recording Runner is reached over
-// its standard input and output.
+// the policy is on unless the owner passes `=false`.
 func TestJobsPolicyFlagsReachTheBootLine(t *testing.T) {
 	for _, row := range []struct {
 		args []string
@@ -174,37 +208,19 @@ func TestJobsPolicyFlagsReachTheBootLine(t *testing.T) {
 		if err := flags.Parse(row.args); err != nil {
 			t.Fatalf("%v: %v", row.args, err)
 		}
-		dir := t.TempDir()
-		received := filepath.Join(dir, "boot.json")
-		runner := filepath.Join(dir, "runner")
-		// Shell builtins only: Desk starts the Runner with an empty PATH.
-		script := "#!/bin/sh\nIFS= read -r line\nprintf '%s\\n' \"$line\" > " + received + "\nprintf '{\"protocol\":\"jobs/1\",\"url\":\"http://127.0.0.1:9\"}\\n'\nwhile IFS= read -r _; do :; done\n"
-		if err := os.WriteFile(runner, []byte(script), 0700); err != nil {
-			t.Fatal(err)
-		}
-		config := t.TempDir()
-		os.Chmod(config, 0700)
-		s, err := New(policy.Apply(Config{RunnerBin: runner, JpackBin: filepath.Join(dir, "jpack"), ProjectDir: t.TempDir(), DeskConfigDir: config, Port: 1, Token: testToken}))
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { s.Close() })
-		if s.jobs == nil {
-			t.Fatal("Jobs companion was not configured")
-		}
-		// The handshake follows the recorded line, so a returned endpoint
-		// means the line is complete on disk.
-		if _, _, err := s.jobs.endpoint(); err != nil {
-			t.Fatal(err)
-		}
-		raw, err := os.ReadFile(received)
-		var boot map[string]json.RawMessage
-		if err != nil || json.Unmarshal(raw, &boot) != nil {
-			t.Fatalf("%v: boot line was not one JSON object: %v %q", row.args, err, raw)
-		}
+		boot := recordedBootLine(t, policy.Apply)
 		if got := string(boot["requireTestedReleases"]); got != row.want {
-			t.Fatalf("%v: requireTestedReleases=%s, want %s: %s", row.args, got, row.want, raw)
+			t.Fatalf("%v: requireTestedReleases=%s, want %s", row.args, got, row.want)
 		}
+	}
+}
+
+// A Config built without the startup flags, by any caller or a main that lost
+// its Apply, keeps the policy on: the field's zero value is the safe one.
+func TestJobsPolicyIsOnWithoutTheStartupFlags(t *testing.T) {
+	boot := recordedBootLine(t, func(cfg Config) Config { return cfg })
+	if got := string(boot["requireTestedReleases"]); got != "true" {
+		t.Fatalf("a Config without Apply booted the Runner with requireTestedReleases=%s", got)
 	}
 }
 
@@ -225,7 +241,7 @@ func TestRunnerRequireTestedReleasesReachesBootLine(t *testing.T) {
 		os.Chmod(config, 0700)
 		// Creating the named desk below runs the runtime; this stand-in answers.
 		writeStandInRuntime(t, filepath.Join(dir, "jpack"), reading(allConfigVersions), lockingAs(wantGatedConfig))
-		s, ts := startDesk(t, Config{RunnerBin: runner, JpackBin: filepath.Join(dir, "jpack"), RunnerRequireTested: required, ProjectDir: t.TempDir(), DeskConfigDir: config, Token: testToken})
+		s, ts := startDesk(t, Config{RunnerBin: runner, JpackBin: filepath.Join(dir, "jpack"), RunnerAllowUntestedReleases: !required, ProjectDir: t.TempDir(), DeskConfigDir: config, Token: testToken})
 		t.Cleanup(func() { ts.Close(); s.Close() })
 		// The handshake follows the recorded line, so a returned endpoint
 		// means the line is complete on disk.
@@ -313,7 +329,7 @@ func TestJobsRealCompanionTestedReleasePolicy(t *testing.T) {
 		return call(ts, "POST", "jobs", `{"name":"Untested","releaseId":"`+release+`","reviewed":true}`)
 	}
 
-	off, offServer := startDesk(t, Config{RunnerBin: bin, JpackBin: runtime, RunnerRequireTested: false, ProjectDir: project, DeskConfigDir: config, Token: testToken})
+	off, offServer := startDesk(t, Config{RunnerBin: bin, JpackBin: runtime, RunnerAllowUntestedReleases: true, ProjectDir: project, DeskConfigDir: config, Token: testToken})
 	earlier := untested(offServer)
 	status, data := createJob(offServer, earlier)
 	var job struct{ ID string }
@@ -323,7 +339,8 @@ func TestJobsRealCompanionTestedReleasePolicy(t *testing.T) {
 	offServer.Close()
 	off.Close()
 
-	on, onServer := startDesk(t, Config{RunnerBin: bin, JpackBin: runtime, RunnerRequireTested: true, ProjectDir: project, DeskConfigDir: config, Token: testToken})
+	// No policy field at all: the zero value keeps the policy on.
+	on, onServer := startDesk(t, Config{RunnerBin: bin, JpackBin: runtime, ProjectDir: project, DeskConfigDir: config, Token: testToken})
 	defer onServer.Close()
 	defer on.Close()
 	status, data = createJob(onServer, untested(onServer))
@@ -363,7 +380,7 @@ func TestDeskConfigReportsTestedReleasesPolicy(t *testing.T) {
 	for _, required := range []bool{true, false} {
 		config := t.TempDir()
 		os.Chmod(config, 0700)
-		s, ts := startDesk(t, Config{RunnerRequireTested: required, ProjectDir: t.TempDir(), DeskConfigDir: config, Token: testToken})
+		s, ts := startDesk(t, Config{RunnerAllowUntestedReleases: !required, ProjectDir: t.TempDir(), DeskConfigDir: config, Token: testToken})
 		t.Cleanup(func() { ts.Close(); s.Close() })
 		policy := func(id, state string, present bool) {
 			t.Helper()

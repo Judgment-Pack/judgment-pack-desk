@@ -2061,12 +2061,23 @@ func (b *cappedBuffer) exceeded() bool {'
     '		requireTested: flags.Bool("runner-require-tested-releases", false,'
   # The step main uses from the command line to the Config, broken two ways.
   mutate go "tested releases: parsed policy inverted on its way to the Config" "$J" \
-    '	cfg.RunnerRequireTested = *f.requireTested' \
-    '	cfg.RunnerRequireTested = !*f.requireTested'
+    '	cfg.RunnerAllowUntestedReleases = !*f.requireTested' \
+    '	cfg.RunnerAllowUntestedReleases = *f.requireTested'
   mutate go "tested releases: parsed policy never reaches the Config" "$J" \
-    '	cfg.RunnerRequireTested = *f.requireTested
+    '	cfg.RunnerAllowUntestedReleases = !*f.requireTested
 	return cfg' \
     '	return cfg'
+  # The Config's zero value keeps the policy on, and both readers derive the
+  # policy from the one field that can turn it off.
+  mutate go "tested releases: zero-value Config turns the policy off" "$S" \
+    '	return !cfg.RunnerAllowUntestedReleases' \
+    '	return cfg.RunnerAllowUntestedReleases'
+  mutate go "tested releases: boot line reads the field without deriving the policy" "$J" \
+    'requireTested: s.cfg.requireTestedReleases(),' \
+    'requireTested: s.cfg.RunnerAllowUntestedReleases,'
+  mutate go "tested releases: desk-config reads the field without deriving the policy" internal/desk/assistant.go \
+    '	return JobsPolicy{RequireTestedReleases: s.cfg.requireTestedReleases()}' \
+    '	return JobsPolicy{RequireTestedReleases: s.cfg.RunnerAllowUntestedReleases}'
   mutate go "tested releases: =false still boots the Runner with the policy on" "$J" \
     '	boot["requireTestedReleases"] = j.requireTested' \
     '	boot["requireTestedReleases"] = true'
@@ -2076,10 +2087,10 @@ func (b *cappedBuffer) exceeded() bool {'
 		boot["requireTestedReleases"] = true
 	}'
   mutate go "tested releases: desk-config does not report the policy" internal/desk/assistant.go \
-    '	return JobsPolicy{RequireTestedReleases: s.cfg.RunnerRequireTested}' \
+    '	return JobsPolicy{RequireTestedReleases: s.cfg.requireTestedReleases()}' \
     '	return JobsPolicy{}'
   mutate go "tested releases: desk-config reports the policy on regardless" internal/desk/assistant.go \
-    '	return JobsPolicy{RequireTestedReleases: s.cfg.RunnerRequireTested}' \
+    '	return JobsPolicy{RequireTestedReleases: s.cfg.requireTestedReleases()}' \
     '	return JobsPolicy{RequireTestedReleases: true}'
   mutate go "tested releases: policy missing where there is no desk-level file" internal/desk/assistant.go \
     'Runtime: s.runtimePaths(), Jobs: s.jobsPolicy(), LocalGateway: s.localGatewayStatus(nil)})' \
