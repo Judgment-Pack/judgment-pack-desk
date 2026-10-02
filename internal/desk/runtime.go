@@ -63,6 +63,42 @@ const (
 	runtimeLockName   = "jpack.lock.json"
 )
 
+// runtimeConfigEnv is the variable the runtime reads its configuration's
+// path from when no `--config` is given, before `./jpack.json`.
+const runtimeConfigEnv = "JPACK_CONFIG"
+
+// runtimeEnv is the environment the relay's runtime gets: this process's own,
+// except that a desk Desk made never reads another project's configuration.
+//
+// `jpack mcp` has no `--config`. It reads `$JPACK_CONFIG`, then
+// `./jpack.json`. Inherited, a `JPACK_CONFIG` set where Desk was started
+// pointed every named desk's runtime at that one configuration, so a desk
+// made gated evaluated under another project's law. Removed, the runtime
+// reads `./jpack.json` in the directory it was started in, which on Linux it
+// entered through the descriptor this desk holds. Naming the file instead
+// would put a pathname back where the descriptor stands.
+//
+// The startup desk keeps an inherited value. There it is the only way the
+// owner can have chosen the configuration, and this desk does not change
+// what an existing project reads. `New` logs it.
+func (s *Server) runtimeEnv() []string {
+	if s.cfg.deskID == "" {
+		return nil
+	}
+	return withoutConfigOverride(os.Environ())
+}
+
+// withoutConfigOverride is env without `JPACK_CONFIG`.
+func withoutConfigOverride(env []string) []string {
+	kept := make([]string, 0, len(env))
+	for _, entry := range env {
+		if !strings.HasPrefix(entry, runtimeConfigEnv+"=") {
+			kept = append(kept, entry)
+		}
+	}
+	return kept
+}
+
 // heldDir is a directory a runtime command runs in, held open by this desk.
 //
 // The descriptor is what Linux starts the child through. The pathname and the
@@ -107,6 +143,9 @@ func runRuntime(ctx context.Context, bin string, dir heldDir, args ...string) ([
 	if err != nil {
 		return nil, err
 	}
+	// These commands run only in a desk this one is making, which never
+	// reads another project's configuration (`runtimeEnv`).
+	cmd.Env = withoutConfigOverride(os.Environ())
 	stdout := &cappedBuffer{limit: runtimeAnswerLimit}
 	cmd.Stdout = stdout
 	cmd.Stderr = io.Discard

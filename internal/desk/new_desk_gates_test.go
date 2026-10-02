@@ -42,16 +42,18 @@ const (
 // writeStandInRuntime puts a stand-in for the runtime at path. It answers the
 // two commands a new desk is made with, each by a shell fragment run in the
 // stand-in's working directory: schema for `packs schema`, and lock for
-// `packs lock`. Every argument list it is given is appended to the returned
-// file, one line per run. It uses shell builtins only.
+// `packs lock`. As `mcp` it reads its input until the relay closes it. Every
+// run appends one line to the returned file: its arguments, and the
+// `JPACK_CONFIG` it was given. It uses shell builtins only.
 func writeStandInRuntime(t *testing.T, path, schema, lock string) (calls string) {
 	t.Helper()
 	calls = filepath.Join(t.TempDir(), "calls")
 	script := "#!/bin/sh\n" +
-		"printf '%s\\n' \"$*\" >> '" + calls + "'\n" +
+		"printf '%s [JPACK_CONFIG=%s]\\n' \"$*\" \"${JPACK_CONFIG-unset}\" >> '" + calls + "'\n" +
 		"case \"$1 $2\" in\n" +
 		"'packs schema')\n" + schema + "\n  ;;\n" +
 		"'packs lock')\n" + lock + "\n  ;;\n" +
+		"'mcp ')\n  while IFS= read -r _; do :; done\n  ;;\n" +
 		"*) exit 64 ;;\n" +
 		"esac\n"
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
@@ -193,6 +195,8 @@ func assertNoDesk(t *testing.T, s *Server, ts *httptest.Server, status int, data
 }
 
 func TestANewDeskStartsUnderReviewedLawWithDecidingRunsRecorded(t *testing.T) {
+	// Named where Desk was started; the new desk's commands must not see it.
+	t.Setenv("JPACK_CONFIG", filepath.Join(t.TempDir(), "jpack.json"))
 	bin := filepath.Join(t.TempDir(), "jpack")
 	calls := writeStandInRuntime(t, bin, reading(allConfigVersions), lockingAs(wantGatedConfig))
 	_, ts, logged := gatesServer(t, bin)
@@ -202,8 +206,9 @@ func TestANewDeskStartsUnderReviewedLawWithDecidingRunsRecorded(t *testing.T) {
 		t.Errorf("the creation answered %+v", row)
 	}
 	// Asked once, then locked once, with the configuration named rather than
-	// searched for: a JPACK_CONFIG in Desk's environment must not choose it.
-	want := "packs schema --format json\npacks lock --config jpack.json --format json\n"
+	// searched for, and with Desk's JPACK_CONFIG removed: it must not choose
+	// what either command reads.
+	want := "packs schema --format json [JPACK_CONFIG=unset]\npacks lock --config jpack.json --format json [JPACK_CONFIG=unset]\n"
 	if got := readFile(t, calls); got != want {
 		t.Errorf("the runtime was run as\n%s\nwant\n%s", got, want)
 	}
@@ -235,7 +240,7 @@ func TestANewDeskNeedsARuntimeThatReadsVersion4(t *testing.T) {
 	s, ts, _ := gatesServer(t, bin)
 	status, data := deskCall(t, ts, "POST", "/api/desks", "", `{"name":"Old runtime"}`, true)
 	assertNoDesk(t, s, ts, status, data, "reads configuration versions 1, 2, 3, and a new desk needs 4 or later")
-	if got := readFile(t, calls); got != "packs schema --format json\n" {
+	if got := readFile(t, calls); got != "packs schema --format json [JPACK_CONFIG=unset]\n" {
 		t.Errorf("a runtime that cannot hold the desk was asked to lock it: %q", got)
 	}
 }
@@ -338,8 +343,14 @@ func TestNewDeskWithTheRuntimeLocksItsOwnConfiguration(t *testing.T) {
 // locked, and rehearsals answer throughout and record nothing.
 func TestNewDeskWithTheRuntimeGatesDecidingRuns(t *testing.T) {
 	bin := requireBinary(t)
-	// The relay's `jpack mcp` reads JPACK_CONFIG before ./jpack.json.
-	t.Setenv("JPACK_CONFIG", "")
+	// **Kept throughout.** `jpack mcp` reads JPACK_CONFIG before
+	// ./jpack.json, so a relay that inherited this ungated configuration
+	// would evaluate a draft's deciding run instead of refusing it.
+	decoy := t.TempDir()
+	if err := os.WriteFile(filepath.Join(decoy, "jpack.json"), []byte(`{"configVersion":"3","packs":{}}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("JPACK_CONFIG", filepath.Join(decoy, "jpack.json"))
 	_, ts, _ := gatesServer(t, bin)
 	row := createGatedDesk(t, ts)
 	want := gatedConfigFor(t, row.ConfigVersion)

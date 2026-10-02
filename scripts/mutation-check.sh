@@ -1905,13 +1905,13 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # **A new desk starts gated (ADR-0009, section 1).** Its configuration is
   # the one the runtime can hold it to, its audit folder is owner-only, and the
   # runtime locks it before the manifest; a desk that cannot be locked is not
-  # made, and leaves no folder. The stand-in runtime in
-  # new_desk_gates_test.go answers each case by absolute path.
+  # made. The stand-in runtime in new_desk_gates_test.go answers each case by
+  # absolute path.
   NDG=internal/desk/desks.go
   NRT=internal/desk/runtime.go
   mutate go "new desk: written at configVersion 3 again" "$NDG" \
-    '			runtimeConfigName: string(gates.config),' \
-    '			runtimeConfigName: "{\"configVersion\":\"3\",\"packs\":{}}\n",'
+    '		runtimeConfigName: string(gates.config),' \
+    '		runtimeConfigName: "{\"configVersion\":\"3\",\"packs\":{}}\n",'
   mutate go "new desk: a runtime that reads 5 gets the fallback" "$NDG" \
     '	if slices.Contains(schema.supported, comparableFactsFromVersion) {' \
     '	if false {'
@@ -1919,13 +1919,13 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	gatedDeskConfigVersion4    = `{"configVersion":"4","requireReviewed":true,"audit":{"dir":".desk-private/audit"},"packs":{}}` + "\n"' \
     '	gatedDeskConfigVersion4    = `{"configVersion":"4","requireReviewed":true,"requireComparableFacts":true,"audit":{"dir":".desk-private/audit"},"packs":{}}` + "\n"'
   mutate go "new desk: the fallback is not logged" "$NDG" \
-    '		if gates.notice != "" {
-			owner.log.Printf("desk: %s", gates.notice)
-		}' \
+    '	if gates.notice != "" {
+		s.log.Printf("desk: %s", gates.notice)
+	}' \
     ''
   mutate go "new desk: the fallback is not in the answer" "$NDG" \
-    '		}{record, gates.configVersion, gates.requireComparableFacts, gates.notice})' \
-    '		}{record, gates.configVersion, gates.requireComparableFacts, ""})'
+    '	}{record, gates.configVersion, gates.requireComparableFacts, gates.notice})' \
+    '	}{record, gates.configVersion, gates.requireComparableFacts, ""})'
   mutate go "new desk: a runtime that reads neither 4 nor 5 gets a desk" "$NDG" \
     '	if slices.Contains(schema.supported, reviewedFromVersion) {' \
     '	if true {'
@@ -1933,25 +1933,21 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '"sources", ".desk", ".desk/job-drafts", ".desk-private", deskAuditDir} {' \
     '"sources", ".desk", ".desk/job-drafts", ".desk-private"} {'
   mutate go "new desk: the audit folder is not owner-only" "$NDG" \
-    '			if err = folder.Mkdir(dir, 0700); err != nil {' \
-    '			if err = folder.Mkdir(dir, 0755); err != nil {'
+    '		if err := folder.Mkdir(dir, 0700); err != nil {' \
+    '		if err := folder.Mkdir(dir, 0755); err != nil {'
   mutate go "new desk: not locked" "$NDG" \
-    '		if err = lockRuntimeProject(r.Context(), bin, held, folder, gates.config); err != nil {' \
-    '		if err = error(nil); err != nil {'
+    '	if err = lockRuntimeProject(ctx, bin, held, folder, gates.config); err != nil {' \
+    '	if err = error(nil); err != nil {'
   mutate go "new desk: a failed lock still makes a desk" "$NDG" \
-    '		if err = lockRuntimeProject(r.Context(), bin, held, folder, gates.config); err != nil {
-			deskRuntimeFailure(w, err)
-			return
-		}' \
-    '		if err = lockRuntimeProject(r.Context(), bin, held, folder, gates.config); err != nil {
-			deskRuntimeFailure(w, err)
-		}'
-  mutate go "new desk: a failed creation leaves its folder" "$NDG" \
-    '		made := false' \
-    '		made := true'
+    '	if err = lockRuntimeProject(ctx, bin, held, folder, gates.config); err != nil {
+		return deskGates{}, runtimeRefusal(err)
+	}' \
+    '	if err = lockRuntimeProject(ctx, bin, held, folder, gates.config); err != nil {
+		_ = runtimeRefusal(err)
+	}'
   mutate go "new desk: the runtime runs outside the new folder" "$NDG" \
-    '		held, err := holdDeskFolder(folder, filepath.Join(owner.configDir, "desks", id))' \
-    '		held, err := holdDeskFolder(root, filepath.Join(owner.configDir, "desks"))'
+    '	held, err := holdDeskFolder(folder, entry)' \
+    '	held, err := holdDeskFolder(s.project.own.root, entry)'
   mutate go "new desk: the lock searches for its configuration" "$NRT" \
     '"packs", "lock", "--config", runtimeConfigName, "--format", "json")' \
     '"packs", "lock", "--format", "json")'
@@ -1977,6 +1973,81 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "new desk: a hung runtime is not bounded" "$NRT" \
     '	ctx, cancel := context.WithTimeout(ctx, runtimeCommandTimeout)' \
     '	ctx, cancel := context.WithCancel(ctx)'
+
+  # **A creation that stops removes what it made, and nothing else.** The
+  # registry's name for the new folder can be pointed at another desk while
+  # the runtime runs; new_desk_lifecycle_test.go does exactly that, and checks
+  # the desks beside it byte for byte.
+  mutate go "new desk: a stopped creation removes nothing" "$NDG" \
+    '	if err := unmakeDeskFolder(folder, entry); err != nil {' \
+    '	if err := error(nil); err != nil {'
+  mutate go "new desk: the folder is removed by its name, recursively" "$NDG" \
+    '	return syscall.Rmdir(entry)' \
+    '	return os.RemoveAll(entry)'
+  mutate go "new desk: the cleanup also removes the neighbouring desks" "$NDG" \
+    '	return syscall.Rmdir(entry)' \
+    '	_ = os.RemoveAll(filepath.Dir(entry))
+	return nil'
+  mutate go "new desk: what was made is removed through the name" "$NDG" \
+    '			if err := folder.Remove(name); err != nil && !errors.Is(err, fs.ErrNotExist) {' \
+    '			if err := os.Remove(filepath.Join(entry, name)); err != nil && !errors.Is(err, fs.ErrNotExist) {'
+  mutate go "new desk: a folder left is not said" "$NDG" \
+    '		message += " Its unfinished folder could not be removed safely and was left at " + entry + ". It is not a desk: Desk does not open it or count it toward the desk limit, and it can be removed."' \
+    ''
+  mutate go "new desk: unfinished folders count toward the bound at a start" "$NDG" \
+    '			continue
+		}
+		saved = append(saved, name)' \
+    '		}
+		saved = append(saved, name)'
+
+  # **The registry is not held while a desk is made**, and what that opens is
+  # closed: desks in the making count toward the bound, and publishing
+  # re-checks shutdown.
+  mutate go "new desk: the registry is held while the folder is made" "$NDG" \
+    '		s.desksMu.Unlock()
+		defer s.desksMu.Lock()
+' \
+    ''
+  mutate go "new desk: desks in the making are not counted" "$NDG" \
+    '	if s.desksClosed || len(s.desks)+s.deskCreations >= maxDesks {' \
+    '	if s.desksClosed || len(s.desks) >= maxDesks {'
+  mutate go "new desk: shutdown is not re-checked before publishing" "$NDG" \
+    '	if s.desksClosed {
+		s.abandonDesk(w, folder, entry,' \
+    '	if false {
+		s.abandonDesk(w, folder, entry,'
+
+  # **A desk Desk made reads only its own configuration.** `jpack mcp` reads
+  # JPACK_CONFIG before ./jpack.json; inherited, it put a gated desk under
+  # another project's law. The startup desk keeps it, and the launch says so.
+  mutate go "named desk: the relay inherits JPACK_CONFIG" "$NRT" \
+    '	if s.cfg.deskID == "" {
+		return nil
+	}
+	return withoutConfigOverride(os.Environ())' \
+    '	return nil'
+  mutate go "named desk: the relay's environment is never set" internal/desk/relay.go \
+    '	cmd.Env = s.runtimeEnv()
+' \
+    ''
+  mutate go "named desk: JPACK_CONFIG is not removed" "$NRT" \
+    '		if !strings.HasPrefix(entry, runtimeConfigEnv+"=") {' \
+    '		if true {'
+  mutate go "new desk: its commands inherit JPACK_CONFIG" "$NRT" \
+    '	cmd.Env = withoutConfigOverride(os.Environ())
+' \
+    ''
+  mutate go "startup desk: an inherited JPACK_CONFIG is dropped" "$NRT" \
+    '	if s.cfg.deskID == "" {
+		return nil
+	}' \
+    '	if s.cfg.deskID == "" {
+		return withoutConfigOverride(os.Environ())
+	}'
+  mutate go "startup desk: the inherited JPACK_CONFIG is not said" internal/desk/server.go \
+    '		s.log.Printf("desk: JPACK_CONFIG is set, so this project'"'"'s runtime reads %s, not the project'"'"'s own jpack.json; desks Desk made ignore it", path)' \
+    '		_ = path'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx

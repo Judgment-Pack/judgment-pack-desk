@@ -134,6 +134,9 @@ type Server struct {
 	desksMu     sync.Mutex
 	desks       map[string]*Server
 	desksClosed bool
+	// deskCreations is how many desks are being made, which count toward
+	// the registry's bound while the lock is released (`createDesk`).
+	deskCreations int
 
 	updates *updateService
 	builds  ComponentBuilds
@@ -327,6 +330,11 @@ func New(cfg Config) (*Server, error) {
 		// somebody's ~/.config is group-writable would be a desk nobody could
 		// use to read a pack; what is withdrawn is the ability to keep a key.
 		s.log.Printf("desk: no assistant key will be kept: %v", s.assistant.problem)
+	}
+	// The startup project keeps an inherited JPACK_CONFIG (`runtimeEnv`).
+	// Said once, because Desk's editor shows this project's own jpack.json.
+	if path := strings.TrimSpace(os.Getenv(runtimeConfigEnv)); path != "" && cfg.deskID == "" {
+		s.log.Printf("desk: JPACK_CONFIG is set, so this project's runtime reads %s, not the project's own jpack.json; desks Desk made ignore it", path)
 	}
 	if cfg.parent != nil {
 		s.sessions = cfg.parent.sessions
