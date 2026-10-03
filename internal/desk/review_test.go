@@ -530,6 +530,10 @@ func TestALockOfAnythingElseIsPutBack(t *testing.T) {
 		name string
 		lock func(t *testing.T, project string) []byte
 	}{
+		// The control: a lock of exactly the reading, graph included, stands.
+		{"the reading itself", func(t *testing.T, project string) []byte {
+			return lockOfAll(t, project, map[string]string{"alpha": "packs/a.json"}, map[string]string{"flow": "flow.json"})
+		}},
 		{"another configuration", func(t *testing.T, project string) []byte {
 			lock := lockOfAll(t, project, map[string]string{"alpha": "packs/a.json"}, map[string]string{"flow": "flow.json"})
 			return bytes.Replace(lock, []byte(sha256Digest([]byte(withGraph))), []byte(sha256Digest([]byte(twoPacks))), 1)
@@ -551,14 +555,24 @@ func TestALockOfAnythingElseIsPutBack(t *testing.T) {
 			s, ts := startDesk(t, Config{ProjectDir: project, JpackBin: rig.bin, Token: testToken, Logger: log.New(io.Discard, "", 0)})
 			t.Cleanup(func() { s.Close(); ts.Close() })
 			rig.answers(t, "invalid", map[string]string{"name": "document-drift", "kind": "graph", "id": "flow", "path": "flow.json"})
-			token := readReview(t, ts, "").Token
+			review := readReview(t, ts, "")
+			if flow := fileOf(t, review, "flow.json"); flow.Kind != "graph" || flow.Lock != "other" {
+				t.Errorf("the changed graph is shown as %+v", flow)
+			}
 			writeProject(t, project, map[string]string{"flow.json": reviewGraph})
-			token2 := readReview(t, ts, "").Token
-			if token == token2 {
+			again := readReview(t, ts, "")
+			if review.Token == again.Token || fileOf(t, again, "flow.json").Lock != "same" {
 				t.Fatal("a change to a graph did not change the review")
 			}
-			rig.locks(t, tc.lock(t, project))
-			status, data := confirm(t, ts, "", token2)
+			want := tc.lock(t, project)
+			rig.locks(t, want)
+			status, data := confirm(t, ts, "", again.Token)
+			if tc.name == "the reading itself" {
+				if status != 200 || readFile(t, filepath.Join(project, "jpack.lock.json")) != string(want) || len(copiesIn(t, project)) != 4 {
+					t.Errorf("a lock of exactly the reading answered %d %s", status, data)
+				}
+				return
+			}
 			if status != http.StatusConflict || !bytes.Contains(data, []byte("previous lock was put back")) {
 				t.Errorf("a lock of %s answered %d %s", tc.name, status, data)
 			}

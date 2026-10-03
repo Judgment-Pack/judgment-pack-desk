@@ -2162,6 +2162,9 @@ func (b *cappedBuffer) exceeded() bool {'
     '	for kind, entries := range map[string]map[string]lockEntry{"pack": lock.Packs} {
 		for id, entry := range entries {
 			set.Entries'
+  mutate go "review: the review reads the lock's packs for a graph" "$RV" \
+    '			entries = lock.Graphs' \
+    '			entries = lock.Packs'
   mutate go "review: the previous lock is not put back" "$RV" \
     '		return s.atomicWrite(runtimeLockName, previous)' \
     '		return nil'
