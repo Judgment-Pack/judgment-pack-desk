@@ -74,6 +74,7 @@ import { SECTION_SUMMARY } from '../admin/sectionSummary'
 import { SourceCard, StatusLine, type SourceStatus } from '../admin/SourceCard'
 import { useDefaultProject } from '../admin/DefaultProject'
 import { ProjectGates } from '../packs/upgrade/UpgradeNote'
+import { DecisionRecord } from '../audit/DecisionRecord'
 import { OrganizationForm, StorageForm, StorageKind } from '../admin/projectFileCards'
 import { useHashTarget } from '../shell/useHashTarget'
 import { useDetailsPortal, useDetailsSlot } from '../shell/DetailsSlot'
@@ -221,6 +222,9 @@ ${effective.desk.chassis.runtimeBin}`} />
                 />
                 {/* The upgrade offer stays available here (ADR-0009, section 4). */}
                 <ProjectGates />
+                {/* Beside the gates, what the runtime finds in the trail they
+                    keep (ADR-0010, section 4). */}
+                <DecisionRecord />
               </RetainedPanel>
               <RetainedPanel active={open.id === 'organization'}>
                 <SourceCard

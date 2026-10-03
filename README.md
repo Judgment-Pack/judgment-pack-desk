@@ -246,9 +246,10 @@ person's approval, and it records no name.
   change it.
 - The runtime Desk pins (0.26.0) chains each line to the one before it, over
   its exact bytes (runtime ADR-0047). A change then shows only against a
-  checkpoint someone else held from before it. Desk takes, shows and hands
-  over no checkpoint, and gives no signing key: its part is
-  [ADR-0010](docs/adr/0010-defensible-decision-records.md), not built yet.
+  checkpoint someone else held from before it. Desk takes and hands over no
+  checkpoint, and gives no signing key, yet: the rest of its part is
+  [ADR-0010](docs/adr/0010-defensible-decision-records.md). It shows what the
+  runtime's own check finds (the decision record, below).
 - A `JPACK_SIGNING_KEY` set where Desk was started is removed from every
   runtime Desk starts for a desk it made, as `JPACK_CONFIG` is
   ([ADR-0010](docs/adr/0010-defensible-decision-records.md)). The project Desk
@@ -260,6 +261,25 @@ person's approval, and it records no name.
 - The folder is private: owner-only, never committed (`.desk-private/` is in a
   new desk's `.gitignore`), not shown or editable in Desk's file editor, and in
   no backup. Losing the desk's folder loses its records.
+
+**The decision record, in Admin → Project** (ADR-0010, sections 4 and 6).
+Beside the Gates card, Desk runs the runtime's own `jpack audit verify --config
+jpack.json --format json` in the desk's folder when the panel opens and when you
+ask again, never on a timer. It passes no public key, no held checkpoint, no
+time-stamping roots and no `--require-…` flag, so the runtime checks the chain
+alone and says that it checked no signature, checkpoint or stamp. The panel
+shows the runtime's status, its coverage counts, segments, discontinuities and
+findings by name, and its sentences on what the result establishes and what it
+does not, in English as the runtime writes them. Exit 1 is a failed check, and
+its report is shown; an answer the runtime does not document is shown as an
+error. Desk ran it on your machine, over your trail: it is not evidence to
+anyone who does not trust you. A holder runs the same command on a copy, with
+what it holds. With a runtime that does not read configVersion `"6"` (before
+0.26.0), or that does not know `audit verify`, the panel says so in one sentence
+and runs nothing more. A project whose `jpack.json` declares no audit directory
+keeps no trail, and the panel runs nothing. On the project Desk was started on,
+under a `JPACK_CONFIG` that names another project's configuration, the panel is
+unavailable, as Review and lock is.
 
 **`requireComparableFacts`** (runtime ADR-0046).
 
