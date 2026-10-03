@@ -3686,5 +3686,10 @@
   "Unchained lines a later chained line commits to": "之後有鏈式行確定到嘅非鏈式行",
   "What this does not establish": "呢個唔證明嘅嘢",
   "What this establishes": "呢個證明到嘅嘢",
-  "Witnessed through record {{sequence}}": "作證到第 {{sequence}} 筆記錄"
+  "Witnessed through record {{sequence}}": "作證到第 {{sequence}} 筆記錄",
+  "Download the trail": "下載軌跡",
+  "Download {{file}}": "下載 {{file}}",
+  "Each file is saved under the runtime’s own name, as its bytes stood on disk between two writes.": "每個檔案都會用運行環境自己嘅名稱儲存，內容係兩次寫入之間磁碟上嘅原本位元組。",
+  "Saved {{file}}.": "已儲存 {{file}}。",
+  "The file could not be downloaded. Please try again.": "下載唔到個檔案。請再試一次。"
 }

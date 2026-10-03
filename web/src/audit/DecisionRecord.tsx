@@ -20,6 +20,7 @@ import { Button } from '../ui/Button'
 import { SettingsSection } from '../ui/SettingsSection'
 import { AUDIT_KEY, AuditUnavailable, readAuditRecord, type AuditCoverageState, type AuditReport } from './client'
 import styles from './DecisionRecord.module.css'
+import { TrailDownloads } from './TrailDownloads'
 
 /** The panel's one query: run on opening, and on the owner's request alone. */
 export function useAuditRecord() {
@@ -49,11 +50,13 @@ export function DecisionRecord() {
                 : record?.state === 'unverified' ? <>
                   <p>{msg('The runtime did not check the trail.')}</p>
                   <ul className={styles.list} aria-label={msg('What the runtime said')}>{record.diagnostics.map((item, index) => <li key={index} lang="en"><code>{item.code}</code> {item.message}</li>)}</ul>
+                  <TrailDownloads files={record.files ?? []} />
                   {again}
                 </>
                   : record?.state === 'report' && <>
                     <p className={styles.statement}>{msg('Desk ran this on your machine, over your trail, with no keys and no checkpoints: it checked no signature, no held checkpoint and no stamp. It is not evidence to anyone who does not trust you. A holder runs the same command on a copy, with what it holds.')}</p>
                     <Report report={record.report} />
+                    <TrailDownloads files={record.files ?? []} />
                     {record.runtime && <p className={styles.quiet}>{msg('Checked by jpack {{version}}.', { version: record.runtime })}</p>}
                     {again}
                   </>}

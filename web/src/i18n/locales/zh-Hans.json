@@ -3686,5 +3686,10 @@
   "Unchained lines a later chained line commits to": "由之后的链式行确定的非链式行",
   "What this does not establish": "这不能证明的内容",
   "What this establishes": "这能证明的内容",
-  "Witnessed through record {{sequence}}": "已作证至第 {{sequence}} 条记录"
+  "Witnessed through record {{sequence}}": "已作证至第 {{sequence}} 条记录",
+  "Download the trail": "下载轨迹",
+  "Download {{file}}": "下载 {{file}}",
+  "Each file is saved under the runtime’s own name, as its bytes stood on disk between two writes.": "每个文件都以运行时自己的名称保存，内容是两次写入之间磁盘上的原始字节。",
+  "Saved {{file}}.": "已保存 {{file}}。",
+  "The file could not be downloaded. Please try again.": "无法下载该文件。请重试。"
 }

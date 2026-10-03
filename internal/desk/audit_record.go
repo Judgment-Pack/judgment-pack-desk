@@ -137,6 +137,11 @@ type auditAnswer struct {
 	Floor       string              `json:"floor,omitempty"`
 	Report      *auditReport        `json:"report,omitempty"`
 	Diagnostics []runtimeDiagnostic `json:"diagnostics,omitempty"`
+	// Files is which of the trail, its signature sidecar and its stamps the
+	// audit directory holds for download, by the names the download takes:
+	// "evaluations", "signatures" and "stamps". It is given with a report and
+	// with the runtime's refusal, and with nothing else.
+	Files []string `json:"files,omitempty"`
 }
 
 // auditRuntime is the directory and refusal for running the audit commands
@@ -223,6 +228,7 @@ func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, err
 		return older, nil
 	}
 	answer.Runtime = schema.version
+	answer.Files = s.auditFilesPresent()
 	return answer, nil
 }
 
