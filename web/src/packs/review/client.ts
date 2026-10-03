@@ -50,7 +50,7 @@ const text = (value: unknown): value is string => typeof value === 'string'
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
 const side = (value: unknown): boolean => value === undefined || object(value) && ['text', 'no-copy', 'absent', 'not-shown'].includes(value.state as string) && (value.digest === undefined || text(value.digest))
 
-function isReview(value: unknown): value is Review {
+export function isReview(value: unknown): value is Review {
   if (!object(value) || !text(value.status) || typeof value.locked !== 'boolean' || !Array.isArray(value.findings) || !Array.isArray(value.diagnostics) || !Array.isArray(value.files) || !object(value.contents) || !Object.values(value.contents).every(text)) return false
   if (!value.findings.every(item => object(item) && text(item.name))) return false
   if (!value.files.every(file => object(file) && text(file.kind) && text(file.path) && ['same', 'other', 'none', 'removed'].includes(file.lock as string) && (file.locked === undefined || text(file.locked)) && object(file.now) && side(file.now) && side(file.earlier))) return false

@@ -2299,6 +2299,166 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "jobs standing: the lock's entry is not sent" "$RV" \
     '	Locked string     `json:"locked,omitempty"`' \
     '	Locked string     `json:"-"`'
+
+  # **The upgrade offer for existing desks (ADR-0009, section 4).** Nothing
+  # is written before the owner confirms; a confirmation writes exactly what
+  # the offer showed, bound by a token over the desk, the reading, the lock,
+  # the configuration written, .gitignore and the audit folder; and the
+  # configuration and the first lock go together, or every file is put back.
+  # upgrade_test.go drives a stand-in runtime by absolute path.
+  UP=internal/desk/upgrade.go
+  mutate go "upgrade: a cross-site request can upgrade" "$UP" \
+    '	if r.Header.Get("Sec-Fetch-Site") == "cross-site" {' \
+    '	if false {'
+  mutate go "upgrade: a confirmation need not be JSON" "$UP" \
+    '	if err != nil || media != "application/json" {' \
+    '	if _ = media; false {'
+  mutate go "upgrade: a confirmation may carry other members" "$UP" \
+    '	if err != nil || decodeDataJSON(data, &request) != nil || len(request.Token) != 64 {' \
+    '	if err != nil || json.Unmarshal(data, &request) != nil || len(request.Token) != 64 {'
+  mutate go "upgrade: a confirmation's token is not checked" "$UP" \
+    '	if err != nil || plan.upgraded == nil || !hmac.Equal([]byte(s.upgradeToken(plan)), []byte(token)) {' \
+    '	if err != nil || plan.upgraded == nil {'
+  mutate go "upgrade: a token is not bound to its desk" "$UP" \
+    '	}{"upgrade", s.cfg.deskID, s.projectDir, plan.snap.set, lock, plan.upgraded.set.Config, ignore, plan.audit})
+	mac := hmac.New(sha256.New, s.reviewKey[:])' \
+    '	}{"upgrade", "", "", plan.snap.set, lock, plan.upgraded.set.Config, ignore, plan.audit})
+	mac := hmac.New(sha256.New, nil)'
+  mutate go "upgrade: a token does not cover the reading" "$UP" \
+    '	}{"upgrade", s.cfg.deskID, s.projectDir, plan.snap.set, lock,' \
+    '	}{"upgrade", s.cfg.deskID, s.projectDir, reviewSet{Config: plan.snap.set.Config}, lock,'
+  mutate go "upgrade: a token does not cover the lock" "$UP" \
+    '		lock = sha256Digest(plan.snap.lock)' \
+    '		lock = "present"'
+  mutate go "upgrade: a token does not cover the configuration written" "$UP" \
+    'lock, plan.upgraded.set.Config, ignore, plan.audit})' \
+    'lock, "", ignore, plan.audit})'
+  mutate go "upgrade: a token does not cover .gitignore" "$UP" \
+    '		ignore[1] = sha256Digest(plan.gitignore.after)' \
+    '		ignore[1] = "changed"'
+  mutate go "upgrade: a token does not cover the audit folder" "$UP" \
+    'plan.upgraded.set.Config, ignore, plan.audit})' \
+    'plan.upgraded.set.Config, ignore, auditPlan{}})'
+  mutate go "upgrade: the offer ignores the owner's choice" "$UP" \
+    '	facts := r.URL.Query().Get("requireComparableFacts") != "false"' \
+    '	facts := true'
+  mutate go "upgrade: the startup desk offers to upgrade another configuration" "$UP" \
+    '	if refusal != "" {
+		writeJSON(w, http.StatusOK, upgradeAnswer{State: "unavailable", Reason: refusal, Changes: []string{}})' \
+    '	if refusal = ""; false {
+		writeJSON(w, http.StatusOK, upgradeAnswer{State: "unavailable", Reason: refusal, Changes: []string{}})'
+  mutate go "upgrade: the startup desk confirms an upgrade of another configuration" "$UP" \
+    '	if refusal != "" {
+		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, refusal)' \
+    '	if refusal = ""; false {
+		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, refusal)'
+  # **Exactly the ADR's changes to jpack.json, and every other byte its own.**
+  mutate go "upgrade: a duplicate member is carried" "$UP" \
+    '		if seen[name] {' \
+    '		if false {'
+  mutate go "upgrade: something after the configuration is carried" "$UP" \
+    '	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {' \
+    '	if _, err := decoder.Token(); false && !errors.Is(err, io.EOF) {'
+  mutate go "upgrade: an edit is applied where another moved the bytes" "$UP" \
+    '	sort.Slice(edits, func(i, j int) bool { return edits[i].start > edits[j].start })' \
+    '	sort.Slice(edits, func(i, j int) bool { return edits[i].start < edits[j].start })'
+  mutate go "upgrade: an existing audit directory is replaced" "$UP" \
+    '	step("audit", !declared, auditMember)' \
+    '	step("audit", !declared || true, auditMember)'
+  mutate go "upgrade: requireComparableFacts cannot be declined" "$UP" \
+    '	plan.choice = facts && plan.facts == "off"' \
+    '	plan.choice = plan.facts == "off"'
+  mutate go "upgrade: a gated project is offered the upgrade again" "$UP" \
+    '	plan.gated = raw("requireReviewed") == "true" && raw("audit") != "" && number >= 4' \
+    '	plan.gated = false && number >= 4'
+  # **No configuration version the runtime cannot read.**
+  mutate go "upgrade: a version the runtime cannot read is offered" "$UP" \
+    '	plan.to = reviewedFromVersion
+	if slices.Contains(schema.supported, comparableFactsFromVersion) {' \
+    '	plan.to = reviewedFromVersion
+	if true {'
+  mutate go "upgrade: a runtime that reads no 4 is offered the upgrade" "$UP" \
+    '	if !slices.Contains(schema.supported, reviewedFromVersion) {' \
+    '	if false {'
+  mutate go "upgrade: a configuration the runtime does not read is upgraded" "$UP" \
+    '	if !slices.Contains(schema.supported, from) {' \
+    '	if false {'
+  mutate go "upgrade: a configuration version Desk does not know is upgraded" "$UP" \
+    '	if err != nil || number < 1 || number > newestKnownConfigVersion || strconv.Itoa(number) != from {' \
+    '	if err != nil || number < 1 || strconv.Itoa(number) != from {'
+  # **.gitignore: the line, only in a Git work tree that does not ignore it.**
+  mutate go "upgrade: .gitignore is written outside a Git work tree" "$UP" \
+    '	if !s.inGitWorkTree() {' \
+    '	if false {'
+  mutate go "upgrade: a .git folder with no HEAD marks a work tree" "$UP" \
+    '		_, err := lstat(filepath.Join(name, "HEAD"))
+		return err == nil' \
+    '		return true'
+  mutate go "upgrade: a .git file does not mark a work tree" "$UP" \
+    '	case info.Mode().IsRegular():
+		return true' \
+    '	case info.Mode().IsRegular():
+		return false'
+  mutate go "upgrade: .gitignore is written where it already ignores the folder" "$UP" \
+    '	case ignoresDeskPrivate(data):' \
+    '	case false:'
+  mutate go "upgrade: a negation is read as ignoring" "$UP" \
+    '			ignored = false' \
+    '			_ = ignored'
+  mutate go "upgrade: a line is added in another line ending" "$UP" \
+    '		eol = "\r\n"' \
+    '		eol = "\n"'
+  mutate go "upgrade: a .gitignore that is a link is read" "$UP" \
+    '	data, err := s.readReviewFileWithin(gitignoreName, reviewTextLimit)' \
+    '	data, _, err := s.readThroughRootWithin(gitignoreName, reviewTextLimit)'
+  # **The audit folder: owner-only, never through a link.**
+  mutate go "upgrade: the audit folder is not made" "$UP" \
+    '	if plan.audit.State == "create" {
+		if err := undo.makeAuditFolder(); err != nil {' \
+    '	if false {
+		if err := undo.makeAuditFolder(); err != nil {'
+  mutate go "upgrade: the audit folder is not owner-only" "$UP" \
+    '			if err := u.s.root.Mkdir(part, custodyDirMode); err != nil {' \
+    '			if err := u.s.root.Mkdir(part, 0o755); err != nil {'
+  mutate go "upgrade: the audit folder is planned through a link" "$UP" \
+    '			case !info.IsDir() || info.Mode()&fs.ModeSymlink != 0:
+				return unavailable(' \
+    '			case false && !info.IsDir():
+				return unavailable('
+  # **Written only over the bytes read; the configuration and the first lock
+  # together, or every file put back.**
+  mutate go "upgrade: a file is written over bytes it did not read" "$UP" \
+    '	case present && (err != nil || !bytes.Equal(current, before)):' \
+    '	case present && (err != nil || current == nil && false):'
+  mutate go "upgrade: a file is made over one that appeared" "$UP" \
+    '	case !present && codeOf(err) != CodeNotFound:' \
+    '	case false:'
+  mutate go "upgrade: the lock is not checked against what was shown" "$UP" \
+    '			if pinned, _, err := lockedSet(after); err == nil && pinned.equal(plan.upgraded.set) {' \
+    '			if _, _, err := lockedSet(after); err == nil {'
+  mutate go "upgrade: the previous lock is not put back" "$UP" \
+    '		if err := u.s.restoreLock(u.plan.snap.lock, u.plan.snap.hasLock); err != nil {' \
+    '		if err := error(nil); err != nil {'
+  mutate go "upgrade: a file the upgrade replaced is not put back" "$UP" \
+    '			err = u.s.atomicWrite(written.name, written.before)' \
+    '			err = nil'
+  mutate go "upgrade: a file the upgrade made is left" "$UP" \
+    '			if err = u.s.root.Remove(written.name); errors.Is(err, fs.ErrNotExist) {' \
+    '			if err = error(nil); errors.Is(err, fs.ErrNotExist) {'
+  mutate go "upgrade: a folder the upgrade made is left" "$UP" \
+    '		if err := u.s.root.Remove(u.made[i]); err != nil && !errors.Is(err, fs.ErrNotExist) {' \
+    '		if err := error(nil); err != nil {'
+  # **The first lock is PR C's: its review over the upgraded configuration,
+  # the existing lock said, and copies kept.**
+  mutate go "upgrade: the first lock's review is of the configuration as it is" "$UP" \
+    '	review, err := s.reviewOf(ctx, dir, plan.upgraded, nil)' \
+    '	review, err := s.reviewOf(ctx, dir, plan.snap, nil)'
+  mutate go "upgrade: an existing lock is not said" "$UP" \
+    '		Locked: plan.snap.hasLock, ConfigBefore: string(plan.snap.config)}' \
+    '		Locked: false, ConfigBefore: string(plan.snap.config)}'
+  mutate go "upgrade: no copies are kept" "$UP" \
+    '	if err := s.storeReviewedCopies(plan.upgraded); err != nil {' \
+    '	if err := error(nil); err != nil {'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -8497,6 +8657,66 @@ export function assistantTransport(id: string): Transport {
   mutate web "jobs standing: Runner's reviewed field is not explained" "$JSV" \
     "    <p className={styles.note}>{msg('Runner locks each release" \
     "    <p className={styles.note}>{false && msg('Runner locks each release"
+
+  # **The upgrade offer on the page.** Nothing is sent until the owner
+  # confirms; the confirmation carries the offer's token and the owner's
+  # choice about requireComparableFacts; each change is listed, with the
+  # existing lock's consequence; and the offer appears once on Packs and stays
+  # in Admin → Project.
+  UC=web/src/packs/upgrade/client.ts
+  UV=web/src/packs/upgrade/UpgradeView.tsx
+  UN=web/src/packs/upgrade/UpgradeNote.tsx
+  mutate web "upgrade: the confirmation does not carry the token" "$UC" \
+    "body: JSON.stringify({ token, requireComparableFacts }) })" \
+    "body: JSON.stringify({ requireComparableFacts }) })"
+  mutate web "upgrade: the confirmation does not carry the owner's choice" "$UC" \
+    "body: JSON.stringify({ token, requireComparableFacts }) })" \
+    "body: JSON.stringify({ token, requireComparableFacts: true }) })"
+  mutate web "upgrade: a stale confirmation reads as any failure" "$UC" \
+    "  return body.code === 'stale' ? new StaleUpgrade(message) : new Error(message)" \
+    "  return new Error(message)"
+  mutate web "upgrade: the offer is asked for with requireComparableFacts whatever the choice" "$UC" \
+    "deskFetch(requireComparableFacts ? '/api/upgrade' : '/api/upgrade?requireComparableFacts=false', { signal })" \
+    "deskFetch('/api/upgrade', { signal })"
+  mutate web "upgrade: declining requireComparableFacts asks for nothing new" "$UV" \
+    "queryFn: ({ signal }) => readUpgrade(facts, signal)" \
+    "queryFn: ({ signal }) => readUpgrade(true, signal)"
+  mutate web "upgrade: a change is not listed" "$UV" \
+    "{upgrade.changes.includes('requireReviewed') && <li>" \
+    "{false && <li>"
+  mutate web "upgrade: an existing lock is not told what the upgrade does to it" "$UV" \
+    "{upgrade.locked && <section className={styles.warning}" \
+    "{false && <section className={styles.warning}"
+  mutate web "upgrade: the runtime's finding about the new jpack.json is not shown" "$UV" \
+    "{said.length > 0 && <ul" \
+    "{false && <ul"
+  mutate web "upgrade: a confirmation is offered without a token" "$UV" \
+    "{upgrade.state === 'offer' && upgrade.token && <section className={styles.confirm}" \
+    "{upgrade.state === 'offer' && <section className={styles.confirm}"
+  mutate web "upgrade: why nothing can be offered is not said" "$UV" \
+    "  if (upgrade.state === 'unavailable') return <Alert" \
+    "  if (false) return <Alert"
+  mutate web "upgrade: the offer is not read again after a confirmation" "$UV" \
+    "await Promise.all([client.invalidateQueries({ queryKey: UPGRADE_KEY }), client.invalidateQueries({ queryKey: REVIEW_KEY })])" \
+    "await Promise.all([client.invalidateQueries({ queryKey: REVIEW_KEY })])"
+  mutate web "upgrade: Packs' review is not read again after a confirmation" "$UV" \
+    "await Promise.all([client.invalidateQueries({ queryKey: UPGRADE_KEY }), client.invalidateQueries({ queryKey: REVIEW_KEY })])" \
+    "await Promise.all([client.invalidateQueries({ queryKey: UPGRADE_KEY })])"
+  mutate web "upgrade: a dismissal is not kept" "$UN" \
+    "    try { localStorage.setItem(key, '1') } catch" \
+    "    try { void key } catch"
+  mutate web "upgrade: a kept dismissal is not read" "$UN" \
+    "  const hidden = !resolved || dismissed.includes(key) || readDismissed(key)" \
+    "  const hidden = !resolved || dismissed.includes(key)"
+  mutate web "upgrade: the note is shown where the gates are on" "$UN" \
+    "  if (hidden || offer.data?.state !== 'offer' || offer.data.gated) return null" \
+    "  if (hidden || offer.data?.state !== 'offer') return null"
+  mutate web "upgrade: the note is not on Packs" web/src/packs/PacksPane.tsx \
+    "    {review && <UpgradeNote/>}" \
+    "    {false && <UpgradeNote/>}"
+  mutate web "upgrade: Admin → Project does not offer it" "$UN" \
+    "              <div><ButtonLink to=\"/packs/_upgrade\">{msg('Review the upgrade')}</ButtonLink></div>" \
+    "              <div />"
 fi
 
 restore

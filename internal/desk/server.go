@@ -141,7 +141,9 @@ type Server struct {
 	// deskCreations is how many desks are being made, which count toward
 	// the registry's bound while the lock is released (`createDesk`).
 	deskCreations int
-	// reviewMu serializes this desk's lock confirmations (`handleReviewLock`).
+	// reviewMu serializes this desk's lock confirmations (`handleReviewLock`)
+	// and upgrades (`handleUpgradeConfirm`), from the fresh reading to the
+	// last restore.
 	reviewMu sync.Mutex
 	// reviewKey is this desk's own key for review tokens (`reviewToken`):
 	// random per process, so a token names one desk and does not outlive it.
@@ -423,6 +425,8 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("PUT /api/attachments/{id}", s.handleAttachment)
 	s.mux.HandleFunc("GET /api/review", s.handleReview)
 	s.mux.HandleFunc("POST /api/review/lock", s.handleReviewLock)
+	s.mux.HandleFunc("GET /api/upgrade", s.handleUpgrade)
+	s.mux.HandleFunc("POST /api/upgrade", s.handleUpgradeConfirm)
 	s.mux.HandleFunc("GET /api/source-reviews", s.handleSourceReviews)
 	s.mux.HandleFunc("PUT /api/source-reviews", s.handleSourceReviews)
 	s.mux.HandleFunc("GET /api/briefs", s.handlePackTests)

@@ -28,6 +28,7 @@ import { ALL_PACKS, HOME_FOLDER, inFolder, packFolder, folderPath } from './fold
 import { FolderLocation, FolderFeedback, SubfolderRows, NewFolderButton, MovePackButton, ShowFolders } from './folders/FolderBrowser'
 import { findingWords, packFindings } from './review/findings'
 import { useReview } from './review/ReviewContext'
+import { UpgradeNote } from './upgrade/UpgradeNote'
 
 function draftDescription(value: unknown): string | undefined { const text=(value as {description?:unknown}|null)?.description;return typeof text==='string'?text:undefined }
 function isSpelled(value: string | undefined): value is string {
@@ -126,6 +127,7 @@ export function PacksPane({ active = true }: { active?: boolean }) {
       navigation={<PacksNavigation leading={<ShowFolders/>} count={isSuccess ? total : undefined} />}
       actions={<><NewFolderButton/>{review && <ButtonLink to="/packs/_review">{msg('Review and lock')}</ButtonLink>}<ButtonLink to={createHref} variant="primary">{msg("Create pack")}</ButtonLink></>} />
     <FolderLocation/><FolderFeedback/>
+    {review && <UpgradeNote/>}
     <div className={styles.controls} role="group" aria-label={msg("Pack list controls")}>
       <Input className={styles.search} type="search" aria-label={msg("Search packs")} value={filter}
         placeholder={msg("Search packs…")} onChange={event => { resetScroll(); setFilter(event.target.value) }} />

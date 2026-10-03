@@ -28,11 +28,13 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"mime"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -509,6 +511,18 @@ func (s *Server) verifySnapshot(ctx context.Context, snap *reviewSnapshot) (veri
 
 func (s *Server) review(ctx context.Context, dir heldDir) (reviewAnswer, error) {
 	snap, readErr := s.readSnapshot()
+	answer, err := s.reviewOf(ctx, dir, snap, readErr)
+	if err == nil && readErr == nil {
+		answer.Token = s.reviewToken(snap)
+	}
+	return answer, err
+}
+
+// reviewOf is the review of one reading, without a token: the runtime's
+// findings over a private copy of it, and every file it holds. The upgrade
+// offer reviews a reading whose configuration it has replaced
+// (`withConfig`), and gives its own token.
+func (s *Server) reviewOf(ctx context.Context, dir heldDir, snap *reviewSnapshot, readErr error) (reviewAnswer, error) {
 	var verified verifiedAnswer
 	var err error
 	if readErr != nil {
@@ -589,8 +603,21 @@ func (s *Server) review(ctx context.Context, dir heldDir) (reviewAnswer, error) 
 		a, b := answer.Files[1+i], answer.Files[1+j]
 		return a.Kind < b.Kind || a.Kind == b.Kind && a.ID < b.ID
 	})
-	answer.Token = s.reviewToken(snap)
 	return answer, nil
+}
+
+// withConfig is the reading with its configuration replaced by config: the
+// same documents and lock, as the runtime would read them once config is
+// written.
+func (snap *reviewSnapshot) withConfig(config []byte) *reviewSnapshot {
+	next := *snap
+	next.config = config
+	next.set.Config = sha256Digest(config)
+	next.set.Entries = slices.Clone(snap.set.Entries)
+	next.docs = slices.Clone(snap.docs)
+	next.files = maps.Clone(snap.files)
+	next.files[runtimeConfigName] = config
+	return &next
 }
 
 // earlierReader shows the reviewed copies of the bytes a lock names: each

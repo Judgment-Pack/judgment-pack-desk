@@ -42,6 +42,13 @@ type reviewRig struct {
 // arguments and the JPACK_CONFIG it was given to calls. Builtins only.
 func newReviewRig(t *testing.T, verifyFirst, lockFirst string) *reviewRig {
 	t.Helper()
+	return newReviewRigReading(t, allConfigVersions, verifyFirst, lockFirst)
+}
+
+// newReviewRigReading is newReviewRig with a `packs schema` that names
+// versions as the configuration versions it reads.
+func newReviewRigReading(t *testing.T, versions, verifyFirst, lockFirst string) *reviewRig {
+	t.Helper()
 	dir := t.TempDir()
 	rig := &reviewRig{bin: filepath.Join(dir, "jpack"), verify: filepath.Join(dir, "verify.json"), lock: filepath.Join(dir, "lock.json")}
 	copyOut := func(from string) string {
@@ -49,7 +56,7 @@ func newReviewRig(t *testing.T, verifyFirst, lockFirst string) *reviewRig {
 	}
 	lock := "  if [ -e '" + rig.lock + "' ]; then\n" + lockFirst + "\n" + copyOut(rig.lock) + " > jpack.lock.json\n" +
 		"  printf '%s\\n' '{\"outputVersion\":\"2\",\"command\":\"packs lock\",\"status\":\"valid\"}'\n  exit 0\n  fi\n" + lockingAs(wantGatedConfig)
-	rig.calls = writeStandInRuntime(t, rig.bin, reading(allConfigVersions), lock)
+	rig.calls = writeStandInRuntime(t, rig.bin, reading(versions), lock)
 	script, err := os.ReadFile(rig.bin)
 	if err != nil {
 		t.Fatal(err)

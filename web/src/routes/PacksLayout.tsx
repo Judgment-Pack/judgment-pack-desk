@@ -19,8 +19,8 @@ export function PacksLayout() {
 function PacksContent() {
  useLocale()
  const {packId,draftId}=useParams(), folders=usePackFolders()!
- // `_review` cannot be a pack's decision id, which begins with a lowercase letter.
- const location=useLocation(), open=Boolean(packId||draftId||location.pathname==='/packs/new'||location.pathname==='/packs/_review')
+ // `_review` and `_upgrade` cannot be a pack's decision id, which begins with a lowercase letter.
+ const location=useLocation(), open=Boolean(packId||draftId||location.pathname==='/packs/new'||location.pathname==='/packs/_review'||location.pathname==='/packs/_upgrade')
  const selected=folders.query.data?packFolder(folders.document,packId??''):undefined
  return <>
   <div className={styles.collection} hidden={open}><PacksPane active={!open}/></div>
