@@ -2206,11 +2206,33 @@ func (b *cappedBuffer) exceeded() bool {'
     '		if err == nil && (!info.IsDir() || info.Mode()&fs.ModeSymlink != 0) {
 			err = fmt.Errorf("%s is not a directory Desk can keep copies in", part)
 		}
-		if err == nil && info.Mode().Perm()&0o077 != 0 {' \
+		if err == nil && info.Mode().Perm()&0o077 != 0 {
+			err = fmt.Errorf("%s is open to other users (%v), so Desk does not keep copies in it", part, info.Mode().Perm())
+		}
+		if err == nil {
+			err = ownedByUs(part, info)
+		}
+		var next *os.Root
+		if err == nil {
+			next, err = current.OpenRoot(part)
+		}
+		if err == nil {
+			if held, statErr := next.Stat("."); statErr != nil || !os.SameFile(info, held) {' \
     '		if _ = info; false {
 			err = fmt.Errorf("%s is not a directory Desk can keep copies in", part)
 		}
-		if false {'
+		if false {
+			err = fmt.Errorf("%s is open to other users (%v), so Desk does not keep copies in it", part, info.Mode().Perm())
+		}
+		if err == nil {
+			err = ownedByUs(part, info)
+		}
+		var next *os.Root
+		if err == nil {
+			next, err = current.OpenRoot(part)
+		}
+		if err == nil {
+			if held, statErr := next.Stat("."); statErr != nil && held == nil {'
   # **The startup desk reviews only its own jpack.json, by path.** A hard link
   # from another directory is the same file in another project.
   mutate go "review: the startup desk reviews another configuration" "$RV" \
