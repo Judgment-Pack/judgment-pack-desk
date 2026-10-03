@@ -138,3 +138,5 @@
 .sourceWaiting::before { content: ''; width: 6px; height: 6px; border-radius: var(--radius); background: currentColor; opacity: .5; animation: sourceWaitPulse 2s ease-in-out infinite; }
 @keyframes sourceWaitPulse { 50% { opacity: .2; } }
 @media (prefers-reduced-motion: reduce) { .sourceWaiting::before { animation: none; } }
+
+.standingFindings { margin: 0; padding-left: var(--space-5); display: grid; gap: var(--space-1); overflow-wrap: anywhere; }

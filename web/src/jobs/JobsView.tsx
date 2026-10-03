@@ -35,6 +35,7 @@ import { jobsAPI, JobsRequestError, type Decision, type Job, type Page, type Rel
 import styles from './JobsView.module.css'
 import { readReleaseTests } from './releaseTests'
 import { ReleaseReadiness } from './ReleaseReadiness'
+import { ReleaseStanding } from './ReleaseStanding'
 
 function date(value: string) { return formatDate(new Date(value), { dateStyle: 'medium', timeStyle: 'short' }) }
 function errorText(error: unknown) { return error instanceof Error ? error.message : msg('The local runner could not complete this request.') }
@@ -103,7 +104,7 @@ function CreateJobEditor({initial}: {initial?: SavedJobDraft}) {
   const research = useEffectiveConfig().config.research
   const [inputMode, setInputMode] = useState<'manual' | 'mapped'>(initial?.draft.values.inputMode ?? 'mapped'), [source, setSource] = useState<SourceInput | SourceV2>()
   const [name, setName] = useState(initial?.draft.values.name ?? ''), [facts, setFacts] = useState(initial?.draft.values.facts ?? '{}'), [supplied, setSupplied] = useState(initial?.draft.values.supplied ?? false), [evidence, setEvidence] = useState(initial?.draft.values.evidence ?? '{}')
-  const [preview, setPreview] = useState<{ signature: string; release: Release; matrix?: string; project: string }>(), [reviewed, setReviewed] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>()
+  const [preview, setPreview] = useState<{ signature: string; release: Release; matrix?: string; project: string; packId: string }>(), [reviewed, setReviewed] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>()
   const [refused, setRefused] = useState<{ releaseId: string; message: string }>()
   const navigate = useNavigate(), queryClient = useQueryClient()
   const [mapped, setMapped] = useState<MappedDraft | undefined>(initial?.draft.values.mapped)
@@ -160,7 +161,8 @@ function CreateJobEditor({initial}: {initial?: SavedJobDraft}) {
       const input = inputMode === 'manual' ? parseInput(facts, supplied, evidence) : { source }
       const current = await currentInputs()
       const release = await jobsAPI<Release>('previews', { pack: current.pack.raw, input, ...(current.tests.matrix ? { matrix: current.tests.matrix, testSource: current.tests.testSource } : {}) })
-      setPreview({ signature: JSON.stringify([current.pack.raw, facts, supplied, evidence, inputMode, source]), release, matrix: current.tests.matrix, project: current.tests.project })
+      // The decision id the release's bytes were served for: the project's lock is keyed by it.
+      setPreview({ signature: JSON.stringify([current.pack.raw, facts, supplied, evidence, inputMode, source]), release, matrix: current.tests.matrix, project: current.tests.project, packId })
     } catch (e) { setError(e) } finally { setBusy(false) }
   }
   async function create() {
@@ -210,7 +212,7 @@ function CreateJobEditor({initial}: {initial?: SavedJobDraft}) {
         {!validPreview&&<p className={styles.callout}>{msg('Structure, saved tests and the sample decision have not been checked for these inputs.')}</p>}
         <div><Button onClick={() => { void prepare() }} disabled={busy || inputMode === 'manual' && !inputsValid || !pack.data || inputMode !== 'manual' && !source}>{busy ? msg('Working…') : msg('Check release')}</Button></div>
 
-      {validPreview && <section className={styles.review}><h2>{msg('Review this release')}</h2>{trigger&&<><TriggerSummary config={trigger}/><p className={styles.note}>{msg('The trigger is created paused. Enable it from the Triggers tab after reviewing its timing and inputs.')}</p></>}<dl className={styles.properties}><div><dt>{msg('Pack version')}</dt><dd>{validPreview.packVersion}</dd></div><div><dt>{msg('Sample decision')}</dt><dd>{decisionLabel(validPreview.preview)}</dd></div><div><dt>{msg('Structure')}</dt><dd>{msg('Validated')}</dd></div></dl><ReleaseReadiness release={validPreview} refusal={refusal} />{validPreview.inputMapping?.version === 2 && <MappingReview mapping={validPreview.inputMapping} profiles={validPreview.inputProfiles} warnings={validPreview.mappingWarnings} />}<p className={styles.note}>{msg('The preview is a rehearsal. Operational runs append audit records. No external actions or schedules are enabled.')}</p><JSONView title={msg('Sample result')} value={validPreview.preview} /><label className="checkbox"><input type="checkbox" checked={reviewed} disabled={busy || !canCreate} onChange={e => setReviewed(e.target.checked)} />{msg('I reviewed this release, its test status and sample result.')}</label></section>}
+      {validPreview && <section className={styles.review}><h2>{msg('Review this release')}</h2>{trigger&&<><TriggerSummary config={trigger}/><p className={styles.note}>{msg('The trigger is created paused. Enable it from the Triggers tab after reviewing its timing and inputs.')}</p></>}<dl className={styles.properties}><div><dt>{msg('Pack version')}</dt><dd>{validPreview.packVersion}</dd></div><div><dt>{msg('Sample decision')}</dt><dd>{decisionLabel(validPreview.preview)}</dd></div><div><dt>{msg('Structure')}</dt><dd>{msg('Validated')}</dd></div></dl><ReleaseReadiness release={validPreview} refusal={refusal} />{preview && <ReleaseStanding release={validPreview} packId={preview.packId} />}{validPreview.inputMapping?.version === 2 && <MappingReview mapping={validPreview.inputMapping} profiles={validPreview.inputProfiles} warnings={validPreview.mappingWarnings} />}<p className={styles.note}>{msg('The preview is a rehearsal. Operational runs append audit records. No external actions or schedules are enabled.')}</p><JSONView title={msg('Sample result')} value={validPreview.preview} /><label className="checkbox"><input type="checkbox" checked={reviewed} disabled={busy || !canCreate} onChange={e => setReviewed(e.target.checked)} />{msg('I reviewed this release, its test status and sample result.')}</label></section>}
       </section>
       </div><div className={styles.wizardActions}><ButtonLink to="/jobs" variant="quiet">{msg('Cancel')}</ButtonLink><div className={styles.actions}><Button disabled={busy || pendingConfig || unwritten || !triggerValid || !dirty} onClick={()=>void saveDraft().catch(setError)}>{msg('Save draft')}</Button>{step>0&&<Button disabled={busy} onClick={()=>setStep(step-1)}>{msg('Back')}</Button>}{step<3?<Button variant="primary" disabled={busy||step===0&&(!name.trim()||!pack.data)||step===1&&(inputMode==='manual'?!inputsValid:!source)||step===2&&!triggerValid} onClick={()=>setStep(step+1)}>{msg('Continue')}</Button>:<Button variant="primary" disabled={!validPreview||!canCreate||!reviewed||!triggerValid||!name.trim()||busy} onClick={()=>void create()}>{trigger?msg('Create paused job'):msg('Create job')}</Button>}</div></div>
     </div></PageBody>

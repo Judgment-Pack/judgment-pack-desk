@@ -384,8 +384,13 @@ type reviewFile struct {
 	// Lock is how the current lock stands to this file: "same", where it pins
 	// these bytes; "other", where it pins other bytes; "none", where it names
 	// nothing here; or "removed", where only the lock names it.
-	Lock string     `json:"lock"`
-	Now  reviewSide `json:"now"`
+	Lock string `json:"lock"`
+	// Locked is the digest the current lock pins for this file, as this
+	// reading read the lock, and absent where it pins none. It is the lock's
+	// own entry, so a page can compare other bytes with it: Jobs compares the
+	// bytes a release is made from (ADR-0009, question 4).
+	Locked string     `json:"locked,omitempty"`
+	Now    reviewSide `json:"now"`
 	// Earlier is the bytes the lock names, where it names other bytes or only
 	// the lock names this file.
 	Earlier *reviewSide `json:"earlier,omitempty"`
@@ -546,8 +551,11 @@ func (s *Server) review(ctx context.Context, dir heldDir) (reviewAnswer, error) 
 	}
 	file := func(kind, id, path, digest, locked string, data []byte) reviewFile {
 		row := reviewFile{Kind: kind, ID: id, Path: path, Digest: digest, Lock: "none", Now: show(data)}
+		if snap.hasLock {
+			row.Locked = locked
+		}
 		switch {
-		case !snap.hasLock || locked == "":
+		case row.Locked == "":
 		case locked == digest:
 			row.Lock = "same"
 		default:
@@ -574,7 +582,7 @@ func (s *Server) review(ctx context.Context, dir heldDir) (reviewAnswer, error) 
 				continue
 			}
 			side := earlier.side(entry.Digest)
-			answer.Files = append(answer.Files, reviewFile{Kind: kind, ID: id, Path: entry.Path, Lock: "removed", Now: reviewSide{State: "absent"}, Earlier: &side})
+			answer.Files = append(answer.Files, reviewFile{Kind: kind, ID: id, Path: entry.Path, Lock: "removed", Locked: entry.Digest, Now: reviewSide{State: "absent"}, Earlier: &side})
 		}
 	}
 	sort.SliceStable(answer.Files[1:], func(i, j int) bool {

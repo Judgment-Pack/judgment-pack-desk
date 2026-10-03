@@ -957,6 +957,67 @@ func TestTheReviewOnTheStartupDeskAndANamedDesk(t *testing.T) {
 	}
 }
 
+// **The lock's own entry, for each id** (ADR-0009, question 4). Jobs compares
+// the bytes a release is made from with what the lock pins for the release's
+// decision id, so the review names that entry: the lock's digest, as the one
+// reading read the lock, never the file's own, never another id's, and
+// nothing where the lock pins nothing. On the startup desk and on a named desk,
+// each from its own project.
+func TestTheReviewNamesWhatTheLockPinsForEachId(t *testing.T) {
+	t.Setenv("JPACK_CONFIG", "")
+	rig := newReviewRig(t, "", "")
+	s, ts, _ := gatesServer(t, rig.bin)
+	startup := s.projectDir
+	writeProject(t, startup, map[string]string{"jpack.json": twoPacks, "packs/a.json": reviewPack, "packs/b.json": otherPack})
+	rig.answers(t, "error")
+	for _, file := range readReview(t, ts, "").Files {
+		if file.Locked != "" || file.Lock != "none" {
+			t.Errorf("with no lock, %s is shown as locked: %+v", file.Path, file)
+		}
+	}
+
+	removed := `{"removed":true}` + "\n"
+	writeProject(t, startup, map[string]string{"packs/d.json": removed})
+	writeProject(t, startup, map[string]string{"jpack.lock.json": string(lockOf(t, startup, map[string]string{"alpha": "packs/a.json", "beta": "packs/b.json", "delta": "packs/d.json"}))})
+	os.Remove(filepath.Join(startup, "packs", "d.json"))
+	edited := strings.Replace(reviewPack, "Minimal", "Edited", 1)
+	grown := strings.Replace(twoPacks, `"beta"`, `"gamma":{"path":"packs/c.json"},"beta"`, 1)
+	writeProject(t, startup, map[string]string{"packs/a.json": edited, "packs/c.json": reviewPack, "jpack.json": grown})
+	rig.answers(t, "invalid")
+	answer := readReview(t, ts, "")
+	want := map[string]struct{ locked, digest, lock string }{
+		"jpack.json":   {sha256Digest([]byte(twoPacks)), sha256Digest([]byte(grown)), "other"},
+		"packs/a.json": {sha256Digest([]byte(reviewPack)), sha256Digest([]byte(edited)), "other"},
+		"packs/b.json": {sha256Digest([]byte(otherPack)), sha256Digest([]byte(otherPack)), "same"},
+		"packs/c.json": {"", sha256Digest([]byte(reviewPack)), "none"},
+		"packs/d.json": {sha256Digest([]byte(removed)), "", "removed"},
+	}
+	if len(answer.Files) != len(want) {
+		t.Fatalf("the startup desk's review shows %+v", answer.Files)
+	}
+	for path, w := range want {
+		if file := fileOf(t, answer, path); file.Locked != w.locked || file.Digest != w.digest || file.Lock != w.lock {
+			t.Errorf("the startup desk shows %s as %+v, want the lock's %q beside the file's %q", path, file, w.locked, w.digest)
+		}
+	}
+	// gamma names alpha's locked bytes, and the lock pins nothing for gamma.
+	if gamma := fileOf(t, answer, "packs/c.json"); gamma.ID != "gamma" || gamma.Locked != "" {
+		t.Errorf("an id the lock does not name was given another id's entry: %+v", gamma)
+	}
+
+	row := createGatedDesk(t, ts)
+	named := strings.Replace(otherPack, "Minimal", "Named", 1)
+	writeProject(t, row.Folder, map[string]string{"packs/a.json": named, "jpack.json": strings.Replace(wantGatedConfig, `"packs":{}`, `"packs":{"alpha":{"path":"packs/a.json"}}`, 1)})
+	writeProject(t, row.Folder, map[string]string{"jpack.lock.json": string(lockOf(t, row.Folder, map[string]string{"alpha": "packs/a.json"}))})
+	rig.answers(t, "valid")
+	if alpha := fileOf(t, readReview(t, ts, row.ID), "packs/a.json"); alpha.ID != "alpha" || alpha.Locked != sha256Digest([]byte(named)) || alpha.Lock != "same" {
+		t.Errorf("the named desk shows alpha as %+v, want its own lock's entry", alpha)
+	}
+	if alpha := fileOf(t, readReview(t, ts, ""), "packs/a.json"); alpha.Locked != sha256Digest([]byte(reviewPack)) {
+		t.Errorf("the startup desk answered with another desk's lock: %+v", alpha)
+	}
+}
+
 // The real runtime, end to end on a named desk: a pack added is reviewed and
 // locked, an edit after that shows its diff against the copy Desk kept, and
 // a confirmation made before the edit locks nothing.
@@ -980,7 +1041,7 @@ func TestReviewAndLockWithTheRuntime(t *testing.T) {
 		t.Fatalf("the confirmation answered %d %s", status, data)
 	}
 	jpackIn(t, bin, row.Folder, "packs", "verify", "--config", "jpack.json", "--format", "json")
-	if again := readReview(t, ts, row.ID); again.Status != "valid" || len(again.Findings) != 0 || fileOf(t, again, "packs/a.json").Lock != "same" {
+	if again := readReview(t, ts, row.ID); again.Status != "valid" || len(again.Findings) != 0 || fileOf(t, again, "packs/a.json").Lock != "same" || fileOf(t, again, "packs/a.json").Locked != sha256Digest([]byte(reviewPack)) {
 		t.Errorf("after the lock the review answered %+v", again)
 	}
 
@@ -988,7 +1049,7 @@ func TestReviewAndLockWithTheRuntime(t *testing.T) {
 	writeProject(t, row.Folder, map[string]string{"packs/a.json": edited})
 	second := readReview(t, ts, row.ID)
 	alpha := fileOf(t, second, "packs/a.json")
-	if len(second.Findings) != 1 || second.Findings[0].Name != "document-drift" || shown(second, *alpha.Earlier) != reviewPack || shown(second, alpha.Now) != edited {
+	if len(second.Findings) != 1 || second.Findings[0].Name != "document-drift" || shown(second, *alpha.Earlier) != reviewPack || shown(second, alpha.Now) != edited || alpha.Locked != sha256Digest([]byte(reviewPack)) {
 		t.Fatalf("the edit was reviewed as %+v", second)
 	}
 	lock := readFile(t, filepath.Join(row.Folder, "jpack.lock.json"))

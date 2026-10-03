@@ -5461,6 +5461,19 @@ note then says the policy is off. The flag applies to every desk of the
 installation; jobs created before the policy was on keep running. Restart Desk to
 change it.
 
+Create job's **Review this release** also says whether the pack bytes the
+release is made from are in the project's reviewed set (ADR-0009). Desk
+compares the SHA-256 of those exact bytes with the entry the project's
+`jpack.lock.json` holds for the pack's decision id, from the same reading as
+**Review and lock**, and shows the runtime's `packs verify` findings for that
+pack in the same words. It tells apart a release in the reviewed set, a draft
+(the lock pins other bytes for the id, or none), a project with no lock, a
+project file changed since the lock, and a review that could not be read. It
+refuses nothing: the job is created the same way either way. Runner evaluates
+each release under a lock of its own, so every Jobs run record says
+`reviewed: true`; that field is about Runner's lock of the release, not the
+project's reviewed set.
+
 Jobs also supports **Mapped sources**: named case, local-file, selected Drive and
 MCP inputs with Runner-verified receipts, derivation, release review and retained
 lineage. Source reads are explicit; artifacts remain local. Configure trusted
