@@ -3642,5 +3642,5 @@
   "This project keeps a reviewed set. Review and lock, on Packs, shows what the runtime finds and updates it.": "此项目有已审核集合。规则包中的“审阅并锁定”会显示运行时的发现并更新它。",
   "What each gate holds, and whom it binds": "每个门禁约束什么，以及约束谁",
   "Who is bound.": "受约束的是谁。",
-  "But JPACK_SIGNING_KEY is set where Desk was started, so this project’s runtime signs its audit records with the key it names, if it accepts that key. Desks Desk made do not inherit it.": "不过，启动 Desk 的环境中设置了 JPACK_SIGNING_KEY，因此此项目的运行时若接受该密钥，就会用它指定的密钥为审计记录签名。Desk 创建的 Desk 不会继承它。"
+  "But JPACK_SIGNING_KEY is set where Desk was started. Where this project’s audit trail is chained, as it is by default, its runtime signs each record with the key it names, if it accepts that key. Desks Desk made do not inherit it.": "不过，启动 Desk 的环境中设置了 JPACK_SIGNING_KEY。若此项目的审计轨迹是链式的（默认如此），其运行时在接受该密钥时，会用它指定的密钥为每条记录签名。Desk 创建的 Desk 不会继承它。"
 }

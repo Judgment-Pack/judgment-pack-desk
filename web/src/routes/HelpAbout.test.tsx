@@ -213,7 +213,7 @@ describe('Help & About', () => {
   })
 })
 
-const SIGNING_KEY_LINE = 'But JPACK_SIGNING_KEY is set where Desk was started, so this project’s runtime signs its audit records with the key it names, if it accepts that key. Desks Desk made do not inherit it.'
+const SIGNING_KEY_LINE = 'But JPACK_SIGNING_KEY is set where Desk was started. Where this project’s audit trail is chained, as it is by default, its runtime signs each record with the key it names, if it accepts that key. Desks Desk made do not inherit it.'
 
 /** Shown once the configuration query has answered, so the gates can be read after it. */
 function Answered() { return useDeskConfigRead() ? <span>configuration read</span> : null }

@@ -3666,5 +3666,5 @@
   "This project keeps a reviewed set. Review and lock, on Packs, shows what the runtime finds and updates it.": "Ce projet a un ensemble révisé. Revoir et verrouiller, dans Packs, montre ce que trouve le runtime et le met à jour.",
   "What each gate holds, and whom it binds": "Ce que tient chaque garde-fou, et qui il tient",
   "Who is bound.": "Qui est tenu.",
-  "But JPACK_SIGNING_KEY is set where Desk was started, so this project’s runtime signs its audit records with the key it names, if it accepts that key. Desks Desk made do not inherit it.": "Mais JPACK_SIGNING_KEY est définie là où Desk a été démarré : le runtime de ce projet signe donc ses enregistrements d’audit avec la clé qu’elle désigne, s’il accepte cette clé. Les Desks créés par Desk n’en héritent pas."
+  "But JPACK_SIGNING_KEY is set where Desk was started. Where this project’s audit trail is chained, as it is by default, its runtime signs each record with the key it names, if it accepts that key. Desks Desk made do not inherit it.": "Mais JPACK_SIGNING_KEY est définie là où Desk a été démarré. Là où la piste d’audit de ce projet est chaînée, comme elle l’est par défaut, son runtime signe chaque enregistrement avec la clé qu’elle désigne, s’il accepte cette clé. Les Desks créés par Desk n’en héritent pas."
 }

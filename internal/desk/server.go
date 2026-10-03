@@ -360,7 +360,7 @@ func New(cfg Config) (*Server, error) {
 	// which names where a secret is kept, and never its bytes, which this desk
 	// does not read.
 	if s.inheritsSigningKey() {
-		s.log.Print("desk: JPACK_SIGNING_KEY is set, so this project's runtime signs its audit records with the key it names, if it accepts that key; desks Desk made ignore it")
+		s.log.Print("desk: JPACK_SIGNING_KEY is set, so where this project's audit trail is chained, its runtime signs each record with the key it names, if it accepts that key; desks Desk made ignore it")
 	}
 	if cfg.parent != nil {
 		s.sessions = cfg.parent.sessions

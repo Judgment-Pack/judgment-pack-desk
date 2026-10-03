@@ -3642,5 +3642,5 @@
   "This project keeps a reviewed set. Review and lock, on Packs, shows what the runtime finds and updates it.": "呢個項目有已審核集合。規則包入面嘅「審閱並鎖定」會顯示運行環境嘅發現並更新佢。",
   "What each gate holds, and whom it binds": "每個門禁約束啲乜，同埋約束邊個",
   "Who is bound.": "受約束嘅係邊個。",
-  "But JPACK_SIGNING_KEY is set where Desk was started, so this project’s runtime signs its audit records with the key it names, if it accepts that key. Desks Desk made do not inherit it.": "不過，啟動 Desk 嗰度設定咗 JPACK_SIGNING_KEY，所以如果呢個項目嘅運行環境接受嗰條金鑰，就會用佢指定嘅金鑰簽署稽核記錄。Desk 建立嘅 Desk 唔會繼承佢。"
+  "But JPACK_SIGNING_KEY is set where Desk was started. Where this project’s audit trail is chained, as it is by default, its runtime signs each record with the key it names, if it accepts that key. Desks Desk made do not inherit it.": "不過，啟動 Desk 嗰度設定咗 JPACK_SIGNING_KEY。如果呢個項目嘅稽核軌跡係鏈式嘅（預設係咁），佢嘅運行環境接受嗰條金鑰嘅話，就會用佢指定嘅金鑰簽署每筆記錄。Desk 建立嘅 Desk 唔會繼承佢。"
 }

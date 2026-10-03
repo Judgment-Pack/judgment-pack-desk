@@ -2088,6 +2088,14 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "signing key: the startup desk's private copy is not marked" internal/desk/review.go \
     'info: info, startup: s.cfg.deskID == ""})' \
     'info: info})'
+  mutate go "signing key: a named desk's review of an unreadable project inherits it" internal/desk/review.go \
+    '		verified, err = s.runVerify(ctx, dir)' \
+    '		dir.startup = true
+		verified, err = s.runVerify(ctx, dir)'
+  mutate go "signing key: the startup desk's upgrade drops it" internal/desk/upgrade.go \
+    'func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string, facts bool) (any, *lockFailure) {' \
+    'func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string, facts bool) (any, *lockFailure) {
+	dir.startup = false'
   mutate go "signing key: a named desk's project is marked the startup desk's" internal/desk/review.go \
     'info: s.project.info, startup: s.cfg.deskID == ""}' \
     'info: s.project.info, startup: true}'

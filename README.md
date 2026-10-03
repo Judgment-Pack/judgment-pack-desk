@@ -254,8 +254,9 @@ person's approval, and it records no name.
   ([ADR-0010](docs/adr/0010-defensible-decision-records.md)). The project Desk
   was started on keeps it, as the owner's. Desk's log says so once at start,
   and Help & About → Gates says so on that project, neither naming the key.
-  The runtime Desk pins (0.26.0) then signs that project's records with the
-  key it names, if it accepts that key.
+  Where that project's audit trail is chained, as it is by default, the
+  runtime Desk pins (0.26.0) signs each record with the key it names, if it
+  accepts that key.
 - The folder is private: owner-only, never committed (`.desk-private/` is in a
   new desk's `.gitignore`), not shown or editable in Desk's file editor, and in
   no backup. Losing the desk's folder loses its records.

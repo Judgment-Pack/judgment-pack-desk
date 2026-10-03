@@ -490,7 +490,7 @@ func TestANamedDeskRuntimeReadsOnlyItsOwnConfiguration(t *testing.T) {
 }
 
 // signingKeySaid is what the launch says of an inherited JPACK_SIGNING_KEY.
-const signingKeySaid = "desk: JPACK_SIGNING_KEY is set, so this project's runtime signs its audit records with the key it names, if it accepts that key; desks Desk made ignore it"
+const signingKeySaid = "desk: JPACK_SIGNING_KEY is set, so where this project's audit trail is chained, its runtime signs each record with the key it names, if it accepts that key; desks Desk made ignore it"
 
 // **A desk Desk made never signs with the startup desk's key** (ADR-0010,
 // section 1). The runtime signs every record it writes with the key
