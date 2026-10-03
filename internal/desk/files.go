@@ -1277,6 +1277,20 @@ func codedBody(code, message string) map[string]string {
 // leaves a staging file behind; it is excluded from the listing and from the
 // watcher, and the server removes stale ones at startup.
 func (s *Server) atomicWrite(clean string, data []byte) error {
+	return s.atomicWriteChecked(clean, data, nil)
+}
+
+// atomicWriteChecked is atomicWrite with a last check: beforePublish runs
+// after the bytes are staged and flushed and immediately before the rename
+// that publishes them, and an error from it removes the staging file and
+// publishes nothing. It is given the staging file's project-relative path.
+//
+// A caller whose write is conditional on what the target holds makes the
+// comparison there, and not before staging: an editor the desk's write mutex
+// knows nothing about can change the target while the bytes are being
+// staged. The residual is the rename itself, as for the desk-level file
+// (`writeConfigFile`).
+func (s *Server) atomicWriteChecked(clean string, data []byte, beforePublish func(staged string) error) error {
 	dir := path.Dir(clean)
 	// The live descriptor, never a name reopened. Closing the exclusive file and
 	// opening its name again is a window in which that name can become
@@ -1314,6 +1328,12 @@ func (s *Server) atomicWrite(clean string, data []byte) error {
 	if err := f.Close(); err != nil {
 		remove()
 		return fmt.Errorf("could not close the staged write: %w", err)
+	}
+	if beforePublish != nil {
+		if err := beforePublish(staged); err != nil {
+			remove()
+			return err
+		}
 	}
 	if err := s.root.Rename(osPath(staged), osPath(clean)); err != nil {
 		remove()

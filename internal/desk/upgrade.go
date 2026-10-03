@@ -639,6 +639,7 @@ func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string
 		return nil, stale
 	}
 	undo := &upgradeUndo{s: s, plan: plan}
+	defer undo.close()
 	fail := func(failure *lockFailure) (any, *lockFailure) {
 		if err := undo.run(); err != nil {
 			s.log.Printf("desk: an upgrade that did not complete could not put the project back: %v", err)
@@ -706,12 +707,23 @@ func writeFailure(err error) *lockFailure {
 type upgradeUndo struct {
 	s    *Server
 	plan *upgradePlan
-	// made is each folder the upgrade made, outermost first.
-	made []string
+	// made is each folder the upgrade made, outermost first, with the held
+	// folder it was made in.
+	made []upgradeMade
+	// held is each folder the upgrade opened, closed when it is done.
+	held []*os.Root
 	// written is each file the upgrade replaced, in order.
 	written []upgradeWritten
 	// locking is set once the runtime may have written a lock.
 	locking bool
+}
+
+// upgradeMade is a folder the upgrade made: its name in the held folder it
+// was made in, and what it was when it was made.
+type upgradeMade struct {
+	in   *os.Root
+	name string
+	info fs.FileInfo
 }
 
 type upgradeWritten struct {
@@ -720,44 +732,98 @@ type upgradeWritten struct {
 	present bool
 }
 
+// testHookAuditFolderChecked runs after each part of the audit folder's path
+// is checked, or made, and before it is opened; testHookBeforeUpgradePublish
+// runs after a file the upgrade writes is staged and immediately before it is
+// compared again and published. Both are nil outside tests. They are where a
+// test is the writer the desk's mutex knows nothing about.
+var (
+	testHookAuditFolderChecked   func(part string)
+	testHookBeforeUpgradePublish func(name, staged string)
+)
+
 // makeAuditFolder makes `.desk-private` and `.desk-private/audit`
-// owner-only, through the project's root, where they are missing. One that
-// is there and is not a folder, or is a link, is refused.
+// owner-only where they are missing, one held folder at a time.
+//
+// **Through held folders, never by a path.** Each part is looked at, or made,
+// in the folder held open before it, then opened, and what was opened must be
+// what was looked at: a part replaced by a link meanwhile, even one that stays
+// inside the project, is refused, and nothing is made through it. A part that
+// is there and is not a folder, or is a link, is refused too.
 func (u *upgradeUndo) makeAuditFolder() error {
-	for _, part := range []string{".desk-private", deskAuditDir} {
-		info, err := u.s.root.Lstat(part)
-		switch {
-		case errors.Is(err, fs.ErrNotExist):
-			if err := u.s.root.Mkdir(part, custodyDirMode); err != nil {
+	current := u.s.root
+	for _, part := range strings.Split(deskAuditDir, "/") {
+		info, err := current.Lstat(part)
+		if errors.Is(err, fs.ErrNotExist) {
+			if err = current.Mkdir(part, custodyDirMode); err != nil {
 				return err
 			}
-			u.made = append(u.made, part)
-		case err != nil:
+			if info, err = current.Lstat(part); err != nil {
+				return err
+			}
+			u.made = append(u.made, upgradeMade{current, part, info})
+		}
+		if err != nil {
 			return err
-		case !info.IsDir() || info.Mode()&fs.ModeSymlink != 0:
+		}
+		if !info.IsDir() || info.Mode()&fs.ModeSymlink != 0 {
 			return fmt.Errorf("%s is not a folder", part)
 		}
+		if testHookAuditFolderChecked != nil {
+			testHookAuditFolderChecked(part)
+		}
+		next, err := current.OpenRoot(part)
+		if err != nil {
+			return err
+		}
+		u.held = append(u.held, next)
+		if opened, err := next.Stat("."); err != nil || !os.SameFile(info, opened) {
+			return fmt.Errorf("%s changed while it was being opened", part)
+		}
+		current = next
 	}
 	return nil
 }
 
-// write replaces name with after, under the desk's write lock, only where it
-// still holds before (or, where it was absent, is still absent), by the file
-// API's rules for the path.
+// close lets go of the folders the upgrade held.
+func (u *upgradeUndo) close() {
+	for _, root := range u.held {
+		root.Close()
+	}
+}
+
+// write replaces name with after, under the desk's write lock and by the file
+// API's rules for the path, only where it still holds before (or, where it was
+// absent, is still absent).
+//
+// **That is checked after the bytes are staged, immediately before they are
+// published**, and not before: an editor the desk's write mutex knows nothing
+// about can change the file while the bytes are being staged, and checked
+// earlier, that edit was overwritten unseen. A file that no longer holds
+// before is left as it is, and nothing is published.
 func (u *upgradeUndo) write(name string, before []byte, present bool, after []byte) error {
 	u.s.writes.Lock()
 	defer u.s.writes.Unlock()
-	if err := u.s.refuseSymlinkedPath(name); err != nil {
-		return err
+	holds := func() error {
+		if err := u.s.refuseSymlinkedPath(name); err != nil {
+			return err
+		}
+		current, _, err := u.s.readThroughRootWithin(name, reviewTextLimit)
+		switch {
+		case present && (err != nil || !bytes.Equal(current, before)):
+			return errUpgradeMoved
+		case !present && codeOf(err) != CodeNotFound:
+			return errUpgradeMoved
+		}
+		return nil
 	}
-	current, _, err := u.s.readThroughRootWithin(name, reviewTextLimit)
-	switch {
-	case present && (err != nil || !bytes.Equal(current, before)):
-		return errUpgradeMoved
-	case !present && codeOf(err) != CodeNotFound:
-		return errUpgradeMoved
-	}
-	if err := u.s.atomicWrite(name, after); err != nil {
+	err := u.s.atomicWriteChecked(name, after, func(staged string) error {
+		if testHookBeforeUpgradePublish != nil {
+			testHookBeforeUpgradePublish(name, staged)
+		}
+		return holds()
+	})
+	if err != nil {
 		return err
 	}
 	u.written = append(u.written, upgradeWritten{name, before, present})
@@ -765,9 +831,12 @@ func (u *upgradeUndo) write(name string, before []byte, present bool, after []by
 }
 
 // run takes the upgrade back: the previous lock, then each file it wrote,
-// last first, then each folder it made, innermost first. A folder that now
-// holds something the upgrade did not put there is not empty, so it is not
-// removed, and that is said.
+// last first, then each folder it made, innermost first.
+//
+// A folder is removed through the held folder it was made in, and only while
+// it is still the folder the upgrade made: one that was moved, or replaced by
+// a link, is left, and so is one that now holds something the upgrade did not
+// put there, which is not empty. Each is said.
 func (u *upgradeUndo) run() error {
 	var problems []string
 	u.s.writes.Lock()
@@ -794,8 +863,18 @@ func (u *upgradeUndo) run() error {
 	}
 	u.s.writes.Unlock()
 	for i := len(u.made) - 1; i >= 0; i-- {
-		if err := u.s.root.Remove(u.made[i]); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			problems = append(problems, u.made[i]+": "+err.Error())
+		made := u.made[i]
+		info, err := made.in.Lstat(made.name)
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			continue
+		case err == nil && !os.SameFile(info, made.info):
+			err = fmt.Errorf("it is no longer the folder the upgrade made, so it was left")
+		case err == nil:
+			err = made.in.Remove(made.name)
+		}
+		if err != nil {
+			problems = append(problems, made.name+": "+err.Error())
 		}
 	}
 	if len(problems) > 0 {

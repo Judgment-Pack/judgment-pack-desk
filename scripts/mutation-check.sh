@@ -2430,8 +2430,11 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if false {
 		if err := undo.makeAuditFolder(); err != nil {'
   mutate go "upgrade: the audit folder is not owner-only" "$UP" \
-    '			if err := u.s.root.Mkdir(part, custodyDirMode); err != nil {' \
-    '			if err := u.s.root.Mkdir(part, 0o755); err != nil {'
+    '			if err = current.Mkdir(part, custodyDirMode); err != nil {' \
+    '			if err = current.Mkdir(part, 0o755); err != nil {'
+  mutate go "upgrade: the audit folder is opened without checking it is what was looked at" "$UP" \
+    '		if opened, err := next.Stat("."); err != nil || !os.SameFile(info, opened) {' \
+    '		if opened, err := next.Stat("."); err != nil || opened == nil {'
   mutate go "upgrade: the audit folder is planned through a link" "$UP" \
     '			case !info.IsDir() || info.Mode()&fs.ModeSymlink != 0:
 				return unavailable(' \
@@ -2440,11 +2443,40 @@ func (b *cappedBuffer) exceeded() bool {'
   # **Written only over the bytes read; the configuration and the first lock
   # together, or every file put back.**
   mutate go "upgrade: a file is written over bytes it did not read" "$UP" \
-    '	case present && (err != nil || !bytes.Equal(current, before)):' \
-    '	case present && (err != nil || current == nil && false):'
+    '		case present && (err != nil || !bytes.Equal(current, before)):' \
+    '		case present && (err != nil || current == nil && false):'
   mutate go "upgrade: a file is made over one that appeared" "$UP" \
-    '	case !present && codeOf(err) != CodeNotFound:' \
-    '	case false:'
+    '		case !present && codeOf(err) != CodeNotFound:' \
+    '		case false:'
+  mutate go "upgrade: a file is compared before it is staged, not before it is published" "$UP" \
+    '	err := u.s.atomicWriteChecked(name, after, func(staged string) error {
+		if testHookBeforeUpgradePublish != nil {
+			testHookBeforeUpgradePublish(name, staged)
+		}
+		return holds()
+	})' \
+    '	err := holds()
+	if err == nil {
+		err = u.s.atomicWriteChecked(name, after, func(staged string) error {
+			if testHookBeforeUpgradePublish != nil {
+				testHookBeforeUpgradePublish(name, staged)
+			}
+			return nil
+		})
+	}'
+  mutate go "upgrade: a failed audit folder leaves what was made" "$UP" \
+    '			return fail(&lockFailure{http.StatusInternalServerError, CodeInternal, "The audit folder could not be made ("' \
+    '			return nil, (&lockFailure{http.StatusInternalServerError, CodeInternal, "The audit folder could not be made ("'
+  mutate go "upgrade: a failed .gitignore write leaves the audit folder" "$UP" \
+    '		if err := undo.write(gitignoreName, plan.gitignore.before, plan.gitignore.present, plan.gitignore.after); err != nil {
+			return fail(writeFailure(err))' \
+    '		if err := undo.write(gitignoreName, plan.gitignore.before, plan.gitignore.present, plan.gitignore.after); err != nil {
+			return nil, writeFailure(err)'
+  mutate go "upgrade: a failed configuration write leaves what the upgrade wrote" "$UP" \
+    '	if err := undo.write(runtimeConfigName, plan.snap.config, true, plan.upgraded.config); err != nil {
+		return fail(writeFailure(err))' \
+    '	if err := undo.write(runtimeConfigName, plan.snap.config, true, plan.upgraded.config); err != nil {
+		return nil, writeFailure(err)'
   mutate go "upgrade: the lock is not checked against what was shown" "$UP" \
     '			if pinned, _, err := lockedSet(after); err == nil && pinned.equal(plan.upgraded.set) {' \
     '			if _, _, err := lockedSet(after); err == nil {'
@@ -2458,8 +2490,11 @@ func (b *cappedBuffer) exceeded() bool {'
     '			if err = u.s.root.Remove(written.name); errors.Is(err, fs.ErrNotExist) {' \
     '			if err = error(nil); errors.Is(err, fs.ErrNotExist) {'
   mutate go "upgrade: a folder the upgrade made is left" "$UP" \
-    '		if err := u.s.root.Remove(u.made[i]); err != nil && !errors.Is(err, fs.ErrNotExist) {' \
-    '		if err := error(nil); err != nil {'
+    '			err = made.in.Remove(made.name)' \
+    '			err = nil'
+  mutate go "upgrade: a folder is removed by its name, whatever is there now" "$UP" \
+    '		case err == nil && !os.SameFile(info, made.info):' \
+    '		case err == nil && info == nil:'
   # **The first lock is PR C's: its review over the upgraded configuration,
   # the existing lock said, and copies kept.**
   mutate go "upgrade: the first lock's review is of the configuration as it is" "$UP" \

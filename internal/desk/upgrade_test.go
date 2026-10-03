@@ -889,3 +889,131 @@ func TestTheUpgradeGoesThroughNoLink(t *testing.T) {
 		})
 	}
 }
+
+// An editor that changes a file the upgrade writes, after its bytes are
+// staged and before they are published, keeps its edit: the upgrade answers
+// stale, publishes nothing over it, and puts back everything it had written
+// before it, folders included, innermost first. No staging file is left.
+func TestAnEditDuringTheUpgradeWriteIsNotOverwritten(t *testing.T) {
+	for _, name := range []string{"jpack.json", ".gitignore"} {
+		t.Run(name, func(t *testing.T) {
+			_, ts, rig, project := upgradeProject(t, allConfigVersions, "", nil)
+			rig.answers(t, "error")
+			before := treeOf(t, project)
+			answer := readUpgrade(t, ts, "", true)
+			rig.locks(t, upgradeLock(t, project, upgradeAfter, bothPacks))
+			edited := "{\"edited\": \"by someone else\"}\n"
+			staged := false
+			testHookBeforeUpgradePublish = func(target, stagedAt string) {
+				if target != name {
+					return
+				}
+				if _, err := os.Lstat(filepath.Join(project, filepath.FromSlash(stagedAt))); err != nil {
+					t.Errorf("nothing was staged at %s: %v", stagedAt, err)
+				}
+				staged = true
+				writeProject(t, project, map[string]string{name: edited})
+			}
+			t.Cleanup(func() { testHookBeforeUpgradePublish = nil })
+			status, data := confirmUpgrade(t, ts, "", answer.Token, true)
+			if status != http.StatusConflict || !bytes.Contains(data, []byte(`"code":"stale"`)) || !bytes.Contains(data, []byte("every file was put back")) {
+				t.Errorf("the confirmation answered %d %s", status, data)
+			}
+			if !staged {
+				t.Fatal("the hook never ran")
+			}
+			before[name] = treeEntry{mode: before[name].mode, data: edited}
+			sameProject(t, before, treeOf(t, project), "an edit during the write")
+			if n := countCalls(t, rig.calls, "packs lock"); n != 0 {
+				t.Errorf("packs lock ran %d time(s)", n)
+			}
+		})
+	}
+}
+
+// A write that fails outright, after .gitignore and the audit folder were
+// written, puts them back too: the staging file is taken away before the
+// configuration is published, so publishing it fails as a rename does.
+func TestAFailedConfigurationWritePutsBackWhatTheUpgradeWrote(t *testing.T) {
+	_, ts, rig, project := upgradeProject(t, allConfigVersions, "", nil)
+	rig.answers(t, "error")
+	before := treeOf(t, project)
+	answer := readUpgrade(t, ts, "", true)
+	rig.locks(t, upgradeLock(t, project, upgradeAfter, bothPacks))
+	var wrote string
+	testHookBeforeUpgradePublish = func(target, staged string) {
+		if target == runtimeConfigName {
+			wrote = readFile(t, filepath.Join(project, ".gitignore"))
+			if err := os.Remove(filepath.Join(project, filepath.FromSlash(staged))); err != nil {
+				t.Error(err)
+			}
+		}
+	}
+	t.Cleanup(func() { testHookBeforeUpgradePublish = nil })
+	status, data := confirmUpgrade(t, ts, "", answer.Token, true)
+	if status != http.StatusInternalServerError || !bytes.Contains(data, []byte("could not write the project")) || !bytes.Contains(data, []byte("every file was put back")) {
+		t.Errorf("the confirmation answered %d %s", status, data)
+	}
+	if wrote != "node_modules/\n.desk-private/\n" {
+		t.Errorf("when the configuration was published, .gitignore held %q", wrote)
+	}
+	sameProject(t, before, treeOf(t, project), "a failed configuration write")
+}
+
+// The audit folder is made through held folders: `.desk-private` replaced by
+// a link, between being looked at and being opened, is refused, and nothing
+// is made where the link points, even inside the project. A folder the
+// upgrade made and someone moved is not removed by its name either.
+func TestTheAuditFolderIsNotMadeThroughASubstitutedLink(t *testing.T) {
+	for _, existed := range []bool{true, false} {
+		name := "a .desk-private the upgrade made"
+		if existed {
+			name = "a .desk-private that was there"
+		}
+		t.Run(name, func(t *testing.T) {
+			_, ts, rig, project := upgradeProject(t, allConfigVersions, "", map[string]string{"elsewhere/keep": "x"})
+			if existed {
+				if err := os.Mkdir(filepath.Join(project, ".desk-private"), 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			rig.answers(t, "error")
+			answer := readUpgrade(t, ts, "", true)
+			if answer.Audit == nil || answer.Audit.State != "create" {
+				t.Fatalf("the offer answered %+v", answer)
+			}
+			rig.locks(t, upgradeLock(t, project, upgradeAfter, bothPacks))
+			testHookAuditFolderChecked = func(part string) {
+				if part != ".desk-private" {
+					return
+				}
+				if err := os.Rename(filepath.Join(project, ".desk-private"), filepath.Join(project, "moved-aside")); err != nil {
+					t.Error(err)
+				}
+				if err := os.Symlink("elsewhere", filepath.Join(project, ".desk-private")); err != nil {
+					t.Error(err)
+				}
+			}
+			t.Cleanup(func() { testHookAuditFolderChecked = nil })
+			status, data := confirmUpgrade(t, ts, "", answer.Token, true)
+			if status == http.StatusOK {
+				t.Fatalf("the confirmation answered %d %s", status, data)
+			}
+			if _, err := os.Lstat(filepath.Join(project, "elsewhere", "audit")); !os.IsNotExist(err) {
+				t.Errorf("the audit folder was made through the link: %v", err)
+			}
+			if info, err := os.Lstat(filepath.Join(project, ".desk-private")); err != nil || info.Mode()&os.ModeSymlink == 0 {
+				t.Errorf("the link was removed by the upgrade's name for its folder: %v", err)
+			}
+			if !existed && !bytes.Contains(data, []byte("could not be put back")) {
+				t.Errorf("a folder the upgrade made and could not remove was not said: %s", data)
+			}
+			if readFile(t, filepath.Join(project, "jpack.json")) != upgradeBefore || readFile(t, filepath.Join(project, ".gitignore")) != "node_modules/\n" {
+				t.Error("a file was written")
+			}
+			if n := countCalls(t, rig.calls, "packs lock"); n != 0 {
+				t.Errorf("packs lock ran %d time(s)", n)
+			}
+		})
+	}
+}
