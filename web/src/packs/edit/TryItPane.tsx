@@ -12,8 +12,10 @@ import { msg, useLocale } from '../../i18n'
  *
  * - **A text pack never touches the reviewed set.** `applied` is built only
  *   where a `pack_id` was supplied, and the consult is gated on `applied`
- *   being non-empty, so a draft run is `lock.DraftRun` — never refused for
- *   being unlocked, and proving nothing about a recorded decision.
+ *   being non-empty, so a deciding run of one is `lock.DraftRun`: refused as
+ *   a draft under `requireReviewed` (runtime 0.24.0 and later), and proving
+ *   nothing about a recorded decision without it. A rehearsal consults no
+ *   reviewed set, so neither applies where the declaration below is sent.
  * - **The audit writer runs for every call, including a text pack.** Only
  *   `rehearsal: true` suppresses the record. So the declaration is sent
  *   wherever the connected runtime advertises the argument, and where it does

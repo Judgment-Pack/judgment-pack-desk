@@ -15,6 +15,7 @@ import { McpContext, type McpConnection } from '../mcp/McpProvider'
 import { SHORTCUTS } from '../shell/shortcuts'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { HelpAbout } from './HelpAbout'
+import { outsideAgentCommand } from './GatesHelp'
 
 afterEach(cleanup)
 
@@ -169,5 +170,33 @@ describe('Help & About', () => {
     expect(screen.getByText('One owner per local Desk. Source connections are managed separately.')).toBeTruthy()
     expect(screen.getByText(/jpack-desk --reset-sign-in/)).toBeTruthy()
     expect(screen.queryByText(/session token/)).toBeNull()
+  })
+
+  it('says what each gate holds and whom it binds, with the command for an outside agent', () => {
+    renderHelp(stubClient(PACKS), {}, effectiveConfig(undefined, undefined, undefined, {
+      path: '/config/desk.json', present: false,
+      chassis: { projectDir: '/desks/a desk', projectFile: '/desks/a desk/jpack-desk.json', runtimeBin: '/opt/jpack/bin/jpack', jobs: { requireTestedReleases: true } }
+    }))
+    const gates = document.getElementById('gates')!.closest('section')!
+    for (const words of ['Reviewed set.', 'Records.', 'Comparable facts.', 'In Desk itself.', 'Who is bound.', 'An outside agent.']) {
+      expect(gates.textContent).toContain(words)
+    }
+    expect(gates.textContent).toContain('it is never refused for a draft, and never recorded')
+    expect(gates.textContent).toContain('This holds only as far as the agent’s client really withholds those tools')
+    expect(gates.textContent).toContain("JPACK_CONFIG='/desks/a desk/jpack.json' /opt/jpack/bin/jpack mcp")
+    expect(gates.textContent).toContain('This installation refuses a job from a release whose saved tests were not run.')
+    cleanup()
+
+    renderHelp(stubClient(PACKS), {}, effectiveConfig(undefined, undefined, undefined, {
+      path: '/config/desk.json', present: false,
+      chassis: { projectDir: '/p', projectFile: '/p/jpack-desk.json', runtimeBin: '/bin/jpack', jobs: { requireTestedReleases: false } }
+    }))
+    expect(document.getElementById('gates')!.closest('section')!.textContent).toContain('This installation allows a job from a release whose saved tests were not run, because Desk was started with --runner-require-tested-releases=false.')
+  })
+
+  it('quotes the command for a shell, and stands in for what Desk has not said', () => {
+    expect(outsideAgentCommand('/desks/abc/', '/usr/bin/jpack')).toBe('JPACK_CONFIG=/desks/abc/jpack.json /usr/bin/jpack mcp')
+    expect(outsideAgentCommand("/it's here", 'jpack')).toBe("JPACK_CONFIG='/it'\\''s here/jpack.json' jpack mcp")
+    expect(outsideAgentCommand(undefined, undefined)).toBe('JPACK_CONFIG=/absolute/path/to/the/desk/jpack.json jpack mcp')
   })
 })

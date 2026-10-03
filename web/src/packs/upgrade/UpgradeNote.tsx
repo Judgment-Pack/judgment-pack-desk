@@ -10,6 +10,7 @@
  */
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { msg, systemMessage, useLocale } from '../../i18n'
 import { Button, ButtonLink } from '../../ui/Button'
 import { SettingsSection } from '../../ui/SettingsSection'
@@ -72,6 +73,7 @@ export function ProjectGates() {
                 <p>{gatesSay(upgrade)}</p>
                 {upgrade.comparableFacts === 'off' && <div><ButtonLink to="/packs/_upgrade">{msg('Review turning requireComparableFacts on')}</ButtonLink></div>}
               </>}
+      <p className={styles.quiet}><Link to="/help#gates">{msg('What each gate holds, and whom it binds')}</Link></p>
     </div>
   </SettingsSection>
 }

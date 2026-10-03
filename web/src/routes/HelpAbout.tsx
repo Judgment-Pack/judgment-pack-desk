@@ -29,6 +29,7 @@ import { Button } from '../ui/Button'
 import { useDiagnostics } from '../shell/Diagnostics'
 import { SHORTCUTS } from '../shell/shortcuts'
 import { useHashTarget } from '../shell/useHashTarget'
+import { GatesHelp } from './GatesHelp'
 
 const REPO = 'https://github.com/Judgment-Pack/judgment-pack-desk'
 
@@ -122,6 +123,8 @@ export function HelpAbout() {
           <p className="loading" id="authoring-method">{msg("Loading the runtime's authoring prompt…")}</p>
         )}
       </Section>
+
+      <GatesHelp />
 
       <Section title={msg("Security")}>
         <p className="quiet" id="security">{msg('One owner per local Desk. Source connections are managed separately.')}</p>

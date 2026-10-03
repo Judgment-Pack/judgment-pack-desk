@@ -2,12 +2,11 @@
  * The lock line, and the far more important thing beside it: everything this
  * page will not say.
  *
- * **No tool reports lock state.** None of the runtime's answers carries a lock
- * member, the Evaluation payload does not either, and `packs lock` is a CLI
- * verb (ADR-0019). So the desk cannot know whether this pack is in the reviewed
- * set, whether the set is current, or whether saving takes it out — and it must
- * not compute any of the three, because each would be a verdict dressed as a
- * fact.
+ * **The editor computes no lock state.** Whether this pack is in the reviewed
+ * set is the runtime's `packs verify` to say, and Desk shows that answer on
+ * Packs and in Review and lock, where the lock is also updated. This page does
+ * not say whether the pack is in the set, or whether saving takes it out: each
+ * would be a verdict dressed as a fact.
  *
  * What it can see is that `jpack.lock.json` is in the file listing. That is a
  * fact about the project, and it is all this says.
@@ -111,8 +110,8 @@ describe('what this page will not say', () => {
     ]) {
       expect(words.toLowerCase(), forbidden).not.toContain(forbidden)
     }
-    // What it does say is one sentence about the project and one about whose
-    // step updating it is.
-    expect(words).toContain('Updating it is the project’s own step.')
+    // What it does say is one sentence about the project and one about where
+    // the set is reviewed and updated.
+    expect(words).toContain('Review and lock, on Packs, shows what the runtime finds and updates it.')
   })
 })
