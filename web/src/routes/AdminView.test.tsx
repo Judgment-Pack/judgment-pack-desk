@@ -901,6 +901,15 @@ describe('the Project section', () => {
     expect(page(container).querySelector('form')).toBeNull()
   })
 
+  it('carries the decision record beside the gates, in the open section (ADR-0010)', () => {
+    renderAdmin()
+    const gates = screen.getByRole('heading', { name: 'Gates' })
+    const record = screen.getByRole('heading', { name: 'Decision record' })
+    expect(gates.compareDocumentPosition(record) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(record.closest('[hidden]')).toBeNull()
+    expect(document.getElementById('project')!.closest('[hidden]')).toBeNull()
+  })
+
   it('carries exactly the state-changing controls it names, and no others', () => {
     // The whole list rather than a count, so a control cannot be added without
     // appearing here. This section offers one, and it is the nomination: it has

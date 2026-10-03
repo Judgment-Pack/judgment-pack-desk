@@ -332,8 +332,15 @@ func lockedSet(data []byte) (reviewSet, lockDocument, error) {
 // The directory is marked as the startup desk's where it is, so the commands
 // keep the owner's inherited `JPACK_SIGNING_KEY` there, and only there.
 func (s *Server) reviewRuntime() (heldDir, string) {
+	return s.projectRuntime("This desk holds no project to review.", "review or lock it")
+}
+
+// projectRuntime is reviewRuntime for any command Desk runs over this desk's
+// project: the same directory, and the same refusal, in which none says why
+// there is no project and doing says what Desk does not do there.
+func (s *Server) projectRuntime(none, doing string) (heldDir, string) {
 	if s.project == nil || s.project.own == nil {
-		return heldDir{}, "This desk holds no project to review."
+		return heldDir{}, none
 	}
 	dir := heldDir{file: s.project.own.dirFile, path: s.projectDir, info: s.project.info, startup: s.cfg.deskID == ""}
 	if s.cfg.deskID != "" {
@@ -343,7 +350,7 @@ func (s *Server) reviewRuntime() (heldDir, string) {
 	if named == "" || configNamesProject(named, s.projectDir, s.project.info) {
 		return dir, ""
 	}
-	return dir, fmt.Sprintf("This project's runtime reads %s, which JPACK_CONFIG names, and not this project's %s, so Desk does not review or lock it here.", named, runtimeConfigName)
+	return dir, fmt.Sprintf("This project's runtime reads %s, which JPACK_CONFIG names, and not this project's %s, so Desk does not %s here.", named, runtimeConfigName, doing)
 }
 
 // configNamesProject reports whether a JPACK_CONFIG value names the
