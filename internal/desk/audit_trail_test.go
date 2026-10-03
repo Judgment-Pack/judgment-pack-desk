@@ -217,8 +217,12 @@ func TestATrailReachedThroughALinkIsRefused(t *testing.T) {
 		config := strings.Replace(auditedConfig, `".desk-private/audit"`, strconv.Quote(dir), 1)
 		ts, _, _, _ := trailDesk(t, config)
 		status, _, body := download(t, ts, "", "file=evaluations")
-		if status != http.StatusForbidden || !strings.Contains(refusalOf(body), "is not a folder inside the project that Desk reads, so Desk does not read it") || bytes.Contains(body, []byte("elsewhere")) {
+		if status != http.StatusForbidden || refusalOf(body) != "The audit directory that jpack.json declares, audit.dir, is not a folder inside the project that Desk reads, so Desk does not read it." || bytes.Contains(body, []byte("elsewhere")) {
 			t.Errorf("an audit directory at %q: answered %d %q", dir, status, body)
+		}
+		// It names the setting, and never quotes its value.
+		if bytes.Contains(body, []byte(filepath.Base(outside))) || bytes.Contains(body, []byte(`\..`)) {
+			t.Errorf("the refusal of an audit directory at %q quotes it: %s", dir, body)
 		}
 	}
 
@@ -241,14 +245,14 @@ func TestAMissingTrailFileIsSaidToBeMissing(t *testing.T) {
 	ts, _, _, audit := trailDesk(t, auditedConfig)
 	for which, name := range auditTrailFiles {
 		status, _, body := download(t, ts, "", "file="+which)
-		if status != http.StatusNotFound || refusalOf(body) != "There is no "+name+" in this project's audit directory, .desk-private/audit." {
+		if status != http.StatusNotFound || refusalOf(body) != "There is no "+name+" in this project's audit directory." {
 			t.Errorf("%s: answered %d %q", which, status, body)
 		}
 	}
 	if err := os.WriteFile(filepath.Join(audit, "signatures.jsonl"), []byte("{}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if status, _, body := download(t, ts, "", "file=signatures"); status != http.StatusConflict || refusalOf(body) != "The signature sidecar is read under the trail's lock, and there is no evaluations.jsonl beside it in .desk-private/audit." {
+	if status, _, body := download(t, ts, "", "file=signatures"); status != http.StatusConflict || refusalOf(body) != "The signature sidecar is read under the trail's lock, and there is no evaluations.jsonl beside it." {
 		t.Errorf("a sidecar with no trail: answered %d %q", status, body)
 	}
 	os.RemoveAll(filepath.Dir(audit))
@@ -388,13 +392,203 @@ func TestNoTrailIsHandedOverWithoutTheLock(t *testing.T) {
 	}{
 		{syscall.EOPNOTSUPP, http.StatusNotImplemented, "Desk can take no lock on evaluations.jsonl here, so it cannot read it between two writes, and does not hand it over."},
 		{syscall.ENOSYS, http.StatusNotImplemented, "Desk can take no lock on evaluations.jsonl here, so it cannot read it between two writes, and does not hand it over."},
-		{syscall.ENOLCK, http.StatusInternalServerError, "evaluations.jsonl could not be read: "},
+		{syscall.ENOLCK, http.StatusInternalServerError, "evaluations.jsonl could not be read. Desk's log says why."},
 	} {
 		flockAudit = func(*os.File, int) error { return tc.answer }
 		status, _, body := download(t, ts, "", "file=evaluations")
 		if status != tc.status || !strings.HasPrefix(refusalOf(body), tc.says) || bytes.Contains(body, []byte("kept")) {
 			t.Errorf("flock answering %v: answered %d %q", tc.answer, status, body)
 		}
+	}
+}
+
+// **A file with another name is not handed over.** A hard link puts a file
+// from anywhere on the same file system under one of the runtime's names,
+// with none of the links a walk can see; each of the three, and the trail
+// read only for its lock when the sidecar is asked for, is refused, and none
+// of its bytes is served, nor offered by the panel.
+func TestAHardLinkedFileIsRefused(t *testing.T) {
+	t.Setenv("JPACK_CONFIG", "")
+	elsewhere := t.TempDir()
+	secret := filepath.Join(elsewhere, "secret.jsonl")
+	if err := os.WriteFile(secret, []byte("{\"elsewhere\":true}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for which, name := range auditTrailFiles {
+		ts, rig, _, audit := trailDesk(t, auditedConfig)
+		for _, other := range []string{"evaluations.jsonl", "signatures.jsonl", "stamps.jsonl"} {
+			if other != name {
+				if err := os.WriteFile(filepath.Join(audit, other), []byte("{}\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		if err := os.Link(secret, filepath.Join(audit, name)); err != nil {
+			t.Skip(err)
+		}
+		status, _, body := download(t, ts, "", "file="+which)
+		if status != http.StatusForbidden || refusalOf(body) != name+" in this project's audit directory, or the trail it is read beside, has another name as well, a hard link, so Desk does not hand it over." || bytes.Contains(body, []byte("elsewhere")) {
+			t.Errorf("%s hard-linked from outside: answered %d %q", which, status, body)
+		}
+		rig.answers(t, 0, auditValidReport)
+		if _, answer, _ := readAudit(t, ts, ""); slices.Contains(answer.Files, which) || len(answer.Files) != 2 {
+			t.Errorf("the panel offers %q with %s hard-linked", answer.Files, which)
+		}
+	}
+	// The trail the sidecar is read beside, hard-linked, refuses the sidecar.
+	ts, _, _, audit := trailDesk(t, auditedConfig)
+	if err := os.WriteFile(filepath.Join(audit, "signatures.jsonl"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(secret, filepath.Join(audit, "evaluations.jsonl")); err != nil {
+		t.Fatal(err)
+	}
+	if status, _, body := download(t, ts, "", "file=signatures"); status != http.StatusForbidden || !strings.Contains(refusalOf(body), "has another name as well, a hard link") {
+		t.Errorf("a sidecar beside a hard-linked trail: answered %d %q", status, body)
+	}
+}
+
+// appendLocked appends line to target as the runtime's writer does: under
+// flock's exclusive lock on lock. It reports, and does not fail, so that a
+// test's stand-in can call it from the server's goroutine.
+func appendLocked(lock, target, line string) error {
+	held, err := os.OpenFile(lock, os.O_RDWR, 0)
+	if err != nil {
+		return err
+	}
+	defer held.Close()
+	if err := syscall.Flock(int(held.Fd()), syscall.LOCK_EX); err != nil {
+		return err
+	}
+	defer syscall.Flock(int(held.Fd()), syscall.LOCK_UN)
+	file, err := os.OpenFile(target, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	_, err = file.WriteString(line)
+	return err
+}
+
+// **The size is read before the lock is let go.** At the moment the download
+// releases its shared lock, a writer that was waiting for it takes the lock
+// and appends a whole line. The bytes served are the ones the size read under
+// the lock covered, without that line, for each file under its own writer's
+// lock.
+func TestTheSizeIsReadBeforeTheLockIsLetGo(t *testing.T) {
+	t.Setenv("JPACK_CONFIG", "")
+	defer func(previous func(*os.File, int) error) { flockAudit = previous }(flockAudit)
+	real := flockAudit
+	for _, tc := range []struct{ which, lock string }{
+		{"evaluations", "evaluations.jsonl"},
+		{"signatures", "evaluations.jsonl"},
+		{"stamps", "stamps.jsonl"},
+	} {
+		ts, _, _, audit := trailDesk(t, auditedConfig)
+		before := `{"line":1}` + "\n"
+		for _, name := range []string{"evaluations.jsonl", "signatures.jsonl", "stamps.jsonl"} {
+			if err := os.WriteFile(filepath.Join(audit, name), []byte(before), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		target := filepath.Join(audit, auditTrailFiles[tc.which])
+		var appended error
+		flockAudit = func(file *os.File, how int) error {
+			err := real(file, how)
+			if how == syscall.LOCK_UN {
+				appended = appendLocked(filepath.Join(audit, tc.lock), target, `{"line":2}`+"\n")
+			}
+			return err
+		}
+		status, _, body := download(t, ts, "", "file="+tc.which)
+		flockAudit = real
+		if appended != nil {
+			t.Fatal(appended)
+		}
+		if status != http.StatusOK || string(body) != before {
+			t.Errorf("%s: served %d %q, want only what was there under the lock, %q", tc.which, status, body, before)
+		}
+		if onDisk, _ := os.ReadFile(target); string(onDisk) != before+`{"line":2}`+"\n" {
+			t.Errorf("%s: the writer did not append: %q", tc.which, onDisk)
+		}
+	}
+}
+
+// **What is opened is what was looked at.** Another regular file renamed onto
+// one of the three names, or another folder onto the audit directory's, in
+// the moment between looking and opening, is refused, and none of its bytes
+// is served.
+func TestAFileOrFolderSwappedWhileOpeningIsRefused(t *testing.T) {
+	t.Setenv("JPACK_CONFIG", "")
+	defer func() { testHookAuditBetween = nil }()
+	for which, name := range auditTrailFiles {
+		ts, _, _, audit := trailDesk(t, auditedConfig)
+		for _, each := range []string{"evaluations.jsonl", "signatures.jsonl", "stamps.jsonl"} {
+			if err := os.WriteFile(filepath.Join(audit, each), []byte("{}\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		swapped := false
+		testHookAuditBetween = func(at string) {
+			if at != name || swapped {
+				return
+			}
+			swapped = true
+			other := filepath.Join(audit, "other.jsonl")
+			if os.WriteFile(other, []byte("{\"swapped\":true}\n"), 0o600) != nil || os.Rename(other, filepath.Join(audit, name)) != nil {
+				panic("could not swap the file")
+			}
+		}
+		status, _, body := download(t, ts, "", "file="+which)
+		testHookAuditBetween = nil
+		if !swapped || status != http.StatusConflict || refusalOf(body) != "The way to "+name+" in this project's audit directory changed while Desk was opening it. Try again." || bytes.Contains(body, []byte("swapped")) {
+			t.Errorf("%s swapped while opening: answered %d %q", which, status, body)
+		}
+	}
+
+	ts, _, project, audit := trailDesk(t, auditedConfig)
+	if err := os.WriteFile(filepath.Join(audit, "evaluations.jsonl"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	swapped := false
+	testHookAuditBetween = func(at string) {
+		if at != "audit" || swapped {
+			return
+		}
+		swapped = true
+		if os.Rename(audit, filepath.Join(project, ".desk-private", "kept")) != nil || os.Mkdir(audit, 0o700) != nil ||
+			os.WriteFile(filepath.Join(audit, "evaluations.jsonl"), []byte("{\"swapped\":true}\n"), 0o600) != nil {
+			panic("could not swap the folder")
+		}
+	}
+	status, _, body := download(t, ts, "", "file=evaluations")
+	testHookAuditBetween = nil
+	if !swapped || status != http.StatusConflict || refusalOf(body) != "The way to evaluations.jsonl in this project's audit directory changed while Desk was opening it. Try again." || bytes.Contains(body, []byte("swapped")) {
+		t.Errorf("the audit folder swapped while opening: answered %d %q", status, body)
+	}
+}
+
+// **An error names no configured path.** A folder on the way the desk may not
+// read is a failure Desk did not foresee; its answer names the file and
+// leaves the rest to Desk's log, which the audit directory's value is not
+// quoted in.
+func TestAnUnforeseenFailureQuotesNoPath(t *testing.T) {
+	t.Setenv("JPACK_CONFIG", "")
+	if os.Geteuid() == 0 {
+		t.Skip("a folder closed to its owner is open to root")
+	}
+	ts, _, project, audit := trailDesk(t, auditedConfig)
+	if err := os.WriteFile(filepath.Join(audit, "evaluations.jsonl"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	private := filepath.Join(project, ".desk-private")
+	if err := os.Chmod(private, 0); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(private, 0o700)
+	status, _, body := download(t, ts, "", "file=evaluations")
+	if status != http.StatusInternalServerError || refusalOf(body) != "evaluations.jsonl could not be read. Desk's log says why." || bytes.Contains(body, []byte(".desk-private")) || bytes.Contains(body, []byte(project)) {
+		t.Errorf("a folder Desk may not read: answered %d %q", status, body)
 	}
 }
 

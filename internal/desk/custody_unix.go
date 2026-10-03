@@ -24,6 +24,15 @@ func ownerOf(info fs.FileInfo) (uint32, bool) {
 	return stat.Uid, true
 }
 
+// linkCount answers how many names an already-stat'ed file has.
+func linkCount(info fs.FileInfo) (uint64, bool) {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, false
+	}
+	return uint64(stat.Nlink), true
+}
+
 // openNoFollow refuses to traverse a symbolic link as the final component.
 //
 // `os.Root` confines a symlink to the root; it does **not** refuse one. A link

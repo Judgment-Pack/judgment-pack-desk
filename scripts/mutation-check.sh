@@ -2388,6 +2388,26 @@ func (b *cappedBuffer) exceeded() bool {'
 			return nil, err' \
     '		default:
 			return func() {}, nil'
+  mutate go "trail: a hard link is served" "$AT" \
+    '	} else if links != 1 {' \
+    '	} else if links < 1 {'
+  mutate go "trail: the size is read after the lock is let go" "$AT" \
+    '	info, err := file.Stat()
+	unlock()' \
+    '	unlock()
+	info, err := file.Stat()'
+  mutate go "trail: a file swapped while opening is served" "$AT" \
+    '	if err != nil || !os.SameFile(info, opened) {' \
+    '	if err != nil {'
+  mutate go "trail: a folder swapped while opening is used" "$AT" \
+    '			if held, statErr := next.Stat("."); statErr != nil || !os.SameFile(info, held) {' \
+    '			if _, statErr := next.Stat("."); statErr != nil {'
+  mutate go "trail: the outside refusal quotes audit.dir" "$AT" \
+    '"The audit directory that jpack.json declares, audit.dir, is not a folder inside the project that Desk reads, so Desk does not read it.")' \
+    'fmt.Sprintf("The audit directory %q that jpack.json declares is not a folder inside the project that Desk reads, so Desk does not read it.", dir))'
+  mutate go "trail: an unforeseen failure is quoted" "$AT" \
+    '	return http.StatusInternalServerError, CodeInternal, fmt.Sprintf("%s could not be read. Desk'"'"'s log says why.", name)' \
+    '	return http.StatusInternalServerError, CodeInternal, fmt.Sprintf("%s could not be read: %v.", name, err)'
   mutate go "trail: a linked trail is followed" "$AT" \
     '	info, err := dir.Lstat(name)' \
     '	info, err := dir.Stat(name)'

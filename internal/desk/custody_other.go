@@ -25,4 +25,7 @@ var connectionRefused = errors.New("connection refused")
 
 func ownerOf(fs.FileInfo) (uint32, bool) { return 0, false }
 
+// linkCount cannot be answered here either.
+func linkCount(fs.FileInfo) (uint64, bool) { return 0, false }
+
 var effectiveUser = func() uint32 { return 0 }

@@ -13,9 +13,15 @@ package desk
 // is the one `jpack.json` declares, and one that leaves the project is
 // refused. Each directory on the way is opened as a root of its own, and must
 // be the directory, not a link, that was looked at; the file must be a
-// regular file, not a link, and the one that was looked at. The file API
-// refuses `.desk-private`, so this is the one route that reads there, and it
-// reads only these three names.
+// regular file, not a link, the one that was looked at, and have no other
+// name: a hard link puts a file from anywhere on the same file system under
+// one of these names, and a link count of one is what says it is not one. The
+// file API refuses `.desk-private`, so this is the one route that reads there,
+// and it reads only these three names.
+//
+// **A refusal never quotes a configured path.** It names `audit.dir` or
+// JPACK_CONFIG, and why, and not the value; an error says the project's
+// folder and the runtime by name. The log keeps the whole error.
 //
 // **Read between two writes, under the runtime's own locks.** The runtime's
 // writer appends to the trail, and to the sidecar in step with it, while it
@@ -25,9 +31,11 @@ package desk
 // shared lock on the trail for the trail and the sidecar, and the shared lock
 // on the stamps file for the stamps: the size, read under it; the lock
 // released; and exactly that many bytes streamed from the same descriptor.
-// (The verifier reads the stamps under the trail's lock and counts a line a
-// write left incomplete as unreadable; a download hands over whole lines.)
-// Writers only append, so those bytes do not change while they are read.
+// The lock keeps the size from cutting an append in progress. It does not
+// mend what is already on disk: a last line a write left incomplete before,
+// which the runtime reports as a torn line, is served as it is, with every
+// other byte. Writers only append, so those bytes do not change while they
+// are read.
 //
 // **Where no such lock can be taken, nothing is handed over.** The runtime
 // takes `flock` on Darwin, Dragonfly, FreeBSD, Linux, NetBSD and OpenBSD, and
@@ -71,14 +79,22 @@ var auditTrailOrder = []string{"evaluations", "signatures", "stamps"}
 // so a test can see a lock held too long refused without waiting it out.
 var auditLockWait = 10 * time.Second
 
+// testHookAuditBetween runs between looking at a name in the audit directory
+// and opening it, the directories on the way included, and is nil outside
+// tests. It lets a test put another file or folder under the name in that
+// moment.
+var testHookAuditBetween func(name string)
+
 var (
-	errAuditNoLock    = errors.New("no lock can be taken on this file here")
-	errAuditLockBusy  = errors.New("a writer held the lock for too long")
-	errAuditLinked    = errors.New("passes through a symbolic link")
-	errAuditNotAFile  = errors.New("is not a regular file")
-	errAuditNoTrail   = errors.New("there is no trail beside it")
-	errAuditOutside   = errors.New("is outside the project")
-	errAuditUnchecked = errors.New("changed while it was being opened")
+	errAuditHardLinked   = errors.New("has more than one name")
+	errAuditLinksUnknown = errors.New("cannot say how many names it has")
+	errAuditNoLock       = errors.New("no lock can be taken on this file here")
+	errAuditLockBusy     = errors.New("a writer held the lock for too long")
+	errAuditLinked       = errors.New("passes through a symbolic link")
+	errAuditNotAFile     = errors.New("is not a regular file")
+	errAuditNoTrail      = errors.New("there is no trail beside it")
+	errAuditOutside      = errors.New("is outside the project")
+	errAuditUnchecked    = errors.New("changed while it was being opened")
 )
 
 // auditTrailRequest reads the one thing a download may ask: `file`, once,
@@ -133,6 +149,9 @@ func (s *Server) openAuditDir(parts []string) (*os.Root, error) {
 		}
 		var next *os.Root
 		if err == nil {
+			if testHookAuditBetween != nil {
+				testHookAuditBetween(part)
+			}
 			next, err = current.OpenRoot(part)
 		}
 		if err == nil {
@@ -151,7 +170,7 @@ func (s *Server) openAuditDir(parts []string) (*os.Root, error) {
 }
 
 // openAuditFile opens one file in the audit directory for reading: a regular
-// file, not a link, and the file that was looked at.
+// file, not a link, the file that was looked at, and with no other name.
 func openAuditFile(dir *os.Root, name string) (*os.File, error) {
 	info, err := dir.Lstat(name)
 	if err != nil {
@@ -163,6 +182,9 @@ func openAuditFile(dir *os.Root, name string) (*os.File, error) {
 	if !info.Mode().IsRegular() {
 		return nil, errAuditNotAFile
 	}
+	if testHookAuditBetween != nil {
+		testHookAuditBetween(name)
+	}
 	file, err := dir.OpenFile(name, os.O_RDONLY|openNoFollow|openNonBlocking, 0)
 	if err != nil {
 		return nil, err
@@ -171,6 +193,13 @@ func openAuditFile(dir *os.Root, name string) (*os.File, error) {
 	if err != nil || !os.SameFile(info, opened) {
 		file.Close()
 		return nil, errAuditUnchecked
+	}
+	if links, known := linkCount(opened); !known {
+		file.Close()
+		return nil, errAuditLinksUnknown
+	} else if links != 1 {
+		file.Close()
+		return nil, errAuditHardLinked
 	}
 	return file, nil
 }
@@ -262,7 +291,7 @@ func (s *Server) handleAuditTrail(w http.ResponseWriter, r *http.Request) {
 	}
 	dir, declared, err := s.projectAuditDir()
 	if err != nil {
-		writeJSONCoded(w, http.StatusInternalServerError, CodeInternal, "The trail could not be read: "+strings.TrimRight(err.Error(), ".")+".")
+		writeJSONCoded(w, http.StatusInternalServerError, CodeInternal, "The trail could not be read: "+strings.TrimRight(s.withoutPaths(err.Error()), ".")+".")
 		return
 	}
 	if !declared {
@@ -271,7 +300,7 @@ func (s *Server) handleAuditTrail(w http.ResponseWriter, r *http.Request) {
 	}
 	parts, err := auditDirParts(dir)
 	if err != nil {
-		writeJSONCoded(w, http.StatusForbidden, CodeOutsideRoot, fmt.Sprintf("The audit directory %q that jpack.json declares is not a folder inside the project that Desk reads, so Desk does not read it.", dir))
+		writeJSONCoded(w, http.StatusForbidden, CodeOutsideRoot, "The audit directory that jpack.json declares, audit.dir, is not a folder inside the project that Desk reads, so Desk does not read it.")
 		return
 	}
 	root, err := s.openAuditDir(parts)
@@ -281,7 +310,10 @@ func (s *Server) handleAuditTrail(w http.ResponseWriter, r *http.Request) {
 		snapshot, err = snapshotAuditFile(r.Context(), root, which)
 	}
 	if err != nil {
-		status, code, message := auditTrailRefusal(err, dir, name)
+		status, code, message := auditTrailRefusal(err, name)
+		if status == http.StatusInternalServerError {
+			s.log.Printf("desk: %s could not be read: %v", name, err)
+		}
 		writeJSONCoded(w, status, code, message)
 		return
 	}
@@ -297,23 +329,28 @@ func (s *Server) handleAuditTrail(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(w, io.NewSectionReader(snapshot.file, 0, snapshot.size))
 }
 
-// auditTrailRefusal is what a download that could not be made says.
-func auditTrailRefusal(err error, dir, name string) (int, string, string) {
+// auditTrailRefusal is what a download that could not be made says. It names
+// the file and the setting, never the audit directory's value.
+func auditTrailRefusal(err error, name string) (int, string, string) {
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		return http.StatusNotFound, CodeNotFound, fmt.Sprintf("There is no %s in this project's audit directory, %s.", name, dir)
+		return http.StatusNotFound, CodeNotFound, fmt.Sprintf("There is no %s in this project's audit directory.", name)
 	case errors.Is(err, errAuditLinked):
-		return http.StatusForbidden, CodeSymlink, fmt.Sprintf("The way to %s in %s passes through a symbolic link, so Desk does not read it.", name, dir)
+		return http.StatusForbidden, CodeSymlink, fmt.Sprintf("The way to %s in this project's audit directory passes through a symbolic link, so Desk does not read it.", name)
 	case errors.Is(err, errAuditNotAFile):
-		return http.StatusForbidden, CodeNotAFile, fmt.Sprintf("The way to %s in %s is not a folder and a regular file, so Desk does not read it.", name, dir)
+		return http.StatusForbidden, CodeNotAFile, fmt.Sprintf("The way to %s in this project's audit directory is not a folder and a regular file, so Desk does not read it.", name)
+	case errors.Is(err, errAuditHardLinked):
+		return http.StatusForbidden, CodeForbidden, fmt.Sprintf("%s in this project's audit directory, or the trail it is read beside, has another name as well, a hard link, so Desk does not hand it over.", name)
+	case errors.Is(err, errAuditLinksUnknown):
+		return http.StatusNotImplemented, CodeInternal, fmt.Sprintf("Desk cannot tell here whether %s has another name, a hard link, so it does not hand it over.", name)
 	case errors.Is(err, errAuditUnchecked):
-		return http.StatusConflict, CodeStale, fmt.Sprintf("The way to %s in %s changed while Desk was opening it. Try again.", name, dir)
+		return http.StatusConflict, CodeStale, fmt.Sprintf("The way to %s in this project's audit directory changed while Desk was opening it. Try again.", name)
 	case errors.Is(err, errAuditNoTrail):
-		return http.StatusConflict, CodeNotFound, fmt.Sprintf("The signature sidecar is read under the trail's lock, and there is no evaluations.jsonl beside it in %s.", dir)
+		return http.StatusConflict, CodeNotFound, "The signature sidecar is read under the trail's lock, and there is no evaluations.jsonl beside it."
 	case errors.Is(err, errAuditNoLock):
 		return http.StatusNotImplemented, CodeInternal, fmt.Sprintf("Desk can take no lock on %s here, so it cannot read it between two writes, and does not hand it over. Copy it while no runtime writes to this project.", name)
 	case errors.Is(err, errAuditLockBusy):
 		return http.StatusServiceUnavailable, CodeInternal, fmt.Sprintf("A runtime held the lock on %s for longer than %s. Try again.", name, auditLockWait)
 	}
-	return http.StatusInternalServerError, CodeInternal, fmt.Sprintf("%s could not be read: %s.", name, strings.TrimRight(err.Error(), "."))
+	return http.StatusInternalServerError, CodeInternal, fmt.Sprintf("%s could not be read. Desk's log says why.", name)
 }

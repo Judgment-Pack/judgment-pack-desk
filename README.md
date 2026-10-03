@@ -294,17 +294,24 @@ Beside the report, the panel offers a download of each of the runtime's own
 files the audit directory holds: `evaluations.jsonl`, `signatures.jsonl` and
 `stamps.jsonl` (`GET /api/audit/trail?file=evaluations`, `signatures` or
 `stamps`; any other request is refused). Desk opens the file through the
-project's root, refusing a link anywhere on the way and an audit directory
-outside the project. For the trail and its sidecar it takes the shared `flock`
-on the trail, which the runtime's writer takes exclusively while it appends to
-both and its verifier takes shared; for the stamps, the shared `flock` on
-`stamps.jsonl`, which the stamps' own writer takes. It reads the size, releases
-the lock, and streams exactly that many bytes, untouched, as
-`application/octet-stream` under the runtime's own name. A recipient checks a copied record with `signatures.jsonl` beside it.
-Desk takes that lock on Linux, macOS and the BSDs. On any other build, and on a
-file system that supports no `flock`, the download is refused rather than made
-from a size that may fall inside a write; on Windows the runtime takes a
-different lock, which Desk does not take.
+project's root, refusing a link anywhere on the way, an audit directory outside
+the project, a file or folder that is not the one it looked at, and a file with
+another name as well (a hard link, which can put a file from elsewhere under
+the runtime's name); the trail read only for its lock is held to the same.
+For the trail and its sidecar it takes the shared `flock` on the trail, which
+the runtime's writer takes exclusively while it appends to both and its
+verifier takes shared; for the stamps, the shared `flock` on `stamps.jsonl`,
+which the stamps' own writer takes. It reads the size, releases the lock, and
+streams exactly that many bytes, untouched, as `application/octet-stream` under
+the runtime's own name. The lock keeps the size from cutting an append in
+progress; it does not mend the file, so a last line a write left incomplete
+before, which `audit verify` reports as `incomplete-last-line`, is served as it
+is on disk. A recipient checks a copied record with `signatures.jsonl` beside
+it. A refusal names the setting (`audit.dir`, `JPACK_CONFIG`) and why, never
+its value. Desk takes that lock on Linux, macOS and the BSDs. On any other
+build, and on a file system that supports no `flock`, the download is refused
+rather than made from a size that may fall inside a write; on Windows the
+runtime takes a different lock, which Desk does not take.
 
 **`requireComparableFacts`** (runtime ADR-0046).
 
