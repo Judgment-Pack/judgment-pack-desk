@@ -4608,7 +4608,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
 
   # The desk computes no lock state, and says nothing where it knows nothing.
   mutate web 'the lock line states a verdict about the reviewed set' web/src/packs/edit/LockLine.tsx \
-    '{msg("This project keeps a reviewed set. Updating it is the project’s own step.")}' \
+    '{msg("This project keeps a reviewed set. Review and lock, on Packs, shows what the runtime finds and updates it.")}' \
     '{msg("This pack is in the reviewed set, and the set is up to date.")}'
   mutate web "the lock line shows with no lock file listed" "$LL" \
     '  const listed = paths.some((path) => path === LOCK_FILE || path.endsWith(`/${LOCK_FILE}`))' \
@@ -8769,6 +8769,20 @@ export function assistantTransport(id: string): Transport {
   mutate web "upgrade: Admin → Project does not offer it" "$UN" \
     "              <div><ButtonLink to=\"/packs/_upgrade\">{msg('Review the upgrade')}</ButtonLink></div>" \
     "              <div />"
+
+  # **Help & About → Gates.** The command it gives an outside agent names this
+  # desk's own configuration, quoted for a shell, and the tested-releases
+  # sentence follows this installation's setting.
+  GH=web/src/routes/GatesHelp.tsx
+  mutate web "help: the agent command names no configuration" "$GH" \
+    '  return `JPACK_CONFIG=${shellWord(config)} ${shellWord(runtimeBin || '"'"'jpack'"'"')} mcp`' \
+    '  return `${shellWord(runtimeBin || '"'"'jpack'"'"')} mcp ${config === '"'"''"'"' ? '"'"''"'"' : '"'"''"'"'}`'
+  mutate web "help: a path is not quoted for the shell" "$GH" \
+    '  return /^[A-Za-z0-9_./=:@%+-]+$/.test(word) ? word :' \
+    '  return true ? word :'
+  mutate web "help: the tested-releases setting is not read" "$GH" \
+    '  const requireTested = chassis?.jobs?.requireTestedReleases' \
+    '  const requireTested = undefined as boolean | undefined'
 fi
 
 restore

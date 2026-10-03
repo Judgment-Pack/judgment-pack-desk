@@ -202,6 +202,149 @@ integration boundaries, and [Drive connections](docs/adr/0006-gateway-drive-conn
 for the personal gateway-owned connection. Personal local storage does not enable shared
 organization storage, scheduled backups, or a document provider.
 
+## Gates: reviewed packs, recorded decisions and tested releases
+
+Desk turns the runtime's and Runner's gates on by default
+([ADR-0009](docs/adr/0009-gates-on-by-default.md)). This section says what each
+one holds, what it does not, and whom it binds. **Help & About → Gates** says
+the same in brief, and shows the command for an outside agent with this desk's
+own paths.
+
+### What each gate holds, and what it does not
+
+**The reviewed set: `requireReviewed` and `jpack.lock.json`** (runtime
+ADR-0019 and ADR-0044).
+
+- It holds: a deciding run applies exactly the bytes last locked, and its
+  record names that lock (`reviewed: true` and `reviewedSet`). A deciding run of
+  anything else is refused: a pack passed as text, a declared pack whose bytes
+  differ from the lock (`document-drift`), or any pack by id once `jpack.json`
+  itself has changed (`config-drift`), since the configuration says which file
+  a decision id names.
+- It does not say that the pack is right, that anyone but the owner looked at
+  it, or who confirmed it. The lock holds digests and no name. It is not a
+  wall: whoever can edit the project can edit a pack and lock again.
+- A rehearsal and the test tools still answer under a draft. Matrices and rows
+  are outside the lock, so editing test cases never needs a review.
+
+**Review and lock**, on Packs, is where the set is reviewed and updated. It
+shows what the runtime's `packs verify` finds, file by file, in plain words, and
+each pack's finding beside its name in the collection. It shows a diff only
+where Desk kept a copy of exactly the bytes the lock names, in
+`.desk-private/reviewed/`. One confirmation locks the whole set, `jpack.json`
+and every declared pack and graph, through the runtime's `packs lock`; Desk
+locks exactly the files it showed, or nothing. Locking records that you
+confirmed these exact files as this project's reviewed set. It is not a second
+person's approval, and it records no name.
+
+**The audit trail: `.desk-private/audit`** (runtime ADR-0018).
+
+- It holds: each completed deciding run against the project adds one line,
+  with the pack's digest, the inputs and the disposition.
+- It says nothing about rehearsals, tests or refusals, which write nothing. A
+  line is not signed or chained, its time is the operator's clock, and anyone
+  who can write the project can change it. Runtime ADR-0047 is the design for
+  defensible records; Desk's part is tracked in issue #186 and is not built.
+- The folder is private: owner-only, never committed (`.desk-private/` is in a
+  new desk's `.gitignore`), not shown or editable in Desk's file editor, and in
+  no backup. Losing the desk's folder loses its records.
+
+**`requireComparableFacts`** (runtime ADR-0046).
+
+- It holds: no evaluation of the project reads a present fact of a JSON type
+  that the comparison reading it can never match. The refusal,
+  `JPS-FACTS-COMPARABLE-REQUIRED`, names each pointer, its type and what the
+  comparison can match, and never a value.
+- It refuses rehearsals too: in Desk, the Evaluate page, Test draft, a single
+  test case run without an expectation, and the assistant's checks. Saved test
+  suites and Jobs are not refused.
+- It does not say that a fact is true, or present: an absent fact is not
+  refused.
+
+**Tested releases** (Runner's `release_untested`). An installation refuses a
+new job from a release whose saved tests were not run; jobs created earlier keep
+running. To allow untested releases, start Desk with
+`--runner-require-tested-releases=false`; it applies to every desk of the
+installation. It holds that the release's saved tests ran and passed, against
+that release's pack and runtime. It does not say that the tests are right, or
+that they cover the pack. See "Local operational Jobs pilot" below.
+
+### Which projects have them
+
+- **A new desk** starts with all of them: `requireReviewed`,
+  `requireComparableFacts`, the audit trail and a lock of its empty project. See
+  "Named desks" below.
+- **The project Desk was started on, and a desk made before this**, are
+  offered them and never put under them. A note on Packs, shown until you
+  dismiss it, and **Admin → Project → Gates**, where the offer stays, open a
+  step that lists each change: `jpack.json` moved to configVersion `"5"` with
+  `requireReviewed` and `.desk-private/audit`, every other byte kept; the line
+  `.desk-private/` added at the end of `.gitignore` in a Git work tree whose
+  `.gitignore` does not already end with it; the first Review and lock; and
+  `requireComparableFacts`, which you can decline on its own. Nothing is written
+  before you confirm, and the configuration and the first lock are written
+  together, or every file is put back. A project that already keeps a lock, for
+  example one a CI step checks, is told that the new `jpack.json` is
+  `config-drift` to it: commit `jpack.json` and `jpack.lock.json` together.
+  Desk offers no configuration version the runtime it runs cannot read: `"4"`
+  needs runtime 0.24.0, and `"5"` needs 0.25.0.
+
+### In Desk itself, nothing is refused for being unreviewed, and nothing is recorded
+
+Every evaluation Desk makes is a rehearsal: the Evaluate page, Test draft, the
+test workspace, research checks, and every call the assistant makes, which the
+ToolGate rewrites to `rehearsal: true` on the wire. A rehearsal consults no
+reviewed set and writes no record (runtime ADR-0028). The one exception is a
+runtime whose tool listing Desk could not read: the Evaluate page and Test
+draft then cannot know the argument exists, send their call without it, and say
+so; that call is a deciding run, refused for a draft and recorded for a
+reviewed pack. So in Desk,
+`requireReviewed` refuses nothing and the audit trail stays empty; only
+`requireComparableFacts` can refuse a rehearsal. The gates hold the project's
+other callers: an agent given the project's `jpack mcp`, a script, a CI step.
+Jobs never read the project's configuration: Runner writes its own for each
+release and evaluates under its own lock of it, so every Jobs run record says
+`reviewed: true` about Runner's lock, not the project's. **Review this release**
+in Create job says whether the release's pack bytes are in the project's
+reviewed set, and refuses nothing.
+
+### Whom `requireReviewed` binds
+
+It binds a caller that neither chooses which configuration a run reads, nor can
+edit that configuration or its lock (runtime ADR-0044, point 5).
+
+- **Desk's assistant** reaches only the five tools the ToolGate allows, over the
+  `jpack mcp` Desk started, and has no file tool; a Codex run has no environment
+  ([ADR-0008](docs/adr/0008-codex-subscription-agent.md)). It is a caller of the
+  bound kind, but every evaluation it makes is a rehearsal, so the requirement
+  never refuses it and it never records.
+- **You, in Desk,** are not bound, by design: Desk's editor can write
+  `jpack.json` and `jpack.lock.json`, and Review and lock is yours.
+- **An agent with the project folder** (file or shell tools, or a coding agent
+  working in the folder) is not bound. It can edit a pack and run `packs lock`,
+  or point `--config` at another file.
+- **An agent given only a `jpack mcp` that someone else started** on this
+  desk's configuration, with no file or shell tools, is bound.
+
+### Giving an outside agent the project's tools
+
+Start `jpack mcp` for the agent with `JPACK_CONFIG` naming the desk's own
+`jpack.json`, and give the agent no file or shell tools:
+
+```sh
+JPACK_CONFIG=/absolute/path/to/the/desk/jpack.json jpack mcp
+```
+
+For a desk Desk made, the folder is under Desk's desks directory (the desk
+switcher's **Create desk…** names it), and Help & About shows the command with
+this desk's own path and runtime. The agent can then neither choose the
+configuration nor edit it, so a deciding run of a draft is refused and each
+deciding run is recorded. **This holds only as far as the agent's client really
+withholds file and shell tools:** the server runs as your user, and an agent
+that can reach the folder another way is not bound. Desk does not host an MCP
+endpoint for outside agents; that would be a new authenticated surface, and
+needs its own design (ADR-0009, question 5).
+
 ## What it shows
 
 **Packs and Judgment Graphs.** `/` opens chat, and `/packs` opens the pack collection.
@@ -1271,8 +1414,11 @@ other and never both: the tool's `required` list is `["facts"]` alone and the
 handler enforces exactly-one-of by hand, so both and neither are each refused
 on an argument mistake rather than on anything about the pack. A text pack
 never reaches the reviewed set — `applied` is built only where a `pack_id` was
-supplied, and the consult is gated on it — so a draft run is `lock.DraftRun`,
-never refused for being unlocked and proving nothing about a recorded decision.
+supplied, and the consult is gated on it — so a deciding run of one is
+`lock.DraftRun`: under `requireReviewed` (runtime 0.24.0 and later) the runtime
+refuses it as a draft, and without it the run proves nothing about a recorded
+decision. Test draft declares a rehearsal wherever the runtime advertises the
+argument, and a rehearsal consults no reviewed set, so neither applies to it.
 The audit writer, though, runs for **every** call including a text pack, and
 only `rehearsal: true` suppresses the record: the declaration is sent wherever
 the runtime advertises the argument, and where it is not, the pane says the run
@@ -1350,12 +1496,15 @@ desk expects — `rules` pasted as an object — are read as what they are rathe
 than taking the route down with the unsaved buffer inside it.
 
 **The lock line.** Where `jpack.lock.json` is in the file listing, one
-sentence: the project keeps a reviewed set, and updating it is the project's
-own step. Where it is not, silence — not "this project keeps no reviewed set",
-which would be a claim about a file that may simply not have been read. No tool
-reports lock state, the Evaluation payload carries no lock member, and `packs
-lock` is a CLI verb (ADR-0019), so the desk cannot know it and computes none of
-it.
+sentence: the project keeps a reviewed set, and **Review and lock**, on Packs,
+shows what the runtime finds and updates it. Where it is not, silence — not
+"this project keeps no reviewed set", which would be a claim about a file that
+may simply not have been read. The editor computes no lock state of its own.
+Whether this pack is in the set is the runtime's `packs verify` to say, and Desk
+shows that answer beside the pack's name on Packs and in Review and lock
+(ADR-0009, section 2), which runs `packs lock` on the owner's confirmation. A
+deciding run's payload has carried `reviewed` and `reviewedSet` since runtime
+0.24.0 (ADR-0044), but the editor makes no deciding run.
 
 **Keyboard.** `Mod+S` saves. It is registered by the editor rather than through
 the shell's `installShortcuts` — every shell chord is suppressed inside a text
@@ -1375,19 +1524,23 @@ node kind it has never seen. Each is a line in the JSON view.
 
 No desk-computed verdict of any kind: no conformance claim, no lock state, no
 health, no pass/fail chip. The runtime judges documents and this page quotes it.
-**Nothing about this pack's standing in the reviewed set appears here** — not
-whether it is in the set, not whether the entry is current, not whether an edit
-would invalidate it. No tool reports any of that, so the desk cannot know it and
-must not compute it. The one thing it does say is that the set **exists**, which
-is the file listing's own answer and nobody's inference: where the listing
-contains `jpack.lock.json`, one line says the project keeps a reviewed set and
-that updating it is the project's own step.
+**This page says nothing of its own about the pack's standing in the reviewed
+set** — not whether it is in the set, not whether the entry is current, not
+whether an edit would take it out. That is the runtime's `packs verify` to say,
+and Desk shows its answer, in plain words and never as its own verdict, beside
+the pack's name on Packs and in **Review and lock**. Here, the one thing said is
+that the set **exists**, which is the file listing's own answer and nobody's
+inference: where the listing contains `jpack.lock.json`, one line says the
+project keeps a reviewed set and that Review and lock, on Packs, updates it.
 
 The editor adds four more. **Display labels never alter condition data**:
 `"5000"` keeps its string type and the option labeled "is greater than" still
 writes `greater-than`. The shared terminology registry supplies labels; it
-does not infer new policy prose, rewrite author values, or change evaluation. **No re-lock button** — `packs lock` is a
-CLI verb (ADR-0019) and the lock line says whose step it is. **No generated row
+does not infer new policy prose, rewrite author values, or change evaluation. **No lock button in the editor** — a lock
+covers the whole set, `jpack.json` and every declared pack and graph, so one pack
+cannot be locked on its own. **Review and lock**, on Packs, shows every file the
+lock would cover and runs `packs lock` on one confirmation of exactly those
+files, and the lock line says so. **No generated row
 expectation**, and no claim to call `packs suggest`, which is CLI-only
 (ADR-0024). And **no form that refuses a value**: what an author types is
 written, and the runtime is what names it.
@@ -4550,8 +4703,9 @@ against a runtime that accepts the rehearsal argument it declares one — a
 rehearsal consults no reviewed set by design (ADR-0028), so a locked pack does
 *not* produce a refusal there. Against an older runtime with no rehearsal
 argument, the same view makes an ordinary evaluation and a lock refusal appears
-verbatim. Either way the desk never offers to update a lock and never routes
-around one. See "The lock, and what phase 1 does not do" below.
+verbatim. Either way the editor never routes around a lock. Updating one is
+**Review and lock**'s, on Packs, on the owner's confirmation (ADR-0009). See
+"The lock, and what phase 1 does not do" below.
 
 ### The file API
 
@@ -4776,9 +4930,14 @@ says so.
 
 ### The lock, and what phase 1 does not do
 
-A project can carry a reviewed-set lock (runtime ADR-0019). Phase 1 **neither
-interprets nor regenerates** one: the desk has no lock parser, writes no lock,
-and offers nothing that would update one.
+A project can carry a reviewed-set lock (runtime ADR-0019). The file API and the
+editor **neither interpret nor regenerate** one: they have no lock parser and
+write no lock. Desk does both elsewhere, through the runtime (ADR-0009). A new
+desk starts with a lock of its empty project; **Review and lock**, on Packs,
+shows the runtime's `packs verify` findings and runs `packs lock` on the owner's
+confirmation; and the upgrade offer writes an existing project's first lock
+together with its configuration. Each reads the lock only to compare what it
+pins with the files, and writes it only through the runtime.
 
 Two consequences worth stating plainly rather than implying otherwise:
 
@@ -4788,13 +4947,17 @@ Two consequences worth stating plainly rather than implying otherwise:
   consults no reviewed set by design (ADR-0028) — so editing a locked pack and
   rehearsing it will *not* produce a lock refusal there. Against an older
   runtime with no such argument the same view makes an ordinary evaluation, and
-  a lock refusal appears verbatim. Phase 3 runs matrices from disk, which is
-  where a lock's answer will appear regardless of that distinction.
+  a lock refusal appears verbatim. The test surfaces never consult the lock
+  (ADR-0019): matrices and rows are outside the reviewed set, so saved tests
+  answer the same whatever the lock says, and Jobs evaluate each release under
+  Runner's own lock of it. A lock's answer appears only in a deciding run by
+  decision id, which Desk itself does not make.
 - **The editor can edit the lock file.** `jpack.lock.json` is a file in the
   project, and this API has no list of files that are special. Editing it is
   possible, it is the user's own file, and it is stated here as a fact rather
   than presented as a feature — the runtime remains the only thing that decides
-  what a lock means.
+  what a lock means, and Review and lock shows what its `packs verify` finds
+  after such an edit.
 
 ## How the relay works
 

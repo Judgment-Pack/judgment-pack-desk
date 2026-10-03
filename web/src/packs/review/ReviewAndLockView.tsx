@@ -53,6 +53,7 @@ export function ReviewAndLockView() {
     <div className={styles.body}>
       <p className={styles.statement}>{msg('Locking records that you confirmed these exact files as this project’s reviewed set. It is not a second person’s approval, and it records no name.')}</p>
       <p className={styles.quiet}>{msg('A change to jpack.json holds every pack: until the next lock, the runtime refuses every deciding run by decision id. Rehearsals and tests are not affected.')}</p>
+      <p className={styles.quiet}>{msg('The lock holds a caller that can neither edit this project nor choose its configuration. Whoever can edit this folder can change a pack and lock again.')}</p>
       {outcome?.kind === 'locked' && <p role="status" className={styles.done}>
         {msg('Locked. These {{count}} files are now this project’s reviewed set.', { count: outcome.locked.files })}
         {outcome.locked.copies === 'not-stored' && <> {msg('Desk could not keep copies of them, so the next review cannot show what changed.')} {systemMessage(outcome.locked.copiesProblem ?? '')}</>}

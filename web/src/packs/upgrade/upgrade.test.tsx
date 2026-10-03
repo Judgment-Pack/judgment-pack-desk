@@ -226,6 +226,8 @@ describe('where the offer appears', () => {
     offers.with = [{ state: 'unavailable', reason: 'JPACK_CONFIG names another project.', gated: false, requireComparableFacts: false, changes: [], locked: false }]
     show(<ProjectGates />)
     expect((await screen.findByText(/Desk offers no upgrade here/)).textContent).toContain('JPACK_CONFIG names another project.')
-    expect(screen.queryByRole('link')).toBeNull()
+    expect(screen.queryByRole('link', { name: /Review/ })).toBeNull()
+    // Each state says where the gates are explained.
+    expect(screen.getByRole('link', { name: 'What each gate holds, and whom it binds' }).getAttribute('href')).toBe('/help#gates')
   })
 })
