@@ -10,7 +10,8 @@ import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { deskFetch } from '../files/client'
 import { testQueryClient } from '../testing/harness'
-import { isAuditRecord, readAuditRecord, type AuditRecord, type AuditReport } from './client'
+import { followsTheProject } from '../mcp/projectChange'
+import { AUDIT_KEY, isAuditRecord, readAuditRecord, type AuditRecord, type AuditReport } from './client'
 import { DecisionRecord } from './DecisionRecord'
 
 vi.mock(import('../files/client'), async original => ({ ...(await original()), deskFetch: vi.fn() }))
@@ -50,19 +51,33 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.useRealTimers() })
 
-function show(client: QueryClient = testQueryClient()) {
-  return render(<QueryClientProvider client={client}><DecisionRecord /></QueryClientProvider>)
+function show(client: QueryClient = testQueryClient(), visible = true) {
+  return render(<QueryClientProvider client={client}><DecisionRecord visible={visible} /></QueryClientProvider>)
 }
 const panel = () => screen.getByTestId('decision-record')
 
 describe('the decision-record client', () => {
   it('refuses an answer that is not one', async () => {
     for (const body of [{ state: 'report' }, { state: 'report', report: { ...valid, coverage: undefined } }, { state: 'report', report: { ...valid, establishes: [1] } },
-      { state: 'unverified', diagnostics: [] }, { state: 'older-runtime' }, { state: 'chained' }, { state: 'report', runtime: 6, report: valid }]) {
+      { state: 'unverified', diagnostics: [] }, { state: 'older-runtime' }, { state: 'chained' }, { state: 'report', runtime: 6, report: valid },
+      { state: 'unverified', diagnostics: [{ code: 'JPS-AUDIT-TRAIL-READ', message: '' }] }, { state: 'unverified', diagnostics: [{ code: '', message: 'Refused.' }] },
+      // A count missing, or not a count.
+      { state: 'report', report: { ...valid, lines: undefined } }, { state: 'report', report: { ...valid, findingsTotal: undefined } },
+      { state: 'report', report: { ...valid, segmentsTotal: -1 } }, { state: 'report', report: { ...valid, coverage: { ...valid.coverage, legacyPrefix: undefined } } },
+      { state: 'report', report: { ...valid, coverage: { ...valid.coverage, unwitnessed: 1.5 } } },
+      // A protection with no status, or through no record.
+      { state: 'report', report: { ...valid, coverage: { ...valid.coverage, signed: { detail: 'no public key was supplied' } } } },
+      { state: 'report', report: { ...valid, coverage: { ...valid.coverage, stamped: { status: 'through' } } } },
+      // Lists longer than their totals, and findings that disagree with the status.
+      { state: 'report', report: { ...invalid, findingsTotal: 0 } }, { state: 'report', report: { ...valid, findingsTotal: 1 } },
+      { state: 'report', report: { ...valid, segmentsTotal: 0 } }, { state: 'report', report: { ...segmented, discontinuitiesTotal: 0 } },
+      { state: 'report', report: { ...invalid, findings: [...invalid.findings, ...invalid.findings], findingsTotal: 1 } },
+      { state: 'report', report: { ...invalid, findings: [{ name: '', line: 4, detail: '' }] } }]) {
       expect(isAuditRecord(body), JSON.stringify(body)).toBe(false)
     }
     answers = [() => json(200, { state: 'report', report: { ...valid, findings: [{ name: 'x' }] } })]
     await expect(readAuditRecord()).rejects.toThrow('The decision record could not be loaded')
+    for (const report of [valid, invalid, segmented, held]) expect(isAuditRecord({ state: 'report', report }), report.status).toBe(true)
   })
 })
 
@@ -176,7 +191,7 @@ describe('the decision-record panel', () => {
     expect(panel().querySelectorAll('p, li, dt, dd, button')).toHaveLength(1)
   })
 
-  it('runs when it opens and when the owner asks again, never on a timer', async () => {
+  it('runs when it becomes visible and when the owner asks again, never on a timer, focus or reconnect', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const client = testQueryClient()
     const first = show(client)
@@ -192,9 +207,41 @@ describe('the decision-record panel', () => {
     expect(asked).toBe(1)
     fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
     await waitFor(() => expect(asked).toBe(2))
-    // Opened again, it runs again, though the answer it had is not stale.
+    await screen.findByText('Every check the runtime made passed.')
+    // Kept mounted and hidden, it runs nothing; shown again, it runs again,
+    // though the answer it had is not stale.
+    first.rerender(<QueryClientProvider client={client}><DecisionRecord visible={false} /></QueryClientProvider>)
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+    expect(asked).toBe(2)
+    first.rerender(<QueryClientProvider client={client}><DecisionRecord visible /></QueryClientProvider>)
+    await waitFor(() => expect(asked).toBe(3))
+    await screen.findByText('Every check the runtime made passed.')
+    // Mounted again, it runs again.
     first.unmount()
     show(client)
-    await waitFor(() => expect(asked).toBe(3))
+    await waitFor(() => expect(asked).toBe(4))
   })
+
+  it('runs nothing while hidden from the start', async () => {
+    show(testQueryClient(), false)
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    expect(asked).toBe(0)
+  })
+
+  it('is not rerun by an invalidation of every query, and is left out of the project’s', async () => {
+    const client = testQueryClient()
+    show(client)
+    await screen.findByText('Every check the runtime made passed.')
+    // The project's own invalidation, which McpProvider sends on a file
+    // change or a reconnect, leaves it as it was, and reaches the others.
+    client.setQueryData(['another'], 'answer')
+    await act(async () => { await client.invalidateQueries({ predicate: followsTheProject }) })
+    expect(client.getQueryState(AUDIT_KEY)?.isInvalidated).toBe(false)
+    expect(client.getQueryState(['another'])?.isInvalidated).toBe(true)
+    // And a blanket invalidation, which reruns every active query, does not
+    // rerun this one.
+    await act(async () => { await client.invalidateQueries() })
+    expect(asked).toBe(1)
+  })
+
 })

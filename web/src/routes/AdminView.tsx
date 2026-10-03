@@ -224,7 +224,7 @@ ${effective.desk.chassis.runtimeBin}`} />
                 <ProjectGates />
                 {/* Beside the gates, what the runtime finds in the trail they
                     keep (ADR-0010, section 4). */}
-                <DecisionRecord />
+                <DecisionRecord visible={open.id === 'project'} />
               </RetainedPanel>
               <RetainedPanel active={open.id === 'organization'}>
                 <SourceCard

@@ -41,9 +41,33 @@ const (
 const (
 	auditUnknownFlag    = `{"outputVersion":"2","tool":{"name":"jpack","version":"0.25.0"},"command":"jpack","status":"error","diagnostics":[{"code":"JPS-INVOCATION-ARGUMENTS","codeStability":"provisional","layer":"operation","severity":"error","instancePath":"","message":"unknown flag: --config"}]}`
 	auditUnknownCommand = `{"outputVersion":"2","tool":{"name":"jpack","version":"0.25.0"},"command":"jpack","status":"error","diagnostics":[{"code":"JPS-INVOCATION-ARGUMENTS","codeStability":"provisional","layer":"operation","severity":"error","instancePath":"","message":"unknown command \"audit\" for \"jpack\""}]}`
+	// auditUnknownVerify is what a runtime with an audit group and no verify
+	// would say, in the same parser's words.
+	auditUnknownVerify = `{"outputVersion":"2","tool":{"name":"jpack","version":"0.0.0"},"command":"jpack","status":"error","diagnostics":[{"code":"JPS-INVOCATION-ARGUMENTS","message":"unknown command \"verify\" for \"jpack audit\""}]}`
 	// auditNoTrailYet is 0.26.0's answer, exit 4, where no record has been
 	// written yet.
 	auditNoTrailYet = `{"outputVersion":"2","tool":{"name":"jpack","version":"0.26.0"},"command":"audit verify","status":"error","diagnostics":[{"code":"JPS-AUDIT-TRAIL-READ","codeStability":"provisional","layer":"operation","severity":"error","instancePath":"","message":"The project's trail /project/.desk-private/audit/evaluations.jsonl does not exist yet: no record has been written."}]}`
+)
+
+// auditMixedReport is what the published runtime 0.26.0 printed over a trail
+// the published 0.25.0 and 0.26.0 wrote in turn: two unchained runs, a chained
+// one, an unchained one, a chained one, and an unchained one. So the first two
+// lines are the legacy prefix, one unchained line is committed to by a later
+// chained one, and the last is covered by nothing.
+const auditMixedReport = `{"outputVersion":"2","tool":{"name":"jpack","version":"0.26.0"},"command":"audit verify","trailPath":"/project/.desk-private/audit/evaluations.jsonl","snapshotBetweenWrites":true,"status":"valid","scope":"one-supplied-chain","lines":6,"bytes":5146,"trail":"c962ef5fa560f62c67bd4c1c29e011e3","head":{"checkpointVersion":"1","recordDigest":"sha256:3a8839bbe26f8c56088623eb7b290572cd5a3941fb97456005c86106bb2d23ee","sequence":5,"trail":"c962ef5fa560f62c67bd4c1c29e011e3"},"coverage":{"legacyPrefix":2,"chained":2,"unchained":1,"uncovered":1,"damaged":0,"signed":{"status":"not-checked","detail":"no public key was supplied"},"signedRecords":0,"unsignedRecords":0,"checkpointed":{"status":"not-supplied"},"witnessed":0,"unwitnessed":2,"stamped":{"status":"not-checked","detail":"no time-stamping roots were supplied"}},"segments":[{"firstLine":1,"lastLine":6}],"segmentsTotal":1,"discontinuities":[],"discontinuitiesTotal":0,"findings":[],"findingsTotal":0,"establishes":["The chained lines are consistent with one another: no line before the last was edited, inserted, deleted or moved without breaking a link, and the lines before the first chained line are the block its previous commits to."],"doesNotEstablish":["The last line, and any lines rewritten from some point on with their links recomputed, are not authenticated by the chain: only a checkpoint covering them, held independently of the operator, shows they are the ones first written.","That the trail is complete: a trail cut short is as consistent as the whole one, and nothing here says which decisions were never written to it.","That any record's at is true: it is the operator's clock.","Who wrote any record: no public key was supplied, so no signature was checked.","When any checkpoint existed: no time-stamping roots were supplied, so no stamp was checked."]}`
+
+// What the published runtime 0.26.0 printed, measured, when it refused to
+// verify: a configuration whose audit.chain is not a boolean (exit 1), one of
+// a configVersion it does not read (exit 2), and an argument it could not read
+// (exit 3, for its root command). And an extra argument and an unknown flag,
+// each in its command parser's words (exit 3): neither says the command is
+// absent.
+const (
+	auditBadChain   = `{"outputVersion":"2","tool":{"name":"jpack","version":"0.26.0"},"command":"audit verify","status":"error","diagnostics":[{"code":"JPS-PROJECT-CONFIG-SCHEMA","codeStability":"provisional","layer":"operation","severity":"error","instancePath":"","message":"The project configuration jpack.json does not satisfy the jpack.json schema: jsonschema validation failed with 'urn:judgmentpack:runtime:jpack-config:6#' - at '/audit/chain': got string, want boolean - at '': 'allOf' failed - at '/configVersion': value must be '6'"}]}`
+	auditBadVersion = `{"outputVersion":"2","tool":{"name":"jpack","version":"0.26.0"},"command":"audit verify","status":"unsupported","diagnostics":[{"code":"JPS-PROJECT-CONFIG-VERSION","codeStability":"provisional","layer":"operation","severity":"error","instancePath":"","message":"The project configuration jpack.json declares configVersion \"99\", which this runtime does not support. It accepts: 1, 2, 3, 4, 5, 6. This configuration comes from a newer toolchain: upgrade the runtime. Do not edit the declaration to an older version — that discards what this configuration declares."}]}`
+	auditBadInteger = `{"outputVersion":"2","tool":{"name":"jpack","version":"0.26.0"},"command":"jpack","status":"error","diagnostics":[{"code":"JPS-INVOCATION-ARGUMENTS","codeStability":"provisional","layer":"operation","severity":"error","instancePath":"","message":"invalid argument \"bad\" for \"--require-signed-through\" flag: strconv.ParseInt: parsing \"bad\": invalid syntax"}]}`
+	auditExtraArg   = `{"outputVersion":"2","tool":{"name":"jpack","version":"0.26.0"},"command":"jpack","status":"error","diagnostics":[{"code":"JPS-INVOCATION-ARGUMENTS","codeStability":"provisional","layer":"operation","severity":"error","instancePath":"","message":"unknown command \"extra\" for \"jpack audit verify\""}]}`
+	auditWrongFlag  = `{"outputVersion":"2","tool":{"name":"jpack","version":"0.26.0"},"command":"jpack","status":"error","diagnostics":[{"code":"JPS-INVOCATION-ARGUMENTS","codeStability":"provisional","layer":"operation","severity":"error","instancePath":"","message":"unknown flag: --wrong"}]}`
 )
 
 // auditedConfig is a project that keeps a trail, as a desk Desk made does.
@@ -55,20 +79,35 @@ type auditRig struct {
 	bin, calls, answer string
 }
 
+// deskAnswerName is the file a desk's folder can hold for the stand-in's
+// `audit verify` to answer with there instead: so an answer says which
+// directory the command ran in.
+const deskAnswerName = "stand-in-verify.json"
+
 // newAuditRig writes the stand-in. Its `packs schema` names versions; its
-// `audit verify` prints what `answers` prepared and exits with its code. Every
-// run appends its arguments and environment as `writeStandInRuntime` says.
+// `audit verify` prints what `answers` prepared and exits with its code, or,
+// where the directory it runs in holds deskAnswerName, that file and its
+// code. Every run appends its arguments and environment as
+// `writeStandInRuntime` says.
 func newAuditRig(t *testing.T, versions string) *auditRig {
+	t.Helper()
+	return newAuditRigSaying(t, reading(versions))
+}
+
+// newAuditRigSaying is newAuditRig with schema as its `packs schema`, a shell
+// fragment.
+func newAuditRigSaying(t *testing.T, schema string) *auditRig {
 	t.Helper()
 	dir := t.TempDir()
 	rig := &auditRig{bin: filepath.Join(dir, "jpack"), answer: filepath.Join(dir, "verify.json")}
-	rig.calls = writeStandInRuntime(t, rig.bin, reading(versions), lockingAs(wantGatedConfig))
+	rig.calls = writeStandInRuntime(t, rig.bin, schema, lockingAs(wantGatedConfig))
 	script, err := os.ReadFile(rig.bin)
 	if err != nil {
 		t.Fatal(err)
 	}
-	verify := "'audit verify')\n  while IFS= read -r line || [ -n \"$line\" ]; do printf '%s\\n' \"$line\"; done < '" + rig.answer + "'\n" +
-		"  IFS= read -r code < '" + rig.answer + ".exit'\n  exit \"$code\"\n  ;;\n"
+	verify := "'audit verify')\n  answer='" + rig.answer + "'\n  if [ -e ./" + deskAnswerName + " ]; then answer=./" + deskAnswerName + "; fi\n" +
+		"  while IFS= read -r line || [ -n \"$line\" ]; do printf '%s\\n' \"$line\"; done < \"$answer\"\n" +
+		"  IFS= read -r code < \"$answer.exit\"\n  exit \"$code\"\n  ;;\n"
 	script = bytes.Replace(script, []byte("'packs lock')\n"), []byte(verify+"'packs lock')\n"), 1)
 	if err := os.WriteFile(rig.bin, script, 0o755); err != nil {
 		t.Fatal(err)
@@ -79,7 +118,13 @@ func newAuditRig(t *testing.T, versions string) *auditRig {
 // answers sets what the stand-in's `audit verify` prints, and its exit.
 func (rig *auditRig) answers(t *testing.T, code int, body string) {
 	t.Helper()
-	if os.WriteFile(rig.answer, []byte(body), 0o600) != nil || os.WriteFile(rig.answer+".exit", []byte(strconv.Itoa(code)+"\n"), 0o600) != nil {
+	answerAt(t, rig.answer, code, body)
+}
+
+// answerAt writes an answer for the stand-in at path, and its exit.
+func answerAt(t *testing.T, path string, code int, body string) {
+	t.Helper()
+	if os.WriteFile(path, []byte(body), 0o600) != nil || os.WriteFile(path+".exit", []byte(strconv.Itoa(code)+"\n"), 0o600) != nil {
 		t.Fatal("could not prepare the stand-in's answer")
 	}
 }
@@ -127,6 +172,15 @@ func readAudit(t *testing.T, ts *httptest.Server, desk string) (int, auditAnswer
 	}
 	_ = json.Unmarshal(data, &refusal)
 	return status, answer, refusal.Error
+}
+
+// refusalOf is a refusal's sentence.
+func refusalOf(data []byte) string {
+	var body struct {
+		Error string `json:"error"`
+	}
+	_ = json.Unmarshal(data, &body)
+	return body.Error
 }
 
 // reportOf is the panel's report on desk, or a failure that says what came
@@ -213,26 +267,57 @@ func TestAFailedCheckIsReadAsAReport(t *testing.T) {
 	}
 }
 
+// edited is a report the runtime printed, with change applied to it as JSON.
+func edited(t *testing.T, report string, change func(map[string]any)) string {
+	t.Helper()
+	var value map[string]any
+	if err := json.Unmarshal([]byte(report), &value); err != nil {
+		t.Fatal(err)
+	}
+	change(value)
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+// member is the object at a path of members in a decoded report.
+func member(value map[string]any, path ...string) map[string]any {
+	for _, name := range path {
+		value = value[name].(map[string]any)
+	}
+	return value
+}
+
 // **What the runtime does not document is an error, said as one.** A report
-// whose status disagrees with its exit, one missing a member a report has, an
-// answer from another command, an error without diagnostics, output that is
-// not JSON, and output past `runRuntime`'s bound are each refused, never shown
-// as a report. A refusal the runtime explains in its diagnostics is shown as
-// the runtime's.
+// whose status disagrees with its exit; one missing any member a report has,
+// down to each coverage count, each protection's status and each item of its
+// lists, or holding a value no report has; one whose lists are longer than
+// their totals, or whose findings disagree with its status; an answer from
+// another command; an error without words, or one that exits 0; output that
+// is not JSON; and output past `runRuntime`'s bound are each refused, never
+// shown as a report.
 func TestAnAnswerTheRuntimeDoesNotDocumentIsAnError(t *testing.T) {
 	t.Setenv("JPACK_CONFIG", "")
 	ts, rig, _ := auditDesk(t, withAuditVersions, auditedConfig)
-	without := func(member string) string {
-		var report map[string]any
-		if err := json.Unmarshal([]byte(auditValidReport), &report); err != nil {
-			t.Fatal(err)
-		}
-		delete(report, member)
-		data, _ := json.Marshal(report)
-		return string(data)
+	without := func(report string, path ...string) string {
+		return edited(t, report, func(value map[string]any) {
+			delete(member(value, path[:len(path)-1]...), path[len(path)-1])
+		})
+	}
+	set := func(report string, to any, path ...string) string {
+		return edited(t, report, func(value map[string]any) {
+			member(value, path[:len(path)-1]...)[path[len(path)-1]] = to
+		})
+	}
+	item := func(report, list string, change func(map[string]any)) string {
+		return edited(t, report, func(value map[string]any) {
+			change(value[list].([]any)[0].(map[string]any))
+		})
 	}
 	padded := strings.Replace(auditValidReport, `"trailPath":"`, `"trailPath":"`+strings.Repeat("x", runtimeAnswerLimit), 1)
-	for _, tc := range []struct {
+	cases := []struct {
 		name string
 		code int
 		body string
@@ -244,40 +329,117 @@ func TestAnAnswerTheRuntimeDoesNotDocumentIsAnError(t *testing.T) {
 		{"an invalid report with exit 0", 0, auditInvalidReport, "did not answer as documented"},
 		{"a segmented report with exit 1", 1, auditSegmentedReport, "did not answer as documented"},
 		{"another command's answer", 0, strings.Replace(auditValidReport, `"command":"audit verify"`, `"command":"packs verify"`, 1), "did not answer as documented"},
-		{"a report with no coverage", 0, without("coverage"), "did not answer as documented"},
-		{"a report with no segments", 0, without("segments"), "did not answer as documented"},
-		{"a report with no discontinuities", 0, without("discontinuities"), "did not answer as documented"},
-		{"a report with no findings", 0, without("findings"), "did not answer as documented"},
-		{"a report with no establishes", 0, without("establishes"), "did not answer as documented"},
-		{"a report with no doesNotEstablish", 0, without("doesNotEstablish"), "did not answer as documented"},
-		{"a report with no snapshot", 0, without("snapshotBetweenWrites"), "did not answer as documented"},
 		{"an error with no diagnostics", 4, `{"command":"audit verify","status":"error","diagnostics":[]}`, "did not answer as documented"},
+		{"a diagnostic with no words", 4, `{"command":"audit verify","status":"error","diagnostics":[{"code":"JPS-AUDIT-TRAIL-READ","message":""}]}`, "did not answer as documented"},
+		{"a diagnostic with no code", 4, `{"command":"audit verify","status":"error","diagnostics":[{"message":"The trail could not be read."}]}`, "did not answer as documented"},
 		{"an error that exits 0", 0, auditNoTrailYet, "did not answer as documented"},
-		{"an error that exits 1", 1, auditNoTrailYet, "did not answer as documented"},
-		{"another command's refusal, exit 2", 2, auditUnknownFlag, "did not answer as documented"},
 		{"a report past runRuntime's bound", 0, padded, "larger than 65536 bytes"},
-	} {
+		{"findings under a valid status", 0, set(auditValidReport, 1, "findingsTotal"), "did not answer as documented"},
+		{"no findings under an invalid status", 1, set(set(auditInvalidReport, []any{}, "findings"), 0, "findingsTotal"), "did not answer as documented"},
+		{"more findings than their total", 1, edited(t, auditInvalidReport, func(value map[string]any) {
+			findings := value["findings"].([]any)
+			value["findings"] = append(findings, findings[0])
+		}), "did not answer as documented"},
+		{"more segments than their total", 0, set(auditSegmentedReport, 1, "segmentsTotal"), "did not answer as documented"},
+		{"more discontinuities than their total", 0, set(auditSegmentedReport, 0, "discontinuitiesTotal"), "did not answer as documented"},
+		{"a negative count", 0, set(auditValidReport, -1, "coverage", "uncovered"), "did not answer as documented"},
+		{"a count that is not a number", 0, set(auditValidReport, "3", "lines"), "did not answer as documented"},
+		{"signed through no sequence", 0, set(auditValidReport, map[string]any{"status": "through"}, "coverage", "signed"), "did not answer as documented"},
+		{"a protection with no status", 0, set(auditValidReport, map[string]any{"detail": "no public key was supplied"}, "coverage", "signed"), "did not answer as documented"},
+		{"a segment with no first line", 0, item(auditSegmentedReport, "segments", func(v map[string]any) { delete(v, "firstLine") }), "did not answer as documented"},
+		{"a discontinuity with no digest", 0, item(auditSegmentedReport, "discontinuities", func(v map[string]any) { delete(v, "digest") }), "did not answer as documented"},
+		{"a discontinuity with no damaged line", 0, item(auditSegmentedReport, "discontinuities", func(v map[string]any) { delete(v, "damagedLine") }), "did not answer as documented"},
+		{"a finding with no name", 1, item(auditInvalidReport, "findings", func(v map[string]any) { delete(v, "name") }), "did not answer as documented"},
+		{"a finding with no line", 1, item(auditInvalidReport, "findings", func(v map[string]any) { delete(v, "line") }), "did not answer as documented"},
+		{"a finding with no detail", 1, item(auditInvalidReport, "findings", func(v map[string]any) { delete(v, "detail") }), "did not answer as documented"},
+	}
+	for _, name := range []string{"coverage", "segments", "discontinuities", "findings", "establishes", "doesNotEstablish", "snapshotBetweenWrites", "lines", "bytes", "segmentsTotal", "discontinuitiesTotal", "findingsTotal"} {
+		cases = append(cases, struct {
+			name string
+			code int
+			body string
+			says string
+		}{"a report with no " + name, 0, without(auditValidReport, name), "did not answer as documented"})
+	}
+	for _, name := range []string{"legacyPrefix", "chained", "unchained", "uncovered", "damaged", "signed", "signedRecords", "unsignedRecords", "checkpointed", "witnessed", "unwitnessed", "stamped"} {
+		cases = append(cases, struct {
+			name string
+			code int
+			body string
+			says string
+		}{"a report with no coverage." + name, 0, without(auditValidReport, "coverage", name), "did not answer as documented"})
+	}
+	// The invalid report the reviewer named: its findings would be hidden
+	// behind a total of nothing.
+	cases = append(cases, struct {
+		name string
+		code int
+		body string
+		says string
+	}{"an invalid report with no findingsTotal", 1, without(auditInvalidReport, "findingsTotal"), "did not answer as documented"})
+	for _, tc := range cases {
 		rig.answers(t, tc.code, tc.body)
 		status, answer, refusal := readAudit(t, ts, "")
 		if status != http.StatusInternalServerError || !strings.HasPrefix(refusal, "The decision record could not be checked: ") || !strings.Contains(refusal, tc.says) || answer.Report != nil {
 			t.Errorf("%s: answered %d %+v %q, want an error saying %q", tc.name, status, answer, refusal, tc.says)
 		}
 	}
+	// Each accepted unchanged, so it is the change that is refused.
+	for _, tc := range []struct {
+		code int
+		body string
+	}{{0, auditValidReport}, {1, auditInvalidReport}, {0, auditSegmentedReport}, {0, auditMixedReport}} {
+		rig.answers(t, tc.code, tc.body)
+		reportOf(t, ts, "")
+	}
+}
 
-	rig.answers(t, 4, auditNoTrailYet)
-	status, answer, refusal := readAudit(t, ts, "")
-	want := []runtimeDiagnostic{{Code: "JPS-AUDIT-TRAIL-READ", Message: "The project's trail /project/.desk-private/audit/evaluations.jsonl does not exist yet: no record has been written."}}
-	if status != http.StatusOK || answer.State != auditStateUnverified || !slices.Equal(answer.Diagnostics, want) || answer.Report != nil || answer.Runtime != "0.0.0-stand-in" {
-		t.Errorf("the runtime's refusal answered %d %+v %q, want its diagnostics", status, answer, refusal)
+// **A refusal the runtime explains is shown in its words, whatever its
+// exit.** The published 0.26.0's own refusals, measured: a configuration it
+// refuses exits 1 with JPS-PROJECT-CONFIG-SCHEMA, one of a configVersion it
+// does not read exits 2, an argument it cannot read exits 3 for its root
+// command, a trail with no record yet exits 4. None of them is a report, and
+// none says the runtime has no audit commands.
+func TestARefusalTheRuntimeExplainsIsShownInItsWords(t *testing.T) {
+	t.Setenv("JPACK_CONFIG", "")
+	ts, rig, _ := auditDesk(t, withAuditVersions, auditedConfig)
+	twoSaid := `{"command":"jpack","status":"error","diagnostics":[{"code":"JPS-INVOCATION-ARGUMENTS","message":"unknown flag: --config"},{"code":"JPS-INVOCATION-ARGUMENTS","message":"unknown flag: --format"}]}`
+	otherCode := strings.Replace(auditUnknownFlag, "JPS-INVOCATION-ARGUMENTS", "JPS-INVOCATION-FORMAT", 1)
+	for _, tc := range []struct {
+		name string
+		code int
+		body string
+	}{
+		{"an audit.chain that is not a boolean, exit 1", 1, auditBadChain},
+		{"a configVersion it does not read, exit 2", 2, auditBadVersion},
+		{"an argument it cannot read, exit 3", 3, auditBadInteger},
+		{"an extra argument, exit 3", 3, auditExtraArg},
+		{"an unknown flag that is not --config, exit 3", 3, auditWrongFlag},
+		{"a trail with no record yet, exit 4", 4, auditNoTrailYet},
+		{"the parser's absence words beside others, exit 3", 3, twoSaid},
+		{"the absence words under another code, exit 3", 3, otherCode},
+		{"the absence words with exit 1", 1, auditUnknownFlag},
+		{"the absence words with exit 2", 2, auditUnknownFlag},
+	} {
+		rig.answers(t, tc.code, tc.body)
+		var want struct {
+			Diagnostics []runtimeDiagnostic `json:"diagnostics"`
+		}
+		if err := json.Unmarshal([]byte(tc.body), &want); err != nil {
+			t.Fatal(err)
+		}
+		status, answer, refusal := readAudit(t, ts, "")
+		if status != http.StatusOK || answer.State != auditStateUnverified || !slices.Equal(answer.Diagnostics, want.Diagnostics) || answer.Report != nil || answer.Runtime != "0.0.0-stand-in" {
+			t.Errorf("%s: answered %d %+v %q, want the runtime's own words", tc.name, status, answer, refusal)
+		}
 	}
 }
 
 // **With a runtime that has no audit commands, one sentence and nothing
 // more** (ADR-0010, section 6). A runtime that does not read "6" is asked
-// nothing past `packs schema`. One that reads it, and still answers for its
-// root command that it knows no `audit verify`, is read the same way, in
-// either of runtime 0.25.0's words. An `audit verify` that refuses on its own
-// account is not mistaken for one.
+// nothing past `packs schema`. One that reads it, and whose command parser
+// still says, alone and exit 3, that it has no `audit verify` (in any of its
+// three words for it, 0.25.0's two among them), is read the same way.
 func TestTheDecisionRecordSaysWhenTheRuntimeHasNoAuditCommands(t *testing.T) {
 	t.Setenv("JPACK_CONFIG", "")
 	older := auditAnswer{State: auditStateOlder, Runtime: "0.0.0-stand-in", Floor: "0.26.0"}
@@ -291,7 +453,7 @@ func TestTheDecisionRecordSaysWhenTheRuntimeHasNoAuditCommands(t *testing.T) {
 	}
 
 	ts, rig, _ = auditDesk(t, withAuditVersions, auditedConfig)
-	for _, said := range []string{auditUnknownFlag, auditUnknownCommand} {
+	for _, said := range []string{auditUnknownFlag, auditUnknownCommand, auditUnknownVerify} {
 		rig.answers(t, 3, said)
 		if status, answer, refusal := readAudit(t, ts, ""); status != http.StatusOK || !sameAuditAnswer(answer, older) {
 			t.Errorf("a runtime with no audit verify (%s) answered %d %+v %q", said, status, answer, refusal)
@@ -300,11 +462,88 @@ func TestTheDecisionRecordSaysWhenTheRuntimeHasNoAuditCommands(t *testing.T) {
 			t.Errorf("the panel ran %q", calls)
 		}
 	}
+}
 
-	notDeclared := `{"outputVersion":"2","tool":{"name":"jpack","version":"0.26.0"},"command":"audit verify","status":"error","diagnostics":[{"code":"JPS-AUDIT-NOT-DECLARED","message":"This project's jpack.json declares no audit directory, so it keeps no trail; pass --trail <file> to read a trail file."}]}`
-	rig.answers(t, 3, notDeclared)
-	if status, answer, _ := readAudit(t, ts, ""); status != http.StatusOK || answer.State != auditStateUnverified || len(answer.Diagnostics) != 1 || answer.Diagnostics[0].Code != "JPS-AUDIT-NOT-DECLARED" {
-		t.Errorf("audit verify's own refusal, exit 3, answered %d %+v", status, answer)
+// **A `packs schema` that fails is an error, never an older runtime.** The
+// panel does not say a runtime lacks the audit commands because it could not
+// ask, and runs nothing past the failed question.
+func TestAFailedSchemaIsAnErrorAndNotAnOlderRuntime(t *testing.T) {
+	t.Setenv("JPACK_CONFIG", "")
+	for _, schema := range []string{
+		"  printf 'not json\\n'\n  exit 5",
+		"  printf '%s\\n' '{\"command\":\"packs schema\",\"status\":\"valid\"}'",
+		"  exit 0",
+	} {
+		rig := newAuditRigSaying(t, schema)
+		rig.answers(t, 0, auditValidReport)
+		project := t.TempDir()
+		writeProject(t, project, map[string]string{"jpack.json": auditedConfig})
+		s, ts := startDesk(t, Config{ProjectDir: project, JpackBin: rig.bin, Token: testToken, Logger: log.New(io.Discard, "", 0)})
+		status, answer, refusal := readAudit(t, ts, "")
+		if status != http.StatusInternalServerError || !strings.Contains(refusal, "configuration versions it reads") || answer.State != "" {
+			t.Errorf("schema %q: answered %d %+v %q, want an error", schema, status, answer, refusal)
+		}
+		if calls := rig.ran(t); !slices.Equal(calls, []string{schemaCall}) {
+			t.Errorf("schema %q: the panel ran %q, want packs schema alone", schema, calls)
+		}
+		s.Close()
+		ts.Close()
+	}
+}
+
+// **Every count is the runtime's, none dropped.** A trail two runtimes wrote
+// in turn, the published 0.25.0 unchained and 0.26.0 chained, has a legacy
+// prefix, an unchained line a later chained one commits to, and an uncovered
+// last line; the panel shows each count as the runtime gave it.
+func TestEveryCoverageCountIsTheRuntimes(t *testing.T) {
+	t.Setenv("JPACK_CONFIG", "")
+	ts, rig, _ := auditDesk(t, withAuditVersions, auditedConfig)
+	rig.answers(t, 0, auditMixedReport)
+	report := reportOf(t, ts, "")
+	want := auditCoverage{LegacyPrefix: 2, Chained: 2, Unchained: 1, Uncovered: 1, Damaged: 0,
+		Signed: auditCoverageState{Status: "not-checked", Detail: "no public key was supplied"}, Checkpointed: auditCoverageState{Status: "not-supplied"},
+		Witnessed: 0, Unwitnessed: 2, Stamped: auditCoverageState{Status: "not-checked", Detail: "no time-stamping roots were supplied"}}
+	if report.Coverage != want || report.Lines != 6 || report.Status != "valid" {
+		t.Errorf("the mixed trail is shown as %+v", report)
+	}
+	held := edited(t, auditValidReport, func(value map[string]any) {
+		coverage := member(value, "coverage")
+		coverage["signed"] = map[string]any{"status": "through", "through": 3}
+		coverage["signedRecords"], coverage["unsignedRecords"] = 3, 0
+		coverage["checkpointed"] = map[string]any{"status": "through", "through": 2}
+		coverage["witnessed"], coverage["unwitnessed"] = 2, 1
+		coverage["stamped"] = map[string]any{"status": "none"}
+	})
+	rig.answers(t, 0, held)
+	report = reportOf(t, ts, "")
+	if c := report.Coverage; c.Signed != (auditCoverageState{Status: "through", Through: 3}) || c.SignedRecords != 3 || c.Checkpointed != (auditCoverageState{Status: "through", Through: 2}) ||
+		c.Witnessed != 2 || c.Unwitnessed != 1 || c.Stamped != (auditCoverageState{Status: "none"}) {
+		t.Errorf("held inputs' reach is shown as %+v", c)
+	}
+}
+
+// **Each desk's command runs in that desk's own folder.** The stand-in answers
+// from a file in the directory it runs in, so the startup desk and a desk Desk
+// made each see the answer their own folder holds.
+func TestEachDeskIsCheckedInItsOwnFolder(t *testing.T) {
+	t.Setenv("JPACK_CONFIG", "")
+	rig := newAuditRig(t, withAuditVersions)
+	rig.answers(t, 4, auditNoTrailYet)
+	s, ts, _ := gatesServer(t, rig.bin)
+	writeProject(t, s.projectDir, map[string]string{"jpack.json": auditedConfig})
+	answerAt(t, filepath.Join(s.projectDir, deskAnswerName), 0, auditValidReport)
+	row := createGatedDesk(t, ts)
+	answerAt(t, filepath.Join(row.Folder, deskAnswerName), 0, auditMixedReport)
+	other := createGatedDesk(t, ts)
+	answerAt(t, filepath.Join(other.Folder, deskAnswerName), 1, auditInvalidReport)
+	for _, desk := range []struct {
+		id    string
+		lines int64
+		state string
+	}{{"", 3, "valid"}, {row.ID, 6, "valid"}, {other.ID, 3, "invalid"}, {row.ID, 6, "valid"}, {"", 3, "valid"}} {
+		if report := reportOf(t, ts, desk.id); report.Lines != desk.lines || report.Status != desk.state {
+			t.Errorf("desk %q was checked as %d lines, %s; want its own folder's %d, %s", desk.id, report.Lines, report.Status, desk.lines, desk.state)
+		}
 	}
 }
 
@@ -324,10 +563,30 @@ func TestTheDecisionRecordIsUnavailableWhereTheReviewIs(t *testing.T) {
 
 	named := filepath.Join(elsewhere, "jpack.json")
 	t.Setenv("JPACK_CONFIG", named)
-	status, answer, refusal := readAudit(t, ts, "")
-	want := "This project's runtime reads " + named + ", which JPACK_CONFIG names, and not this project's jpack.json, so Desk does not check its decision record here."
-	if status != http.StatusConflict || refusal != want || answer.State != "" {
-		t.Errorf("under another project's JPACK_CONFIG the panel answered %d %+v %q", status, answer, refusal)
+	status, data := reviewCall(t, ts, "GET", "/api/audit/verify", "", nil, bearer)
+	want := "This project's runtime reads the configuration that JPACK_CONFIG names where Desk was started, and not this project's jpack.json, so Desk does not check its decision record here."
+	if status != http.StatusConflict || refusalOf(data) != want {
+		t.Errorf("under another project's JPACK_CONFIG the panel answered %d %s", status, data)
+	}
+	// The setting is named, and its value is not: neither the path nor the
+	// folder it is in.
+	if bytes.Contains(data, []byte(elsewhere)) || bytes.Contains(data, []byte(filepath.Base(elsewhere))) {
+		t.Errorf("the panel's refusal discloses the configured path: %s", data)
+	}
+	// Nor does an error: a runtime that has gone from where it was named is
+	// said by its file name, not its folder.
+	t.Setenv("JPACK_CONFIG", "")
+	gone := t.TempDir()
+	missing := filepath.Join(gone, "jpack")
+	_, ts3 := startDesk(t, Config{ProjectDir: project, JpackBin: missing, Token: testToken, Logger: log.New(io.Discard, "", 0)})
+	status, data = reviewCall(t, ts3, "GET", "/api/audit/verify", "", nil, bearer)
+	if status != http.StatusInternalServerError || !strings.HasPrefix(refusalOf(data), "The decision record could not be checked: ") || bytes.Contains(data, []byte(gone)) || bytes.Contains(data, []byte(project)) {
+		t.Errorf("with its runtime gone the panel answered %d %s", status, data)
+	}
+	t.Setenv("JPACK_CONFIG", named)
+	// The review's own refusal keeps its wording, which quotes it.
+	if status, data := reviewCall(t, ts, "GET", "/api/review", "", nil, bearer); status != http.StatusConflict || !bytes.Contains(data, []byte(named)) {
+		t.Errorf("the review's refusal changed: %d %s", status, data)
 	}
 	if calls := rig.ran(t); len(calls) != 0 {
 		t.Errorf("a refused panel ran %q", calls)
@@ -473,5 +732,22 @@ func TestTheDecisionRecordWithTheRuntime(t *testing.T) {
 	report = reportOf(t, ts, row.ID)
 	if report.Status != "invalid" || len(report.Findings) != 1 || report.Findings[0].Name != "incomplete-last-line" {
 		t.Errorf("after a torn line the panel shows %+v", report)
+	}
+
+	// An argument it cannot read is its refusal, for its root command, exit
+	// 3: shown in its words, and never taken for an older runtime.
+	dir, refused := s.desks[row.ID].auditRuntime()
+	if refused != "" {
+		t.Fatal(refused)
+	}
+	out, err := runRuntime(t.Context(), bin, dir, "audit", "verify", "--config", "jpack.json", "--format", "json", "--require-signed-through", "bad")
+	if read, readErr := readAuditVerification(out, err); readErr != nil || read.State != auditStateUnverified || len(read.Diagnostics) != 1 || read.Diagnostics[0].Code != "JPS-INVOCATION-ARGUMENTS" {
+		t.Errorf("runtime %s's answer to an argument it cannot read was read as %+v, %v (%s)", schema.Tool.Version, read, readErr, out)
+	}
+	// A configuration it refuses, exit 1: its refusal, in its words.
+	writeProject(t, row.Folder, map[string]string{"jpack.json": `{"configVersion":"6","audit":{"dir":".desk-private/audit","chain":"yes"},"packs":{}}` + "\n"})
+	status, answer, refusal = readAudit(t, ts, row.ID)
+	if status != http.StatusOK || answer.State != auditStateUnverified || len(answer.Diagnostics) == 0 || answer.Diagnostics[0].Code != "JPS-PROJECT-CONFIG-SCHEMA" {
+		t.Errorf("with a configuration the runtime refuses the panel answered %d %+v %q", status, answer, refusal)
 	}
 }

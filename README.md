@@ -264,22 +264,26 @@ person's approval, and it records no name.
 
 **The decision record, in Admin → Project** (ADR-0010, sections 4 and 6).
 Beside the Gates card, Desk runs the runtime's own `jpack audit verify --config
-jpack.json --format json` in the desk's folder when the panel opens and when you
-ask again, never on a timer. It passes no public key, no held checkpoint, no
-time-stamping roots and no `--require-…` flag, so the runtime checks the chain
-alone and says that it checked no signature, checkpoint or stamp. The panel
-shows the runtime's status, its coverage counts, segments, discontinuities and
-findings by name, and its sentences on what the result establishes and what it
-does not, in English as the runtime writes them. Exit 1 is a failed check, and
-its report is shown; an answer the runtime does not document is shown as an
-error. Desk ran it on your machine, over your trail: it is not evidence to
-anyone who does not trust you. A holder runs the same command on a copy, with
-what it holds. With a runtime that does not read configVersion `"6"` (before
-0.26.0), or that does not know `audit verify`, the panel says so in one sentence
-and runs nothing more. A project whose `jpack.json` declares no audit directory
-keeps no trail, and the panel runs nothing. On the project Desk was started on,
-under a `JPACK_CONFIG` that names another project's configuration, the panel is
-unavailable, as Review and lock is.
+jpack.json --format json` in the desk's folder each time you open Project and
+when you ask again: never on a timer, on a reconnect, or because a project file
+changed. It passes no public key, no held checkpoint, no time-stamping roots and
+no `--require-…` flag, so the runtime checks the chain alone and says that it
+checked no signature, checkpoint or stamp. The panel shows the runtime's status,
+its coverage counts, segments, discontinuities and findings by name, and its
+sentences on what the result establishes and what it does not, in English as
+the runtime writes them. Exit 1 with a report is a failed check, and the report
+is shown, once every member a report has is there; a refusal the runtime
+explains, on any non-zero exit, is shown in its words; any other answer is
+shown as an error. Desk ran it on your machine, over your trail: it is not
+evidence to anyone who does not trust you. A holder runs the same command on a
+copy, with what it holds. With a runtime that does not read configVersion `"6"`
+(before 0.26.0), or whose command parser says, and says only, that it has no
+`audit verify`, the panel says so in one sentence and runs nothing more; a
+`packs schema` that fails is an error, not an older runtime. A project whose
+`jpack.json` declares no audit directory keeps no trail, and the panel runs
+nothing. On the project Desk was started on, under a `JPACK_CONFIG` that names
+another project's configuration, the panel is unavailable, as Review and lock
+is; it names the variable, not its value.
 
 **`requireComparableFacts`** (runtime ADR-0046).
 

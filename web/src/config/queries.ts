@@ -9,8 +9,9 @@
  * Two consequences of that, both deliberate rather than tolerated:
  *
  * - The path is under no `skipDirs` entry, so the chassis' watcher already
- *   reports changes to it, and `McpProvider`'s blanket `invalidateQueries()`
- *   makes the header update live when the file is edited in any editor.
+ *   reports changes to it, and `McpProvider`'s invalidation of every query
+ *   that follows the project makes the header update live when the file is
+ *   edited in any editor.
  * - It appears in `GET /api/files` and is editable in `/author`. That is
  *   honest: it *is* an ordinary project file, and the file API forms no
  *   opinion about what any file means.

@@ -16,10 +16,12 @@ package desk
 //
 // **It runs only where the runtime has the command.** `packs schema` names the
 // configuration versions the runtime reads, and "6" is the sign: the first
-// release that reads it has every audit command. An `audit verify` that the
-// runtime does not know (it answers for its root command, exit 3) is taken as
-// the same absence. With either, the page says one sentence and runs nothing
-// more.
+// release that reads it has every audit command. A `packs schema` that fails
+// is an error, never taken for an older runtime. An `audit verify` that the
+// command parser says does not exist (exit 3, and nothing but its words for
+// that) is taken as the same absence. With either, the page says one sentence
+// and runs nothing more. Every other refusal is the runtime's, shown in its
+// words.
 //
 // **It runs where the review runs**, through `runRuntime`, in the directory
 // this desk holds, with `--config jpack.json` named: never under a
@@ -32,7 +34,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 )
@@ -141,8 +145,20 @@ type auditAnswer struct {
 
 // auditRuntime is the directory and refusal for running the audit commands
 // over this desk's project: the review's own, in the panel's words.
+//
+// **The refusal names the variable, never its value.** JPACK_CONFIG holds a
+// path, and a path where Desk was started says where the owner keeps their
+// files. The panel and the trail's download say which setting refuses them
+// and why; the review's older wording, which quotes the value, is unchanged.
 func (s *Server) auditRuntime() (heldDir, string) {
-	return s.projectRuntime("This desk holds no project whose decision record Desk can check.", "check its decision record")
+	dir, named, ok := s.projectRuntime()
+	switch {
+	case !ok:
+		return heldDir{}, "This desk holds no project whose decision record Desk can check."
+	case named != "":
+		return dir, "This project's runtime reads the configuration that JPACK_CONFIG names where Desk was started, and not this project's " + runtimeConfigName + ", so Desk does not check its decision record here."
+	}
+	return dir, ""
 }
 
 // handleAuditVerify answers `GET /api/audit/verify`. It runs only when asked:
@@ -159,10 +175,30 @@ func (s *Server) handleAuditVerify(w http.ResponseWriter, r *http.Request) {
 	}
 	answer, err := s.auditVerify(r.Context(), dir)
 	if err != nil {
-		writeJSONCoded(w, http.StatusInternalServerError, CodeInternal, "The decision record could not be checked: "+strings.TrimRight(err.Error(), ".")+".")
+		s.log.Printf("desk: the decision record could not be checked: %v", err)
+		writeJSONCoded(w, http.StatusInternalServerError, CodeInternal, "The decision record could not be checked: "+strings.TrimRight(s.withoutPaths(err.Error()), ".")+".")
 		return
 	}
 	writeJSON(w, http.StatusOK, answer)
+}
+
+// withoutPaths is message with each path this desk was configured with
+// replaced by what it names: JPACK_CONFIG's value by the variable's name, the
+// runtime binary by its file name, and the project's folder by "the project's
+// folder". An error the panel or the download answers with names a setting
+// and why, and never quotes where the owner keeps their files. The log keeps
+// the message whole.
+func (s *Server) withoutPaths(message string) string {
+	for _, path := range []struct{ value, name string }{
+		{strings.TrimSpace(os.Getenv(runtimeConfigEnv)), runtimeConfigEnv},
+		{s.cfg.JpackBin, filepath.Base(s.cfg.JpackBin)},
+		{s.projectDir, "the project's folder"},
+	} {
+		if path.value != "" && path.value != path.name {
+			message = strings.ReplaceAll(message, path.value, path.name)
+		}
+	}
+	return message
 }
 
 // auditDirOf is the audit directory a configuration declares, `audit.dir`,
@@ -226,36 +262,199 @@ func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, err
 	return answer, nil
 }
 
-// auditVerification is `audit verify --format json` as it arrives, with the
-// members a report must have kept as pointers, so that a missing one is told
-// from an empty one.
+// The answers runtime 0.25.0 gives, measured, for an `audit verify` it does
+// not have: with Desk's flags, its root command knows no `--config`; without
+// them, it knows no `audit`. A runtime with an `audit` group and no `verify`
+// would say the third. Each comes alone, under JPS-INVOCATION-ARGUMENTS, exit
+// 3. Runner's probe for the same absence reads the same three.
+var auditAbsentMessages = []string{
+	`unknown command "audit" for "jpack"`,
+	`unknown command "verify" for "jpack audit"`,
+	`unknown flag: --config`,
+}
+
+// auditVerification is `audit verify --format json` as it arrives. Every
+// member a report must have is a pointer, so that a missing one is told from
+// a zero, and is checked before anything is shown.
 type auditVerification struct {
-	Command              string               `json:"command"`
-	Status               string               `json:"status"`
-	Diagnostics          []runtimeDiagnostic  `json:"diagnostics"`
-	Lines                int64                `json:"lines"`
-	Bytes                int64                `json:"bytes"`
-	Snapshot             *bool                `json:"snapshotBetweenWrites"`
-	Coverage             *auditCoverage       `json:"coverage"`
-	Segments             []auditSegment       `json:"segments"`
-	SegmentsTotal        int64                `json:"segmentsTotal"`
-	Discontinuities      []auditDiscontinuity `json:"discontinuities"`
-	DiscontinuitiesTotal int64                `json:"discontinuitiesTotal"`
-	Findings             []auditFinding       `json:"findings"`
-	FindingsTotal        int64                `json:"findingsTotal"`
-	Establishes          []string             `json:"establishes"`
-	DoesNotEstablish     []string             `json:"doesNotEstablish"`
+	Command              string                   `json:"command"`
+	Status               string                   `json:"status"`
+	Diagnostics          []runtimeDiagnostic      `json:"diagnostics"`
+	Lines                *int64                   `json:"lines"`
+	Bytes                *int64                   `json:"bytes"`
+	Snapshot             *bool                    `json:"snapshotBetweenWrites"`
+	Coverage             *wireAuditCoverage       `json:"coverage"`
+	Segments             []wireAuditSegment       `json:"segments"`
+	SegmentsTotal        *int64                   `json:"segmentsTotal"`
+	Discontinuities      []wireAuditDiscontinuity `json:"discontinuities"`
+	DiscontinuitiesTotal *int64                   `json:"discontinuitiesTotal"`
+	Findings             []wireAuditFinding       `json:"findings"`
+	FindingsTotal        *int64                   `json:"findingsTotal"`
+	Establishes          []string                 `json:"establishes"`
+	DoesNotEstablish     []string                 `json:"doesNotEstablish"`
+}
+
+type wireAuditCoverageState struct {
+	Status  *string `json:"status"`
+	Through *int64  `json:"through"`
+	Detail  *string `json:"detail"`
+}
+
+type wireAuditCoverage struct {
+	LegacyPrefix    *int64                  `json:"legacyPrefix"`
+	Chained         *int64                  `json:"chained"`
+	Unchained       *int64                  `json:"unchained"`
+	Uncovered       *int64                  `json:"uncovered"`
+	Damaged         *int64                  `json:"damaged"`
+	Signed          *wireAuditCoverageState `json:"signed"`
+	SignedRecords   *int64                  `json:"signedRecords"`
+	UnsignedRecords *int64                  `json:"unsignedRecords"`
+	Checkpointed    *wireAuditCoverageState `json:"checkpointed"`
+	Witnessed       *int64                  `json:"witnessed"`
+	Unwitnessed     *int64                  `json:"unwitnessed"`
+	Stamped         *wireAuditCoverageState `json:"stamped"`
+}
+
+type wireAuditSegment struct {
+	FirstLine *int64 `json:"firstLine"`
+	LastLine  *int64 `json:"lastLine"`
+}
+
+type wireAuditDiscontinuity struct {
+	Line        *int64  `json:"line"`
+	Reason      *string `json:"reason"`
+	DamagedLine *int64  `json:"damagedLine"`
+	Bytes       *int64  `json:"bytes"`
+	Digest      *string `json:"digest"`
+}
+
+type wireAuditFinding struct {
+	Name   *string `json:"name"`
+	Line   *int64  `json:"line"`
+	Detail *string `json:"detail"`
+}
+
+// auditPresence reads required members, and remembers whether any was
+// missing or held a value no report has.
+type auditPresence struct{ missing bool }
+
+// count is a count or a sequence: present, and not negative.
+func (p *auditPresence) count(value *int64) int64 {
+	if value == nil || *value < 0 {
+		p.missing = true
+		return 0
+	}
+	return *value
+}
+
+// text is a present string; named says it must not be empty either.
+func (p *auditPresence) text(value *string, named bool) string {
+	if value == nil || named && *value == "" {
+		p.missing = true
+		return ""
+	}
+	return *value
+}
+
+// state is one protection's reach: a status, and the sequence it reaches
+// through, which a status of "through" must name.
+func (p *auditPresence) state(value *wireAuditCoverageState) auditCoverageState {
+	if value == nil {
+		p.missing = true
+		return auditCoverageState{}
+	}
+	state := auditCoverageState{Status: p.text(value.Status, true)}
+	if value.Through != nil || state.Status == "through" {
+		state.Through = p.count(value.Through)
+		if state.Status == "through" && state.Through < 1 {
+			p.missing = true
+		}
+	}
+	if value.Detail != nil {
+		state.Detail = *value.Detail
+	}
+	return state
+}
+
+// report is the answer as a report, or false where a member a report has is
+// missing, holds no valid value, or disagrees with the status: a list longer
+// than its total, findings under a status that says every check passed, or
+// none under one that says a check failed.
+func (got auditVerification) report() (*auditReport, bool) {
+	p := &auditPresence{}
+	if got.Coverage == nil || got.Snapshot == nil || got.Segments == nil || got.Discontinuities == nil || got.Findings == nil || got.Establishes == nil || got.DoesNotEstablish == nil {
+		return nil, false
+	}
+	c := got.Coverage
+	report := &auditReport{
+		Status: got.Status, Lines: p.count(got.Lines), Bytes: p.count(got.Bytes), SnapshotBetweenWrites: *got.Snapshot,
+		Coverage: auditCoverage{
+			LegacyPrefix: p.count(c.LegacyPrefix), Chained: p.count(c.Chained), Unchained: p.count(c.Unchained),
+			Uncovered: p.count(c.Uncovered), Damaged: p.count(c.Damaged),
+			Signed: p.state(c.Signed), SignedRecords: p.count(c.SignedRecords), UnsignedRecords: p.count(c.UnsignedRecords),
+			Checkpointed: p.state(c.Checkpointed), Witnessed: p.count(c.Witnessed), Unwitnessed: p.count(c.Unwitnessed),
+			Stamped: p.state(c.Stamped),
+		},
+		Segments: []auditSegment{}, SegmentsTotal: p.count(got.SegmentsTotal),
+		Discontinuities: []auditDiscontinuity{}, DiscontinuitiesTotal: p.count(got.DiscontinuitiesTotal),
+		Findings: []auditFinding{}, FindingsTotal: p.count(got.FindingsTotal),
+		Establishes: got.Establishes, DoesNotEstablish: got.DoesNotEstablish,
+	}
+	for _, segment := range got.Segments {
+		report.Segments = append(report.Segments, auditSegment{FirstLine: p.count(segment.FirstLine), LastLine: p.count(segment.LastLine)})
+	}
+	for _, item := range got.Discontinuities {
+		report.Discontinuities = append(report.Discontinuities, auditDiscontinuity{
+			Line: p.count(item.Line), Reason: p.text(item.Reason, true), DamagedLine: p.count(item.DamagedLine),
+			Bytes: p.count(item.Bytes), Digest: p.text(item.Digest, true),
+		})
+	}
+	for _, finding := range got.Findings {
+		report.Findings = append(report.Findings, auditFinding{Name: p.text(finding.Name, true), Line: p.count(finding.Line), Detail: p.text(finding.Detail, false)})
+	}
+	if p.missing ||
+		report.SegmentsTotal < int64(len(report.Segments)) ||
+		report.DiscontinuitiesTotal < int64(len(report.Discontinuities)) ||
+		report.FindingsTotal < int64(len(report.Findings)) ||
+		(report.Status == "invalid") != (report.FindingsTotal > 0) {
+		return nil, false
+	}
+	return report, true
+}
+
+// said is the runtime's diagnostics, where it gave any and each has a code and
+// words.
+func (got auditVerification) said() bool {
+	if len(got.Diagnostics) == 0 {
+		return false
+	}
+	for _, diagnostic := range got.Diagnostics {
+		if diagnostic.Code == "" || diagnostic.Message == "" {
+			return false
+		}
+	}
+	return true
+}
+
+// absent is whether the answer is the command parser's, saying the runtime
+// has no `audit verify`: exit 3, and one diagnostic, JPS-INVOCATION-ARGUMENTS,
+// in one of the forms auditAbsentMessages lists. Any other invocation error,
+// such as an argument the runtime could not read, is the runtime's refusal.
+func (got auditVerification) absent(code int) bool {
+	return code == 3 && len(got.Diagnostics) == 1 && got.Diagnostics[0].Code == "JPS-INVOCATION-ARGUMENTS" &&
+		slices.Contains(auditAbsentMessages, got.Diagnostics[0].Message)
 }
 
 // readAuditVerification reads what `audit verify` printed, whatever the exit.
 //
-//   - Exit 0 with "valid" or "segmented", and exit 1 with "invalid", is the
-//     report: exit 1 is a failed check, never a failure to check.
-//   - Exit 3 answered for any command but `audit verify` is a runtime without
-//     it: runtime 0.25.0, asked for `audit verify --config …`, answers for its
-//     root command that it knows no `--config` there.
-//   - Any other non-zero exit with the runtime's own diagnostics is its
-//     refusal to verify, such as a trail no record has been written to yet.
+//   - A runtime without the command (absent) is said as one.
+//   - Exit 0 with "valid" or "segmented", and exit 1 with "invalid", from
+//     `audit verify`, with every member a report has, is the report: exit 1 is
+//     a failed check, never a failure to check.
+//   - Any other non-zero exit with "error" or "unsupported" and the runtime's
+//     own diagnostics is its refusal to verify, shown in its words: a trail no
+//     record has been written to yet (exit 4), a configuration it refuses
+//     (exit 1 or 2), an argument it could not read (exit 3).
 //
 // Anything else is not an answer the runtime documents, and is an error.
 func readAuditVerification(out []byte, runErr error) (auditAnswer, error) {
@@ -271,25 +470,14 @@ func readAuditVerification(out []byte, runErr error) (auditAnswer, error) {
 	if out == nil || json.Unmarshal(out, &got) != nil {
 		return auditAnswer{}, undocumentedAudit(runErr)
 	}
-	if code == 3 && got.Command != auditVerifyCommand && got.Status == "error" {
-		return auditAnswer{State: auditStateOlder}, nil
-	}
-	if got.Command != auditVerifyCommand {
-		return auditAnswer{}, undocumentedAudit(runErr)
-	}
 	switch {
-	case code == 0 && (got.Status == "valid" || got.Status == "segmented"), code == 1 && got.Status == "invalid":
-		if got.Coverage == nil || got.Snapshot == nil || got.Segments == nil || got.Discontinuities == nil || got.Findings == nil || got.Establishes == nil || got.DoesNotEstablish == nil {
-			return auditAnswer{}, undocumentedAudit(runErr)
+	case got.absent(code):
+		return auditAnswer{State: auditStateOlder}, nil
+	case got.Command == auditVerifyCommand && (code == 0 && (got.Status == "valid" || got.Status == "segmented") || code == 1 && got.Status == "invalid"):
+		if report, ok := got.report(); ok {
+			return auditAnswer{State: auditStateReport, Report: report}, nil
 		}
-		return auditAnswer{State: auditStateReport, Report: &auditReport{
-			Status: got.Status, Lines: got.Lines, Bytes: got.Bytes, SnapshotBetweenWrites: *got.Snapshot,
-			Coverage: *got.Coverage, Segments: got.Segments, SegmentsTotal: got.SegmentsTotal,
-			Discontinuities: got.Discontinuities, DiscontinuitiesTotal: got.DiscontinuitiesTotal,
-			Findings: got.Findings, FindingsTotal: got.FindingsTotal,
-			Establishes: got.Establishes, DoesNotEstablish: got.DoesNotEstablish,
-		}}, nil
-	case code > 1 && (got.Status == "error" || got.Status == "unsupported") && len(got.Diagnostics) > 0:
+	case code > 0 && (got.Status == "error" || got.Status == "unsupported") && got.said():
 		return auditAnswer{State: auditStateUnverified, Diagnostics: got.Diagnostics}, nil
 	}
 	return auditAnswer{}, undocumentedAudit(runErr)

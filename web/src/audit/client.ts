@@ -65,21 +65,31 @@ const object = (value: unknown): value is Record<string, unknown> => !!value && 
 function list<T>(value: unknown, item: (value: unknown) => value is T): value is T[] { return Array.isArray(value) && value.every(item) }
 const optional = (value: unknown, check: (value: unknown) => boolean) => value === undefined || check(value)
 
-const isState = (value: unknown): value is AuditCoverageState => object(value) && text(value.status) && optional(value.through, count) && optional(value.detail, text)
+const named = (value: unknown): value is string => text(value) && value !== ''
+/** A protection's reach: a status, and the record it reaches through, which "through" must name. */
+const isState = (value: unknown): value is AuditCoverageState => object(value) && named(value.status) && optional(value.through, count) && optional(value.detail, text)
+  && (value.status !== 'through' || count(value.through) && value.through > 0)
 const isCoverage = (value: unknown): value is AuditCoverage => object(value)
   && ['legacyPrefix', 'chained', 'unchained', 'uncovered', 'damaged', 'signedRecords', 'unsignedRecords', 'witnessed', 'unwitnessed'].every(name => count(value[name]))
   && ['signed', 'checkpointed', 'stamped'].every(name => isState(value[name]))
 const isSegment = (value: unknown): value is AuditSegment => object(value) && count(value.firstLine) && count(value.lastLine)
-const isDiscontinuity = (value: unknown): value is AuditDiscontinuity => object(value) && count(value.line) && text(value.reason) && count(value.damagedLine) && count(value.bytes) && text(value.digest)
-const isFinding = (value: unknown): value is AuditFinding => object(value) && text(value.name) && count(value.line) && text(value.detail)
-const isDiagnostic = (value: unknown): value is AuditDiagnostic => object(value) && text(value.code) && text(value.message)
+const isDiscontinuity = (value: unknown): value is AuditDiscontinuity => object(value) && count(value.line) && named(value.reason) && count(value.damagedLine) && count(value.bytes) && named(value.digest)
+const isFinding = (value: unknown): value is AuditFinding => object(value) && named(value.name) && count(value.line) && text(value.detail)
+const isDiagnostic = (value: unknown): value is AuditDiagnostic => object(value) && named(value.code) && named(value.message)
 
+/**
+ * A report with every member the runtime gives one, as the chassis checks it:
+ * each count present and not negative, no list longer than its total, and
+ * findings exactly where the status says a check failed.
+ */
 export function isAuditReport(value: unknown): value is AuditReport {
   return object(value) && text(value.status) && count(value.lines) && count(value.bytes) && typeof value.snapshotBetweenWrites === 'boolean'
     && isCoverage(value.coverage) && list(value.segments, isSegment) && count(value.segmentsTotal)
     && list(value.discontinuities, isDiscontinuity) && count(value.discontinuitiesTotal)
     && list(value.findings, isFinding) && count(value.findingsTotal)
     && list(value.establishes, text) && list(value.doesNotEstablish, text)
+    && value.segments.length <= value.segmentsTotal && value.discontinuities.length <= value.discontinuitiesTotal
+    && value.findings.length <= value.findingsTotal && (value.status === 'invalid') === (value.findingsTotal > 0)
 }
 
 export function isAuditRecord(value: unknown): value is AuditRecord {

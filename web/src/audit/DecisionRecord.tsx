@@ -8,40 +8,57 @@
  * diagnostics. Desk runs it with no key, no held checkpoint and no stamping
  * roots, and the panel says so.
  *
- * It runs when the panel opens and when the owner asks again. Never on a
- * timer, on focus or on reconnect.
+ * It runs when the panel becomes visible and when the owner asks again: never
+ * on a timer, on focus, on a reconnect or on a change to the project. The
+ * query is disabled, so nothing reruns it on its own, and marked to run only
+ * on request, so `McpProvider` neither cancels nor invalidates it. Admin keeps
+ * Project's panel mounted while another section is open, so it says when the
+ * panel is visible.
  *
  * With a runtime that has no audit commands, it says one sentence and nothing
  * else: no word of what that runtime cannot do is said as if it were done.
  */
+import { useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { ON_REQUEST_ONLY } from '../mcp/projectChange'
 import { msg, systemMessage, useLocale } from '../i18n'
 import { Button } from '../ui/Button'
 import { SettingsSection } from '../ui/SettingsSection'
 import { AUDIT_KEY, AuditUnavailable, readAuditRecord, type AuditCoverageState, type AuditReport } from './client'
 import styles from './DecisionRecord.module.css'
 
-/** The panel's one query: run on opening, and on the owner's request alone. */
-export function useAuditRecord() {
-  return useQuery({
+/**
+ * The panel's one query: run each time the panel becomes visible, and on the
+ * owner's request, and at no other time.
+ */
+export function useAuditRecord(visible: boolean) {
+  const query = useQuery({
     queryKey: AUDIT_KEY,
     queryFn: ({ signal }) => readAuditRecord(signal),
+    enabled: false,
+    meta: ON_REQUEST_ONLY,
     retry: false,
-    refetchOnMount: 'always',
+    staleTime: Infinity,
+    refetchOnMount: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchInterval: false
   })
+  const refetch = useRef(query.refetch)
+  refetch.current = query.refetch
+  // Joins a run already in flight rather than starting a second.
+  useEffect(() => { if (visible) void refetch.current({ cancelRefetch: false }) }, [visible])
+  return query
 }
 
-export function DecisionRecord() {
+export function DecisionRecord({ visible = true }: { visible?: boolean }) {
   useLocale()
-  const query = useAuditRecord()
+  const query = useAuditRecord(visible)
   const record = query.data
-  const again = <div><Button onClick={() => void query.refetch()} disabled={query.isFetching}>{query.isFetching ? msg('Checking…') : msg('Check again')}</Button></div>
+  const again = <div><Button onClick={() => void query.refetch()}>{msg('Check again')}</Button></div>
   return <SettingsSection title={msg('Decision record')} variant="plain">
     <div className={styles.card} data-testid="decision-record">
-      {query.isPending ? <p role="status" className={styles.quiet}>{msg('Asking the runtime…')}</p>
+      {query.isPending || query.isFetching ? <p role="status" className={styles.quiet}>{msg('Asking the runtime…')}</p>
         : query.error instanceof AuditUnavailable ? <p role="alert">{msg('Desk does not check the decision record here.')} {systemMessage(query.error.message)}</p>
           : query.error ? <div role="alert" className={styles.card}><p>{systemMessage(query.error.message)}</p><div><Button onClick={() => void query.refetch()} disabled={query.isFetching}>{msg('Retry')}</Button></div></div>
             : record?.state === 'older-runtime' ? <p>{msg('This runtime (jpack {{version}}) writes an unchained trail and has no audit commands. Chaining, checkpoints, signing and stamping need jpack {{floor}} or later.', { version: record.runtime ?? '?', floor: record.floor })}</p>

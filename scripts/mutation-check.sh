@@ -2128,10 +2128,13 @@ func (b *cappedBuffer) exceeded() bool {'
 
   # **The decision-record panel (ADR-0010, sections 4, 6 and 8).** It runs the
   # runtime's own `audit verify` with no held input and no `--require-…` flag,
-  # only where `packs schema` names "6" and the runtime knows the command, and
-  # reads exit 1 as a failed check's report. What the runtime does not
-  # document is an error. It refuses where the review refuses, and runs
-  # nothing for a project that keeps no trail.
+  # only where `packs schema` names "6" and the command parser does not say,
+  # alone and exit 3, that the command is absent; a failed `packs schema` is an
+  # error. Exit 0 or 1 with a report is read only with every member a report
+  # has; a refusal with the runtime's words, on any non-zero exit, is shown in
+  # them; anything else is an error. It refuses where the review refuses,
+  # naming JPACK_CONFIG and not its value, runs each desk's command in that
+  # desk's folder, and runs nothing for a project that keeps no trail.
   AR=internal/desk/audit_record.go
   mutate go "audit: the capability check is skipped" "$AR" \
     '	if !slices.Contains(schema.supported, auditConfigVersion) {' \
@@ -2139,6 +2142,15 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "audit: another configuration version is taken as the sign" "$AR" \
     '	auditConfigVersion = "6"' \
     '	auditConfigVersion = "5"'
+  mutate go "audit: a failed packs schema reads as an older runtime" "$AR" \
+    '	schema, err := readRuntimeSchema(ctx, s.cfg.JpackBin, dir)
+	if err != nil {
+		return auditAnswer{}, err
+	}' \
+    '	schema, err := readRuntimeSchema(ctx, s.cfg.JpackBin, dir)
+	if err != nil {
+		return auditAnswer{State: auditStateOlder, Floor: auditRuntimeFloor}, nil
+	}'
   mutate go "audit: a reader's demand is passed" "$AR" \
     '"audit", "verify", "--config", runtimeConfigName, "--format", "json")' \
     '"audit", "verify", "--config", runtimeConfigName, "--format", "json", "--require-checkpoint-through", "1")'
@@ -2149,32 +2161,102 @@ func (b *cappedBuffer) exceeded() bool {'
     '"audit", "verify", "--config", runtimeConfigName, "--format", "json")' \
     '"audit", "verify", "--format", "json")'
   mutate go "audit: exit 1 is not read as a report" "$AR" \
-    '	case code == 0 && (got.Status == "valid" || got.Status == "segmented"), code == 1 && got.Status == "invalid":' \
-    '	case code == 0 && (got.Status == "valid" || got.Status == "segmented"):'
+    '|| code == 1 && got.Status == "invalid"):' \
+    '):'
   mutate go "audit: a report's status is not held to its exit" "$AR" \
-    '	case code == 0 && (got.Status == "valid" || got.Status == "segmented"), code == 1 && got.Status == "invalid":' \
-    '	case got.Status == "valid" || got.Status == "segmented" || got.Status == "invalid":'
-  mutate go "audit: a report missing a member is shown" "$AR" \
-    '		if got.Coverage == nil || got.Snapshot == nil || got.Segments == nil || got.Discontinuities == nil || got.Findings == nil || got.Establishes == nil || got.DoesNotEstablish == nil {' \
-    '		if got.Coverage == nil || got.Snapshot == nil {'
+    '	case got.Command == auditVerifyCommand && (code == 0 && (got.Status == "valid" || got.Status == "segmented") || code == 1 && got.Status == "invalid"):' \
+    '	case got.Command == auditVerifyCommand && (got.Status == "valid" || got.Status == "segmented" || got.Status == "invalid"):'
+  mutate go "audit: a report's list missing is shown" "$AR" \
+    '	if got.Coverage == nil || got.Snapshot == nil || got.Segments == nil || got.Discontinuities == nil || got.Findings == nil || got.Establishes == nil || got.DoesNotEstablish == nil {' \
+    '	if got.Coverage == nil || got.Snapshot == nil {'
+  mutate go "audit: a missing count reads as zero" "$AR" \
+    '	if value == nil || *value < 0 {
+		p.missing = true
+		return 0
+	}' \
+    '	if value == nil {
+		return 0
+	}
+	if *value < 0 {
+		p.missing = true
+		return 0
+	}'
+  mutate go "audit: a negative count is shown" "$AR" \
+    '	if value == nil || *value < 0 {
+		p.missing = true' \
+    '	if value == nil {
+		p.missing = true'
+  mutate go "audit: a protection with no status is shown" "$AR" \
+    '	state := auditCoverageState{Status: p.text(value.Status, true)}' \
+    '	state := auditCoverageState{}
+	if value.Status != nil {
+		state.Status = *value.Status
+	}'
+  mutate go "audit: through no sequence is shown" "$AR" \
+    '	if value.Through != nil || state.Status == "through" {
+		state.Through = p.count(value.Through)
+		if state.Status == "through" && state.Through < 1 {
+			p.missing = true
+		}
+	}' \
+    '	if value.Through != nil {
+		state.Through = *value.Through
+	}'
+  mutate go "audit: more findings than their total are shown" "$AR" \
+    '		report.FindingsTotal < int64(len(report.Findings)) ||' \
+    ''
+  mutate go "audit: more segments than their total are shown" "$AR" \
+    '		report.SegmentsTotal < int64(len(report.Segments)) ||' \
+    ''
+  mutate go "audit: more discontinuities than their total are shown" "$AR" \
+    '		report.DiscontinuitiesTotal < int64(len(report.Discontinuities)) ||' \
+    ''
+  mutate go "audit: findings that disagree with the status are shown" "$AR" \
+    '		report.FindingsTotal < int64(len(report.Findings)) ||
+		(report.Status == "invalid") != (report.FindingsTotal > 0) {' \
+    '		report.FindingsTotal < int64(len(report.Findings)) {'
+  mutate go "audit: the legacy prefix is dropped" "$AR" \
+    'LegacyPrefix: p.count(c.LegacyPrefix),' \
+    'LegacyPrefix: 0 * p.count(c.LegacyPrefix),'
+  mutate go "audit: unchained lines are dropped" "$AR" \
+    'Unchained: p.count(c.Unchained),' \
+    'Unchained: 0 * p.count(c.Unchained),'
+  mutate go "audit: absence is read on any exit" "$AR" \
+    '	return code == 3 && len(got.Diagnostics) == 1' \
+    '	return code > 0 && len(got.Diagnostics) == 1'
+  mutate go "audit: absence is read beside other diagnostics" "$AR" \
+    '	return code == 3 && len(got.Diagnostics) == 1' \
+    '	return code == 3 && len(got.Diagnostics) >= 1'
+  mutate go "audit: absence is read under any code" "$AR" \
+    ' && got.Diagnostics[0].Code == "JPS-INVOCATION-ARGUMENTS" &&' \
+    ' &&'
+  mutate go "audit: any invocation error reads as absence" "$AR" \
+    '		slices.Contains(auditAbsentMessages, got.Diagnostics[0].Message)' \
+    '		got.Diagnostics[0].Message != ""'
+  mutate go "audit: a missing verify is not read as absence" "$AR" \
+    '	`unknown command "verify" for "jpack audit"`,
+' \
+    ''
   mutate go "audit: a runtime without audit verify is an error" "$AR" \
-    '	if code == 3 && got.Command != auditVerifyCommand && got.Status == "error" {' \
-    '	if false {'
-  mutate go "audit: any exit from another command reads as no audit commands" "$AR" \
-    '	if code == 3 && got.Command != auditVerifyCommand && got.Status == "error" {' \
-    '	if code != 0 && got.Command != auditVerifyCommand && got.Status == "error" {'
-  mutate go "audit: audit verify's own exit 3 reads as no audit commands" "$AR" \
-    '	if code == 3 && got.Command != auditVerifyCommand && got.Status == "error" {' \
-    '	if code == 3 && got.Status == "error" {'
+    '	case got.absent(code):
+		return auditAnswer{State: auditStateOlder}, nil' \
+    '	case false:
+		return auditAnswer{State: auditStateOlder}, nil'
   mutate go "audit: the runtime's refusal is an error" "$AR" \
-    '	case code > 1 && (got.Status == "error" || got.Status == "unsupported") && len(got.Diagnostics) > 0:' \
+    '	case code > 0 && (got.Status == "error" || got.Status == "unsupported") && got.said():' \
     '	case false:'
-  mutate go "audit: a refusal with no diagnostics is shown" "$AR" \
-    '	case code > 1 && (got.Status == "error" || got.Status == "unsupported") && len(got.Diagnostics) > 0:' \
-    '	case code > 1 && (got.Status == "error" || got.Status == "unsupported"):'
-  mutate go "audit: a refusal that exits 0 or 1 is shown" "$AR" \
-    '	case code > 1 && (got.Status == "error" || got.Status == "unsupported") && len(got.Diagnostics) > 0:' \
-    '	case (got.Status == "error" || got.Status == "unsupported") && len(got.Diagnostics) > 0:'
+  mutate go "audit: a refusal that exits 1 is an error" "$AR" \
+    '	case code > 0 && (got.Status == "error" || got.Status == "unsupported") && got.said():' \
+    '	case code > 1 && (got.Status == "error" || got.Status == "unsupported") && got.said():'
+  mutate go "audit: a refusal for the root command is an error" "$AR" \
+    '	case code > 0 && (got.Status == "error" || got.Status == "unsupported") && got.said():' \
+    '	case code > 0 && got.Command == auditVerifyCommand && (got.Status == "error" || got.Status == "unsupported") && got.said():'
+  mutate go "audit: a refusal that exits 0 is shown" "$AR" \
+    '	case code > 0 && (got.Status == "error" || got.Status == "unsupported") && got.said():' \
+    '	case (got.Status == "error" || got.Status == "unsupported") && got.said():'
+  mutate go "audit: a refusal with no words is shown" "$AR" \
+    '		if diagnostic.Code == "" || diagnostic.Message == "" {' \
+    '		if diagnostic.Code == "" && false {'
   mutate go "audit: an older runtime's answer drops its version" "$AR" \
     '	if answer.State == auditStateOlder {
 		return older, nil
@@ -2184,16 +2266,34 @@ func (b *cappedBuffer) exceeded() bool {'
 	}'
   mutate go "audit: the report does not say which runtime made it" "$AR" \
     '	answer.Runtime = schema.version
-	return answer, nil' \
-    '	return answer, nil'
+' \
+    ''
   mutate go "audit: available on the startup desk under another JPACK_CONFIG" "$AR" \
     '	dir, refusal := s.auditRuntime()
 	if refusal != "" {' \
     '	dir, refusal := s.auditRuntime()
 	if false {'
   mutate go "audit: the refusal speaks of the review" "$AR" \
-    '"check its decision record")' \
-    '"review or lock it")'
+    'so Desk does not check its decision record here."' \
+    'so Desk does not review or lock it here."'
+  mutate go "audit: the refusal quotes JPACK_CONFIG's value" "$AR" \
+    '		return dir, "This project'"'"'s runtime reads the configuration that JPACK_CONFIG names where Desk was started' \
+    '		return dir, "This project'"'"'s runtime reads the configuration that " + named + " names where Desk was started'
+  mutate go "audit: an error quotes a configured path" "$AR" \
+    'strings.TrimRight(s.withoutPaths(err.Error()), ".")' \
+    'strings.TrimRight(err.Error(), ".")'
+  mutate go "audit: a named desk is checked in the startup desk's folder" "$AR" \
+    '	dir, named, ok := s.projectRuntime()
+	switch {
+	case !ok:
+		return heldDir{}, "This desk holds no project whose decision record Desk can check."' \
+    '	dir, named, ok := s.projectRuntime()
+	if s.cfg.parent != nil {
+		dir, named, ok = s.cfg.parent.projectRuntime()
+	}
+	switch {
+	case !ok:
+		return heldDir{}, "This desk holds no project whose decision record Desk can check."'
   mutate go "audit: a project that keeps no trail has the runtime run" "$AR" \
     '	} else if !declared {' \
     '	} else if !declared && false {'
@@ -8968,23 +9068,43 @@ export function assistantTransport(id: string): Transport {
 
   # **The decision-record panel on the page (ADR-0010, sections 4 and 6).** An
   # older runtime gets one sentence and nothing beside it; the report shows the
-  # runtime's counts, findings and sentences, verbatim and marked English;
-  # Desk's refusal is said as Desk's; and the panel runs on opening and on
-  # request, never on a timer, on focus or on reconnect.
+  # runtime's counts, findings and sentences, verbatim and marked English, and
+  # only a report with every member is accepted; Desk's refusal is said as
+  # Desk's; and the panel runs each time it becomes visible and on request,
+  # never on a timer, focus, reconnect or project change.
   DR=web/src/audit/DecisionRecord.tsx
   AC=web/src/audit/client.ts
-  mutate web "record: it runs again on a timer" "$DR" \
-    "    refetchInterval: false" \
-    "    refetchInterval: 60_000"
-  mutate web "record: it runs again on focus" "$DR" \
-    "    refetchOnWindowFocus: false," \
-    "    refetchOnWindowFocus: 'always',"
-  mutate web "record: it runs again on reconnect" "$DR" \
-    "    refetchOnReconnect: false," \
-    "    refetchOnReconnect: 'always',"
-  mutate web "record: opening the panel again runs nothing" "$DR" \
-    "    refetchOnMount: 'always'," \
-    "    refetchOnMount: true,"
+  MP=web/src/mcp/McpProvider.tsx
+  # The query also sets no interval and no refetch on focus or reconnect, but
+  # a disabled query runs none of those: `enabled: false` is the safeguard,
+  # and the row that turns it on is the one that can fail a test.
+  mutate web "record: the query runs on its own" "$DR" \
+    "    enabled: false," \
+    "    enabled: true,"
+  mutate web "record: becoming visible again runs nothing" "$DR" \
+    "{ cancelRefetch: false }) }, [visible])" \
+    "{ cancelRefetch: false }) }, [])"
+  mutate web "record: it runs while hidden" "$DR" \
+    "  useEffect(() => { if (visible) void refetch.current(" \
+    "  useEffect(() => { if (visible || !visible) void refetch.current("
+  mutate web "record: Admin says it is always visible" web/src/routes/AdminView.tsx \
+    "<DecisionRecord visible={open.id === 'project'} />" \
+    "<DecisionRecord visible />"
+  mutate web "record: not marked to run only on request" "$DR" \
+    "    meta: ON_REQUEST_ONLY," \
+    "    meta: { ...ON_REQUEST_ONLY, onRequestOnly: false },"
+  mutate web "record: every query follows the project" web/src/mcp/projectChange.ts \
+    "  return query.meta?.onRequestOnly !== true" \
+    "  return query.meta?.onRequestOnly !== true || true"
+  mutate web "record: a file change cancels its run" "$MP" \
+    "await queryClient.cancelQueries({ predicate: followsTheProject })" \
+    "await queryClient.cancelQueries()"
+  mutate web "record: a file change invalidates it" "$MP" \
+    "        await queryClient.invalidateQueries({ predicate: followsTheProject })" \
+    "        await queryClient.invalidateQueries()"
+  mutate web "record: a reconnect invalidates it" "$MP" \
+    "if (reconnecting) await queryClient.invalidateQueries({ predicate: followsTheProject })" \
+    "if (reconnecting) await queryClient.invalidateQueries()"
   mutate web "record: asking again runs nothing" "$DR" \
     "  const again = <div><Button onClick={() => void query.refetch()}" \
     "  const again = <div><Button onClick={() => undefined}"
@@ -9050,9 +9170,25 @@ export function assistantTransport(id: string): Transport {
   mutate web "record: the runtime's refusal with nothing said is accepted" "$AC" \
     "    case 'unverified': return list(value.diagnostics, isDiagnostic) && value.diagnostics.length > 0" \
     "    case 'unverified': return list(value.diagnostics, isDiagnostic)"
+  mutate web "record: a diagnostic with no words is accepted" "$AC" \
+    "object(value) && named(value.code) && named(value.message)" \
+    "object(value) && text(value.code) && text(value.message)"
+  mutate web "record: a count that is missing is accepted" "$AC" \
+    "  return object(value) && text(value.status) && count(value.lines) && count(value.bytes)" \
+    "  return object(value) && text(value.status) && (value.lines === undefined || count(value.lines)) && count(value.bytes)"
+  mutate web "record: through no record is accepted" "$AC" \
+    "
+  && (value.status !== 'through' || count(value.through) && value.through > 0)" \
+    ""
+  mutate web "record: a list longer than its total is accepted" "$AC" \
+    "    && value.findings.length <= value.findingsTotal && " \
+    "    && "
+  mutate web "record: findings that disagree with the status are accepted" "$AC" \
+    " && (value.status === 'invalid') === (value.findingsTotal > 0)" \
+    ""
   mutate web "record: not in Admin → Project" web/src/routes/AdminView.tsx \
-    "                <DecisionRecord />" \
-    "                {false && <DecisionRecord />}"
+    "                <DecisionRecord visible={open.id === 'project'} />" \
+    "                {false && <DecisionRecord visible={open.id === 'project'} />}"
 fi
 
 restore
