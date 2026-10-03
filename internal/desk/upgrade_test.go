@@ -262,6 +262,29 @@ func sameProject(t *testing.T, before, after map[string]treeEntry, why string) {
 	}
 }
 
+// insideRepository reports whether dir, or a folder above it, holds a Git
+// repository's .git: a folder with HEAD in it, or a file. It is written
+// here, apart from inGitWorkTree, so that a test skipped for it does not
+// skip on the code it tests.
+func insideRepository(dir string) bool {
+	for {
+		mark := filepath.Join(dir, ".git")
+		if info, err := os.Lstat(mark); err == nil {
+			if info.Mode().IsRegular() {
+				return true
+			}
+			if _, err := os.Lstat(filepath.Join(mark, "HEAD")); err == nil && info.IsDir() {
+				return true
+			}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return false
+		}
+		dir = parent
+	}
+}
+
 // An offer, for either choice, and an offer left unconfirmed, change no byte
 // of the project and make nothing in it.
 func TestDecliningTheUpgradeWritesNothing(t *testing.T) {
@@ -386,8 +409,8 @@ func TestTheUpgradeAndGitignore(t *testing.T) {
 		{"not a Git work tree, and no .gitignore", map[string]string{".git/HEAD": "", ".gitignore": ""}, "outside", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s, ts, rig, project := upgradeProject(t, allConfigVersions, "", tc.files)
-			if tc.state == "outside" && s.inGitWorkTree() {
+			_, ts, rig, project := upgradeProject(t, allConfigVersions, "", tc.files)
+			if tc.state == "outside" && insideRepository(filepath.Dir(project)) {
 				t.Skip("the test's temporary folder is inside a Git work tree")
 			}
 			rig.answers(t, "error")
