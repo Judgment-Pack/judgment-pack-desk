@@ -3686,5 +3686,10 @@
   "Unchained lines a later chained line commits to": "後の連鎖した行が確定させている連鎖のない行",
   "What this does not establish": "これが立証しないこと",
   "What this establishes": "これが立証すること",
-  "Witnessed through record {{sequence}}": "記録 {{sequence}} まで裏付け済み"
+  "Witnessed through record {{sequence}}": "記録 {{sequence}} まで裏付け済み",
+  "Download the trail": "証跡をダウンロード",
+  "Download {{file}}": "{{file}} をダウンロード",
+  "Each file is saved under the runtime’s own name, as its bytes stood on disk between two writes.": "各ファイルはランタイム自身の名前で保存されます。内容は、2 回の書き込みの間にディスク上にあったバイトそのままです。",
+  "Saved {{file}}.": "{{file}} を保存しました。",
+  "The file could not be downloaded. Please try again.": "ファイルをダウンロードできませんでした。もう一度お試しください。"
 }
