@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-03
 deciders: maintainer
 ---
@@ -8,8 +8,9 @@ deciders: maintainer
 
 Issue #186. Runtime ADR-0047 (accepted 2026-10-01) makes a decision record
 defensible to someone who does not trust its operator. It names Desk's part:
-key custody, checkpoint hand-over and stamping settings. This record proposes
-that part. It sets out what Desk would build, what each piece establishes and
+key custody, checkpoint hand-over and stamping settings. This record decides
+that part. The maintainer accepted it on 2026-10-03, with the answers recorded
+under "The maintainer's answers". It sets out what Desk would build, what each piece establishes and
 what it does not, every new runtime command Desk would run, and the questions
 the maintainer needs to answer. Nothing here is built yet.
 
@@ -559,7 +560,11 @@ Desk's Go also reads, never writes, the runtime's files: `evaluations.jsonl`,
 - Neutral: chaining arrives with the runtime pin alone, and needs nothing from
   Desk.
 
-## Questions for the maintainer
+## The maintainer's answers
+
+The maintainer answered on 2026-10-03 with "go", read as agreeing with every
+recommendation below. Each answer is recorded after its question; the
+maintainer may overrule any of them.
 
 1. **Where does a project's signing key live by default?**
    **Recommendation:** `<Desk configuration directory>/secrets/signing/<project>.seed`,
@@ -567,6 +572,8 @@ Desk's Go also reads, never writes, the runtime's files: `evaluations.jsonl`,
    That custody refuses a directory other users can write to, which the runtime
    does not check. The alternative of one installation key is worse: a single
    copy signs for every desk.
+   **Answered: yes, as recommended.**
+
 2. **How is the key named to the runtime?**
    **Recommendation:** for a desk Desk made, `audit.signingKey` in its
    `jpack.json` at configVersion `"6"`, so that every caller that reads the
@@ -579,27 +586,37 @@ Desk's Go also reads, never writes, the runtime's files: `evaluations.jsonl`,
    Default it to `JPACK_SIGNING_KEY` on the runtimes Desk starts and in Desk's
    agent setup. In both cases, remove an inherited `JPACK_SIGNING_KEY` from the
    runtimes of desks Desk made.
+   **Answered: yes, as recommended.**
+
 3. **Is signing on by default for new desks?** It needs the new runtime.
    **Recommendation:** yes, where the runtime reads `"6"` and Desk's custody can
    keep a key. Elsewhere the desk is created unsigned, and the creation says so,
    as ADR-0009 does for `requireComparableFacts`. On ADR-0009's principle,
    defaults are on, and the cost to the owner's loop is nil. The panel says what
    a key does not bind.
+   **Answered: yes.**
+
 4. **Which hand-over channels ship first?**
    **Recommendation:** download or copy of the exact bytes, with an
    owner-labelled holder and a cursor that moves on the owner's confirmation.
    Build an HTTPS endpoint second, only for a holder who runs one. Never offer
    the local gateway, or the owner's own connected accounts, as holders.
+   **Answered: download or copy first, as recommended.**
+
 5. **Does Desk schedule stamping, and against which authority by default?**
    **Recommendation:** Desk schedules it once the owner configures an authority.
    There is no default authority. The setting lives in Desk, passed as `--tsa`,
    not in `jpack.json`, so that it needs no `"6"` and no new lock. The interval
    is the owner's, and stamps run only when records were added.
+   **Answered: yes, with no default authority.**
+
 6. **Does Desk run `audit verify` and show its report?**
    **Recommendation:** yes. It is a read-only panel, with the runtime's
    sentences verbatim, run with the keys, hand-over record and roots Desk holds,
    each labelled as the operator's own. It runs on opening and after an action,
    never on a timer.
+   **Answered: yes, a read-only panel.**
+
 7. **Does Desk adopt Runner's export version 4, and later its signatures?**
    **Recommendation:** adopt version 4 once Desk pins a Runner release with #34:
    - ask for 4, and label what Runner answers;
@@ -608,13 +625,18 @@ Desk's Go also reads, never writes, the runtime's files: `evaluations.jsonl`,
 
    Pass Runner no key until Runner #36 settles how. Then use a separate key, not
    a project's.
+   **Answered: yes, as recommended.**
+
 8. **Does Desk offer `audit repair`?**
    **Recommendation:** yes, when verification reports a torn last line, after a
    confirmation that says what repair does and does not do. Never automatically.
+   **Answered: yes, behind a confirmation.**
+
 9. **When a key is lost, does Desk move the trail aside to start a new one?**
    **Recommendation:** not in this line. Show the runtime's refusal and the
    guide's way out. Moving a trail aside discards the identity that holders'
    checkpoints name, and needs its own confirmation design.
+   **Answered: not in this line.**
 
 ## Delivery, after acceptance
 
