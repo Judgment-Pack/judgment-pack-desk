@@ -249,9 +249,14 @@ person's approval, and it records no name.
   checkpoint someone else held from before it. Desk takes, shows and hands
   over no checkpoint, and gives no signing key: its part is
   [ADR-0010](docs/adr/0010-defensible-decision-records.md), not built yet.
-- A `JPACK_SIGNING_KEY` set where Desk was started reaches every runtime Desk
-  starts, for every desk, and the runtime can sign their records with it.
-  ADR-0010 removes it for desks Desk made.
+- A `JPACK_SIGNING_KEY` set where Desk was started is removed from every
+  runtime Desk starts for a desk it made, as `JPACK_CONFIG` is
+  ([ADR-0010](docs/adr/0010-defensible-decision-records.md)). The project Desk
+  was started on keeps it, as the owner's. Desk's log says so once at start,
+  and Help & About → Gates says so on that project, neither naming the key.
+  Where that project's audit trail is chained, as it is by default, the
+  runtime Desk pins (0.26.0) signs each record with the key it names, if it
+  accepts that key.
 - The folder is private: owner-only, never committed (`.desk-private/` is in a
   new desk's `.gitignore`), not shown or editable in Desk's file editor, and in
   no backup. Losing the desk's folder loses its records.
@@ -5750,7 +5755,7 @@ See [unsaved-work behavior](docs/design/unsaved-work.md) for coverage and limits
 
 Use the desk name beside the brand to switch desks or **Create desk…**. Each new desk keeps its packs, source documents, chats, drafts, tests, briefs, jobs, and run artifacts in its own folder. Its private data lives under `.desk-private/`, excluded from the project file editor. Machine credentials remain in protected settings. The browser title uses the desk name and keeps `*` while edits are unsaved; the favicon follows the configured brand.
 
-A new desk starts gated ([ADR-0009](docs/adr/0009-gates-on-by-default.md)). Its `jpack.json` sets `requireReviewed`, `requireComparableFacts` and an audit trail in `.desk-private/audit/`, and the runtime locks the empty project before the desk exists, in `jpack.lock.json`. A deciding run of a draft is then refused, while rehearsals and tests of it still answer. `requireComparableFacts` refuses any evaluation, rehearsals included, that reads a fact of a type no comparison in the pack can match. With a runtime older than 0.25.0, the desk is created without `requireComparableFacts`, and the creation says so. With one older than 0.24.0, or if the lock fails, no desk is created. A named desk's runtime always reads the desk's own `jpack.json`: a `JPACK_CONFIG` set where Desk was started applies only to the startup project.
+A new desk starts gated ([ADR-0009](docs/adr/0009-gates-on-by-default.md)). Its `jpack.json` sets `requireReviewed`, `requireComparableFacts` and an audit trail in `.desk-private/audit/`, and the runtime locks the empty project before the desk exists, in `jpack.lock.json`. A deciding run of a draft is then refused, while rehearsals and tests of it still answer. `requireComparableFacts` refuses any evaluation, rehearsals included, that reads a fact of a type no comparison in the pack can match. With a runtime older than 0.25.0, the desk is created without `requireComparableFacts`, and the creation says so. With one older than 0.24.0, or if the lock fails, no desk is created. A named desk's runtime always reads the desk's own `jpack.json`, and inherits no signing key: a `JPACK_CONFIG` or `JPACK_SIGNING_KEY` set where Desk was started applies only to the startup project.
 
 Switching desks checks unsaved work and does not stop another desk's runner. Existing projects retain their storage locations; creating a desk does not migrate existing data. Use the paired runtime update, which accepts an empty project until its first pack is created. See [named desk storage and lifecycle](docs/design/named-desks.md).
 

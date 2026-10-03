@@ -356,6 +356,12 @@ func New(cfg Config) (*Server, error) {
 	if path := strings.TrimSpace(os.Getenv(runtimeConfigEnv)); path != "" && cfg.deskID == "" {
 		s.log.Printf("desk: JPACK_CONFIG is set, so this project's runtime reads %s, not the project's own jpack.json; desks Desk made ignore it", path)
 	}
+	// And an inherited JPACK_SIGNING_KEY, said once beside it. Never its path,
+	// which names where a secret is kept, and never its bytes, which this desk
+	// does not read.
+	if s.inheritsSigningKey() {
+		s.log.Print("desk: JPACK_SIGNING_KEY is set, so where this project's audit trail is chained, its runtime signs each record with the key it names, if it accepts that key; desks Desk made ignore it")
+	}
 	if cfg.parent != nil {
 		s.sessions = cfg.parent.sessions
 		s.signIn = cfg.parent.signIn

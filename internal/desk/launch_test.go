@@ -5,6 +5,7 @@ package desk
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -290,6 +291,55 @@ func TestDeskConfigReadCarriesTheProjectAndRuntimeItWasLaunchedWith(t *testing.T
 		if runtime["bin"] != s.cfg.JpackBin {
 			t.Errorf("%s: runtime.bin %v, want %q", when, runtime["bin"], s.cfg.JpackBin)
 		}
+	}
+}
+
+// The page learns from the desk-config answer whether this desk's runtimes
+// inherit a JPACK_SIGNING_KEY (ADR-0010, section 1): on the startup desk
+// where one is set and not blank, as the runtime reads it, and never on a
+// desk Desk made, which never inherits it. `false` is stated, not left out,
+// and the key's path is never in the answer.
+func TestDeskConfigReportsAnInheritedSigningKeyOnTheStartupDeskOnly(t *testing.T) {
+	key := filepath.Join(t.TempDir(), "owner-signing.seed")
+	for _, tc := range []struct {
+		name, value string
+		set         bool
+		startup     string
+	}{
+		{"set", key, true, "true"},
+		{"blank", "  ", true, "false"},
+		{"empty", "", true, "false"},
+		{"unset", "", false, "false"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("JPACK_SIGNING_KEY", tc.value)
+			if !tc.set {
+				os.Unsetenv("JPACK_SIGNING_KEY")
+			}
+			s, ts, _ := gatesServer(t, standInRuntime(t))
+			named := createGatedDesk(t, ts).ID
+			for _, present := range []bool{false, true} {
+				if present {
+					writeDeskConfig(t, s, `{"deskConfigVersion":1}`)
+				}
+				for _, desk := range []struct{ id, want string }{{"", tc.startup}, {named, "false"}} {
+					status, data := deskCall(t, ts, "GET", "/api/desk-config", desk.id, "", true)
+					var answer struct {
+						Present bool                       `json:"present"`
+						Runtime map[string]json.RawMessage `json:"runtime"`
+					}
+					if status != 200 || json.Unmarshal(data, &answer) != nil || answer.Present != present {
+						t.Fatalf("desk %q, desk-level file %v: %d %s", desk.id, present, status, data)
+					}
+					if got := string(answer.Runtime["inheritsSigningKey"]); got != desk.want {
+						t.Errorf("desk %q, desk-level file %v: runtime.inheritsSigningKey is %q, want %s", desk.id, present, got, desk.want)
+					}
+					if bytes.Contains(data, []byte(filepath.Base(key))) {
+						t.Errorf("desk %q: the answer names the signing key's path: %s", desk.id, data)
+					}
+				}
+			}
+		})
 	}
 }
 

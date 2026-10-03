@@ -1046,3 +1046,54 @@ func TestTheAuditFolderIsNotMadeThroughASubstitutedLink(t *testing.T) {
 		})
 	}
 }
+
+// **The upgrade's commands keep the signing key only on the startup desk.**
+// A confirmed upgrade asks the runtime which versions it reads and locks the
+// project. On the startup desk both keep an inherited `JPACK_SIGNING_KEY`; on
+// a desk Desk made before new desks started gated, both run without it.
+func TestAnUpgradeConfirmationKeepsTheSigningKeyOnlyOnTheStartupDesk(t *testing.T) {
+	t.Setenv("JPACK_CONFIG", "")
+	key := filepath.Join(t.TempDir(), "owner-signing.seed")
+	t.Setenv("JPACK_SIGNING_KEY", key)
+	t.Setenv("DESK_TEST_INHERITED", "kept")
+	_, ts, rig, project := upgradeProject(t, allConfigVersions, "", nil)
+	rig.answers(t, "error")
+	row := createGatedDesk(t, ts)
+	// As a desk made before PR B left it: ungated, and with no lock.
+	writeProject(t, row.Folder, map[string]string{"jpack.json": `{"configVersion":"3","packs":{}}` + "\n"})
+	if err := os.Remove(filepath.Join(row.Folder, runtimeLockName)); err != nil {
+		t.Fatal(err)
+	}
+	for _, desk := range []struct {
+		id, folder, env string
+		packs           map[string]string
+	}{
+		{"", project, "[JPACK_SIGNING_KEY=" + key + "] [DESK_TEST_INHERITED=kept]", bothPacks},
+		{row.ID, row.Folder, "[JPACK_SIGNING_KEY=unset] [DESK_TEST_INHERITED=kept]", nil},
+	} {
+		answer := readUpgrade(t, ts, desk.id, true)
+		if answer.State != "offer" {
+			t.Fatalf("desk %q: no offer: %+v", desk.id, answer)
+		}
+		rig.locks(t, upgradeLock(t, desk.folder, answer.ConfigAfter, desk.packs))
+		os.Remove(rig.calls + ".env")
+		if status, data := confirmUpgrade(t, ts, desk.id, answer.Token, true); status != http.StatusOK {
+			t.Fatalf("desk %q: the confirmation answered %d %s", desk.id, status, data)
+		}
+		seen := envSeen(t, rig.calls)
+		for _, command := range []string{"packs schema --format json", "packs lock --config jpack.json --format json"} {
+			found := false
+			for _, line := range seen {
+				found = found || line == command+" "+desk.env
+			}
+			if !found {
+				t.Errorf("desk %q: %s did not run with %s: %q", desk.id, command, desk.env, seen)
+			}
+		}
+		for _, line := range seen {
+			if !strings.HasSuffix(line, " "+desk.env) {
+				t.Errorf("desk %q: a command ran as %q, want it with %s", desk.id, line, desk.env)
+			}
+		}
+	}
+}

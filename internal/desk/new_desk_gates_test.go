@@ -44,11 +44,13 @@ const (
 // stand-in's working directory: schema for `packs schema`, and lock for
 // `packs lock`. As `mcp` it reads its input until the relay closes it. Every
 // run appends one line to the returned file: its arguments, and the
-// `JPACK_CONFIG` it was given. It uses shell builtins only.
+// `JPACK_CONFIG` it was given. It first appends one line to `envSeen`'s file.
+// It uses shell builtins only.
 func writeStandInRuntime(t *testing.T, path, schema, lock string) (calls string) {
 	t.Helper()
 	calls = filepath.Join(t.TempDir(), "calls")
 	script := "#!/bin/sh\n" +
+		"printf '%s [JPACK_SIGNING_KEY=%s] [DESK_TEST_INHERITED=%s]\\n' \"$*\" \"${JPACK_SIGNING_KEY-unset}\" \"${DESK_TEST_INHERITED-unset}\" >> '" + calls + ".env'\n" +
 		"printf '%s [JPACK_CONFIG=%s]\\n' \"$*\" \"${JPACK_CONFIG-unset}\" >> '" + calls + "'\n" +
 		"case \"$1 $2\" in\n" +
 		"'packs schema')\n" + schema + "\n  ;;\n" +
@@ -60,6 +62,24 @@ func writeStandInRuntime(t *testing.T, path, schema, lock string) (calls string)
 		t.Fatalf("write the stand-in runtime: %v", err)
 	}
 	return calls
+}
+
+// envSeen is what the stand-in whose calls file is calls recorded of each
+// run's environment, one line per run, in order: its arguments, the
+// `JPACK_SIGNING_KEY` it was given, and `DESK_TEST_INHERITED`, which a test
+// sets to see that the rest of Desk's environment still arrives. The line is
+// written before the calls file's, so a run seen there is seen here. A
+// stand-in never run has recorded nothing.
+func envSeen(t *testing.T, calls string) []string {
+	t.Helper()
+	data, err := os.ReadFile(calls + ".env")
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
 }
 
 // reading is a `packs schema --format json` that names versions as

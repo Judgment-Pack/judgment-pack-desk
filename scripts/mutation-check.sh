@@ -2029,17 +2029,20 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if s.cfg.deskID == "" {
 		return nil
 	}
-	return withoutConfigOverride(os.Environ())' \
+	return withoutVariables(os.Environ(), runtimeConfigEnv, runtimeSigningKeyEnv)' \
     '	return nil'
   mutate go "named desk: the relay's environment is never set" internal/desk/relay.go \
     '	cmd.Env = s.runtimeEnv()
 ' \
     ''
-  mutate go "named desk: JPACK_CONFIG is not removed" "$NRT" \
-    '		if !strings.HasPrefix(entry, runtimeConfigEnv+"=") {' \
-    '		if true {'
+  mutate go "named desk: no variable named is removed" "$NRT" \
+    '		if !slices.Contains(names, name) {' \
+    '		if !slices.Contains(names, strings.ToLower(name)) {'
   mutate go "new desk: its commands inherit JPACK_CONFIG" "$NRT" \
-    '	cmd.Env = withoutConfigOverride(os.Environ())
+    '	drop := []string{runtimeConfigEnv}' \
+    '	drop := []string{}'
+  mutate go "new desk: its commands inherit the whole environment" "$NRT" \
+    '	cmd.Env = withoutVariables(os.Environ(), drop...)
 ' \
     ''
   mutate go "startup desk: an inherited JPACK_CONFIG is dropped" "$NRT" \
@@ -2047,11 +2050,81 @@ func (b *cappedBuffer) exceeded() bool {'
 		return nil
 	}' \
     '	if s.cfg.deskID == "" {
-		return withoutConfigOverride(os.Environ())
+		return withoutVariables(os.Environ(), runtimeConfigEnv)
 	}'
   mutate go "startup desk: the inherited JPACK_CONFIG is not said" internal/desk/server.go \
     '		s.log.Printf("desk: JPACK_CONFIG is set, so this project'"'"'s runtime reads %s, not the project'"'"'s own jpack.json; desks Desk made ignore it", path)' \
     '		_ = path'
+
+  # **A desk Desk made never signs with the startup desk's key (ADR-0010,
+  # section 1).** JPACK_SIGNING_KEY names the key a runtime signs every record
+  # with; inherited, one key signed every desk's records. It is removed from a
+  # made desk's relay and commands. The startup desk keeps it, in its relay and
+  # in the commands Desk runs over it or a private copy of it; the launch says
+  # so without naming it, and the desk-config answer reports it there only.
+  mutate go "signing key: a named desk's relay inherits it" "$NRT" \
+    '	return withoutVariables(os.Environ(), runtimeConfigEnv, runtimeSigningKeyEnv)' \
+    '	return withoutVariables(os.Environ(), runtimeConfigEnv)'
+  mutate go "signing key: a made desk's commands inherit it" "$NRT" \
+    '	if !dir.startup {
+		drop = append(drop, runtimeSigningKeyEnv)' \
+    '	if false {
+		drop = append(drop, runtimeSigningKeyEnv)'
+  mutate go "signing key: the startup desk's relay drops it" "$NRT" \
+    '	if s.cfg.deskID == "" {
+		return nil
+	}' \
+    '	if s.cfg.deskID == "" {
+		return withoutVariables(os.Environ(), runtimeSigningKeyEnv)
+	}'
+  mutate go "signing key: the startup desk's commands drop it" "$NRT" \
+    '	if !dir.startup {
+		drop = append(drop, runtimeSigningKeyEnv)' \
+    '	if true {
+		drop = append(drop, runtimeSigningKeyEnv)'
+  mutate go "signing key: the startup desk's project is not marked" internal/desk/review.go \
+    'info: s.project.info, startup: s.cfg.deskID == ""}' \
+    'info: s.project.info}'
+  mutate go "signing key: the startup desk's private copy is not marked" internal/desk/review.go \
+    'info: info, startup: s.cfg.deskID == ""})' \
+    'info: info})'
+  mutate go "signing key: a named desk's review of an unreadable project inherits it" internal/desk/review.go \
+    '		verified, err = s.runVerify(ctx, dir)' \
+    '		dir.startup = true
+		verified, err = s.runVerify(ctx, dir)'
+  mutate go "signing key: the startup desk's upgrade drops it" internal/desk/upgrade.go \
+    'func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string, facts bool) (any, *lockFailure) {' \
+    'func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string, facts bool) (any, *lockFailure) {
+	dir.startup = false'
+  mutate go "signing key: a named desk's project is marked the startup desk's" internal/desk/review.go \
+    'info: s.project.info, startup: s.cfg.deskID == ""}' \
+    'info: s.project.info, startup: true}'
+  mutate go "signing key: a named desk's private copy is marked the startup desk's" internal/desk/review.go \
+    'info: info, startup: s.cfg.deskID == ""})' \
+    'info: info, startup: true})'
+  mutate go "signing key: a named desk reports the startup desk's" "$NRT" \
+    '	return s.cfg.deskID == "" && strings.TrimSpace(os.Getenv(runtimeSigningKeyEnv)) != ""' \
+    '	return strings.TrimSpace(os.Getenv(runtimeSigningKeyEnv)) != ""'
+  mutate go "signing key: a blank value counts as one" "$NRT" \
+    '	return s.cfg.deskID == "" && strings.TrimSpace(os.Getenv(runtimeSigningKeyEnv)) != ""' \
+    '	return s.cfg.deskID == "" && os.Getenv(runtimeSigningKeyEnv) != ""'
+  mutate go "signing key: desk-config reports it never" internal/desk/assistant.go \
+    'InheritsSigningKey: s.inheritsSigningKey()}' \
+    'InheritsSigningKey: false}'
+  mutate go "signing key: desk-config reports it always" internal/desk/assistant.go \
+    'InheritsSigningKey: s.inheritsSigningKey()}' \
+    'InheritsSigningKey: true}'
+  mutate go "signing key: false left out of the desk-config answer" internal/desk/assistant.go \
+    'InheritsSigningKey bool `json:"inheritsSigningKey"`' \
+    'InheritsSigningKey bool `json:"inheritsSigningKey,omitempty"`'
+  mutate go "signing key: the inherited key is not said" "$S" \
+    '	if s.inheritsSigningKey() {
+		s.log.Print(' \
+    '	if false {
+		s.log.Print('
+  mutate go "signing key: the launch names the key's path" "$S" \
+    '; desks Desk made ignore it")' \
+    '; desks Desk made ignore it: " + os.Getenv(runtimeSigningKeyEnv))'
 
   # **Tested releases by default (ADR-0009).** The flag is on unless the owner
   # passes `=false`; the boot line states the choice either way; and the
@@ -8783,6 +8856,29 @@ export function assistantTransport(id: string): Transport {
   mutate web "help: the tested-releases setting is not read" "$GH" \
     '  const requireTested = chassis?.jobs?.requireTestedReleases' \
     '  const requireTested = undefined as boolean | undefined'
+
+  # **An inherited JPACK_SIGNING_KEY, said beside the records (ADR-0010).** Only
+  # where Desk's desk-config answer says `true`: never for `false`, a missing
+  # member or anything that is not a boolean, at either the read or the page.
+  mutate web "signing key: config read drops the member" web/src/config/queries.ts \
+    "    ...(typeof answered.runtime.inheritsSigningKey === 'boolean'
+      ? { runtimeInheritsSigningKey: answered.runtime.inheritsSigningKey }
+      : {})," \
+    "    ...({}),"
+  mutate web "signing key: config read takes a member that is not a boolean" web/src/config/queries.ts \
+    "    ...(typeof answered.runtime.inheritsSigningKey === 'boolean'
+      ? { runtimeInheritsSigningKey: answered.runtime.inheritsSigningKey }" \
+    "    ...('inheritsSigningKey' in answered.runtime
+      ? { runtimeInheritsSigningKey: answered.runtime.inheritsSigningKey as boolean }"
+  mutate web "signing key: the line shows for false" "$GH" \
+    '    {chassis?.runtimeInheritsSigningKey === true && <p' \
+    '    {chassis?.runtimeInheritsSigningKey !== undefined && <p'
+  mutate web "signing key: the line shows for a value that is not a boolean" "$GH" \
+    '    {chassis?.runtimeInheritsSigningKey === true && <p' \
+    '    {!!chassis?.runtimeInheritsSigningKey && <p'
+  mutate web "signing key: the line never shows" "$GH" \
+    '    {chassis?.runtimeInheritsSigningKey === true && <p' \
+    '    {false && <p'
 fi
 
 restore

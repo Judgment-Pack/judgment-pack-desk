@@ -228,6 +228,20 @@ describe('what the chassis says about this process', () => {
     expect(effective.desk?.chassis?.jobs).toBeUndefined()
   })
 
+  it.each([true, false])('carries whether the desk’s runtime inherits a signing key: %s', async inherits => {
+    // `false` is carried as a statement, as the tested-releases policy is.
+    answers({ path: '/config/desk.json', present: false, project: { dir: '/p', file: '/p/jpack-desk.json' }, runtime: { bin: 'jpack', inheritsSigningKey: inherits } })
+    const effective = await loadDeskConfig()
+    expect(effective.desk?.chassis?.runtimeInheritsSigningKey).toBe(inherits)
+  })
+
+  it.each([undefined, 'true', 1, null])('reads no inherited signing key from %j', async inherits => {
+    answers({ path: '/config/desk.json', present: false, project: { dir: '/p', file: '/p/jpack-desk.json' }, runtime: { bin: 'jpack', ...(inherits === undefined ? {} : { inheritsSigningKey: inherits }) } })
+    const effective = await loadDeskConfig()
+    expect(effective.desk?.chassis?.runtimeBin).toBe('jpack')
+    expect(effective.desk?.chassis).not.toHaveProperty('runtimeInheritsSigningKey')
+  })
+
   it('says nothing about them where the chassis did not', async () => {
     // Undefined rather than empty strings: a page that filled these in would
     // be naming paths it never learned.

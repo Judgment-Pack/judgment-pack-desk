@@ -8,6 +8,7 @@ package desk
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -15,6 +16,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -960,6 +962,82 @@ func TestTheReviewOnTheStartupDeskAndANamedDesk(t *testing.T) {
 			if !strings.HasSuffix(line, "[JPACK_CONFIG=unset]") {
 				t.Errorf("a review command ran as %q", line)
 			}
+		}
+	}
+}
+
+// **The commands Desk runs keep an inherited JPACK_SIGNING_KEY on the startup
+// desk only** (ADR-0010, sections 1 and 8), as its relay does. On the startup
+// desk the key is the owner's, and the review over a private copy, the lock
+// and the upgrade offer see it as the project's own runtime does. On a desk
+// Desk made, each runs without it, and with the rest of Desk's environment.
+func TestTheReviewCommandsKeepTheSigningKeyOnlyOnTheStartupDesk(t *testing.T) {
+	t.Setenv("JPACK_CONFIG", "")
+	key := filepath.Join(t.TempDir(), "owner-signing.seed")
+	t.Setenv("JPACK_SIGNING_KEY", key)
+	t.Setenv("DESK_TEST_INHERITED", "kept")
+	_, ts, rig, project := reviewProject(t, "", "")
+	// Made before the stand-in is told what its lock copies, so that the
+	// creation's own lock is the runtime's.
+	row := createGatedDesk(t, ts)
+	for _, desk := range []struct{ id, folder, env string }{
+		{"", project, "[JPACK_SIGNING_KEY=" + key + "] [DESK_TEST_INHERITED=kept]"},
+		{row.ID, row.Folder, "[JPACK_SIGNING_KEY=unset] [DESK_TEST_INHERITED=kept]"},
+	} {
+		os.Remove(rig.calls + ".env")
+		rig.answers(t, "valid")
+		rig.locks(t, []byte(readFile(t, filepath.Join(desk.folder, "jpack.lock.json"))))
+		answer := readReview(t, ts, desk.id)
+		readUpgrade(t, ts, desk.id, true)
+		if status, data := confirm(t, ts, desk.id, answer.Token); status != 200 {
+			t.Fatalf("desk %q: the confirmation answered %d %s", desk.id, status, data)
+		}
+		seen := envSeen(t, rig.calls)
+		for _, command := range []string{"packs verify --config jpack.json --format json", "packs schema --format json", "packs lock --config jpack.json --format json"} {
+			if !slices.Contains(seen, command+" "+desk.env) {
+				t.Errorf("desk %q: %s did not run with %s: %q", desk.id, command, desk.env, seen)
+			}
+		}
+		for _, line := range seen {
+			if !strings.HasSuffix(line, " "+desk.env) {
+				t.Errorf("desk %q: a command ran as %q, want it with %s", desk.id, line, desk.env)
+			}
+		}
+	}
+}
+
+// **A review over an unreadable project keeps the same environment.** Where
+// the one reading fails, the review still asks the runtime for its findings,
+// over the project itself rather than a private copy. That command keeps an
+// inherited `JPACK_SIGNING_KEY` on the startup desk and runs without it on a
+// desk Desk made, as every other command does.
+func TestAReviewOfAnUnreadableProjectKeepsTheSigningKeyOnlyOnTheStartupDesk(t *testing.T) {
+	t.Setenv("JPACK_CONFIG", "")
+	key := filepath.Join(t.TempDir(), "owner-signing.seed")
+	t.Setenv("JPACK_SIGNING_KEY", key)
+	t.Setenv("DESK_TEST_INHERITED", "kept")
+	s, ts, rig, _ := reviewProject(t, "", "")
+	row := createGatedDesk(t, ts)
+	rig.answers(t, "error")
+	for _, desk := range []struct {
+		server *Server
+		env    string
+	}{
+		{s, "[JPACK_SIGNING_KEY=" + key + "] [DESK_TEST_INHERITED=kept]"},
+		{s.desks[row.ID], "[JPACK_SIGNING_KEY=unset] [DESK_TEST_INHERITED=kept]"},
+	} {
+		os.Remove(rig.calls + ".env")
+		dir, refusal := desk.server.reviewRuntime()
+		if refusal != "" {
+			t.Fatal(refusal)
+		}
+		answer, err := desk.server.reviewOf(t.Context(), dir, nil, errors.New("the reading failed"))
+		if err != nil || answer.Blocked == "" {
+			t.Fatalf("desk %q: the review over an unreadable project answered %+v, %v", desk.server.cfg.deskID, answer, err)
+		}
+		seen := envSeen(t, rig.calls)
+		if len(seen) != 1 || seen[0] != "packs verify --config jpack.json --format json "+desk.env {
+			t.Errorf("desk %q: the review ran %q, want packs verify with %s", desk.server.cfg.deskID, seen, desk.env)
 		}
 	}
 }

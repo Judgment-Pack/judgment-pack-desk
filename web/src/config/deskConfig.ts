@@ -2156,6 +2156,12 @@ export interface ChassisPaths {
   projectDir: string
   projectFile: string
   runtimeBin: string
+  /**
+   * Whether this desk's runtimes inherit a JPACK_SIGNING_KEY set where Desk was
+   * started: only ever true on the startup desk. Undefined where the chassis
+   * did not say. The key's path is never carried.
+   */
+  runtimeInheritsSigningKey?: boolean
 }
 
 /**

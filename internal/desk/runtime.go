@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -67,8 +68,15 @@ const (
 // path from when no `--config` is given, before `./jpack.json`.
 const runtimeConfigEnv = "JPACK_CONFIG"
 
+// runtimeSigningKeyEnv is the variable the runtime reads a signing key's path
+// from (runtime ADR-0047). Set and not blank, it names the key that signs
+// every record the runtime writes to a chained trail, at any configVersion,
+// and it takes precedence over the configuration's own `audit.signingKey`.
+const runtimeSigningKeyEnv = "JPACK_SIGNING_KEY"
+
 // runtimeEnv is the environment the relay's runtime gets: this process's own,
-// except that a desk Desk made never reads another project's configuration.
+// except that a desk Desk made never reads another project's configuration,
+// and never signs with another project's key.
 //
 // `jpack mcp` has no `--config`. It reads `$JPACK_CONFIG`, then
 // `./jpack.json`. Inherited, a `JPACK_CONFIG` set where Desk was started
@@ -78,25 +86,39 @@ const runtimeConfigEnv = "JPACK_CONFIG"
 // entered through the descriptor this desk holds. Naming the file instead
 // would put a pathname back where the descriptor stands.
 //
-// The startup desk keeps an inherited value. There it is the only way the
-// owner can have chosen the configuration, and this desk does not change
-// what an existing project reads. `New` logs it.
+// `JPACK_SIGNING_KEY` is removed for the same reason (ADR-0010, section 1).
+// Inherited, the one key named where Desk was started signed the records of
+// every desk's runtime, whatever key that desk's own configuration names.
+//
+// The startup desk keeps both. There they are the owner's: an inherited
+// `JPACK_CONFIG` is the only way the owner can have chosen the configuration,
+// and an inherited `JPACK_SIGNING_KEY` the key; this desk does not change what
+// an existing project reads or signs with. `New` logs each.
 func (s *Server) runtimeEnv() []string {
 	if s.cfg.deskID == "" {
 		return nil
 	}
-	return withoutConfigOverride(os.Environ())
+	return withoutVariables(os.Environ(), runtimeConfigEnv, runtimeSigningKeyEnv)
 }
 
-// withoutConfigOverride is env without `JPACK_CONFIG`.
-func withoutConfigOverride(env []string) []string {
+// withoutVariables is env without any entry for the variables named.
+func withoutVariables(env []string, names ...string) []string {
 	kept := make([]string, 0, len(env))
 	for _, entry := range env {
-		if !strings.HasPrefix(entry, runtimeConfigEnv+"=") {
+		name, _, _ := strings.Cut(entry, "=")
+		if !slices.Contains(names, name) {
 			kept = append(kept, entry)
 		}
 	}
 	return kept
+}
+
+// inheritsSigningKey reports whether this desk's runtimes inherit a signing
+// key from where Desk was started: on the startup desk only, and only where
+// `JPACK_SIGNING_KEY` is set and not blank, which is when the runtime reads
+// it. Neither the key's path nor its bytes are read here.
+func (s *Server) inheritsSigningKey() bool {
+	return s.cfg.deskID == "" && strings.TrimSpace(os.Getenv(runtimeSigningKeyEnv)) != ""
 }
 
 // heldDir is a directory a runtime command runs in, held open by this desk.
@@ -109,6 +131,11 @@ type heldDir struct {
 	file *os.File
 	path string
 	info os.FileInfo
+	// startup is true where the directory is the project Desk was started on,
+	// or a private copy of it, so a command run there keeps an inherited
+	// `JPACK_SIGNING_KEY` (`runRuntime`). The zero value is a desk Desk made,
+	// so a directory nobody marked never carries the owner's key.
+	startup bool
 }
 
 // runtimeCommandTimeout bounds one runtime command this desk runs to
@@ -143,9 +170,25 @@ func runRuntime(ctx context.Context, bin string, dir heldDir, args ...string) ([
 	if err != nil {
 		return nil, err
 	}
-	// These commands run only in a desk this one is making, which never
-	// reads another project's configuration (`runtimeEnv`).
-	cmd.Env = withoutConfigOverride(os.Environ())
+	// **`JPACK_CONFIG` never.** These commands run in a desk being made, and
+	// in Review and lock and the upgrade offer on any desk, the startup desk
+	// included. Every one names `--config jpack.json` or reads no project, so
+	// an inherited value could only point it at another project's file.
+	//
+	// **`JPACK_SIGNING_KEY` only on the startup desk**, as the relay has it
+	// (`runtimeEnv`). A desk Desk made never signs with the key named where
+	// Desk was started. On the startup desk the key is the owner's, and these
+	// commands keep it, so that they see the project as its relay does: with
+	// the one key in force for it. `packs schema`, `packs lock` and `packs
+	// verify` neither evaluate nor sign, so keeping it changes nothing they do.
+	// The commands ADR-0010, section 8, adds here (`packs validate`'s key
+	// check, `audit repair`) report or sign with the key in force, and without
+	// it would speak of another key than the one the project's runtime uses.
+	drop := []string{runtimeConfigEnv}
+	if !dir.startup {
+		drop = append(drop, runtimeSigningKeyEnv)
+	}
+	cmd.Env = withoutVariables(os.Environ(), drop...)
 	stdout := &cappedBuffer{limit: runtimeAnswerLimit}
 	cmd.Stdout = stdout
 	cmd.Stderr = io.Discard

@@ -3641,5 +3641,6 @@
   "This holds only as far as the agent’s client really withholds those tools: the server runs as your user, and Desk does not host it.": "これが成り立つのは、エージェントのクライアントがそれらのツールを本当に与えない場合に限られます。サーバーはあなたのユーザーとして動作し、Desk はそれをホストしません。",
   "This project keeps a reviewed set. Review and lock, on Packs, shows what the runtime finds and updates it.": "このプロジェクトにはレビュー済み集合があります。パックの「レビューしてロック」がランタイムの検出内容を示し、集合を更新します。",
   "What each gate holds, and whom it binds": "各ゲートが拘束するものと、拘束する相手",
-  "Who is bound.": "拘束される相手。"
+  "Who is bound.": "拘束される相手。",
+  "But JPACK_SIGNING_KEY is set where Desk was started. Where this project’s audit trail is chained, as it is by default, its runtime signs each record with the key it names, if it accepts that key. Desks Desk made do not inherit it.": "ただし、Desk を起動した環境で JPACK_SIGNING_KEY が設定されています。このプロジェクトの監査証跡が連鎖している場合（既定ではそうなります）、ランタイムは、その鍵を受け入れるなら、指定された鍵で各記録に署名します。Desk が作成した Desk はこれを引き継ぎません。"
 }
