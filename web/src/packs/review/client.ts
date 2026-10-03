@@ -22,6 +22,8 @@ export type ReviewFile = {
   digest?: string
   /** How the current lock stands to this file. */
   lock: 'same' | 'other' | 'none' | 'removed'
+  /** The digest the current lock pins for this file, as this reading read the lock; absent where it pins none. */
+  locked?: string
   now: ReviewSide
   /** The bytes the lock names, where it names other bytes or only the lock names this file. */
   earlier?: ReviewSide
@@ -51,7 +53,7 @@ const side = (value: unknown): boolean => value === undefined || object(value) &
 function isReview(value: unknown): value is Review {
   if (!object(value) || !text(value.status) || typeof value.locked !== 'boolean' || !Array.isArray(value.findings) || !Array.isArray(value.diagnostics) || !Array.isArray(value.files) || !object(value.contents) || !Object.values(value.contents).every(text)) return false
   if (!value.findings.every(item => object(item) && text(item.name))) return false
-  if (!value.files.every(file => object(file) && text(file.kind) && text(file.path) && ['same', 'other', 'none', 'removed'].includes(file.lock as string) && object(file.now) && side(file.now) && side(file.earlier))) return false
+  if (!value.files.every(file => object(file) && text(file.kind) && text(file.path) && ['same', 'other', 'none', 'removed'].includes(file.lock as string) && (file.locked === undefined || text(file.locked)) && object(file.now) && side(file.now) && side(file.earlier))) return false
   return (value.token === undefined || text(value.token)) && (value.blocked === undefined || text(value.blocked))
 }
 

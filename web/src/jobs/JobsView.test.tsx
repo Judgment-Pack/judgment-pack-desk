@@ -8,10 +8,13 @@ import { CreateJobContent } from './JobsView'
 import { jobsAPI, JobsRequestError } from './client'
 import { readReleaseTests } from './releaseTests'
 import { DeskConfigProvider } from '../config/DeskConfigProvider'
+import { createHash } from 'node:crypto'
+import { readReview, type Review } from '../packs/review/client'
 vi.mock('./drafts',async original=>({...await original<typeof import('./drafts')>(),loadJobDraft:vi.fn()}))
 vi.mock('./MappedInputFields',()=>({MappedInputFields:()=>null}))
 vi.mock('./client', async original => ({ ...await original<typeof import('./client')>(), jobsAPI: vi.fn() }))
 vi.mock('./releaseTests', () => ({ readReleaseTests: vi.fn() }))
+vi.mock('../packs/review/client', async original => ({ ...await original<typeof import('../packs/review/client')>(), readReview: vi.fn() }))
 const { pack, packs } = vi.hoisted(() => ({
  pack: { data: { raw: '{"version":"1"}', document: { title: 'Example pack', version: '1' } }, refetch: vi.fn() },
  packs: { data: { packs: [{ id: 'pack', matrixPath: 'cases.json' }] }, refetch: vi.fn() },
@@ -22,6 +25,7 @@ const saved = { project: 'project', matrix: '{"matrixVersion":"3","cases":[{"id"
 const release = { id: 'release', pack: '{"version":"1"}', packVersion: '1', tests: 'passed', preview: { disposition: { kind: 'outcome', outcomeId: 'accept', reasons: [], handoff: { state: 'none' } } } }
 beforeEach(() => {
  pack.refetch.mockResolvedValue(pack); packs.refetch.mockResolvedValue(packs)
+ vi.mocked(readReview).mockRejectedValue(new Error('The review could not be loaded. Please try again.'))
  vi.mocked(readReleaseTests).mockResolvedValue(saved)
  vi.mocked(jobsAPI).mockResolvedValue(release)
 })
@@ -203,4 +207,45 @@ it('uses the Desk AI origin in the test matrix sent with a job release preview',
   const preview = vi.mocked(jobsAPI).mock.calls.find(([path]) => path === 'previews')![1] as {matrix: string}
   expect(JSON.parse(preview.matrix).cases[0].origin).toBe('ai')
  } finally { read.mockRestore() }
+})
+
+/** The project's review, with its lock pinning `locked` for the decision id `pack`. */
+const sha = (text: string) => 'sha256:' + createHash('sha256').update(text, 'utf8').digest('hex')
+function projectReview(locked: string | undefined, rest: Partial<Review> = {}): Review {
+ return { status: 'valid', locked: true, findings: [], diagnostics: [], contents: {}, token: 'f'.repeat(64), files: [
+  { kind: 'config', path: 'jpack.json', lock: 'same', locked: 'sha256:config', now: { state: 'text', digest: 'sha256:config' } },
+  { kind: 'pack', id: 'pack', path: 'pack.json', lock: locked ? 'same' : 'none', ...(locked ? { locked } : {}), now: { state: 'text', digest: sha(release.pack) } }
+ ], ...rest }
+}
+const standing = async (state: string) => { await waitFor(() => expect(document.querySelector('[data-standing]')?.getAttribute('data-standing')).toBe(state)); return document.querySelector('[data-label]')?.textContent }
+it('shows whether the release’s pack bytes are in the reviewed set, for the decision id the release was checked for', async () => {
+ // Runner's packId is the pack document's own id; the project's lock is keyed by the decision id.
+ vi.mocked(jobsAPI).mockResolvedValue({ ...release, packId: 'https://example.com/judgment-packs/example' })
+ vi.mocked(readReview).mockResolvedValue(projectReview(sha(release.pack)))
+ renderCreate(); await check()
+ expect(await standing('reviewed')).toBe('In the reviewed set')
+ expect(screen.getByText(/The lock pins these exact bytes for pack\./)).toBeTruthy()
+})
+const states: [string, () => Promise<Review>][] = [
+ ['reviewed', async () => projectReview(sha(release.pack))],
+ ['draft', async () => projectReview(sha('{"version":"0"}'), { status: 'invalid', findings: [{ name: 'document-drift', kind: 'pack', id: 'pack', path: 'pack.json' }] })],
+ ['no-lock', async () => ({ ...projectReview(undefined), status: 'error', locked: false, diagnostics: [{ code: 'JPS-LOCK-ABSENT', message: 'There is no reviewed-set lock.' }] })],
+ ['config-drift', async () => projectReview(sha(release.pack), { status: 'invalid', findings: [{ name: 'config-drift', path: 'jpack.json' }] })],
+ ['unreadable', async () => { throw new Error('The project could not be reviewed.') }],
+]
+it.each(states)('refuses nothing: with the standing %s, the job is created exactly as before', async (state, answer) => {
+ vi.mocked(readReview).mockImplementation(answer)
+ renderCreate(); await check(); await standing(state)
+ expect(review().disabled).toBe(false); fireEvent.click(review()); expect(button().disabled).toBe(false)
+ vi.mocked(jobsAPI).mockResolvedValue({ id: 'job-id' })
+ fireEvent.click(button())
+ await waitFor(() => expect(jobsAPI).toHaveBeenLastCalledWith('jobs', { name: 'Intake', releaseId: 'release', reviewed: true }))
+ expect(screen.queryByRole('alert')).toBeNull()
+})
+it('leaves the tested-releases policy as it was: a reviewed release whose tests failed is still not a job', async () => {
+ vi.mocked(jobsAPI).mockResolvedValue({ ...release, tests: 'failed' })
+ vi.mocked(readReview).mockResolvedValue(projectReview(sha(release.pack)))
+ renderCreate(); await check()
+ expect(await standing('reviewed')).toBe('In the reviewed set')
+ expect(review().disabled).toBe(true); expect(button().disabled).toBe(true)
 })

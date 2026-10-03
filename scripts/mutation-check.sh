@@ -2282,6 +2282,23 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "review: the runtime's detail is dropped" "$RV" \
     '	Detail string `json:"detail,omitempty"`' \
     '	Detail string `json:"-"`'
+
+  # **The lock's own entry, for each id (ADR-0009, question 4).** Jobs
+  # compares a release's bytes with what the lock pins for its decision id, so
+  # the review names that entry, from the same reading: never the file's own
+  # digest, never another entry, and for what only the lock names too.
+  mutate go "jobs standing: the file's own digest stands for the lock's entry" "$RV" \
+    '			row.Locked = locked' \
+    '			row.Locked = digest'
+  mutate go "jobs standing: the configuration's entry stands for a pack's" "$RV" \
+    '			row.Locked = locked' \
+    '			row.Locked = lock.Config.Digest'
+  mutate go "jobs standing: a removed file's lock entry is not named" "$RV" \
+    'Lock: "removed", Locked: entry.Digest, Now:' \
+    'Lock: "removed", Now:'
+  mutate go "jobs standing: the lock's entry is not sent" "$RV" \
+    '	Locked string     `json:"locked,omitempty"`' \
+    '	Locked string     `json:"-"`'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -8415,6 +8432,71 @@ export function assistantTransport(id: string): Transport {
   mutate web "review: no finding beside a pack's name" web/src/packs/PacksPane.tsx \
     "                {pack.status!=='draft' && findings.get(pack.id)?.map(" \
     "                {false && findings.get(pack.id)?.map("
+
+  # **Jobs' "Review this release" (ADR-0009, question 4).** The SHA-256 of
+  # the exact bytes the release is made from, compared with the lock's own
+  # entry for the decision id the release was checked for, from the review's
+  # one reading; the runtime's findings for that pack beside it; and nothing
+  # in the wizard reads it, so nothing is refused.
+  JS=web/src/jobs/reviewedSet.ts
+  JSV=web/src/jobs/ReleaseStanding.tsx
+  mutate web "jobs standing: the comparison is inverted" "$JS" \
+    "  const bytes: LockedBytes = !locked ? 'none' : locked === digest ? 'same' : 'other'" \
+    "  const bytes: LockedBytes = !locked ? 'none' : locked !== digest ? 'same' : 'other'"
+  mutate web "jobs standing: the first pack's entry is compared" "$JS" \
+    "  const locked = review.files.find(file => file.kind === 'pack' && file.id === packId)?.locked" \
+    "  const locked = review.files.find(file => file.kind === 'pack')?.locked"
+  mutate web "jobs standing: the file's current digest is compared" "$JS" \
+    "  const locked = review.files.find(file => file.kind === 'pack' && file.id === packId)?.locked" \
+    "  const locked = review.files.find(file => file.kind === 'pack' && file.id === packId)?.digest"
+  mutate web "jobs standing: the parsed pack is hashed, not its bytes" "$JS" \
+    "  return 'sha256:' + await digestOf(text)" \
+    "  return 'sha256:' + await digestOf(JSON.stringify(JSON.parse(text)))"
+  mutate web "jobs standing: a project file change is not shown" "$JS" \
+    "  if (findings.some(finding => finding.name === 'config-drift')) return" \
+    "  if (false) return"
+  mutate web "jobs standing: no lock is not told apart" "$JS" \
+    "  if (!review.locked) return { state: 'no-lock' }" \
+    "  if (false) return { state: 'no-lock' }"
+  mutate web "jobs standing: a lock the runtime could not read is compared" "$JS" \
+    "  if (review.status === 'error') return" \
+    "  if (false) return"
+  mutate web "jobs standing: a review that stopped is compared" "$JS" \
+    "  if (review.blocked) return" \
+    "  if (review.blocked === 'never') return"
+  mutate web "jobs standing: another pack's findings are shown" "$JS" \
+    "...(packFindings(review).get(packId) ?? [])]" \
+    "...[...packFindings(review).values()].flat()]"
+  mutate web "jobs standing: a lock entry that is not text is accepted" "$RC" \
+    " && (file.locked === undefined || text(file.locked)) && " \
+    " && "
+  mutate web "jobs standing: Runner's own pack id is compared" web/src/jobs/JobsView.tsx \
+    "<ReleaseStanding release={validPreview} packId={preview.packId} />" \
+    "<ReleaseStanding release={validPreview} packId={validPreview.packId} />"
+  mutate web "jobs standing: not shown in Review this release" web/src/jobs/JobsView.tsx \
+    "{preview && <ReleaseStanding release={validPreview} packId={preview.packId} />}" \
+    "{!preview && <ReleaseStanding release={validPreview} packId={''} />}"
+  mutate web "jobs standing: a review that cannot be read is never said" "$JSV" \
+    "    : query.error ? { state: 'unreadable', reason: query.error.message }" \
+    "    : query.error ? undefined"
+  # **A reading is a claim only while it is the current one.** While its
+  # replacement is read, paused or owed, the previous answer is withdrawn,
+  # and a replacement that fails says it does not know.
+  mutate web "jobs standing: a cached reading outlives a failed refresh" "$JSV" \
+    "    : query.error ? { state: 'unreadable', reason: query.error.message }" \
+    "    : query.error && !query.data ? { state: 'unreadable', reason: query.error.message }"
+  mutate web "jobs standing: a cached reading is kept while it is read again" "$JSV" \
+    "  const standing: Standing | undefined = query.fetchStatus !== 'idle' ? undefined" \
+    "  const standing: Standing | undefined = false ? undefined"
+  mutate web "jobs standing: a cached reading is kept while its read is paused" "$JSV" \
+    "  const standing: Standing | undefined = query.fetchStatus !== 'idle' ? undefined" \
+    "  const standing: Standing | undefined = query.fetchStatus === 'fetching' ? undefined"
+  mutate web "jobs standing: an invalidated reading is kept until it is read again" "$JSV" \
+    "      : query.isStale ? undefined : query.data" \
+    "      : query.data"
+  mutate web "jobs standing: Runner's reviewed field is not explained" "$JSV" \
+    "    <p className={styles.note}>{msg('Runner locks each release" \
+    "    <p className={styles.note}>{false && msg('Runner locks each release"
 fi
 
 restore
