@@ -2,17 +2,27 @@ package desk
 
 // Review and lock (ADR-0009, section 2).
 //
-// The review shows what the runtime's `packs verify` finds, file by file, and
-// the lock is the runtime's `packs lock`. Desk forms no verdict of its own: it
-// passes the runtime's findings through, and shows a diff only where it kept a
-// copy of exactly the bytes the lock names. What it does add is the guarantee
-// that **the bytes the owner confirmed are the bytes locked**: the confirmation
-// carries the digests the owner was shown, they are checked against the files
-// before the lock and against the lock afterwards, and anything that moved in
-// between puts the previous lock back.
+// The review shows what the runtime's `packs verify` finds, and every file a
+// lock would cover; the lock is the runtime's `packs lock`. Desk forms no
+// verdict of its own: it passes the runtime's findings through, and shows a
+// diff only where it kept a copy of exactly the bytes the lock names.
+//
+// **What the owner confirms is bound to what the owner was shown.** One
+// reading of the project — the configuration, every declared pack and graph,
+// and the lock — is the review: the contents shown, the digests confirmed,
+// and the runtime's findings (taken over a private copy of exactly those
+// bytes) all come from it, and nothing is read twice. The review hands back
+// a token: a MAC, under a key this desk alone holds, over the desk, that
+// reading's digests and the lock's bytes. A confirmation carries the token,
+// and is honoured only if a fresh reading, under the desk's review lock,
+// yields the same token: the same desk, the same files, the same lock. The
+// lock the runtime then writes must pin exactly those digests, or the
+// previous lock is put back.
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -21,6 +31,7 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -32,15 +43,18 @@ const (
 	// hex SHA-256 of its bytes. It is private: the watcher skips it, and the
 	// file API refuses it.
 	reviewedCopiesDir = ".desk-private/reviewed"
-	// reviewTextLimit is the most of one file the review shows as text.
-	reviewTextLimit = 256 << 10
-	// reviewConfirmLimit bounds a confirmation's body.
-	reviewConfirmLimit = 2 << 20
-	// reviewEntryLimit bounds how many documents one confirmation names.
+	// reviewTextLimit is the largest file the review shows, and so the
+	// largest it lets the owner confirm.
+	reviewTextLimit = 1 << 20
+	// reviewTotalLimit bounds everything one review shows.
+	reviewTotalLimit = 16 << 20
+	// reviewConfirmLimit bounds a confirmation's body: it carries a token.
+	reviewConfirmLimit = 4 << 10
+	// reviewEntryLimit bounds how many documents one review covers.
 	reviewEntryLimit = 4096
 )
 
-// reviewEntry is one declared document a lock covers, as Desk read it.
+// reviewEntry is one declared document a lock covers.
 type reviewEntry struct {
 	Kind   string `json:"kind"`
 	ID     string `json:"id"`
@@ -49,8 +63,7 @@ type reviewEntry struct {
 }
 
 // reviewSet is everything a lock covers: the configuration and every
-// declared pack and graph, each by the digest of its bytes. The review shows
-// it, the confirmation returns it, and the lock must pin exactly it.
+// declared pack and graph, each by the digest of its bytes.
 type reviewSet struct {
 	Config  string        `json:"config"`
 	Entries []reviewEntry `json:"entries"`
@@ -84,46 +97,146 @@ type declaredDocument struct {
 	Path string `json:"path"`
 }
 
-// readReviewSet reads the configuration and every document it declares, and
-// returns what a lock would cover, with the bytes each digest was taken of.
-//
-// It reads `packs` and `graphs` and each entry's `path`, and nothing else:
-// which configuration is valid is the runtime's to say. Every read goes
-// through the project's root.
-func (s *Server) readReviewSet() (reviewSet, map[string][]byte, error) {
-	config, _, err := s.readThroughRoot(runtimeConfigName)
+// snapshotDocument is one declared document as the snapshot read it.
+type snapshotDocument struct {
+	entry reviewEntry
+	clean string
+	data  []byte
+}
+
+// reviewSnapshot is one reading of everything the review step is about.
+type reviewSnapshot struct {
+	set     reviewSet
+	config  []byte
+	docs    []snapshotDocument
+	lock    []byte
+	hasLock bool
+}
+
+// bytesOf is the snapshot's bytes for a digest it holds.
+func (snap *reviewSnapshot) bytesOf(digest string) ([]byte, bool) {
+	if digest == snap.set.Config {
+		return snap.config, true
+	}
+	for _, doc := range snap.docs {
+		if doc.entry.Digest == digest {
+			return doc.data, true
+		}
+	}
+	return nil, false
+}
+
+// readReviewFile reads one project file under the file API's own rules: a
+// path the API would refuse — private, excluded, a staging file, or one
+// that passes through a link — is refused here too.
+func (s *Server) readReviewFile(rel string) ([]byte, error) {
+	clean, err := wireRelativePath(rel)
 	if err != nil {
-		return reviewSet{}, nil, fmt.Errorf("%s could not be read: %w", runtimeConfigName, err)
+		return nil, err
+	}
+	if err := s.refuseSymlinkedPath(clean); err != nil {
+		return nil, err
+	}
+	data, _, err := s.readThroughRoot(clean)
+	return data, err
+}
+
+// readSnapshot reads the configuration, every document it declares, and the
+// lock, once. It reads `packs` and `graphs` and each entry's `path`, and
+// nothing else: which configuration is valid is the runtime's to say.
+func (s *Server) readSnapshot() (*reviewSnapshot, error) {
+	config, err := s.readReviewFile(runtimeConfigName)
+	if err != nil {
+		return nil, fmt.Errorf("%s could not be read: %w", runtimeConfigName, err)
 	}
 	var declared struct {
 		Packs  map[string]declaredDocument `json:"packs"`
 		Graphs map[string]declaredDocument `json:"graphs"`
 	}
 	if err := json.Unmarshal(config, &declared); err != nil {
-		return reviewSet{}, nil, fmt.Errorf("%s is not a configuration Desk can read: %w", runtimeConfigName, err)
+		return nil, fmt.Errorf("%s is not a configuration Desk can read: %w", runtimeConfigName, err)
 	}
-	set := reviewSet{Config: sha256Digest(config), Entries: []reviewEntry{}}
-	read := map[string][]byte{set.Config: config}
+	if len(declared.Packs)+len(declared.Graphs) > reviewEntryLimit {
+		return nil, fmt.Errorf("the project declares more than %d documents, which is more than Desk reviews", reviewEntryLimit)
+	}
+	snap := &reviewSnapshot{config: config, set: reviewSet{Config: sha256Digest(config), Entries: []reviewEntry{}}}
 	for kind, entries := range map[string]map[string]declaredDocument{"pack": declared.Packs, "graph": declared.Graphs} {
 		for id, entry := range entries {
 			clean, err := wireRelativePath(entry.Path)
 			if err != nil {
-				return reviewSet{}, nil, fmt.Errorf("the %s %q is declared at %q, which Desk cannot read: %w", kind, id, entry.Path, err)
+				return nil, fmt.Errorf("the %s %q is declared at %q, which Desk does not read: %w", kind, id, entry.Path, err)
 			}
-			data, _, err := s.readThroughRoot(clean)
+			data, err := s.readReviewFile(clean)
 			if err != nil {
-				return reviewSet{}, nil, fmt.Errorf("the %s %q could not be read: %w", kind, id, err)
+				return nil, fmt.Errorf("the %s %q could not be read: %w", kind, id, err)
 			}
-			digest := sha256Digest(data)
-			read[digest] = data
-			set.Entries = append(set.Entries, reviewEntry{Kind: kind, ID: id, Path: entry.Path, Digest: digest})
+			item := reviewEntry{Kind: kind, ID: id, Path: entry.Path, Digest: sha256Digest(data)}
+			snap.docs = append(snap.docs, snapshotDocument{entry: item, clean: clean, data: data})
+			snap.set.Entries = append(snap.set.Entries, item)
 		}
 	}
-	if len(set.Entries) > reviewEntryLimit {
-		return reviewSet{}, nil, fmt.Errorf("the project declares more than %d documents, which is more than Desk reviews", reviewEntryLimit)
+	sortEntries(snap.set.Entries)
+	sort.Slice(snap.docs, func(i, j int) bool {
+		a, b := snap.docs[i].entry, snap.docs[j].entry
+		return a.Kind < b.Kind || a.Kind == b.Kind && a.ID < b.ID
+	})
+	lock, err := s.readReviewFile(runtimeLockName)
+	switch {
+	case err == nil:
+		snap.lock, snap.hasLock = lock, true
+	case codeOf(err) != CodeNotFound:
+		return nil, fmt.Errorf("%s could not be read: %w", runtimeLockName, err)
 	}
-	sortEntries(set.Entries)
-	return set, read, nil
+	return snap, nil
+}
+
+// reviewToken binds a confirmation to this desk and to one reading of its
+// project: a MAC, under the desk's own key, over the desk's identity, the
+// set's digests, and the lock's bytes. A desk's key is random per process,
+// so a token names one desk and does not outlive it.
+func (s *Server) reviewToken(snap *reviewSnapshot) string {
+	lock := "absent"
+	if snap.hasLock {
+		lock = sha256Digest(snap.lock)
+	}
+	payload, _ := json.Marshal(struct {
+		Desk    string    `json:"desk"`
+		Project string    `json:"project"`
+		Set     reviewSet `json:"set"`
+		Lock    string    `json:"lock"`
+	}{s.cfg.deskID, s.projectDir, snap.set, lock})
+	mac := hmac.New(sha256.New, s.reviewKey[:])
+	mac.Write(payload)
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// unshowable says why a snapshot cannot be confirmed: a file the owner
+// cannot be shown is a file the owner cannot confirm.
+func (snap *reviewSnapshot) unshowable() string {
+	total := len(snap.config)
+	if reason := showableText(runtimeConfigName, snap.config); reason != "" {
+		return reason
+	}
+	for _, doc := range snap.docs {
+		if reason := showableText(doc.entry.Path, doc.data); reason != "" {
+			return reason
+		}
+		total += len(doc.data)
+	}
+	if total > reviewTotalLimit {
+		return fmt.Sprintf("the files a lock would cover add up to more than %d bytes, which is more than Desk shows at once", reviewTotalLimit)
+	}
+	return ""
+}
+
+func showableText(name string, data []byte) string {
+	if len(data) > reviewTextLimit {
+		return fmt.Sprintf("%s is larger than %d bytes, which is more than Desk shows", name, reviewTextLimit)
+	}
+	if !utf8.Valid(data) {
+		return fmt.Sprintf("%s is not text Desk can show", name)
+	}
+	return ""
 }
 
 // lockDocument is a `jpack.lock.json`, as runtime ADR-0019 writes it.
@@ -139,18 +252,6 @@ type lockDocument struct {
 type lockEntry struct {
 	Path   string `json:"path"`
 	Digest string `json:"digest"`
-}
-
-// readLock reads the project's lock. A missing lock is not an error.
-func (s *Server) readLock() (data []byte, present bool, err error) {
-	data, _, err = s.readThroughRoot(runtimeLockName)
-	if errors.Is(err, fs.ErrNotExist) || codeOf(err) == CodeNotFound {
-		return nil, false, nil
-	}
-	if err != nil {
-		return nil, false, err
-	}
-	return data, true, nil
 }
 
 // lockedSet is what a lock pins, in the review's terms.
@@ -172,12 +273,15 @@ func lockedSet(data []byte) (reviewSet, lockDocument, error) {
 // reviewRuntime is the directory and refusal for running the runtime over
 // this desk's project.
 //
-// A desk Desk made never reads another project's configuration, and the
-// commands here name `--config jpack.json` and run without `JPACK_CONFIG`
+// A desk Desk made never reads another project's configuration: the commands
+// here name `--config jpack.json` and run without `JPACK_CONFIG`
 // (`runRuntime`). The startup project keeps an inherited `JPACK_CONFIG` for
-// its relay (`runtimeEnv`); where that names another file, the runtime is not
-// reading the configuration this step would review, so the step refuses
-// rather than lock one file while the runtime holds the project to another.
+// its relay (`runtimeEnv`), so the step proceeds only where that names this
+// project's own `jpack.json` **by path**: the runtime resolves a relative
+// value against the project, and reads every document and the lock relative
+// to the configuration's own directory. A hard link to `jpack.json` from
+// another directory is the same file in another project, so an identity
+// check is not enough; the directory has to be this one.
 func (s *Server) reviewRuntime() (heldDir, string) {
 	if s.project == nil || s.project.own == nil {
 		return heldDir{}, "This desk holds no project to review."
@@ -187,39 +291,67 @@ func (s *Server) reviewRuntime() (heldDir, string) {
 		return dir, ""
 	}
 	named := strings.TrimSpace(os.Getenv(runtimeConfigEnv))
-	if named == "" {
-		return dir, ""
-	}
-	if !filepath.IsAbs(named) {
-		named = filepath.Join(s.projectDir, named)
-	}
-	there, err := os.Stat(named)
-	own, ownErr := s.root.Stat(runtimeConfigName)
-	if err == nil && ownErr == nil && os.SameFile(there, own) {
+	if named == "" || configNamesProject(named, s.projectDir, s.project.info) {
 		return dir, ""
 	}
 	return dir, fmt.Sprintf("This project's runtime reads %s, which JPACK_CONFIG names, and not this project's %s, so Desk does not review or lock it here.", named, runtimeConfigName)
 }
 
-// reviewSide is one side of a finding's comparison.
+// configNamesProject reports whether a JPACK_CONFIG value names the
+// project's own jpack.json: a file of that name, not a link, in a directory
+// that resolves to the project itself.
+func configNamesProject(named, projectDir string, project fs.FileInfo) bool {
+	if !filepath.IsAbs(named) {
+		named = filepath.Join(projectDir, named)
+	}
+	named = filepath.Clean(named)
+	if filepath.Base(named) != runtimeConfigName {
+		return false
+	}
+	dir, err := filepath.EvalSymlinks(filepath.Dir(named))
+	if err != nil || dir != projectDir {
+		return false
+	}
+	there, err := os.Stat(filepath.Dir(named))
+	if err != nil || !os.SameFile(there, project) {
+		return false
+	}
+	file, err := os.Lstat(named)
+	return err == nil && file.Mode().IsRegular()
+}
+
+// reviewSide is one side of a file's comparison.
 type reviewSide struct {
 	// State is "text"; "no-copy", where the lock names bytes Desk kept no copy
-	// of; "unlocked", where the lock names nothing here; "absent", where there
-	// is no file; or "too-large".
+	// of; "absent", where there is no file; or "not-shown", for a file too
+	// large to show, or not text.
 	State string `json:"state"`
 	Text  string `json:"text,omitempty"`
 }
 
-// reviewFinding is one of the runtime's findings, passed through, with the
-// two sides Desk can show for it.
+// reviewFile is one file the review is about: one the lock would cover, or
+// one the lock covers that the configuration no longer declares.
+type reviewFile struct {
+	Kind   string `json:"kind"`
+	ID     string `json:"id,omitempty"`
+	Path   string `json:"path"`
+	Digest string `json:"digest,omitempty"`
+	// Lock is how the current lock stands to this file: "same", where it pins
+	// these bytes; "other", where it pins other bytes; "none", where it names
+	// nothing here; or "removed", where only the lock names it.
+	Lock string     `json:"lock"`
+	Now  reviewSide `json:"now"`
+	// Earlier is the bytes the lock names, where it names other bytes or only
+	// the lock names this file.
+	Earlier *reviewSide `json:"earlier,omitempty"`
+}
+
 type reviewFinding struct {
-	Name    string     `json:"name"`
-	Kind    string     `json:"kind,omitempty"`
-	ID      string     `json:"id,omitempty"`
-	Path    string     `json:"path,omitempty"`
-	Detail  string     `json:"detail,omitempty"`
-	Earlier reviewSide `json:"earlier"`
-	Now     reviewSide `json:"now"`
+	Name   string `json:"name"`
+	Kind   string `json:"kind,omitempty"`
+	ID     string `json:"id,omitempty"`
+	Path   string `json:"path,omitempty"`
+	Detail string `json:"detail,omitempty"`
 }
 
 type runtimeDiagnostic struct {
@@ -234,14 +366,14 @@ type reviewAnswer struct {
 	Locked      bool                `json:"locked"`
 	Findings    []reviewFinding     `json:"findings"`
 	Diagnostics []runtimeDiagnostic `json:"diagnostics"`
-	// Set is what a lock would cover. It is absent where Desk could not read
-	// every file, and Unreadable then says why: nothing can be confirmed.
-	Set        *reviewSet `json:"set"`
-	Unreadable string     `json:"unreadable,omitempty"`
+	Files       []reviewFile        `json:"files"`
+	// Token confirms exactly what this answer shows. It is absent where any
+	// file cannot be shown, and Blocked then says why.
+	Token   string `json:"token,omitempty"`
+	Blocked string `json:"blocked,omitempty"`
 }
 
-// handleReview answers `GET /api/review`: the runtime's findings, and what a
-// lock would cover.
+// handleReview answers `GET /api/review`.
 func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 	if !s.guard(w, r) {
 		return
@@ -260,73 +392,150 @@ func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, answer)
 }
 
-func (s *Server) review(ctx context.Context, dir heldDir) (reviewAnswer, error) {
+type verifiedAnswer struct {
+	Command     string              `json:"command"`
+	Status      string              `json:"status"`
+	Diagnostics []runtimeDiagnostic `json:"diagnostics"`
+	Findings    []reviewFinding     `json:"findings"`
+}
+
+// runVerify runs `packs verify` in dir, and reads its answer whatever the
+// exit: a difference is a non-zero exit.
+func (s *Server) runVerify(ctx context.Context, dir heldDir) (verifiedAnswer, error) {
 	out, runErr := runRuntime(ctx, s.cfg.JpackBin, dir, "packs", "verify", "--config", runtimeConfigName, "--format", "json")
-	var verified struct {
-		Command     string              `json:"command"`
-		Status      string              `json:"status"`
-		Diagnostics []runtimeDiagnostic `json:"diagnostics"`
-		Findings    []struct {
-			Name   string `json:"name"`
-			Kind   string `json:"kind"`
-			ID     string `json:"id"`
-			Path   string `json:"path"`
-			Detail string `json:"detail"`
-		} `json:"findings"`
-	}
-	// A difference is a non-zero exit, so the answer is read whatever the
-	// status; only an answer that is not the documented one is a failure.
+	var verified verifiedAnswer
 	if out == nil || json.Unmarshal(out, &verified) != nil || verified.Command != "packs verify" || verified.Status == "" {
 		if runErr == nil {
 			runErr = errors.New("its packs verify did not answer as documented")
 		}
-		return reviewAnswer{}, fmt.Errorf("the runtime could not verify it: %w", runErr)
+		return verified, fmt.Errorf("the runtime could not verify it: %w", runErr)
 	}
-	answer := reviewAnswer{Status: verified.Status, Findings: []reviewFinding{}, Diagnostics: verified.Diagnostics}
+	return verified, nil
+}
+
+// verifySnapshot runs `packs verify` over a private copy of exactly the
+// snapshot's bytes, so the findings are about what the review shows, and the
+// runtime reads nothing of the project while it runs.
+func (s *Server) verifySnapshot(ctx context.Context, snap *reviewSnapshot) (verifiedAnswer, error) {
+	// A fresh owner-only directory of this process's own, removed after.
+	where, err := os.MkdirTemp("", "jpack-desk-review-")
+	if err != nil {
+		return verifiedAnswer{}, err
+	}
+	defer os.RemoveAll(where)
+	root, err := os.OpenRoot(where)
+	if err != nil {
+		return verifiedAnswer{}, err
+	}
+	defer root.Close()
+	write := func(clean string, data []byte) error {
+		if dir := path.Dir(clean); dir != "." {
+			if err := root.MkdirAll(filepath.FromSlash(dir), 0o700); err != nil {
+				return err
+			}
+		}
+		return root.WriteFile(filepath.FromSlash(clean), data, 0o600)
+	}
+	if err := write(runtimeConfigName, snap.config); err != nil {
+		return verifiedAnswer{}, err
+	}
+	for _, doc := range snap.docs {
+		if err := write(doc.clean, doc.data); err != nil {
+			return verifiedAnswer{}, err
+		}
+	}
+	if snap.hasLock {
+		if err := write(runtimeLockName, snap.lock); err != nil {
+			return verifiedAnswer{}, err
+		}
+	}
+	file, err := root.Open(".")
+	if err != nil {
+		return verifiedAnswer{}, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return verifiedAnswer{}, err
+	}
+	return s.runVerify(ctx, heldDir{file: file, path: where, info: info})
+}
+
+func (s *Server) review(ctx context.Context, dir heldDir) (reviewAnswer, error) {
+	snap, readErr := s.readSnapshot()
+	var verified verifiedAnswer
+	var err error
+	if readErr != nil {
+		// Nothing can be confirmed; the runtime's own findings still say
+		// what it sees, over the project itself.
+		verified, err = s.runVerify(ctx, dir)
+	} else {
+		verified, err = s.verifySnapshot(ctx, snap)
+	}
+	if err != nil {
+		return reviewAnswer{}, err
+	}
+	answer := reviewAnswer{Status: verified.Status, Findings: verified.Findings, Diagnostics: verified.Diagnostics, Files: []reviewFile{}}
+	if answer.Findings == nil {
+		answer.Findings = []reviewFinding{}
+	}
 	if answer.Diagnostics == nil {
 		answer.Diagnostics = []runtimeDiagnostic{}
 	}
-	lockData, present, err := s.readLock()
-	if err != nil {
-		return reviewAnswer{}, fmt.Errorf("%s could not be read: %w", runtimeLockName, err)
+	if readErr != nil {
+		answer.Blocked = readErr.Error()
+		return answer, nil
 	}
-	answer.Locked = present
+	answer.Locked = snap.hasLock
 	var lock lockDocument
-	if present {
+	if snap.hasLock {
 		// An unreadable lock is the runtime's to report; Desk then has no
 		// digests to look copies up by, and shows none.
-		_, lock, _ = lockedSet(lockData)
+		_, lock, _ = lockedSet(snap.lock)
 	}
 	copies, _ := s.reviewedCopies(false)
 	if copies != nil {
 		defer copies.Close()
 	}
-	for _, found := range verified.Findings {
-		finding := reviewFinding{Name: found.Name, Kind: found.Kind, ID: found.ID, Path: found.Path, Detail: found.Detail}
-		lockedDigest := ""
+	file := func(kind, id, path, digest, locked string, data []byte) reviewFile {
+		row := reviewFile{Kind: kind, ID: id, Path: path, Digest: digest, Lock: "none", Now: shownText(data)}
 		switch {
-		case found.Name == "config-drift":
-			lockedDigest = lock.Config.Digest
-		case found.Kind == "pack":
-			lockedDigest = lock.Packs[found.ID].Digest
-		case found.Kind == "graph":
-			lockedDigest = lock.Graphs[found.ID].Digest
-		}
-		finding.Earlier = earlierCopy(copies, lockedDigest)
-		switch {
-		case found.Name == "locked-but-undeclared":
-			finding.Now = reviewSide{State: "absent"}
-		case found.Name == "config-drift":
-			finding.Now = s.currentText(runtimeConfigName)
+		case !snap.hasLock || locked == "":
+		case locked == digest:
+			row.Lock = "same"
 		default:
-			finding.Now = s.currentText(found.Path)
+			row.Lock = "other"
+			earlier := earlierCopy(copies, locked)
+			row.Earlier = &earlier
 		}
-		answer.Findings = append(answer.Findings, finding)
+		return row
 	}
-	if set, _, err := s.readReviewSet(); err != nil {
-		answer.Unreadable = err.Error()
-	} else {
-		answer.Set = &set
+	answer.Files = append(answer.Files, file("config", "", runtimeConfigName, snap.set.Config, lock.Config.Digest, snap.config))
+	declared := map[string]bool{}
+	for _, doc := range snap.docs {
+		entries := lock.Packs
+		if doc.entry.Kind == "graph" {
+			entries = lock.Graphs
+		}
+		declared[doc.entry.Kind+"\x00"+doc.entry.ID] = true
+		answer.Files = append(answer.Files, file(doc.entry.Kind, doc.entry.ID, doc.entry.Path, doc.entry.Digest, entries[doc.entry.ID].Digest, doc.data))
+	}
+	// What only the lock names: shown as it was locked, where Desk kept it.
+	for kind, entries := range map[string]map[string]lockEntry{"pack": lock.Packs, "graph": lock.Graphs} {
+		for id, entry := range entries {
+			if declared[kind+"\x00"+id] {
+				continue
+			}
+			earlier := earlierCopy(copies, entry.Digest)
+			answer.Files = append(answer.Files, reviewFile{Kind: kind, ID: id, Path: entry.Path, Lock: "removed", Now: reviewSide{State: "absent"}, Earlier: &earlier})
+		}
+	}
+	sort.SliceStable(answer.Files[1:], func(i, j int) bool {
+		a, b := answer.Files[1+i], answer.Files[1+j]
+		return a.Kind < b.Kind || a.Kind == b.Kind && a.ID < b.ID
+	})
+	if answer.Blocked = snap.unshowable(); answer.Blocked == "" {
+		answer.Token = s.reviewToken(snap)
 	}
 	return answer, nil
 }
@@ -335,9 +544,6 @@ func (s *Server) review(ctx context.Context, dir heldDir) (reviewAnswer, error) 
 // Desk kept a copy whose own digest is that one. The copy helps the owner
 // read; the lock is the record.
 func earlierCopy(copies *os.Root, digest string) reviewSide {
-	if digest == "" {
-		return reviewSide{State: "unlocked"}
-	}
 	name, ok := copyName(digest)
 	if !ok || copies == nil {
 		return reviewSide{State: "no-copy"}
@@ -361,31 +567,20 @@ func copyName(digest string) (string, bool) {
 	return hexDigest, true
 }
 
-func (s *Server) currentText(declared string) reviewSide {
-	clean, err := wireRelativePath(declared)
-	if err != nil {
-		return reviewSide{State: "absent"}
-	}
-	data, _, err := s.readThroughRoot(clean)
-	if err != nil {
-		return reviewSide{State: "absent"}
-	}
-	return shownText(data)
-}
-
 func shownText(data []byte) reviewSide {
-	if len(data) > reviewTextLimit || !utf8.Valid(data) {
-		return reviewSide{State: "too-large"}
+	if showableText("", data) != "" {
+		return reviewSide{State: "not-shown"}
 	}
 	return reviewSide{State: "text", Text: string(data)}
 }
 
 // reviewedCopies opens `.desk-private/reviewed` through the project's root,
-// one component at a time, refusing a link or anything but a directory at
-// either step. With create, missing directories are made owner-only, and a
-// new copies folder ignores itself in Git: in a project Desk did not make,
-// `.desk-private/` may not be ignored yet, and these copies duplicate the
-// project's own files.
+// one component at a time. Each must be a directory, not a link, owned by
+// this user and open to no one else; one that is not is refused rather than
+// trusted with copies or believed when read. With create, a missing
+// directory is made owner-only, and a new copies folder ignores itself in
+// Git: in a project Desk did not make, `.desk-private/` may not be ignored
+// yet, and these copies duplicate the project's own files.
 func (s *Server) reviewedCopies(create bool) (*os.Root, error) {
 	current := s.root
 	var opened *os.Root
@@ -401,6 +596,12 @@ func (s *Server) reviewedCopies(create bool) (*os.Root, error) {
 		}
 		if err == nil && (!info.IsDir() || info.Mode()&fs.ModeSymlink != 0) {
 			err = fmt.Errorf("%s is not a directory Desk can keep copies in", part)
+		}
+		if err == nil && info.Mode().Perm()&0o077 != 0 {
+			err = fmt.Errorf("%s is open to other users (%v), so Desk does not keep copies in it", part, info.Mode().Perm())
+		}
+		if err == nil {
+			err = ownedByUs(part, info)
 		}
 		var next *os.Root
 		if err == nil {
@@ -430,19 +631,19 @@ func (s *Server) reviewedCopies(create bool) (*os.Root, error) {
 }
 
 // storeReviewedCopies keeps a copy of each locked file, named by its digest.
-func (s *Server) storeReviewedCopies(read map[string][]byte, set reviewSet) error {
+func (s *Server) storeReviewedCopies(snap *reviewSnapshot) error {
 	copies, err := s.reviewedCopies(true)
 	if err != nil {
 		return err
 	}
 	defer copies.Close()
-	digests := []string{set.Config}
-	for _, entry := range set.Entries {
+	digests := []string{snap.set.Config}
+	for _, entry := range snap.set.Entries {
 		digests = append(digests, entry.Digest)
 	}
 	for _, digest := range digests {
 		name, ok := copyName(digest)
-		data, have := read[digest]
+		data, have := snap.bytesOf(digest)
 		if !ok || !have || sha256Digest(data) != digest {
 			return fmt.Errorf("no verified bytes for %s", digest)
 		}
@@ -463,8 +664,8 @@ type lockFailure struct {
 	message string
 }
 
-// handleReviewLock answers `POST /api/review/lock`: lock exactly the set the
-// owner confirmed, or nothing.
+// handleReviewLock answers `POST /api/review/lock`: lock exactly what the
+// review the token names showed, or nothing.
 //
 // It is a `POST` with a JSON body and the desk's bearer, which a cross-site
 // page cannot send: the guard checks the session and the Origin, and a
@@ -484,11 +685,11 @@ func (s *Server) handleReviewLock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request struct {
-		Set *reviewSet `json:"set"`
+		Token string `json:"token"`
 	}
 	data, err := readBounded(r.Body, reviewConfirmLimit)
-	if err != nil || decodeDataJSON(data, &request) != nil || request.Set == nil || len(request.Set.Entries) > reviewEntryLimit {
-		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, "Confirm the reviewed set as the review showed it.")
+	if err != nil || decodeDataJSON(data, &request) != nil || len(request.Token) != 64 {
+		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, "Confirm the review with the token it gave.")
 		return
 	}
 	dir, refusal := s.reviewRuntime()
@@ -497,7 +698,7 @@ func (s *Server) handleReviewLock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.reviewMu.Lock()
-	answer, failure := s.lockConfirmed(r.Context(), dir, *request.Set)
+	answer, failure := s.lockConfirmed(r.Context(), dir, request.Token)
 	s.reviewMu.Unlock()
 	if failure != nil {
 		writeJSONCoded(w, failure.status, failure.code, failure.message)
@@ -506,28 +707,24 @@ func (s *Server) handleReviewLock(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, answer)
 }
 
-// lockConfirmed locks the confirmed set, or puts the previous lock back.
-func (s *Server) lockConfirmed(ctx context.Context, dir heldDir, confirmed reviewSet) (any, *lockFailure) {
-	sortEntries(confirmed.Entries)
-	current, read, err := s.readReviewSet()
-	if err != nil || !current.equal(confirmed) {
+// lockConfirmed locks what the review the token names showed, or puts the
+// previous lock back.
+func (s *Server) lockConfirmed(ctx context.Context, dir heldDir, token string) (any, *lockFailure) {
+	snap, err := s.readSnapshot()
+	if err != nil || snap.unshowable() != "" || !hmac.Equal([]byte(s.reviewToken(snap)), []byte(token)) {
 		return nil, &lockFailure{http.StatusConflict, CodeStale, "The project changed after you reviewed it, so nothing was locked. Review it again."}
-	}
-	previous, hadLock, err := s.readLock()
-	if err != nil {
-		return nil, &lockFailure{http.StatusInternalServerError, CodeInternal, "The current lock could not be read, so nothing was locked: " + err.Error()}
 	}
 	lockErr := lockRuntimeProjectAt(ctx, s.cfg.JpackBin, dir)
 	locked := false
 	if lockErr == nil {
-		if after, present, err := s.readLock(); err == nil && present {
-			if pinned, _, err := lockedSet(after); err == nil && pinned.equal(current) {
+		if after, err := s.readReviewFile(runtimeLockName); err == nil {
+			if pinned, _, err := lockedSet(after); err == nil && pinned.equal(snap.set) {
 				locked = true
 			}
 		}
 	}
 	if !locked {
-		restoreErr := s.restoreLock(previous, hadLock)
+		restoreErr := s.restoreLock(snap.lock, snap.hasLock)
 		message := "A file changed while it was being locked, so the previous lock was put back and nothing else was written. Review it again."
 		status, code := http.StatusConflict, CodeStale
 		if lockErr != nil {
@@ -541,19 +738,23 @@ func (s *Server) lockConfirmed(ctx context.Context, dir heldDir, confirmed revie
 		return nil, &lockFailure{status, code, message}
 	}
 	result := struct {
-		Files  int    `json:"files"`
-		Copies string `json:"copies"`
-	}{Files: 1 + len(current.Entries), Copies: "stored"}
-	if err := s.storeReviewedCopies(read, current); err != nil {
+		Files         int    `json:"files"`
+		Copies        string `json:"copies"`
+		CopiesProblem string `json:"copiesProblem,omitempty"`
+	}{Files: 1 + len(snap.set.Entries), Copies: "stored"}
+	if err := s.storeReviewedCopies(snap); err != nil {
 		s.log.Printf("desk: the reviewed copies were not stored: %v", err)
-		result.Copies = "not-stored"
+		result.Copies, result.CopiesProblem = "not-stored", err.Error()
 	}
 	return result, nil
 }
 
 // restoreLock puts the previous lock's bytes back, or removes the lock where
-// there was none.
+// there was none, under the file API's rules for the path.
 func (s *Server) restoreLock(previous []byte, hadLock bool) error {
+	if err := s.refuseSymlinkedPath(runtimeLockName); err != nil {
+		return err
+	}
 	if hadLock {
 		return s.atomicWrite(runtimeLockName, previous)
 	}

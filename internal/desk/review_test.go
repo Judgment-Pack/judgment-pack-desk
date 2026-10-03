@@ -20,37 +20,40 @@ import (
 
 const reviewPack = `{"specVersion":"0.2.0-draft","id":"https://example.com/judgment-packs/minimal-literal","version":"0.1.0","title":"Minimal literal decision","decision":{"intent":"Provide the smallest focused valid pack.","question":"Does the literal rule select accept?"},"outcomes":[{"id":"accept","label":"Accept"},{"id":"reject","label":"Reject"}],"rules":[{"id":"literal-rule","description":"A true literal condition.","when":{"op":"literal","value":true},"outcome":"accept","onUnknown":"ignore"}]}` + "\n"
 
-// reviewRuntime is a stand-in runtime for the review step, and the files
-// that steer it.
+var otherPack = strings.Replace(reviewPack, "minimal-literal", "other", 1)
+
+const reviewGraph = `{"graph":"stand-in"}` + "\n"
+
+// reviewRig is a stand-in runtime for the review step, and the files that
+// steer it.
 type reviewRig struct {
 	bin, calls string
-	// verify is what `packs verify` prints; it exits 1 when it holds
-	// "invalid".
+	// verify is what `packs verify` prints; it exits 1 unless it holds
+	// "valid".
 	verify string
-	// lock is what `packs lock` copies to jpack.lock.json. It is not created
-	// until a test prepares it; until then `packs lock` locks a new desk.
+	// lock is what `packs lock` copies to jpack.lock.json. Until a test
+	// prepares it, `packs lock` locks a new desk instead.
 	lock string
-	// before is a shell fragment `packs lock` runs first.
-	before string
 }
 
-// newReviewRig writes the stand-in. Every run appends its arguments and the
-// JPACK_CONFIG it was given to calls. It uses shell builtins only.
-func newReviewRig(t *testing.T, before string) *reviewRig {
+// newReviewRig writes the stand-in. verifyFirst and lockFirst are shell
+// fragments each command runs before answering. Every run appends its
+// arguments and the JPACK_CONFIG it was given to calls. Builtins only.
+func newReviewRig(t *testing.T, verifyFirst, lockFirst string) *reviewRig {
 	t.Helper()
 	dir := t.TempDir()
-	rig := &reviewRig{bin: filepath.Join(dir, "jpack"), verify: filepath.Join(dir, "verify.json"), lock: filepath.Join(dir, "lock.json"), before: before}
+	rig := &reviewRig{bin: filepath.Join(dir, "jpack"), verify: filepath.Join(dir, "verify.json"), lock: filepath.Join(dir, "lock.json")}
 	copyOut := func(from string) string {
 		return "  while IFS= read -r line || [ -n \"$line\" ]; do printf '%s\\n' \"$line\"; done < '" + from + "'"
 	}
-	lock := "  if [ -e '" + rig.lock + "' ]; then\n" + before + "\n" + copyOut(rig.lock) + " > jpack.lock.json\n" +
+	lock := "  if [ -e '" + rig.lock + "' ]; then\n" + lockFirst + "\n" + copyOut(rig.lock) + " > jpack.lock.json\n" +
 		"  printf '%s\\n' '{\"outputVersion\":\"2\",\"command\":\"packs lock\",\"status\":\"valid\"}'\n  exit 0\n  fi\n" + lockingAs(wantGatedConfig)
 	rig.calls = writeStandInRuntime(t, rig.bin, reading(allConfigVersions), lock)
 	script, err := os.ReadFile(rig.bin)
 	if err != nil {
 		t.Fatal(err)
 	}
-	verify := "'packs verify')\n" + copyOut(rig.verify) + "\n  IFS= read -r code < '" + rig.verify + ".exit'\n  exit \"$code\"\n  ;;\n"
+	verify := "'packs verify')\n" + verifyFirst + "\n" + copyOut(rig.verify) + "\n  IFS= read -r code < '" + rig.verify + ".exit'\n  exit \"$code\"\n  ;;\n"
 	script = bytes.Replace(script, []byte("'packs lock')\n"), []byte(verify+"'packs lock')\n"), 1)
 	if err := os.WriteFile(rig.bin, script, 0o755); err != nil {
 		t.Fatal(err)
@@ -64,7 +67,11 @@ func (rig *reviewRig) answers(t *testing.T, status string, findings ...map[strin
 	if findings == nil {
 		findings = []map[string]string{}
 	}
-	data, _ := json.Marshal(map[string]any{"outputVersion": "2", "command": "packs verify", "status": status, "findings": findings})
+	answer := map[string]any{"outputVersion": "2", "command": "packs verify", "status": status, "findings": findings}
+	if status == "error" {
+		answer["diagnostics"] = []map[string]string{{"code": "JPS-LOCK-ABSENT", "message": "There is no reviewed-set lock at jpack.lock.json."}}
+	}
+	data, _ := json.Marshal(answer)
 	code := "1\n"
 	if status == "valid" {
 		code = "0\n"
@@ -85,21 +92,28 @@ func (rig *reviewRig) locks(t *testing.T, data []byte) {
 // lockOf is the lock the runtime writes for a project's files as they are.
 func lockOf(t *testing.T, project string, packs map[string]string) []byte {
 	t.Helper()
+	return lockOfAll(t, project, packs, nil)
+}
+
+func lockOfAll(t *testing.T, project string, packs, graphs map[string]string) []byte {
+	t.Helper()
 	config, err := os.ReadFile(filepath.Join(project, "jpack.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	entries := map[string]lockEntry{}
-	for id, path := range packs {
-		data, err := os.ReadFile(filepath.Join(project, path))
-		if err != nil {
-			t.Fatal(err)
-		}
-		entries[id] = lockEntry{Path: path, Digest: sha256Digest(data)}
-	}
 	lock := map[string]any{"lockVersion": "1", "config": map[string]string{"digest": sha256Digest(config)}}
-	if len(entries) > 0 {
-		lock["packs"] = entries
+	for member, declared := range map[string]map[string]string{"packs": packs, "graphs": graphs} {
+		entries := map[string]lockEntry{}
+		for id, path := range declared {
+			data, err := os.ReadFile(filepath.Join(project, path))
+			if err != nil {
+				t.Fatal(err)
+			}
+			entries[id] = lockEntry{Path: path, Digest: sha256Digest(data)}
+		}
+		if len(entries) > 0 {
+			lock[member] = entries
+		}
 	}
 	data, _ := json.MarshalIndent(lock, "", "  ")
 	return append(data, '\n')
@@ -122,11 +136,11 @@ const twoPacks = `{"configVersion":"5","requireReviewed":true,"packs":{"alpha":{
 
 // reviewProject is a startup desk over a project with two packs and a lock of
 // them as they are, and the rig behind it.
-func reviewProject(t *testing.T, before string) (*Server, *httptest.Server, *reviewRig, string) {
+func reviewProject(t *testing.T, verifyFirst, lockFirst string) (*Server, *httptest.Server, *reviewRig, string) {
 	t.Helper()
-	rig := newReviewRig(t, before)
+	rig := newReviewRig(t, verifyFirst, lockFirst)
 	project := t.TempDir()
-	writeProject(t, project, map[string]string{"jpack.json": twoPacks, "packs/a.json": reviewPack, "packs/b.json": strings.Replace(reviewPack, "minimal-literal", "other", 1)})
+	writeProject(t, project, map[string]string{"jpack.json": twoPacks, "packs/a.json": reviewPack, "packs/b.json": otherPack})
 	if err := os.WriteFile(filepath.Join(project, "jpack.lock.json"), lockOf(t, project, map[string]string{"alpha": "packs/a.json", "beta": "packs/b.json"}), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -176,9 +190,9 @@ func readReview(t *testing.T, ts *httptest.Server, desk string) reviewAnswer {
 	return answer
 }
 
-func confirm(t *testing.T, ts *httptest.Server, desk string, set *reviewSet) (int, []byte) {
+func confirm(t *testing.T, ts *httptest.Server, desk, token string) (int, []byte) {
 	t.Helper()
-	return reviewCall(t, ts, "POST", "/api/review/lock", desk, map[string]any{"set": set}, bearer)
+	return reviewCall(t, ts, "POST", "/api/review/lock", desk, map[string]any{"token": token}, bearer)
 }
 
 func countCalls(t *testing.T, calls, prefix string) int {
@@ -213,54 +227,82 @@ func copiesIn(t *testing.T, project string) map[string]string {
 	return kept
 }
 
-// The review passes the runtime's findings through, says what a lock would
-// cover, and shows an earlier copy only where Desk kept exactly the bytes the
-// lock names. It locks nothing.
-func TestTheReviewShowsTheRuntimesFindings(t *testing.T) {
-	s, ts, rig, project := reviewProject(t, "")
-	lockBefore := readFile(t, filepath.Join(project, "jpack.lock.json"))
-	// A copy of alpha's locked bytes, and a copy under beta's locked digest
-	// that holds other bytes.
+// fileOf is the review's row for a path.
+func fileOf(t *testing.T, answer reviewAnswer, path string) reviewFile {
+	t.Helper()
+	for _, file := range answer.Files {
+		if file.Path == path {
+			return file
+		}
+	}
+	t.Fatalf("the review shows no %s: %+v", path, answer.Files)
+	return reviewFile{}
+}
+
+func keepCopy(t *testing.T, s *Server, data string) {
+	t.Helper()
 	copies, err := s.reviewedCopies(true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	alphaName, _ := copyName(sha256Digest([]byte(reviewPack)))
-	if err := writePrivateData(copies, alphaName, []byte(reviewPack)); err != nil {
+	defer copies.Close()
+	name, _ := copyName(sha256Digest([]byte(data)))
+	if err := writePrivateData(copies, name, []byte(data)); err != nil {
 		t.Fatal(err)
 	}
-	betaName, _ := copyName(sha256Digest([]byte(strings.Replace(reviewPack, "minimal-literal", "other", 1))))
+}
+
+// The review shows every file a lock would cover, and what only the lock
+// names, beside the runtime's findings passed through; an earlier copy only
+// where Desk kept exactly the bytes the lock names. It locks nothing.
+func TestTheReviewShowsEveryFileAndTheRuntimesFindings(t *testing.T) {
+	s, ts, rig, project := reviewProject(t, "", "")
+	removed := `{"removed":true}` + "\n"
+	writeProject(t, project, map[string]string{"packs/d.json": removed})
+	lock := lockOf(t, project, map[string]string{"alpha": "packs/a.json", "beta": "packs/b.json", "delta": "packs/d.json"})
+	writeProject(t, project, map[string]string{"jpack.lock.json": string(lock)})
+	os.Remove(filepath.Join(project, "packs", "d.json"))
+	keepCopy(t, s, reviewPack)
+	keepCopy(t, s, removed)
+	// A copy under beta's locked digest that holds other bytes.
+	copies, _ := s.reviewedCopies(false)
+	betaName, _ := copyName(sha256Digest([]byte(otherPack)))
 	if err := writePrivateData(copies, betaName, []byte("not what the lock names\n")); err != nil {
 		t.Fatal(err)
 	}
 	copies.Close()
-	writeProject(t, project, map[string]string{"packs/a.json": strings.Replace(reviewPack, "Minimal", "Edited", 1), "packs/b.json": strings.Replace(reviewPack, "Minimal", "Changed", 1)})
-	rig.answers(t, "invalid",
-		map[string]string{"name": "document-drift", "kind": "pack", "id": "alpha", "path": "packs/a.json", "detail": "The pack document's bytes differ from the reviewed set."},
-		map[string]string{"name": "document-drift", "kind": "pack", "id": "beta", "path": "packs/b.json", "detail": "The pack document's bytes differ from the reviewed set."},
-		map[string]string{"name": "lock-entry-missing", "kind": "pack", "id": "gamma", "path": "packs/c.json", "detail": "The configuration declares this pack and the reviewed set does not name it."},
-		map[string]string{"name": "locked-but-undeclared", "kind": "pack", "id": "delta", "path": "packs/d.json", "detail": "The reviewed set names this pack and the configuration no longer declares it."},
-	)
+	edited := strings.Replace(reviewPack, "Minimal", "Edited", 1)
+	writeProject(t, project, map[string]string{"packs/a.json": edited, "packs/b.json": strings.Replace(otherPack, "Minimal", "Changed", 1)})
+	findings := []map[string]string{
+		{"name": "document-drift", "kind": "pack", "id": "alpha", "path": "packs/a.json", "detail": "The pack document's bytes differ from the reviewed set."},
+		{"name": "locked-but-undeclared", "kind": "pack", "id": "delta", "path": "packs/d.json", "detail": "The reviewed set names this pack and the configuration no longer declares it."},
+	}
+	rig.answers(t, "invalid", findings...)
+	lockBefore := readFile(t, filepath.Join(project, "jpack.lock.json"))
+
 	answer := readReview(t, ts, "")
-	if answer.Status != "invalid" || !answer.Locked || len(answer.Findings) != 4 {
-		t.Fatalf("the review answered %+v", answer)
+	if answer.Status != "invalid" || !answer.Locked || len(answer.Findings) != 2 || answer.Findings[0] != (reviewFinding{Name: "document-drift", Kind: "pack", ID: "alpha", Path: "packs/a.json", Detail: "The pack document's bytes differ from the reviewed set."}) {
+		t.Fatalf("the findings were not passed through: %+v", answer.Findings)
 	}
-	alpha, beta, gamma, delta := answer.Findings[0], answer.Findings[1], answer.Findings[2], answer.Findings[3]
-	if alpha.Name != "document-drift" || alpha.ID != "alpha" || alpha.Path != "packs/a.json" || alpha.Detail != "The pack document's bytes differ from the reviewed set." {
-		t.Errorf("the finding was not passed through: %+v", alpha)
+	if len(answer.Files) != 4 {
+		t.Fatalf("the review shows %d files, want the configuration, two packs and the removed one: %+v", len(answer.Files), answer.Files)
 	}
-	if alpha.Earlier.State != "text" || alpha.Earlier.Text != reviewPack || alpha.Now.State != "text" || !strings.Contains(alpha.Now.Text, "Edited") {
-		t.Errorf("alpha's comparison is %+v / %+v, want its locked copy beside the file", alpha.Earlier, alpha.Now)
+	config := fileOf(t, answer, "jpack.json")
+	if config.Kind != "config" || config.Lock != "same" || config.Now.Text != twoPacks || config.Digest != sha256Digest([]byte(twoPacks)) {
+		t.Errorf("the configuration is shown as %+v", config)
 	}
-	if beta.Earlier.State != "no-copy" {
-		t.Errorf("a copy whose bytes are not the locked ones was shown: %+v", beta.Earlier)
+	alpha := fileOf(t, answer, "packs/a.json")
+	if alpha.Lock != "other" || alpha.Earlier.State != "text" || alpha.Earlier.Text != reviewPack || alpha.Now.Text != edited || alpha.Digest != sha256Digest([]byte(edited)) {
+		t.Errorf("alpha is shown as %+v", alpha)
 	}
-	if gamma.Earlier.State != "unlocked" || delta.Now.State != "absent" {
-		t.Errorf("new and removed packs were shown as %+v and %+v", gamma.Earlier, delta.Now)
+	if beta := fileOf(t, answer, "packs/b.json"); beta.Lock != "other" || beta.Earlier.State != "no-copy" || beta.Now.State != "text" {
+		t.Errorf("a copy whose bytes are not the locked ones was shown: %+v", beta)
 	}
-	if answer.Set == nil || answer.Set.Config != sha256Digest([]byte(twoPacks)) || len(answer.Set.Entries) != 2 ||
-		answer.Set.Entries[0] != (reviewEntry{Kind: "pack", ID: "alpha", Path: "packs/a.json", Digest: sha256Digest([]byte(strings.Replace(reviewPack, "Minimal", "Edited", 1)))}) {
-		t.Errorf("the set a lock would cover is %+v", answer.Set)
+	if delta := fileOf(t, answer, "packs/d.json"); delta.Lock != "removed" || delta.Now.State != "absent" || delta.Earlier.Text != removed {
+		t.Errorf("what only the lock names is shown as %+v", delta)
+	}
+	if len(answer.Token) != 64 || answer.Blocked != "" {
+		t.Errorf("a review of files that can all be shown gave token %q, blocked %q", answer.Token, answer.Blocked)
 	}
 	if got := readFile(t, rig.calls); got != "packs verify --config jpack.json --format json [JPACK_CONFIG=unset]\n" {
 		t.Errorf("the review ran %q, want only packs verify", got)
@@ -270,26 +312,101 @@ func TestTheReviewShowsTheRuntimesFindings(t *testing.T) {
 	}
 }
 
-// **Nothing is locked without a confirmation**, and a confirmation has to
-// come from this desk's page: the session, the Origin, the browser's own
-// fetch metadata and the body are each checked before anything runs.
-func TestNothingIsLockedWithoutAConfirmation(t *testing.T) {
-	_, ts, rig, project := reviewProject(t, "")
+// **One reading.** The reviewer's case: a file changed while the review ran
+// was shown as it was and confirmed as it became. Now the contents shown and
+// the digests confirmed are one reading, and the runtime verifies a private
+// copy of it; a confirmation of a reading the files have left locks nothing.
+func TestTheBytesShownAreTheBytesConfirmed(t *testing.T) {
+	project := t.TempDir()
+	seen := t.TempDir()
+	changed := strings.Replace(reviewPack, "Minimal", "Changed while the review ran", 1)
+	// Where the runtime ran, and what it read there, before the project's
+	// file changes under the review.
+	rig := newReviewRig(t, "  printf '%s\\n' \"$(pwd -P)\" > '"+filepath.Join(seen, "where")+"'\n"+
+		"  while IFS= read -r line || [ -n \"$line\" ]; do printf '%s\\n' \"$line\"; done < packs/a.json > '"+filepath.Join(seen, "read")+"'\n"+
+		"  printf '%s\\n' '"+strings.TrimSuffix(changed, "\n")+"' > '"+filepath.Join(project, "packs", "a.json")+"'", "")
+	writeProject(t, project, map[string]string{"jpack.json": twoPacks, "packs/a.json": reviewPack, "packs/b.json": otherPack})
+	writeProject(t, project, map[string]string{"jpack.lock.json": string(lockOf(t, project, map[string]string{"alpha": "packs/a.json", "beta": "packs/b.json"}))})
+	s, ts := startDesk(t, Config{ProjectDir: project, JpackBin: rig.bin, Token: testToken, Logger: log.New(io.Discard, "", 0)})
+	t.Cleanup(func() { s.Close(); ts.Close() })
 	rig.answers(t, "valid")
 	lockBefore := readFile(t, filepath.Join(project, "jpack.lock.json"))
-	set := readReview(t, ts, "").Set
+
+	answer := readReview(t, ts, "")
+	alpha := fileOf(t, answer, "packs/a.json")
+	if alpha.Now.Text != reviewPack || alpha.Digest != sha256Digest([]byte(reviewPack)) {
+		t.Errorf("the review showed %q under %s, want the one reading it took", alpha.Now.Text, alpha.Digest)
+	}
+	if readFile(t, filepath.Join(project, "packs", "a.json")) != changed {
+		t.Fatal("the stand-in did not change the file while the review ran")
+	}
+	// The runtime verified a private copy of the reading, not the project.
+	if where := strings.TrimSpace(readFile(t, filepath.Join(seen, "where"))); where == "" || where == s.projectDir || readFile(t, filepath.Join(seen, "read")) != reviewPack {
+		t.Errorf("the runtime verified %q, holding %q, not a copy of the reading", where, readFile(t, filepath.Join(seen, "read")))
+	}
+	rig.locks(t, lockOf(t, project, map[string]string{"alpha": "packs/a.json", "beta": "packs/b.json"}))
+	status, data := confirm(t, ts, "", answer.Token)
+	if status != http.StatusConflict || !bytes.Contains(data, []byte(`"code":"stale"`)) {
+		t.Errorf("confirming a reading the files have left answered %d %s", status, data)
+	}
+	if countCalls(t, rig.calls, "packs lock") != 0 || readFile(t, filepath.Join(project, "jpack.lock.json")) != lockBefore || len(copiesIn(t, project)) != 0 {
+		t.Error("a confirmation of what the files no longer hold wrote something")
+	}
+}
+
+// **A first lock is a full review.** The reviewer's case: with no lock the
+// runtime finds nothing, and the page showed no file but offered the lock.
+// Now every file a lock would cover is shown, and a file that cannot be shown
+// cannot be confirmed.
+func TestTheFirstLockShowsEveryFile(t *testing.T) {
+	_, ts, rig, project := reviewProject(t, "", "")
+	os.Remove(filepath.Join(project, "jpack.lock.json"))
+	rig.answers(t, "error")
+	answer := readReview(t, ts, "")
+	if answer.Locked || len(answer.Findings) != 0 || len(answer.Diagnostics) != 1 || len(answer.Files) != 3 || answer.Token == "" {
+		t.Fatalf("the first review answered %+v", answer)
+	}
+	for path, text := range map[string]string{"jpack.json": twoPacks, "packs/a.json": reviewPack, "packs/b.json": otherPack} {
+		if file := fileOf(t, answer, path); file.Lock != "none" || file.Now.Text != text {
+			t.Errorf("%s is shown as %+v", path, file)
+		}
+	}
+	// A file too large to show is a file the owner cannot confirm.
+	writeProject(t, project, map[string]string{"packs/b.json": strings.Repeat(" ", reviewTextLimit+1)})
+	large := readReview(t, ts, "")
+	if large.Token != "" || !strings.Contains(large.Blocked, "packs/b.json is larger than") || fileOf(t, large, "packs/b.json").Now.State != "not-shown" {
+		t.Errorf("a file too large to show was offered for confirmation: token %q, blocked %q", large.Token, large.Blocked)
+	}
+	if status, _ := confirm(t, ts, "", answer.Token); status != http.StatusConflict {
+		t.Errorf("an earlier token confirmed a file too large to show: %d", status)
+	}
+	if _, err := os.Stat(filepath.Join(project, "jpack.lock.json")); !os.IsNotExist(err) || countCalls(t, rig.calls, "packs lock") != 0 {
+		t.Error("something was locked")
+	}
+}
+
+// **Nothing is locked without a confirmation**, and a confirmation has to
+// come from this desk's page: the session, the Origin, the browser's own
+// fetch metadata, the body and the token are each checked first.
+func TestNothingIsLockedWithoutAConfirmation(t *testing.T) {
+	_, ts, rig, project := reviewProject(t, "", "")
+	rig.answers(t, "valid")
+	lockBefore := readFile(t, filepath.Join(project, "jpack.lock.json"))
+	token := readReview(t, ts, "").Token
+	other := strings.Repeat("0", 64)
 	for _, tc := range []struct {
 		name     string
 		body     any
 		want     int
 		decorate []func(*http.Request)
 	}{
-		{"no session", map[string]any{"set": set}, 401, nil},
-		{"another origin", map[string]any{"set": set}, 403, []func(*http.Request){bearer, func(r *http.Request) { r.Header.Set("Origin", "http://example.com") }}},
-		{"cross-site", map[string]any{"set": set}, 403, []func(*http.Request){bearer, func(r *http.Request) { r.Header.Set("Sec-Fetch-Site", "cross-site") }}},
-		{"not JSON", map[string]any{"set": set}, 415, []func(*http.Request){bearer, func(r *http.Request) { r.Header.Set("Content-Type", "text/plain") }}},
-		{"no set", map[string]any{}, 400, []func(*http.Request){bearer}},
-		{"another member", map[string]any{"set": set, "force": true}, 400, []func(*http.Request){bearer}},
+		{"no session", map[string]any{"token": token}, 401, nil},
+		{"another origin", map[string]any{"token": token}, 403, []func(*http.Request){bearer, func(r *http.Request) { r.Header.Set("Origin", "http://example.com") }}},
+		{"cross-site", map[string]any{"token": token}, 403, []func(*http.Request){bearer, func(r *http.Request) { r.Header.Set("Sec-Fetch-Site", "cross-site") }}},
+		{"not JSON", map[string]any{"token": token}, 415, []func(*http.Request){bearer, func(r *http.Request) { r.Header.Set("Content-Type", "text/plain") }}},
+		{"no token", map[string]any{}, 400, []func(*http.Request){bearer}},
+		{"another member", map[string]any{"token": token, "force": true}, 400, []func(*http.Request){bearer}},
+		{"a token this review did not give", map[string]any{"token": other}, 409, []func(*http.Request){bearer}},
 	} {
 		status, data := reviewCall(t, ts, "POST", "/api/review/lock", "", tc.body, tc.decorate...)
 		if status != tc.want {
@@ -308,16 +425,16 @@ func TestNothingIsLockedWithoutAConfirmation(t *testing.T) {
 	}
 }
 
-// A confirmation of digests the files no longer have locks nothing and
+// A confirmation of a reading the files have since left locks nothing and
 // writes nothing.
 func TestAStaleConfirmationLocksNothing(t *testing.T) {
-	_, ts, rig, project := reviewProject(t, "")
+	_, ts, rig, project := reviewProject(t, "", "")
 	rig.answers(t, "valid")
 	lockBefore := readFile(t, filepath.Join(project, "jpack.lock.json"))
-	set := readReview(t, ts, "").Set
+	token := readReview(t, ts, "").Token
 	writeProject(t, project, map[string]string{"packs/a.json": strings.Replace(reviewPack, "Minimal", "Edited after the review", 1)})
 	rig.locks(t, lockOf(t, project, map[string]string{"alpha": "packs/a.json", "beta": "packs/b.json"}))
-	status, data := confirm(t, ts, "", set)
+	status, data := confirm(t, ts, "", token)
 	if status != http.StatusConflict || !bytes.Contains(data, []byte(`"code":"stale"`)) || !bytes.Contains(data, []byte("nothing was locked")) {
 		t.Errorf("a stale confirmation answered %d %s", status, data)
 	}
@@ -327,18 +444,57 @@ func TestAStaleConfirmationLocksNothing(t *testing.T) {
 	if readFile(t, filepath.Join(project, "jpack.lock.json")) != lockBefore || len(copiesIn(t, project)) != 0 {
 		t.Error("a stale confirmation wrote something")
 	}
+	// The lock is part of the reading too: one locked elsewhere after the
+	// review makes the confirmation stale.
+	writeProject(t, project, map[string]string{"packs/a.json": reviewPack})
+	token = readReview(t, ts, "").Token
+	relocked := lockOf(t, project, map[string]string{"alpha": "packs/a.json"})
+	writeProject(t, project, map[string]string{"jpack.lock.json": string(relocked)})
+	if status, data := confirm(t, ts, "", token); status != http.StatusConflict || countCalls(t, rig.calls, "packs lock") != 0 {
+		t.Errorf("a confirmation of a lock since replaced answered %d %s", status, data)
+	}
+	if readFile(t, filepath.Join(project, "jpack.lock.json")) != string(relocked) {
+		t.Error("a stale confirmation changed the lock")
+	}
 }
 
-// A confirmation of the set as it is locks it, and keeps a copy of each file
-// it locked, named by its digest.
+// **A confirmation is bound to its desk.** The reviewer's case: the startup
+// desk's confirmation, sent with a named desk's header, locked the named
+// desk where the bytes matched. Now it locks nothing.
+func TestAConfirmationIsBoundToItsDesk(t *testing.T) {
+	_, ts, rig, project := reviewProject(t, "", "")
+	rig.answers(t, "valid")
+	row := createGatedDesk(t, ts)
+	for _, name := range []string{"jpack.json", "jpack.lock.json", "packs/a.json", "packs/b.json"} {
+		writeProject(t, row.Folder, map[string]string{name: readFile(t, filepath.Join(project, filepath.FromSlash(name)))})
+	}
+	startup, named := readReview(t, ts, ""), readReview(t, ts, row.ID)
+	for i := range startup.Files {
+		if startup.Files[i].Digest != named.Files[i].Digest {
+			t.Fatalf("the two desks hold different bytes: %+v %+v", startup.Files[i], named.Files[i])
+		}
+	}
+	lockBefore := readFile(t, filepath.Join(row.Folder, "jpack.lock.json"))
+	rig.locks(t, []byte(lockBefore))
+	locks := countCalls(t, rig.calls, "packs lock")
+	if status, data := confirm(t, ts, row.ID, startup.Token); status != http.StatusConflict {
+		t.Errorf("another desk's confirmation answered %d %s", status, data)
+	}
+	if countCalls(t, rig.calls, "packs lock") != locks || readFile(t, filepath.Join(row.Folder, "jpack.lock.json")) != lockBefore || len(copiesIn(t, row.Folder)) != 0 {
+		t.Error("another desk's confirmation locked or wrote something")
+	}
+}
+
+// A confirmation of the reading as it is locks it, and keeps a copy of each
+// file it locked, named by its digest.
 func TestAConfirmedSetIsLockedAndCopied(t *testing.T) {
-	_, ts, rig, project := reviewProject(t, "")
+	_, ts, rig, project := reviewProject(t, "", "")
 	writeProject(t, project, map[string]string{"packs/a.json": strings.Replace(reviewPack, "Minimal", "Edited", 1)})
 	rig.answers(t, "invalid", map[string]string{"name": "document-drift", "kind": "pack", "id": "alpha", "path": "packs/a.json"})
-	set := readReview(t, ts, "").Set
+	token := readReview(t, ts, "").Token
 	want := lockOf(t, project, map[string]string{"alpha": "packs/a.json", "beta": "packs/b.json"})
 	rig.locks(t, want)
-	status, data := confirm(t, ts, "", set)
+	status, data := confirm(t, ts, "", token)
 	if status != 200 || !bytes.Contains(data, []byte(`"files":3`)) || !bytes.Contains(data, []byte(`"copies":"stored"`)) {
 		t.Fatalf("the confirmation answered %d %s", status, data)
 	}
@@ -365,23 +521,54 @@ func TestAConfirmedSetIsLockedAndCopied(t *testing.T) {
 	}
 }
 
-// The copies are kept only in a real `.desk-private/reviewed`: a link there
-// is not followed, and the lock still stands.
-func TestReviewedCopiesAreNotKeptThroughALink(t *testing.T) {
-	_, ts, rig, project := reviewProject(t, "")
-	if err := os.Symlink("packs", filepath.Join(project, ".desk-private")); err != nil {
-		t.Skip(err)
-	}
-	rig.answers(t, "valid")
-	set := readReview(t, ts, "").Set
-	rig.locks(t, lockOf(t, project, map[string]string{"alpha": "packs/a.json", "beta": "packs/b.json"}))
-	status, data := confirm(t, ts, "", set)
-	if status != 200 || !bytes.Contains(data, []byte(`"copies":"not-stored"`)) {
-		t.Errorf("the confirmation answered %d %s", status, data)
-	}
-	entries, _ := os.ReadDir(filepath.Join(project, "packs"))
-	if len(entries) != 2 {
-		t.Errorf("copies were written through the link: %v", entries)
+// **The lock must pin exactly the reading.** A lock that pins another
+// configuration, another graph, or an entry more is put back byte for byte,
+// and nothing else is written.
+func TestALockOfAnythingElseIsPutBack(t *testing.T) {
+	const withGraph = `{"configVersion":"5","requireReviewed":true,"packs":{"alpha":{"path":"packs/a.json"}},"graphs":{"flow":{"path":"flow.json"}}}` + "\n"
+	for _, tc := range []struct {
+		name string
+		lock func(t *testing.T, project string) []byte
+	}{
+		{"another configuration", func(t *testing.T, project string) []byte {
+			lock := lockOfAll(t, project, map[string]string{"alpha": "packs/a.json"}, map[string]string{"flow": "flow.json"})
+			return bytes.Replace(lock, []byte(sha256Digest([]byte(withGraph))), []byte(sha256Digest([]byte(twoPacks))), 1)
+		}},
+		{"another graph", func(t *testing.T, project string) []byte {
+			lock := lockOfAll(t, project, map[string]string{"alpha": "packs/a.json"}, map[string]string{"flow": "flow.json"})
+			return bytes.Replace(lock, []byte(sha256Digest([]byte(reviewGraph))), []byte(sha256Digest([]byte(reviewPack))), 1)
+		}},
+		{"an entry more", func(t *testing.T, project string) []byte {
+			return lockOfAll(t, project, map[string]string{"alpha": "packs/a.json"}, map[string]string{"flow": "flow.json", "extra": "flow.json"})
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rig := newReviewRig(t, "", "")
+			project := t.TempDir()
+			writeProject(t, project, map[string]string{"jpack.json": withGraph, "packs/a.json": reviewPack, "flow.json": reviewGraph})
+			previous := lockOfAll(t, project, map[string]string{"alpha": "packs/a.json"}, map[string]string{"flow": "flow.json"})
+			writeProject(t, project, map[string]string{"jpack.lock.json": string(previous), "flow.json": strings.Replace(reviewGraph, "stand-in", "edited", 1)})
+			s, ts := startDesk(t, Config{ProjectDir: project, JpackBin: rig.bin, Token: testToken, Logger: log.New(io.Discard, "", 0)})
+			t.Cleanup(func() { s.Close(); ts.Close() })
+			rig.answers(t, "invalid", map[string]string{"name": "document-drift", "kind": "graph", "id": "flow", "path": "flow.json"})
+			token := readReview(t, ts, "").Token
+			writeProject(t, project, map[string]string{"flow.json": reviewGraph})
+			token2 := readReview(t, ts, "").Token
+			if token == token2 {
+				t.Fatal("a change to a graph did not change the review")
+			}
+			rig.locks(t, tc.lock(t, project))
+			status, data := confirm(t, ts, "", token2)
+			if status != http.StatusConflict || !bytes.Contains(data, []byte("previous lock was put back")) {
+				t.Errorf("a lock of %s answered %d %s", tc.name, status, data)
+			}
+			if got := readFile(t, filepath.Join(project, "jpack.lock.json")); got != string(previous) {
+				t.Errorf("the previous lock was not put back exactly: %s", got)
+			}
+			if len(copiesIn(t, project)) != 0 {
+				t.Error("copies were written for a lock that was put back")
+			}
+		})
 	}
 }
 
@@ -390,18 +577,17 @@ func TestReviewedCopiesAreNotKeptThroughALink(t *testing.T) {
 // else is written; where there was no lock, none is left.
 func TestAFileChangedDuringTheLockPutsThePreviousLockBack(t *testing.T) {
 	for _, hadLock := range []bool{true, false} {
-		_, ts, rig, project := reviewProject(t, "  printf 'changed during the lock\\n' >> packs/a.json")
+		_, ts, rig, project := reviewProject(t, "", "  printf 'changed during the lock\\n' >> packs/a.json")
 		if !hadLock {
 			os.Remove(filepath.Join(project, "jpack.lock.json"))
 		}
 		rig.answers(t, "valid")
-		set := readReview(t, ts, "").Set
+		token := readReview(t, ts, "").Token
 		lockBefore, _ := os.ReadFile(filepath.Join(project, "jpack.lock.json"))
-		// What the runtime would lock after the change.
 		changed := filepath.Join(t.TempDir(), "project")
-		writeProject(t, changed, map[string]string{"jpack.json": twoPacks, "packs/a.json": reviewPack + "changed during the lock\n", "packs/b.json": readFile(t, filepath.Join(project, "packs", "b.json"))})
+		writeProject(t, changed, map[string]string{"jpack.json": twoPacks, "packs/a.json": reviewPack + "changed during the lock\n", "packs/b.json": otherPack})
 		rig.locks(t, lockOf(t, changed, map[string]string{"alpha": "packs/a.json", "beta": "packs/b.json"}))
-		status, data := confirm(t, ts, "", set)
+		status, data := confirm(t, ts, "", token)
 		if status != http.StatusConflict || !bytes.Contains(data, []byte("previous lock was put back")) {
 			t.Errorf("had lock %v: the confirmation answered %d %s", hadLock, status, data)
 		}
@@ -421,12 +607,12 @@ func TestAFileChangedDuringTheLockPutsThePreviousLockBack(t *testing.T) {
 // A lock the runtime refuses puts the previous one back, and the answer says
 // what the runtime said.
 func TestARefusedLockPutsThePreviousLockBack(t *testing.T) {
-	_, ts, rig, project := reviewProject(t, "  printf 'half written' > jpack.lock.json\n  printf '%s\\n' '{\"command\":\"packs lock\",\"status\":\"error\",\"diagnostics\":[{\"code\":\"JPS-X\",\"message\":\"The stand-in refuses.\"}]}'\n  exit 4")
+	_, ts, rig, project := reviewProject(t, "", "  printf 'half written' > jpack.lock.json\n  printf '%s\\n' '{\"command\":\"packs lock\",\"status\":\"error\",\"diagnostics\":[{\"code\":\"JPS-X\",\"message\":\"The stand-in refuses.\"}]}'\n  exit 4")
 	rig.answers(t, "valid")
 	lockBefore := readFile(t, filepath.Join(project, "jpack.lock.json"))
-	set := readReview(t, ts, "").Set
+	token := readReview(t, ts, "").Token
 	rig.locks(t, []byte("{}\n"))
-	status, data := confirm(t, ts, "", set)
+	status, data := confirm(t, ts, "", token)
 	if status != http.StatusInternalServerError || !bytes.Contains(data, []byte("The stand-in refuses")) || !bytes.Contains(data, []byte("previous lock was put back")) {
 		t.Errorf("a refused lock answered %d %s", status, data)
 	}
@@ -435,41 +621,160 @@ func TestARefusedLockPutsThePreviousLockBack(t *testing.T) {
 	}
 }
 
+// **The review reads by the file API's rules.** The reviewer's case: a
+// declared pack that is a link into `.desk-private` returned private bytes
+// through the review while the file route refused it. A link anywhere on the
+// path of the configuration, a document or the lock is refused, and nothing
+// of what it points at is shown.
+func TestTheReviewReadsByTheFileAPIsRules(t *testing.T) {
+	const secret = "a private record that the file API refuses to read"
+	for _, link := range []string{"packs/a.json", "jpack.lock.json"} {
+		t.Run(link, func(t *testing.T) {
+			_, ts, rig, project := reviewProject(t, "", "")
+			rig.answers(t, "valid")
+			writeProject(t, project, map[string]string{".desk-private/secret.json": secret + "\n"})
+			os.Remove(filepath.Join(project, filepath.FromSlash(link)))
+			target, _ := filepath.Rel(filepath.Dir(filepath.Join(project, filepath.FromSlash(link))), filepath.Join(project, ".desk-private", "secret.json"))
+			if err := os.Symlink(target, filepath.Join(project, filepath.FromSlash(link))); err != nil {
+				t.Skip(err)
+			}
+			if status, _ := reviewCall(t, ts, "GET", "/api/file?path="+link, "", nil, bearer); status == 200 {
+				t.Fatalf("the file route read %s", link)
+			}
+			status, data := reviewCall(t, ts, "GET", "/api/review", "", nil, bearer)
+			var answer reviewAnswer
+			if status != 200 || json.Unmarshal(data, &answer) != nil {
+				t.Fatalf("review: %d %s", status, data)
+			}
+			if bytes.Contains(data, []byte(secret)) {
+				t.Errorf("the review showed what %s links to", link)
+			}
+			if answer.Token != "" || !strings.Contains(answer.Blocked, "symbolic link") {
+				t.Errorf("a reading through a link was offered for confirmation: token %q, blocked %q", answer.Token, answer.Blocked)
+			}
+		})
+	}
+}
+
+// The copies are kept only in a real `.desk-private/reviewed`: a link there
+// is not followed, and the lock still stands.
+func TestReviewedCopiesAreNotKeptThroughALink(t *testing.T) {
+	_, ts, rig, project := reviewProject(t, "", "")
+	if err := os.Symlink("packs", filepath.Join(project, ".desk-private")); err != nil {
+		t.Skip(err)
+	}
+	rig.answers(t, "valid")
+	token := readReview(t, ts, "").Token
+	rig.locks(t, lockOf(t, project, map[string]string{"alpha": "packs/a.json", "beta": "packs/b.json"}))
+	status, data := confirm(t, ts, "", token)
+	if status != 200 || !bytes.Contains(data, []byte(`"copies":"not-stored"`)) {
+		t.Errorf("the confirmation answered %d %s", status, data)
+	}
+	entries, _ := os.ReadDir(filepath.Join(project, "packs"))
+	if len(entries) != 2 {
+		t.Errorf("copies were written through the link: %v", entries)
+	}
+}
+
+// **A copies folder open to others is not trusted.** The reviewer's case: a
+// 0777 `.desk-private/reviewed` stayed 0777 and was reported as holding the
+// copies. Now nothing is written there, the answer says why, and a copy
+// found there is not shown.
+func TestAnUnsafeCopiesFolderIsNotTrusted(t *testing.T) {
+	s, ts, rig, project := reviewProject(t, "", "")
+	folder := filepath.Join(project, ".desk-private", "reviewed")
+	if err := os.MkdirAll(folder, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	keepCopy(t, s, reviewPack)
+	if err := os.Chmod(folder, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	before := copiesIn(t, project)
+	writeProject(t, project, map[string]string{"packs/a.json": strings.Replace(reviewPack, "Minimal", "Edited", 1)})
+	rig.answers(t, "invalid", map[string]string{"name": "document-drift", "kind": "pack", "id": "alpha", "path": "packs/a.json"})
+	answer := readReview(t, ts, "")
+	if alpha := fileOf(t, answer, "packs/a.json"); alpha.Earlier.State != "no-copy" {
+		t.Errorf("a copy from a folder open to others was shown: %+v", alpha.Earlier)
+	}
+	rig.locks(t, lockOf(t, project, map[string]string{"alpha": "packs/a.json", "beta": "packs/b.json"}))
+	status, data := confirm(t, ts, "", answer.Token)
+	if status != 200 || !bytes.Contains(data, []byte(`"copies":"not-stored"`)) || !bytes.Contains(data, []byte("open to other users")) {
+		t.Errorf("the confirmation answered %d %s", status, data)
+	}
+	info, _ := os.Stat(folder)
+	if after := copiesIn(t, project); len(after) != len(before) || info.Mode().Perm() != 0o777 {
+		t.Errorf("Desk wrote into a folder open to others: %v -> %v, %v", before, after, info.Mode().Perm())
+	}
+}
+
 // A named desk reviews its own project, and its commands run without
 // JPACK_CONFIG. The startup desk reviews only where its runtime reads its own
-// jpack.json.
+// jpack.json, by path: the reviewer's case was a hard link to it from another
+// directory, whose documents and lock are another project's.
 func TestTheReviewOnTheStartupDeskAndANamedDesk(t *testing.T) {
-	rig := newReviewRig(t, "")
+	rig := newReviewRig(t, "", "")
 	project := t.TempDir()
-	writeProject(t, project, map[string]string{"jpack.json": twoPacks, "packs/a.json": reviewPack, "packs/b.json": reviewPack})
-	elsewhere := filepath.Join(t.TempDir(), "jpack.json")
-	t.Setenv("JPACK_CONFIG", elsewhere)
+	writeProject(t, project, map[string]string{"jpack.json": twoPacks, "jpack.other.json": twoPacks, "packs/a.json": reviewPack, "packs/b.json": reviewPack})
+	elsewhere := t.TempDir()
+	writeProject(t, elsewhere, map[string]string{"jpack.json": twoPacks})
+	linked := t.TempDir()
+	if err := os.Link(filepath.Join(project, "jpack.json"), filepath.Join(linked, "jpack.json")); err != nil {
+		t.Skip(err)
+	}
+	pointing := t.TempDir()
+	if err := os.Symlink(filepath.Join(project, "jpack.json"), filepath.Join(pointing, "jpack.json")); err != nil {
+		t.Skip(err)
+	}
 	_, ts, _ := gatesServer(t, rig.bin)
-	// gatesServer's project is empty; this one is the startup desk's.
 	s2, ts2 := startDesk(t, Config{ProjectDir: project, JpackBin: rig.bin, Token: testToken, Logger: log.New(io.Discard, "", 0)})
 	t.Cleanup(func() { s2.Close(); ts2.Close() })
-	if status, data := reviewCall(t, ts2, "GET", "/api/review", "", nil, bearer); status != http.StatusConflict || !bytes.Contains(data, []byte("JPACK_CONFIG names")) {
-		t.Errorf("a startup desk whose runtime reads another configuration answered %d %s", status, data)
-	}
-	if status, _ := confirm(t, ts2, "", &reviewSet{Config: "sha256:00"}); status != http.StatusConflict {
-		t.Errorf("a startup desk whose runtime reads another configuration locked: %d", status)
-	}
-	t.Setenv("JPACK_CONFIG", filepath.Join(project, "jpack.json"))
 	rig.answers(t, "valid")
-	if answer := readReview(t, ts2, ""); answer.Set == nil {
-		t.Errorf("a startup desk whose JPACK_CONFIG names its own jpack.json was not reviewed: %+v", answer)
+	for _, tc := range []struct {
+		name, value string
+		allowed     bool
+	}{
+		{"another project's", filepath.Join(elsewhere, "jpack.json"), false},
+		{"a hard link from another directory", filepath.Join(linked, "jpack.json"), false},
+		{"a link from another directory", filepath.Join(pointing, "jpack.json"), false},
+		{"another file in this project", filepath.Join(project, "jpack.other.json"), false},
+		{"this project's, by path", filepath.Join(project, "jpack.json"), true},
+		{"this project's, relative", "jpack.json", true},
+	} {
+		t.Setenv("JPACK_CONFIG", tc.value)
+		status, data := reviewCall(t, ts2, "GET", "/api/review", "", nil, bearer)
+		if allowed := status == 200; allowed != tc.allowed {
+			t.Errorf("JPACK_CONFIG naming %s: the review answered %d %s", tc.name, status, data)
+		}
+		if !tc.allowed {
+			if status, data := confirm(t, ts2, "", strings.Repeat("0", 64)); status != http.StatusConflict || !bytes.Contains(data, []byte("JPACK_CONFIG names")) {
+				t.Errorf("JPACK_CONFIG naming %s: the lock answered %d %s", tc.name, status, data)
+			}
+		}
 	}
 
-	t.Setenv("JPACK_CONFIG", elsewhere)
+	// A jpack.json in this directory that is itself a link to another one.
+	os.Rename(filepath.Join(project, "jpack.json"), filepath.Join(project, "kept.json"))
+	if err := os.Symlink(filepath.Join(elsewhere, "jpack.json"), filepath.Join(project, "jpack.json")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("JPACK_CONFIG", filepath.Join(project, "jpack.json"))
+	if status, data := reviewCall(t, ts2, "GET", "/api/review", "", nil, bearer); status != http.StatusConflict {
+		t.Errorf("JPACK_CONFIG naming a link in this directory: the review answered %d %s", status, data)
+	}
+	os.Remove(filepath.Join(project, "jpack.json"))
+	os.Rename(filepath.Join(project, "kept.json"), filepath.Join(project, "jpack.json"))
+
+	t.Setenv("JPACK_CONFIG", filepath.Join(elsewhere, "jpack.json"))
 	row := createGatedDesk(t, ts)
 	writeProject(t, row.Folder, map[string]string{"packs/a.json": reviewPack, "jpack.json": strings.Replace(wantGatedConfig, `"packs":{}`, `"packs":{"alpha":{"path":"packs/a.json"}}`, 1)})
 	rig.answers(t, "invalid", map[string]string{"name": "config-drift", "path": "jpack.json"}, map[string]string{"name": "lock-entry-missing", "kind": "pack", "id": "alpha", "path": "packs/a.json"})
 	answer := readReview(t, ts, row.ID)
-	if len(answer.Findings) != 2 || answer.Set == nil || len(answer.Set.Entries) != 1 || answer.Findings[0].Now.Text != readFile(t, filepath.Join(row.Folder, "jpack.json")) {
+	if len(answer.Findings) != 2 || len(answer.Files) != 2 || answer.Token == "" || fileOf(t, answer, "jpack.json").Now.Text != readFile(t, filepath.Join(row.Folder, "jpack.json")) {
 		t.Fatalf("the named desk's review answered %+v", answer)
 	}
 	rig.locks(t, lockOf(t, row.Folder, map[string]string{"alpha": "packs/a.json"}))
-	if status, data := confirm(t, ts, row.ID, answer.Set); status != 200 {
+	if status, data := confirm(t, ts, row.ID, answer.Token); status != 200 {
 		t.Fatalf("the named desk's confirmation answered %d %s", status, data)
 	}
 	if len(copiesIn(t, row.Folder)) != 3 {
@@ -500,28 +805,29 @@ func TestReviewAndLockWithTheRuntime(t *testing.T) {
 	for _, finding := range first.Findings {
 		names[finding.Name] = finding
 	}
-	if first.Status != "invalid" || names["config-drift"].Name == "" || names["lock-entry-missing"].ID != "alpha" || names["lock-entry-missing"].Earlier.State != "unlocked" {
+	if first.Status != "invalid" || names["config-drift"].Name == "" || names["lock-entry-missing"].ID != "alpha" || fileOf(t, first, "packs/a.json").Lock != "none" || fileOf(t, first, "packs/a.json").Now.Text != reviewPack {
 		t.Fatalf("the first review answered %+v", first)
 	}
-	if status, data := confirm(t, ts, row.ID, first.Set); status != 200 {
+	if status, data := confirm(t, ts, row.ID, first.Token); status != 200 {
 		t.Fatalf("the confirmation answered %d %s", status, data)
 	}
 	jpackIn(t, bin, row.Folder, "packs", "verify", "--config", "jpack.json", "--format", "json")
-	if again := readReview(t, ts, row.ID); again.Status != "valid" || len(again.Findings) != 0 {
+	if again := readReview(t, ts, row.ID); again.Status != "valid" || len(again.Findings) != 0 || fileOf(t, again, "packs/a.json").Lock != "same" {
 		t.Errorf("after the lock the review answered %+v", again)
 	}
 
 	edited := strings.Replace(reviewPack, "Minimal literal decision", "Edited decision", 1)
 	writeProject(t, row.Folder, map[string]string{"packs/a.json": edited})
 	second := readReview(t, ts, row.ID)
-	if len(second.Findings) != 1 || second.Findings[0].Name != "document-drift" || second.Findings[0].Earlier.Text != reviewPack || second.Findings[0].Now.Text != edited {
+	alpha := fileOf(t, second, "packs/a.json")
+	if len(second.Findings) != 1 || second.Findings[0].Name != "document-drift" || alpha.Earlier.Text != reviewPack || alpha.Now.Text != edited {
 		t.Fatalf("the edit was reviewed as %+v", second)
 	}
 	lock := readFile(t, filepath.Join(row.Folder, "jpack.lock.json"))
-	if status, _ := confirm(t, ts, row.ID, first.Set); status != http.StatusConflict || readFile(t, filepath.Join(row.Folder, "jpack.lock.json")) != lock {
+	if status, _ := confirm(t, ts, row.ID, first.Token); status != http.StatusConflict || readFile(t, filepath.Join(row.Folder, "jpack.lock.json")) != lock {
 		t.Errorf("a confirmation made before the edit answered %d, or changed the lock", status)
 	}
-	if status, data := confirm(t, ts, row.ID, second.Set); status != 200 {
+	if status, data := confirm(t, ts, row.ID, second.Token); status != 200 {
 		t.Fatalf("the second confirmation answered %d %s", status, data)
 	}
 	jpackIn(t, bin, row.Folder, "packs", "verify", "--config", "jpack.json", "--format", "json")

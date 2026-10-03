@@ -1,9 +1,9 @@
 /**
  * Review and lock on the page: what it reads, what it shows, and that it
- * locks only on the owner's confirmation, sending back exactly the set the
- * review showed.
+ * locks only on the owner's confirmation, sending back the token of exactly
+ * the reading it showed.
  */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -17,15 +17,23 @@ import { ReviewProvider } from './ReviewContext'
 
 vi.mock(import('../../files/client'), async original => ({ ...(await original()), deskFetch: vi.fn() }))
 
-const set = { config: 'sha256:' + '0'.repeat(64), entries: [
-  { kind: 'pack', id: 'alpha', path: 'packs/a.json', digest: 'sha256:' + '1'.repeat(64) },
-  { kind: 'pack', id: 'beta', path: 'packs/b.json', digest: 'sha256:' + '2'.repeat(64) }
-] }
+const token = 'f'.repeat(64)
+const config = '{"configVersion":"5","packs":{"alpha":{"path":"packs/a.json"},"beta":{"path":"packs/b.json"}}}'
 const before = '{"id":"alpha","title":"Before"}'
 const after = '{"id":"alpha","title":"After"}'
-const differing: Review = { status: 'invalid', locked: true, diagnostics: [], set, findings: [
-  { name: 'document-drift', kind: 'pack', id: 'alpha', path: 'packs/a.json', detail: 'The pack document’s bytes differ.', earlier: { state: 'text', text: before }, now: { state: 'text', text: after } },
-  { name: 'document-drift', kind: 'pack', id: 'beta', path: 'packs/b.json', earlier: { state: 'no-copy' }, now: { state: 'text', text: '{}' } }
+const beta = '{"id":"beta","title":"Beta"}'
+const differing: Review = { status: 'invalid', locked: true, diagnostics: [], token, findings: [
+  { name: 'document-drift', kind: 'pack', id: 'alpha', path: 'packs/a.json', detail: 'The pack document’s bytes differ.' },
+  { name: 'document-drift', kind: 'pack', id: 'beta', path: 'packs/b.json' }
+], files: [
+  { kind: 'config', path: 'jpack.json', lock: 'same', now: { state: 'text', text: config } },
+  { kind: 'pack', id: 'alpha', path: 'packs/a.json', lock: 'other', earlier: { state: 'text', text: before }, now: { state: 'text', text: after } },
+  { kind: 'pack', id: 'beta', path: 'packs/b.json', lock: 'other', earlier: { state: 'no-copy' }, now: { state: 'text', text: beta } }
+] }
+const first: Review = { status: 'error', locked: false, findings: [], token, diagnostics: [{ code: 'JPS-LOCK-ABSENT', message: 'There is no reviewed-set lock.' }], files: [
+  { kind: 'config', path: 'jpack.json', lock: 'none', now: { state: 'text', text: config } },
+  { kind: 'pack', id: 'alpha', path: 'packs/a.json', lock: 'none', now: { state: 'text', text: after } },
+  { kind: 'pack', id: 'beta', path: 'packs/b.json', lock: 'none', now: { state: 'text', text: beta } }
 ] }
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -48,35 +56,39 @@ afterEach(() => { cleanup(); vi.clearAllMocks() })
 function show() {
   render(<QueryClientProvider client={testQueryClient()}><MemoryRouter><ReviewProvider><ReviewAndLockView /></ReviewProvider></MemoryRouter></QueryClientProvider>)
 }
+const file = (path: string) => document.querySelector(`[data-file="${path}"]`) as HTMLElement
 
 describe('the review client', () => {
   it('refuses an answer that is not a review', async () => {
     vi.mocked(deskFetch).mockResolvedValueOnce(json(200, { status: 'valid' }))
     await expect(readReview()).rejects.toThrow('The review could not be loaded')
   })
-  it('sends the confirmed set as JSON, and tells a stale confirmation apart', async () => {
+  it('sends the review’s token as JSON, and tells a stale confirmation apart', async () => {
     lockAnswer = () => json(409, { code: 'stale', error: 'The project changed after you reviewed it.' })
-    await expect(confirmLock(set)).rejects.toBeInstanceOf(StaleReview)
-    expect(posted).toEqual([{ method: 'POST', type: 'application/json', body: { set } }])
+    await expect(confirmLock(token)).rejects.toBeInstanceOf(StaleReview)
+    expect(posted).toEqual([{ method: 'POST', type: 'application/json', body: { token } }])
     lockAnswer = () => json(500, { code: 'internal', error: 'The runtime did not lock the project.' })
-    await expect(confirmLock(set)).rejects.toThrow('The runtime did not lock the project.')
+    await expect(confirmLock(token)).rejects.toThrow('The runtime did not lock the project.')
   })
 })
 
 describe('the review page', () => {
-  it('shows each finding in plain words, with a diff only where the desk kept the locked bytes', async () => {
+  it('shows every file, each finding in plain words, and a diff only where the desk kept the locked bytes', async () => {
     reviews = [differing]
     show()
     expect(await screen.findAllByText('Changed since the last lock')).toHaveLength(2)
     expect(screen.getByText('Locking records that you confirmed these exact files as this project’s reviewed set. It is not a second person’s approval, and it records no name.')).toBeTruthy()
     expect(screen.getByText(/A change to jpack.json holds every pack/)).toBeTruthy()
-    expect(screen.getByText('The pack document’s bytes differ.')).toBeTruthy()
+    expect(within(file('jpack.json')).getByText('Matches the last lock')).toBeTruthy()
+    expect(within(file('packs/a.json')).getByText('The pack document’s bytes differ.')).toBeTruthy()
     // Alpha's locked bytes are kept, so its changes are drawn; beta's are not.
-    expect(screen.getAllByRole('region', { name: 'Pack changes' })).toHaveLength(1)
-    expect(screen.getByText('Desk has no earlier copy of the locked version to compare with.')).toBeTruthy()
+    expect(within(file('packs/a.json')).getByRole('region', { name: 'Pack changes' })).toBeTruthy()
+    expect(within(file('packs/b.json')).queryByRole('region', { name: 'Pack changes' })).toBeNull()
+    expect(within(file('packs/b.json')).getByText('Desk has no earlier copy of the locked version to compare with.')).toBeTruthy()
+    expect(file('packs/b.json').textContent).toContain(beta)
   })
 
-  it('locks nothing until the owner confirms, then sends back exactly the set it showed', async () => {
+  it('locks nothing until the owner confirms, then sends back the token of what it showed', async () => {
     reviews = [differing]
     show()
     const button = await screen.findByRole('button', { name: 'Confirm and lock 2 differences' })
@@ -84,7 +96,7 @@ describe('the review page', () => {
     expect(posted).toEqual([])
     fireEvent.click(button)
     expect((await screen.findByRole('status')).textContent).toContain('Locked. These 3 files are now this project’s reviewed set.')
-    expect(posted).toEqual([{ method: 'POST', type: 'application/json', body: { set } }])
+    expect(posted).toEqual([{ method: 'POST', type: 'application/json', body: { token } }])
   })
 
   it('shows the step again when the project changed after the review', async () => {
@@ -96,24 +108,32 @@ describe('the review page', () => {
     await screen.findByRole('button', { name: 'Confirm and lock 1 difference' })
   })
 
-  it('offers no lock when every file matches, or when a file could not be read', async () => {
-    reviews = [{ status: 'valid', locked: true, diagnostics: [], set, findings: [] }]
+  it('reads a first lock as a full review: every file, open', async () => {
+    reviews = [first]
+    show()
+    await screen.findByText('This project has no reviewed-set lock yet, so every file below is new to it. Read each one before you lock.')
+    expect(screen.getByText('There is no reviewed-set lock.')).toBeTruthy()
+    for (const [path, text] of [['jpack.json', config], ['packs/a.json', after], ['packs/b.json', beta]] as const) {
+      expect(within(file(path)).getByText('Not in a lock yet')).toBeTruthy()
+      expect(file(path).querySelector('details')?.open).toBe(true)
+      expect(file(path).textContent).toContain(text)
+    }
+    expect(screen.getByRole('button', { name: 'Confirm and lock 3 files' })).toBeTruthy()
+  })
+
+  it('offers no lock when every file matches, when a file cannot be shown, or without a token', async () => {
+    reviews = [{ ...first, status: 'valid', locked: true, diagnostics: [], files: first.files.map(item => ({ ...item, lock: 'same' as const })) }]
     show()
     await screen.findByText('Every file matches the reviewed set. There is nothing to lock.')
     expect(screen.queryByRole('button', { name: /Confirm and lock/ })).toBeNull()
     cleanup()
-    reviews = [{ ...differing, set: null, unreadable: 'packs/b.json could not be read' }]
+    // The desk gives no token for a reading it cannot show; the page offers
+    // no lock for one even if a token came.
+    reviews = [{ ...first, blocked: 'packs/b.json is larger than 1048576 bytes, which is more than Desk shows', files: [first.files[0]!, first.files[1]!, { ...first.files[2]!, now: { state: 'not-shown' } }] }]
     show()
-    expect((await screen.findByRole('alert')).textContent).toContain('Desk could not read every file a lock would cover')
+    expect((await screen.findByRole('alert')).textContent).toContain('Desk cannot lock this project here until it can show you every file a lock would cover.')
+    expect(screen.getByText('The current file is too large to show here.')).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Confirm and lock/ })).toBeNull()
-  })
-
-  it('offers the first lock of a project with none, and says what the runtime said', async () => {
-    reviews = [{ status: 'error', locked: false, findings: [], set, diagnostics: [{ code: 'JPS-LOCK-ABSENT', message: 'There is no reviewed-set lock.' }] }]
-    show()
-    await screen.findByText('This project has no reviewed-set lock yet.')
-    expect(screen.getByText('There is no reviewed-set lock.')).toBeTruthy()
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirm and lock' })).toBeTruthy())
   })
 })
 

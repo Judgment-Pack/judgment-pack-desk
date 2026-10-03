@@ -143,6 +143,9 @@ type Server struct {
 	deskCreations int
 	// reviewMu serializes this desk's lock confirmations (`handleReviewLock`).
 	reviewMu sync.Mutex
+	// reviewKey is this desk's own key for review tokens (`reviewToken`):
+	// random per process, so a token names one desk and does not outlive it.
+	reviewKey [32]byte
 
 	updates *updateService
 	builds  ComponentBuilds
@@ -344,6 +347,8 @@ func New(cfg Config) (*Server, error) {
 		// use to read a pack; what is withdrawn is the ability to keep a key.
 		s.log.Printf("desk: no assistant key will be kept: %v", s.assistant.problem)
 	}
+	// crypto/rand never fails, and never returns short (Go 1.24 and later).
+	_, _ = rand.Read(s.reviewKey[:])
 	// The startup project keeps an inherited JPACK_CONFIG (`runtimeEnv`).
 	// Said once, because Desk's editor shows this project's own jpack.json.
 	if path := strings.TrimSpace(os.Getenv(runtimeConfigEnv)); path != "" && cfg.deskID == "" {

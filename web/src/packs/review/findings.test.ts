@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findingWords, packFindings } from './findings'
+import { fileFindings, findingWords, otherFindings, packFindings } from './findings'
 import type { Review } from './client'
 
 describe('the runtime’s findings in plain words', () => {
@@ -15,15 +15,30 @@ describe('the runtime’s findings in plain words', () => {
     expect(findingWords('something-new')).toBe('something-new')
   })
   it('groups pack findings by decision id, and nothing else', () => {
-    const side = { state: 'absent' as const }
-    const review: Review = { status: 'invalid', locked: true, diagnostics: [], set: null, findings: [
-      { name: 'config-drift', path: 'jpack.json', earlier: side, now: side },
-      { name: 'document-drift', kind: 'pack', id: 'alpha', path: 'packs/a.json', earlier: side, now: side },
-      { name: 'path-mismatch', kind: 'pack', id: 'alpha', path: 'packs/a.json', earlier: side, now: side },
-      { name: 'document-drift', kind: 'graph', id: 'alpha', path: 'flow.json', earlier: side, now: side }
+    const review: Review = { status: 'invalid', locked: true, diagnostics: [], files: [], findings: [
+      { name: 'config-drift', path: 'jpack.json' },
+      { name: 'document-drift', kind: 'pack', id: 'alpha', path: 'packs/a.json' },
+      { name: 'path-mismatch', kind: 'pack', id: 'alpha', path: 'packs/a.json' },
+      { name: 'document-drift', kind: 'graph', id: 'alpha', path: 'flow.json' }
     ] }
     const found = packFindings(review)
     expect([...found.keys()]).toEqual(['alpha'])
     expect(found.get('alpha')!.map(item => item.name)).toEqual(['document-drift', 'path-mismatch'])
+  })
+  it('puts each finding beside the file it is about, and keeps the rest', () => {
+    const now = { state: 'text' as const, text: '{}' }
+    const review: Review = { status: 'invalid', locked: true, diagnostics: [], files: [
+      { kind: 'config', path: 'jpack.json', lock: 'other', now },
+      { kind: 'pack', id: 'alpha', path: 'packs/a.json', lock: 'other', now },
+      { kind: 'graph', id: 'alpha', path: 'flow.json', lock: 'same', now }
+    ], findings: [
+      { name: 'config-drift', path: 'jpack.json' },
+      { name: 'document-drift', kind: 'pack', id: 'alpha', path: 'packs/a.json' },
+      { name: 'document-missing', kind: 'pack', id: 'gone', path: 'packs/g.json' }
+    ] }
+    expect(fileFindings(review, review.files[0]!).map(item => item.name)).toEqual(['config-drift'])
+    expect(fileFindings(review, review.files[1]!).map(item => item.name)).toEqual(['document-drift'])
+    expect(fileFindings(review, review.files[2]!)).toEqual([])
+    expect(otherFindings(review).map(item => item.id)).toEqual(['gone'])
   })
 })

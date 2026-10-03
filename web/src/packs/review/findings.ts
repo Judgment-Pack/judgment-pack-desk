@@ -6,7 +6,7 @@
  * does not know is shown as the runtime wrote it, never dropped.
  */
 import { msg } from '../../i18n'
-import type { Review, ReviewFinding } from './client'
+import type { Review, ReviewFile, ReviewFinding } from './client'
 
 export function findingWords(name: string): string {
   switch (name) {
@@ -28,4 +28,16 @@ export function packFindings(review: Review | undefined): Map<string, ReviewFind
     found.set(finding.id, [...(found.get(finding.id) ?? []), finding])
   }
   return found
+}
+
+/** The runtime's findings about one file of the review. */
+export function fileFindings(review: Review, file: ReviewFile): ReviewFinding[] {
+  return review.findings.filter(finding => file.kind === 'config'
+    ? finding.name === 'config-drift'
+    : finding.kind === file.kind && finding.id === file.id)
+}
+
+/** The findings no file of the review is about. */
+export function otherFindings(review: Review): ReviewFinding[] {
+  return review.findings.filter(finding => !review.files.some(file => fileFindings(review, file).includes(finding)))
 }

@@ -1,35 +1,40 @@
 /**
  * Review and lock (ADR-0009, section 2), as the page calls it.
  *
- * `GET /api/review` answers the runtime's `packs verify` findings, passed
- * through, and the set of files a lock would cover, each by digest.
- * `POST /api/review/lock` sends that set back: the desk locks exactly it, or
- * nothing. Nothing here judges a file; the runtime's findings are the answer.
+ * `GET /api/review` answers one reading of the project: every file a lock
+ * would cover, and what only the lock names, with the runtime's `packs
+ * verify` findings over exactly those bytes, passed through. Where every file
+ * can be shown it gives a token that names this desk and that reading.
+ * `POST /api/review/lock` sends the token back: the desk locks exactly that
+ * reading, or nothing. Nothing here judges a file; the runtime's findings are
+ * the answer.
  */
 import { deskFetch } from '../../files/client'
 import { msg } from '../../i18n'
 
-export type ReviewSide = { state: 'text' | 'no-copy' | 'unlocked' | 'absent' | 'too-large'; text?: string }
-export type ReviewFinding = {
-  name: string
-  kind?: string
+export type ReviewSide = { state: 'text' | 'no-copy' | 'absent' | 'not-shown'; text?: string }
+export type ReviewFinding = { name: string; kind?: string; id?: string; path?: string; detail?: string }
+export type ReviewFile = {
+  kind: 'config' | 'pack' | 'graph' | string
   id?: string
-  path?: string
-  detail?: string
-  earlier: ReviewSide
+  path: string
+  digest?: string
+  /** How the current lock stands to this file. */
+  lock: 'same' | 'other' | 'none' | 'removed'
   now: ReviewSide
+  /** The bytes the lock names, where it names other bytes or only the lock names this file. */
+  earlier?: ReviewSide
 }
-export type ReviewEntry = { kind: string; id: string; path: string; digest: string }
-export type ReviewSet = { config: string; entries: ReviewEntry[] }
 export type Review = {
   status: string
   locked: boolean
   findings: ReviewFinding[]
   diagnostics: { code: string; message: string }[]
-  set: ReviewSet | null
-  unreadable?: string
+  files: ReviewFile[]
+  token?: string
+  blocked?: string
 }
-export type Locked = { files: number; copies: 'stored' | 'not-stored' }
+export type Locked = { files: number; copies: 'stored' | 'not-stored'; copiesProblem?: string }
 
 export const REVIEW_KEY = ['desk-review'] as const
 
@@ -38,13 +43,13 @@ export class StaleReview extends Error {}
 
 const text = (value: unknown): value is string => typeof value === 'string'
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
-const side = (value: unknown): boolean => object(value) && ['text', 'no-copy', 'unlocked', 'absent', 'too-large'].includes(value.state as string) && (value.text === undefined || text(value.text))
+const side = (value: unknown): boolean => value === undefined || object(value) && (value.state === undefined || ['text', 'no-copy', 'absent', 'not-shown'].includes(value.state as string)) && (value.text === undefined || text(value.text))
 
 function isReview(value: unknown): value is Review {
-  if (!object(value) || !text(value.status) || typeof value.locked !== 'boolean' || !Array.isArray(value.findings) || !Array.isArray(value.diagnostics)) return false
-  if (!value.findings.every(item => object(item) && text(item.name) && side(item.earlier) && side(item.now))) return false
-  if (value.set !== null && !(object(value.set) && text(value.set.config) && Array.isArray(value.set.entries) && value.set.entries.every(entry => object(entry) && text(entry.kind) && text(entry.id) && text(entry.path) && text(entry.digest)))) return false
-  return true
+  if (!object(value) || !text(value.status) || typeof value.locked !== 'boolean' || !Array.isArray(value.findings) || !Array.isArray(value.diagnostics) || !Array.isArray(value.files)) return false
+  if (!value.findings.every(item => object(item) && text(item.name))) return false
+  if (!value.files.every(file => object(file) && text(file.kind) && text(file.path) && ['same', 'other', 'none', 'removed'].includes(file.lock as string) && object(file.now) && side(file.now) && side(file.earlier))) return false
+  return (value.token === undefined || text(value.token)) && (value.blocked === undefined || text(value.blocked))
 }
 
 async function refusal(response: Response): Promise<Error> {
@@ -62,11 +67,11 @@ export async function readReview(signal?: AbortSignal): Promise<Review> {
   return value
 }
 
-/** Lock exactly the set the review showed. */
-export async function confirmLock(set: ReviewSet): Promise<Locked> {
-  const response = await deskFetch('/api/review/lock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ set }) })
+/** Lock exactly the reading the review's token names. */
+export async function confirmLock(token: string): Promise<Locked> {
+  const response = await deskFetch('/api/review/lock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) })
   if (!response.ok) throw await refusal(response)
   const value: unknown = await response.json()
-  if (!object(value) || typeof value.files !== 'number' || (value.copies !== 'stored' && value.copies !== 'not-stored')) throw new Error(msg('The review could not be loaded. Please try again.'))
+  if (!object(value) || typeof value.files !== 'number' || (value.copies !== 'stored' && value.copies !== 'not-stored') || (value.copiesProblem !== undefined && !text(value.copiesProblem))) throw new Error(msg('The review could not be loaded. Please try again.'))
   return value as Locked
 }
