@@ -3641,5 +3641,6 @@
   "This holds only as far as the agent’s client really withholds those tools: the server runs as your user, and Desk does not host it.": "这仅在代理的客户端确实不提供这些工具时成立：服务器以你的用户身份运行，Desk 并不托管它。",
   "This project keeps a reviewed set. Review and lock, on Packs, shows what the runtime finds and updates it.": "此项目有已审核集合。规则包中的“审阅并锁定”会显示运行时的发现并更新它。",
   "What each gate holds, and whom it binds": "每个门禁约束什么，以及约束谁",
-  "Who is bound.": "受约束的是谁。"
+  "Who is bound.": "受约束的是谁。",
+  "But JPACK_SIGNING_KEY is set where Desk was started, so this project’s runtime signs its audit records with the key it names, if it accepts that key. Desks Desk made do not inherit it.": "不过，启动 Desk 的环境中设置了 JPACK_SIGNING_KEY，因此此项目的运行时若接受该密钥，就会用它指定的密钥为审计记录签名。Desk 创建的 Desk 不会继承它。"
 }

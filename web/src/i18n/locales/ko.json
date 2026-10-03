@@ -3641,5 +3641,6 @@
   "This holds only as far as the agent’s client really withholds those tools: the server runs as your user, and Desk does not host it.": "이는 에이전트의 클라이언트가 그 도구들을 실제로 주지 않는 한에서만 성립합니다. 서버는 사용자 계정으로 실행되며, Desk가 호스팅하지 않습니다.",
   "This project keeps a reviewed set. Review and lock, on Packs, shows what the runtime finds and updates it.": "이 프로젝트에는 검토된 집합이 있습니다. 팩의 검토하고 잠그기가 런타임이 찾은 내용을 보여 주고 집합을 갱신합니다.",
   "What each gate holds, and whom it binds": "각 게이트가 묶는 것과 대상",
-  "Who is bound.": "묶이는 대상."
+  "Who is bound.": "묶이는 대상.",
+  "But JPACK_SIGNING_KEY is set where Desk was started, so this project’s runtime signs its audit records with the key it names, if it accepts that key. Desks Desk made do not inherit it.": "다만 Desk를 시작한 환경에 JPACK_SIGNING_KEY가 설정되어 있으므로, 이 프로젝트의 런타임은 그 키를 받아들이는 경우 지정된 키로 감사 기록에 서명합니다. Desk가 만든 Desk는 이를 물려받지 않습니다."
 }

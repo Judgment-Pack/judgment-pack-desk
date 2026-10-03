@@ -241,12 +241,19 @@ type ProjectPaths struct {
 	File string `json:"file"`
 }
 
-// RuntimePaths is the runtime binary this desk was launched with.
+// RuntimePaths is the runtime binary this desk was launched with, and what its
+// runtimes inherit from where Desk was started.
 type RuntimePaths struct {
 	// Bin is the flag's value verbatim: a path, or a name resolved on PATH.
 	// It is not resolved here, because what a reader has to check against the
 	// command line is what the command line said.
 	Bin string `json:"bin"`
+	// InheritsSigningKey is true where this desk's runtimes inherit a
+	// `JPACK_SIGNING_KEY` set where Desk was started, which is on the startup
+	// desk only: a desk Desk made never does (`runtimeEnv`). Always present,
+	// so `false` is a statement, not a missing answer. The key's path is not
+	// reported.
+	InheritsSigningKey bool `json:"inheritsSigningKey"`
 }
 
 // DeskConfigWrite is the body of a desk-level write.
@@ -363,7 +370,7 @@ func (s *Server) projectPaths() ProjectPaths {
 }
 
 func (s *Server) runtimePaths() RuntimePaths {
-	return RuntimePaths{Bin: s.cfg.JpackBin}
+	return RuntimePaths{Bin: s.cfg.JpackBin, InheritsSigningKey: s.inheritsSigningKey()}
 }
 
 // refuseDeskRead answers a read that found something and could not use it.

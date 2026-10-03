@@ -3665,5 +3665,6 @@
   "This holds only as far as the agent’s client really withholds those tools: the server runs as your user, and Desk does not host it.": "Cela ne tient que dans la mesure où le client de l’agent lui refuse réellement ces outils : le serveur s’exécute sous votre utilisateur, et Desk ne l’héberge pas.",
   "This project keeps a reviewed set. Review and lock, on Packs, shows what the runtime finds and updates it.": "Ce projet a un ensemble révisé. Revoir et verrouiller, dans Packs, montre ce que trouve le runtime et le met à jour.",
   "What each gate holds, and whom it binds": "Ce que tient chaque garde-fou, et qui il tient",
-  "Who is bound.": "Qui est tenu."
+  "Who is bound.": "Qui est tenu.",
+  "But JPACK_SIGNING_KEY is set where Desk was started, so this project’s runtime signs its audit records with the key it names, if it accepts that key. Desks Desk made do not inherit it.": "Mais JPACK_SIGNING_KEY est définie là où Desk a été démarré : le runtime de ce projet signe donc ses enregistrements d’audit avec la clé qu’elle désigne, s’il accepte cette clé. Les Desks créés par Desk n’en héritent pas."
 }

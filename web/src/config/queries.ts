@@ -66,7 +66,8 @@ interface DeskLevelAnswer {
    * whether or not one is there.
    */
   project?: { dir: string; file: string }
-  runtime?: { bin: string }
+  /** `inheritsSigningKey` is read only where it is a boolean. */
+  runtime?: { bin: string; inheritsSigningKey?: unknown }
   /** The installation's Jobs policy. Read only where it is a boolean. */
   jobs?: { requireTestedReleases?: unknown }
 }
@@ -84,6 +85,9 @@ function chassisPaths(answered: DeskLevelAnswer): ChassisPaths | undefined {
     projectDir: answered.project.dir,
     projectFile: answered.project.file,
     runtimeBin: answered.runtime.bin,
+    ...(typeof answered.runtime.inheritsSigningKey === 'boolean'
+      ? { runtimeInheritsSigningKey: answered.runtime.inheritsSigningKey }
+      : {}),
     ...(answered.builds ? { builds: answered.builds } : {}),
     ...(typeof answered.jobs?.requireTestedReleases === 'boolean'
       ? { jobs: { requireTestedReleases: answered.jobs.requireTestedReleases } }

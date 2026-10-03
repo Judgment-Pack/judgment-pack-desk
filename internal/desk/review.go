@@ -328,11 +328,14 @@ func lockedSet(data []byte) (reviewSet, lockDocument, error) {
 // to the configuration's own directory. A hard link to `jpack.json` from
 // another directory is the same file in another project, so an identity
 // check is not enough; the directory has to be this one.
+//
+// The directory is marked as the startup desk's where it is, so the commands
+// keep the owner's inherited `JPACK_SIGNING_KEY` there, and only there.
 func (s *Server) reviewRuntime() (heldDir, string) {
 	if s.project == nil || s.project.own == nil {
 		return heldDir{}, "This desk holds no project to review."
 	}
-	dir := heldDir{file: s.project.own.dirFile, path: s.projectDir, info: s.project.info}
+	dir := heldDir{file: s.project.own.dirFile, path: s.projectDir, info: s.project.info, startup: s.cfg.deskID == ""}
 	if s.cfg.deskID != "" {
 		return dir, ""
 	}
@@ -506,7 +509,8 @@ func (s *Server) verifySnapshot(ctx context.Context, snap *reviewSnapshot) (veri
 	if err != nil {
 		return verifiedAnswer{}, err
 	}
-	return s.runVerify(ctx, heldDir{file: file, path: where, info: info})
+	// A copy of the startup desk's project is still the startup desk's.
+	return s.runVerify(ctx, heldDir{file: file, path: where, info: info, startup: s.cfg.deskID == ""})
 }
 
 func (s *Server) review(ctx context.Context, dir heldDir) (reviewAnswer, error) {

@@ -324,6 +324,7 @@
   "Build your decision": "Build your decision",
   "Build your pack": "Build your pack",
   "Bundled artifacts": "Bundled artifacts",
+  "But JPACK_SIGNING_KEY is set where Desk was started, so this project’s runtime signs its audit records with the key it names, if it accepts that key. Desks Desk made do not inherit it.": "But JPACK_SIGNING_KEY is set where Desk was started, so this project’s runtime signs its audit records with the key it names, if it accepts that key. Desks Desk made do not inherit it.",
   "Calculated": "Calculated",
   "Calculator: {{name}} · {{version}}": "Calculator: {{name}} · {{version}}",
   "Cancel": "Cancel",

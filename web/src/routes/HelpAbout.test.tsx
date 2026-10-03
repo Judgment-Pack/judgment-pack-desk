@@ -8,16 +8,16 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, render, screen } from '@testing-library/react'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
-import { afterEach, describe, expect, it } from 'vitest'
-import { DeskConfigFixture } from '../config/DeskConfigProvider'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { DeskConfigFixture, DeskConfigProvider, useDeskConfigRead } from '../config/DeskConfigProvider'
 import { effectiveConfig, type EffectiveConfig } from '../config/deskConfig'
 import { McpContext, type McpConnection } from '../mcp/McpProvider'
 import { SHORTCUTS } from '../shell/shortcuts'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { HelpAbout } from './HelpAbout'
-import { outsideAgentCommand } from './GatesHelp'
+import { GatesHelp, outsideAgentCommand } from './GatesHelp'
 
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 const PROMPT_TEXT = 'Encode ONE policy decision as a Judgment Pack (declare specVersion …).'
 
@@ -194,9 +194,53 @@ describe('Help & About', () => {
     expect(document.getElementById('gates')!.closest('section')!.textContent).toContain('This installation allows a job from a release whose saved tests were not run, because Desk was started with --runner-require-tested-releases=false.')
   })
 
+  it.each([
+    ['true', true, true], ['false', false, false], ['missing', undefined, false], ['not a boolean', 'true', false]
+  ])('says the startup desk inherits JPACK_SIGNING_KEY only where Desk says so: %s', (_, inherits, shown) => {
+    renderHelp(stubClient(PACKS), {}, effectiveConfig(undefined, undefined, undefined, {
+      path: '/config/desk.json', present: false,
+      chassis: { projectDir: '/p', projectFile: '/p/jpack-desk.json', runtimeBin: '/bin/jpack', ...(inherits === undefined ? {} : { runtimeInheritsSigningKey: inherits as boolean }) }
+    }))
+    const gates = document.getElementById('gates')!.closest('section')!
+    expect(gates.textContent?.includes(SIGNING_KEY_LINE)).toBe(shown)
+    expect(gates.textContent).toContain('A record is not signed')
+  })
+
   it('quotes the command for a shell, and stands in for what Desk has not said', () => {
     expect(outsideAgentCommand('/desks/abc/', '/usr/bin/jpack')).toBe('JPACK_CONFIG=/desks/abc/jpack.json /usr/bin/jpack mcp')
     expect(outsideAgentCommand("/it's here", 'jpack')).toBe("JPACK_CONFIG='/it'\\''s here/jpack.json' jpack mcp")
     expect(outsideAgentCommand(undefined, undefined)).toBe('JPACK_CONFIG=/absolute/path/to/the/desk/jpack.json jpack mcp')
+  })
+})
+
+const SIGNING_KEY_LINE = 'But JPACK_SIGNING_KEY is set where Desk was started, so this project’s runtime signs its audit records with the key it names, if it accepts that key. Desks Desk made do not inherit it.'
+
+/** Shown once the configuration query has answered, so the gates can be read after it. */
+function Answered() { return useDeskConfigRead() ? <span>configuration read</span> : null }
+
+describe('Help & About → Gates, from Desk’s own desk-config answer', () => {
+  /** The page learns the member from the chassis, through the real provider. */
+  async function renderAnswered(runtime: Record<string, unknown>) {
+    vi.stubGlobal('fetch', async (url: string) => String(url).includes('/api/desk-config')
+      ? { ok: true, status: 200, statusText: '', text: async () => JSON.stringify({ path: '/desk.json', present: false, sha256: '', project: { dir: '/p', file: '/p/jpack-desk.json' }, runtime }) }
+      : { ok: false, status: 404, statusText: '', text: async () => JSON.stringify({ error: 'no such file' }) })
+    render(<QueryClientProvider client={testQueryClient()}><DeskConfigProvider><GatesHelp /><Answered /></DeskConfigProvider></QueryClientProvider>)
+    await screen.findByText('configuration read')
+    return document.getElementById('gates')!.closest('section')!.textContent ?? ''
+  }
+
+  it('says the startup desk’s runtime inherits JPACK_SIGNING_KEY where Desk says true', async () => {
+    expect(await renderAnswered({ bin: 'jpack', inheritsSigningKey: true })).toContain(SIGNING_KEY_LINE)
+  })
+
+  it.each([
+    ['false', { bin: 'jpack', inheritsSigningKey: false }],
+    ['no member', { bin: 'jpack' }],
+    ['a string', { bin: 'jpack', inheritsSigningKey: 'true' }],
+    ['a number', { bin: 'jpack', inheritsSigningKey: 1 }]
+  ])('says nothing of a signing key where Desk answered %s', async (_, runtime) => {
+    const gates = await renderAnswered(runtime)
+    expect(gates).toContain('Records.')
+    expect(gates).not.toContain('JPACK_SIGNING_KEY')
   })
 })

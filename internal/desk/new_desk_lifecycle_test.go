@@ -488,3 +488,61 @@ func TestANamedDeskRuntimeReadsOnlyItsOwnConfiguration(t *testing.T) {
 		t.Errorf("the launch did not say the startup desk reads JPACK_CONFIG: %s", logged)
 	}
 }
+
+// signingKeySaid is what the launch says of an inherited JPACK_SIGNING_KEY.
+const signingKeySaid = "desk: JPACK_SIGNING_KEY is set, so this project's runtime signs its audit records with the key it names, if it accepts that key; desks Desk made ignore it"
+
+// **A desk Desk made never signs with the startup desk's key** (ADR-0010,
+// section 1). The runtime signs every record it writes with the key
+// JPACK_SIGNING_KEY names, before the configuration's own, so inherited it
+// signed every desk's records with one key. A made desk's runtimes, the
+// commands that made it and its relay, start without it and with the rest of
+// Desk's environment. The startup desk's relay keeps it, as the owner's, and
+// the launch says so once, naming neither its path nor its value.
+func TestAnInheritedSigningKeyStaysWithTheStartupDesk(t *testing.T) {
+	key := filepath.Join(t.TempDir(), "owner-signing.seed")
+	t.Setenv("JPACK_SIGNING_KEY", key)
+	t.Setenv("DESK_TEST_INHERITED", "kept")
+	bin := filepath.Join(t.TempDir(), "jpack")
+	calls := writeStandInRuntime(t, bin, reading(allConfigVersions), lockingAs(wantGatedConfig))
+	_, ts, logged := gatesServer(t, bin)
+	row := createGatedDesk(t, ts)
+	made := []string{
+		"packs schema --format json [JPACK_SIGNING_KEY=unset] [DESK_TEST_INHERITED=kept]",
+		"packs lock --config jpack.json --format json [JPACK_SIGNING_KEY=unset] [DESK_TEST_INHERITED=kept]",
+	}
+	if got := envSeen(t, calls); strings.Join(got, "\n") != strings.Join(made, "\n") {
+		t.Errorf("the commands that made a desk ran with %q, want %q", got, made)
+	}
+	relayStarted(t, ts, "?desk="+row.ID, calls, 1)
+	relayStarted(t, ts, "", calls, 2)
+	var relays []string
+	for _, line := range envSeen(t, calls) {
+		if strings.HasPrefix(line, "mcp ") {
+			relays = append(relays, line)
+		}
+	}
+	want := []string{"mcp [JPACK_SIGNING_KEY=unset] [DESK_TEST_INHERITED=kept]", "mcp [JPACK_SIGNING_KEY=" + key + "] [DESK_TEST_INHERITED=kept]"}
+	if strings.Join(relays, "\n") != strings.Join(want, "\n") {
+		t.Errorf("the named desk's and the startup desk's runtimes started as %q, want %q", relays, want)
+	}
+	said := logged.String()
+	if n := strings.Count(said, signingKeySaid); n != 1 {
+		t.Errorf("the launch said the inherited JPACK_SIGNING_KEY %d times, want once: %s", n, said)
+	}
+	for _, secret := range []string{key, filepath.Base(key), filepath.Dir(key)} {
+		if strings.Contains(said, secret) {
+			t.Errorf("the log names the signing key's path (%s): %s", secret, said)
+		}
+	}
+}
+
+// A JPACK_SIGNING_KEY that is blank names no key to the runtime, and the
+// launch says nothing of one.
+func TestABlankSigningKeyIsNotSaid(t *testing.T) {
+	t.Setenv("JPACK_SIGNING_KEY", "  ")
+	_, _, logged := gatesServer(t, standInRuntime(t))
+	if strings.Contains(logged.String(), "JPACK_SIGNING_KEY") {
+		t.Errorf("the launch spoke of a blank JPACK_SIGNING_KEY: %s", logged)
+	}
+}
