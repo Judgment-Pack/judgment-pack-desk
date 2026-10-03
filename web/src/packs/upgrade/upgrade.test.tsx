@@ -201,8 +201,10 @@ describe('where the offer appears', () => {
 
   it('is not shown where the gates are on', async () => {
     offers.with = [{ ...gatedOn, state: 'offer', comparableFacts: 'off', token }]
-    show(<UpgradeNote />)
-    await waitFor(() => expect(reads).toEqual(['/api/upgrade']))
+    // The card reads the same offer: once it says so, the note has read it too.
+    show(<><UpgradeNote /><ProjectGates /></>)
+    await screen.findByText(/requireComparableFacts is off/)
+    expect(reads).toEqual(['/api/upgrade'])
     expect(screen.queryByRole('complementary')).toBeNull()
   })
 
