@@ -73,6 +73,7 @@ import { ConfigPane } from '../admin/ConfigPane'
 import { SECTION_SUMMARY } from '../admin/sectionSummary'
 import { SourceCard, StatusLine, type SourceStatus } from '../admin/SourceCard'
 import { useDefaultProject } from '../admin/DefaultProject'
+import { ProjectGates } from '../packs/upgrade/UpgradeNote'
 import { OrganizationForm, StorageForm, StorageKind } from '../admin/projectFileCards'
 import { useHashTarget } from '../shell/useHashTarget'
 import { useDetailsPortal, useDetailsSlot } from '../shell/DetailsSlot'
@@ -218,6 +219,8 @@ ${effective.desk.chassis.runtimeBin}`} />
                   fields={defaultProject.field}
                   save={defaultProject.save}
                 />
+                {/* The upgrade offer stays available here (ADR-0009, section 4). */}
+                <ProjectGates />
               </RetainedPanel>
               <RetainedPanel active={open.id === 'organization'}>
                 <SourceCard

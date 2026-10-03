@@ -45,12 +45,16 @@
  * The entry's key is a `decisionId`, `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$` — which
  * is where the slug rule comes from and why it is what it is.
  *
- * **`configVersion` is never touched.** `packs` exists in all three shapes
- * (`SupportedConfigVersions()` is `{"1","2","3"}`), so amending a `"1"` or
- * `"2"` project must leave it at `"1"` or `"2"`: bumping it would break a
- * runtime that reads only the earlier shapes, for a member that needed no
- * bump. `graphs` and `audit` are carried through untouched for the same
- * reason.
+ * **`configVersion` is never touched here.** `packs` exists in every shape
+ * the runtime reads (`supportedConfigVersions` is `"1"` to `"5"` on 0.25.0,
+ * as `packs schema --format json` reports it), so adding a pack to a `"1"` or
+ * `"2"` project leaves it at `"1"` or `"2"`: bumping it would break a runtime
+ * that reads only the earlier shapes, for a member that needed no bump.
+ * `graphs`, `audit`, `requireReviewed` and `requireComparableFacts` are
+ * carried through untouched for the same reason. The one place Desk moves
+ * `configVersion` is the upgrade offer (ADR-0009, section 4), on the owner's
+ * confirmation, and it does that in the chassis, by the same rule as this
+ * module: every other member carried through, in its order.
  */
 
 /**

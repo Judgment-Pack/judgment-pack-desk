@@ -19,5 +19,8 @@
   "This lock covers {{count}} files: jpack.json and every pack and graph it declares.": "This lock covers {{count}} file: jpack.json and every pack and graph it declares.",
   "Confirm and lock {{count}} differences": "Confirm and lock {{count}} difference",
   "Locked. These {{count}} files are now this project’s reviewed set.": "Locked. This {{count}} file is now this project’s reviewed set.",
-  "Confirm and lock {{count}} files": "Confirm and lock {{count}} file"
+  "Confirm and lock {{count}} files": "Confirm and lock {{count}} file",
+  "Turn the gates on and lock {{count}} files": "Turn the gates on and lock {{count}} file",
+  "The lock covers {{count}} files: jpack.json as the upgrade writes it, and every pack and graph it declares. Without a lock, requireReviewed would refuse every deciding run, so the configuration and the lock are written together: if the lock fails, Desk puts jpack.json, .gitignore and the lock back as they were.": "The lock covers {{count}} file: jpack.json as the upgrade writes it, since it declares no pack or graph. Without a lock, requireReviewed would refuse every deciding run, so the configuration and the lock are written together: if the lock fails, Desk puts jpack.json, .gitignore and the lock back as they were.",
+  "The gates are on. jpack.json is at configVersion {{version}}, and these {{count}} files are this project’s reviewed set.": "The gates are on. jpack.json is at configVersion {{version}}, and {{count}} file is this project’s reviewed set."
 }

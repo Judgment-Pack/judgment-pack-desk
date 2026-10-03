@@ -95,7 +95,7 @@ export function ReviewAndLockView() {
 }
 
 /** One file of the review: what the runtime found, and the file itself. */
-function File({ review, file }: { review: Review; file: ReviewFile }) {
+export function File({ review, file }: { review: Review; file: ReviewFile }) {
   const found = fileFindings(review, file)
   const { earlier, now } = file
   const before = textOf(review, earlier), after = textOf(review, now)
