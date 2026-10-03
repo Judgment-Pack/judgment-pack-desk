@@ -1899,8 +1899,8 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	limit := runnerAnswerLimit' \
     '	limit := runnerExportLimit'
   mutate go "verification export: limit past Runner's MaxExportSize" "$J" \
-    'const runnerExportLimit = 8<<20 + len(`,"auditBytes":""`) + (8<<20+2)/3*4' \
-    'const runnerExportLimit = 8<<20 + len(`,"auditBytes":""`) + (8<<20+2)/3*4 + 1'
+    '	len(`,"auditSignatures":""`) + (16<<10+2)/3*4' \
+    '	len(`,"auditSignatures":""`) + (16<<10+2)/3*4 + 1'
 
   # **A new desk starts gated (ADR-0009, section 1).** Its configuration is
   # the one the runtime can hold it to, its audit folder is owner-only, and the
