@@ -2124,8 +2124,8 @@ func (b *cappedBuffer) exceeded() bool {'
   # digests and the lock's bytes, and a confirmation is honoured only if a
   # fresh reading gives the same one.
   mutate go "review: a confirmation's token is not checked" "$RV" \
-    '	if err != nil || snap.unshowable() != "" || !hmac.Equal([]byte(s.reviewToken(snap)), []byte(token)) {' \
-    '	if err != nil || snap.unshowable() != "" {'
+    '	if err != nil || !hmac.Equal([]byte(s.reviewToken(snap)), []byte(token)) {' \
+    '	if err != nil {'
   mutate go "review: a token is not bound to its desk" "$RV" \
     '	}{s.cfg.deskID, s.projectDir, snap.set, lock})
 	mac := hmac.New(sha256.New, s.reviewKey[:])' \
@@ -2143,12 +2143,30 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "review: the runtime verifies the project, not the reading" "$RV" \
     '		verified, err = s.verifySnapshot(ctx, snap)' \
     '		verified, err = s.runVerify(ctx, dir)'
-  mutate go "review: a file that cannot be shown can be confirmed" "$RV" \
-    '	if answer.Blocked = snap.unshowable(); answer.Blocked == "" {' \
-    '	if answer.Blocked = snap.unshowable(); true {'
-  mutate go "review: a file too large to show is shown" "$RV" \
-    '	if len(data) > reviewTextLimit {' \
+  # **Every budget is checked before the read it bounds.** Each distinct
+  # file is read once; none past reviewTextLimit; all together none past
+  # reviewReadingLimit; entries past reviewEntryLimit stop the reading before
+  # any document; earlier copies past reviewEarlierLimit are not read.
+  mutate go "review: a file too large to show is read whole" "$RV" \
+    '	limit := reviewTextLimit
+	if remaining := reviewReadingLimit - r.retained; remaining < limit {' \
+    '	limit := maxFileBytes
+	if remaining := reviewReadingLimit - r.retained; remaining < limit {'
+  mutate go "review: the reading budget is checked late" "$RV" \
+    '	if remaining := reviewReadingLimit - r.retained; remaining < limit {' \
+    '	if remaining := reviewReadingLimit - r.retained; false && remaining < limit {'
+  mutate go "review: one file is read again for each id" "$RV" \
+    '	if data, ok := r.files[clean]; ok {' \
+    '	if data, ok := r.files[clean]; ok && false {'
+  mutate go "review: entries past the limit are read" "$RV" \
+    '	if len(declared.Packs)+len(declared.Graphs) > reviewEntryLimit {' \
     '	if false {'
+  mutate go "review: a file that is not text is shown" "$RV" \
+    '	case !utf8.Valid(data):' \
+    '	case false:'
+  mutate go "review: the earlier copies are not bounded" "$RV" \
+    '	if remaining := reviewEarlierLimit - e.shown; remaining < limit {' \
+    '	if remaining := reviewEarlierLimit - e.shown; false && remaining < limit {'
   mutate go "review: the lock is not checked against the reading" "$RV" \
     '			if pinned, _, err := lockedSet(after); err == nil && pinned.equal(snap.set) {' \
     '			if _, _, err := lockedSet(after); err == nil {'
@@ -2180,15 +2198,15 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if err := s.refuseSymlinkedPath(clean); err != nil {
 		return nil, err
 	}
-	data, _, err := s.readThroughRoot(clean)' \
-    '	data, _, err := s.readThroughRoot(clean)'
+	data, _, err := s.readThroughRootWithin(clean, limit)' \
+    '	data, _, err := s.readThroughRootWithin(clean, limit)'
   mutate go "review: no copies are kept" "$RV" \
     '	if err := s.storeReviewedCopies(snap); err != nil {' \
     '	if err := error(nil); err != nil {'
   mutate go "review: a copy of other bytes is shown" "$RV" \
-    '	if err != nil || sha256Digest(data) != digest {
+    '	if err != nil || sha256Digest(data) != digest || !utf8.Valid(data) {
 		return reviewSide{State: "no-copy"}' \
-    '	if err != nil {
+    '	if err != nil || !utf8.Valid(data) {
 		return reviewSide{State: "no-copy"}'
   mutate go "review: the copies folder is not owner-only" "$RV" \
     '			if err = current.Mkdir(part, custodyDirMode); err != nil && !errors.Is(err, fs.ErrExist) {' \
@@ -8383,8 +8401,8 @@ export function assistantTransport(id: string): Transport {
     "  const open = !review.locked || found.length > 0 || file.lock !== 'same'" \
     "  const open = found.length > 0"
   mutate web "review: a diff is drawn without the locked bytes" "$RVV" \
-    "    {earlier?.state === 'text' && now.state === 'text'" \
-    "    {now.state === 'text' && earlier !== undefined"
+    "    {before !== undefined && after !== undefined" \
+    "    {after !== undefined"
   mutate web "review: a lock is offered when every file matches" "$RVV" \
     "            : review.token && !matches && <section" \
     "            : review.token && <section"

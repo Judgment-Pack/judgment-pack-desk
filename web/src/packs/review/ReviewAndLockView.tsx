@@ -18,7 +18,7 @@ import { CodeBlock } from '../../ui/CodeBlock'
 import { Disclosure } from '../../ui/Disclosure'
 import { PageHeader } from '../../ui/PageLayout'
 import { SnapshotComparison } from '../SnapshotComparison'
-import { confirmLock, REVIEW_KEY, StaleReview, type Locked, type Review, type ReviewFile } from './client'
+import { confirmLock, REVIEW_KEY, StaleReview, textOf, type Locked, type Review, type ReviewFile } from './client'
 import { fileFindings, findingWords, otherFindings } from './findings'
 import { useReview } from './ReviewContext'
 import styles from './ReviewAndLock.module.css'
@@ -98,6 +98,7 @@ export function ReviewAndLockView() {
 function File({ review, file }: { review: Review; file: ReviewFile }) {
   const found = fileFindings(review, file)
   const { earlier, now } = file
+  const before = textOf(review, earlier), after = textOf(review, now)
   // A first lock reads every file; after one, a file the lock already holds
   // stays closed, and can still be opened.
   const open = !review.locked || found.length > 0 || file.lock !== 'same'
@@ -108,16 +109,16 @@ function File({ review, file }: { review: Review; file: ReviewFile }) {
           : msg('Not in a lock yet')}</h3>
     <p className={styles.where}>{file.id && <code>{file.id}</code>}<code>{file.path}</code></p>
     {found.map((finding, index) => finding.detail && <p key={index} className={styles.quiet}>{finding.detail}</p>)}
-    {earlier?.state === 'text' && now.state === 'text'
+    {before !== undefined && after !== undefined
       ? <>
-        <SnapshotComparison before={earlier.text!} after={now.text!} beforeLabel={msg('Last locked')} afterLabel={msg('Now')} />
-        <Disclosure title={msg('The whole file now')}><CodeBlock text={now.text!} label={msg('Now')} /></Disclosure>
+        <SnapshotComparison before={before} after={after} beforeLabel={msg('Last locked')} afterLabel={msg('Now')} />
+        <Disclosure title={msg('The whole file now')}><CodeBlock text={after} label={msg('Now')} /></Disclosure>
       </>
       : <>
         {earlier?.state === 'no-copy' && <p className={styles.quiet}>{msg('Desk has no earlier copy of the locked version to compare with.')}</p>}
         {earlier?.state === 'not-shown' && <p className={styles.quiet}>{msg('The locked version is too large to show here.')}</p>}
-        {earlier?.state === 'text' && <Disclosure title={msg('Last locked')} open={open}><CodeBlock text={earlier.text!} label={msg('Last locked')} /></Disclosure>}
-        {now.state === 'text' && <Disclosure title={msg('The whole file now')} open={open}><CodeBlock text={now.text!} label={msg('Now')} /></Disclosure>}
+        {before !== undefined && <Disclosure title={msg('Last locked')} open={open}><CodeBlock text={before} label={msg('Last locked')} /></Disclosure>}
+        {after !== undefined && <Disclosure title={msg('The whole file now')} open={open}><CodeBlock text={after} label={msg('Now')} /></Disclosure>}
         {now.state === 'not-shown' && <p className={styles.quiet}>{msg('The current file is too large to show here.')}</p>}
       </>}
   </li>

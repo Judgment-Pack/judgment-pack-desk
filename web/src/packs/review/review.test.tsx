@@ -22,18 +22,21 @@ const config = '{"configVersion":"5","packs":{"alpha":{"path":"packs/a.json"},"b
 const before = '{"id":"alpha","title":"Before"}'
 const after = '{"id":"alpha","title":"After"}'
 const beta = '{"id":"beta","title":"Beta"}'
-const differing: Review = { status: 'invalid', locked: true, diagnostics: [], token, findings: [
+/** A side showing text, whose text the review carries in its contents. */
+const text = (value: string) => ({ state: 'text' as const, digest: 'sha256:' + value })
+const contents = Object.fromEntries([config, before, after, beta].map(value => ['sha256:' + value, value]))
+const differing: Review = { status: 'invalid', locked: true, diagnostics: [], token, contents, findings: [
   { name: 'document-drift', kind: 'pack', id: 'alpha', path: 'packs/a.json', detail: 'The pack document’s bytes differ.' },
   { name: 'document-drift', kind: 'pack', id: 'beta', path: 'packs/b.json' }
 ], files: [
-  { kind: 'config', path: 'jpack.json', lock: 'same', now: { state: 'text', text: config } },
-  { kind: 'pack', id: 'alpha', path: 'packs/a.json', lock: 'other', earlier: { state: 'text', text: before }, now: { state: 'text', text: after } },
-  { kind: 'pack', id: 'beta', path: 'packs/b.json', lock: 'other', earlier: { state: 'no-copy' }, now: { state: 'text', text: beta } }
+  { kind: 'config', path: 'jpack.json', lock: 'same', now: text(config) },
+  { kind: 'pack', id: 'alpha', path: 'packs/a.json', lock: 'other', earlier: text(before), now: text(after) },
+  { kind: 'pack', id: 'beta', path: 'packs/b.json', lock: 'other', earlier: { state: 'no-copy' }, now: text(beta) }
 ] }
-const first: Review = { status: 'error', locked: false, findings: [], token, diagnostics: [{ code: 'JPS-LOCK-ABSENT', message: 'There is no reviewed-set lock.' }], files: [
-  { kind: 'config', path: 'jpack.json', lock: 'none', now: { state: 'text', text: config } },
-  { kind: 'pack', id: 'alpha', path: 'packs/a.json', lock: 'none', now: { state: 'text', text: after } },
-  { kind: 'pack', id: 'beta', path: 'packs/b.json', lock: 'none', now: { state: 'text', text: beta } }
+const first: Review = { status: 'error', locked: false, findings: [], token, contents, diagnostics: [{ code: 'JPS-LOCK-ABSENT', message: 'There is no reviewed-set lock.' }], files: [
+  { kind: 'config', path: 'jpack.json', lock: 'none', now: text(config) },
+  { kind: 'pack', id: 'alpha', path: 'packs/a.json', lock: 'none', now: text(after) },
+  { kind: 'pack', id: 'beta', path: 'packs/b.json', lock: 'none', now: text(beta) }
 ] }
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })

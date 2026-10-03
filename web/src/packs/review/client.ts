@@ -12,7 +12,8 @@
 import { deskFetch } from '../../files/client'
 import { msg } from '../../i18n'
 
-export type ReviewSide = { state: 'text' | 'no-copy' | 'absent' | 'not-shown'; text?: string }
+/** One side of a file's comparison. Its text is in the review's `contents`, by `digest`. */
+export type ReviewSide = { state: 'text' | 'no-copy' | 'absent' | 'not-shown'; digest?: string }
 export type ReviewFinding = { name: string; kind?: string; id?: string; path?: string; detail?: string }
 export type ReviewFile = {
   kind: 'config' | 'pack' | 'graph' | string
@@ -31,6 +32,8 @@ export type Review = {
   findings: ReviewFinding[]
   diagnostics: { code: string; message: string }[]
   files: ReviewFile[]
+  /** Each text the review shows, once, by its digest. */
+  contents: Record<string, string>
   token?: string
   blocked?: string
 }
@@ -43,10 +46,10 @@ export class StaleReview extends Error {}
 
 const text = (value: unknown): value is string => typeof value === 'string'
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
-const side = (value: unknown): boolean => value === undefined || object(value) && (value.state === undefined || ['text', 'no-copy', 'absent', 'not-shown'].includes(value.state as string)) && (value.text === undefined || text(value.text))
+const side = (value: unknown): boolean => value === undefined || object(value) && ['text', 'no-copy', 'absent', 'not-shown'].includes(value.state as string) && (value.digest === undefined || text(value.digest))
 
 function isReview(value: unknown): value is Review {
-  if (!object(value) || !text(value.status) || typeof value.locked !== 'boolean' || !Array.isArray(value.findings) || !Array.isArray(value.diagnostics) || !Array.isArray(value.files)) return false
+  if (!object(value) || !text(value.status) || typeof value.locked !== 'boolean' || !Array.isArray(value.findings) || !Array.isArray(value.diagnostics) || !Array.isArray(value.files) || !object(value.contents) || !Object.values(value.contents).every(text)) return false
   if (!value.findings.every(item => object(item) && text(item.name))) return false
   if (!value.files.every(file => object(file) && text(file.kind) && text(file.path) && ['same', 'other', 'none', 'removed'].includes(file.lock as string) && object(file.now) && side(file.now) && side(file.earlier))) return false
   return (value.token === undefined || text(value.token)) && (value.blocked === undefined || text(value.blocked))
@@ -74,4 +77,9 @@ export async function confirmLock(token: string): Promise<Locked> {
   const value: unknown = await response.json()
   if (!object(value) || typeof value.files !== 'number' || (value.copies !== 'stored' && value.copies !== 'not-stored') || (value.copiesProblem !== undefined && !text(value.copiesProblem))) throw new Error(msg('The review could not be loaded. Please try again.'))
   return value as Locked
+}
+
+/** The text a side of the review shows, if it shows one. */
+export function textOf(review: Review, side: ReviewSide | undefined): string | undefined {
+  return side?.state === 'text' && side.digest !== undefined ? review.contents[side.digest] : undefined
 }

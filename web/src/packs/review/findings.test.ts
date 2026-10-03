@@ -15,7 +15,7 @@ describe('the runtime’s findings in plain words', () => {
     expect(findingWords('something-new')).toBe('something-new')
   })
   it('groups pack findings by decision id, and nothing else', () => {
-    const review: Review = { status: 'invalid', locked: true, diagnostics: [], files: [], findings: [
+    const review: Review = { status: 'invalid', locked: true, diagnostics: [], files: [], contents: {}, findings: [
       { name: 'config-drift', path: 'jpack.json' },
       { name: 'document-drift', kind: 'pack', id: 'alpha', path: 'packs/a.json' },
       { name: 'path-mismatch', kind: 'pack', id: 'alpha', path: 'packs/a.json' },
@@ -26,8 +26,8 @@ describe('the runtime’s findings in plain words', () => {
     expect(found.get('alpha')!.map(item => item.name)).toEqual(['document-drift', 'path-mismatch'])
   })
   it('puts each finding beside the file it is about, and keeps the rest', () => {
-    const now = { state: 'text' as const, text: '{}' }
-    const review: Review = { status: 'invalid', locked: true, diagnostics: [], files: [
+    const now = { state: 'text' as const, digest: 'sha256:0' }
+    const review: Review = { status: 'invalid', locked: true, diagnostics: [], contents: { 'sha256:0': '{}' }, files: [
       { kind: 'config', path: 'jpack.json', lock: 'other', now },
       { kind: 'pack', id: 'alpha', path: 'packs/a.json', lock: 'other', now },
       { kind: 'graph', id: 'alpha', path: 'flow.json', lock: 'same', now }

@@ -8,6 +8,7 @@ package desk
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -227,6 +228,14 @@ func copiesIn(t *testing.T, project string) map[string]string {
 	return kept
 }
 
+// shown is the text a side of the review names, from its contents.
+func shown(answer reviewAnswer, side reviewSide) string {
+	if side.State != "text" {
+		return ""
+	}
+	return answer.Contents[side.Digest]
+}
+
 // fileOf is the review's row for a path.
 func fileOf(t *testing.T, answer reviewAnswer, path string) reviewFile {
 	t.Helper()
@@ -288,17 +297,17 @@ func TestTheReviewShowsEveryFileAndTheRuntimesFindings(t *testing.T) {
 		t.Fatalf("the review shows %d files, want the configuration, two packs and the removed one: %+v", len(answer.Files), answer.Files)
 	}
 	config := fileOf(t, answer, "jpack.json")
-	if config.Kind != "config" || config.Lock != "same" || config.Now.Text != twoPacks || config.Digest != sha256Digest([]byte(twoPacks)) {
+	if config.Kind != "config" || config.Lock != "same" || shown(answer, config.Now) != twoPacks || config.Digest != sha256Digest([]byte(twoPacks)) {
 		t.Errorf("the configuration is shown as %+v", config)
 	}
 	alpha := fileOf(t, answer, "packs/a.json")
-	if alpha.Lock != "other" || alpha.Earlier.State != "text" || alpha.Earlier.Text != reviewPack || alpha.Now.Text != edited || alpha.Digest != sha256Digest([]byte(edited)) {
+	if alpha.Lock != "other" || alpha.Earlier.State != "text" || shown(answer, *alpha.Earlier) != reviewPack || shown(answer, alpha.Now) != edited || alpha.Digest != sha256Digest([]byte(edited)) {
 		t.Errorf("alpha is shown as %+v", alpha)
 	}
 	if beta := fileOf(t, answer, "packs/b.json"); beta.Lock != "other" || beta.Earlier.State != "no-copy" || beta.Now.State != "text" {
 		t.Errorf("a copy whose bytes are not the locked ones was shown: %+v", beta)
 	}
-	if delta := fileOf(t, answer, "packs/d.json"); delta.Lock != "removed" || delta.Now.State != "absent" || delta.Earlier.Text != removed {
+	if delta := fileOf(t, answer, "packs/d.json"); delta.Lock != "removed" || delta.Now.State != "absent" || shown(answer, *delta.Earlier) != removed {
 		t.Errorf("what only the lock names is shown as %+v", delta)
 	}
 	if len(answer.Token) != 64 || answer.Blocked != "" {
@@ -334,8 +343,8 @@ func TestTheBytesShownAreTheBytesConfirmed(t *testing.T) {
 
 	answer := readReview(t, ts, "")
 	alpha := fileOf(t, answer, "packs/a.json")
-	if alpha.Now.Text != reviewPack || alpha.Digest != sha256Digest([]byte(reviewPack)) {
-		t.Errorf("the review showed %q under %s, want the one reading it took", alpha.Now.Text, alpha.Digest)
+	if shown(answer, alpha.Now) != reviewPack || alpha.Digest != sha256Digest([]byte(reviewPack)) {
+		t.Errorf("the review showed %q under %s, want the one reading it took", shown(answer, alpha.Now), alpha.Digest)
 	}
 	if readFile(t, filepath.Join(project, "packs", "a.json")) != changed {
 		t.Fatal("the stand-in did not change the file while the review ran")
@@ -367,21 +376,166 @@ func TestTheFirstLockShowsEveryFile(t *testing.T) {
 		t.Fatalf("the first review answered %+v", answer)
 	}
 	for path, text := range map[string]string{"jpack.json": twoPacks, "packs/a.json": reviewPack, "packs/b.json": otherPack} {
-		if file := fileOf(t, answer, path); file.Lock != "none" || file.Now.Text != text {
+		if file := fileOf(t, answer, path); file.Lock != "none" || shown(answer, file.Now) != text {
 			t.Errorf("%s is shown as %+v", path, file)
 		}
 	}
 	// A file too large to show is a file the owner cannot confirm.
 	writeProject(t, project, map[string]string{"packs/b.json": strings.Repeat(" ", reviewTextLimit+1)})
 	large := readReview(t, ts, "")
-	if large.Token != "" || !strings.Contains(large.Blocked, "packs/b.json is larger than") || fileOf(t, large, "packs/b.json").Now.State != "not-shown" {
+	if large.Token != "" || !strings.Contains(large.Blocked, "packs/b.json is larger than") || len(large.Contents) != 0 {
 		t.Errorf("a file too large to show was offered for confirmation: token %q, blocked %q", large.Token, large.Blocked)
 	}
 	if status, _ := confirm(t, ts, "", answer.Token); status != http.StatusConflict {
 		t.Errorf("an earlier token confirmed a file too large to show: %d", status)
 	}
+	// And so is one that is not text.
+	writeProject(t, project, map[string]string{"packs/b.json": "{\"bytes\":\"\xff\xfe\"}\n"})
+	if binary := readReview(t, ts, ""); binary.Token != "" || !strings.Contains(binary.Blocked, "packs/b.json is not text") {
+		t.Errorf("a file that is not text was offered for confirmation: token %q, blocked %q", binary.Token, binary.Blocked)
+	}
 	if _, err := os.Stat(filepath.Join(project, "jpack.lock.json")); !os.IsNotExist(err) || countCalls(t, rig.calls, "packs lock") != 0 {
 		t.Error("something was locked")
+	}
+}
+
+// retainedBy counts what each reading of the review holds, file by file,
+// through the review's own hook.
+func retainedBy(t *testing.T) (reads map[string]int, most *int) {
+	t.Helper()
+	reads, top := map[string]int{}, 0
+	testHookReviewRetained = func(clean string, retained int) {
+		reads[clean]++
+		if retained > top {
+			top = retained
+		}
+	}
+	t.Cleanup(func() { testHookReviewRetained = nil })
+	return reads, &top
+}
+
+// padded is a pack of about size bytes: valid JSON, padded with spaces.
+func padded(size int) string {
+	return strings.Replace(reviewPack, `"title":`, strings.Repeat(" ", size-len(reviewPack))+`"title":`, 1)
+}
+
+// **Each file is read once, however many ids name it.** The reviewer's case:
+// 64 ids naming one padded pack of nearly 1 MiB were read, and kept, 64
+// times before any budget was looked at.
+func TestManyIdsNamingOneFileAreReadOnce(t *testing.T) {
+	_, ts, rig, project := reviewProject(t, "", "")
+	ids := map[string]map[string]string{}
+	for i := range 64 {
+		ids[fmt.Sprintf("p%02d", i)] = map[string]string{"path": "packs/big.json"}
+	}
+	config, _ := json.Marshal(map[string]any{"configVersion": "5", "packs": ids})
+	writeProject(t, project, map[string]string{"jpack.json": string(config) + "\n", "packs/big.json": padded(reviewTextLimit - 1024)})
+	rig.answers(t, "valid")
+	reads, most := retainedBy(t)
+	status, data := reviewCall(t, ts, "GET", "/api/review", "", nil, bearer)
+	var answer reviewAnswer
+	if status != 200 || json.Unmarshal(data, &answer) != nil {
+		t.Fatalf("review: %d %.200s", status, data)
+	}
+	if reads["packs/big.json"] != 1 || *most > 2*reviewTextLimit {
+		t.Errorf("one file named by 64 ids was read %d time(s), holding %d bytes at most", reads["packs/big.json"], *most)
+	}
+	// The configuration, 64 ids, and the two packs only the old lock names.
+	if answer.Token == "" || answer.Blocked != "" || len(answer.Files) != 67 || len(answer.Contents) != 2 {
+		t.Errorf("the review gave token %q, blocked %q, %d files and %d contents", answer.Token, answer.Blocked, len(answer.Files), len(answer.Contents))
+	}
+	if len(data) > 3*reviewTextLimit {
+		t.Errorf("the answer is %d bytes: the file's text is not shown once", len(data))
+	}
+}
+
+// **The budget is checked before each read.** Distinct files that add up to
+// more than the reading budget stop the review at the first file that would
+// pass it, with nothing read after, and nothing held past the budget.
+func TestTheReadingBudgetStopsTheReviewBeforeItIsPassed(t *testing.T) {
+	_, ts, rig, project := reviewProject(t, "", "")
+	packs := map[string]map[string]string{}
+	files := map[string]string{}
+	for i := range 2 * reviewReadingLimit / reviewTextLimit {
+		name := fmt.Sprintf("packs/p%02d.json", i)
+		packs[fmt.Sprintf("p%02d", i)] = map[string]string{"path": name}
+		files[name] = padded(reviewTextLimit - 1024)
+	}
+	config, _ := json.Marshal(map[string]any{"configVersion": "5", "packs": packs})
+	files["jpack.json"] = string(config) + "\n"
+	writeProject(t, project, files)
+	rig.answers(t, "valid")
+	reads, most := retainedBy(t)
+	answer := readReview(t, ts, "")
+	if answer.Token != "" || !strings.Contains(answer.Blocked, "add up to more than") || len(answer.Contents) != 0 {
+		t.Errorf("a reading past the budget gave token %q, blocked %q", answer.Token, answer.Blocked)
+	}
+	if *most > reviewReadingLimit || len(reads) > reviewReadingLimit/(reviewTextLimit-1024)+1 {
+		t.Errorf("the review held %d bytes, over %d files, before stopping", *most, len(reads))
+	}
+}
+
+// **Too many entries stop the review before any document is read.**
+func TestTooManyEntriesAreRefusedBeforeAnyRead(t *testing.T) {
+	_, ts, rig, project := reviewProject(t, "", "")
+	ids := map[string]map[string]string{}
+	for i := range reviewEntryLimit + 1 {
+		ids[fmt.Sprintf("p%04d", i)] = map[string]string{"path": "packs/a.json"}
+	}
+	config, _ := json.Marshal(map[string]any{"configVersion": "5", "packs": ids})
+	writeProject(t, project, map[string]string{"jpack.json": string(config) + "\n"})
+	rig.answers(t, "valid")
+	reads, _ := retainedBy(t)
+	answer := readReview(t, ts, "")
+	if answer.Token != "" || !strings.Contains(answer.Blocked, "more than 1024 documents") {
+		t.Errorf("too many entries gave token %q, blocked %q", answer.Token, answer.Blocked)
+	}
+	if len(reads) != 1 || reads["jpack.json"] != 1 {
+		t.Errorf("documents were read before the entries were counted: %v", reads)
+	}
+}
+
+// **The earlier copies shown are bounded too.** Copies that add up to more
+// than their budget are shown until it, and then reported as not shown,
+// without being read.
+func TestTheEarlierCopiesShownAreBounded(t *testing.T) {
+	s, ts, rig, project := reviewProject(t, "", "")
+	packs := map[string]map[string]string{}
+	earlier := map[string]string{}
+	current := map[string]string{}
+	for i := range 2 * reviewEarlierLimit / reviewTextLimit {
+		name := fmt.Sprintf("packs/p%02d.json", i)
+		packs[fmt.Sprintf("p%02d", i)] = map[string]string{"path": name}
+		earlier[name] = strings.Replace(padded(reviewTextLimit-1024), "minimal-literal", fmt.Sprintf("p%02d", i), 1)
+		current[name] = strings.Replace(reviewPack, "minimal-literal", fmt.Sprintf("p%02d", i), 1)
+	}
+	config, _ := json.Marshal(map[string]any{"configVersion": "5", "packs": packs})
+	earlier["jpack.json"] = string(config) + "\n"
+	writeProject(t, project, earlier)
+	byPath := map[string]string{}
+	for name := range packs {
+		byPath[name] = packs[name]["path"]
+		keepCopy(t, s, earlier[packs[name]["path"]])
+	}
+	writeProject(t, project, map[string]string{"jpack.lock.json": string(lockOf(t, project, byPath))})
+	writeProject(t, project, current)
+	rig.answers(t, "invalid")
+	status, data := reviewCall(t, ts, "GET", "/api/review", "", nil, bearer)
+	var answer reviewAnswer
+	if status != 200 || json.Unmarshal(data, &answer) != nil {
+		t.Fatalf("review: %d %.200s", status, data)
+	}
+	states := map[string]int{}
+	for _, file := range answer.Files {
+		if file.Earlier != nil {
+			states[file.Earlier.State]++
+		}
+	}
+	if states["text"] == 0 || states["not-shown"] == 0 || states["text"] > reviewEarlierLimit/(reviewTextLimit-1024) {
+		t.Errorf("the earlier copies were shown as %v", states)
+	}
+	if answer.Token == "" || len(data) > reviewEarlierLimit+2*reviewTextLimit {
+		t.Errorf("the answer is %d bytes, token %q", len(data), answer.Token)
 	}
 }
 
@@ -784,7 +938,7 @@ func TestTheReviewOnTheStartupDeskAndANamedDesk(t *testing.T) {
 	writeProject(t, row.Folder, map[string]string{"packs/a.json": reviewPack, "jpack.json": strings.Replace(wantGatedConfig, `"packs":{}`, `"packs":{"alpha":{"path":"packs/a.json"}}`, 1)})
 	rig.answers(t, "invalid", map[string]string{"name": "config-drift", "path": "jpack.json"}, map[string]string{"name": "lock-entry-missing", "kind": "pack", "id": "alpha", "path": "packs/a.json"})
 	answer := readReview(t, ts, row.ID)
-	if len(answer.Findings) != 2 || len(answer.Files) != 2 || answer.Token == "" || fileOf(t, answer, "jpack.json").Now.Text != readFile(t, filepath.Join(row.Folder, "jpack.json")) {
+	if len(answer.Findings) != 2 || len(answer.Files) != 2 || answer.Token == "" || shown(answer, fileOf(t, answer, "jpack.json").Now) != readFile(t, filepath.Join(row.Folder, "jpack.json")) {
 		t.Fatalf("the named desk's review answered %+v", answer)
 	}
 	rig.locks(t, lockOf(t, row.Folder, map[string]string{"alpha": "packs/a.json"}))
@@ -819,7 +973,7 @@ func TestReviewAndLockWithTheRuntime(t *testing.T) {
 	for _, finding := range first.Findings {
 		names[finding.Name] = finding
 	}
-	if first.Status != "invalid" || names["config-drift"].Name == "" || names["lock-entry-missing"].ID != "alpha" || fileOf(t, first, "packs/a.json").Lock != "none" || fileOf(t, first, "packs/a.json").Now.Text != reviewPack {
+	if first.Status != "invalid" || names["config-drift"].Name == "" || names["lock-entry-missing"].ID != "alpha" || fileOf(t, first, "packs/a.json").Lock != "none" || shown(first, fileOf(t, first, "packs/a.json").Now) != reviewPack {
 		t.Fatalf("the first review answered %+v", first)
 	}
 	if status, data := confirm(t, ts, row.ID, first.Token); status != 200 {
@@ -834,7 +988,7 @@ func TestReviewAndLockWithTheRuntime(t *testing.T) {
 	writeProject(t, row.Folder, map[string]string{"packs/a.json": edited})
 	second := readReview(t, ts, row.ID)
 	alpha := fileOf(t, second, "packs/a.json")
-	if len(second.Findings) != 1 || second.Findings[0].Name != "document-drift" || alpha.Earlier.Text != reviewPack || alpha.Now.Text != edited {
+	if len(second.Findings) != 1 || second.Findings[0].Name != "document-drift" || shown(second, *alpha.Earlier) != reviewPack || shown(second, alpha.Now) != edited {
 		t.Fatalf("the edit was reviewed as %+v", second)
 	}
 	lock := readFile(t, filepath.Join(row.Folder, "jpack.lock.json"))
