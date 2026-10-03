@@ -2319,6 +2319,9 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "upgrade: a confirmation's token is not checked" "$UP" \
     '	if err != nil || plan.upgraded == nil || !hmac.Equal([]byte(s.upgradeToken(plan)), []byte(token)) {' \
     '	if err != nil || plan.upgraded == nil {'
+  mutate go "upgrade: a project with nothing to change is confirmed" "$UP" \
+    '	if err != nil || plan.upgraded == nil || !hmac.Equal([]byte(s.upgradeToken(plan)), []byte(token)) {' \
+    '	if err != nil || !hmac.Equal([]byte(s.upgradeToken(plan)), []byte(token)) {'
   mutate go "upgrade: a token is not bound to its desk" "$UP" \
     '	}{"upgrade", s.cfg.deskID, s.projectDir, plan.snap.set, lock, plan.upgraded.set.Config, ignore, plan.audit})
 	mac := hmac.New(sha256.New, s.reviewKey[:])' \

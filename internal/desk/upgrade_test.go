@@ -670,6 +670,11 @@ func TestAGatedDeskHasNothingToUpgrade(t *testing.T) {
 	if answer := readUpgrade(t, ts, row.ID, true); answer.State != "unchanged" || !answer.Gated || answer.ComparableFacts != "on" || answer.Token != "" {
 		t.Errorf("a gated desk's offer answered %+v", answer)
 	}
+	before := treeOf(t, row.Folder)
+	if status, data := confirmUpgrade(t, ts, row.ID, strings.Repeat("0", 64), true); status != http.StatusConflict {
+		t.Errorf("a confirmation with nothing to change answered %d %s", status, data)
+	}
+	sameProject(t, before, treeOf(t, row.Folder), "a confirmation with nothing to change")
 }
 
 // The startup desk upgrades only its own jpack.json; a named desk made before
