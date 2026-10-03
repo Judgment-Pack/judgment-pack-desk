@@ -610,9 +610,9 @@ func TestJobsRefusesAnyOtherVerificationVersion(t *testing.T) {
 // Runner's MaxExportSize: what verify-run reads of an export. Every other
 // route keeps the ordinary limit.
 func TestJobsReadsAnExportUpToRunnersLimit(t *testing.T) {
-	// Runner v0.4.0's MaxExportSize, read from its source. Desk cannot import it.
-	if runnerExportLimit != 19573436 {
-		t.Fatal("Runner's MaxExportSize is 19573436, not", runnerExportLimit)
+	// Runner v0.5.0's MaxExportSize, read from its source. Desk cannot import it.
+	if runnerExportLimit != 19596893 {
+		t.Fatal("Runner's MaxExportSize is 19596893, not", runnerExportLimit)
 	}
 	size := 0
 	companion := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

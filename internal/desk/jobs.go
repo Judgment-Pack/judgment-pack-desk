@@ -306,17 +306,23 @@ var (
 // runnerAnswerLimit is the most of a Runner answer Desk reads on most routes.
 const runnerAnswerLimit = 16 << 20
 
-// runnerExportLimit is Runner's MaxExportSize (v0.4.0, internal/runner/
+// runnerExportLimit is Runner's MaxExportSize (v0.5.0, internal/runner/
 // audit_bytes.go), the most of a verification export its verify-run reads:
-// version 2's 8 MiB, and version 3's member carrying the audit record's bytes,
-// at most 8 MiB of them in base64. Desk saves the answer as it comes, so an
+// version 2's 8 MiB; from version 3 on, the member carrying the audit record's
+// bytes, at most 8 MiB of them in base64; from version 4 on, the member
+// carrying the run's chain entry, at most 1024 bytes in base64, and its
+// checkpoint; and in version 5, the member carrying the record's signature
+// sidecar, at most 16 KiB in base64. Desk saves the answer as it comes, so an
 // answer within this limit is a file that verify-run reads, by size, and a
-// larger one is not. A run is a member of its own version-3 export: it carries
-// the record twice, parsed and as those bytes, so it too can pass
-// runnerAnswerLimit, but never its export's size. It is read to the same
+// larger one is not. A run is a member of its own version-5 export: it carries
+// the record twice, parsed and as those bytes, and its sidecar, so it too can
+// pass runnerAnswerLimit, but never its export's size. It is read to the same
 // limit, since the download is on the run's page, which a run Desk refused
 // to read would leave out of reach.
-const runnerExportLimit = 8<<20 + len(`,"auditBytes":""`) + (8<<20+2)/3*4
+const runnerExportLimit = 8<<20 + len(`,"auditBytes":""`) + (8<<20+2)/3*4 +
+	len(`,"chain":{"entry":"","checkpoint":}`) + (1024+2)/3*4 +
+	len(`{"checkpointVersion":"1","recordDigest":"sha256:","sequence":,"trail":""}`) + 64 + len("9007199254740990") + 32 +
+	len(`,"auditSignatures":""`) + (16<<10+2)/3*4
 
 // verificationVersion is the export version a request on a run's verification
 // route asks Runner for: "" for none, which Runner answers with version 2, or

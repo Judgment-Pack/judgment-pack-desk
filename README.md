@@ -241,10 +241,17 @@ person's approval, and it records no name.
 
 - It holds: each completed deciding run against the project adds one line,
   with the pack's digest, the inputs and the disposition.
-- It says nothing about rehearsals, tests or refusals, which write nothing. A
-  line is not signed or chained, its time is the operator's clock, and anyone
-  who can write the project can change it. Runtime ADR-0047 is the design for
-  defensible records; Desk's part is tracked in issue #186 and is not built.
+- It says nothing about rehearsals, tests or refusals, which write nothing.
+  Its time is the operator's clock, and anyone who can write the project can
+  change it.
+- The runtime Desk pins (0.26.0) chains each line to the one before it, over
+  its exact bytes (runtime ADR-0047). A change then shows only against a
+  checkpoint someone else held from before it. Desk takes, shows and hands
+  over no checkpoint, and gives no signing key: its part is
+  [ADR-0010](docs/adr/0010-defensible-decision-records.md), not built yet.
+- A `JPACK_SIGNING_KEY` set where Desk was started reaches every runtime Desk
+  starts, for every desk, and the runtime can sign their records with it.
+  ADR-0010 removes it for desks Desk made.
 - The folder is private: owner-only, never committed (`.desk-private/` is in a
   new desk's `.gitignore`), not shown or editable in Desk's file editor, and in
   no backup. Losing the desk's folder loses its records.

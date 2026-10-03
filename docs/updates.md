@@ -10,12 +10,20 @@ Runtime and pack. Upgrading Desk does not reinterpret those jobs.
 repository identities, exact commits and channels. Go embeds it; the Gateway
 builder, Jobs compatibility CI and release packager read it. Development pins
 are held rather than replaced with an older published release. A stable Desk
-release refuses development pins. Runner is pinned to `v0.4.0`, including calculator profiles, bindings,
-calculated input lineage and verification export version 3, which Desk's verification download
-asks for.
+release refuses development pins. Runner is pinned to `v0.5.0`, including calculator profiles, bindings,
+calculated input lineage, verification export versions 3 to 5, and the installation's chain
+of runs. Desk's verification download asks for version 3. Desk does not yet fetch versions
+4 or 5, pass `GET /v1/run-chain` through, or give Runner a signing key
+([ADR-0010](adr/0010-defensible-decision-records.md), PRs 3 and 8).
 
-Gateway is pinned to `v0.8.1` and includes `adapter-render`, required by its
-local source plan. Its Drive connection uses whole-Drive consent and Desk
+Runtime is pinned to `v0.26.0`, which chains a project's audit trail over its exact bytes
+by default, and signs it where a key is set (runtime ADR-0047). Desk does not yet show,
+verify or hand over the trail ([ADR-0010](adr/0010-defensible-decision-records.md)).
+
+Gateway is pinned to `v0.9.0` and includes `adapter-render`, required by its
+local source plan. It refuses to start where another user could replace an adapter it
+launches, or a link to its seed or credentials; the bundle's adapters, owned by the
+user who runs Desk, pass. Its Drive connection uses whole-Drive consent and Desk
 search-and-select. Upgrade the catalog, selection UI and relay together with
 the pin. Older Drive connections may report `reconnect-required` even while
 status says connected; reconnect explicitly to grant the new scope.
