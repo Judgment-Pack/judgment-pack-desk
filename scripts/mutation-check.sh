@@ -2101,6 +2101,187 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "tested releases: policy off left out of the desk-config answer" internal/desk/assistant.go \
     'RequireTestedReleases bool `json:"requireTestedReleases"`' \
     'RequireTestedReleases bool `json:"requireTestedReleases,omitempty"`'
+
+  # **Review and lock (ADR-0009, section 2).** The review passes the
+  # runtime's findings through and shows an earlier copy only for exactly the
+  # bytes the lock names; the lock takes a confirmation this page sent, of
+  # exactly the files as they are, and anything that moves while the runtime
+  # locks puts the previous lock back. review_test.go drives a stand-in
+  # runtime by absolute path.
+  RV=internal/desk/review.go
+  mutate go "review: a cross-site request can lock" "$RV" \
+    '	if r.Header.Get("Sec-Fetch-Site") == "cross-site" {' \
+    '	if false {'
+  mutate go "review: a confirmation need not be JSON" "$RV" \
+    '	if err != nil || media != "application/json" {' \
+    '	if _ = media; false {'
+  mutate go "review: a confirmation may carry other members" "$RV" \
+    '	if err != nil || decodeDataJSON(data, &request) != nil || len(request.Token) != 64 {' \
+    '	if err != nil || json.Unmarshal(data, &request) != nil || len(request.Token) != 64 {'
+  # **What the owner confirms is what the owner was shown.** One reading is
+  # the review: the contents shown, the token, and the runtime's findings,
+  # taken over a private copy of it. The token names the desk, the reading's
+  # digests and the lock's bytes, and a confirmation is honoured only if a
+  # fresh reading gives the same one.
+  mutate go "review: a confirmation's token is not checked" "$RV" \
+    '	if err != nil || !hmac.Equal([]byte(s.reviewToken(snap)), []byte(token)) {' \
+    '	if err != nil {'
+  mutate go "review: a token is not bound to its desk" "$RV" \
+    '	}{s.cfg.deskID, s.projectDir, snap.set, lock})
+	mac := hmac.New(sha256.New, s.reviewKey[:])' \
+    '	}{"", "", snap.set, lock})
+	mac := hmac.New(sha256.New, nil)'
+  mutate go "review: a token does not cover the files" "$RV" \
+    '	}{s.cfg.deskID, s.projectDir, snap.set, lock})' \
+    '	}{s.cfg.deskID, s.projectDir, reviewSet{}, lock})'
+  mutate go "review: a token does not cover the lock" "$RV" \
+    '		lock = sha256Digest(snap.lock)' \
+    '		lock = "present"'
+  mutate go "review: the files shown are read again" "$RV" \
+    '		answer.Files = append(answer.Files, file(doc.entry.Kind, doc.entry.ID, doc.entry.Path, doc.entry.Digest, entries[doc.entry.ID].Digest, doc.data))' \
+    '		answer.Files = append(answer.Files, file(doc.entry.Kind, doc.entry.ID, doc.entry.Path, doc.entry.Digest, entries[doc.entry.ID].Digest, func() []byte { data, _ := s.readReviewFile(doc.clean); return data }()))'
+  mutate go "review: the runtime verifies the project, not the reading" "$RV" \
+    '		verified, err = s.verifySnapshot(ctx, snap)' \
+    '		verified, err = s.runVerify(ctx, dir)'
+  # **Every budget is checked before the read it bounds.** Each distinct
+  # file is read once; none past reviewTextLimit; all together none past
+  # reviewReadingLimit; entries past reviewEntryLimit stop the reading before
+  # any document; earlier copies past reviewEarlierLimit are not read.
+  mutate go "review: a file too large to show is read whole" "$RV" \
+    '	limit := reviewTextLimit
+	if remaining := reviewReadingLimit - r.retained; remaining < limit {' \
+    '	limit := maxFileBytes
+	if remaining := reviewReadingLimit - r.retained; remaining < limit {'
+  mutate go "review: the reading budget is checked late" "$RV" \
+    '	if remaining := reviewReadingLimit - r.retained; remaining < limit {' \
+    '	if remaining := reviewReadingLimit - r.retained; false && remaining < limit {'
+  mutate go "review: one file is read again for each id" "$RV" \
+    '	if data, ok := r.files[clean]; ok {' \
+    '	if data, ok := r.files[clean]; ok && false {'
+  mutate go "review: entries past the limit are read" "$RV" \
+    '	if len(declared.Packs)+len(declared.Graphs) > reviewEntryLimit {' \
+    '	if false {'
+  mutate go "review: a file that is not text is shown" "$RV" \
+    '	case !utf8.Valid(data):' \
+    '	case false:'
+  mutate go "review: the earlier copies are not bounded" "$RV" \
+    '	if remaining := reviewEarlierLimit - e.shown; remaining < limit {' \
+    '	if remaining := reviewEarlierLimit - e.shown; false && remaining < limit {'
+  mutate go "review: the lock is not checked against the reading" "$RV" \
+    '			if pinned, _, err := lockedSet(after); err == nil && pinned.equal(snap.set) {' \
+    '			if _, _, err := lockedSet(after); err == nil {'
+  mutate go "review: the lock's configuration digest is not compared" "$RV" \
+    '	if a.Config != b.Config || len(a.Entries) != len(b.Entries) {' \
+    '	if len(a.Entries) != len(b.Entries) {'
+  mutate go "review: the lock's graphs are not read" "$RV" \
+    '	for kind, entries := range map[string]map[string]lockEntry{"pack": lock.Packs, "graph": lock.Graphs} {
+		for id, entry := range entries {
+			set.Entries' \
+    '	for kind, entries := range map[string]map[string]lockEntry{"pack": lock.Packs} {
+		for id, entry := range entries {
+			set.Entries'
+  mutate go "review: the review reads the lock's packs for a graph" "$RV" \
+    '			entries = lock.Graphs' \
+    '			entries = lock.Packs'
+  mutate go "review: the previous lock is not put back" "$RV" \
+    '		return s.atomicWrite(runtimeLockName, previous)' \
+    '		return nil'
+  mutate go "review: a lock is left where there was none" "$RV" \
+    '	if err := s.root.Remove(runtimeLockName); err != nil && !errors.Is(err, fs.ErrNotExist) {' \
+    '	if err := error(nil); err != nil {'
+  mutate go "review: a refused lock is trusted" "$RV" \
+    '&& answer.Command == "packs lock" && answer.Status == "valid" && err == nil {' \
+    '&& answer.Command == "packs lock" {'
+  # **The review reads by the file API's rules**: a private, excluded or
+  # linked path is refused for the configuration, the documents and the lock.
+  mutate go "review: a review read follows a link" "$RV" \
+    '	if err := s.refuseSymlinkedPath(clean); err != nil {
+		return nil, err
+	}
+	data, _, err := s.readThroughRootWithin(clean, limit)' \
+    '	data, _, err := s.readThroughRootWithin(clean, limit)'
+  mutate go "review: no copies are kept" "$RV" \
+    '	if err := s.storeReviewedCopies(snap); err != nil {' \
+    '	if err := error(nil); err != nil {'
+  mutate go "review: a copy of other bytes is shown" "$RV" \
+    '	if err != nil || sha256Digest(data) != digest || !utf8.Valid(data) {
+		return reviewSide{State: "no-copy"}' \
+    '	if err != nil || !utf8.Valid(data) {
+		return reviewSide{State: "no-copy"}'
+  mutate go "review: the copies folder is not owner-only" "$RV" \
+    '			if err = current.Mkdir(part, custodyDirMode); err != nil && !errors.Is(err, fs.ErrExist) {' \
+    '			if err = current.Mkdir(part, 0o755); err != nil && !errors.Is(err, fs.ErrExist) {'
+  mutate go "review: a copies folder open to others is trusted" "$RV" \
+    '		if err == nil && info.Mode().Perm()&0o077 != 0 {' \
+    '		if false {'
+  mutate go "review: the copies folder does not ignore itself" "$RV" \
+    '	if made {' \
+    '	if made && false {'
+  # **Three layers refuse a link, and each alone is enough**: the type check
+  # on the Lstat, the mode a link reports, and the identity check between what
+  # was inspected and what was opened. So the row breaks all three.
+  mutate go "review: copies are kept through a link" "$RV" \
+    '		if err == nil && (!info.IsDir() || info.Mode()&fs.ModeSymlink != 0) {
+			err = fmt.Errorf("%s is not a directory Desk can keep copies in", part)
+		}
+		if err == nil && info.Mode().Perm()&0o077 != 0 {
+			err = fmt.Errorf("%s is open to other users (%v), so Desk does not keep copies in it", part, info.Mode().Perm())
+		}
+		if err == nil {
+			err = ownedByUs(part, info)
+		}
+		var next *os.Root
+		if err == nil {
+			next, err = current.OpenRoot(part)
+		}
+		if err == nil {
+			if held, statErr := next.Stat("."); statErr != nil || !os.SameFile(info, held) {' \
+    '		if _ = info; false {
+			err = fmt.Errorf("%s is not a directory Desk can keep copies in", part)
+		}
+		if false {
+			err = fmt.Errorf("%s is open to other users (%v), so Desk does not keep copies in it", part, info.Mode().Perm())
+		}
+		if err == nil {
+			err = ownedByUs(part, info)
+		}
+		var next *os.Root
+		if err == nil {
+			next, err = current.OpenRoot(part)
+		}
+		if err == nil {
+			if held, statErr := next.Stat("."); statErr != nil && held == nil {'
+  # **The startup desk reviews only its own jpack.json, by path.** A hard link
+  # from another directory is the same file in another project.
+  mutate go "review: the startup desk reviews another configuration" "$RV" \
+    '	if named == "" || configNamesProject(named, s.projectDir, s.project.info) {' \
+    '	if true {'
+  mutate go "review: a JPACK_CONFIG in another directory passes" "$RV" \
+    '	if err != nil || dir != projectDir {
+		return false
+	}
+	there, err := os.Stat(filepath.Dir(named))
+	if err != nil || !os.SameFile(there, project) {' \
+    '	if err != nil && dir == "" {
+		return false
+	}
+	there, err := os.Stat(filepath.Dir(named))
+	if err != nil && there == nil {'
+  mutate go "review: a JPACK_CONFIG of another name passes" "$RV" \
+    '	if filepath.Base(named) != runtimeConfigName {' \
+    '	if false {'
+  mutate go "review: a JPACK_CONFIG that is a link passes" "$RV" \
+    '	return err == nil && file.Mode().IsRegular()' \
+    '	return err == nil && file != nil'
+  mutate go "review: verify searches for its configuration" "$RV" \
+    '"packs", "verify", "--config", runtimeConfigName, "--format", "json")' \
+    '"packs", "verify", "--format", "json")'
+  mutate go "review: lock searches for its configuration" "$RV" \
+    '"packs", "lock", "--config", runtimeConfigName, "--format", "json")' \
+    '"packs", "lock", "--format", "json")'
+  mutate go "review: the runtime's detail is dropped" "$RV" \
+    '	Detail string `json:"detail,omitempty"`' \
+    '	Detail string `json:"-"`'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -8188,6 +8369,52 @@ export function assistantTransport(id: string): Transport {
   mutate web "tested releases: Runner's refusal not shown in place of the job" web/src/jobs/JobsView.tsx \
     "      if (e instanceof JobsRequestError && e.code === 'release_untested') {" \
     "      if (e instanceof JobsRequestError && e.code === 'release_untested_never') {"
+
+  # **Review and lock on the page.** The runtime's findings in plain words,
+  # never dropped; a diff only where the desk kept the locked bytes; and a
+  # lock only on the owner's confirmation, of exactly the set shown.
+  RF=web/src/packs/review/findings.ts
+  RC=web/src/packs/review/client.ts
+  RVV=web/src/packs/review/ReviewAndLockView.tsx
+  mutate web "review: a finding is given other words" "$RF" \
+    "    case 'document-drift': return msg('Changed since the last lock')" \
+    "    case 'document-drift': return name"
+  mutate web "review: an unknown finding is dropped" "$RF" \
+    "    default: return name" \
+    "    default: return ''"
+  mutate web "review: a graph's finding is shown beside a pack" "$RF" \
+    "    if (finding.kind !== 'pack' || !finding.id) continue" \
+    "    if (!finding.id) continue"
+  mutate web "review: a finding is put beside another file" "$RF" \
+    "    : finding.kind === file.kind && finding.id === file.id)" \
+    "    : finding.id === file.id)"
+  mutate web "review: the confirmation does not carry the token" "$RC" \
+    "body: JSON.stringify({ token }) })" \
+    "body: JSON.stringify({}) })"
+  mutate web "review: a stale confirmation reads as any failure" "$RC" \
+    "  return body.code === 'stale' ? new StaleReview(message) : new Error(message)" \
+    "  return new Error(message)"
+  mutate web "review: a file is left out of the review" "$RVV" \
+    "{review.files.map(file => <File" \
+    "{review.files.slice(1).map(file => <File"
+  mutate web "review: a first lock's files are shown closed" "$RVV" \
+    "  const open = !review.locked || found.length > 0 || file.lock !== 'same'" \
+    "  const open = found.length > 0"
+  mutate web "review: a diff is drawn without the locked bytes" "$RVV" \
+    "    {before !== undefined && after !== undefined" \
+    "    {after !== undefined"
+  mutate web "review: a lock is offered when every file matches" "$RVV" \
+    "            : review.token && !matches && <section" \
+    "            : review.token && <section"
+  mutate web "review: a lock is offered over a file that cannot be shown" "$RVV" \
+    "          {review.blocked ? <Alert" \
+    "          {false ? <Alert"
+  mutate web "review: the step is not shown again after a stale confirmation" "$RVV" \
+    "      await client.invalidateQueries({ queryKey: REVIEW_KEY })" \
+    "      void client"
+  mutate web "review: no finding beside a pack's name" web/src/packs/PacksPane.tsx \
+    "                {pack.status!=='draft' && findings.get(pack.id)?.map(" \
+    "                {false && findings.get(pack.id)?.map("
 fi
 
 restore

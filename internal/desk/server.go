@@ -141,6 +141,11 @@ type Server struct {
 	// deskCreations is how many desks are being made, which count toward
 	// the registry's bound while the lock is released (`createDesk`).
 	deskCreations int
+	// reviewMu serializes this desk's lock confirmations (`handleReviewLock`).
+	reviewMu sync.Mutex
+	// reviewKey is this desk's own key for review tokens (`reviewToken`):
+	// random per process, so a token names one desk and does not outlive it.
+	reviewKey [32]byte
 
 	updates *updateService
 	builds  ComponentBuilds
@@ -342,6 +347,8 @@ func New(cfg Config) (*Server, error) {
 		// use to read a pack; what is withdrawn is the ability to keep a key.
 		s.log.Printf("desk: no assistant key will be kept: %v", s.assistant.problem)
 	}
+	// crypto/rand never fails, and never returns short (Go 1.24 and later).
+	_, _ = rand.Read(s.reviewKey[:])
 	// The startup project keeps an inherited JPACK_CONFIG (`runtimeEnv`).
 	// Said once, because Desk's editor shows this project's own jpack.json.
 	if path := strings.TrimSpace(os.Getenv(runtimeConfigEnv)); path != "" && cfg.deskID == "" {
@@ -414,6 +421,8 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("POST /api/connections/{provider}/{method}", s.handleConnections)
 	s.mux.HandleFunc("GET /api/attachments/{id}", s.handleAttachment)
 	s.mux.HandleFunc("PUT /api/attachments/{id}", s.handleAttachment)
+	s.mux.HandleFunc("GET /api/review", s.handleReview)
+	s.mux.HandleFunc("POST /api/review/lock", s.handleReviewLock)
 	s.mux.HandleFunc("GET /api/source-reviews", s.handleSourceReviews)
 	s.mux.HandleFunc("PUT /api/source-reviews", s.handleSourceReviews)
 	s.mux.HandleFunc("GET /api/briefs", s.handlePackTests)

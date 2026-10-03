@@ -26,6 +26,8 @@ import { moveFocus, useWindowedRows } from './useWindowedRows'
 import { usePackFolders } from './folders/FolderContext'
 import { ALL_PACKS, HOME_FOLDER, inFolder, packFolder, folderPath } from './folders/model'
 import { FolderLocation, FolderFeedback, SubfolderRows, NewFolderButton, MovePackButton, ShowFolders } from './folders/FolderBrowser'
+import { findingWords, packFindings } from './review/findings'
+import { useReview } from './review/ReviewContext'
 
 function draftDescription(value: unknown): string | undefined { const text=(value as {description?:unknown}|null)?.description;return typeof text==='string'?text:undefined }
 function isSpelled(value: string | undefined): value is string {
@@ -43,6 +45,8 @@ export function PacksPane({ active = true }: { active?: boolean }) {
   const drafts = packDrafts.filter(item=>!item.finalized)
   const total = (data?.packs?.length ?? 0)+drafts.length
   const folders = usePackFolders()
+  const review = useReview()
+  const findings = useMemo(() => packFindings(review?.data), [review?.data])
   const folderScope = folders?.query.data && !folders.query.isError ? folders.selected : ALL_PACKS
   const createHref = folders ? `/packs/new?folder=${encodeURIComponent(folders.selected === ALL_PACKS ? HOME_FOLDER : folders.selected)}` : '/packs/new'
   const [filter, setFilter] = useState('')
@@ -120,7 +124,7 @@ export function PacksPane({ active = true }: { active?: boolean }) {
   return <article className={styles.pane} data-layout={active ? 'page' : undefined} aria-label={msg("Pack collection")}>
     <PageHeader title={msg("Packs")} variant="collection"
       navigation={<PacksNavigation leading={<ShowFolders/>} count={isSuccess ? total : undefined} />}
-      actions={<><NewFolderButton/><ButtonLink to={createHref} variant="primary">{msg("Create pack")}</ButtonLink></>} />
+      actions={<><NewFolderButton/>{review && <ButtonLink to="/packs/_review">{msg('Review and lock')}</ButtonLink>}<ButtonLink to={createHref} variant="primary">{msg("Create pack")}</ButtonLink></>} />
     <FolderLocation/><FolderFeedback/>
     <div className={styles.controls} role="group" aria-label={msg("Pack list controls")}>
       <Input className={styles.search} type="search" aria-label={msg("Search packs")} value={filter}
@@ -182,6 +186,7 @@ export function PacksPane({ active = true }: { active?: boolean }) {
                 {isSpelled(pack.detail) && <span className={styles.issue} role="img" aria-label={pack.detail}>!</span>}
               </span>
               <span className={isSpelled(pack.detail) ? styles.rowDetail : styles.description} data-overflow-text>
+                {pack.status!=='draft' && findings.get(pack.id)?.map(finding => <small key={finding.name} className={styles.reviewBadge} data-finding={finding.name}>{findingWords(finding.name)}</small>)}
                 {folders && (folderScope === ALL_PACKS || filter) && <>{folderPath(folders.document,packFolder(folders.document,pack.id))} · </>}{isSpelled(pack.detail) ? pack.detail : isSpelled(pack.description) ? pack.description : ''}
               </span>
               <span className={styles.version} data-overflow-text>{isSpelled(pack.packVersion) ? msg("v{{value0}}", { value0: pack.packVersion }) : '—'}</span>

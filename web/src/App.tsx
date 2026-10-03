@@ -13,6 +13,7 @@ import { PackTests } from './routes/PackTests'
 import { PackView } from './routes/PackView'
 import { PacksIndex } from './routes/PacksIndex'
 import { PacksLayout } from './routes/PacksLayout'
+import { ReviewAndLockView } from './packs/review/ReviewAndLockView'
 import { AppShell } from './shell/AppShell'
 import { BlockedNotice, ConnectionNotices, useBlockingError } from './shell/ConnectionNotices'
 
@@ -51,6 +52,7 @@ export function App() {
           <Route path="/packs" element={<PacksLayout />}>
             <Route index element={<PacksIndex />} />
             <Route path="new" element={<NewPackView />} />
+            <Route path="_review" element={<ReviewAndLockView />} />
             <Route path="drafts/:draftId" element={<DraftPackView />} />
             <Route path=":packId" element={<PackView />} />
             <Route path=":packId/evaluate" element={<PackTests />} />

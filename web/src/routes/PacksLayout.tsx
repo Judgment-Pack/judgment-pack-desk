@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { PacksPane } from '../packs/PacksPane'
 import styles from './PacksLayout.module.css'
 import { PackFoldersProvider, usePackFolders } from '../packs/folders/FolderContext'
+import { ReviewProvider } from '../packs/review/ReviewContext'
 import { FolderFrame, FolderLocation, FolderFeedback, MovePackButton, ShowFolders } from '../packs/folders/FolderBrowser'
 import { packFolder } from '../packs/folders/model'
 import { assignCreatedPack, FOLDERS_KEY } from '../packs/folders/client'
@@ -13,12 +14,13 @@ import { Button } from '../ui/Button'
 import { msg, systemMessage, useLocale } from '../i18n'
 
 export function PacksLayout() {
-  return <div className={styles.layout} data-measure="full" data-layout="page"><PackFoldersProvider><FolderFrame><PacksContent/></FolderFrame></PackFoldersProvider></div>
+  return <div className={styles.layout} data-measure="full" data-layout="page"><PackFoldersProvider><ReviewProvider><FolderFrame><PacksContent/></FolderFrame></ReviewProvider></PackFoldersProvider></div>
 }
 function PacksContent() {
  useLocale()
  const {packId,draftId}=useParams(), folders=usePackFolders()!
- const location=useLocation(), open=Boolean(packId||draftId||location.pathname==='/packs/new')
+ // `_review` cannot be a pack's decision id, which begins with a lowercase letter.
+ const location=useLocation(), open=Boolean(packId||draftId||location.pathname==='/packs/new'||location.pathname==='/packs/_review')
  const selected=folders.query.data?packFolder(folders.document,packId??''):undefined
  return <>
   <div className={styles.collection} hidden={open}><PacksPane active={!open}/></div>

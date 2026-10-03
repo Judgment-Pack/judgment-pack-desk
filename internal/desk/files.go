@@ -746,6 +746,12 @@ func isExcludedName(name string) bool {
 // from being read at all, and it is checked on the handle rather than on the
 // name.
 func (s *Server) readThroughRoot(clean string) ([]byte, int, error) {
+	return s.readThroughRootWithin(clean, maxFileBytes)
+}
+
+// readThroughRootWithin is readThroughRoot with a smaller bound: it reads at
+// most limit+1 bytes, and refuses a file larger than limit.
+func (s *Server) readThroughRootWithin(clean string, limit int) ([]byte, int, error) {
 	// O_NONBLOCK so that a FIFO does not block the open itself: the type check
 	// below can only decide if it gets to run.
 	f, err := s.root.OpenFile(osPath(clean), os.O_RDONLY|openNonBlocking, 0)
@@ -788,13 +794,13 @@ func (s *Server) readThroughRoot(clean string) ([]byte, int, error) {
 	}
 	// Bounded by the reader, not by the size the metadata claimed: a file that
 	// grows between the stat and the read would otherwise be unbounded.
-	data, err := io.ReadAll(io.LimitReader(f, maxFileBytes+1))
+	data, err := io.ReadAll(io.LimitReader(f, int64(limit)+1))
 	if err != nil {
 		return nil, http.StatusInternalServerError, err
 	}
-	if len(data) > maxFileBytes {
+	if len(data) > limit {
 		return nil, http.StatusRequestEntityTooLarge, withCode(CodeTooLarge, fmt.Errorf(
-			"%s is larger than %d bytes, which is the most this editor reads", clean, maxFileBytes))
+			"%s is larger than %d bytes, which is the most this editor reads", clean, limit))
 	}
 	return data, http.StatusOK, nil
 }

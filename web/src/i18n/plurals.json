@@ -15,5 +15,9 @@
   "The {{layers}} layers did not run.": "The {{layers}} layer did not run.",
   "Running the runtime’s {{prompt}} prompt over {{count}} diagnostics.": "Running the runtime’s {{prompt}} prompt over {{count}} diagnostic.",
   "{{count}} characters": "{{count}} character",
-  "Attach {{count}} items": "Attach {{count}} item"
+  "Attach {{count}} items": "Attach {{count}} item",
+  "This lock covers {{count}} files: jpack.json and every pack and graph it declares.": "This lock covers {{count}} file: jpack.json and every pack and graph it declares.",
+  "Confirm and lock {{count}} differences": "Confirm and lock {{count}} difference",
+  "Locked. These {{count}} files are now this project’s reviewed set.": "Locked. This {{count}} file is now this project’s reviewed set.",
+  "Confirm and lock {{count}} files": "Confirm and lock {{count}} file"
 }
