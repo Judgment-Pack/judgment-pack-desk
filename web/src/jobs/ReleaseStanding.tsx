@@ -44,9 +44,20 @@ function Findings({ findings, id }: { findings: ReviewFinding[]; id: string }) {
 export function ReleaseStanding({ release, packId }: { release: Release; packId: string }) {
   useLocale()
   // One reading per release: a release checked again is compared afresh, and
-  // a lock confirmed in the review step invalidates this with the review.
-  const query = useQuery({ queryKey: [...REVIEW_KEY, 'release', release.id, packId], queryFn: ({ signal }) => readReleaseStanding(release.pack, packId, signal), retry: false, staleTime: 0, refetchOnWindowFocus: true })
-  const standing: Standing | undefined = query.error ? { state: 'unreadable', reason: query.error.message } : query.data
+  // a lock confirmed in the review step invalidates this with the review, as
+  // does any change to the project's files.
+  //
+  // **A reading is a claim only while it is the current one.** `staleTime` is
+  // infinite so that stale means invalidated and nothing else; every mount
+  // and every return to the window reads again regardless. While a
+  // replacement is being read, or its read is paused, or it is owed and not
+  // yet started, the previous answer is withdrawn and the step says it is
+  // checking; a replacement that fails says it does not know. Nothing is ever
+  // shown from a reading that is not the latest, and successful, one.
+  const query = useQuery({ queryKey: [...REVIEW_KEY, 'release', release.id, packId], queryFn: ({ signal }) => readReleaseStanding(release.pack, packId, signal), retry: false, staleTime: Infinity, refetchOnMount: 'always', refetchOnWindowFocus: 'always' })
+  const standing: Standing | undefined = query.fetchStatus !== 'idle' ? undefined
+    : query.error ? { state: 'unreadable', reason: query.error.message }
+      : query.isStale ? undefined : query.data
   const review = <Link to="/packs/_review">{msg('Review and lock')}</Link>
   return <div className={styles.readiness} data-standing={standing?.state ?? 'checking'}>
     <div className={styles.readinessHeading}><h3>{msg('Project reviewed set')}</h3><span data-label>{label(standing)}</span></div>

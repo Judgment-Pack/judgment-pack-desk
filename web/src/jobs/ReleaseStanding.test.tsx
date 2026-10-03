@@ -6,8 +6,8 @@
  * for that pack are shown in the review step's words.
  */
 import { createHash } from 'node:crypto'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { deskFetch } from '../files/client'
@@ -40,7 +40,7 @@ const configDrift: ReviewFinding = { name: 'config-drift', path: 'jpack.json', d
 const alphaDrift: ReviewFinding = { name: 'document-drift', kind: 'pack', id: 'alpha', path: 'packs/alpha.json', detail: 'The pack document’s bytes differ from the reviewed set.' }
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
-let answer: () => Response
+let answer: () => Response | Promise<Response>
 beforeEach(() => {
   answer = () => json(200, review(sha(bytes)))
   vi.mocked(deskFetch).mockImplementation(async url => {
@@ -116,7 +116,9 @@ describe('the comparison', () => {
 })
 
 function show(packId = 'alpha') {
-  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter><ReleaseStanding release={release} packId={packId} /></MemoryRouter></QueryClientProvider>)
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<QueryClientProvider client={client}><MemoryRouter><ReleaseStanding release={release} packId={packId} /></MemoryRouter></QueryClientProvider>)
+  return client
 }
 const shown = async (state: Standing['state']) => {
   await waitFor(() => expect(document.querySelector('[data-standing]')?.getAttribute('data-standing')).toBe(state))
@@ -187,5 +189,75 @@ describe('the display', () => {
     expect(text).not.toContain('Desk compared')
     expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.getByText(meaning)).toBeTruthy()
+  })
+})
+
+/**
+ * A claim holds only while its reading is the current one. A file change
+ * invalidates every query and reads it again; a return to the window reads it
+ * again; either may be slow, paused, or fail. Until the replacement has
+ * arrived, the previous answer is withdrawn.
+ */
+describe('a reading that is no longer current', () => {
+  const unreadable = 'This project’s runtime reads jpack.other.json, which JPACK_CONFIG names, and not this project’s jpack.json, so Desk does not review or lock it here.'
+  /** The next answer, held until the test lets it go. */
+  function held(body: unknown) {
+    let open!: () => void
+    const gate = new Promise<void>(resolve => { open = resolve })
+    answer = async () => { await gate; return json(200, body) }
+    return open
+  }
+  const refreshes = [
+    ['a file change invalidates it', (client: QueryClient) => client.invalidateQueries()],
+    ['the page reads it again', (client: QueryClient) => client.refetchQueries()],
+  ] as const
+
+  it.each(refreshes)('withdraws the claim while %s, and shows only the answer that replaces it', async (_, refresh) => {
+    const client = show()
+    await shown('reviewed')
+    const open = held(review(sha(other)))
+    await act(async () => { void refresh(client) })
+    await waitFor(() => expect(label()).toBe('Checking…'))
+    expect(document.querySelector('[data-standing]')?.getAttribute('data-standing')).toBe('checking')
+    expect(screen.queryByText(/The lock pins these exact bytes/)).toBeNull()
+    open()
+    expect(await shown('draft')).toContain('The lock pins other bytes for alpha.')
+    expect(label()).toBe('Draft')
+  })
+
+  it('withdraws the claim while a read is paused', async () => {
+    const client = show()
+    await shown('reviewed')
+    answer = () => json(200, review(sha(other)))
+    onlineManager.setOnline(false)
+    try {
+      await act(async () => { void client.refetchQueries() })
+      await waitFor(() => expect(client.getQueryCache().getAll().some(query => query.state.fetchStatus === 'paused')).toBe(true))
+      expect(label()).toBe('Checking…')
+      expect(screen.queryByText(/The lock pins these exact bytes/)).toBeNull()
+    } finally {
+      onlineManager.setOnline(true)
+    }
+    await shown('draft')
+  })
+
+  it('withdraws the claim once it is invalidated, before it is read again', async () => {
+    const client = show()
+    await shown('reviewed')
+    await act(async () => { await client.invalidateQueries({ refetchType: 'none' }) })
+    await waitFor(() => expect(label()).toBe('Checking…'))
+    expect(client.getQueryCache().getAll().every(query => query.state.fetchStatus === 'idle')).toBe(true)
+    expect(screen.queryByText(/The lock pins these exact bytes/)).toBeNull()
+  })
+
+  it.each(refreshes)('says it does not know when the reading that replaces a claim fails, after %s', async (_, refresh) => {
+    const client = show()
+    await shown('reviewed')
+    answer = () => json(409, { code: 'bad_request', error: unreadable })
+    await act(async () => { void refresh(client) })
+    const text = await shown('unreadable')
+    expect(label()).toBe('Not known')
+    expect(text).toContain(unreadable)
+    expect(text).not.toContain('The lock pins these exact bytes')
   })
 })

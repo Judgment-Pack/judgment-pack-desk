@@ -8477,8 +8477,23 @@ export function assistantTransport(id: string): Transport {
     "{preview && <ReleaseStanding release={validPreview} packId={preview.packId} />}" \
     "{!preview && <ReleaseStanding release={validPreview} packId={''} />}"
   mutate web "jobs standing: a review that cannot be read is never said" "$JSV" \
-    "  const standing: Standing | undefined = query.error ? { state: 'unreadable', reason: query.error.message } : query.data" \
-    "  const standing: Standing | undefined = query.data"
+    "    : query.error ? { state: 'unreadable', reason: query.error.message }" \
+    "    : query.error ? undefined"
+  # **A reading is a claim only while it is the current one.** While its
+  # replacement is read, paused or owed, the previous answer is withdrawn,
+  # and a replacement that fails says it does not know.
+  mutate web "jobs standing: a cached reading outlives a failed refresh" "$JSV" \
+    "    : query.error ? { state: 'unreadable', reason: query.error.message }" \
+    "    : query.error && !query.data ? { state: 'unreadable', reason: query.error.message }"
+  mutate web "jobs standing: a cached reading is kept while it is read again" "$JSV" \
+    "  const standing: Standing | undefined = query.fetchStatus !== 'idle' ? undefined" \
+    "  const standing: Standing | undefined = false ? undefined"
+  mutate web "jobs standing: a cached reading is kept while its read is paused" "$JSV" \
+    "  const standing: Standing | undefined = query.fetchStatus !== 'idle' ? undefined" \
+    "  const standing: Standing | undefined = query.fetchStatus === 'fetching' ? undefined"
+  mutate web "jobs standing: an invalidated reading is kept until it is read again" "$JSV" \
+    "      : query.isStale ? undefined : query.data" \
+    "      : query.data"
   mutate web "jobs standing: Runner's reviewed field is not explained" "$JSV" \
     "    <p className={styles.note}>{msg('Runner locks each release" \
     "    <p className={styles.note}>{false && msg('Runner locks each release"
