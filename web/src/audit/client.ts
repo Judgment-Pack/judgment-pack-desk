@@ -48,9 +48,12 @@ export type AuditReport = {
   doesNotEstablish: string[]
 }
 export type AuditDiagnostic = { code: string; message: string }
+/** The runtime's files a download can hand over, by the name the download takes. */
+export const TRAIL_FILES = { evaluations: 'evaluations.jsonl', signatures: 'signatures.jsonl', stamps: 'stamps.jsonl' } as const
+export type TrailFile = keyof typeof TRAIL_FILES
 export type AuditRecord =
-  | { state: 'report'; runtime?: string; report: AuditReport }
-  | { state: 'unverified'; runtime?: string; diagnostics: AuditDiagnostic[] }
+  | { state: 'report'; runtime?: string; report: AuditReport; files?: TrailFile[] }
+  | { state: 'unverified'; runtime?: string; diagnostics: AuditDiagnostic[]; files?: TrailFile[] }
   | { state: 'older-runtime'; runtime?: string; floor: string }
   | { state: 'no-trail' }
 
@@ -76,6 +79,7 @@ const isSegment = (value: unknown): value is AuditSegment => object(value) && co
 const isDiscontinuity = (value: unknown): value is AuditDiscontinuity => object(value) && count(value.line) && named(value.reason) && count(value.damagedLine) && count(value.bytes) && named(value.digest)
 const isFinding = (value: unknown): value is AuditFinding => object(value) && named(value.name) && count(value.line) && text(value.detail)
 const isDiagnostic = (value: unknown): value is AuditDiagnostic => object(value) && named(value.code) && named(value.message)
+const isTrailFile = (value: unknown): value is TrailFile => text(value) && Object.hasOwn(TRAIL_FILES, value)
 
 /**
  * A report with every member the runtime gives one, as the chassis checks it:
@@ -93,7 +97,7 @@ export function isAuditReport(value: unknown): value is AuditReport {
 }
 
 export function isAuditRecord(value: unknown): value is AuditRecord {
-  if (!object(value) || !optional(value.runtime, text)) return false
+  if (!object(value) || !optional(value.runtime, text) || !optional(value.files, item => list(item, isTrailFile))) return false
   switch (value.state) {
     case 'report': return isAuditReport(value.report)
     case 'unverified': return list(value.diagnostics, isDiagnostic) && value.diagnostics.length > 0
@@ -108,6 +112,20 @@ async function refusal(response: Response): Promise<Error> {
   try { body = await response.json() as typeof body } catch { /* The status is still an answer. */ }
   const message = text(body.error) ? body.error : msg('The decision record could not be loaded. Please try again.')
   return response.status === 409 ? new AuditUnavailable(message) : new Error(message)
+}
+
+/**
+ * One of the runtime's files, as Desk served it: the bytes on disk between two
+ * writes, read as a Blob and never as text, so nothing decodes or encodes them.
+ */
+export async function downloadTrailFile(which: TrailFile): Promise<Blob> {
+  const response = await deskFetch(`/api/audit/trail?file=${which}`)
+  if (!response.ok) {
+    let body: { error?: unknown } = {}
+    try { body = await response.json() as typeof body } catch { /* The status is still an answer. */ }
+    throw new Error(text(body.error) ? body.error : msg('The file could not be downloaded. Please try again.'))
+  }
+  return response.blob()
 }
 
 /** The runtime's check of this desk's trail, run now. */

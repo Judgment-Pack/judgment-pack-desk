@@ -2360,6 +2360,87 @@ func (b *cappedBuffer) exceeded() bool {'
 ' \
     ''
 
+  # **Downloading the trail as exact bytes (ADR-0010, section 2).** One of
+  # three files, asked for once; opened through the project's root with no
+  # link on the way and no audit directory outside the project; its size read
+  # under the lock its writer takes (the trail's for the trail and the
+  # sidecar, the stamps file's own for the stamps), within a bound; and
+  # exactly those bytes served, under the runtime's own name.
+  AT=internal/desk/audit_trail.go
+  mutate go "trail: no lock is taken" "$AT" \
+    '	unlock, err := lockAuditShared(ctx, locked, auditLockWait)' \
+    '	unlock, err := func() {}, error(nil)
+	_ = locked'
+  mutate go "trail: the sidecar is read under its own lock" "$AT" \
+    '		locked = trail' \
+    '		locked = file'
+  mutate go "trail: the stamps are read under the trail's lock" "$AT" \
+    '	if which == "signatures" {' \
+    '	if which != "evaluations" {'
+  mutate go "trail: a lock held past the bound is waited out" internal/desk/audit_lock_flock.go \
+    '		if !time.Now().Before(deadline) {' \
+    '		if false && !time.Now().Before(deadline) {'
+  mutate go "trail: a file system with no flock is read unlocked" internal/desk/audit_lock_flock.go \
+    '			return nil, errAuditNoLock' \
+    '			return func() {}, nil'
+  mutate go "trail: a lock that failed is read past" internal/desk/audit_lock_flock.go \
+    '		default:
+			return nil, err' \
+    '		default:
+			return func() {}, nil'
+  mutate go "trail: a linked trail is followed" "$AT" \
+    '	info, err := dir.Lstat(name)' \
+    '	info, err := dir.Stat(name)'
+  mutate go "trail: a linked audit directory is followed" "$AT" \
+    '		info, err := current.Lstat(part)' \
+    '		info, err := current.Stat(part)'
+  mutate go "trail: an audit directory that climbs out is opened" "$AT" \
+    '	if !fs.ValidPath(clean) {
+		return nil, errAuditOutside' \
+    '	if false {
+		return nil, errAuditOutside'
+  mutate go "trail: a repeated file is taken" "$AT" \
+    '	if err != nil || len(values) != 1 || len(values["file"]) != 1 {' \
+    '	if err != nil || len(values) != 1 || len(values["file"]) == 0 {'
+  mutate go "trail: another query member is taken" "$AT" \
+    '	if err != nil || len(values) != 1 || len(values["file"]) != 1 {' \
+    '	if err != nil || len(values["file"]) != 1 {'
+  mutate go "trail: a query that does not parse is taken" "$AT" \
+    '	values, err := url.ParseQuery(raw)
+	if err != nil || len(values) != 1 || len(values["file"]) != 1 {' \
+    '	values, _ := url.ParseQuery(raw)
+	if len(values) != 1 || len(values["file"]) != 1 {'
+  mutate go "trail: any file name is taken" "$AT" \
+    '	if _, ok := auditTrailFiles[which]; !ok {' \
+    '	if which == "" {'
+  mutate go "trail: available on the startup desk under another JPACK_CONFIG" "$AT" \
+    '	if _, refusal := s.auditRuntime(); refusal != "" {' \
+    '	if _, refusal := s.auditRuntime(); false && refusal != "" {'
+  mutate go "trail: served as JSON text" "$AT" \
+    '	w.Header().Set("Content-Type", "application/octet-stream")' \
+    '	w.Header().Set("Content-Type", "application/json; charset=utf-8")'
+  mutate go "trail: saved under another name" "$AT" \
+    'map[string]string{"filename": name}' \
+    'map[string]string{"filename": which + ".json"}'
+  mutate go "trail: a missing file is not said to be missing" "$AT" \
+    '	case errors.Is(err, fs.ErrNotExist):
+		return http.StatusNotFound' \
+    '	case false:
+		return http.StatusNotFound'
+  mutate go "trail: a sidecar with no trail is said to be missing" "$AT" \
+    '		if errors.Is(err, fs.ErrNotExist) {
+			err = errAuditNoTrail
+		}' \
+    ''
+  mutate go "trail: the panel names no files" internal/desk/audit_record.go \
+    '	answer.Files = s.auditFilesPresent()
+' \
+    ''
+  mutate go "trail: the download's route is not served" "$S" \
+    '	s.mux.HandleFunc("GET /api/audit/trail", s.handleAuditTrail)
+' \
+    ''
+
   # **Tested releases by default (ADR-0009).** The flag is on unless the owner
   # passes `=false`; the boot line states the choice either way; and the
   # desk-config answer reports it, `false` included, so the page can say which.
@@ -9237,6 +9318,42 @@ export function assistantTransport(id: string): Transport {
   mutate web "record: not in Admin → Project" web/src/routes/AdminView.tsx \
     "                <DecisionRecord visible={open.id === 'project'} />" \
     "                {false && <DecisionRecord visible={open.id === 'project'} />}"
+
+  # **Downloading the trail from the panel (ADR-0010, section 2).** A button
+  # for each file the audit directory holds and no other, asking for that
+  # file; the answer kept as bytes and saved under the runtime's own name; and
+  # a refusal said as one.
+  TD=web/src/audit/TrailDownloads.tsx
+  mutate web "downloads: a button for a file not held" "$TD" \
+    "{files.map(which => <Button" \
+    "{(['evaluations', 'signatures', 'stamps'] as const).map(which => <Button"
+  mutate web "downloads: offered with no files" "$TD" \
+    "  if (files.length === 0) return null
+" \
+    ""
+  mutate web "downloads: saved under another name" "$TD" \
+    "link.download = TRAIL_FILES[which]" \
+    "link.download = which + '.json'"
+  mutate web "downloads: the bytes are read as text" "$AC" \
+    "  return response.blob()" \
+    "  return new Blob([await response.text()])"
+  mutate web "downloads: another file is asked for" "$AC" \
+    "deskFetch(\`/api/audit/trail?file=\${which}\`)" \
+    "deskFetch(\`/api/audit/trail?file=\${which.length > 0 ? 'evaluations' : which}\`)"
+  mutate web "downloads: a refusal is not said" "$TD" \
+    "{error && <p role=\"alert\">" \
+    "{error && <p role=\"alert\" hidden>"
+  mutate web "downloads: not beside the report" "$DR" \
+    "<Report report={record.report} />
+                    <TrailDownloads files={record.files ?? []} />" \
+    "<Report report={record.report} />"
+  mutate web "downloads: not beside the runtime's refusal" "$DR" \
+    "</li>)}</ul>
+                  <TrailDownloads files={record.files ?? []} />" \
+    "</li>)}</ul>"
+  mutate web "downloads: a file name the download does not take is accepted" "$AC" \
+    " || !optional(value.files, item => list(item, isTrailFile))) return false" \
+    " || !optional(value.files, item => list(item, (entry): entry is TrailFile => text(entry) || isTrailFile(entry)))) return false"
 fi
 
 restore

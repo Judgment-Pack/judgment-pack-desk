@@ -3710,5 +3710,10 @@
   "Unchained lines a later chained line commits to": "Lignes non chaînées auxquelles s’engage une ligne chaînée ultérieure",
   "What this does not establish": "Ce que cela n’établit pas",
   "What this establishes": "Ce que cela établit",
-  "Witnessed through record {{sequence}}": "Attesté jusqu’à l’enregistrement {{sequence}}"
+  "Witnessed through record {{sequence}}": "Attesté jusqu’à l’enregistrement {{sequence}}",
+  "Download the trail": "Télécharger la piste",
+  "Download {{file}}": "Télécharger {{file}}",
+  "Each file is saved under the runtime’s own name, as its bytes stood on disk between two writes.": "Chaque fichier est enregistré sous le nom que lui donne le runtime, avec ses octets tels qu’ils étaient sur le disque entre deux écritures.",
+  "Saved {{file}}.": "{{file}} enregistré.",
+  "The file could not be downloaded. Please try again.": "Le fichier n’a pas pu être téléchargé. Veuillez réessayer."
 }

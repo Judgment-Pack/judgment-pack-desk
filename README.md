@@ -249,7 +249,8 @@ person's approval, and it records no name.
   checkpoint someone else held from before it. Desk takes and hands over no
   checkpoint, and gives no signing key, yet: the rest of its part is
   [ADR-0010](docs/adr/0010-defensible-decision-records.md). It shows what the
-  runtime's own check finds (the decision record, below).
+  runtime's own check finds, and hands over the trail's files as exact bytes
+  (the decision record, below).
 - A `JPACK_SIGNING_KEY` set where Desk was started is removed from every
   runtime Desk starts for a desk it made, as `JPACK_CONFIG` is
   ([ADR-0010](docs/adr/0010-defensible-decision-records.md)). The project Desk
@@ -288,6 +289,22 @@ copy, with what it holds. With a runtime that does not read configVersion `"6"`
 nothing. On the project Desk was started on, under a `JPACK_CONFIG` that names
 another project's configuration, the panel is unavailable, as Review and lock
 is; it names the variable, not its value.
+
+Beside the report, the panel offers a download of each of the runtime's own
+files the audit directory holds: `evaluations.jsonl`, `signatures.jsonl` and
+`stamps.jsonl` (`GET /api/audit/trail?file=evaluations`, `signatures` or
+`stamps`; any other request is refused). Desk opens the file through the
+project's root, refusing a link anywhere on the way and an audit directory
+outside the project. For the trail and its sidecar it takes the shared `flock`
+on the trail, which the runtime's writer takes exclusively while it appends to
+both and its verifier takes shared; for the stamps, the shared `flock` on
+`stamps.jsonl`, which the stamps' own writer takes. It reads the size, releases
+the lock, and streams exactly that many bytes, untouched, as
+`application/octet-stream` under the runtime's own name. A recipient checks a copied record with `signatures.jsonl` beside it.
+Desk takes that lock on Linux, macOS and the BSDs. On any other build, and on a
+file system that supports no `flock`, the download is refused rather than made
+from a size that may fall inside a write; on Windows the runtime takes a
+different lock, which Desk does not take.
 
 **`requireComparableFacts`** (runtime ADR-0046).
 
