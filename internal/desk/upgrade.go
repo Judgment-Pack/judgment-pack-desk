@@ -223,26 +223,31 @@ func auditMember(sep, colon string) string {
 	return "{" + newline + indent + indent + dir + newline + indent + "}"
 }
 
-// ignoresDeskPrivate reports whether a `.gitignore` ignores `.desk-private/`
-// with a line of its own. Desk reads only this one file and runs no Git, so
-// a rule anywhere else (a parent's `.gitignore`, `.git/info/exclude`, a
-// global excludes file) is not seen, and the line is then added beside it,
-// which does no harm. A later negation that names the folder undoes it.
+// ignoresDeskPrivate reports whether a `.gitignore`'s last rule is exactly
+// the line Desk writes, `.desk-private/`.
+//
+// **Desk does not emulate Git's matching.** Git applies the last rule that
+// matches a path, and does not look inside a folder it has excluded, so that
+// line, last, excludes `.desk-private` and everything in it whatever comes
+// before: `!*/`, `!**` or `!.desk-private/` earlier are overridden by it. Any
+// other ending gets the line added at the end. A file that already ignores
+// the folder some other way gets a redundant line, which does no harm.
+//
+// Rules are read as Git reads them: blank lines and comments are not rules,
+// and trailing spaces and a CRLF file's carriage return are not part of one.
+// Desk reads only this one file and runs no Git: a rule elsewhere (a
+// parent's `.gitignore`, `.git/info/exclude`, a global excludes file) has
+// less weight than this file's own, so it cannot undo the line.
 func ignoresDeskPrivate(data []byte) bool {
-	ignored := false
+	last := ""
 	for _, line := range strings.Split(string(data), "\n") {
-		// Git ignores trailing spaces, and a CRLF file's carriage return.
 		line = strings.TrimRight(strings.TrimSuffix(line, "\r"), " ")
-		switch line {
-		case ".desk-private", ".desk-private/", "/.desk-private", "/.desk-private/",
-			".desk-private/*", "/.desk-private/*", ".desk-private/**", "/.desk-private/**":
-			ignored = true
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
 		}
-		if strings.HasPrefix(line, "!") && strings.Contains(line, ".desk-private") {
-			ignored = false
-		}
+		last = line
 	}
-	return ignored
+	return last == deskPrivateIgnore
 }
 
 // withDeskPrivateIgnored is a `.gitignore` with `.desk-private/` added as its

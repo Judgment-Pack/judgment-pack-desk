@@ -126,20 +126,37 @@ func TestConfigMembersRefusesWhatItCannotCarry(t *testing.T) {
 	}
 }
 
+// A .gitignore counts as ignoring .desk-private only where its last rule is
+// exactly the line Desk writes. Git applies the last rule that matches, and
+// does not look inside a folder it excludes, so that line, last, holds
+// whatever comes before it; measured with Git on each negation below.
 func TestIgnoresDeskPrivate(t *testing.T) {
 	for data, want := range map[string]bool{
-		"":                                    false,
-		"node_modules/\n":                     false,
-		".desk-private/\n":                    true,
-		"/.desk-private\r\n":                  true,
-		".desk-private/*   \n":                true,
-		"# .desk-private/\n":                  false,
-		".desk-private/audit\n":               false,
-		".desk-private/\n!.desk-private/a\n":  false,
-		"!.desk-private/\n.desk-private/\n":   true,
-		"x/.desk-private/\n":                  false,
-		"node_modules/\n/.desk-private/**\n":  true,
-		".desk-private/\n# !.desk-private/\n": true,
+		"":                                     false,
+		"node_modules/\n":                      false,
+		".desk-private/\n":                     true,
+		".desk-private/":                       true,
+		".desk-private/   \r\n":                true,
+		"node_modules/\r\n.desk-private/\r\n":  true,
+		".desk-private/\n# a comment\n\n   \n": true,
+		"!*/\n.desk-private/\n":                true,
+		"!**\n.desk-private/\n":                true,
+		// A negation after it, of any shape, undoes it for Git.
+		".desk-private/\n!*/\n":               false,
+		".desk-private/\n!**\n":               false,
+		".desk-private/\n!.desk-private/\n":   false,
+		".desk-private/\n!.desk-private/**\n": false,
+		".desk-private/\n!packs/**\n":         false,
+		// Another rule for the folder, or one for a folder below the project,
+		// is not the line Desk writes: the line is added after it.
+		"/.desk-private/\n":      false,
+		".desk-private\n":        false,
+		".desk-private/**\n":     false,
+		".desk-private/audit/\n": false,
+		"packs/.desk-private/\n": false,
+		"**/.desk-private/\n":    false,
+		"# .desk-private/\n":     false,
+		"\\#.desk-private/\n":    false,
 	} {
 		if got := ignoresDeskPrivate([]byte(data)); got != want {
 			t.Errorf("%q: %v, want %v", data, got, want)
@@ -400,7 +417,8 @@ func TestTheUpgradeAndGitignore(t *testing.T) {
 		state string
 		want  string // "" where there is no .gitignore after
 	}{
-		{"already ignored", map[string]string{".gitignore": "node_modules/\n/.desk-private/\n"}, "ignored", "node_modules/\n/.desk-private/\n"},
+		{"already ignored", map[string]string{".gitignore": "!*/\nnode_modules/\n.desk-private/\n"}, "ignored", "!*/\nnode_modules/\n.desk-private/\n"},
+		{"ignored, then a negation", map[string]string{".gitignore": ".desk-private/\n!*/\n"}, "add", ".desk-private/\n!*/\n.desk-private/\n"},
 		{"not ignored, without a last newline, with CRLF", map[string]string{".gitignore": "a/\r\nb/"}, "add", "a/\r\nb/\r\n.desk-private/\r\n"},
 		{"no .gitignore in a Git work tree", map[string]string{".gitignore": ""}, "create", ".desk-private/\n"},
 		{"a linked work tree's .git file", map[string]string{".git/HEAD": "", ".git": "gitdir: /elsewhere\n"}, "add", "node_modules/\n.desk-private/\n"},

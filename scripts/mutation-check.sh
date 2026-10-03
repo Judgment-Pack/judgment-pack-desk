@@ -2405,9 +2405,18 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "upgrade: .gitignore is written where it already ignores the folder" "$UP" \
     '	case ignoresDeskPrivate(data):' \
     '	case false:'
-  mutate go "upgrade: a negation is read as ignoring" "$UP" \
-    '			ignored = false' \
-    '			_ = ignored'
+  # Desk does not emulate Git's matching: only Desk's own line, last, counts.
+  mutate go "upgrade: a rule after Desk's line is not read" "$UP" \
+    '		last = line' \
+    '		if last == "" {
+			last = line
+		}'
+  mutate go "upgrade: another rule for the folder is taken for Desk's line" "$UP" \
+    '	return last == deskPrivateIgnore' \
+    '	return strings.Contains(last, ".desk-private")'
+  mutate go "upgrade: a comment is read as a rule" "$UP" \
+    '		if line == "" || strings.HasPrefix(line, "#") {' \
+    '		if line == "" {'
   mutate go "upgrade: a line is added in another line ending" "$UP" \
     '		eol = "\r\n"' \
     '		eol = "\n"'
