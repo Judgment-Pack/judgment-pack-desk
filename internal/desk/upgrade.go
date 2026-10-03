@@ -805,8 +805,11 @@ func (u *upgradeUndo) write(name string, before []byte, present bool, after []by
 	u.s.writes.Lock()
 	defer u.s.writes.Unlock()
 	holds := func() error {
+		// The reading read this path through no link, so a link on it now,
+		// or anything else the walk refuses, is the project changing after
+		// the offer: stale, like changed bytes.
 		if err := u.s.refuseSymlinkedPath(name); err != nil {
-			return err
+			return errUpgradeMoved
 		}
 		current, _, err := u.s.readThroughRootWithin(name, reviewTextLimit)
 		switch {

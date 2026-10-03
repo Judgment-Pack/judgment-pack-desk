@@ -894,8 +894,37 @@ func TestTheUpgradeGoesThroughNoLink(t *testing.T) {
 // staged and before they are published, keeps its edit: the upgrade answers
 // stale, publishes nothing over it, and puts back everything it had written
 // before it, folders included, innermost first. No staging file is left.
+// A link put in the file's place, even to the same bytes, is a change too.
 func TestAnEditDuringTheUpgradeWriteIsNotOverwritten(t *testing.T) {
 	for _, name := range []string{"jpack.json", ".gitignore"} {
+		t.Run(name+", a link in its place", func(t *testing.T) {
+			_, ts, rig, project := upgradeProject(t, allConfigVersions, "", nil)
+			rig.answers(t, "error")
+			answer := readUpgrade(t, ts, "", true)
+			rig.locks(t, upgradeLock(t, project, upgradeAfter, bothPacks))
+			testHookBeforeUpgradePublish = func(target, _ string) {
+				if target != name {
+					return
+				}
+				same := readFile(t, filepath.Join(project, name))
+				writeProject(t, project, map[string]string{"same-bytes": same})
+				if os.Remove(filepath.Join(project, name)) != nil || os.Symlink("same-bytes", filepath.Join(project, name)) != nil {
+					t.Error("could not put a link in the file's place")
+				}
+			}
+			t.Cleanup(func() { testHookBeforeUpgradePublish = nil })
+			before := treeOf(t, project)
+			status, data := confirmUpgrade(t, ts, "", answer.Token, true)
+			if status != http.StatusConflict || !bytes.Contains(data, []byte(`"code":"stale"`)) || !bytes.Contains(data, []byte("every file was put back")) {
+				t.Errorf("the confirmation answered %d %s", status, data)
+			}
+			after := treeOf(t, project)
+			if after[name].mode&os.ModeSymlink == 0 || after["same-bytes"].data != before[name].data {
+				t.Errorf("the link was not left in place: %v %q", after[name].mode, after["same-bytes"].data)
+			}
+			before[name], before["same-bytes"] = after[name], after["same-bytes"]
+			sameProject(t, before, after, "a link put in place during the write")
+		})
 		t.Run(name, func(t *testing.T) {
 			_, ts, rig, project := upgradeProject(t, allConfigVersions, "", nil)
 			rig.answers(t, "error")

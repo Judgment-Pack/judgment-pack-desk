@@ -2448,6 +2448,11 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "upgrade: a file is made over one that appeared" "$UP" \
     '		case !present && codeOf(err) != CodeNotFound:' \
     '		case false:'
+  mutate go "upgrade: a link found at publication is answered as a failure, not as stale" "$UP" \
+    '		if err := u.s.refuseSymlinkedPath(name); err != nil {
+			return errUpgradeMoved' \
+    '		if err := u.s.refuseSymlinkedPath(name); err != nil {
+			return err'
   mutate go "upgrade: a file is compared before it is staged, not before it is published" "$UP" \
     '	err := u.s.atomicWriteChecked(name, after, func(staged string) error {
 		if testHookBeforeUpgradePublish != nil {
