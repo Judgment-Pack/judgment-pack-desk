@@ -40,6 +40,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 )
 
 const (
@@ -284,8 +285,26 @@ func (s *Server) auditDirSpans(message, auditDir string) []string {
 			spans = append(spans, real)
 		}
 	}
+	for _, span := range spans {
+		if shown := displayedPath(span); shown != span {
+			spans = append(spans, shown)
+		}
+	}
 	slices.SortFunc(spans, func(a, b string) int { return len(b) - len(a) })
 	return slices.Compact(spans)
+}
+
+// displayedPath is path as the runtime prints it in a sentence: each control
+// or invisible format character (a tab, a newline, a zero-width space, a
+// direction override) shown as "?", every other character as it is.
+// Measured with the published 0.26.0.
+func displayedPath(path string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+			return '?'
+		}
+		return r
+	}, path)
 }
 
 // pathInMessage is a path from the root of a file system that a message
@@ -300,13 +319,30 @@ var pathInMessage = regexp.MustCompile(`(?:^|[\s"(=\[])((?:/|[A-Za-z]:[\\/])[^\s
 // keeps: which file a sentence is about is what makes it useful.
 var runtimeFileNames = []string{"evaluations.jsonl", "signatures.jsonl", "stamps.jsonl", runtimeConfigName, runtimeLockName}
 
+// pathToRuntimeFile is a path from a root that ends in one of the runtime's
+// own files' names, however many spaces or "?" it holds on the way: the form
+// in which the runtime names its trail and the files beside it. It starts
+// where pathInMessage does, and may not cross a line, a double quote, a colon
+// or a semicolon, so it does not run from one path, over the clause between, to
+// another.
+var pathToRuntimeFile = regexp.MustCompile(`(?:^|[\s"(=\[])((?:/|[A-Za-z]:[\\/])[^\n":;]*?[/\\](?:evaluations\.jsonl|signatures\.jsonl|stamps\.jsonl|jpack\.lock\.json|jpack\.json))(?:$|[\s"'),.;:])`)
+
 // withoutAbsolutePaths is message with each absolute path replaced by "…",
 // or by "…/" and its last name where that is one of runtimeFileNames.
-// Punctuation that ends a sentence after a path stays.
+// Punctuation that ends a sentence after a path stays. A path that ends in a
+// runtime file's name is taken whole first, spaces and all
+// (pathToRuntimeFile); then every other path, up to its first space
+// (pathInMessage).
 func withoutAbsolutePaths(message string) string {
+	return withoutPathsMatching(withoutPathsMatching(message, pathToRuntimeFile), pathInMessage)
+}
+
+// withoutPathsMatching is message with each path pattern's first group
+// matches replaced as withoutAbsolutePaths says.
+func withoutPathsMatching(message string, pattern *regexp.Regexp) string {
 	var out strings.Builder
 	last := 0
-	for _, match := range pathInMessage.FindAllStringSubmatchIndex(message, -1) {
+	for _, match := range pattern.FindAllStringSubmatchIndex(message, -1) {
 		start, end := match[2], match[3]
 		path := strings.TrimRight(message[start:end], ".,:;")
 		out.WriteString(message[last:start])

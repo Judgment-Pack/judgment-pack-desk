@@ -481,7 +481,7 @@ func TestThePanelQuotesNoPath(t *testing.T) {
 	report = strings.Replace(report, `"establishes":[]`, `"establishes":["The lines in `+project+`/.desk-private/audit are consistent."]`, 1)
 	report = strings.Replace(report, `"doesNotEstablish":["`, `"doesNotEstablish":["Nothing about `+secret+`/stamps.jsonl. `, 1)
 	report = strings.Replace(report, `"checkpointed":{"status":"not-supplied"}`, `"checkpointed":{"status":"not-supplied","detail":"none held at `+secret+`"}`, 1)
-	report = strings.Replace(report, `"stamped":{"status":"not-checked","detail":"no time-stamping roots were supplied"}`, `"stamped":{"status":"not-checked","detail":"no roots at `+secret+`/roots.pem"}`, 1)
+	report = strings.Replace(report, `"stamped":{"status":"not-checked","detail":"no time-stamping roots were supplied"}`, `"stamped":{"status":"not-checked","detail":"no roots at `+secret+`/roots.pem; see /elsewhere/My SECRET-AUDIT-PATH copy/stamps.jsonl"}`, 1)
 	report = strings.Replace(report, `"discontinuities":[],"discontinuitiesTotal":0`, `"discontinuities":[{"line":2,"reason":"repaired at `+secret+`","damagedLine":1,"bytes":8,"digest":"sha256:952cdc0f85ab10d18a1bdccfeb6c3991e59ab424dc2ce916544aac44f3d8b45e"}],"discontinuitiesTotal":1`, 1)
 	if strings.Count(report, secret) != 6 {
 		t.Fatal("the report fixture does not hold a path in every field the panel passes on")
@@ -509,7 +509,7 @@ func TestThePanelQuotesNoPath(t *testing.T) {
 	if got := answer.Report.DoesNotEstablish; len(got) == 0 || !strings.HasPrefix(got[0], "Nothing about …/stamps.jsonl. ") {
 		t.Errorf("the report does not establish %q", got)
 	}
-	if got := answer.Report.Coverage.Checkpointed.Detail + " | " + answer.Report.Coverage.Stamped.Detail; got != "none held at … | no roots at …" {
+	if got := answer.Report.Coverage.Checkpointed.Detail + " | " + answer.Report.Coverage.Stamped.Detail; got != "none held at … | no roots at …; see …/stamps.jsonl" {
 		t.Errorf("the coverage details say %q", got)
 	}
 	if got := answer.Report.Discontinuities; len(got) != 1 || got[0].Reason != "repaired at …" {
@@ -529,11 +529,15 @@ func TestTheAuditDirectoryIsNeverQuoted(t *testing.T) {
 		{"absolute, with a space and parentheses", outside},
 		{"climbing out of the project", "../Top SECRET dir"},
 		{"inside, with a space", "Top SECRET dir"},
+		{"absolute, with a tab", filepath.Join(filepath.Dir(outside), "Top\t SECRET dir")},
+		{"absolute, with a newline", filepath.Join(filepath.Dir(outside), "Top\n SECRET dir")},
+		{"absolute, with a zero-width space", filepath.Join(filepath.Dir(outside), "Top\u200b SECRET dir")},
 	} {
 		config := `{"configVersion":"5","audit":{"dir":` + strconv.Quote(tc.dir) + `},"packs":{}}` + "\n"
 		ts, rig, project := auditDesk(t, withAuditVersions, config)
-		joined := filepath.Join(project, tc.dir, "evaluations.jsonl")
-		proc := filepath.Join("/proc/self/fd/3", tc.dir, "evaluations.jsonl")
+		// As the runtime prints them: a control or format character as "?".
+		joined := displayedPath(filepath.Join(project, tc.dir, "evaluations.jsonl"))
+		proc := displayedPath(filepath.Join("/proc/self/fd/3", tc.dir, "evaluations.jsonl"))
 		said := []map[string]string{
 			{"code": "JPS-AUDIT-TRAIL-READ", "message": "The project's trail " + joined + " could not be opened as one regular file inside the project."},
 			{"code": "JPS-AUDIT-TRAIL-READ", "message": "The project's trail " + proc + " does not exist yet: no record has been written."},
@@ -544,7 +548,7 @@ func TestTheAuditDirectoryIsNeverQuoted(t *testing.T) {
 		}
 		if filepath.IsAbs(tc.dir) {
 			// An absolute audit.dir named on its own, not joined to anything.
-			said = append(said, map[string]string{"code": "JPS-AUDIT-TRAIL-READ", "message": "The audit directory " + tc.dir + " is not inside the project."})
+			said = append(said, map[string]string{"code": "JPS-AUDIT-TRAIL-READ", "message": "The audit directory " + displayedPath(tc.dir) + " is not inside the project."})
 			want = append(want, "The audit directory … is not inside the project.")
 		}
 		body, _ := json.Marshal(map[string]any{"command": "audit verify", "status": "error", "diagnostics": said})
@@ -611,6 +615,10 @@ func TestAMessageNamesNoAbsolutePath(t *testing.T) {
 		{".desk-private/audit/evaluations.jsonl", ".desk-private/audit/evaluations.jsonl"},
 		{"line 3/4 of 7", "line 3/4 of 7"},
 		{"/", "…"},
+		{"The project's trail /x/Top? SECRET dir/evaluations.jsonl could not be opened.", "The project's trail …/evaluations.jsonl could not be opened."},
+		{"open /a/b: no such file in trail /x/y z/stamps.jsonl.", "open …: no such file in trail …/stamps.jsonl."},
+		{`at C:\My Files\signatures.jsonl, then`, "at …/signatures.jsonl, then"},
+		{"/a b/jpack.json.bak is not read", "…/jpack.json.bak is not read"},
 	} {
 		if got := withoutAbsolutePaths(tc.in); got != tc.want {
 			t.Errorf("%q became %q, want %q", tc.in, got, tc.want)
@@ -947,6 +955,8 @@ func TestThePanelQuotesNoPathWithTheRuntime(t *testing.T) {
 		filepath.Join(outside, "Top SECRET (audit) dir"),
 		"../Top SECRET dir",
 		"Top SECRET dir",
+		filepath.Join(outside, "Top\t SECRET dir"),
+		filepath.Join(outside, "Top\u200b SECRET dir"),
 	} {
 		project := t.TempDir()
 		writeProject(t, project, map[string]string{"jpack.json": `{"configVersion":"5","audit":{"dir":` + strconv.Quote(dir) + `},"packs":{}}` + "\n"})

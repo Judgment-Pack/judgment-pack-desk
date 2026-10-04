@@ -2340,6 +2340,15 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "audit: every answer is logged" "$AR" \
     'before != after {' \
     'before != after || after != "" {'
+  mutate go "audit: a path as the runtime displays it is not taken" "$AR" \
+    '		if shown := displayedPath(span); shown != span {' \
+    '		if shown := displayedPath(span); shown != span && false {'
+  mutate go "audit: a path to a runtime file is cut at its first space" "$AR" \
+    'return withoutPathsMatching(withoutPathsMatching(message, pathToRuntimeFile), pathInMessage)' \
+    'return withoutPathsMatching(message, pathInMessage)'
+  mutate go "audit: a path to a runtime file runs across a clause" "$AR" \
+    '[^\n":;]*?' \
+    '[^\n":]*?'
   mutate go "audit: the panel's route is not served" "$S" \
     '	s.mux.HandleFunc("GET /api/audit/verify", s.handleAuditVerify)
 ' \
