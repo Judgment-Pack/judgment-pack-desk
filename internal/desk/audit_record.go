@@ -294,13 +294,15 @@ func (s *Server) auditDirSpans(message, auditDir string) []string {
 	return slices.Compact(spans)
 }
 
-// displayedPath is path as the runtime prints it in a sentence: each control
-// or invisible format character (a tab, a newline, a zero-width space, a
-// direction override) shown as "?", every other character as it is.
-// Measured with the published 0.26.0.
+// displayedPath is path as the runtime prints it in a sentence. It is the
+// runtime's own rule, read from its source and not measured case by case
+// (runtime 0.26.0, `internal/display/sanitize.go`, `Sanitize`): a control
+// character (Cc), a format character (Cf), a line separator (Zl) or a
+// paragraph separator (Zp) is printed as "?", and every other character as
+// it is. A runtime that changes that rule needs this to change with it.
 func displayedPath(path string) string {
 	return strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r) {
 			return '?'
 		}
 		return r

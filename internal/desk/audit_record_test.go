@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode"
 )
 
 // withAuditVersions is what a runtime with the audit commands names as
@@ -532,12 +533,18 @@ func TestTheAuditDirectoryIsNeverQuoted(t *testing.T) {
 		{"absolute, with a tab", filepath.Join(filepath.Dir(outside), "Top\t SECRET dir")},
 		{"absolute, with a newline", filepath.Join(filepath.Dir(outside), "Top\n SECRET dir")},
 		{"absolute, with a zero-width space", filepath.Join(filepath.Dir(outside), "Top\u200b SECRET dir")},
+		// A line or paragraph separator, beside a colon, a semicolon or a
+		// double quote, which a path to a runtime file may not cross: only
+		// the audit directory's displayed span can take these whole.
+		{"inside, with a line separator and a colon", "Top\u2028 SECRET-AUDIT-PATH:TAIL"},
+		{"absolute, with a paragraph separator and a semicolon", filepath.Join(filepath.Dir(outside), "Top\u2029 SECRET;TAIL")},
+		{"absolute, with a line separator and a double quote", filepath.Join(filepath.Dir(outside), "Top\u2028 SECRET\"TAIL")},
 	} {
 		config := `{"configVersion":"5","audit":{"dir":` + strconv.Quote(tc.dir) + `},"packs":{}}` + "\n"
 		ts, rig, project := auditDesk(t, withAuditVersions, config)
-		// As the runtime prints them: a control or format character as "?".
-		joined := displayedPath(filepath.Join(project, tc.dir, "evaluations.jsonl"))
-		proc := displayedPath(filepath.Join("/proc/self/fd/3", tc.dir, "evaluations.jsonl"))
+		// As the runtime prints them (runtimePrints, not the code under test).
+		joined := runtimePrints(filepath.Join(project, tc.dir, "evaluations.jsonl"))
+		proc := runtimePrints(filepath.Join("/proc/self/fd/3", tc.dir, "evaluations.jsonl"))
 		said := []map[string]string{
 			{"code": "JPS-AUDIT-TRAIL-READ", "message": "The project's trail " + joined + " could not be opened as one regular file inside the project."},
 			{"code": "JPS-AUDIT-TRAIL-READ", "message": "The project's trail " + proc + " does not exist yet: no record has been written."},
@@ -548,13 +555,13 @@ func TestTheAuditDirectoryIsNeverQuoted(t *testing.T) {
 		}
 		if filepath.IsAbs(tc.dir) {
 			// An absolute audit.dir named on its own, not joined to anything.
-			said = append(said, map[string]string{"code": "JPS-AUDIT-TRAIL-READ", "message": "The audit directory " + displayedPath(tc.dir) + " is not inside the project."})
+			said = append(said, map[string]string{"code": "JPS-AUDIT-TRAIL-READ", "message": "The audit directory " + runtimePrints(tc.dir) + " is not inside the project."})
 			want = append(want, "The audit directory … is not inside the project.")
 		}
 		body, _ := json.Marshal(map[string]any{"command": "audit verify", "status": "error", "diagnostics": said})
 		rig.answers(t, 4, string(body))
 		status, data := reviewCall(t, ts, "GET", "/api/audit/verify", "", nil, bearer)
-		for _, leaked := range []string{"SECRET", "(audit)", project, "/proc/self"} {
+		for _, leaked := range []string{"SECRET", "TAIL", "(audit)", project, "/proc/self"} {
 			if strings.Contains(string(data), leaked) {
 				t.Errorf("%s: the panel says %q: %s", tc.name, leaked, data)
 			}
@@ -593,6 +600,42 @@ func TestTheRuntimesOwnWordsStayInDesksLog(t *testing.T) {
 	}
 	if strings.Contains(logged.String(), "as the runtime said it") {
 		t.Errorf("an answer with no path was logged: %q", logged.String())
+	}
+}
+
+// runtimePrints is the runtime's own display rule, copied here from runtime
+// 0.26.0's `internal/display/sanitize.go` as the tests' oracle, so that a test
+// of displayedPath never takes its expectation from displayedPath.
+func runtimePrints(value string) string {
+	var output strings.Builder
+	for _, char := range value {
+		if unicode.IsControl(char) || unicode.Is(unicode.Cf, char) || unicode.Is(unicode.Zl, char) || unicode.Is(unicode.Zp, char) {
+			output.WriteRune('?')
+			continue
+		}
+		output.WriteRune(char)
+	}
+	return output.String()
+}
+
+// **The runtime's display rule, category by category** (runtime 0.26.0,
+// `internal/display/sanitize.go`): a control, format, line-separator or
+// paragraph-separator character is printed as "?", and nothing else is.
+func TestAPathIsTakenAsTheRuntimePrintsIt(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"a\tb", "a?b"},          // Cc
+		{"a\x07b", "a?b"},        // Cc
+		{"a\u200bb", "a?b"},      // Cf
+		{"a\u202eb", "a?b"},      // Cf
+		{"a\u2028b", "a?b"},      // Zl
+		{"a\u2029b", "a?b"},      // Zp
+		{"a\u00a0b", "a\u00a0b"}, // Zs, left
+		{"aéb", "aéb"},
+		{"a\ue000b", "a\ue000b"}, // private use, left
+	} {
+		if got := displayedPath(tc.in); got != tc.want {
+			t.Errorf("%q is taken as %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }
 
@@ -957,6 +1000,8 @@ func TestThePanelQuotesNoPathWithTheRuntime(t *testing.T) {
 		"Top SECRET dir",
 		filepath.Join(outside, "Top\t SECRET dir"),
 		filepath.Join(outside, "Top\u200b SECRET dir"),
+		"Top\u2028 SECRET-AUDIT-PATH:TAIL",
+		filepath.Join(outside, "Top\u2029 SECRET;TAIL"),
 	} {
 		project := t.TempDir()
 		writeProject(t, project, map[string]string{"jpack.json": `{"configVersion":"5","audit":{"dir":` + strconv.Quote(dir) + `},"packs":{}}` + "\n"})
@@ -971,7 +1016,7 @@ func TestThePanelQuotesNoPathWithTheRuntime(t *testing.T) {
 		if answer.State == auditStateOlder {
 			t.Skip("this runtime has no audit commands")
 		}
-		for _, leaked := range []string{"SECRET", "(audit)", "/proc/self", project, outside} {
+		for _, leaked := range []string{"SECRET", "TAIL", "(audit)", "/proc/self", project, outside} {
 			if strings.Contains(string(data), leaked) {
 				t.Errorf("%q: the panel says %q: %s", dir, leaked, data)
 			}

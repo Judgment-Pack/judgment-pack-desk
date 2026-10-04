@@ -2349,6 +2349,12 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "audit: a path to a runtime file runs across a clause" "$AR" \
     '[^\n":;]*?' \
     '[^\n":]*?'
+  mutate go "audit: a line separator is not taken as the runtime prints it" "$AR" \
+    ' || unicode.Is(unicode.Zl, r)' \
+    ''
+  mutate go "audit: a paragraph separator is not taken as the runtime prints it" "$AR" \
+    ' || unicode.Is(unicode.Zp, r)' \
+    ''
   mutate go "audit: the panel's route is not served" "$S" \
     '	s.mux.HandleFunc("GET /api/audit/verify", s.handleAuditVerify)
 ' \
