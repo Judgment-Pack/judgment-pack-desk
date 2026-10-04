@@ -2311,8 +2311,26 @@ func (b *cappedBuffer) exceeded() bool {'
     '	shown := s.withoutPathsIn(answer)' \
     '	shown := answer'
   mutate go "audit: a path not configured is passed on" "$AR" \
-    '	return withoutAbsolutePaths(message)' \
-    '	return message'
+    '	return strings.ReplaceAll(withoutAbsolutePaths(message), held, "…")' \
+    '	return strings.ReplaceAll(message, held, "…")'
+  mutate go "audit: the audit directory is not replaced whole" "$AR" \
+    '		message = strings.ReplaceAll(message, span, held)' \
+    '		_ = span'
+  mutate go "audit: the runtime's working directory is not a base" "$AR" \
+    's.cfg.ProjectDir, runtimeTrampolineDir}' \
+    's.cfg.ProjectDir}'
+  mutate go "audit: a shorter span is replaced first" "$AR" \
+    'return len(b) - len(a)' \
+    'return len(a) - len(b)'
+  mutate go "audit: an absolute audit directory on its own is passed on" "$AR" \
+    '		spans = append(spans, filepath.Clean(auditDir), auditDir)' \
+    '		_ = auditDir'
+  mutate go "audit: what the report does not establish is passed on with its paths" "$AR" \
+    '	report.DoesNotEstablish = sentencesWithoutPaths(clean, report.DoesNotEstablish)' \
+    ''
+  mutate go "audit: a discontinuity's reason is passed on with its paths" "$AR" \
+    '		report.Discontinuities[i].Reason = clean(report.Discontinuities[i].Reason)' \
+    '		_ = i'
   mutate go "audit: a redacted path keeps its last name" "$AR" \
     '		if slices.Contains(runtimeFileNames, base) {' \
     '		if true {'

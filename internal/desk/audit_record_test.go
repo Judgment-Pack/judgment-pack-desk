@@ -479,8 +479,12 @@ func TestThePanelQuotesNoPath(t *testing.T) {
 	report := strings.Replace(auditInvalidReport, `"detail":"the trail ends in 8 bytes with no newline: a write that did not complete"`, `"detail":"`+secret+`/evaluations.jsonl ends in 8 bytes"`, 1)
 	report = strings.Replace(report, `"detail":"no public key was supplied"`, `"detail":"no key at `+secret+`/key.seed"`, 1)
 	report = strings.Replace(report, `"establishes":[]`, `"establishes":["The lines in `+project+`/.desk-private/audit are consistent."]`, 1)
-	if report == auditInvalidReport {
-		t.Fatal("the report fixture holds no path")
+	report = strings.Replace(report, `"doesNotEstablish":["`, `"doesNotEstablish":["Nothing about `+secret+`/stamps.jsonl. `, 1)
+	report = strings.Replace(report, `"checkpointed":{"status":"not-supplied"}`, `"checkpointed":{"status":"not-supplied","detail":"none held at `+secret+`"}`, 1)
+	report = strings.Replace(report, `"stamped":{"status":"not-checked","detail":"no time-stamping roots were supplied"}`, `"stamped":{"status":"not-checked","detail":"no roots at `+secret+`/roots.pem"}`, 1)
+	report = strings.Replace(report, `"discontinuities":[],"discontinuitiesTotal":0`, `"discontinuities":[{"line":2,"reason":"repaired at `+secret+`","damagedLine":1,"bytes":8,"digest":"sha256:952cdc0f85ab10d18a1bdccfeb6c3991e59ab424dc2ce916544aac44f3d8b45e"}],"discontinuitiesTotal":1`, 1)
+	if strings.Count(report, secret) != 6 {
+		t.Fatal("the report fixture does not hold a path in every field the panel passes on")
 	}
 	rig.answers(t, 1, report)
 	status, data = reviewCall(t, ts, "GET", "/api/audit/verify", "", nil, bearer)
@@ -499,8 +503,67 @@ func TestThePanelQuotesNoPath(t *testing.T) {
 	if got := answer.Report.Coverage.Signed.Detail; got != "no key at …" {
 		t.Errorf("the signatures' detail says %q", got)
 	}
-	if got := answer.Report.Establishes; len(got) != 1 || got[0] != "The lines in the project's folder/.desk-private/audit are consistent." {
+	if got := answer.Report.Establishes; len(got) != 1 || got[0] != "The lines in … are consistent." {
 		t.Errorf("the report establishes %q", got)
+	}
+	if got := answer.Report.DoesNotEstablish; len(got) == 0 || !strings.HasPrefix(got[0], "Nothing about …/stamps.jsonl. ") {
+		t.Errorf("the report does not establish %q", got)
+	}
+	if got := answer.Report.Coverage.Checkpointed.Detail + " | " + answer.Report.Coverage.Stamped.Detail; got != "none held at … | no roots at …" {
+		t.Errorf("the coverage details say %q", got)
+	}
+	if got := answer.Report.Discontinuities; len(got) != 1 || got[0].Reason != "repaired at …" {
+		t.Errorf("the discontinuity says %+v", got)
+	}
+}
+
+// **The audit directory is replaced whole, however the runtime joins it.**
+// The runtime names its trail as the folder it ran in joined with audit.dir:
+// an absolute one is joined on, and one that climbs out is resolved to where
+// it is. A space or a parenthesis in it must not end the replacement, and the
+// project's folder before it must not be replaced first and leave the rest.
+func TestTheAuditDirectoryIsNeverQuoted(t *testing.T) {
+	t.Setenv("JPACK_CONFIG", "")
+	outside := filepath.Join(t.TempDir(), "Top SECRET (audit) dir")
+	for _, tc := range []struct{ name, dir string }{
+		{"absolute, with a space and parentheses", outside},
+		{"climbing out of the project", "../Top SECRET dir"},
+		{"inside, with a space", "Top SECRET dir"},
+	} {
+		config := `{"configVersion":"5","audit":{"dir":` + strconv.Quote(tc.dir) + `},"packs":{}}` + "\n"
+		ts, rig, project := auditDesk(t, withAuditVersions, config)
+		joined := filepath.Join(project, tc.dir, "evaluations.jsonl")
+		proc := filepath.Join("/proc/self/fd/3", tc.dir, "evaluations.jsonl")
+		said := []map[string]string{
+			{"code": "JPS-AUDIT-TRAIL-READ", "message": "The project's trail " + joined + " could not be opened as one regular file inside the project."},
+			{"code": "JPS-AUDIT-TRAIL-READ", "message": "The project's trail " + proc + " does not exist yet: no record has been written."},
+		}
+		want := []string{
+			"The project's trail …/evaluations.jsonl could not be opened as one regular file inside the project.",
+			"The project's trail …/evaluations.jsonl does not exist yet: no record has been written.",
+		}
+		if filepath.IsAbs(tc.dir) {
+			// An absolute audit.dir named on its own, not joined to anything.
+			said = append(said, map[string]string{"code": "JPS-AUDIT-TRAIL-READ", "message": "The audit directory " + tc.dir + " is not inside the project."})
+			want = append(want, "The audit directory … is not inside the project.")
+		}
+		body, _ := json.Marshal(map[string]any{"command": "audit verify", "status": "error", "diagnostics": said})
+		rig.answers(t, 4, string(body))
+		status, data := reviewCall(t, ts, "GET", "/api/audit/verify", "", nil, bearer)
+		for _, leaked := range []string{"SECRET", "(audit)", project, "/proc/self"} {
+			if strings.Contains(string(data), leaked) {
+				t.Errorf("%s: the panel says %q: %s", tc.name, leaked, data)
+			}
+		}
+		var answer auditAnswer
+		if status != http.StatusOK || json.Unmarshal(data, &answer) != nil || len(answer.Diagnostics) != len(want) {
+			t.Fatalf("%s: the panel answered %d %s", tc.name, status, data)
+		}
+		for i := range want {
+			if answer.Diagnostics[i].Message != want[i] {
+				t.Errorf("%s: diagnostic %d says %q, want %q", tc.name, i, answer.Diagnostics[i].Message, want[i])
+			}
+		}
 	}
 }
 
@@ -878,26 +941,33 @@ func TestTheDecisionRecordWithTheRuntime(t *testing.T) {
 func TestThePanelQuotesNoPathWithTheRuntime(t *testing.T) {
 	bin := requireBinary(t)
 	t.Setenv("JPACK_CONFIG", "")
-	project := t.TempDir()
-	secret := filepath.Join(t.TempDir(), "SECRET-AUDIT-PATH")
-	writeProject(t, project, map[string]string{"jpack.json": `{"configVersion":"5","audit":{"dir":` + strconv.Quote(secret) + `},"packs":{}}` + "\n"})
-	s, ts := startDesk(t, Config{ProjectDir: project, JpackBin: bin, Token: testToken, Logger: log.New(io.Discard, "", 0)})
-	t.Cleanup(func() { s.Close() })
-	t.Cleanup(ts.Close)
-	status, data := reviewCall(t, ts, "GET", "/api/audit/verify", "", nil, bearer)
-	var answer auditAnswer
-	if status != http.StatusOK || json.Unmarshal(data, &answer) != nil {
-		t.Fatalf("the panel answered %d %s", status, data)
-	}
-	if answer.State == auditStateOlder {
-		t.Skip("this runtime has no audit commands")
-	}
-	for _, leaked := range []string{"SECRET-AUDIT-PATH", "/proc/self", project, filepath.Dir(secret)} {
-		if strings.Contains(string(data), leaked) {
-			t.Errorf("the panel says %q: %s", leaked, data)
+	outside := t.TempDir()
+	for _, dir := range []string{
+		filepath.Join(outside, "SECRET-AUDIT-PATH"),
+		filepath.Join(outside, "Top SECRET (audit) dir"),
+		"../Top SECRET dir",
+		"Top SECRET dir",
+	} {
+		project := t.TempDir()
+		writeProject(t, project, map[string]string{"jpack.json": `{"configVersion":"5","audit":{"dir":` + strconv.Quote(dir) + `},"packs":{}}` + "\n"})
+		s, ts := startDesk(t, Config{ProjectDir: project, JpackBin: bin, Token: testToken, Logger: log.New(io.Discard, "", 0)})
+		status, data := reviewCall(t, ts, "GET", "/api/audit/verify", "", nil, bearer)
+		ts.Close()
+		s.Close()
+		var answer auditAnswer
+		if status != http.StatusOK || json.Unmarshal(data, &answer) != nil {
+			t.Fatalf("%q: the panel answered %d %s", dir, status, data)
 		}
-	}
-	if answer.State != auditStateUnverified || len(answer.Diagnostics) == 0 {
-		t.Errorf("the panel answered %+v, want the runtime's refusal", answer)
+		if answer.State == auditStateOlder {
+			t.Skip("this runtime has no audit commands")
+		}
+		for _, leaked := range []string{"SECRET", "(audit)", "/proc/self", project, outside} {
+			if strings.Contains(string(data), leaked) {
+				t.Errorf("%q: the panel says %q: %s", dir, leaked, data)
+			}
+		}
+		if answer.State != auditStateUnverified || len(answer.Diagnostics) == 0 {
+			t.Errorf("%q: the panel answered %+v, want the runtime's refusal", dir, answer)
+		}
 	}
 }

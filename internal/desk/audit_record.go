@@ -197,30 +197,95 @@ func mustJSON(v any) string {
 	return string(data)
 }
 
-// withoutPaths is message with no path from the root of a file system in it.
+// withoutPaths is message with no path from the root of a file system in it,
+// for an answer that may name this project's audit directory
+// (withoutPathsUnder, with the audit directory jpack.json declares now).
+func (s *Server) withoutPaths(message string) string {
+	auditDir, _, _ := s.projectAuditDir()
+	return s.withoutPathsUnder(message, auditDir)
+}
+
+// withoutPathsUnder is message with no path from the root of a file system
+// in it, where auditDir is the audit directory jpack.json declares.
 //
-// Each path this desk was configured with is replaced by what it names:
-// JPACK_CONFIG's value by the variable's name, the runtime binary by its file
-// name, and the project's folder by "the project's folder". Then every other
-// path from a root, such as the one the runtime resolves an absolute
-// `audit.dir` to, is replaced by "…", keeping its last name only where that is
-// one of the runtime's own files (withoutAbsolutePaths).
+//  1. **The audit directory, whole.** The runtime names its trail as the
+//     folder it ran in joined with audit.dir, whatever audit.dir holds: an
+//     absolute path is joined on, and ".." is resolved, so a directory
+//     outside the project is named by where it is. Desk joins audit.dir the
+//     same way to each name it has for that folder (the configured path, the
+//     resolved one, and a /proc/self/fd/N the runtime entered it through),
+//     and takes an absolute audit.dir on its own too. Each such span is
+//     replaced whole, longest first, before anything else, so a space or a
+//     parenthesis in it cannot end the replacement early.
+//  2. **The paths this desk was configured with:** JPACK_CONFIG's value by
+//     the variable's name, the runtime binary by its file name, and the
+//     project's folder by "the project's folder".
+//  3. **Every other path from a root**, Unix or a drive letter, by "…",
+//     keeping a last name only where it is one of the runtime's own files
+//     (withoutAbsolutePaths).
 //
 // **It is the one way a message reaches the page from the panel or the
 // download:** Desk's own errors, and every sentence of the runtime's that they
 // pass on (withoutPathsIn). So an answer names a setting and why, and never
 // says where the owner keeps their files. The log keeps the message whole.
-func (s *Server) withoutPaths(message string) string {
+func (s *Server) withoutPathsUnder(message, auditDir string) string {
+	const held = "\x00"
+	message = strings.ReplaceAll(message, held, "")
+	for _, span := range s.auditDirSpans(message, auditDir) {
+		message = strings.ReplaceAll(message, span, held)
+	}
 	for _, path := range []struct{ value, name string }{
 		{strings.TrimSpace(os.Getenv(runtimeConfigEnv)), runtimeConfigEnv},
 		{s.cfg.JpackBin, filepath.Base(s.cfg.JpackBin)},
 		{s.projectDir, "the project's folder"},
+		{s.cfg.ProjectDir, "the project's folder"},
 	} {
-		if path.value != "" && path.value != path.name {
+		if path.value != "" && path.value != path.name && filepath.IsAbs(path.value) {
 			message = strings.ReplaceAll(message, path.value, path.name)
 		}
 	}
-	return withoutAbsolutePaths(message)
+	return strings.ReplaceAll(withoutAbsolutePaths(message), held, "…")
+}
+
+// procFD is the name the runtime has for the folder it was started in where
+// Desk enters it through a descriptor it holds: on Linux the trampoline's
+// `cd /proc/self/fd/3/.` (project_linux.go), so the runtime's own working
+// directory is runtimeTrampolineDir. Any other such name a sentence holds is
+// taken too.
+var procFD = regexp.MustCompile(`/proc/self/fd/[0-9]+`)
+
+// runtimeTrampolineDir is the working directory the trampoline gives the
+// runtime. An audit.dir that climbs out is joined through it, so
+// "../x" is named /proc/self/fd/x, with no descriptor number left to find.
+const runtimeTrampolineDir = "/proc/self/fd/3"
+
+// auditDirSpans is every way a sentence can name the audit directory
+// auditDir: joined to each name of the folder the runtime ran in, and on its
+// own where it is absolute. Longest first, so a shorter span never cuts a
+// longer one.
+func (s *Server) auditDirSpans(message, auditDir string) []string {
+	if strings.TrimSpace(auditDir) == "" {
+		return nil
+	}
+	bases := []string{s.projectDir, s.cfg.ProjectDir, runtimeTrampolineDir}
+	if real, err := filepath.EvalSymlinks(s.projectDir); err == nil {
+		bases = append(bases, real)
+	}
+	bases = append(bases, procFD.FindAllString(message, -1)...)
+	var spans []string
+	for _, base := range bases {
+		if base != "" {
+			spans = append(spans, filepath.Join(base, auditDir))
+		}
+	}
+	if filepath.IsAbs(auditDir) {
+		spans = append(spans, filepath.Clean(auditDir), auditDir)
+		if real, err := filepath.EvalSymlinks(auditDir); err == nil {
+			spans = append(spans, real)
+		}
+	}
+	slices.SortFunc(spans, func(a, b string) int { return len(b) - len(a) })
+	return slices.Compact(spans)
 }
 
 // pathInMessage is a path from the root of a file system that a message
@@ -261,10 +326,12 @@ func withoutAbsolutePaths(message string) string {
 // withoutPaths: the runtime's diagnostics, and its report's findings,
 // details, reasons and the sentences of what it establishes.
 func (s *Server) withoutPathsIn(answer auditAnswer) auditAnswer {
+	auditDir, _, _ := s.projectAuditDir()
+	clean := func(message string) string { return s.withoutPathsUnder(message, auditDir) }
 	if answer.Diagnostics != nil {
 		said := make([]runtimeDiagnostic, len(answer.Diagnostics))
 		for i, diagnostic := range answer.Diagnostics {
-			said[i] = runtimeDiagnostic{Code: diagnostic.Code, Message: s.withoutPaths(diagnostic.Message)}
+			said[i] = runtimeDiagnostic{Code: diagnostic.Code, Message: clean(diagnostic.Message)}
 		}
 		answer.Diagnostics = said
 	}
@@ -273,29 +340,29 @@ func (s *Server) withoutPathsIn(answer auditAnswer) auditAnswer {
 	}
 	report := *answer.Report
 	for _, state := range []*auditCoverageState{&report.Coverage.Signed, &report.Coverage.Checkpointed, &report.Coverage.Stamped} {
-		state.Detail = s.withoutPaths(state.Detail)
+		state.Detail = clean(state.Detail)
 	}
 	report.Discontinuities = slices.Clone(report.Discontinuities)
 	for i := range report.Discontinuities {
-		report.Discontinuities[i].Reason = s.withoutPaths(report.Discontinuities[i].Reason)
+		report.Discontinuities[i].Reason = clean(report.Discontinuities[i].Reason)
 	}
 	report.Findings = slices.Clone(report.Findings)
 	for i := range report.Findings {
-		report.Findings[i].Detail = s.withoutPaths(report.Findings[i].Detail)
+		report.Findings[i].Detail = clean(report.Findings[i].Detail)
 	}
-	report.Establishes = sentencesWithoutPaths(s, report.Establishes)
-	report.DoesNotEstablish = sentencesWithoutPaths(s, report.DoesNotEstablish)
+	report.Establishes = sentencesWithoutPaths(clean, report.Establishes)
+	report.DoesNotEstablish = sentencesWithoutPaths(clean, report.DoesNotEstablish)
 	answer.Report = &report
 	return answer
 }
 
-func sentencesWithoutPaths(s *Server, sentences []string) []string {
+func sentencesWithoutPaths(clean func(string) string, sentences []string) []string {
 	if sentences == nil {
 		return nil
 	}
 	out := make([]string, len(sentences))
 	for i, sentence := range sentences {
-		out[i] = s.withoutPaths(sentence)
+		out[i] = clean(sentence)
 	}
 	return out
 }

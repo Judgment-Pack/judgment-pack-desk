@@ -274,10 +274,11 @@ sentences on what the result establishes and what it does not, in English as
 the runtime writes them. Exit 1 with a report is a failed check, and the report
 is shown, once every member a report has is there; a refusal the runtime
 explains, on any non-zero exit, is shown in its words; any other answer is
-shown as an error. In every sentence the panel passes on, a path from the root
-of a file system is replaced by “…”, keeping only the name of one of the
-runtime's own files, so the panel does not say where your files are; Desk's
-log keeps the sentence whole. Desk ran it on your machine, over your trail: it is not
+shown as an error. In every sentence the panel passes on, the audit directory,
+wherever `jpack.json` puts it, and any other path from the root of a file
+system are replaced by “…”, keeping only the name of one of the runtime's own
+files, so the panel does not say where your files are; Desk's log keeps the
+sentence whole. Desk ran it on your machine, over your trail: it is not
 evidence to anyone who does not trust you. A holder runs the same command on a
 copy, with what it holds. With a runtime that does not read configVersion `"6"`
 (before 0.26.0), or whose command parser says, and says only, that it has no
