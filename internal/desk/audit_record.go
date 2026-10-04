@@ -37,6 +37,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 )
@@ -179,15 +180,36 @@ func (s *Server) handleAuditVerify(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, http.StatusInternalServerError, CodeInternal, "The decision record could not be checked: "+strings.TrimRight(s.withoutPaths(err.Error()), ".")+".")
 		return
 	}
-	writeJSON(w, http.StatusOK, answer)
+	shown := s.withoutPathsIn(answer)
+	if before, after := mustJSON(answer), mustJSON(shown); before != after {
+		// The page is told no path; the owner's own log keeps them.
+		s.log.Printf("desk: the decision record, as the runtime said it: %s", before)
+	}
+	writeJSON(w, http.StatusOK, shown)
 }
 
-// withoutPaths is message with each path this desk was configured with
-// replaced by what it names: JPACK_CONFIG's value by the variable's name, the
-// runtime binary by its file name, and the project's folder by "the project's
-// folder". An error the panel or the download answers with names a setting
-// and why, and never quotes where the owner keeps their files. The log keeps
-// the message whole.
+// mustJSON is v as JSON, for comparing two answers and for the log.
+func mustJSON(v any) string {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Sprint(v)
+	}
+	return string(data)
+}
+
+// withoutPaths is message with no path from the root of a file system in it.
+//
+// Each path this desk was configured with is replaced by what it names:
+// JPACK_CONFIG's value by the variable's name, the runtime binary by its file
+// name, and the project's folder by "the project's folder". Then every other
+// path from a root, such as the one the runtime resolves an absolute
+// `audit.dir` to, is replaced by "…", keeping its last name only where that is
+// one of the runtime's own files (withoutAbsolutePaths).
+//
+// **It is the one way a message reaches the page from the panel or the
+// download:** Desk's own errors, and every sentence of the runtime's that they
+// pass on (withoutPathsIn). So an answer names a setting and why, and never
+// says where the owner keeps their files. The log keeps the message whole.
 func (s *Server) withoutPaths(message string) string {
 	for _, path := range []struct{ value, name string }{
 		{strings.TrimSpace(os.Getenv(runtimeConfigEnv)), runtimeConfigEnv},
@@ -198,7 +220,84 @@ func (s *Server) withoutPaths(message string) string {
 			message = strings.ReplaceAll(message, path.value, path.name)
 		}
 	}
-	return message
+	return withoutAbsolutePaths(message)
+}
+
+// pathInMessage is a path from the root of a file system that a message
+// names: "/" or a drive letter, at the start or after a space, a double
+// quote, a parenthesis, a bracket or "=", up to the next space, quote,
+// parenthesis or bracket. Not after a single quote: the runtime's schema
+// diagnostics quote JSON pointers so ('/audit/chain'), and those are not
+// paths. Not after a colon either, so a URL's "//" is left as it is.
+var pathInMessage = regexp.MustCompile(`(?:^|[\s"(=\[])((?:/|[A-Za-z]:[\\/])[^\s"'()\[\]]*)`)
+
+// runtimeFileNames are the runtime's own files, whose names a redacted path
+// keeps: which file a sentence is about is what makes it useful.
+var runtimeFileNames = []string{"evaluations.jsonl", "signatures.jsonl", "stamps.jsonl", runtimeConfigName, runtimeLockName}
+
+// withoutAbsolutePaths is message with each absolute path replaced by "…",
+// or by "…/" and its last name where that is one of runtimeFileNames.
+// Punctuation that ends a sentence after a path stays.
+func withoutAbsolutePaths(message string) string {
+	var out strings.Builder
+	last := 0
+	for _, match := range pathInMessage.FindAllStringSubmatchIndex(message, -1) {
+		start, end := match[2], match[3]
+		path := strings.TrimRight(message[start:end], ".,:;")
+		out.WriteString(message[last:start])
+		base := path[strings.LastIndexAny(path, `/\`)+1:]
+		if slices.Contains(runtimeFileNames, base) {
+			out.WriteString("…/" + base)
+		} else {
+			out.WriteString("…")
+		}
+		last = start + len(path)
+	}
+	out.WriteString(message[last:])
+	return out.String()
+}
+
+// withoutPathsIn is answer with every sentence in it passed through
+// withoutPaths: the runtime's diagnostics, and its report's findings,
+// details, reasons and the sentences of what it establishes.
+func (s *Server) withoutPathsIn(answer auditAnswer) auditAnswer {
+	if answer.Diagnostics != nil {
+		said := make([]runtimeDiagnostic, len(answer.Diagnostics))
+		for i, diagnostic := range answer.Diagnostics {
+			said[i] = runtimeDiagnostic{Code: diagnostic.Code, Message: s.withoutPaths(diagnostic.Message)}
+		}
+		answer.Diagnostics = said
+	}
+	if answer.Report == nil {
+		return answer
+	}
+	report := *answer.Report
+	for _, state := range []*auditCoverageState{&report.Coverage.Signed, &report.Coverage.Checkpointed, &report.Coverage.Stamped} {
+		state.Detail = s.withoutPaths(state.Detail)
+	}
+	report.Discontinuities = slices.Clone(report.Discontinuities)
+	for i := range report.Discontinuities {
+		report.Discontinuities[i].Reason = s.withoutPaths(report.Discontinuities[i].Reason)
+	}
+	report.Findings = slices.Clone(report.Findings)
+	for i := range report.Findings {
+		report.Findings[i].Detail = s.withoutPaths(report.Findings[i].Detail)
+	}
+	report.Establishes = sentencesWithoutPaths(s, report.Establishes)
+	report.DoesNotEstablish = sentencesWithoutPaths(s, report.DoesNotEstablish)
+	answer.Report = &report
+	return answer
+}
+
+func sentencesWithoutPaths(s *Server, sentences []string) []string {
+	if sentences == nil {
+		return nil
+	}
+	out := make([]string, len(sentences))
+	for i, sentence := range sentences {
+		out[i] = s.withoutPaths(sentence)
+	}
+	return out
 }
 
 // auditDirOf is the audit directory a configuration declares, `audit.dir`,

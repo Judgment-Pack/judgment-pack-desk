@@ -2307,6 +2307,21 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if err := json.Unmarshal(config, &declared); err != nil {
 		return "", false, nil
 	}'
+  mutate go "audit: the panel's answer is passed on with its paths" "$AR" \
+    '	shown := s.withoutPathsIn(answer)' \
+    '	shown := answer'
+  mutate go "audit: a path not configured is passed on" "$AR" \
+    '	return withoutAbsolutePaths(message)' \
+    '	return message'
+  mutate go "audit: a redacted path keeps its last name" "$AR" \
+    '		if slices.Contains(runtimeFileNames, base) {' \
+    '		if true {'
+  mutate go "audit: the runtime's words are not kept in the log" "$AR" \
+    '		s.log.Printf("desk: the decision record, as the runtime said it: %s", before)' \
+    '		_ = before'
+  mutate go "audit: every answer is logged" "$AR" \
+    'before != after {' \
+    'before != after || after != "" {'
   mutate go "audit: the panel's route is not served" "$S" \
     '	s.mux.HandleFunc("GET /api/audit/verify", s.handleAuditVerify)
 ' \
