@@ -3686,5 +3686,10 @@
   "Unchained lines a later chained line commits to": "이후의 체인 줄이 확정하는 체인 없는 줄",
   "What this does not establish": "이것이 입증하지 않는 것",
   "What this establishes": "이것이 입증하는 것",
-  "Witnessed through record {{sequence}}": "기록 {{sequence}}까지 입증됨"
+  "Witnessed through record {{sequence}}": "기록 {{sequence}}까지 입증됨",
+  "Download the trail": "추적 다운로드",
+  "Download {{file}}": "{{file}} 다운로드",
+  "Each file is saved under the runtime’s own name, as its bytes stood on disk between two writes.": "각 파일은 런타임 자체의 이름으로 저장되며, 두 번의 쓰기 사이에 디스크에 있던 바이트 그대로입니다.",
+  "Saved {{file}}.": "{{file}}을(를) 저장했습니다.",
+  "The file could not be downloaded. Please try again.": "파일을 다운로드하지 못했습니다. 다시 시도해 주세요."
 }
