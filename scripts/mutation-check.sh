@@ -2126,6 +2126,240 @@ func (b *cappedBuffer) exceeded() bool {'
     '; desks Desk made ignore it")' \
     '; desks Desk made ignore it: " + os.Getenv(runtimeSigningKeyEnv))'
 
+  # **The decision-record panel (ADR-0010, sections 4, 6 and 8).** It runs the
+  # runtime's own `audit verify` with no held input and no `--require-…` flag,
+  # only where `packs schema` names "6" and the command parser does not say,
+  # alone and exit 3, that the command is absent; a failed `packs schema` is an
+  # error. Exit 0 or 1 with a report is read only with every member a report
+  # has; a refusal with the runtime's words, on any non-zero exit, is shown in
+  # them; anything else is an error. It refuses where the review refuses,
+  # naming JPACK_CONFIG and not its value, runs each desk's command in that
+  # desk's folder, and runs nothing for a project that keeps no trail.
+  AR=internal/desk/audit_record.go
+  mutate go "audit: the capability check is skipped" "$AR" \
+    '	if !slices.Contains(schema.supported, auditConfigVersion) {' \
+    '	if !slices.Contains(schema.supported, auditConfigVersion) && false {'
+  mutate go "audit: another configuration version is taken as the sign" "$AR" \
+    '	auditConfigVersion = "6"' \
+    '	auditConfigVersion = "5"'
+  mutate go "audit: a failed packs schema reads as an older runtime" "$AR" \
+    '	schema, err := readRuntimeSchema(ctx, s.cfg.JpackBin, dir)
+	if err != nil {
+		return auditAnswer{}, err
+	}' \
+    '	schema, err := readRuntimeSchema(ctx, s.cfg.JpackBin, dir)
+	if err != nil {
+		return auditAnswer{State: auditStateOlder, Floor: auditRuntimeFloor}, nil
+	}'
+  mutate go "audit: a reader's demand is passed" "$AR" \
+    '"audit", "verify", "--config", runtimeConfigName, "--format", "json")' \
+    '"audit", "verify", "--config", runtimeConfigName, "--format", "json", "--require-checkpoint-through", "1")'
+  mutate go "audit: a public key is passed" "$AR" \
+    '"audit", "verify", "--config", runtimeConfigName, "--format", "json")' \
+    '"audit", "verify", "--config", runtimeConfigName, "--public-key", "keys.pub", "--format", "json")'
+  mutate go "audit: the configuration is not named" "$AR" \
+    '"audit", "verify", "--config", runtimeConfigName, "--format", "json")' \
+    '"audit", "verify", "--format", "json")'
+  mutate go "audit: exit 1 is not read as a report" "$AR" \
+    '|| code == 1 && got.Status == "invalid"):' \
+    '):'
+  mutate go "audit: a report's status is not held to its exit" "$AR" \
+    '	case got.Command == auditVerifyCommand && (code == 0 && (got.Status == "valid" || got.Status == "segmented") || code == 1 && got.Status == "invalid"):' \
+    '	case got.Command == auditVerifyCommand && (got.Status == "valid" || got.Status == "segmented" || got.Status == "invalid"):'
+  mutate go "audit: a report's list missing is shown" "$AR" \
+    '	if got.Coverage == nil || got.Snapshot == nil || got.Segments == nil || got.Discontinuities == nil || got.Findings == nil || got.Establishes == nil || got.DoesNotEstablish == nil {' \
+    '	if got.Coverage == nil || got.Snapshot == nil {'
+  mutate go "audit: a missing count reads as zero" "$AR" \
+    '	if value == nil || *value < 0 {
+		p.missing = true
+		return 0
+	}' \
+    '	if value == nil {
+		return 0
+	}
+	if *value < 0 {
+		p.missing = true
+		return 0
+	}'
+  mutate go "audit: a negative count is shown" "$AR" \
+    '	if value == nil || *value < 0 {
+		p.missing = true' \
+    '	if value == nil {
+		p.missing = true'
+  mutate go "audit: a protection with no status is shown" "$AR" \
+    '	state := auditCoverageState{Status: p.text(value.Status, true)}' \
+    '	state := auditCoverageState{}
+	if value.Status != nil {
+		state.Status = *value.Status
+	}'
+  mutate go "audit: through no sequence is shown" "$AR" \
+    '	if value.Through != nil || state.Status == "through" {
+		state.Through = p.count(value.Through)
+		if state.Status == "through" && state.Through < 1 {
+			p.missing = true
+		}
+	}' \
+    '	if value.Through != nil {
+		state.Through = *value.Through
+	}'
+  mutate go "audit: more findings than their total are shown" "$AR" \
+    '		report.FindingsTotal < int64(len(report.Findings)) ||' \
+    ''
+  mutate go "audit: more segments than their total are shown" "$AR" \
+    '		report.SegmentsTotal < int64(len(report.Segments)) ||' \
+    ''
+  mutate go "audit: more discontinuities than their total are shown" "$AR" \
+    '		report.DiscontinuitiesTotal < int64(len(report.Discontinuities)) ||' \
+    ''
+  mutate go "audit: findings that disagree with the status are shown" "$AR" \
+    '		report.FindingsTotal < int64(len(report.Findings)) ||
+		(report.Status == "invalid") != (report.FindingsTotal > 0) {' \
+    '		report.FindingsTotal < int64(len(report.Findings)) {'
+  mutate go "audit: the legacy prefix is dropped" "$AR" \
+    'LegacyPrefix: p.count(c.LegacyPrefix),' \
+    'LegacyPrefix: 0 * p.count(c.LegacyPrefix),'
+  mutate go "audit: unchained lines are dropped" "$AR" \
+    'Unchained: p.count(c.Unchained),' \
+    'Unchained: 0 * p.count(c.Unchained),'
+  mutate go "audit: absence is read on any exit" "$AR" \
+    '	return code == 3 && len(got.Diagnostics) == 1' \
+    '	return code > 0 && len(got.Diagnostics) == 1'
+  mutate go "audit: absence is read beside other diagnostics" "$AR" \
+    '	return code == 3 && len(got.Diagnostics) == 1' \
+    '	return code == 3 && len(got.Diagnostics) >= 1'
+  mutate go "audit: absence is read under any code" "$AR" \
+    ' && got.Diagnostics[0].Code == "JPS-INVOCATION-ARGUMENTS" &&' \
+    ' &&'
+  mutate go "audit: any invocation error reads as absence" "$AR" \
+    '		slices.Contains(auditAbsentMessages, got.Diagnostics[0].Message)' \
+    '		got.Diagnostics[0].Message != ""'
+  mutate go "audit: a missing verify is not read as absence" "$AR" \
+    '	`unknown command "verify" for "jpack audit"`,
+' \
+    ''
+  mutate go "audit: a runtime without audit verify is an error" "$AR" \
+    '	case got.absent(code):
+		return auditAnswer{State: auditStateOlder}, nil' \
+    '	case false:
+		return auditAnswer{State: auditStateOlder}, nil'
+  mutate go "audit: the runtime's refusal is an error" "$AR" \
+    '	case code > 0 && (got.Status == "error" || got.Status == "unsupported") && got.said():' \
+    '	case false:'
+  mutate go "audit: a refusal that exits 1 is an error" "$AR" \
+    '	case code > 0 && (got.Status == "error" || got.Status == "unsupported") && got.said():' \
+    '	case code > 1 && (got.Status == "error" || got.Status == "unsupported") && got.said():'
+  mutate go "audit: a refusal for the root command is an error" "$AR" \
+    '	case code > 0 && (got.Status == "error" || got.Status == "unsupported") && got.said():' \
+    '	case code > 0 && got.Command == auditVerifyCommand && (got.Status == "error" || got.Status == "unsupported") && got.said():'
+  mutate go "audit: a refusal that exits 0 is shown" "$AR" \
+    '	case code > 0 && (got.Status == "error" || got.Status == "unsupported") && got.said():' \
+    '	case (got.Status == "error" || got.Status == "unsupported") && got.said():'
+  mutate go "audit: a refusal with no words is shown" "$AR" \
+    '		if diagnostic.Code == "" || diagnostic.Message == "" {' \
+    '		if diagnostic.Code == "" && false {'
+  mutate go "audit: an older runtime's answer drops its version" "$AR" \
+    '	if answer.State == auditStateOlder {
+		return older, nil
+	}' \
+    '	if answer.State == auditStateOlder {
+		return answer, nil
+	}'
+  mutate go "audit: the report does not say which runtime made it" "$AR" \
+    '	answer.Runtime = schema.version
+' \
+    ''
+  mutate go "audit: available on the startup desk under another JPACK_CONFIG" "$AR" \
+    '	dir, refusal := s.auditRuntime()
+	if refusal != "" {' \
+    '	dir, refusal := s.auditRuntime()
+	if false {'
+  mutate go "audit: the refusal speaks of the review" "$AR" \
+    'so Desk does not check its decision record here."' \
+    'so Desk does not review or lock it here."'
+  mutate go "audit: the refusal quotes JPACK_CONFIG's value" "$AR" \
+    '		return dir, "This project'"'"'s runtime reads the configuration that JPACK_CONFIG names where Desk was started' \
+    '		return dir, "This project'"'"'s runtime reads the configuration that " + named + " names where Desk was started'
+  mutate go "audit: an error quotes a configured path" "$AR" \
+    'strings.TrimRight(s.withoutPaths(err.Error()), ".")' \
+    'strings.TrimRight(err.Error(), ".")'
+  mutate go "audit: a named desk is checked in the startup desk's folder" "$AR" \
+    '	dir, named, ok := s.projectRuntime()
+	switch {
+	case !ok:
+		return heldDir{}, "This desk holds no project whose decision record Desk can check."' \
+    '	dir, named, ok := s.projectRuntime()
+	if s.cfg.parent != nil {
+		dir, named, ok = s.cfg.parent.projectRuntime()
+	}
+	switch {
+	case !ok:
+		return heldDir{}, "This desk holds no project whose decision record Desk can check."'
+  mutate go "audit: a project that keeps no trail has the runtime run" "$AR" \
+    '	} else if !declared {' \
+    '	} else if !declared && false {'
+  mutate go "audit: an empty audit directory counts as one" "$AR" \
+    '	if declared.Audit == nil || declared.Audit.Dir == nil || *declared.Audit.Dir == "" {' \
+    '	if declared.Audit == nil || declared.Audit.Dir == nil {'
+  mutate go "audit: a configuration Desk cannot read keeps no trail" "$AR" \
+    '	if err := json.Unmarshal(config, &declared); err != nil {
+		return "", false, err
+	}' \
+    '	if err := json.Unmarshal(config, &declared); err != nil {
+		return "", false, nil
+	}'
+  mutate go "audit: the panel's answer is passed on with its paths" "$AR" \
+    '	shown := s.withoutPathsIn(answer)' \
+    '	shown := answer'
+  mutate go "audit: a path not configured is passed on" "$AR" \
+    '	return strings.ReplaceAll(withoutAbsolutePaths(message), held, "…")' \
+    '	return strings.ReplaceAll(message, held, "…")'
+  mutate go "audit: the audit directory is not replaced whole" "$AR" \
+    '		message = strings.ReplaceAll(message, span, held)' \
+    '		_ = span'
+  mutate go "audit: the runtime's working directory is not a base" "$AR" \
+    's.cfg.ProjectDir, runtimeTrampolineDir}' \
+    's.cfg.ProjectDir}'
+  mutate go "audit: a shorter span is replaced first" "$AR" \
+    'return len(b) - len(a)' \
+    'return len(a) - len(b)'
+  mutate go "audit: an absolute audit directory on its own is passed on" "$AR" \
+    '		spans = append(spans, filepath.Clean(auditDir), auditDir)' \
+    '		_ = auditDir'
+  mutate go "audit: what the report does not establish is passed on with its paths" "$AR" \
+    '	report.DoesNotEstablish = sentencesWithoutPaths(clean, report.DoesNotEstablish)' \
+    ''
+  mutate go "audit: a discontinuity's reason is passed on with its paths" "$AR" \
+    '		report.Discontinuities[i].Reason = clean(report.Discontinuities[i].Reason)' \
+    '		_ = i'
+  mutate go "audit: a redacted path keeps its last name" "$AR" \
+    '		if slices.Contains(runtimeFileNames, base) {' \
+    '		if true {'
+  mutate go "audit: the runtime's words are not kept in the log" "$AR" \
+    '		s.log.Printf("desk: the decision record, as the runtime said it: %s", before)' \
+    '		_ = before'
+  mutate go "audit: every answer is logged" "$AR" \
+    'before != after {' \
+    'before != after || after != "" {'
+  mutate go "audit: a path as the runtime displays it is not taken" "$AR" \
+    '		if shown := displayedPath(span); shown != span {' \
+    '		if shown := displayedPath(span); shown != span && false {'
+  mutate go "audit: a path to a runtime file is cut at its first space" "$AR" \
+    'return withoutPathsMatching(withoutPathsMatching(message, pathToRuntimeFile), pathInMessage)' \
+    'return withoutPathsMatching(message, pathInMessage)'
+  mutate go "audit: a path to a runtime file runs across a clause" "$AR" \
+    '[^\n":;]*?' \
+    '[^\n":]*?'
+  mutate go "audit: a line separator is not taken as the runtime prints it" "$AR" \
+    ' || unicode.Is(unicode.Zl, r)' \
+    ''
+  mutate go "audit: a paragraph separator is not taken as the runtime prints it" "$AR" \
+    ' || unicode.Is(unicode.Zp, r)' \
+    ''
+  mutate go "audit: the panel's route is not served" "$S" \
+    '	s.mux.HandleFunc("GET /api/audit/verify", s.handleAuditVerify)
+' \
+    ''
+
   # **Tested releases by default (ADR-0009).** The flag is on unless the owner
   # passes `=false`; the boot line states the choice either way; and the
   # desk-config answer reports it, `false` included, so the page can say which.
@@ -8879,6 +9113,130 @@ export function assistantTransport(id: string): Transport {
   mutate web "signing key: the line never shows" "$GH" \
     '    {chassis?.runtimeInheritsSigningKey === true && <p' \
     '    {false && <p'
+
+  # **The decision-record panel on the page (ADR-0010, sections 4 and 6).** An
+  # older runtime gets one sentence and nothing beside it; the report shows the
+  # runtime's counts, findings and sentences, verbatim and marked English, and
+  # only a report with every member is accepted; Desk's refusal is said as
+  # Desk's; and the panel runs each time it becomes visible and on request,
+  # never on a timer, focus, reconnect or project change.
+  DR=web/src/audit/DecisionRecord.tsx
+  AC=web/src/audit/client.ts
+  MP=web/src/mcp/McpProvider.tsx
+  # The query also sets no interval and no refetch on focus or reconnect, but
+  # a disabled query runs none of those: `enabled: false` is the safeguard,
+  # and the row that turns it on is the one that can fail a test.
+  mutate web "record: the query runs on its own" "$DR" \
+    "    enabled: false," \
+    "    enabled: true,"
+  mutate web "record: becoming visible again runs nothing" "$DR" \
+    "{ cancelRefetch: false }) }, [visible])" \
+    "{ cancelRefetch: false }) }, [])"
+  mutate web "record: it runs while hidden" "$DR" \
+    "  useEffect(() => { if (visible) void refetch.current(" \
+    "  useEffect(() => { if (visible || !visible) void refetch.current("
+  mutate web "record: Admin says it is always visible" web/src/routes/AdminView.tsx \
+    "<DecisionRecord visible={open.id === 'project'} />" \
+    "<DecisionRecord visible />"
+  mutate web "record: not marked to run only on request" "$DR" \
+    "    meta: ON_REQUEST_ONLY," \
+    "    meta: { ...ON_REQUEST_ONLY, onRequestOnly: false },"
+  mutate web "record: every query follows the project" web/src/mcp/projectChange.ts \
+    "  return query.meta?.onRequestOnly !== true" \
+    "  return query.meta?.onRequestOnly !== true || true"
+  mutate web "record: a file change cancels its run" "$MP" \
+    "await queryClient.cancelQueries({ predicate: followsTheProject })" \
+    "await queryClient.cancelQueries()"
+  mutate web "record: a file change invalidates it" "$MP" \
+    "        await queryClient.invalidateQueries({ predicate: followsTheProject })" \
+    "        await queryClient.invalidateQueries()"
+  mutate web "record: a reconnect invalidates it" "$MP" \
+    "if (reconnecting) await queryClient.invalidateQueries({ predicate: followsTheProject })" \
+    "if (reconnecting) await queryClient.invalidateQueries()"
+  mutate web "record: asking again runs nothing" "$DR" \
+    "  const again = <div><Button onClick={() => void query.refetch()}" \
+    "  const again = <div><Button onClick={() => undefined}"
+  mutate web "record: an older runtime's line claims signing" "$DR" \
+    "            : record?.state === 'older-runtime' ? <p>{msg(" \
+    "            : record?.state === 'older-runtime' ? <p>{msg('Signed through record {{sequence}}', { sequence: 0 })} {msg("
+  mutate web "record: an older runtime's line has a control beside it" "$DR" \
+    "floor: record.floor })}</p>" \
+    "floor: record.floor })}{again}</p>"
+  mutate web "record: an older runtime's line names another version" "$DR" \
+    "{ version: record.runtime ?? '?', floor: record.floor }" \
+    "{ version: record.floor, floor: record.floor }"
+  mutate web "record: what Desk did not give is not said" "$DR" \
+    "                    <p className={styles.statement}>{msg(" \
+    "                    <p className={styles.statement}>{false && msg("
+  mutate web "record: the establishes sentences are not marked English" "$DR" \
+    "<ul className={styles.list} lang=\"en\">{report.establishes" \
+    "<ul className={styles.list}>{report.establishes"
+  mutate web "record: what the result does not establish is not shown" "$DR" \
+    "    {report.doesNotEstablish.length > 0 && <section" \
+    "    {false && <section"
+  mutate web "record: a finding is not named" "$DR" \
+    "          <code>{finding.name}</code>" \
+    "          <code>{finding.line}</code>"
+  mutate web "record: findings the runtime did not list are not counted" "$DR" \
+    "      {listed(report.findings.length, report.findingsTotal)}" \
+    "      {null}"
+  mutate web "record: a discontinuity is not shown" "$DR" \
+    "    {report.discontinuitiesTotal > 0 && <section" \
+    "    {false && <section"
+  mutate web "record: uncovered lines are shown as unchained" "$DR" \
+    "<dd>{coverage.uncovered}</dd>" \
+    "<dd>{coverage.unchained}</dd>"
+  mutate web "record: unwitnessed records are shown as witnessed" "$DR" \
+    "<dd>{coverage.unwitnessed}</dd>" \
+    "<dd>{coverage.witnessed}</dd>"
+  mutate web "record: an unchecked signature reads as none" "$DR" \
+    "    : state.status === 'none' && kind === 'signed' ? msg(" \
+    "    : (state.status === 'none' || state.status === 'not-checked') && kind === 'signed' ? msg("
+  mutate web "record: signature counts are shown where none was checked" "$DR" \
+    "      {coverage.signed.status !== 'not-checked' && <>" \
+    "      {true && <>"
+  mutate web "record: a snapshot taken with no lock is not said" "$DR" \
+    "    {!report.snapshotBetweenWrites && <p" \
+    "    {false && <p"
+  mutate web "record: Desk's refusal reads as a failure" "$AC" \
+    "  return response.status === 409 ? new AuditUnavailable(message) : new Error(message)" \
+    "  return new Error(message)"
+  mutate web "record: an answer that is not one is shown" "$AC" \
+    "  if (!isAuditRecord(value)) throw new Error(msg('The decision record could not be loaded. Please try again.'))
+  return value" \
+    "  return value as AuditRecord"
+  mutate web "record: an answer of no known state is accepted" "$AC" \
+    "    case 'no-trail': return true
+  }
+  return false" \
+    "    case 'no-trail': return true
+  }
+  return true"
+  mutate web "record: a report with no coverage is accepted" "$AC" \
+    "    && isCoverage(value.coverage) && " \
+    "    && (isCoverage(value.coverage) || true) && "
+  mutate web "record: the runtime's refusal with nothing said is accepted" "$AC" \
+    "    case 'unverified': return list(value.diagnostics, isDiagnostic) && value.diagnostics.length > 0" \
+    "    case 'unverified': return list(value.diagnostics, isDiagnostic)"
+  mutate web "record: a diagnostic with no words is accepted" "$AC" \
+    "object(value) && named(value.code) && named(value.message)" \
+    "object(value) && text(value.code) && text(value.message)"
+  mutate web "record: a count that is missing is accepted" "$AC" \
+    "  return object(value) && text(value.status) && count(value.lines) && count(value.bytes)" \
+    "  return object(value) && text(value.status) && (value.lines === undefined || count(value.lines)) && count(value.bytes)"
+  mutate web "record: through no record is accepted" "$AC" \
+    "
+  && (value.status !== 'through' || count(value.through) && value.through > 0)" \
+    ""
+  mutate web "record: a list longer than its total is accepted" "$AC" \
+    "    && value.findings.length <= value.findingsTotal && " \
+    "    && "
+  mutate web "record: findings that disagree with the status are accepted" "$AC" \
+    " && (value.status === 'invalid') === (value.findingsTotal > 0)" \
+    ""
+  mutate web "record: not in Admin → Project" web/src/routes/AdminView.tsx \
+    "                <DecisionRecord visible={open.id === 'project'} />" \
+    "                {false && <DecisionRecord visible={open.id === 'project'} />}"
 fi
 
 restore

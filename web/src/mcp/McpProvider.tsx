@@ -10,6 +10,7 @@ import { deskFetch } from '../files/client'
 import { NO_SESSION_MESSAGE, NoSession, sessionBearer, sessionEnded, whenSessionEnds } from './session'
 import { UNKNOWN_CAPABILITIES, type RuntimeCapabilities, listAllTools, readCapabilities } from './capabilities'
 import { DeskWebSocketTransport } from './transport'
+import { followsTheProject } from './projectChange'
 
 export type ConnectionStatus = 'connecting' | 'ready' | 'reconnecting' | 'failed'
 
@@ -305,9 +306,10 @@ export function McpProvider({ children }: { children: ReactNode }) {
         // it can make any cached answer stale. Cancel before invalidating:
         // invalidation alone reuses a fetch already in flight, and an answer
         // read from the tree before the change would land as fresh — the abort
-        // travels into callTool through each query's own signal.
-        await queryClient.cancelQueries()
-        await queryClient.invalidateQueries()
+        // travels into callTool through each query's own signal. A query that
+        // runs only when the page asks for it is left alone (projectChange.ts).
+        await queryClient.cancelQueries({ predicate: followsTheProject })
+        await queryClient.invalidateQueries({ predicate: followsTheProject })
       }
 
       // A socket that closes after a successful initialize is a lost
@@ -376,7 +378,7 @@ export function McpProvider({ children }: { children: ReactNode }) {
             retryNow
           })
           // Whatever the project did while the desk was away, it did unobserved.
-          if (reconnecting) await queryClient.invalidateQueries()
+          if (reconnecting) await queryClient.invalidateQueries({ predicate: followsTheProject })
         })
         .catch((cause: unknown) => {
           if (cause instanceof Disposed) {

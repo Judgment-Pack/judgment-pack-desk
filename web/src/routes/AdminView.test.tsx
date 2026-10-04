@@ -55,12 +55,18 @@ import { SECTION_SUMMARY } from '../admin/sectionSummary'
 import buttonStyles from '../ui/Button.module.css'
 import selectStyles from '../ui/Select.module.css'
 import { AdminView } from './AdminView'
+import { readAuditRecord } from '../audit/client'
 import { ADMIN_GROUPS, ADMIN_SECTIONS } from './adminSections'
+
+// The decision-record panel asks the chassis to run the runtime's audit
+// verify; here it is told the project keeps no trail, and counted.
+vi.mock(import('../audit/client'), async original => ({ ...(await original()), readAuditRecord: vi.fn(async () => ({ state: 'no-trail' as const })) }))
 
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
   window.localStorage.clear()
+  vi.mocked(readAuditRecord).mockClear()
 })
 
 const QUIET = stubClient({ list_packs: () => ({ text: JSON.stringify({ packs: [] }) }) })
@@ -899,6 +905,31 @@ describe('the Project section', () => {
       expect(section.textContent, elsewhere).not.toContain(elsewhere)
     }
     expect(page(container).querySelector('form')).toBeNull()
+  })
+
+  it('carries the decision record beside the gates, in the open section (ADR-0010)', () => {
+    renderAdmin()
+    const gates = screen.getByRole('heading', { name: 'Gates' })
+    const record = screen.getByRole('heading', { name: 'Decision record' })
+    expect(gates.compareDocumentPosition(record) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(record.closest('[hidden]')).toBeNull()
+    expect(document.getElementById('project')!.closest('[hidden]')).toBeNull()
+  })
+
+  it('runs the decision record each time Project is opened, and not while another section is', async () => {
+    const { container } = renderAdmin(everythingConfigured())
+    await screen.findByText(/This project keeps no trail/)
+    expect(readAuditRecord).toHaveBeenCalledTimes(1)
+    const open = (id: string) => fireEvent.click(rowsIn(container).find((row) => row.getAttribute('href') === `/admin#${id}`)!)
+    open('storage')
+    open('organization')
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)) })
+    expect(readAuditRecord).toHaveBeenCalledTimes(1)
+    open('project')
+    await waitFor(() => expect(readAuditRecord).toHaveBeenCalledTimes(2))
+    open('storage')
+    open('project')
+    await waitFor(() => expect(readAuditRecord).toHaveBeenCalledTimes(3))
   })
 
   it('carries exactly the state-changing controls it names, and no others', () => {

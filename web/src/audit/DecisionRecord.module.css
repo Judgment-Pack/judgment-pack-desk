@@ -1,0 +1,11 @@
+.card { display: grid; gap: var(--density-gap); min-width: 0; }
+.card p { margin: 0; }
+.statement { font-weight: 600; }
+.quiet { color: var(--ink-faint); font-size: var(--text-sm); }
+.heading { margin: 0 0 var(--space-1); font-size: var(--text-body); font-weight: 600; }
+.list { margin: 0; padding-left: 1.25rem; display: flex; flex-direction: column; gap: var(--space-1); overflow-wrap: anywhere; }
+.facts { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-1) var(--density-gap); }
+.facts > div { display: contents; }
+.facts dt { color: var(--ink-faint); }
+.facts dd { margin: 0; text-align: end; overflow-wrap: anywhere; }
+.actions { display: flex; flex-wrap: wrap; gap: var(--density-gap); }

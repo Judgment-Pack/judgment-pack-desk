@@ -332,18 +332,34 @@ func lockedSet(data []byte) (reviewSet, lockDocument, error) {
 // The directory is marked as the startup desk's where it is, so the commands
 // keep the owner's inherited `JPACK_SIGNING_KEY` there, and only there.
 func (s *Server) reviewRuntime() (heldDir, string) {
-	if s.project == nil || s.project.own == nil {
+	dir, named, ok := s.projectRuntime()
+	switch {
+	case !ok:
 		return heldDir{}, "This desk holds no project to review."
+	case named != "":
+		return dir, fmt.Sprintf("This project's runtime reads %s, which JPACK_CONFIG names, and not this project's %s, so Desk does not review or lock it here.", named, runtimeConfigName)
 	}
-	dir := heldDir{file: s.project.own.dirFile, path: s.projectDir, info: s.project.info, startup: s.cfg.deskID == ""}
+	return dir, ""
+}
+
+// projectRuntime is the directory for running the runtime over this desk's
+// project, as reviewRuntime describes it, or false where the desk holds no
+// project. Where the startup desk's runtime reads another configuration than
+// this project's, named is the JPACK_CONFIG value that names it, and the
+// caller refuses: each in its own words.
+func (s *Server) projectRuntime() (dir heldDir, named string, ok bool) {
+	if s.project == nil || s.project.own == nil {
+		return heldDir{}, "", false
+	}
+	dir = heldDir{file: s.project.own.dirFile, path: s.projectDir, info: s.project.info, startup: s.cfg.deskID == ""}
 	if s.cfg.deskID != "" {
-		return dir, ""
+		return dir, "", true
 	}
-	named := strings.TrimSpace(os.Getenv(runtimeConfigEnv))
+	named = strings.TrimSpace(os.Getenv(runtimeConfigEnv))
 	if named == "" || configNamesProject(named, s.projectDir, s.project.info) {
-		return dir, ""
+		return dir, "", true
 	}
-	return dir, fmt.Sprintf("This project's runtime reads %s, which JPACK_CONFIG names, and not this project's %s, so Desk does not review or lock it here.", named, runtimeConfigName)
+	return dir, named, true
 }
 
 // configNamesProject reports whether a JPACK_CONFIG value names the
