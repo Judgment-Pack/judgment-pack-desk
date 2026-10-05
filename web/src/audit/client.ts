@@ -1,12 +1,15 @@
 /**
- * The decision-record panel (ADR-0010, sections 4 and 6), as the page calls it.
+ * The decision-record panel (ADR-0010, sections 1, 4 and 6), as the page calls
+ * it.
  *
  * `GET /api/audit/verify` answers what the runtime's own `jpack audit verify`
- * finds in this desk's trail, run with no key, no held checkpoint and no
- * stamping roots: the report, with the runtime's member names; the runtime's
- * refusal to make one; that the runtime has no audit commands; or that the
- * project keeps no trail. It runs only when asked. Nothing here judges the
- * trail: the runtime's report is the answer.
+ * finds in this desk's trail, run with the public keys Desk keeps for the desk
+ * (none on the startup desk), no held checkpoint and no stamping roots: the
+ * report, with the runtime's member names; the runtime's refusal to make one;
+ * that the runtime has no audit commands; or that the project keeps no trail.
+ * Beside a report or a refusal: the keys Desk keeps and passed, and `packs
+ * validate`'s word on whether the key named signs. It runs only when asked.
+ * Nothing here judges the trail: the runtime's report is the answer.
  */
 import { deskFetch } from '../files/client'
 import { msg } from '../i18n'
@@ -30,6 +33,8 @@ export type AuditCoverage = {
 export type AuditSegment = { firstLine: number; lastLine: number }
 export type AuditDiscontinuity = { line: number; reason: string; damagedLine: number; bytes: number; digest: string }
 export type AuditFinding = { name: string; line: number; detail: string }
+/** The signature sidecar as the runtime read it, given where a key was passed. */
+export type AuditSignatures = { lines: number; unreadable: number; rotations: number; keysSupplied: number; revocations: number; firstKey: string; keyInForce: string }
 export type AuditReport = {
   /** The runtime's: `valid`, `segmented` or `invalid`. */
   status: string
@@ -43,17 +48,39 @@ export type AuditReport = {
   discontinuitiesTotal: number
   findings: AuditFinding[]
   findingsTotal: number
+  signatures?: AuditSignatures
   /** The runtime's own sentences, in English, as it wrote them. */
   establishes: string[]
   doesNotEstablish: string[]
 }
 export type AuditDiagnostic = { code: string; message: string }
+/** One public key Desk keeps for this desk: the key, the runtime's keyId for it, and the record it signs after. */
+export type DeskPublicKey = { publicKey: string; keyId: string; at: number }
+/**
+ * The keys Desk keeps for this desk: `kept`, each passed to the check in this
+ * order; `none`, a desk Desk made with no key; `startup`, the project Desk was
+ * started on, which keeps none in this version; `unread`, Desk could not read
+ * or pass them, and passed none.
+ */
+export type AuditKeys =
+  | { state: 'kept'; public: DeskPublicKey[] }
+  | { state: 'none' | 'startup' }
+  | { state: 'unread'; problem: string }
+/**
+ * `packs validate`'s word on the key named for this project: its
+ * `audit-signing-key` check, with the runtime's status and sentence; none,
+ * where no key is named; or why it did not say.
+ */
+export type AuditSigning =
+  | { state: 'check'; status: 'passed' | 'failed' | 'skipped'; detail?: string }
+  | { state: 'no-key' }
+  | { state: 'unread'; diagnostics?: AuditDiagnostic[]; problem?: string }
 /** The runtime's files a download can hand over, by the name the download takes. */
 export const TRAIL_FILES = { evaluations: 'evaluations.jsonl', signatures: 'signatures.jsonl', stamps: 'stamps.jsonl' } as const
 export type TrailFile = keyof typeof TRAIL_FILES
 export type AuditRecord =
-  | { state: 'report'; runtime?: string; report: AuditReport; files?: TrailFile[] }
-  | { state: 'unverified'; runtime?: string; diagnostics: AuditDiagnostic[]; files?: TrailFile[] }
+  | { state: 'report'; runtime?: string; report: AuditReport; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning }
+  | { state: 'unverified'; runtime?: string; diagnostics: AuditDiagnostic[]; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning }
   | { state: 'older-runtime'; runtime?: string; floor: string }
   | { state: 'no-trail' }
 
@@ -80,6 +107,32 @@ const isDiscontinuity = (value: unknown): value is AuditDiscontinuity => object(
 const isFinding = (value: unknown): value is AuditFinding => object(value) && named(value.name) && count(value.line) && text(value.detail)
 const isDiagnostic = (value: unknown): value is AuditDiagnostic => object(value) && named(value.code) && named(value.message)
 const isTrailFile = (value: unknown): value is TrailFile => text(value) && Object.hasOwn(TRAIL_FILES, value)
+const hex = (length: number) => (value: unknown): value is string => text(value) && new RegExp(`^[0-9a-f]{${length}}$`).test(value)
+const isSignatures = (value: unknown): value is AuditSignatures => object(value)
+  && ['lines', 'unreadable', 'rotations', 'keysSupplied', 'revocations'].every(name => count(value[name])) && named(value.firstKey) && named(value.keyInForce)
+const isPublicKey = (value: unknown): value is DeskPublicKey => object(value) && hex(64)(value.publicKey) && hex(32)(value.keyId) && count(value.at)
+
+/** The keys Desk keeps, as the chassis lists them: a kept list is at least one key, in order of the record each signs after. */
+export function isAuditKeys(value: unknown): value is AuditKeys {
+  if (!object(value)) return false
+  switch (value.state) {
+    case 'kept': return list(value.public, isPublicKey) && value.public.length > 0 && value.public.every((key, index, keys) => index === 0 ? key.at === 0 : key.at > keys[index - 1]!.at)
+    case 'none': case 'startup': return true
+    case 'unread': return named(value.problem)
+  }
+  return false
+}
+
+export function isAuditSigning(value: unknown): value is AuditSigning {
+  if (!object(value)) return false
+  switch (value.state) {
+    case 'check': return ['passed', 'failed', 'skipped'].includes(value.status as string) && optional(value.detail, text)
+    case 'no-key': return true
+    case 'unread': return optional(value.diagnostics, item => list(item, isDiagnostic)) && optional(value.problem, text)
+      && (value.diagnostics !== undefined && (value.diagnostics as unknown[]).length > 0 || named(value.problem))
+  }
+  return false
+}
 
 /**
  * A report with every member the runtime gives one, as the chassis checks it:
@@ -91,13 +144,14 @@ export function isAuditReport(value: unknown): value is AuditReport {
     && isCoverage(value.coverage) && list(value.segments, isSegment) && count(value.segmentsTotal)
     && list(value.discontinuities, isDiscontinuity) && count(value.discontinuitiesTotal)
     && list(value.findings, isFinding) && count(value.findingsTotal)
-    && list(value.establishes, text) && list(value.doesNotEstablish, text)
+    && list(value.establishes, text) && list(value.doesNotEstablish, text) && optional(value.signatures, isSignatures)
     && value.segments.length <= value.segmentsTotal && value.discontinuities.length <= value.discontinuitiesTotal
     && value.findings.length <= value.findingsTotal && (value.status === 'invalid') === (value.findingsTotal > 0)
 }
 
 export function isAuditRecord(value: unknown): value is AuditRecord {
-  if (!object(value) || !optional(value.runtime, text) || !optional(value.files, item => list(item, isTrailFile))) return false
+  if (!object(value) || !optional(value.runtime, text) || !optional(value.files, item => list(item, isTrailFile))
+    || !optional(value.keys, isAuditKeys) || !optional(value.signing, isAuditSigning)) return false
   switch (value.state) {
     case 'report': return isAuditReport(value.report)
     case 'unverified': return list(value.diagnostics, isDiagnostic) && value.diagnostics.length > 0

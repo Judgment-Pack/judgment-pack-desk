@@ -78,6 +78,10 @@ func openPrivateDataRoot(dir string, create bool) (*os.Root, error) {
 	return root, nil
 }
 
+// errPrivateDataChanged is a private file that was not the same file when
+// opened as when inspected: a moment's state, not the file's.
+var errPrivateDataChanged = errors.New("private data changed while being opened")
+
 func readPrivateData(root *os.Root, name string, limit int) ([]byte, error) {
 	info, err := root.Lstat(name)
 	if err != nil {
@@ -99,7 +103,7 @@ func readPrivateData(root *os.Root, name string, limit int) ([]byte, error) {
 		return nil, err
 	}
 	if !os.SameFile(info, opened) {
-		return nil, withCode(CodeForbidden, errors.New("private data changed while being opened"))
+		return nil, withCode(CodeForbidden, errPrivateDataChanged)
 	}
 	if err = ownerOnlyFile(name, opened.Mode()); err != nil {
 		return nil, withCode(CodeForbidden, err)

@@ -8,11 +8,19 @@ package desk
 // runtime's own sentences about what the result establishes and what it does
 // not.
 //
-// **It runs with no held input.** No `--public-key`, `--expect` or `--tsa-…`,
-// because this desk holds no key, no record of a hand-over and no stamping
-// roots yet, and never a `--require-…` flag: those are a reader's demands, not
-// the operator's. The runtime then checks the chain alone, and says so in its
+// **It runs with the keys Desk keeps, and nothing else held.** On a desk Desk
+// made and keeps a key for, each public key in `<desk id>.keys.jsonl`, in
+// order, as `--public-key` (signing.go); on the startup desk, none in this
+// version. No `--expect` or `--tsa-…`, because this desk holds no record of a
+// hand-over and no stamping roots yet, and never a `--require-…` flag: those
+// are a reader's demands, not the operator's. The runtime then checks the
+// chain, and the signatures against the keys it was given, and says so in its
 // own sentences.
+//
+// **Beside it, the runtime's word on the key** (ADR-0010, section 1): `packs
+// validate`'s `audit-signing-key` check, which says whether the key the
+// project names signs its records, or no check where it names none; and the
+// public keys Desk keeps for the desk, for the owner to hand to a holder.
 //
 // **It runs only where the runtime has the command.** `packs schema` names the
 // configuration versions the runtime reads, and "6" is the sign: the first
@@ -33,6 +41,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
+	"maps"
 	"net/http"
 	"os"
 	"os/exec"
@@ -109,6 +119,20 @@ type auditFinding struct {
 	Detail string `json:"detail"`
 }
 
+// auditSignatures is the signature sidecar as a verification read it, by
+// runtime 0.26.0's own member names: its lines, those of no shape it reads,
+// the rotations followed, the keys and revocations supplied, and the first
+// key and the key in force at the end, by keyId.
+type auditSignatures struct {
+	Lines        int64  `json:"lines"`
+	Unreadable   int64  `json:"unreadable"`
+	Rotations    int64  `json:"rotations"`
+	KeysSupplied int64  `json:"keysSupplied"`
+	Revocations  int64  `json:"revocations"`
+	FirstKey     string `json:"firstKey"`
+	KeyInForce   string `json:"keyInForce"`
+}
+
 // auditReport is the part of `audit verify --format json` the panel shows,
 // by runtime 0.26.0's own member names (`result.AuditVerification`). The
 // lists hold at most the runtime's first hundred of each; the totals count
@@ -126,6 +150,9 @@ type auditReport struct {
 	DiscontinuitiesTotal  int64                `json:"discontinuitiesTotal"`
 	Findings              []auditFinding       `json:"findings"`
 	FindingsTotal         int64                `json:"findingsTotal"`
+	// Signatures is the signature sidecar as the runtime read it, given
+	// where a public key was passed (`result.AuditSignatures`).
+	Signatures *auditSignatures `json:"signatures,omitempty"`
 	// Establishes and DoesNotEstablish are the runtime's own sentences, in
 	// English, passed through as it wrote them.
 	Establishes      []string `json:"establishes"`
@@ -148,6 +175,60 @@ type auditAnswer struct {
 	// "evaluations", "signatures" and "stamps". It is given with a report and
 	// with the runtime's refusal, and with nothing else.
 	Files []string `json:"files,omitempty"`
+	// Keys and Signing are given with a report and with the runtime's
+	// refusal, and with nothing else.
+	Keys    *auditKeys    `json:"keys,omitempty"`
+	Signing *auditSigning `json:"signing,omitempty"`
+}
+
+// What the panel holds of the desk's keys.
+const (
+	// keysKept: Desk keeps a key for this desk, Public lists its public keys,
+	// and each was passed to `audit verify`, in order.
+	keysKept = "kept"
+	// keysNone: a desk Desk made, for which it keeps no key: made unsigned,
+	// or before Desk kept keys.
+	keysNone = "none"
+	// keysStartup: the project Desk was started on, for which Desk keeps no
+	// key in this version.
+	keysStartup = "startup"
+	// keysUnread: Desk could not read or pass the keys it keeps, Problem says
+	// why, and none was passed.
+	keysUnread = "unread"
+)
+
+// auditKeys is the public keys Desk keeps for this desk, as the panel shows
+// them and as it passed them.
+type auditKeys struct {
+	State   string          `json:"state"`
+	Public  []deskPublicKey `json:"public,omitempty"`
+	Problem string          `json:"problem,omitempty"`
+}
+
+// What the panel can say of `packs validate`'s `audit-signing-key` check.
+const (
+	// signingChecked: the runtime reported the check, with its status and its
+	// words.
+	signingChecked = "check"
+	// signingNoKey: it reported no such check, which it does only where no key
+	// is named, by the configuration or by JPACK_SIGNING_KEY.
+	signingNoKey = "no-key"
+	// signingUnread: it did not say; Diagnostics or Problem say why.
+	signingUnread = "unread"
+	// auditSigningKeyCheck is the check's name (runtime 0.26.0,
+	// `project.CheckAuditSigningKey`).
+	auditSigningKeyCheck = "audit-signing-key"
+)
+
+// auditSigning is `packs validate`'s word on whether the key named for this
+// project signs its records. Status is the runtime's: "passed", "failed" or
+// "skipped"; Detail is its sentence, in English.
+type auditSigning struct {
+	State       string              `json:"state"`
+	Status      string              `json:"status,omitempty"`
+	Detail      string              `json:"detail,omitempty"`
+	Diagnostics []runtimeDiagnostic `json:"diagnostics,omitempty"`
+	Problem     string              `json:"problem,omitempty"`
 }
 
 // auditRuntime is the directory and refusal for running the audit commands
@@ -225,7 +306,11 @@ func (s *Server) withoutPaths(message string) string {
 //     parenthesis in it cannot end the replacement early.
 //  2. **The paths this desk was configured with:** JPACK_CONFIG's value by
 //     the variable's name, the runtime binary by its file name, and the
-//     project's folder by "the project's folder".
+//     project's folder by "the project's folder"; an inherited
+//     JPACK_SIGNING_KEY's value, the key Desk keeps for this desk, its list
+//     of public keys and every folder on the way to them by "…"
+//     (`custodySpans`). These and the spans of step 1 are replaced in one
+//     pass, longest first.
 //  3. **Every other path from a root**, Unix or a drive letter, by "…",
 //     keeping a last name only where it is one of the runtime's own files
 //     (withoutAbsolutePaths).
@@ -237,9 +322,18 @@ func (s *Server) withoutPaths(message string) string {
 func (s *Server) withoutPathsUnder(message, auditDir string) string {
 	const held = "\x00"
 	message = strings.ReplaceAll(message, held, "")
+	var spans []pathSpan
 	for _, span := range s.auditDirSpans(message, auditDir) {
-		message = strings.ReplaceAll(message, span, held)
+		spans = append(spans, pathSpan{value: span, with: held})
 	}
+	// An inherited JPACK_SIGNING_KEY names where a secret is kept: whole, and
+	// every folder on the way to it, as the runtime prints each too.
+	if key := strings.TrimSpace(os.Getenv(runtimeSigningKeyEnv)); filepath.IsAbs(key) {
+		spans = append(spans, pathSpans(key, false, held)...)
+	}
+	// The key Desk keeps for this desk, its list, and every folder on the way
+	// to them, the home folder among them.
+	spans = append(spans, s.custodySpans(s.cfg.deskID, held)...)
 	for _, path := range []struct{ value, name string }{
 		{strings.TrimSpace(os.Getenv(runtimeConfigEnv)), runtimeConfigEnv},
 		{s.cfg.JpackBin, filepath.Base(s.cfg.JpackBin)},
@@ -247,10 +341,13 @@ func (s *Server) withoutPathsUnder(message, auditDir string) string {
 		{s.cfg.ProjectDir, "the project's folder"},
 	} {
 		if path.value != "" && path.value != path.name && filepath.IsAbs(path.value) {
-			message = strings.ReplaceAll(message, path.value, path.name)
+			spans = append(spans, pathSpan{value: path.value, with: path.name})
 		}
 	}
-	return strings.ReplaceAll(withoutAbsolutePaths(message), held, "…")
+	// One pass, longest first (`replaceSpans`): the audit directory before
+	// the project's folder it is in, and the project's folder before
+	// Desk's configuration folder or the home folder it is in.
+	return strings.ReplaceAll(withoutAbsolutePaths(replaceSpans(message, spans)), held, "…")
 }
 
 // procFD is the name the runtime has for the folder it was started in where
@@ -371,6 +468,7 @@ func withoutPathsMatching(message string, pattern *regexp.Regexp) string {
 func (s *Server) withoutPathsIn(answer auditAnswer) auditAnswer {
 	auditDir, _, _ := s.projectAuditDir()
 	clean := func(message string) string { return s.withoutPathsUnder(message, auditDir) }
+	answer = withoutPathsInKeys(answer, clean)
 	if answer.Diagnostics != nil {
 		said := make([]runtimeDiagnostic, len(answer.Diagnostics))
 		for i, diagnostic := range answer.Diagnostics {
@@ -396,6 +494,30 @@ func (s *Server) withoutPathsIn(answer auditAnswer) auditAnswer {
 	report.Establishes = sentencesWithoutPaths(clean, report.Establishes)
 	report.DoesNotEstablish = sentencesWithoutPaths(clean, report.DoesNotEstablish)
 	answer.Report = &report
+	return answer
+}
+
+// withoutPathsInKeys is the panel's words on the keys and on the runtime's
+// check of them, passed through clean.
+func withoutPathsInKeys(answer auditAnswer, clean func(string) string) auditAnswer {
+	if answer.Keys != nil {
+		keys := *answer.Keys
+		keys.Problem = clean(keys.Problem)
+		answer.Keys = &keys
+	}
+	if answer.Signing != nil {
+		signing := *answer.Signing
+		signing.Detail = clean(signing.Detail)
+		signing.Problem = clean(signing.Problem)
+		if signing.Diagnostics != nil {
+			said := make([]runtimeDiagnostic, len(signing.Diagnostics))
+			for i, diagnostic := range signing.Diagnostics {
+				said[i] = runtimeDiagnostic{Code: diagnostic.Code, Message: clean(diagnostic.Message)}
+			}
+			signing.Diagnostics = said
+		}
+		answer.Signing = &signing
+	}
 	return answer
 }
 
@@ -444,7 +566,8 @@ func (s *Server) projectAuditDir() (string, bool, error) {
 
 // auditVerify is the panel's answer: nothing run where the project keeps no
 // trail; `packs schema` alone where the runtime reads no "6"; and otherwise
-// the runtime's `audit verify`, with no held input.
+// `packs validate`'s word on the key, and the runtime's `audit verify`, with
+// the public keys Desk keeps for the desk and nothing else held.
 func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, error) {
 	if _, declared, err := s.projectAuditDir(); err != nil {
 		return auditAnswer{}, err
@@ -459,7 +582,27 @@ func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, err
 	if !slices.Contains(schema.supported, auditConfigVersion) {
 		return older, nil
 	}
-	out, runErr := runRuntime(ctx, s.cfg.JpackBin, dir, "audit", "verify", "--config", runtimeConfigName, "--format", "json")
+	signing := s.signingCheck(ctx, dir)
+	keys, held := s.heldKeys(ctx, dir)
+	defer held.Close()
+	args := []string{"audit", "verify", "--config", runtimeConfigName, "--format", "json"}
+	if keys.State == keysKept {
+		files, remove, err := held.publicKeyFiles(keys.Public)
+		if err != nil {
+			s.log.Printf("desk: the public keys could not be written for audit verify in %s: %v", held.path, err)
+			keys = auditKeys{State: keysUnread, Problem: "Desk could not hand the runtime the public keys it keeps for this desk, so no signature was checked."}
+		} else {
+			defer func() {
+				if err := remove(); err != nil {
+					s.log.Printf("desk: the public keys written for audit verify in %s could not all be removed: %v", held.path, err)
+				}
+			}()
+			for _, file := range files {
+				args = append(args, "--public-key", file)
+			}
+		}
+	}
+	out, runErr := runRuntime(ctx, s.cfg.JpackBin, dir, args...)
 	answer, err := readAuditVerification(out, runErr)
 	if err != nil {
 		return auditAnswer{}, err
@@ -469,7 +612,176 @@ func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, err
 	}
 	answer.Runtime = schema.version
 	answer.Files = s.auditFilesPresent()
+	answer.Keys = &keys
+	answer.Signing = &signing
 	return answer, nil
+}
+
+// heldKeys is the public keys Desk keeps for this desk, and the signing
+// folder they are kept in, held, where there are any. Nothing is made or
+// changed in Desk's custody to read them.
+//
+// **A list of keys is only passed with the key it belongs to.** The list's
+// last key, the one in force, must be the key the runtime reads from the seed
+// Desk keeps for the desk (`jpack audit key public <seed> --format json`, run
+// in project, the folder the panel's commands run in); Desk never reads the
+// seed's bytes itself. A seed with no list, a list with no seed, and a list
+// whose key is not the seed's are each said, and no key is passed: only a desk
+// with neither has none.
+//
+// **One key.** A desk Desk makes in this version has exactly one key, and
+// Desk does not yet rotate one (ADR-0010's delivery table, PR 3b), so a list
+// of more than one is not one this version wrote, and is refused rather than
+// passed.
+func (s *Server) heldKeys(ctx context.Context, project heldDir) (auditKeys, *signingDir) {
+	if s.cfg.deskID == "" {
+		return auditKeys{State: keysStartup}, nil
+	}
+	dir, err := s.assistant.openSigning(false)
+	if errors.Is(err, errNoSigningDir) {
+		return auditKeys{State: keysNone}, nil
+	}
+	if err != nil {
+		s.log.Printf("desk: the signing folder could not be opened for the decision record: %v", err)
+		return auditKeys{State: keysUnread, Problem: "Desk could not open the folder it keeps signing keys in: " + strings.TrimRight(s.custodyWords(err.Error()), ".") + "."}, nil
+	}
+	unread := func(problem string) (auditKeys, *signingDir) {
+		dir.Close()
+		return auditKeys{State: keysUnread, Problem: problem}, nil
+	}
+	seedName := s.cfg.deskID + seedSuffix
+	seed, seedErr := dir.root.Lstat(seedName)
+	public, found, err := dir.readKeys(s.cfg.deskID + keysSuffix)
+	switch {
+	case err != nil:
+		return unread("Desk could not read the public keys it keeps for this desk: " + err.Error() + ".")
+	case !found && errors.Is(seedErr, fs.ErrNotExist):
+		dir.Close()
+		return auditKeys{State: keysNone}, nil
+	case !found:
+		return unread("Desk keeps a key for this desk, but no list of its public keys, so it passed no key.")
+	case seedErr != nil:
+		return unread("Desk keeps a list of public keys for this desk, but not its key, so it passed no key.")
+	case len(public) != 1:
+		return unread("Desk's list of this desk's public keys holds more than one key, and this version of Desk keeps one key for a desk and rotates none, so it passed no key.")
+	}
+	if err := checkSeed(seedName, seed); err != nil {
+		return unread("Desk could not use the key it keeps for this desk: " + strings.TrimRight(err.Error(), ".") + ".")
+	}
+	if err := dir.namesFile(seedName, seed); err != nil {
+		return unread("The key Desk keeps for this desk is not at the path the runtime reads it from, so it passed no key.")
+	}
+	seedPath := filepath.Join(dir.path, seedName)
+	out, runErr := runRuntime(ctx, s.cfg.JpackBin, project, "audit", "key", "public", seedPath, "--format", "json")
+	var answer struct {
+		Command     string              `json:"command"`
+		Status      string              `json:"status"`
+		PublicKey   string              `json:"publicKey"`
+		KeyID       string              `json:"keyId"`
+		Diagnostics []runtimeDiagnostic `json:"diagnostics"`
+	}
+	decoded := out != nil && json.Unmarshal(out, &answer) == nil
+	if runErr != nil || !decoded || answer.Command != "audit key public" || answer.Status != "read" {
+		s.log.Printf("desk: the runtime did not read the key Desk keeps for desk %s: %v %s", s.cfg.deskID, runErr, out)
+		why := "its audit key public did not answer as documented"
+		var said []string
+		for _, diagnostic := range answer.Diagnostics {
+			if message := strings.TrimSpace(diagnostic.Message); message != "" {
+				said = append(said, message)
+			}
+		}
+		if len(said) > 0 {
+			why = strings.Join(said, " ")
+		}
+		return unread("The runtime could not read the key Desk keeps for this desk, so it passed no key: " + strings.TrimRight(why, ".") + ".")
+	}
+	if last := public[len(public)-1]; last.PublicKey != answer.PublicKey || last.KeyID != answer.KeyID {
+		return unread("Desk's list of this desk's public keys does not name the key Desk keeps for it, so it passed no key.")
+	}
+	return auditKeys{State: keysKept, Public: public}, dir
+}
+
+// signingCheck runs `packs validate --config jpack.json --format json` and
+// reads its `audit-signing-key` check. Where the configuration declares
+// packs, it names one with `--id`: the configuration's own checks are made
+// either way, and one pack's report keeps the answer within `runRuntime`'s
+// bound however many packs the project has.
+func (s *Server) signingCheck(ctx context.Context, dir heldDir) auditSigning {
+	args := []string{"packs", "validate", "--config", runtimeConfigName, "--format", "json"}
+	if id, ok := s.onePackID(); ok {
+		args = append(args, "--id", id)
+	}
+	out, runErr := runRuntime(ctx, s.cfg.JpackBin, dir, args...)
+	return readSigningCheck(out, runErr)
+}
+
+// onePackID is the first of the pack ids this project's jpack.json declares,
+// in order, where it declares any. It reads that member and nothing else.
+func (s *Server) onePackID() (string, bool) {
+	config, err := s.readReviewFileWithin(runtimeConfigName, reviewTextLimit)
+	if err != nil {
+		return "", false
+	}
+	var declared struct {
+		Packs map[string]json.RawMessage `json:"packs"`
+	}
+	if json.Unmarshal(config, &declared) != nil || len(declared.Packs) == 0 {
+		return "", false
+	}
+	return slices.Sorted(maps.Keys(declared.Packs))[0], true
+}
+
+// readSigningCheck reads what `packs validate` printed, whatever the exit.
+//
+//   - "packs validate", exit 0 with "valid" or exit 1 with "invalid": its
+//     `audit-signing-key` check, where it reported one, which must have a
+//     status of the three a check has, appear once, and not have failed
+//     under a "valid"; and where it reported none, that no key is named.
+//   - Any other non-zero exit with "error" or "unsupported" and the
+//     runtime's own diagnostics: its refusal, in its words.
+//
+// Anything else is not an answer the runtime documents, and says so.
+func readSigningCheck(out []byte, runErr error) auditSigning {
+	code := 0
+	if runErr != nil {
+		var exit *exec.ExitError
+		if !errors.As(runErr, &exit) {
+			return auditSigning{State: signingUnread, Problem: runErr.Error()}
+		}
+		code = exit.ExitCode()
+	}
+	undocumented := auditSigning{State: signingUnread, Problem: "Its packs validate did not answer as documented."}
+	var got struct {
+		Command     string              `json:"command"`
+		Status      string              `json:"status"`
+		Diagnostics []runtimeDiagnostic `json:"diagnostics"`
+		Checks      []struct {
+			Name   string `json:"name"`
+			Status string `json:"status"`
+			Detail string `json:"detail"`
+		} `json:"checks"`
+	}
+	if out == nil || json.Unmarshal(out, &got) != nil {
+		return undocumented
+	}
+	switch {
+	case got.Command == "packs validate" && (code == 0 && got.Status == "valid" || code == 1 && got.Status == "invalid"):
+		found := auditSigning{State: signingNoKey}
+		for _, check := range got.Checks {
+			if check.Name != auditSigningKeyCheck {
+				continue
+			}
+			if found.State == signingChecked || !slices.Contains([]string{"passed", "failed", "skipped"}, check.Status) ||
+				check.Status == "failed" && got.Status != "invalid" {
+				return undocumented
+			}
+			found = auditSigning{State: signingChecked, Status: check.Status, Detail: check.Detail}
+		}
+		return found
+	case code > 0 && (got.Status == "error" || got.Status == "unsupported") && (auditVerification{Diagnostics: got.Diagnostics}).said():
+		return auditSigning{State: signingUnread, Diagnostics: got.Diagnostics}
+	}
+	return undocumented
 }
 
 // The answers runtime 0.25.0 gives, measured, for an `audit verify` it does
@@ -500,6 +812,7 @@ type auditVerification struct {
 	DiscontinuitiesTotal *int64                   `json:"discontinuitiesTotal"`
 	Findings             []wireAuditFinding       `json:"findings"`
 	FindingsTotal        *int64                   `json:"findingsTotal"`
+	Signatures           *wireAuditSignatures     `json:"signatures"`
 	Establishes          []string                 `json:"establishes"`
 	DoesNotEstablish     []string                 `json:"doesNotEstablish"`
 }
@@ -542,6 +855,16 @@ type wireAuditFinding struct {
 	Name   *string `json:"name"`
 	Line   *int64  `json:"line"`
 	Detail *string `json:"detail"`
+}
+
+type wireAuditSignatures struct {
+	Lines        *int64  `json:"lines"`
+	Unreadable   *int64  `json:"unreadable"`
+	Rotations    *int64  `json:"rotations"`
+	KeysSupplied *int64  `json:"keysSupplied"`
+	Revocations  *int64  `json:"revocations"`
+	FirstKey     *string `json:"firstKey"`
+	KeyInForce   *string `json:"keyInForce"`
 }
 
 // auditPresence reads required members, and remembers whether any was
@@ -621,6 +944,13 @@ func (got auditVerification) report() (*auditReport, bool) {
 	}
 	for _, finding := range got.Findings {
 		report.Findings = append(report.Findings, auditFinding{Name: p.text(finding.Name, true), Line: p.count(finding.Line), Detail: p.text(finding.Detail, false)})
+	}
+	if sig := got.Signatures; sig != nil {
+		report.Signatures = &auditSignatures{
+			Lines: p.count(sig.Lines), Unreadable: p.count(sig.Unreadable), Rotations: p.count(sig.Rotations),
+			KeysSupplied: p.count(sig.KeysSupplied), Revocations: p.count(sig.Revocations),
+			FirstKey: p.text(sig.FirstKey, true), KeyInForce: p.text(sig.KeyInForce, true),
+		}
 	}
 	if p.missing ||
 		report.SegmentsTotal < int64(len(report.Segments)) ||

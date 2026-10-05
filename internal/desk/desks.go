@@ -5,6 +5,7 @@ package desk
 // supplied path can widen the file API's authority. Existing projects keep
 // their established storage locations until explicitly migrated.
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -21,6 +22,7 @@ import (
 	"strings"
 	"syscall"
 	"unicode"
+	"unicode/utf8"
 )
 
 var deskIDPattern = regexp.MustCompile(`^[a-f0-9]{32}$`)
@@ -37,6 +39,26 @@ const deskManifest = ".desk-private/desk.json"
 // but not "5" gets the same gates without `requireComparableFacts`, and the
 // creation says so. One that reads neither cannot hold a desk to its reviewed
 // set, and no desk is created.
+//
+// **A new desk is signed where it can be** (ADR-0010, section 1 and question
+// 3): where the runtime reads "6" and Desk's custody can keep a key, the
+// configuration is "5"'s at configVersion "6", and its audit member names the
+// key Desk keeps for the desk (`signedDeskConfig`). Every runtime that reads
+// the desk's configuration then signs its records. The fallbacks:
+//
+//	| The runtime reads | Custody keeps a key | jpack.json         | Signed | The creation says   |
+//	|-------------------|---------------------|--------------------|--------|---------------------|
+//	| "6"               | yes                 | "6", signingKey    | yes    | nothing             |
+//	| "6"               | no                  | "5"                | no     | unsignedByCustody   |
+//	| "5", not "6"      | not asked           | "5"                | no     | unsignedByRuntime   |
+//	| "4", not "5"      | not asked           | "4"                | no     | the "4" notice, and |
+//	|                   |                     |                    |        | unsignedByRuntime   |
+//	| neither "4" nor "5" | not asked         | no desk            |        | why                 |
+//
+// A key the runtime fails to generate makes no desk, and leaves no seed and
+// no list of public keys (`generateDeskKey`). A build that cannot establish
+// who owns a directory keeps no key (`openSigning`); there, today, the desks
+// folder is refused by the same custody, so no desk is made at all.
 const (
 	deskAuditDir               = ".desk-private/audit"
 	gatedDeskConfig            = `{"configVersion":"5","requireReviewed":true,"requireComparableFacts":true,"audit":{"dir":".desk-private/audit"},"packs":{}}` + "\n"
@@ -45,13 +67,61 @@ const (
 	reviewedFromVersion        = "4"
 )
 
+// The creation's notices for a desk made unsigned. Each is its own paragraph
+// of the notice, after the "4" one where both apply, so that the page can
+// show each in the owner's language.
+const (
+	// unsignedByRuntime: the runtime's version, and the first that reads "6".
+	unsignedByRuntime = "This desk is not signed: a desk names its signing key at configVersion 6, and the runtime this Desk runs (jpack %s) does not read it. A runtime of %s or later creates desks signed."
+	// unsignedByCustody: why custody keeps no key, in words with no path.
+	unsignedByCustody = "This desk is not signed, because Desk could not keep a signing key for it: %s. It was created at configVersion 5, which names no signing key."
+)
+
 // deskGates is the configuration a new desk is written with, and what the
 // creation says about it.
 type deskGates struct {
 	config                 []byte
 	configVersion          string
 	requireComparableFacts bool
-	notice                 string
+	// signed is whether the configuration names a key Desk keeps for the
+	// desk, key.
+	signed bool
+	key    *madeKey
+	notice string
+}
+
+// unsigned adds a paragraph to the creation's notice.
+func (g *deskGates) unsigned(paragraph string) {
+	if g.notice != "" {
+		g.notice += "\n\n"
+	}
+	g.notice += paragraph
+}
+
+// signedDeskConfig is the configuration of a signed desk: "5"'s gates at
+// configVersion "6", with the audit member's signingKey naming seedPath after
+// its dir (runtime 0.26.0, `jpack.schema.json`, `$defs.audit`). The path is a
+// JSON string as Go's encoder writes one, with "<", ">" and "&" left as they
+// are; it escapes a control character, U+2028 and U+2029, and the runtime
+// reads each back as the character it was.
+func signedDeskConfig(seedPath string) []byte {
+	var quoted bytes.Buffer
+	encoder := json.NewEncoder(&quoted)
+	encoder.SetEscapeHTML(false)
+	_ = encoder.Encode(seedPath)
+	return []byte(`{"configVersion":"6","requireReviewed":true,"requireComparableFacts":true,"audit":{"dir":".desk-private/audit","signingKey":` +
+		strings.TrimSuffix(quoted.String(), "\n") + `},"packs":{}}` + "\n")
+}
+
+// newDeskID is a new desk's id: 128 random bits, in hex. A variable only so
+// that a test can know a desk's id, and so its signing key's path and its
+// configuration's exact bytes, before the desk is made.
+var newDeskID = func() (string, error) {
+	var random [16]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(random[:]), nil
 }
 
 // chooseDeskGates picks the configuration from what the runtime reads.
@@ -91,16 +161,12 @@ func (s *Server) deskRecord() (deskRecord, error) {
 	if s.cfg.deskID == "" {
 		return row, nil
 	}
-	data, err := readPrivateData(s.root, deskManifest, 4096)
+	saved, err := readDeskManifest(s.root, s.cfg.deskID)
+	if errors.Is(err, errNotPublished) {
+		return row, errors.New("desk metadata is invalid")
+	}
 	if err != nil {
 		return row, err
-	}
-	var saved struct {
-		ID   string `json:"id"`
-		Name string `json:"name"`
-	}
-	if json.Unmarshal(data, &saved) != nil || saved.ID != s.cfg.deskID || !validDeskName(saved.Name) {
-		return row, errors.New("desk metadata is invalid")
 	}
 	row.Name = saved.Name
 	if s.cfg.parent == nil {
@@ -146,7 +212,7 @@ func (s *Server) openDeskLocked(id string) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+	if !deskFolderAccepted(info) {
 		return nil, errors.New("invalid desk folder")
 	}
 	dir := filepath.Join(s.configDir, "desks", id)
@@ -161,12 +227,7 @@ func (s *Server) openDeskLocked(id string) (*Server, error) {
 		pinned.Close()
 		return nil, errors.New("desk folder changed while opening")
 	}
-	data, err := readPrivateData(pinned.own.root, deskManifest, 4096)
-	var manifest struct {
-		ID   string `json:"id"`
-		Name string `json:"name"`
-	}
-	if err != nil || json.Unmarshal(data, &manifest) != nil || manifest.ID != id || !validDeskName(manifest.Name) {
+	if _, err := readDeskManifest(pinned.own.root, id); err != nil {
 		pinned.Close()
 		return nil, errors.New("desk metadata is invalid")
 	}
@@ -275,12 +336,11 @@ func (s *Server) createDesk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer root.Close()
-	var random [16]byte
-	if _, err = rand.Read(random[:]); err != nil {
+	id, err := newDeskID()
+	if err != nil {
 		storageFailure(w, err)
 		return
 	}
-	id := hex.EncodeToString(random[:])
 	if err = root.Mkdir(id, 0700); err != nil {
 		storageFailure(w, err)
 		return
@@ -298,28 +358,45 @@ func (s *Server) createDesk(w http.ResponseWriter, r *http.Request) {
 		// before it unwinds, so the release deferred above stays balanced.
 		s.desksMu.Unlock()
 		defer s.desksMu.Lock()
-		return s.makeDeskFolder(r.Context(), folder, entry)
+		return s.makeDeskFolder(r.Context(), folder, entry, id)
 	}()
 	s.deskCreations--
 	if failure != nil {
 		s.abandonDesk(w, folder, entry, failure)
 		return
 	}
+	defer gates.key.close()
 	if s.desksClosed {
-		s.abandonDesk(w, folder, entry, &deskFailure{http.StatusConflict, CodeBadRequest, "Desk is shutting down, so the desk was not created."})
+		s.abandonDesk(w, folder, entry, s.dropKey(gates.key, &deskFailure{http.StatusConflict, CodeBadRequest, "Desk is shutting down, so the desk was not created."}))
 		return
 	}
-	// Metadata is written last. Until it is, the folder is not a desk.
+	// **The key is still where the configuration names it**, or the desk is
+	// not published, and never answered as signed: the seed's pathname must
+	// name the seed found through the folder held (`stillNamed`).
+	keyBetween("before publish")
+	if err = gates.key.stillNamed(); err != nil {
+		s.log.Printf("desk: the new desk %s was not published: %v", id, err)
+		s.abandonDesk(w, folder, entry, s.dropKey(gates.key, runtimeRefusal(err)))
+		return
+	}
+	// Metadata is written last, as one event (`publishDeskManifest`). Until
+	// it is, the folder is not a desk.
 	manifest, _ := json.Marshal(struct {
 		ID   string `json:"id"`
 		Name string `json:"name"`
 	}{id, request.Name})
-	if err = folder.WriteFile(deskManifest, manifest, 0600); err != nil {
-		s.abandonDesk(w, folder, entry, storageRefusal(err))
+	if err = publishDeskManifest(folder, manifest); err != nil {
+		s.abandonDesk(w, folder, entry, s.dropKey(gates.key, storageRefusal(err)))
 		return
 	}
+	// The desk is published: its key's marker goes. Where it cannot, the
+	// next start removes the marker alone (`sweepUnfinishedKeys`).
+	keyBetween("published")
+	if err := gates.key.settle(); err != nil {
+		s.log.Printf("desk: the new desk %s's creation marker was left; the next start removes it: %v", id, err)
+	}
 	if gates.notice != "" {
-		s.log.Printf("desk: %s", gates.notice)
+		s.log.Printf("desk: %s", strings.ReplaceAll(gates.notice, "\n\n", " "))
 	}
 	child, err := s.openDeskLocked(id)
 	if err != nil {
@@ -335,15 +412,29 @@ func (s *Server) createDesk(w http.ResponseWriter, r *http.Request) {
 		deskRecord
 		ConfigVersion          string `json:"configVersion"`
 		RequireComparableFacts bool   `json:"requireComparableFacts"`
+		Signed                 bool   `json:"signed"`
 		Notice                 string `json:"notice,omitempty"`
-	}{record, gates.configVersion, gates.requireComparableFacts, gates.notice})
+	}{record, gates.configVersion, gates.requireComparableFacts, gates.signed, gates.notice})
+}
+
+// dropKey is failure, after removing the key a creation that stopped had
+// made. Where that cannot be done, Desk's log says where, and the answer says
+// so in words with no path.
+func (s *Server) dropKey(key *madeKey, failure *deskFailure) *deskFailure {
+	if err := key.unmake(); err != nil {
+		s.log.Printf("desk: a failed creation could not remove the signing key it made in %s: %v", key.dir.path, err)
+		failure.message += " The signing key made for it could not be removed, and was left in Desk's signing folder; no desk names it."
+	}
+	return failure
 }
 
 // makeDeskFolder makes a new desk's folder, through folder, the root this
-// request opened when it made the directory: the folders, the configuration
-// the runtime can hold the desk to, and the runtime's lock of it. It holds no
-// lock, and writes no manifest.
-func (s *Server) makeDeskFolder(ctx context.Context, folder *os.Root, entry string) (deskGates, *deskFailure) {
+// request opened when it made the directory: the folders, the desk's signing
+// key where it is signed, the configuration the runtime can hold the desk to,
+// and the runtime's lock of it, in that order. It holds no lock, and writes no
+// manifest. A failure removes the key it made; on success, the caller closes
+// it.
+func (s *Server) makeDeskFolder(ctx context.Context, folder *os.Root, entry, id string) (deskGates, *deskFailure) {
 	for _, dir := range []string{"packs", "sources", ".desk", ".desk/job-drafts", ".desk-private", deskAuditDir} {
 		if err := folder.Mkdir(dir, 0700); err != nil {
 			return deskGates{}, storageRefusal(err)
@@ -367,19 +458,145 @@ func (s *Server) makeDeskFolder(ctx context.Context, folder *os.Root, entry stri
 	if err != nil {
 		return deskGates{}, runtimeRefusal(err)
 	}
+	// The key first, then the configuration that names it, then the lock
+	// that pins that configuration.
+	if slices.Contains(schema.supported, signedFromVersion) {
+		dir, err := s.assistant.openSigning(true)
+		if err == nil && !utf8.ValidString(dir.path) {
+			dir.Close()
+			err = errors.New("the path of Desk's signing folder is not valid UTF-8, which jpack.json cannot name")
+		}
+		if err != nil {
+			s.log.Printf("desk: no signing key is kept for the new desk %s: %v", id, err)
+			gates.unsigned(fmt.Sprintf(unsignedByCustody, strings.TrimRight(s.custodyWords(err.Error()), ".")))
+		} else {
+			key, err := generateDeskKey(ctx, bin, held, dir, id)
+			if err != nil {
+				dir.Close()
+				s.log.Printf("desk: the new desk %s's signing key was not generated: %v", id, err)
+				return deskGates{}, runtimeRefusal(errors.New(s.withoutCustodyPaths(err.Error(), id)))
+			}
+			gates = deskGates{config: signedDeskConfig(key.seedPath()), configVersion: signedFromVersion, requireComparableFacts: true, signed: true, key: key}
+		}
+	} else {
+		gates.unsigned(fmt.Sprintf(unsignedByRuntime, schema.version, auditRuntimeFloor))
+	}
+	failed := func(failure *deskFailure) (deskGates, *deskFailure) {
+		failure = s.dropKey(gates.key, failure)
+		gates.key.close()
+		return deskGates{}, failure
+	}
 	for name, body := range map[string]string{
 		runtimeConfigName: string(gates.config),
 		"jpack-desk.json": "{\"deskConfigVersion\":1}\n",
 		".gitignore":      ".desk-private/\n",
 	} {
 		if err = folder.WriteFile(name, []byte(body), 0600); err != nil {
-			return deskGates{}, storageRefusal(err)
+			return failed(storageRefusal(err))
 		}
 	}
 	if err = lockRuntimeProject(ctx, bin, held, folder, gates.config); err != nil {
-		return deskGates{}, runtimeRefusal(err)
+		return failed(runtimeRefusal(errors.New(s.withoutCustodyPaths(err.Error(), id))))
 	}
 	return gates, nil
+}
+
+// errNotPublished is a desk folder the registry would not open as a desk:
+// one with no manifest, or one whose manifest is not a desk's.
+var errNotPublished = errors.New("not a published desk")
+
+// savedDesk is a desk's manifest, as the registry reads it.
+type savedDesk struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// readDeskManifest reads desk id's manifest through folder, the desk's own
+// folder, and is the one reader of it: the registry opens a desk
+// (`openDeskLocked`) and names it (`deskRecord`) only where it answers one,
+// and a start's sweep counts a desk as published only where it does
+// (`deskPublished`). Its manifest must be a private file of the user's, within
+// its bound, whose JSON names this id and a valid name.
+//
+// A manifest that is not there, or is there and is not one, is
+// errNotPublished. Any other error says only that it could not be read now:
+// it could not be inspected or opened, or it changed while it was opened.
+func readDeskManifest(folder *os.Root, id string) (savedDesk, error) {
+	data, err := readPrivateData(folder, deskManifest, 4096)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return savedDesk{}, fmt.Errorf("%w: it has no manifest", errNotPublished)
+	case err != nil && !errors.Is(err, errPrivateDataChanged) && (codeOf(err) == CodeForbidden || codeOf(err) == CodeTooLarge):
+		return savedDesk{}, fmt.Errorf("%w: its manifest is not one Desk reads: %v", errNotPublished, err)
+	case err != nil:
+		return savedDesk{}, err
+	}
+	var saved savedDesk
+	if json.Unmarshal(data, &saved) != nil || saved.ID != id || !validDeskName(saved.Name) {
+		return savedDesk{}, fmt.Errorf("%w: its manifest is not a desk's", errNotPublished)
+	}
+	return saved, nil
+}
+
+// deskFolderAccepted is whether an entry of the desks folder is one the
+// registry opens: a real directory, not a link.
+func deskFolderAccepted(info fs.FileInfo) bool {
+	return info.IsDir() && info.Mode()&os.ModeSymlink == 0
+}
+
+// manifestStagingPrefix names a desk's manifest while it is being written,
+// in `.desk-private`, before it is renamed into place.
+const manifestStagingPrefix = ".desk-json-"
+
+// publishDeskManifest publishes a new desk: its manifest, written as one
+// event. It is staged in `.desk-private` under a name of its own, made 0600 on
+// its descriptor, synced, and renamed into place, and the folder is synced. A
+// crash at any moment leaves either no manifest or a whole one at its name,
+// never a part of one; a stage it leaves is not a manifest.
+func publishDeskManifest(folder *os.Root, data []byte) error {
+	keyBetween("before staging")
+	private, err := folder.OpenRoot(".desk-private")
+	if err != nil {
+		return err
+	}
+	defer private.Close()
+	stage, err := randomStagingName(manifestStagingPrefix)
+	if err != nil {
+		return err
+	}
+	file, err := private.OpenFile(stage, os.O_RDWR|os.O_CREATE|os.O_EXCL|openNoFollow, custodyFileMode)
+	if err != nil {
+		return err
+	}
+	// Removed on each failure by name, not by a deferred call, so that a
+	// stop at any moment leaves exactly what a crash would.
+	failed := func(err error) error {
+		file.Close()
+		_ = private.Remove(stage)
+		return err
+	}
+	if _, err := file.Write(data); err != nil {
+		return failed(err)
+	}
+	if err := file.Chmod(custodyFileMode); err != nil {
+		return failed(err)
+	}
+	if err := file.Sync(); err != nil {
+		return failed(err)
+	}
+	if err := file.Close(); err != nil {
+		return failed(err)
+	}
+	keyBetween("after staging")
+	if err := private.Rename(stage, filepath.Base(deskManifest)); err != nil {
+		return failed(err)
+	}
+	keyBetween("after rename")
+	if dir, err := private.Open("."); err == nil {
+		_ = dir.Sync()
+		_ = dir.Close()
+	}
+	return nil
 }
 
 // deskFailure is why a creation stopped, as its answer says it.
@@ -468,6 +685,9 @@ func (s *Server) resumeDesks() {
 	}
 	s.desksMu.Lock()
 	defer s.desksMu.Unlock()
+	// Before any desk is opened, the keys of creations a stopped Desk left
+	// unfinished.
+	s.sweepUnfinishedKeys()
 	// Read-only on startup: starting an existing Desk creates no registry.
 	root, err := s.assistant.root.OpenRoot("desks")
 	if err != nil {

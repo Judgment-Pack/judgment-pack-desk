@@ -247,10 +247,11 @@ person's approval, and it records no name.
 - The runtime Desk pins (0.26.0) chains each line to the one before it, over
   its exact bytes (runtime ADR-0047). A change then shows only against a
   checkpoint someone else held from before it. Desk takes and hands over no
-  checkpoint, and gives no signing key, yet: the rest of its part is
-  [ADR-0010](docs/adr/0010-defensible-decision-records.md). It shows what the
-  runtime's own check finds, and hands over the trail's files as exact bytes
-  (the decision record, below).
+  checkpoint yet: the rest of its part is
+  [ADR-0010](docs/adr/0010-defensible-decision-records.md). It keeps a signing
+  key for each desk it makes (below), shows what the runtime's own check
+  finds, and hands over the trail's files as exact bytes (the decision record,
+  below).
 - A `JPACK_SIGNING_KEY` set where Desk was started is removed from every
   runtime Desk starts for a desk it made, as `JPACK_CONFIG` is
   ([ADR-0010](docs/adr/0010-defensible-decision-records.md)). The project Desk
@@ -263,23 +264,143 @@ person's approval, and it records no name.
   new desk's `.gitignore`), not shown or editable in Desk's file editor, and in
   no backup. Losing the desk's folder loses its records.
 
+**The signing key of a desk Desk makes** (ADR-0010, section 1).
+
+- Where the runtime Desk runs reads configVersion `"6"` (0.26.0 and later), a
+  new desk is signed. Desk has the runtime write an Ed25519 seed for it, with
+  `jpack audit key generate <path> --format json`, at
+  `secrets/signing/<desk id>.seed` in Desk's configuration folder: outside the
+  project, 0600, never over another file. The `signing` folder is held to the
+  custody the assistant's key has: a real directory, the user's, made or
+  narrowed to 0700; one that is a link, is another user's, or that group or
+  others can write is refused, never repaired. Desk then checks what the
+  runtime wrote (one regular file, with one name, the user's, readable by
+  nobody else), without reading its bytes.
+- The runtime writes the seed through its path, and Desk checks through the
+  folder it holds open. So immediately before the runtime runs, the
+  `signing` folder's path must name the folder Desk holds; after the run, and
+  again immediately before the desk is published, the seed's path must name
+  the seed Desk found there. Otherwise the creation is refused, says at which
+  of those moments, and is never answered as signed. Desk removes only what
+  it finds through the folder it holds. What is left is the moment between
+  the first check and the runtime's own open, in a folder only your user can
+  change: a swap a process of your user makes in that moment can have the
+  runtime write the seed into the folder swapped in, and Desk leaves that
+  file where it was written.
+- Before the runtime runs, Desk writes an empty marker,
+  `secrets/signing/<desk id>.creating`, and removes it once the desk's
+  manifest is written. The manifest is written as one event: staged beside
+  its name, synced, and renamed into place, so a crash leaves no manifest or
+  a whole one, never part of one. A Desk stopped in between leaves the
+  marker. At the next start, before any desk opens, a marker whose desk was
+  never published is removed with that id's seed and list, and a marker whose
+  desk was published is removed alone. "Published" is decided by the same
+  reader the registry opens a desk with: a folder of that id that the
+  registry accepts, with a manifest it reads (present, whole, Desk's own and
+  naming that desk); an empty or cut-short manifest is not one. A seed
+  or list with no marker is never removed, and neither is anything whose
+  desk cannot be inspected. Desk keeps no lock on its configuration folder,
+  so a second Desk making a desk in the same folder at that moment would lose
+  that desk's key.
+- Desk then writes the desk's `jpack.json` at configVersion `"6"`, with
+  `requireReviewed`, `requireComparableFacts`, and an audit member whose
+  `signingKey` names the seed by its absolute path, and locks it, so the lock
+  pins the key's name. Every runtime that reads that `jpack.json`, the
+  outside agent's `jpack mcp` included, signs each record it adds to the
+  chained trail, if it accepts the key. The key's path, which names the home
+  folder, is in that `jpack.json`.
+- Beside the seed, Desk keeps the desk's public keys, in order, in
+  `secrets/signing/<desk id>.keys.jsonl`. Each line is one key:
+  `{"publicKey":"<64 lowercase hex>","keyId":"<32 lowercase hex>","at":<sequence>}`,
+  with the members in that order and no spaces. `publicKey` is the key's
+  public half and `keyId` the runtime's name for it, both as `audit key
+  generate` printed them (Desk checks that the `keyId` is the first 32
+  hexadecimal characters of the SHA-256 of the key's 32 bytes, as the runtime
+  derives it). `at` is the trail sequence the key took over from: it signs the
+  records after it, and a desk's first key takes over from 0. The file is
+  public material and never holds a seed. Desk writes it whole, through a
+  staging file linked into place, never over another. In this version a desk
+  has exactly one key, since Desk does not yet rotate one, and a list of more
+  than one is refused.
+- Where the runtime does not read `"6"`, or Desk's custody cannot keep a key,
+  the desk is made at configVersion `"5"` (or `"4"`, as before), unsigned, and
+  says so and why: in the creation's answer, in a dialog before the desk
+  opens, and in Desk's log. The answer names Desk's signing, secrets and
+  configuration folders by those words, and no path: a refusal of the
+  runtime's is passed on with the seed, its list and every folder on the way
+  to them replaced by “…”, as the panel does. Desk never writes `"6"` for a runtime that cannot
+  read it. If the runtime fails to generate the key, or the lock fails after
+  it, no desk is made, and the seed and list of keys it made are removed;
+  where one cannot be, the answer and Desk's log say so. A build that
+  cannot establish who owns a directory keeps no key; on such a build Desk
+  makes no desk at all, since its desks folder is held to the same custody.
+- Not yet: rotating a desk's key, a key for the project Desk was started on,
+  handing over checkpoints, repair and stamping (ADR-0010's delivery table).
+
+**Whom a desk's key binds** (ADR-0010, section 1, "Whom the key binds").
+
+- **Desk's assistant** has no file tool and Codex runs with no environment, so
+  it cannot read the key; it only rehearses, so it signs nothing either.
+- **An agent given only the desk's `jpack mcp`**, with no file or shell tools,
+  cannot read the key. Its deciding runs are signed with a key it cannot use,
+  so a line it writes into the trail by any other path carries no valid
+  signature. This is the case signing answers.
+- **An agent with file or shell tools, running as your user,** can read the
+  seed: mode 0600 keeps out other users, not this one. Against such an agent a
+  signature binds nothing. Only another OS user, a sandbox that denies reading
+  Desk's configuration folder, or giving it MCP tools only keeps it apart, and
+  Desk cannot check which holds.
+- **You** hold the key. A signature establishes nothing against you.
+
 **The decision record, in Admin → Project** (ADR-0010, sections 4 and 6).
 Beside the Gates card, Desk runs the runtime's own `jpack audit verify --config
 jpack.json --format json` in the desk's folder each time you open Project and
 when you ask again: never on a timer, on a reconnect, or because a project file
-changed. It passes no public key, no held checkpoint, no time-stamping roots and
-no `--require-…` flag, so the runtime checks the chain alone and says that it
-checked no signature, checkpoint or stamp. The panel shows the runtime's status,
+changed. On a desk Desk made and keeps a key for, it first asks the runtime
+for the seed's public key, with `jpack audit key public <seed> --format json`
+(Desk never reads the seed itself), and passes the list only where its key in
+force is that key. A seed with no list, a list with no seed, a list whose key
+is not the seed's, or one of more than one key passes no key, and the panel
+says why; only a desk with neither shows that Desk keeps no key. It passes
+each public key in the desk's list, in order, as `--public-key`: the runtime
+reads a key from the
+file it names, so each is written for that run to a file of its own in a new
+folder in Desk's signing folder, and removed after it (a Desk stopped during
+the check leaves that folder, which holds public keys only). On the project
+Desk was started on it passes no key. It passes no held checkpoint, no time-stamping
+roots and no `--require-…` flag, so the runtime checks the chain, and the
+signatures against the keys it was given, and says what it did not check. Its
+sentence above the report says which: with this desk's public keys, or with no
+keys. The panel shows the runtime's status,
 its coverage counts, segments, discontinuities and findings by name, and its
 sentences on what the result establishes and what it does not, in English as
-the runtime writes them. Exit 1 with a report is a failed check, and the report
+the runtime writes them, and, where a key was passed, the key in force at the
+end of the trail and the signature lines the runtime could not read. Beside the
+report it shows the desk's public keys, in order, each with a copy button, for
+you to hand to a holder, who checks a copy with `jpack audit verify
+--public-key`, one file per key, in that order; or that Desk keeps no key for
+this desk, or could not read the keys it keeps, and passed none. It also runs
+`packs validate --config jpack.json --format json` and shows its
+`audit-signing-key` check, the runtime's word on whether the key the project
+names signs its records, with its status and its sentence; the runtime reports
+no such check where no key is named, and the panel says so. Where `jpack.json`
+declares packs, Desk names the first with `--id`, so one pack's report keeps
+the answer within Desk's 64 KiB bound; the configuration's own checks are made
+either way. Exit 1 with a report is a failed check, and the report
 is shown, once every member a report has is there; a refusal the runtime
 explains, on any non-zero exit, is shown in its words; any other answer is
 shown as an error. In every sentence the panel passes on, the audit directory,
 wherever `jpack.json` puts it, and any other path from the root of a file
 system are replaced by “…”, keeping only the name of one of the runtime's own
-files, so the panel does not say where your files are; Desk's log keeps the
-sentence whole. Desk ran it on your machine, over your trail: it is not
+files, so the panel does not say where your files are. The desk's seed, its
+list of public keys, and every folder on the way to them, Desk's configuration
+folder and the home folder above it among them, are replaced whole, as Go
+writes each and as the runtime prints it, and so are an inherited
+`JPACK_SIGNING_KEY`'s path and every folder on the way to it, so that a space
+in a folder's name does not leave the rest of its path behind. One generator
+gives all of these: each path as it was given, as it is cleaned, and as it
+resolves through links, and every folder on the way to each, since the
+runtime prints a key's path as it was given and a folder's as it cleans it. Desk's log keeps the sentence whole. Desk ran it on your machine, over your trail: it is not
 evidence to anyone who does not trust you. A holder runs the same command on a
 copy, with what it holds. With a runtime that does not read configVersion `"6"`
 (before 0.26.0), or whose command parser says, and says only, that it has no
@@ -336,8 +457,9 @@ that they cover the pack. See "Local operational Jobs pilot" below.
 ### Which projects have them
 
 - **A new desk** starts with all of them: `requireReviewed`,
-  `requireComparableFacts`, the audit trail and a lock of its empty project. See
-  "Named desks" below.
+  `requireComparableFacts`, the audit trail and a lock of its empty project,
+  and, with runtime 0.26.0 or later, a signing key Desk keeps for it (above).
+  See "Named desks" below.
 - **The project Desk was started on, and a desk made before this**, are
   offered them and never put under them. A note on Packs, shown until you
   dismiss it, and **Admin → Project → Gates**, where the offer stays, open a
@@ -5820,7 +5942,7 @@ See [unsaved-work behavior](docs/design/unsaved-work.md) for coverage and limits
 
 Use the desk name beside the brand to switch desks or **Create desk…**. Each new desk keeps its packs, source documents, chats, drafts, tests, briefs, jobs, and run artifacts in its own folder. Its private data lives under `.desk-private/`, excluded from the project file editor. Machine credentials remain in protected settings. The browser title uses the desk name and keeps `*` while edits are unsaved; the favicon follows the configured brand.
 
-A new desk starts gated ([ADR-0009](docs/adr/0009-gates-on-by-default.md)). Its `jpack.json` sets `requireReviewed`, `requireComparableFacts` and an audit trail in `.desk-private/audit/`, and the runtime locks the empty project before the desk exists, in `jpack.lock.json`. A deciding run of a draft is then refused, while rehearsals and tests of it still answer. `requireComparableFacts` refuses any evaluation, rehearsals included, that reads a fact of a type no comparison in the pack can match. With a runtime older than 0.25.0, the desk is created without `requireComparableFacts`, and the creation says so. With one older than 0.24.0, or if the lock fails, no desk is created. A named desk's runtime always reads the desk's own `jpack.json`, and inherits no signing key: a `JPACK_CONFIG` or `JPACK_SIGNING_KEY` set where Desk was started applies only to the startup project.
+A new desk starts gated ([ADR-0009](docs/adr/0009-gates-on-by-default.md)). Its `jpack.json` sets `requireReviewed`, `requireComparableFacts` and an audit trail in `.desk-private/audit/`, and the runtime locks the empty project before the desk exists, in `jpack.lock.json`. A deciding run of a draft is then refused, while rehearsals and tests of it still answer. `requireComparableFacts` refuses any evaluation, rehearsals included, that reads a fact of a type no comparison in the pack can match. With runtime 0.26.0 or later, it is also signed: its `jpack.json` is at configVersion `"6"` and names a signing key Desk keeps for it, outside the desk, in `secrets/signing/` in Desk's configuration folder (see "The signing key of a desk Desk makes" under Gates). With a runtime older than 0.26.0, or where Desk's custody cannot keep a key, the desk is created at configVersion `"5"`, unsigned, and the creation says so and why, before the desk opens. With a runtime older than 0.25.0, the desk is created without `requireComparableFacts`, and the creation says so. With one older than 0.24.0, if the runtime fails to generate the key, or if the lock fails, no desk is created. A named desk's runtime always reads the desk's own `jpack.json`, and inherits no signing key: a `JPACK_CONFIG` or `JPACK_SIGNING_KEY` set where Desk was started applies only to the startup project.
 
 Switching desks checks unsaved work and does not stop another desk's runner. Existing projects retain their storage locations; creating a desk does not migrate existing data. Use the paired runtime update, which accepts an empty project until its first pack is created. See [named desk storage and lifecycle](docs/design/named-desks.md).
 

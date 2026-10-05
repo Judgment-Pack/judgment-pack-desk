@@ -1971,12 +1971,12 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	gatedDeskConfigVersion4    = `{"configVersion":"4","requireReviewed":true,"requireComparableFacts":true,"audit":{"dir":".desk-private/audit"},"packs":{}}` + "\n"'
   mutate go "new desk: the fallback is not logged" "$NDG" \
     '	if gates.notice != "" {
-		s.log.Printf("desk: %s", gates.notice)
+		s.log.Printf("desk: %s", strings.ReplaceAll(gates.notice, "\n\n", " "))
 	}' \
     ''
   mutate go "new desk: the fallback is not in the answer" "$NDG" \
-    '	}{record, gates.configVersion, gates.requireComparableFacts, gates.notice})' \
-    '	}{record, gates.configVersion, gates.requireComparableFacts, ""})'
+    '	}{record, gates.configVersion, gates.requireComparableFacts, gates.signed, gates.notice})' \
+    '	}{record, gates.configVersion, gates.requireComparableFacts, gates.signed, ""})'
   mutate go "new desk: a runtime that reads neither 4 nor 5 gets a desk" "$NDG" \
     '	if slices.Contains(schema.supported, reviewedFromVersion) {' \
     '	if true {'
@@ -1991,7 +1991,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	if err = error(nil); err != nil {'
   mutate go "new desk: a failed lock still makes a desk" "$NDG" \
     '	if err = lockRuntimeProject(ctx, bin, held, folder, gates.config); err != nil {
-		return deskGates{}, runtimeRefusal(err)
+		return failed(runtimeRefusal(errors.New(s.withoutCustodyPaths(err.Error(), id))))
 	}' \
     '	if err = lockRuntimeProject(ctx, bin, held, folder, gates.config); err != nil {
 		_ = runtimeRefusal(err)
@@ -2203,17 +2203,17 @@ func (b *cappedBuffer) exceeded() bool {'
 		return auditAnswer{State: auditStateOlder, Floor: auditRuntimeFloor}, nil
 	}'
   mutate go "audit: a reader's demand is passed" "$AR" \
-    '"audit", "verify", "--config", runtimeConfigName, "--format", "json")' \
-    '"audit", "verify", "--config", runtimeConfigName, "--format", "json", "--require-checkpoint-through", "1")'
-  mutate go "audit: a public key is passed" "$AR" \
-    '"audit", "verify", "--config", runtimeConfigName, "--format", "json")' \
-    '"audit", "verify", "--config", runtimeConfigName, "--public-key", "keys.pub", "--format", "json")'
+    '"audit", "verify", "--config", runtimeConfigName, "--format", "json"}' \
+    '"audit", "verify", "--config", runtimeConfigName, "--format", "json", "--require-checkpoint-through", "1"}'
+  mutate go "audit: a public key is passed where Desk keeps none" "$AR" \
+    '"audit", "verify", "--config", runtimeConfigName, "--format", "json"}' \
+    '"audit", "verify", "--config", runtimeConfigName, "--public-key", "keys.pub", "--format", "json"}'
   mutate go "audit: the configuration is not named" "$AR" \
-    '"audit", "verify", "--config", runtimeConfigName, "--format", "json")' \
-    '"audit", "verify", "--format", "json")'
+    '"audit", "verify", "--config", runtimeConfigName, "--format", "json"}' \
+    '"audit", "verify", "--format", "json"}'
   mutate go "audit: exit 1 is not read as a report" "$AR" \
-    '|| code == 1 && got.Status == "invalid"):' \
-    '):'
+    '	case got.Command == auditVerifyCommand && (code == 0 && (got.Status == "valid" || got.Status == "segmented") || code == 1 && got.Status == "invalid"):' \
+    '	case got.Command == auditVerifyCommand && (code == 0 && (got.Status == "valid" || got.Status == "segmented")):'
   mutate go "audit: a report's status is not held to its exit" "$AR" \
     '	case got.Command == auditVerifyCommand && (code == 0 && (got.Status == "valid" || got.Status == "segmented") || code == 1 && got.Status == "invalid"):' \
     '	case got.Command == auditVerifyCommand && (got.Status == "valid" || got.Status == "segmented" || got.Status == "invalid"):'
@@ -2362,11 +2362,13 @@ func (b *cappedBuffer) exceeded() bool {'
     '	shown := s.withoutPathsIn(answer)' \
     '	shown := answer'
   mutate go "audit: a path not configured is passed on" "$AR" \
-    '	return strings.ReplaceAll(withoutAbsolutePaths(message), held, "…")' \
-    '	return strings.ReplaceAll(message, held, "…")'
+    '	return strings.ReplaceAll(withoutAbsolutePaths(replaceSpans(message, spans)), held, "…")' \
+    '	return strings.ReplaceAll(replaceSpans(message, spans), held, "…")'
   mutate go "audit: the audit directory is not replaced whole" "$AR" \
-    '		message = strings.ReplaceAll(message, span, held)' \
-    '		_ = span'
+    '	for _, span := range s.auditDirSpans(message, auditDir) {
+		spans = append(spans, pathSpan{value: span, with: held})' \
+    '	for _, span := range s.auditDirSpans(message, auditDir) {
+		_ = span'
   mutate go "audit: the runtime's working directory is not a base" "$AR" \
     's.cfg.ProjectDir, runtimeTrampolineDir}' \
     's.cfg.ProjectDir}'
@@ -2410,6 +2412,366 @@ func (b *cappedBuffer) exceeded() bool {'
     '	s.mux.HandleFunc("GET /api/audit/verify", s.handleAuditVerify)
 ' \
     ''
+
+  # **A desk Desk makes is signed where it can be (ADR-0010, section 1 and
+  # question 3).** The key first, then the configuration naming it at "6",
+  # then the lock; each fallback made at "5", unsigned, and said in words
+  # with no path; a key that fails to be made makes no desk and leaves no
+  # key. The stand-in in new_desk_gates_test.go answers each case.
+  mutate go "signed desk: a runtime that reads 6 is asked for no key" "$NDG" \
+    '	if slices.Contains(schema.supported, signedFromVersion) {' \
+    '	if false {'
+  mutate go "signed desk: a runtime that does not read 6 is asked for a key" "$NDG" \
+    '	if slices.Contains(schema.supported, signedFromVersion) {' \
+    '	if true {'
+  mutate go "signed desk: the configuration is written before the key" "$NDG" \
+    '			key, err := generateDeskKey(ctx, bin, held, dir, id)' \
+    '			_ = folder.WriteFile(runtimeConfigName, []byte(gatedDeskConfig), 0600)
+			key, err := generateDeskKey(ctx, bin, held, dir, id)'
+  mutate go "signed desk: locked before the configuration is written" "$NDG" \
+    '			gates = deskGates{config: signedDeskConfig(key.seedPath()), configVersion: signedFromVersion, requireComparableFacts: true, signed: true, key: key}' \
+    '			gates = deskGates{config: signedDeskConfig(key.seedPath()), configVersion: signedFromVersion, requireComparableFacts: true, signed: true, key: key}
+			_ = lockRuntimeProject(ctx, bin, held, folder, gates.config)'
+  mutate go "signed desk: the key named is not the seed" "$NDG" \
+    'signedDeskConfig(key.seedPath())' \
+    'signedDeskConfig(filepath.Join(key.dir.path, "other.seed"))'
+  mutate go "signed desk: requireComparableFacts is dropped at 6" "$NDG" \
+    'return []byte(`{"configVersion":"6","requireReviewed":true,"requireComparableFacts":true,' \
+    'return []byte(`{"configVersion":"6","requireReviewed":true,'
+  mutate go "signed desk: the answer calls a signed desk unsigned" "$NDG" \
+    'requireComparableFacts: true, signed: true, key: key}' \
+    'requireComparableFacts: true, signed: false, key: key}'
+  mutate go "signed desk: custody's refusal is not said" "$NDG" \
+    '			gates.unsigned(fmt.Sprintf(unsignedByCustody, strings.TrimRight(s.custodyWords(err.Error()), ".")))' \
+    '			_ = unsignedByCustody'
+  mutate go "signed desk: an older runtime's desk is not said to be unsigned" "$NDG" \
+    '		gates.unsigned(fmt.Sprintf(unsignedByRuntime, schema.version, auditRuntimeFloor))' \
+    '		_ = unsignedByRuntime'
+  mutate go "signed desk: custody's reason names a path" "$NDG" \
+    'strings.TrimRight(s.custodyWords(err.Error()), ".")))' \
+    'strings.TrimRight(err.Error(), ".")))'
+  mutate go "signed desk: a path jpack.json cannot name is used" "$NDG" \
+    '		if err == nil && !utf8.ValidString(dir.path) {' \
+    '		if err == nil && !utf8.ValidString(dir.path) && false {'
+  mutate go "signed desk: a failed generation's refusal names a path" "$NDG" \
+    '				return deskGates{}, runtimeRefusal(errors.New(s.withoutCustodyPaths(err.Error(), id)))' \
+    '				return deskGates{}, runtimeRefusal(err)'
+  mutate go "signed desk: the key outlives a failed lock" "$NDG" \
+    '		failure = s.dropKey(gates.key, failure)' \
+    '		failure = s.dropKey(nil, failure)'
+  mutate go "signed desk: the key outlives a creation stopped by shutdown" "$NDG" \
+    's.dropKey(gates.key, &deskFailure{http.StatusConflict' \
+    's.dropKey(nil, &deskFailure{http.StatusConflict'
+  mutate go "signed desk: the notice's paragraphs run together" "$NDG" \
+    '		g.notice += "\n\n"' \
+    '		g.notice += " "'
+
+  # **The key Desk keeps for a desk, and its list of public keys (ADR-0010,
+  # section 1).** Nothing kept is generated over; what a failed run left is
+  # removed; the runtime's answer is held to `audit key generate`'s; the seed
+  # is one regular file, its owner's alone, with one name; the list is
+  # written whole, never over another, 0600, in the one spelling Desk reads
+  # back; and the signing folder is custody's.
+  SG=internal/desk/signing.go
+  mutate go "key list: anything already kept is generated over" "$SG" \
+    '		if _, err := dir.root.Lstat(name); !errors.Is(err, fs.ErrNotExist) {' \
+    '		if _, err := dir.root.Lstat(name); false && !errors.Is(err, fs.ErrNotExist) {'
+  mutate go "key list: a failed run's seed is left" "$SG" \
+    '		removed := dir.root.Remove(made.seedName)' \
+    '		removed := error(nil)'
+  mutate go "key list: an answer from another command is taken" "$SG" \
+    'answer.Command != "audit key generate" || ' \
+    ''
+  mutate go "key list: an answer of another status is taken" "$SG" \
+    ' || answer.Status != "generated" {' \
+    ' {'
+  mutate go "key list: a seed others can read is named" "$SG" \
+    '	if err := ownerOnlyFile(name, info.Mode()); err != nil {
+		return err
+	}
+	if err := ownedByUs(name, info); err != nil {' \
+    '	if err := ownedByUs(name, info); err != nil {'
+  mutate go "key list: a seed with another name is named" "$SG" \
+    '	if links, known := linkCount(info); !known || links != 1 {' \
+    '	if links, known := linkCount(info); !known || links < 1 {'
+  mutate go "key list: a linked seed is named" "$SG" \
+    '	if info.Mode()&fs.ModeSymlink != 0 {
+		return fmt.Errorf("%s is a symbolic link, not a signing key", name)' \
+    '	if false {
+		return fmt.Errorf("%s is a symbolic link, not a signing key", name)'
+  mutate go "key list: a keyId that is not its key's is kept" "$SG" \
+    '	case !keyIDForm.MatchString(k.KeyID) || k.KeyID != keyIDOf(k.PublicKey):' \
+    '	case !keyIDForm.MatchString(k.KeyID):'
+  mutate go "key list: a public key in capitals is kept" "$SG" \
+    'publicKeyForm = regexp.MustCompile(`^[0-9a-f]{64}$`)' \
+    'publicKeyForm = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)'
+  mutate go "key list: a list is written over another" "$SG" \
+    '	if err := d.root.Link(stagedName, name); err != nil {' \
+    '	if err := d.root.Rename(stagedName, name); err != nil {'
+  mutate go "key list: the list is not owner-only" "$SG" \
+    '	if err := staged.Chmod(custodyFileMode); err != nil {' \
+    '	if err := staged.Chmod(0o644); err != nil {'
+  mutate go "key list: a staging file is left" "$SG" \
+    '	defer d.root.Remove(stagedName)' \
+    '	defer func() {}()'
+  mutate go "key list: the first key takes over from a later record" "$SG" \
+    'KeyID: answer.KeyID, At: 0}' \
+    'KeyID: answer.KeyID, At: 1}'
+  mutate go "key list: a list in another spelling is read" "$SG" \
+    '		if json.Unmarshal([]byte(line), &key) != nil || string(key.line()) != line+"\n" {' \
+    '		if json.Unmarshal([]byte(line), &key) != nil {'
+  mutate go "key list: a first key after 0 is read" "$SG" \
+    '		if i == 0 && key.At != 0 || i > 0 && key.At <= keys[i-1].At {' \
+    '		if i > 0 && key.At <= keys[i-1].At {'
+  mutate go "key list: keys out of order are read" "$SG" \
+    '		if i == 0 && key.At != 0 || i > 0 && key.At <= keys[i-1].At {' \
+    '		if i == 0 && key.At != 0 {'
+  mutate go "key list: a key twice is read" "$SG" \
+    '		if seen[key.PublicKey] {' \
+    '		if false {'
+  mutate go "key list: more keys than the bound are read" "$SG" \
+    '	if len(lines) > maxDeskKeys {' \
+    '	if false {'
+  mutate go "key list: an unended list is read" "$SG" \
+    '	if len(data) == 0 || data[len(data)-1] != '"'"'\n'"'"' {' \
+    '	if len(data) == 0 {'
+  mutate go "key list: a list others can write is read" "$SG" \
+    '	if info.Mode().Perm()&worldMode != 0 {
+		return nil, true, errors.New("its group or other users can write it")' \
+    '	if false {
+		return nil, true, errors.New("its group or other users can write it")'
+  mutate go "key list: a linked list is read" "$SG" \
+    '	if !info.Mode().IsRegular() {
+		return nil, true, errors.New("it is not a regular file")' \
+    '	if false {
+		return nil, true, errors.New("it is not a regular file")'
+  mutate go "key list: a list past the bound is read" "$SG" \
+    '	data, err := readBounded(file, keysFileLimit)' \
+    '	data, err := readBounded(file, 1<<20)'
+  mutate go "key list: a swapped signing folder is used" "$SG" \
+    '	if opened, err := root.Stat("."); err != nil || !os.SameFile(checked, opened) {' \
+    '	if opened, err := root.Stat("."); err != nil || opened == nil {'
+  mutate go "key list: a signing folder others can write is read" "$SG" \
+    '	if err := safeDirectory(path, checked, true); err != nil {' \
+    '	if err := safeDirectory(path, checked, true); err != nil && false {'
+  mutate go "key list: no signing folder is made" "$SG" \
+    '	if create {
+		// **Made first, and one that is there already is checked as usual.**' \
+    '	if false {
+		// **Made first, and one that is there already is checked as usual.**'
+  mutate go "key list: the key files outlive the check" "$SG" \
+    '		errs = append(errs, d.root.Remove(folder))' \
+    '		errs = append(errs, nil)'
+  mutate go "key list: keys are passed out of order" "$SG" \
+    '		paths = append(paths, filepath.Join(d.path, name))' \
+    '		paths = append([]string{filepath.Join(d.path, name)}, paths...)'
+  mutate go "key list: custody's words name its folders by path" "$SG" \
+    '			{value: filepath.Join(secrets, signingDirName), with: "Desk'"'"'s signing folder"},' \
+    '			{value: filepath.Join(secrets, signingDirName) + "x", with: "Desk'"'"'s signing folder"},'
+  mutate go "key list: no folder on the key's way is a span" "$SG" \
+    '			if os.IsPathSeparator(spelling[at]) && strings.TrimLeft(spelling[:at], string(filepath.Separator)) != "" {' \
+    '			if os.IsPathSeparator(spelling[at]) && strings.TrimLeft(spelling[:at], string(filepath.Separator)) != "" && false {'
+  mutate go "key list: no span is taken as the runtime prints it" "$SG" \
+    '		for _, form := range []string{value, displayedPath(value)} {' \
+    '		for _, form := range []string{value} {'
+  mutate go "key list: a folder is taken without the path under it" "$SG" \
+    '			tail = len(strings.TrimRight(rest[:tail], ".,:;"))' \
+    '			tail = 0'
+  mutate go "key list: a shorter span is replaced first" "$SG" \
+    'return len(b.value) - len(a.value)' \
+    'return len(a.value) - len(b.value)'
+  mutate go "signed desk: a refusal at the lock names a path" "$NDG" \
+    '		return failed(runtimeRefusal(errors.New(s.withoutCustodyPaths(err.Error(), id))))' \
+    '		return failed(runtimeRefusal(err))'
+
+  # **Review round 1 of #219.** The signing folder's and the seed's paths
+  # checked against what Desk holds; the creation marker and the start's
+  # sweep; a list of keys passed only with its seed's own key; every folder
+  # on an inherited key's path a span; a second first creation signed; a
+  # seed another user owns, a list swapped while read, and a manifest that
+  # cannot be written.
+  mutate go "key list: the folder's path is not checked before the runtime runs" "$SG" \
+    '	if dir.namesHeld() != nil {' \
+    '	if dir.namesHeld() != nil && false {'
+  mutate go "key list: the seed's path is not checked after the runtime runs" "$SG" \
+    '	if dir.namesFile(made.seedName, seed) != nil {' \
+    '	if dir.namesFile(made.seedName, seed) != nil && false {'
+  mutate go "signed desk: the seed's path is not checked before publishing" "$SG" \
+    '	if k.dir.namesFile(k.seedName, k.seed) != nil {' \
+    '	if k.dir.namesFile(k.seedName, k.seed) != nil && false {'
+  mutate go "key list: no marker is written" "$SG" \
+    '	marker, err := dir.writeMarker(made.markerName)' \
+    '	marker, err := os.FileInfo(nil), error(nil)'
+  mutate go "key list: a failed creation leaves its marker" "$SG" \
+    '}{{k.keysName, k.keys}, {k.seedName, k.seed}, {k.markerName, k.marker}} {' \
+    '}{{k.keysName, k.keys}, {k.seedName, k.seed}} {'
+  mutate go "signed desk: the marker is left after publishing" "$NDG" \
+    '	if err := gates.key.settle(); err != nil {' \
+    '	if err := error(nil); err != nil {'
+  mutate go "signed desk: a manifest that fails leaves the key" "$NDG" \
+    's.dropKey(gates.key, storageRefusal(err))' \
+    's.dropKey(nil, storageRefusal(err))'
+  mutate go "sweep: does not run at start" "$NDG" \
+    '	s.sweepUnfinishedKeys()
+' \
+    ''
+  mutate go "sweep: a key without a marker is removed" "$SG" \
+    '		id, isMarker := strings.CutSuffix(entry.Name(), creatingSuffix)' \
+    '		id, isMarker := strings.CutSuffix(entry.Name(), seedSuffix)'
+  mutate go "sweep: a published desk's key is removed" "$SG" \
+    '		if !published {
+			names = []string{id + keysSuffix, id + seedSuffix, id + creatingSuffix}' \
+    '		if true {
+			names = []string{id + keysSuffix, id + seedSuffix, id + creatingSuffix}'
+  mutate go "sweep: an unpublished creation's key is left" "$SG" \
+    '		if !published {
+			names = []string{id + keysSuffix, id + seedSuffix, id + creatingSuffix}' \
+    '		if false {
+			names = []string{id + keysSuffix, id + seedSuffix, id + creatingSuffix}'
+  mutate go "sweep: a desk that cannot be inspected loses its key" "$SG" \
+    '	return err == nil, err
+}' \
+    '	return err == nil, nil
+}'
+  mutate go "key list: the folder made by another creation is refused" "$SG" \
+    'err != nil && !errors.Is(err, fs.ErrExist) {
+			return nil, fmt.Errorf("%s could not be created: %w", path, err)' \
+    'err != nil {
+			return nil, fmt.Errorf("%s could not be created: %w", path, err)'
+  mutate go "key list: a seed another user owns is named" "$SG" \
+    '	if err := ownedByUs(name, info); err != nil {
+		return err
+	}
+	if links' \
+    '	if links'
+  mutate go "key list: a list swapped while read is read" "$SG" \
+    '	if opened, err := file.Stat(); err != nil || !os.SameFile(info, opened) {
+		return nil, true, errors.New("it changed between being inspected and being opened")' \
+    '	if opened, err := file.Stat(); err != nil || opened == nil {
+		return nil, true, errors.New("it changed between being inspected and being opened")'
+  mutate go "key panel: a list is passed whatever its seed's key" "$AR" \
+    '	if last := public[len(public)-1]; last.PublicKey != answer.PublicKey || last.KeyID != answer.KeyID {' \
+    '	if last := public[len(public)-1]; last.At < 0 {'
+  mutate go "key panel: a list is passed whatever its seed's keyId" "$AR" \
+    'last.PublicKey != answer.PublicKey || last.KeyID != answer.KeyID {' \
+    'last.PublicKey != answer.PublicKey {'
+  mutate go "key panel: a seed with no list reads as no key" "$AR" \
+    '	case !found && errors.Is(seedErr, fs.ErrNotExist):' \
+    '	case !found && (errors.Is(seedErr, fs.ErrNotExist) || seedErr == nil):'
+  mutate go "key panel: a list of more than one key is passed" "$AR" \
+    '	case len(public) != 1:' \
+    '	case len(public) < 1:'
+  mutate go "key panel: audit key public is read from another command" "$AR" \
+    'answer.Command != "audit key public" || ' \
+    ''
+  mutate go "key panel: audit key public is read whatever its status" "$AR" \
+    ' || answer.Status != "read" {' \
+    ' {'
+  mutate go "key panel: a seed Desk will not use is passed" "$AR" \
+    '	if err := checkSeed(seedName, seed); err != nil {' \
+    '	if err := checkSeed(seedName, seed); err != nil && false {'
+  mutate go "key panel: an inherited key's folders are not spans" "$AR" \
+    '		spans = append(spans, pathSpans(key, false, held)...)' \
+    '		spans = append(spans, pathSpan{value: key, with: held}, pathSpan{value: displayedPath(key), with: held})'
+
+  # **Review round 2 of #219: two classes.** Publication is one atomic event,
+  # and "published" is what the registry's own reader accepts; every span
+  # comes from one generator, over each spelling of a path and every folder
+  # on its way.
+  mutate go "publication: existence is taken for publication" "$SG" \
+    '	_, err = readDeskManifest(folder, id)' \
+    '	_, err = folder.Lstat(deskManifest)'
+  mutate go "publication: a manifest that cannot be read counts as none" "$NDG" \
+    '	case err != nil && !errors.Is(err, errPrivateDataChanged) && (codeOf(err) == CodeForbidden || codeOf(err) == CodeTooLarge):' \
+    '	case err != nil:'
+  mutate go "publication: the manifest is written in place" "$NDG" \
+    '	stage, err := randomStagingName(manifestStagingPrefix)' \
+    '	stage, err := filepath.Base(deskManifest), error(nil)'
+  mutate go "publication: the marker is removed before publication" "$NDG" \
+    '	if err = publishDeskManifest(folder, manifest); err != nil {' \
+    '	_ = gates.key.settle()
+	if err = publishDeskManifest(folder, manifest); err != nil {'
+  mutate go "spans: no spelling as given" "$SG" \
+    '	spellings := []string{path}' \
+    '	spellings := []string{}'
+  mutate go "spans: no cleaned spelling" "$SG" \
+    '	spellings = append(spellings, filepath.Clean(path))
+' \
+    ''
+  mutate go "spans: no resolved spelling" "$SG" \
+    '	if real, err := filepath.EvalSymlinks(path); err == nil {' \
+    '	if real, err := filepath.EvalSymlinks(path); err == nil && false {'
+
+  # **The panel with the desk's keys (ADR-0010, sections 1 and 4).** Each key
+  # Desk keeps passed, in order, and none on the startup desk; nothing made
+  # in custody to read them; `packs validate`'s `audit-signing-key` check
+  # read as the runtime documents it, of one pack where packs are declared,
+  # and its words passed on with no path; the signatures the runtime read.
+  mutate go "key panel: kept keys are not passed" "$AR" \
+    '				args = append(args, "--public-key", file)' \
+    '				_ = file'
+  mutate go "key panel: the startup desk is read for keys" "$AR" \
+    '	if s.cfg.deskID == "" {
+		return auditKeys{State: keysStartup}, nil
+	}' \
+    ''
+  mutate go "key panel: reading the keys makes a signing folder" "$AR" \
+    '	dir, err := s.assistant.openSigning(false)' \
+    '	dir, err := s.assistant.openSigning(true)'
+  mutate go "key panel: packs validate is not run" "$AR" \
+    '	signing := s.signingCheck(ctx, dir)' \
+    '	signing := auditSigning{State: signingNoKey}'
+  mutate go "key panel: validate's word is read from another command" "$AR" \
+    '	case got.Command == "packs validate" && (code == 0 && got.Status == "valid" || code == 1 && got.Status == "invalid"):' \
+    '	case code == 0 && got.Status == "valid" || code == 1 && got.Status == "invalid":'
+  mutate go "key panel: validate's exit is not held to its status" "$AR" \
+    '	case got.Command == "packs validate" && (code == 0 && got.Status == "valid" || code == 1 && got.Status == "invalid"):' \
+    '	case got.Command == "packs validate" && (got.Status == "valid" || got.Status == "invalid"):'
+  mutate go "key panel: a failed check under valid is shown" "$AR" \
+    '				check.Status == "failed" && got.Status != "invalid" {' \
+    '				false {'
+  mutate go "key panel: a check reported twice is shown" "$AR" \
+    '			if found.State == signingChecked || !slices.Contains(' \
+    '			if !slices.Contains('
+  mutate go "key panel: a check of any status is shown" "$AR" \
+    '!slices.Contains([]string{"passed", "failed", "skipped"}, check.Status) ||' \
+    'false ||'
+  mutate go "key panel: validate's refusal is undocumented" "$AR" \
+    '	case code > 0 && (got.Status == "error" || got.Status == "unsupported") && (auditVerification{Diagnostics: got.Diagnostics}).said():' \
+    '	case false:'
+  mutate go "key panel: validate's refusal on exit 0 is shown" "$AR" \
+    '	case code > 0 && (got.Status == "error" || got.Status == "unsupported") && (auditVerification{Diagnostics: got.Diagnostics}).said():' \
+    '	case code >= 0 && (got.Status == "error" || got.Status == "unsupported") && (auditVerification{Diagnostics: got.Diagnostics}).said():'
+  mutate go "key panel: every pack is validated" "$AR" \
+    '	if id, ok := s.onePackID(); ok {' \
+    '	if id, ok := s.onePackID(); ok && false {'
+  mutate go "key panel: not the first pack is named" "$AR" \
+    '	return slices.Sorted(maps.Keys(declared.Packs))[0], true' \
+    '	return slices.Sorted(maps.Keys(declared.Packs))[len(declared.Packs)-1], true'
+  mutate go "key panel: the check's words are passed on with their paths" "$AR" \
+    '		signing.Detail = clean(signing.Detail)' \
+    ''
+  mutate go "key panel: an inherited key's path is said" "$AR" \
+    '	if key := strings.TrimSpace(os.Getenv(runtimeSigningKeyEnv)); filepath.IsAbs(key) {' \
+    '	if key := strings.TrimSpace(os.Getenv(runtimeSigningKeyEnv)); false && filepath.IsAbs(key) {'
+  mutate go "key panel: the key's path and its folders are not spans" "$AR" \
+    '	spans = append(spans, s.custodySpans(s.cfg.deskID, held)...)' \
+    ''
+  mutate go "key panel: the signatures are not shown" "$AR" \
+    '	if sig := got.Signatures; sig != nil {' \
+    '	if sig := got.Signatures; sig != nil && false {'
+  mutate go "key panel: signatures with no first key are shown" "$AR" \
+    'FirstKey: p.text(sig.FirstKey, true)' \
+    'FirstKey: p.text(sig.FirstKey, false)'
+  mutate go "key panel: the keys are not given with the answer" "$AR" \
+    '	answer.Keys = &keys
+	answer.Signing = &signing' \
+    '	answer.Signing = &signing'
+  mutate go "key panel: the check is not given with the answer" "$AR" \
+    '	answer.Keys = &keys
+	answer.Signing = &signing' \
+    '	answer.Keys = &keys
+	_ = signing'
 
   # **Downloading the trail as exact bytes (ADR-0010, section 2).** One of
   # three files, asked for once; opened through the project's root with no
@@ -9501,8 +9863,8 @@ export function assistantTransport(id: string): Transport {
     "{ version: record.runtime ?? '?', floor: record.floor }" \
     "{ version: record.floor, floor: record.floor }"
   mutate web "record: what Desk did not give is not said" "$DR" \
-    "                    <p className={styles.statement}>{msg(" \
-    "                    <p className={styles.statement}>{false && msg("
+    "                      : msg('Desk ran this on your machine, over your trail, with no keys and no checkpoints" \
+    "                      : false && msg('Desk ran this on your machine, over your trail, with no keys and no checkpoints"
   mutate web "record: the establishes sentences are not marked English" "$DR" \
     "<ul className={styles.list} lang=\"en\">{report.establishes" \
     "<ul className={styles.list}>{report.establishes"
@@ -9573,6 +9935,87 @@ export function assistantTransport(id: string): Transport {
     "                <DecisionRecord visible={open.id === 'project'} />" \
     "                {false && <DecisionRecord visible={open.id === 'project'} />}"
 
+  # **The desk's keys in the panel, and what a new desk was made without
+  # (ADR-0010, sections 1 and 4).** The statement says which keys were
+  # passed; each key Desk keeps is shown, in order; the runtime's word on the
+  # key, its status in the owner's language and its sentence in English; and
+  # what a creation made without is said, paragraph by paragraph, before the
+  # desk opens.
+  mutate web "key panel: the statement claims keys it did not pass" "$DR" \
+    "{record.keys?.state === 'kept'" \
+    "{true"
+  mutate web "key panel: the statement says no keys where it passed some" "$DR" \
+    "{record.keys?.state === 'kept'" \
+    "{false"
+  mutate web "key panel: the public keys are not shown" "$DR" \
+    "{keys.public.map((key, index) =>" \
+    "{keys.public.slice(0, 0).map((key, index) =>"
+  mutate web "key panel: the public keys are shown out of order" "$DR" \
+    "{keys.public.map((key, index) =>" \
+    "{[...keys.public].reverse().map((key, index) =>"
+  mutate web "key panel: the check's words are dropped" "$DR" \
+    "<> <span lang=\"en\">{signing.detail}</span></>" \
+    "<> <span lang=\"en\"></span></>"
+  mutate web "key panel: a failed check reads as passed" "$DR" \
+    "failed: msg('Failed')" \
+    "failed: msg('Passed')"
+  mutate web "key panel: no key named is not said" "$DR" \
+    "{msg('The runtime’s check of the key: no key is named for this project, so its runtime signs no record.')}" \
+    "{''}"
+  mutate web "key panel: a made desk without a key is not said" "$DR" \
+    "{keys?.state === 'none' && <p>" \
+    "{false && <p>"
+  mutate web "key panel: keys Desk could not read are not said" "$DR" \
+    "<p role=\"alert\">{systemMessage(keys.problem)}</p>" \
+    "<p role=\"alert\"></p>"
+  mutate web "key panel: the runtime's diagnostics on the key are not shown" "$DR" \
+    "aria-label={msg('What the runtime said of the key')}>{signing.diagnostics.map(" \
+    "aria-label={msg('What the runtime said of the key')}>{signing.diagnostics.slice(0, 0).map("
+  mutate web "key panel: the key in force is not shown" "$DR" \
+    "<dd><code>{report.signatures.keyInForce}</code></dd>" \
+    "<dd><code></code></dd>"
+  mutate web "key panel: a kept list out of order is accepted" "$AC" \
+    "index === 0 ? key.at === 0 : key.at > keys[index - 1]!.at" \
+    "index >= 0 || key.at === keys.length"
+  mutate web "key panel: a key not in lowercase hex is accepted" "$AC" \
+    "hex(64)(value.publicKey)" \
+    "text(value.publicKey)"
+  mutate web "key panel: an empty kept list is accepted" "$AC" \
+    "value.public.length > 0 && " \
+    ""
+  mutate web "key panel: a check of any status is accepted" "$AC" \
+    "['passed', 'failed', 'skipped'].includes(value.status as string)" \
+    "text(value.status)"
+  mutate web "key panel: signatures are not checked" "$AC" \
+    "optional(value.signatures, isSignatures)" \
+    "(optional(value.signatures, isSignatures) || true)"
+  mutate web "key panel: keys and the check are not checked" "$AC" \
+    "|| !optional(value.keys, isAuditKeys) || !optional(value.signing, isAuditSigning)" \
+    ""
+  DS=web/src/desks/DeskSwitcher.tsx
+  mutate web "new desk notice: not shown" "$DS" \
+    "if (desk.notice) setCreated(desk)" \
+    "if (false) setCreated(desk)"
+  mutate web "new desk notice: the desk opens before it is read" "$DS" \
+    "      else await switchTo(desk.id)" \
+    "      await switchTo(desk.id)"
+  mutate web "new desk notice: its paragraphs are not each translated" "$DS" \
+    "{created?.notice?.split('\n\n').map(" \
+    "{[created?.notice ?? ''].map("
+  mutate web "new desk notice: a paragraph is not translated" "$DS" \
+    "<p key={index}>{systemMessage(paragraph)}</p>" \
+    "<p key={index}>{systemMessage(paragraph) && paragraph}</p>"
+  mutate web "new desk notice: a notice that is not words is accepted" "$DS" \
+    " || value.notice !== undefined && typeof value.notice !== 'string')" \
+    ")"
+  GH=web/src/routes/GatesHelp.tsx
+  mutate web "gates help: says no record is signed" "$GH" \
+    "Anyone who can write this project can change a record." \
+    "A record is not signed, and anyone who can write this project can change it."
+  mutate web "gates help: the signatures paragraph is not said as written" "$GH" \
+    "<0/> A desk Desk makes with runtime 0.26.0 or later names a signing key" \
+    "<0/> A desk Desk makes with runtime 0.26.0 or later names no signing key"
+
   # **Downloading the trail from the panel (ADR-0010, section 2).** A button
   # for each file the audit directory holds and no other, asking for that
   # file; the answer kept as bytes and saved under the runtime's own name; and
@@ -9598,16 +10041,16 @@ export function assistantTransport(id: string): Transport {
     "{error && <p role=\"alert\">" \
     "{error && <p role=\"alert\" hidden>"
   mutate web "downloads: not beside the report" "$DR" \
-    "<Report report={record.report} />
+    "                    <SigningKey keys={record.keys} signing={record.signing} />
                     <TrailDownloads files={record.files ?? []} />" \
-    "<Report report={record.report} />"
+    "                    <SigningKey keys={record.keys} signing={record.signing} />"
   mutate web "downloads: not beside the runtime's refusal" "$DR" \
-    "</li>)}</ul>
+    "                  <SigningKey keys={record.keys} signing={record.signing} />
                   <TrailDownloads files={record.files ?? []} />" \
-    "</li>)}</ul>"
+    "                  <SigningKey keys={record.keys} signing={record.signing} />"
   mutate web "downloads: a file name the download does not take is accepted" "$AC" \
-    " || !optional(value.files, item => list(item, isTrailFile))) return false" \
-    " || !optional(value.files, item => list(item, (entry): entry is TrailFile => text(entry) || isTrailFile(entry)))) return false"
+    " || !optional(value.files, item => list(item, isTrailFile))" \
+    " || !optional(value.files, item => list(item, (entry): entry is TrailFile => text(entry) || isTrailFile(entry)))"
 
   # **An expectation no pack can produce is the expectation's defect (#137).**
   # The runtime answers JPS-EXPECTATION-UNREACHABLE when an expectation is well

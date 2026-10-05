@@ -8,7 +8,8 @@ import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { useChats } from '../chat/ChatProvider'
 import { deskFetch } from '../files/client'
 import { useFileListing } from '../files/queries'
-import { msg, useLocale } from '../i18n'
+import { msg, systemMessage, useLocale } from '../i18n'
+import { sourceMessage } from '../i18n/source'
 import { IconCheck, IconFolder, IconPlus } from '../shell/icons'
 import { useConfirmDeskExit, useConfirmDiscard, useDeskTitle, useHasUnsavedChanges } from '../shell/UnsavedChanges'
 import { Button } from '../ui/Button'
@@ -21,13 +22,27 @@ import { activeDeskId, openDesk } from './scope'
 
 type Desk = { id: string; name: string; folder: string; managed: boolean }
 type Directory = { current: Desk; desks: Desk[]; location: string }
+/** A creation's answer: the desk, and what it says where the desk was made with less than a new desk has. */
+type Created = Desk & { notice?: string }
+
+/**
+ * The paragraphs a creation's notice is made of, as the chassis writes them
+ * (`chooseDeskGates`, `unsignedByRuntime` and `unsignedByCustody` in
+ * `internal/desk/desks.go`), so that `systemMessage` shows each in the owner's
+ * language. A reason Desk's custody gives stays as the chassis wrote it.
+ */
+export const CREATION_NOTICES = [
+  sourceMessage('The runtime this Desk runs (jpack {{version}}) reads configuration versions {{versions}}, not 5. This desk was created at configVersion 4, without requireComparableFacts, so a fact of a type no comparison can match is not refused. A runtime of 0.25.0 or later creates desks with it.'),
+  sourceMessage('This desk is not signed: a desk names its signing key at configVersion 6, and the runtime this Desk runs (jpack {{version}}) does not read it. A runtime of {{floor}} or later creates desks signed.'),
+  sourceMessage('This desk is not signed, because Desk could not keep a signing key for it: {{reason}}. It was created at configVersion 5, which names no signing key.')
+] as const
 export async function desksAPI<T>(name?: string): Promise<T> {
   const response = await deskFetch('/api/desks', name === undefined ? {} : {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})})
   if (!response.ok) throw Error(msg('Desks could not be loaded or saved. Please try again.'))
   const value: unknown = await response.json()
   const object = (item: unknown): item is Record<string, unknown> => !!item && typeof item === 'object' && !Array.isArray(item)
   const record = (item: unknown): boolean => object(item) && typeof item.id === 'string' && (item.id === '' || /^[a-f0-9]{32}$/.test(item.id)) && typeof item.name === 'string' && !!item.name.trim() && typeof item.folder === 'string' && typeof item.managed === 'boolean'
-  if (name === undefined ? !object(value) || !record(value.current) || !Array.isArray(value.desks) || !value.desks.every(record) || typeof value.location !== 'string' : !record(value)) throw Error(msg('Desks could not be loaded or saved. Please try again.'))
+  if (name === undefined ? !object(value) || !record(value.current) || !Array.isArray(value.desks) || !value.desks.every(record) || typeof value.location !== 'string' : !record(value) || !object(value) || value.notice !== undefined && typeof value.notice !== 'string') throw Error(msg('Desks could not be loaded or saved. Please try again.'))
   return value as T
 }
 export function DeskSwitcher() {
@@ -70,6 +85,7 @@ function useDeskManagement(opener: RefObject<HTMLButtonElement | null>) {
   const client = useQueryClient(), {store, dirty:chatDirty} = useChats()
   const leave = useConfirmDeskExit(), discard = useConfirmDiscard()
   const [creating,setCreating] = useState(false), [name,setName] = useState(''), [busy,setBusy] = useState(false), [error,setError] = useState('')
+  const [created,setCreated] = useState<Created>()
   const clearCreateGuard = useDirtyGuard(creating && !!name.trim(), msg('Discard this desk name?'), {name:name.trim(), busy:creating&&busy})
   async function switchTo(id: string) {
     if (id === activeDeskId) return
@@ -85,10 +101,13 @@ function useDeskManagement(opener: RefObject<HTMLButtonElement | null>) {
   async function create() {
     setBusy(true); setError('')
     try {
-      const desk = await desksAPI<Desk>(name.trim())
+      const desk = await desksAPI<Created>(name.trim())
       await client.invalidateQueries({queryKey:['desks']})
       clearCreateGuard(); setCreating(false); setName('')
-      await switchTo(desk.id)
+      // A desk made with less than a new desk has, unsigned among them, says
+      // so before it opens.
+      if (desk.notice) setCreated(desk)
+      else await switchTo(desk.id)
     } catch (e) {setError(e instanceof Error ? e.message : msg('The desk could not be created.'))}
     finally {setBusy(false)}
   }
@@ -119,6 +138,10 @@ function useDeskManagement(opener: RefObject<HTMLButtonElement | null>) {
       <Field label={msg('Desk name')}>{wiring=><Input {...wiring} value={name} maxLength={80} autoComplete="off" onChange={event=>setName(event.target.value)}/>}</Field>
       <p className="quiet">{msg('A new folder will be created in:')}<br/><code>{directory.data?.location}</code></p>
       {error&&<p role="alert">{error}</p>}
+    </Dialog>
+    <Dialog open={!!created} onOpenChange={open=>{if(!open)setCreated(undefined)}} openerRef={opener} title={msg('Desk created')}
+      footer={<DialogActions><Button onClick={()=>setCreated(undefined)}>{msg('Close')}</Button><Button variant="primary" onClick={()=>{const id=created?.id;setCreated(undefined);if(id)void switchTo(id)}}>{msg('Open desk')}</Button></DialogActions>}>
+      {created?.notice?.split('\n\n').map((paragraph,index)=><p key={index}>{systemMessage(paragraph)}</p>)}
     </Dialog>
     <Dialog open={!creating&&!!error} onOpenChange={open=>{if(!open)setError('')}} openerRef={opener} title={msg('Could not switch desk')} description={error} footer={<DialogActions><Button onClick={()=>setError('')}>{msg('Close')}</Button></DialogActions>}><span/></Dialog>
   </>

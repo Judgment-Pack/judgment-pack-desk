@@ -1109,9 +1109,9 @@ func TestTheReviewNamesWhatTheLockPinsForEachId(t *testing.T) {
 func TestReviewAndLockWithTheRuntime(t *testing.T) {
 	bin := requireBinary(t)
 	t.Setenv("JPACK_CONFIG", "")
-	_, ts, _ := gatesServer(t, bin)
+	s, ts, _ := gatesServer(t, bin)
 	row := createGatedDesk(t, ts)
-	config := strings.Replace(gatedConfigFor(t, row.ConfigVersion), `"packs":{}`, `"packs":{"alpha":{"path":"packs/a.json"}}`, 1)
+	config := strings.Replace(gatedConfigFor(t, s, row), `"packs":{}`, `"packs":{"alpha":{"path":"packs/a.json"}}`, 1)
 	writeProject(t, row.Folder, map[string]string{"packs/a.json": reviewPack, "jpack.json": config})
 
 	first := readReview(t, ts, row.ID)
