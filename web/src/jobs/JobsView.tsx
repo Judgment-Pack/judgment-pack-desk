@@ -37,6 +37,7 @@ import { readReleaseTests } from './releaseTests'
 import { ReleaseReadiness } from './ReleaseReadiness'
 import { ReleaseStanding } from './ReleaseStanding'
 import { ActivityView } from './ActivityView'
+import { stamp } from './activity'
 import { RunFields, RunTechnicalDetails } from './RunRecord'
 
 function date(value: string) { return formatDate(new Date(value), { dateStyle: 'medium', timeStyle: 'short' }) }
@@ -81,7 +82,9 @@ function JobsIndex() {
     </div></PageBody>
   </>
 }
-function RunTable({runs,showJob=false}:{runs:Run[];showJob?:boolean}){return <div className={styles.tableWrap}><table className={styles.table}><thead><tr>{showJob&&<th>{msg('Job')}</th>}<th>{msg('Run')}</th><th>{msg('Execution')}</th><th>{msg('Decision')}</th><th>{msg('Submitted')}</th></tr></thead><tbody>{runs.map(r=><tr key={r.id}>{showJob&&<td><Link to={`/jobs/${r.jobId}`}>{r.jobName??r.jobId}</Link></td>}<td><Link to={`/jobs/${r.jobId}/runs/${r.id}`}>{r.id.slice(-8)}</Link></td><td>{stateLabel(r.state)}</td><td>{decisionLabel(r.result)}</td><td className="quiet">{date(r.createdAt)}</td></tr>)}</tbody></table></div>}
+// A run without a readable submission time says so, as the Activity tab does,
+// rather than throwing and taking the whole Runs tab down with it (#223).
+function RunTable({runs,showJob=false}:{runs:Run[];showJob?:boolean}){return <div className={styles.tableWrap}><table className={styles.table}><thead><tr>{showJob&&<th>{msg('Job')}</th>}<th>{msg('Run')}</th><th>{msg('Execution')}</th><th>{msg('Decision')}</th><th>{msg('Submitted')}</th></tr></thead><tbody>{runs.map(r=><tr key={r.id}>{showJob&&<td><Link to={`/jobs/${r.jobId}`}>{r.jobName??r.jobId}</Link></td>}<td><Link to={`/jobs/${r.jobId}/runs/${r.id}`}>{r.id.slice(-8)}</Link></td><td>{stateLabel(r.state)}</td><td>{decisionLabel(r.result)}</td><td className="quiet">{stamp('submitted', r.createdAt) ? date(r.createdAt) : msg('Not recorded')}</td></tr>)}</tbody></table></div>}
 export function CreateJobContent() {
   const [params] = useSearchParams(), draftId = params.get('draft')
   const loaded = useQuery({ queryKey: ['job-draft', draftId], queryFn: () => loadJobDraft(draftId!), enabled: !!draftId, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false })

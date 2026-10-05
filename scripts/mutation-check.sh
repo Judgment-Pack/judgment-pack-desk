@@ -9311,6 +9311,18 @@ export function assistantTransport(id: string): Transport {
     " description={msg('Jobs runs are recorded by the runner, not in this trail.')}" \
     ""
 
+  # **A run without its submission time in the Runs table (#223).** Runner
+  # v0.5.0 always writes `createdAt`; a record from an older or edited store may
+  # not, and one such run threw while rendering and took the whole Runs tab down
+  # with it. The cell says the time is not recorded, as the Activity tab does,
+  # for an absent time and for one that does not read as a time.
+  mutate web "jobs runs table: a run without its submission time is formatted anyway" web/src/jobs/JobsView.tsx \
+    "{stamp('submitted', r.createdAt) ? date(r.createdAt) : msg('Not recorded')}" \
+    "{date(r.createdAt)}"
+  mutate web "jobs runs table: an unreadable submission time is formatted anyway" web/src/jobs/JobsView.tsx \
+    "{stamp('submitted', r.createdAt) ? date(r.createdAt) : msg('Not recorded')}" \
+    "{r.createdAt ? date(r.createdAt) : msg('Not recorded')}"
+
   # **The upgrade offer on the page.** Nothing is sent until the owner
   # confirms; the confirmation carries the offer's token and the owner's
   # choice about requireComparableFacts; each change is listed, with the
