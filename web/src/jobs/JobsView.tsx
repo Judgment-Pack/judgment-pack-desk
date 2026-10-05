@@ -27,6 +27,7 @@ import { Button, ButtonLink } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { InputFields } from './InputFields'
 import { parseInput } from './inputModel'
+import { refreshRunnerKey } from './runnerKey'
 import { Tooltip } from '../ui/Tooltip'
 import { Select } from '../ui/Select'
 import { Disclosure } from '../ui/Disclosure'
@@ -185,7 +186,7 @@ function CreateJobEditor({initial}: {initial?: SavedJobDraft}) {
       if (source && !isSourceV2(source) && inputMode !== 'manual') await verifySource(source, research.gateway)
       const job = await jobsAPI<Job>('jobs', { name, releaseId: validPreview.id, reviewed, ...(trigger?{trigger}:{}) })
       if (saved.current) { try { saved.current = await saveJobDraft(draftId.current, values, saved.current.file.sha256, 'created'); void queryClient.invalidateQueries({queryKey:['job-drafts']}) } catch { /* The created job is durable; preserve the draft if cleanup failed. */ } }
-      clearGuard(); await queryClient.invalidateQueries({ queryKey: ['jobs-pages', 'jobs'] }); navigate(`/jobs/${job.id}${job.initialTriggerId?'?tab=triggers':''}`)
+      clearGuard(); void refreshRunnerKey(queryClient); await queryClient.invalidateQueries({ queryKey: ['jobs-pages', 'jobs'] }); navigate(`/jobs/${job.id}${job.initialTriggerId?'?tab=triggers':''}`)
     } catch (e) {
       if (e instanceof JobsRequestError && e.code === 'release_untested') { setRefused({ releaseId: validPreview.id, message: e.message }); setReviewed(false) }
       else setError(e)
@@ -272,7 +273,7 @@ function RunForm({ job, release }: { job: Job; release: Release }) {
       const input = release.inputMapping ? { source } : parseInput(facts, supplied, evidence), payload = JSON.stringify(input)
       if (key.current?.payload !== payload) key.current = { payload, key: crypto.randomUUID() }
       const run = await jobsAPI<Run>(`jobs/${job.id}/runs`, input, key.current.key)
-      clearGuard(); await queryClient.invalidateQueries({ queryKey: ['jobs-pages', `jobs/${job.id}/runs`] }); navigate(`/jobs/${job.id}/runs/${run.id}`)
+      clearGuard(); void refreshRunnerKey(queryClient); await queryClient.invalidateQueries({ queryKey: ['jobs-pages', `jobs/${job.id}/runs`] }); navigate(`/jobs/${job.id}/runs/${run.id}`)
     } catch (e) { setError(e) } finally { setBusy(false) }
   }
   return <section className={styles.runForm}><h2>{msg('New run')}</h2><p className="quiet">{msg('These inputs start an operational run and will be retained with its audit record.')}</p>{release.inputMapping?.version === 2 ? <MappedInputFields doc={JSON.parse(release.pack) as PackDocument} fixed={release.inputMapping} disabled={busy} onChange={setSource} onWorkChange={setSourceWork} /> : release.inputMapping ? <SourceInputFields doc={JSON.parse(release.pack) as PackDocument} provider={release.inputMapping.provider} fixed={release.inputMapping} disabled={busy} onChange={setSource} onWorkChange={setSourceWork} /> : <InputFields doc={JSON.parse(release.pack) as PackDocument} onValid={setInputsValid} onUnwritten={setUnwritten} {...{ facts, setFacts, supplied, setSupplied, evidence, setEvidence }} disabled={busy} />}<Problem error={error} /><div><Button variant="primary" disabled={busy || !inputsValid || Boolean(release.inputMapping && !source)} onClick={() => { void submit() }}>{busy ? msg('Submitting…') : msg('Submit run')}</Button></div></section>

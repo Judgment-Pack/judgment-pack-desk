@@ -3783,5 +3783,8 @@
   "Desk could not read Runner’s signing key just now, and left it as it is: {{detail}}.": "Desk konnte den Signaturschlüssel von Runner gerade nicht lesen und hat ihn unverändert gelassen: {{detail}}.",
   "Desk does not name the signing key it keeps for Runner: {{detail}}.": "Desk nennt Runner den Signaturschlüssel nicht, den es für ihn verwahrt: {{detail}}.",
   "The runtime refuses Runner’s signing key: {{detail}}.": "Die Laufzeit lehnt den Signaturschlüssel von Runner ab: {{detail}}.",
-  "Runner refused its signing key when it started: {{detail}}.": "Runner hat seinen Signaturschlüssel beim Start abgelehnt: {{detail}}."
+  "Runner refused its signing key when it started: {{detail}}.": "Runner hat seinen Signaturschlüssel beim Start abgelehnt: {{detail}}.",
+  "The folder Desk keeps signing keys in was in use when Runner started, so Desk changed nothing and named no key. It tries again the next time it starts Runner.": "Der Ordner, in dem Desk Signaturschlüssel verwahrt, war beim Start von Runner in Gebrauch. Desk hat daher nichts geändert und keinen Schlüssel genannt. Beim nächsten Start von Runner versucht es Desk erneut.",
+  "<0/> Runner is not running on this desk now, so no Jobs run is run or signed.": "<0/> Runner läuft auf diesem Desk gerade nicht, daher wird kein Auftragslauf ausgeführt oder signiert.",
+  "Runner did not start: {{detail}}.": "Runner ist nicht gestartet: {{detail}}."
 }

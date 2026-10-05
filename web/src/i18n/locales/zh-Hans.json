@@ -3783,5 +3783,8 @@
   "Desk could not read Runner’s signing key just now, and left it as it is: {{detail}}.": "Desk 此刻无法读取 Runner 的签名密钥，已保持原样：{{detail}}。",
   "Desk does not name the signing key it keeps for Runner: {{detail}}.": "Desk 不会把它为 Runner 保管的签名密钥指定给 Runner：{{detail}}。",
   "The runtime refuses Runner’s signing key: {{detail}}.": "运行时拒绝 Runner 的签名密钥：{{detail}}。",
-  "Runner refused its signing key when it started: {{detail}}.": "Runner 启动时拒绝了自己的签名密钥：{{detail}}。"
+  "Runner refused its signing key when it started: {{detail}}.": "Runner 启动时拒绝了自己的签名密钥：{{detail}}。",
+  "The folder Desk keeps signing keys in was in use when Runner started, so Desk changed nothing and named no key. It tries again the next time it starts Runner.": "Runner 启动时，Desk 保管签名密钥的文件夹正在使用中，因此 Desk 没有做任何更改，也没有指定密钥。下次启动 Runner 时会再试。",
+  "<0/> Runner is not running on this desk now, so no Jobs run is run or signed.": "<0/> 此 Desk 上的 Runner 当前未运行，因此不会运行或签名任何作业运行。",
+  "Runner did not start: {{detail}}.": "Runner 未能启动：{{detail}}。"
 }

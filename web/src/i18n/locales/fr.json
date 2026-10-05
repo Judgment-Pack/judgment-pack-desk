@@ -3807,5 +3807,8 @@
   "Desk could not read Runner’s signing key just now, and left it as it is: {{detail}}.": "Desk n’a pas pu lire la clé de signature de Runner à l’instant, et l’a laissée telle quelle : {{detail}}.",
   "Desk does not name the signing key it keeps for Runner: {{detail}}.": "Desk n’indique pas à Runner la clé de signature qu’il conserve pour lui : {{detail}}.",
   "The runtime refuses Runner’s signing key: {{detail}}.": "Le runtime refuse la clé de signature de Runner : {{detail}}.",
-  "Runner refused its signing key when it started: {{detail}}.": "Runner a refusé sa clé de signature à son démarrage : {{detail}}."
+  "Runner refused its signing key when it started: {{detail}}.": "Runner a refusé sa clé de signature à son démarrage : {{detail}}.",
+  "The folder Desk keeps signing keys in was in use when Runner started, so Desk changed nothing and named no key. It tries again the next time it starts Runner.": "Le dossier où Desk conserve les clés de signature était en cours d’utilisation au démarrage de Runner : Desk n’a donc rien modifié et n’a indiqué aucune clé. Il réessaiera au prochain démarrage de Runner.",
+  "<0/> Runner is not running on this desk now, so no Jobs run is run or signed.": "<0/> Runner ne fonctionne pas actuellement sur ce bureau : aucune exécution de tâche n’est donc lancée ni signée.",
+  "Runner did not start: {{detail}}.": "Runner n’a pas démarré : {{detail}}."
 }

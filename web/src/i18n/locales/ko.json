@@ -3783,5 +3783,8 @@
   "Desk could not read Runner’s signing key just now, and left it as it is: {{detail}}.": "Desk가 지금은 Runner의 서명 키를 읽을 수 없어 그대로 두었습니다: {{detail}}.",
   "Desk does not name the signing key it keeps for Runner: {{detail}}.": "Desk는 Runner를 위해 보관하는 서명 키를 Runner에 지정하지 않습니다: {{detail}}.",
   "The runtime refuses Runner’s signing key: {{detail}}.": "런타임이 Runner의 서명 키를 거부합니다: {{detail}}.",
-  "Runner refused its signing key when it started: {{detail}}.": "Runner가 시작할 때 자체 서명 키를 거부했습니다: {{detail}}."
+  "Runner refused its signing key when it started: {{detail}}.": "Runner가 시작할 때 자체 서명 키를 거부했습니다: {{detail}}.",
+  "The folder Desk keeps signing keys in was in use when Runner started, so Desk changed nothing and named no key. It tries again the next time it starts Runner.": "Runner가 시작될 때 Desk가 서명 키를 보관하는 폴더가 사용 중이어서, Desk는 아무것도 바꾸지 않았고 키도 지정하지 않았습니다. 다음에 Runner를 시작할 때 다시 시도합니다.",
+  "<0/> Runner is not running on this desk now, so no Jobs run is run or signed.": "<0/> 지금 이 Desk에서 Runner가 실행되고 있지 않아, 어떤 작업 실행도 실행되거나 서명되지 않습니다.",
+  "Runner did not start: {{detail}}.": "Runner가 시작되지 않았습니다: {{detail}}."
 }

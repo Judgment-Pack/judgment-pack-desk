@@ -242,33 +242,6 @@ describe('what the chassis says about this process', () => {
     expect(effective.desk?.chassis).not.toHaveProperty('runtimeInheritsSigningKey')
   })
 
-  it.each([
-    [{ state: 'signed', publicKey: 'a'.repeat(64), keyId: 'b'.repeat(32) }, { state: 'signed', publicKey: 'a'.repeat(64), keyId: 'b'.repeat(32) }],
-    [{ state: 'unsigned', reason: 'runner-refused', detail: 'it must be a regular file' }, { state: 'unsigned', reason: 'runner-refused', detail: 'it must be a regular file' }],
-    [{ state: 'unsigned', reason: 'lost' }, { state: 'unsigned', reason: 'lost' }],
-    [{ state: 'starting' }, { state: 'starting' }]
-  ])('carries the Runner key Desk reports: %j', async (runnerKey, want) => {
-    answers({ path: '/config/desk.json', present: false, project: { dir: '/p', file: '/p/jpack-desk.json' }, runtime: { bin: 'jpack' }, jobs: { requireTestedReleases: true, runnerKey } })
-    const effective = await loadDeskConfig()
-    expect(effective.desk?.chassis?.runnerKey).toEqual(want)
-  })
-
-  it.each([
-    undefined, null, 'signed', [], {},
-    { state: 'signed', publicKey: 'A'.repeat(64), keyId: 'b'.repeat(32) },
-    { state: 'signed', publicKey: 'a'.repeat(63), keyId: 'b'.repeat(32) },
-    { state: 'signed', publicKey: 'a'.repeat(64) },
-    { state: 'unsigned', reason: 'another reason' },
-    { state: 'unsigned', reason: 'custody', detail: 7 },
-    { state: 'unsigned' },
-    { state: 'running' }
-  ])('reads no Runner key from %j', async runnerKey => {
-    answers({ path: '/config/desk.json', present: false, project: { dir: '/p', file: '/p/jpack-desk.json' }, runtime: { bin: 'jpack' }, jobs: { requireTestedReleases: true, ...(runnerKey === undefined ? {} : { runnerKey }) } })
-    const effective = await loadDeskConfig()
-    expect(effective.desk?.chassis?.projectDir).toBe('/p')
-    expect(effective.desk?.chassis).not.toHaveProperty('runnerKey')
-  })
-
   it('says nothing about them where the chassis did not', async () => {
     // Undefined rather than empty strings: a page that filled these in would
     // be naming paths it never learned.

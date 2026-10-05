@@ -3783,5 +3783,8 @@
   "Desk could not read Runner’s signing key just now, and left it as it is: {{detail}}.": "Desk は今は Runner の署名鍵を読み取れなかったため、そのままにしました: {{detail}}。",
   "Desk does not name the signing key it keeps for Runner: {{detail}}.": "Desk は Runner のために保管している署名鍵を Runner に指定しません: {{detail}}。",
   "The runtime refuses Runner’s signing key: {{detail}}.": "ランタイムは Runner の署名鍵を拒否しています: {{detail}}。",
-  "Runner refused its signing key when it started: {{detail}}.": "Runner は起動時に自身の署名鍵を拒否しました: {{detail}}。"
+  "Runner refused its signing key when it started: {{detail}}.": "Runner は起動時に自身の署名鍵を拒否しました: {{detail}}。",
+  "The folder Desk keeps signing keys in was in use when Runner started, so Desk changed nothing and named no key. It tries again the next time it starts Runner.": "Runner の起動時に、Desk が署名鍵を保管するフォルダーが使用中だったため、Desk は何も変更せず、鍵も指定しませんでした。次に Runner を起動するときに再試行します。",
+  "<0/> Runner is not running on this desk now, so no Jobs run is run or signed.": "<0/> このデスクでは現在 Runner が動作していないため、ジョブの実行も署名も行われません。",
+  "Runner did not start: {{detail}}.": "Runner は起動しませんでした: {{detail}}。"
 }

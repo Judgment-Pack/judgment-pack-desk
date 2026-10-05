@@ -3783,5 +3783,8 @@
   "Desk could not read Runner’s signing key just now, and left it as it is: {{detail}}.": "Desk 而家讀唔到 Runner 嘅簽署金鑰，所以保持原狀：{{detail}}。",
   "Desk does not name the signing key it keeps for Runner: {{detail}}.": "Desk 唔會將佢為 Runner 保管嘅簽署金鑰指定畀 Runner：{{detail}}。",
   "The runtime refuses Runner’s signing key: {{detail}}.": "運行環境拒絕 Runner 嘅簽署金鑰：{{detail}}。",
-  "Runner refused its signing key when it started: {{detail}}.": "Runner 啟動嗰陣拒絕咗自己嘅簽署金鑰：{{detail}}。"
+  "Runner refused its signing key when it started: {{detail}}.": "Runner 啟動嗰陣拒絕咗自己嘅簽署金鑰：{{detail}}。",
+  "The folder Desk keeps signing keys in was in use when Runner started, so Desk changed nothing and named no key. It tries again the next time it starts Runner.": "Runner 啟動嗰陣，Desk 保管簽署金鑰嘅資料夾正喺度用緊，所以 Desk 乜都冇改，亦冇指定任何金鑰。下次啟動 Runner 嗰陣會再試。",
+  "<0/> Runner is not running on this desk now, so no Jobs run is run or signed.": "<0/> 呢個 Desk 而家冇運行 Runner，所以冇作業執行會被執行或者簽署。",
+  "Runner did not start: {{detail}}.": "Runner 冇啟動到：{{detail}}。"
 }
