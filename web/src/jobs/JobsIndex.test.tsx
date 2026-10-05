@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { JobsContent } from './JobsView'
 import { jobsAPI } from './client'
+import { formatDate } from '../i18n'
 vi.mock('./client',()=>({jobsAPI:vi.fn()}))
 vi.mock('./drafts',async original=>({...await original<typeof import('./drafts')>(),useJobDrafts:()=>({data:[{draft:{id:'draft-one',updatedAt:'2026-09-26T12:00:00Z',values:{name:'Policy review',packId:'policy'}}}],isPending:false})}))
 beforeEach(()=>vi.mocked(jobsAPI).mockResolvedValue({items:[]}))
@@ -34,4 +35,14 @@ it('offers the runner’s chain of runs on the Jobs and the Runs tab',async()=>{
   expect(screen.getByRole('button',{name:'Download the runner’s chain of runs'}),path).toBeTruthy()
   cleanup()
  }
+})
+// #223. A job's recent run without a readable submission time: its dot says
+// "Not recorded" rather than throwing and taking the job table down with it; a
+// run with its time is labelled as before.
+it('labels a recent run without a readable submission time Not recorded on its dot',async()=>{
+ vi.mocked(jobsAPI).mockResolvedValue({items:[{id:'job-one',name:'Daily review',recentRuns:[{id:'run-one',state:'completed'},{id:'run-two',state:'failed',createdAt:'not a time'},{id:'run-three',state:'completed',createdAt:'2026-09-26T12:00:00Z'}]}]})
+ show();await screen.findByRole('link',{name:'Daily review'})
+ expect(screen.getByRole('link',{name:'Completed · Not recorded'}).getAttribute('href')).toBe('/jobs/job-one/runs/run-one')
+ expect(screen.getByRole('link',{name:'Failed · Not recorded'}).getAttribute('href')).toBe('/jobs/job-one/runs/run-two')
+ expect(screen.getByRole('link',{name:`Completed · ${formatDate(new Date('2026-09-26T12:00:00Z'),{dateStyle:'medium',timeStyle:'short'})}`}).getAttribute('href')).toBe('/jobs/job-one/runs/run-three')
 })

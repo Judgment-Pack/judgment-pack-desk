@@ -68,3 +68,23 @@ it('says when Runner kept no record of who asked', async () => {
   expect(fact('Requested by')).toBe('Not recorded')
   expect(fact('Requester as recorded')).toBe('Not recorded')
 })
+
+// #223. A run whose stored times Desk cannot read: one without a submission
+// time, whose finish does not read as a time, and one whose start does not.
+// The page says "Not recorded" for each instead of throwing; a time Runner has
+// not stored yet stays "—".
+it('says Not recorded for a submission time Runner did not store, and for a start or finish that does not read as a time', async () => {
+  const { createdAt: _createdAt, ...failed } = runs.failed
+  const unsubmitted = { ...failed, id: 'run_' + '8'.repeat(32), finishedAt: 'not a time' } as Run
+  const unreadable: Run = { ...runs.running, id: 'run_' + '9'.repeat(32), startedAt: 'not a time' }
+  vi.mocked(jobsAPI).mockImplementation(runner({ runs: [unsubmitted, unreadable] }) as never)
+  await open(unsubmitted)
+  expect(fact('Submitted')).toBe('Not recorded')
+  expect(fact('Started')).toBe('—')
+  expect(fact('Finished')).toBe('Not recorded')
+  cleanup()
+  await open(unreadable)
+  expect(fact('Submitted')).toBe(when(runs.running.createdAt))
+  expect(fact('Started')).toBe('Not recorded')
+  expect(fact('Finished')).toBe('—')
+})
