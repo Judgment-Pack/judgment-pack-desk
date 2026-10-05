@@ -6,19 +6,49 @@ deciders: maintainer
 
 # Keep a desk's decision record defensible: key custody, checkpoint hand-over and stamping
 
+**Amended 2026-10-05** (issue #217). No decision and no answer below changed.
+The amendment records what has shipped since acceptance, and adds what the
+Jobs record needs:
+- status statements brought up to date, each with the release or PR that
+  changed it: this introduction, "Runner and the gateway", the 0777 row of
+  section 1's table, section 5 and "More information";
+- `--limit 300` on the Jobs chain's `audit checkpoint --trail`, as section 2
+  chose for the desk's trail (sections 5 and 8);
+- `audit verify --trail <copy>` over the Jobs chain, in a Jobs record panel
+  (sections 4, 5 and 8; issue #216);
+- in the delivery table: PRs 1 and 2 marked shipped and 8a merged, PR 8
+  split into 8a and 8b, and rows for Runner's signing key (issue #215) and the
+  Jobs record panel.
+
+Each amended passage says "Amended 2026-10-05".
+
 Issue #186. Runtime ADR-0047 (accepted 2026-10-01) makes a decision record
 defensible to someone who does not trust its operator. It names Desk's part:
 key custody, checkpoint hand-over and stamping settings. This record decides
 that part. The maintainer accepted it on 2026-10-03, with the answers recorded
 under "The maintainer's answers". It sets out what Desk would build, what each piece establishes and
 what it does not, every new runtime command Desk would run, and the questions
-the maintainer needs to answer. Nothing here is built yet.
+the maintainer needs to answer. Nothing here was built at acceptance.
+*Amended 2026-10-05:* PRs 1 and 2 shipped in Desk v0.5.1 (#202; #204 and #205,
+as 2a and 2b). PR 3a is open as #219. PR 8a is merged (#220) and in no
+release yet.
 
-It was checked against Desk `main` at `61a158c`, which pins Runtime `v0.25.0`,
-Runner `v0.4.0` and Gateway `v0.8.1` (`internal/releaseplan/components.json`).
-None of the runtime commands below is in a release. They are on runtime `main`,
-in the PRs that closed issues #206 to #209 and #216: #211 to #215, and #217.
-The latest release, 0.25.0, has none of them.
+It was checked against Desk `main` at `61a158c`, which then pinned Runtime
+`v0.25.0`, Runner `v0.4.0` and Gateway `v0.8.1`
+(`internal/releaseplan/components.json`). None of the runtime commands below
+was then in a release. They were on runtime `main`, in the PRs that closed
+issues #206 to #209 and #216: #211 to #215, and #217. The latest release then,
+0.25.0, has none of them.
+
+*Amended 2026-10-05, checked against Desk `main` at `072229f`:*
+- #200 moved the pins to Runtime `v0.26.0`, Runner `v0.5.0` and Gateway
+  `v0.9.0`, which Desk v0.5.0 and v0.5.1 carry.
+- Runtime v0.26.0 ships #211 to #215 and #217, so every runtime command below
+  is in a release.
+- Runtime v0.27.0 adds a rule for the directories on a key's path (section 1;
+  its CHANGELOG). Desk does not pin it yet.
+- Line numbers in Desk's code are as of `61a158c`, except where an amendment
+  gives another.
 
 **How this was measured.** The released 0.25.0 cannot sign, so the runtime
 behaviour quoted here was measured on runtime `main` at `581330e`. It was built
@@ -91,14 +121,22 @@ bytes, wherever a record travels").
 
 **Runner and the gateway.**
 - **Runner `main`** keeps an installation-level chain of runs, with export
-  version 4 and `GET /v1/run-chain` (Runner #34, closing #30). It is
-  unreleased: v0.4.0 has export version 3.
-- **Runner #36**, open, proposes that Runner check record signatures.
-- **Desk** asks Runner for export version 3 (`web/src/jobs/JobsView.tsx:303`)
-  and refuses any version but 2 and 3 (`internal/desk/jobs.go:334`).
-- **Gateway `main`** has `requireSignedRecord` (gateway #201, ADR-0012). It is
-  unreleased: v0.8.1 predates it. Desk sends no writes through `/act`, so this
-  record does not use it.
+  version 4 and `GET /v1/run-chain` (Runner #34, closing #30). It was
+  unreleased: v0.4.0 has export version 3. *Amended 2026-10-05:* Runner v0.5.0
+  ships it.
+- **Runner #36**, open at acceptance, proposed that Runner check record
+  signatures. *Amended 2026-10-05:* Runner #37 closed it, in v0.5.0. Runner
+  gives each run's runtime an installation key, named by the boot line's
+  `signingKey`, and `verify-run` checks the record's signature (export
+  version 5).
+- **Desk** asked Runner for export version 3 (`web/src/jobs/JobsView.tsx:303`)
+  and refused any version but 2 and 3 (`internal/desk/jobs.go:334`).
+  *Amended 2026-10-05:* since #220 it asks for version 5
+  (`web/src/jobs/JobsView.tsx:339`) and forwards 2 to 5
+  (`internal/desk/jobs.go:363`).
+- **Gateway `main`** has `requireSignedRecord` (gateway #201, ADR-0012). It was
+  unreleased: v0.8.1 predates it. *Amended 2026-10-05:* Gateway v0.9.0 ships
+  it. Desk sends no writes through `/act`, so this record does not use it.
 
 ## Decision drivers
 
@@ -155,7 +193,7 @@ One key per project, not one per installation:
 | `<config>/secrets/signing/<id>.seed`, 0600, directories 0700 | accepted; records signed |
 | the same, mode 0400 | accepted |
 | in `<config>/desks/`, beside the desk's folder | accepted |
-| in a directory any user can write (0777) | **accepted**: the runtime does not check the key's directories |
+| in a directory any user can write (0777) | **accepted**: the runtime does not check the key's directories. *Amended 2026-10-05:* runtime v0.27.0 refuses a key in or under a directory its group or others can write, unless that directory is sticky (runtime #222, closing #221; its CHANGELOG). Not measured here. Desk's custody refused it already. |
 | inside the project (`.desk-private/in.seed`) | refused: "inside the project's directory" |
 | through a linked directory, or the seed itself a link | refused: "goes through a symbolic link" |
 | mode 0640 | refused: "can be read or written by its group or by other users" |
@@ -449,24 +487,78 @@ Measured: a report with the runtime's cap of 100 findings was 11.5 KB, within
 `runRuntime`'s bound. A larger one is refused by that bound rather than
 truncated.
 
+**A Jobs record panel.** *Amended 2026-10-05, issue #216.* Beside the
+decision-record panel, for the desk's Runner (section 5), Desk takes a private
+copy of the chain of runs Runner serves and runs
+`jpack audit verify --trail <copy> --format json`, with the inputs Desk holds:
+- `--public-key` for Runner's key (section 5), when Desk keeps one;
+- `--expect` for each checkpoint of the chain that Desk handed over.
+
+It runs on request only. It shows the status, the coverage, each finding by
+name, and the runtime's `establishes` and `doesNotEstablish` sentences
+verbatim, and offers the chain for download. A transfer that ends early is an
+error, never a report over a shorter copy. What it says: "Desk ran this over
+its own copy of the runner's chain of runs, with the keys and checkpoints it
+keeps. It shows what a holder would see. It is not evidence to anyone who does
+not trust this installation."
+
 ### 5. Runner
 
 **Export version 4.** After Desk pins a Runner release that includes #34:
 - the page asks for version 4. Runner answers 3, or 2, for a run with no entry
-  in its chain, and the page labels each.
+  in its chain, and the page labels each. *Amended 2026-10-05:* #220 (PR 8a),
+  against Runner v0.5.0, asks for version 5, which adds the record's signature
+  sidecar (Runner #37). Runner answers 4, 3 or 2 where the run lacks what a
+  later version carries, and the page labels each.
 - `GET /v1/run-chain` is passed through for download. Its content type is
-  `application/jsonl`, not the `application/json` the proxy sets today
-  (`internal/desk/jobs.go:407`). Its bytes are passed untouched.
+  `application/jsonl`, not the `application/json` the proxy set at acceptance
+  (`internal/desk/jobs.go:407` then). Its bytes are passed untouched.
+  *Amended 2026-10-05:* #220 passes the route on with Runner's own
+  `Content-Type` (`internal/desk/jobs.go:451`), up to 67,174,400 bytes
+  (`runChainLimit`); every other route still gets `application/json`
+  (`jobs.go:453`).
 - **The Jobs chain is handed over through section 2.** Desk saves the served
-  chain to a private temporary file and runs `jpack audit checkpoint --trail
-  <file> --since <cursor>`. Measured: the runtime reads a chain in Runner's
-  entry form and prints its checkpoints, outside any project. A holder may hold
-  both the desk's trail and the Jobs chain, with a cursor for each.
+  chain to a private temporary file and runs
+  `jpack audit checkpoint --trail <file> --since <cursor> --limit 300`, and
+  asks again as section 2 does. Measured: the runtime reads a chain in
+  Runner's entry form and prints its checkpoints, outside any project. A
+  holder may hold both the desk's trail and the Jobs chain, with a cursor for
+  each. *Amended 2026-10-05:* `--limit 300` added, as section 2 chose. A
+  checkpoint line is about 170 bytes, so at the default of 1000 lines the
+  answer would pass `runRuntime`'s 64 KiB bound (`runtimeAnswerLimit`,
+  `internal/desk/runtime.go:154`) once more than about 385 entries were not
+  yet handed over.
+- **The Jobs chain is verified in the Jobs record panel** (section 4).
+  *Amended 2026-10-05, issue #216.* Desk saves the served chain to a private
+  copy and runs `jpack audit verify --trail <copy> --format json`, with
+  `--public-key` for Runner's key when Desk keeps one, and `--expect` for each
+  checkpoint of the chain it handed over. The panel shows section 4's sentence
+  on the operator's copy. Runner's CI holds the runtime's verifier to Runner's
+  chain (`TestTheRuntimesVerifierReadsTheChainOfRuns`, with `--expect`). Not
+  measured here: Runner's key signs each run's record, kept in its export as
+  `run.auditSignatures`, and no sidecar sits beside the chain's copy, so what
+  `--public-key` reports over that copy is for the panel's PR to measure.
 
 **Signatures.** Runner #36 proposes an installation key that Runner passes to
 each attempt's runtime. Today Desk passes Runner no key. It will pass none
 until #36 settles how. When it does, the key is a separate one in Desk's
 custody, never a project's.
+
+*Amended 2026-10-05:* #36 is settled. Runner #37 closed it, in v0.5.0: the
+boot line's `signingKey` names a seed by its absolute path, which Runner checks
+at boot and passes as `JPACK_SIGNING_KEY` to operational evaluations only.
+Desk's boot line still carries no key (`internal/desk/jobs.go:156`), so every
+Jobs run is unsigned. The key, as decided above (issue #215):
+- one seed for each desk's Runner, at `secrets/signing/runner/<desk id>.seed`
+  in Desk's configuration directory, where `<desk id>` names the desk as
+  section 1 names `<project>`. The folder `runner/` is a name no project's id
+  can take;
+- made with `audit key generate`, and held by the same custody checks as a
+  project's key, through PR 3's helpers rather than a second implementation;
+- passed to Runner as the boot line's `signingKey`; never a project's key, and
+  never an inherited `JPACK_SIGNING_KEY`.
+
+It is delivery row 11.
 
 ### 6. The version floor
 
@@ -532,10 +624,15 @@ None of them evaluates. So none consults the lock, and none is refused by
 | `audit key public <seed> --format json` | nothing | no | to show a key's public half again | 1 |
 | `audit key rotate --next <seed> --format json` | a `key-rotation` line in `signatures.jsonl`, under the trail's lock | no | rotation, owner-initiated | 1 |
 | `audit checkpoint --since N --limit 300` (human form) | nothing | no | hand-over: its standard output is the bytes handed over | 2 |
-| `audit checkpoint --trail <file> --since N` | nothing | no | the Jobs chain's checkpoints, from a private copy | 5 |
+| `audit checkpoint --trail <file> --since N --limit 300` | nothing | no | the Jobs chain's checkpoints, from a private copy | 5 |
+| `audit verify --trail <copy> --format json [--public-key …] [--expect …]` | nothing | no | the Jobs record panel, over a private copy of Runner's chain; exit 1 on any failed check, read whatever the exit | 4, 5 |
 | `audit verify --format json [--public-key …] [--expect …] [--tsa-roots …]` | nothing | no | the panel; exit 1 on any failed check, read whatever the exit | 4 |
 | `audit stamp --tsa <address> --timeout 15s --format json` | a line in `stamps.jsonl`, under its own lock | yes: the checkpoint's digest and a nonce, to the authority | the scheduler | 3 |
 | `audit repair --format json` | a `discontinuity` record (signed where a key is in force); the damaged bytes kept as a line | no | after the owner confirms | 4 |
+
+*Amended 2026-10-05:* `--limit 300` on the Jobs chain's checkpoints
+(section 5), and the Jobs record panel's `audit verify --trail` (section 4;
+issue #216).
 
 Desk's Go also reads, never writes, the runtime's files: `evaluations.jsonl`,
 `signatures.jsonl` and `stamps.jsonl`, for download (section 2).
@@ -644,18 +741,26 @@ One PR each, in this order, each under Desk's review rules. Everything after
 the first needs Desk to pin a runtime release that includes #211 to #215 and
 #217, through the usual component-update PR.
 
-| PR | What | Needs |
-|---|---|---|
-| 1 | Remove an inherited `JPACK_SIGNING_KEY` from the runtimes of desks Desk made, and show one inherited on the startup desk | nothing; can ship now |
-| 2 | The decision-record panel: capability check, `audit verify` with no held inputs, the older-runtime line; download of the trail, sidecar and stamps as exact bytes | the runtime pin |
-| 3 | Key custody: generate per project; new desks at `"6"` with `audit.signingKey`; public keys shown; `packs validate`'s check shown; rotation | 2; questions 1–3 |
-| 4 | The upgrade offer learns `"6"` and the signing key, as its own item | ADR-0009 PR D merged; 3 |
-| 5 | Hand-over by download or copy: holders, the checkpoints route, cursors, Desk's record; verification against that record | 2; question 4 |
-| 6 | The repair offer | 2; question 8 |
-| 7 | Stamping: settings, scheduler, pending records; verification with roots | 2; question 5 |
-| 8 | Runner export version 4, `run-chain` pass-through, the Jobs chain in hand-over | a Runner release with #34; 5; question 7 |
-| 9 | The README and in-app help: what each part establishes and does not, and the agent setup with the key | each of the above |
-| 10 | Hand-over to an HTTPS endpoint | a holder who runs one; question 4 |
+*Amended 2026-10-05:* #200 pinned Runtime v0.26.0, which includes them. PR 8
+is split into 8a and 8b. Rows 11 and 12 are added where they fall in this
+order, and are numbered after 10 so that the PR numbers already cited keep
+their meaning. The status column is as of 2026-10-05.
+
+| PR | What | Needs | Status, 2026-10-05 |
+|---|---|---|---|
+| 1 | Remove an inherited `JPACK_SIGNING_KEY` from the runtimes of desks Desk made, and show one inherited on the startup desk | nothing; can ship now | shipped: #202, in v0.5.1 |
+| 2 | The decision-record panel: capability check, `audit verify` with no held inputs, the older-runtime line; download of the trail, sidecar and stamps as exact bytes | the runtime pin | shipped: #204 (2a) and #205 (2b), in v0.5.1 |
+| 3 | Key custody: generate per project; new desks at `"6"` with `audit.signingKey`; public keys shown; `packs validate`'s check shown; rotation | 2; questions 1–3 | 3a open as #219 |
+| 4 | The upgrade offer learns `"6"` and the signing key, as its own item | ADR-0009 PR D merged; 3 | |
+| 5 | Hand-over by download or copy: holders, the checkpoints route, cursors, Desk's record; verification against that record | 2; question 4 | |
+| 6 | The repair offer | 2; question 8 | |
+| 7 | Stamping: settings, scheduler, pending records; verification with roots | 2; question 5 | |
+| 8a | Export version 5 and labelling, `run-chain` pass-through | nothing: #200 pinned Runner v0.5.0; question 7 | merged: #220, on `main`, in no release yet |
+| 8b | The Jobs chain in hand-over: `audit checkpoint --trail <file> --since <cursor> --limit 300`, with a cursor of its own | 5 | |
+| 11 | Runner signing key in Desk's custody, `secrets/signing/runner/<desk id>.seed` under the same custody checks, passed as the boot-line `signingKey` | 3; policy settled by question 7; Runner #36 closed by #37 in v0.5.0 | |
+| 12 | The Jobs record panel beside the Decision record: `audit verify --trail <copy>` with the Runner key and the held checkpoints | 5 and 11 | |
+| 9 | The README and in-app help: what each part establishes and does not, and the agent setup with the key | each of the above | |
+| 10 | Hand-over to an HTTPS endpoint | a holder who runs one; question 4 | |
 
 Not in this line:
 - the gateway's `requireSignedRecord`, since Desk sends no writes through
@@ -673,7 +778,9 @@ Not in this line:
     "Record signatures, exactly" and "Repairing a torn trail";
   - issues #206 to #209 and #216, and PRs #211 to #215 and #217.
 - **Runner `main`:** `docs/MAPPING-V2.md`, "The installation's chain of runs";
-  #34 and #30; #36 (signatures, open).
+  #34 and #30; #36 (signatures, open at acceptance). *Amended 2026-10-05:*
+  #34 and #37 are in Runner v0.5.0, and #37 closed #36; see also the same
+  document's "Record signatures".
 - **Gateway `main`:** ADR-0012 and #201 (`requireSignedRecord`).
 - **Desk:**
   - [ADR-0003](0003-private-chat-data-and-recovery.md) (backups);
