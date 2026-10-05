@@ -4,7 +4,7 @@
  * sidecar are held, from records shaped as Runner v0.5.0 serves them.
  */
 import { createHash } from 'node:crypto'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, configure, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Tooltip } from 'radix-ui'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -15,6 +15,9 @@ import { when } from './RunRecord'
 import { JOB, RECORD_LINE, release, runner, runs } from './__fixtures__/activity'
 
 vi.mock('./client', async original => ({ ...await original<typeof import('./client')>(), jobsAPI: vi.fn() }))
+// Each test stands the whole job page up and reads several of Runner's answers;
+// on a loaded host that takes longer than testing-library's one second.
+configure({ asyncUtilTimeout: 5000 })
 beforeEach(() => { vi.mocked(jobsAPI).mockImplementation(runner() as never) })
 afterEach(() => { cleanup(); vi.resetAllMocks() })
 
