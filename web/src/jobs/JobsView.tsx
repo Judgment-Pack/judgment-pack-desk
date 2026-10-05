@@ -36,6 +36,8 @@ import styles from './JobsView.module.css'
 import { readReleaseTests } from './releaseTests'
 import { ReleaseReadiness } from './ReleaseReadiness'
 import { ReleaseStanding } from './ReleaseStanding'
+import { ActivityView } from './ActivityView'
+import { RunFields, RunTechnicalDetails } from './RunRecord'
 
 function date(value: string) { return formatDate(new Date(value), { dateStyle: 'medium', timeStyle: 'short' }) }
 function errorText(error: unknown) { return error instanceof Error ? error.message : msg('The local runner could not complete this request.') }
@@ -229,11 +231,12 @@ function JobView({ jobId }: { jobId: string }) {
   const data = query.data
   useBriefSubject({ id: `job:${jobId}`, path: `/api/operations/jobs/${jobId}/briefs`, title: data?.job.name ?? msg('Job brief') })
   return <>
-    <PageHeader title={msg('Jobs')} titleHref="/jobs" context={data?.job.name} navigation={data&&!showInputs&&<nav className={styles.tabs} aria-label={msg('Job')}><button aria-current={tab==='runs'?'page':undefined} onClick={()=>setParams({})}>{msg('Runs')}</button><button aria-current={tab==='triggers'?'page':undefined} onClick={()=>setParams({tab:'triggers'})}>{msg('Triggers')}</button><button aria-current={tab==='release'?'page':undefined} onClick={()=>setParams({tab:'release'})}>{msg('Release')}</button></nav>} actions={data && <Button variant="primary" onClick={() => setShowInputs(!showInputs)}>{showInputs ? msg('Hide inputs') : msg('Run job')}</Button>} />
+    <PageHeader title={msg('Jobs')} titleHref="/jobs" context={data?.job.name} navigation={data&&!showInputs&&<nav className={styles.tabs} aria-label={msg('Job')}><button aria-current={tab==='runs'?'page':undefined} onClick={()=>setParams({})}>{msg('Runs')}</button><button aria-current={tab==='triggers'?'page':undefined} onClick={()=>setParams({tab:'triggers'})}>{msg('Triggers')}</button><button aria-current={tab==='release'?'page':undefined} onClick={()=>setParams({tab:'release'})}>{msg('Release')}</button><button aria-current={tab==='activity'?'page':undefined} onClick={()=>setParams({tab:'activity'})}>{msg('Activity')}</button></nav>} actions={data && <Button variant="primary" onClick={() => setShowInputs(!showInputs)}>{showInputs ? msg('Hide inputs') : msg('Run job')}</Button>} />
     <PageBody width="wide"><div className={styles.stack}><Problem error={query.error || runs.error} />
       {query.isPending && <p role="status">{msg('Loading job…')}</p>}
       {data && <><div hidden={showInputs||tab!=='release'} className={styles.release}><h2>{data.release.title}</h2><p className="quiet">{msg('Fixed version {{version}}', { version: data.release.packVersion })}</p>{data.release.inputMapping && <p className={styles.note}>{data.release.inputMapping.version === 2 ? msg('Mapped sources') : data.release.inputMapping.provider === 'local-file' ? msg('Local JSON file · Fixed input mapping') : msg('Google Drive · Fixed input mapping')}</p>}<ReleaseReadiness release={data.release} job />{data.release.inputMapping?.version === 2 && <MappingReview mapping={data.release.inputMapping} profiles={data.release.inputProfiles} warnings={data.release.mappingWarnings} />}<Disclosure title={msg('Release details')}><dl className={styles.properties}><div><dt>{msg('Pack digest')}</dt><dd><code>{data.release.packDigest}</code></dd></div><div><dt>{msg('Runtime digest')}</dt><dd><code>{data.release.runtimeDigest}</code></dd></div></dl><p className={styles.note}>{msg('To use a changed pack, create a new job and review its new release.')}</p></Disclosure></div>
         {!showInputs&&tab==='triggers'&&<TriggersView jobId={jobId} release={data.release}/>}
+        {!showInputs&&tab==='activity'&&<ActivityView jobId={jobId} release={data.release}/>}
         {showInputs && <RunForm job={data.job} release={data.release} />}
         <section hidden={showInputs||tab!=='runs'} className={styles.stack}>{!showInputs&&tab==='runs'&&<SourcePreparations jobId={jobId} onHasItems={setHasPreparations}/>}<h2>{msg('Run history')}</h2>
           {runs.isPending && <p role="status">{msg('Loading runs…')}</p>}
@@ -277,13 +280,13 @@ function RunView({ runId }: { runId: string }) {
     <PageHeader title={msg('Jobs')} titleHref="/jobs" context={msg('Run {{id}}', { id: runId.slice(-8) })} actions={run && <ButtonLink to={`/jobs/${run.jobId}`} variant="quiet">{msg('Back to job')}</ButtonLink>} />
     <PageBody width="wide"><div className={styles.stack}><Problem error={query.error} />
       {query.isPending && <p role="status">{msg('Loading run…')}</p>}
-      {run && <><dl className={styles.properties}><div><dt>{msg('Execution')}</dt><dd role={run.state === 'queued' || run.state === 'running' ? 'status' : undefined}>{stateLabel(run.state)}</dd></div><div><dt>{msg('Decision')}</dt><dd>{decisionLabel(run.result)}</dd></div><div><dt>{msg('Submitted')}</dt><dd>{date(run.createdAt)}</dd></div><div><dt>{msg('Finished')}</dt><dd>{run.finishedAt ? date(run.finishedAt) : '—'}</dd></div></dl>
+      {run && <><RunFields run={run} />
         {run.trigger&&<><div className={styles.actions}><span className="quiet">{msg('Trigger')}</span><Link to={`/jobs/${run.jobId}?tab=triggers`}>{triggerName(run.trigger.kind)}</Link>{run.trigger.scheduledAt&&<span className="quiet">{date(run.trigger.scheduledAt)}</span>}</div><JSONView title={msg('Trigger record')} value={run.trigger}/></>}
         {run.problem && <p className={styles.problem}>{run.problem}</p>}
         {run.result && <section className={styles.stack}><h2>{msg('Decision details')}</h2>{run.result.disposition.reasons.length > 0 && <ul>{run.result.disposition.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>}<p>{run.result.disposition.handoff.state === 'requested' ? msg('Handoff requested: {{target}}', { target: run.result.handoffTarget?.name ?? msg('See full result') }) : msg('No handoff requested')}</p><p className={styles.note}>{msg('This is a recorded decision. No external action or notification was sent.')}</p><JSONView title={msg('Full result')} value={run.result} /></section>}
         {run.input?.source && isSourceV2(run.input.source) ? <><MappingReview mapping={run.input.source.mapping} />{run.input.preparation && <InputLineage preparation={run.input.preparation} />}<JSONView title={msg('Retained inputs')} value={{ facts: run.input.facts, evidence: run.input.evidence }} /><VerificationDownload runId={run.id} /></> : run.input?.source ? <SourceSummary source={run.input.source as SourceInput} /> : <JSONView title={msg('Retained inputs')} value={run.input} />}
         {run.audit && <JSONView title={msg('Runtime audit record')} value={run.audit} />}
-        <Disclosure title={msg('Technical details')}><dl className={styles.properties}><div><dt>{msg('Run ID')}</dt><dd><code>{run.id}</code></dd></div><div><dt>{msg('Release ID')}</dt><dd><code>{run.releaseId}</code></dd></div><div><dt>{msg('Revision')}</dt><dd>{run.revision}</dd></div><div><dt>{msg('Attempts')}</dt><dd>{run.attempt}</dd></div></dl></Disclosure>
+        <RunTechnicalDetails run={run} />
       </>}
     </div></PageBody>
   </>

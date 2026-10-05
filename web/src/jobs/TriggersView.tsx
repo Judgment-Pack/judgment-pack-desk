@@ -22,7 +22,7 @@ type Preview={config?:TriggerConfig;next:string[];inputReady:boolean;configurati
 const when=(s:string)=>formatDate(new Date(s),{dateStyle:'medium',timeStyle:'short'})
 export function triggerState(t:Pick<Trigger,'paused'|'config'|'nextAt'|'problem'>){return t.paused?msg('Paused'):t.problem?msg('Needs attention'):t.config.kind==='cloud'?msg('Listening'):t.config.kind==='schedule'&&!t.nextAt?msg('Finished'):msg('Active')}
 function failure(e:unknown){return e instanceof Error?e.message:String(e)}
-function reason(value?:string){return value?({'missed':msg('Missed while unavailable'),'latest-after-missed':msg('Latest missed occurrence'),'overlap':msg('Another run was pending'),'queue-full':msg('Queue full'),'queue-expired':msg('Queue expired'),'trigger-paused':msg('Trigger paused')} as Record<string,string>)[value]??value:'—'}
+export function reason(value?:string){return value?({'missed':msg('Missed while unavailable'),'latest-after-missed':msg('Latest missed occurrence'),'overlap':msg('Another run was pending'),'queue-full':msg('Queue full'),'queue-expired':msg('Queue expired'),'trigger-paused':msg('Trigger paused')} as Record<string,string>)[value]??value:'—'}
 export function TriggersView({jobId,release}:{jobId:string;release:Release}){
  const client=useQueryClient(),opener=useRef<HTMLElement|null>(null)
  const query=useQuery({queryKey:['job-triggers',jobId],queryFn:()=>jobsAPI<{items:Trigger[];localFiles:boolean}>(`jobs/${jobId}/triggers`),refetchInterval:5000})
