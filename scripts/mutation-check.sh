@@ -3451,6 +3451,14 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "runner key: the desks' sweep runs without the lock" internal/desk/desks.go \
     '	s.sweepUnfinishedKeysLocked()' \
     '	s.sweepUnfinishedKeys()'
+  mutate go "runner key: Runner's first start does not wait for the start's sweep" "$J" \
+    '		select {
+		case <-s.jobs.started:
+		case <-s.jobs.stop:
+			return
+		}
+' \
+    ''
   mutate go "runner key: the desks' sweep waits for the lock" "$RK" \
     '	unlock, err := lockKeyCustody(signing, 0)' \
     '	unlock, err := lockKeyCustody(signing, runnerKeyCreationWait)'

@@ -563,3 +563,60 @@ func TestARunnerKeysFolderSwappedAfterItsNarrowingIsRefused(t *testing.T) {
 		t.Error("a key was made")
 	}
 }
+
+// **Desk's start sweeps the desks' keys before its Runner takes the lock.**
+// The startup desk's Runner is started from Desk's start, and its key's
+// decision holds the lock, here for as long as the runtime takes to make the
+// key; the desks' sweep, which never waits, must not find it held. With a
+// Runner configured, an unfinished desk key is removed at Desk's start, and
+// the Runner's key is decided after it.
+func TestDesksStartSweepsBeforeItsRunnerTakesTheLock(t *testing.T) {
+	const orphan = "c000000000000000000000000000001a"
+	bin := filepath.Join(t.TempDir(), "jpack")
+	calls := writeStandInRuntime(t, bin, reading(allConfigVersions), lockingAs(wantGatedConfig))
+	// A runtime slow to make a key, so that a Runner's decision started
+	// before the sweep would still hold the lock when the sweep came.
+	generatingAs(t, calls, "  i=0; while [ \"$i\" -lt 200000 ]; do i=$((i+1)); done\n"+generateAsTheRuntime)
+	first, _, _ := gatesServer(t, bin)
+	signing, err := first.assistant.openSigning(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signing.Close()
+	folder := signingFolderOf(first)
+	for _, file := range []string{orphan + ".seed", orphan + ".keys.jsonl", orphan + ".creating"} {
+		if err := os.WriteFile(filepath.Join(folder, file), []byte("planted\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var mu sync.Mutex
+	var swept, decidedFirst bool
+	testHookKeyBetween = func(at string) {
+		if at != "before generate" {
+			return
+		}
+		_, err := os.Lstat(filepath.Join(folder, orphan+".creating"))
+		mu.Lock()
+		if !swept && !decidedFirst {
+			decidedFirst = !os.IsNotExist(err)
+			swept = os.IsNotExist(err)
+		}
+		mu.Unlock()
+	}
+	t.Cleanup(func() { testHookKeyBetween = nil })
+	runner, _ := recordingRunner(t, false)
+	s, ts := startDesk(t, Config{ProjectDir: t.TempDir(), JpackBin: bin, RunnerBin: runner, DeskConfigDir: first.configDir, Token: testToken})
+	t.Cleanup(func() { ts.Close(); s.Close() })
+	started(t, s.jobs)
+	testHookKeyBetween = nil
+	mu.Lock()
+	defer mu.Unlock()
+	if decidedFirst || !swept {
+		t.Errorf("the Runner's key was decided before Desk's start swept the desks' keys (swept %v)", swept)
+	}
+	for _, file := range []string{orphan + ".seed", orphan + ".keys.jsonl", orphan + ".creating"} {
+		if _, err := os.Lstat(filepath.Join(folder, file)); !os.IsNotExist(err) {
+			t.Errorf("Desk's start left %s: %v", file, err)
+		}
+	}
+}

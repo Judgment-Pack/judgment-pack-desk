@@ -78,6 +78,12 @@ type jobsCompanion struct {
 	stop                                chan struct{}
 	// key is the signing key Desk keeps for this Runner (runner_key.go).
 	key *runnerKey
+	// started is closed once the server that owns this Runner is built: on
+	// the startup desk, once the start's sweep of the desks' keys has taken
+	// and let go of the key-custody lock (`resumeDesks`). The first start of
+	// Runner waits for it, so that its key's decision does not hold the lock
+	// that sweep would otherwise find held, and skip.
+	started chan struct{}
 }
 
 func (s *Server) initJobs() {
@@ -97,8 +103,14 @@ func (s *Server) initJobs() {
 	// Runner's own key is kept under the name of its workspace: the desk's
 	// id, or the startup desk's state directory's name (ADR-0010, section 5).
 	s.jobs.key = s.newRunnerKey(s.jobs.workspace)
+	s.jobs.started = make(chan struct{})
 	// Resume durable queued work when Desk starts, without requiring an open tab.
 	go func() {
+		select {
+		case <-s.jobs.started:
+		case <-s.jobs.stop:
+			return
+		}
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
 		for {

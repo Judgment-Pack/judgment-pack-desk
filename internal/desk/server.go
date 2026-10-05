@@ -498,6 +498,11 @@ func New(cfg Config) (*Server, error) {
 	if cfg.parent == nil {
 		s.resumeDesks()
 	}
+	// Runner's first start only now, after the start's sweep of the desks'
+	// keys (jobs.go, `started`).
+	if s.jobs != nil {
+		close(s.jobs.started)
+	}
 	return s, nil
 }
 
