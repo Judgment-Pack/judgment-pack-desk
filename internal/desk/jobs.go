@@ -151,8 +151,7 @@ func (j *jobsCompanion) endpoint() (string, string, error) {
 
 // start starts Runner and reads its handshake, naming signingKey on the boot
 // line where it is not empty. Where Runner did not start, and what it wrote
-// to its standard error says it refused the signing key, refusal is its
-// reason.
+// to its standard error says it refused a signing key, refusal is its reason.
 func (j *jobsCompanion) start(signingKey string) (refusal *string, err error) {
 	var secret [32]byte
 	if _, err := rand.Read(secret[:]); err != nil {
@@ -186,7 +185,7 @@ func (j *jobsCompanion) start(signingKey string) (refusal *string, err error) {
 		input.Close()
 		cmd.Process.Kill()
 		<-done
-		if reason, refused := runnerKeyRefusal(said.Bytes()); refused && signingKey != "" {
+		if reason, refused := runnerKeyRefusal(said.Bytes()); refused {
 			return &reason, err
 		}
 		return nil, err

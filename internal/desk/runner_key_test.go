@@ -454,8 +454,10 @@ func TestARunnerKeyNotInspectedNowIsLeftAndNotMade(t *testing.T) {
 	for _, c := range []struct {
 		which string
 		kept  bool
-	}{{".creating", true}, {".creating", false}, {".seed", true}, {".seed", false}, {".keys.jsonl", false}} {
-		t.Run(c.which+map[bool]string{true: ", key kept", false: ", nothing kept"}[c.kept], func(t *testing.T) {
+		// later is a start after this process's first, past the sweep.
+		later bool
+	}{{".creating", true, false}, {".creating", false, false}, {".creating", true, true}, {".seed", true, false}, {".seed", false, false}, {".keys.jsonl", false, false}} {
+		t.Run(c.which+map[bool]string{true: ", key kept", false: ", nothing kept"}[c.kept]+map[bool]string{true: ", a later start", false: ""}[c.later], func(t *testing.T) {
 			bin := filepath.Join(t.TempDir(), "jpack")
 			calls := writeStandInRuntime(t, bin, reading(allConfigVersions), lockingAs(wantGatedConfig))
 			s, _, _ := gatesServer(t, bin)
@@ -478,6 +480,7 @@ func TestARunnerKeyNotInspectedNowIsLeftAndNotMade(t *testing.T) {
 			}
 			t.Cleanup(func() { testHookRunnerKeyLstat = nil })
 			k := s.newRunnerKey(name)
+			k.swept = c.later
 			if path := k.prepare(); path != "" {
 				t.Fatalf("named %s while %s could not be inspected", path, failing)
 			}
@@ -789,7 +792,131 @@ func TestNoPartOfARunnerKeysPathIsSaid(t *testing.T) {
 			}
 		}
 	}
-	if got := s.runnerKeyWords(runner+" is writable by group or others (mode 0770)", name, true); got != "the folder Desk keeps Runner's keys in is writable by group or others (mode 0770)" {
-		t.Errorf("Desk's own sentence became %q", got)
+	for said, want := range map[string]string{
+		runner + " is writable by group or others (mode 0770)":                   "the folder Desk keeps Runner's keys in is writable by group or others (mode 0770)",
+		seed + " is a symbolic link; " + runner + " is not":                      "… is a symbolic link; the folder Desk keeps Runner's keys in is not",
+		filepath.Join(config, "secrets", "signing") + " is another user's":       "Desk's signing folder is another user's",
+		filepath.Join(link, "jpack-desk", "secrets") + " could not be inspected": "… could not be inspected",
+	} {
+		if got := s.runnerKeyWords(said, name, true); got != want {
+			t.Errorf("Desk's own sentence %q\nbecame %q\nwant %q", said, got, want)
+		}
+	}
+}
+
+// **Runner's folder is custody's**: a loose one, 0755 as a umask of 022
+// makes it, is narrowed to 0700 and used; one swapped for another between
+// its check and its open is not used, and the key is not named.
+func TestTheRunnerKeysFolderIsHeldToCustody(t *testing.T) {
+	const name = "c000000000000000000000000000000a"
+	bin := filepath.Join(t.TempDir(), "jpack")
+	writeStandInRuntime(t, bin, reading(allConfigVersions), lockingAs(wantGatedConfig))
+	s, _, _ := gatesServer(t, bin)
+	folder := runnerFolderOf(s)
+	if err := os.MkdirAll(folder, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(folder, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if path := s.newRunnerKey(name).prepare(); path != filepath.Join(folder, name+".seed") {
+		t.Fatalf("a loose folder of Desk's own was not narrowed and used: %q", path)
+	}
+	if got := permOf(t, folder); got != 0o700 {
+		t.Errorf("the folder is %v, want 0700", got)
+	}
+
+	testHookAfterCustodyCheck = func(path string) {
+		if path != folder {
+			return
+		}
+		if err := os.Rename(folder, folder+".aside"); err != nil {
+			t.Error(err)
+		}
+		if err := os.Mkdir(folder, 0o700); err != nil {
+			t.Error(err)
+		}
+	}
+	t.Cleanup(func() { testHookAfterCustodyCheck = nil })
+	k := s.newRunnerKey(name)
+	if path := k.prepare(); path != "" {
+		t.Fatalf("a folder swapped between its check and its open was used: %s", path)
+	}
+	testHookAfterCustodyCheck = nil
+	if got := *k.report(); got.Reason != "custody" || got.Detail != "the folder Desk keeps Runner's keys in changed between being checked and being opened, and was not used" {
+		t.Errorf("reported %+v", got)
+	}
+}
+
+// **The path Runner is given names the key Desk found.** The Runner keys'
+// folder replaced by another holding a seed of the same name, after the key
+// is found and before it is named; or the seed replaced while the runtime
+// reads it: either way the key is not named.
+func TestARunnerKeyWhosePathNamesAnotherIsNotNamed(t *testing.T) {
+	const name = "c000000000000000000000000000000b"
+	for _, c := range []struct {
+		name    string
+		arrange func(t *testing.T, s *Server, calls, folder string)
+	}{
+		{"the folder replaced", func(t *testing.T, s *Server, calls, folder string) {
+			testHookKeyBetween = func(at string) {
+				if at != "read list" {
+					return
+				}
+				if err := os.Rename(folder, folder+".aside"); err != nil {
+					t.Error(err)
+				}
+				if err := os.Mkdir(folder, 0o700); err != nil {
+					t.Error(err)
+				}
+				if err := os.WriteFile(filepath.Join(folder, name+".seed"), []byte(standInSeed+"\n"), 0o600); err != nil {
+					t.Error(err)
+				}
+			}
+		}},
+		{"the seed replaced while the runtime reads it", func(t *testing.T, s *Server, calls, folder string) {
+			readingKeyAs(t, calls, `  mv "$4" "$4.aside" && cp -p "$4.aside" "$4" && printf '%s\n' '`+standInRead+`'`)
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			bin := filepath.Join(t.TempDir(), "jpack")
+			calls := writeStandInRuntime(t, bin, reading(allConfigVersions), lockingAs(wantGatedConfig))
+			s, _, _ := gatesServer(t, bin)
+			folder := runnerFolderOf(s)
+			if s.newRunnerKey(name).prepare() == "" {
+				t.Fatal("the key was not made")
+			}
+			c.arrange(t, s, calls, folder)
+			t.Cleanup(func() { testHookKeyBetween = nil })
+			k := s.newRunnerKey(name)
+			if path := k.prepare(); path != "" {
+				t.Fatalf("named %s", path)
+			}
+			testHookKeyBetween = nil
+			if got := *k.report(); got != (RunnerKeyStatus{State: "unsigned", Reason: "not-used", Detail: "the key is not at the path Runner would be given"}) {
+				t.Errorf("reported %+v", got)
+			}
+		})
+	}
+}
+
+// A configuration folder whose path is not valid UTF-8 cannot be carried on
+// Runner's boot line, a JSON object, as itself: no key is named, and why is
+// said.
+func TestARunnerKeyWhosePathIsNotUTF8IsNotNamed(t *testing.T) {
+	config := filepath.Join(t.TempDir(), "conf\xff")
+	if err := os.Mkdir(config, 0o700); err != nil {
+		t.Skipf("this file system takes no such name: %v", err)
+	}
+	bin := filepath.Join(t.TempDir(), "jpack")
+	writeStandInRuntime(t, bin, reading(allConfigVersions), lockingAs(wantGatedConfig))
+	s, ts := startDesk(t, Config{ProjectDir: t.TempDir(), JpackBin: bin, DeskConfigDir: config, Token: testToken})
+	t.Cleanup(func() { ts.Close(); s.Close() })
+	k := s.newRunnerKey(strings.Repeat("ab", 32))
+	if path := k.prepare(); path != "" {
+		t.Fatalf("named %q", path)
+	}
+	if got := *k.report(); got != (RunnerKeyStatus{State: "unsigned", Reason: "custody", Detail: "the path of Desk's signing folder is not valid UTF-8, which Runner's boot line cannot carry"}) {
+		t.Errorf("reported %+v", got)
 	}
 }
