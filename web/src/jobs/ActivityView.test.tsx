@@ -49,7 +49,7 @@ describe('the Activity tab', () => {
     expect(tabs.map(tab => tab.textContent)).toEqual(['Runs', 'Triggers', 'Release', 'Activity'])
     expect(tabs[3]!.getAttribute('aria-current')).toBe('page')
     const head = within(await table()).getAllByRole('columnheader').map(th => th.textContent)
-    expect(head).toEqual(['When', 'What', 'By', 'Release', 'Evidence'])
+    expect(head).toEqual(['When', 'Source', 'What', 'By', 'Release', 'Evidence'])
     expect(await whats()).toEqual([
       'Run queued', 'Run started', 'Occurrence received', 'Occurrence skipped', 'Occurrence expired', 'Occurrence failed', 'Occurrence canceled',
       'Run completed: accept', 'Run completed: refer', 'Run failed', 'Run interrupted', 'Run completed: accept',
@@ -99,27 +99,27 @@ describe('the Activity tab', () => {
 
   it('says who initiated each record: this installation, or a trigger by name and revision; never a person', async () => {
     show(); await table()
-    expect(cells('Run queued')[2]!.textContent).toBe('This installation')
-    expect(cells('Run started')[2]!.textContent).toBe('Nightly intake, trigger revision 2')
-    expect(cells('Occurrence skipped')[2]!.textContent).toBe('Nightly intake, trigger revision 3')
+    expect(cells('Run queued')[3]!.textContent).toBe('This installation')
+    expect(cells('Run started')[3]!.textContent).toBe('Nightly intake, trigger revision 2')
+    expect(cells('Occurrence skipped')[3]!.textContent).toBe('Nightly intake, trigger revision 3')
     // A run recorded before Runner kept who asked for it.
-    expect(screen.getAllByRole('button', { name: 'Run completed: accept' })[1]!.closest('tr')!.querySelectorAll('td')[2]!.textContent).toBe('Not recorded')
+    expect(screen.getAllByRole('button', { name: 'Run completed: accept' })[1]!.closest('tr')!.querySelectorAll('td')[3]!.textContent).toBe('Not recorded')
   })
 
   it('names the fixed release, linking to the Release tab', async () => {
     show(); await table()
-    const link = within(cells('Run queued')[3]!).getByRole('link', { name: 'Fixed version 1.2.0' })
+    const link = within(cells('Run queued')[4]!).getByRole('link', { name: 'Fixed version 1.2.0' })
     expect(link.textContent).toBe('1.2.0')
     expect(link.getAttribute('href')).toBe(`/jobs/${JOB}?tab=release`)
   })
 
   it('says what each run’s record holds, present or absent, read from the run itself', async () => {
     show(); await table()
-    const evidence = (what: string) => cells(what)[4]!
+    const evidence = (what: string) => cells(what)[5]!
     await waitFor(() => expect(evidence('Run completed: refer').textContent).not.toContain('Loading'))
     expect([...evidence('Run completed: refer').querySelectorAll('span')].map(span => span.textContent)).toEqual(['Present: Retained inputs, Exact record bytes', 'Absent: Signature sidecar, Acquisition receipts'])
     await waitFor(() => expect([...evidence('Run queued').querySelectorAll('span')].map(span => span.textContent)).toEqual(['Present: Retained inputs', 'Absent: Exact record bytes, Signature sidecar, Acquisition receipts']))
-    const signed = screen.getAllByRole('button', { name: 'Run completed: accept' })[0]!.closest('tr')!.querySelectorAll('td')[4]!
+    const signed = screen.getAllByRole('button', { name: 'Run completed: accept' })[0]!.closest('tr')!.querySelectorAll('td')[5]!
     await waitFor(() => expect([...signed.querySelectorAll('span')].map(span => span.textContent)).toEqual(['Present: Retained inputs, Exact record bytes, Signature sidecar', 'Absent: Acquisition receipts']))
     expect(asked(`runs/${runs.signed.id}`)).toBe(true)
     // An occurrence is no run record, and claims nothing.
@@ -128,21 +128,21 @@ describe('the Activity tab', () => {
 
   it('shows a failed run’s problem by its first line, and occurrences and preparations with their reasons', async () => {
     show(); await table()
-    expect(cells('Run failed')[1]!.textContent).toContain('The automatic run expired in the queue before evaluation.')
-    expect(cells('Run failed')[1]!.textContent).not.toContain('Second line')
-    expect(cells('Occurrence received')[1]!.textContent).toContain('Submitted')
-    expect(cells('Occurrence skipped')[1]!.textContent).toContain('Another run was pending')
-    expect(cells('Occurrence expired')[1]!.textContent).toContain('Queue expired')
-    expect(cells('Occurrence failed')[1]!.textContent).toContain('Source acquisition was interrupted.')
-    expect(cells('Occurrence canceled')[1]!.textContent).toContain('Cancelled locally.')
-    expect(cells('Source preparation needs attention')[1]!.textContent).toContain('The acquisition worker stopped before retaining the response.')
+    expect(cells('Run failed')[2]!.textContent).toContain('The automatic run expired in the queue before evaluation.')
+    expect(cells('Run failed')[2]!.textContent).not.toContain('Second line')
+    expect(cells('Occurrence received')[2]!.textContent).toContain('Submitted')
+    expect(cells('Occurrence skipped')[2]!.textContent).toContain('Another run was pending')
+    expect(cells('Occurrence expired')[2]!.textContent).toContain('Queue expired')
+    expect(cells('Occurrence failed')[2]!.textContent).toContain('Source acquisition was interrupted.')
+    expect(cells('Occurrence canceled')[2]!.textContent).toContain('Cancelled locally.')
+    expect(cells('Source preparation needs attention')[2]!.textContent).toContain('The acquisition worker stopped before retaining the response.')
   })
 
   it('links each run row, and an occurrence that became a run, to the run page', async () => {
     show(); await table()
-    expect(within(cells('Run queued')[1]!).getByRole('link').getAttribute('href')).toBe(`/jobs/${JOB}/runs/${runs.queued.id}`)
-    expect(within(cells('Occurrence received')[1]!).getByRole('link').getAttribute('href')).toBe(`/jobs/${JOB}/runs/${runs.running.id}`)
-    fireEvent.click(within(cells('Run queued')[1]!).getByRole('link'))
+    expect(within(cells('Run queued')[2]!).getByRole('link').getAttribute('href')).toBe(`/jobs/${JOB}/runs/${runs.queued.id}`)
+    expect(within(cells('Occurrence received')[2]!).getByRole('link').getAttribute('href')).toBe(`/jobs/${JOB}/runs/${runs.running.id}`)
+    fireEvent.click(within(cells('Run queued')[2]!).getByRole('link'))
     expect(await screen.findByText('run page')).toBeTruthy()
   })
 

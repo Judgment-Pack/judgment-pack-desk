@@ -1,8 +1,17 @@
 /**
  * A job's Activity tab (#213): one table, newest first, of what Runner
- * recorded about the job, built only from the records it already serves.
+ * recorded about the job: the entries of Runner's journal of job activity,
+ * where Runner serves it (#218), and the records it serves.
  *
- * Each row is a record: a run, a trigger occurrence, or a source preparation
+ * A journal row is an entry, as Runner wrote it: its kind, the time Runner
+ * wrote it, and who Runner says initiated it (`journal.ts`). Desk derives no
+ * entry from records it observed. Where Runner answers the journal's route
+ * with 404, the tab shows the records alone and says so. The journal is read
+ * forward from its start, bounded (`useJournalReader`): until it is read to
+ * its end the tab says how far it has read and shows no entry it has not read
+ * to the end, and it renders the newest entries in steps.
+ *
+ * A record row is a run, a trigger occurrence, or a source preparation
  * (see `activity.ts` for how rows are made, ordered and paged). It says when
  * Runner recorded it, with each time named; what it is; whether this
  * installation or a trigger initiated it; which fixed release it belongs to;
@@ -13,17 +22,18 @@
  * Nothing in this tab checks anything, and it says no more than that the
  * runner holds an item. No brief is in it.
  */
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useInfiniteQuery, useQueries, type UseQueryResult } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { language, msg, useLocale } from '../i18n'
+import { formatNumber, language, msg, useLocale } from '../i18n'
 import { useDetailsPortal, useDetailsSlot } from '../shell/DetailsSlot'
 import { Button } from '../ui/Button'
 import { Disclosure } from '../ui/Disclosure'
 import { Select } from '../ui/Select'
 import { jobsAPI, type Page, type Release, type Run } from './client'
-import { evidenceOf, firstLine, keeps, mergeActivity, MANUAL, statesFor, streamsFor, type ActivityFilter, type ActivityRow, type KindFilter } from './activity'
-import { decisionText, RecordJSON, ReleaseName, requesterText, RunDisclosures, RunFields, RunTechnicalDetails, stampLabel, useJobTriggers, when } from './RunRecord'
+import { evidenceOf, firstLine, keeps, mergeActivity, MANUAL, stamp, statesFor, streamsFor, type ActivityFilter, type ActivityRow, type JournalRow, type KindFilter } from './activity'
+import { beforeTheJournal, JOURNAL_LIMITS, kindText, useJournalReader, type JournalEntry, type JournalLimits, type JournalState } from './journal'
+import { decisionText, RecordJSON, ReleaseName, requesterText, RunDisclosures, RunFields, RunTechnicalDetails, stampLabel, useJobRecord, useJobTriggers, when } from './RunRecord'
 import { occurrenceState } from './SourcePreparations'
 import { reason } from './TriggersView'
 import type { Occurrence, Trigger } from './triggerTypes'
@@ -62,6 +72,48 @@ function whatDetail(row: ActivityRow): string | undefined {
   if (row.kind === 'occurrence' && row.state === 'received') return occurrenceState(o.state)
   return o.reason ? firstLine(reason(o.reason)) : undefined
 }
+
+/** When Runner wrote an entry; "Not recorded" where it wrote no time Desk can read, as the run page says (#223). */
+function Recorded({ at }: { at: unknown }) {
+  const stored = typeof at === 'string' ? stamp('recorded', at) : undefined
+  return stored ? <time dateTime={stored.at}>{when(stored.at)}</time> : <>{msg('Not recorded')}</>
+}
+
+/** Who Runner says initiated an entry (`JournalActor`): never a person. */
+export function actorText(by: unknown, triggers?: Trigger[]): string {
+  if (!by || typeof by !== 'object') return msg('Not recorded')
+  const actor = by as Record<string, unknown>
+  const named = (id: string) => triggers?.find(trigger => trigger.id === id)?.config.name ?? msg('Trigger {{id}}', { id: id.slice(-8) })
+  switch (actor.kind) {
+    case 'installation': return msg('This installation')
+    case 'trigger':
+      return typeof actor.trigger === 'string' ? requesterText({ kind: 'trigger', triggerId: actor.trigger, revision: typeof actor.revision === 'number' ? actor.revision : undefined }, triggers) : msg('Not recorded')
+    case 'trigger-credential':
+      if (typeof actor.trigger !== 'string') return msg('Not recorded')
+      // keyRevision is the trigger revision the key was issued at, null for a key issued before the journal began.
+      return typeof actor.keyRevision === 'number' ? msg('Event token of {{name}}, issued at trigger revision {{revision}}', { name: named(actor.trigger), revision: actor.keyRevision })
+        : actor.keyRevision === null ? msg('Event token of {{name}}, issued before the journal began', { name: named(actor.trigger) }) : msg('Not recorded')
+    case 'cloud-connection': return typeof actor.connection === 'string' ? msg('Cloud connection {{connection}}', { connection: actor.connection }) : msg('Not recorded')
+    case 'runner': return msg('The runner itself')
+    // A kind of initiator a later Runner names: shown as Runner wrote it.
+    default: return typeof actor.kind === 'string' ? actor.kind : msg('Not recorded')
+  }
+}
+
+/** The lines under an entry's kind: the trigger's revision, a refusal's answer, the reason Runner recorded. */
+function entryDetails(entry: JournalEntry, triggers?: Trigger[]): ReactNode[] {
+  const lines: ReactNode[] = []
+  const concerns = entry.concerns && typeof entry.concerns === 'object' ? entry.concerns : {}
+  if (typeof entry.kind === 'string' && entry.kind.startsWith('trigger.') && typeof concerns.trigger === 'string') {
+    lines.push(requesterText({ kind: 'trigger', triggerId: concerns.trigger, revision: typeof entry.revision === 'number' ? entry.revision : undefined }, triggers))
+  }
+  const answered = [entry.request, entry.status, entry.code].filter(value => typeof value === 'string' || typeof value === 'number')
+  if (entry.kind === 'admission.refused' && answered.length > 0) lines.push(<code>{answered.join(' · ')}</code>)
+  if (typeof entry.reason === 'string' && entry.reason) lines.push(firstLine(reason(entry.reason)))
+  return lines
+}
+const runOf = (entry: JournalEntry) => typeof entry.concerns?.run === 'string' && entry.concerns.run.startsWith('run_') ? entry.concerns.run : undefined
+const releaseOf = (entry: JournalEntry) => typeof entry.concerns?.release === 'string' ? entry.concerns.release : undefined
 
 function Stamps({ row }: { row: ActivityRow }) {
   return <div className={own.stamps}>{[row.when, ...row.also].map(stamp => <div key={stamp.name}><span className={own.stampName}>{stampLabel(stamp.name)}</span> <time dateTime={stamp.at}>{when(stamp.at)}</time></div>)}</div>
@@ -103,6 +155,22 @@ function OccurrenceDetails({ row, jobId, release, triggers }: { row: ActivityRow
   </>
 }
 
+function JournalDetails({ row, jobId, release, triggers }: { row: JournalRow; jobId: string; release: Release; triggers?: Trigger[] }) {
+  const entry = row.entry, title = kindText(entry.kind), run = runOf(entry), releaseId = releaseOf(entry)
+  return <section className={own.pane} aria-label={title}>
+    <h2>{title}</h2>
+    <dl className={styles.properties}>
+      <div><dt>{msg('Source')}</dt><dd>{msg('Journal entry')}</dd></div>
+      <div><dt>{stampLabel('recorded')}</dt><dd><Recorded at={entry.at} /></dd></div>
+      <div><dt>{msg('By')}</dt><dd>{actorText(entry.by, triggers)}</dd></div>
+      {releaseId && <div><dt>{msg('Release')}</dt><dd><ReleaseName jobId={jobId} releaseId={releaseId} release={release} /></dd></div>}
+      {run && <div><dt>{msg('Run')}</dt><dd><Link to={`/jobs/${jobId}/runs/${run}`}>{msg('Run {{id}}', { id: run.slice(-8) })}</Link></dd></div>}
+    </dl>
+    {entryDetails(entry, triggers).map((line, index) => <p key={index} className={styles.note}>{line}</p>)}
+    <RecordJSON title={msg('Journal entry (JSON)')} value={entry} />
+  </section>
+}
+
 function ActivityDetails({ row, record, jobId, release, triggers }: { row: ActivityRow; record?: UseQueryResult<Run>; jobId: string; release: Release; triggers?: Trigger[] }) {
   const title = whatText(row)
   return <section className={own.pane} aria-label={title}>
@@ -116,13 +184,39 @@ function ActivityDetails({ row, record, jobId, release, triggers }: { row: Activ
   </section>
 }
 
-export function ActivityView({ jobId, release }: { jobId: string; release: Release }) {
+/** Where the reading of the journal stands, in one or two sentences, and what continues it after a failure. */
+function JournalProgress({ state, resume }: { state: JournalState; resume: () => void }) {
+  if (state.phase === 'starting' || state.phase === 'absent') return null
+  const read = formatNumber(state.read), sequence = formatNumber(state.next)
+  const shownAsBefore = state.snapshot ? msg('Until it is read to its end again, the table shows the journal as it was when last read to its end.')
+    : msg('Its entries are shown once it is read to its end. Until then, records stand by when the runner first recorded each.')
+  if (state.phase === 'caught-up') return <p className="quiet">{msg('The runner’s journal is read to its end as of the last request. Entries read: {{read}}.', { read })}</p>
+  if (state.phase === 'reading') return <p className="quiet" role="status">{msg('Reading the runner’s journal. Entries read so far: {{read}}.', { read })} {shownAsBefore}</p>
+  const reason = state.reason ?? msg('The local runner could not complete this request.')
+  return <div className={own.journalStop}>
+    <p role="alert" className={styles.problem}>{state.next > 0 ? msg('Reading the runner’s journal stopped after entry {{sequence}}: {{reason}} Entries read: {{read}}.', { sequence, reason, read }) : msg('Reading the runner’s journal stopped before its first entry: {{reason}}', { reason })} {shownAsBefore}</p>
+    <div><Button onClick={resume}>{state.next > 0 ? msg('Continue from entry {{sequence}}', { sequence }) : msg('Try again from its start')}</Button></div>
+  </div>
+}
+
+export function ActivityView({ jobId, release, limits = JOURNAL_LIMITS }: { jobId: string; release: Release; limits?: JournalLimits }) {
   useLocale()
   const [filter, setFilter] = useState<ActivityFilter>({ kind: 'all', state: 'all', trigger: 'all' })
   const [selected, setSelected] = useState<string>()
   const details = useDetailsSlot()
   const triggers = useJobTriggers(jobId), triggerItems = triggers.data?.items
   const plan = streamsFor(filter)
+  const filtered = filter.kind !== 'all' || filter.state !== 'all' || filter.trigger !== 'all'
+  const job = useJobRecord(jobId)
+  // Runner's journal, read forward from where the last reading ended, never
+  // from 0 again; once caught up, asked again no faster than the lists are.
+  // Only what was read to its end is shown, the newest `window` entries first.
+  const journal = useJournalReader(jobId, limits.keep), reading = journal.state
+  const served = reading.phase === 'reading' || reading.phase === 'caught-up' || reading.phase === 'stopped' ? reading.snapshot : undefined
+  const [windowFor, setWindowFor] = useState({ jobId, size: limits.window })
+  const windowSize = windowFor.jobId === jobId ? windowFor.size : limits.window
+  const readTotal = served ? served.dropped + served.entries.length : 0
+  const from = served ? Math.max(served.dropped, readTotal - windowSize) : 0
   const runs = useInfiniteQuery({
     queryKey: ['jobs-pages', `jobs/${jobId}/runs`, 'activity', plan.runState ?? 'all'], enabled: plan.runs, initialPageParam: 0,
     queryFn: ({ pageParam }) => jobsAPI<Page<Run>>(`jobs/${jobId}/runs?${plan.runState ? `state=${plan.runState}&` : ''}after=${pageParam}`),
@@ -135,22 +229,25 @@ export function ActivityView({ jobId, release }: { jobId: string; release: Relea
   })
   // A list being read for the first time could hold a newer row than any
   // shown, so nothing is shown until every list the filter reads has answered.
-  const pending = (plan.runs && runs.isPending) || (plan.occurrences && occurrences.isPending)
+  const pending = (plan.runs && runs.isPending) || (plan.occurrences && occurrences.isPending) || reading.phase === 'starting'
   const merged = mergeActivity({
     runs: plan.runs && runs.data ? { records: runs.data.pages.flatMap(page => page.items), more: runs.hasNextPage } : undefined,
     occurrences: plan.occurrences && occurrences.data ? { records: occurrences.data.pages.flatMap(page => page.items), more: occurrences.hasNextPage } : undefined
-  }, keeps(filter))
-  const rows = pending ? [] : merged.rows
+  }, keeps(filter), served && { entries: served.entries, dropped: served.dropped, from, show: !filtered })
+  const rows = pending ? [] : merged.rows, shown = pending ? [] : merged.shown
   const runRows = rows.filter(row => row.run)
   const records = useQueries({ queries: runRows.map(row => ({ queryKey: ['job-activity-run', row.run!.id, row.run!.state], queryFn: () => jobsAPI<Run>(`runs/${row.run!.id}`), staleTime: Infinity })) })
   const record = new Map(runRows.map((row, index) => [row.key, records[index]]))
-  const chosen = rows.find(row => row.key === selected)
-  const pane = chosen ? <ActivityDetails key={chosen.key} row={chosen} record={record.get(chosen.key)} jobId={jobId} release={release} triggers={triggerItems} /> : null
+  const chosen = shown.find(row => row.key === selected)
+  const pane = !chosen ? null : chosen.kind === 'journal' ? <JournalDetails key={chosen.key} row={chosen} jobId={jobId} release={release} triggers={triggerItems} />
+    : <ActivityDetails key={chosen.key} row={chosen} record={record.get(chosen.key)} jobId={jobId} release={release} triggers={triggerItems} />
   const portal = useDetailsPortal(pane)
   const more = (plan.runs && runs.hasNextPage) || (plan.occurrences && occurrences.hasNextPage)
   const fetching = runs.isFetchingNextPage || occurrences.isFetchingNextPage
   const error = (plan.runs && runs.error) || (plan.occurrences && occurrences.error)
-  const filtered = filter.kind !== 'all' || filter.state !== 'all' || filter.trigger !== 'all'
+  const entriesShown = shown.filter(row => row.kind === 'journal').length
+  // Earlier kept entries are offered when the window, not a record list's next page, is what holds them.
+  const earlier = served && !filtered && !pending && from > served.dropped && merged.heldEntries === 0
   // The next page of the list that holds rows back; the boundary moves only when it is read.
   function loadMore() {
     const lists = { runs: plan.runs && runs.hasNextPage ? runs : undefined, occurrences: plan.occurrences && occurrences.hasNextPage ? occurrences : undefined }
@@ -159,7 +256,7 @@ export function ActivityView({ jobId, release }: { jobId: string; release: Relea
   }
   function choose(kind: KindFilter) { setFilter(current => ({ ...current, kind, state: statesFor(kind).includes(current.state) ? current.state : 'all' })) }
   return <section className={styles.stack} aria-label={msg('Activity')}>
-    <p className={styles.note}>{msg('What the local runner recorded about this job, newest first by when it first recorded each item. Every time shown is one the runner stored, named for what it records. Evidence says only whether the runner holds an item; nothing here checks it.')}</p>
+    <p className={styles.note}>{msg('What the local runner recorded about this job, newest first: the entries of its journal of job activity in the order the runner wrote them, and its records, each where the entry that created it stands, or by when the runner first recorded it where the journal has no such entry. Every time shown is one the runner stored, named for what it records. The journal is the runner’s own log, not chained and not signed. Evidence says only whether the runner holds an item; nothing here checks it.')}</p>
     <div className={own.filters}>
       <Select id="activity-kind" aria-label={msg('Kind')} value={filter.kind} options={[{ value: 'all', label: msg('All kinds') }, { value: 'run', label: msg('Runs') }, { value: 'occurrence', label: msg('Trigger occurrences') }, { value: 'preparation', label: msg('Source preparations') }]} onValueChange={value => choose(value as KindFilter)} />
       <Select id="activity-state" aria-label={msg('State')} value={filter.state} options={[{ value: 'all', label: msg('All states') }, ...statesFor(filter.kind).map(value => ({ value, label: stateName(value) }))]} onValueChange={state => setFilter(current => ({ ...current, state }))} />
@@ -167,15 +264,40 @@ export function ActivityView({ jobId, release }: { jobId: string; release: Relea
     </div>
     {error && <p role="alert" className={styles.problem}>{error instanceof Error ? error.message : msg('The local runner could not complete this request.')}</p>}
     {pending && <p role="status">{msg('Loading…')}</p>}
-    {!pending && !error && rows.length === 0 && !more && <p className="quiet">{filtered ? msg('Nothing the runner recorded matches these filters.') : msg('The runner has recorded nothing for this job yet.')}</p>}
-    {rows.length > 0 && <div className={styles.tableWrap}><table className={styles.table}>
-      <thead><tr><th>{msg('When')}</th><th>{msg('What')}</th><th>{msg('By')}</th><th>{msg('Release')}</th><th>{msg('Evidence')}</th></tr></thead>
-      <tbody>{rows.map(row => {
+    {reading.phase === 'absent' && <p className="quiet">{msg('The local runner serves no journal of job activity for this job, so only its records are shown.')}</p>}
+    <JournalProgress state={reading} resume={journal.resume} />
+    {served && served.dropped > 0 && <p className="quiet">{msg('Earlier entries read and not kept, to bound what this page holds: {{dropped}}. Only the newest {{kept}} are kept.', { dropped: formatNumber(served.dropped), kept: formatNumber(served.entries.length) })}</p>}
+    {served && !filtered && !pending && entriesShown < readTotal && <p className="quiet">{msg('Showing the newest {{shown}} of {{read}} journal entries read.', { shown: formatNumber(entriesShown), read: formatNumber(readTotal) })}</p>}
+    {served && filtered && <p className="quiet">{msg('The runner’s journal is shown when no filter is set.')}</p>}
+    {served && !pending && beforeTheJournal(served.began, job.data?.job.createdAt) && <p className={styles.note}>{typeof served.began === 'string' && stamp('recorded', served.began)
+      ? msg('No journal before {{time}}: the runner’s journal of job activity began then. Nothing earlier has an entry, and nothing is filled in from its records.', { time: when(served.began) })
+      : msg('The runner did not say when its journal began in a time this Desk can read. Nothing before it has an entry.')}</p>}
+    {!pending && !error && shown.length === 0 && !more && <p className="quiet">{filtered ? msg('Nothing the runner recorded matches these filters.') : msg('The runner has recorded nothing for this job yet.')}</p>}
+    {shown.length > 0 && <div className={styles.tableWrap}><table className={styles.table}>
+      <thead><tr><th>{msg('When')}</th><th>{msg('Source')}</th><th>{msg('What')}</th><th>{msg('By')}</th><th>{msg('Release')}</th><th>{msg('Evidence')}</th></tr></thead>
+      <tbody>{shown.map(row => {
+        const choose = () => { setSelected(row.key); details.reveal() }
+        if (row.kind === 'journal') {
+          const entry = row.entry, run = runOf(entry), releaseId = releaseOf(entry)
+          return <tr key={row.key} data-kind="journal" className={row.key === selected ? own.selected : undefined}>
+            <td><div className={own.stamps}><div><span className={own.stampName}>{stampLabel('recorded')}</span> <Recorded at={entry.at} /></div></div></td>
+            <td>{msg('Journal entry')}</td>
+            <td>
+              <button type="button" className={own.select} aria-pressed={row.key === selected} onClick={choose}>{kindText(entry.kind)}</button>
+              {entryDetails(entry, triggerItems).map((line, index) => <span key={index} className={styles.cellMeta}>{line}</span>)}
+              {run && <Link className={styles.cellMeta} to={`/jobs/${jobId}/runs/${run}`}>{msg('Run {{id}}', { id: run.slice(-8) })}</Link>}
+            </td>
+            <td>{actorText(entry.by, triggerItems)}</td>
+            <td>{releaseId ? <ReleaseName jobId={jobId} releaseId={releaseId} release={release} short /> : '—'}</td>
+            <td>—</td>
+          </tr>
+        }
         const detail = whatDetail(row), runId = row.run?.id ?? row.occurrence?.runId
         return <tr key={row.key} data-kind={row.kind} className={row.key === selected ? own.selected : undefined}>
           <td><Stamps row={row} /></td>
+          <td>{msg('Record')}</td>
           <td>
-            <button type="button" className={own.select} aria-pressed={row.key === selected} onClick={() => { setSelected(row.key); details.reveal() }}>{whatText(row)}</button>
+            <button type="button" className={own.select} aria-pressed={row.key === selected} onClick={choose}>{whatText(row)}</button>
             {detail && <span className={styles.cellMeta}>{detail}</span>}
             {runId && <Link className={styles.cellMeta} to={`/jobs/${jobId}/runs/${runId}`}>{msg('Run {{id}}', { id: runId.slice(-8) })}</Link>}
           </td>
@@ -186,6 +308,7 @@ export function ActivityView({ jobId, release }: { jobId: string; release: Relea
       })}</tbody>
     </table></div>}
     {more && <div><Button disabled={fetching} onClick={loadMore}>{msg('Load more')}</Button></div>}
+    {earlier && <div><Button onClick={() => setWindowFor({ jobId, size: windowSize + limits.step })}>{msg('Show earlier journal entries')}</Button></div>}
     {!portal && pane}
     {portal}
   </section>

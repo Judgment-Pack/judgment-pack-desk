@@ -231,15 +231,28 @@ func (j *jobsCompanion) close() {
 	}
 }
 
-var jobsPath = regexp.MustCompile(`^(occurrences/occ_[a-f0-9]{32}/(cancel|reconcile)|status|background-connections|input-profiles|previews|inputs/preview|inputs/next|jobs|runs|jobs/job_[a-f0-9]{32}|jobs/job_[a-f0-9]{32}/runs|runs/run_[a-f0-9]{32}|jobs/job_[a-f0-9]{32}/triggers|jobs/job_[a-f0-9]{32}/triggers/preview|jobs/job_[a-f0-9]{32}/occurrences|triggers/trg_[a-f0-9]{32}/state|triggers/trg_[a-f0-9]{32}/rotate-key|runs/run_[a-f0-9]{32}/verification|run-chain|jobs/job_[a-f0-9]{32}/briefs|runs/run_[a-f0-9]{32}/briefs)$`)
+// jobsPath is every Runner route Desk forwards. `jobs/job_<id>/events` is a
+// job's journal of job activity (Runner v0.6.0, `GET /v1/jobs/{job}/events`),
+// which the Activity tab reads; see journalPath. Runner's store-wide `events`
+// route is not forwarded.
+var jobsPath = regexp.MustCompile(`^(occurrences/occ_[a-f0-9]{32}/(cancel|reconcile)|status|background-connections|input-profiles|previews|inputs/preview|inputs/next|jobs|runs|jobs/job_[a-f0-9]{32}|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/events|runs/run_[a-f0-9]{32}|jobs/job_[a-f0-9]{32}/triggers|jobs/job_[a-f0-9]{32}/triggers/preview|jobs/job_[a-f0-9]{32}/occurrences|triggers/trg_[a-f0-9]{32}/state|triggers/trg_[a-f0-9]{32}/rotate-key|runs/run_[a-f0-9]{32}/verification|run-chain|jobs/job_[a-f0-9]{32}/briefs|runs/run_[a-f0-9]{32}/briefs)$`)
 
 func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	if !s.guard(w, r) {
 		return
 	}
 	tail := strings.TrimPrefix(r.URL.Path, "/api/operations/")
-	// The chain of runs is read, never written: Runner serves it on GET alone.
-	if !jobsPath.MatchString(tail) || (r.Method != http.MethodGet && r.Method != http.MethodPost) || tail == runChainRoute && r.Method != http.MethodGet {
+	// No Jobs path is percent-encoded: each is fixed words and Runner's ids.
+	// The route list is matched against the decoded path, so an encoded
+	// separator or letter would otherwise pass as the path it decodes to.
+	// The query may be encoded; only the path is held to this.
+	if strings.Contains(r.URL.EscapedPath(), "%") {
+		writeJSONCoded(w, 404, CodeBadRequest, "Unknown Jobs operation.")
+		return
+	}
+	// The chain of runs and a job's journal are read, never written: Runner
+	// serves each on GET alone.
+	if !jobsPath.MatchString(tail) || (r.Method != http.MethodGet && r.Method != http.MethodPost) || (tail == runChainRoute || journalPath.MatchString(tail)) && r.Method != http.MethodGet {
 		writeJSONCoded(w, 404, CodeBadRequest, "Unknown Jobs operation.")
 		return
 	}
@@ -303,6 +316,34 @@ var (
 	runPath          = regexp.MustCompile(`^runs/run_[a-f0-9]{32}$`)
 	verificationPath = regexp.MustCompile(`^runs/run_[a-f0-9]{32}/verification$`)
 )
+
+// journalPath is a job's journal of job activity (Runner v0.6.0,
+// `GET /v1/jobs/{job}/events?after=`), read with GET alone and with its cursor
+// alone: journalCursor. A page holds at most 50 entries, each reason cut at
+// 1,024 bytes, well within runnerAnswerLimit.
+var journalPath = regexp.MustCompile(`^jobs/job_[a-f0-9]{32}/events$`)
+
+// journalCursor is the cursor a journal request asks Runner for: "" when the
+// query names none, which Runner reads as 0, the start; or exactly one
+// `after` of 1 to 18 decimal digits, as Runner reads a cursor. A repeated,
+// empty or non-decimal cursor, or a query that does not parse, is refused
+// rather than forwarded: a lenient reader would keep one of repeated values,
+// or drop a malformed one and read from the start, where Runner refuses both.
+// Every other key is left out.
+func journalCursor(rawQuery string) (string, error) {
+	values, malformed := url.ParseQuery(rawQuery)
+	switch cursor, given := values["after"]; {
+	case malformed != nil:
+		// Refused below, as Runner refuses it.
+	case !given:
+		return "", nil
+	case len(cursor) == 1 && journalSequence.MatchString(cursor[0]):
+		return cursor[0], nil
+	}
+	return "", errors.New("invalid journal cursor")
+}
+
+var journalSequence = regexp.MustCompile(`^[0-9]{1,18}$`)
 
 // runnerAnswerLimit is the most of a Runner answer Desk reads on most routes.
 const runnerAnswerLimit = 16 << 20
@@ -391,6 +432,16 @@ func (s *Server) proxyJobs(w http.ResponseWriter, r *http.Request, tail, eventTo
 		limit = runnerExportLimit
 	case runPath.MatchString(tail):
 		limit = runnerExportLimit
+	case journalPath.MatchString(tail):
+		after, err := journalCursor(r.URL.RawQuery)
+		if err != nil {
+			writeJSONCoded(w, 400, CodeBadRequest, "Ask for a journal page with at most one after, a sequence in decimal digits, in a well-formed query.")
+			return
+		}
+		query = url.Values{}
+		if after != "" {
+			query.Set("after", after)
+		}
 	}
 	if s.jobs == nil {
 		writeJSONCoded(w, 503, CodeBadRequest, "Jobs requires the local runner companion. Install jpack-runner beside Desk or start Desk with --runner.")

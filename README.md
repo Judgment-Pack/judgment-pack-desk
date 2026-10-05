@@ -5858,6 +5858,47 @@ needing attention. Filtering happens in Runner before pagination. A completed
 execution can still reject a case or request review; execution and decision are
 separate columns. List responses omit retained inputs and audit bodies.
 
+Each job's **Activity** tab shows what the local runner recorded about the job,
+newest first. Where Runner serves its journal of job activity (Runner v0.6.0 and
+later, `GET /v1/jobs/{job}/events`, which Desk forwards; Runner's store-wide
+journal and its `job` filter are not forwarded), each entry is a row whose source
+says "Journal entry": its kind, the time Runner recorded it, and who Runner says
+initiated it, which is this installation, a trigger at a revision, a trigger's
+event token, a cloud connection or the runner itself, never a person. Entries keep
+the order Runner wrote them in, never their times. Runner's runs and occurrences
+are rows whose source says "Record", each standing where the entry that created it
+stands; a record the journal holds no such entry for, as one from before the
+journal, stands below every entry, by when the runner first recorded it. What an
+entry holds beyond its kind, such as an interruption's window or a trigger's
+previous revision, is in the entry's JSON in its detail pane. An entry never
+changes what a record row says, and Desk makes no row from changes it saw itself.
+
+Runner pages the journal oldest first and has no way to read it from its newest
+entries, so the tab reads it forward from its start once, one page after another,
+never two at once, with a turn for the browser between pages, and then asks again
+with the same cursor every 5 seconds. Until it has read to the end, one line says
+how many entries it has read so far, no entry is shown, and records stand by when
+the runner first recorded each, or the journal stays as it was when last read to
+its end; once read to the end, a line says so, as of the last request. The table
+renders the newest 500 entries, says how many of how many, and shows 500 more each
+time it is asked. The page keeps at most 20,000 entries: older ones are dropped,
+and a line says how many were read and not kept. A record whose creating entry was
+dropped stands below every kept entry, by its first time; one whose creating entry
+is kept but not shown stands below every entry shown. A page that fails stops the
+reading after the last entry read; the tab says which, and continues from there
+when asked, never from the start.
+
+Where a job is older than the journal, the tab says there is no journal before the
+time it began: Runner fills nothing in from its records. Where the route answers
+404, as an earlier Runner does, the tab shows the records alone and says the
+runner serves no journal for the job. A kind this Desk does not know is shown by
+its name, and a time that does not read as one as "Not recorded". The tab does not
+show Runner's own starts and stops, which only Runner's store-wide journal serves
+and Desk does not forward, or any review: Runner records none. With a filter set,
+it shows records only. The journal is the operator's own log, kept in the runner's
+store: not chained, not signed, and binding nothing against the operator. Its
+times are the runner's clock.
+
 Create job has four steps: Job, Inputs, Trigger and Review. Manual inputs use
 fields inferred from the pack, with exact JSON available in disclosures. Unknown,
 null, false and zero remain distinct. Evidence availability is explicit and does

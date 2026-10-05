@@ -29,7 +29,9 @@ export class JobsRequestError extends Error {
 }
 export async function jobsAPI<T>(path: string, body?: unknown, key?: string, signal?: AbortSignal): Promise<T> {
   const response = await deskFetch(`/api/operations/${path}`, body === undefined ? { signal } : { signal, method: 'POST', headers: { 'Content-Type': 'application/json', ...(key ? { 'Idempotency-Key': key } : {}) }, body: jobsRequest(body) })
-  const result = await response.json()
+  // A refusal whose body is not JSON, such as an earlier Runner's plain-text
+  // 404 for a route it does not serve, is still a refusal with its status.
+  const result = await response.json().catch((error: unknown) => { if (response.ok) throw error; return {} })
   if (!response.ok) throw new JobsRequestError(result.error?.message ?? result.message ?? 'The local runner could not complete this request.', response.status, typeof result.error?.code === 'string' ? result.error.code : undefined)
   return result as T
 }

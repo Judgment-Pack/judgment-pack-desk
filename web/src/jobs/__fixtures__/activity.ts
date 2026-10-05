@@ -6,7 +6,8 @@
  * `summary` strips them the same way, so a test that read evidence from a
  * list would see none. Occurrences are public records: no input.
  */
-import type { Release, Run } from '../client'
+import { JobsRequestError, type Release, type Run } from '../client'
+import type { JournalPage } from '../journal'
 import type { Occurrence, Trigger } from '../triggerTypes'
 
 export const JOB = 'job_' + 'a'.repeat(32)
@@ -66,11 +67,32 @@ export const occurrences: Record<string, Occurrence> = {
   attention: occurrence(7, 'needs-attention', 8, { reason: 'The acquisition worker stopped before retaining the response. The source was not called again.', preparation: { startedAt: at(8, 1), deadline: at(59), tasks: [{ name: 'ledger', id: 'task-2', state: 'needs-attention', startedAt: at(8, 1) }] } })
 }
 
+/**
+ * A job's journal as Runner v0.6.0 serves it (`GET /v1/jobs/{job}/events`):
+ * the entries after a cursor, by sequence, at most `size` of them; `next` the
+ * last one's sequence, or the cursor when there is none; `more` when another
+ * page is already there. `absent` answers 404, as a Runner or a Desk that does
+ * not serve the route does. By default, an empty journal that began when the
+ * job was created.
+ */
+export interface StandInJournal { began?: string; entries?: { sequence: number }[]; size?: number }
+export function journalPage(journal: StandInJournal, after: number): JournalPage {
+  const entries = journal.entries ?? [], size = journal.size ?? 50
+  const items = entries.filter(entry => entry.sequence > after).slice(0, size)
+  const next = items.length ? items[items.length - 1]!.sequence : after
+  return { journalBegan: journal.began ?? at(0), items, next, more: entries.some(entry => entry.sequence > next) }
+}
+
 /** Runner's lists and records for one job, answering as Desk's `jobsAPI` does. */
-export function runner(options: { runs?: Run[]; occurrences?: Occurrence[]; pages?: Record<string, { items: unknown[]; next: number }> } = {}) {
+export function runner(options: { runs?: Run[]; occurrences?: Occurrence[]; pages?: Record<string, unknown>; journal?: StandInJournal | 'absent' } = {}) {
   const all = options.runs ?? Object.values(runs), occurring = options.occurrences ?? Object.values(occurrences)
   return async (path: string): Promise<unknown> => {
     if (options.pages?.[path]) return options.pages[path]
+    const events = /^jobs\/job_a{32}\/events\?after=(\d+)$/.exec(path)
+    if (events) {
+      if (options.journal === 'absent') throw new JobsRequestError('Unknown Jobs operation.', 404)
+      return journalPage(options.journal ?? {}, Number(events[1]))
+    }
     if (path === `jobs/${JOB}`) return { job: { id: JOB, name: 'Daily intake', releaseId: release.id, revision: 1, createdAt: at(0) }, release }
     if (path === `jobs/${JOB}/triggers`) return { items: [trigger], localFiles: true }
     const listed = /^jobs\/job_a{32}\/runs\?(?:state=(\w+)&)?after=0$/.exec(path)

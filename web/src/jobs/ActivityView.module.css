@@ -13,3 +13,4 @@
 .pane { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--density-gutter); min-width: 0; }
 .pane h2, .pane h3 { margin: 0; font-size: var(--text-body); font-weight: 600; }
 .pane p { margin: 0; }
+.journalStop { display: grid; gap: var(--space-2); }
