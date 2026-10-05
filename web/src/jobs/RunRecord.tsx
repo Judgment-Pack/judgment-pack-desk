@@ -52,7 +52,9 @@ export function stampLabel(name: StampName): string {
     interruption: msg('Interruption recorded by the runner'),
     received: msg('Received'),
     scheduled: msg('Scheduled for'),
-    'preparation-started': msg('Preparation started')
+    'preparation-started': msg('Preparation started'),
+    // When Runner wrote a journal entry, by its own clock (#218).
+    recorded: msg('Recorded')
   }[name]
 }
 

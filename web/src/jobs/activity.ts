@@ -24,12 +24,23 @@
  * start or finish) is shown in the row and does not order it, because a
  * record not yet loaded can have a later one.
  *
+ * **Runner's journal, interleaved (#218).** Where Runner serves the job's
+ * journal (`journal.ts`), its entries are rows too, in Runner's order. A record
+ * row then stands at the place of the journal entry that created its record (a
+ * run's `run.queued`, an occurrence's admission), which Runner wrote in the
+ * transaction that inserted the record, so that place follows the lists'
+ * sequence too, and the same holding-back applies. A record the journal holds
+ * no creation for was made before the journal began, and stands below every
+ * entry, by its first time as above. An entry never changes what a record row
+ * says: the row is built from the record alone.
+ *
  * **A preparation is an occurrence's own state.** Runner keeps a source
  * preparation inside its occurrence; an occurrence that is waiting for sources
  * or needs attention reads as a preparation row, and in any other state as an
  * occurrence row.
  */
 import type { JobInput, Run } from './client'
+import { creations, type JournalEntry } from './journal'
 import type { Occurrence } from './triggerTypes'
 
 export type ActivityKind = 'run' | 'occurrence' | 'preparation'
@@ -39,7 +50,7 @@ export const OCCURRENCE_STATES = ['received', 'skipped', 'expired', 'failed', 'c
 export const PREPARATION_STATES = ['waiting', 'needs-attention'] as const
 
 /** What a stored timestamp records. */
-export type StampName = 'submitted' | 'started' | 'finished' | 'interruption' | 'received' | 'scheduled' | 'preparation-started'
+export type StampName = 'submitted' | 'started' | 'finished' | 'interruption' | 'received' | 'scheduled' | 'preparation-started' | 'recorded'
 export interface Stamp { name: StampName; at: string; time: number }
 
 /** Who initiated a record: this installation's owner, or a trigger. Never a person. */
@@ -147,34 +158,61 @@ export function keeps(filter: ActivityFilter) {
 
 export interface Loaded<T> { records: T[]; more: boolean }
 export type StreamName = 'runs' | 'occurrences'
+/** An entry of Runner's journal, at its place in the order Runner served the journal. */
+export interface JournalRow { key: string; kind: 'journal'; entry: JournalEntry; place: number }
 export interface Merged {
+  /** The record rows shown, in the order they are shown. */
   rows: ActivityRow[]
+  /** Every row shown, records and journal entries together, newest first. */
+  shown: (ActivityRow | JournalRow)[]
   /** Loaded rows older than a record not yet loaded could be. */
   held: number
   /** The lists whose next page moves the boundary. */
   limiting: StreamName[]
 }
 
-const newestFirst = (a: ActivityRow, b: ActivityRow) => b.when.time - a.when.time || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)
+/**
+ * Where a row stands, newest first: in Runner's order (`[1, place]`), or before
+ * the journal (`[0, time]`). A journal entry stands at its place in the journal;
+ * a record at the place of the entry that created it, just above that entry;
+ * a record the journal holds no creation for (made before the journal began, or
+ * read without a journal) by the time Runner first recorded it, as it was before
+ * the journal. Nothing compares a record's time with an entry's.
+ */
+type Place = readonly [number, number]
+const newer = (a: Place, b: Place) => b[0] - a[0] || b[1] - a[1]
+const lowest = (a: Place, b: Place) => newer(a, b) < 0 ? b : a
+const NOTHING_SHOWN: Place = [Infinity, Infinity]
 
-export function mergeActivity(streams: { runs?: Loaded<Run>; occurrences?: Loaded<Occurrence> }, keep: (row: ActivityRow) => boolean = () => true): Merged {
+export function mergeActivity(streams: { runs?: Loaded<Run>; occurrences?: Loaded<Occurrence> }, keep: (row: ActivityRow) => boolean = () => true, journal?: { entries: JournalEntry[]; show: boolean }): Merged {
   const built: Record<StreamName, ActivityRow[]> = {
     runs: rowsOf(streams.runs?.records.map(runRow)),
     occurrences: rowsOf(streams.occurrences?.records.map(occurrenceRow))
   }
+  const created = creations(journal?.entries ?? [])
+  const place = (row: ActivityRow): Place => { const at = created.get(row.key); return at === undefined ? [0, row.when.time] : [1, at + 0.5] }
   // A list with more pages holds back every row older than its oldest loaded
-  // record. One whose loaded records carry no readable time holds back all.
-  const floors: Partial<Record<StreamName, number>> = {}
-  let boundary = -Infinity
+  // record: a record not yet loaded was made before it, and so was the entry
+  // that created it. The oldest record's own creation entry is not held. A
+  // list whose loaded records carry no readable time holds back all.
+  const floors: Partial<Record<StreamName, Place>> = {}
+  let boundary: Place = [-Infinity, -Infinity]
   for (const name of ['runs', 'occurrences'] as const) {
     if (!streams[name]?.more) continue
-    const floor = built[name].reduce((oldest, row) => Math.min(oldest, row.when.time), Infinity)
+    const floor = built[name].reduce<Place>((oldest, row) => { const at = place(row); return lowest(oldest, at[0] === 1 ? [1, at[1] - 0.5] : at) }, NOTHING_SHOWN)
     floors[name] = floor
-    boundary = Math.max(boundary, floor)
+    boundary = newer(boundary, floor) > 0 ? floor : boundary
   }
-  const all = [...built.runs, ...built.occurrences].filter(keep).sort(newestFirst)
-  const rows = all.filter(row => row.when.time >= boundary)
-  return { rows, held: all.length - rows.length, limiting: (['runs', 'occurrences'] as const).filter(name => floors[name] === boundary) }
+  const placed: { row: ActivityRow | JournalRow; at: Place }[] = [...built.runs, ...built.occurrences].filter(keep).map(row => ({ row, at: place(row) }))
+  if (journal?.show) journal.entries.forEach((entry, at) => placed.push({ row: { key: `journal:${at}`, kind: 'journal', entry, place: at }, at: [1, at] }))
+  placed.sort((a, b) => newer(a.at, b.at) || (a.row.key < b.row.key ? -1 : a.row.key > b.row.key ? 1 : 0))
+  const shown = placed.filter(item => newer(item.at, boundary) <= 0).map(item => item.row)
+  return {
+    rows: shown.filter((row): row is ActivityRow => row.kind !== 'journal'),
+    shown,
+    held: placed.length - shown.length,
+    limiting: (['runs', 'occurrences'] as const).filter(name => floors[name]?.[0] === boundary[0] && floors[name]?.[1] === boundary[1])
+  }
 }
 function rowsOf(rows: (ActivityRow | undefined)[] | undefined): ActivityRow[] {
   return (rows ?? []).filter((row): row is ActivityRow => row !== undefined)
