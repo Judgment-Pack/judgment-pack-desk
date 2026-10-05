@@ -9,7 +9,7 @@ vi.mock('./client',()=>({jobsAPI:vi.fn()}))
 vi.mock('./drafts',async original=>({...await original<typeof import('./drafts')>(),useJobDrafts:()=>({data:[{draft:{id:'draft-one',updatedAt:'2026-09-26T12:00:00Z',values:{name:'Policy review',packId:'policy'}}}],isPending:false})}))
 beforeEach(()=>vi.mocked(jobsAPI).mockResolvedValue({items:[]}))
 afterEach(()=>{cleanup();vi.clearAllMocks()})
-function show(){render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><Tooltip.Provider><MemoryRouter initialEntries={['/jobs']}><JobsContent/></MemoryRouter></Tooltip.Provider></QueryClientProvider>)}
+function show(path='/jobs'){render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><Tooltip.Provider><MemoryRouter initialEntries={[path]}><JobsContent/></MemoryRouter></Tooltip.Provider></QueryClientProvider>)}
 it('shows drafts in the job table, with a badge and compact resume action instead of a second list',async()=>{
  show();const table=await screen.findByRole('table')
  expect(within(table).getByText('Draft')).toBeTruthy()
@@ -25,4 +25,13 @@ it('keeps runnable jobs and saved drafts in the same table',async()=>{
  expect(screen.getAllByRole('table')).toHaveLength(1)
  expect(screen.getByRole('link',{name:'Run'}).getAttribute('href')).toBe('/jobs/job-one?run=new')
  expect(screen.getByText('Draft')).toBeTruthy()
+})
+// The runner's chain of runs is the desk's, not one job's: its download sits
+// under Jobs | Runs on both tabs.
+it('offers the runner’s chain of runs on the Jobs and the Runs tab',async()=>{
+ for(const path of ['/jobs','/jobs/runs']){
+  show(path);await screen.findByRole('navigation',{name:'Jobs'})
+  expect(screen.getByRole('button',{name:'Download the runner’s chain of runs'}),path).toBeTruthy()
+  cleanup()
+ }
 })

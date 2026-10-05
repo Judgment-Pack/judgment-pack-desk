@@ -21,7 +21,7 @@ import { useBriefSubject } from '../briefs/context'
 import { useEffect, useRef, useState } from 'react'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { msg, useLocale, formatDate } from '../i18n'
+import { msg, systemMessage, useLocale, formatDate } from '../i18n'
 import { PageHeader, PageBody } from '../ui/PageLayout'
 import { Button, ButtonLink } from '../ui/Button'
 import { Input } from '../ui/Input'
@@ -68,6 +68,7 @@ function JobsIndex() {
   return <>
     <PageHeader variant="collection" title={msg('Jobs')} navigation={<nav className={styles.tabs} aria-label={msg('Jobs')}><Link to="/jobs" aria-current={!allRuns?'page':undefined}>{msg('Jobs')}</Link><Link to="/jobs/runs" aria-current={allRuns?'page':undefined}>{msg('Runs')}</Link></nav>} actions={<ButtonLink to="/jobs/new" variant="primary">{msg('Create job')}</ButtonLink>}/>
     <PageBody width="full"><div className={styles.stack}>
+      <RunChainDownload/>
       {showToolbar&&<div className={styles.toolbar}><Input className={styles.search} aria-label={allRuns?msg('Search runs'):msg('Search jobs')} placeholder={allRuns?msg('Search runs…'):msg('Search jobs…')} value={search} onChange={e=>setSearch(e.target.value)}/>{allRuns&&<><Select id="jobs-execution-filter" aria-label={msg('Execution')} value={state} options={[{value:'all',label:msg('All executions')},...(['queued','running','completed','failed','interrupted'] as const).map(value=>({value,label:stateLabel(value)}))]} onValueChange={setState}/><label className="checkbox"><input type="checkbox" checked={review} onChange={e=>setReview(e.target.checked)}/>{msg('Needs attention')}</label></>}</div>}
       <Problem error={list.error}/>{list.isPending&&<p role="status">{msg('Loading…')}</p>}
       {!list.isPending&&!list.error&&!hasRows&&(allRuns||!drafts.isPending)&&<section className={styles.empty} role="status"><h2>{filtered?msg('No matches'):allRuns?msg('No runs yet'):msg('No jobs yet')}</h2><p>{filtered?msg('Try another search or clear the filters.'):allRuns?msg('Run a job to see its results and history here.'):msg('Create a job to run a saved pack manually, on a schedule, or when an event arrives.')}</p></section>}
@@ -288,29 +289,95 @@ function RunView({ runId }: { runId: string }) {
   </>
 }
 
-/** The version of a verification export, read from the export itself. Runner
- answers version 2 for a run that holds no bytes of its audit record, whatever
- was asked for, so what was asked for does not say what was saved. */
-function exportVersion(text: string): 2 | 3 | undefined {
- try { const version=(JSON.parse(text) as {version?: unknown} | null)?.version; return version===2||version===3 ? version : undefined } catch { return undefined }
+type ExportVersion = 2 | 3 | 4 | 5
+/** A verification export's version, read from the export itself, and for
+ version 4 or 5 the sequence of the run's entry in the runner's chain of runs.
+ Desk asks for version 5, and Runner answers an earlier one where the run lacks
+ what a later one carries: version 4 for a run whose record is unsigned, 3 for
+ a run recorded before Runner chained its runs, 2 for one that holds no exact
+ bytes of its record. What was asked for does not say what was saved. */
+function readExport(text: string): {version: ExportVersion, sequence?: number} | undefined {
+ try {
+  const value=JSON.parse(text) as {version?: unknown, chain?: {entry?: unknown}} | null, version=value?.version
+  if(version===2||version===3) return {version}
+  if(version!==4&&version!==5) return undefined
+  // A version that carries a chain entry is named only with the entry's
+  // sequence: without one, the clause naming the entry would not be true.
+  const sequence=entrySequence(value?.chain?.entry)
+  return sequence===undefined ? undefined : {version, sequence}
+ } catch { return undefined }
+}
+
+/** The sequence the run's chain entry names. The entry is its line's exact
+ bytes in base64, one JSON object. It is read, not checked: nothing here holds
+ it to the record, to the checkpoint beside it, or to the chain. */
+function entrySequence(entry: unknown): number | undefined {
+ if(typeof entry!=='string') return undefined
+ const line=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Uint8Array.from(atob(entry),c=>c.charCodeAt(0)))) as {sequence?: unknown} | null
+ const sequence=line?.sequence
+ return typeof sequence==='number'&&Number.isSafeInteger(sequence)&&sequence>0 ? sequence : undefined
+}
+
+/** What a saved export carries, one clause for each version. */
+function exportSentence(file: string, version: ExportVersion) {
+ switch(version) {
+  case 2: return msg('Saved {{file}}: export version 2, which carries no exact bytes of the audit record to compare with a gateway receipt.', {file})
+  case 3: return msg('Saved {{file}}: export version 3, with the audit record’s exact bytes. Their digest, which verify-run reports as recordDigest, can be compared with a gateway receipt’s decision.recordDigest; verify-run does not make that comparison.', {file})
+  case 4: return msg('Saved {{file}}: export version 4, with the audit record’s exact bytes and the run’s chain entry and checkpoint; unsigned. The bytes’ digest, which verify-run reports as recordDigest, can be compared with a gateway receipt’s decision.recordDigest; verify-run does not make that comparison.', {file})
+  case 5: return msg('Saved {{file}}: export version 5, with the audit record’s exact bytes, the run’s chain entry and checkpoint, and the record’s signatures, not checked here. The bytes’ digest, which verify-run reports as recordDigest, can be compared with a gateway receipt’s decision.recordDigest; verify-run does not make that comparison.', {file})
+ }
 }
 
 export function VerificationDownload({runId}: {runId: string}) {
- const [error,setError]=useState<unknown>(), [busy,setBusy]=useState(false), [saved,setSaved]=useState<{file: string, version: 2 | 3}>()
+ const [error,setError]=useState<unknown>(), [busy,setBusy]=useState(false), [saved,setSaved]=useState<{file: string, version: ExportVersion, sequence?: number}>()
  async function download() {
   setBusy(true);setError(undefined);setSaved(undefined)
   try {
-   const response=await deskFetch(`/api/operations/runs/${runId}/verification?version=3`)
+   const response=await deskFetch(`/api/operations/runs/${runId}/verification?version=5`)
    if(!response.ok) throw Error(msg('The local runner could not complete this request.'))
    // Saved as Runner sent it, byte for byte: nothing here encodes the export again.
-   const blob=await response.blob(), version=exportVersion(await blob.text())
-   if(!version) throw Error(msg('The local runner could not complete this request.'))
-   const file=`${runId}-verification-v${version}.json`, url=URL.createObjectURL(blob), a=document.createElement('a')
+   const blob=await response.blob(), standing=readExport(await blob.text())
+   if(!standing) throw Error(msg('The local runner could not complete this request.'))
+   const file=`${runId}-verification-v${standing.version}.json`, url=URL.createObjectURL(blob), a=document.createElement('a')
    a.href=url;a.download=file;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)
-   setSaved({file,version})
+   setSaved({file,...standing})
   } catch(e){setError(e)} finally {setBusy(false)}
  }
  return <div className={styles.field}><div><Button disabled={busy} onClick={()=>void download()}>{msg('Download verification record')}</Button></div>
-  {saved && <p role="status" className={styles.note}>{saved.version===3 ? msg('Saved {{file}}: export version 3, with the audit record’s exact bytes. Their digest, which verify-run reports as recordDigest, can be compared with a gateway receipt’s decision.recordDigest; verify-run does not make that comparison.', {file: saved.file}) : msg('Saved {{file}}: export version 2, which carries no exact bytes of the audit record to compare with a gateway receipt.', {file: saved.file})}</p>}
+  {saved && <div role="status" className={`${styles.field} ${styles.note}`}><p>{exportSentence(saved.file, saved.version)}</p>
+   <p>{saved.sequence===undefined ? msg('Runner’s chain of runs: no chain entry in this export.') : msg('Runner’s chain of runs: chain entry {{sequence}}, not checked.', {sequence: String(saved.sequence)})}</p></div>}
+  <Problem error={error}/></div>
+}
+
+const RUN_CHAIN_FILE='run-chain.jsonl'
+/** Why Desk or the runner refused, in their words where they gave any. */
+async function refusalText(response: Response) {
+ try {
+  const said=(await response.json() as {error?: unknown} | null)?.error
+  const text=typeof said==='string' ? said : (said as {message?: unknown} | null | undefined)?.message
+  if(typeof text==='string'&&text) return systemMessage(text)
+ } catch { /* Not a refusal Desk or the runner wrote. */ }
+ return msg('The local runner could not complete this request.')
+}
+
+/** The runner's whole chain of runs, saved as the runner sent it: Desk passes
+ it on untouched, or fails it whole, and nothing here reads or checks it. */
+export function RunChainDownload() {
+ const [error,setError]=useState<unknown>(), [busy,setBusy]=useState(false), [chainSaved,setChainSaved]=useState(false)
+ async function download() {
+  setBusy(true);setError(undefined);setChainSaved(false)
+  try {
+   const response=await deskFetch('/api/operations/run-chain')
+   if(!response.ok) throw Error(await refusalText(response))
+   // The whole answer or nothing: a transfer that ends early rejects here,
+   // before anything is saved.
+   const chain=await response.blob(), href=URL.createObjectURL(chain), link=document.createElement('a')
+   link.href=href;link.download=RUN_CHAIN_FILE;link.click();setTimeout(()=>URL.revokeObjectURL(href),1000)
+   setChainSaved(true)
+  } catch(e){setError(e)} finally {setBusy(false)}
+ }
+ return <div className={styles.field}><div className={styles.actions}><Button variant="quiet" disabled={busy} onClick={()=>void download()}>{msg('Download the runner’s chain of runs')}</Button>
+  <span className={styles.note}>{msg('The file is the runner’s whole chain of runs, byte for byte as the runner sent it, unverified here.')}</span></div>
+  {chainSaved && <p role="status" className={styles.note}>{msg('Saved {{file}}.', {file: RUN_CHAIN_FILE})}</p>}
   <Problem error={error}/></div>
 }

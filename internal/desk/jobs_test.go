@@ -1,13 +1,16 @@
 package desk
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -547,14 +550,17 @@ func TestJobsForwardsVerificationVersionOnlyOnItsRoute(t *testing.T) {
 	run := "runs/run_" + strings.Repeat("0", 32)
 	job := "jobs/job_" + strings.Repeat("0", 32)
 	for _, tc := range []struct{ tail, query, runner string }{
+		{run + "/verification", "version=5", "/v1/" + run + "/verification?version=5"},
+		{run + "/verification", "version=4", "/v1/" + run + "/verification?version=4"},
 		{run + "/verification", "version=3", "/v1/" + run + "/verification?version=3"},
 		{run + "/verification", "version=2", "/v1/" + run + "/verification?version=2"},
 		{run + "/verification", "", "/v1/" + run + "/verification"},
-		{run + "/verification", "untrusted=ignored&version=3", "/v1/" + run + "/verification?version=3"},
-		{run, "version=3", "/v1/" + run},
-		{run + "/briefs", "version=3", "/v1/" + run + "/briefs"},
-		{job + "/runs", "after=40&version=3", "/v1/" + job + "/runs?after=40"},
-		{"runs", "version=3&version=2", "/v1/runs"},
+		{run + "/verification", "untrusted=ignored&version=5", "/v1/" + run + "/verification?version=5"},
+		{run, "version=5", "/v1/" + run},
+		{run + "/briefs", "version=5", "/v1/" + run + "/briefs"},
+		{job + "/runs", "after=40&version=5", "/v1/" + job + "/runs?after=40"},
+		{"runs", "version=5&version=4", "/v1/runs"},
+		{"run-chain", "version=5", "/v1/run-chain"},
 	} {
 		r := httptest.NewRequest("GET", "/api/operations/"+tc.tail+"?"+tc.query, nil)
 		w := httptest.NewRecorder()
@@ -568,8 +574,8 @@ func TestJobsForwardsVerificationVersionOnlyOnItsRoute(t *testing.T) {
 	}
 }
 
-// Desk forwards a version only when the request asks once for 2 or 3, in a
-// query that parses. Otherwise it refuses the request itself, and nothing
+// Desk forwards a version only when the request asks once for 2, 3, 4 or 5,
+// in a query that parses. Otherwise it refuses the request itself, and nothing
 // reaches Runner: a lenient reading would forward one of repeated values, or
 // the one value left after dropping a malformed pair.
 func TestJobsRefusesAnyOtherVerificationVersion(t *testing.T) {
@@ -586,21 +592,26 @@ func TestJobsRefusesAnyOtherVerificationVersion(t *testing.T) {
 		"version=3&version=2",
 		"version=2&version=3",
 		"version=3&version=3",
+		"version=5&version=4",
+		"version=5&version=5",
 		"version=",
 		"version",
-		"version=4",
-		"version=03",
-		"version=3%20",
-		"version=v3",
-		"version=%zz&version=3",
-		"version=3&other=%zz",
-		"version=3;other=1",
+		"version=1",
+		"version=6",
+		"version=05",
+		"version=5%20",
+		"version=v5",
+		"version=five",
+		"version=4.0",
+		"version=%zz&version=5",
+		"version=5&other=%zz",
+		"version=5;other=1",
 	} {
 		forwarded = 0
 		r := httptest.NewRequest("GET", "/api/operations/"+tail+"?"+query, nil)
 		w := httptest.NewRecorder()
 		s.proxyJobs(w, r, tail, "")
-		if w.Code != 400 || forwarded != 0 || !strings.Contains(w.Body.String(), "version 2 or 3") {
+		if w.Code != 400 || forwarded != 0 || !strings.Contains(w.Body.String(), "version 2, 3, 4 or 5") {
 			t.Errorf("%s: %d %s, forwarded %d", query, w.Code, w.Body, forwarded)
 		}
 	}
@@ -647,6 +658,187 @@ func TestJobsReadsAnExportUpToRunnersLimit(t *testing.T) {
 		}
 		if tc.status == 200 && w.Body.Len() != tc.size {
 			t.Errorf("%s: relayed %d of %d bytes", tc.tail, w.Body.Len(), tc.size)
+		}
+	}
+}
+
+// Runner's chain of runs reaches the page as Runner sent it: the same bytes,
+// its own type, and no query of the caller's. A refusal of Runner's passes
+// through with its status and type.
+func TestJobsPassesTheRunChainThroughUntouched(t *testing.T) {
+	// Two lines as Runner ends them, and bytes that are not UTF-8 nor JSON: a
+	// relay that decoded, re-encoded or trimmed the answer would change them.
+	chain := []byte(`{"entryVersion":"1","trail":"` + strings.Repeat("a", 32) + `","sequence":1,"previous":"sha256:` + strings.Repeat("0", 64) + `","kind":"run","run":"run_` + strings.Repeat("1", 32) + `","auditDigest":"sha256:` + strings.Repeat("2", 64) + `"}` + "\n" +
+		"{\"sequence\":2, \"note\":\"\xff\xfe\\u0026\"}  \n")
+	type answer struct {
+		status      int
+		contentType []string
+		body        []byte
+	}
+	var serve answer
+	requests := make(chan *http.Request, 1)
+	companion := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests <- r
+		w.Header()["Content-Type"] = serve.contentType
+		w.WriteHeader(serve.status)
+		w.Write(serve.body)
+	}))
+	defer companion.Close()
+	s := &Server{jobs: &jobsCompanion{url: companion.URL, token: "test-private", done: make(chan struct{})}}
+	refusal := []byte(`{"error":{"code":"store_error","message":"The run store could not be read.","retryable":true}}` + "\n")
+	for _, tc := range []struct {
+		name, query string
+		serve       answer
+		wantType    []string
+	}{
+		{"the chain", "", answer{200, []string{"application/jsonl"}, chain}, []string{"application/jsonl"}},
+		{"the chain, asked with a query", "after=40&q=x&version=5", answer{200, []string{"application/jsonl"}, chain}, []string{"application/jsonl"}},
+		{"an empty chain", "", answer{200, []string{"application/jsonl"}, nil}, []string{"application/jsonl"}},
+		{"a refusal", "", answer{500, []string{"application/json"}, refusal}, []string{"application/json"}},
+		{"no type", "", answer{200, nil, chain}, nil},
+	} {
+		serve = tc.serve
+		r := httptest.NewRequest("GET", "/api/operations/run-chain?"+tc.query, nil)
+		w := httptest.NewRecorder()
+		s.proxyJobs(w, r, "run-chain", "")
+		got := <-requests
+		if got.Method != "GET" || got.URL.RequestURI() != "/v1/run-chain" || got.Header.Get("Authorization") != "Bearer test-private" {
+			t.Errorf("%s: forwarded %s %s", tc.name, got.Method, got.URL.RequestURI())
+		}
+		if w.Code != tc.serve.status || !bytes.Equal(w.Body.Bytes(), tc.serve.body) {
+			t.Errorf("%s: %d %q, want %d %q", tc.name, w.Code, w.Body.Bytes(), tc.serve.status, tc.serve.body)
+		}
+		if gotType := w.Result().Header.Values("Content-Type"); !slices.Equal(gotType, tc.wantType) {
+			t.Errorf("%s: Content-Type %q, want %q", tc.name, gotType, tc.wantType)
+		}
+	}
+}
+
+// The chain is passed on whole or not at all. Past Desk's bound it is refused,
+// never cut to the bound, and up to it every byte is passed on.
+func TestJobsRefusesARunChainPastItsBound(t *testing.T) {
+	// 65,536 entries of the longest line Runner writes, and its newline.
+	if runChainLimit != 65536*1025 {
+		t.Fatal("the chain's bound is 65,536 lines of 1025 bytes, not", runChainLimit)
+	}
+	var chain []byte
+	companion := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/jsonl")
+		w.Write(chain)
+	}))
+	defer companion.Close()
+	s := &Server{jobs: &jobsCompanion{url: companion.URL, token: "test-private", done: make(chan struct{})}}
+	for _, tc := range []struct {
+		size, status int
+	}{
+		{runChainLimit, 200},
+		{runChainLimit + 1, 502},
+	} {
+		line := append(bytes.Repeat([]byte("a"), 1024), '\n')
+		chain = append(bytes.Repeat(line, tc.size/len(line)), bytes.Repeat([]byte("b"), tc.size%len(line))...)
+		r := httptest.NewRequest("GET", "/api/operations/run-chain", nil)
+		w := httptest.NewRecorder()
+		s.proxyJobs(w, r, "run-chain", "")
+		if w.Code != tc.status {
+			t.Errorf("%d bytes: %d, want %d", tc.size, w.Code, tc.status)
+		}
+		switch {
+		case tc.status == 200 && !bytes.Equal(w.Body.Bytes(), chain):
+			t.Errorf("%d bytes: relayed %d bytes that are not the chain", tc.size, w.Body.Len())
+		case tc.status != 200 && (bytes.Contains(w.Body.Bytes(), line) || w.Header().Get("Content-Type") != "application/json"):
+			t.Errorf("%d bytes: a refusal carried the chain, or another type: %s %.80q", tc.size, w.Header().Get("Content-Type"), w.Body.Bytes())
+		}
+	}
+}
+
+// A transfer that ends early is an error, never a shorter chain: Runner
+// aborts the chain on a page it cannot read after the answer has begun, and a
+// closed connection leaves a body short of its length or its last chunk.
+func TestJobsAnAbortedRunChainIsAnError(t *testing.T) {
+	page := `{"sequence":1}` + "\n"
+	raw := func(response string) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			connection, buffered, err := http.NewResponseController(w).Hijack()
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			buffered.WriteString(response)
+			buffered.Flush()
+			connection.Close()
+		}
+	}
+	for _, tc := range []struct {
+		name   string
+		runner http.HandlerFunc
+	}{
+		{"aborted as Runner aborts it", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/jsonl")
+			w.WriteHeader(200)
+			w.Write([]byte(page))
+			http.NewResponseController(w).Flush()
+			panic(http.ErrAbortHandler)
+		}},
+		{"closed short of its length", raw("HTTP/1.1 200 OK\r\nContent-Type: application/jsonl\r\nContent-Length: 1000\r\n\r\n" + page)},
+		{"closed before its last chunk", raw("HTTP/1.1 200 OK\r\nContent-Type: application/jsonl\r\nTransfer-Encoding: chunked\r\n\r\n" + strconv.FormatInt(int64(len(page)), 16) + "\r\n" + page + "\r\n")},
+	} {
+		companion := httptest.NewUnstartedServer(tc.runner)
+		// The server's own note of a hijacked or aborted answer is not this test's.
+		companion.Config.ErrorLog = log.New(io.Discard, "", 0)
+		companion.Start()
+		s := &Server{jobs: &jobsCompanion{url: companion.URL, token: "test-private", done: make(chan struct{})}}
+		r := httptest.NewRequest("GET", "/api/operations/run-chain", nil)
+		w := httptest.NewRecorder()
+		s.proxyJobs(w, r, "run-chain", "")
+		companion.Close()
+		if w.Code != 502 || strings.Contains(w.Body.String(), page) || w.Header().Get("Content-Type") != "application/json" {
+			t.Errorf("%s: %d %s %q", tc.name, w.Code, w.Header().Get("Content-Type"), w.Body)
+		}
+	}
+}
+
+// The chain has its own route, read with GET alone. Another method on it, or a
+// path that only begins with it, is not a Jobs operation and reaches nothing.
+func TestJobsReadsTheRunChainOnItsRouteAlone(t *testing.T) {
+	var forwarded []string
+	companion := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		forwarded = append(forwarded, r.Method+" "+r.URL.RequestURI())
+		w.Header().Set("Content-Type", "application/jsonl")
+		w.Write([]byte("{}\n"))
+	}))
+	defer companion.Close()
+	s, _ := newTestServer(t, false)
+	s.jobs = &jobsCompanion{url: companion.URL, token: "test-private", done: make(chan struct{}), stop: make(chan struct{})}
+	// The fake has no process to stop.
+	t.Cleanup(func() { s.jobs.closed = true })
+	call := func(method, path string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, nil)
+		r.Header.Set("Authorization", "Bearer "+testToken)
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		return w
+	}
+	if w := call("GET", "/api/operations/run-chain"); w.Code != 200 || w.Body.String() != "{}\n" || w.Header().Get("Content-Type") != "application/jsonl" || !slices.Equal(forwarded, []string{"GET /v1/run-chain"}) {
+		t.Fatalf("the chain was not read: %d %s %q, forwarded %q", w.Code, w.Header().Get("Content-Type"), w.Body, forwarded)
+	}
+	for _, tc := range []struct{ method, path string }{
+		{"POST", "/api/operations/run-chain"},
+		{"PUT", "/api/operations/run-chain"},
+		{"PATCH", "/api/operations/run-chain"},
+		{"DELETE", "/api/operations/run-chain"},
+		{"HEAD", "/api/operations/run-chain"},
+		{"GET", "/api/operations/run-chain/"},
+		{"GET", "/api/operations/run-chain/1"},
+		{"GET", "/api/operations/run-chain%2F1"},
+		{"GET", "/api/operations/run-chain.jsonl"},
+		{"GET", "/api/operations/run-chains"},
+		{"GET", "/api/operations/Run-Chain"},
+		{"GET", "/api/operations/runs/run-chain"},
+		{"GET", "/api/operations/run-chain/verification"},
+	} {
+		forwarded = nil
+		if w := call(tc.method, tc.path); w.Code < 300 || len(forwarded) != 0 {
+			t.Errorf("%s %s: %d, forwarded %q", tc.method, tc.path, w.Code, forwarded)
 		}
 	}
 }

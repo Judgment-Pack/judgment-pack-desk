@@ -3693,5 +3693,11 @@
   "Saved {{file}}.": "{{file}}을(를) 저장했습니다.",
   "The file could not be downloaded. Please try again.": "파일을 다운로드하지 못했습니다. 다시 시도해 주세요.",
   "This expectation names a disposition no pack can produce, so the expectation must change, not the draft: {{detail}}": "이 예상 결과는 어떤 팩도 만들 수 없는 판정을 지정하므로, 초안이 아니라 예상 결과를 변경해야 합니다: {{detail}}",
-  "The runtime did not admit this expectation: {{detail}}": "런타임이 이 예상 결과를 받아들이지 않았습니다: {{detail}}"
+  "The runtime did not admit this expectation: {{detail}}": "런타임이 이 예상 결과를 받아들이지 않았습니다: {{detail}}",
+  "Download the runner’s chain of runs": "실행기의 실행 체인 다운로드",
+  "Runner’s chain of runs: chain entry {{sequence}}, not checked.": "실행기의 실행 체인: 체인 항목 {{sequence}}, 확인하지 않음.",
+  "Runner’s chain of runs: no chain entry in this export.": "실행기의 실행 체인: 이 내보내기에는 체인 항목이 없습니다.",
+  "Saved {{file}}: export version 4, with the audit record’s exact bytes and the run’s chain entry and checkpoint; unsigned. The bytes’ digest, which verify-run reports as recordDigest, can be compared with a gateway receipt’s decision.recordDigest; verify-run does not make that comparison.": "{{file}}을(를) 저장했습니다. 내보내기 버전 4이며, 감사 기록의 정확한 바이트와 실행의 체인 항목 및 체크포인트가 들어 있습니다. 서명은 없습니다. verify-run이 recordDigest로 보고하는 그 바이트의 다이제스트는 게이트웨이 수신 확인서의 decision.recordDigest와 비교할 수 있지만, verify-run은 이 비교를 하지 않습니다.",
+  "Saved {{file}}: export version 5, with the audit record’s exact bytes, the run’s chain entry and checkpoint, and the record’s signatures, not checked here. The bytes’ digest, which verify-run reports as recordDigest, can be compared with a gateway receipt’s decision.recordDigest; verify-run does not make that comparison.": "{{file}}을(를) 저장했습니다. 내보내기 버전 5이며, 감사 기록의 정확한 바이트, 실행의 체인 항목과 체크포인트, 기록의 서명이 들어 있습니다. 서명은 여기서 확인하지 않았습니다. verify-run이 recordDigest로 보고하는 그 바이트의 다이제스트는 게이트웨이 수신 확인서의 decision.recordDigest와 비교할 수 있지만, verify-run은 이 비교를 하지 않습니다.",
+  "The file is the runner’s whole chain of runs, byte for byte as the runner sent it, unverified here.": "이 파일은 실행기가 보낸 바이트 그대로의 실행기 실행 체인 전체이며, 여기서는 검증하지 않았습니다."
 }

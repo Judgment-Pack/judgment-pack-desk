@@ -5710,6 +5710,18 @@ or a named source. Source configuration opens in Details. Advanced rules and
 request templates remain available as JSON. See [the Mapping v2 workflow](docs/design/jobs-mapping-v2.md) for setup,
 verification, compatibility and remaining scope.
 
+A completed Mapping v2 run offers **Download verification record**. Desk asks
+Runner for export version 5 and saves the answer byte for byte as
+`<run>-verification-v<N>.json`, named for the version Runner answered: 5 with the
+record's signatures, 4 for an unsigned record, 3 for a run with no chain entry,
+2 for one without the record's exact bytes. The page says what that version
+carries and, for 4 or 5, which chain entry the run has ("chain entry 42, not
+checked"). **Download the runner's chain of runs**, under Jobs | Runs, saves
+Runner's whole chain as `run-chain.jsonl`, exactly as Runner sent it, up to
+64 MiB; a larger chain, or a transfer that ends early, fails and saves nothing.
+Desk verifies neither file. Runner's `verify-run` reads the export, and with
+`--chain` the chain.
+
 
 ### Jobs and Runs workspace
 
