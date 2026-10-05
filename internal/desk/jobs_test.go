@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -1034,5 +1035,197 @@ func TestJobEventResultForwardsOnlyTheParsedRead(t *testing.T) {
 	s.handleJobEventResult(w, r)
 	if w.Code != 200 || len(forwarded) != 1 || forwarded[0].URL.RequestURI() != runnerRead {
 		t.Fatalf("path not built from parsed identifiers: %d %s", w.Code, w.Body)
+	}
+}
+
+// **Each desk's runs signed with Runner's own key, end to end** (ADR-0010,
+// section 5; issue #215), with the pinned Runner and runtime. A desk Desk
+// made, and the startup desk, each: its Runner starts with the key Desk keeps
+// for it, never the JPACK_SIGNING_KEY set where Desk was started; a new mapped
+// run's version-5 export carries the record's signature sidecar; and
+// `verify-run --public-key <the key desk-config reports> --require-signed`
+// passes on it. Then, with the Runner keys' folder made writable by group:
+// the runtime's own rule refuses the key in its words; Desk names no key to
+// Runner and says why, with no path; runs go on, and a new run's export is
+// version 4, which `--require-signed` refuses as unsigned.
+func TestJobsRealCompanionSignsEachDesksRuns(t *testing.T) {
+	bin, runtime := os.Getenv("JPACK_RUNNER_TEST_BIN"), os.Getenv("JPACK_BIN")
+	if bin == "" || runtime == "" {
+		t.Skip("set JPACK_RUNNER_TEST_BIN and JPACK_BIN for companion integration")
+	}
+	run := func(name string, args ...string) (string, error) {
+		t.Helper()
+		var stdout, stderr bytes.Buffer
+		cmd := exec.Command(name, args...)
+		cmd.Stdout, cmd.Stderr = &stdout, &stderr
+		err := cmd.Run()
+		return stdout.String() + stderr.String(), err
+	}
+	// A key of the owner's, set where Desk is started: never Runner's.
+	owner := t.TempDir()
+	if err := os.Chmod(owner, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	inherited := filepath.Join(owner, "owner.seed")
+	if out, err := run(runtime, "audit", "key", "generate", inherited, "--format", "json"); err != nil {
+		t.Fatalf("the runtime made no key: %v %s", err, out)
+	}
+	ownerPublic, err := run(runtime, "audit", "key", "public", inherited)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("JPACK_SIGNING_KEY", inherited)
+
+	config, project := t.TempDir(), t.TempDir()
+	if err := os.Chmod(config, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	pack, _ := json.Marshal(`{"specVersion":"0.2.0-draft","id":"https://example.invalid/judgment-packs/scored","version":"0.1.0","title":"A scored pack","decision":{"intent":"Decide the one thing this pack decides.","question":"Does this request proceed?"},"outcomes":[{"id":"proceed","label":"Proceed"},{"id":"hold","label":"Hold"}],"rules":[{"id":"seven","description":"Proceed at seven.","when":{"op":"fact","path":"/score","operator":"equals","value":7},"outcome":"proceed","onUnknown":"escalate"}]}`)
+	// A mapping v2 input that reads the case given only.
+	input := `{"source":{"mapping":{"version":2,"case":{"facts":[{"target":"/score","source":"/score"}],"evidence":[]},"sources":[]},"case":{"score":7}}}`
+	call := func(ts *httptest.Server, desk, method, path, body string, header ...string) (int, []byte) {
+		t.Helper()
+		r, err := http.NewRequest(method, ts.URL+"/api/"+path, strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.Header.Set("Authorization", "Bearer "+testToken)
+		r.Header.Set("Content-Type", "application/json")
+		if desk != "" {
+			r.Header.Set("X-Jpack-Desk", desk)
+		}
+		for i := 0; i+1 < len(header); i += 2 {
+			r.Header.Set(header[i], header[i+1])
+		}
+		response, err := ts.Client().Do(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		data, err := io.ReadAll(response.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return response.StatusCode, data
+	}
+	runnerKey := func(ts *httptest.Server, desk string) RunnerKeyStatus {
+		t.Helper()
+		if status, data := call(ts, desk, "GET", "operations/status", ""); status != 200 {
+			t.Fatalf("the Runner of desk %q did not start: %d %s", desk, status, data)
+		}
+		status, data := call(ts, desk, "GET", "desk-config", "")
+		var answer struct {
+			Jobs struct{ RunnerKey *RunnerKeyStatus } `json:"jobs"`
+		}
+		if status != 200 || json.Unmarshal(data, &answer) != nil || answer.Jobs.RunnerKey == nil {
+			t.Fatalf("desk-config: %d %s", status, data)
+		}
+		return *answer.Jobs.RunnerKey
+	}
+	// exported completes one mapped run on desk and answers its export, as
+	// asked for at version 5, saved to a file, and the release's digest.
+	exported := func(ts *httptest.Server, desk, key string) (map[string]json.RawMessage, string, string) {
+		t.Helper()
+		status, data := call(ts, desk, "POST", "operations/previews", `{"pack":`+string(pack)+`,"input":`+input+`}`)
+		var release struct{ ID string }
+		if status != 201 || json.Unmarshal(data, &release) != nil || release.ID == "" {
+			t.Fatalf("preview: %d %s", status, data)
+		}
+		status, data = call(ts, desk, "POST", "operations/jobs", `{"name":"Signed","releaseId":"`+release.ID+`","reviewed":true}`)
+		var job struct{ ID string }
+		if status != 201 || json.Unmarshal(data, &job) != nil || job.ID == "" {
+			t.Fatalf("job: %d %s", status, data)
+		}
+		status, data = call(ts, desk, "POST", "operations/jobs/"+job.ID+"/runs", input, "Idempotency-Key", key)
+		var run struct{ ID, State string }
+		if status != 202 || json.Unmarshal(data, &run) != nil || run.ID == "" {
+			t.Fatalf("run: %d %s", status, data)
+		}
+		for deadline := time.Now().Add(60 * time.Second); run.State != "completed"; {
+			if run.State == "failed" || run.State == "interrupted" || time.Now().After(deadline) {
+				t.Fatalf("the run did not complete: %s", data)
+			}
+			time.Sleep(200 * time.Millisecond)
+			if status, data = call(ts, desk, "GET", "operations/runs/"+run.ID, ""); status != 200 || json.Unmarshal(data, &run) != nil {
+				t.Fatalf("run: %d %s", status, data)
+			}
+		}
+		status, data = call(ts, desk, "GET", "operations/runs/"+run.ID+"/verification?version=5", "")
+		var bundle map[string]json.RawMessage
+		var digest string
+		if status != 200 || json.Unmarshal(data, &bundle) != nil || json.Unmarshal(bundle["releaseDigest"], &digest) != nil {
+			t.Fatalf("export: %d %.300s", status, data)
+		}
+		file := filepath.Join(t.TempDir(), "run.json")
+		if err := os.WriteFile(file, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return bundle, file, digest
+	}
+	profiles := filepath.Join(t.TempDir(), "profiles.json")
+	if err := os.WriteFile(profiles, []byte("[]"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	verify := func(file, digest, publicKey string) (string, error) {
+		return run(bin, "verify-run", "--file", file, "--profiles", profiles, "--release-digest", digest, "--public-key", publicKey, "--require-signed")
+	}
+
+	s, ts := startDesk(t, Config{RunnerBin: bin, JpackBin: runtime, RunnerAllowUntestedReleases: true, ProjectDir: project, DeskConfigDir: config, Token: testToken})
+	named := createTestDesk(t, ts, "Named").ID
+	folder := filepath.Join(s.configDir, "secrets", "signing", "runner")
+	var startupKey string
+	for _, desk := range []string{named, ""} {
+		key := runnerKey(ts, desk)
+		startupKey = key.PublicKey
+		if key.State != "signed" || key.PublicKey == strings.TrimSpace(ownerPublic) {
+			t.Fatalf("desk %q's Runner key: %+v", desk, key)
+		}
+		bundle, file, digest := exported(ts, desk, "signed-"+desk)
+		var signed struct {
+			AuditSignatures []byte `json:"auditSignatures"`
+		}
+		if string(bundle["version"]) != "5" || json.Unmarshal(bundle["run"], &signed) != nil || len(signed.AuditSignatures) == 0 {
+			t.Fatalf("desk %q's run is not exported signed at version 5: version %s", desk, bundle["version"])
+		}
+		if out, err := verify(file, digest, key.PublicKey); err != nil || !strings.Contains(out, `"status":"signed"`) {
+			t.Fatalf("desk %q: verify-run --require-signed: %v %s", desk, err, out)
+		}
+		if out, err := verify(file, digest, strings.TrimSpace(ownerPublic)); err == nil {
+			t.Fatalf("desk %q's run verifies under the inherited key: %s", desk, out)
+		}
+	}
+	state := filepath.Base(s.jobs.dir)
+	if names := namesIn(t, folder); !slices.Equal(names, []string{named + ".keys.jsonl", named + ".seed", state + ".keys.jsonl", state + ".seed"}) && !slices.Equal(names, []string{state + ".keys.jsonl", state + ".seed", named + ".keys.jsonl", named + ".seed"}) {
+		t.Errorf("the Runner keys' folder holds %q", names)
+	}
+	ts.Close()
+	s.Close()
+
+	// The Runner keys' folder writable by group: the runtime's own rule
+	// refuses the key, in its words.
+	if err := os.Chmod(folder, 0o770); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(folder, 0o700) })
+	seed := filepath.Join(folder, state+".seed")
+	if out, err := run(runtime, "audit", "key", "public", seed, "--format", "json"); err == nil || !strings.Contains(out, "JPS-AUDIT-KEY-REFUSED") || !strings.Contains(out, "on the signing key's path can be written by its group or by other users (mode 0770) and has no sticky bit, so another user could remove or replace the key") {
+		t.Fatalf("the runtime did not refuse a key under a group-writable folder: %v %s", err, out)
+	}
+	again, againServer := startDesk(t, Config{RunnerBin: bin, JpackBin: runtime, RunnerAllowUntestedReleases: true, ProjectDir: project, DeskConfigDir: config, Token: testToken})
+	defer againServer.Close()
+	defer again.Close()
+	key := runnerKey(againServer, "")
+	if key.State != "unsigned" || key.Reason != "custody" || !strings.Contains(key.Detail, "the folder Desk keeps Runner's keys in is writable by group or others (mode 0770)") || strings.Contains(key.Detail, config) {
+		t.Fatalf("a refused key was reported %+v", key)
+	}
+	bundle, file, digest := exported(againServer, "", "unsigned")
+	if string(bundle["version"]) != "4" || bundle["run"] == nil || bytes.Contains(bundle["run"], []byte(`"auditSignatures"`)) {
+		t.Fatalf("a run without the key was exported at version %s", bundle["version"])
+	}
+	if out, err := verify(file, digest, startupKey); err == nil || !strings.Contains(out, "unsigned") {
+		t.Fatalf("verify-run --require-signed passed a run made without the key: %v %s", err, out)
+	}
+	if mode := permOf(t, folder); mode != 0o770 {
+		t.Errorf("the refused folder was changed to %v", mode)
 	}
 }

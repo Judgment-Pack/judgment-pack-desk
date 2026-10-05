@@ -253,33 +253,27 @@ func (k *runnerKey) examine(ctx context.Context) (RunnerKeyStatus, string) {
 	seedName, keysName, markerName := k.name+seedSuffix, k.name+keysSuffix, k.name+creatingSuffix
 	// **A marked key is never named.** Its creation did not finish, so it has
 	// signed nothing, and the next start of Desk removes it.
-	switch _, err := dir.root.Lstat(markerName); {
+	switch _, err := lstatRunnerKey(dir, markerName); {
 	case err == nil:
 		return unsignedRunner(runnerKeyUnfinished, ""), ""
 	case !errors.Is(err, fs.ErrNotExist):
 		return unsignedRunner(runnerKeyNotNow, "its creation marker could not be inspected"), ""
 	}
-	seed, err := dir.root.Lstat(seedName)
+	seed, err := lstatRunnerKey(dir, seedName)
 	if errors.Is(err, fs.ErrNotExist) {
 		// **Made only where nothing is kept.** A list without its seed is a
 		// lost key, and is said; nothing is made in its place.
-		_, listErr := dir.root.Lstat(keysName)
+		_, listErr := lstatRunnerKey(dir, keysName)
 		switch {
 		case listErr == nil:
 			return unsignedRunner(runnerKeyLost, ""), ""
 		case !errors.Is(listErr, fs.ErrNotExist):
 			return unsignedRunner(runnerKeyNotNow, "its list of public keys could not be inspected"), ""
 		}
-		made, err := generateDeskKey(ctx, s.cfg.JpackBin, project, dir, k.name)
-		if err != nil {
-			why := strings.TrimPrefix(err.Error(), "the runtime did not generate its signing key: ")
-			return unsignedRunner(runnerKeyNotMade, s.runnerKeyWords(why, k.name, false)), ""
+		if status, made := k.make(ctx, project, dir); !made {
+			return status, ""
 		}
-		if err := made.settle(); err != nil {
-			s.log.Printf("desk: Runner's new signing key keeps its creation marker, so it is not named to Runner; the next start removes it: %s", s.runnerKeyWords(err.Error(), k.name, true))
-			return unsignedRunner(runnerKeyUnfinished, ""), ""
-		}
-		seed, err = dir.root.Lstat(seedName)
+		seed, err = lstatRunnerKey(dir, seedName)
 	}
 	if err != nil {
 		return unsignedRunner(runnerKeyNotNow, "the key could not be inspected"), ""
@@ -313,6 +307,24 @@ func (k *runnerKey) examine(ctx context.Context) (RunnerKeyStatus, string) {
 		return unsignedRunner(runnerKeyNotUsed, "the key is not at the path Runner would be given"), ""
 	}
 	return RunnerKeyStatus{State: runnerKeySigned, PublicKey: public.PublicKey, KeyID: public.KeyID}, path
+}
+
+// make has the runtime make the key in dir, through generateDeskKey, and
+// removes its creation marker; or says why there is no key to name.
+func (k *runnerKey) make(ctx context.Context, project heldDir, dir *signingDir) (RunnerKeyStatus, bool) {
+	s := k.s
+	made, err := generateDeskKey(ctx, s.cfg.JpackBin, project, dir, k.name)
+	if err != nil {
+		why := strings.TrimPrefix(err.Error(), "the runtime did not generate its signing key: ")
+		return unsignedRunner(runnerKeyNotMade, s.runnerKeyWords(why, k.name, false)), false
+	}
+	// **Named only once its marker is gone.** A marker that stays marks a key
+	// that never signed anything, which the next start of Desk removes.
+	if err := made.settle(); err != nil {
+		s.log.Printf("desk: Runner's new signing key keeps its creation marker, so it is not named to Runner; the next start removes it: %s", s.runnerKeyWords(err.Error(), k.name, true))
+		return unsignedRunner(runnerKeyUnfinished, ""), false
+	}
+	return RunnerKeyStatus{}, true
 }
 
 // readRunnerKey is the runtime's word on the seed at path: its public half,
@@ -363,7 +375,7 @@ func (s *Server) readRunnerKey(ctx context.Context, project heldDir, path, name 
 // inspected leaves everything as it is, and is an error.
 func (k *runnerKey) sweepUnfinished(dir *signingDir) error {
 	marker := k.name + creatingSuffix
-	_, err := dir.root.Lstat(marker)
+	_, err := lstatRunnerKey(dir, marker)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
@@ -417,6 +429,22 @@ func (a *assistantStore) openRunnerSigning() (*signingDir, error) {
 	return &signingDir{root: root, path: path}, nil
 }
 
+// testHookRunnerKeyLstat runs before each inspection of a Runner key's
+// seed, list or marker, and is nil outside tests. An error it returns stands
+// for a failure to inspect that name now, such as an I/O error, so a test can
+// tell "could not be inspected" from "not there".
+var testHookRunnerKeyLstat func(name string) error
+
+// lstatRunnerKey inspects name in the folder held, not following a link.
+func lstatRunnerKey(dir *signingDir, name string) (fs.FileInfo, error) {
+	if testHookRunnerKeyLstat != nil {
+		if err := testHookRunnerKeyLstat(name); err != nil {
+			return nil, err
+		}
+	}
+	return dir.root.Lstat(name)
+}
+
 // runnerKeyRuntimeDir is the folder the runtime's key commands run in: this
 // desk's project, held, and never marked as the startup desk's, so that the
 // commands never inherit JPACK_SIGNING_KEY (`runRuntime`).
@@ -428,24 +456,31 @@ func (s *Server) runnerKeyRuntimeDir() (heldDir, bool) {
 }
 
 // runnerKeyWords is a sentence about the Runner key kept under name, with no
-// path in it. With named, Desk's own folders are named by name, as
-// custodyWords names them, and the Runner keys' folder too; then the key's
-// path, its list's and every folder on the way to them are replaced by "…",
-// whatever their spelling (`pathSpans`), and every other path from a root.
+// path in it: the key's path and its list's, whole, by "…", wherever they
+// stand and however they are spelled (`pathSpans`); with named, Desk's own
+// folders by name, as custodyWords names them, and the Runner keys' folder
+// too; then every folder on the way to the key by "…", and every other path
+// from a root.
 func (s *Server) runnerKeyWords(message, name string, named bool) string {
 	if !filepath.IsAbs(s.configDir) {
 		return withoutAbsolutePaths(message)
 	}
 	runner := filepath.Join(s.configDir, secretsDirName, signingDirName, runnerSigningDirName)
+	var files []pathSpan
+	for _, path := range []string{filepath.Join(runner, name+seedSuffix), filepath.Join(runner, name+keysSuffix)} {
+		for _, span := range pathSpans(path, false, "…") {
+			if !span.directory {
+				files = append(files, span)
+			}
+		}
+	}
+	message = replaceSpans(message, files)
 	if named {
-		message = replaceSpans(message, []pathSpan{{value: runner, with: "the folder Desk keeps Runner's keys in"}})
-		message = s.custodyWords(message)
+		message = s.custodyWords(replaceSpans(message, []pathSpan{{value: runner, with: "the folder Desk keeps Runner's keys in"}}))
 	}
 	const held = "\x00"
 	message = strings.ReplaceAll(message, held, "")
-	spans := append(pathSpans(filepath.Join(runner, name+seedSuffix), false, held), pathSpans(filepath.Join(runner, name+keysSuffix), false, held)...)
-	spans = append(spans, pathSpans(runner, true, held)...)
-	spans = append(spans, s.custodySpans("", held)...)
+	spans := append(pathSpans(runner, true, held), s.custodySpans("", held)...)
 	return strings.ReplaceAll(withoutAbsolutePaths(replaceSpans(message, spans)), held, "…")
 }
 
