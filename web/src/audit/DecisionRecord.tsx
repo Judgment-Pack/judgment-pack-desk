@@ -9,8 +9,10 @@
  * any, no held checkpoint and no stamping roots, and the panel says which.
  *
  * Beside it: the public keys Desk keeps, for the owner to hand to a holder,
- * and `packs validate`'s word on whether the key named signs this project's
- * records, in the runtime's own sentence (ADR-0010, section 1).
+ * each labelled by its place and the record it signs after; `packs
+ * validate`'s word on whether the key named signs this project's records, in
+ * the runtime's own sentence; and rotating the key, on the owner's word
+ * (ADR-0010, section 1; `RotateSigningKey`).
  *
  * It runs when the panel becomes visible and when the owner asks again: never
  * on a timer, on focus, on a reconnect or on a change to the project. The
@@ -22,15 +24,16 @@
  * With a runtime that has no audit commands, it says one sentence and nothing
  * else: no word of what that runtime cannot do is said as if it were done.
  */
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ON_REQUEST_ONLY } from '../mcp/projectChange'
 import { msg, systemMessage, useLocale } from '../i18n'
 import { Button } from '../ui/Button'
 import { CodeBlock } from '../ui/CodeBlock'
 import { SettingsSection } from '../ui/SettingsSection'
-import { AUDIT_KEY, AuditUnavailable, readAuditRecord, type AuditCoverageState, type AuditKeys, type AuditReport, type AuditSigning } from './client'
+import { AUDIT_KEY, AuditUnavailable, readAuditRecord, type AuditCoverageState, type AuditKeys, type AuditReport, type AuditRotation, type AuditSigning } from './client'
 import styles from './DecisionRecord.module.css'
+import { RotateSigningKey, type RotationOutcome } from './RotateSigningKey'
 import { TrailDownloads } from './TrailDownloads'
 
 /**
@@ -61,7 +64,16 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
   useLocale()
   const query = useAuditRecord(visible)
   const record = query.data
-  const again = <div><Button onClick={() => void query.refetch()}>{msg('Check again')}</Button></div>
+  // What a rotation answered, kept across the check run after it, which reads
+  // the keys afresh: the query is disabled and never stale, so only an
+  // explicit run reads them again, and invalidating it would run nothing. The
+  // answer goes when the owner checks again or opens the panel again, so it
+  // never stands beside a later reading it does not describe.
+  const [rotated, setRotated] = useState<RotationOutcome>()
+  useEffect(() => { if (visible) setRotated(undefined) }, [visible])
+  const rotation = (keys?: AuditKeys, rotation?: AuditRotation) => <RotateSigningKey rotation={rotation} keyCount={keys?.state === 'kept' ? keys.public.length : 0}
+    outcome={rotated} onOutcome={outcome => { setRotated(outcome); void query.refetch() }} />
+  const again = <div><Button onClick={() => { setRotated(undefined); void query.refetch() }}>{msg('Check again')}</Button></div>
   return <SettingsSection title={msg('Decision record')} description={msg('Jobs runs are recorded by the runner, not in this trail.')} variant="plain">
     <div className={styles.card} data-testid="decision-record">
       {query.isPending || query.isFetching ? <p role="status" className={styles.quiet}>{msg('Asking the runtime…')}</p>
@@ -73,6 +85,7 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
                   <p>{msg('The runtime did not check the trail.')}</p>
                   <ul className={styles.list} aria-label={msg('What the runtime said')}>{record.diagnostics.map((item, index) => <li key={index} lang="en"><code>{item.code}</code> {item.message}</li>)}</ul>
                   <SigningKey keys={record.keys} signing={record.signing} />
+                  {rotation(record.keys, record.rotation)}
                   <TrailDownloads files={record.files ?? []} />
                   {again}
                 </>
@@ -82,6 +95,7 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
                       : msg('Desk ran this on your machine, over your trail, with no keys and no checkpoints: it checked no signature, no held checkpoint and no stamp. It is not evidence to anyone who does not trust you. A holder runs the same command on a copy, with what it holds.')}</p>
                     <Report report={record.report} />
                     <SigningKey keys={record.keys} signing={record.signing} />
+                    {rotation(record.keys, record.rotation)}
                     <TrailDownloads files={record.files ?? []} />
                     {record.runtime && <p className={styles.quiet}>{msg('Checked by jpack {{version}}.', { version: record.runtime })}</p>}
                     {again}
@@ -101,7 +115,9 @@ function SigningKey({ keys, signing }: { keys?: AuditKeys; signing?: AuditSignin
     <div className={styles.card}>
       {keys?.state === 'kept' && <>
         <p className={styles.quiet}>{msg('Desk keeps this desk’s signing key in its own configuration folder, outside the project, and passed these public keys to the check, in this order. Hand them to a holder: a holder checks a copy of the trail with jpack audit verify --public-key, one file for each key, in this order.')}</p>
-        {keys.public.map((key, index) => <CodeBlock key={key.publicKey} text={key.publicKey} label={msg('Public key {{number}}, keyId {{keyId}}', { number: index + 1, keyId: key.keyId })} />)}
+        {keys.public.map((key, index) => <CodeBlock key={key.publicKey} text={key.publicKey} label={key.at === 0
+          ? msg('Public key {{number}}, keyId {{keyId}}, signing from the first record', { number: index + 1, keyId: key.keyId })
+          : msg('Public key {{number}}, keyId {{keyId}}, signing the records after record {{at}}', { number: index + 1, keyId: key.keyId, at: key.at })} />)}
       </>}
       {keys?.state === 'none' && <p>{msg('Desk keeps no signing key for this desk, so it passed no public key.')}</p>}
       {keys?.state === 'startup' && <p>{msg('Desk keeps no signing key for the project it was started on, so it passed no public key.')}</p>}

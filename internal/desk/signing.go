@@ -54,6 +54,14 @@ package desk
 // id was published (`sweepUnfinishedKeys`). A seed or a list with no marker
 // is never removed, whatever the desks folder says.
 //
+// # One lock
+//
+// A creation, from before its marker to the marker's removal, and the sweep,
+// from its first look to its last removal, each hold the signing folder's
+// lock (signing_lock.go), so that a second Desk process sharing the
+// configuration folder never sweeps away a key a creation is making (issue
+// #230).
+//
 // # What this does not defend against
 //
 // Custody's own residual (custody.go): a process running as this user can
@@ -331,16 +339,22 @@ type madeKey struct {
 	seedName, keysName, markerName string
 	seed, keys, marker             os.FileInfo
 	public                         deskPublicKey
+	// unlock releases the signing folder's lock the creation holds, from
+	// before its marker until the marker is removed (signing_lock.go).
+	unlock func()
 }
 
 // seedPath is the seed's absolute path: what `audit key generate` was given,
 // and what the desk's `audit.signingKey` names.
 func (k *madeKey) seedPath() string { return filepath.Join(k.dir.path, k.seedName) }
 
-// close releases the signing folder. A nil key holds nothing.
+// close releases the signing folder, and its lock. A nil key holds nothing.
 func (k *madeKey) close() {
 	if k != nil {
 		k.dir.Close()
+		if k.unlock != nil {
+			k.unlock()
+		}
 	}
 }
 
@@ -605,37 +619,52 @@ func (d *signingDir) stage() (*os.File, string, error) {
 // in the one spelling Desk writes (`parseDeskKeys`). found is false where
 // there is none. Its errors name no path.
 func (d *signingDir) readKeys(name string) (keys []deskPublicKey, found bool, err error) {
+	keys, _, found, err = d.readKeysFile(name)
+	return keys, found, err
+}
+
+// readKeysFile is readKeys, with the list as it was read: the file inspected
+// and its bytes, which a rotation checks are still the list's before it
+// writes the list again (`replaceKeys`).
+func (d *signingDir) readKeysFile(name string) (keys []deskPublicKey, read keysFile, found bool, err error) {
 	info, err := d.root.Lstat(name)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, false, nil
+		return nil, keysFile{}, false, nil
 	}
 	if err != nil {
-		return nil, true, errors.New("it could not be inspected")
+		return nil, keysFile{}, true, errors.New("it could not be inspected")
 	}
 	if !info.Mode().IsRegular() {
-		return nil, true, errors.New("it is not a regular file")
+		return nil, keysFile{}, true, errors.New("it is not a regular file")
 	}
 	if ownedByUs(name, info) != nil {
-		return nil, true, errors.New("it is not owned by the user running Desk")
+		return nil, keysFile{}, true, errors.New("it is not owned by the user running Desk")
 	}
 	if info.Mode().Perm()&worldMode != 0 {
-		return nil, true, errors.New("its group or other users can write it")
+		return nil, keysFile{}, true, errors.New("its group or other users can write it")
 	}
 	keyBetween("read list")
 	file, err := d.root.OpenFile(name, os.O_RDONLY|openNoFollow|openNonBlocking, 0)
 	if err != nil {
-		return nil, true, errors.New("it could not be opened")
+		return nil, keysFile{}, true, errors.New("it could not be opened")
 	}
 	defer file.Close()
 	if opened, err := file.Stat(); err != nil || !os.SameFile(info, opened) {
-		return nil, true, errors.New("it changed between being inspected and being opened")
+		return nil, keysFile{}, true, errors.New("it changed between being inspected and being opened")
 	}
 	data, err := readBounded(file, keysFileLimit)
 	if err != nil {
-		return nil, true, fmt.Errorf("it could not be read whole within %d bytes", keysFileLimit)
+		return nil, keysFile{}, true, fmt.Errorf("it could not be read whole within %d bytes", keysFileLimit)
 	}
 	keys, err = parseDeskKeys(data)
-	return keys, true, err
+	return keys, keysFile{info: info, data: data}, true, err
+}
+
+// keysFile is a list of public keys as it was read: the file inspected, and
+// its bytes.
+type keysFile struct {
+	info os.FileInfo
+	data []byte
 }
 
 // publicKeyFiles writes each key to a file of its own, for `audit verify
@@ -869,21 +898,25 @@ func (s *Server) custodyWords(message string) string {
 // unfinished. It runs once, at start, under the registry's lock, before any
 // desk is opened or any request served.
 //
-// It acts only on markers (`<id>.creating`), never on a seed or a list
-// without one:
+// It acts only on markers (`<id>.creating`) directly in the signing folder,
+// never on a seed or a list without one, and never in a folder below it:
 //
 //   - where the desks folder holds no folder of that id, or one with no
-//     manifest, the desk was never published: its seed, its list and its
-//     marker are removed, through the signing folder held;
+//     manifest, the desk was never published: its list, its seed and its
+//     marker are removed, in that order, the marker last;
 //   - where that folder holds a manifest, the desk was published and only
 //     the marker was left: the marker alone is removed;
 //   - where either cannot be told, because a name could not be inspected for
 //     any reason but its absence, nothing is removed, and the log says so.
 //     A manifest that cannot be read for a moment never costs a desk its key.
 //
-// It cannot tell a creation another Desk process is making in the same
-// configuration folder at the same moment from one a stopped Desk left: Desk
-// keeps no lock on its configuration folder.
+// **Under the signing folder's lock, taken once** (signing_lock.go). Where
+// another Desk process holds it, a creation may be under way there: the sweep
+// changes nothing, and leaves every marker for the next start. Where no lock
+// can be taken here, it removes nothing either. Under the lock it inspects
+// every name first, and removes each through the folder it holds only while
+// the name still holds the file it inspected (`removeMade`): a file put in
+// its place since is left, with the marker after it.
 func (s *Server) sweepUnfinishedKeys() {
 	dir, err := s.assistant.openSigning(false)
 	if errors.Is(err, errNoSigningDir) {
@@ -894,6 +927,12 @@ func (s *Server) sweepUnfinishedKeys() {
 		return
 	}
 	defer dir.Close()
+	unlock, err := lockSigning(dir)
+	if err != nil {
+		s.log.Printf("desk: unfinished creations' keys were left for the next start, because the signing folder's lock was not taken: %v", err)
+		return
+	}
+	defer unlock()
 	listing, err := dir.root.Open(".")
 	if err != nil {
 		return
@@ -908,18 +947,34 @@ func (s *Server) sweepUnfinishedKeys() {
 		if !isMarker || !deskIDPattern.MatchString(id) {
 			continue
 		}
+		// Every name first: what is removed is what was inspected here.
+		names := []string{id + keysSuffix, id + seedSuffix, id + creatingSuffix}
+		inspected := make([]os.FileInfo, len(names))
+		for i, name := range names {
+			info, err := dir.root.Lstat(name)
+			if err != nil && !errors.Is(err, fs.ErrNotExist) {
+				inspected = nil
+				s.log.Printf("desk: an unfinished creation's key was left, because %s could not be inspected: %v", name, err)
+				break
+			}
+			inspected[i] = info
+		}
+		if inspected == nil || inspected[2] == nil {
+			continue
+		}
 		published, err := s.deskPublished(id)
 		if err != nil {
 			s.log.Printf("desk: an unfinished creation's key was left, because whether desk %s was made could not be told: %v", id, err)
 			continue
 		}
-		names := []string{id + creatingSuffix}
-		if !published {
-			names = []string{id + keysSuffix, id + seedSuffix, id + creatingSuffix}
+		keyBetween("sweep: inspected")
+		remove := []int{0, 1, 2}
+		if published {
+			remove = []int{2}
 		}
-		for _, name := range names {
-			if err := dir.root.Remove(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
-				s.log.Printf("desk: %s, left by an unfinished creation, could not be removed: %v", name, err)
+		for _, i := range remove {
+			if err := dir.removeMade(names[i], inspected[i]); err != nil {
+				s.log.Printf("desk: %s, left by an unfinished creation, was not removed: %v", names[i], err)
 				break
 			}
 		}

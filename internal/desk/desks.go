@@ -470,12 +470,33 @@ func (s *Server) makeDeskFolder(ctx context.Context, folder *os.Root, entry, id 
 			s.log.Printf("desk: no signing key is kept for the new desk %s: %v", id, err)
 			gates.unsigned(fmt.Sprintf(unsignedByCustody, strings.TrimRight(s.custodyWords(err.Error()), ".")))
 		} else {
+			// The signing folder's lock, from before the marker until the
+			// marker is removed (`madeKey.close`), so that no other Desk
+			// process's sweep removes the key meanwhile (issue #230).
+			unlock, err := lockSigningWithin(ctx, dir, signingLockWait)
+			if errors.Is(err, errSigningBusy) {
+				dir.Close()
+				return deskGates{}, &deskFailure{http.StatusConflict, CodeBadRequest, "The desk was not created: " + signingBusyWords}
+			}
+			if err != nil {
+				s.log.Printf("desk: the new desk %s's key is made without the signing folder's lock: %v", id, err)
+				unlock = func() {}
+			}
+			// Released however the creation ends before its key holds the
+			// lock, a panic included, as a stopped process releases it.
+			handedOver := false
+			defer func() {
+				if !handedOver {
+					unlock()
+				}
+			}()
 			key, err := generateDeskKey(ctx, bin, held, dir, id)
 			if err != nil {
 				dir.Close()
 				s.log.Printf("desk: the new desk %s's signing key was not generated: %v", id, err)
 				return deskGates{}, runtimeRefusal(errors.New(s.withoutCustodyPaths(err.Error(), id)))
 			}
+			key.unlock, handedOver = unlock, true
 			gates = deskGates{config: signedDeskConfig(key.seedPath()), configVersion: signedFromVersion, requireComparableFacts: true, signed: true, key: key}
 		}
 	} else {
@@ -732,6 +753,9 @@ func (s *Server) resumeDesks() {
 			s.log.Printf("desk: could not resume %s: %v", name, err)
 		}
 	}
+	// Once the desks are open, and still before any request is served, the
+	// rotations of their keys a stopped Desk left unfinished.
+	s.recoverRotations()
 }
 func (s *Server) closeDesks() {
 	s.desksMu.Lock()

@@ -44,8 +44,9 @@ trail, its signatures and its stamps as exact bytes; the runtimes of desks Desk 
 longer inherit `JPACK_SIGNING_KEY`
 ([ADR-0010](adr/0010-defensible-decision-records.md), PRs 1 and 2: #202, #204, #205).
 Desks Desk makes keep a signing key and start signed at configVersion `"6"` (PR 3a,
-#219). Desk does not yet rotate a key, give the startup desk one, hand over checkpoints
-or stamp (PRs 3b, 4, 5 and 7).
+#219), and the owner can rotate a desk's key from its decision record, which finishes or
+undoes at the next start a rotation a stop cut short (PR 3b). Desk does not yet give the
+startup desk a key, hand over checkpoints or stamp (PRs 4, 5 and 7).
 
 Gateway is pinned to `v0.9.1` and includes `adapter-render`, required by its
 local source plan. It refuses to start where another user could replace an adapter it

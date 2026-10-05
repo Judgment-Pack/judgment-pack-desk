@@ -7,12 +7,19 @@
  * (none on the startup desk), no held checkpoint and no stamping roots: the
  * report, with the runtime's member names; the runtime's refusal to make one;
  * that the runtime has no audit commands; or that the project keeps no trail.
- * Beside a report or a refusal: the keys Desk keeps and passed, and `packs
- * validate`'s word on whether the key named signs. It runs only when asked.
- * Nothing here judges the trail: the runtime's report is the answer.
+ * Beside a report or a refusal: the keys Desk keeps and passed, `packs
+ * validate`'s word on whether the key named signs, and whether the owner can
+ * rotate the desk's key now, with the token that confirms it. It runs only
+ * when asked. Nothing here judges the trail: the runtime's report is the
+ * answer.
+ *
+ * `POST /api/audit/key/rotate` sends that token back: the desk rotates its key
+ * as the panel showed it, or changes nothing (ADR-0010, section 1, "Rotating
+ * it").
  */
 import { deskFetch } from '../files/client'
 import { msg } from '../i18n'
+import { sourceMessage } from '../i18n/source'
 
 /** One protection's reach, as runtime 0.26.0 reports it. */
 export type AuditCoverageState = { status: string; through?: number; detail?: string }
@@ -75,12 +82,45 @@ export type AuditSigning =
   | { state: 'check'; status: 'passed' | 'failed' | 'skipped'; detail?: string }
   | { state: 'no-key' }
   | { state: 'unread'; diagnostics?: AuditDiagnostic[]; problem?: string }
+/**
+ * Whether the owner can rotate this desk's signing key now: `available`, with
+ * the token that confirms it; `unavailable`, and why; or `unfinished`, a
+ * rotation that did not finish, and what Desk does with it or why it cannot
+ * tell. The reason is Desk's own sentence.
+ */
+export type AuditRotation =
+  | { state: 'available'; token: string }
+  | { state: 'unavailable' | 'unfinished'; reason: string }
+/** A rotation made: the key that signed until `at`, and the key that signs the records after it. */
+export type RotationResult = { state: 'rotated'; at: number; from: DeskPublicKey; next: DeskPublicKey }
+/** The keys changed after the panel showed them: nothing was rotated. */
+export class StaleRotation extends Error {}
+
+/**
+ * The chassis's own sentences about rotation, as it says them, so that the
+ * page can show each in the owner's language (`systemMessage`). A reason that
+ * carries the runtime's words or a file's state keeps them as they were said.
+ */
+export const ROTATION_REASONS = [
+  sourceMessage('This is the project Desk was started on. Desk keeps no signing key for it in this version, so it has none to rotate.'),
+  sourceMessage('Desk keeps no signing key for this desk, so it has none to rotate.'),
+  sourceMessage('Desk rotates only a key it can read, with a list of public keys that agrees with it.'),
+  sourceMessage('This desk\'s key took over after record {{record}}, and no record has been signed since: a rotation now would take over after the same record. Make a deciding run first.'),
+  sourceMessage('This desk already has {{count}} signing keys, the most Desk keeps for one desk, so it rotates no further key.'),
+  sourceMessage('Desk reads the trail\'s signature sidecar to tell whether a rotation was written, and it could not be read: {{reason}}. So Desk does not rotate the key now.'),
+  sourceMessage('Nothing of it is left to do but remove its marker, which Desk does when it next starts.'),
+  sourceMessage('The runtime wrote the rotation, and Desk did not finish it: Desk finishes it when it next starts. Until then, records are written unsigned.'),
+  sourceMessage('The runtime did not write the rotation: Desk removes the next key when it next starts. The current key still signs.'),
+  sourceMessage('Its marker was removed while Desk looked.'),
+  sourceMessage('Desk cannot tell whether the runtime wrote the rotation, so it changes nothing: {{reason}}.')
+]
+
 /** The runtime's files a download can hand over, by the name the download takes. */
 export const TRAIL_FILES = { evaluations: 'evaluations.jsonl', signatures: 'signatures.jsonl', stamps: 'stamps.jsonl' } as const
 export type TrailFile = keyof typeof TRAIL_FILES
 export type AuditRecord =
-  | { state: 'report'; runtime?: string; report: AuditReport; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning }
-  | { state: 'unverified'; runtime?: string; diagnostics: AuditDiagnostic[]; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning }
+  | { state: 'report'; runtime?: string; report: AuditReport; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation }
+  | { state: 'unverified'; runtime?: string; diagnostics: AuditDiagnostic[]; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation }
   | { state: 'older-runtime'; runtime?: string; floor: string }
   | { state: 'no-trail' }
 
@@ -134,6 +174,16 @@ export function isAuditSigning(value: unknown): value is AuditSigning {
   return false
 }
 
+/** The panel's word on rotation: a token of 64 hexadecimal characters with `available`, a sentence with the others, and nothing else. */
+export function isAuditRotation(value: unknown): value is AuditRotation {
+  if (!object(value)) return false
+  switch (value.state) {
+    case 'available': return hex(64)(value.token) && value.reason === undefined
+    case 'unavailable': case 'unfinished': return named(value.reason) && value.token === undefined
+  }
+  return false
+}
+
 /**
  * A report with every member the runtime gives one, as the chassis checks it:
  * each count present and not negative, no list longer than its total, and
@@ -151,7 +201,7 @@ export function isAuditReport(value: unknown): value is AuditReport {
 
 export function isAuditRecord(value: unknown): value is AuditRecord {
   if (!object(value) || !optional(value.runtime, text) || !optional(value.files, item => list(item, isTrailFile))
-    || !optional(value.keys, isAuditKeys) || !optional(value.signing, isAuditSigning)) return false
+    || !optional(value.keys, isAuditKeys) || !optional(value.signing, isAuditSigning) || !optional(value.rotation, isAuditRotation)) return false
   switch (value.state) {
     case 'report': return isAuditReport(value.report)
     case 'unverified': return list(value.diagnostics, isDiagnostic) && value.diagnostics.length > 0
@@ -189,4 +239,25 @@ export async function readAuditRecord(signal?: AbortSignal): Promise<AuditRecord
   const value: unknown = await response.json()
   if (!isAuditRecord(value)) throw new Error(msg('The decision record could not be loaded. Please try again.'))
   return value
+}
+
+/**
+ * Rotate this desk's signing key, as the panel the token names showed it. A
+ * refusal says why in Desk's words; `StaleRotation` where the keys changed
+ * after the panel showed them.
+ */
+export async function rotateSigningKey(token: string): Promise<RotationResult> {
+  const response = await deskFetch('/api/audit/key/rotate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) })
+  if (!response.ok) {
+    let body: { error?: unknown; code?: unknown } = {}
+    try { body = await response.json() as typeof body } catch { /* The status is still an answer. */ }
+    const message = text(body.error) ? body.error : msg('The key could not be rotated. Check the decision record again.')
+    throw body.code === 'stale' ? new StaleRotation(message) : new Error(message)
+  }
+  const value: unknown = await response.json()
+  if (!object(value) || value.state !== 'rotated' || !count(value.at) || value.at < 1 || !isPublicKey(value.from) || !isPublicKey(value.next)
+    || value.next.at !== value.at || value.next.publicKey === value.from.publicKey) {
+    throw new Error(msg('The key could not be rotated. Check the decision record again.'))
+  }
+  return value as RotationResult
 }

@@ -57,6 +57,8 @@ const (
 //   - `audit key public <path> --format json` prints standInRead, the key
 //     standInGenerated names, whatever the path; `<calls>.public`, where it
 //     exists, is a shell fragment run instead (`readingKeyAs`).
+//   - `audit key rotate` runs `<calls>.rotate`, a shell fragment, where it
+//     exists (`rotatingAs`, rotation_test.go), and otherwise exits 64.
 //   - `packs validate` prints `<calls>.validate` and exits with
 //     `<calls>.validate.exit`, where they exist (`validatingAs`), and
 //     otherwise standInValidated, which reports no signing-key check.
@@ -80,6 +82,9 @@ func writeStandInRuntime(t *testing.T, path, schema, lock string) (calls string)
 		"  public)\n" +
 		"  if [ -e '" + calls + ".public' ]; then . '" + calls + ".public'; exit $?; fi\n" +
 		"  printf '%s\\n' '" + standInRead + "'\n  ;;\n" +
+		"  rotate)\n" +
+		"  if [ -e '" + calls + ".rotate' ]; then . '" + calls + ".rotate'; exit $?; fi\n" +
+		"  exit 64\n  ;;\n" +
 		"  *) exit 64 ;;\n" +
 		"  esac\n  ;;\n" +
 		"'packs validate')\n" +

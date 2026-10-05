@@ -184,8 +184,10 @@ describe('the decision-record panel', () => {
     const signing = within(screen.getByRole('region', { name: 'Signing key' }))
     expect(signing.getByText(/^Desk keeps this desk’s signing key in its own configuration folder, outside the project/)).toBeTruthy()
     const shown = [...screen.getByRole('region', { name: 'Signing key' }).querySelectorAll('pre')].map(block => [block.getAttribute('aria-label'), block.textContent])
-    expect(shown).toEqual([[`Public key 1, keyId ${deskKey.keyId}`, deskKey.publicKey], [`Public key 2, keyId ${nextKey.keyId}`, nextKey.publicKey]])
-    expect(signing.getByRole('button', { name: `Copy Public key 1, keyId ${deskKey.keyId}` })).toBeTruthy()
+    // Each key, by its place and the record it signs after.
+    expect(shown).toEqual([[`Public key 1, keyId ${deskKey.keyId}, signing from the first record`, deskKey.publicKey],
+      [`Public key 2, keyId ${nextKey.keyId}, signing the records after record 7`, nextKey.publicKey]])
+    expect(signing.getByRole('button', { name: `Copy Public key 1, keyId ${deskKey.keyId}, signing from the first record` })).toBeTruthy()
     const check = screen.getByRole('region', { name: 'Signing key' }).querySelector('[data-check]')!
     expect(check.getAttribute('data-check')).toBe('passed')
     expect(check.textContent).toBe('The runtime’s check of the key: Passed. ' + passedCheck.detail)

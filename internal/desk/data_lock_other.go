@@ -10,3 +10,6 @@ import (
 func lockPrivateData(*os.File, bool) error {
 	return errors.New("this platform does not support the Desk's private-data lock")
 }
+
+// lockHeld is false on this build, where no lock is ever taken.
+func lockHeld(error) bool { return false }

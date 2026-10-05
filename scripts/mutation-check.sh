@@ -2602,14 +2602,14 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if len(data) == 0 {'
   mutate go "key list: a list others can write is read" "$SG" \
     '	if info.Mode().Perm()&worldMode != 0 {
-		return nil, true, errors.New("its group or other users can write it")' \
+		return nil, keysFile{}, true, errors.New("its group or other users can write it")' \
     '	if false {
-		return nil, true, errors.New("its group or other users can write it")'
+		return nil, keysFile{}, true, errors.New("its group or other users can write it")'
   mutate go "key list: a linked list is read" "$SG" \
     '	if !info.Mode().IsRegular() {
-		return nil, true, errors.New("it is not a regular file")' \
+		return nil, keysFile{}, true, errors.New("it is not a regular file")' \
     '	if false {
-		return nil, true, errors.New("it is not a regular file")'
+		return nil, keysFile{}, true, errors.New("it is not a regular file")'
   mutate go "key list: a list past the bound is read" "$SG" \
     '	data, err := readBounded(file, keysFileLimit)' \
     '	data, err := readBounded(file, 1<<20)'
@@ -2684,15 +2684,13 @@ func (b *cappedBuffer) exceeded() bool {'
     '		id, isMarker := strings.CutSuffix(entry.Name(), creatingSuffix)' \
     '		id, isMarker := strings.CutSuffix(entry.Name(), seedSuffix)'
   mutate go "sweep: a published desk's key is removed" "$SG" \
-    '		if !published {
-			names = []string{id + keysSuffix, id + seedSuffix, id + creatingSuffix}' \
-    '		if true {
-			names = []string{id + keysSuffix, id + seedSuffix, id + creatingSuffix}'
-  mutate go "sweep: an unpublished creation's key is left" "$SG" \
-    '		if !published {
-			names = []string{id + keysSuffix, id + seedSuffix, id + creatingSuffix}' \
+    '		if published {
+			remove = []int{2}' \
     '		if false {
-			names = []string{id + keysSuffix, id + seedSuffix, id + creatingSuffix}'
+			remove = []int{2}'
+  mutate go "sweep: an unpublished creation's key is left" "$SG" \
+    '		remove := []int{0, 1, 2}' \
+    '		remove := []int{2}'
   mutate go "sweep: a desk that cannot be inspected loses its key" "$SG" \
     '	return err == nil, err
 }' \
@@ -2711,25 +2709,24 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if links'
   mutate go "key list: a list swapped while read is read" "$SG" \
     '	if opened, err := file.Stat(); err != nil || !os.SameFile(info, opened) {
-		return nil, true, errors.New("it changed between being inspected and being opened")' \
+		return nil, keysFile{}, true, errors.New("it changed between being inspected and being opened")' \
     '	if opened, err := file.Stat(); err != nil || opened == nil {
-		return nil, true, errors.New("it changed between being inspected and being opened")'
-  mutate go "key panel: a list is passed whatever its seed's key" "$AR" \
-    '	if last := public[len(public)-1]; last.PublicKey != answer.PublicKey || last.KeyID != answer.KeyID {' \
-    '	if last := public[len(public)-1]; last.At < 0 {'
-  mutate go "key panel: a list is passed whatever its seed's keyId" "$AR" \
-    'last.PublicKey != answer.PublicKey || last.KeyID != answer.KeyID {' \
-    'last.PublicKey != answer.PublicKey {'
+		return nil, keysFile{}, true, errors.New("it changed between being inspected and being opened")'
+  # The list's last key against the seed's, and the runtime's answer for the
+  # seed, are read by the helpers PR 3b shares with rotation (rotation.go).
+  mutate go "key panel: a list is passed whatever its seed's key" internal/desk/rotation.go \
+    '	if last := keys[len(keys)-1]; last.PublicKey != current.PublicKey || last.KeyID != current.KeyID {' \
+    '	if last := keys[len(keys)-1]; last.At < 0 {'
+  mutate go "key panel: a list is passed whatever its seed's keyId" internal/desk/rotation.go \
+    'last.PublicKey != current.PublicKey || last.KeyID != current.KeyID {' \
+    'last.PublicKey != current.PublicKey {'
   mutate go "key panel: a seed with no list reads as no key" "$AR" \
     '	case !found && errors.Is(seedErr, fs.ErrNotExist):' \
     '	case !found && (errors.Is(seedErr, fs.ErrNotExist) || seedErr == nil):'
-  mutate go "key panel: a list of more than one key is passed" "$AR" \
-    '	case len(public) != 1:' \
-    '	case len(public) < 1:'
-  mutate go "key panel: audit key public is read from another command" "$AR" \
+  mutate go "key panel: audit key public is read from another command" internal/desk/rotation.go \
     'answer.Command != "audit key public" || ' \
     ''
-  mutate go "key panel: audit key public is read whatever its status" "$AR" \
+  mutate go "key panel: audit key public is read whatever its status" internal/desk/rotation.go \
     ' || answer.Status != "read" {' \
     ' {'
   mutate go "key panel: a seed Desk will not use is passed" "$AR" \
@@ -3400,6 +3397,275 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "upgrade: no copies are kept" "$UP" \
     '	if err := s.storeReviewedCopies(plan.upgraded); err != nil {' \
     '	if err := error(nil); err != nil {'
+
+  # **Rotating a desk's signing key (ADR-0010 PR 3b).** Only the owner's
+  # confirmed request rotates, and only where a rotation can be made; the
+  # steps run in order through the folder Desk holds; whether the runtime
+  # wrote its line is the sidecar's to say; what changed while a rotation was
+  # finished is not written over; and the start finishes, undoes, or leaves
+  # what it cannot tell about. Every row's name says "rotation", so
+  # `mutation-check.sh go rotation` runs exactly these.
+  RO=internal/desk/rotation.go
+  mutate go "rotation: offered past the key list's bound" internal/desk/rotation.go \
+    '	case len(reading.keys) >= rotationKeyLimit:' \
+    '	case false && len(reading.keys) >= rotationKeyLimit:'
+  mutate go "rotation: the token is not checked" "$RO" \
+    '	case !hmac.Equal([]byte(offer.Token), []byte(token)):' \
+    '	case false:'
+  mutate go "rotation: the token binds the key alone" "$RO" \
+    '}{"rotate-signing-key", s.cfg.deskID, s.projectDir, sha256Digest(reading.list.data), reading.current.PublicKey, len(reading.sidecar.rotations)})' \
+    '}{"rotate-signing-key", s.cfg.deskID, s.projectDir, "", reading.current.PublicKey, 0})'
+  mutate go "rotation: offered on the startup desk" "$RO" \
+    '	if s.cfg.deskID == "" {
+		return auditRotation{' \
+    '	if false {
+		return auditRotation{'
+  mutate go "rotation: the startup desk's request reaches the rotation" "$RO" \
+    '	if s.cfg.deskID == "" {
+		writeJSONCoded(w, http.StatusConflict' \
+    '	if false {
+		writeJSONCoded(w, http.StatusConflict'
+  mutate go "rotation: offered over a rotation that did not finish" "$RO" \
+    '!errors.Is(err, fs.ErrNotExist) {
+		return s.unfinishedRotation(ctx, project, dir)' \
+    'err != nil && false {
+		return s.unfinishedRotation(ctx, project, dir)'
+  mutate go "rotation: offered where the sidecar cannot be read" "$RO" \
+    '	case reading.sidecarErr != nil:' \
+    '	case false:'
+  mutate go "rotation: offered with no record since the last rotation" "$RO" \
+    '	case len(reading.sidecar.rotations) > 0 && !reading.sidecar.signedSinceRotation:' \
+    '	case false:'
+  mutate go "rotation: a runtime that does not read 6 is asked" "$RO" \
+    '	if !slices.Contains(schema.supported, signedFromVersion) {' \
+    '	if false {'
+  mutate go "rotation: the marker is not where the start looks" "$RO" \
+    '	marker, err := dir.writeMarker(markerName)' \
+    '	marker, err := dir.writeMarker(markerName + ".tmp")'
+  mutate go "rotation: the folder is not checked before generate" "$RO" \
+    '	if dir.namesHeld() != nil {
+		return undo(nil, ' \
+    '	if false {
+		return undo(nil, '
+  mutate go "rotation: the next key's path is not checked after generate" "$RO" \
+    '	if dir.namesFile(nextName, next) != nil {
+		return undo(next, ' \
+    '	if false {
+		return undo(next, '
+  mutate go "rotation: what a failed generation left stays" "$RO" \
+    '		removed := dir.root.Remove(nextName)' \
+    '		removed := error(nil)'
+  mutate go "rotation: an answer of another command is taken" "$RO" \
+    'answer.Command == "audit key rotate" && ' \
+    ''
+  mutate go "rotation: an answer of another status is taken" "$RO" \
+    ' && answer.Status == "rotated" &&' \
+    ' &&'
+  mutate go "rotation: an answer from another key is taken" "$RO" \
+    ' && answer.From == current.KeyID' \
+    ''
+  mutate go "rotation: an answer to another keyId is taken" "$RO" \
+    ' && answer.Next == next.KeyID' \
+    ''
+  mutate go "rotation: an answer to another key is taken" "$RO" \
+    ' && answer.NextPublicKey == next.PublicKey {' \
+    ' {'
+  mutate go "rotation: an answer at no record is taken" "$RO" \
+    'answer.At >= 1 && ' \
+    ''
+  mutate go "rotation: a refusal is taken as proof that nothing was written" "$RO" \
+    '		state = s.inspectRotation(ctx, project, dir, marker)' \
+    '		state = rotationState{outcome: rotationUnwritten, marker: marker, next: next}'
+  mutate go "rotation: a refused rotation leaves its next key" "$RO" \
+    '			if err := dir.removeMade(nextName, next); err != nil {' \
+    '			if err := error(nil); err != nil {'
+  mutate go "rotation: a refused rotation leaves its marker" "$RO" \
+    '		if err := dir.removeMade(markerName, marker); err != nil {
+			s.log.Printf' \
+    '		if err := error(nil); err != nil {
+			s.log.Printf'
+  mutate go "rotation: the list is written over a list that changed" "$RO" \
+    '	if err != nil || !found || !os.SameFile(now.info, read.info) || !bytes.Equal(now.data, read.data) {' \
+    '	if err != nil || !found || now.info == nil {'
+  mutate go "rotation: the seed is renamed over a seed that changed" "$RO" \
+    '	if found, err := d.root.Lstat(seedName); err != nil || !os.SameFile(found, seed) {' \
+    '	if found, err := d.root.Lstat(seedName); err != nil || found == nil {'
+  mutate go "rotation: the seed is renamed before the list is written" "$RO" \
+    '	if state.finished != nil {
+		if err := dir.replaceKeys(keysName, state.list, state.finished); err != nil {
+			return false, fmt.Errorf("the list of public keys could not be written with the next key: %w", err)
+		}
+	}
+	keyBetween("rotation: list written")
+	if err := dir.promoteNext(nextName, seedName, state.next, state.seed); err != nil {
+		return false, err
+	}' \
+    '	if err := dir.promoteNext(nextName, seedName, state.next, state.seed); err != nil {
+		return false, err
+	}
+	if state.finished != nil {
+		if err := dir.replaceKeys(keysName, state.list, state.finished); err != nil {
+			return false, fmt.Errorf("the list of public keys could not be written with the next key: %w", err)
+		}
+	}
+	keyBetween("rotation: list written")'
+  mutate go "rotation: the marker stays after a rotation" "$RO" \
+    '	if err := dir.removeMade(markerName, state.marker); err != nil {
+		return true, fmt.Errorf("its marker could not be removed: %w", err)' \
+    '	if err := dir.removeMade(markerName+".none", state.marker); err != nil {
+		return true, fmt.Errorf("its marker could not be removed: %w", err)'
+  # No status before its effect: a rotation the runtime wrote and Desk could
+  # not finish is never answered as rotated, and says the next key signs only
+  # once the desk names it.
+  mutate go "rotation: an unfinished rotation is answered as rotated" "$RO" \
+    '		if renamed, err := s.finishRotation(dir, state); err != nil {
+			s.log.Printf("desk: the rotation of desk %s' \
+    '		if renamed, err := s.finishRotation(dir, state); err != nil && false {
+			s.log.Printf("desk: the rotation of desk %s'
+  mutate go "rotation: the next key is said to sign before the rename" "$RO" \
+    '	if renamed {
+		return fmt.Sprintf(' \
+    '	if true {
+		return fmt.Sprintf('
+  mutate go "rotation: a rename made is said as not made" "$RO" \
+    '		return true, fmt.Errorf("its marker could not be removed: %w", err)' \
+    '		return false, fmt.Errorf("its marker could not be removed: %w", err)'
+  mutate go "rotation: a refusal names a path" "$RO" \
+    '		message := s.withoutPaths(failure.message)' \
+    '		message := failure.message'
+  mutate go "rotation: the panel's word on a rotation names a path" internal/desk/audit_record.go \
+    '		rotation.Reason = clean(rotation.Reason)' \
+    '		rotation.Reason = strings.TrimSpace(rotation.Reason)'
+  # The list of keys, read against the sidecar's key rotations.
+  mutate go "rotation list: a list that disagrees with the sidecar is passed" internal/desk/audit_record.go \
+    '	} else if err := checkKeysAgainst(public, current, &reading.sidecar); err != nil {' \
+    '	} else if err := checkKeysAgainst(public, current, nil); err != nil {'
+  # Not `if false`: without the check, a sidecar with more rotations than
+  # the list has later keys indexes past the list and the suite panics, which
+  # is no answer. A list with more later keys than rotations is the case that
+  # needs the count.
+  mutate go "rotation list: the sidecar's count of rotations is not compared" "$RO" \
+    '	if len(sidecar.rotations) != len(keys)-1 {' \
+    '	if len(sidecar.rotations) > len(keys)-1 {'
+  mutate go "rotation list: a later key is not the one a rotation hands over to" "$RO" \
+    '		case rotation.Next != key.PublicKey:' \
+    '		case rotation.Next != key.PublicKey && false:'
+  mutate go "rotation list: a rotation made by another key agrees" "$RO" \
+    '		case rotation.KeyID != before.KeyID:' \
+    '		case rotation.KeyID != before.KeyID && false:'
+  mutate go "rotation list: a rotation at another sequence agrees" "$RO" \
+    '		case rotation.At != key.At:' \
+    '		case rotation.At != key.At && false:'
+  # The sidecar, read as the runtime's verifier reads it.
+  mutate go "rotation sidecar: a line a write left incomplete is read" "$RO" \
+    '		if errors.Is(err, io.EOF) {
+			return reading, nil' \
+    '		if errors.Is(err, io.EOF) {
+			reading.read(line)
+			return reading, nil'
+  mutate go "rotation sidecar: a member named twice is read" "$RO" \
+    '		if _, twice := members[name]; twice {' \
+    '		if _, twice := members[name]; twice && false {'
+  mutate go "rotation sidecar: a line with a member more is read" "$RO" \
+    '	if !ok || len(members) != 7 {' \
+    '	if !ok || len(members) < 7 {'
+  mutate go "rotation sidecar: a record's signature does not count as one since" "$RO" \
+    '		r.signedSinceRotation = true' \
+    '		r.signedSinceRotation = len(r.rotations) == 0'
+  mutate go "rotation sidecar: a rotation does not start the count again" "$RO" \
+    '		r.signedSinceRotation = false' \
+    '		r.signedSinceRotation = r.signedSinceRotation || false'
+  mutate go "rotation sidecar: one that cannot be read is read as empty" "$RO" \
+    '	snapshot, err := snapshotAuditFile(ctx, root, "signatures")
+	if errors.Is(err, fs.ErrNotExist) {' \
+    '	snapshot, err := snapshotAuditFile(ctx, root, "signatures")
+	if err != nil {'
+  # What the start does with a marker left.
+  mutate go "rotation recovery: the start does not look for rotations" internal/desk/desks.go \
+    '	s.recoverRotations()' \
+    ''
+  mutate go "rotation recovery: a next key the sidecar names elsewhere is removed" "$RO" \
+    '		if sidecar.names(nextKey) {' \
+    '		if false {'
+  mutate go "rotation recovery: a rotation made by another key is finished" "$RO" \
+    '	if last.KeyID != current.KeyID {' \
+    '	if false {'
+  mutate go "rotation recovery: no next key and keys that disagree is nothing left" "$RO" \
+    '		if err := checkKeysAgainst(keys, current, &sidecar); err != nil {
+			return unknown("there is no next key' \
+    '		if err := error(nil); err != nil {
+			return unknown("there is no next key'
+  mutate go "rotation recovery: an undone rotation leaves its next key" "$RO" \
+    '	if err := dir.removeMade(nextName, next); err != nil {
+		return fmt.Errorf("the next key could not be removed: %w", err)' \
+    '	if err := dir.removeMade(nextName+".none", next); err != nil {
+		return fmt.Errorf("the next key could not be removed: %w", err)'
+  mutate go "rotation recovery: a settled rotation leaves its marker" "$RO" \
+    '		if err := dir.removeMade(markerName, state.marker); err != nil {
+			s.log.Printf("desk: the marker of a finished' \
+    '		if err := dir.removeMade(markerName+".none", state.marker); err != nil {
+			s.log.Printf("desk: the marker of a finished'
+
+  # **One lock for every change to keys in the signing folder (issue #230).**
+  # A creation, the start's sweep, a rotation and the start's recovery each
+  # take flock's exclusive lock on the signing folder's descriptor, from their
+  # first look to their last change; the sweep and the recovery try once and
+  # change nothing without it; a creation and a rotation wait a bounded time;
+  # and under the lock what is removed is what was inspected, the marker last.
+  # Every row's name says "signing lock", so `mutation-check.sh go "signing
+  # lock"` runs exactly these.
+  SL=internal/desk/signing_lock.go
+  mutate go "signing lock: a creation takes no lock" internal/desk/desks.go \
+    '			unlock, err := lockSigningWithin(ctx, dir, signingLockWait)' \
+    '			unlock, err := func() {}, error(nil)'
+  mutate go "signing lock: a creation lets the lock go before its marker goes" internal/desk/desks.go \
+    '			key.unlock, handedOver = unlock, true' \
+    '			key.unlock, handedOver = nil, false'
+  mutate go "signing lock: the sweep takes no lock" "$SG" \
+    '	unlock, err := lockSigning(dir)
+	if err != nil {
+		s.log.Printf("desk: unfinished creations' \
+    '	unlock, err := func() {}, error(nil)
+	if err != nil {
+		s.log.Printf("desk: unfinished creations'
+  mutate go "signing lock: the sweep goes on without the lock" "$SG" \
+    '		s.log.Printf("desk: unfinished creations'"'"' keys were left for the next start, because the signing folder'"'"'s lock was not taken: %v", err)
+		return' \
+    '		unlock = func() {}'
+  mutate go "signing lock: a rotation takes no lock" "$RO" \
+    '		unlock, err := lockSigningWithin(ctx, dir, signingLockWait)' \
+    '		unlock, err := func() {}, error(nil)'
+  mutate go "signing lock: the recovery takes no lock" "$RO" \
+    '	unlock, err := lockSigning(dir)
+	if err != nil {
+		s.log.Printf("desk: unfinished rotations' \
+    '	unlock, err := func() {}, error(nil)
+	if err != nil {
+		s.log.Printf("desk: unfinished rotations'
+  mutate go "signing lock: the recovery goes on without the lock" "$RO" \
+    '		s.log.Printf("desk: unfinished rotations were left for the next start, because the signing folder'"'"'s lock was not taken: %v", err)
+		return' \
+    '		unlock = func() {}'
+  mutate go "signing lock: a lock held elsewhere is read as no lock" internal/desk/data_lock_unix.go \
+    '	return errors.Is(err, syscall.EWOULDBLOCK)' \
+    '	return errors.Is(err, syscall.EWOULDBLOCK) && false'
+  mutate go "signing lock: a creation or a rotation does not wait" "$SL" \
+    '		if !errors.Is(err, errSigningBusy) || !time.Now().Before(deadline) {' \
+    '		if true || !time.Now().Before(deadline) {'
+  mutate go "signing lock: a second descriptor is not excluded" "$SL" \
+    '	if err := lockSigningFile(file); err != nil {' \
+    '	if err := error(nil); err != nil {'
+  mutate go "signing lock: the sweep removes by name, not what it inspected" "$SG" \
+    '			if err := dir.removeMade(names[i], inspected[i]); err != nil {' \
+    '			if err := dir.root.Remove(names[i]); err != nil {'
+  mutate go "signing lock: the sweep removes the marker first" "$SG" \
+    '		remove := []int{0, 1, 2}' \
+    '		remove := []int{2, 0, 1}'
+  mutate go "signing lock: the recovery removes by name, not what it inspected" "$RO" \
+    '	if err := dir.removeMade(nextName, next); err != nil {
+		return fmt.Errorf("the next key could not be removed: %w", err)' \
+    '	if err := dir.root.Remove(nextName); err != nil {
+		return fmt.Errorf("the next key could not be removed: %w", err)'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -10059,8 +10325,8 @@ export function assistantTransport(id: string): Transport {
     "if (reconnecting) await queryClient.invalidateQueries({ predicate: followsTheProject })" \
     "if (reconnecting) await queryClient.invalidateQueries()"
   mutate web "record: asking again runs nothing" "$DR" \
-    "  const again = <div><Button onClick={() => void query.refetch()}" \
-    "  const again = <div><Button onClick={() => undefined}"
+    "  const again = <div><Button onClick={() => { setRotated(undefined); void query.refetch() }}" \
+    "  const again = <div><Button onClick={() => { setRotated(undefined) }}"
   mutate web "record: an older runtime's line claims signing" "$DR" \
     "            : record?.state === 'older-runtime' ? <p>{msg(" \
     "            : record?.state === 'older-runtime' ? <p>{msg('Signed through record {{sequence}}', { sequence: 0 })} {msg("
@@ -10249,13 +10515,13 @@ export function assistantTransport(id: string): Transport {
     "{error && <p role=\"alert\">" \
     "{error && <p role=\"alert\" hidden>"
   mutate web "downloads: not beside the report" "$DR" \
-    "                    <SigningKey keys={record.keys} signing={record.signing} />
+    "                    {rotation(record.keys, record.rotation)}
                     <TrailDownloads files={record.files ?? []} />" \
-    "                    <SigningKey keys={record.keys} signing={record.signing} />"
+    "                    {rotation(record.keys, record.rotation)}"
   mutate web "downloads: not beside the runtime's refusal" "$DR" \
-    "                  <SigningKey keys={record.keys} signing={record.signing} />
+    "                  {rotation(record.keys, record.rotation)}
                   <TrailDownloads files={record.files ?? []} />" \
-    "                  <SigningKey keys={record.keys} signing={record.signing} />"
+    "                  {rotation(record.keys, record.rotation)}"
   mutate web "downloads: a file name the download does not take is accepted" "$AC" \
     " || !optional(value.files, item => list(item, isTrailFile))" \
     " || !optional(value.files, item => list(item, (entry): entry is TrailFile => text(entry) || isTrailFile(entry)))"
@@ -10310,6 +10576,68 @@ export function assistantTransport(id: string): Transport {
   mutate web "the Tests workspace drops the limit sentence" "$TW" \
     ": msg('The runtime did not admit this expectation: {{detail}}', { detail: finding.message })" \
     ": finding.message"
+
+  # **Rotating a desk's signing key, on the page (ADR-0010 PR 3b).** Only the
+  # confirmation sends the panel's token, and it says each thing a rotation
+  # does and does not do; the panel is checked again after it; a refusal, a
+  # rotation that did not finish and why none is offered are each said; each
+  # key is labelled by the record it signs after; and the client holds the
+  # chassis's answers to their form. `mutation-check.sh web rotation` runs
+  # exactly these.
+  RK=web/src/audit/RotateSigningKey.tsx
+  AC=web/src/audit/client.ts
+  DR=web/src/audit/DecisionRecord.tsx
+  mutate web "rotation page: the button rotates without a confirmation" "$RK" \
+    "<Button ref={opener} onClick={() => setOpen(true)}>" \
+    "<Button ref={opener} onClick={() => void confirm()}>"
+  mutate web "rotation page: the confirmation omits that the current key stops signing" "$RK" \
+    "        <li>{msg('The current key stops signing. Records written after the rotation are signed with the new key.')}</li>" \
+    ""
+  mutate web "rotation page: the confirmation omits a record that may be unsigned" "$RK" \
+    "        <li>{msg('A record written while the rotation is in progress may be unsigned.')}</li>" \
+    ""
+  mutate web "rotation page: the confirmation omits that nothing is revoked" "$RK" \
+    "        <li>{msg('A rotation revokes nothing: whoever holds the old key can still sign as it." \
+    "        <li hidden>{msg('A rotation revokes nothing: whoever holds the old key can still sign as it."
+  mutate web "rotation page: the confirmation omits the old key's bytes" "$RK" \
+    "        <li>{msg('The old key’s file loses its name, but its bytes may remain on the disk.')}</li>" \
+    ""
+  mutate web "rotation page: the confirmation omits that a lost key stays lost" "$RK" \
+    "        <li>{msg('A lost key cannot be rotated away from: a rotation needs the key in force.')}</li>" \
+    ""
+  mutate web "rotation page: the token sent is not the panel's" "$RK" \
+    "await rotateSigningKey(rotation.token)" \
+    "await rotateSigningKey('0'.repeat(64))"
+  mutate web "rotation page: the panel is not checked again after a rotation" "$DR" \
+    "onOutcome={outcome => { setRotated(outcome); void query.refetch() }}" \
+    "onOutcome={outcome => { setRotated(outcome) }}"
+  mutate web "rotation page: an outcome outlives a later check" "$DR" \
+    "onClick={() => { setRotated(undefined); void query.refetch() }}" \
+    "onClick={() => { void query.refetch() }}"
+  mutate web "rotation page: an outcome outlives opening the panel again" "$DR" \
+    "  useEffect(() => { if (visible) setRotated(undefined) }, [visible])" \
+    "  useEffect(() => { if (visible) void 0 }, [visible])"
+  mutate web "rotation page: a rotation that did not finish is not said" "$RK" \
+    "{rotation?.state === 'unfinished' && <p role=\"alert\">" \
+    "{rotation?.state === 'unfinished' && keyCount < 0 && <p role=\"alert\">"
+  mutate web "rotation page: a refusal is not said" "$RK" \
+    "{outcome?.kind === 'failed' && <p role=\"alert\">" \
+    "{outcome?.kind === 'failed' && keyCount < 0 && <p role=\"alert\">"
+  mutate web "rotation page: offered where the chassis offers none" "$RK" \
+    "{rotation?.state === 'available' && <>" \
+    "{rotation && <>"
+  mutate web "rotation page: a key's label does not say the record it signs after" "$DR" \
+    "label={key.at === 0" \
+    "label={key.at >= 0"
+  mutate web "rotation client: a token of another form is taken" "$AC" \
+    "case 'available': return hex(64)(value.token) && value.reason === undefined" \
+    "case 'available': return text(value.token) && value.reason === undefined"
+  mutate web "rotation client: a rotation to another sequence is taken" "$AC" \
+    "    || value.next.at !== value.at || value.next.publicKey === value.from.publicKey) {" \
+    "    || value.next.publicKey === value.from.publicKey) {"
+  mutate web "rotation client: a stale refusal is not told apart" "$AC" \
+    "throw body.code === 'stale' ? new StaleRotation(message) : new Error(message)" \
+    "throw new Error(message)"
 fi
 
 restore
