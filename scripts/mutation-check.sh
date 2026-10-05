@@ -3407,7 +3407,7 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "runner key: the key commands inherit JPACK_SIGNING_KEY" "$RK" \
     '	return heldDir{file: s.project.own.dirFile, path: s.projectDir, info: s.project.info}, true' \
     '	return heldDir{file: s.project.own.dirFile, path: s.projectDir, info: s.project.info, startup: s.cfg.deskID == ""}, true'
-  mutate go "runner key: its folder held to no custody" "$RK" \
+  mutate go "runner key: the folder opened is not held to custody" "$RK" \
     '	if err := safeDirectory(path, checked, true); err != nil {
 		return failed(err)
 	}

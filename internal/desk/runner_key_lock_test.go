@@ -207,7 +207,11 @@ func TestTwoStartsNeverRemoveANamedKey(t *testing.T) {
 					path, _ := c.prepare()
 					cDone <- path
 				}()
-				<-cWaiting
+				select {
+				case <-cWaiting:
+				case <-time.After(20 * time.Second):
+					t.Error("C did not wait for the lock A holds")
+				}
 			})
 		case "lock busy":
 			if cLaunched.Load() {
@@ -473,5 +477,84 @@ func TestRunnersStandardErrorIsKeptToItsBound(t *testing.T) {
 		if _, got := runnerKeyRefusal(said.Bytes()); got != refused {
 			t.Errorf("a refusal whose prefix ends at byte %d: read %v, want %v", filler+len(runnerKeyRefusedPrefix), got, refused)
 		}
+	}
+}
+
+// **The desks' sweep at Desk's start takes the lock**, and does not wait for
+// it: a Desk started while another process holds it leaves an unfinished
+// desk key as it is; the next start, once the lock is free, removes it.
+func TestDesksStartSweepsUnderTheLock(t *testing.T) {
+	const orphan = "c0000000000000000000000000000018"
+	bin := filepath.Join(t.TempDir(), "jpack")
+	writeStandInRuntime(t, bin, reading(allConfigVersions), lockingAs(wantGatedConfig))
+	first, _, _ := gatesServer(t, bin)
+	signing, err := first.assistant.openSigning(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signing.Close()
+	folder := signingFolderOf(first)
+	for _, file := range []string{orphan + ".seed", orphan + ".keys.jsonl", orphan + ".creating"} {
+		if err := os.WriteFile(filepath.Join(folder, file), []byte("planted\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := keptIn(t, folder)
+	release := holdKeyCustodyLock(t, folder)
+	began := time.Now()
+	held, heldServer := startDesk(t, Config{ProjectDir: t.TempDir(), JpackBin: bin, DeskConfigDir: first.configDir, Token: testToken})
+	if waited := time.Since(began); waited >= 5*time.Second {
+		t.Errorf("Desk's start waited %v for the lock", waited)
+	}
+	heldServer.Close()
+	held.Close()
+	assertKept(t, folder, before)
+	release()
+	free, freeServer := startDesk(t, Config{ProjectDir: t.TempDir(), JpackBin: bin, DeskConfigDir: first.configDir, Token: testToken})
+	freeServer.Close()
+	free.Close()
+	if names := namesIn(t, folder); len(names) != 0 {
+		t.Errorf("Desk's start, the lock free, left %q", names)
+	}
+}
+
+// **The folder opened is the folder checked.** `runner/` replaced, between
+// custody's making or narrowing of it and the check of what is opened, by one
+// its group can write: it is refused, and no key is made or named in it.
+func TestARunnerKeysFolderSwappedAfterItsNarrowingIsRefused(t *testing.T) {
+	const name = "c0000000000000000000000000000019"
+	bin := filepath.Join(t.TempDir(), "jpack")
+	calls := writeStandInRuntime(t, bin, reading(allConfigVersions), lockingAs(wantGatedConfig))
+	s, _, _ := gatesServer(t, bin)
+	runner := runnerFolderOf(s)
+	testHookRunnerKeyIO = func(step string) error {
+		if step != "runner" {
+			return nil
+		}
+		if err := os.Rename(runner, runner+".aside"); err != nil {
+			t.Error(err)
+		}
+		if err := os.Mkdir(runner, 0o700); err != nil {
+			t.Error(err)
+		}
+		if err := os.Chmod(runner, 0o770); err != nil {
+			t.Error(err)
+		}
+		return nil
+	}
+	t.Cleanup(func() { testHookRunnerKeyIO = nil })
+	k := s.newRunnerKey(name)
+	if path := k.decide(); path != "" {
+		t.Fatalf("named %s in a folder its group can write", path)
+	}
+	testHookRunnerKeyIO = nil
+	if got := *k.report(); got.Reason != "custody" || !strings.Contains(got.Detail, "writable by group or others") {
+		t.Errorf("reported %+v", got)
+	}
+	if names := namesIn(t, runner); len(names) != 0 {
+		t.Errorf("the folder swapped in holds %q", names)
+	}
+	if _, err := os.Stat(calls); err == nil && generations(t, calls) != 0 {
+		t.Error("a key was made")
 	}
 }
