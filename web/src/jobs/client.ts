@@ -12,7 +12,16 @@ export interface JobInput { source?: SourceInput | SourceV2; preparation?: Prepa
 export interface Decision { disposition: { kind: string; outcomeId?: string; reasons: string[]; handoff: { state: string; triggeredBy?: string[] } }; handoffTarget?: { kind?: string; name?: string } }
 export interface Release { inputMapping?: InputMapping | MappingV2; inputProfiles?: InputProfile[]; mappingWarnings?: string[]; id: string; title: string; packId: string; packVersion: string; packDigest: string; runtimeDigest: string; createdAt: string; pack: string; sample: JobInput; preview: Decision; tests: 'not-run' | 'passed' | 'failed' | 'error'; testEvidence?: ReleaseTests }
 export interface Job { initialTriggerId?:string; triggers?:{id:string;kind:string;paused:boolean;nextAt?:string}[]; id: string; name: string; releaseId: string; revision: number; createdAt: string; packTitle?: string; packVersion?: string; recentRuns?: Pick<Run, 'id' | 'state' | 'createdAt'>[] }
-export interface Run { trigger?:TriggerOrigin; jobName?: string; id: string; jobId: string; releaseId: string; revision: number; state: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted'; createdAt: string; startedAt?: string; finishedAt?: string; attempt: number; problem?: string; input?: JobInput; result?: Decision; audit?: unknown }
+/**
+ * A run as Runner (v0.5.0, `internal/runner/model.go`) returns it. `startedAt`
+ * is absent until execution starts, and absent for a run that expired in the
+ * queue. `requestedBy` is the installation's owner or `trigger:<id>`; a run
+ * recorded before Runner kept it has none. `auditBytes` (the record exactly as
+ * the runtime wrote it) and `auditSignatures` (the attempt's signature sidecar)
+ * are base64, only on `GET runs/{run}`: every list strips them, with `input`
+ * and `audit`.
+ */
+export interface Run { trigger?:TriggerOrigin; jobName?: string; id: string; jobId: string; releaseId: string; revision: number; state: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted'; createdAt: string; startedAt?: string; finishedAt?: string; requestedBy?: string; attempt: number; problem?: string; input?: JobInput; result?: Decision; audit?: unknown; auditBytes?: string; auditSignatures?: string }
 export interface Page<T> { items: T[]; next: number }
 /** A refusal in the runner's words, with its code for the few refusals Desk shows differently. */
 export class JobsRequestError extends Error {
