@@ -191,17 +191,22 @@ func TestTwoStartsNeverRemoveANamedKey(t *testing.T) {
 	var bDecided RunnerKeyStatus
 	cDone := make(chan string, 1)
 	cWaiting := make(chan struct{})
-	var bOnce, cOnce, waitingOnce sync.Once
-	var cLaunched atomic.Bool
+	// Flags, not sync.Once: where a start does not wait for the lock, B's
+	// start runs into these hooks from inside A's, and a Once would wait on
+	// itself.
+	var bStarted, cStarted, cLaunched atomic.Bool
+	var waitingOnce sync.Once
 	testHookKeyBetween = func(at string) {
 		switch at {
 		case "after generate":
 			// A holds the lock, and its marker stands: B starts now.
-			bOnce.Do(func() { bPath, bDecided = b.prepare() })
+			if bStarted.CompareAndSwap(false, true) {
+				bPath, bDecided = b.prepare()
+			}
 		case "read list":
 			// A, its marker removed, reads its list under the lock: C starts
 			// now, and A goes on only once C is waiting for the lock.
-			cOnce.Do(func() {
+			if cStarted.CompareAndSwap(false, true) {
 				cLaunched.Store(true)
 				go func() {
 					path, _ := c.prepare()
@@ -212,7 +217,7 @@ func TestTwoStartsNeverRemoveANamedKey(t *testing.T) {
 				case <-time.After(20 * time.Second):
 					t.Error("C did not wait for the lock A holds")
 				}
-			})
+			}
 		case "lock busy":
 			if cLaunched.Load() {
 				waitingOnce.Do(func() { close(cWaiting) })
