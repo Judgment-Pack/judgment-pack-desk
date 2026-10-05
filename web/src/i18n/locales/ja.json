@@ -3770,5 +3770,18 @@
   "The runtime’s check of the key: {{status}}.": "ランタイムによる鍵の確認: {{status}}。",
   "This desk is not signed, because Desk could not keep a signing key for it: {{reason}}. It was created at configVersion 5, which names no signing key.": "Desk がこのデスクの署名鍵を保管できなかったため、このデスクは署名されません: {{reason}}。署名鍵を指定しない configVersion 5 で作成されました。",
   "This desk is not signed: a desk names its signing key at configVersion 6, and the runtime this Desk runs (jpack {{version}}) does not read it. A runtime of {{floor}} or later creates desks signed.": "このデスクは署名されません。デスクが署名鍵を指定するのは configVersion 6 からで、Desk が実行するランタイム（jpack {{version}}）はそれを読めません。ランタイム {{floor}} 以降なら、署名されたデスクを作成します。",
-  "What the runtime said of the key": "鍵についてのランタイムの応答"
+  "What the runtime said of the key": "鍵についてのランタイムの応答",
+  "Jobs signatures.": "ジョブの署名。",
+  "<0/> Runner signs the record of each Jobs run on this desk with a key of its own, never this project’s. Desk keeps it in its own configuration folder, outside the project, and names it to Runner when Runner starts. A holder checks a run’s version-5 export with jpack-runner verify-run --public-key and this public key. A signature binds nothing against you, who hold the key, or against an agent that can read your files.": "<0/> Runner は、このデスクの各ジョブ実行の記録に、このプロジェクトのものではない Runner 自身の鍵で署名します。Desk はその鍵をプロジェクトの外にある自身の設定フォルダーに保管し、Runner の起動時に Runner に指定します。実行を検証する人は、その実行のバージョン 5 のエクスポートを jpack-runner verify-run --public-key とこの公開鍵で確認します。鍵を持つあなたや、あなたのファイルを読めるエージェントに対しては、署名は何も拘束しません。",
+  "Runner’s public key, keyId {{keyId}}": "Runner の公開鍵、keyId {{keyId}}",
+  "<0/> Jobs runs on this desk are not signed, and run as before.": "<0/> このデスクのジョブ実行は署名されず、これまでどおり実行されます。",
+  "<0/> Runner has not started on this desk yet, so Desk cannot say yet whether it signs this desk’s runs.": "<0/> このデスクではまだ Runner が起動していないため、Desk はこのデスクの実行に署名するかどうかをまだ示せません。",
+  "Desk cannot keep a signing key for Runner here: {{detail}}.": "Desk はここで Runner の署名鍵を保管できません: {{detail}}。",
+  "The runtime did not make Runner’s signing key: {{detail}}.": "ランタイムは Runner の署名鍵を作成しませんでした: {{detail}}。",
+  "Making Runner’s signing key did not finish. Desk removes what was left at its next start, and makes the key again.": "Runner の署名鍵の作成が完了しませんでした。Desk は次回の起動時に残ったものを削除し、鍵を作り直します。",
+  "Desk keeps the public half of Runner’s signing key, but no longer the key itself, and does not make another in its place.": "Desk は Runner の署名鍵の公開側を保管していますが、鍵そのものはもうなく、代わりの鍵は作成しません。",
+  "Desk could not read Runner’s signing key just now, and left it as it is: {{detail}}.": "Desk は今は Runner の署名鍵を読み取れなかったため、そのままにしました: {{detail}}。",
+  "Desk does not name the signing key it keeps for Runner: {{detail}}.": "Desk は Runner のために保管している署名鍵を Runner に指定しません: {{detail}}。",
+  "The runtime refuses Runner’s signing key: {{detail}}.": "ランタイムは Runner の署名鍵を拒否しています: {{detail}}。",
+  "Runner refused its signing key when it started: {{detail}}.": "Runner は起動時に自身の署名鍵を拒否しました: {{detail}}。"
 }

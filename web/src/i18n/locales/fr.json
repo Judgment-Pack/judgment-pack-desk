@@ -3794,5 +3794,18 @@
   "The runtime’s check of the key: {{status}}.": "La vérification de la clé par le runtime : {{status}}.",
   "This desk is not signed, because Desk could not keep a signing key for it: {{reason}}. It was created at configVersion 5, which names no signing key.": "Ce bureau n’est pas signé, car Desk n’a pas pu conserver de clé de signature pour lui : {{reason}}. Il a été créé avec configVersion 5, qui ne nomme aucune clé de signature.",
   "This desk is not signed: a desk names its signing key at configVersion 6, and the runtime this Desk runs (jpack {{version}}) does not read it. A runtime of {{floor}} or later creates desks signed.": "Ce bureau n’est pas signé : un bureau nomme sa clé de signature à partir de configVersion 6, et le runtime qu’exécute Desk (jpack {{version}}) ne la lit pas. Un runtime {{floor}} ou ultérieur crée des bureaux signés.",
-  "What the runtime said of the key": "Ce que le runtime a indiqué sur la clé"
+  "What the runtime said of the key": "Ce que le runtime a indiqué sur la clé",
+  "Jobs signatures.": "Signatures des tâches.",
+  "<0/> Runner signs the record of each Jobs run on this desk with a key of its own, never this project’s. Desk keeps it in its own configuration folder, outside the project, and names it to Runner when Runner starts. A holder checks a run’s version-5 export with jpack-runner verify-run --public-key and this public key. A signature binds nothing against you, who hold the key, or against an agent that can read your files.": "<0/> Runner signe l’enregistrement de chaque exécution de tâche de ce bureau avec une clé qui lui est propre, jamais celle de ce projet. Desk la conserve dans son propre dossier de configuration, hors du projet, et l’indique à Runner au démarrage de Runner. Qui vérifie une exécution contrôle son export en version 5 avec jpack-runner verify-run --public-key et cette clé publique. Une signature ne vous engage à rien, vous qui détenez la clé, ni un agent qui peut lire vos fichiers.",
+  "Runner’s public key, keyId {{keyId}}": "Clé publique de Runner, keyId {{keyId}}",
+  "<0/> Jobs runs on this desk are not signed, and run as before.": "<0/> Les exécutions de tâches de ce bureau ne sont pas signées et se déroulent comme avant.",
+  "<0/> Runner has not started on this desk yet, so Desk cannot say yet whether it signs this desk’s runs.": "<0/> Runner n’a pas encore démarré sur ce bureau, donc Desk ne peut pas encore dire s’il signe les exécutions de ce bureau.",
+  "Desk cannot keep a signing key for Runner here: {{detail}}.": "Desk ne peut pas conserver ici de clé de signature pour Runner : {{detail}}.",
+  "The runtime did not make Runner’s signing key: {{detail}}.": "Le runtime n’a pas créé la clé de signature de Runner : {{detail}}.",
+  "Making Runner’s signing key did not finish. Desk removes what was left at its next start, and makes the key again.": "La création de la clé de signature de Runner ne s’est pas terminée. Desk supprime ce qui en reste à son prochain démarrage, puis recrée la clé.",
+  "Desk keeps the public half of Runner’s signing key, but no longer the key itself, and does not make another in its place.": "Desk conserve la moitié publique de la clé de signature de Runner, mais plus la clé elle-même, et n’en crée pas d’autre à sa place.",
+  "Desk could not read Runner’s signing key just now, and left it as it is: {{detail}}.": "Desk n’a pas pu lire la clé de signature de Runner à l’instant, et l’a laissée telle quelle : {{detail}}.",
+  "Desk does not name the signing key it keeps for Runner: {{detail}}.": "Desk n’indique pas à Runner la clé de signature qu’il conserve pour lui : {{detail}}.",
+  "The runtime refuses Runner’s signing key: {{detail}}.": "Le runtime refuse la clé de signature de Runner : {{detail}}.",
+  "Runner refused its signing key when it started: {{detail}}.": "Runner a refusé sa clé de signature à son démarrage : {{detail}}."
 }

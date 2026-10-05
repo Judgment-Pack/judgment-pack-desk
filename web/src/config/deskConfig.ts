@@ -2162,7 +2162,28 @@ export interface ChassisPaths {
    * did not say. The key's path is never carried.
    */
   runtimeInheritsSigningKey?: boolean
+  /**
+   * What this desk's Runner signs its runs with, or why it signs none
+   * (ADR-0010, section 5). Undefined where the chassis did not say, which is
+   * where this desk has no Runner. Never a path.
+   */
+  runnerKey?: RunnerKey
 }
+
+/** Why a desk's Runner was started without its signing key, as the chassis names it. */
+export const RUNNER_KEY_REASONS = ['custody', 'not-made', 'unfinished', 'lost', 'not-read-now', 'not-used', 'runtime-refused', 'runner-refused'] as const
+export type RunnerKeyReason = typeof RUNNER_KEY_REASONS[number]
+
+/**
+ * The key Desk keeps for this desk's Runner, as the chassis reported it: its
+ * public half, as the runtime read it from the key; or why Runner was started
+ * without it, with the words of the check, the runtime or Runner that say
+ * why; or that Runner has not started yet.
+ */
+export type RunnerKey =
+  | { state: 'signed'; publicKey: string; keyId: string }
+  | { state: 'unsigned'; reason: RunnerKeyReason; detail?: string }
+  | { state: 'starting' }
 
 /**
  * One read of the desk-level `desk.json`, as the chassis reported it.

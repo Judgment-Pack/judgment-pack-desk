@@ -338,7 +338,7 @@ func TestEachStateARunnerKeyCanBeFoundIn(t *testing.T) {
 		}
 	}
 	for _, c := range []struct {
-		name   string
+		name    string
 		arrange func(t *testing.T, st setup)
 		// later is a start after this process's first, so that no sweep runs.
 		later  bool
@@ -742,7 +742,7 @@ func TestARunnerThatRefusesItsKeyStartsWithout(t *testing.T) {
 func TestOnlyRunnersRefusalOfTheKeyIsTakenForOne(t *testing.T) {
 	for said, want := range map[string]string{
 		"runner: the signing key is refused: its path must be absolute and clean\n": "its path must be absolute and clean",
-		"note\nrunner: the signing key is refused: it must be a regular file\n":       "it must be a regular file",
+		"note\nrunner: the signing key is refused: it must be a regular file\n":     "it must be a regular file",
 	} {
 		if got, refused := runnerKeyRefusal([]byte(said)); !refused || got != want {
 			t.Errorf("%q: %q %v", said, got, refused)

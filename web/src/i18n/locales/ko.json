@@ -3770,5 +3770,18 @@
   "The runtime’s check of the key: {{status}}.": "런타임의 키 확인: {{status}}.",
   "This desk is not signed, because Desk could not keep a signing key for it: {{reason}}. It was created at configVersion 5, which names no signing key.": "Desk가 이 데스크의 서명 키를 보관할 수 없었으므로 이 데스크는 서명되지 않습니다: {{reason}}. 서명 키를 지정하지 않는 configVersion 5로 만들어졌습니다.",
   "This desk is not signed: a desk names its signing key at configVersion 6, and the runtime this Desk runs (jpack {{version}}) does not read it. A runtime of {{floor}} or later creates desks signed.": "이 데스크는 서명되지 않습니다. 데스크는 configVersion 6부터 서명 키를 지정하는데, Desk가 실행하는 런타임(jpack {{version}})은 이를 읽지 못합니다. 런타임 {{floor}} 이상은 서명된 데스크를 만듭니다.",
-  "What the runtime said of the key": "키에 대한 런타임의 응답"
+  "What the runtime said of the key": "키에 대한 런타임의 응답",
+  "Jobs signatures.": "작업 서명.",
+  "<0/> Runner signs the record of each Jobs run on this desk with a key of its own, never this project’s. Desk keeps it in its own configuration folder, outside the project, and names it to Runner when Runner starts. A holder checks a run’s version-5 export with jpack-runner verify-run --public-key and this public key. A signature binds nothing against you, who hold the key, or against an agent that can read your files.": "<0/> Runner는 이 Desk의 각 작업 실행 기록에 이 프로젝트의 키가 아닌 Runner 자체의 키로 서명합니다. Desk는 그 키를 프로젝트 밖에 있는 자체 설정 폴더에 보관하고, Runner가 시작될 때 Runner에 지정합니다. 실행을 검증하는 사람은 그 실행의 버전 5 내보내기를 jpack-runner verify-run --public-key와 이 공개 키로 확인합니다. 키를 가진 사용자나 사용자의 파일을 읽을 수 있는 에이전트에 대해서는 서명이 아무것도 묶지 않습니다.",
+  "Runner’s public key, keyId {{keyId}}": "Runner의 공개 키, keyId {{keyId}}",
+  "<0/> Jobs runs on this desk are not signed, and run as before.": "<0/> 이 Desk의 작업 실행은 서명되지 않으며, 이전과 같이 실행됩니다.",
+  "<0/> Runner has not started on this desk yet, so Desk cannot say yet whether it signs this desk’s runs.": "<0/> 이 Desk에서 Runner가 아직 시작되지 않아, Desk는 이 Desk의 실행에 서명하는지 아직 알 수 없습니다.",
+  "Desk cannot keep a signing key for Runner here: {{detail}}.": "Desk는 여기에서 Runner의 서명 키를 보관할 수 없습니다: {{detail}}.",
+  "The runtime did not make Runner’s signing key: {{detail}}.": "런타임이 Runner의 서명 키를 만들지 않았습니다: {{detail}}.",
+  "Making Runner’s signing key did not finish. Desk removes what was left at its next start, and makes the key again.": "Runner의 서명 키 생성이 끝나지 않았습니다. Desk는 다음 시작 때 남은 것을 제거하고 키를 다시 만듭니다.",
+  "Desk keeps the public half of Runner’s signing key, but no longer the key itself, and does not make another in its place.": "Desk는 Runner 서명 키의 공개 부분은 보관하지만 키 자체는 더 이상 없으며, 그 자리에 다른 키를 만들지 않습니다.",
+  "Desk could not read Runner’s signing key just now, and left it as it is: {{detail}}.": "Desk가 지금은 Runner의 서명 키를 읽을 수 없어 그대로 두었습니다: {{detail}}.",
+  "Desk does not name the signing key it keeps for Runner: {{detail}}.": "Desk는 Runner를 위해 보관하는 서명 키를 Runner에 지정하지 않습니다: {{detail}}.",
+  "The runtime refuses Runner’s signing key: {{detail}}.": "런타임이 Runner의 서명 키를 거부합니다: {{detail}}.",
+  "Runner refused its signing key when it started: {{detail}}.": "Runner가 시작할 때 자체 서명 키를 거부했습니다: {{detail}}."
 }

@@ -13,9 +13,14 @@
  * desk's runtime inherits a JPACK_SIGNING_KEY (the startup desk), that it
  * does. It offers no key action: while that key is set, the runtime acts on
  * it, not on anything Desk keeps.
+ *
+ * Beside those, the key this desk's Runner signs its runs with (ADR-0010,
+ * section 5): its public key, or why its runs are not signed, as Desk
+ * reported it in desk-config. Nothing where this desk has no Runner.
  */
 import { Section } from '../components/primitives'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
+import type { RunnerKey, RunnerKeyReason } from '../config/deskConfig'
 import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
 import { CodeBlock } from '../ui/CodeBlock'
@@ -37,6 +42,38 @@ export function outsideAgentCommand(projectDir: string | undefined, runtimeBin: 
   return `JPACK_CONFIG=${shellWord(config)} ${shellWord(runtimeBin || 'jpack')} mcp`
 }
 
+/**
+ * Why this desk's Runner signs no run, for each reason the chassis names
+ * (`internal/desk/runner_key.go`). The words of the check, the runtime or
+ * Runner that say why are passed on as they were written.
+ */
+function runnerKeyReason(key: { reason: RunnerKeyReason; detail?: string }): string {
+  const detail = key.detail ?? ''
+  switch (key.reason) {
+    case 'custody': return msg('Desk cannot keep a signing key for Runner here: {{detail}}.', { detail })
+    case 'not-made': return msg('The runtime did not make Runner’s signing key: {{detail}}.', { detail })
+    case 'unfinished': return msg('Making Runner’s signing key did not finish. Desk removes what was left at its next start, and makes the key again.')
+    case 'lost': return msg('Desk keeps the public half of Runner’s signing key, but no longer the key itself, and does not make another in its place.')
+    case 'not-read-now': return msg('Desk could not read Runner’s signing key just now, and left it as it is: {{detail}}.', { detail })
+    case 'not-used': return msg('Desk does not name the signing key it keeps for Runner: {{detail}}.', { detail })
+    case 'runtime-refused': return msg('The runtime refuses Runner’s signing key: {{detail}}.', { detail })
+    case 'runner-refused': return msg('Runner refused its signing key when it started: {{detail}}.', { detail })
+  }
+}
+
+/** The key this desk's Runner signs its runs with, or why it signs none. */
+export function RunnerSignatures({ runnerKey }: { runnerKey: RunnerKey | undefined }) {
+  useLocale()
+  if (!runnerKey) return null
+  const label = <strong>{msg('Jobs signatures.')}</strong>
+  if (runnerKey.state === 'signed') return <>
+    <p className="quiet" id="runner-signatures"><Message text={"<0/> Runner signs the record of each Jobs run on this desk with a key of its own, never this project’s. Desk keeps it in its own configuration folder, outside the project, and names it to Runner when Runner starts. A holder checks a run’s version-5 export with jpack-runner verify-run --public-key and this public key. A signature binds nothing against you, who hold the key, or against an agent that can read your files."} slots={[label]} /></p>
+    <CodeBlock text={runnerKey.publicKey} label={msg('Runner’s public key, keyId {{keyId}}', { keyId: runnerKey.keyId })} />
+  </>
+  if (runnerKey.state === 'unsigned') return <p className="quiet" id="runner-signatures"><Message text={"<0/> Jobs runs on this desk are not signed, and run as before."} slots={[label]} /> {runnerKeyReason(runnerKey)}</p>
+  return <p className="quiet" id="runner-signatures"><Message text={"<0/> Runner has not started on this desk yet, so Desk cannot say yet whether it signs this desk’s runs."} slots={[label]} /></p>
+}
+
 export function GatesHelp() {
   useLocale()
   const { desk } = useEffectiveConfig()
@@ -48,6 +85,7 @@ export function GatesHelp() {
     <p className="quiet"><Message text={"<0/> Where jpack.json declares an audit directory (.desk-private/audit in a desk Desk made), each completed deciding run adds one record there. Rehearsals, tests and refusals add none. The folder is private to this desk, never committed and in no backup. Anyone who can write this project can change a record."} slots={[<strong>{msg('Records.')}</strong>]} /></p>
     <p className="quiet"><Message text={"<0/> A desk Desk makes with runtime 0.26.0 or later names a signing key in its jpack.json, unless Desk cannot keep one, which its creation says. Desk keeps the key for that desk in its own configuration folder, outside the project, and every runtime that reads that jpack.json signs each record it adds, if it accepts the key. A signature binds an agent given only this desk’s jpack mcp, which cannot read the key. It binds nothing against you, who hold the key, or against an agent that can read your files. Desk keeps no key for any other project: its records are signed only where something else names a key."} slots={[<strong>{msg('Signatures.')}</strong>]} /></p>
     {chassis?.runtimeInheritsSigningKey === true && <p className="quiet">{msg('But JPACK_SIGNING_KEY is set where Desk was started. Where this project’s audit trail is chained, as it is by default, its runtime signs each record with the key it names, if it accepts that key. Desks Desk made do not inherit it.')}</p>}
+    <RunnerSignatures runnerKey={chassis?.runnerKey} />
     <p className="quiet"><Message text={"<0/> Where jpack.json sets requireComparableFacts, the runtime refuses any evaluation, rehearsals included, that reads a fact of a JSON type no comparison in the pack can match, and names the fact. Saved tests and Jobs are not refused."} slots={[<strong>{msg('Comparable facts.')}</strong>]} /></p>
     <p className="quiet">{requireTested === true
       ? <Message text={"<0/> This installation refuses a job from a release whose saved tests were not run. Start Desk with <1/> to allow it; that applies to every desk."} slots={[<strong>{msg('Tested releases.')}</strong>, flag]} />

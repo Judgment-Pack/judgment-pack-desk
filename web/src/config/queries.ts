@@ -36,9 +36,12 @@ import {
 } from '../files/client'
 import {
   PROJECT_CONFIG_PATH,
+  RUNNER_KEY_REASONS,
   decodeDeskConfig,
   effectiveConfig,
   type ChassisPaths,
+  type RunnerKey,
+  type RunnerKeyReason,
   type ComponentBuilds,
   type DeskLevelRead,
   type LocalGatewayStatus,
@@ -69,8 +72,30 @@ interface DeskLevelAnswer {
   project?: { dir: string; file: string }
   /** `inheritsSigningKey` is read only where it is a boolean. */
   runtime?: { bin: string; inheritsSigningKey?: unknown }
-  /** The installation's Jobs policy. Read only where it is a boolean. */
-  jobs?: { requireTestedReleases?: unknown }
+  /**
+   * The installation's Jobs policy, read only where it is a boolean, and this
+   * desk's Runner key, read only where it is one of the shapes it has.
+   */
+  jobs?: { requireTestedReleases?: unknown; runnerKey?: unknown }
+}
+
+/**
+ * The Runner key the chassis reported, or undefined where it is not one of
+ * the three shapes it has: a public key of 64 and a keyId of 32 lowercase
+ * hexadecimal characters; a reason the page has words for, and words that
+ * are text; or that Runner has not started.
+ */
+export function runnerKeyOf(value: unknown): RunnerKey | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const key = value as Record<string, unknown>
+  if (key.state === 'signed' && typeof key.publicKey === 'string' && /^[0-9a-f]{64}$/.test(key.publicKey) && typeof key.keyId === 'string' && /^[0-9a-f]{32}$/.test(key.keyId)) {
+    return { state: 'signed', publicKey: key.publicKey, keyId: key.keyId }
+  }
+  if (key.state === 'unsigned' && (RUNNER_KEY_REASONS as readonly unknown[]).includes(key.reason) && (key.detail === undefined || typeof key.detail === 'string')) {
+    return { state: 'unsigned', reason: key.reason as RunnerKeyReason, ...(typeof key.detail === 'string' && key.detail !== '' ? { detail: key.detail } : {}) }
+  }
+  if (key.state === 'starting') return { state: 'starting' }
+  return undefined
 }
 
 /**
@@ -82,6 +107,7 @@ interface DeskLevelAnswer {
  */
 function chassisPaths(answered: DeskLevelAnswer): ChassisPaths | undefined {
   if (answered.project === undefined || answered.runtime === undefined) return undefined
+  const runnerKey = runnerKeyOf(answered.jobs?.runnerKey)
   return {
     projectDir: answered.project.dir,
     projectFile: answered.project.file,
@@ -92,7 +118,8 @@ function chassisPaths(answered: DeskLevelAnswer): ChassisPaths | undefined {
     ...(answered.builds ? { builds: answered.builds } : {}),
     ...(typeof answered.jobs?.requireTestedReleases === 'boolean'
       ? { jobs: { requireTestedReleases: answered.jobs.requireTestedReleases } }
-      : {})
+      : {}),
+    ...(runnerKey ? { runnerKey } : {})
   }
 }
 
