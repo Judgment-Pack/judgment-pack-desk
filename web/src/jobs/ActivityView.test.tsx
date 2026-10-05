@@ -218,9 +218,10 @@ describe('paging', () => {
     const served = runner()
     vi.mocked(jobsAPI).mockImplementation((async (path: string) => path === `jobs/${JOB}/occurrences?after=0` ? occurrencesLater : served(path)) as never)
     show()
-    await waitFor(() => expect(asked(`jobs/${JOB}/runs?after=0`)).toBe(true))
-    await new Promise(resolve => setTimeout(resolve, 50))
-    expect(screen.queryByRole('table')).toBeNull()
+    // The job's Runs tab asks for the same page; the second ask is the Activity tab's.
+    await waitFor(() => expect(vi.mocked(jobsAPI).mock.calls.filter(([path]) => path === `jobs/${JOB}/runs?after=0`).length).toBeGreaterThanOrEqual(2))
+    await expect(screen.findByRole('table', undefined, { timeout: 1000 })).rejects.toThrow()
+    expect(within(screen.getByRole('region', { name: 'Activity' })).getByRole('status').textContent).toBe('Loading…')
     answer({ items: Object.values(occurrences), next: 0 })
     expect((await whats())[2]).toBe('Occurrence received')
   })
