@@ -175,13 +175,15 @@ describe('a record row', () => {
     const said = async (setting: StandInJournal | 'absent', limits?: JournalLimits) => {
       vi.mocked(jobsAPI).mockImplementation(runner({ runs: [run], occurrences: [], journal: setting }) as never)
       const { unmount } = showTab(limits)
+      // Read once the journal is read to its end, when the run's row stands among its entries.
+      await screen.findByText(setting === 'absent' ? /serves no journal/ : /read to its end as of the last request/)
       let text: string | null | undefined
       await waitFor(() => { text = bodyRows().find(row => row.getAttribute('data-kind') === 'run')?.textContent; expect(text).toMatch(/Present: /) })
-      if (setting !== 'absent') await screen.findByText(/read to its end as of the last request/)
       unmount(); cleanup()
       return text
     }
     const none = await said('absent'), whole = await said(journal), bounded = await said(journal, { keep: 1000, window: 500, step: 500 })
+    // The whole journal holds the run's entries, the bounded one has dropped them.
     expect(whole).toBe(none)
     expect(bounded).toBe(none)
     expect(none).toContain('Run started')
