@@ -1920,8 +1920,8 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '|runs/run_[a-f0-9]{32}/verification|run-chain|' \
     '|runs/run_[a-f0-9]{32}/verification|run-chain.*|'
   mutate go "run chain: written with POST" "$J" \
-    ' || tail == runChainRoute && r.Method != http.MethodGet {' \
-    ' {'
+    ' || (tail == runChainRoute || journalPath.MatchString(tail)) && r.Method != http.MethodGet {' \
+    ' || journalPath.MatchString(tail) && r.Method != http.MethodGet {'
   mutate go "run chain: the caller's query forwarded" "$J" \
     '		query = url.Values{}
 		limit = runChainLimit' \
@@ -1956,10 +1956,14 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	body, err := io.ReadAll(io.LimitReader(response.Body, int64(limit)+1))
 	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {'
 
-  # **A job's journal of job activity is forwarded on its own route, with its
-  # cursor alone (#218).** The Activity tab reads Runner's
-  # `GET /v1/jobs/{job}/events?after=`; Runner's store-wide `events` route, a
-  # path that only begins like the job's, and the `job` key reach nothing.
+  # **A job's journal of job activity is forwarded on its own route, read with
+  # GET alone, with its cursor alone (#218).** The Activity tab reads Runner's
+  # `GET /v1/jobs/{job}/events?after=`. Runner's store-wide `events` route, a
+  # path that only begins like the job's, an id outside lower-case hex, and
+  # any method but GET reach nothing; no key but `after` is forwarded, and an
+  # `after` given more than once, empty, or not in 1 to 18 decimal digits, or
+  # in a query that does not parse, is refused, while none means the start.
+  # No Jobs path at all may be percent-encoded (review of #228).
   mutate go "jobs journal (route): not on the route list" "$J" \
     '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/events|' \
     '|jobs/job_[a-f0-9]{32}/runs|'
@@ -1969,9 +1973,50 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "jobs journal (route): the store-wide journal forwarded" "$J" \
     '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/events|' \
     '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/events|events|'
-  mutate go "jobs journal (route): the job key forwarded" "$J" \
-    '	for _, key := range []string{"after", "q", "state", "review", "preparations"} {' \
-    '	for _, key := range []string{"after", "q", "state", "review", "preparations", "job"} {'
+  mutate go "jobs journal (route): an id in upper-case hex forwarded" "$J" \
+    '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/events|' \
+    '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-fA-F0-9]{32}/events|'
+  mutate go "jobs journal (route): an id with hex letters refused" "$J" \
+    '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/events|' \
+    '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[0-9]{32}/events|'
+  mutate go "jobs journal (route): written with POST" "$J" \
+    ' || (tail == runChainRoute || journalPath.MatchString(tail)) && r.Method != http.MethodGet {' \
+    ' || tail == runChainRoute && r.Method != http.MethodGet {'
+  mutate go "jobs journal (route): its own rules never apply" "$J" \
+    'var journalPath = regexp.MustCompile(`^jobs/job_[a-f0-9]{32}/events$`)' \
+    'var journalPath = regexp.MustCompile(`^jobs/job_[a-f0-9]{32}/eventz$`)'
+  mutate go "jobs journal (cursor): the shared query keys forwarded" "$J" \
+    '		query = url.Values{}
+		if after != "" {' \
+    '		if after != "" {'
+  mutate go "jobs journal (cursor): a repeated cursor read as its first" "$J" \
+    '	case len(cursor) == 1 && journalSequence.MatchString(cursor[0]):' \
+    '	case len(cursor) >= 1 && journalSequence.MatchString(cursor[0]):'
+  mutate go "jobs journal (cursor): a cursor that only begins with digits forwarded" "$J" \
+    'var journalSequence = regexp.MustCompile(`^[0-9]{1,18}$`)' \
+    'var journalSequence = regexp.MustCompile(`^[0-9]{1,18}`)'
+  mutate go "jobs journal (cursor): an empty cursor forwarded" "$J" \
+    'var journalSequence = regexp.MustCompile(`^[0-9]{1,18}$`)' \
+    'var journalSequence = regexp.MustCompile(`^[0-9]{0,18}$`)'
+  mutate go "jobs journal (cursor): a cursor past Runner's 18 digits forwarded" "$J" \
+    'var journalSequence = regexp.MustCompile(`^[0-9]{1,18}$`)' \
+    'var journalSequence = regexp.MustCompile(`^[0-9]+$`)'
+  mutate go "jobs journal (cursor): a query that does not parse read leniently" "$J" \
+    '	case malformed != nil:
+		// Refused below, as Runner refuses it.' \
+    '	case malformed != nil && false:'
+  mutate go "jobs journal (cursor): no cursor refused rather than read as the start" "$J" \
+    '	case !given:' \
+    '	case !given && false:'
+  mutate go "jobs proxy (path): a percent-encoded path forwarded" "$J" \
+    '	if strings.Contains(r.URL.EscapedPath(), "%") {' \
+    '	if false {'
+  mutate go "jobs proxy (path): the encoding is looked for in the decoded path" "$J" \
+    '	if strings.Contains(r.URL.EscapedPath(), "%") {' \
+    '	if strings.Contains(r.URL.Path, "%") {'
+  mutate go "jobs proxy (path): an encoded query refused as if it were the path" "$J" \
+    '	if strings.Contains(r.URL.EscapedPath(), "%") {' \
+    '	if strings.Contains(r.URL.RequestURI(), "%") {'
 
   # **A new desk starts gated (ADR-0009, section 1).** Its configuration is
   # the one the runtime can hold it to, its audit folder is owner-only, and the

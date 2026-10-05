@@ -884,14 +884,17 @@ func TestJobsReadsTheRunChainOnItsRouteAlone(t *testing.T) {
 }
 
 // A job's journal of job activity (Runner v0.6.0) is forwarded on its own
-// route, with the page cursor alone: the Activity tab reads it. Runner's
-// store-wide journal, and any path that only begins like the job's, reach
-// nothing.
+// route, read with GET alone, with its cursor alone: at most one `after`, in
+// decimal digits, or none, which Runner reads as the start. Every other key is
+// left out; a repeated, empty, non-decimal or malformed cursor is refused by
+// Desk; and Runner's store-wide journal, a path that only begins like the
+// job's, and an id outside lower-case hex reach nothing.
 func TestJobsForwardsAJobsJournalWithItsCursorAlone(t *testing.T) {
 	var forwarded []string
 	page := `{"journalBegan":"2026-10-06T08:00:00.000000Z","items":[],"next":40,"more":false}`
 	companion := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		forwarded = append(forwarded, r.Method+" "+r.URL.RequestURI())
+		body, _ := io.ReadAll(r.Body)
+		forwarded = append(forwarded, strings.TrimSpace(r.Method+" "+r.URL.RequestURI()+" "+string(body)))
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(page))
 	}))
@@ -900,16 +903,58 @@ func TestJobsForwardsAJobsJournalWithItsCursorAlone(t *testing.T) {
 	s.jobs = &jobsCompanion{url: companion.URL, token: "test-private", done: make(chan struct{}), stop: make(chan struct{})}
 	// The fake has no process to stop.
 	t.Cleanup(func() { s.jobs.closed = true })
-	call := func(method, path string) *httptest.ResponseRecorder {
-		r := httptest.NewRequest(method, path, nil)
+	call := func(method, path, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
 		r.Header.Set("Authorization", "Bearer "+testToken)
 		w := httptest.NewRecorder()
 		s.ServeHTTP(w, r)
 		return w
 	}
-	job := "job_" + strings.Repeat("0", 32)
-	if w := call("GET", "/api/operations/jobs/"+job+"/events?after=40&job=job_"+strings.Repeat("1", 32)+"&untrusted=ignored"); w.Code != 200 || w.Body.String() != page || !slices.Equal(forwarded, []string{"GET /v1/jobs/" + job + "/events?after=40"}) {
-		t.Fatalf("the journal was not read: %d %q, forwarded %q", w.Code, w.Body, forwarded)
+	// A valid id holds every hex letter, a to f; an invalid one the same in upper case.
+	job := "job_0123456789abcdef0123456789abcdef"
+	events := "/api/operations/jobs/" + job + "/events"
+	for _, tc := range []struct{ query, runner string }{
+		{"after=40", "/v1/jobs/" + job + "/events?after=40"},
+		{"after=0", "/v1/jobs/" + job + "/events?after=0"},
+		{"after=000000000000000040", "/v1/jobs/" + job + "/events?after=000000000000000040"},
+		// No cursor: Runner reads from the start.
+		{"", "/v1/jobs/" + job + "/events"},
+		// Every other key is left out, each of the shared list's included.
+		{"after=40&q=needle&state=running&review=true&preparations=1&job=job_11111111111111111111111111111111&limit=1&untrusted=ignored", "/v1/jobs/" + job + "/events?after=40"},
+		{"q=needle&state=running&review=true&preparations=1", "/v1/jobs/" + job + "/events"},
+	} {
+		forwarded = nil
+		if w := call("GET", events+"?"+tc.query, ""); w.Code != 200 || w.Body.String() != page || !slices.Equal(forwarded, []string{"GET " + tc.runner}) {
+			t.Errorf("GET ?%s: %d %q, forwarded %q, want GET %s", tc.query, w.Code, w.Body, forwarded, tc.runner)
+		}
+	}
+	// A cursor Runner would refuse is refused here, not read as another one or as the start.
+	for _, query := range []string{
+		"after=40&after=99",
+		"after=40&after=40",
+		"after=&after=99",
+		"after=",
+		"after",
+		"after=-1",
+		"after=+40",
+		"after=4e1",
+		"after=0x28",
+		"after=40%20",
+		"after=1234567890123456789",
+		"after=40;bad=x",
+		"after=40&bad=%zz",
+	} {
+		forwarded = nil
+		if w := call("GET", events+"?"+query, ""); w.Code != 400 || len(forwarded) != 0 {
+			t.Errorf("GET ?%s: %d %q, forwarded %q", query, w.Code, w.Body, forwarded)
+		}
+	}
+	// Read only: no other method reaches Runner, a POST with a body included.
+	for _, method := range []string{"POST", "PUT", "PATCH", "DELETE", "HEAD"} {
+		forwarded = nil
+		if w := call(method, events+"?after=40", `{"kind":"run.completed"}`); w.Code < 300 || len(forwarded) != 0 {
+			t.Errorf("%s: %d, forwarded %q", method, w.Code, forwarded)
+		}
 	}
 	for _, path := range []string{
 		"/api/operations/events",
@@ -917,13 +962,57 @@ func TestJobsForwardsAJobsJournalWithItsCursorAlone(t *testing.T) {
 		"/api/operations/jobs/" + job + "/events/",
 		"/api/operations/jobs/" + job + "/events/1",
 		"/api/operations/jobs/" + job + "/event",
-		"/api/operations/jobs/job_" + strings.Repeat("Z", 32) + "/events",
+		"/api/operations/jobs/job_0123456789ABCDEF0123456789ABCDEF/events",
+		"/api/operations/jobs/job_0123456789abcdef0123456789abcdeg/events",
+		"/api/operations/jobs/" + job[:len(job)-1] + "/events",
 		"/api/operations/triggers/trg_" + strings.Repeat("0", 32) + "/events",
 	} {
 		forwarded = nil
-		if w := call("GET", path); w.Code != 404 || len(forwarded) != 0 {
+		if w := call("GET", path, ""); w.Code != 404 || len(forwarded) != 0 {
 			t.Errorf("GET %s: %d, forwarded %q", path, w.Code, forwarded)
 		}
+	}
+}
+
+// No Jobs path is percent-encoded, so a path that is reaches nothing, on any
+// route: the route list is matched against the decoded path, where an encoded
+// separator or letter would pass as the path it decodes to. An encoded value
+// in the query is not the path, and is forwarded as before.
+func TestJobsRefusesAPercentEncodedPath(t *testing.T) {
+	var forwarded []string
+	companion := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		forwarded = append(forwarded, r.Method+" "+r.URL.RequestURI())
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"items":[],"next":0}`))
+	}))
+	defer companion.Close()
+	s, _ := newTestServer(t, false)
+	s.jobs = &jobsCompanion{url: companion.URL, token: "test-private", done: make(chan struct{}), stop: make(chan struct{})}
+	t.Cleanup(func() { s.jobs.closed = true })
+	call := func(path string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("GET", path, nil)
+		r.Header.Set("Authorization", "Bearer "+testToken)
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		return w
+	}
+	job := "job_0123456789abcdef0123456789abcdef"
+	for _, path := range []string{
+		"/api/operations/jobs/" + job + "%2fevents",
+		"/api/operations/jobs/" + job + "%2Fevents",
+		"/api/operations/jobs/job_%30123456789abcdef0123456789abcdef/events",
+		"/api/operations/jobs/" + job + "%2fruns",
+		"/api/operations/run%2Dchain",
+		"/api/operations/%6aobs",
+	} {
+		forwarded = nil
+		if w := call(path); w.Code != 404 || len(forwarded) != 0 {
+			t.Errorf("GET %s: %d, forwarded %q", path, w.Code, forwarded)
+		}
+	}
+	forwarded = nil
+	if w := call("/api/operations/runs?q=a%20b%2Fc&after=0"); w.Code != 200 || !slices.Equal(forwarded, []string{"GET /v1/runs?after=0&q=a+b%2Fc"}) {
+		t.Errorf("an encoded query value: %d, forwarded %q", w.Code, forwarded)
 	}
 }
 
