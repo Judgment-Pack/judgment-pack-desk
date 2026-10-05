@@ -560,6 +560,16 @@ Jobs run is unsigned. The key, as decided above (issue #215):
 
 It is delivery row 11.
 
+*Amended 2026-10-05:* #229 delivers row 11. For the project Desk was started
+on, `<desk id>` is the name of its Runner's state directory, the hex SHA-256 of
+the project's path. The key is made at a Runner's start where none is kept,
+with a creation marker beside it, as a desk's key has, and is named on the boot
+line only where no marker is left, the runtime reads it (`audit key public`)
+and its list of public keys holds that one key. Otherwise Runner starts without
+a key, its runs go on unsigned, and Desk says why; where Runner refuses the key
+at boot, Desk starts it again at once without it. Desk never removes or makes
+again a key it could not read or that was refused.
+
 ### 6. The version floor
 
 All of this needs a runtime release that includes #211 to #215 and #217. Measured
@@ -757,7 +767,7 @@ their meaning. The status column is as of 2026-10-05.
 | 7 | Stamping: settings, scheduler, pending records; verification with roots | 2; question 5 | |
 | 8a | Export version 5 and labelling, `run-chain` pass-through | nothing: #200 pinned Runner v0.5.0; question 7 | merged: #220, on `main`, in no release yet |
 | 8b | The Jobs chain in hand-over: `audit checkpoint --trail <file> --since <cursor> --limit 300`, with a cursor of its own | 5 | |
-| 11 | Runner signing key in Desk's custody, `secrets/signing/runner/<desk id>.seed` under the same custody checks, passed as the boot-line `signingKey` | 3; policy settled by question 7; Runner #36 closed by #37 in v0.5.0 | |
+| 11 | Runner signing key in Desk's custody, `secrets/signing/runner/<desk id>.seed` under the same custody checks, passed as the boot-line `signingKey` | 3; policy settled by question 7; Runner #36 closed by #37 in v0.5.0 | #229, in no release yet |
 | 12 | The Jobs record panel beside the Decision record: `audit verify --trail <copy>` with the Runner key and the held checkpoints | 5 and 11 | |
 | 9 | The README and in-app help: what each part establishes and does not, and the agent setup with the key | each of the above | |
 | 10 | Hand-over to an HTTPS endpoint | a holder who runs one; question 4 | |

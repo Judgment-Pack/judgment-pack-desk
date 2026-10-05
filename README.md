@@ -5845,6 +5845,42 @@ fails and saves nothing.
 Desk verifies neither file. Runner's `verify-run` reads the export, and with
 `--chain` the chain.
 
+**Runner's signing key** ([ADR-0010](docs/adr/0010-defensible-decision-records.md),
+section 5). Each desk's Runner signs the audit record of each run with a key of
+its own: never a project's key, and never a `JPACK_SIGNING_KEY` set where Desk
+was started.
+
+- Desk keeps it at `secrets/signing/runner/<name>.seed` in its configuration
+  folder, with its list of public keys, `<name>.keys.jsonl`, in the form a
+  desk's list has, under the custody a desk's key has (see "The signing key
+  of a desk Desk makes" under Gates). `<name>` is the desk's id; for the
+  project Desk was started on, it is the name of its Runner's state folder,
+  `jobs/<name>`: the hex SHA-256 of the project's path.
+- At a Runner's start, where nothing is kept under its name, the runtime
+  Desk runs makes the key (`jpack audit key generate`), with a creation
+  marker beside it until it is whole, as a desk's key has. Desk names it on
+  Runner's boot line, as `signingKey`, only where no marker is left, the
+  runtime reads it as a key under its own rules (`jpack audit key public`),
+  and the list holds that one key. Runner checks it again at boot and gives
+  it to the runtime of each operational evaluation only. A run so signed is
+  exported at version 5, with `run.auditSignatures`; check it with
+  `jpack-runner verify-run --public-key <key> --require-signed`, giving the
+  public key Help & About → Gates shows.
+- Otherwise Runner starts without a key, and its runs go on, unsigned, and
+  are exported at version 4. Gates says why: custody refuses a folder on the
+  key's path, the runtime did not make the key or refuses it, Runner refused
+  it at boot (Runner is then started again at once without it), the seed is
+  lost, or something could not be read just now. Desk never removes, or
+  makes again, a key it could not read, a key that was refused, or one whose
+  seed is lost. A creation that did not finish leaves its marker, and the
+  first start of that Runner after Desk starts again removes what it left
+  and makes another: a key is never named while its marker is there, so
+  that key never signed anything.
+- Whom it binds is whom a desk's key binds: nothing against you, who hold
+  it, or against an agent that can read your files.
+- Not yet: rotating Runner's key, and the Jobs record panel that checks the
+  chain of runs with it (ADR-0010's delivery table, PR 3b and row 12).
+
 
 ### Jobs and Runs workspace
 
