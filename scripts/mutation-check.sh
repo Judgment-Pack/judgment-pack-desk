@@ -9657,14 +9657,14 @@ export function assistantTransport(id: string): Transport {
     "  return by ? { kind: 'installation' } : { kind: 'unrecorded' }" \
     "  return { kind: 'installation' }"
   mutate web "jobs activity (rows): rows a later page could put above are shown" "$JAC" \
-    "  const rows = all.filter(row => row.when.time >= boundary)" \
-    "  const rows = all"
+    "  const shown = placed.filter(item => newer(item.at, boundary) <= 0).map(item => item.row)" \
+    "  const shown = placed.map(item => item.row)"
   mutate web "jobs activity (rows): the older floor limits instead of the newer" "$JAC" \
-    "    boundary = Math.max(boundary, floor)" \
-    "    boundary = boundary === -Infinity ? floor : Math.min(boundary, floor)"
+    "    boundary = newer(boundary, floor) > 0 ? floor : boundary" \
+    "    boundary = boundary[0] === -Infinity ? floor : lowest(boundary, floor)"
   mutate web "jobs activity (rows): rows keep Runner's list order, not time" "$JAC" \
-    "  const all = [...built.runs, ...built.occurrences].filter(keep).sort(newestFirst)" \
-    "  const all = [...built.runs, ...built.occurrences].filter(keep)"
+    "  placed.sort((a, b) => newer(a.at, b.at) || (a.row.key < b.row.key ? -1 : a.row.key > b.row.key ? 1 : 0))" \
+    ""
   mutate web "jobs activity (filters): the state filter is not sent to Runner" "$JAC" \
     "  return { runs, ...(runs && runState ? { runState } : {}), occurrences }" \
     "  return { runs, occurrences }"
@@ -9687,14 +9687,87 @@ export function assistantTransport(id: string): Transport {
     "<dd>{storedTime('started', run.startedAt, '—')}</dd>" \
     "<dd>—</dd>"
   mutate web "jobs activity (rows): rows are shown before every list has answered" "$JAV" \
-    "  const rows = pending ? [] : merged.rows" \
-    "  const rows = merged.rows"
+    "  const rows = pending ? [] : merged.rows, shown = pending ? [] : merged.shown" \
+    "  const rows = merged.rows, shown = merged.shown"
   mutate web "jobs activity (page): the Activity tab is not offered" web/src/jobs/JobsView.tsx \
     "<button aria-current={tab==='activity'?'page':undefined} onClick={()=>setParams({tab:'activity'})}>{msg('Activity')}</button>" \
     ""
   mutate web "jobs activity (page): the Decision record panel does not say Jobs runs are elsewhere" web/src/audit/DecisionRecord.tsx \
     " description={msg('Jobs runs are recorded by the runner, not in this trail.')}" \
     ""
+
+  # **Runner's journal of job activity in the Activity tab (#218).** The tab
+  # reads the job's journal through Runner's cursor, from 0 once and then
+  # from where it ended, no faster than every five seconds, and reads a 404
+  # as a runner that serves no journal, which it does not ask again. It words
+  # every kind the pinned Runner lists and names one it does not know; shows
+  # the time Runner recorded, or "Not recorded"; labels each row's source;
+  # names who Runner says initiated an entry, never a person; keeps Runner's
+  # order and stands a record at the entry that created it; says when the
+  # journal began after the job; and never lets an entry change what a record
+  # row says. The group in each name (kinds, reading, order, source, by,
+  # time, begins, record, filters) lets one group be re-run with the filter.
+  JJ=web/src/jobs/journal.ts
+  mutate web "jobs journal (kinds): a kind Runner writes is not worded" "$JJ" \
+    "  'run.expired': () => msg('Run expired in the queue')," \
+    ""
+  mutate web "jobs journal (kinds): a kind this Desk does not know is dropped" "$JJ" \
+    "  return msg('An entry of a kind this Desk does not know: {{kind}}', { kind: typeof kind === 'string' ? kind : JSON.stringify(kind ?? null) })" \
+    "  return ''"
+  mutate web "jobs journal (reading): the reader starts from 0 whatever it holds" "$JJ" \
+    "  let next = prior?.next ?? 0, began = prior?.began" \
+    "  let next = 0, began = prior?.began"
+  mutate web "jobs journal (reading): the tab reads from 0 again on every refresh" "$JAV" \
+    "return readJobJournal(jobId, prior?.served ? prior.journal : undefined, signal)" \
+    "return readJobJournal(jobId, undefined, signal)"
+  mutate web "jobs journal (reading): only the first page is read" "$JJ" \
+    "    if (!answer.more || !moved) return { entries, next, began }" \
+    "    return { entries, next, began }"
+  mutate web "jobs journal (reading): asked again faster than every five seconds" "$JJ" \
+    "export const JOURNAL_REFRESH_MS = 5000" \
+    "export const JOURNAL_REFRESH_MS = 1000"
+  mutate web "jobs journal (reading): a 404 is an error, not a runner without a journal" "$JJ" \
+    "    if (error instanceof JobsRequestError && error.status === 404) return { served: false }" \
+    "    if (false) return { served: false }"
+  mutate web "jobs journal (reading): a runner that serves no journal is asked again" "$JAV" \
+    "    refetchInterval: query => query.state.data?.served === false ? false : JOURNAL_REFRESH_MS," \
+    "    refetchInterval: JOURNAL_REFRESH_MS,"
+  mutate web "jobs journal (reading): a refusal that is not JSON loses its status" web/src/jobs/client.ts \
+    "  const result = await response.json().catch((error: unknown) => { if (response.ok) throw error; return {} })" \
+    "  const result = await response.json()"
+  mutate web "jobs journal (order): a record stands by its time, not its creation entry" "$JAC" \
+    "return at === undefined ? [0, row.when.time] : [1, at + 0.5] }" \
+    "return [0, row.when.time] }"
+  mutate web "jobs journal (order): entries are ordered by their time, not Runner's order" "$JAC" \
+    "kind: 'journal', entry, place: at }, at: [1, at] }))" \
+    "kind: 'journal', entry, place: at }, at: [1, Date.parse(String(entry.at))] }))"
+  mutate web "jobs journal (order): the oldest record's own creation entry is held back" "$JAC" \
+    "return lowest(oldest, at[0] === 1 ? [1, at[1] - 0.5] : at) }" \
+    "return lowest(oldest, at) }"
+  mutate web "jobs journal (source): an entry is labelled a record" "$JAV" \
+    "            <td>{msg('Journal entry')}</td>" \
+    "            <td>{msg('Record')}</td>"
+  mutate web "jobs journal (by): the installation is shown as its owner" "$JAV" \
+    "    case 'installation': return msg('This installation')" \
+    "    case 'installation': return String(actor.owner)"
+  mutate web "jobs journal (by): a key issued before the journal is given a revision" "$JAV" \
+    "      return typeof actor.keyRevision === 'number' ? msg(" \
+    "      return actor.keyRevision !== undefined ? msg("
+  mutate web "jobs journal (time): a time that does not read as one is formatted" "$JAV" \
+    "  return stored ? <time dateTime={stored.at}>{when(stored.at)}</time> : <>{msg('Not recorded')}</>" \
+    "  return <time dateTime={String(at)}>{when(String(at))}</time>"
+  mutate web "jobs journal (begins): the line is never shown" "$JAV" \
+    "    {served && !pending && beforeTheJournal(served.began, job.data?.job.createdAt) && " \
+    "    {false && "
+  mutate web "jobs journal (begins): the line is shown whatever the job's age" "$JJ" \
+    "  return Number.isNaN(start) || Number.isNaN(created) || created < start" \
+    "  return true"
+  mutate web "jobs journal (record): a run row takes its state from the journal" "$JAC" \
+    "    runs: rowsOf(streams.runs?.records.map(runRow))," \
+    "    runs: rowsOf(streams.runs?.records.map(run => runRow({ ...run, state: ([...(journal?.entries ?? [])].reverse().find(entry => entry.concerns?.run === run.id && typeof entry.to === 'string')?.to as Run['state'] | undefined) ?? run.state })))," 
+  mutate web "jobs journal (filters): entries are shown under a filter" "$JAV" \
+    "served && { entries: served.entries, show: !filtered })" \
+    "served && { entries: served.entries, show: true })"
 
   # **A run time Desk cannot read, in Jobs (#223).** Runner v0.5.0 always
   # writes `createdAt`; a record from an older or edited store may not, and a
