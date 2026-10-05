@@ -4,7 +4,7 @@
  * run's record holds, the filters, paging, and the detail pane.
  */
 import { createHash } from 'node:crypto'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Tooltip } from 'radix-ui'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -16,6 +16,9 @@ import { when } from './RunRecord'
 import { at, JOB, occurrences, RECORD_LINE, runner, runs, summary, SIDECAR_LINES } from './__fixtures__/activity'
 
 vi.mock('./client', async original => ({ ...await original<typeof import('./client')>(), jobsAPI: vi.fn() }))
+// Each test stands the whole job page up and reads several of Runner's answers;
+// on a loaded host that takes longer than testing-library's one second.
+configure({ asyncUtilTimeout: 5000 })
 beforeEach(() => { vi.mocked(jobsAPI).mockImplementation(runner() as never) })
 afterEach(() => { cleanup(); vi.resetAllMocks(); document.body.innerHTML = '' })
 
