@@ -9705,8 +9705,14 @@ export function assistantTransport(id: string): Transport {
   # names who Runner says initiated an entry, never a person; keeps Runner's
   # order and stands a record at the entry that created it; says when the
   # journal began after the job; and never lets an entry change what a record
-  # row says. The group in each name (kinds, reading, order, source, by,
-  # time, begins, record, filters) lets one group be re-run with the filter.
+  # row says. It reads a large journal in bounds: one page at a time with a
+  # turn for the browser between pages, a line saying how far it has read
+  # and no entry shown until the end, the newest 500 rendered and more in
+  # steps, at most 20,000 kept with the rest counted, and a failed page
+  # stopping the reading at its cursor, to continue from there. The group in
+  # each name (kinds, reading, order, source, by, time, begins, record,
+  # filters, progress, window, bound, pace, stop) lets one group be re-run
+  # with the filter.
   JJ=web/src/jobs/journal.ts
   mutate web "jobs journal (kinds): a kind Runner writes is not worded" "$JJ" \
     "  'run.expired': () => msg('Run expired in the queue')," \
@@ -9715,32 +9721,35 @@ export function assistantTransport(id: string): Transport {
     "  return msg('An entry of a kind this Desk does not know: {{kind}}', { kind: typeof kind === 'string' ? kind : JSON.stringify(kind ?? null) })" \
     "  return ''"
   mutate web "jobs journal (reading): the reader starts from 0 whatever it holds" "$JJ" \
-    "  let next = prior?.next ?? 0, began = prior?.began" \
-    "  let next = 0, began = prior?.began"
-  mutate web "jobs journal (reading): the tab reads from 0 again on every refresh" "$JAV" \
-    "return readJobJournal(jobId, prior?.served ? prior.journal : undefined, signal)" \
-    "return readJobJournal(jobId, undefined, signal)"
+    "    const answer = await page(journal.next)" \
+    "    const answer = await page(0)"
+  mutate web "jobs journal (reading): the tab reads from 0 again on every refresh" "$JJ" \
+    "        await new Promise<void>(resolve => { timer = setTimeout(resolve, JOURNAL_REFRESH_MS) })" \
+    "        await new Promise<void>(resolve => { timer = setTimeout(resolve, JOURNAL_REFRESH_MS) }); journal.next = 0"
   mutate web "jobs journal (reading): only the first page is read" "$JJ" \
-    "    if (!answer.more || !moved) return { entries, next, began }" \
-    "    return { entries, next, began }"
+    "    if (!answer.more || !moved) return" \
+    "    return"
   mutate web "jobs journal (reading): asked again faster than every five seconds" "$JJ" \
     "export const JOURNAL_REFRESH_MS = 5000" \
     "export const JOURNAL_REFRESH_MS = 1000"
   mutate web "jobs journal (reading): a 404 is an error, not a runner without a journal" "$JJ" \
-    "    if (error instanceof JobsRequestError && error.status === 404) return { served: false }" \
-    "    if (false) return { served: false }"
-  mutate web "jobs journal (reading): a runner that serves no journal is asked again" "$JAV" \
-    "    refetchInterval: query => query.state.data?.served === false ? false : JOURNAL_REFRESH_MS," \
-    "    refetchInterval: JOURNAL_REFRESH_MS,"
+    "          if (error instanceof JobsRequestError && error.status === 404 && readCount(journal) === 0 && journal.next === 0) { setState({ phase: 'absent' }); return }" \
+    ""
+  mutate web "jobs journal (reading): a runner that serves no journal is asked again" "$JJ" \
+    "{ setState({ phase: 'absent' }); return }" \
+    "{ setState({ phase: 'absent' }); await new Promise(resolve => setTimeout(resolve, JOURNAL_REFRESH_MS)); continue }"
   mutate web "jobs journal (reading): a refusal that is not JSON loses its status" web/src/jobs/client.ts \
     "  const result = await response.json().catch((error: unknown) => { if (response.ok) throw error; return {} })" \
     "  const result = await response.json()"
   mutate web "jobs journal (order): a record stands by its time, not its creation entry" "$JAC" \
-    "return at === undefined ? [0, row.when.time] : [1, at + 0.5] }" \
+    "return at === undefined ? [0, row.when.time] : [1, offset + at + 0.5] }" \
     "return [0, row.when.time] }"
   mutate web "jobs journal (order): entries are ordered by their time, not Runner's order" "$JAC" \
-    "kind: 'journal', entry, place: at }, at: [1, at] }))" \
-    "kind: 'journal', entry, place: at }, at: [1, Date.parse(String(entry.at))] }))"
+    "entry: journal.entries[index]!, place: at }, at: [1, at] })" \
+    "entry: journal.entries[index]!, place: at }, at: [1, Date.parse(String(journal.entries[index]!.at))] })"
+  mutate web "jobs journal (order): a place does not count the entries read and not kept" "$JAC" \
+    "return at === undefined ? [0, row.when.time] : [1, offset + at + 0.5] }" \
+    "return at === undefined ? [0, row.when.time] : [1, at + 0.5] }"
   mutate web "jobs journal (order): the oldest record's own creation entry is held back" "$JAC" \
     "return lowest(oldest, at[0] === 1 ? [1, at[1] - 0.5] : at) }" \
     "return lowest(oldest, at) }"
@@ -9766,8 +9775,66 @@ export function assistantTransport(id: string): Transport {
     "    runs: rowsOf(streams.runs?.records.map(runRow))," \
     "    runs: rowsOf(streams.runs?.records.map(run => runRow({ ...run, state: ([...(journal?.entries ?? [])].reverse().find(entry => entry.concerns?.run === run.id && typeof entry.to === 'string')?.to as Run['state'] | undefined) ?? run.state })))," 
   mutate web "jobs journal (filters): entries are shown under a filter" "$JAV" \
-    "served && { entries: served.entries, show: !filtered })" \
-    "served && { entries: served.entries, show: true })"
+    "served && { entries: served.entries, dropped: served.dropped, from, show: !filtered })" \
+    "served && { entries: served.entries, dropped: served.dropped, from, show: true })"
+  mutate web "jobs journal (progress): entries are shown before the journal is read to its end" "$JJ" \
+    "          await catchUp(journal, page, keep, () => status('reading'), yieldToBrowser, controller.signal)" \
+    "          await catchUp(journal, page, keep, () => { reading.snapshot = { entries: journal.entries.slice(), dropped: journal.dropped, began: journal.began }; status('reading') }, yieldToBrowser, controller.signal)"
+  mutate web "jobs journal (progress): the reading's progress is not said" "$JAV" \
+    "  if (state.phase === 'reading') return <p className=\"quiet\" role=\"status\">" \
+    "  if (state.phase === 'reading') return null; if (false) return <p className=\"quiet\" role=\"status\">"
+  mutate web "jobs journal (progress): the table is not said to wait for the end" "$JAV" \
+    "    : msg('Its entries are shown once it is read to its end. Until then, records stand by when the runner first recorded each.')" \
+    "    : ''"
+  mutate web "jobs journal (progress): a journal read to its end is not said to be" "$JAV" \
+    "  if (state.phase === 'caught-up') return <p className=\"quiet\">" \
+    "  if (state.phase === 'caught-up') return null; if (false) return <p className=\"quiet\">"
+  mutate web "jobs journal (progress): what was last read to the end is dropped while newer pages are read" "$JJ" \
+    "next: journal.next, snapshot: reading.snapshot, ...(reason" \
+    "next: journal.next, snapshot: phase === 'caught-up' ? reading.snapshot : undefined, ...(reason"
+  mutate web "jobs journal (window): every entry kept is rendered" "$JAV" \
+    "  const from = served ? Math.max(served.dropped, readTotal - windowSize) : 0" \
+    "  const from = served ? served.dropped : 0"
+  mutate web "jobs journal (window): the newest-entries line is not shown" "$JAV" \
+    "    {served && !filtered && !pending && entriesShown < readTotal && " \
+    "    {false && "
+  mutate web "jobs journal (window): the step control shows nothing more" "$JAV" \
+    "setWindowFor({ jobId, size: windowSize + limits.step })" \
+    "setWindowFor({ jobId, size: windowSize })"
+  mutate web "jobs journal (window): the step control is offered past what is kept" "$JAV" \
+    "  const earlier = served && !filtered && !pending && from > served.dropped && merged.heldEntries === 0" \
+    "  const earlier = served && !filtered && !pending && merged.heldEntries === 0"
+  mutate web "jobs journal (bound): every entry read is kept" "$JJ" \
+    "    if (excess > 0) { journal.entries.splice(0, excess); journal.dropped += excess }" \
+    ""
+  mutate web "jobs journal (bound): entries dropped are not counted" "$JJ" \
+    "    if (excess > 0) { journal.entries.splice(0, excess); journal.dropped += excess }" \
+    "    if (excess > 0) { journal.entries.splice(0, excess) }"
+  mutate web "jobs journal (bound): the entries read and not kept are not said" "$JAV" \
+    "    {served && served.dropped > 0 && " \
+    "    {false && "
+  mutate web "jobs journal (bound): the bounds are not the ones stated" "$JJ" \
+    "export const JOURNAL_LIMITS: JournalLimits = { keep: 20000, window: 500, step: 500 }" \
+    "export const JOURNAL_LIMITS: JournalLimits = { keep: 50000, window: 500, step: 500 }"
+  mutate web "jobs journal (pace): no turn for the browser between pages" "$JJ" \
+    "    progress()
+    await pause()" \
+    "    progress()"
+  mutate web "jobs journal (pace): the turn is a microtask, not a task" "$JJ" \
+    "  return new Promise(resolve => setTimeout(resolve, 0))" \
+    "  return Promise.resolve()"
+  mutate web "jobs journal (pace): the refresh does not wait for the catch-up" "$JJ" \
+    "          await catchUp(journal, page, keep, () => status('reading'), yieldToBrowser, controller.signal)" \
+    "          void catchUp(journal, page, keep, () => status('reading'), yieldToBrowser, controller.signal)"
+  mutate web "jobs journal (stop): a page answered after the reading was abandoned is read" "$JJ" \
+    "    if (signal?.aborted) throw signal.reason" \
+    ""
+  mutate web "jobs journal (stop): a failure is not said" "$JJ" \
+    "          status('stopped', error instanceof Error ? error.message : msg('The local runner could not complete this request.'))" \
+    "          status('caught-up')"
+  mutate web "jobs journal (stop): continuing starts from 0" "$JJ" \
+    "    resume: () => { const reading = held.current!;" \
+    "    resume: () => { const reading = held.current!; reading.journal = emptyJournal();"
 
   # **A run time Desk cannot read, in Jobs (#223).** Runner v0.5.0 always
   # writes `createdAt`; a record from an older or edited store may not, and a
