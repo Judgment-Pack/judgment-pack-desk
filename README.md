@@ -5718,7 +5718,8 @@ record's signatures, 4 for an unsigned record, 3 for a run with no chain entry,
 carries and, for 4 or 5, which chain entry the run has ("chain entry 42, not
 checked"). **Download the runner's chain of runs**, under Jobs | Runs, saves
 Runner's whole chain as `run-chain.jsonl`, exactly as Runner sent it, up to
-64 MiB; a larger chain, or a transfer that ends early, fails and saves nothing.
+67,174,400 bytes (about 64 MiB); a larger chain, or a transfer that ends early,
+fails and saves nothing.
 Desk verifies neither file. Runner's `verify-run` reads the export, and with
 `--chain` the chain.
 

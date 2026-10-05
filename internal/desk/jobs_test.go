@@ -749,6 +749,45 @@ func TestJobsRefusesARunChainPastItsBound(t *testing.T) {
 			t.Errorf("%d bytes: a refusal carried the chain, or another type: %s %.80q", tc.size, w.Header().Get("Content-Type"), w.Body.Bytes())
 		}
 	}
+
+	// Desk stops reading one byte past the bound. A chain ten times over it is
+	// refused having taken little more than the bound from Runner, never read
+	// whole and measured after: what Runner manages to write past the bound is
+	// what the connection buffers before Desk lets it go. Measured on loopback
+	// that is 4 to 13 MB; 64 MiB allows for a kernel that grows its socket
+	// buffers to 32 MiB, and is still a tenth of what a whole read takes.
+	line := append(bytes.Repeat([]byte("a"), 1024), '\n')
+	page := bytes.Repeat(line, 1024)
+	written := make(chan int, 1)
+	flood := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/jsonl")
+		total := 0
+		for total < 10*runChainLimit {
+			n, err := w.Write(page)
+			total += n
+			if err != nil {
+				break
+			}
+		}
+		written <- total
+	}))
+	defer flood.Close()
+	s.jobs = &jobsCompanion{url: flood.URL, token: "test-private", done: make(chan struct{})}
+	r := httptest.NewRequest("GET", "/api/operations/run-chain", nil)
+	w := httptest.NewRecorder()
+	s.proxyJobs(w, r, "run-chain", "")
+	if w.Code != 502 || bytes.Contains(w.Body.Bytes(), line) || w.Header().Get("Content-Type") != "application/json" {
+		t.Errorf("a chain ten times the bound: %d %s %.80q", w.Code, w.Header().Get("Content-Type"), w.Body.Bytes())
+	}
+	select {
+	case n := <-written:
+		t.Logf("Runner wrote %d bytes of a %d-byte chain; the bound is %d", n, 10*runChainLimit, runChainLimit)
+		if n > runChainLimit+64<<20 {
+			t.Errorf("Runner wrote %d bytes of a %d-byte chain before Desk refused it: Desk read past its bound of %d", n, 10*runChainLimit, runChainLimit)
+		}
+	case <-time.After(30 * time.Second):
+		t.Error("Runner was still writing the chain 30 seconds after Desk refused it")
+	}
 }
 
 // A transfer that ends early is an error, never a shorter chain: Runner

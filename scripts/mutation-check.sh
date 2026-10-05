@@ -1942,6 +1942,11 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	if len(body) > limit {
 		body = body[:limit]
 	}'
+  # Read whole and measured after, a chain far past the bound is still
+  # refused, but only once Desk has held all of it.
+  mutate go "run chain: read whole before its size is checked" "$J" \
+    '	body, err := io.ReadAll(io.LimitReader(response.Body, int64(limit)+1))' \
+    '	body, err := io.ReadAll(response.Body)'
   mutate go "run chain: a transfer that ended early passed on" "$J" \
     '	body, err := io.ReadAll(io.LimitReader(response.Body, int64(limit)+1))
 	if err != nil {' \

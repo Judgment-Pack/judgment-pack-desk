@@ -63,11 +63,13 @@ stays within 16 MiB, except the chain of runs.
 `run-chain.jsonl`: Runner's `GET /v1/run-chain`, every entry's line in sequence
 order, exactly as Runner sent it, which `verify-run --chain` reads. Desk passes no
 query to Runner and keeps Runner's `application/jsonl`. Runner sets no bound on
-the chain; Desk's is 64 MiB (65,536 entries at the 1024-byte longest line Runner
-writes, and some 220,000 at the 300 bytes an entry takes in practice). Desk reads
-the whole answer before it sends any of it, so a chain past the bound, or a
-transfer Runner aborts, is an error and the page saves nothing; neither is ever
-passed on as a shorter chain. Nothing in the file is checked here.
+the chain; Desk's is 67,174,400 bytes, about 64 MiB: 65,536 entries at the
+1024-byte longest line Runner writes and its newline, and some 220,000 at the 300
+bytes an entry takes in practice. A chain of exactly 67,174,400 bytes passes, and
+one byte more fails. Desk reads the whole answer before it sends any of it, and
+stops reading one byte past the bound, so a chain past the bound, or a transfer
+Runner aborts, is an error and the page saves nothing; neither is ever passed on
+as a shorter chain. Nothing in the file is checked here.
 
 ## Installation trust
 

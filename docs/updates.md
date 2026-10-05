@@ -14,9 +14,9 @@ release refuses development pins. Runner is pinned to `v0.5.0`, including calcul
 calculated input lineage, verification export versions 3 to 5, and the installation's chain
 of runs. Desk's verification download asks for version 5 and names the file for the version
 Runner answered, which is earlier where the run lacks what a later version carries. Desk
-passes `GET /v1/run-chain` through as Runner's exact bytes, up to 64 MiB, or fails the
-download. It does not yet give Runner a signing key or check a chain entry
-([ADR-0010](adr/0010-defensible-decision-records.md), PRs 3 and 8).
+passes `GET /v1/run-chain` through as Runner's exact bytes, up to 67,174,400 bytes (about
+64 MiB), or fails the download. It does not yet give Runner a signing key or check a
+chain entry ([ADR-0010](adr/0010-defensible-decision-records.md), PRs 3 and 8).
 
 Runtime is pinned to `v0.26.0`, which chains a project's audit trail over its exact bytes
 by default, and signs it where a key is set (runtime ADR-0047). Desk does not yet show,
