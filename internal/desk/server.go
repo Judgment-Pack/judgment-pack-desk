@@ -145,6 +145,11 @@ type Server struct {
 	// and upgrades (`handleUpgradeConfirm`), from the fresh reading to the
 	// last restore.
 	reviewMu sync.Mutex
+	// keyMu serializes what this desk does with its signing key: the
+	// decision record's reading of its keys, a rotation from the token to the
+	// marker's removal, and the finish or undo of one a stop cut short
+	// (rotation.go).
+	keyMu sync.Mutex
 	// reviewKey is this desk's own key for review tokens (`reviewToken`):
 	// random per process, so a token names one desk and does not outlive it.
 	reviewKey [32]byte
@@ -433,6 +438,7 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("POST /api/review/lock", s.handleReviewLock)
 	s.mux.HandleFunc("GET /api/audit/verify", s.handleAuditVerify)
 	s.mux.HandleFunc("GET /api/audit/trail", s.handleAuditTrail)
+	s.mux.HandleFunc("POST /api/audit/key/rotate", s.handleRotateKey)
 	s.mux.HandleFunc("GET /api/upgrade", s.handleUpgrade)
 	s.mux.HandleFunc("POST /api/upgrade", s.handleUpgradeConfirm)
 	s.mux.HandleFunc("GET /api/source-reviews", s.handleSourceReviews)

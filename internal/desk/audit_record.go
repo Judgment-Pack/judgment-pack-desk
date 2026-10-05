@@ -179,6 +179,10 @@ type auditAnswer struct {
 	// refusal, and with nothing else.
 	Keys    *auditKeys    `json:"keys,omitempty"`
 	Signing *auditSigning `json:"signing,omitempty"`
+	// Rotation is whether the owner can rotate the desk's signing key now,
+	// with the token that confirms it, or why not (rotation.go). It is given
+	// with a report and with the runtime's refusal, and with nothing else.
+	Rotation *auditRotation `json:"rotation,omitempty"`
 }
 
 // What the panel holds of the desk's keys.
@@ -518,6 +522,11 @@ func withoutPathsInKeys(answer auditAnswer, clean func(string) string) auditAnsw
 		}
 		answer.Signing = &signing
 	}
+	if answer.Rotation != nil {
+		rotation := *answer.Rotation
+		rotation.Reason = clean(rotation.Reason)
+		answer.Rotation = &rotation
+	}
 	return answer
 }
 
@@ -583,18 +592,23 @@ func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, err
 		return older, nil
 	}
 	signing := s.signingCheck(ctx, dir)
+	// Under the desk's key lock, so the panel never reads a rotation half
+	// made in this process, and its token names what it read.
+	s.keyMu.Lock()
+	defer s.keyMu.Unlock()
 	keys, held := s.heldKeys(ctx, dir)
 	defer held.Close()
+	rotation := s.rotationOffer(ctx, dir, keys, held)
 	args := []string{"audit", "verify", "--config", runtimeConfigName, "--format", "json"}
 	if keys.State == keysKept {
-		files, remove, err := held.publicKeyFiles(keys.Public)
+		files, remove, err := held.dir.publicKeyFiles(keys.Public)
 		if err != nil {
-			s.log.Printf("desk: the public keys could not be written for audit verify in %s: %v", held.path, err)
+			s.log.Printf("desk: the public keys could not be written for audit verify in %s: %v", held.dir.path, err)
 			keys = auditKeys{State: keysUnread, Problem: "Desk could not hand the runtime the public keys it keeps for this desk, so no signature was checked."}
 		} else {
 			defer func() {
 				if err := remove(); err != nil {
-					s.log.Printf("desk: the public keys written for audit verify in %s could not all be removed: %v", held.path, err)
+					s.log.Printf("desk: the public keys written for audit verify in %s could not all be removed: %v", held.dir.path, err)
 				}
 			}()
 			for _, file := range files {
@@ -614,56 +628,94 @@ func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, err
 	answer.Files = s.auditFilesPresent()
 	answer.Keys = &keys
 	answer.Signing = &signing
+	answer.Rotation = &rotation
 	return answer, nil
 }
 
-// heldKeys is the public keys Desk keeps for this desk, and the signing
-// folder they are kept in, held, where there are any. Nothing is made or
-// changed in Desk's custody to read them.
+// keyReading is what the panel read of the keys Desk keeps for a desk, held
+// while it is used: the signing folder; the seed as inspected; the list of
+// public keys as read, its file and bytes; the key the runtime read from the
+// seed; and the trail's signature sidecar, or why it could not be read.
+type keyReading struct {
+	dir        *signingDir
+	seed       os.FileInfo
+	list       keysFile
+	keys       []deskPublicKey
+	current    deskPublicKey
+	sidecar    sidecarReading
+	sidecarErr error
+}
+
+// Close releases the signing folder. A nil reading holds nothing.
+func (k *keyReading) Close() {
+	if k != nil {
+		k.dir.Close()
+	}
+}
+
+// heldKeys is the public keys Desk keeps for this desk, and what it read of
+// them, held, where there are any. Nothing is made or changed in Desk's
+// custody to read them.
 //
-// **A list of keys is only passed with the key it belongs to.** The list's
-// last key, the one in force, must be the key the runtime reads from the seed
-// Desk keeps for the desk (`jpack audit key public <seed> --format json`, run
-// in project, the folder the panel's commands run in); Desk never reads the
-// seed's bytes itself. A seed with no list, a list with no seed, and a list
-// whose key is not the seed's are each said, and no key is passed: only a desk
-// with neither has none.
+// **A list of keys is only passed with the key it belongs to.** The list is
+// read whole and strictly (`parseDeskKeys`): its first key takes over from 0,
+// and each later one from a later sequence. Its last key, the one in force,
+// must be the key the runtime reads from the seed Desk keeps for the desk
+// (`jpack audit key public <seed> --format json`, run in project, the folder
+// the panel's commands run in); Desk never reads the seed's bytes itself. A
+// seed with no list, a list with no seed, and a list whose key is not the
+// seed's are each said, and no key is passed: only a desk with neither has
+// none.
 //
-// **One key.** A desk Desk makes in this version has exactly one key, and
-// Desk does not yet rotate one (ADR-0010's delivery table, PR 3b), so a list
-// of more than one is not one this version wrote, and is refused rather than
-// passed.
-func (s *Server) heldKeys(ctx context.Context, project heldDir) (auditKeys, *signingDir) {
+// **And with the rotations the trail's sidecar records** (`checkKeysAgainst`).
+// Where the signature sidecar can be read, under the trail's lock, each later
+// key must be the one its key rotations hand over to, in order, at the
+// sequence the list gives. A list that disagrees is said, and no key is
+// passed. A sidecar that cannot be read now is said in Desk's log, and the
+// list is passed on the other checks: `audit verify` reads the sidecar
+// itself.
+func (s *Server) heldKeys(ctx context.Context, project heldDir) (auditKeys, *keyReading) {
 	if s.cfg.deskID == "" {
 		return auditKeys{State: keysStartup}, nil
 	}
 	dir, err := s.assistant.openSigning(false)
-	if errors.Is(err, errNoSigningDir) {
+	keys, reading := s.keysIn(ctx, project, dir, err)
+	if reading == nil {
+		dir.Close()
+	}
+	return keys, reading
+}
+
+// keysIn is heldKeys's reading, through dir, the signing folder the caller
+// opened (openErr where it could not), and closes nothing: a rotation reads
+// its keys so through the folder it holds the lock of (rotation.go). The
+// reading it answers refers to dir.
+//
+// It is asked only for a desk Desk made: heldKeys answers the startup desk
+// itself, and a rotation is refused there before it reads anything.
+func (s *Server) keysIn(ctx context.Context, project heldDir, dir *signingDir, openErr error) (auditKeys, *keyReading) {
+	if errors.Is(openErr, errNoSigningDir) {
 		return auditKeys{State: keysNone}, nil
 	}
-	if err != nil {
+	if err := openErr; err != nil {
 		s.log.Printf("desk: the signing folder could not be opened for the decision record: %v", err)
 		return auditKeys{State: keysUnread, Problem: "Desk could not open the folder it keeps signing keys in: " + strings.TrimRight(s.custodyWords(err.Error()), ".") + "."}, nil
 	}
-	unread := func(problem string) (auditKeys, *signingDir) {
-		dir.Close()
+	unread := func(problem string) (auditKeys, *keyReading) {
 		return auditKeys{State: keysUnread, Problem: problem}, nil
 	}
 	seedName := s.cfg.deskID + seedSuffix
 	seed, seedErr := dir.root.Lstat(seedName)
-	public, found, err := dir.readKeys(s.cfg.deskID + keysSuffix)
+	public, list, found, err := dir.readKeysFile(s.cfg.deskID + keysSuffix)
 	switch {
 	case err != nil:
 		return unread("Desk could not read the public keys it keeps for this desk: " + err.Error() + ".")
 	case !found && errors.Is(seedErr, fs.ErrNotExist):
-		dir.Close()
 		return auditKeys{State: keysNone}, nil
 	case !found:
 		return unread("Desk keeps a key for this desk, but no list of its public keys, so it passed no key.")
 	case seedErr != nil:
 		return unread("Desk keeps a list of public keys for this desk, but not its key, so it passed no key.")
-	case len(public) != 1:
-		return unread("Desk's list of this desk's public keys holds more than one key, and this version of Desk keeps one key for a desk and rotates none, so it passed no key.")
 	}
 	if err := checkSeed(seedName, seed); err != nil {
 		return unread("Desk could not use the key it keeps for this desk: " + strings.TrimRight(err.Error(), ".") + ".")
@@ -671,34 +723,21 @@ func (s *Server) heldKeys(ctx context.Context, project heldDir) (auditKeys, *sig
 	if err := dir.namesFile(seedName, seed); err != nil {
 		return unread("The key Desk keeps for this desk is not at the path the runtime reads it from, so it passed no key.")
 	}
-	seedPath := filepath.Join(dir.path, seedName)
-	out, runErr := runRuntime(ctx, s.cfg.JpackBin, project, "audit", "key", "public", seedPath, "--format", "json")
-	var answer struct {
-		Command     string              `json:"command"`
-		Status      string              `json:"status"`
-		PublicKey   string              `json:"publicKey"`
-		KeyID       string              `json:"keyId"`
-		Diagnostics []runtimeDiagnostic `json:"diagnostics"`
+	current, err := s.publicKeyOf(ctx, project, dir, seedName)
+	if err != nil {
+		return unread("The runtime could not read the key Desk keeps for this desk, so it passed no key: " + strings.TrimRight(err.Error(), ".") + ".")
 	}
-	decoded := out != nil && json.Unmarshal(out, &answer) == nil
-	if runErr != nil || !decoded || answer.Command != "audit key public" || answer.Status != "read" {
-		s.log.Printf("desk: the runtime did not read the key Desk keeps for desk %s: %v %s", s.cfg.deskID, runErr, out)
-		why := "its audit key public did not answer as documented"
-		var said []string
-		for _, diagnostic := range answer.Diagnostics {
-			if message := strings.TrimSpace(diagnostic.Message); message != "" {
-				said = append(said, message)
-			}
-		}
-		if len(said) > 0 {
-			why = strings.Join(said, " ")
-		}
-		return unread("The runtime could not read the key Desk keeps for this desk, so it passed no key: " + strings.TrimRight(why, ".") + ".")
-	}
-	if last := public[len(public)-1]; last.PublicKey != answer.PublicKey || last.KeyID != answer.KeyID {
+	if err := checkKeysAgainst(public, current, nil); err != nil {
 		return unread("Desk's list of this desk's public keys does not name the key Desk keeps for it, so it passed no key.")
 	}
-	return auditKeys{State: keysKept, Public: public}, dir
+	reading := &keyReading{dir: dir, seed: seed, list: list, keys: public, current: current}
+	reading.sidecar, reading.sidecarErr = s.readSidecar(ctx)
+	if reading.sidecarErr != nil {
+		s.log.Printf("desk: the signature sidecar of desk %s could not be read to check its list of keys: %v", s.cfg.deskID, reading.sidecarErr)
+	} else if err := checkKeysAgainst(public, current, &reading.sidecar); err != nil {
+		return unread("Desk's list of this desk's public keys does not agree with the key rotations in the trail's signature sidecar, so it passed no key: " + err.Error() + ".")
+	}
+	return auditKeys{State: keysKept, Public: public}, reading
 }
 
 // signingCheck runs `packs validate --config jpack.json --format json` and

@@ -299,9 +299,25 @@ person's approval, and it records no name.
   registry accepts, with a manifest it reads (present, whole, Desk's own and
   naming that desk); an empty or cut-short manifest is not one. A seed
   or list with no marker is never removed, and neither is anything whose
-  desk cannot be inspected. Desk keeps no lock on its configuration folder,
-  so a second Desk making a desk in the same folder at that moment would lose
-  that desk's key.
+  desk cannot be inspected. The sweep inspects each name first, and removes
+  each only while its name still holds the file it inspected, the marker
+  last, so that a file put in its place since is left, with the marker.
+- **One lock for every change to keys in the signing folder** (issue #230).
+  Two Desk processes can share one configuration folder: Desk started on two
+  projects shares `~/.config/jpack-desk`. So a desk's key creation (from
+  before its marker to the marker's removal), the start's sweep, a rotation
+  and the start's recovery of rotations (below) each hold `flock`'s exclusive
+  lock on the signing folder's own descriptor, opened through the folder Desk
+  holds, from their first look to their last change. The sweep and the
+  recovery try once: where another Desk process holds the lock, they change
+  nothing, say so in Desk's log, and leave everything for the next start.
+  A creation or a rotation waits for it up to ten seconds, and then refuses:
+  "another Desk process is changing keys in this configuration folder; try
+  again". On a build or a file system where no `flock` can be taken, a
+  creation and a rotation go on without it, as before, and the sweep and the
+  recovery change nothing at all: nothing is removed without the lock. The
+  lock is advisory: it keeps out another Desk process, not another program
+  that writes the signing folder.
 - Desk then writes the desk's `jpack.json` at configVersion `"6"`, with
   `requireReviewed`, `requireComparableFacts`, and an audit member whose
   `signingKey` names the seed by its absolute path, and locks it, so the lock
@@ -318,10 +334,11 @@ person's approval, and it records no name.
   hexadecimal characters of the SHA-256 of the key's 32 bytes, as the runtime
   derives it). `at` is the trail sequence the key took over from: it signs the
   records after it, and a desk's first key takes over from 0. The file is
-  public material and never holds a seed. Desk writes it whole, through a
-  staging file linked into place, never over another. In this version a desk
-  has exactly one key, since Desk does not yet rotate one, and a list of more
-  than one is refused.
+  public material and never holds a seed. A creation writes it whole, through
+  a staging file linked into place, never over another. A rotation (below)
+  writes it whole again with the next key appended, at the sequence the
+  runtime gave, so each later key takes over from a later sequence than the
+  one before it.
 - Where the runtime does not read `"6"`, or Desk's custody cannot keep a key,
   the desk is made at configVersion `"5"` (or `"4"`, as before), unsigned, and
   says so and why: in the creation's answer, in a dialog before the desk
@@ -334,8 +351,94 @@ person's approval, and it records no name.
   where one cannot be, the answer and Desk's log say so. A build that
   cannot establish who owns a directory keeps no key; on such a build Desk
   makes no desk at all, since its desks folder is held to the same custody.
-- Not yet: rotating a desk's key, a key for the project Desk was started on,
-  handing over checkpoints, repair and stamping (ADR-0010's delivery table).
+- Not yet: a key for the project Desk was started on, handing over
+  checkpoints, repair and stamping (ADR-0010's delivery table).
+
+**Rotating a desk's key** (ADR-0010, section 1, "Rotating it").
+
+- Rotation is yours to ask for, and never scheduled. It is offered only for a
+  desk Desk made and keeps a key for, in the decision record in Admin →
+  Project, as "Rotate signing key", where: Desk passed the desk's keys to the
+  check (below); the trail's signature sidecar could be read; and, after an
+  earlier rotation, a record has been signed since, because a rotation with no
+  record after the last one would take over after the same record, which the
+  list of keys cannot hold. Otherwise the panel says why. The project Desk was
+  started on has no key Desk rotates, and says so; a runtime older than
+  0.26.0 has no `audit key rotate`, and the panel shows only that it has no
+  audit commands.
+- The confirmation says what the runtime does: the current key stops signing,
+  and records written after the rotation are signed with the new key; a record
+  written while the rotation is in progress may be unsigned; a rotation
+  revokes nothing, so whoever holds the old key can still sign as it, and each
+  holder must be given the new public key, and told about the old one if you
+  no longer trust it (only a holder's own `jpack audit verify --revoked`
+  refuses what it signs); the old key's file loses its name, but its bytes may
+  remain on the disk; and a lost key cannot be rotated away from, because a
+  rotation needs the key in force.
+- Confirming sends the token the panel gave: a MAC, under the desk's own key
+  for this process, over the list of public keys and the key the runtime read
+  from the seed. A rotation is made only where a fresh reading gives the same
+  token; otherwise no key is made or rotated, and the answer says the keys
+  changed. From that reading to the last step, under the desk's key lock and
+  the signing folder's lock (above), each step through the signing folder
+  Desk holds:
+  1. `secrets/signing/<desk id>.rotating`, an empty marker, 0600, written
+     never over anything;
+  2. `jpack audit key generate <signing>/<desk id>.next.seed --format json`,
+     with the folder's path checked to name the folder held before the run,
+     and the seed's path to name the seed found there after it;
+  3. `jpack audit key rotate --next <that seed> --config jpack.json --format
+     json`, in the desk's folder, whose answer gives the sequence the next key
+     takes over after;
+  4. the list of public keys written whole with the next key appended at that
+     sequence: staged, synced, and renamed over the list, after a check that
+     the list is still the file and the bytes read;
+  5. the next seed renamed over the current seed's name, in the same folder,
+     and the seed's path checked to name the file renamed;
+  6. the marker removed.
+
+  `jpack.json` never changes, so there is no new lock and no drift. The panel
+  then passes both keys, in order.
+- **Whether the runtime wrote its key-rotation line is the sidecar's to say,
+  not its answer's**: a write that failed after its line was whole is refused
+  too. After any answer but a rotation as asked, Desk reads the trail's
+  signature sidecar, under the trail's lock as the download does, and asks
+  the runtime for the next seed's public key. Where no line of the sidecar
+  names the next key, the next seed and the marker are removed, nothing else
+  has changed, and the answer gives the runtime's own words, with no path in
+  them. That is what happens when the trail has no chained record yet, when
+  its last line is incomplete, and when the current key is not in force.
+  Where the sidecar's last key rotation hands over to the next key from the
+  current one, the rotation is finished (steps 4 to 6). Where Desk cannot tell,
+  it changes nothing, and the marker stays.
+- **At start**, after the desks are opened and before any request is served,
+  each `<desk id>.rotating` marker directly in the signing folder, of a desk
+  the registry opened, is read the same way, under the signing folder's lock,
+  taken once (above):
+  - the runtime wrote the line: the rotation is finished;
+  - no line names the next key: the next seed and the marker are removed;
+  - there is no next seed, and the list, the current seed and the sidecar
+    agree as the panel requires: a stop before the next key was made, or
+    after it was renamed; the marker alone is removed;
+  - **Desk cannot tell**, because the sidecar is unreadable, refused or
+    locked, a seed is missing or one the runtime will not read, or the list
+    cannot be read: nothing changes, the marker stays, and the panel says
+    that a rotation did not finish, and why. It also says, for a marker Desk
+    could act on, what it does at its next start.
+
+  The current seed is never removed. A seed is never removed because a read
+  failed, and never while the sidecar names it. What is removed is removed
+  only while its name still holds the file inspected, the marker last.
+  Nothing in a folder below the signing folder, and no marker of a desk that
+  is not open, is touched. A
+  rotation that did not finish blocks another until it is resolved; where the
+  runtime wrote the line and Desk could not finish, records are written
+  unsigned until the next start finishes it.
+- **What rotation does not do.** It revokes nothing, and the panel passes no
+  `--revoked`: that is a holder's own trust configuration. It does not hand the
+  new public key to anyone. It does not erase the old seed's bytes. It cannot
+  move away from a lost key: Desk shows the runtime's refusal, and does not
+  move a trail aside (ADR-0010, question 9).
 
 **Whom a desk's key binds** (ADR-0010, section 1, "Whom the key binds").
 
@@ -359,9 +462,16 @@ when you ask again: never on a timer, on a reconnect, or because a project file
 changed. On a desk Desk made and keeps a key for, it first asks the runtime
 for the seed's public key, with `jpack audit key public <seed> --format json`
 (Desk never reads the seed itself), and passes the list only where its key in
-force is that key. A seed with no list, a list with no seed, a list whose key
-is not the seed's, or one of more than one key passes no key, and the panel
-says why; only a desk with neither shows that Desk keeps no key. It passes
+force, its last, is that key. A seed with no list, a list with no seed, or a
+list whose last key is not the seed's passes no key, and the panel says why;
+only a desk with neither shows that Desk keeps no key. Where the trail's
+signature sidecar can be read, under the trail's lock, the list must also
+agree with the key rotations it records: each later key is the one a rotation
+hands over to, in order, made by the key before it, at the sequence the list
+gives. A list that does not passes no key, and the panel says where they
+differ. A sidecar Desk cannot read now is noted in Desk's log, and the list is
+passed on the other checks, since `audit verify` reads the sidecar itself. It
+passes
 each public key in the desk's list, in order, as `--public-key`: the runtime
 reads a key from the
 file it names, so each is written for that run to a file of its own in a new
@@ -376,8 +486,9 @@ its coverage counts, segments, discontinuities and findings by name, and its
 sentences on what the result establishes and what it does not, in English as
 the runtime writes them, and, where a key was passed, the key in force at the
 end of the trail and the signature lines the runtime could not read. Beside the
-report it shows the desk's public keys, in order, each with a copy button, for
-you to hand to a holder, who checks a copy with `jpack audit verify
+report it shows the desk's public keys, in order, each labelled by its place
+and the record it signs after, with a copy button, for you to hand to a
+holder, who checks a copy with `jpack audit verify
 --public-key`, one file per key, in that order; or that Desk keeps no key for
 this desk, or could not read the keys it keeps, and passed none. It also runs
 `packs validate --config jpack.json --format json` and shows its

@@ -1076,3 +1076,35 @@ func TestThePanelQuotesNoPathWithTheRuntime(t *testing.T) {
 		}
 	}
 }
+
+// **The audit directory's spans, at their own layer.** The answers the panel
+// gives are also held by the general rule that ends a path at its first space
+// (`withoutAbsolutePaths`), so these hold the spans themselves: for an
+// audit.dir that climbs out of the project, the runtime names its trail
+// through the trampoline's working directory, so that folder joined with it
+// must be among them, with no descriptor number left to find in the message;
+// and they come longest first, so that a shorter span never cuts a longer
+// one. The expected spans are built here by hand.
+func TestAuditDirSpansAreTheRuntimesNamesLongestFirst(t *testing.T) {
+	s := &Server{projectDir: "/home/owner/project", cfg: Config{ProjectDir: "/home/owner/project"}}
+	spans := s.auditDirSpans("", "../x")
+	if !slices.Contains(spans, "/proc/self/fd/x") || !slices.Contains(spans, filepath.Join("/proc/self/fd/3", "../x")) {
+		t.Errorf("the spans %q miss the trampoline's working directory joined with ../x", spans)
+	}
+	if !slices.Contains(spans, "/home/owner/x") {
+		t.Errorf("the spans %q miss the project's folder joined with ../x", spans)
+	}
+	// A case whose spans arrive shortest first: the project's folder, then
+	// the trampoline's.
+	s = &Server{projectDir: "/p", cfg: Config{ProjectDir: "/p"}}
+	spans = s.auditDirSpans("named /proc/self/fd/12/audit there", "audit")
+	want := []string{"/proc/self/fd/12/audit", "/proc/self/fd/3/audit", "/p/audit"}
+	if !slices.Equal(spans, want) {
+		t.Errorf("the spans are %q, want %q, longest first", spans, want)
+	}
+	for i := 1; i < len(spans); i++ {
+		if len(spans[i]) > len(spans[i-1]) {
+			t.Errorf("span %q comes after the shorter %q", spans[i], spans[i-1])
+		}
+	}
+}

@@ -500,10 +500,10 @@ func TestPublicKeyFilesKeepTheKeysOrder(t *testing.T) {
 }
 
 // **A list of keys is passed only with the seed it belongs to.** A list whose
-// key is not the seed's, a seed with no list, a list with no seed, a list of
-// more than the one key this version keeps, a seed the runtime cannot read or
-// Desk will not use, and an answer that is not `audit key public`'s each pass
-// no key, and say so in words with no path; only a desk with neither has none.
+// last key is not the seed's, whether it lists one key or more, a seed with
+// no list, a list with no seed, a seed the runtime cannot read or Desk will
+// not use, and an answer that is not `audit key public`'s each pass no key,
+// and say so in words with no path; only a desk with neither has none.
 func TestAKeyListThatIsNotTheSeedsPassesNoKey(t *testing.T) {
 	t.Setenv("JPACK_CONFIG", "")
 	const id = "a8000000000000000000000000000001"
@@ -522,9 +522,9 @@ func TestAKeyListThatIsNotTheSeedsPassesNoKey(t *testing.T) {
 		{"no seed", func(t *testing.T, folder, _ string) {
 			removeNamed(t, folder, id+".seed")
 		}, false, "Desk keeps a list of public keys for this desk, but not its key, so it passed no key."},
-		{"more than one key", func(t *testing.T, folder, _ string) {
+		{"two keys, the last another's", func(t *testing.T, folder, _ string) {
 			writeKeys(t, folder, id, wantKeyLine(standInPublicKey, standInKeyID, 0)+wantKeyLine(secondPublicKey, secondKeyID, 7))
-		}, false, "Desk's list of this desk's public keys holds more than one key, and this version of Desk keeps one key for a desk and rotates none, so it passed no key."},
+		}, true, "Desk's list of this desk's public keys does not name the key Desk keeps for it, so it passed no key."},
 		{"a seed others can read", func(t *testing.T, folder, _ string) {
 			if err := os.Chmod(filepath.Join(folder, id+".seed"), 0o640); err != nil {
 				t.Fatal(err)
