@@ -30,6 +30,22 @@ package desk
 // never lists `signing/`, and touches only the files of its own name in
 // `runner/`.
 //
+// # One lock for all of Desk's key custody
+//
+// Every decision to make, remove or name a Runner key is taken under an
+// exclusive lock on the signing folder Desk holds: a `flock` on that folder's
+// own descriptor (`lockPrivateData`), so the lock follows the folder and not
+// a name, and it excludes another Desk process, and another desk's Runner in
+// this one, alike. A start's sweep of the desks' keys takes the same lock
+// (`sweepUnfinishedKeysLocked`). The lock is held from the first inspection
+// to the last effect of the decision, and released before Runner is started:
+//
+//   - a sweep, a start that finds a creation marker, does not wait: where
+//     the lock is held, it changes nothing, and Runner starts without a key;
+//   - any other start waits for it a bounded time (`runnerKeyCreationWait`),
+//     and then starts Runner without a key, changing nothing;
+//   - a build that cannot take the lock names no key.
+//
 // # When it is made, and how
 //
 // At a Runner's start, where nothing is kept under its name: a new desk's
@@ -40,12 +56,19 @@ package desk
 // names to Runner, writes the seed (`audit key generate`), through
 // generateDeskKey: the marker first, the folder's pathname checked, the seed
 // written by the runtime and checked through the folder held, the list
-// written whole. The marker is then removed by identity.
+// written whole. The marker is then removed by identity. All of it under the
+// lock.
 //
-// **A key is named to Runner only where it has no marker.** A marker is left
-// only by a creation that did not finish, so a marked key has never signed
-// anything, and the first start of a desk's Runner in a process removes it
-// and its list (`sweepUnfinished`); the next start makes another.
+// **A key is named to Runner only where, under the lock, it has no marker.**
+// A creation holds the lock from before its marker is written to after the
+// marker is removed, so a marker seen under the lock is never a creation in
+// progress: it is one that was stopped, or whose marker could not be
+// removed, and either way that key was never named, and never signed
+// anything. So it is removed at whatever start finds it (`removeUnfinished`):
+// every name inspected first, then removed through the folder held, each
+// only while it is the file inspected, the marker last, so that a removal
+// that stops leaves the marker for the next start to finish. Another key is
+// then made. Nothing else ever removes a Runner key.
 //
 // # What is never done
 //
@@ -63,12 +86,14 @@ package desk
 // # What this does not defend against
 //
 // Custody's residual and the signing folder's (custody.go, signing.go): a
-// process running as this user can read the seed or swap a name in a folder
-// only this user can change, between Desk's check and Runner's or the
-// runtime's open. Against such a process, and against the owner, who holds
-// the key, a signature binds nothing. Two Desk processes over one
-// configuration folder can see each other's unfinished creation as one a
-// stopped Desk left: Desk keeps no lock on that folder.
+// process running as this user, and not Desk, can read the seed or swap a
+// name in a folder only this user can change. Runner opens the seed by the
+// path it is given after the lock is released; what holds then is Runner's
+// own check of that path at boot (absolute, no link, one name, the user's,
+// readable by nobody else), the runtime's own check each time it signs, and
+// Desk's checks, just before the lock is released, that the path still names
+// the folder and the seed it found. Against such a process, and against the
+// owner, who holds the key, a signature binds nothing.
 
 import (
 	"context"
@@ -76,12 +101,15 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
+	"syscall"
+	"time"
 	"unicode/utf8"
 )
 
@@ -93,15 +121,19 @@ const runnerSigningDirName = "runner"
 // 64 hexadecimal characters naming the startup desk's Runner state directory.
 var runnerKeyName = regexp.MustCompile(`^[0-9a-f]{32}(?:[0-9a-f]{32})?$`)
 
-// What desk-config reports of a desk's Runner key (`RunnerKeyStatus.State`).
+// What Desk reports of a desk's Runner key (`RunnerKeyStatus.State`).
 const (
-	// runnerKeySigned: Runner was started with the key; PublicKey and KeyID
-	// are its public half, as the runtime read it from the seed.
-	runnerKeySigned = "signed"
-	// runnerKeyUnsigned: Runner was started without a key; Reason says why.
-	runnerKeyUnsigned = "unsigned"
-	// runnerKeyStarting: this desk's Runner has not been started yet.
+	// runnerKeyStarting: Runner is being started, or has not been yet.
 	runnerKeyStarting = "starting"
+	// runnerKeySigned: Runner started, and answered, with the key on its boot
+	// line; PublicKey and KeyID are its public half, as the runtime read it
+	// from the seed.
+	runnerKeySigned = "signed"
+	// runnerKeyUnsigned: Runner started, and answered, without a key; Reason
+	// says why.
+	runnerKeyUnsigned = "unsigned"
+	// runnerKeyNotRunning: Runner did not start; Detail says why.
+	runnerKeyNotRunning = "not-running"
 )
 
 // Why a desk's Runner was started without a key (`RunnerKeyStatus.Reason`).
@@ -112,13 +144,16 @@ const (
 	runnerKeyNoCustody = "custody"
 	// The runtime did not make the key.
 	runnerKeyNotMade = "not-made"
-	// A creation of the key did not finish; the next start of Desk removes
-	// what it left.
+	// A creation of the key could not remove its marker; the next start
+	// removes what it left, and makes another.
 	runnerKeyUnfinished = "unfinished"
 	// The list of public keys is kept, and the seed is not.
 	runnerKeyLost = "lost"
-	// The seed, its list or its marker could not be inspected or read now.
+	// The seed, its list, its marker, their folder or the lock could not be
+	// inspected, taken or read now.
 	runnerKeyNotNow = "not-read-now"
+	// The signing folder's lock was held by another start.
+	runnerKeyInUse = "in-use"
 	// The seed or its list is not one Desk names to Runner.
 	runnerKeyNotUsed = "not-used"
 	// The runtime refuses the seed.
@@ -127,9 +162,9 @@ const (
 	runnerKeyRunnerRefused = "runner-refused"
 )
 
-// RunnerKeyStatus is what `GET /api/desk-config` reports of the key this
-// desk's Runner signs its runs with, under `jobs.runnerKey`. It never carries
-// a path.
+// RunnerKeyStatus is what Desk reports of the key this desk's Runner signs
+// its runs with: in `GET /api/desk-config` under `jobs.runnerKey`, and in
+// `GET /api/runner-key`, which the page polls. It never carries a path.
 type RunnerKeyStatus struct {
 	State     string `json:"state"`
 	PublicKey string `json:"publicKey,omitempty"`
@@ -144,11 +179,6 @@ type runnerKey struct {
 	s    *Server
 	name string
 
-	// swept is set once this process has looked for an unfinished creation
-	// under name (`sweepUnfinished`). Read and written under the companion's
-	// lock, which every start holds.
-	swept bool
-
 	mu     sync.Mutex
 	status RunnerKeyStatus
 	// said is the status last written to Desk's log, so that a Runner that
@@ -157,12 +187,13 @@ type runnerKey struct {
 }
 
 // newRunnerKey is the key Desk keeps for the Runner whose workspace is name.
+// Until its Runner has started and answered, it is reported as starting.
 func (s *Server) newRunnerKey(name string) *runnerKey {
 	return &runnerKey{s: s, name: name, status: RunnerKeyStatus{State: runnerKeyStarting}}
 }
 
-// keyStatus is what desk-config says of this Runner's key; nil where this
-// desk has no Runner.
+// keyStatus is what Desk reports of this Runner's key; nil where this desk
+// has no Runner.
 func (j *jobsCompanion) keyStatus() *RunnerKeyStatus {
 	if j == nil {
 		return nil
@@ -170,7 +201,7 @@ func (j *jobsCompanion) keyStatus() *RunnerKeyStatus {
 	return j.key.report()
 }
 
-// report is what desk-config says of the key; nil where there is none.
+// report is what Desk reports of the key; nil where there is none.
 func (k *runnerKey) report() *RunnerKeyStatus {
 	if k == nil {
 		return nil
@@ -181,12 +212,16 @@ func (k *runnerKey) report() *RunnerKeyStatus {
 	return &status
 }
 
-// set records what a start found, and says it in Desk's log where it changed.
+// set records the state of the key, and says it in Desk's log where it
+// changed. Starting is not said.
 func (k *runnerKey) set(status RunnerKeyStatus) {
+	if k == nil {
+		return
+	}
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	k.status = status
-	if status == k.said {
+	if status.State == runnerKeyStarting || status == k.said {
 		return
 	}
 	k.said = status
@@ -195,38 +230,74 @@ func (k *runnerKey) set(status RunnerKeyStatus) {
 		k.s.log.Printf("desk: Runner signs this desk's runs with the key Desk keeps for it, keyId %s", status.KeyID)
 	case runnerKeyUnsigned:
 		k.s.log.Printf("desk: Runner was started without a signing key, so this desk's runs are not signed (%s): %s", status.Reason, status.Detail)
+	case runnerKeyNotRunning:
+		k.s.log.Printf("desk: Runner did not start, so this desk runs and signs nothing now: %s", status.Detail)
 	}
 }
 
-// unsigned is a start without a key, for reason, with detail.
+// unsignedRunner is a start without a key, for reason, with detail.
 func unsignedRunner(reason, detail string) RunnerKeyStatus {
 	return RunnerKeyStatus{State: runnerKeyUnsigned, Reason: reason, Detail: strings.TrimRight(detail, ".")}
 }
 
 // prepare is the path of the key to name to Runner on the boot line, or ""
-// where Runner is to start without one; what it found is reported. It runs
-// before each start, under the companion's lock.
-func (k *runnerKey) prepare() string {
+// where Runner is to start without one, and the state to report once Runner
+// has started and answered (`started`). Until then the key is reported as
+// starting: a key is never reported as signing before Runner has taken it.
+// It runs before each start, under the companion's lock.
+func (k *runnerKey) prepare() (string, RunnerKeyStatus) {
 	if k == nil {
-		return ""
+		return "", RunnerKeyStatus{}
 	}
+	k.set(RunnerKeyStatus{State: runnerKeyStarting})
 	status, path := k.examine(context.Background())
-	k.set(status)
-	return path
+	return path, status
 }
 
-// refusedByRunner records that Runner refused the key at boot, in its words.
-// The key is left as it is.
-func (k *runnerKey) refusedByRunner(words string) {
+// started records what Runner started and answered with: decided, which
+// prepare or refused gave.
+func (k *runnerKey) started(decided RunnerKeyStatus) { k.set(decided) }
+
+// refused is the state of a Runner that refused the key at boot, in its
+// words, and was started again without it. The key is left as it is.
+func (k *runnerKey) refused(words string) RunnerKeyStatus {
+	if k == nil {
+		return RunnerKeyStatus{}
+	}
+	return unsignedRunner(runnerKeyRunnerRefused, k.s.runnerKeyWords(words, k.name, false))
+}
+
+// notRunning records that Runner did not start, and why, with no path.
+func (k *runnerKey) notRunning(err error) {
 	if k == nil {
 		return
 	}
-	k.set(unsignedRunner(runnerKeyRunnerRefused, k.s.runnerKeyWords(words, k.name, false)))
+	k.set(RunnerKeyStatus{State: runnerKeyNotRunning, Detail: strings.TrimRight(k.s.runnerKeyWords(err.Error(), k.name, false), ".")})
 }
 
-// examine finds the key kept under k.name, makes it where nothing is kept,
-// and answers what Runner is to be started with: the seed's absolute path
-// where every check holds, "" otherwise, and the status either way.
+// handleRunnerKey answers `GET /api/runner-key`: what this desk's Runner
+// signs its runs with, or why it signs none, as the page shows it in Help &
+// About and asks again while it is open. `null` where this desk has no Runner.
+func (s *Server) handleRunnerKey(w http.ResponseWriter, r *http.Request) {
+	if !s.guard(w, r) {
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, struct {
+		RunnerKey *RunnerKeyStatus `json:"runnerKey"`
+	}{s.jobs.keyStatus()})
+}
+
+// runnerKeyNames are the three names a Runner key is kept under in `runner/`.
+type runnerKeyNames struct{ seed, keys, marker string }
+
+// runnerKeyFound is what an inspection found at each of them: nil where
+// nothing is there.
+type runnerKeyFound struct{ seed, keys, marker os.FileInfo }
+
+// examine finds the key kept under k.name, under the lock, and decides: the
+// seed's absolute path where every check holds, "" otherwise, and the state
+// to report once Runner has started either way.
 func (k *runnerKey) examine(ctx context.Context) (RunnerKeyStatus, string) {
 	s := k.s
 	if !runnerKeyName.MatchString(k.name) {
@@ -236,66 +307,81 @@ func (k *runnerKey) examine(ctx context.Context) (RunnerKeyStatus, string) {
 	if !ok {
 		return unsignedRunner(runnerKeyNoCustody, "this desk holds no folder to run the runtime in"), ""
 	}
-	dir, err := s.assistant.openRunnerSigning()
+	signing, dir, err := s.assistant.openRunnerSigning()
 	if err != nil {
+		var notNow runnerKeyNotNowError
+		if errors.As(err, &notNow) {
+			return unsignedRunner(runnerKeyNotNow, s.runnerKeyWords(err.Error(), k.name, true)), ""
+		}
 		return unsignedRunner(runnerKeyNoCustody, s.runnerKeyWords(err.Error(), k.name, true)), ""
 	}
+	defer signing.Close()
 	defer dir.Close()
 	if !utf8.ValidString(dir.path) {
 		return unsignedRunner(runnerKeyNoCustody, "the path of Desk's signing folder is not valid UTF-8, which Runner's boot line cannot carry"), ""
 	}
-	if !k.swept {
-		if err := k.sweepUnfinished(dir); err != nil {
+	names := runnerKeyNames{seed: k.name + seedSuffix, keys: k.name + keysSuffix, marker: k.name + creatingSuffix}
+	// **A sweep never waits for the lock.** Whether this start would remove
+	// an unfinished creation is seen before the lock only to choose how long
+	// to wait for it; what is done is decided again under it.
+	wait := runnerKeyCreationWait
+	if _, err := lstatRunnerKey(dir, names.marker); err == nil {
+		wait = 0
+	}
+	unlock, err := lockKeyCustody(signing, wait)
+	switch {
+	case errors.Is(err, errKeyCustodyInUse):
+		return unsignedRunner(runnerKeyInUse, ""), ""
+	case err != nil:
+		return unsignedRunner(runnerKeyNotNow, s.runnerKeyWords("the folder Desk keeps signing keys in could not be locked: "+err.Error(), k.name, true)), ""
+	}
+	defer unlock()
+	// **Every name inspected before anything is decided.** Anything but
+	// "not there" for any of the three is "could not be read now": nothing is
+	// removed, made or named.
+	found, err := inspectRunnerKey(dir, names)
+	if err != nil {
+		return unsignedRunner(runnerKeyNotNow, err.Error()), ""
+	}
+	if found.marker != nil {
+		keyBetween("before removal")
+		if err := k.removeUnfinished(dir, names, found); err != nil {
 			return unsignedRunner(runnerKeyNotNow, s.runnerKeyWords(err.Error(), k.name, true)), ""
 		}
-		k.swept = true
+		found = runnerKeyFound{}
 	}
-	seedName, keysName, markerName := k.name+seedSuffix, k.name+keysSuffix, k.name+creatingSuffix
-	// **A marked key is never named.** Its creation did not finish, so it has
-	// signed nothing, and the next start of Desk removes it.
-	switch _, err := lstatRunnerKey(dir, markerName); {
-	case err == nil:
-		return unsignedRunner(runnerKeyUnfinished, ""), ""
-	case !errors.Is(err, fs.ErrNotExist):
-		return unsignedRunner(runnerKeyNotNow, "its creation marker could not be inspected"), ""
-	}
-	seed, err := lstatRunnerKey(dir, seedName)
-	if errors.Is(err, fs.ErrNotExist) {
+	seed := found.seed
+	if seed == nil {
 		// **Made only where nothing is kept.** A list without its seed is a
 		// lost key, and is said; nothing is made in its place.
-		_, listErr := lstatRunnerKey(dir, keysName)
-		switch {
-		case listErr == nil:
+		if found.keys != nil {
 			return unsignedRunner(runnerKeyLost, ""), ""
-		case !errors.Is(listErr, fs.ErrNotExist):
-			return unsignedRunner(runnerKeyNotNow, "its list of public keys could not be inspected"), ""
 		}
 		if status, made := k.make(ctx, project, dir); !made {
 			return status, ""
 		}
-		seed, err = lstatRunnerKey(dir, seedName)
-	}
-	if err != nil {
-		return unsignedRunner(runnerKeyNotNow, "the key could not be inspected"), ""
+		if seed, err = lstatRunnerKey(dir, names.seed); err != nil {
+			return unsignedRunner(runnerKeyNotNow, "the key could not be inspected"), ""
+		}
 	}
 	if err := checkSeed("the key", seed); err != nil {
 		return unsignedRunner(runnerKeyNotUsed, err.Error()), ""
 	}
-	keys, found, err := dir.readKeys(keysName)
+	keys, listed, err := dir.readKeys(names.keys)
 	switch {
 	case err != nil:
 		return unsignedRunner(runnerKeyNotUsed, "its list of public keys was not read: "+err.Error()), ""
-	case !found:
+	case !listed:
 		return unsignedRunner(runnerKeyNotUsed, "Desk keeps no list of its public keys"), ""
 	case len(keys) != 1:
 		return unsignedRunner(runnerKeyNotUsed, "its list of public keys holds more than one key, and this version of Desk keeps one key for Runner and rotates none"), ""
 	}
 	// The pathname Runner and the runtime are given must name the folder and
 	// the seed found through it.
-	if dir.namesHeld() != nil || dir.namesFile(seedName, seed) != nil {
+	if dir.namesHeld() != nil || dir.namesFile(names.seed, seed) != nil {
 		return unsignedRunner(runnerKeyNotUsed, "the key is not at the path Runner would be given"), ""
 	}
-	path := filepath.Join(dir.path, seedName)
+	path := filepath.Join(dir.path, names.seed)
 	public, status := s.readRunnerKey(ctx, project, path, k.name)
 	if status != nil {
 		return *status, ""
@@ -303,14 +389,63 @@ func (k *runnerKey) examine(ctx context.Context) (RunnerKeyStatus, string) {
 	if public.PublicKey != keys[0].PublicKey || public.KeyID != keys[0].KeyID {
 		return unsignedRunner(runnerKeyNotUsed, "its list of public keys does not name it"), ""
 	}
-	if dir.namesFile(seedName, seed) != nil {
+	// Last, still under the lock: the path still names the seed found. After
+	// the lock is released, Runner opens it by that path (see "What this does
+	// not defend against").
+	if dir.namesFile(names.seed, seed) != nil {
 		return unsignedRunner(runnerKeyNotUsed, "the key is not at the path Runner would be given"), ""
 	}
 	return RunnerKeyStatus{State: runnerKeySigned, PublicKey: public.PublicKey, KeyID: public.KeyID}, path
 }
 
+// inspectRunnerKey inspects all three names, not following a link. Absence is
+// an answer; any other failure is an error that names what could not be
+// inspected, and no name.
+func inspectRunnerKey(dir *signingDir, names runnerKeyNames) (runnerKeyFound, error) {
+	var found runnerKeyFound
+	for _, each := range []struct {
+		name string
+		into *os.FileInfo
+		what string
+	}{{names.marker, &found.marker, "its creation marker"}, {names.seed, &found.seed, "the key"}, {names.keys, &found.keys, "its list of public keys"}} {
+		info, err := lstatRunnerKey(dir, each.name)
+		switch {
+		case err == nil:
+			*each.into = info
+		case !errors.Is(err, fs.ErrNotExist):
+			return runnerKeyFound{}, fmt.Errorf("%s could not be inspected, so nothing was removed or made", each.what)
+		}
+	}
+	return found, nil
+}
+
+// removeUnfinished removes what a creation that did not finish left under
+// this name, under the lock: the list, the seed and then the marker, each
+// through the folder held and only while it is the file just inspected
+// (`removeMade`). The marker goes last, so a removal that stops at any point
+// leaves it, and the next start, under the lock, finishes the job.
+func (k *runnerKey) removeUnfinished(dir *signingDir, names runnerKeyNames, found runnerKeyFound) error {
+	for _, each := range []struct {
+		name string
+		info os.FileInfo
+	}{{names.keys, found.keys}, {names.seed, found.seed}, {names.marker, found.marker}} {
+		if each.info == nil {
+			continue
+		}
+		if err := runnerKeyIO("remove " + each.name); err != nil {
+			return fmt.Errorf("what an unfinished creation of its key left could not all be removed: %w", err)
+		}
+		if err := dir.removeMade(each.name, each.info); err != nil {
+			return fmt.Errorf("what an unfinished creation of its key left could not all be removed: %w", err)
+		}
+	}
+	k.s.log.Print("desk: the signing key of an unfinished creation for this desk's Runner was removed; another is made now")
+	return nil
+}
+
 // make has the runtime make the key in dir, through generateDeskKey, and
-// removes its creation marker; or says why there is no key to name.
+// removes its creation marker, all under the lock; or says why there is no
+// key to name.
 func (k *runnerKey) make(ctx context.Context, project heldDir, dir *signingDir) (RunnerKeyStatus, bool) {
 	s := k.s
 	made, err := generateDeskKey(ctx, s.cfg.JpackBin, project, dir, k.name)
@@ -319,7 +454,7 @@ func (k *runnerKey) make(ctx context.Context, project heldDir, dir *signingDir) 
 		return unsignedRunner(runnerKeyNotMade, s.runnerKeyWords(why, k.name, false)), false
 	}
 	// **Named only once its marker is gone.** A marker that stays marks a key
-	// that never signed anything, which the next start of Desk removes.
+	// that was never named, which the next start removes.
 	if err := made.settle(); err != nil {
 		s.log.Printf("desk: Runner's new signing key keeps its creation marker, so it is not named to Runner; the next start removes it: %s", s.runnerKeyWords(err.Error(), k.name, true))
 		return unsignedRunner(runnerKeyUnfinished, ""), false
@@ -368,79 +503,149 @@ func (s *Server) readRunnerKey(ctx context.Context, project heldDir, path, name 
 	return deskPublicKey{}, &status
 }
 
-// sweepUnfinished removes what a creation of this Runner's key left
-// unfinished: where `<name>.creating` is in `runner/`, the list, the seed and
-// the marker of that name, through the folder held. It acts on its own name
-// only, and on nothing a marker does not name. A marker that cannot be
-// inspected leaves everything as it is, and is an error.
-func (k *runnerKey) sweepUnfinished(dir *signingDir) error {
-	marker := k.name + creatingSuffix
-	_, err := lstatRunnerKey(dir, marker)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
+// runnerKeyCreationWait is how long a start that may make or name a key
+// waits for the key-custody lock before it starts Runner without one. A
+// variable only so that a test can shorten it.
+var runnerKeyCreationWait = 10 * time.Second
+
+// runnerKeyLockPoll is how often a start that waits asks for the lock again.
+const runnerKeyLockPoll = 25 * time.Millisecond
+
+// errKeyCustodyInUse is the key-custody lock held by another start, for
+// longer than this one waits.
+var errKeyCustodyInUse = errors.New("the folder Desk keeps signing keys in was in use")
+
+// lockKeyCustody takes the one exclusive lock for Desk's key custody: a
+// `flock` on the descriptor of the signing folder held (`lockPrivateData`),
+// so that it follows the folder Desk holds and not a name. It asks at once,
+// and again until wait has passed; with no wait, once. A lock held elsewhere
+// all that time is errKeyCustodyInUse; any other failure, a build that
+// cannot lock among them, is returned as itself. Either way nothing is held.
+// The lock is released by the function it answers, and by nothing else.
+func lockKeyCustody(signing *signingDir, wait time.Duration) (func(), error) {
+	if err := runnerKeyIO("lock"); err != nil {
+		return nil, err
 	}
+	file, err := signing.root.Open(".")
 	if err != nil {
-		return errors.New("its creation marker could not be inspected, so nothing was removed")
+		return nil, err
 	}
-	for _, name := range []string{k.name + keysSuffix, k.name + seedSuffix, marker} {
-		if err := dir.root.Remove(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("what an unfinished creation of its key left could not all be removed: %w", err)
+	deadline := time.Now().Add(wait)
+	for busy := false; ; {
+		err := lockPrivateData(file, true)
+		if err == nil {
+			return func() { file.Close() }, nil
 		}
+		if !errors.Is(err, syscall.EWOULDBLOCK) && !errors.Is(err, syscall.EAGAIN) && !errors.Is(err, syscall.EINTR) {
+			file.Close()
+			return nil, err
+		}
+		if !busy {
+			busy = true
+			keyBetween("lock busy")
+		}
+		if !time.Now().Before(deadline) {
+			file.Close()
+			return nil, errKeyCustodyInUse
+		}
+		time.Sleep(runnerKeyLockPoll)
 	}
-	k.s.log.Print("desk: the signing key of an unfinished creation for this desk's Runner was removed; another is made now")
-	return nil
 }
 
-// openRunnerSigning validates `secrets/signing/runner/` and holds it, as
-// openSigning holds `signing/`, through the signing folder's descriptor:
-// made 0700 where it is missing, narrowed to 0700, and refused, never
-// repaired, where it is a link, not a directory, another user's, or could be
-// written by group or other; and the folder opened must be the folder
-// checked.
-func (a *assistantStore) openRunnerSigning() (*signingDir, error) {
-	signing, err := a.openSigning(true)
+// sweepUnfinishedKeysLocked is the start's sweep of the desks' unfinished
+// keys (`sweepUnfinishedKeys`, signing.go), under the key-custody lock, so
+// that it and a Runner key's decisions never run at once. A sweep that cannot
+// take the lock at once does not wait: it leaves everything for the next
+// start, and says so.
+func (s *Server) sweepUnfinishedKeysLocked() {
+	signing, err := s.assistant.openSigning(false)
+	if errors.Is(err, errNoSigningDir) {
+		return
+	}
 	if err != nil {
-		return nil, err
+		s.log.Printf("desk: the signing folder could not be opened to look for unfinished creations: %s", s.custodyWords(err.Error()))
+		return
 	}
 	defer signing.Close()
+	unlock, err := lockKeyCustody(signing, 0)
+	if err != nil {
+		s.log.Printf("desk: unfinished creations of desks' keys were not looked for, and are left for the next start: %s", s.custodyWords(err.Error()))
+		return
+	}
+	defer unlock()
+	s.sweepUnfinishedKeys()
+}
+
+// runnerKeyNotNowError is a failure to inspect or open `runner/` now, as
+// against a folder custody refuses.
+type runnerKeyNotNowError struct{ err error }
+
+func (e runnerKeyNotNowError) Error() string { return e.err.Error() }
+func (e runnerKeyNotNowError) Unwrap() error { return e.err }
+
+// openRunnerSigning validates `secrets/signing/` and `secrets/signing/runner/`
+// and holds both: the signing folder as openSigning holds it, and `runner/`
+// through its descriptor, made 0700 where it is missing, narrowed to 0700,
+// and refused, never repaired, where it is a link, not a directory, another
+// user's, or could be written by group or other; and the folder opened must
+// be the folder checked. The caller closes both.
+func (a *assistantStore) openRunnerSigning() (*signingDir, *signingDir, error) {
+	signing, err := a.openSigning(true)
+	if err != nil {
+		return nil, nil, err
+	}
+	failed := func(err error) (*signingDir, *signingDir, error) {
+		signing.Close()
+		return nil, nil, err
+	}
 	path := filepath.Join(signing.path, runnerSigningDirName)
 	if err := signing.root.Mkdir(runnerSigningDirName, custodyDirMode); err != nil && !errors.Is(err, fs.ErrExist) {
-		return nil, fmt.Errorf("%s could not be created: %w", path, err)
+		return failed(fmt.Errorf("%s could not be created: %w", path, err))
 	}
 	if err := ensureOwnedDirectoryIn(signing.root, signing.path, runnerSigningDirName); err != nil {
-		return nil, err
+		return failed(err)
+	}
+	if err := runnerKeyIO(runnerSigningDirName); err != nil {
+		return failed(runnerKeyNotNowError{fmt.Errorf("%s could not be inspected: %w", path, err)})
 	}
 	checked, err := signing.root.Lstat(runnerSigningDirName)
 	if err != nil {
-		return nil, fmt.Errorf("%s could not be inspected: %w", path, err)
+		return failed(runnerKeyNotNowError{fmt.Errorf("%s could not be inspected: %w", path, err)})
 	}
 	if err := safeDirectory(path, checked, true); err != nil {
-		return nil, err
+		return failed(err)
 	}
 	afterCustodyCheck(path)
 	root, err := signing.root.OpenRoot(runnerSigningDirName)
 	if err != nil {
-		return nil, fmt.Errorf("%s could not be opened: %w", path, err)
+		return failed(runnerKeyNotNowError{fmt.Errorf("%s could not be opened: %w", path, err)})
 	}
 	if opened, err := root.Stat("."); err != nil || !os.SameFile(checked, opened) {
 		root.Close()
-		return nil, fmt.Errorf("%s changed between being checked and being opened, and was not used", path)
+		return failed(fmt.Errorf("%s changed between being checked and being opened, and was not used", path))
 	}
-	return &signingDir{root: root, path: path}, nil
+	return signing, &signingDir{root: root, path: path}, nil
 }
 
-// testHookRunnerKeyLstat runs before each inspection of a Runner key's
-// seed, list or marker, and is nil outside tests. An error it returns stands
-// for a failure to inspect that name now, such as an I/O error, so a test can
-// tell "could not be inspected" from "not there".
-var testHookRunnerKeyLstat func(name string) error
+// testHookRunnerKeyIO runs before each step of a Runner key's that a failure
+// can stop, and is nil outside tests: the inspection of its seed, list or
+// marker (by name), of `runner/` ("runner"), the taking of the lock ("lock")
+// and each removal ("remove <name>"). An error it returns stands for that
+// step failing now, such as an I/O error, so a test can tell "could not be
+// done now" from "not there", and stop a removal part way.
+var testHookRunnerKeyIO func(step string) error
+
+func runnerKeyIO(step string) error {
+	if testHookRunnerKeyIO != nil {
+		return testHookRunnerKeyIO(step)
+	}
+	return nil
+}
 
 // lstatRunnerKey inspects name in the folder held, not following a link.
 func lstatRunnerKey(dir *signingDir, name string) (fs.FileInfo, error) {
-	if testHookRunnerKeyLstat != nil {
-		if err := testHookRunnerKeyLstat(name); err != nil {
-			return nil, err
-		}
+	if err := runnerKeyIO(name); err != nil {
+		return nil, err
 	}
 	return dir.root.Lstat(name)
 }

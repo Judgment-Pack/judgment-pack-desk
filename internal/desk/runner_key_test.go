@@ -9,6 +9,7 @@ package desk
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"log"
 	"net/http/httptest"
@@ -42,6 +43,15 @@ func (b *syncBuffer) String() string {
 
 // runnerFolderOf is the folder Desk keeps Runner keys in, on s.
 func runnerFolderOf(s *Server) string { return filepath.Join(signingFolderOf(s), "runner") }
+
+// decide is a start's decision on the key (`prepare`), recorded as if Runner
+// had then started and answered with it (`started`), so that report says it.
+// It answers the path the boot line would name.
+func (k *runnerKey) decide() string {
+	path, decided := k.prepare()
+	k.started(decided)
+	return path
+}
 
 // recordingRunner is a stand-in Runner that appends each boot line it is
 // given to received, and the JPACK_SIGNING_KEY of its own environment to
@@ -258,14 +268,14 @@ func TestARunnerKeyIsMadeOnceAndFoundAfter(t *testing.T) {
 	s, _, _ := gatesServer(t, bin)
 	name := strings.Repeat("ab", 32)
 	first := s.newRunnerKey(name)
-	path := first.prepare()
+	path := first.decide()
 	seed := filepath.Join(runnerFolderOf(s), name+".seed")
 	info, err := os.Lstat(seed)
 	if path != seed || err != nil {
 		t.Fatalf("the first start named %q: %v", path, err)
 	}
 	for _, k := range []*runnerKey{first, s.newRunnerKey(name)} {
-		if got := k.prepare(); got != seed {
+		if got := k.decide(); got != seed {
 			t.Fatalf("a later start named %q", got)
 		}
 	}
@@ -333,17 +343,15 @@ func TestEachStateARunnerKeyCanBeFoundIn(t *testing.T) {
 	// made makes the key as a first start does, and returns it.
 	made := func(t *testing.T, st setup) {
 		t.Helper()
-		if path := st.s.newRunnerKey(name).prepare(); path == "" {
+		if path := st.s.newRunnerKey(name).decide(); path == "" {
 			t.Fatal("the key was not made")
 		}
 	}
 	for _, c := range []struct {
 		name    string
 		arrange func(t *testing.T, st setup)
-		// later is a start after this process's first, so that no sweep runs.
-		later  bool
-		reason string
-		detail string
+		reason  string
+		detail  string
 	}{
 		{name: "a link at the seed's name", arrange: func(t *testing.T, st setup) {
 			made(t, st)
@@ -398,12 +406,6 @@ func TestEachStateARunnerKeyCanBeFoundIn(t *testing.T) {
 				t.Fatal(err)
 			}
 		}, reason: "not-used", detail: "its list of public keys was not read: its group or other users can write it"},
-		{name: "a marker a later start finds", arrange: func(t *testing.T, st setup) {
-			made(t, st)
-			if err := os.WriteFile(filepath.Join(st.folder, name+".creating"), nil, 0o600); err != nil {
-				t.Fatal(err)
-			}
-		}, later: true, reason: "unfinished"},
 		{name: "the runtime refuses the seed", arrange: func(t *testing.T, st setup) {
 			made(t, st)
 			readingKeyAs(t, st.calls, `  printf '%s\n' "{\"outputVersion\":\"2\",\"command\":\"audit key public\",\"status\":\"error\",\"diagnostics\":[{\"code\":\"JPS-AUDIT-KEY-REFUSED\",\"message\":\"The key at $4 is refused: the directory ${4%/*} on the signing key's path can be written by its group or by other users (mode 0770) and has no sticky bit, so another user could remove or replace the key; chmod go-w ${4%/*} fixes it.\"}]}"; exit 1`)
@@ -417,7 +419,7 @@ func TestEachStateARunnerKeyCanBeFoundIn(t *testing.T) {
 			bin := filepath.Join(t.TempDir(), "jpack")
 			calls := writeStandInRuntime(t, bin, reading(allConfigVersions), lockingAs(wantGatedConfig))
 			s, _, logged := gatesServer(t, bin)
-			if path := s.newRunnerKey(other).prepare(); path == "" {
+			if path := s.newRunnerKey(other).decide(); path == "" {
 				t.Fatal("the folder was not made")
 			}
 			st := setup{s, runnerFolderOf(s), calls}
@@ -425,8 +427,7 @@ func TestEachStateARunnerKeyCanBeFoundIn(t *testing.T) {
 			before := keptIn(t, st.folder)
 			generated := strings.Count(readFile(t, calls), "audit key generate")
 			k := s.newRunnerKey(name)
-			k.swept = c.later
-			if path := k.prepare(); path != "" {
+			if path := k.decide(); path != "" {
 				t.Fatalf("the start named %s", path)
 			}
 			got := *k.report()
@@ -445,78 +446,105 @@ func TestEachStateARunnerKeyCanBeFoundIn(t *testing.T) {
 	}
 }
 
-// **Could not be inspected now is not "not there"** (#219's round 3, for the
-// Runner key). An inspection of the marker, the seed or the list that fails
-// for any reason but absence leaves every file as it is, makes no key, and
-// names none; the next start that can inspect them names the key.
+// **Could not be inspected now is not "not there"** (#219's round 3, and
+// review round 1 of this PR, for the Runner key). Under the lock, every name
+// is inspected before anything is decided: a failure for any reason but
+// absence, at the marker, the seed, the list, the folder or the lock, leaves
+// every file byte for byte, removes nothing, makes nothing and names nothing,
+// whether a key is kept, a creation was left unfinished (marker, seed and
+// list), or nothing is kept; the next start that can inspect them names a
+// key.
 func TestARunnerKeyNotInspectedNowIsLeftAndNotMade(t *testing.T) {
 	const name = "c0000000000000000000000000000003"
-	for _, c := range []struct {
-		which string
-		kept  bool
-		// later is a start after this process's first, past the sweep.
-		later bool
-	}{{".creating", true, false}, {".creating", false, false}, {".creating", true, true}, {".seed", true, false}, {".seed", false, false}, {".keys.jsonl", false, false}} {
-		t.Run(c.which+map[bool]string{true: ", key kept", false: ", nothing kept"}[c.kept]+map[bool]string{true: ", a later start", false: ""}[c.later], func(t *testing.T) {
-			bin := filepath.Join(t.TempDir(), "jpack")
-			calls := writeStandInRuntime(t, bin, reading(allConfigVersions), lockingAs(wantGatedConfig))
-			s, _, _ := gatesServer(t, bin)
-			made := name
-			if !c.kept {
-				made = strings.Repeat("ab", 32)
-			}
-			if s.newRunnerKey(made).prepare() == "" {
-				t.Fatal("the folder was not made")
-			}
-			folder := runnerFolderOf(s)
-			before := keptIn(t, folder)
-			generated := strings.Count(readFile(t, calls), "audit key generate")
-			failing := name + c.which
-			testHookRunnerKeyLstat = func(n string) error {
-				if n == failing {
-					return syscall.EIO
+	for _, failing := range []string{name + ".creating", name + ".seed", name + ".keys.jsonl", "runner", "lock"} {
+		for _, kept := range []string{"a key kept", "an unfinished creation", "nothing kept"} {
+			t.Run(failing+", "+kept, func(t *testing.T) {
+				bin := filepath.Join(t.TempDir(), "jpack")
+				calls := writeStandInRuntime(t, bin, reading(allConfigVersions), lockingAs(wantGatedConfig))
+				s, _, _ := gatesServer(t, bin)
+				switch kept {
+				case "a key kept":
+					if s.newRunnerKey(name).decide() == "" {
+						t.Fatal("the key was not made")
+					}
+				case "an unfinished creation":
+					leaveUnfinished(t, s, name)
+				default:
+					if s.newRunnerKey(strings.Repeat("ab", 32)).decide() == "" {
+						t.Fatal("the folder was not made")
+					}
 				}
-				return nil
-			}
-			t.Cleanup(func() { testHookRunnerKeyLstat = nil })
-			k := s.newRunnerKey(name)
-			k.swept = c.later
-			if path := k.prepare(); path != "" {
-				t.Fatalf("named %s while %s could not be inspected", path, failing)
-			}
-			if got := *k.report(); got.State != "unsigned" || got.Reason != "not-read-now" {
-				t.Errorf("reported %+v", got)
-			}
-			assertKept(t, folder, before)
-			if n := strings.Count(readFile(t, calls), "audit key generate"); n != generated {
-				t.Errorf("a key was generated while a name could not be inspected")
-			}
-			testHookRunnerKeyLstat = nil
-			if path := k.prepare(); path != filepath.Join(folder, name+".seed") {
-				t.Errorf("the start after named %q: %+v", path, *k.report())
-			}
-		})
+				folder := runnerFolderOf(s)
+				before := keptIn(t, folder)
+				generated := strings.Count(readFile(t, calls), "audit key generate")
+				testHookRunnerKeyIO = func(step string) error {
+					if step == failing {
+						return syscall.EIO
+					}
+					return nil
+				}
+				t.Cleanup(func() { testHookRunnerKeyIO = nil })
+				k := s.newRunnerKey(name)
+				if path := k.decide(); path != "" {
+					t.Fatalf("named %s while %s could not be inspected", path, failing)
+				}
+				if got := *k.report(); got.State != "unsigned" || got.Reason != "not-read-now" {
+					t.Errorf("reported %+v", got)
+				}
+				assertKept(t, folder, before)
+				if n := strings.Count(readFile(t, calls), "audit key generate"); n != generated {
+					t.Errorf("a key was generated while %s could not be inspected", failing)
+				}
+				testHookRunnerKeyIO = nil
+				if path := k.decide(); path != filepath.Join(folder, name+".seed") {
+					t.Errorf("the start after named %q: %+v", path, *k.report())
+				}
+			})
+		}
 	}
 }
 
-// **A creation that did not finish is removed at the first start, and only
-// then, and only by its marker** (runner_key.go, `sweepUnfinished`). A marker
-// left with a seed and a list: a later start in the same process leaves all
-// three and names nothing; the first start of the next process removes them
-// and makes another key, and names it. A seed and a list with no marker are
-// never removed.
-func TestAnUnfinishedRunnerKeyIsRemovedAtTheFirstStartOnly(t *testing.T) {
+// leaveUnfinished leaves what a creation stopped before it removed its marker
+// leaves: the marker, the seed the runtime wrote and the list of its public
+// keys, in the Runner keys' folder.
+func leaveUnfinished(t *testing.T, s *Server, name string) {
+	t.Helper()
+	signing, dir, err := s.assistant.openRunnerSigning()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer signing.Close()
+	defer dir.Close()
+	project, _ := s.runnerKeyRuntimeDir()
+	if _, err := generateDeskKey(context.Background(), s.cfg.JpackBin, project, dir, name); err != nil {
+		t.Fatal(err)
+	}
+	if names := namesIn(t, dir.path); !slices.Contains(names, name+".creating") || !slices.Contains(names, name+".seed") || !slices.Contains(names, name+".keys.jsonl") {
+		t.Fatalf("the unfinished creation left %q", names)
+	}
+}
+
+// **A creation that did not finish is removed under the lock, at whatever
+// start finds it, and only by its marker** (runner_key.go,
+// `removeUnfinished`). A seed and a list with no marker are never removed. A
+// marker left with a seed and a list: the next start, in this process or
+// another, removes all three and makes another key, and names it. Nothing
+// but a marker found under the lock removes a key: the first-start rule of
+// the round before is gone, since a creation holds the lock for as long as
+// its marker stands.
+func TestAnUnfinishedRunnerKeyIsRemovedUnderTheLock(t *testing.T) {
 	const name = "c0000000000000000000000000000004"
 	bin := filepath.Join(t.TempDir(), "jpack")
 	calls := writeStandInRuntime(t, bin, reading(allConfigVersions), lockingAs(wantGatedConfig))
 	s, _, _ := gatesServer(t, bin)
-	if s.newRunnerKey(name).prepare() == "" {
+	k := s.newRunnerKey(name)
+	if k.decide() == "" {
 		t.Fatal("the key was not made")
 	}
 	folder := runnerFolderOf(s)
 	seed := filepath.Join(folder, name+".seed")
 	unmarked := keptIn(t, folder)
-	if s.newRunnerKey(name).prepare() != seed {
+	if k.decide() != seed || s.newRunnerKey(name).decide() != seed {
 		t.Fatal("an unmarked key was not named")
 	}
 	assertKept(t, folder, unmarked)
@@ -528,17 +556,9 @@ func TestAnUnfinishedRunnerKeyIsRemovedAtTheFirstStartOnly(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	marked := keptIn(t, folder)
-	later := s.newRunnerKey(name)
-	later.swept = true
-	if later.prepare() != "" {
-		t.Fatal("a marked key was named")
-	}
-	assertKept(t, folder, marked)
 	generated := strings.Count(readFile(t, calls), "audit key generate")
-	next := s.newRunnerKey(name)
-	if next.prepare() != seed {
-		t.Fatalf("the next process's first start reported %+v", *next.report())
+	if path := k.decide(); path != seed {
+		t.Fatalf("a later start in this process reported %+v", *k.report())
 	}
 	if got := readFile(t, seed); got != standInSeed+"\n" {
 		t.Errorf("the unfinished key was not removed and made again: %q", got)
@@ -551,18 +571,107 @@ func TestAnUnfinishedRunnerKeyIsRemovedAtTheFirstStartOnly(t *testing.T) {
 	}
 }
 
+// **A removal that stops is finished by the next start.** It removes the
+// list, then the seed, then the marker, each only while it is the file
+// inspected: stopped before any of the three, the marker always stays, and
+// the next start removes what is left and makes and names another key.
+func TestAnInterruptedRemovalIsFinishedByTheNextStart(t *testing.T) {
+	const name = "c000000000000000000000000000000c"
+	for _, c := range []struct {
+		stop string
+		left []string
+	}{
+		{name + ".keys.jsonl", []string{name + ".creating", name + ".keys.jsonl", name + ".seed"}},
+		{name + ".seed", []string{name + ".creating", name + ".seed"}},
+		{name + ".creating", []string{name + ".creating"}},
+	} {
+		t.Run("stopped before "+c.stop, func(t *testing.T) {
+			bin := filepath.Join(t.TempDir(), "jpack")
+			writeStandInRuntime(t, bin, reading(allConfigVersions), lockingAs(wantGatedConfig))
+			s, _, _ := gatesServer(t, bin)
+			leaveUnfinished(t, s, name)
+			folder := runnerFolderOf(s)
+			testHookRunnerKeyIO = func(step string) error {
+				if step == "remove "+c.stop {
+					return syscall.EIO
+				}
+				return nil
+			}
+			t.Cleanup(func() { testHookRunnerKeyIO = nil })
+			k := s.newRunnerKey(name)
+			if path := k.decide(); path != "" {
+				t.Fatalf("named %s", path)
+			}
+			if got := *k.report(); got.Reason != "not-read-now" {
+				t.Errorf("reported %+v", got)
+			}
+			if names := namesIn(t, folder); !slices.Equal(names, c.left) {
+				t.Fatalf("a removal stopped before %s left %q, want %q", c.stop, names, c.left)
+			}
+			testHookRunnerKeyIO = nil
+			if path := k.decide(); path != filepath.Join(folder, name+".seed") {
+				t.Fatalf("the next start reported %+v", *k.report())
+			}
+			if names := namesIn(t, folder); !slices.Equal(names, []string{name + ".keys.jsonl", name + ".seed"}) {
+				t.Errorf("the folder holds %q", names)
+			}
+		})
+	}
+}
+
+// **A removal acts on exactly the files inspected.** Where the seed is
+// replaced between the inspection and its removal, it is not removed, the
+// marker stays, and no key is named; the next start, which inspects the
+// replacement, removes it.
+func TestARemovalLeavesAFileReplacedSinceItsInspection(t *testing.T) {
+	const name = "c000000000000000000000000000000d"
+	bin := filepath.Join(t.TempDir(), "jpack")
+	writeStandInRuntime(t, bin, reading(allConfigVersions), lockingAs(wantGatedConfig))
+	s, _, _ := gatesServer(t, bin)
+	leaveUnfinished(t, s, name)
+	folder := runnerFolderOf(s)
+	seed := filepath.Join(folder, name+".seed")
+	testHookKeyBetween = func(at string) {
+		if at != "before removal" {
+			return
+		}
+		if err := os.WriteFile(seed+".other", []byte("replaced\n"), 0o600); err != nil {
+			t.Error(err)
+		}
+		if err := os.Rename(seed+".other", seed); err != nil {
+			t.Error(err)
+		}
+	}
+	t.Cleanup(func() { testHookKeyBetween = nil })
+	k := s.newRunnerKey(name)
+	if path := k.decide(); path != "" {
+		t.Fatalf("named %s", path)
+	}
+	testHookKeyBetween = nil
+	if got := readFile(t, seed); got != "replaced\n" {
+		t.Errorf("a seed replaced since its inspection was removed: %q", got)
+	}
+	if _, err := os.Lstat(filepath.Join(folder, name+".creating")); err != nil {
+		t.Errorf("the marker did not stay: %v", err)
+	}
+	if path := k.decide(); path != seed || readFile(t, seed) != standInSeed+"\n" {
+		t.Errorf("the next start named %q", path)
+	}
+}
+
 // **Neither sweep touches the other's files.** A desk's key and a Runner's
 // key under the same id, each with its creation marker: the desk sweep at
-// start (`sweepUnfinishedKeys`, no desk of that id published) removes the
-// desk's three files and none of the Runner's; the Runner's sweep removes the
-// Runner's three and none of the desk's.
+// start (`sweepUnfinishedKeysLocked`, no desk of that id published) removes
+// the desk's three files and none of the Runner's; the Runner key's start
+// removes the Runner's three, makes another key, and touches none of the
+// desk's.
 func TestNeitherSweepTouchesTheOthersKey(t *testing.T) {
 	const id = "c0000000000000000000000000000005"
 	bin := filepath.Join(t.TempDir(), "jpack")
 	writeStandInRuntime(t, bin, reading(allConfigVersions), lockingAs(wantGatedConfig))
 	s, _, _ := gatesServer(t, bin)
 	k := s.newRunnerKey(id)
-	if k.prepare() == "" {
+	if k.decide() == "" {
 		t.Fatal("the key was not made")
 	}
 	signing, runner := signingFolderOf(s), runnerFolderOf(s)
@@ -580,7 +689,7 @@ func TestNeitherSweepTouchesTheOthersKey(t *testing.T) {
 	plant(signing)
 	plant(runner)
 	runnerFiles := keptIn(t, runner)
-	s.sweepUnfinishedKeys()
+	s.sweepUnfinishedKeysLocked()
 	if names := namesIn(t, signing); !slices.Equal(names, []string{"runner"}) {
 		t.Errorf("the desk sweep left %q in the signing folder", names)
 	}
@@ -588,16 +697,11 @@ func TestNeitherSweepTouchesTheOthersKey(t *testing.T) {
 
 	plant(signing)
 	deskFiles := keptIn(t, signing)
-	dir, err := s.assistant.openRunnerSigning()
-	if err != nil {
-		t.Fatal(err)
+	if path := s.newRunnerKey(id).decide(); path != filepath.Join(runner, id+".seed") {
+		t.Fatalf("the Runner key's start named %q", path)
 	}
-	defer dir.Close()
-	if err := s.newRunnerKey(id).sweepUnfinished(dir); err != nil {
-		t.Fatal(err)
-	}
-	if names := namesIn(t, runner); len(names) != 0 {
-		t.Errorf("the Runner sweep left %q", names)
+	if names := namesIn(t, runner); !slices.Equal(names, []string{id + ".keys.jsonl", id + ".seed"}) || readFile(t, filepath.Join(runner, id+".seed")) != standInSeed+"\n" {
+		t.Errorf("the Runner sweep left %q, not a key made again", names)
 	}
 	assertKept(t, signing, deskFiles)
 }
@@ -620,7 +724,7 @@ func TestAGroupWritableFolderOnTheKeysPathIsRefused(t *testing.T) {
 		bin := filepath.Join(t.TempDir(), "jpack")
 		writeStandInRuntime(t, bin, reading(allConfigVersions), lockingAs(wantGatedConfig))
 		s, _, logged := gatesServer(t, bin)
-		if s.newRunnerKey(name).prepare() == "" {
+		if s.newRunnerKey(name).decide() == "" {
 			t.Fatal("the key was not made")
 		}
 		before := keptIn(t, runnerFolderOf(s))
@@ -628,7 +732,7 @@ func TestAGroupWritableFolderOnTheKeysPathIsRefused(t *testing.T) {
 			t.Fatal(err)
 		}
 		k := s.newRunnerKey(name)
-		if path := k.prepare(); path != "" {
+		if path := k.decide(); path != "" {
 			t.Fatalf("named %s under a group-writable folder", path)
 		}
 		if got, want := *k.report(), (RunnerKeyStatus{State: "unsigned", Reason: "custody", Detail: c.detail}); got != want {
@@ -656,7 +760,7 @@ func TestARunnerKeyTheRuntimeDoesNotMakeLeavesNothing(t *testing.T) {
 	s, _, _ := gatesServer(t, bin)
 	generatingAs(t, calls, `  printf '%s\n' "{\"outputVersion\":\"2\",\"command\":\"audit key generate\",\"status\":\"error\",\"diagnostics\":[{\"code\":\"JPS-AUDIT-KEY-REFUSED\",\"message\":\"No seed was written to $4, where a signing key is refused: the directory ${4%/*} is owned by uid 4242, neither root nor the user this runtime runs as (uid 1000).\"}]}"; exit 1`)
 	k := s.newRunnerKey(name)
-	if path := k.prepare(); path != "" {
+	if path := k.decide(); path != "" {
 		t.Fatalf("named %s", path)
 	}
 	want := RunnerKeyStatus{State: "unsigned", Reason: "not-made", Detail: "No seed was written to …, where a signing key is refused: the directory … is owned by uid 4242, neither root nor the user this runtime runs as (uid 1000)"}
@@ -669,7 +773,7 @@ func TestARunnerKeyTheRuntimeDoesNotMakeLeavesNothing(t *testing.T) {
 	if err := os.Remove(calls + ".generate"); err != nil {
 		t.Fatal(err)
 	}
-	if path := k.prepare(); path != filepath.Join(runnerFolderOf(s), name+".seed") {
+	if path := k.decide(); path != filepath.Join(runnerFolderOf(s), name+".seed") {
 		t.Errorf("the next start named %q", path)
 	}
 }
@@ -677,13 +781,13 @@ func TestARunnerKeyTheRuntimeDoesNotMakeLeavesNothing(t *testing.T) {
 // **A creation whose marker cannot be removed names no key**: its marker is
 // replaced while the runtime makes the key, so the creation finds it is not
 // the marker it wrote and leaves it. Runner starts without the key; the next
-// process's first start removes all three and makes another.
+// start, under the lock, removes all three and makes another.
 func TestARunnerKeyWhoseMarkerStaysIsNotNamed(t *testing.T) {
 	const name = "c0000000000000000000000000000008"
 	bin := filepath.Join(t.TempDir(), "jpack")
 	writeStandInRuntime(t, bin, reading(allConfigVersions), lockingAs(wantGatedConfig))
 	s, _, _ := gatesServer(t, bin)
-	if s.newRunnerKey(strings.Repeat("ab", 32)).prepare() == "" {
+	if s.newRunnerKey(strings.Repeat("ab", 32)).decide() == "" {
 		t.Fatal("the folder was not made")
 	}
 	marker := filepath.Join(runnerFolderOf(s), name+".creating")
@@ -701,7 +805,7 @@ func TestARunnerKeyWhoseMarkerStaysIsNotNamed(t *testing.T) {
 	}
 	t.Cleanup(func() { testHookKeyBetween = nil })
 	k := s.newRunnerKey(name)
-	if path := k.prepare(); path != "" {
+	if path := k.decide(); path != "" {
 		t.Fatalf("a key whose marker stayed was named: %s", path)
 	}
 	testHookKeyBetween = nil
@@ -711,8 +815,8 @@ func TestARunnerKeyWhoseMarkerStaysIsNotNamed(t *testing.T) {
 	if _, err := os.Lstat(marker); err != nil {
 		t.Errorf("the marker is gone: %v", err)
 	}
-	if path := s.newRunnerKey(name).prepare(); path != filepath.Join(runnerFolderOf(s), name+".seed") {
-		t.Errorf("the next process's first start named %q", path)
+	if path := k.decide(); path != filepath.Join(runnerFolderOf(s), name+".seed") {
+		t.Errorf("the next start named %q", path)
 	}
 	if _, err := os.Lstat(marker); !os.IsNotExist(err) {
 		t.Errorf("the marker was left: %v", err)
@@ -819,7 +923,7 @@ func TestTheRunnerKeysFolderIsHeldToCustody(t *testing.T) {
 	if err := os.Chmod(folder, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if path := s.newRunnerKey(name).prepare(); path != filepath.Join(folder, name+".seed") {
+	if path := s.newRunnerKey(name).decide(); path != filepath.Join(folder, name+".seed") {
 		t.Fatalf("a loose folder of Desk's own was not narrowed and used: %q", path)
 	}
 	if got := permOf(t, folder); got != 0o700 {
@@ -839,7 +943,7 @@ func TestTheRunnerKeysFolderIsHeldToCustody(t *testing.T) {
 	}
 	t.Cleanup(func() { testHookAfterCustodyCheck = nil })
 	k := s.newRunnerKey(name)
-	if path := k.prepare(); path != "" {
+	if path := k.decide(); path != "" {
 		t.Fatalf("a folder swapped between its check and its open was used: %s", path)
 	}
 	testHookAfterCustodyCheck = nil
@@ -886,13 +990,13 @@ func TestARunnerKeyWhosePathNamesAnotherIsNotNamed(t *testing.T) {
 			calls := writeStandInRuntime(t, bin, reading(allConfigVersions), lockingAs(wantGatedConfig))
 			s, _, _ := gatesServer(t, bin)
 			folder := runnerFolderOf(s)
-			if s.newRunnerKey(name).prepare() == "" {
+			if s.newRunnerKey(name).decide() == "" {
 				t.Fatal("the key was not made")
 			}
 			c.arrange(t, s, calls, folder)
 			t.Cleanup(func() { testHookKeyBetween = nil })
 			k := s.newRunnerKey(name)
-			if path := k.prepare(); path != "" {
+			if path := k.decide(); path != "" {
 				t.Fatalf("named %s", path)
 			}
 			testHookKeyBetween = nil
@@ -916,7 +1020,7 @@ func TestARunnerKeyWhosePathIsNotUTF8IsNotNamed(t *testing.T) {
 	s, ts := startDesk(t, Config{ProjectDir: t.TempDir(), JpackBin: bin, DeskConfigDir: config, Token: testToken})
 	t.Cleanup(func() { ts.Close(); s.Close() })
 	k := s.newRunnerKey(strings.Repeat("ab", 32))
-	if path := k.prepare(); path != "" {
+	if path := k.decide(); path != "" {
 		t.Fatalf("named %q", path)
 	}
 	if got := *k.report(); got != (RunnerKeyStatus{State: "unsigned", Reason: "custody", Detail: "the path of Desk's signing folder is not valid UTF-8, which Runner's boot line cannot carry"}) {

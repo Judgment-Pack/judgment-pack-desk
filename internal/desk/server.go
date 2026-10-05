@@ -425,6 +425,7 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("POST /api/updates", s.handleUpdates)
 
 	s.mux.HandleFunc("GET /api/desk-config", s.handleDeskConfig)
+	s.mux.HandleFunc("GET /api/runner-key", s.handleRunnerKey)
 	s.mux.HandleFunc("POST /api/connections/{method}", s.handleConnections)
 	s.mux.HandleFunc("POST /api/connections/{provider}/{method}", s.handleConnections)
 	s.mux.HandleFunc("GET /api/attachments/{id}", s.handleAttachment)

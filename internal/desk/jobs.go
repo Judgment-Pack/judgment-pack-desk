@@ -136,16 +136,21 @@ func (j *jobsCompanion) endpoint() (string, string, error) {
 	}
 	// **Runner's own key, or none** (ADR-0010, section 5). Where Runner
 	// refuses it at boot, it is started again at once without it, so its runs
-	// go on, unsigned, and the key is left as it is.
-	signingKey := j.key.prepare()
+	// go on, unsigned, and the key is left as it is. What the key is reported
+	// as is published only once Runner has started and answered: until then
+	// it is starting, and a Runner that did not start is reported as not
+	// running, never as signing.
+	signingKey, decided := j.key.prepare()
 	refusal, err := j.start(signingKey)
 	if err != nil && signingKey != "" && refusal != nil {
-		j.key.refusedByRunner(*refusal)
+		decided = j.key.refused(*refusal)
 		_, err = j.start("")
 	}
 	if err != nil {
+		j.key.notRunning(err)
 		return "", "", err
 	}
+	j.key.started(decided)
 	return j.url, j.token, nil
 }
 

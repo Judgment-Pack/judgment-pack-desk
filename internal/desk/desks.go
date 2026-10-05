@@ -686,8 +686,8 @@ func (s *Server) resumeDesks() {
 	s.desksMu.Lock()
 	defer s.desksMu.Unlock()
 	// Before any desk is opened, the keys of creations a stopped Desk left
-	// unfinished.
-	s.sweepUnfinishedKeys()
+	// unfinished, under the key-custody lock (runner_key.go).
+	s.sweepUnfinishedKeysLocked()
 	// Read-only on startup: starting an existing Desk creates no registry.
 	root, err := s.assistant.root.OpenRoot("desks")
 	if err != nil {
