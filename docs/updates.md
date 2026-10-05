@@ -10,25 +10,42 @@ Runtime and pack. Upgrading Desk does not reinterpret those jobs.
 repository identities, exact commits and channels. Go embeds it; the Gateway
 builder, Jobs compatibility CI and release packager read it. Development pins
 are held rather than replaced with an older published release. A stable Desk
-release refuses development pins. Runner is pinned to `v0.5.0`, including calculator profiles, bindings,
-calculated input lineage, verification export versions 3 to 5, and the installation's chain
-of runs. Desk's verification download asks for version 5 and names the file for the version
+release refuses development pins. Runner is pinned to `v0.6.0`, including calculator profiles, bindings,
+calculated input lineage, verification export versions 3 to 5, the installation's chain
+of runs, and a journal of each job's activity. It also exports a run whose job has no
+mapping v2, as version 3 or later with `"inputs":"not-mapped"`, where earlier Runners
+refused one. Desk's verification download asks for version 5 and names the file for the version
 Runner answered, which is earlier where the run lacks what a later version carries. Desk
 passes `GET /v1/run-chain` through as Runner's exact bytes, up to 67,174,400 bytes (about
 64 MiB), or fails the download. It does not yet give Runner a signing key (row 11 of
 [ADR-0010](adr/0010-defensible-decision-records.md)'s delivery table, after PR 3), check
 a chain entry (row 12, the Jobs record panel) or hand the chain over (row 8b).
 
-Runtime is pinned to `v0.26.0`, which chains a project's audit trail over its exact bytes
-by default, and signs it where a key is set (runtime ADR-0047). Since v0.5.1, Desk's
+**Back up every desk's Jobs store before updating to a Desk that pins Runner
+`v0.6.0`.** Its first start migrates each store to Runner's schema `"2"`, and Runner
+`v0.5.0`, which earlier Desks bundle, then refuses that store. The updater does not copy
+the store, and a rollback selects the earlier Desk, not the earlier data: after a
+rollback, Jobs cannot open a migrated store until a copy from before the update is put
+back. Stop Desk, copy each Jobs workspace folder, then update ([Runner's State and
+backups](https://github.com/Judgment-Pack/judgment-pack-runner/blob/v0.6.0/README.md#state-and-backups)).
+Desk's release stays at state epoch 1 even so: the change is Runner's store, not Desk's
+own state, and this paragraph is the explicit step it would otherwise lack.
+
+Runtime is pinned to `v0.27.1`, which chains a project's audit trail over its exact bytes
+by default, and signs it where a key is set (runtime ADR-0047). Its `audit verify` report
+also says, among what it does not establish, that the trail records decisions and not
+refused or failed attempts (runtime ADR-0048); the decision-record panel shows that
+sentence as the runtime writes it. Since v0.5.1, Desk's
 decision record in Admin → Project shows the runtime's `audit verify` of a desk's trail,
 run without public keys, held checkpoints or time-stamping roots, and downloads the
 trail, its signatures and its stamps as exact bytes; the runtimes of desks Desk made no
 longer inherit `JPACK_SIGNING_KEY`
 ([ADR-0010](adr/0010-defensible-decision-records.md), PRs 1 and 2: #202, #204, #205).
-It does not yet keep a key, hand over checkpoints or stamp (PRs 3, 5 and 7).
+Desks Desk makes keep a signing key and start signed at configVersion `"6"` (PR 3a,
+#219). Desk does not yet rotate a key, give the startup desk one, hand over checkpoints
+or stamp (PRs 3b, 4, 5 and 7).
 
-Gateway is pinned to `v0.9.0` and includes `adapter-render`, required by its
+Gateway is pinned to `v0.9.1` and includes `adapter-render`, required by its
 local source plan. It refuses to start where another user could replace an adapter it
 launches, or a link to its seed or credentials; the bundle's adapters, owned by the
 user who runs Desk, pass. Its Drive connection uses whole-Drive consent and Desk

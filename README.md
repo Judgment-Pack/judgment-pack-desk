@@ -244,7 +244,7 @@ person's approval, and it records no name.
 - It says nothing about rehearsals, tests or refusals, which write nothing.
   Its time is the operator's clock, and anyone who can write the project can
   change it.
-- The runtime Desk pins (0.26.0) chains each line to the one before it, over
+- The runtime Desk pins (0.27.1) chains each line to the one before it, over
   its exact bytes (runtime ADR-0047). A change then shows only against a
   checkpoint someone else held from before it. Desk takes and hands over no
   checkpoint yet: the rest of its part is
@@ -258,7 +258,7 @@ person's approval, and it records no name.
   was started on keeps it, as the owner's. Desk's log says so once at start,
   and Help & About → Gates says so on that project, neither naming the key.
   Where that project's audit trail is chained, as it is by default, the
-  runtime Desk pins (0.26.0) signs each record with the key it names, if it
+  runtime Desk pins (0.27.1) signs each record with the key it names, if it
   accepts that key.
 - The folder is private: owner-only, never committed (`.desk-private/` is in a
   new desk's `.gitignore`), not shown or editable in Desk's file editor, and in
