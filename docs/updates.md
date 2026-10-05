@@ -14,7 +14,9 @@ release refuses development pins. Runner is pinned to `v0.6.0`, including calcul
 calculated input lineage, verification export versions 3 to 5, the installation's chain
 of runs, and a journal of each job's activity. It also exports a run whose job has no
 mapping v2, as version 3 or later with `"inputs":"not-mapped"`, where earlier Runners
-refused one. Desk's verification download asks for version 5 and names the file for the version
+refused one. Each job's Activity tab reads the job's journal through Desk's Jobs route, which
+forwards `GET /v1/jobs/{job}/events` and its cursor; Runner's store-wide journal is not
+forwarded. Desk's verification download asks for version 5 and names the file for the version
 Runner answered, which is earlier where the run lacks what a later version carries. Desk
 passes `GET /v1/run-chain` through as Runner's exact bytes, up to 67,174,400 bytes (about
 64 MiB), or fails the download. It does not yet give Runner a signing key (row 11 of

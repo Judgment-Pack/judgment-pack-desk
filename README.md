@@ -5858,6 +5858,35 @@ needing attention. Filtering happens in Runner before pagination. A completed
 execution can still reject a case or request review; execution and decision are
 separate columns. List responses omit retained inputs and audit bodies.
 
+Each job's **Activity** tab shows what the local runner recorded about the job,
+newest first. Where Runner serves its journal of job activity (Runner v0.6.0 and
+later, `GET /v1/jobs/{job}/events`, which Desk forwards; Runner's store-wide
+journal and its `job` filter are not forwarded), each entry is a row whose source
+says "Journal entry": its kind, the time Runner recorded it, and who Runner says
+initiated it, which is this installation, a trigger at a revision, a trigger's
+event token, a cloud connection or the runner itself, never a person. Entries keep
+the order Runner wrote them in, never their times. Runner's runs and occurrences
+are rows whose source says "Record", each standing where the entry that created it
+stands; a record the journal holds no such entry for, as one from before the
+journal, stands below every entry, by when the runner first recorded it. What an
+entry holds beyond its kind, such as an interruption's window or a trigger's
+previous revision, is in the entry's JSON in its detail pane. An entry never
+changes what a record row says, and Desk makes no row from changes it saw itself.
+The tab reads the journal from its start once, follows Runner's cursor while
+Runner says more is there, and then asks again with the same cursor every 5
+seconds.
+
+Where a job is older than the journal, the tab says there is no journal before the
+time it began: Runner fills nothing in from its records. Where the route answers
+404, as an earlier Runner does, the tab shows the records alone and says the
+runner serves no journal for the job. A kind this Desk does not know is shown by
+its name, and a time that does not read as one as "Not recorded". The tab does not
+show Runner's own starts and stops, which only Runner's store-wide journal serves
+and Desk does not forward, or any review: Runner records none. With a filter set,
+it shows records only. The journal is the operator's own log, kept in the runner's
+store: not chained, not signed, and binding nothing against the operator. Its
+times are the runner's clock.
+
 Create job has four steps: Job, Inputs, Trigger and Review. Manual inputs use
 fields inferred from the pack, with exact JSON available in disclosures. Unknown,
 null, false and zero remain distinct. Evidence availability is explicit and does

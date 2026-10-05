@@ -53,7 +53,8 @@ There are no action credentials or browser-controlled subprocess addresses.
 Run submissions require `Idempotency-Key`. Same job, owner, key and input returns the
 same run across restarts; changed input returns 409. Pending work is bounded to 100,
 requests to 2 MiB and each Runtime invocation to 30 seconds. Lists are paginated, newest
-first. Raw inputs/audits stay on run details rather than list responses.
+first; a job's journal of job activity (Runner v0.6.0, `GET /v1/jobs/{job}/events`) pages
+oldest first, after a cursor. Raw inputs/audits stay on run details rather than list responses.
 
 The local companion starts when Desk starts. The queue resumes without a browser.
 It holds an exclusive process lock and uses SQLite WAL with synchronous FULL. After a
