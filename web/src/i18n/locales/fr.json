@@ -3715,5 +3715,7 @@
   "Download {{file}}": "Télécharger {{file}}",
   "Each file is saved under the runtime’s own name, as its bytes stood on disk between two writes.": "Chaque fichier est enregistré sous le nom que lui donne le runtime, avec ses octets tels qu’ils étaient sur le disque entre deux écritures.",
   "Saved {{file}}.": "{{file}} enregistré.",
-  "The file could not be downloaded. Please try again.": "Le fichier n’a pas pu être téléchargé. Veuillez réessayer."
+  "The file could not be downloaded. Please try again.": "Le fichier n’a pas pu être téléchargé. Veuillez réessayer.",
+  "This expectation names a disposition no pack can produce, so the expectation must change, not the draft: {{detail}}": "Cette attente désigne une décision qu’aucun pack ne peut produire, donc c’est l’attente qui doit changer, pas le brouillon : {{detail}}",
+  "The runtime did not admit this expectation: {{detail}}": "Le moteur n’a pas admis cette attente : {{detail}}"
 }
