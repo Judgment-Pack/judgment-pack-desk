@@ -57,7 +57,7 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
   const query = useAuditRecord(visible)
   const record = query.data
   const again = <div><Button onClick={() => void query.refetch()}>{msg('Check again')}</Button></div>
-  return <SettingsSection title={msg('Decision record')} variant="plain">
+  return <SettingsSection title={msg('Decision record')} description={msg('Jobs runs are recorded by the runner, not in this trail.')} variant="plain">
     <div className={styles.card} data-testid="decision-record">
       {query.isPending || query.isFetching ? <p role="status" className={styles.quiet}>{msg('Asking the runtime…')}</p>
         : query.error instanceof AuditUnavailable ? <p role="alert">{msg('Desk does not check the decision record here.')} {systemMessage(query.error.message)}</p>
