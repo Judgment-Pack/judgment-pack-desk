@@ -6,7 +6,10 @@
  * A journal row is an entry, as Runner wrote it: its kind, the time Runner
  * wrote it, and who Runner says initiated it (`journal.ts`). Desk derives no
  * entry from records it observed. Where Runner answers the journal's route
- * with 404, the tab shows the records alone and says so.
+ * with 404, the tab shows the records alone and says so. The journal is read
+ * forward from its start, bounded (`useJournalReader`): until it is read to
+ * its end the tab says how far it has read and shows no entry it has not read
+ * to the end, and it renders the newest entries in steps.
  *
  * A record row is a run, a trigger occurrence, or a source preparation
  * (see `activity.ts` for how rows are made, ordered and paged). It says when
@@ -20,16 +23,16 @@
  * runner holds an item. No brief is in it.
  */
 import { useState, type ReactNode } from 'react'
-import { useInfiniteQuery, useQueries, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
+import { useInfiniteQuery, useQueries, type UseQueryResult } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { language, msg, useLocale } from '../i18n'
+import { formatNumber, language, msg, useLocale } from '../i18n'
 import { useDetailsPortal, useDetailsSlot } from '../shell/DetailsSlot'
 import { Button } from '../ui/Button'
 import { Disclosure } from '../ui/Disclosure'
 import { Select } from '../ui/Select'
 import { jobsAPI, type Page, type Release, type Run } from './client'
 import { evidenceOf, firstLine, keeps, mergeActivity, MANUAL, stamp, statesFor, streamsFor, type ActivityFilter, type ActivityRow, type JournalRow, type KindFilter } from './activity'
-import { beforeTheJournal, JOURNAL_REFRESH_MS, kindText, readJobJournal, type JournalEntry, type JournalReading } from './journal'
+import { beforeTheJournal, JOURNAL_LIMITS, kindText, useJournalReader, type JournalEntry, type JournalLimits, type JournalState } from './journal'
 import { decisionText, RecordJSON, ReleaseName, requesterText, RunDisclosures, RunFields, RunTechnicalDetails, stampLabel, useJobRecord, useJobTriggers, when } from './RunRecord'
 import { occurrenceState } from './SourcePreparations'
 import { reason } from './TriggersView'
@@ -181,7 +184,22 @@ function ActivityDetails({ row, record, jobId, release, triggers }: { row: Activ
   </section>
 }
 
-export function ActivityView({ jobId, release }: { jobId: string; release: Release }) {
+/** Where the reading of the journal stands, in one or two sentences, and what continues it after a failure. */
+function JournalProgress({ state, resume }: { state: JournalState; resume: () => void }) {
+  if (state.phase === 'starting' || state.phase === 'absent') return null
+  const read = formatNumber(state.read), sequence = formatNumber(state.next)
+  const shownAsBefore = state.snapshot ? msg('Until it is read to its end again, the table shows the journal as it was when last read to its end.')
+    : msg('Its entries are shown once it is read to its end. Until then, records stand by when the runner first recorded each.')
+  if (state.phase === 'caught-up') return <p className="quiet">{msg('The runner’s journal is read to its end as of the last request. Entries read: {{read}}.', { read })}</p>
+  if (state.phase === 'reading') return <p className="quiet" role="status">{msg('Reading the runner’s journal. Entries read so far: {{read}}.', { read })} {shownAsBefore}</p>
+  const reason = state.reason ?? msg('The local runner could not complete this request.')
+  return <div className={own.journalStop}>
+    <p role="alert" className={styles.problem}>{state.next > 0 ? msg('Reading the runner’s journal stopped after entry {{sequence}}: {{reason}} Entries read: {{read}}.', { sequence, reason, read }) : msg('Reading the runner’s journal stopped before its first entry: {{reason}}', { reason })} {shownAsBefore}</p>
+    <div><Button onClick={resume}>{state.next > 0 ? msg('Continue from entry {{sequence}}', { sequence }) : msg('Try again from its start')}</Button></div>
+  </div>
+}
+
+export function ActivityView({ jobId, release, limits = JOURNAL_LIMITS }: { jobId: string; release: Release; limits?: JournalLimits }) {
   useLocale()
   const [filter, setFilter] = useState<ActivityFilter>({ kind: 'all', state: 'all', trigger: 'all' })
   const [selected, setSelected] = useState<string>()
@@ -192,14 +210,13 @@ export function ActivityView({ jobId, release }: { jobId: string; release: Relea
   const job = useJobRecord(jobId)
   // Runner's journal, read forward from where the last reading ended, never
   // from 0 again; once caught up, asked again no faster than the lists are.
-  const client = useQueryClient(), journalKey = ['job-journal', jobId]
-  const journal = useQuery({
-    queryKey: journalKey,
-    queryFn: ({ signal }) => { const prior = client.getQueryData<JournalReading>(journalKey); return readJobJournal(jobId, prior?.served ? prior.journal : undefined, signal) },
-    refetchInterval: query => query.state.data?.served === false ? false : JOURNAL_REFRESH_MS,
-    structuralSharing: false
-  })
-  const served = journal.data?.served ? journal.data.journal : undefined
+  // Only what was read to its end is shown, the newest `window` entries first.
+  const journal = useJournalReader(jobId, limits.keep), reading = journal.state
+  const served = reading.phase === 'reading' || reading.phase === 'caught-up' || reading.phase === 'stopped' ? reading.snapshot : undefined
+  const [windowFor, setWindowFor] = useState({ jobId, size: limits.window })
+  const windowSize = windowFor.jobId === jobId ? windowFor.size : limits.window
+  const readTotal = served ? served.dropped + served.entries.length : 0
+  const from = served ? Math.max(served.dropped, readTotal - windowSize) : 0
   const runs = useInfiniteQuery({
     queryKey: ['jobs-pages', `jobs/${jobId}/runs`, 'activity', plan.runState ?? 'all'], enabled: plan.runs, initialPageParam: 0,
     queryFn: ({ pageParam }) => jobsAPI<Page<Run>>(`jobs/${jobId}/runs?${plan.runState ? `state=${plan.runState}&` : ''}after=${pageParam}`),
@@ -212,11 +229,11 @@ export function ActivityView({ jobId, release }: { jobId: string; release: Relea
   })
   // A list being read for the first time could hold a newer row than any
   // shown, so nothing is shown until every list the filter reads has answered.
-  const pending = (plan.runs && runs.isPending) || (plan.occurrences && occurrences.isPending) || journal.isPending
+  const pending = (plan.runs && runs.isPending) || (plan.occurrences && occurrences.isPending) || reading.phase === 'starting'
   const merged = mergeActivity({
     runs: plan.runs && runs.data ? { records: runs.data.pages.flatMap(page => page.items), more: runs.hasNextPage } : undefined,
     occurrences: plan.occurrences && occurrences.data ? { records: occurrences.data.pages.flatMap(page => page.items), more: occurrences.hasNextPage } : undefined
-  }, keeps(filter), served && { entries: served.entries, show: !filtered })
+  }, keeps(filter), served && { entries: served.entries, dropped: served.dropped, from, show: !filtered })
   const rows = pending ? [] : merged.rows, shown = pending ? [] : merged.shown
   const runRows = rows.filter(row => row.run)
   const records = useQueries({ queries: runRows.map(row => ({ queryKey: ['job-activity-run', row.run!.id, row.run!.state], queryFn: () => jobsAPI<Run>(`runs/${row.run!.id}`), staleTime: Infinity })) })
@@ -227,7 +244,10 @@ export function ActivityView({ jobId, release }: { jobId: string; release: Relea
   const portal = useDetailsPortal(pane)
   const more = (plan.runs && runs.hasNextPage) || (plan.occurrences && occurrences.hasNextPage)
   const fetching = runs.isFetchingNextPage || occurrences.isFetchingNextPage
-  const error = (plan.runs && runs.error) || (plan.occurrences && occurrences.error) || journal.error
+  const error = (plan.runs && runs.error) || (plan.occurrences && occurrences.error)
+  const entriesShown = shown.filter(row => row.kind === 'journal').length
+  // Earlier kept entries are offered when the window, not a record list's next page, is what holds them.
+  const earlier = served && !filtered && !pending && from > served.dropped && merged.heldEntries === 0
   // The next page of the list that holds rows back; the boundary moves only when it is read.
   function loadMore() {
     const lists = { runs: plan.runs && runs.hasNextPage ? runs : undefined, occurrences: plan.occurrences && occurrences.hasNextPage ? occurrences : undefined }
@@ -244,7 +264,10 @@ export function ActivityView({ jobId, release }: { jobId: string; release: Relea
     </div>
     {error && <p role="alert" className={styles.problem}>{error instanceof Error ? error.message : msg('The local runner could not complete this request.')}</p>}
     {pending && <p role="status">{msg('Loading…')}</p>}
-    {journal.data?.served === false && <p className="quiet">{msg('The local runner serves no journal of job activity for this job, so only its records are shown.')}</p>}
+    {reading.phase === 'absent' && <p className="quiet">{msg('The local runner serves no journal of job activity for this job, so only its records are shown.')}</p>}
+    <JournalProgress state={reading} resume={journal.resume} />
+    {served && served.dropped > 0 && <p className="quiet">{msg('Earlier entries read and not kept, to bound what this page holds: {{dropped}}. Only the newest {{kept}} are kept.', { dropped: formatNumber(served.dropped), kept: formatNumber(served.entries.length) })}</p>}
+    {served && !filtered && !pending && entriesShown < readTotal && <p className="quiet">{msg('Showing the newest {{shown}} of {{read}} journal entries read.', { shown: formatNumber(entriesShown), read: formatNumber(readTotal) })}</p>}
     {served && filtered && <p className="quiet">{msg('The runner’s journal is shown when no filter is set.')}</p>}
     {served && !pending && beforeTheJournal(served.began, job.data?.job.createdAt) && <p className={styles.note}>{typeof served.began === 'string' && stamp('recorded', served.began)
       ? msg('No journal before {{time}}: the runner’s journal of job activity began then. Nothing earlier has an entry, and nothing is filled in from its records.', { time: when(served.began) })
@@ -285,6 +308,7 @@ export function ActivityView({ jobId, release }: { jobId: string; release: Relea
       })}</tbody>
     </table></div>}
     {more && <div><Button disabled={fetching} onClick={loadMore}>{msg('Load more')}</Button></div>}
+    {earlier && <div><Button onClick={() => setWindowFor({ jobId, size: windowSize + limits.step })}>{msg('Show earlier journal entries')}</Button></div>}
     {!portal && pane}
     {portal}
   </section>

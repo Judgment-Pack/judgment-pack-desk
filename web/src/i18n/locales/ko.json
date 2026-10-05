@@ -3798,5 +3798,16 @@
   "Trigger configured": "트리거 구성됨",
   "Trigger key rotated": "트리거 키 교체됨",
   "Trigger resumed": "트리거 재개됨",
-  "What the local runner recorded about this job, newest first: the entries of its journal of job activity in the order the runner wrote them, and its records, each where the entry that created it stands, or by when the runner first recorded it where the journal has no such entry. Every time shown is one the runner stored, named for what it records. The journal is the runner’s own log, not chained and not signed. Evidence says only whether the runner holds an item; nothing here checks it.": "로컬 실행기가 이 작업에 대해 기록한 내용을 최신순으로 표시합니다. 작업 활동 저널의 항목은 실행기가 쓴 순서대로, 레코드는 각각 자신을 만든 항목의 자리에, 저널에 그런 항목이 없으면 실행기가 처음 기록한 시각에 따라 놓입니다. 표시되는 모든 시각은 실행기가 저장한 것이며, 무엇을 기록한 시각인지 이름이 붙어 있습니다. 저널은 실행기 자체의 로그이며, 체인으로 연결되거나 서명되지 않습니다. '증거'는 실행기가 항목을 보유하는지만 알려 주며, 여기서는 아무것도 확인하지 않습니다."
+  "What the local runner recorded about this job, newest first: the entries of its journal of job activity in the order the runner wrote them, and its records, each where the entry that created it stands, or by when the runner first recorded it where the journal has no such entry. Every time shown is one the runner stored, named for what it records. The journal is the runner’s own log, not chained and not signed. Evidence says only whether the runner holds an item; nothing here checks it.": "로컬 실행기가 이 작업에 대해 기록한 내용을 최신순으로 표시합니다. 작업 활동 저널의 항목은 실행기가 쓴 순서대로, 레코드는 각각 자신을 만든 항목의 자리에, 저널에 그런 항목이 없으면 실행기가 처음 기록한 시각에 따라 놓입니다. 표시되는 모든 시각은 실행기가 저장한 것이며, 무엇을 기록한 시각인지 이름이 붙어 있습니다. 저널은 실행기 자체의 로그이며, 체인으로 연결되거나 서명되지 않습니다. '증거'는 실행기가 항목을 보유하는지만 알려 주며, 여기서는 아무것도 확인하지 않습니다.",
+  "Continue from entry {{sequence}}": "항목 {{sequence}}부터 계속",
+  "Earlier entries read and not kept, to bound what this page holds: {{dropped}}. Only the newest {{kept}} are kept.": "이 페이지가 보유하는 양을 제한하기 위해 읽었지만 보관하지 않은 이전 항목: {{dropped}}. 최신 {{kept}}개만 보관합니다.",
+  "Its entries are shown once it is read to its end. Until then, records stand by when the runner first recorded each.": "저널을 끝까지 읽은 후에 항목을 표시합니다. 그때까지 레코드는 실행기가 처음 기록한 시각에 따라 놓입니다.",
+  "Reading the runner’s journal stopped after entry {{sequence}}: {{reason}} Entries read: {{read}}.": "실행기 저널 읽기가 항목 {{sequence}} 다음에서 멈췄습니다: {{reason}} 읽은 항목: {{read}}.",
+  "Reading the runner’s journal stopped before its first entry: {{reason}}": "실행기 저널 읽기가 첫 항목 전에 멈췄습니다: {{reason}}",
+  "Reading the runner’s journal. Entries read so far: {{read}}.": "실행기 저널을 읽는 중입니다. 지금까지 읽은 항목: {{read}}.",
+  "Show earlier journal entries": "이전 저널 항목 표시",
+  "Showing the newest {{shown}} of {{read}} journal entries read.": "읽은 저널 항목 {{read}}개 중 최신 {{shown}}개를 표시합니다.",
+  "The runner’s journal is read to its end as of the last request. Entries read: {{read}}.": "실행기 저널은 마지막 요청 기준으로 끝까지 읽었습니다. 읽은 항목: {{read}}.",
+  "Try again from its start": "처음부터 다시 시도",
+  "Until it is read to its end again, the table shows the journal as it was when last read to its end.": "다시 끝까지 읽을 때까지 표에는 마지막으로 끝까지 읽었을 때의 저널이 표시됩니다."
 }

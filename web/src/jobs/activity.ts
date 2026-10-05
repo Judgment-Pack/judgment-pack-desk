@@ -167,6 +167,8 @@ export interface Merged {
   shown: (ActivityRow | JournalRow)[]
   /** Loaded rows older than a record not yet loaded could be. */
   held: number
+  /** Of those, journal entries in the window. */
+  heldEntries: number
   /** The lists whose next page moves the boundary. */
   limiting: StreamName[]
 }
@@ -178,19 +180,33 @@ export interface Merged {
  * a record the journal holds no creation for (made before the journal began, or
  * read without a journal) by the time Runner first recorded it, as it was before
  * the journal. Nothing compares a record's time with an entry's.
+ *
+ * A place counts every entry read, kept or not (`dropped` is the place of the
+ * first kept one). A record whose creating entry was read and not kept stands
+ * below every kept entry, by its first time, among the records from before the
+ * journal: all of them were made before every kept entry. A record whose
+ * creating entry is kept but outside the window stands where that entry would,
+ * below every entry shown.
  */
 type Place = readonly [number, number]
 const newer = (a: Place, b: Place) => b[0] - a[0] || b[1] - a[1]
 const lowest = (a: Place, b: Place) => newer(a, b) < 0 ? b : a
 const NOTHING_SHOWN: Place = [Infinity, Infinity]
 
-export function mergeActivity(streams: { runs?: Loaded<Run>; occurrences?: Loaded<Occurrence> }, keep: (row: ActivityRow) => boolean = () => true, journal?: { entries: JournalEntry[]; show: boolean }): Merged {
+/**
+ * The journal as the merge reads it: the entries kept, oldest first; how many
+ * were read before them and not kept; the place of the oldest entry to show as
+ * a row (the window); and whether entries are rows at all.
+ */
+export interface JournalWindow { entries: JournalEntry[]; dropped: number; from: number; show: boolean }
+
+export function mergeActivity(streams: { runs?: Loaded<Run>; occurrences?: Loaded<Occurrence> }, keep: (row: ActivityRow) => boolean = () => true, journal?: JournalWindow): Merged {
   const built: Record<StreamName, ActivityRow[]> = {
     runs: rowsOf(streams.runs?.records.map(runRow)),
     occurrences: rowsOf(streams.occurrences?.records.map(occurrenceRow))
   }
-  const created = creations(journal?.entries ?? [])
-  const place = (row: ActivityRow): Place => { const at = created.get(row.key); return at === undefined ? [0, row.when.time] : [1, at + 0.5] }
+  const created = creations(journal?.entries ?? []), offset = journal?.dropped ?? 0
+  const place = (row: ActivityRow): Place => { const at = created.get(row.key); return at === undefined ? [0, row.when.time] : [1, offset + at + 0.5] }
   // A list with more pages holds back every row older than its oldest loaded
   // record: a record not yet loaded was made before it, and so was the entry
   // that created it. The oldest record's own creation entry is not held. A
@@ -204,13 +220,21 @@ export function mergeActivity(streams: { runs?: Loaded<Run>; occurrences?: Loade
     boundary = newer(boundary, floor) > 0 ? floor : boundary
   }
   const placed: { row: ActivityRow | JournalRow; at: Place }[] = [...built.runs, ...built.occurrences].filter(keep).map(row => ({ row, at: place(row) }))
-  if (journal?.show) journal.entries.forEach((entry, at) => placed.push({ row: { key: `journal:${at}`, kind: 'journal', entry, place: at }, at: [1, at] }))
+  const records = placed.length
+  if (journal?.show) {
+    for (let index = Math.max(0, journal.from - offset); index < journal.entries.length; index++) {
+      const at = offset + index
+      placed.push({ row: { key: `journal:${at}`, kind: 'journal', entry: journal.entries[index]!, place: at }, at: [1, at] })
+    }
+  }
+  const windowed = placed.length - records
   placed.sort((a, b) => newer(a.at, b.at) || (a.row.key < b.row.key ? -1 : a.row.key > b.row.key ? 1 : 0))
   const shown = placed.filter(item => newer(item.at, boundary) <= 0).map(item => item.row)
   return {
     rows: shown.filter((row): row is ActivityRow => row.kind !== 'journal'),
     shown,
     held: placed.length - shown.length,
+    heldEntries: windowed - shown.filter(row => row.kind === 'journal').length,
     limiting: (['runs', 'occurrences'] as const).filter(name => floors[name]?.[0] === boundary[0] && floors[name]?.[1] === boundary[1])
   }
 }

@@ -3798,5 +3798,16 @@
   "Trigger configured": "触发器已配置",
   "Trigger key rotated": "触发器密钥已轮换",
   "Trigger resumed": "触发器已恢复",
-  "What the local runner recorded about this job, newest first: the entries of its journal of job activity in the order the runner wrote them, and its records, each where the entry that created it stands, or by when the runner first recorded it where the journal has no such entry. Every time shown is one the runner stored, named for what it records. The journal is the runner’s own log, not chained and not signed. Evidence says only whether the runner holds an item; nothing here checks it.": "本地运行器记录的此作业情况，从新到旧排列：其作业活动日志的条目按运行器写入的顺序排列；其记录各自位于创建它的条目处，日志中没有这样的条目时，则按运行器首次记录它的时间排列。显示的每个时间都由运行器存储，并标明它记录的是什么。日志由运行器自行保存，既未成链也未签名。“证据”只说明运行器是否保存了某项；这里不作任何检查。"
+  "What the local runner recorded about this job, newest first: the entries of its journal of job activity in the order the runner wrote them, and its records, each where the entry that created it stands, or by when the runner first recorded it where the journal has no such entry. Every time shown is one the runner stored, named for what it records. The journal is the runner’s own log, not chained and not signed. Evidence says only whether the runner holds an item; nothing here checks it.": "本地运行器记录的此作业情况，从新到旧排列：其作业活动日志的条目按运行器写入的顺序排列；其记录各自位于创建它的条目处，日志中没有这样的条目时，则按运行器首次记录它的时间排列。显示的每个时间都由运行器存储，并标明它记录的是什么。日志由运行器自行保存，既未成链也未签名。“证据”只说明运行器是否保存了某项；这里不作任何检查。",
+  "Continue from entry {{sequence}}": "从条目 {{sequence}} 继续",
+  "Earlier entries read and not kept, to bound what this page holds: {{dropped}}. Only the newest {{kept}} are kept.": "为限制此页面保存的内容，已读取但未保留的较早条目：{{dropped}}。只保留最新的 {{kept}} 条。",
+  "Its entries are shown once it is read to its end. Until then, records stand by when the runner first recorded each.": "日志读取到末尾后才显示其条目。在此之前，记录按运行器首次记录它们的时间排列。",
+  "Reading the runner’s journal stopped after entry {{sequence}}: {{reason}} Entries read: {{read}}.": "读取运行器日志在条目 {{sequence}} 之后停止：{{reason}} 已读取条目：{{read}}。",
+  "Reading the runner’s journal stopped before its first entry: {{reason}}": "读取运行器日志在其第一个条目之前停止：{{reason}}",
+  "Reading the runner’s journal. Entries read so far: {{read}}.": "正在读取运行器的日志。目前已读取条目：{{read}}。",
+  "Show earlier journal entries": "显示较早的日志条目",
+  "Showing the newest {{shown}} of {{read}} journal entries read.": "显示已读取的 {{read}} 条日志条目中最新的 {{shown}} 条。",
+  "The runner’s journal is read to its end as of the last request. Entries read: {{read}}.": "截至最后一次请求，运行器的日志已读取到末尾。已读取条目：{{read}}。",
+  "Try again from its start": "从头重试",
+  "Until it is read to its end again, the table shows the journal as it was when last read to its end.": "在再次读取到末尾之前，表格显示的是上次读取到末尾时的日志。"
 }

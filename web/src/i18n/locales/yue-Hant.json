@@ -3798,5 +3798,16 @@
   "Trigger configured": "觸發器已設定",
   "Trigger key rotated": "觸發器鎖匙已輪換",
   "Trigger resumed": "觸發器已恢復",
-  "What the local runner recorded about this job, newest first: the entries of its journal of job activity in the order the runner wrote them, and its records, each where the entry that created it stands, or by when the runner first recorded it where the journal has no such entry. Every time shown is one the runner stored, named for what it records. The journal is the runner’s own log, not chained and not signed. Evidence says only whether the runner holds an item; nothing here checks it.": "本機執行器記錄低嘅呢個作業情況，由新到舊排列：佢嘅作業活動日誌條目按執行器寫入嘅次序排列；佢嘅記錄各自放喺建立佢嘅條目嗰度，日誌冇呢個條目嘅話，就按執行器第一次記錄佢嘅時間排列。顯示嘅每個時間都係執行器儲存嘅，並標明記錄緊乜嘢。日誌由執行器自己保存，冇成鏈亦冇簽署。「證據」只係講執行器有冇保存某一項；呢度唔會檢查任何嘢。"
+  "What the local runner recorded about this job, newest first: the entries of its journal of job activity in the order the runner wrote them, and its records, each where the entry that created it stands, or by when the runner first recorded it where the journal has no such entry. Every time shown is one the runner stored, named for what it records. The journal is the runner’s own log, not chained and not signed. Evidence says only whether the runner holds an item; nothing here checks it.": "本機執行器記錄低嘅呢個作業情況，由新到舊排列：佢嘅作業活動日誌條目按執行器寫入嘅次序排列；佢嘅記錄各自放喺建立佢嘅條目嗰度，日誌冇呢個條目嘅話，就按執行器第一次記錄佢嘅時間排列。顯示嘅每個時間都係執行器儲存嘅，並標明記錄緊乜嘢。日誌由執行器自己保存，冇成鏈亦冇簽署。「證據」只係講執行器有冇保存某一項；呢度唔會檢查任何嘢。",
+  "Continue from entry {{sequence}}": "由條目 {{sequence}} 繼續",
+  "Earlier entries read and not kept, to bound what this page holds: {{dropped}}. Only the newest {{kept}} are kept.": "為咗限制呢個頁面保存嘅內容，已經讀取但冇保留嘅較早條目：{{dropped}}。只保留最新嘅 {{kept}} 個。",
+  "Its entries are shown once it is read to its end. Until then, records stand by when the runner first recorded each.": "日誌讀到尾之後先會顯示佢嘅條目。喺嗰之前，記錄按執行器第一次記錄佢哋嘅時間排列。",
+  "Reading the runner’s journal stopped after entry {{sequence}}: {{reason}} Entries read: {{read}}.": "讀取執行器日誌喺條目 {{sequence}} 之後停咗：{{reason}} 已讀取條目：{{read}}。",
+  "Reading the runner’s journal stopped before its first entry: {{reason}}": "讀取執行器日誌喺佢第一個條目之前停咗：{{reason}}",
+  "Reading the runner’s journal. Entries read so far: {{read}}.": "讀緊執行器嘅日誌。到而家已讀取條目：{{read}}。",
+  "Show earlier journal entries": "顯示較早嘅日誌條目",
+  "Showing the newest {{shown}} of {{read}} journal entries read.": "顯示已讀取嘅 {{read}} 個日誌條目入面最新嘅 {{shown}} 個。",
+  "The runner’s journal is read to its end as of the last request. Entries read: {{read}}.": "截至最後一次請求，執行器嘅日誌已經讀到尾。已讀取條目：{{read}}。",
+  "Try again from its start": "由頭再試",
+  "Until it is read to its end again, the table shows the journal as it was when last read to its end.": "喺再次讀到尾之前，表格顯示上次讀到尾嗰陣嘅日誌。"
 }

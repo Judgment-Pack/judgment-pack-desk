@@ -3798,5 +3798,16 @@
   "Trigger configured": "トリガーを設定",
   "Trigger key rotated": "トリガーのキーをローテーション",
   "Trigger resumed": "トリガーを再開",
-  "What the local runner recorded about this job, newest first: the entries of its journal of job activity in the order the runner wrote them, and its records, each where the entry that created it stands, or by when the runner first recorded it where the journal has no such entry. Every time shown is one the runner stored, named for what it records. The journal is the runner’s own log, not chained and not signed. Evidence says only whether the runner holds an item; nothing here checks it.": "ローカルランナーがこのジョブについて記録した内容を新しい順に表示します。ジョブアクティビティのジャーナルのエントリはランナーが書き込んだ順に並び、記録はそれぞれ自分を作成したエントリの位置に、ジャーナルにそのエントリがない場合はランナーが最初に記録した時刻順に並びます。表示される時刻はすべてランナーが保存したもので、何を記録した時刻かを示しています。ジャーナルはランナー自身のログであり、連鎖も署名もされていません。「証拠」はランナーが項目を保持しているかどうかだけを示し、ここでは何も確認しません。"
+  "What the local runner recorded about this job, newest first: the entries of its journal of job activity in the order the runner wrote them, and its records, each where the entry that created it stands, or by when the runner first recorded it where the journal has no such entry. Every time shown is one the runner stored, named for what it records. The journal is the runner’s own log, not chained and not signed. Evidence says only whether the runner holds an item; nothing here checks it.": "ローカルランナーがこのジョブについて記録した内容を新しい順に表示します。ジョブアクティビティのジャーナルのエントリはランナーが書き込んだ順に並び、記録はそれぞれ自分を作成したエントリの位置に、ジャーナルにそのエントリがない場合はランナーが最初に記録した時刻順に並びます。表示される時刻はすべてランナーが保存したもので、何を記録した時刻かを示しています。ジャーナルはランナー自身のログであり、連鎖も署名もされていません。「証拠」はランナーが項目を保持しているかどうかだけを示し、ここでは何も確認しません。",
+  "Continue from entry {{sequence}}": "エントリ {{sequence}} から再開",
+  "Earlier entries read and not kept, to bound what this page holds: {{dropped}}. Only the newest {{kept}} are kept.": "読み取ったものの、このページが保持する量を抑えるため保持していない以前のエントリ: {{dropped}}。保持するのは最新の {{kept}} 件だけです。",
+  "Its entries are shown once it is read to its end. Until then, records stand by when the runner first recorded each.": "エントリは最後まで読み取ってから表示します。それまでは、記録はランナーが最初に記録した時刻順に並びます。",
+  "Reading the runner’s journal stopped after entry {{sequence}}: {{reason}} Entries read: {{read}}.": "ランナーのジャーナルの読み取りはエントリ {{sequence}} の後で停止しました: {{reason}} 読み取ったエントリ: {{read}}。",
+  "Reading the runner’s journal stopped before its first entry: {{reason}}": "ランナーのジャーナルの読み取りは最初のエントリの前で停止しました: {{reason}}",
+  "Reading the runner’s journal. Entries read so far: {{read}}.": "ランナーのジャーナルを読み取り中です。これまでに読み取ったエントリ: {{read}}。",
+  "Show earlier journal entries": "以前のジャーナルのエントリを表示",
+  "Showing the newest {{shown}} of {{read}} journal entries read.": "読み取った {{read}} 件のジャーナルのエントリのうち、最新の {{shown}} 件を表示しています。",
+  "The runner’s journal is read to its end as of the last request. Entries read: {{read}}.": "ランナーのジャーナルは最後の要求の時点で最後まで読み取り済みです。読み取ったエントリ: {{read}}。",
+  "Try again from its start": "最初からもう一度試す",
+  "Until it is read to its end again, the table shows the journal as it was when last read to its end.": "再び最後まで読み取るまで、表は前回最後まで読み取った時点のジャーナルを表示します。"
 }

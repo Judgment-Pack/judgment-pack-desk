@@ -171,23 +171,39 @@ describe('merging Runner’s lists with its journal (#218)', () => {
   it('keeps Runner’s order for entries, puts each record just above the entry that created it, and a record before the journal below every entry', () => {
     // The journal's times run backwards: Runner's clock was set back. Its order stands.
     const entries = [{ ...queued(2), at: at(50) }, { ...started(2), at: at(40) }, { ...queued(3), at: at(30) }]
-    const merged = mergeActivity({ runs: { records: [run(3, 5), run(2, 6), run(1, 59)], more: false } }, () => true, { entries, show: true })
+    const merged = mergeActivity({ runs: { records: [run(3, 5), run(2, 6), run(1, 59)], more: false } }, () => true, { entries, dropped: 0, from: 0, show: true })
     expect(names(merged)).toBe('record:3 2:run.queued 1:run.started record:2 0:run.queued record:1')
     expect(merged.rows.map(row => row.key.slice(-1)).join(' ')).toBe('3 2 1')
   })
 
   it('holds back every row, entries included, below the oldest loaded record of a list with more pages', () => {
     const entries = [queued(1), started(1), queued(2), started(2), queued(3)]
-    const merged = mergeActivity({ runs: { records: [run(3, 30), run(2, 20)], more: true } }, () => true, { entries, show: true })
+    const merged = mergeActivity({ runs: { records: [run(3, 30), run(2, 20)], more: true } }, () => true, { entries, dropped: 0, from: 0, show: true })
     // Run 1 is not loaded yet; its record would stand above its run.queued, at place 0, and above nothing shown.
     expect(names(merged)).toBe('record:3 4:run.queued 3:run.started record:2 2:run.queued')
     expect(merged.held).toBe(2)
+    expect(merged.heldEntries).toBe(2)
     expect(merged.limiting).toEqual(['runs'])
+  })
+
+  it('shows only the window of newest entries, and stands a record whose creating entry is outside it below every entry shown', () => {
+    const entries = [queued(1), started(1), queued(2), started(2), queued(3)]
+    const merged = mergeActivity({ runs: { records: [run(3, 30), run(2, 20), run(1, 10)], more: false } }, () => true, { entries, dropped: 0, from: 3, show: true })
+    expect(names(merged)).toBe('record:3 4:run.queued 3:run.started record:2 record:1')
+    expect([merged.held, merged.heldEntries].join(' ')).toBe('0 0')
+  })
+
+  it('counts entries read and not kept in every place, and stands a record whose creating entry was not kept among the records before the journal', () => {
+    // Entries 0 and 1 (run 1's queue and start) were read and dropped.
+    const entries = [queued(2), started(2), queued(3)]
+    const merged = mergeActivity({ runs: { records: [run(3, 30), run(2, 20), run(1, 10), run(0, 5)], more: false } }, () => true, { entries, dropped: 2, from: 2, show: true })
+    expect(names(merged)).toBe('record:3 4:run.queued 3:run.started record:2 2:run.queued record:1 record:0')
+    expect(merged.shown.filter(row => row.kind === 'journal').map(row => row.key).join(' ')).toBe('journal:4 journal:3 journal:2')
   })
 
   it('shows no entry while the filters keep records only, and still places each record by its creation', () => {
     const entries = [queued(2), queued(1)]
-    const merged = mergeActivity({ runs: { records: [run(2, 30), run(1, 20)], more: false } }, () => true, { entries, show: false })
+    const merged = mergeActivity({ runs: { records: [run(2, 30), run(1, 20)], more: false } }, () => true, { entries, dropped: 0, from: 0, show: false })
     expect(names(merged)).toBe('record:1 record:2')
   })
 })
