@@ -106,6 +106,7 @@ export const ROTATION_REASONS = [
   sourceMessage('Desk keeps no signing key for this desk, so it has none to rotate.'),
   sourceMessage('Desk rotates only a key it can read, with a list of public keys that agrees with it.'),
   sourceMessage('This desk\'s key took over after record {{record}}, and no record has been signed since: a rotation now would take over after the same record. Make a deciding run first.'),
+  sourceMessage('This desk already has {{count}} signing keys, the most Desk keeps for one desk, so it rotates no further key.'),
   sourceMessage('Desk reads the trail\'s signature sidecar to tell whether a rotation was written, and it could not be read: {{reason}}. So Desk does not rotate the key now.'),
   sourceMessage('Nothing of it is left to do but remove its marker, which Desk does when it next starts.'),
   sourceMessage('The runtime wrote the rotation, and Desk did not finish it: Desk finishes it when it next starts. Until then, records are written unsigned.'),

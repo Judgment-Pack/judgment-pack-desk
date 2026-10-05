@@ -3836,5 +3836,6 @@
   "The runtime wrote the rotation, and Desk did not finish it: Desk finishes it when it next starts. Until then, records are written unsigned.": "Die Laufzeit hat die Rotation geschrieben, und Desk hat sie nicht abgeschlossen: Desk schließt sie beim nächsten Start ab. Bis dahin werden Einträge unsigniert geschrieben.",
   "This desk's key took over after record {{record}}, and no record has been signed since: a rotation now would take over after the same record. Make a deciding run first.": "Der Schlüssel dieses Desks hat nach Eintrag {{record}} übernommen, und seitdem wurde kein Eintrag signiert: Eine Rotation jetzt würde nach demselben Eintrag übernehmen. Führen Sie zuerst einen entscheidenden Lauf aus.",
   "This is the project Desk was started on. Desk keeps no signing key for it in this version, so it has none to rotate.": "Dies ist das Projekt, mit dem Desk gestartet wurde. Desk verwahrt in dieser Version keinen Signaturschlüssel dafür und hat daher keinen zu rotieren.",
-  "What a rotation does and does not do": "Was eine Rotation tut und was nicht"
+  "What a rotation does and does not do": "Was eine Rotation tut und was nicht",
+  "This desk already has {{count}} signing keys, the most Desk keeps for one desk, so it rotates no further key.": "Dieser Desk hat bereits {{count}} Signaturschlüssel, die meisten, die Desk für einen Desk aufbewahrt, daher rotiert Desk keinen weiteren Schlüssel."
 }

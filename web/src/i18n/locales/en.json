@@ -3624,5 +3624,6 @@
   "The runtime wrote the rotation, and Desk did not finish it: Desk finishes it when it next starts. Until then, records are written unsigned.": "The runtime wrote the rotation, and Desk did not finish it: Desk finishes it when it next starts. Until then, records are written unsigned.",
   "This desk's key took over after record {{record}}, and no record has been signed since: a rotation now would take over after the same record. Make a deciding run first.": "This desk's key took over after record {{record}}, and no record has been signed since: a rotation now would take over after the same record. Make a deciding run first.",
   "This is the project Desk was started on. Desk keeps no signing key for it in this version, so it has none to rotate.": "This is the project Desk was started on. Desk keeps no signing key for it in this version, so it has none to rotate.",
-  "What a rotation does and does not do": "What a rotation does and does not do"
+  "What a rotation does and does not do": "What a rotation does and does not do",
+  "This desk already has {{count}} signing keys, the most Desk keeps for one desk, so it rotates no further key.": "This desk already has {{count}} signing keys, the most Desk keeps for one desk, so it rotates no further key."
 }

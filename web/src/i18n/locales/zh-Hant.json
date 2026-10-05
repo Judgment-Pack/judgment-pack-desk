@@ -3836,5 +3836,6 @@
   "The runtime wrote the rotation, and Desk did not finish it: Desk finishes it when it next starts. Until then, records are written unsigned.": "執行環境已寫入輪替，但 Desk 尚未完成：Desk 會在下次啟動時完成。在此之前，記錄以未簽署方式寫入。",
   "This desk's key took over after record {{record}}, and no record has been signed since: a rotation now would take over after the same record. Make a deciding run first.": "此工作台的金鑰在記錄 {{record}} 之後接手，此後沒有任何記錄被簽署：現在輪替將在同一筆記錄之後接手。請先進行一次決策執行。",
   "This is the project Desk was started on. Desk keeps no signing key for it in this version, so it has none to rotate.": "這是 Desk 啟動時所在的專案。在此版本中，Desk 不為它保管簽署金鑰，因此沒有可輪替的金鑰。",
-  "What a rotation does and does not do": "輪替會做什麼、不會做什麼"
+  "What a rotation does and does not do": "輪替會做什麼、不會做什麼",
+  "This desk already has {{count}} signing keys, the most Desk keeps for one desk, so it rotates no further key.": "此 Desk 已有 {{count}} 個簽署金鑰，已達 Desk 為單一 Desk 保存的上限，因此不再輪換金鑰。"
 }

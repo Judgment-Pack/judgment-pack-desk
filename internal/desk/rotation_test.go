@@ -432,6 +432,36 @@ func (r *rotationRig) assertUnchanged(t *testing.T) {
 // so, and the rotation is finished. A next key the runtime will not generate
 // leaves nothing either, not even what its failed run left under the next
 // key's name.
+// **No rotation past the key list's bound.** A desk whose list already holds
+// as many keys as Desk keeps is offered no rotation, and a token the panel gave
+// before is refused before the runtime is asked anything: the runtime would
+// hand signing to a key the list could not name (review round 1).
+func TestNoRotationPastTheKeyListsBound(t *testing.T) {
+	t.Setenv("JPACK_SIGNING_KEY", filepath.Join(t.TempDir(), "owner.seed"))
+	r := newRotationRig(t, "c1000000000000000000000000000077", "")
+	r.writeTrail(t, 1, recordLine(standInKeyID, 1))
+	token := r.token(t)
+	rotationKeyLimit = 1
+	t.Cleanup(func() { rotationKeyLimit = maxDeskKeys })
+	panel, _ := r.panel(t)
+	want := "This desk already has 1 signing keys, the most Desk keeps for one desk, so it rotates no further key."
+	if panel.Rotation.State != rotationUnavailable || panel.Rotation.Reason != want || panel.Rotation.Token != "" {
+		t.Errorf("at the bound the panel offers %+v", panel.Rotation)
+	}
+	r.rig.ran(t)
+	if status, data := r.rotate(t, token); status != http.StatusConflict || !strings.Contains(string(data), want) {
+		t.Errorf("a rotation at the bound answered %d %s", status, data)
+	}
+	for _, call := range r.rig.ran(t) {
+		if strings.HasPrefix(call, "audit key generate") || strings.HasPrefix(call, "audit key rotate") {
+			t.Errorf("a rotation at the bound ran %q", call)
+		}
+	}
+	if names := namesIn(t, r.signing); !slices.Equal(names, []string{r.id + keysSuffix, r.id + seedSuffix}) {
+		t.Errorf("a rotation at the bound left %q", names)
+	}
+}
+
 func TestARotationTheRuntimeRefusesChangesNothing(t *testing.T) {
 	const id = "c2000000000000000000000000000001"
 	for _, tc := range []struct {

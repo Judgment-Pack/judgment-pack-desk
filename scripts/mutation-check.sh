@@ -3406,6 +3406,9 @@ func (b *cappedBuffer) exceeded() bool {'
   # what it cannot tell about. Every row's name says "rotation", so
   # `mutation-check.sh go rotation` runs exactly these.
   RO=internal/desk/rotation.go
+  mutate go "rotation: offered past the key list's bound" internal/desk/rotation.go \
+    '	case len(reading.keys) >= rotationKeyLimit:' \
+    '	case false && len(reading.keys) >= rotationKeyLimit:'
   mutate go "rotation: the token is not checked" "$RO" \
     '	case !hmac.Equal([]byte(offer.Token), []byte(token)):' \
     '	case false:'

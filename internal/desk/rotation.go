@@ -811,6 +811,11 @@ type auditRotation struct {
 	Token  string `json:"token,omitempty"`
 }
 
+// rotationKeyLimit is the most keys a desk's list may hold before Desk
+// offers no further rotation: the list's own bound. A variable only so a test
+// can reach it without that many rotations.
+var rotationKeyLimit = maxDeskKeys
+
 // rotationOffer says whether the owner can rotate this desk's key now, with
 // the token that confirms it, from what the panel read of its keys. It runs
 // under the desk's key lock.
@@ -841,6 +846,12 @@ func (s *Server) rotationOffer(ctx context.Context, project heldDir, keys auditK
 		return auditRotation{State: rotationUnavailable, Reason: "Desk rotates only a key it can read, with a list of public keys that agrees with it."}
 	case reading.sidecarErr != nil:
 		return auditRotation{State: rotationUnavailable, Reason: "Desk reads the trail's signature sidecar to tell whether a rotation was written, and it could not be read: " + sidecarProblem(reading.sidecarErr) + ". So Desk does not rotate the key now."}
+	case len(reading.keys) >= rotationKeyLimit:
+		// **No rotation the list cannot record.** The runtime would hand
+		// signing to the next key, and the list, held to its bound, could not
+		// name it: the desk would keep a key no longer in force, and the
+		// rotation could never finish (review round 1).
+		return auditRotation{State: rotationUnavailable, Reason: fmt.Sprintf("This desk already has %d signing keys, the most Desk keeps for one desk, so it rotates no further key.", rotationKeyLimit)}
 	case len(reading.sidecar.rotations) > 0 && !reading.sidecar.signedSinceRotation:
 		return auditRotation{State: rotationUnavailable, Reason: fmt.Sprintf("This desk's key took over after record %d, and no record has been signed since: a rotation now would take over after the same record. Make a deciding run first.", reading.keys[len(reading.keys)-1].At)}
 	}

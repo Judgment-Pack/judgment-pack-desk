@@ -3836,5 +3836,6 @@
   "The runtime wrote the rotation, and Desk did not finish it: Desk finishes it when it next starts. Until then, records are written unsigned.": "ランタイムはローテーションを書き込みましたが、Desk はそれを完了していません。Desk は次回起動時に完了します。それまで、記録は署名なしで書き込まれます。",
   "This desk's key took over after record {{record}}, and no record has been signed since: a rotation now would take over after the same record. Make a deciding run first.": "このデスクの鍵は記録 {{record}} の後に引き継がれ、それ以降どの記録も署名されていません。今ローテーションすると、同じ記録の後に引き継ぐことになります。先に判断実行を行ってください。",
   "This is the project Desk was started on. Desk keeps no signing key for it in this version, so it has none to rotate.": "これは Desk の起動対象のプロジェクトです。このバージョンでは Desk はこのプロジェクトの署名鍵を保管していないため、ローテーションする鍵がありません。",
-  "What a rotation does and does not do": "ローテーションが行うことと行わないこと"
+  "What a rotation does and does not do": "ローテーションが行うことと行わないこと",
+  "This desk already has {{count}} signing keys, the most Desk keeps for one desk, so it rotates no further key.": "この Desk にはすでに {{count}} 個の署名鍵があり、Desk が 1 つの Desk に保持する上限に達しているため、これ以上鍵をローテーションしません。"
 }
