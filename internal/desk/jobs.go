@@ -231,14 +231,15 @@ func (j *jobsCompanion) close() {
 	}
 }
 
-var jobsPath = regexp.MustCompile(`^(occurrences/occ_[a-f0-9]{32}/(cancel|reconcile)|status|background-connections|input-profiles|previews|inputs/preview|inputs/next|jobs|runs|jobs/job_[a-f0-9]{32}|jobs/job_[a-f0-9]{32}/runs|runs/run_[a-f0-9]{32}|jobs/job_[a-f0-9]{32}/triggers|jobs/job_[a-f0-9]{32}/triggers/preview|jobs/job_[a-f0-9]{32}/occurrences|triggers/trg_[a-f0-9]{32}/state|triggers/trg_[a-f0-9]{32}/rotate-key|runs/run_[a-f0-9]{32}/verification|jobs/job_[a-f0-9]{32}/briefs|runs/run_[a-f0-9]{32}/briefs)$`)
+var jobsPath = regexp.MustCompile(`^(occurrences/occ_[a-f0-9]{32}/(cancel|reconcile)|status|background-connections|input-profiles|previews|inputs/preview|inputs/next|jobs|runs|jobs/job_[a-f0-9]{32}|jobs/job_[a-f0-9]{32}/runs|runs/run_[a-f0-9]{32}|jobs/job_[a-f0-9]{32}/triggers|jobs/job_[a-f0-9]{32}/triggers/preview|jobs/job_[a-f0-9]{32}/occurrences|triggers/trg_[a-f0-9]{32}/state|triggers/trg_[a-f0-9]{32}/rotate-key|runs/run_[a-f0-9]{32}/verification|run-chain|jobs/job_[a-f0-9]{32}/briefs|runs/run_[a-f0-9]{32}/briefs)$`)
 
 func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	if !s.guard(w, r) {
 		return
 	}
 	tail := strings.TrimPrefix(r.URL.Path, "/api/operations/")
-	if !jobsPath.MatchString(tail) || (r.Method != http.MethodGet && r.Method != http.MethodPost) {
+	// The chain of runs is read, never written: Runner serves it on GET alone.
+	if !jobsPath.MatchString(tail) || (r.Method != http.MethodGet && r.Method != http.MethodPost) || tail == runChainRoute && r.Method != http.MethodGet {
 		writeJSONCoded(w, 404, CodeBadRequest, "Unknown Jobs operation.")
 		return
 	}
@@ -306,15 +307,34 @@ var (
 // runnerAnswerLimit is the most of a Runner answer Desk reads on most routes.
 const runnerAnswerLimit = 16 << 20
 
+// runChainRoute is Runner's chain of runs (`GET /v1/run-chain`, v0.5.0): every
+// entry's line, exactly as stored, each ended by a newline, served as
+// application/jsonl. That is a trail file as the Runtime reads one, which
+// Runner's verify-run --chain reads too, so Desk passes it on untouched: no
+// query reaches Runner, and the answer keeps Runner's own bytes and type.
+const runChainRoute = "run-chain"
+
+// runChainLimit is the most of the chain of runs Desk passes on: 65,536
+// entries at the longest line Runner writes (maxChainLine, 1024 bytes) and its
+// newline, which is some 220,000 at the 300 bytes an entry takes in practice.
+// Runner sets no bound on the chain, and verify-run reads one as a stream; this
+// bound is Desk's own. Desk holds an answer whole before it sends any of it, so
+// that a chain past this bound is refused rather than cut short, and a
+// transfer Runner aborts is an error rather than a shorter chain; the bound is
+// what Desk holds in memory for one download, as the page does again to save it.
+const runChainLimit = (1 << 16) * (1024 + 1)
+
 // runnerExportLimit is Runner's MaxExportSize (v0.5.0, internal/runner/
 // audit_bytes.go), the most of a verification export its verify-run reads:
 // version 2's 8 MiB; from version 3 on, the member carrying the audit record's
 // bytes, at most 8 MiB of them in base64; from version 4 on, the member
 // carrying the run's chain entry, at most 1024 bytes in base64, and its
 // checkpoint; and in version 5, the member carrying the record's signature
-// sidecar, at most 16 KiB in base64. Desk saves the answer as it comes, so an
-// answer within this limit is a file that verify-run reads, by size, and a
-// larger one is not. A run is a member of its own version-5 export: it carries
+// sidecar, at most 16 KiB in base64. The page asks for version 5, and Runner
+// answers an earlier version where the run lacks what a later one carries, so
+// the answer is any of the four. Desk saves it as it comes, so an answer
+// within this limit is a file that verify-run reads, by size, and a larger one
+// is not. A run is a member of its own version-5 export: it carries
 // the record twice, parsed and as those bytes, and its sidecar, so it too can
 // pass runnerAnswerLimit, but never its export's size. It is read to the same
 // limit, since the download is on the run's page, which a run Desk refused
@@ -326,10 +346,13 @@ const runnerExportLimit = 8<<20 + len(`,"auditBytes":""`) + (8<<20+2)/3*4 +
 
 // verificationVersion is the export version a request on a run's verification
 // route asks Runner for: "" for none, which Runner answers with version 2, or
-// exactly one "2" or "3". Anything else is refused rather than forwarded, as
-// Runner refuses it. The query is parsed strictly, since a lenient reader
-// keeps one of repeated values and drops malformed pairs, and would forward a
-// version that the request did not ask for alone.
+// exactly one "2", "3", "4" or "5", the versions Runner v0.5.0 serves. Runner
+// answers an earlier version than the one asked for where the run lacks what
+// the later one carries, so what is asked for does not say what is answered:
+// the page reads the version from the answer. Anything else is refused rather
+// than forwarded, as Runner refuses it. The query is parsed strictly, since a
+// lenient reader keeps one of repeated values and drops malformed pairs, and
+// would forward a version that the request did not ask for alone.
 func verificationVersion(rawQuery string) (string, error) {
 	query, err := url.ParseQuery(rawQuery)
 	switch version, asked := query["version"]; {
@@ -337,7 +360,7 @@ func verificationVersion(rawQuery string) (string, error) {
 		// Refused below.
 	case !asked:
 		return "", nil
-	case len(version) == 1 && (version[0] == "2" || version[0] == "3"):
+	case len(version) == 1 && (version[0] == "2" || version[0] == "3" || version[0] == "4" || version[0] == "5"):
 		return version[0], nil
 	}
 	return "", errors.New("invalid verification export version")
@@ -353,10 +376,13 @@ func (s *Server) proxyJobs(w http.ResponseWriter, r *http.Request, tail, eventTo
 	}
 	limit := runnerAnswerLimit
 	switch {
+	case tail == runChainRoute:
+		query = url.Values{}
+		limit = runChainLimit
 	case verificationPath.MatchString(tail):
 		version, err := verificationVersion(r.URL.RawQuery)
 		if err != nil {
-			writeJSONCoded(w, 400, CodeBadRequest, "Ask once for verification export version 2 or 3, in a well-formed query.")
+			writeJSONCoded(w, 400, CodeBadRequest, "Ask once for verification export version 2, 3, 4 or 5, in a well-formed query.")
 			return
 		}
 		if version != "" {
@@ -405,12 +431,27 @@ func (s *Server) proxyJobs(w http.ResponseWriter, r *http.Request, tail, eventTo
 		return
 	}
 	defer response.Body.Close()
-	body, err := readBounded(response.Body, limit)
+	// The whole answer is read before any of it is sent, so a failure is an
+	// error status, never a shorter answer. A transfer that ends early fails
+	// to read: Runner aborts the chain of runs on a page it cannot read, and a
+	// connection that closes leaves a body short of its length or its last
+	// chunk. An answer past its limit is refused, never cut to it.
+	body, err := io.ReadAll(io.LimitReader(response.Body, int64(limit)+1))
 	if err != nil {
+		writeJSONCoded(w, 502, CodeBadRequest, "The runner's answer did not complete.")
+		return
+	}
+	if len(body) > limit {
 		writeJSONCoded(w, 502, CodeBadRequest, "The runner response exceeded its limit.")
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
+	if tail == runChainRoute {
+		// Runner's own type, application/jsonl for the chain and JSON for a
+		// refusal; none where it sent none, which Desk does not guess at.
+		w.Header()["Content-Type"] = response.Header.Values("Content-Type")
+	} else {
+		w.Header().Set("Content-Type", "application/json")
+	}
 	w.WriteHeader(response.StatusCode)
 	w.Write(body)
 }

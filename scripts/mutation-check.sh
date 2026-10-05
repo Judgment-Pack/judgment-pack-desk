@@ -1859,7 +1859,7 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	file, err := os.OpenFile(path, os.O_RDONLY|0*syscall.O_NONBLOCK, 0)'
   # **A verification export is asked for once, plainly, and only there.** The
   # version a request asks for reaches Runner from the verification route
-  # alone, as exactly one 2 or 3 in a query that parses; anything else is
+  # alone, as exactly one 2, 3, 4 or 5 in a query that parses; anything else is
   # refused by Desk and never forwarded. Its answer, and the run's, are read up
   # to Runner's MaxExportSize, and no other route's limit moves.
   J=internal/desk/jobs.go
@@ -1871,18 +1871,21 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	query, err := url.ParseQuery(rawQuery)
 	err = nil'
   mutate go "verification export: first of repeated versions forwarded" "$J" \
-    '	case len(version) == 1 && (version[0] == "2" || version[0] == "3"):' \
-    '	case len(version) >= 1 && (version[0] == "2" || version[0] == "3"):'
+    '	case len(version) == 1 && (version[0] == "2" || version[0] == "3" || version[0] == "4" || version[0] == "5"):' \
+    '	case len(version) >= 1 && (version[0] == "2" || version[0] == "3" || version[0] == "4" || version[0] == "5"):'
   mutate go "verification export: any one version forwarded" "$J" \
-    '	case len(version) == 1 && (version[0] == "2" || version[0] == "3"):' \
+    '	case len(version) == 1 && (version[0] == "2" || version[0] == "3" || version[0] == "4" || version[0] == "5"):' \
     '	case len(version) == 1:'
+  mutate go "verification export: version 6 forwarded" "$J" \
+    'version[0] == "4" || version[0] == "5"):' \
+    'version[0] == "4" || version[0] == "5" || version[0] == "6"):'
   mutate go "verification export: empty version read as none" "$J" \
     '	case !asked:' \
     '	case !asked || version[0] == "":'
   mutate go "verification export: refused version still forwarded" "$J" \
-    '			writeJSONCoded(w, 400, CodeBadRequest, "Ask once for verification export version 2 or 3, in a well-formed query.")
+    '			writeJSONCoded(w, 400, CodeBadRequest, "Ask once for verification export version 2, 3, 4 or 5, in a well-formed query.")
 			return' \
-    '			writeJSONCoded(w, 400, CodeBadRequest, "Ask once for verification export version 2 or 3, in a well-formed query.")'
+    '			writeJSONCoded(w, 400, CodeBadRequest, "Ask once for verification export version 2, 3, 4 or 5, in a well-formed query.")'
   mutate go "verification export: read to the ordinary limit" "$J" \
     '			query.Set("version", version)
 		}
@@ -1901,6 +1904,54 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   mutate go "verification export: limit past Runner's MaxExportSize" "$J" \
     '	len(`,"auditSignatures":""`) + (16<<10+2)/3*4' \
     '	len(`,"auditSignatures":""`) + (16<<10+2)/3*4 + 1'
+  # **Runner's chain of runs is passed on whole, as Runner sent it, or not at
+  # all (#214).** `GET /v1/run-chain` has its own route, read with GET alone; no
+  # query reaches Runner, and the answer keeps Runner's bytes and its
+  # application/jsonl. Desk reads every answer whole before it sends any of it,
+  # so a chain past Desk's bound is refused rather than cut to it, and a
+  # transfer that ends early is a 502, never a shorter 200.
+  mutate go "run chain: not on the route list" "$J" \
+    '|runs/run_[a-f0-9]{32}/verification|run-chain|' \
+    '|runs/run_[a-f0-9]{32}/verification|'
+  mutate go "run chain: a path that begins with it forwarded" "$J" \
+    '|runs/run_[a-f0-9]{32}/verification|run-chain|' \
+    '|runs/run_[a-f0-9]{32}/verification|run-chain.*|'
+  mutate go "run chain: written with POST" "$J" \
+    ' || tail == runChainRoute && r.Method != http.MethodGet {' \
+    ' {'
+  mutate go "run chain: the caller's query forwarded" "$J" \
+    '		query = url.Values{}
+		limit = runChainLimit' \
+    '		limit = runChainLimit'
+  mutate go "run chain: read to the ordinary limit" "$J" \
+    '		query = url.Values{}
+		limit = runChainLimit' \
+    '		query = url.Values{}
+		limit = runnerAnswerLimit'
+  mutate go "run chain: bound past 65,536 lines" "$J" \
+    'const runChainLimit = (1 << 16) * (1024 + 1)' \
+    'const runChainLimit = (1<<16)*(1024+1) + 1'
+  mutate go "run chain: type rewritten to JSON" "$J" \
+    '		w.Header()["Content-Type"] = response.Header.Values("Content-Type")' \
+    '		w.Header().Set("Content-Type", "application/json")'
+  mutate go "run chain: cut to its bound rather than refused" "$J" \
+    '	if len(body) > limit {
+		writeJSONCoded(w, 502, CodeBadRequest, "The runner response exceeded its limit.")
+		return
+	}' \
+    '	if len(body) > limit {
+		body = body[:limit]
+	}'
+  # Read whole and measured after, a chain far past the bound is still
+  # refused, but only once Desk has held all of it.
+  mutate go "run chain: read whole before its size is checked" "$J" \
+    '	body, err := io.ReadAll(io.LimitReader(response.Body, int64(limit)+1))' \
+    '	body, err := io.ReadAll(response.Body)'
+  mutate go "run chain: a transfer that ended early passed on" "$J" \
+    '	body, err := io.ReadAll(io.LimitReader(response.Body, int64(limit)+1))
+	if err != nil {' \
+    '	body, err := io.ReadAll(io.LimitReader(response.Body, int64(limit)+1))
+	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {'
 
   # **A new desk starts gated (ADR-0009, section 1).** Its configuration is
   # the one the runtime can hold it to, its audit folder is owner-only, and the
@@ -3837,31 +3888,86 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '      const focus = corrected?.resolved?.rationale ?? row.rationale' \
     '      const focus = corrected ? row.rationale : row.rationale'
   # **A saved verification export says which version it is, from its own
-  # body.** Runner answers version 2 for a run without the record's bytes
-  # whatever is asked, so the name comes from the answer, the bytes are saved
-  # as sent, and only a version-3 file is offered the receipt comparison.
+  # body.** Desk asks for version 5, and Runner answers an earlier one where
+  # the run lacks what a later one carries, so the name comes from the answer,
+  # the bytes are saved as sent, and each version's sentence says what that
+  # version carries; a version-2 file is offered no receipt comparison. A
+  # version-4 or version-5 file names the run's chain entry by the sequence the
+  # entry's own line gives, not checked, and one whose entry cannot be read is
+  # not saved under that version's name (#214).
   JV=web/src/jobs/JobsView.tsx
-  mutate web "verification export: version 3 not asked for" "$JV" \
-    'deskFetch(`/api/operations/runs/${runId}/verification?version=3`)' \
-    'deskFetch(`/api/operations/runs/${runId}/verification`)'
+  mutate web "verification export: version 5 not asked for" "$JV" \
+    'deskFetch(`/api/operations/runs/${runId}/verification?version=5`)' \
+    'deskFetch(`/api/operations/runs/${runId}/verification?version=3`)'
   mutate web "verification export: named for the version asked" "$JV" \
-    'const file=`${runId}-verification-v${version}.json`' \
-    'const file=`${runId}-verification-v3.json`'
+    'const file=`${runId}-verification-v${standing.version}.json`' \
+    'const file=`${runId}-verification-v5.json`'
   mutate web "verification export: any version saved" "$JV" \
-    'return version===2||version===3 ? version : undefined' \
-    'return (version ?? 3) as 2 | 3'
+    'if(version===2||version===3) return {version}' \
+    "if(typeof version==='number'&&version!==4&&version!==5) return {version: version as ExportVersion}"
+  mutate web "verification export: version 6 saved" "$JV" \
+    'if(version!==4&&version!==5) return undefined' \
+    'if(version!==4&&version!==5&&version!==6) return undefined'
+  mutate web "verification export: version 4 saved without a chain entry it can read" "$JV" \
+    'return sequence===undefined ? undefined : {version, sequence}' \
+    'return {version, sequence}'
+  mutate web "verification export: chain entry read from the checkpoint" "$JV" \
+    'const sequence=entrySequence(value?.chain?.entry)' \
+    'const sequence=(value?.chain as {checkpoint?: {sequence?: number}} | undefined)?.checkpoint?.sequence'
+  mutate web "verification export: any sequence taken" "$JV" \
+    "return typeof sequence==='number'&&Number.isSafeInteger(sequence)&&sequence>0 ? sequence : undefined" \
+    "return typeof sequence==='number' ? sequence : undefined"
+  mutate web "verification export: version 4 clause dropped" "$JV" \
+    'export version 4, with the audit record’s exact bytes and the run’s chain entry and checkpoint; unsigned.' \
+    'export version 4, with the audit record’s exact bytes.'
+  mutate web "verification export: version 5 clause dropped" "$JV" \
+    ', and the record’s signatures, not checked here.' \
+    '.'
+  mutate web "verification export: chain standing not shown" "$JV" \
+    "   <p>{saved.sequence===undefined ? msg('Runner’s chain of runs: no chain entry in this export.') : msg('Runner’s chain of runs: chain entry {{sequence}}, not checked.', {sequence: String(saved.sequence)})}</p></div>}" \
+    '   </div>}'
   mutate web "verification export: saved encoded again" "$JV" \
     'url=URL.createObjectURL(blob)' \
     'url=URL.createObjectURL(new Blob([JSON.stringify(JSON.parse(await blob.text()))]))'
   mutate web "verification export: comparison offered for version 2" "$JV" \
-    '{saved.version===3 ? msg(' \
-    '{saved.version>0 ? msg('
+    "  case 2: return msg('Saved {{file}}: export version 2, which carries no exact bytes of the audit record to compare with a gateway receipt.', {file})" \
+    '  case 2:'
   mutate web "verification export: saved as text decoded from the answer" "$JV" \
     'url=URL.createObjectURL(blob)' \
     'url=URL.createObjectURL(new Blob([await blob.text()]))'
   mutate web "verification export: earlier saved line kept after a failed attempt" "$JV" \
     'setBusy(true);setError(undefined);setSaved(undefined)' \
     'setBusy(true);setError(undefined)'
+  # **The runner's chain of runs is saved whole, as it came, or not at all
+  # (#214).** The page saves Desk's answer as run-chain.jsonl from the Blob it
+  # came in, saves nothing for a refusal or a transfer that ends early, and
+  # says the file is unverified here. It sits under Jobs | Runs on both tabs.
+  mutate web "run chain: saved under another name" "$JV" \
+    "const RUN_CHAIN_FILE='run-chain.jsonl'" \
+    "const RUN_CHAIN_FILE='run-chain.json'"
+  mutate web "run chain: another route asked" "$JV" \
+    "deskFetch('/api/operations/run-chain')" \
+    "deskFetch('/api/operations/runs')"
+  mutate web "run chain: saved as text decoded from the answer" "$JV" \
+    'href=URL.createObjectURL(chain)' \
+    'href=URL.createObjectURL(new Blob([await chain.text()]))'
+  mutate web "run chain: a refusal saved" "$JV" \
+    '   if(!response.ok) throw Error(await refusalText(response))
+' \
+    ''
+  mutate web "run chain: a transfer that ended early saved" "$JV" \
+    'const chain=await response.blob()' \
+    'const chain=await response.blob().catch(()=>new Blob([]))'
+  mutate web "run chain: earlier saved line kept after a failed attempt" "$JV" \
+    'setBusy(true);setError(undefined);setChainSaved(false)' \
+    'setBusy(true);setError(undefined)'
+  mutate web "run chain: not said to be unverified" "$JV" \
+    "  <span className={styles.note}>{msg('The file is the runner’s whole chain of runs, byte for byte as the runner sent it, unverified here.')}</span>" \
+    ''
+  mutate web "run chain: not offered on the Jobs page" "$JV" \
+    '      <RunChainDownload/>
+' \
+    ''
 
   # 4. Admin printed a decoded number with nothing said about what bounds it,
   # what the frame does to it, or what is actually on screen.

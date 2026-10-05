@@ -34,16 +34,42 @@ profiles and the release digest to check an export offline. Downloads contain
 private case, request and response data; the ordinary view keeps raw proof behind
 technical disclosure. Local storage remains the artifact store.
 
-The download asks Runner for verification export version 3, which carries the
-audit record's exact bytes, saves the answer as it comes, and names the file for
-the version Runner answered (`<run>-verification-v3.json`). Runner answers
-version 2 for a run that holds no such bytes, such as one recorded before Runner
-`v0.4.0`. `verify-run` reports the bytes' SHA-256 as `recordDigest`. Comparing
-it with a gateway receipt's `decision.recordDigest` is the reader's step:
-`verify-run` does not make it. Desk forwards `version` on this route only, as
-exactly one `2` or `3`, and refuses any other value itself. It reads an export,
-and the run it is made from, up to Runner's `MaxExportSize` (about 18.7 MiB),
-which is what `verify-run` reads; every other Runner answer stays within 16 MiB.
+The download asks Runner for verification export version 5, saves the answer as
+it comes, and names the file for the version Runner answered
+(`<run>-verification-v<N>.json`). Runner answers an earlier version where the run
+lacks what a later one carries, with HTTP 200 either way:
+
+| Version | What it carries | Runner answers it to a request for 5 when |
+| --- | --- | --- |
+| 5 | the audit record's exact bytes, the run's chain entry and its checkpoint, and the record's signature sidecar | the run has all of them |
+| 4 | the record's exact bytes, the chain entry and its checkpoint; unsigned | the record has no signature sidecar |
+| 3 | the record's exact bytes | the run has no chain entry, as one recorded before Runner `v0.5.0` chained its runs |
+| 2 | no exact bytes of the record | the run holds none, as one recorded before Runner `v0.4.0` |
+
+The page says which version it saved and what that version carries. For a
+version-4 or version-5 file it names the run's chain entry by the sequence the
+entry's own line gives ("chain entry 42, not checked"); for a version-2 or
+version-3 file it says the export has no chain entry. Desk checks nothing in the
+file: not the entry against the record, its checkpoint or the chain, and not the
+signatures. `verify-run` reports the record bytes' SHA-256 as `recordDigest`.
+Comparing it with a gateway receipt's `decision.recordDigest` is the reader's
+step: `verify-run` does not make it. Desk forwards `version` on this route only,
+as exactly one `2`, `3`, `4` or `5`, and refuses any other value itself. It
+reads an export, and the run it is made from, up to Runner's `MaxExportSize`
+(about 18.7 MiB), which is what `verify-run` reads; every other Runner answer
+stays within 16 MiB, except the chain of runs.
+
+**Download the runner's chain of runs**, under Jobs | Runs, saves
+`run-chain.jsonl`: Runner's `GET /v1/run-chain`, every entry's line in sequence
+order, exactly as Runner sent it, which `verify-run --chain` reads. Desk passes no
+query to Runner and keeps Runner's `application/jsonl`. Runner sets no bound on
+the chain; Desk's is 67,174,400 bytes, about 64 MiB: 65,536 entries at the
+1024-byte longest line Runner writes and its newline, and some 220,000 at the 300
+bytes an entry takes in practice. A chain of exactly 67,174,400 bytes passes, and
+one byte more fails. Desk reads the whole answer before it sends any of it, and
+stops reading one byte past the bound, so a chain past the bound, or a transfer
+Runner aborts, is an error and the page saves nothing; neither is ever passed on
+as a shorter chain. Nothing in the file is checked here.
 
 ## Installation trust
 
