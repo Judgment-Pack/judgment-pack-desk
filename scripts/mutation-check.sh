@@ -2903,8 +2903,8 @@ func (b *cappedBuffer) exceeded() bool {'
     'requireTested: s.cfg.requireTestedReleases(),' \
     'requireTested: s.cfg.RunnerAllowUntestedReleases,'
   mutate go "tested releases: desk-config reads the field without deriving the policy" internal/desk/assistant.go \
-    '	return JobsPolicy{RequireTestedReleases: s.cfg.requireTestedReleases()}' \
-    '	return JobsPolicy{RequireTestedReleases: s.cfg.RunnerAllowUntestedReleases}'
+    'RequireTestedReleases: s.cfg.requireTestedReleases(), ' \
+    'RequireTestedReleases: s.cfg.RunnerAllowUntestedReleases, '
   mutate go "tested releases: =false still boots the Runner with the policy on" "$J" \
     '	boot["requireTestedReleases"] = j.requireTested' \
     '	boot["requireTestedReleases"] = true'
@@ -2914,11 +2914,11 @@ func (b *cappedBuffer) exceeded() bool {'
 		boot["requireTestedReleases"] = true
 	}'
   mutate go "tested releases: desk-config does not report the policy" internal/desk/assistant.go \
-    '	return JobsPolicy{RequireTestedReleases: s.cfg.requireTestedReleases()}' \
-    '	return JobsPolicy{}'
+    'RequireTestedReleases: s.cfg.requireTestedReleases(), ' \
+    ''
   mutate go "tested releases: desk-config reports the policy on regardless" internal/desk/assistant.go \
-    '	return JobsPolicy{RequireTestedReleases: s.cfg.requireTestedReleases()}' \
-    '	return JobsPolicy{RequireTestedReleases: true}'
+    'RequireTestedReleases: s.cfg.requireTestedReleases(), ' \
+    'RequireTestedReleases: true, '
   mutate go "tested releases: policy missing where there is no desk-level file" internal/desk/assistant.go \
     'Runtime: s.runtimePaths(), Jobs: s.jobsPolicy(), LocalGateway: s.localGatewayStatus(nil)})' \
     'Runtime: s.runtimePaths(), LocalGateway: s.localGatewayStatus(nil)})'
@@ -3338,6 +3338,137 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "upgrade: no copies are kept" "$UP" \
     '	if err := s.storeReviewedCopies(plan.upgraded); err != nil {' \
     '	if err := error(nil); err != nil {'
+
+  # **Runner's signing key (ADR-0010, section 5; runner_key.go).** A key of
+  # Runner's own, never a project's or an inherited one, named on the boot
+  # line only where no marker is left, custody holds its folder, the runtime
+  # reads it and its list holds that one key; otherwise Runner starts without
+  # it, and the key is left as it is. A refusal at boot is answered by a start
+  # without it. Nothing that cannot be inspected now is taken for nothing
+  # there, and no part of the key's path is said.
+  RK=internal/desk/runner_key.go
+  mutate go "runner key: not named on the boot line" "$J" \
+    '		boot["signingKey"] = signingKey' \
+    '		_ = signingKey'
+  mutate go "runner key: the startup desk's key not named by its state directory" "$J" \
+    '	s.jobs.key = s.newRunnerKey(s.jobs.workspace)' \
+    '	s.jobs.key = s.newRunnerKey(digestOf([]byte(s.configDir)))'
+  mutate go "runner key: Runner inherits Desk's environment" "$J" \
+    '	cmd.Env = []string{"LANG=C", "LC_ALL=C"}' \
+    '	cmd.Env = append(os.Environ(), "LANG=C", "LC_ALL=C")'
+  mutate go "runner key: a refusal at boot is not answered by a start without it" "$J" \
+    '	if err != nil && signingKey != "" && refusal != nil {' \
+    '	if false && err != nil && signingKey != "" && refusal != nil {'
+  mutate go "runner key: Runner's refusal is not reported" "$J" \
+    '		j.key.refusedByRunner(*refusal)' \
+    '		_ = refusal'
+  mutate go "runner key: Runner's standard error is not kept" "$J" \
+    '	cmd.Stderr = said' \
+    '	cmd.Stderr = io.Discard'
+  mutate go "runner key: Runner's refusal read from any line of its" "$RK" \
+    'strings.CutPrefix(line, runnerKeyRefusedPrefix)' \
+    'strings.CutPrefix(line, "runner: ")'
+  mutate go "runner key: desk-config does not report it" internal/desk/assistant.go \
+    ', RunnerKey: s.jobs.keyStatus()}' \
+    '}'
+  mutate go "runner key: the key commands inherit JPACK_SIGNING_KEY" "$RK" \
+    '	return heldDir{file: s.project.own.dirFile, path: s.projectDir, info: s.project.info}, true' \
+    '	return heldDir{file: s.project.own.dirFile, path: s.projectDir, info: s.project.info, startup: s.cfg.deskID == ""}, true'
+  mutate go "runner key: its folder held to no custody" "$RK" \
+    '	if err := ensureOwnedDirectoryIn(signing.root, signing.path, runnerSigningDirName); err != nil {
+		return nil, err
+	}
+	checked, err := signing.root.Lstat(runnerSigningDirName)
+	if err != nil {
+		return nil, fmt.Errorf("%s could not be inspected: %w", path, err)
+	}
+	if err := safeDirectory(path, checked, true); err != nil {
+		return nil, err
+	}' \
+    '	checked, err := signing.root.Lstat(runnerSigningDirName)
+	if err != nil {
+		return nil, fmt.Errorf("%s could not be inspected: %w", path, err)
+	}'
+  mutate go "runner key: a loose folder is not narrowed" "$RK" \
+    '	if err := ensureOwnedDirectoryIn(signing.root, signing.path, runnerSigningDirName); err != nil {' \
+    '	if err := error(nil); err != nil {'
+  mutate go "runner key: its folder swapped between check and open is used" "$RK" \
+    '	if opened, err := root.Stat("."); err != nil || !os.SameFile(checked, opened) {' \
+    '	if opened, err := root.Stat("."); err != nil || opened == nil {'
+  mutate go "runner key: a path not valid UTF-8 is named" "$RK" \
+    '	if !utf8.ValidString(dir.path) {' \
+    '	if false {'
+  mutate go "runner key: the sweep runs at every start" "$RK" \
+    '	if !k.swept {' \
+    '	if true {'
+  mutate go "runner key: an unfinished creation is never removed" "$RK" \
+    '	for _, name := range []string{k.name + keysSuffix, k.name + seedSuffix, marker} {' \
+    '	for _, name := range []string{} {'
+  mutate go "runner key: the sweep acts on a key without a marker" "$RK" \
+    '	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return errors.New("its creation marker could not be inspected, so nothing was removed")' \
+    '	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return errors.New("its creation marker could not be inspected, so nothing was removed")'
+  mutate go "runner key: a marker the sweep cannot inspect is removed with its key" "$RK" \
+    '		return errors.New("its creation marker could not be inspected, so nothing was removed")' \
+    '		_ = 0'
+  mutate go "runner key: a marked key is named" "$RK" \
+    '	case err == nil:
+		return unsignedRunner(runnerKeyUnfinished, ""), ""' \
+    '	case err == nil:'
+  mutate go "runner key: a marker that cannot be inspected is taken for none" "$RK" \
+    '	case !errors.Is(err, fs.ErrNotExist):
+		return unsignedRunner(runnerKeyNotNow, "its creation marker could not be inspected"), ""' \
+    '	case !errors.Is(err, fs.ErrNotExist):'
+  mutate go "runner key: a seed that cannot be inspected is taken for none" "$RK" \
+    '	seed, err := lstatRunnerKey(dir, seedName)
+	if errors.Is(err, fs.ErrNotExist) {' \
+    '	seed, err := lstatRunnerKey(dir, seedName)
+	if err != nil {'
+  mutate go "runner key: a lost seed is not said" "$RK" \
+    '		case listErr == nil:
+			return unsignedRunner(runnerKeyLost, ""), ""' \
+    '		case listErr == nil:'
+  mutate go "runner key: a list that cannot be inspected is taken for none" "$RK" \
+    '		case !errors.Is(listErr, fs.ErrNotExist):
+			return unsignedRunner(runnerKeyNotNow, "its list of public keys could not be inspected"), ""' \
+    '		case !errors.Is(listErr, fs.ErrNotExist):'
+  mutate go "runner key: a key whose marker stays is named" "$RK" \
+    '	if err := made.settle(); err != nil {' \
+    '	if err := made.settle(); false && err != nil {'
+  mutate go "runner key: a seed that breaks custody's rule is named" "$RK" \
+    '	if err := checkSeed("the key", seed); err != nil {' \
+    '	if err := error(nil); err != nil {'
+  mutate go "runner key: a seed with no list is named" "$RK" \
+    '	case !found:' \
+    '	case false:'
+  mutate go "runner key: a list of more than one key is named" "$RK" \
+    '	case len(keys) != 1:' \
+    '	case len(keys) < 1:'
+  mutate go "runner key: named where its folder's path names another" "$RK" \
+    '	if dir.namesHeld() != nil || dir.namesFile(seedName, seed) != nil {' \
+    '	if false {'
+  mutate go "runner key: the runtime is not asked" "$RK" \
+    '	public, status := s.readRunnerKey(ctx, project, path, k.name)' \
+    '	public, status := keys[0], (*RunnerKeyStatus)(nil)'
+  mutate go "runner key: the runtime's refusal is taken for a read" "$RK" \
+    '	if runErr == nil && decoded && answer.Command == "audit key public" && answer.Status == "read" {' \
+    '	if decoded && answer.Command == "audit key public" {'
+  mutate go "runner key: a list naming another key is named" "$RK" \
+    '	if public.PublicKey != keys[0].PublicKey || public.KeyID != keys[0].KeyID {' \
+    '	if false {'
+  mutate go "runner key: named where the seed was replaced while read" "$RK" \
+    '	if dir.namesFile(seedName, seed) != nil {' \
+    '	if false {'
+  mutate go "runner key: the key's path said whole" "$RK" \
+    '	message = replaceSpans(message, files)' \
+    '	_ = files'
+  mutate go "runner key: a folder on the key's way said" "$RK" \
+    '	return strings.ReplaceAll(withoutAbsolutePaths(replaceSpans(message, spans)), held, "…")' \
+    '	return strings.ReplaceAll(message, held, "…")'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -10108,6 +10239,37 @@ export function assistantTransport(id: string): Transport {
   mutate web "the Tests workspace drops the limit sentence" "$TW" \
     ": msg('The runtime did not admit this expectation: {{detail}}', { detail: finding.message })" \
     ": finding.message"
+
+  # **Runner's signing key, on the page (ADR-0010, section 5).** desk-config's
+  # jobs.runnerKey read only in one of its shapes, and Gates shows Runner's
+  # public key, or why Jobs runs are not signed, in the words Desk passed on.
+  RQ=web/src/config/queries.ts
+  mutate web "runner key: not shown on Gates" "$GH" \
+    '    <RunnerSignatures runnerKey={chassis?.runnerKey} />
+' \
+    ''
+  mutate web "runner key: its public key not shown" "$GH" \
+    '    <CodeBlock text={runnerKey.publicKey}' \
+    "    <CodeBlock text={''}"
+  mutate web "runner key: why its runs are unsigned not said" "$GH" \
+    ' {runnerKeyReason(runnerKey)}</p>' \
+    '</p>'
+  mutate web "runner key: the words Desk passed on not said" "$GH" \
+    "  const detail = key.detail ?? ''" \
+    "  const detail = ''"
+  mutate web "runner key: a malformed public key read" "$RQ" \
+    "/^[0-9a-f]{64}\$/.test(key.publicKey)" \
+    "/^[0-9a-fA-F]{63,64}\$/.test(key.publicKey)"
+  mutate web "runner key: a reason the page has no words for read" "$RQ" \
+    '(RUNNER_KEY_REASONS as readonly unknown[]).includes(key.reason)' \
+    "typeof key.reason === 'string'"
+  mutate web "runner key: words that are not text read" "$RQ" \
+    "(key.detail === undefined || typeof key.detail === 'string')" \
+    'true'
+  mutate web "runner key: not carried from desk-config" "$RQ" \
+    '      : {}),
+    ...(runnerKey ? { runnerKey } : {})' \
+    '      : {})'
 fi
 
 restore
