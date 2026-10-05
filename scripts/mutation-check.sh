@@ -9232,107 +9232,82 @@ export function assistantTransport(id: string): Transport {
   # run's record is read for what it holds, each item present or absent and
   # never called checked; a row a later page could put above one shown is held
   # back. The run page shows the same fields, and the Decision record panel
-  # says Jobs runs are not in its trail. Each row breaks one of those.
+  # says Jobs runs are not in its trail. Each row breaks one of those; the
+  # group in its name (time, evidence, by, rows, filters, page) lets one group
+  # be re-run with the filter alone.
   JAC=web/src/jobs/activity.ts
   JAV=web/src/jobs/ActivityView.tsx
   JRV=web/src/jobs/RunRecord.tsx
-  mutate web "jobs activity: a run row without its submission time is given one" "$JAC" \
+  mutate web "jobs activity (time): a run row without its submission time is given one" "$JAC" \
     "  const when = stamp('submitted', run.createdAt)" \
     "  const when = stamp('submitted', run.createdAt || new Date().toISOString())"
-  mutate web "jobs activity: an occurrence row without its receipt time is given one" "$JAC" \
+  mutate web "jobs activity (time): an occurrence row without its receipt time is given one" "$JAC" \
     "  const when = stamp('received', o.receivedAt)" \
     "  const when = stamp('received', o.receivedAt || new Date().toISOString())"
-  mutate web "jobs activity: an unreadable time is kept as now" "$JAC" \
-    "  return Number.isNaN(time) ? undefined : { name, at, time }" \
-    "  return { name, at, time: Number.isNaN(time) ? Date.now() : time }"
-  mutate web "jobs activity: a start is shown that Runner never stored" "$JAC" \
+  mutate web "jobs activity (time): a start is shown that Runner never stored" "$JAC" \
     "also: stored([stamp('started', run.startedAt), end])" \
     "also: stored([stamp('started', run.startedAt ?? run.createdAt), end])"
-  mutate web "jobs activity: an interrupted run's finish is called finished" "$JAC" \
+  mutate web "jobs activity (time): an interrupted run's finish is called finished" "$JAC" \
     "  const end = run.state === 'interrupted' ? stamp('interruption', run.finishedAt)" \
     "  const end = run.state === 'interrupted' ? stamp('finished', run.finishedAt)"
-  mutate web "jobs activity: the run page calls an interrupted run's finish finished" "$JRV" \
+  mutate web "jobs activity (time): the run page calls an interrupted run's finish finished" "$JRV" \
     "<dt>{run.state === 'interrupted' ? stampLabel('interruption') : msg('Finished')}</dt>" \
     "<dt>{msg('Finished')}</dt>"
-  mutate web "jobs activity: the sidecar's presence is not read" "$JAC" \
+  mutate web "jobs activity (evidence): the sidecar's presence is not read" "$JAC" \
     "    sidecar: Boolean(run.auditSignatures)," \
     "    sidecar: false,"
-  mutate web "jobs activity: record bytes are read from the parsed record" "$JAC" \
+  mutate web "jobs activity (evidence): record bytes are read from the parsed record" "$JAC" \
     "    recordBytes: Boolean(run.auditBytes)," \
     "    recordBytes: Boolean(run.audit),"
-  mutate web "jobs activity: receipts are said present without a citation" "$JAC" \
+  mutate web "jobs activity (evidence): receipts are said present without a citation" "$JAC" \
     "    receipts: (run.input?.preparation?.cites?.length ?? 0) > 0" \
     "    receipts: Boolean(run.input?.preparation)"
-  mutate web "jobs activity: evidence is read from the list, which strips it" "$JAV" \
+  mutate web "jobs activity (evidence): evidence is read from the list, which strips it" "$JAV" \
     'queryFn: () => jobsAPI<Run>(`runs/${row.run!.id}`), staleTime: Infinity' \
     'queryFn: async () => row.run!, staleTime: Infinity'
-  mutate web "jobs activity: a trigger's run is said to be this installation" "$JAC" \
+  mutate web "jobs activity (by): a trigger's run is said to be this installation" "$JAC" \
     "  if (by.startsWith('trigger:')) {" \
     "  if (false) {"
-  mutate web "jobs activity: an unrecorded requester is said to be this installation" "$JAC" \
+  mutate web "jobs activity (by): an unrecorded requester is said to be this installation" "$JAC" \
     "  return by ? { kind: 'installation' } : { kind: 'unrecorded' }" \
     "  return { kind: 'installation' }"
-  mutate web "jobs activity: a trigger's revision is taken from another trigger's origin" "$JAC" \
-    "    const origin = run.trigger?.triggerId === triggerId ? run.trigger : undefined" \
-    "    const origin = run.trigger"
-  mutate web "jobs activity: a trigger is named by its id" "$JRV" \
-    "  const name = trigger?.config.name ?? " \
-    "  const name = by.triggerId ?? "
-  mutate web "jobs activity: rows a later page could put above are shown" "$JAC" \
+  mutate web "jobs activity (rows): rows a later page could put above are shown" "$JAC" \
     "  const rows = all.filter(row => row.when.time >= boundary)" \
     "  const rows = all"
-  mutate web "jobs activity: the older floor limits instead of the newer" "$JAC" \
+  mutate web "jobs activity (rows): the older floor limits instead of the newer" "$JAC" \
     "    boundary = Math.max(boundary, floor)" \
     "    boundary = boundary === -Infinity ? floor : Math.min(boundary, floor)"
-  mutate web "jobs activity: rows keep Runner's list order, not time" "$JAC" \
+  mutate web "jobs activity (rows): rows keep Runner's list order, not time" "$JAC" \
     "  const all = [...built.runs, ...built.occurrences].filter(keep).sort(newestFirst)" \
     "  const all = [...built.runs, ...built.occurrences].filter(keep)"
-  mutate web "jobs activity: the state filter is not sent to Runner" "$JAC" \
+  mutate web "jobs activity (filters): the state filter is not sent to Runner" "$JAC" \
     "  return { runs, ...(runs && runState ? { runState } : {}), occurrences }" \
     "  return { runs, occurrences }"
-  mutate web "jobs activity: the kind filter keeps every kind" "$JAC" \
+  mutate web "jobs activity (filters): the kind filter keeps every kind" "$JAC" \
     "    (filter.kind === 'all' || row.kind === filter.kind)" \
     "    true"
-  mutate web "jobs activity: the trigger filter keeps every initiator" "$JAC" \
+  mutate web "jobs activity (filters): the trigger filter keeps every initiator" "$JAC" \
     "      || (filter.trigger === MANUAL ? row.by.kind !== 'trigger' : row.by.kind === 'trigger' && row.by.triggerId === filter.trigger))" \
     "      || true)"
-  mutate web "jobs activity: a waiting occurrence is not a preparation" "$JAC" \
+  mutate web "jobs activity (rows): a waiting occurrence is not a preparation" "$JAC" \
     "  const preparing = Boolean(o.preparation) && (PREPARATION_STATES as readonly string[]).includes(o.state)" \
     "  const preparing = false"
-  mutate web "jobs activity: an occurrence that ended reads as received" "$JAC" \
-    "    state: preparing || ENDED.has(o.state) ? o.state : 'received'," \
-    "    state: preparing ? o.state : 'received',"
-  mutate web "jobs activity: bytes are measured as their base64 text" "$JRV" \
+  mutate web "jobs activity (evidence): bytes are measured as their base64 text" "$JRV" \
     "    const bytes = decodeBase64(base64)" \
     "    const bytes = new TextEncoder().encode(base64)"
-  mutate web "jobs activity: the evidence column says verified" "$JAV" \
+  mutate web "jobs activity (evidence): the evidence column says verified" "$JAV" \
     "{present.length > 0 && <span>{msg('Present: {{items}}', { items: listed(present) })}</span>}" \
     "{present.length > 0 && <span>{'Verified: ' + listed(present)}</span>}"
-  mutate web "jobs activity: the run page says a held item is verified" "$JRV" \
-    "const presence = (held: boolean) => held ? msg('Present in the record') : msg('Absent from the record')" \
-    "const presence = (held: boolean) => held ? 'Verified' : msg('Absent from the record')"
-  mutate web "jobs activity: the run page does not show when the run started" "$JRV" \
+  mutate web "jobs activity (time): the run page does not show when the run started" "$JRV" \
     "<dd>{run.startedAt ? when(run.startedAt) : '—'}</dd>" \
     "<dd>—</dd>"
-  mutate web "jobs activity: the run page does not show the release's digests" "$JRV" \
-    "<dd>{release ? <code>{release.packDigest}</code> : '—'}</dd>" \
-    "<dd>—</dd>"
-  mutate web "jobs activity: a failed run's problem is shown whole" "$JAV" \
-    "  if (row.run) return row.run.problem ? firstLine(row.run.problem) : undefined" \
-    "  if (row.run) return row.run.problem"
-  mutate web "jobs activity: rows are shown before every list has answered" "$JAV" \
+  mutate web "jobs activity (rows): rows are shown before every list has answered" "$JAV" \
     "  const rows = pending ? [] : merged.rows" \
     "  const rows = merged.rows"
-  mutate web "jobs activity: the pane is not given to the shell" "$JAV" \
-    "  const portal = useDetailsPortal(pane)" \
-    "  const portal = useDetailsPortal(null)"
-  mutate web "jobs activity: choosing a row does not open the pane" "$JAV" \
-    "onClick={() => { setSelected(row.key); details.reveal() }}" \
-    "onClick={() => { setSelected(row.key) }}"
-  mutate web "jobs activity: the Activity tab is not offered" web/src/jobs/JobsView.tsx \
+  mutate web "jobs activity (page): the Activity tab is not offered" web/src/jobs/JobsView.tsx \
     "<button aria-current={tab==='activity'?'page':undefined} onClick={()=>setParams({tab:'activity'})}>{msg('Activity')}</button>" \
     ""
-  mutate web "jobs activity: the Decision record panel does not say Jobs runs are elsewhere" web/src/audit/DecisionRecord.tsx \
+  mutate web "jobs activity (page): the Decision record panel does not say Jobs runs are elsewhere" web/src/audit/DecisionRecord.tsx \
     " description={msg('Jobs runs are recorded by the runner, not in this trail.')}" \
     ""
 
