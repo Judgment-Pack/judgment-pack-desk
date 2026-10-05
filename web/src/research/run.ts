@@ -1253,6 +1253,11 @@ export class AuthoringRun {
       const cases: AuthoringCase[] = []
       admitted.forEach((row, index) => {
         const finding = checked[index]!
+        // Every invalid finding is held as an issue, whatever its code, and the
+        // gate below returns before the repair loop. An expectation no pack can
+        // produce (JPS-EXPECTATION-UNREACHABLE) is the case that matters most:
+        // established, it fails every rehearsal and spends each repair turn on
+        // a draft that is not what is wrong. `findingSummary` says so.
         if (finding.status === 'invalid') return void issues.push({ id: row.id, original: row, message: findingSummary(finding) })
         // The exact expectation is the disposition and the target together. A
         // target that contradicts its own disposition can never pass, whatever

@@ -288,5 +288,32 @@
       "code": "JPS-EXPECTATION-INVALID",
       "message": "\u00a78.3: reasons is empty if and only if kind is \"outcome\""
     }
+  },
+  {
+    "name": "unresolved retaining not-applicable",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"not-applicable\"],\"handoff\":{\"state\":\"none\"}}",
+    "result": {
+      "status": "invalid",
+      "code": "JPS-EXPECTATION-UNREACHABLE",
+      "message": "\u00a78 step 1: \"If applicability is false, produce a terminal not-applicable result carrying reason not-applicable and do not evaluate exceptions or rules\" is the only step that records that reason, and it reports the halt under kind \"not-applicable\", so no evaluation produces an unresolved result retaining that reason. Expect kind \"not-applicable\" instead."
+    }
+  },
+  {
+    "name": "no match beside another reason",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"no-match\",\"unknown\"],\"handoff\":{\"state\":\"none\"}}",
+    "result": {
+      "status": "invalid",
+      "code": "JPS-EXPECTATION-UNREACHABLE",
+      "message": "\u00a78 step 10: \"If no fallback is present, produce unresolved with reason no-match\" is the only step that records \"no-match\", and every step that records another reason returns before it \u2014 step 5 \"produce unresolved after all exception effects have been inspected, and do not evaluate normal rules\", step 8 \"Produce unresolved whenever either reason is present\" \u2014 so no evaluation produces \"no-match\" beside another reason."
+    }
+  },
+  {
+    "name": "outcome id outside the local-id grammar",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"Allow\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
+    "result": {
+      "status": "invalid",
+      "code": "JPS-EXPECTATION-UNREACHABLE",
+      "message": "\u00a75: \"Local object identifiers are non-empty ASCII strings matching ^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$\", so \"Allow\" is a string no conforming pack can declare as an outcome id."
+    }
   }
 ]

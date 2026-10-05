@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { checkCandidate } from './checkCandidate'
-import { EVALUATOR_SPEC, EXPECTATION_TOOL, findingSummary, validateExpectations } from './expectations'
+import { EVALUATOR_SPEC, EXPECTATION_TOOL, findingSummary, validateExpectations, type InvalidFinding } from './expectations'
 import { fixtureExpectations } from './__fixtures__/expectationRuntime'
+import recordedFindings from './__fixtures__/expectations.json'
 import type { McpToolResult } from '../assistant/engine'
 
 const signal = new AbortController().signal
@@ -65,6 +66,34 @@ describe('runtime expectation admission', () => {
     expect(findingSummary(limited[0] as { message: string; admitted: boolean })).toContain('did not admit')
     const refused = await validateExpectations([reasonless], callTool, signal)
     expect(findingSummary(refused[0] as { message: string; admitted: boolean })).toContain('§8.3')
+  })
+
+  it('keeps an expectation no pack can produce apart from a Core defect and a limit, and says the expectation must change', async () => {
+    // The runtime's ADR-0037: a legal §8.3 shape that §8's step order or §5's
+    // identifier grammar puts beyond every conforming pack. It is not a shape
+    // defect and not an input the runtime declined to read, so it is a case of
+    // its own -- and what a person reads is that the expectation, not the draft,
+    // has to change, in a sentence that ends with the runtime's own rule.
+    const unreachable = [
+      ['unresolved retaining not-applicable', '§8 step 1'],
+      ['no match beside another reason', '§8 step 10'],
+      ['outcome id outside the local-id grammar', '§5']
+    ] as const
+    const recorded = (name: string) => recordedFindings.find(row => row.name === name)!
+    const results = await validateExpectations([...unreachable.map(([name]) => JSON.parse(recorded(name).text)), reasonless], callTool, signal)
+    unreachable.forEach(([name, rule], index) => {
+      const { code, message } = recorded(name).result as { code: string; message: string }
+      expect(code).toBe('JPS-EXPECTATION-UNREACHABLE')
+      expect(results[index]).toEqual({ status: 'invalid', message, unreachable: true })
+      const summary = findingSummary(results[index] as InvalidFinding)
+      expect(summary).toBe(`This expectation names a disposition no pack can produce, so the expectation must change, not the draft: ${message}`)
+      expect(summary).toContain(rule)
+      expect(summary).not.toContain('did not admit')
+    })
+    // A §8.3 defect in the same batch is still read as one, in the runtime's words alone.
+    expect(results[3]).toMatchObject({ status: 'invalid', admitted: true })
+    expect(results[3]).not.toHaveProperty('unreachable')
+    expect(findingSummary(results[3] as InvalidFinding)).toBe((recorded('reasonless unresolved').result as { message: string }).message)
   })
 
   it('reports a prose refusal in the runtime\'s own words, not as a JSON error', async () => {
