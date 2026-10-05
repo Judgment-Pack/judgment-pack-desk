@@ -1,13 +1,17 @@
+import contextlib
 import gzip
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
+import shlex
 import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 spec = importlib.util.spec_from_file_location('published', Path(__file__).with_name('published-components.py'))
 p = importlib.util.module_from_spec(spec); spec.loader.exec_module(p)
@@ -154,5 +158,138 @@ class PublishedComponentsTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, '^Public Desk bundles require an unconfigured Google registration') as error:
                     p.require_unregistered_gateway(PLAN['components']['gateway'])
                 self.assertNotIn('private', str(error.exception))
+
+
+# A stand-in for `gh`, put first on PATH so the real run() starts it, captures
+# its standard error and bounds it. Every call is appended to a log the test
+# counts from. Downloads copy the published asset and checksums.txt, after
+# FAKE_GH_DOWNLOAD_FAILURES failed attempts ('always' never succeeds, 'hang'
+# never finishes); a failed attempt leaves what a broken gh transfer leaves.
+FAKE_GH = r"""
+import json, os, shutil, sys, time
+from pathlib import Path
+
+args = sys.argv[1:]
+state = Path(os.environ['FAKE_GH_STATE'])
+with (state / 'calls').open('a') as log:
+    log.write(json.dumps(args) + '\n')
+published = state / 'published'
+if args[:2] == ['release', 'download']:
+    directory = Path(args[args.index('--dir') + 1])
+    names = [args[i + 1] for i, arg in enumerate(args) if arg == '--pattern']
+    for name in names:
+        # As gh does: it never writes over a file that is already there.
+        if (directory / name).exists():
+            sys.exit(str(directory / name) + ' already exists (use `--clobber` to overwrite file or `--skip-existing` to skip file)')
+    attempt = sum(json.loads(line)[:2] == ['release', 'download'] for line in (state / 'calls').read_text().splitlines())
+    failures = os.environ['FAKE_GH_DOWNLOAD_FAILURES']
+    if failures == 'hang':
+        sys.stderr.write('connecting to api.github.com\n'); sys.stderr.flush(); time.sleep(60)
+    if failures == 'always' or attempt <= int(failures):
+        # As gh leaves a broken transfer: a whole checksums.txt beside a partial archive.
+        shutil.copyfile(published / 'checksums.txt', directory / 'checksums.txt')
+        (directory / names[0]).write_bytes((published / names[0]).read_bytes()[:100])
+        sys.exit('HTTP 502: Bad Gateway (attempt ' + str(attempt) + ')')
+    for name in names:
+        shutil.copyfile(published / name, directory / name)
+elif args[:2] == ['attestation', 'verify']:
+    if os.environ['FAKE_GH_ATTESTATION'] == 'reject':
+        sys.exit('Error: no matching attestations found')
+    sys.stderr.write('Loaded 1 attestation from GitHub API\n')
+elif args[:1] == ['api']:
+    print(json.dumps({'encoding': 'base64', 'size': 3, 'content': 'e30K'}))
+else:
+    sys.exit('unexpected gh call: ' + ' '.join(args))
+"""
+
+
+class DownloadRetryTest(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        self.state = self.root / 'gh'; published = self.state / 'published'; published.mkdir(parents=True)
+        (self.state / 'fake_gh.py').write_text(FAKE_GH)
+        gh = self.state / 'gh'
+        gh.write_text('#!/bin/sh\nexec ' + shlex.quote(sys.executable) + ' ' +
+                      shlex.quote(str(self.state / 'fake_gh.py')) + ' "$@"\n')
+        gh.chmod(0o755)
+        self.pin = PLAN['components']['runtime']
+        self.asset = 'judgment-pack_' + self.pin['version'][1:] + '_linux_amd64.tar.gz'
+        archive(published / self.asset, [(file, ('published ' + file).encode()) for file in p.PROGRAMS['runtime'] + p.NOTICES['runtime']])
+        (published / 'checksums.txt').write_text(p.digest(published / self.asset) + '  ' + self.asset + '\n')
+        slept = patch.object(p, 'sleep'); self.sleep = slept.start(); self.addCleanup(slept.stop)
+
+    @contextlib.contextmanager
+    def gh(self, failures='0', attestation='accept'):
+        (self.state / 'calls').write_text('')
+        self.log = io.StringIO()
+        environment = {'PATH': str(self.state) + os.pathsep + os.environ['PATH'], 'FAKE_GH_STATE': str(self.state),
+                       'FAKE_GH_DOWNLOAD_FAILURES': failures, 'FAKE_GH_ATTESTATION': attestation}
+        with patch.dict(os.environ, environment), contextlib.redirect_stderr(self.log):
+            yield
+
+    def calls(self, *command):
+        return sum(json.loads(line)[:len(command)] == list(command)
+                   for line in (self.state / 'calls').read_text().splitlines())
+
+    def fetch(self, directory):
+        return p.fetch('runtime', self.pin, 'linux/amd64', self.root / directory)
+
+    def test_a_failed_download_is_retried_from_an_empty_directory_and_recovers(self):
+        with self.gh():
+            first = self.fetch('first-try')
+        self.assertEqual((self.calls('release', 'download'), self.calls('attestation', 'verify')), (1, 1))
+        with self.gh(failures='1'):
+            retried = self.fetch('second-try')
+        self.assertEqual(retried, first)
+        self.assertEqual((self.calls('release', 'download'), self.calls('attestation', 'verify')), (2, 1))
+        self.assertEqual(self.sleep.call_args_list, [call(2)])
+        self.assertEqual(sorted(path.name for path in (self.root / 'second-try').iterdir()), sorted([self.asset, 'checksums.txt']))
+        self.assertIn('Download attempt 1 of 3 failed; retrying in 2 s.', self.log.getvalue())
+        self.assertIn('HTTP 502: Bad Gateway (attempt 1)', self.log.getvalue())
+        # What gh printed on stderr for a command that succeeded still reaches the log.
+        self.assertIn('Loaded 1 attestation from GitHub API', self.log.getvalue())
+
+    def test_a_download_that_keeps_failing_stops_after_three_attempts_with_what_gh_said(self):
+        with self.gh(failures='always'), self.assertRaises(p.CommandFailed) as raised:
+            self.fetch('failing')
+        self.assertEqual((self.calls('release', 'download'), self.calls('attestation', 'verify')), (3, 0))
+        self.assertEqual(self.sleep.call_args_list, [call(2), call(4)])
+        message = str(raised.exception)
+        self.assertIn('Download failed after 3 attempts', message)
+        self.assertIn('gh release download ' + self.pin['version'] + ' --repo ' + self.pin['repository'], message)
+        self.assertIn('exited with status 1', message)
+        self.assertIn('HTTP 502: Bad Gateway (attempt 3)', message)
+        for attempt in (1, 2):
+            self.assertIn('HTTP 502: Bad Gateway (attempt %d)' % attempt, self.log.getvalue())
+
+    def test_each_download_attempt_is_bounded_and_a_timeout_says_what_gh_had_said(self):
+        with patch.object(p, 'TIMEOUT', 1.5), self.gh(failures='hang'), self.assertRaises(p.CommandFailed) as raised:
+            self.fetch('hanging')
+        self.assertEqual(self.calls('release', 'download'), 3)
+        self.assertIn('did not finish within 1.5 seconds', str(raised.exception))
+        self.assertIn('connecting to api.github.com', str(raised.exception))
+
+    def test_a_failed_attestation_is_not_retried(self):
+        with self.gh(attestation='reject'), patch.object(p, 'read_archive') as read, self.assertRaises(p.CommandFailed) as raised:
+            self.fetch('rejected')
+        self.assertEqual((self.calls('release', 'download'), self.calls('attestation', 'verify')), (1, 1))
+        self.sleep.assert_not_called()
+        read.assert_not_called()
+        self.assertIn('gh attestation verify', str(raised.exception))
+        self.assertIn('no matching attestations found', str(raised.exception))
+
+    def test_a_checksum_mismatch_is_not_retried(self):
+        (self.state / 'published' / 'checksums.txt').write_text('0' * 64 + '  ' + self.asset + '\n')
+        with self.gh(), self.assertRaisesRegex(ValueError, 'checksum mismatch'):
+            self.fetch('mismatched')
+        self.assertEqual((self.calls('release', 'download'), self.calls('attestation', 'verify')), (1, 0))
+        self.sleep.assert_not_called()
+
+    def test_a_command_whose_output_is_captured_still_returns_it(self):
+        with self.gh():
+            p.require_unregistered_gateway(PLAN['components']['gateway'])
+        self.assertEqual(self.calls('api'), 1)
+
 
 if __name__ == '__main__': unittest.main()

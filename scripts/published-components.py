@@ -5,8 +5,12 @@ import hashlib
 import json
 from pathlib import Path, PurePosixPath
 import re
+import shlex
+import shutil
 import subprocess
+import sys
 import tarfile
+import time
 
 PROGRAMS = {
     'runtime': ('jpack',),
@@ -19,10 +23,68 @@ NOTICES = {'runtime': ('LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES'),
            'gateway': ('LICENSE', 'THIRD_PARTY_NOTICES')}
 MAX_ARCHIVE = 128 * 1024 * 1024
 MAX_EXPANDED = 512 * 1024 * 1024
+# Each command, and each attempt at a download, is bounded on its own.
+TIMEOUT = 180
+# Only the download is retried: 2 s before the second attempt, 4 s before the
+# third. A checksum or attestation failure is a verdict on the bytes, and is
+# never retried.
+DOWNLOAD_ATTEMPTS = 3
+DOWNLOAD_BACKOFF = 2
+sleep = time.sleep
+
+
+class CommandFailed(subprocess.SubprocessError):
+    """A command exited non-zero or ran out of time; the message carries its stderr."""
+
+
+def failure(args, outcome, stderr):
+    if isinstance(stderr, bytes):
+        stderr = stderr.decode('utf-8', 'replace')
+    said = (stderr or '').strip()
+    return (shlex.join(args) + ' ' + outcome +
+            (': ' + args[0] + ' said:\n' + said if said else ', and printed nothing on standard error'))
 
 
 def run(args, **kwargs):
-    return subprocess.run(args, check=True, timeout=180, **kwargs)
+    """Run a command; if it fails, raise with the command and what it printed on stderr.
+
+    Standard error is captured so that a failure says why. When the command
+    succeeds, what it printed there is passed on, so the log keeps it."""
+    if not kwargs.get('capture_output') and 'stderr' not in kwargs:
+        kwargs['stderr'] = subprocess.PIPE
+    try:
+        result = subprocess.run(args, check=True, timeout=TIMEOUT, **kwargs)
+    except subprocess.CalledProcessError as error:
+        raise CommandFailed(failure(args, 'exited with status ' + str(error.returncode), error.stderr)) from error
+    except subprocess.TimeoutExpired as error:
+        raise CommandFailed(failure(args, 'did not finish within ' + str(TIMEOUT) + ' seconds', error.stderr)) from error
+    said = result.stderr.decode('utf-8', 'replace') if isinstance(result.stderr, bytes) else result.stderr
+    if said:
+        sys.stderr.write(said if said.endswith('\n') else said + '\n')
+        sys.stderr.flush()
+    return result
+
+
+def download(args, directory):
+    """Run `gh release download`, retrying only it, each time into an empty directory.
+
+    gh writes each asset straight to its final name, so a failed attempt can
+    leave a partial archive, or a whole checksums.txt beside one; and it refuses
+    to write over a file that is already there. The directory is fetch's own,
+    so it is emptied before the next attempt."""
+    for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
+        try:
+            return run(args)
+        except CommandFailed as error:
+            if attempt == DOWNLOAD_ATTEMPTS:
+                raise CommandFailed('Download failed after ' + str(attempt) + ' attempts. Last attempt: ' +
+                                    str(error)) from error.__cause__
+            delay = DOWNLOAD_BACKOFF * 2 ** (attempt - 1)
+            print('Download attempt ' + str(attempt) + ' of ' + str(DOWNLOAD_ATTEMPTS) + ' failed; retrying in ' +
+                  str(delay) + ' s. ' + str(error), file=sys.stderr, flush=True)
+            shutil.rmtree(directory)
+            directory.mkdir()
+            sleep(delay)
 
 
 def digest(path):
@@ -95,8 +157,8 @@ def fetch(name, component, platform_name, directory):
     directory.mkdir(parents=True)
     prefix = 'judgment-pack' if name == 'runtime' else 'judgment-pack-' + name
     asset = prefix + '_' + version[1:] + '_' + platform_name.replace('/', '_') + '.tar.gz'
-    run(['gh', 'release', 'download', version, '--repo', repository, '--dir', str(directory),
-         '--pattern', asset, '--pattern', 'checksums.txt'])
+    download(['gh', 'release', 'download', version, '--repo', repository, '--dir', str(directory),
+              '--pattern', asset, '--pattern', 'checksums.txt'], directory)
     archive = directory / asset
     expected = checksum(directory / 'checksums.txt', asset)
     if archive.stat().st_size > MAX_ARCHIVE or digest(archive) != expected:

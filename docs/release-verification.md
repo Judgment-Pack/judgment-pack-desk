@@ -6,6 +6,10 @@ checks its SHA-256 against `checksums.txt`, and requires a GitHub build attestat
 signed by that repository's `.github/workflows/release.yml` at the locked tag and
 commit. It refuses self-hosted attestations. A missing asset, failed checksum or
 failed attestation stops packaging; it never substitutes a locally built binary.
+A failed download alone is tried again, at most twice, after 2 and then 4
+seconds, into an emptied directory; each attempt is bounded to 180 seconds. A
+failed checksum or attestation is never retried. When `gh` fails, the error
+names the command and repeats what `gh` printed on standard error.
 
 Runtime, Runner, the source worker, Gateway and the seven adapters used by Desk
 are copied unchanged, with their published license notices. Extra upstream
