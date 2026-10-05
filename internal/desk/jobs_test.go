@@ -883,6 +883,50 @@ func TestJobsReadsTheRunChainOnItsRouteAlone(t *testing.T) {
 	}
 }
 
+// A job's journal of job activity (Runner v0.6.0) is forwarded on its own
+// route, with the page cursor alone: the Activity tab reads it. Runner's
+// store-wide journal, and any path that only begins like the job's, reach
+// nothing.
+func TestJobsForwardsAJobsJournalWithItsCursorAlone(t *testing.T) {
+	var forwarded []string
+	page := `{"journalBegan":"2026-10-06T08:00:00.000000Z","items":[],"next":40,"more":false}`
+	companion := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		forwarded = append(forwarded, r.Method+" "+r.URL.RequestURI())
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(page))
+	}))
+	defer companion.Close()
+	s, _ := newTestServer(t, false)
+	s.jobs = &jobsCompanion{url: companion.URL, token: "test-private", done: make(chan struct{}), stop: make(chan struct{})}
+	// The fake has no process to stop.
+	t.Cleanup(func() { s.jobs.closed = true })
+	call := func(method, path string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, nil)
+		r.Header.Set("Authorization", "Bearer "+testToken)
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		return w
+	}
+	job := "job_" + strings.Repeat("0", 32)
+	if w := call("GET", "/api/operations/jobs/"+job+"/events?after=40&job=job_"+strings.Repeat("1", 32)+"&untrusted=ignored"); w.Code != 200 || w.Body.String() != page || !slices.Equal(forwarded, []string{"GET /v1/jobs/" + job + "/events?after=40"}) {
+		t.Fatalf("the journal was not read: %d %q, forwarded %q", w.Code, w.Body, forwarded)
+	}
+	for _, path := range []string{
+		"/api/operations/events",
+		"/api/operations/events?job=" + job,
+		"/api/operations/jobs/" + job + "/events/",
+		"/api/operations/jobs/" + job + "/events/1",
+		"/api/operations/jobs/" + job + "/event",
+		"/api/operations/jobs/job_" + strings.Repeat("Z", 32) + "/events",
+		"/api/operations/triggers/trg_" + strings.Repeat("0", 32) + "/events",
+	} {
+		forwarded = nil
+		if w := call("GET", path); w.Code != 404 || len(forwarded) != 0 {
+			t.Errorf("GET %s: %d, forwarded %q", path, w.Code, forwarded)
+		}
+	}
+}
+
 // A trigger token reads one thing through Desk: what became of an occurrence
 // it created. Desk forwards exactly that read, built from the parsed
 // identifiers, and passes the Runner's refusals through unchanged.

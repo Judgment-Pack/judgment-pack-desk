@@ -1956,6 +1956,23 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	body, err := io.ReadAll(io.LimitReader(response.Body, int64(limit)+1))
 	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {'
 
+  # **A job's journal of job activity is forwarded on its own route, with its
+  # cursor alone (#218).** The Activity tab reads Runner's
+  # `GET /v1/jobs/{job}/events?after=`; Runner's store-wide `events` route, a
+  # path that only begins like the job's, and the `job` key reach nothing.
+  mutate go "jobs journal (route): not on the route list" "$J" \
+    '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/events|' \
+    '|jobs/job_[a-f0-9]{32}/runs|'
+  mutate go "jobs journal (route): a path that begins with it forwarded" "$J" \
+    '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/events|' \
+    '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/events.*|'
+  mutate go "jobs journal (route): the store-wide journal forwarded" "$J" \
+    '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/events|' \
+    '|jobs/job_[a-f0-9]{32}/runs|jobs/job_[a-f0-9]{32}/events|events|'
+  mutate go "jobs journal (route): the job key forwarded" "$J" \
+    '	for _, key := range []string{"after", "q", "state", "review", "preparations"} {' \
+    '	for _, key := range []string{"after", "q", "state", "review", "preparations", "job"} {'
+
   # **A new desk starts gated (ADR-0009, section 1).** Its configuration is
   # the one the runtime can hold it to, its audit folder is owner-only, and the
   # runtime locks it before the manifest; a desk that cannot be locked is not
