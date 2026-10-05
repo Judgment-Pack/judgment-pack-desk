@@ -2615,7 +2615,7 @@ func (b *cappedBuffer) exceeded() bool {'
     's.dropKey(gates.key, storageRefusal(err))' \
     's.dropKey(nil, storageRefusal(err))'
   mutate go "sweep: does not run at start" "$NDG" \
-    '	s.sweepUnfinishedKeys()
+    '	s.sweepUnfinishedKeysLocked()
 ' \
     ''
   mutate go "sweep: a key without a marker is removed" "$SG" \
@@ -3341,11 +3341,15 @@ func (b *cappedBuffer) exceeded() bool {'
 
   # **Runner's signing key (ADR-0010, section 5; runner_key.go).** A key of
   # Runner's own, never a project's or an inherited one, named on the boot
-  # line only where no marker is left, custody holds its folder, the runtime
-  # reads it and its list holds that one key; otherwise Runner starts without
-  # it, and the key is left as it is. A refusal at boot is answered by a start
-  # without it. Nothing that cannot be inspected now is taken for nothing
-  # there, and no part of the key's path is said.
+  # line only where, under the one key-custody lock on the signing folder, no
+  # marker is left, custody holds its folder, the runtime reads it and its
+  # list holds that one key; otherwise Runner starts without it, and the key
+  # is left as it is. Every name is inspected before anything is decided; a
+  # marker's key is removed through the folder held, by identity, marker last.
+  # A sweep never waits for the lock; any other start waits a bounded time.
+  # What Runner signs with is reported only once Runner has answered. Nothing
+  # that cannot be inspected now is taken for nothing there, and no part of
+  # the key's path is said.
   RK=internal/desk/runner_key.go
   mutate go "runner key: not named on the boot line" "$J" \
     '		boot["signingKey"] = signingKey' \
@@ -3360,82 +3364,132 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if err != nil && signingKey != "" && refusal != nil {' \
     '	if false && err != nil && signingKey != "" && refusal != nil {'
   mutate go "runner key: Runner's refusal is not reported" "$J" \
-    '		j.key.refusedByRunner(*refusal)' \
+    '		decided = j.key.refused(*refusal)' \
     '		_ = refusal'
   mutate go "runner key: Runner's standard error is not kept" "$J" \
     '	cmd.Stderr = said' \
     '	cmd.Stderr = io.Discard'
+  mutate go "runner key: a Runner that did not start is not said" "$J" \
+    '		j.key.notRunning(err)
+' \
+    ''
+  mutate go "runner key: what Runner answered with is not recorded" "$J" \
+    '	j.key.started(decided)' \
+    '	_ = decided'
+  mutate go "runner key: signed is reported before Runner answers" "$RK" \
+    '	k.set(RunnerKeyStatus{State: runnerKeyStarting})
+	status, path := k.examine(context.Background())' \
+    '	status, path := k.examine(context.Background())
+	k.set(status)'
+  mutate go "runner key: reported unsigned before any start" "$RK" \
+    '	return &runnerKey{s: s, name: name, status: RunnerKeyStatus{State: runnerKeyStarting}}' \
+    '	return &runnerKey{s: s, name: name, status: RunnerKeyStatus{State: runnerKeyUnsigned}}'
   mutate go "runner key: Runner's refusal read from any line of its" "$RK" \
     'strings.CutPrefix(line, runnerKeyRefusedPrefix)' \
     'strings.CutPrefix(line, "runner: ")'
+  mutate go "runner key: more of Runner's standard error kept" "$RK" \
+    'const runnerSaidLimit = 4 << 10' \
+    'const runnerSaidLimit = 8 << 10'
   mutate go "runner key: desk-config does not report it" internal/desk/assistant.go \
     ', RunnerKey: s.jobs.keyStatus()}' \
     '}'
+  mutate go "runner key: its route answers without the guard" "$RK" \
+    '	if !s.guard(w, r) {
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, struct {' \
+    '	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, struct {'
+  mutate go "runner key: a name that is not one reaches a path" "$RK" \
+    '	if !runnerKeyName.MatchString(k.name) {' \
+    '	if false {'
   mutate go "runner key: the key commands inherit JPACK_SIGNING_KEY" "$RK" \
     '	return heldDir{file: s.project.own.dirFile, path: s.projectDir, info: s.project.info}, true' \
     '	return heldDir{file: s.project.own.dirFile, path: s.projectDir, info: s.project.info, startup: s.cfg.deskID == ""}, true'
   mutate go "runner key: its folder held to no custody" "$RK" \
-    '	if err := ensureOwnedDirectoryIn(signing.root, signing.path, runnerSigningDirName); err != nil {
-		return nil, err
+    '	if err := safeDirectory(path, checked, true); err != nil {
+		return failed(err)
 	}
-	checked, err := signing.root.Lstat(runnerSigningDirName)
-	if err != nil {
-		return nil, fmt.Errorf("%s could not be inspected: %w", path, err)
-	}
-	if err := safeDirectory(path, checked, true); err != nil {
-		return nil, err
-	}' \
-    '	checked, err := signing.root.Lstat(runnerSigningDirName)
-	if err != nil {
-		return nil, fmt.Errorf("%s could not be inspected: %w", path, err)
-	}'
+	afterCustodyCheck(path)' \
+    '	afterCustodyCheck(path)'
   mutate go "runner key: a loose folder is not narrowed" "$RK" \
     '	if err := ensureOwnedDirectoryIn(signing.root, signing.path, runnerSigningDirName); err != nil {' \
     '	if err := error(nil); err != nil {'
   mutate go "runner key: its folder swapped between check and open is used" "$RK" \
     '	if opened, err := root.Stat("."); err != nil || !os.SameFile(checked, opened) {' \
     '	if opened, err := root.Stat("."); err != nil || !os.SameFile(opened, opened) {'
+  mutate go "runner key: its folder not read now is taken for custody's refusal" "$RK" \
+    '		if errors.As(err, &notNow) {' \
+    '		if errors.As(err, &notNow) && false {'
   mutate go "runner key: a path not valid UTF-8 is named" "$RK" \
     '	if !utf8.ValidString(dir.path) {' \
     '	if !utf8.ValidString(dir.path) && false {'
-  mutate go "runner key: the sweep runs at every start" "$RK" \
-    '	if !k.swept {' \
-    '	if true {'
-  mutate go "runner key: an unfinished creation is never removed" "$RK" \
-    '	for _, name := range []string{k.name + keysSuffix, k.name + seedSuffix, marker} {' \
-    '	for _, name := range []string{} {'
-  mutate go "runner key: the sweep acts on a key without a marker" "$RK" \
-    '	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return errors.New("its creation marker could not be inspected, so nothing was removed")' \
-    '	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return errors.New("its creation marker could not be inspected, so nothing was removed")'
-  mutate go "runner key: a marker the sweep cannot inspect is removed with its key" "$RK" \
-    '		return errors.New("its creation marker could not be inspected, so nothing was removed")' \
-    '		_ = 0'
+  mutate go "runner key: decided without the lock" "$RK" \
+    '		err := lockPrivateData(file, true)
+		if err == nil {' \
+    '		err := error(nil)
+		if err == nil {'
+  mutate go "runner key: the lock taken on runner/, not on the signing folder" "$RK" \
+    '	unlock, err := lockKeyCustody(signing, wait)' \
+    '	unlock, err := lockKeyCustody(dir, wait)'
+  mutate go "runner key: a sweep waits for the lock" "$RK" \
+    '	if _, err := lstatRunnerKey(dir, names.marker); err == nil {
+		wait = 0
+	}' \
+    '	if _, err := lstatRunnerKey(dir, names.marker); err == nil {
+		wait = runnerKeyCreationWait
+	}'
+  mutate go "runner key: a creation does not wait for the lock" "$RK" \
+    '	wait := runnerKeyCreationWait' \
+    '	wait := time.Duration(0)'
+  mutate go "runner key: a lock held elsewhere is not said as in use" "$RK" \
+    '	case errors.Is(err, errKeyCustodyInUse):
+		return unsignedRunner(runnerKeyInUse, ""), ""' \
+    '	case errors.Is(err, errKeyCustodyInUse) && false:
+		return unsignedRunner(runnerKeyInUse, ""), ""'
+  mutate go "runner key: the desks' sweep runs without the lock" internal/desk/desks.go \
+    '	s.sweepUnfinishedKeysLocked()' \
+    '	s.sweepUnfinishedKeys()'
+  mutate go "runner key: the desks' sweep waits for the lock" "$RK" \
+    '	unlock, err := lockKeyCustody(signing, 0)' \
+    '	unlock, err := lockKeyCustody(signing, runnerKeyCreationWait)'
+  mutate go "runner key: a name that cannot be inspected is taken for none" "$RK" \
+    '		case !errors.Is(err, fs.ErrNotExist):
+			return runnerKeyFound{}, fmt.Errorf("%s could not be inspected, so nothing was removed or made", each.what)' \
+    '		case !errors.Is(err, fs.ErrNotExist):'
+  mutate go "runner key: an inspection that failed is acted on" "$RK" \
+    '	found, err := inspectRunnerKey(dir, names)
+	if err != nil {' \
+    '	found, err := inspectRunnerKey(dir, names)
+	if err != nil && false {'
   mutate go "runner key: a marked key is named" "$RK" \
-    '	case err == nil:
-		return unsignedRunner(runnerKeyUnfinished, ""), ""' \
-    '	case err == nil:'
-  mutate go "runner key: a marker that cannot be inspected is taken for none" "$RK" \
-    '	case !errors.Is(err, fs.ErrNotExist):
-		return unsignedRunner(runnerKeyNotNow, "its creation marker could not be inspected"), ""' \
-    '	case !errors.Is(err, fs.ErrNotExist):'
-  mutate go "runner key: a seed that cannot be inspected is taken for none" "$RK" \
-    '	seed, err := lstatRunnerKey(dir, seedName)
-	if errors.Is(err, fs.ErrNotExist) {' \
-    '	seed, err := lstatRunnerKey(dir, seedName)
-	if err != nil {'
+    '	if found.marker != nil {
+		keyBetween("before removal")' \
+    '	if false {
+		keyBetween("before removal")'
+  mutate go "runner key: a key without a marker is removed" "$RK" \
+    '	if found.marker != nil {
+		keyBetween("before removal")' \
+    '	if found.marker != nil || found.seed != nil {
+		keyBetween("before removal")'
+  mutate go "runner key: an unfinished creation is never removed" "$RK" \
+    '		if err := dir.removeMade(each.name, each.info); err != nil {' \
+    '		if err := error(nil); err != nil {'
+  mutate go "runner key: a file replaced since its inspection is removed" "$RK" \
+    '		if err := dir.removeMade(each.name, each.info); err != nil {' \
+    '		if err := dir.root.Remove(each.name); err != nil {'
+  mutate go "runner key: the marker is removed before the key" "$RK" \
+    '	}{{names.keys, found.keys}, {names.seed, found.seed}, {names.marker, found.marker}} {' \
+    '	}{{names.marker, found.marker}, {names.keys, found.keys}, {names.seed, found.seed}} {'
+  mutate go "runner key: a removal that stopped is acted on" "$RK" \
+    '		if err := k.removeUnfinished(dir, names, found); err != nil {' \
+    '		if err := k.removeUnfinished(dir, names, found); false && err != nil {'
   mutate go "runner key: a lost seed is not said" "$RK" \
-    '		case listErr == nil:
-			return unsignedRunner(runnerKeyLost, ""), ""' \
-    '		case listErr == nil:'
-  mutate go "runner key: a list that cannot be inspected is taken for none" "$RK" \
-    '		case !errors.Is(listErr, fs.ErrNotExist):
-			return unsignedRunner(runnerKeyNotNow, "its list of public keys could not be inspected"), ""' \
-    '		case !errors.Is(listErr, fs.ErrNotExist):'
+    '		if found.keys != nil {
+			return unsignedRunner(runnerKeyLost, ""), ""
+		}' \
+    ''
   mutate go "runner key: a key whose marker stays is named" "$RK" \
     '	if err := made.settle(); err != nil {' \
     '	if err := made.settle(); false && err != nil {'
@@ -3443,13 +3497,13 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if err := checkSeed("the key", seed); err != nil {' \
     '	if err := error(nil); err != nil {'
   mutate go "runner key: a seed with no list is named" "$RK" \
-    '	case !found:' \
-    '	case !found && false:'
+    '	case !listed:' \
+    '	case !listed && false:'
   mutate go "runner key: a list of more than one key is named" "$RK" \
     '	case len(keys) != 1:' \
     '	case len(keys) < 1:'
   mutate go "runner key: named where its folder's path names another" "$RK" \
-    '	if dir.namesHeld() != nil || dir.namesFile(seedName, seed) != nil {' \
+    '	if dir.namesHeld() != nil || dir.namesFile(names.seed, seed) != nil {' \
     '	if false {'
   mutate go "runner key: the runtime is not asked" "$RK" \
     '	public, status := s.readRunnerKey(ctx, project, path, k.name)' \
@@ -3461,8 +3515,11 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if public.PublicKey != keys[0].PublicKey || public.KeyID != keys[0].KeyID {' \
     '	if false {'
   mutate go "runner key: named where the seed was replaced while read" "$RK" \
-    '	if dir.namesFile(seedName, seed) != nil {' \
-    '	if false {'
+    '	if dir.namesFile(names.seed, seed) != nil {
+		return unsignedRunner(runnerKeyNotUsed, "the key is not at the path Runner would be given"), ""
+	}
+	return RunnerKeyStatus{State: runnerKeySigned' \
+    '	return RunnerKeyStatus{State: runnerKeySigned'
   mutate go "runner key: the key's path said whole" "$RK" \
     '	message = replaceSpans(message, files)' \
     '	_ = files'
@@ -10241,12 +10298,14 @@ export function assistantTransport(id: string): Transport {
     ": msg('The runtime did not admit this expectation: {{detail}}', { detail: finding.message })" \
     ": finding.message"
 
-  # **Runner's signing key, on the page (ADR-0010, section 5).** desk-config's
-  # jobs.runnerKey read only in one of its shapes, and Gates shows Runner's
-  # public key, or why Jobs runs are not signed, in the words Desk passed on.
-  RQ=web/src/config/queries.ts
+  # **Runner's signing key, on the page (ADR-0010, section 5).** It has a
+  # query of its own (`GET /api/runner-key`), read only in its four shapes,
+  # asked again while Gates shows it and when a Jobs action completes; Gates
+  # shows Runner's public key, or why Jobs runs are not signed, or that Runner
+  # is not running, in the words Desk passed on.
+  RQ=web/src/jobs/runnerKey.ts
   mutate web "runner key: not shown on Gates" "$GH" \
-    '    <RunnerSignatures runnerKey={chassis?.runnerKey} />
+    '    <RunnerKeyNow />
 ' \
     ''
   mutate web "runner key: its public key not shown" "$GH" \
@@ -10258,6 +10317,12 @@ export function assistantTransport(id: string): Transport {
   mutate web "runner key: the words Desk passed on not said" "$GH" \
     "  const detail = key.detail ?? ''" \
     "  const detail = ''"
+  mutate web "runner key: the folder in use not said" "$GH" \
+    "    case 'in-use': return msg(" \
+    "    case 'in-use': return '' && msg("
+  mutate web "runner key: Runner not running not said" "$GH" \
+    "  if (runnerKey.state === 'not-running') return" \
+    "  if (runnerKey.state === 'not-running' && false) return"
   mutate web "runner key: a malformed public key read" "$RQ" \
     "/^[0-9a-f]{64}\$/.test(key.publicKey)" \
     "/^[0-9a-fA-F]{63,64}\$/.test(key.publicKey)"
@@ -10265,12 +10330,17 @@ export function assistantTransport(id: string): Transport {
     '(RUNNER_KEY_REASONS as readonly unknown[]).includes(key.reason)' \
     "typeof key.reason === 'string'"
   mutate web "runner key: words that are not text read" "$RQ" \
-    "(key.detail === undefined || typeof key.detail === 'string')" \
-    'true'
-  mutate web "runner key: not carried from desk-config" "$RQ" \
-    '      : {}),
-    ...(runnerKey ? { runnerKey } : {})' \
-    '      : {})'
+    "  const words = key.detail === undefined || typeof key.detail === 'string'" \
+    '  const words = true'
+  mutate web "runner key: not asked again while shown" "$RQ" \
+    '    refetchInterval: RUNNER_KEY_REFRESH_MS,' \
+    '    refetchInterval: false,'
+  mutate web "runner key: a Jobs action does not ask again" web/src/jobs/JobsView.tsx \
+    "clearGuard(); void refreshRunnerKey(queryClient); await queryClient.invalidateQueries({ queryKey: ['jobs-pages', 'jobs'] });" \
+    "clearGuard(); await queryClient.invalidateQueries({ queryKey: ['jobs-pages', 'jobs'] });"
+  mutate web "runner key: a run submitted does not ask again" web/src/jobs/JobsView.tsx \
+    "clearGuard(); void refreshRunnerKey(queryClient); await queryClient.invalidateQueries({ queryKey: ['jobs-pages', \`jobs/\${job.id}/runs\`] });" \
+    "clearGuard(); await queryClient.invalidateQueries({ queryKey: ['jobs-pages', \`jobs/\${job.id}/runs\`] });"
 fi
 
 restore

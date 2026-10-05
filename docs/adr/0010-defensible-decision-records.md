@@ -568,7 +568,11 @@ line only where no marker is left, the runtime reads it (`audit key public`)
 and its list of public keys holds that one key. Otherwise Runner starts without
 a key, its runs go on unsigned, and Desk says why; where Runner refuses the key
 at boot, Desk starts it again at once without it. Desk never removes or makes
-again a key it could not read or that was refused.
+again a key it could not read or that was refused. Every decision on a Runner
+key, and a start's sweep of the desks' keys, is taken under one exclusive lock
+on the signing folder Desk holds (review round 1 of #229): a sweep never waits
+for it, and any other start waits up to 10 seconds and then starts Runner
+without a key, changing nothing.
 
 ### 6. The version floor
 
