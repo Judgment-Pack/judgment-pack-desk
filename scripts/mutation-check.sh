@@ -3394,10 +3394,10 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if err := error(nil); err != nil {'
   mutate go "runner key: its folder swapped between check and open is used" "$RK" \
     '	if opened, err := root.Stat("."); err != nil || !os.SameFile(checked, opened) {' \
-    '	if opened, err := root.Stat("."); err != nil || opened == nil {'
+    '	if opened, err := root.Stat("."); err != nil || !os.SameFile(opened, opened) {'
   mutate go "runner key: a path not valid UTF-8 is named" "$RK" \
     '	if !utf8.ValidString(dir.path) {' \
-    '	if false {'
+    '	if !utf8.ValidString(dir.path) && false {'
   mutate go "runner key: the sweep runs at every start" "$RK" \
     '	if !k.swept {' \
     '	if true {'
@@ -3444,7 +3444,7 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if err := error(nil); err != nil {'
   mutate go "runner key: a seed with no list is named" "$RK" \
     '	case !found:' \
-    '	case false:'
+    '	case !found && false:'
   mutate go "runner key: a list of more than one key is named" "$RK" \
     '	case len(keys) != 1:' \
     '	case len(keys) < 1:'
@@ -3468,7 +3468,8 @@ func (b *cappedBuffer) exceeded() bool {'
     '	_ = files'
   mutate go "runner key: a folder on the key's way said" "$RK" \
     '	return strings.ReplaceAll(withoutAbsolutePaths(replaceSpans(message, spans)), held, "…")' \
-    '	return strings.ReplaceAll(message, held, "…")'
+    '	_ = spans
+	return strings.ReplaceAll(message, held, "…")'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx

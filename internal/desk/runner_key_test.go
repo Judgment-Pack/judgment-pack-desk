@@ -869,10 +869,13 @@ func TestARunnerKeyWhosePathNamesAnotherIsNotNamed(t *testing.T) {
 				if err := os.Mkdir(folder, 0o700); err != nil {
 					t.Error(err)
 				}
-				if err := os.WriteFile(filepath.Join(folder, name+".seed"), []byte(standInSeed+"\n"), 0o600); err != nil {
+				if err := os.WriteFile(filepath.Join(folder, name+".seed"), []byte("swapped\n"), 0o600); err != nil {
 					t.Error(err)
 				}
 			}
+			// The runtime, given the path, would read the seed swapped in,
+			// and answer another key for it.
+			readingKeyAs(t, calls, `  if [ "$(cat "$4")" = swapped ]; then printf '%s\n' '`+strings.Replace(standInRead, standInPublicKey+`","keyId":"`+standInKeyID, secondPublicKey+`","keyId":"`+secondKeyID, 1)+`'; else printf '%s\n' '`+standInRead+`'; fi`)
 		}},
 		{"the seed replaced while the runtime reads it", func(t *testing.T, s *Server, calls, folder string) {
 			readingKeyAs(t, calls, `  mv "$4" "$4.aside" && cp -p "$4.aside" "$4" && printf '%s\n' '`+standInRead+`'`)
