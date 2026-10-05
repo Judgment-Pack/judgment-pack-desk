@@ -9404,6 +9404,27 @@ export function assistantTransport(id: string): Transport {
   mutate web "unreachable expectation: an approved correction is applied" "$URR" \
     "      if (finding!.status !== 'valid') throw new Error(" \
     "      if (finding!.status !== 'valid' && !finding!.unreachable) throw new Error("
+
+  # **The Tests workspace words an invalid expectation by its class (#208).**
+  # Saving a case whose expectation the runtime holds invalid showed the
+  # runtime's bare message whatever the finding was, so an expectation no pack
+  # can produce read as an ordinary defect and nothing said it was the
+  # expectation, not the draft, that must change. The workspace now words each
+  # class as a research run does (`findingSummary`), through the catalogue: a
+  # §8.3 defect as the runtime words it, a limit as input the runtime did not
+  # admit, an unreachable expectation as the expectation to change. Each row
+  # breaks one of those: the wording consulted at all, and each of its two
+  # sentences.
+  TW=web/src/packs/test-workspace/TestsWorkspace.tsx
+  mutate web "the Tests workspace shows an invalid expectation's bare message" "$TW" \
+    "throw Error(checked[0]?.status === 'invalid' ? invalidExpectation(checked[0]) : 'Expectation was not checked.')" \
+    "throw Error(checked[0]?.status === 'invalid' ? checked[0].message : 'Expectation was not checked.')"
+  mutate web "the Tests workspace drops the unreachable sentence" "$TW" \
+    "    return msg('This expectation names a disposition no pack can produce, so the expectation must change, not the draft: {{detail}}', { detail: finding.message })" \
+    "    return finding.message"
+  mutate web "the Tests workspace drops the limit sentence" "$TW" \
+    ": msg('The runtime did not admit this expectation: {{detail}}', { detail: finding.message })" \
+    ": finding.message"
 fi
 
 restore
