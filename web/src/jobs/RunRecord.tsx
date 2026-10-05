@@ -13,7 +13,7 @@ import { Link } from 'react-router-dom'
 import { formatDate, formatNumber, msg } from '../i18n'
 import { Disclosure } from '../ui/Disclosure'
 import { jobsAPI, type Decision, type Job, type Release, type Run, type SourceInput } from './client'
-import { decodeBase64, evidenceOf, requesterOf, sha256, type Requester, type StampName } from './activity'
+import { decodeBase64, evidenceOf, requesterOf, sha256, stamp, type Requester, type StampName } from './activity'
 import { isSourceV2 } from './mappingTypes'
 import { InputLineage, MappingReview } from './MappingReview'
 import { SourceSummary } from './SourceSummary'
@@ -22,6 +22,12 @@ import type { Trigger } from './triggerTypes'
 import styles from './JobsView.module.css'
 
 export function when(value: string) { return formatDate(new Date(value), { dateStyle: 'medium', timeStyle: 'medium' }) }
+/**
+ * A stored time as the run page shows it: `absent` where Runner stored none, and
+ * "Not recorded" where what it stored does not read as a time, so neither
+ * throws (#223). The Activity tab shows no stamp for either.
+ */
+function storedTime(name: StampName, at: string | undefined, absent: string) { const stored = stamp(name, at); return stored ? when(stored.at) : at ? msg('Not recorded') : absent }
 
 /** The job and its release, as `GET jobs/{job}` returns them: the query the job page reads. */
 export function useJobRecord(jobId: string) {
@@ -80,9 +86,9 @@ export function RunFields({ run }: { run: Run }) {
   return <dl className={styles.properties}>
     <div><dt>{msg('Execution')}</dt><dd role={run.state === 'queued' || run.state === 'running' ? 'status' : undefined}>{runStateLabel(run.state)}</dd></div>
     <div><dt>{msg('Decision')}</dt><dd>{decisionText(run.result)}</dd></div>
-    <div><dt>{msg('Submitted')}</dt><dd>{when(run.createdAt)}</dd></div>
-    <div><dt>{msg('Started')}</dt><dd>{run.startedAt ? when(run.startedAt) : '—'}</dd></div>
-    <div><dt>{run.state === 'interrupted' ? stampLabel('interruption') : msg('Finished')}</dt><dd>{run.finishedAt ? when(run.finishedAt) : '—'}</dd></div>
+    <div><dt>{msg('Submitted')}</dt><dd>{storedTime('submitted', run.createdAt, msg('Not recorded'))}</dd></div>
+    <div><dt>{msg('Started')}</dt><dd>{storedTime('started', run.startedAt, '—')}</dd></div>
+    <div><dt>{run.state === 'interrupted' ? stampLabel('interruption') : msg('Finished')}</dt><dd>{storedTime(run.state === 'interrupted' ? 'interruption' : 'finished', run.finishedAt, '—')}</dd></div>
     <div><dt>{msg('Requested by')}</dt><dd>{requesterText(requesterOf(run), triggers.data?.items)}</dd></div>
     <div><dt>{msg('Release')}</dt><dd><ReleaseName jobId={run.jobId} releaseId={run.releaseId} release={release} /></dd></div>
     <div><dt>{msg('Pack digest')}</dt><dd>{release ? <code>{release.packDigest}</code> : '—'}</dd></div>

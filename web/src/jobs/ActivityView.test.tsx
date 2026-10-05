@@ -86,8 +86,9 @@ describe('the Activity tab', () => {
   })
 
   // A run without its submission time is held by the row tests in
-  // activity.test.ts: the Runs tab, which stays mounted beside this one, does
-  // not render such a run at all.
+  // activity.test.ts. The Runs tab, which stays mounted beside this one, now
+  // shows such a run with its submission time "Not recorded" (#223); this
+  // test keeps its occurrence.
   it('makes no row for a record without the time that orders it', async () => {
     const unreceived = { ...occurrences.skipped, id: 'occ_' + '9'.repeat(32), receivedAt: '' }
     vi.mocked(jobsAPI).mockImplementation(runner({ runs: [runs.signed], occurrences: [unreceived, occurrences.expired] }) as never)

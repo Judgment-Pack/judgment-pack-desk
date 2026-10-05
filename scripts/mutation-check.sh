@@ -9299,7 +9299,7 @@ export function assistantTransport(id: string): Transport {
     "{present.length > 0 && <span>{msg('Present: {{items}}', { items: listed(present) })}</span>}" \
     "{present.length > 0 && <span>{'Verified: ' + listed(present)}</span>}"
   mutate web "jobs activity (time): the run page does not show when the run started" "$JRV" \
-    "<dd>{run.startedAt ? when(run.startedAt) : '—'}</dd>" \
+    "<dd>{storedTime('started', run.startedAt, '—')}</dd>" \
     "<dd>—</dd>"
   mutate web "jobs activity (rows): rows are shown before every list has answered" "$JAV" \
     "  const rows = pending ? [] : merged.rows" \
@@ -9310,6 +9310,47 @@ export function assistantTransport(id: string): Transport {
   mutate web "jobs activity (page): the Decision record panel does not say Jobs runs are elsewhere" web/src/audit/DecisionRecord.tsx \
     " description={msg('Jobs runs are recorded by the runner, not in this trail.')}" \
     ""
+
+  # **A run time Desk cannot read, in Jobs (#223).** Runner v0.5.0 always
+  # writes `createdAt`; a record from an older or edited store may not, and a
+  # stored time may not read as one. Each place that formats a run's time asks
+  # the Activity tab's stamp() first, and says "Not recorded" rather than
+  # throwing and taking its page down: the Runs table, the Jobs index's
+  # recent-run dots (label and tooltip), and the run page's Submitted, Started
+  # and Finished, where a time Runner has not stored yet stays "—".
+  mutate web "jobs run times (#223): the Runs table's helper formats a time Runner did not store" web/src/jobs/JobsView.tsx \
+    "const stored = stamp('submitted', at); return stored ? date(stored.at) : msg('Not recorded')" \
+    "return date(at!)"
+  mutate web "jobs run times (#223): the Runs table's helper formats a time that does not read as one" web/src/jobs/JobsView.tsx \
+    "const stored = stamp('submitted', at); return stored ? date(stored.at) : msg('Not recorded')" \
+    "return at ? date(at) : msg('Not recorded')"
+  mutate web "jobs run times (#223): the Runs table formats the time unguarded" web/src/jobs/JobsView.tsx \
+    "<td className=\"quiet\">{submitted(r.createdAt)}</td>" \
+    "<td className=\"quiet\">{date(r.createdAt)}</td>"
+  mutate web "jobs run times (#223): the index dot's label formats the time unguarded" web/src/jobs/JobsView.tsx \
+    'aria-label={`${stateLabel(r.state)} · ${submitted(r.createdAt)}`}' \
+    'aria-label={`${stateLabel(r.state)} · ${date(r.createdAt)}`}'
+  mutate web "jobs run times (#223): the index dot's tooltip formats the time unguarded" web/src/jobs/JobsView.tsx \
+    'content={`${stateLabel(r.state)} · ${submitted(r.createdAt)}`}' \
+    'content={`${stateLabel(r.state)} · ${date(r.createdAt)}`}'
+  mutate web "jobs run times (#223): the run page formats a time that does not read as one" "$JRV" \
+    "return stored ? when(stored.at) : at ? msg('Not recorded') : absent" \
+    "return at ? when(at) : absent"
+  mutate web "jobs run times (#223): the run page formats its submission time unguarded" "$JRV" \
+    "<dd>{storedTime('submitted', run.createdAt, msg('Not recorded'))}</dd>" \
+    "<dd>{when(run.createdAt)}</dd>"
+  mutate web "jobs run times (#223): the run page calls a submission time Runner did not store —" "$JRV" \
+    "<dd>{storedTime('submitted', run.createdAt, msg('Not recorded'))}</dd>" \
+    "<dd>{storedTime('submitted', run.createdAt, '—')}</dd>"
+  mutate web "jobs run times (#223): the run page formats its start unguarded" "$JRV" \
+    "<dd>{storedTime('started', run.startedAt, '—')}</dd>" \
+    "<dd>{run.startedAt ? when(run.startedAt) : '—'}</dd>"
+  mutate web "jobs run times (#223): the run page calls a start not stored yet Not recorded" "$JRV" \
+    "<dd>{storedTime('started', run.startedAt, '—')}</dd>" \
+    "<dd>{storedTime('started', run.startedAt, msg('Not recorded'))}</dd>"
+  mutate web "jobs run times (#223): the run page formats its finish unguarded" "$JRV" \
+    "<dd>{storedTime(run.state === 'interrupted' ? 'interruption' : 'finished', run.finishedAt, '—')}</dd>" \
+    "<dd>{run.finishedAt ? when(run.finishedAt) : '—'}</dd>"
 
   # **The upgrade offer on the page.** Nothing is sent until the owner
   # confirms; the confirmation carries the offer's token and the owner's

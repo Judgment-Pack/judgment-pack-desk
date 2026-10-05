@@ -181,6 +181,26 @@ it('sends global run search and attention filters to the runner',async()=>{
  expect(screen.getByLabelText('Search runs')).toBeTruthy()
 })
 
+// #223. Runner v0.5.0 always writes `createdAt`, but a record from an older or
+// edited store may not, and one such run threw while rendering and took the
+// whole Runs tab down with it. It now says the time is not recorded, as the
+// Activity tab does; a run that has its time is shown as before.
+it('shows Not recorded in the Runs table for a run without a readable submission time, instead of throwing',async()=>{
+ const {JobsContent}=await import('./JobsView')
+ const {formatDate}=await import('../i18n')
+ const run={jobId:'job-one',jobName:'Intake',state:'completed'}
+ vi.mocked(jobsAPI).mockImplementation(async path=>({items:path==='runs?after=0'?[
+  {...run,id:'run-aaaaaaaa',createdAt:'2026-09-26T12:00:00Z'},
+  {...run,id:'run-bbbbbbbb'},
+  {...run,id:'run-cccccccc',createdAt:'not a time'},
+ ]:[]}) as never)
+ render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><Tooltip.Provider><MemoryRouter initialEntries={['/jobs/runs']}><JobsContent/></MemoryRouter></Tooltip.Provider></QueryClientProvider>)
+ const submitted=async(run:string)=>(await screen.findByRole('link',{name:run})).closest('tr')!.querySelectorAll('td')[4]!.textContent
+ expect(await submitted('bbbbbbbb')).toBe('Not recorded')
+ expect(await submitted('cccccccc')).toBe('Not recorded')
+ expect(await submitted('aaaaaaaa')).toBe(formatDate(new Date('2026-09-26T12:00:00Z'),{dateStyle:'medium',timeStyle:'short'}))
+})
+
 it('keeps a resumed job editor and its unsaved fields through failed background reads',async()=>{
  const values={name:'Saved job',packId:'pack',inputMode:'manual' as const,facts:'{}',supplied:false,evidence:'{}'}
  vi.mocked(loadJobDraft).mockResolvedValueOnce({file:{path:'.desk/job-drafts/example.json',content:'{}',bytes:2,sha256:'base'},draft:{version:1,id:'example',updatedAt:'2026-09-26T12:00:00Z',status:'draft',values}}).mockRejectedValue(Error('File unavailable'))
