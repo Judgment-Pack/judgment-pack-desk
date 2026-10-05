@@ -17,9 +17,22 @@ export const EVALUATOR_SPEC = '0.2.0-draft'
 /** How many expectations one call carries; the tool is stateless, so a larger suite is chunked. */
 const PER_CALL = 256
 
+/**
+ * An invalid finding is one of three things, told apart by the runtime's code
+ * and never by its status: a §8.3 defect a reviewer can correct (`admitted`), an
+ * input the runtime did not admit at all (`JPS-EXPECTATION-LIMIT`, `admitted`
+ * false), or a legal §8.3 disposition no conforming pack can produce
+ * (`JPS-EXPECTATION-UNREACHABLE`, ADR-0037 of the runtime). The third is neither
+ * of the others: the runtime admitted it and its shape is sound, and what must
+ * change is the expectation, not the draft it was written for.
+ */
+export type InvalidFinding =
+  | { message: string; admitted: boolean; unreachable?: undefined }
+  | { message: string; unreachable: true }
+
 export type CheckedExpectation =
   | { status: 'valid'; canonical: string }
-  | { status: 'invalid'; message: string; admitted: boolean }
+  | ({ status: 'invalid' } & InvalidFinding)
 
 /** Runtime-owned §8.3 checks; a missing or incomplete report is never acceptance. */
 export async function validateExpectations(dispositions: readonly unknown[], callTool: CallTool, signal: AbortSignal): Promise<CheckedExpectation[]> {
@@ -46,8 +59,11 @@ async function validateBatch(dispositions: readonly unknown[], callTool: CallToo
     if (row.status === 'valid' && typeof row.canonical === 'string' && record(JSON.parse(row.canonical))) return { status: 'valid', canonical: row.canonical }
     // A limit finding says the runtime did not admit the input, not that Core
     // prohibits its meaning, so it is carried as what it is and never handed to
-    // a reviewer as a §8.3 defect to correct.
+    // a reviewer as a §8.3 defect to correct. An unreachable finding says the
+    // shape is sound and no pack can produce it, so it is carried as that: an
+    // expectation to change, never a draft to repair until it agrees.
     if (row.status === 'invalid' && typeof row.message === 'string' && row.message.trim()) {
+      if (row.code === 'JPS-EXPECTATION-UNREACHABLE') return { status: 'invalid', message: row.message, unreachable: true }
       return { status: 'invalid', message: row.message, admitted: row.code !== 'JPS-EXPECTATION-LIMIT' }
     }
     throw new Error('The runtime returned an unreadable expectation finding.')
@@ -61,10 +77,13 @@ function record(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * What an invalid finding is: a §8.3 defect a reviewer can correct, or an input
- * the runtime would not admit at all. The wording of the second is the runtime's
- * own, so a person reads why it was refused rather than a claim Core makes.
+ * What an invalid finding is: a §8.3 defect a reviewer can correct, an input the
+ * runtime would not admit at all, or an expectation no pack can produce. The
+ * wording after the colon is the runtime's own, so a person reads why it was
+ * refused rather than a claim Core makes, and for an unreachable expectation
+ * that wording names the rule (§8's step order or §5's identifier grammar).
  */
-export function findingSummary(finding: { message: string; admitted: boolean }): string {
+export function findingSummary(finding: InvalidFinding): string {
+  if (finding.unreachable) return `This expectation names a disposition no pack can produce, so the expectation must change, not the draft: ${finding.message}`
   return finding.admitted ? finding.message : `The runtime did not admit this expectation: ${finding.message}`
 }

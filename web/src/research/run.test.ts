@@ -11,6 +11,7 @@ import { digestOf, type AuthoringCase, type CandidateCheck } from './checkCandid
 import { researchTools } from './tools'
 import { TEST_PUBLIC_KEY, fakeGateway } from './__fixtures__/fakeGateway'
 import { fixtureExpectations } from './__fixtures__/expectationRuntime'
+import recordedFindings from './__fixtures__/expectations.json'
 import { EXPECTATION_TOOL } from './expectations'
 import { parseJsonText } from './verify/canon'
 import { canRetryExpectationValidation, INITIAL_STATE } from './run'
@@ -695,6 +696,22 @@ const correctionTurn = (expectedDisposition: unknown = CASES.cases[2]!.expectedD
   event({ type: 'end' })
 }
 
+/**
+ * A legal §8.3 shape no conforming pack can produce (the runtime's ADR-0037):
+ * §8 step 1 is the only step that records `not-applicable`, and it reports the
+ * halt under kind `not-applicable`, never `unresolved`. A runtime before that
+ * ADR answered it valid, and a run then repaired a draft that could never agree.
+ */
+const UNREACHABLE = { kind: 'unresolved', reasons: ['not-applicable'], handoff: { state: 'none' } }
+const UNREACHABLE_CASES = { cases: CASES.cases.map((row, index) => index === 2 ? { ...row, expectedDisposition: UNREACHABLE } : row) }
+const UNREACHABLE_FINDING = recordedFindings.find(row => row.name === 'unresolved retaining not-applicable')!.result as { status: string; code: string; message: string }
+/** What a person reads: the expectation is what must change, then the runtime's rule in its own words. */
+const UNREACHABLE_SUMMARY = `This expectation names a disposition no pack can produce, so the expectation must change, not the draft: ${UNREACHABLE_FINDING.message}`
+const unreachableCasesTurn: Script = async (_request, _signal, event) => {
+  event({ type: 'proposal', document: UNREACHABLE_CASES, unknowns: [] })
+  event({ type: 'end' })
+}
+
 async function blockedRun(scripts: Script[] = [], overrides: Partial<RunPorts> = {}) {
   const h = harness([researchTurn(), blockedCasesTurn, ...scripts], overrides)
   h.run.start('brief', [PAGE_URL])
@@ -810,6 +827,110 @@ describe('invalid expectation review', () => {
     expect(state.expectationIssues[0]!.proposal).toBeUndefined()
     expect(state.expectationIssues[0]!.proposalError).toBeTruthy()
     expect(state.cases).toHaveLength(2)
+  })
+
+  it('blocks an expectation no pack can produce as the expectation to change, and starts no repair round on it', async () => {
+    // The issue list. Established, this case fails every rehearsal whatever the
+    // draft says, so each repair turn would spend the budget on a draft that is
+    // not what is wrong. It is held as an issue, worded as the expectation's
+    // defect, and the draft is neither checked nor repaired.
+    const { run, runtime, requests } = harness([researchTurn(), unreachableCasesTurn, correctionTurn()])
+    run.start('brief', [PAGE_URL])
+    let state = await settled(run)
+    // No repair round: no revision spent, no turn after the reviewer's, no rehearsal.
+    expect(state.revisionsUsed).toBe(0)
+    expect(requests).toHaveLength(2)
+    expect(runtime.calls).toEqual([EXPECTATION_TOOL])
+    expect(state.candidates).toHaveLength(1)
+    expect(state.candidates[0]!.check).toBeUndefined()
+    expect(state.status, state.detail).toBe('needs-input')
+    expect(state.phase).toBe('review')
+    expect(state.expectationIssues.map(issue => [issue.id, issue.message])).toEqual([['hours-missing', UNREACHABLE_SUMMARY]])
+    expect(state.expectationIssues[0]!.original.expectedDisposition).toEqual(UNREACHABLE)
+    expect(state.cases.map(row => row.id)).toEqual(['meets-hours', 'under-hours'])
+    // What it offers is the expectation's own repair: a reviewer who changes only
+    // the expectation, told that the expectation is what must change.
+    const draft = state.candidates[0]!
+    run.proposeExpectationCorrection('hours-missing')
+    state = await settled(run)
+    expect(requests).toHaveLength(3)
+    expect(requests[2]!.reviewer).toBe(true)
+    expect(requests[2]!.prompt).toContain(`VALIDATOR FINDING\n${UNREACHABLE_SUMMARY}`)
+    const issue = state.expectationIssues[0]!
+    expect(issue.proposal?.expectedDisposition).toEqual(CASES.cases[2]!.expectedDisposition)
+    run.approveExpectationCorrection(issue.id, issue.proposal!.token)
+    state = await settled(run)
+    expect(state.status, state.detail).toBe('ready')
+    expect(state.revisionsUsed).toBe(0)
+    expect(state.candidates).toHaveLength(1)
+    expect(state.candidates[0]!.text).toBe(draft.text)
+  })
+
+  it('keeps a proposed correction no pack can produce blocked, and says the expectation must change again', async () => {
+    // The proposal check: a reviewer's correction is put to the runtime before it
+    // is offered, and one no pack can produce is refused in the same words.
+    const { run, runtime, requests } = await blockedRun([correctionTurn(UNREACHABLE)])
+    run.proposeExpectationCorrection('hours-missing')
+    const state = await settled(run)
+    expect(state.status, state.detail).toBe('needs-input')
+    expect(state.expectationIssues[0]!.proposal).toBeUndefined()
+    expect(state.expectationIssues[0]!.proposalError).toBe(UNREACHABLE_SUMMARY)
+    expect(state.cases).toHaveLength(2)
+    expect(state.revisionsUsed).toBe(0)
+    expect(state.candidates).toHaveLength(1)
+    expect(runtime.calls).not.toContain('experimental_evaluate')
+    expect(requests).toHaveLength(3)
+  })
+
+  it('applies nothing where approval finds the correction is one no pack can produce', async () => {
+    // The correction check: approval asks the runtime again, and a runtime that
+    // moved on since the proposal can answer that no pack produces it. Nothing
+    // is applied, the draft is not repaired, and the person reads why.
+    const native = fakeRuntime()
+    let moved = false
+    const callTool: CallTool = async (name, args) => moved && name === EXPECTATION_TOOL
+      ? { structuredContent: { specVersion: args.spec_version, status: 'invalid', results: [{ index: 0, ...UNREACHABLE_FINDING }] } }
+      : native.callTool(name, args)
+    const { run, requests } = await blockedRun([correctionTurn()], { callTool })
+    run.proposeExpectationCorrection('hours-missing')
+    const issue = (await settled(run)).expectationIssues[0]!
+    expect(issue.proposal).toBeDefined()
+    moved = true
+    run.approveExpectationCorrection(issue.id, issue.proposal!.token)
+    const state = await settled(run)
+    expect(state.status).toBe('failed')
+    expect(state.detail).toBe(`The correction is no longer valid: ${UNREACHABLE_SUMMARY}`)
+    expect(state.expectationIssues[0]!.resolved).toBeUndefined()
+    expect(state.cases).toHaveLength(2)
+    expect(state.revisionsUsed).toBe(0)
+    expect(state.candidates).toHaveLength(1)
+    expect(native.calls).not.toContain('experimental_evaluate')
+    expect(requests).toHaveLength(3)
+  })
+
+  it('blocks a saved case an earlier runtime admitted, when the pinned one finds no pack can produce it', async () => {
+    // A reopened draft. A case established before the runtime reported this
+    // shape is put to the runtime again on recheck, and becomes the issue it
+    // always was -- not a rehearsal failure the person is sent to repair.
+    const { checkpoint, decodeCheckpoint, restoreLedger } = await import('../chat/checkpoint')
+    const first = harness([researchTurn(), casesTurn])
+    first.run.start('Research the requirement', [])
+    const ready = await settled(first.run)
+    expect(canCreateResearchDraft(ready)).toBe(true)
+    const saved = decodeCheckpoint(JSON.parse(JSON.stringify(checkpoint(ready, first.ledger.sources))))
+    saved.state.cases = saved.state.cases.map(row => row.id === 'hours-missing' ? { ...row, expectedDisposition: UNREACHABLE } : row)
+    const resumed = harness([async () => { throw new Error('Reload must not call the model') }], { registry: async () => Object.values(ready.registries).at(-1)!, seal: async () => { throw new Error('A sealed session cannot be sealed twice') } })
+    restoreLedger(resumed.ledger, saved.sources)
+    await resumed.run.restore(saved.state)
+    resumed.run.recheck()
+    const state = await settled(resumed.run)
+    expect(state.status, state.detail).toBe('needs-input')
+    expect(state.expectationIssues.map(issue => [issue.id, issue.message])).toEqual([['hours-missing', UNREACHABLE_SUMMARY]])
+    expect(state.cases.map(row => row.id)).toEqual(['meets-hours', 'under-hours'])
+    expect(state.revisionsUsed).toBe(ready.revisionsUsed)
+    expect(resumed.runtime.calls).not.toContain('experimental_evaluate')
+    expect(resumed.requests).toHaveLength(0)
+    expect(canCreateResearchDraft(state)).toBe(false)
   })
 
   it('holds the screened proposal when validation fails, and retries it without a second reviewer turn', async () => {
