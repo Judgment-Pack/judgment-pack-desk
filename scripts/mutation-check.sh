@@ -9374,6 +9374,36 @@ export function assistantTransport(id: string): Transport {
   mutate web "downloads: a file name the download does not take is accepted" "$AC" \
     " || !optional(value.files, item => list(item, isTrailFile))) return false" \
     " || !optional(value.files, item => list(item, (entry): entry is TrailFile => text(entry) || isTrailFile(entry)))) return false"
+
+  # **An expectation no pack can produce is the expectation's defect (#137).**
+  # The runtime answers JPS-EXPECTATION-UNREACHABLE when an expectation is well
+  # formed and no pack could ever produce it. Established as a case, it fails
+  # every rehearsal and spends each repair turn on a draft that is not what is
+  # wrong; read as an ordinary defect, the person is never told that it is the
+  # expectation, not the draft, that must change. Each row breaks one place
+  # that holds this: the reading of the finding, the summary a person reads,
+  # and the four places the run consults it.
+  URE=web/src/research/expectations.ts
+  URR=web/src/research/run.ts
+  mutate web "unreachable expectation: read as a Core defect" "$URE" \
+    "      if (row.code === 'JPS-EXPECTATION-UNREACHABLE') return { status: 'invalid', message: row.message, unreachable: true }" \
+    "      void 0"
+  mutate web "unreachable expectation: summary drops the runtime's reason" "$URE" \
+    'so the expectation must change, not the draft: ${finding.message}`' \
+    'so the expectation must change, not the draft.`'
+  mutate web "unreachable expectation: established as a case" "$URR" \
+    "        if (finding.status === 'invalid') return void issues.push({ id: row.id, original: row, message: findingSummary(finding) })" \
+    "        if (finding.status === 'invalid' && finding.unreachable) return void cases.push(deepFreeze(structuredClone(row)))
+        if (finding.status === 'invalid') return void issues.push({ id: row.id, original: row, message: findingSummary(finding) })"
+  mutate web "unreachable expectation: a saved case is restored as a case" "$URR" \
+    "      const problem = finding.status === 'invalid' ? findingSummary(finding) : targetContradiction(finding.canonical, row.expectedHandoffTarget)" \
+    "      const problem = finding.status === 'invalid' ? (finding.unreachable ? null : findingSummary(finding)) : targetContradiction(finding.canonical, row.expectedHandoffTarget)"
+  mutate web "unreachable expectation: a proposed correction refused in bare words" "$URR" \
+    "        if (finding!.status === 'invalid') proposalError = findingSummary(finding!)" \
+    "        if (finding!.status === 'invalid') proposalError = finding!.message"
+  mutate web "unreachable expectation: an approved correction is applied" "$URR" \
+    "      if (finding!.status !== 'valid') throw new Error(" \
+    "      if (finding!.status !== 'valid' && !finding!.unreachable) throw new Error("
 fi
 
 restore
