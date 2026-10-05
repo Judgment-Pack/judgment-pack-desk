@@ -5872,9 +5872,21 @@ journal, stands below every entry, by when the runner first recorded it. What an
 entry holds beyond its kind, such as an interruption's window or a trigger's
 previous revision, is in the entry's JSON in its detail pane. An entry never
 changes what a record row says, and Desk makes no row from changes it saw itself.
-The tab reads the journal from its start once, follows Runner's cursor while
-Runner says more is there, and then asks again with the same cursor every 5
-seconds.
+
+Runner pages the journal oldest first and has no way to read it from its newest
+entries, so the tab reads it forward from its start once, one page after another,
+never two at once, with a turn for the browser between pages, and then asks again
+with the same cursor every 5 seconds. Until it has read to the end, one line says
+how many entries it has read so far, no entry is shown, and records stand by when
+the runner first recorded each, or the journal stays as it was when last read to
+its end; once read to the end, a line says so, as of the last request. The table
+renders the newest 500 entries, says how many of how many, and shows 500 more each
+time it is asked. The page keeps at most 20,000 entries: older ones are dropped,
+and a line says how many were read and not kept. A record whose creating entry was
+dropped stands below every kept entry, by its first time; one whose creating entry
+is kept but not shown stands below every entry shown. A page that fails stops the
+reading after the last entry read; the tab says which, and continues from there
+when asked, never from the start.
 
 Where a job is older than the journal, the tab says there is no journal before the
 time it began: Runner fills nothing in from its records. Where the route answers
