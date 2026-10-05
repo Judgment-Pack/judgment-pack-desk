@@ -324,7 +324,7 @@ const runChainRoute = "run-chain"
 // what Desk holds in memory for one download, as the page does again to save it.
 const runChainLimit = (1 << 16) * (1024 + 1)
 
-// runnerExportLimit is Runner's MaxExportSize (v0.5.0, internal/runner/
+// runnerExportLimit is Runner's MaxExportSize (v0.5.0, and unchanged in v0.6.0, internal/runner/
 // audit_bytes.go), the most of a verification export its verify-run reads:
 // version 2's 8 MiB; from version 3 on, the member carrying the audit record's
 // bytes, at most 8 MiB of them in base64; from version 4 on, the member
@@ -346,7 +346,7 @@ const runnerExportLimit = 8<<20 + len(`,"auditBytes":""`) + (8<<20+2)/3*4 +
 
 // verificationVersion is the export version a request on a run's verification
 // route asks Runner for: "" for none, which Runner answers with version 2, or
-// exactly one "2", "3", "4" or "5", the versions Runner v0.5.0 serves. Runner
+// exactly one "2", "3", "4" or "5", the versions Runner v0.5.0 and v0.6.0 serve. Runner
 // answers an earlier version than the one asked for where the run lacks what
 // the later one carries, so what is asked for does not say what is answered:
 // the page reads the version from the answer. Anything else is refused rather

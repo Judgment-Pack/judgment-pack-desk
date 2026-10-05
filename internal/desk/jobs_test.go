@@ -621,7 +621,8 @@ func TestJobsRefusesAnyOtherVerificationVersion(t *testing.T) {
 // Runner's MaxExportSize: what verify-run reads of an export. Every other
 // route keeps the ordinary limit.
 func TestJobsReadsAnExportUpToRunnersLimit(t *testing.T) {
-	// Runner v0.5.0's MaxExportSize, read from its source. Desk cannot import it.
+	// Runner's MaxExportSize, read from its source at v0.5.0 and again at v0.6.0,
+	// where it is unchanged. Desk cannot import it.
 	if runnerExportLimit != 19596893 {
 		t.Fatal("Runner's MaxExportSize is 19596893, not", runnerExportLimit)
 	}
