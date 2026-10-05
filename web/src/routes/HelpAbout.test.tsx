@@ -203,7 +203,23 @@ describe('Help & About', () => {
     }))
     const gates = document.getElementById('gates')!.closest('section')!
     expect(gates.textContent?.includes(SIGNING_KEY_LINE)).toBe(shown)
-    expect(gates.textContent).toContain('A record is not signed')
+    expect(gates.textContent).toContain(SIGNATURES_LINE)
+  })
+
+  it('says a desk Desk makes is signed, by a key Desk keeps, whom that binds and whom not, and no longer that no record is', () => {
+    renderHelp(stubClient(PACKS), {}, effectiveConfig(undefined, undefined, undefined, {
+      path: '/config/desk.json', present: false,
+      chassis: { projectDir: '/p', projectFile: '/p/jpack-desk.json', runtimeBin: '/bin/jpack', runtimeInheritsSigningKey: true }
+    }))
+    const gates = document.getElementById('gates')!.closest('section')!
+    const records = [...gates.querySelectorAll('p')].map(paragraph => paragraph.textContent ?? '')
+    const at = records.findIndex(text => text.startsWith('Records.'))
+    expect(records[at]).toBe('Records. Where jpack.json declares an audit directory (.desk-private/audit in a desk Desk made), each completed deciding run adds one record there. Rehearsals, tests and refusals add none. The folder is private to this desk, never committed and in no backup. Anyone who can write this project can change a record.')
+    // Then the signatures, then the inherited key, which answers the
+    // sentence before it.
+    expect(records[at + 1]).toBe(SIGNATURES_LINE)
+    expect(records[at + 2]).toBe(SIGNING_KEY_LINE)
+    expect(gates.textContent).not.toContain('A record is not signed')
   })
 
   it('quotes the command for a shell, and stands in for what Desk has not said', () => {
@@ -213,6 +229,7 @@ describe('Help & About', () => {
   })
 })
 
+const SIGNATURES_LINE = 'Signatures. A desk Desk makes with runtime 0.26.0 or later names a signing key in its jpack.json, unless Desk cannot keep one, which its creation says. Desk keeps the key for that desk in its own configuration folder, outside the project, and every runtime that reads that jpack.json signs each record it adds, if it accepts the key. A signature binds an agent given only this desk’s jpack mcp, which cannot read the key. It binds nothing against you, who hold the key, or against an agent that can read your files. Desk keeps no key for any other project: its records are signed only where something else names a key.'
 const SIGNING_KEY_LINE = 'But JPACK_SIGNING_KEY is set where Desk was started. Where this project’s audit trail is chained, as it is by default, its runtime signs each record with the key it names, if it accepts that key. Desks Desk made do not inherit it.'
 
 /** Shown once the configuration query has answered, so the gates can be read after it. */

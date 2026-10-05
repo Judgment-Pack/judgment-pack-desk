@@ -1,9 +1,10 @@
 /**
- * The decision-record panel (ADR-0010, sections 4 and 6): the one sentence an
- * older runtime gets, and nothing beside it; the runtime's report, with its
- * sentences verbatim; the runtime's refusal; Desk's own refusal; a project
- * that keeps no trail; and that it runs on opening and on request, never on a
- * timer.
+ * The decision-record panel (ADR-0010, sections 1, 4 and 6): the one sentence
+ * an older runtime gets, and nothing beside it; the runtime's report, with its
+ * sentences verbatim; the keys Desk passed, shown for a holder, and the
+ * runtime's word on the key; the runtime's refusal; Desk's own refusal; a
+ * project that keeps no trail; and that it runs on opening and on request,
+ * never on a timer.
  */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
@@ -36,6 +37,15 @@ const held: AuditReport = { ...valid, snapshotBetweenWrites: false, coverage: { 
   signed: { status: 'through', through: 7 }, signedRecords: 7, unsignedRecords: 2,
   checkpointed: { status: 'through', through: 6 }, witnessed: 6, unwitnessed: 3,
   stamped: { status: 'none' } } }
+
+// A key runtime 0.26.0 generated, and the keyId it printed for it.
+const deskKey = { publicKey: '882a7f2be72a4b0c0a03b590300c72e8ed3fab24355a6950f9e6399814c67350', keyId: '4ba1de706a3baa4d8f5456340604190a', at: 0 }
+const nextKey = { publicKey: '272ad95977cf9721551ead07d2c9563cb7403b3688a8c23508b6a02ba4302623', keyId: '1cba17c1fa03b21777f6bf729e3f1a2b', at: 7 }
+const signedReport: AuditReport = { ...valid, coverage: { ...coverage, signed: { status: 'through', through: 10 }, signedRecords: 10, unsignedRecords: 0 },
+  signatures: { lines: 10, unreadable: 1, rotations: 0, keysSupplied: 1, revocations: 0, firstKey: deskKey.keyId, keyInForce: deskKey.keyId } }
+const passedCheck = { state: 'check', status: 'passed', detail: 'Chained records are signed with key 4ba1de706a3baa4d8f5456340604190a, named by the audit member\'s signingKey.' } as const
+const KEYED_STATEMENT = 'Desk ran this on your machine, over your trail, with the public keys it keeps for this desk and no checkpoints: it checked the signatures against those keys, and no held checkpoint and no stamp. It is not evidence to anyone who does not trust you: you hold the key. A holder runs the same command on a copy, with what it holds.'
+const KEYLESS_STATEMENT = 'Desk ran this on your machine, over your trail, with no keys and no checkpoints: it checked no signature, no held checkpoint and no stamp. It is not evidence to anyone who does not trust you. A holder runs the same command on a copy, with what it holds.'
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 let answers: (() => Response)[]
@@ -79,6 +89,47 @@ describe('the decision-record client', () => {
     await expect(readAuditRecord()).rejects.toThrow('The decision record could not be loaded')
     for (const report of [valid, invalid, segmented, held]) expect(isAuditRecord({ state: 'report', report }), report.status).toBe(true)
   })
+
+  it('reads the keys Desk kept and the runtime’s word on them, and refuses what is not one', () => {
+    for (const extra of [
+      { keys: { state: 'kept', public: [deskKey] }, signing: passedCheck },
+      { keys: { state: 'kept', public: [deskKey, nextKey] }, signing: { state: 'check', status: 'failed', detail: 'refused' } },
+      { keys: { state: 'none' }, signing: { state: 'no-key' } },
+      { keys: { state: 'startup' }, signing: { state: 'check', status: 'skipped' } },
+      { keys: { state: 'unread', problem: 'Desk could not read the public keys it keeps for this desk: it is not a regular file.' } },
+      { signing: { state: 'unread', diagnostics: [{ code: 'JPS-PROJECT-CONFIG-VERSION', message: 'Refused.' }] } },
+      { signing: { state: 'unread', problem: 'Its packs validate did not answer as documented.' } }
+    ]) {
+      expect(isAuditRecord({ state: 'report', report: signedReport, ...extra }), JSON.stringify(extra)).toBe(true)
+      expect(isAuditRecord({ state: 'unverified', diagnostics: [{ code: 'JPS-AUDIT-TRAIL-READ', message: 'None yet.' }], ...extra }), JSON.stringify(extra)).toBe(true)
+    }
+    for (const extra of [
+      { keys: { state: 'kept', public: [] } },
+      { keys: { state: 'kept' } },
+      { keys: { state: 'kept', public: [{ ...deskKey, publicKey: deskKey.publicKey.toUpperCase() }] } },
+      { keys: { state: 'kept', public: [{ ...deskKey, publicKey: deskKey.publicKey.slice(2) }] } },
+      { keys: { state: 'kept', public: [{ ...deskKey, keyId: deskKey.keyId.slice(1) }] } },
+      { keys: { state: 'kept', public: [{ ...deskKey, at: 1 }] } },
+      { keys: { state: 'kept', public: [deskKey, { ...nextKey, at: 0 }] } },
+      { keys: { state: 'kept', public: [deskKey, { ...nextKey, at: -1 }] } },
+      { keys: { state: 'unread' } },
+      { keys: { state: 'unread', problem: '' } },
+      { keys: { state: 'signed' } },
+      { keys: 'kept' },
+      { signing: { state: 'check', status: 'maybe' } },
+      { signing: { state: 'check' } },
+      { signing: { state: 'check', status: 'passed', detail: 5 } },
+      { signing: { state: 'unread' } },
+      { signing: { state: 'unread', diagnostics: [] } },
+      { signing: { state: 'unread', diagnostics: [{ code: '', message: 'Refused.' }] } },
+      { signing: { state: 'signed' } }
+    ]) {
+      expect(isAuditRecord({ state: 'report', report: valid, ...extra }), JSON.stringify(extra)).toBe(false)
+    }
+    for (const signatures of [{ ...signedReport.signatures, keyInForce: undefined }, { ...signedReport.signatures, firstKey: '' }, { ...signedReport.signatures, unreadable: -1 }, { ...signedReport.signatures, rotations: undefined }]) {
+      expect(isAuditRecord({ state: 'report', report: { ...signedReport, signatures } }), JSON.stringify(signatures)).toBe(false)
+    }
+  })
 })
 
 describe('the decision-record panel', () => {
@@ -95,7 +146,9 @@ describe('the decision-record panel', () => {
   it('shows the runtime’s report: status, coverage, segments, and its sentences verbatim, in English', async () => {
     show()
     expect(await screen.findByText('Every check the runtime made passed.')).toBeTruthy()
-    expect(screen.getByText('Desk ran this on your machine, over your trail, with no keys and no checkpoints: it checked no signature, no held checkpoint and no stamp. It is not evidence to anyone who does not trust you. A holder runs the same command on a copy, with what it holds.')).toBeTruthy()
+    expect(screen.getByText(KEYLESS_STATEMENT)).toBeTruthy()
+    // An answer with no word on the keys says nothing of them.
+    expect(screen.queryByRole('region', { name: 'Signing key' })).toBeNull()
     const facts = within(panel().querySelector('dl')!)
     const value = (term: string) => facts.getByText(term).nextElementSibling?.textContent
     expect(value('Lines')).toBe('10')
@@ -121,6 +174,71 @@ describe('the decision-record panel', () => {
     expect(doesNot.getAttribute('lang')).toBe('en')
     expect(screen.getByText('Checked by jpack 0.26.0.')).toBeTruthy()
     expect(screen.queryByText(/lock on the trail/)).toBeNull()
+  })
+
+  it('says which keys it passed, shows each for a holder in order, and the runtime’s word on the key', async () => {
+    answers = [() => json(200, { state: 'report', runtime: '0.26.0', report: signedReport, keys: { state: 'kept', public: [deskKey, nextKey] }, signing: passedCheck } satisfies AuditRecord)]
+    show()
+    expect(await screen.findByText(KEYED_STATEMENT)).toBeTruthy()
+    expect(screen.queryByText(KEYLESS_STATEMENT)).toBeNull()
+    const signing = within(screen.getByRole('region', { name: 'Signing key' }))
+    expect(signing.getByText(/^Desk keeps this desk’s signing key in its own configuration folder, outside the project/)).toBeTruthy()
+    const shown = [...screen.getByRole('region', { name: 'Signing key' }).querySelectorAll('pre')].map(block => [block.getAttribute('aria-label'), block.textContent])
+    expect(shown).toEqual([[`Public key 1, keyId ${deskKey.keyId}`, deskKey.publicKey], [`Public key 2, keyId ${nextKey.keyId}`, nextKey.publicKey]])
+    expect(signing.getByRole('button', { name: `Copy Public key 1, keyId ${deskKey.keyId}` })).toBeTruthy()
+    const check = screen.getByRole('region', { name: 'Signing key' }).querySelector('[data-check]')!
+    expect(check.getAttribute('data-check')).toBe('passed')
+    expect(check.textContent).toBe('The runtime’s check of the key: Passed. ' + passedCheck.detail)
+    expect(check.querySelector('span')!.getAttribute('lang')).toBe('en')
+    const facts = within(panel().querySelector('dl')!)
+    const value = (term: string) => facts.getByText(term).nextElementSibling?.textContent
+    expect(value('Signatures')).toBe('Signed through record 10')
+    expect(value('Key in force at the end of the trail')).toBe(deskKey.keyId)
+    expect(value('Signature lines the runtime could not read')).toBe('1')
+  })
+
+  it('says where Desk keeps no key, or could not read the ones it keeps, and passes none', async () => {
+    for (const [keys, says] of [
+      [{ state: 'none' }, 'Desk keeps no signing key for this desk, so it passed no public key.'],
+      [{ state: 'startup' }, 'Desk keeps no signing key for the project it was started on, so it passed no public key.'],
+      [{ state: 'unread', problem: 'Desk could not read the public keys it keeps for this desk: line 1 is not in the form Desk writes.' }, 'Desk could not read the public keys it keeps for this desk: line 1 is not in the form Desk writes.']
+    ] as const) {
+      answers = [() => json(200, { state: 'report', runtime: '0.26.0', report: valid, keys, signing: { state: 'no-key' } } satisfies AuditRecord)]
+      show()
+      expect(await screen.findByText(KEYLESS_STATEMENT)).toBeTruthy()
+      const signing = screen.getByRole('region', { name: 'Signing key' })
+      expect(within(signing).getByText(says)).toBeTruthy()
+      expect(signing.querySelector('pre')).toBeNull()
+      expect(within(signing).getByText('The runtime’s check of the key: no key is named for this project, so its runtime signs no record.')).toBeTruthy()
+      if (keys.state === 'unread') expect(within(signing).getByRole('alert').textContent).toBe(says)
+      cleanup()
+    }
+  })
+
+  it('shows a key the runtime refuses, and a check it did not make, in its words', async () => {
+    const refused = 'The signing key the audit member\'s signingKey names, Desk\'s signing folder/abc.seed, is refused, so records are written unsigned: the signing key can be read or written by its group or by other users.'
+    answers = [() => json(200, { state: 'report', runtime: '0.26.0', report: valid, keys: { state: 'kept', public: [deskKey] }, signing: { state: 'check', status: 'failed', detail: refused } } satisfies AuditRecord)]
+    show()
+    await screen.findByText(KEYED_STATEMENT)
+    expect(panel().querySelector('[data-check]')!.textContent).toBe('The runtime’s check of the key: Failed. ' + refused)
+    cleanup()
+
+    answers = [() => json(200, { state: 'unverified', runtime: '0.26.0', diagnostics: [{ code: 'JPS-AUDIT-TRAIL-READ', message: 'None yet.' }], keys: { state: 'kept', public: [deskKey] },
+      signing: { state: 'unread', diagnostics: [{ code: 'JPS-PROJECT-CONFIG-VERSION', message: 'The configuration is refused.' }] } } satisfies AuditRecord)]
+    show()
+    await screen.findByText('The runtime did not check the trail.')
+    const signing = within(screen.getByRole('region', { name: 'Signing key' }))
+    expect(signing.getByText('The runtime did not say whether a key signs this project’s records.')).toBeTruthy()
+    const said = signing.getByRole('list', { name: 'What the runtime said of the key' })
+    expect(said.textContent).toBe('JPS-PROJECT-CONFIG-VERSION The configuration is refused.')
+    expect(said.querySelector('li')!.getAttribute('lang')).toBe('en')
+    expect(screen.getByRole('region', { name: 'Signing key' }).querySelectorAll('pre')).toHaveLength(1)
+    cleanup()
+
+    answers = [() => json(200, { state: 'report', runtime: '0.26.0', report: valid, signing: { state: 'unread', problem: 'Its packs validate did not answer as documented.' } } satisfies AuditRecord)]
+    show()
+    await screen.findByText(KEYLESS_STATEMENT)
+    expect(within(screen.getByRole('region', { name: 'Signing key' })).getByText('Its packs validate did not answer as documented.')).toBeTruthy()
   })
 
   it('shows each finding by name, and how many the runtime did not list', async () => {

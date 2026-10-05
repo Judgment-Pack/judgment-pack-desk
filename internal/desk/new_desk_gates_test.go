@@ -40,12 +40,30 @@ const (
 )
 
 // writeStandInRuntime puts a stand-in for the runtime at path. It answers the
-// two commands a new desk is made with, each by a shell fragment run in the
+// commands a new desk is made with, each by a shell fragment run in the
 // stand-in's working directory: schema for `packs schema`, and lock for
 // `packs lock`. As `mcp` it reads its input until the relay closes it. Every
 // run appends one line to the returned file: its arguments, and the
 // `JPACK_CONFIG` it was given. It first appends one line to `envSeen`'s file.
 // It uses shell builtins only.
+//
+// The commands a signed desk adds (ADR-0010) it answers by default as runtime
+// 0.26.0 does, and each can be steered from a file beside the calls file:
+//
+//   - `audit key generate <path> --format json` writes a seed at path,
+//     owner-only and never over anything, and prints standInGenerated;
+//     `<calls>.generate`, where it exists, is a shell fragment run instead
+//     (`generatingAs`).
+//   - `audit key public <path> --format json` prints standInRead, the key
+//     standInGenerated names, whatever the path; `<calls>.public`, where it
+//     exists, is a shell fragment run instead (`readingKeyAs`).
+//   - `packs validate` prints `<calls>.validate` and exits with
+//     `<calls>.validate.exit`, where they exist (`validatingAs`), and
+//     otherwise standInValidated, which reports no signing-key check.
+//   - `packs lock`, in a desk folder whose name has a `<calls>.lock-<name>`,
+//     writes and reports the lock that file holds (`signsDesks`), and
+//     otherwise runs lock. Run so before the folder has a jpack.json, it
+//     appends "lock before config" to `<calls>.order`.
 func writeStandInRuntime(t *testing.T, path, schema, lock string) (calls string) {
 	t.Helper()
 	calls = filepath.Join(t.TempDir(), "calls")
@@ -54,7 +72,29 @@ func writeStandInRuntime(t *testing.T, path, schema, lock string) (calls string)
 		"printf '%s [JPACK_CONFIG=%s]\\n' \"$*\" \"${JPACK_CONFIG-unset}\" >> '" + calls + "'\n" +
 		"case \"$1 $2\" in\n" +
 		"'packs schema')\n" + schema + "\n  ;;\n" +
-		"'packs lock')\n" + lock + "\n  ;;\n" +
+		"'audit key')\n" +
+		"  case \"$3\" in\n" +
+		"  generate)\n" +
+		"  if [ -e '" + calls + ".generate' ]; then . '" + calls + ".generate'; exit $?; fi\n" +
+		generateAsTheRuntime + "\n  ;;\n" +
+		"  public)\n" +
+		"  if [ -e '" + calls + ".public' ]; then . '" + calls + ".public'; exit $?; fi\n" +
+		"  printf '%s\\n' '" + standInRead + "'\n  ;;\n" +
+		"  *) exit 64 ;;\n" +
+		"  esac\n  ;;\n" +
+		"'packs validate')\n" +
+		"  if [ -e '" + calls + ".validate' ]; then\n" +
+		"    while IFS= read -r line || [ -n \"$line\" ]; do printf '%s\\n' \"$line\"; done < '" + calls + ".validate'\n" +
+		"    IFS= read -r code < '" + calls + ".validate.exit'; exit \"$code\"\n" +
+		"  fi\n" +
+		"  printf '%s\\n' '" + standInValidated + "'\n  ;;\n" +
+		"'packs lock')\n" +
+		"  desk=$(pwd -P); desk=${desk##*/}\n" +
+		"  if [ -e '" + calls + ".lock-'\"$desk\" ]; then\n" +
+		"    [ -e jpack.json ] || printf 'lock before config\\n' >> '" + calls + ".order'\n" +
+		"    { IFS= read -r lock; IFS= read -r answer; } < '" + calls + ".lock-'\"$desk\"\n" +
+		"    printf '%s\\n' \"$lock\" > jpack.lock.json; printf '%s\\n' \"$answer\"; exit 0\n" +
+		"  fi\n" + lock + "\n  ;;\n" +
 		"'mcp ')\n  while IFS= read -r _; do :; done\n  ;;\n" +
 		"*) exit 64 ;;\n" +
 		"esac\n"
@@ -62,6 +102,91 @@ func writeStandInRuntime(t *testing.T, path, schema, lock string) (calls string)
 		t.Fatalf("write the stand-in runtime: %v", err)
 	}
 	return calls
+}
+
+// What runtime 0.26.0 printed for `audit key generate <path> --format json`,
+// measured, and the public key and keyId in it: the stand-in prints it for
+// every key it generates. standInSeed is any 64 hexadecimal characters; no
+// test reads it back.
+const (
+	standInPublicKey = "882a7f2be72a4b0c0a03b590300c72e8ed3fab24355a6950f9e6399814c67350"
+	standInKeyID     = "4ba1de706a3baa4d8f5456340604190a"
+	standInGenerated = `{"outputVersion":"2","tool":{"name":"jpack","version":"0.26.0"},"command":"audit key generate","status":"generated","publicKey":"` + standInPublicKey + `","keyId":"` + standInKeyID + `"}`
+	standInSeed      = "1f0e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"
+	// standInRead is what runtime 0.26.0 prints for `audit key public <path>
+	// --format json` over the seed whose public half is standInPublicKey.
+	standInRead = `{"outputVersion":"2","tool":{"name":"jpack","version":"0.26.0"},"command":"audit key public","status":"read","publicKey":"` + standInPublicKey + `","keyId":"` + standInKeyID + `"}`
+	// generateAsTheRuntime is the stand-in's own `audit key generate`: the
+	// seed at "$4", owner-only and never over anything, and the answer.
+	generateAsTheRuntime = "  (umask 077; set -C; printf '%s\\n' '" + standInSeed + "' > \"$4\") || exit 4\n  printf '%s\\n' '" + standInGenerated + "'"
+	// standInValidated is a `packs validate` of a project that names no key,
+	// as 0.26.0 prints one: the audit directory's check, and no other.
+	standInValidated = `{"outputVersion":"2","tool":{"name":"jpack","version":"0.26.0"},"command":"packs validate","status":"valid","kind":"non-normative-runtime-convention","configPath":"jpack.json","configVersion":"5","summary":{"total":0,"passed":0,"failed":0},"checks":[{"name":"audit-dir-inside-root","status":"passed"}],"packs":[]}`
+)
+
+// generatingAs steers the stand-in whose calls file is calls: its `audit key
+// generate` runs fragment, a shell fragment, in place of its own. The seed's
+// path is "$4", and the fragment's last status is the run's exit.
+func generatingAs(t *testing.T, calls, fragment string) {
+	t.Helper()
+	if err := os.WriteFile(calls+".generate", []byte(fragment+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// readingKeyAs steers the stand-in whose calls file is calls: its `audit key
+// public` runs fragment, a shell fragment, in place of its own.
+func readingKeyAs(t *testing.T, calls, fragment string) {
+	t.Helper()
+	if err := os.WriteFile(calls+".public", []byte(fragment+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// validatingAs steers the stand-in whose calls file is calls: its `packs
+// validate` prints body and exits with code.
+func validatingAs(t *testing.T, calls string, code int, body string) {
+	t.Helper()
+	answerAt(t, calls+".validate", code, body)
+}
+
+// fixDeskIDs makes the next desks with ids, in order; after them, random ids
+// again.
+func fixDeskIDs(t *testing.T, ids ...string) {
+	t.Helper()
+	was := newDeskID
+	next := 0
+	newDeskID = func() (string, error) {
+		if next == len(ids) {
+			return was()
+		}
+		next++
+		return ids[next-1], nil
+	}
+	t.Cleanup(func() { newDeskID = was })
+}
+
+// wantSignedConfig is the configuration a signed desk id is written with,
+// where Desk's configuration directory is config: spelled out here, with the
+// key's path built by hand, rather than read from the code.
+func wantSignedConfig(config, id string) string {
+	return `{"configVersion":"6","requireReviewed":true,"requireComparableFacts":true,"audit":{"dir":".desk-private/audit","signingKey":"` +
+		config + "/secrets/signing/" + id + `.seed"},"packs":{}}` + "\n"
+}
+
+// signsDesks fixes the ids of the next desks, and has the stand-in whose
+// calls file is calls lock each one's signed configuration under config: a
+// lock pinning wantSignedConfig, reported as 0.26.0 reports it.
+func signsDesks(t *testing.T, calls, config string, ids ...string) {
+	t.Helper()
+	fixDeskIDs(t, ids...)
+	for _, id := range ids {
+		digest := "sha256:" + digestOf([]byte(wantSignedConfig(config, id)))
+		lock := `{"lockVersion":"1","config":{"digest":"` + digest + `"}}` + "\n" + lockAnswer(digest) + "\n"
+		if err := os.WriteFile(calls+".lock-"+id, []byte(lock), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 // envSeen is what the stand-in whose calls file is calls recorded of each
@@ -79,7 +204,7 @@ func envSeen(t *testing.T, calls string) []string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+	return strings.Split(seedArgument.ReplaceAllString(keyFileArgument.ReplaceAllString(strings.TrimSuffix(string(data), "\n"), "--public-key FILE"), "audit key public SEED --format json"), "\n")
 }
 
 // reading is a `packs schema --format json` that names versions as
@@ -124,6 +249,7 @@ type createdDesk struct {
 	deskRecord
 	ConfigVersion          string `json:"configVersion"`
 	RequireComparableFacts bool   `json:"requireComparableFacts"`
+	Signed                 bool   `json:"signed"`
 	Notice                 string `json:"notice"`
 }
 
@@ -133,6 +259,19 @@ func createGatedDesk(t *testing.T, ts *httptest.Server) createdDesk {
 	var row createdDesk
 	if status != 201 || json.Unmarshal(data, &row) != nil || row.ID == "" {
 		t.Fatalf("create: %d %s", status, data)
+	}
+	return row
+}
+
+// createSignedDesk makes the desk id on s, whose runtime is the stand-in
+// with the calls file calls and reads "6", and fails the test unless it is
+// made, signed, at "6".
+func createSignedDesk(t *testing.T, s *Server, ts *httptest.Server, calls, id string) createdDesk {
+	t.Helper()
+	signsDesks(t, calls, s.configDir, id)
+	row := createGatedDesk(t, ts)
+	if row.ID != id || row.ConfigVersion != "6" || !row.Signed || row.Notice != "" {
+		t.Fatalf("the desk was made %+v, want %s signed at 6", row, id)
 	}
 	return row
 }
@@ -219,10 +358,10 @@ func TestANewDeskStartsUnderReviewedLawWithDecidingRunsRecorded(t *testing.T) {
 	t.Setenv("JPACK_CONFIG", filepath.Join(t.TempDir(), "jpack.json"))
 	bin := filepath.Join(t.TempDir(), "jpack")
 	calls := writeStandInRuntime(t, bin, reading(allConfigVersions), lockingAs(wantGatedConfig))
-	_, ts, logged := gatesServer(t, bin)
+	s, ts, logged := gatesServer(t, bin)
 	row := createGatedDesk(t, ts)
 	assertGatedFolder(t, row.Folder, wantGatedConfig)
-	if row.ConfigVersion != "5" || !row.RequireComparableFacts || row.Notice != "" || !row.Managed || row.Name != "Gated" {
+	if row.ConfigVersion != "5" || !row.RequireComparableFacts || row.Signed || row.Notice != wantUnsignedByRuntime || !row.Managed || row.Name != "Gated" {
 		t.Errorf("the creation answered %+v", row)
 	}
 	// Asked once, then locked once, with the configuration named rather than
@@ -235,7 +374,19 @@ func TestANewDeskStartsUnderReviewedLawWithDecidingRunsRecorded(t *testing.T) {
 	if strings.Contains(logged.String(), "requireComparableFacts") {
 		t.Errorf("a runtime that reads 5 logged a fallback: %s", logged)
 	}
+	// A runtime that does not read 6 is asked for no key, and nothing is made
+	// in Desk's custody.
+	if _, err := os.Lstat(filepath.Join(s.configDir, "secrets", "signing")); !os.IsNotExist(err) {
+		t.Errorf("a runtime that reads no 6 had a signing folder made: %v", err)
+	}
+	if !strings.Contains(logged.String(), "desk: "+wantUnsignedByRuntime) {
+		t.Errorf("the unsigned desk was not logged: %s", logged)
+	}
 }
+
+// What a creation says of a desk made unsigned, spelled out here, for the
+// stand-in's version, rather than read from the code.
+const wantUnsignedByRuntime = "This desk is not signed: a desk names its signing key at configVersion 6, and the runtime this Desk runs (jpack 0.0.0-stand-in) does not read it. A runtime of 0.26.0 or later creates desks signed."
 
 func TestANewDeskFallsBackToVersion4WhenTheRuntimeCannotRead5(t *testing.T) {
 	bin := filepath.Join(t.TempDir(), "jpack")
@@ -243,8 +394,12 @@ func TestANewDeskFallsBackToVersion4WhenTheRuntimeCannotRead5(t *testing.T) {
 	_, ts, logged := gatesServer(t, bin)
 	row := createGatedDesk(t, ts)
 	assertGatedFolder(t, row.Folder, wantGatedConfigV4)
-	if row.ConfigVersion != "4" || row.RequireComparableFacts {
-		t.Errorf("the creation answered %+v, want configVersion 4 without requireComparableFacts", row)
+	if row.ConfigVersion != "4" || row.RequireComparableFacts || row.Signed {
+		t.Errorf("the creation answered %+v, want configVersion 4 without requireComparableFacts, unsigned", row)
+	}
+	// Two paragraphs, each said whole: the version, then the signature.
+	if want := "The runtime this Desk runs (jpack 0.0.0-stand-in) reads configuration versions 1, 2, 3, 4, not 5. This desk was created at configVersion 4, without requireComparableFacts, so a fact of a type no comparison can match is not refused. A runtime of 0.25.0 or later creates desks with it.\n\n" + wantUnsignedByRuntime; row.Notice != want {
+		t.Errorf("the notice is %q, want %q", row.Notice, want)
 	}
 	// It says so, in the answer and in Desk's log.
 	for _, said := range []string{row.Notice, logged.String()} {
@@ -329,17 +484,6 @@ func jpackIn(t *testing.T, bin, folder string, args ...string) []byte {
 	return out
 }
 
-// gatedConfigFor is the configuration a creation that answered version
-// should have written.
-func gatedConfigFor(t *testing.T, version string) string {
-	t.Helper()
-	want := map[string]string{"5": wantGatedConfig, "4": wantGatedConfigV4}[version]
-	if want == "" {
-		t.Fatalf("the creation answered configVersion %q", version)
-	}
-	return want
-}
-
 // The real runtime locks the new desk's own configuration, even where Desk
 // was started with JPACK_CONFIG naming another, and the lock verifies.
 func TestNewDeskWithTheRuntimeLocksItsOwnConfiguration(t *testing.T) {
@@ -349,9 +493,9 @@ func TestNewDeskWithTheRuntimeLocksItsOwnConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("JPACK_CONFIG", filepath.Join(decoy, "jpack.json"))
-	_, ts, _ := gatesServer(t, bin)
+	s, ts, _ := gatesServer(t, bin)
 	row := createGatedDesk(t, ts)
-	assertGatedFolder(t, row.Folder, gatedConfigFor(t, row.ConfigVersion))
+	assertGatedFolder(t, row.Folder, gatedConfigFor(t, s, row))
 	if _, err := os.Lstat(filepath.Join(decoy, "jpack.lock.json")); !os.IsNotExist(err) {
 		t.Errorf("the lock was written beside JPACK_CONFIG's configuration: %v", err)
 	}
@@ -371,9 +515,9 @@ func TestNewDeskWithTheRuntimeGatesDecidingRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("JPACK_CONFIG", filepath.Join(decoy, "jpack.json"))
-	_, ts, _ := gatesServer(t, bin)
+	s, ts, _ := gatesServer(t, bin)
 	row := createGatedDesk(t, ts)
-	want := gatedConfigFor(t, row.ConfigVersion)
+	want := gatedConfigFor(t, s, row)
 	assertGatedFolder(t, row.Folder, want)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)

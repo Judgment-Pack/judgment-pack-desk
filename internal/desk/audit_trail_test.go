@@ -123,8 +123,8 @@ func TestTheTrailIsHandedOverAsExactBytes(t *testing.T) {
 		t.Errorf("a download ran the runtime: %q", calls)
 	}
 
-	_, ts2, _ := gatesServer(t, rig.bin)
-	row := createGatedDesk(t, ts2)
+	s2, ts2, _ := gatesServer(t, rig.bin)
+	row := createSignedDesk(t, s2, ts2, rig.calls, "a0000000000000000000000000000006")
 	own := `{"desk":"made"}` + "\n"
 	if err := os.WriteFile(filepath.Join(row.Folder, ".desk-private", "audit", "evaluations.jsonl"), []byte(own), 0o600); err != nil {
 		t.Fatal(err)
@@ -671,9 +671,9 @@ func TestTheTrailDownloadWithTheRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, ts, _ := gatesServer(t, bin)
+	s, ts, _ := gatesServer(t, bin)
 	row := createGatedDesk(t, ts)
-	config := strings.Replace(gatedConfigFor(t, row.ConfigVersion), `"packs":{}`, `"packs":{"alpha":{"path":"packs/a.json"}}`, 1)
+	config := strings.Replace(gatedConfigFor(t, s, row), `"packs":{}`, `"packs":{"alpha":{"path":"packs/a.json"}}`, 1)
 	writeProject(t, row.Folder, map[string]string{"packs/a.json": reviewPack, "jpack.json": config})
 	jpackIn(t, bin, row.Folder, "packs", "lock", "--config", "jpack.json", "--format", "json")
 	facts := filepath.Join(t.TempDir(), "facts.json")

@@ -167,10 +167,17 @@ func readBounded(reader io.Reader, limit int) ([]byte, error) {
 		return nil, err
 	}
 	if len(data) > limit {
-		return nil, fmt.Errorf("more than %d bytes", limit)
+		return nil, overLimit{limit}
 	}
 	return data, nil
 }
+
+// overLimit is readBounded's answer to more bytes than its limit. It is a
+// type of its own so that a caller can tell "too large" from a failure to
+// read, which says nothing of the size.
+type overLimit struct{ limit int }
+
+func (e overLimit) Error() string { return fmt.Sprintf("more than %d bytes", e.limit) }
 
 /* The desk-level configuration file ---------------------------------------- */
 

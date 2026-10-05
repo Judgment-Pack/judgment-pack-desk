@@ -5,8 +5,12 @@
  * status, the coverage, the segments and discontinuities, each finding by
  * name, and the runtime's sentences about what the result establishes and
  * what it does not, verbatim and in English, as Desk shows the runtime's
- * diagnostics. Desk runs it with no key, no held checkpoint and no stamping
- * roots, and the panel says so.
+ * diagnostics. Desk runs it with the public keys it keeps for this desk, if
+ * any, no held checkpoint and no stamping roots, and the panel says which.
+ *
+ * Beside it: the public keys Desk keeps, for the owner to hand to a holder,
+ * and `packs validate`'s word on whether the key named signs this project's
+ * records, in the runtime's own sentence (ADR-0010, section 1).
  *
  * It runs when the panel becomes visible and when the owner asks again: never
  * on a timer, on focus, on a reconnect or on a change to the project. The
@@ -23,8 +27,9 @@ import { useQuery } from '@tanstack/react-query'
 import { ON_REQUEST_ONLY } from '../mcp/projectChange'
 import { msg, systemMessage, useLocale } from '../i18n'
 import { Button } from '../ui/Button'
+import { CodeBlock } from '../ui/CodeBlock'
 import { SettingsSection } from '../ui/SettingsSection'
-import { AUDIT_KEY, AuditUnavailable, readAuditRecord, type AuditCoverageState, type AuditReport } from './client'
+import { AUDIT_KEY, AuditUnavailable, readAuditRecord, type AuditCoverageState, type AuditKeys, type AuditReport, type AuditSigning } from './client'
 import styles from './DecisionRecord.module.css'
 import { TrailDownloads } from './TrailDownloads'
 
@@ -67,18 +72,59 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
                 : record?.state === 'unverified' ? <>
                   <p>{msg('The runtime did not check the trail.')}</p>
                   <ul className={styles.list} aria-label={msg('What the runtime said')}>{record.diagnostics.map((item, index) => <li key={index} lang="en"><code>{item.code}</code> {item.message}</li>)}</ul>
+                  <SigningKey keys={record.keys} signing={record.signing} />
                   <TrailDownloads files={record.files ?? []} />
                   {again}
                 </>
                   : record?.state === 'report' && <>
-                    <p className={styles.statement}>{msg('Desk ran this on your machine, over your trail, with no keys and no checkpoints: it checked no signature, no held checkpoint and no stamp. It is not evidence to anyone who does not trust you. A holder runs the same command on a copy, with what it holds.')}</p>
+                    <p className={styles.statement}>{record.keys?.state === 'kept'
+                      ? msg('Desk ran this on your machine, over your trail, with the public keys it keeps for this desk and no checkpoints: it checked the signatures against those keys, and no held checkpoint and no stamp. It is not evidence to anyone who does not trust you: you hold the key. A holder runs the same command on a copy, with what it holds.')
+                      : msg('Desk ran this on your machine, over your trail, with no keys and no checkpoints: it checked no signature, no held checkpoint and no stamp. It is not evidence to anyone who does not trust you. A holder runs the same command on a copy, with what it holds.')}</p>
                     <Report report={record.report} />
+                    <SigningKey keys={record.keys} signing={record.signing} />
                     <TrailDownloads files={record.files ?? []} />
                     {record.runtime && <p className={styles.quiet}>{msg('Checked by jpack {{version}}.', { version: record.runtime })}</p>}
                     {again}
                   </>}
     </div>
   </SettingsSection>
+}
+
+/**
+ * The keys Desk keeps for this desk, as it passed them, and the runtime's
+ * word on the key the project names.
+ */
+function SigningKey({ keys, signing }: { keys?: AuditKeys; signing?: AuditSigning }) {
+  if (!keys && !signing) return null
+  return <section aria-label={msg('Signing key')}>
+    <h4 className={styles.heading}>{msg('Signing key')}</h4>
+    <div className={styles.card}>
+      {keys?.state === 'kept' && <>
+        <p className={styles.quiet}>{msg('Desk keeps this desk’s signing key in its own configuration folder, outside the project, and passed these public keys to the check, in this order. Hand them to a holder: a holder checks a copy of the trail with jpack audit verify --public-key, one file for each key, in this order.')}</p>
+        {keys.public.map((key, index) => <CodeBlock key={key.publicKey} text={key.publicKey} label={msg('Public key {{number}}, keyId {{keyId}}', { number: index + 1, keyId: key.keyId })} />)}
+      </>}
+      {keys?.state === 'none' && <p>{msg('Desk keeps no signing key for this desk, so it passed no public key.')}</p>}
+      {keys?.state === 'startup' && <p>{msg('Desk keeps no signing key for the project it was started on, so it passed no public key.')}</p>}
+      {keys?.state === 'unread' && <p role="alert">{systemMessage(keys.problem)}</p>}
+      {signing && <SigningCheck signing={signing} />}
+    </div>
+  </section>
+}
+
+/** `packs validate`'s `audit-signing-key` check, with the runtime's own sentence. */
+function SigningCheck({ signing }: { signing: AuditSigning }) {
+  switch (signing.state) {
+    case 'check': {
+      const status = { passed: msg('Passed'), failed: msg('Failed'), skipped: msg('Skipped') }[signing.status]
+      return <p data-check={signing.status}>{msg('The runtime’s check of the key: {{status}}.', { status })}{signing.detail && <> <span lang="en">{signing.detail}</span></>}</p>
+    }
+    case 'no-key': return <p>{msg('The runtime’s check of the key: no key is named for this project, so its runtime signs no record.')}</p>
+    case 'unread': return <>
+      <p>{msg('The runtime did not say whether a key signs this project’s records.')}</p>
+      {signing.diagnostics && <ul className={styles.list} aria-label={msg('What the runtime said of the key')}>{signing.diagnostics.map((item, index) => <li key={index} lang="en"><code>{item.code}</code> {item.message}</li>)}</ul>}
+      {signing.problem && <p className={styles.quiet}>{systemMessage(signing.problem)}</p>}
+    </>
+  }
 }
 
 /** The runtime's word for a report's status, in the owner's language. */
@@ -125,6 +171,10 @@ function Report({ report }: { report: AuditReport }) {
       {coverage.signed.status !== 'not-checked' && <>
         <div><dt>{msg('Records with a valid signature of their own')}</dt><dd>{coverage.signedRecords}</dd></div>
         <div><dt>{msg('Chained records without one')}</dt><dd>{coverage.unsignedRecords}</dd></div>
+      </>}
+      {report.signatures && <>
+        <div><dt>{msg('Key in force at the end of the trail')}</dt><dd><code>{report.signatures.keyInForce}</code></dd></div>
+        <div><dt>{msg('Signature lines the runtime could not read')}</dt><dd>{report.signatures.unreadable}</dd></div>
       </>}
       <div><dt>{msg('Held checkpoints')}</dt><dd>{reach('checkpointed', coverage.checkpointed)}</dd></div>
       <div><dt>{msg('Records a held checkpoint witnesses')}</dt><dd>{coverage.witnessed}</dd></div>

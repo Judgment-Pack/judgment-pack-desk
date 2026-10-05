@@ -78,6 +78,10 @@ func openPrivateDataRoot(dir string, create bool) (*os.Root, error) {
 	return root, nil
 }
 
+// errPrivateDataChanged is a private file that was not the same file when
+// opened as when inspected: a moment's state, not the file's.
+var errPrivateDataChanged = errors.New("private data changed while being opened")
+
 func readPrivateData(root *os.Root, name string, limit int) ([]byte, error) {
 	info, err := root.Lstat(name)
 	if err != nil {
@@ -99,7 +103,7 @@ func readPrivateData(root *os.Root, name string, limit int) ([]byte, error) {
 		return nil, err
 	}
 	if !os.SameFile(info, opened) {
-		return nil, withCode(CodeForbidden, errors.New("private data changed while being opened"))
+		return nil, withCode(CodeForbidden, errPrivateDataChanged)
 	}
 	if err = ownerOnlyFile(name, opened.Mode()); err != nil {
 		return nil, withCode(CodeForbidden, err)
@@ -107,12 +111,32 @@ func readPrivateData(root *os.Root, name string, limit int) ([]byte, error) {
 	if err = ownedByUs(name, opened); err != nil {
 		return nil, withCode(CodeForbidden, err)
 	}
-	data, err := readBounded(file, limit)
-	if err != nil {
+	var data []byte
+	if testHookPrivateRead != nil {
+		err = testHookPrivateRead(name)
+	}
+	if err == nil {
+		data, err = readBounded(file, limit)
+	}
+	var over overLimit
+	switch {
+	case errors.As(err, &over):
 		return nil, withCode(CodeTooLarge, fmt.Errorf("%s exceeds its %d-byte storage limit", name, limit))
+	case err != nil:
+		// **A failure to read is not "too large".** It says nothing of the
+		// file, and is kept as itself, uncoded: a reader that decides from
+		// the code what a file is (readDeskManifest, and so a start's sweep
+		// of unfinished keys) must be able to tell "this is not a desk's
+		// manifest" from "it could not be read now".
+		return nil, fmt.Errorf("%s could not be read: %w", name, err)
 	}
 	return data, nil
 }
+
+// testHookPrivateRead runs before a private file's bytes are read, and is nil
+// outside tests. An error it returns stands for a failure to read them, such
+// as an I/O error, so a test can fail one read and let the next succeed.
+var testHookPrivateRead func(name string) error
 
 func writePrivateData(root *os.Root, name string, data []byte) error {
 	file, stage, err := newDataStage(root)

@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -106,7 +107,11 @@ func newAuditRigSaying(t *testing.T, schema string) *auditRig {
 	if err != nil {
 		t.Fatal(err)
 	}
-	verify := "'audit verify')\n  answer='" + rig.answer + "'\n  if [ -e ./" + deskAnswerName + " ]; then answer=./" + deskAnswerName + "; fi\n" +
+	// Each `--public-key` file's line is appended to `<calls>.keys`, in the
+	// order given, as the run reads it: `keysSeen`.
+	verify := "'audit verify')\n" +
+		"  prev=; for arg do if [ \"$prev\" = --public-key ]; then IFS= read -r key < \"$arg\"; printf '%s\\n' \"$key\" >> '" + rig.calls + ".keys'; fi; prev=$arg; done\n" +
+		"  answer='" + rig.answer + "'\n  if [ -e ./" + deskAnswerName + " ]; then answer=./" + deskAnswerName + "; fi\n" +
 		"  while IFS= read -r line || [ -n \"$line\" ]; do printf '%s\\n' \"$line\"; done < \"$answer\"\n" +
 		"  IFS= read -r code < \"$answer.exit\"\n  exit \"$code\"\n  ;;\n"
 	script = bytes.Replace(script, []byte("'packs lock')\n"), []byte(verify+"'packs lock')\n"), 1)
@@ -142,7 +147,7 @@ func (rig *auditRig) ran(t *testing.T) []string {
 	}
 	os.Remove(rig.calls)
 	os.Remove(rig.calls + ".env")
-	return strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+	return strings.Split(seedArgument.ReplaceAllString(keyFileArgument.ReplaceAllString(strings.TrimSuffix(string(data), "\n"), "--public-key FILE"), "audit key public SEED --format json"), "\n")
 }
 
 // auditDesk is a startup desk over a project with config as its jpack.json,
@@ -196,9 +201,39 @@ func reportOf(t *testing.T, ts *httptest.Server, desk string) *auditReport {
 }
 
 const (
-	schemaCall = "packs schema --format json [JPACK_CONFIG=unset]"
-	verifyCall = "audit verify --config jpack.json --format json [JPACK_CONFIG=unset]"
+	schemaCall   = "packs schema --format json [JPACK_CONFIG=unset]"
+	validateCall = "packs validate --config jpack.json --format json [JPACK_CONFIG=unset]"
+	verifyCall   = "audit verify --config jpack.json --format json [JPACK_CONFIG=unset]"
+	// verifyWithKeyCall is verifyCall with one public key's file, by the
+	// name ran gives every such file.
+	verifyWithKeyCall = "audit verify --config jpack.json --format json --public-key FILE [JPACK_CONFIG=unset]"
+	// publicCall is `audit key public` of the desk's seed, as ran names it.
+	publicCall = "audit key public SEED --format json [JPACK_CONFIG=unset]"
 )
+
+// keyFileArgument is a `--public-key` argument as a run names it: a file Desk
+// wrote for that run alone.
+var keyFileArgument = regexp.MustCompile(`--public-key [^ ]+`)
+
+// seedArgument is `audit key public` with the seed's path, which a test that
+// cares about it reads before ran names it SEED.
+var seedArgument = regexp.MustCompile(`audit key public .* --format json`)
+
+// keysSeen is the public keys the stand-in's `audit verify` read from its
+// `--public-key` files since the last call, in the order given, then forgets
+// them.
+func (rig *auditRig) keysSeen(t *testing.T) []string {
+	t.Helper()
+	data, err := os.ReadFile(rig.calls + ".keys")
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(rig.calls + ".keys")
+	return strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+}
 
 // **The runtime's own audit verify, with no held input.** On the startup desk
 // and on a desk Desk made, the panel asks `packs schema`, then runs exactly
@@ -210,8 +245,11 @@ func TestTheDecisionRecordRunsAuditVerifyWithNoHeldInput(t *testing.T) {
 	ts, rig, _ := auditDesk(t, withAuditVersions, auditedConfig)
 	rig.answers(t, 0, auditValidReport)
 	report := reportOf(t, ts, "")
-	if calls := rig.ran(t); !slices.Equal(calls, []string{schemaCall, verifyCall}) {
-		t.Errorf("the panel ran %q, want packs schema and then audit verify with no held input", calls)
+	if calls := rig.ran(t); !slices.Equal(calls, []string{schemaCall, validateCall, verifyCall}) {
+		t.Errorf("the panel ran %q, want packs schema, packs validate, and then audit verify with no held input", calls)
+	}
+	if keys := rig.keysSeen(t); keys != nil {
+		t.Errorf("the startup desk passed public keys %q", keys)
 	}
 	var want struct {
 		Establishes      []string      `json:"establishes"`
@@ -233,16 +271,20 @@ func TestTheDecisionRecordRunsAuditVerifyWithNoHeldInput(t *testing.T) {
 		t.Errorf("the runtime's sentences were not passed through as written: %q / %q", report.Establishes, report.DoesNotEstablish)
 	}
 
-	// A desk Desk made: its own project, the same command.
-	_, ts2, _ := gatesServer(t, rig.bin)
-	row := createGatedDesk(t, ts2)
+	// A desk Desk made: its own project, the same command, with the public
+	// key Desk keeps for it.
+	s2, ts2, _ := gatesServer(t, rig.bin)
+	row := createSignedDesk(t, s2, ts2, rig.calls, "a0000000000000000000000000000001")
 	rig.ran(t)
 	rig.answers(t, 1, auditInvalidReport)
 	if report := reportOf(t, ts2, row.ID); report.Status != "invalid" {
 		t.Errorf("the made desk's panel shows %+v", report)
 	}
-	if calls := rig.ran(t); !slices.Equal(calls, []string{schemaCall, verifyCall}) {
+	if calls := rig.ran(t); !slices.Equal(calls, []string{schemaCall, validateCall, publicCall, verifyWithKeyCall}) {
 		t.Errorf("the made desk's panel ran %q", calls)
+	}
+	if keys := rig.keysSeen(t); !slices.Equal(keys, []string{standInPublicKey}) {
+		t.Errorf("the made desk's panel passed public keys %q, want the one the runtime generated for it", keys)
 	}
 }
 
@@ -692,7 +734,7 @@ func TestTheDecisionRecordSaysWhenTheRuntimeHasNoAuditCommands(t *testing.T) {
 		if status, answer, refusal := readAudit(t, ts, ""); status != http.StatusOK || !sameAuditAnswer(answer, older) {
 			t.Errorf("a runtime with no audit verify (%s) answered %d %+v %q", said, status, answer, refusal)
 		}
-		if calls := rig.ran(t); !slices.Equal(calls, []string{schemaCall, verifyCall}) {
+		if calls := rig.ran(t); !slices.Equal(calls, []string{schemaCall, validateCall, verifyCall}) {
 			t.Errorf("the panel ran %q", calls)
 		}
 	}
@@ -766,9 +808,9 @@ func TestEachDeskIsCheckedInItsOwnFolder(t *testing.T) {
 	s, ts, _ := gatesServer(t, rig.bin)
 	writeProject(t, s.projectDir, map[string]string{"jpack.json": auditedConfig})
 	answerAt(t, filepath.Join(s.projectDir, deskAnswerName), 0, auditValidReport)
-	row := createGatedDesk(t, ts)
+	row := createSignedDesk(t, s, ts, rig.calls, "a0000000000000000000000000000002")
 	answerAt(t, filepath.Join(row.Folder, deskAnswerName), 0, auditMixedReport)
-	other := createGatedDesk(t, ts)
+	other := createSignedDesk(t, s, ts, rig.calls, "a0000000000000000000000000000003")
 	answerAt(t, filepath.Join(other.Folder, deskAnswerName), 1, auditInvalidReport)
 	for _, desk := range []struct {
 		id    string
@@ -828,17 +870,17 @@ func TestTheDecisionRecordIsUnavailableWhereTheReviewIs(t *testing.T) {
 
 	t.Setenv("JPACK_CONFIG", filepath.Join(project, "jpack.json"))
 	reportOf(t, ts, "")
-	if calls := rig.ran(t); !slices.Equal(calls, []string{schemaCall, verifyCall}) {
+	if calls := rig.ran(t); !slices.Equal(calls, []string{schemaCall, validateCall, verifyCall}) {
 		t.Errorf("under this project's own JPACK_CONFIG the panel ran %q", calls)
 	}
 
 	t.Setenv("JPACK_CONFIG", named)
-	_, ts2, _ := gatesServer(t, rig.bin)
-	row := createGatedDesk(t, ts2)
+	s2, ts2, _ := gatesServer(t, rig.bin)
+	row := createSignedDesk(t, s2, ts2, rig.calls, "a0000000000000000000000000000004")
 	rig.ran(t)
 	reportOf(t, ts2, row.ID)
-	if calls := rig.ran(t); !slices.Equal(calls, []string{schemaCall, verifyCall}) {
-		t.Errorf("a made desk under another project's JPACK_CONFIG ran %q, want both without it", calls)
+	if calls := rig.ran(t); !slices.Equal(calls, []string{schemaCall, validateCall, publicCall, verifyWithKeyCall}) {
+		t.Errorf("a made desk under another project's JPACK_CONFIG ran %q, want each without it", calls)
 	}
 }
 
@@ -891,15 +933,18 @@ func TestThePanelsCommandsKeepTheSigningKeyOnlyOnTheStartupDesk(t *testing.T) {
 	rig := newAuditRig(t, withAuditVersions)
 	s, ts, _ := gatesServer(t, rig.bin)
 	writeProject(t, s.projectDir, map[string]string{"jpack.json": auditedConfig})
-	row := createGatedDesk(t, ts)
+	row := createSignedDesk(t, s, ts, rig.calls, "a0000000000000000000000000000005")
 	rig.answers(t, 0, auditValidReport)
-	for _, desk := range []struct{ id, env string }{
-		{"", "[JPACK_SIGNING_KEY=" + key + "] [DESK_TEST_INHERITED=kept]"},
-		{row.ID, "[JPACK_SIGNING_KEY=unset] [DESK_TEST_INHERITED=kept]"},
+	for _, desk := range []struct{ id, verify, env string }{
+		{"", "audit verify --config jpack.json --format json ", "[JPACK_SIGNING_KEY=" + key + "] [DESK_TEST_INHERITED=kept]"},
+		{row.ID, "audit verify --config jpack.json --format json --public-key FILE ", "[JPACK_SIGNING_KEY=unset] [DESK_TEST_INHERITED=kept]"},
 	} {
 		os.Remove(rig.calls + ".env")
 		reportOf(t, ts, desk.id)
-		want := []string{"packs schema --format json " + desk.env, "audit verify --config jpack.json --format json " + desk.env}
+		want := []string{"packs schema --format json " + desk.env, "packs validate --config jpack.json --format json " + desk.env, desk.verify + desk.env}
+		if desk.id != "" {
+			want = slices.Insert(want, 2, "audit key public SEED --format json "+desk.env)
+		}
 		if seen := envSeen(t, rig.calls); !slices.Equal(seen, want) {
 			t.Errorf("desk %q: the panel ran %q, want %q", desk.id, seen, want)
 		}
@@ -944,7 +989,7 @@ func TestTheDecisionRecordWithTheRuntime(t *testing.T) {
 		t.Fatalf("before any record the panel answered %d %+v %q", status, answer, refusal)
 	}
 
-	config := strings.Replace(gatedConfigFor(t, row.ConfigVersion), `"packs":{}`, `"packs":{"alpha":{"path":"packs/a.json"}}`, 1)
+	config := strings.Replace(gatedConfigFor(t, s, row), `"packs":{}`, `"packs":{"alpha":{"path":"packs/a.json"}}`, 1)
 	writeProject(t, row.Folder, map[string]string{"packs/a.json": reviewPack, "jpack.json": config})
 	jpackIn(t, bin, row.Folder, "packs", "lock", "--config", "jpack.json", "--format", "json")
 	facts := filepath.Join(t.TempDir(), "facts.json")
@@ -953,7 +998,12 @@ func TestTheDecisionRecordWithTheRuntime(t *testing.T) {
 	}
 	jpackIn(t, bin, row.Folder, "experimental", "evaluate", "--config", "jpack.json", "--pack-id", "alpha", "--facts", facts, "--format", "json")
 	report := reportOf(t, ts, row.ID)
-	if report.Status != "valid" || report.Lines != 1 || report.Coverage.Chained != 1 || report.Coverage.Signed.Status != "not-checked" || len(report.Establishes) == 0 || len(report.DoesNotEstablish) == 0 {
+	// Signed where the desk was made signed, with the key Desk passed.
+	signed := auditCoverageState{Status: "not-checked", Detail: "no public key was supplied"}
+	if row.Signed {
+		signed = auditCoverageState{Status: "through", Through: 1}
+	}
+	if report.Status != "valid" || report.Lines != 1 || report.Coverage.Chained != 1 || report.Coverage.Signed != signed || len(report.Establishes) == 0 || len(report.DoesNotEstablish) == 0 {
 		t.Errorf("after one deciding run the panel shows %+v", report)
 	}
 
