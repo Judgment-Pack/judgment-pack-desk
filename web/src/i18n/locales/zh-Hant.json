@@ -3691,5 +3691,7 @@
   "Download {{file}}": "下載 {{file}}",
   "Each file is saved under the runtime’s own name, as its bytes stood on disk between two writes.": "每個檔案都以執行環境自己的名稱儲存，內容是兩次寫入之間磁碟上的原始位元組。",
   "Saved {{file}}.": "已儲存 {{file}}。",
-  "The file could not be downloaded. Please try again.": "無法下載該檔案。請再試一次。"
+  "The file could not be downloaded. Please try again.": "無法下載該檔案。請再試一次。",
+  "This expectation names a disposition no pack can produce, so the expectation must change, not the draft: {{detail}}": "此預期結果指定了任何規則包都無法產生的判定，因此需要變更的是預期結果，而不是草稿：{{detail}}",
+  "The runtime did not admit this expectation: {{detail}}": "執行階段未接納此預期結果：{{detail}}"
 }

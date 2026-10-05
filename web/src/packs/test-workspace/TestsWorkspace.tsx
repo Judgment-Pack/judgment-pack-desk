@@ -16,7 +16,7 @@ import { useEffectiveConfig } from '../../config/DeskConfigProvider'
 import { useFileListing } from '../../files/queries'
 import { readFile } from '../../files/client'
 import { digestOf, jsonIdentity } from '../../research/checkCandidate'
-import { validateExpectations } from '../../research/expectations'
+import { validateExpectations, type InvalidFinding } from '../../research/expectations'
 import { useInspectorPresentation } from '../../shell/InspectorPresentation'
 import { useInspectorPortal, useInspectorControls } from '../../shell/InspectorSlot'
 import { useBriefSubject } from '../../briefs/context'
@@ -68,6 +68,19 @@ function toolPayload(result: McpToolResult): unknown {
     .join('\n')
   if (result.isError) throw Error(text || 'The runtime could not complete the test request.')
   return result.structuredContent ?? JSON.parse(text)
+}
+/**
+ * An invalid expectation, worded as a research run words it (`findingSummary`),
+ * so a person reads the same kind of finding in both places. A §8.3 defect is
+ * the runtime's own sentence. A limit says the runtime did not admit the input.
+ * An expectation no pack can produce says that the expectation must change, not
+ * the draft. Desk's words come from the catalogue; the runtime's message after
+ * them is shown as it came. In English the result is findingSummary's sentence.
+ */
+function invalidExpectation(finding: InvalidFinding): string {
+  if (finding.unreachable)
+    return msg('This expectation names a disposition no pack can produce, so the expectation must change, not the draft: {{detail}}', { detail: finding.message })
+  return finding.admitted ? finding.message : msg('The runtime did not admit this expectation: {{detail}}', { detail: finding.message })
 }
 function trialOutcome(run: TestRun): string {
   const disposition = run.trial?.disposition
@@ -431,7 +444,7 @@ export function TestsContent({
           new AbortController().signal,
         )
         if (checked[0]?.status !== 'valid')
-          throw Error(checked[0]?.status === 'invalid' ? checked[0].message : 'Expectation was not checked.')
+          throw Error(checked[0]?.status === 'invalid' ? invalidExpectation(checked[0]) : 'Expectation was not checked.')
         held.row.expectedDisposition = JSON.parse(checked[0].canonical)
       }
       if (executable(held)) importMatrix({ matrixVersion: '3', cases: [held.row] })

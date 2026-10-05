@@ -3691,5 +3691,7 @@
   "Download {{file}}": "下载 {{file}}",
   "Each file is saved under the runtime’s own name, as its bytes stood on disk between two writes.": "每个文件都以运行时自己的名称保存，内容是两次写入之间磁盘上的原始字节。",
   "Saved {{file}}.": "已保存 {{file}}。",
-  "The file could not be downloaded. Please try again.": "无法下载该文件。请重试。"
+  "The file could not be downloaded. Please try again.": "无法下载该文件。请重试。",
+  "This expectation names a disposition no pack can produce, so the expectation must change, not the draft: {{detail}}": "此预期结果指定了任何规则包都无法产生的判定，因此需要更改的是预期结果，而不是草稿：{{detail}}",
+  "The runtime did not admit this expectation: {{detail}}": "运行时未接纳此预期结果：{{detail}}"
 }

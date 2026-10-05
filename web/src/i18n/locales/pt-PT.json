@@ -3715,5 +3715,7 @@
   "Download {{file}}": "Transferir {{file}}",
   "Each file is saved under the runtime’s own name, as its bytes stood on disk between two writes.": "Cada ficheiro é guardado com o nome que o runtime lhe dá, com os bytes como estavam no disco entre duas escritas.",
   "Saved {{file}}.": "{{file}} guardado.",
-  "The file could not be downloaded. Please try again.": "Não foi possível transferir o ficheiro. Tente novamente."
+  "The file could not be downloaded. Please try again.": "Não foi possível transferir o ficheiro. Tente novamente.",
+  "This expectation names a disposition no pack can produce, so the expectation must change, not the draft: {{detail}}": "Esta expectativa indica uma decisão que nenhum pacote consegue produzir, pelo que é a expectativa que tem de mudar, não o rascunho: {{detail}}",
+  "The runtime did not admit this expectation: {{detail}}": "O motor não admitiu esta expectativa: {{detail}}"
 }

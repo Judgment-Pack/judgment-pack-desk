@@ -3715,5 +3715,7 @@
   "Download {{file}}": "Descargar {{file}}",
   "Each file is saved under the runtime’s own name, as its bytes stood on disk between two writes.": "Cada archivo se guarda con el nombre que le da el entorno de ejecución, con los bytes tal como estaban en el disco entre dos escrituras.",
   "Saved {{file}}.": "Se guardó {{file}}.",
-  "The file could not be downloaded. Please try again.": "No se pudo descargar el archivo. Inténtelo de nuevo."
+  "The file could not be downloaded. Please try again.": "No se pudo descargar el archivo. Inténtelo de nuevo.",
+  "This expectation names a disposition no pack can produce, so the expectation must change, not the draft: {{detail}}": "Esta expectativa indica una decisión que ningún paquete puede producir, así que debe cambiar la expectativa, no el borrador: {{detail}}",
+  "The runtime did not admit this expectation: {{detail}}": "El motor no admitió esta expectativa: {{detail}}"
 }

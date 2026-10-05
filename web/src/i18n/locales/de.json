@@ -3691,5 +3691,7 @@
   "Download {{file}}": "{{file}} herunterladen",
   "Each file is saved under the runtime’s own name, as its bytes stood on disk between two writes.": "Jede Datei wird unter dem eigenen Namen der Laufzeit gespeichert, mit den Bytes, wie sie zwischen zwei Schreibvorgängen auf dem Datenträger standen.",
   "Saved {{file}}.": "{{file}} gespeichert.",
-  "The file could not be downloaded. Please try again.": "Die Datei konnte nicht heruntergeladen werden. Bitte versuchen Sie es erneut."
+  "The file could not be downloaded. Please try again.": "Die Datei konnte nicht heruntergeladen werden. Bitte versuchen Sie es erneut.",
+  "This expectation names a disposition no pack can produce, so the expectation must change, not the draft: {{detail}}": "Diese Erwartung nennt eine Entscheidung, die kein Paket erzeugen kann; ändern muss sich daher die Erwartung, nicht der Entwurf: {{detail}}",
+  "The runtime did not admit this expectation: {{detail}}": "Die Laufzeit hat diese Erwartung nicht zugelassen: {{detail}}"
 }

@@ -3691,5 +3691,7 @@
   "Download {{file}}": "{{file}} 다운로드",
   "Each file is saved under the runtime’s own name, as its bytes stood on disk between two writes.": "각 파일은 런타임 자체의 이름으로 저장되며, 두 번의 쓰기 사이에 디스크에 있던 바이트 그대로입니다.",
   "Saved {{file}}.": "{{file}}을(를) 저장했습니다.",
-  "The file could not be downloaded. Please try again.": "파일을 다운로드하지 못했습니다. 다시 시도해 주세요."
+  "The file could not be downloaded. Please try again.": "파일을 다운로드하지 못했습니다. 다시 시도해 주세요.",
+  "This expectation names a disposition no pack can produce, so the expectation must change, not the draft: {{detail}}": "이 예상 결과는 어떤 팩도 만들 수 없는 판정을 지정하므로, 초안이 아니라 예상 결과를 변경해야 합니다: {{detail}}",
+  "The runtime did not admit this expectation: {{detail}}": "런타임이 이 예상 결과를 받아들이지 않았습니다: {{detail}}"
 }

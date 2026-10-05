@@ -3691,5 +3691,7 @@
   "Download {{file}}": "{{file}} をダウンロード",
   "Each file is saved under the runtime’s own name, as its bytes stood on disk between two writes.": "各ファイルはランタイム自身の名前で保存されます。内容は、2 回の書き込みの間にディスク上にあったバイトそのままです。",
   "Saved {{file}}.": "{{file}} を保存しました。",
-  "The file could not be downloaded. Please try again.": "ファイルをダウンロードできませんでした。もう一度お試しください。"
+  "The file could not be downloaded. Please try again.": "ファイルをダウンロードできませんでした。もう一度お試しください。",
+  "This expectation names a disposition no pack can produce, so the expectation must change, not the draft: {{detail}}": "この期待値はどのパックも生成できない判定を指定しているため、変更すべきは下書きではなく期待値です：{{detail}}",
+  "The runtime did not admit this expectation: {{detail}}": "ランタイムはこの期待値を受け入れませんでした：{{detail}}"
 }
