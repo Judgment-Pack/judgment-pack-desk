@@ -2687,6 +2687,9 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "publication: a manifest that cannot be read counts as none" "$NDG" \
     '	case err != nil && !errors.Is(err, errPrivateDataChanged) && (codeOf(err) == CodeForbidden || codeOf(err) == CodeTooLarge):' \
     '	case err != nil:'
+  mutate go "publication: a read that failed counts as too large" internal/desk/private_data.go \
+    '	case errors.As(err, &over):' \
+    '	case errors.As(err, &over) || err != nil:'
   mutate go "publication: the manifest is written in place" "$NDG" \
     '	stage, err := randomStagingName(manifestStagingPrefix)' \
     '	stage, err := filepath.Base(deskManifest), error(nil)'

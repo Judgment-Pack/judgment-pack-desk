@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -399,6 +400,58 @@ func TestAManifestThatIsNotWholeIsNotAPublication(t *testing.T) {
 				t.Errorf("a desk whose manifest is %s was opened", tc.name)
 			}
 		})
+	}
+}
+
+// **A manifest that could not be read now is not taken for "not published".**
+// A desk stopped after its manifest was published, and before its marker was
+// removed, is a desk the registry opens. If the start's sweep cannot read
+// that manifest once, an I/O error that says nothing of the file, the sweep
+// cannot tell, and so keeps the seed, the list and the marker; the registry,
+// which then reads the manifest, opens the desk with its key. (Review round
+// 3: the sweep had read any failure to read as "too large", so "not a
+// desk's", and removed a published desk's key.)
+func TestAManifestNotReadNowKeepsItsKey(t *testing.T) {
+	const id = "b7000000000000000000000000000002"
+	calls, s, ts, _ := signingStandIn(t)
+	signsDesks(t, calls, s.configDir, id)
+	testHookKeyBetween = func(at string) {
+		if at == "published" {
+			panic(http.ErrAbortHandler)
+		}
+	}
+	t.Cleanup(func() { testHookKeyBetween = nil })
+	postAbandoned(t, s, ts.URL)
+	testHookKeyBetween = nil
+	if _, err := os.Stat(filepath.Join(s.configDir, "desks", id, deskManifest)); err != nil {
+		t.Fatal("the desk's manifest was not published:", err)
+	}
+	failed := 0
+	testHookPrivateRead = func(name string) error {
+		if name == deskManifest && failed == 0 {
+			failed++
+			return syscall.EIO
+		}
+		return nil
+	}
+	t.Cleanup(func() { testHookPrivateRead = nil })
+	ts.Close()
+	again, logged := restartedServer(t, s)
+	testHookPrivateRead = nil
+	if failed != 1 {
+		t.Fatal("no read of the manifest was failed")
+	}
+	names := namesIn(t, signingFolderOf(s))
+	for _, want := range []string{id + seedSuffix, id + keysSuffix} {
+		if !slices.Contains(names, want) {
+			t.Errorf("a published desk lost %s to a read that failed once: %q (%s)", want, names, logged)
+		}
+	}
+	again.desksMu.Lock()
+	opened := again.desks[id] != nil
+	again.desksMu.Unlock()
+	if !opened {
+		t.Errorf("the published desk was not opened (%s)", logged)
 	}
 }
 
