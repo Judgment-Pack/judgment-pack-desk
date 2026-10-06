@@ -6,7 +6,7 @@
  * run it, and there is no model key anywhere in this desk to run it with.
  */
 import { QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DeskConfigFixture, DeskConfigProvider, useDeskConfigRead } from '../config/DeskConfigProvider'
@@ -222,6 +222,54 @@ describe('Help & About', () => {
     expect(gates.textContent).not.toContain('A record is not signed')
   })
 
+  it('shows Runner’s public key beside the project’s signatures, where Desk reports that Runner signs', async () => {
+    answeringRunnerKey({ state: 'signed', publicKey: RUNNER_PUBLIC_KEY, keyId: RUNNER_KEY_ID })
+    renderHelp(stubClient(PACKS))
+    await screen.findByText(`Runner’s public key, keyId ${RUNNER_KEY_ID}`)
+    const gates = document.getElementById('gates')!.closest('section')!
+    const paragraphs = [...gates.querySelectorAll('p')].map(paragraph => paragraph.textContent ?? '')
+    const at = paragraphs.indexOf(SIGNATURES_LINE)
+    expect(at).toBeGreaterThan(-1)
+    expect(paragraphs[at + 1]).toBe(RUNNER_SIGNS_LINE)
+    expect(gates.textContent).toContain(RUNNER_PUBLIC_KEY)
+  })
+
+  it.each([
+    ['custody', 'the folder Desk keeps Runner’s keys in is writable by group or others (mode 0770)', 'Desk cannot keep a signing key for Runner here: the folder Desk keeps Runner’s keys in is writable by group or others (mode 0770).'],
+    ['not-made', 'No seed was written to …', 'The runtime did not make Runner’s signing key: No seed was written to ….'],
+    ['unfinished', undefined, 'Making Runner’s signing key did not finish. Desk removes what was left at its next start, and makes the key again.'],
+    ['lost', undefined, 'Desk keeps the public half of Runner’s signing key, but no longer the key itself, and does not make another in its place.'],
+    ['not-read-now', 'the key could not be inspected', 'Desk could not read Runner’s signing key just now, and left it as it is: the key could not be inspected.'],
+    ['in-use', undefined, 'The folder Desk keeps signing keys in was in use when Runner started, so Desk changed nothing and named no key. It tries again the next time it starts Runner.'],
+    ['not-used', 'its list of public keys does not name it', 'Desk does not name the signing key it keeps for Runner: its list of public keys does not name it.'],
+    ['runtime-refused', 'The key at … is refused', 'The runtime refuses Runner’s signing key: The key at … is refused.'],
+    ['runner-refused', 'it must have one name, with no hard link elsewhere', 'Runner refused its signing key when it started: it must have one name, with no hard link elsewhere.']
+  ] as const)('says Jobs runs are not signed, and why, where Desk reports %s', async (reason, detail, why) => {
+    answeringRunnerKey({ state: 'unsigned', reason, ...(detail === undefined ? {} : { detail }) })
+    renderHelp(stubClient(PACKS))
+    const line = `Jobs signatures. Jobs runs on this desk are not signed, and run as before. ${why}`
+    await waitFor(() => expect(gatesParagraphs()).toContain(line))
+    const paragraphs = gatesParagraphs()
+    expect(paragraphs[paragraphs.indexOf(SIGNATURES_LINE) + 1]).toBe(line)
+    expect(document.getElementById('gates')!.closest('section')!.textContent).not.toContain('Runner signs the record')
+  })
+
+  it('says Runner has not started yet, that it is not running and why, and nothing of Runner where Desk reports no Runner', async () => {
+    answeringRunnerKey({ state: 'starting' })
+    renderHelp(stubClient(PACKS))
+    await waitFor(() => expect(gatesParagraphs()).toContain('Jobs signatures. Runner has not started on this desk yet, so Desk cannot say yet whether it signs this desk’s runs.'))
+    cleanup()
+    answeringRunnerKey({ state: 'not-running', detail: 'fork/exec …: no such file or directory' })
+    renderHelp(stubClient(PACKS))
+    await waitFor(() => expect(gatesParagraphs()).toContain('Jobs signatures. Runner is not running on this desk now, so no Jobs run is run or signed. Runner did not start: fork/exec …: no such file or directory.'))
+    expect(document.getElementById('gates')!.closest('section')!.textContent).not.toContain('Runner signs the record')
+    cleanup()
+    const asked = answeringRunnerKey(null)
+    renderHelp(stubClient(PACKS))
+    await waitFor(() => expect(asked()).toBeGreaterThan(0))
+    expect(document.getElementById('gates')!.closest('section')!.textContent).not.toContain('Jobs signatures.')
+  })
+
   it('quotes the command for a shell, and stands in for what Desk has not said', () => {
     expect(outsideAgentCommand('/desks/abc/', '/usr/bin/jpack')).toBe('JPACK_CONFIG=/desks/abc/jpack.json /usr/bin/jpack mcp')
     expect(outsideAgentCommand("/it's here", 'jpack')).toBe("JPACK_CONFIG='/it'\\''s here/jpack.json' jpack mcp")
@@ -229,7 +277,27 @@ describe('Help & About', () => {
   })
 })
 
+/**
+ * Desk's answers to `GET /api/runner-key`, one per request, the last kept;
+ * and a 404 for anything else. Answers how many times it was asked.
+ */
+function answeringRunnerKey(...answers: unknown[]): () => number {
+  let asked = 0
+  vi.stubGlobal('fetch', async (url: string) => String(url).includes('/api/runner-key')
+    ? { ok: true, status: 200, statusText: '', text: async () => JSON.stringify({ runnerKey: answers[Math.min(asked++, answers.length - 1)] }) }
+    : { ok: false, status: 404, statusText: '', text: async () => JSON.stringify({ error: 'no such file' }) })
+  return () => asked
+}
+
+/** Each paragraph of the Gates section, as read. */
+function gatesParagraphs(): string[] {
+  return [...document.getElementById('gates')!.closest('section')!.querySelectorAll('p')].map(paragraph => paragraph.textContent ?? '')
+}
+
 const SIGNATURES_LINE = 'Signatures. A desk Desk makes with runtime 0.26.0 or later names a signing key in its jpack.json, unless Desk cannot keep one, which its creation says. Desk keeps the key for that desk in its own configuration folder, outside the project, and every runtime that reads that jpack.json signs each record it adds, if it accepts the key. A signature binds an agent given only this desk’s jpack mcp, which cannot read the key. It binds nothing against you, who hold the key, or against an agent that can read your files. Desk keeps no key for any other project: its records are signed only where something else names a key.'
+const RUNNER_PUBLIC_KEY = '882a7f2be72a4b0c0a03b590300c72e8ed3fab24355a6950f9e6399814c67350'
+const RUNNER_KEY_ID = '4ba1de706a3baa4d8f5456340604190a'
+const RUNNER_SIGNS_LINE = 'Jobs signatures. Runner signs the record of each Jobs run on this desk with a key of its own, never this project’s. Desk keeps it in its own configuration folder, outside the project, and names it to Runner when Runner starts. A holder checks a run’s version-5 export with jpack-runner verify-run --public-key and this public key. A signature binds nothing against you, who hold the key, or against an agent that can read your files.'
 const SIGNING_KEY_LINE = 'But JPACK_SIGNING_KEY is set where Desk was started. Where this project’s audit trail is chained, as it is by default, its runtime signs each record with the key it names, if it accepts that key. Desks Desk made do not inherit it.'
 
 /** Shown once the configuration query has answered, so the gates can be read after it. */

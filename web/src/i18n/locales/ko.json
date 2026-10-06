@@ -3837,5 +3837,21 @@
   "This desk's key took over after record {{record}}, and no record has been signed since: a rotation now would take over after the same record. Make a deciding run first.": "이 데스크의 키는 기록 {{record}} 이후부터 넘겨받았고, 그 뒤로 서명된 기록이 없습니다. 지금 교체하면 같은 기록 이후부터 넘겨받게 됩니다. 먼저 결정 실행을 하세요.",
   "This is the project Desk was started on. Desk keeps no signing key for it in this version, so it has none to rotate.": "이것은 Desk를 시작한 프로젝트입니다. 이 버전에서 Desk는 이 프로젝트의 서명 키를 보관하지 않으므로 교체할 키가 없습니다.",
   "What a rotation does and does not do": "교체가 하는 일과 하지 않는 일",
-  "This desk already has {{count}} signing keys, the most Desk keeps for one desk, so it rotates no further key.": "이 Desk에는 이미 서명 키가 {{count}}개 있으며, 이는 Desk가 Desk 하나에 보관하는 최대치이므로 더 이상 키를 교체하지 않습니다."
+  "This desk already has {{count}} signing keys, the most Desk keeps for one desk, so it rotates no further key.": "이 Desk에는 이미 서명 키가 {{count}}개 있으며, 이는 Desk가 Desk 하나에 보관하는 최대치이므로 더 이상 키를 교체하지 않습니다.",
+  "Jobs signatures.": "작업 서명.",
+  "<0/> Runner signs the record of each Jobs run on this desk with a key of its own, never this project’s. Desk keeps it in its own configuration folder, outside the project, and names it to Runner when Runner starts. A holder checks a run’s version-5 export with jpack-runner verify-run --public-key and this public key. A signature binds nothing against you, who hold the key, or against an agent that can read your files.": "<0/> Runner는 이 Desk의 각 작업 실행 기록에 이 프로젝트의 키가 아닌 Runner 자체의 키로 서명합니다. Desk는 그 키를 프로젝트 밖에 있는 자체 설정 폴더에 보관하고, Runner가 시작될 때 Runner에 지정합니다. 실행을 검증하는 사람은 그 실행의 버전 5 내보내기를 jpack-runner verify-run --public-key와 이 공개 키로 확인합니다. 키를 가진 사용자나 사용자의 파일을 읽을 수 있는 에이전트에 대해서는 서명이 아무것도 묶지 않습니다.",
+  "Runner’s public key, keyId {{keyId}}": "Runner의 공개 키, keyId {{keyId}}",
+  "<0/> Jobs runs on this desk are not signed, and run as before.": "<0/> 이 Desk의 작업 실행은 서명되지 않으며, 이전과 같이 실행됩니다.",
+  "<0/> Runner has not started on this desk yet, so Desk cannot say yet whether it signs this desk’s runs.": "<0/> 이 Desk에서 Runner가 아직 시작되지 않아, Desk는 이 Desk의 실행에 서명하는지 아직 알 수 없습니다.",
+  "Desk cannot keep a signing key for Runner here: {{detail}}.": "Desk는 여기에서 Runner의 서명 키를 보관할 수 없습니다: {{detail}}.",
+  "The runtime did not make Runner’s signing key: {{detail}}.": "런타임이 Runner의 서명 키를 만들지 않았습니다: {{detail}}.",
+  "Making Runner’s signing key did not finish. Desk removes what was left at its next start, and makes the key again.": "Runner의 서명 키 생성이 끝나지 않았습니다. Desk는 다음 시작 때 남은 것을 제거하고 키를 다시 만듭니다.",
+  "Desk keeps the public half of Runner’s signing key, but no longer the key itself, and does not make another in its place.": "Desk는 Runner 서명 키의 공개 부분은 보관하지만 키 자체는 더 이상 없으며, 그 자리에 다른 키를 만들지 않습니다.",
+  "Desk could not read Runner’s signing key just now, and left it as it is: {{detail}}.": "Desk가 지금은 Runner의 서명 키를 읽을 수 없어 그대로 두었습니다: {{detail}}.",
+  "Desk does not name the signing key it keeps for Runner: {{detail}}.": "Desk는 Runner를 위해 보관하는 서명 키를 Runner에 지정하지 않습니다: {{detail}}.",
+  "The runtime refuses Runner’s signing key: {{detail}}.": "런타임이 Runner의 서명 키를 거부합니다: {{detail}}.",
+  "Runner refused its signing key when it started: {{detail}}.": "Runner가 시작할 때 자체 서명 키를 거부했습니다: {{detail}}.",
+  "The folder Desk keeps signing keys in was in use when Runner started, so Desk changed nothing and named no key. It tries again the next time it starts Runner.": "Runner가 시작될 때 Desk가 서명 키를 보관하는 폴더가 사용 중이어서, Desk는 아무것도 바꾸지 않았고 키도 지정하지 않았습니다. 다음에 Runner를 시작할 때 다시 시도합니다.",
+  "<0/> Runner is not running on this desk now, so no Jobs run is run or signed.": "<0/> 지금 이 Desk에서 Runner가 실행되고 있지 않아, 어떤 작업 실행도 실행되거나 서명되지 않습니다.",
+  "Runner did not start: {{detail}}.": "Runner가 시작되지 않았습니다: {{detail}}."
 }

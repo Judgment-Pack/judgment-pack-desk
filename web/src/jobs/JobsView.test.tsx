@@ -7,6 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { CreateJobContent } from './JobsView'
 import { jobsAPI, JobsRequestError } from './client'
 import { readReleaseTests } from './releaseTests'
+import { refreshRunnerKey } from './runnerKey'
 import { DeskConfigProvider } from '../config/DeskConfigProvider'
 import { createHash } from 'node:crypto'
 import { readReview, type Review } from '../packs/review/client'
@@ -14,6 +15,7 @@ vi.mock('./drafts',async original=>({...await original<typeof import('./drafts')
 vi.mock('./MappedInputFields',()=>({MappedInputFields:()=>null}))
 vi.mock('./client', async original => ({ ...await original<typeof import('./client')>(), jobsAPI: vi.fn() }))
 vi.mock('./releaseTests', () => ({ readReleaseTests: vi.fn() }))
+vi.mock('./runnerKey', async original => ({ ...await original<typeof import('./runnerKey')>(), refreshRunnerKey: vi.fn() }))
 vi.mock('../packs/review/client', async original => ({ ...await original<typeof import('../packs/review/client')>(), readReview: vi.fn() }))
 const { pack, packs } = vi.hoisted(() => ({
  pack: { data: { raw: '{"version":"1"}', document: { title: 'Example pack', version: '1' } }, refetch: vi.fn() },
@@ -151,6 +153,8 @@ it('creates the immutable reviewed release after checking freshness again', asyn
  fireEvent.click(button())
  await waitFor(() => expect(jobsAPI).toHaveBeenCalledWith('jobs', { name: 'Intake', releaseId: 'release', reviewed: true }))
  expect(readReleaseTests).toHaveBeenCalledTimes(2)
+ // A job made may have started Runner: Gates asks again what it signs with.
+ await waitFor(() => expect(refreshRunnerKey).toHaveBeenCalledTimes(1))
 })
 
 it('starts an operational run with fresh facts and omitted evidence',async()=>{
@@ -168,6 +172,8 @@ it('starts an operational run with fresh facts and omitted evidence',async()=>{
  expect((screen.getByLabelText('Supply evidence availability') as HTMLInputElement).checked).toBe(false)
  fireEvent.click(screen.getByRole('button',{name:'Submit run'}))
  await waitFor(()=>expect(jobsAPI).toHaveBeenCalledWith('jobs/job-one/runs',{facts:{}},expect.any(String)))
+ // A run submitted may have started Runner: Gates asks again what it signs with.
+ await waitFor(()=>expect(refreshRunnerKey).toHaveBeenCalledTimes(1))
 })
 it('sends global run search and attention filters to the runner',async()=>{
  const {JobsContent}=await import('./JobsView')

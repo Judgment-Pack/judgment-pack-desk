@@ -3837,5 +3837,21 @@
   "This desk's key took over after record {{record}}, and no record has been signed since: a rotation now would take over after the same record. Make a deciding run first.": "此工作台的密钥在记录 {{record}} 之后接管，此后没有任何记录被签名：现在轮换将在同一条记录之后接管。请先进行一次决策运行。",
   "This is the project Desk was started on. Desk keeps no signing key for it in this version, so it has none to rotate.": "这是 Desk 启动时所在的项目。在此版本中，Desk 不为它保管签名密钥，因此没有可轮换的密钥。",
   "What a rotation does and does not do": "轮换会做什么、不会做什么",
-  "This desk already has {{count}} signing keys, the most Desk keeps for one desk, so it rotates no further key.": "此 Desk 已有 {{count}} 个签名密钥，已达 Desk 为单个 Desk 保存的上限，因此不再轮换密钥。"
+  "This desk already has {{count}} signing keys, the most Desk keeps for one desk, so it rotates no further key.": "此 Desk 已有 {{count}} 个签名密钥，已达 Desk 为单个 Desk 保存的上限，因此不再轮换密钥。",
+  "Jobs signatures.": "作业签名。",
+  "<0/> Runner signs the record of each Jobs run on this desk with a key of its own, never this project’s. Desk keeps it in its own configuration folder, outside the project, and names it to Runner when Runner starts. A holder checks a run’s version-5 export with jpack-runner verify-run --public-key and this public key. A signature binds nothing against you, who hold the key, or against an agent that can read your files.": "<0/> Runner 用它自己的密钥为此 Desk 每次作业运行的记录签名，从不使用此项目的密钥。Desk 将其保管在项目之外、自己的配置文件夹中，并在 Runner 启动时指定给 Runner。核验运行的人用 jpack-runner verify-run --public-key 和此公钥检查该运行的第 5 版导出。对持有密钥的你，或能读取你文件的代理，签名不构成任何约束。",
+  "Runner’s public key, keyId {{keyId}}": "Runner 的公钥，keyId {{keyId}}",
+  "<0/> Jobs runs on this desk are not signed, and run as before.": "<0/> 此 Desk 的作业运行未签名，照常运行。",
+  "<0/> Runner has not started on this desk yet, so Desk cannot say yet whether it signs this desk’s runs.": "<0/> Runner 尚未在此 Desk 上启动，因此 Desk 暂时无法说明它是否为此 Desk 的运行签名。",
+  "Desk cannot keep a signing key for Runner here: {{detail}}.": "Desk 无法在此为 Runner 保管签名密钥：{{detail}}。",
+  "The runtime did not make Runner’s signing key: {{detail}}.": "运行时未创建 Runner 的签名密钥：{{detail}}。",
+  "Making Runner’s signing key did not finish. Desk removes what was left at its next start, and makes the key again.": "Runner 签名密钥的创建未完成。Desk 会在下次启动时移除残留的内容，并重新创建密钥。",
+  "Desk keeps the public half of Runner’s signing key, but no longer the key itself, and does not make another in its place.": "Desk 保管着 Runner 签名密钥的公开部分，但密钥本身已不在，也不会另建一个代替。",
+  "Desk could not read Runner’s signing key just now, and left it as it is: {{detail}}.": "Desk 此刻无法读取 Runner 的签名密钥，已保持原样：{{detail}}。",
+  "Desk does not name the signing key it keeps for Runner: {{detail}}.": "Desk 不会把它为 Runner 保管的签名密钥指定给 Runner：{{detail}}。",
+  "The runtime refuses Runner’s signing key: {{detail}}.": "运行时拒绝 Runner 的签名密钥：{{detail}}。",
+  "Runner refused its signing key when it started: {{detail}}.": "Runner 启动时拒绝了自己的签名密钥：{{detail}}。",
+  "The folder Desk keeps signing keys in was in use when Runner started, so Desk changed nothing and named no key. It tries again the next time it starts Runner.": "Runner 启动时，Desk 保管签名密钥的文件夹正在使用中，因此 Desk 没有做任何更改，也没有指定密钥。下次启动 Runner 时会再试。",
+  "<0/> Runner is not running on this desk now, so no Jobs run is run or signed.": "<0/> 此 Desk 上的 Runner 当前未运行，因此不会运行或签名任何作业运行。",
+  "Runner did not start: {{detail}}.": "Runner 未能启动：{{detail}}。"
 }
