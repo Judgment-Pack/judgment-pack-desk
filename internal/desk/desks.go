@@ -435,7 +435,7 @@ func (s *Server) dropKey(key *madeKey, failure *deskFailure) *deskFailure {
 // manifest. A failure removes the key it made; on success, the caller closes
 // it.
 func (s *Server) makeDeskFolder(ctx context.Context, folder *os.Root, entry, id string) (deskGates, *deskFailure) {
-	for _, dir := range []string{"packs", "sources", ".desk", ".desk/job-drafts", ".desk-private", deskAuditDir} {
+	for _, dir := range []string{"packs", "sources", ".desk", ".desk/job-drafts", ".desk-private", deskAuditDir, handoverDir} {
 		if err := folder.Mkdir(dir, 0700); err != nil {
 			return deskGates{}, storageRefusal(err)
 		}
@@ -653,7 +653,7 @@ func (s *Server) abandonDesk(w http.ResponseWriter, folder *os.Root, entry strin
 // in the order it is removed: what is in a directory before the directory.
 var deskFolderMade = []string{
 	deskManifest, runtimeLockName, runtimeConfigName, "jpack-desk.json", ".gitignore",
-	deskAuditDir, ".desk-private", ".desk/job-drafts", ".desk", "packs", "sources",
+	handoverDir, deskAuditDir, ".desk-private", ".desk/job-drafts", ".desk", "packs", "sources",
 }
 
 // unmakeDeskFolder removes what a failed creation made, and nothing else.

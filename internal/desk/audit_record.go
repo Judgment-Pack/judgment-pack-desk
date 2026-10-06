@@ -8,14 +8,16 @@ package desk
 // runtime's own sentences about what the result establishes and what it does
 // not.
 //
-// **It runs with the keys Desk keeps, and nothing else held.** On a desk Desk
-// made and keeps a key for, each public key in `<desk id>.keys.jsonl`, in
-// order, as `--public-key` (signing.go); on the startup desk, none in this
-// version. No `--expect` or `--tsa-…`, because this desk holds no record of a
-// hand-over and no stamping roots yet, and never a `--require-…` flag: those
-// are a reader's demands, not the operator's. The runtime then checks the
-// chain, and the signatures against the keys it was given, and says so in its
-// own sentences.
+// **It runs with the keys and checkpoints Desk keeps, and nothing else
+// held.** On a desk Desk made and keeps a key for, each public key in
+// `<desk id>.keys.jsonl`, in order, as `--public-key` (signing.go); on the
+// startup desk, none in this version. For each holder Desk handed checkpoints
+// of the current trail over to, the file of those it kept, as `--expect`
+// (handover.go). No `--tsa-…`, because this desk holds no stamping roots yet,
+// and never a `--require-…` flag: those are a reader's demands, not the
+// operator's. The runtime then checks the chain, the signatures against the
+// keys it was given, and the trail against the checkpoints it was given, and
+// says so in its own sentences.
 //
 // **Beside it, the runtime's word on the key** (ADR-0010, section 1): `packs
 // validate`'s `audit-signing-key` check, which says whether the key the
@@ -183,6 +185,17 @@ type auditAnswer struct {
 	// with the token that confirms it, or why not (rotation.go). It is given
 	// with a report and with the runtime's refusal, and with nothing else.
 	Rotation *auditRotation `json:"rotation,omitempty"`
+	// Expected is how many holders' files of checkpoints were passed as
+	// `--expect`, and ExpectUnread the labels of the holders whose file could
+	// not be read now, or is not ours, and was passed over (handover.go).
+	// Each is given with a report and with the runtime's refusal, where it
+	// is not zero or empty.
+	Expected     int      `json:"expected,omitempty"`
+	ExpectUnread []string `json:"expectUnread,omitempty"`
+	// HandoverProblem is why Desk passed none of the checkpoints it handed
+	// over, where it could not read its record of hand-overs, or tell which
+	// trail is current: never the same as keeping none.
+	HandoverProblem string `json:"handoverProblem,omitempty"`
 }
 
 // What the panel holds of the desk's keys.
@@ -473,6 +486,7 @@ func (s *Server) withoutPathsIn(answer auditAnswer) auditAnswer {
 	auditDir, _, _ := s.projectAuditDir()
 	clean := func(message string) string { return s.withoutPathsUnder(message, auditDir) }
 	answer = withoutPathsInKeys(answer, clean)
+	answer.HandoverProblem = clean(answer.HandoverProblem)
 	if answer.Diagnostics != nil {
 		said := make([]runtimeDiagnostic, len(answer.Diagnostics))
 		for i, diagnostic := range answer.Diagnostics {
@@ -576,7 +590,8 @@ func (s *Server) projectAuditDir() (string, bool, error) {
 // auditVerify is the panel's answer: nothing run where the project keeps no
 // trail; `packs schema` alone where the runtime reads no "6"; and otherwise
 // `packs validate`'s word on the key, and the runtime's `audit verify`, with
-// the public keys Desk keeps for the desk and nothing else held.
+// the public keys Desk keeps for the desk and the checkpoints it handed over,
+// and nothing else held.
 func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, error) {
 	if _, declared, err := s.projectAuditDir(); err != nil {
 		return auditAnswer{}, err
@@ -616,6 +631,8 @@ func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, err
 			}
 		}
 	}
+	expect := s.heldCheckpoints(ctx, dir)
+	args = append(args, expect.args...)
 	out, runErr := runRuntime(ctx, s.cfg.JpackBin, dir, args...)
 	answer, err := readAuditVerification(out, runErr)
 	if err != nil {
@@ -629,6 +646,9 @@ func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, err
 	answer.Keys = &keys
 	answer.Signing = &signing
 	answer.Rotation = &rotation
+	answer.Expected = expect.count
+	answer.ExpectUnread = expect.unread
+	answer.HandoverProblem = expect.problem
 	return answer, nil
 }
 
