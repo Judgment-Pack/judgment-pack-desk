@@ -15,16 +15,15 @@
 # `git checkout`, which would discard uncommitted work. Commit first.
 #
 # **Stopping a batch from outside.** Every suite runs in the harness's own
-# process group (run_web's `timeout --foreground`; run_go's `go test` is not
-# wrapped), so a watchdog that bounds that group, by resident memory or by
-# time, counts the suites too, and ending the group ends them. Stop a batch by
-# sending KILL to the whole group: `kill -KILL -- -<pgid>`, or run it under
-# `setsid` and a watchdog that does, or under `timeout -s KILL`. A TERM or an
-# INT is not enough: it ends the row's suite, the trap below restores the
-# tree, and the batch goes on with its next row. Nothing restores the tree
-# after a KILL, so restore it by hand: `git checkout -- internal web/src`. A
-# web suite that hangs past run_web's own bound is ended only from outside,
-# so a long web batch wants such a watchdog anyway.
+# process group (`bounded`, below), so a watchdog that bounds that group, by
+# resident memory or by time, counts the suites too, and ending the group ends
+# them. Stop a batch by sending KILL to the whole group: `kill -KILL --
+# -<pgid>`, or run it under `setsid` and a watchdog that does, or under
+# `timeout -s KILL`. A TERM or an INT is not enough: it ends the row's suite,
+# the trap below restores the tree, and the batch goes on with its next row.
+# Nothing restores the tree after a KILL, so restore it by hand: `git checkout
+# -- internal web/src`. A suite that outlives its own bound needs no one from
+# outside: the harness ends its whole process tree and goes on.
 set -uo pipefail
 
 cd "$(dirname "$0")/.."
@@ -75,6 +74,54 @@ report() { # report <name> <result-line>
   printf '| %-52s | %s |\n' "$1" "$2"
 }
 
+# **A bound that ends the whole suite** (issue #237). Each suite runs in the
+# harness's own process group, so that a watchdog bounding that group counts
+# it and ends it. A bound that only signals the command it started does not
+# end what that command started: with npm 10.9, `timeout --foreground` ends
+# npm and its `sh -c` and leaves vitest and its workers running, and `go
+# test -timeout` ends the test binary and leaves what a test started running
+# (both measured). So the harness ends the suite's process tree itself.
+#
+# end_tree <pid>: end pid and every process below it. Each is stopped before
+# its children are listed (`pgrep -P`), so none can start another, and killed
+# after them, children first, so none is orphaned out of reach. Each pid is
+# kept in $ended.
+end_tree() {
+  local child
+  kill -STOP "$1" 2>/dev/null || return 0
+  ended+=("$1")
+  for child in $(pgrep -P "$1"); do end_tree "$child"; done
+  kill -KILL "$1" 2>/dev/null
+}
+
+# bounded <seconds> <log> <command...>: run the command, its output in log (a
+# file: a process left holding a pipe would hold the harness too), and answer
+# its status. Where it outlives the bound, end its whole tree (end_tree), wait
+# until none of it is left but a zombie, and answer 124, as `timeout` does.
+# It runs in the background, where bash would have it ignore INT and QUIT:
+# they are given back, so a Ctrl-C still ends the row's suite.
+bounded() {
+  local limit="$1" log="$2" pid deadline tries
+  shift 2
+  (trap - INT QUIT; exec "$@") > "$log" 2>&1 &
+  pid=$!
+  deadline=$((SECONDS + limit))
+  while kill -0 "$pid" 2>/dev/null; do
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      ended=()
+      end_tree "$pid"
+      wait "$pid" 2>/dev/null
+      for tries in 1 2 3 4 5 6 7 8 9 10; do
+        ps -o stat= -p "$(IFS=,; echo "${ended[*]}")" 2>/dev/null | grep -qv '^Z' || break
+        sleep 0.5
+      done
+      return 124
+    fi
+    sleep 1
+  done
+  wait "$pid"
+}
+
 # A mutation that does not compile, panics, or hangs the suite has not been
 # survived — it has not been tested. Reporting any of those as "nothing failed"
 # would be the most dangerous thing this script could do, so each is named.
@@ -91,8 +138,24 @@ run_go() {
   # on an idle machine, mostly waiting rather than computing: any load then
   # pushed a working suite past the bound. A deliberate wait inside a test is
   # not a hang; a real one is minutes, and 240s still catches it.
-  out="$(go test ./internal/desk -count=1 -timeout 240s 2>&1)"
+  #
+  # **Now the harness's own bound** (issue #237). When `go test -timeout`
+  # fires, the test binary panics and exits, and what its tests started runs
+  # on (measured), so the harness's bound must fire first and end the whole
+  # tree: `-timeout` is set past it, as a backstop only. The build comes
+  # first, apart, with a bound of its own (a cold cache can take minutes, and
+  # a build is not a hang), so that the 240s is the run's, and the link's.
+  local log
+  log="$(mktemp)"
+  bounded 1800 "$log" go test ./internal/desk -count=1 -run '^$'
+  bounded 240 "$log" go test ./internal/desk -count=1 -timeout 300s
   code=$?
+  out="$(cat "$log")"
+  rm -f "$log"
+  if [ "$code" -eq 124 ]; then
+    echo "INCONCLUSIVE — suite timed out (the mutation hangs a handler)"
+    return
+  fi
   if grep -q 'build failed\|cannot use\|undefined:\|declared and not used\|syntax error' <<<"$out"; then
     echo "INCONCLUSIVE — did not compile"
     return
@@ -144,16 +207,17 @@ run_web() {
   # clear of the per-case ceiling in `vitest.config.ts` times the handful of
   # cases one mutation can hang, so a hang is still reported as a hang.
   #
-  # **`--foreground`, so vitest stays in the harness's process group** (issue
-  # #237). Without it `timeout` puts the suite in a group of its own: a
-  # watchdog bounding the harness's group then neither counts vitest's memory
-  # nor ends vitest when it ends the group. The cost: the bound's own signal
-  # now goes to npm alone, and ends npm and its shell but not vitest (measured
-  # with npm 10.9), so a suite that outlives the bound runs on, and this waits
-  # for its output until it ends or its group is ended. Bound a batch from
-  # outside too (the header says how).
-  out="$(timeout --foreground 900 npm --prefix web test 2>&1)"
-  local code=$?
+  # **The harness's own bound, which ends the suite's whole tree** (issue
+  # #237, `bounded`). `timeout --foreground` stays as a backstop a minute
+  # later, in the harness's process group: without `--foreground`, `timeout`
+  # would put the suite in a group of its own, where a watchdog bounding the
+  # harness's group neither counts it nor ends it.
+  local log code
+  log="$(mktemp)"
+  bounded 900 "$log" timeout --foreground 960 npm --prefix web test
+  code=$?
+  out="$(cat "$log")"
+  rm -f "$log"
   if [ "$code" -eq 124 ]; then
     echo "INCONCLUSIVE — web suite timed out"
     return
