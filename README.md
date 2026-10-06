@@ -479,8 +479,13 @@ folder in Desk's signing folder, and removed after it (a Desk stopped during
 the check leaves that folder, which holds public keys only). On the project
 Desk was started on it passes no key. For each holder you confirmed
 checkpoints of the trail as it is now as handed over to (the hand-over, below),
-it passes Desk's file of them as `--expect`; a file it cannot read now, or that
-is not yours, is left out and the panel names its holder. It passes no
+it passes Desk's file of them as `--expect`, once it has read the file whole
+and found it to be what it recorded as handed over: complete lines, each a
+checkpoint of that trail, in order, ending at the last record confirmed and in
+the very bytes last confirmed. A file that is not, that it cannot read now, or
+that is not yours, is left out and the panel names its holder; where Desk
+cannot read its record of hand-overs at all, or the runtime does not say which
+trail is current, it passes none and the panel says why. It passes no
 time-stamping roots and no `--require-…` flag, so the runtime checks the chain,
 the signatures against the keys it was given and the trail against the
 checkpoints it was given, and says what it did not check. Its sentence above
@@ -567,8 +572,11 @@ of the trail is held to what they kept with `jpack audit verify --expect`.
   nothing.
 - **Your confirmation moves the cursor.** "Confirm" asks the runtime for the
   same checkpoints again, and Desk records them only where they are the same
-  bytes: appended to its file for that holder and trail, with the last record,
-  the time by Desk's clock and the SHA-256 of the file. Otherwise it records
+  bytes: appended to its file for that holder and trail, with the record the
+  file started after, its last record, the time by Desk's clock and the
+  SHA-256 of the file. The list of holders and each holder's record are
+  written only within the 64 KiB they are read with: a holder past it is
+  refused, and says so. Otherwise it records
   nothing and says the file is stale. Where the trail was moved aside, each
   holder starts again at 0 for the new trail. The decision record is then
   checked again, with what was handed over.
