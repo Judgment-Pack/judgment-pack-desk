@@ -16,6 +16,16 @@
  * `POST /api/audit/key/rotate` sends that token back: the desk rotates its key
  * as the panel showed it, or changes nothing (ADR-0010, section 1, "Rotating
  * it").
+ *
+ * The hand-over (ADR-0010, section 2): `GET /api/audit/holders` lists the
+ * holders the owner added and what Desk recorded as handed over to each,
+ * against the trail as the runtime gives it now; `POST /api/audit/holders`
+ * adds one; `GET /api/audit/checkpoints?holder=<id>` answers the checkpoints
+ * after that holder's cursor, as the exact bytes the runtime printed, with
+ * headers that name them; and `POST /api/audit/holders/<id>/confirm` is the
+ * owner's word that the file went to the holder. Desk's record of it proves
+ * nothing to anyone: only the holder's own copy counts. With it, the check
+ * above is also given the checkpoints Desk handed over, and says how many.
  */
 import { deskFetch } from '../files/client'
 import { msg } from '../i18n'
@@ -118,9 +128,15 @@ export const ROTATION_REASONS = [
 /** The runtime's files a download can hand over, by the name the download takes. */
 export const TRAIL_FILES = { evaluations: 'evaluations.jsonl', signatures: 'signatures.jsonl', stamps: 'stamps.jsonl' } as const
 export type TrailFile = keyof typeof TRAIL_FILES
+/**
+ * Beside a report or a refusal: how many holders' files of checkpoints Desk
+ * passed to the check as `--expect`, and the labels of the holders whose file
+ * it could not read now, and passed over.
+ */
+type HeldInputs = { expected?: number; expectUnread?: string[] }
 export type AuditRecord =
-  | { state: 'report'; runtime?: string; report: AuditReport; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation }
-  | { state: 'unverified'; runtime?: string; diagnostics: AuditDiagnostic[]; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation }
+  | ({ state: 'report'; runtime?: string; report: AuditReport; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation } & HeldInputs)
+  | ({ state: 'unverified'; runtime?: string; diagnostics: AuditDiagnostic[]; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation } & HeldInputs)
   | { state: 'older-runtime'; runtime?: string; floor: string }
   | { state: 'no-trail' }
 
@@ -201,7 +217,8 @@ export function isAuditReport(value: unknown): value is AuditReport {
 
 export function isAuditRecord(value: unknown): value is AuditRecord {
   if (!object(value) || !optional(value.runtime, text) || !optional(value.files, item => list(item, isTrailFile))
-    || !optional(value.keys, isAuditKeys) || !optional(value.signing, isAuditSigning) || !optional(value.rotation, isAuditRotation)) return false
+    || !optional(value.keys, isAuditKeys) || !optional(value.signing, isAuditSigning) || !optional(value.rotation, isAuditRotation)
+    || !optional(value.expected, count) || !optional(value.expectUnread, item => list(item, named))) return false
   switch (value.state) {
     case 'report': return isAuditReport(value.report)
     case 'unverified': return list(value.diagnostics, isDiagnostic) && value.diagnostics.length > 0
@@ -260,4 +277,119 @@ export async function rotateSigningKey(token: string): Promise<RotationResult> {
     throw new Error(msg('The key could not be rotated. Check the decision record again.'))
   }
   return value as RotationResult
+}
+
+/* The hand-over ------------------------------------------------------------- */
+
+/** What Desk recorded of one trail handed over to one holder; `unwitnessed`, for the current trail only. */
+export type HolderTrail = { through: number; confirmedAt: number; digest: string; unwitnessed?: number }
+/** One holder: the owner's label and channel, and Desk's record of each trail handed over to it. */
+export type Holder = { id: string; label: string; channel: string; addedAt: number; trails: Record<string, HolderTrail>; otherTrail?: boolean }
+/** The trail as the runtime gives it now: its identity and the sequence of its last chained record. */
+export type HandoverTrail = { identity: string; sequence: number }
+/**
+ * The holders, and the trail: none where it has no chained record yet, or the
+ * runtime gives no checkpoint of it, and then `diagnostics` say why in the
+ * runtime's words.
+ */
+export type Holders = { holders: Holder[]; trail: HandoverTrail | null; diagnostics?: AuditDiagnostic[] }
+/** A download of checkpoints: the bytes as served, the name to save them under, and what the headers named. */
+export type Checkpoints = { blob: Blob; name: string; trail: string; from: number; through: number; digest: string; more: boolean }
+
+export const HOLDERS_KEY = ['desk-audit-holders'] as const
+
+/** The file is not what the trail gives now: nothing was recorded. */
+export class StaleHandover extends Error {}
+
+/**
+ * The chassis's own sentences about the hand-over, as it says them, so that
+ * the page can show each in the owner's language (`systemMessage`). A reason
+ * that carries the runtime's words keeps them as they were said.
+ */
+export const HANDOVER_REASONS = [
+  sourceMessage("A holder's label is 1 to 120 characters and its channel 1 to 200, each with no control characters."),
+  sourceMessage('Desk keeps no holder by that id.'),
+  sourceMessage('The trail has no chained record yet, so there is nothing to hand over.'),
+  sourceMessage('Desk keeps at most {{count}} holders for one desk, so it adds no more.'),
+  sourceMessage('The runtime gives no checkpoint of this trail now: {{reason}}'),
+  sourceMessage('Desk recorded checkpoints through record {{cursor}} as handed over to this holder, and the trail\'s last chained record is now record {{sequence}}: the trail is shorter than what was handed over, so Desk hands nothing over.')
+]
+
+const trailIdentity = hex(32)
+const sha256 = (value: unknown): value is string => text(value) && /^sha256:[0-9a-f]{64}$/.test(value)
+const holderId = hex(16)
+const isHolderTrail = (value: unknown): value is HolderTrail => object(value) && count(value.through) && value.through > 0 && count(value.confirmedAt)
+  && sha256(value.digest) && optional(value.unwitnessed, count)
+
+/** One holder, as the chassis shows it: an id of its form, the owner's words, and a record keyed by trail identity. */
+export function isHolder(value: unknown): value is Holder {
+  return object(value) && holderId(value.id) && named(value.label) && named(value.channel) && count(value.addedAt)
+    && object(value.trails) && Object.entries(value.trails).every(([trail, entry]) => trailIdentity(trail) && isHolderTrail(entry))
+    && optional(value.otherTrail, item => typeof item === 'boolean')
+}
+
+/** The holders and the trail: a trail with no runtime refusal beside it, or none and perhaps the runtime's words. */
+export function isHolders(value: unknown): value is Holders {
+  if (!object(value) || !list(value.holders, isHolder) || !optional(value.diagnostics, item => list(item, isDiagnostic) && item.length > 0)) return false
+  if (value.trail === null) return true
+  return object(value.trail) && trailIdentity(value.trail.identity) && count(value.trail.sequence) && value.trail.sequence > 0 && value.diagnostics === undefined
+}
+
+async function handoverRefusal(response: Response, fallback: string): Promise<Error> {
+  let body: { error?: unknown; reason?: unknown } = {}
+  try { body = await response.json() as typeof body } catch { /* The status is still an answer. */ }
+  if (response.status === 409 && body.reason === 'stale') return new StaleHandover(msg('What you downloaded is not what the trail gives now. Download it again and hand over that file.'))
+  return new Error(text(body.error) ? body.error : fallback)
+}
+
+/** The holders Desk keeps, and what it recorded of each. */
+export async function readHolders(signal?: AbortSignal): Promise<Holders> {
+  const response = await deskFetch('/api/audit/holders', { signal })
+  if (!response.ok) throw await handoverRefusal(response, msg('The holders could not be loaded. Please try again.'))
+  const value: unknown = await response.json()
+  if (!isHolders(value)) throw new Error(msg('The holders could not be loaded. Please try again.'))
+  return value
+}
+
+/** Add a holder by the owner's label and channel. */
+export async function addHolder(label: string, channel: string): Promise<Holder> {
+  const response = await deskFetch('/api/audit/holders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label, channel }) })
+  if (!response.ok) throw await handoverRefusal(response, msg('The holder could not be added. Please try again.'))
+  const value: unknown = await response.json()
+  if (!isHolder(value)) throw new Error(msg('The holder could not be added. Please try again.'))
+  return value
+}
+
+/**
+ * The checkpoints after a holder's cursor, as Desk served them: the bytes read
+ * as a Blob and never as text, so nothing decodes or encodes them, and the
+ * headers that name them. `null` where there is nothing new to hand over.
+ */
+export async function downloadCheckpoints(holder: string): Promise<Checkpoints | null> {
+  const failed = msg('The checkpoints could not be downloaded. Please try again.')
+  const response = await deskFetch(`/api/audit/checkpoints?holder=${encodeURIComponent(holder)}`)
+  if (response.status === 204) return null
+  if (!response.ok) throw await handoverRefusal(response, failed)
+  const header = (name: string) => response.headers.get(name) ?? ''
+  const trail = header('Desk-Checkpoints-Trail'), digest = header('Desk-Checkpoints-Digest'), more = header('Desk-Checkpoints-More')
+  const from = /^\d+$/.test(header('Desk-Checkpoints-From')) ? Number(header('Desk-Checkpoints-From')) : -1
+  const through = /^\d+$/.test(header('Desk-Checkpoints-Through')) ? Number(header('Desk-Checkpoints-Through')) : -1
+  const name = /^attachment; filename="(checkpoints-[0-9a-f]{32}-\d+-\d+\.jsonl)"$/.exec(header('Content-Disposition'))?.[1]
+  if (!trailIdentity(trail) || !sha256(digest) || !['true', 'false'].includes(more) || !count(from) || !count(through) || through <= from
+    || name !== `checkpoints-${trail}-${from + 1}-${through}.jsonl`) throw new Error(failed)
+  return { blob: await response.blob(), name, trail, from, through, digest, more: more === 'true' }
+}
+
+/**
+ * The owner's word that a download went to the holder. Desk records it only
+ * where the trail still gives those bytes from the holder's cursor;
+ * `StaleHandover` where it does not.
+ */
+export async function confirmHandover(holder: string, checkpoints: Pick<Checkpoints, 'trail' | 'from' | 'through' | 'digest'>): Promise<Holder> {
+  const { trail, from, through, digest } = checkpoints
+  const response = await deskFetch(`/api/audit/holders/${encodeURIComponent(holder)}/confirm`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ trail, from, through, digest }) })
+  if (!response.ok) throw await handoverRefusal(response, msg('The hand-over could not be recorded. Please try again.'))
+  const value: unknown = await response.json()
+  if (!isHolder(value) || value.id !== holder) throw new Error(msg('The hand-over could not be recorded. Please try again.'))
+  return value
 }

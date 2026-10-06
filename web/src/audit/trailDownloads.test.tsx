@@ -36,6 +36,8 @@ beforeEach(() => {
     asked.push(String(url))
     if (String(url) === '/api/audit/verify') return json(200, record)
     if (String(url).startsWith('/api/audit/trail?')) return trail(String(url))
+    // The hand-over beside the downloads: no holder, and no trail to hand over.
+    if (String(url) === '/api/audit/holders') return json(200, { holders: [], trail: null })
     return json(404, { error: 'not here' })
   })
   let pending: Blob | undefined

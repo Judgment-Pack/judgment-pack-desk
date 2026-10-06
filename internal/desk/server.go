@@ -150,6 +150,9 @@ type Server struct {
 	// marker's removal, and the finish or undo of one a stop cut short
 	// (rotation.go).
 	keyMu sync.Mutex
+	// handoverMu serializes every reading and change of this desk's record
+	// of checkpoint hand-overs, `.desk-private/handover` (handover.go).
+	handoverMu sync.Mutex
 	// reviewKey is this desk's own key for review tokens (`reviewToken`):
 	// random per process, so a token names one desk and does not outlive it.
 	reviewKey [32]byte
@@ -440,6 +443,10 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("GET /api/audit/verify", s.handleAuditVerify)
 	s.mux.HandleFunc("GET /api/audit/trail", s.handleAuditTrail)
 	s.mux.HandleFunc("POST /api/audit/key/rotate", s.handleRotateKey)
+	s.mux.HandleFunc("GET /api/audit/holders", s.handleHolders)
+	s.mux.HandleFunc("POST /api/audit/holders", s.handleAddHolder)
+	s.mux.HandleFunc("POST /api/audit/holders/{id}/confirm", s.handleConfirmHandover)
+	s.mux.HandleFunc("GET /api/audit/checkpoints", s.handleCheckpoints)
 	s.mux.HandleFunc("GET /api/upgrade", s.handleUpgrade)
 	s.mux.HandleFunc("POST /api/upgrade", s.handleUpgradeConfirm)
 	s.mux.HandleFunc("GET /api/source-reviews", s.handleSourceReviews)

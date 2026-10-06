@@ -307,6 +307,10 @@ func assertGatedFolder(t *testing.T, folder, config string) {
 	if perm := info.Mode().Perm(); perm != 0o700 {
 		t.Errorf("the audit folder is %v, want owner-only 0700", perm)
 	}
+	// The hand-over folder beside it (ADR-0010, section 2), owner-only too.
+	if info, err := os.Lstat(filepath.Join(folder, ".desk-private", "handover")); err != nil || !info.IsDir() || info.Mode().Perm() != 0o700 {
+		t.Errorf("the new desk's hand-over folder is %v (%v), want an owner-only folder", info, err)
+	}
 	if got := readFile(t, filepath.Join(folder, ".gitignore")); got != ".desk-private/\n" {
 		t.Errorf(".gitignore is %q, want it to ignore .desk-private/", got)
 	}

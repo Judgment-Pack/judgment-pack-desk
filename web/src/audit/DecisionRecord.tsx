@@ -6,13 +6,16 @@
  * name, and the runtime's sentences about what the result establishes and
  * what it does not, verbatim and in English, as Desk shows the runtime's
  * diagnostics. Desk runs it with the public keys it keeps for this desk, if
- * any, no held checkpoint and no stamping roots, and the panel says which.
+ * any, the checkpoints it handed over to holders, if any, and no stamping
+ * roots, and the panel says which.
  *
  * Beside it: the public keys Desk keeps, for the owner to hand to a holder,
  * each labelled by its place and the record it signs after; `packs
  * validate`'s word on whether the key named signs this project's records, in
  * the runtime's own sentence; and rotating the key, on the owner's word
- * (ADR-0010, section 1; `RotateSigningKey`).
+ * (ADR-0010, section 1; `RotateSigningKey`); and the hand-over of
+ * checkpoints to holders, with Desk's own record of it (ADR-0010, section 2;
+ * `Handover`).
  *
  * It runs when the panel becomes visible and when the owner asks again: never
  * on a timer, on focus, on a reconnect or on a change to the project. The
@@ -33,6 +36,7 @@ import { CodeBlock } from '../ui/CodeBlock'
 import { SettingsSection } from '../ui/SettingsSection'
 import { AUDIT_KEY, AuditUnavailable, readAuditRecord, type AuditCoverageState, type AuditKeys, type AuditReport, type AuditRotation, type AuditSigning } from './client'
 import styles from './DecisionRecord.module.css'
+import { Handover, NO_HANDOVER, type HandoverState } from './Handover'
 import { RotateSigningKey, type RotationOutcome } from './RotateSigningKey'
 import { TrailDownloads } from './TrailDownloads'
 
@@ -71,6 +75,12 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
   // never stands beside a later reading it does not describe.
   const [rotated, setRotated] = useState<RotationOutcome>()
   useEffect(() => { if (visible) setRotated(undefined) }, [visible])
+  // What the hand-over's downloads and confirmations answered, kept across
+  // the check run after a confirmation, which unmounts the section while it
+  // runs; dropped when the panel is opened again.
+  const [handover, setHandover] = useState<HandoverState>(NO_HANDOVER)
+  useEffect(() => { if (visible) setHandover(NO_HANDOVER) }, [visible])
+  const handoverSection = <Handover state={handover} onState={setHandover} onConfirmed={() => void query.refetch()} />
   const rotation = (keys?: AuditKeys, rotation?: AuditRotation) => <RotateSigningKey rotation={rotation} keyCount={keys?.state === 'kept' ? keys.public.length : 0}
     outcome={rotated} onOutcome={outcome => { setRotated(outcome); void query.refetch() }} />
   const again = <div><Button onClick={() => { setRotated(undefined); void query.refetch() }}>{msg('Check again')}</Button></div>
@@ -86,16 +96,20 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
                   <ul className={styles.list} aria-label={msg('What the runtime said')}>{record.diagnostics.map((item, index) => <li key={index} lang="en"><code>{item.code}</code> {item.message}</li>)}</ul>
                   <SigningKey keys={record.keys} signing={record.signing} />
                   {rotation(record.keys, record.rotation)}
+                  {handoverSection}
                   <TrailDownloads files={record.files ?? []} />
                   {again}
                 </>
                   : record?.state === 'report' && <>
-                    <p className={styles.statement}>{record.keys?.state === 'kept'
-                      ? msg('Desk ran this on your machine, over your trail, with the public keys it keeps for this desk and no checkpoints: it checked the signatures against those keys, and no held checkpoint and no stamp. It is not evidence to anyone who does not trust you: you hold the key. A holder runs the same command on a copy, with what it holds.')
-                      : msg('Desk ran this on your machine, over your trail, with no keys and no checkpoints: it checked no signature, no held checkpoint and no stamp. It is not evidence to anyone who does not trust you. A holder runs the same command on a copy, with what it holds.')}</p>
+                    <p className={styles.statement}>{record.expected ? msg('Desk ran this on your machine, over your trail, with keys and checkpoints you keep. It shows what a holder would see. It is not evidence to anyone who does not trust you. A holder runs the same command on a copy, with what it holds.')
+                      : <>{record.keys?.state === 'kept'
+                        ? msg('Desk ran this on your machine, over your trail, with the public keys it keeps for this desk and no checkpoints: it checked the signatures against those keys, and no held checkpoint and no stamp. It is not evidence to anyone who does not trust you: you hold the key. A holder runs the same command on a copy, with what it holds.')
+                        : msg('Desk ran this on your machine, over your trail, with no keys and no checkpoints: it checked no signature, no held checkpoint and no stamp. It is not evidence to anyone who does not trust you. A holder runs the same command on a copy, with what it holds.')}</>}</p>
+                    {record.expectUnread && <p role="alert">{msg('Desk could not read the checkpoints it keeps as handed over to {{holders}}, so the check ran without them.', { holders: record.expectUnread.join(', ') })}</p>}
                     <Report report={record.report} />
                     <SigningKey keys={record.keys} signing={record.signing} />
                     {rotation(record.keys, record.rotation)}
+                    {handoverSection}
                     <TrailDownloads files={record.files ?? []} />
                     {record.runtime && <p className={styles.quiet}>{msg('Checked by jpack {{version}}.', { version: record.runtime })}</p>}
                     {again}

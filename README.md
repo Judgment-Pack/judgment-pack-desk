@@ -246,12 +246,12 @@ person's approval, and it records no name.
   change it.
 - The runtime Desk pins (0.27.1) chains each line to the one before it, over
   its exact bytes (runtime ADR-0047). A change then shows only against a
-  checkpoint someone else held from before it. Desk takes and hands over no
-  checkpoint yet: the rest of its part is
+  checkpoint someone else held from before it. Desk's part is
   [ADR-0010](docs/adr/0010-defensible-decision-records.md). It keeps a signing
   key for each desk it makes (below), shows what the runtime's own check
-  finds, and hands over the trail's files as exact bytes (the decision record,
-  below).
+  finds, hands over the trail's files as exact bytes (the decision record,
+  below), and hands checkpoints over to holders you name, by download (the
+  hand-over, below).
 - A `JPACK_SIGNING_KEY` set where Desk was started is removed from every
   runtime Desk starts for a desk it made, as `JPACK_CONFIG` is
   ([ADR-0010](docs/adr/0010-defensible-decision-records.md)). The project Desk
@@ -477,11 +477,15 @@ reads a key from the
 file it names, so each is written for that run to a file of its own in a new
 folder in Desk's signing folder, and removed after it (a Desk stopped during
 the check leaves that folder, which holds public keys only). On the project
-Desk was started on it passes no key. It passes no held checkpoint, no time-stamping
-roots and no `--require-…` flag, so the runtime checks the chain, and the
-signatures against the keys it was given, and says what it did not check. Its
-sentence above the report says which: with this desk's public keys, or with no
-keys. The panel shows the runtime's status,
+Desk was started on it passes no key. For each holder you confirmed
+checkpoints of the trail as it is now as handed over to (the hand-over, below),
+it passes Desk's file of them as `--expect`; a file it cannot read now, or that
+is not yours, is left out and the panel names its holder. It passes no
+time-stamping roots and no `--require-…` flag, so the runtime checks the chain,
+the signatures against the keys it was given and the trail against the
+checkpoints it was given, and says what it did not check. Its sentence above
+the report says which: with keys and checkpoints you keep, with this desk's
+public keys, or with no keys. The panel shows the runtime's status,
 its coverage counts, segments, discontinuities and findings by name, and its
 sentences on what the result establishes and what it does not, in English as
 the runtime writes them, and, where a key was passed, the key in force at the
@@ -544,6 +548,37 @@ its value. Desk takes that lock on Linux, macOS and the BSDs. On any other
 build, and on a file system that supports no `flock`, the download is refused
 rather than made from a size that may fall inside a write; on Windows the
 runtime takes a different lock, which Desk does not take.
+
+**The hand-over, in the decision record** (ADR-0010, section 2). A hand-over
+gives a checkpoint of your trail to someone who keeps it apart from you, a
+holder: a counterparty, an auditor, a store you do not control. Later, a copy
+of the trail is held to what they kept with `jpack audit verify --expect`.
+
+- **Holders.** You add each by a label and a channel of your own words, such
+  as "Counterparty: procurement desk" and "e-mail to records@…". Desk keeps
+  them, and its record of what went to each, in `.desk-private/handover/`
+  under the project: owner-only, opened through the project's root and never
+  through a link, refused by the file API, and in no backup, like the trail.
+- **Download or copy is the one channel in this version.** "Download
+  checkpoints" saves the checkpoints after that holder's last confirmed record
+  as the exact bytes `jpack audit checkpoint --since <n> --limit 300` printed,
+  batch after batch, up to 6,000 in one file, which is named for the trail and
+  the records. You send it by any channel the holder keeps. A download moves
+  nothing.
+- **Your confirmation moves the cursor.** "Confirm" asks the runtime for the
+  same checkpoints again, and Desk records them only where they are the same
+  bytes: appended to its file for that holder and trail, with the last record,
+  the time by Desk's clock and the SHA-256 of the file. Otherwise it records
+  nothing and says the file is stale. Where the trail was moved aside, each
+  holder starts again at 0 for the new trail. The decision record is then
+  checked again, with what was handed over.
+- **What a held checkpoint establishes:** the records up to it are the ones
+  that existed when it was handed over, against an operator who does not hold
+  the holder's copy. **It does not establish** anything after it, that the
+  holder kept every checkpoint, or when it was made or handed over.
+- **What Desk's record of hand-overs establishes:** nothing, to a holder or to
+  anyone else. It is yours, and you can change it. Only the holder's own copy
+  counts. The panel says so beside the list.
 
 **`requireComparableFacts`** (runtime ADR-0046).
 

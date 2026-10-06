@@ -2131,8 +2131,8 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	if slices.Contains(schema.supported, reviewedFromVersion) {' \
     '	if true {'
   mutate go "new desk: no audit folder" "$NDG" \
-    '"sources", ".desk", ".desk/job-drafts", ".desk-private", deskAuditDir} {' \
-    '"sources", ".desk", ".desk/job-drafts", ".desk-private"} {'
+    '"sources", ".desk", ".desk/job-drafts", ".desk-private", deskAuditDir, handoverDir} {' \
+    '"sources", ".desk", ".desk/job-drafts", ".desk-private", handoverDir} {'
   mutate go "new desk: the audit folder is not owner-only" "$NDG" \
     '		if err := folder.Mkdir(dir, 0700); err != nil {' \
     '		if err := folder.Mkdir(dir, 0755); err != nil {'
@@ -4008,6 +4008,207 @@ func (b *cappedBuffer) exceeded() bool {'
     '	return strings.ReplaceAll(withoutAbsolutePaths(replaceSpans(message, spans)), held, "…")' \
     '	_ = spans
 	return strings.ReplaceAll(message, held, "…")'
+  # **Checkpoint hand-over by download or copy (ADR-0010 PR 5, section 2).**
+  # The bytes the runtime printed, untouched and in order, through the record
+  # read first; each line held to that trail and to the order; the batches
+  # bounded; nothing new said as such; each holder's cursor its own; a
+  # confirmation recorded only for the same bytes from the holder's own
+  # cursor, one at a time, appended to the holder's file and never written
+  # over; the decision record given each holder's file for the current trail
+  # and no other, and told of a file it could not read; Desk's record refused
+  # by the file API and kept only where only the owner can read it; no path in
+  # an answer; a holder's words bounded. Every row's name starts "hand-over:",
+  # so `mutation-check.sh go "hand-over:"` runs exactly these.
+  HO=internal/desk/handover.go
+  mutate go "hand-over: the bytes are encoded again" "$HO" \
+    '			data = append(data, line...)' \
+    '			if canonical, err := json.Marshal(json.RawMessage(line[:len(line)-1])); err == nil {
+				data = append(append(data, canonical...), 10)
+			}'
+  mutate go "hand-over: a line's newline is dropped" "$HO" \
+    '			data = append(data, line...)' \
+    '			data = append(data, line[:len(line)-1]...)'
+  mutate go "hand-over: a checkpoint of another trail is served" "$HO" \
+    '			case checkpoint.trail != identity:' \
+    '			case false:'
+  mutate go "hand-over: a checkpoint out of order is served" "$HO" \
+    '			case checkpoint.sequence <= last:' \
+    '			case false:'
+  mutate go "hand-over: a line that is not a checkpoint is served" "$HO" \
+    '			case !ok:' \
+    '			case !ok && false:'
+  mutate go "hand-over: a checkpoint with a member too many is read" "$HO" \
+    '	if !ok || len(members) != 4 {' \
+    '	if !ok || len(members) < 4 {'
+  mutate go "hand-over: a last line with no newline is served" "$HO" \
+    "			if line[len(line)-1] != '\\n' {" \
+    "			if false {"
+  mutate go "hand-over: checkpoints past the record read first are served" "$HO" \
+    '			case checkpoint.sequence > through:' \
+    '			case false:'
+  mutate go "hand-over: the batches are not bounded" "$HO" \
+    '	for range handoverBatches {' \
+    '	for range 1000 {'
+  mutate go "hand-over: a full batch is taken for the last" "$HO" \
+    '		if received < handoverBatch {' \
+    '		if received <= handoverBatch {'
+  mutate go "hand-over: a trail that ends early is served" "$HO" \
+    '		if received < handoverBatch {' \
+    '		if received < 0 {'
+  mutate go "hand-over: the next batch is asked from the cursor again" "$HO" \
+    '"--since", strconv.FormatInt(last, 10)' \
+    '"--since", strconv.FormatInt(from, 10)'
+  mutate go "hand-over: nothing new is not said" "$HO" \
+    '	if cursor == head.Sequence {' \
+    '	if false {'
+  mutate go "hand-over: the cursor is not the holder's record" "$HO" \
+    '	cursor := record.Trails[head.Identity].Through' \
+    '	cursor := int64(0) * record.Trails[head.Identity].Through'
+  mutate go "hand-over: the digest header is not the bytes' own" "$HO" \
+    '	w.Header().Set(checkpointsDigestHeader, sha256Digest(read.data))' \
+    '	w.Header().Set(checkpointsDigestHeader, sha256Digest(nil))'
+  mutate go "hand-over: a confirmation of other bytes is recorded" "$HO" \
+    '	case read.through != through || sha256Digest(read.data) != request.Digest:' \
+    '	case read.through != through:'
+  mutate go "hand-over: a confirmation from another cursor is recorded" "$HO" \
+    '	case record.Trails[request.Trail].Through != from:' \
+    '	case false:'
+  mutate go "hand-over: a confirmation with no chained record is not stale" "$HO" \
+    '	case head == nil:
+		staleRefusal(w)
+		return
+	}
+	read, err := s.readCheckpoints(r.Context(), dir, request.Trail, from, through)' \
+    '	}
+	read, err := s.readCheckpoints(r.Context(), dir, request.Trail, from, through)'
+  mutate go "hand-over: confirmations are not one at a time" "$HO" \
+    '	s.handoverMu.Lock()
+	defer s.handoverMu.Unlock()
+	holder, record, found, err := s.readHolderRecord(id)' \
+    '	holder, record, found, err := s.readHolderRecord(id)'
+  mutate go "hand-over: the holder's file is written over" "$HO" \
+    '	next := append(slices.Clip(held), data[len(tail):]...)' \
+    '	next := slices.Clone(data[len(tail):])'
+  mutate go "hand-over: a holder's file that disagrees is written to" "$HO" \
+    '	if !bytes.HasPrefix(data, tail) {' \
+    '	if len(tail) > len(data) {'
+  mutate go "hand-over: what a stopped confirmation wrote is appended again" "$HO" \
+    '	for cut > 0 {' \
+    '	for cut < 0 {'
+  mutate go "hand-over: the record is not written" "$HO" \
+    "	if err := writePrivateData(folder, handoverRecordName, append(written, '\\n')); err != nil {" \
+    "	if err := writePrivateData(folder, handoverRecordName+\".none\", append(written, '\\n')); err != nil {"
+  mutate go "hand-over: a confirmation is not timed by Desk's clock" "$HO" \
+    'ConfirmedAt: handoverClock().Unix(), Digest: sha256Digest(data)}' \
+    'ConfirmedAt: 0, Digest: sha256Digest(data)}'
+  mutate go "hand-over: the record moves to another record" "$HO" \
+    '	trails[trail] = handedOver{Through: through,' \
+    '	trails[trail] = handedOver{Through: through - 1,'
+  mutate go "hand-over: records since are not counted from the record" "$HO" \
+    '			since := max(head.Sequence-handed.Through, 0)' \
+    '			since := max(head.Sequence, 0)'
+  mutate go "hand-over: a holder of a trail moved aside is not said" "$HO" \
+    '		shown.OtherTrail = !current' \
+    '		shown.OtherTrail = !current && false'
+  mutate go "hand-over: a record of another trail is counted against this one" "$HO" \
+    '		if head != nil && trail == head.Identity {' \
+    '		if head != nil {'
+  mutate go "hand-over: no chained record is said as a refusal" "$HO" \
+    '(got.Diagnostics[0].Code == "JPS-AUDIT-CHECKPOINT-NONE" ||' \
+    '(got.Diagnostics[0].Code == "JPS-AUDIT-CHECKPOINT-NONE-X" ||'
+  mutate go "hand-over: a trail not written yet is said as a refusal" "$HO" \
+    '			got.Diagnostics[0].Code == "JPS-AUDIT-TRAIL-READ" && s.trailAbsent()) {' \
+    '			got.Diagnostics[0].Code == "JPS-AUDIT-TRAIL-READ" && s.trailAbsent() && false) {'
+  mutate go "hand-over: a trail that cannot be opened is taken for none" "$HO" \
+    '	_, err = root.Lstat(auditTrailFiles["evaluations"])
+	return errors.Is(err, fs.ErrNotExist)' \
+    '	_, err = root.Lstat(auditTrailFiles["evaluations"])
+	return err == nil || errors.Is(err, fs.ErrNotExist)'
+  mutate go "hand-over: an answer the runtime does not document is read" "$HO" \
+    '	case code == 0 && got.Command == auditCheckpointCommand && got.Status == "checkpointed":' \
+    '	case got.Status == "checkpointed":'
+  mutate go "hand-over: a runtime's refusal names a path" "$HO" \
+    '	message := s.withoutPaths(failure.message)' \
+    '	message := failure.message'
+  mutate go "hand-over: the holders' answer names a path" "$HO" \
+    'Message: s.withoutPaths(diagnostic.Message)})' \
+    'Message: diagnostic.Message})'
+  mutate go "hand-over: a label past its bound is kept" "$HO" \
+    '|| utf8.RuneCountInString(value) > limit {' \
+    '|| utf8.RuneCountInString(value) > limit+1 {'
+  mutate go "hand-over: a control character is kept" "$HO" \
+    '		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r)' \
+    '		if unicode.IsControl(r) && false || unicode.Is(unicode.Cf, r)'
+  mutate go "hand-over: a format character is kept" "$HO" \
+    '		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Zl, r)' \
+    '		if unicode.IsControl(r) || unicode.Is(unicode.Zl, r)'
+  mutate go "hand-over: a line separator is kept" "$HO" \
+    '|| unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r) {' \
+    '|| unicode.Is(unicode.Zp, r) {'
+  mutate go "hand-over: a holder's words are not trimmed" "$HO" \
+    '	value = strings.TrimSpace(value)' \
+    '	value = strings.TrimRight(value, "")'
+  mutate go "hand-over: the holders are not bounded" "$HO" \
+    '	if len(holders) >= maxHolders {' \
+    '	if len(holders) > maxHolders {'
+  mutate go "hand-over: a folder open to others is used" "$HO" \
+    '		if info.Mode().Perm()&0o077 != 0 {' \
+    '		if info.Mode().Perm()&0o077 != 0 && false {'
+  mutate go "hand-over: a link is followed to the folder" "$HO" \
+    '		info, lookErr := current.Lstat(part)' \
+    '		info, lookErr := current.Stat(part)'
+  mutate go "hand-over: a new folder does not ignore itself in Git" "$HO" \
+    '	if made {' \
+    '	if made && false {'
+  mutate go "hand-over: offered with a runtime that has no audit commands" "$HO" \
+    '	if !slices.Contains(schema.supported, auditConfigVersion) {
+		return heldDir{}, &lockFailure{' \
+    '	if false {
+		return heldDir{}, &lockFailure{'
+  mutate go "hand-over: offered where no trail is kept" "$HO" \
+    '	if !declared {
+		return heldDir{}, &lockFailure{http.StatusConflict, CodeBadRequest, noTrailWords}' \
+    '	if !declared && false {
+		return heldDir{}, &lockFailure{http.StatusConflict, CodeBadRequest, noTrailWords}'
+  mutate go "hand-over: the decision record is given no held checkpoint" "$HO" \
+    '			held.args = append(held.args, "--expect", path.Join(handoverDir, holder.ID, name))' \
+    '			held.args = append(held.args)'
+  mutate go "hand-over: every file a holder keeps is passed" "$HO" \
+    '			err = checkHeldFile(folder, name)
+			folder.Close()' \
+    '			if entries, _ := fs.ReadDir(folder.FS(), "."); len(entries) > 0 {
+				for _, entry := range entries {
+					if strings.HasSuffix(entry.Name(), ".jsonl") {
+						name = entry.Name()
+					}
+				}
+			}
+			err = checkHeldFile(folder, name)
+			folder.Close()'
+  mutate go "hand-over: a held file that cannot be read is passed" "$HO" \
+    '			err = checkHeldFile(folder, name)' \
+    '			err = nil'
+  mutate go "hand-over: a held file passed over is not named" "$HO" \
+    '			held.unread = append(held.unread, holder.Label)' \
+    '			_ = holder.Label'
+  mutate go "hand-over: the panel passes no held checkpoint" internal/desk/audit_record.go \
+    '	args = append(args, expect.args...)' \
+    '	_ = expect.args'
+  mutate go "hand-over: the panel does not say checkpoints were passed" internal/desk/audit_record.go \
+    '	answer.Expected = expect.count' \
+    '	answer.Expected = 0'
+  mutate go "hand-over: the panel does not say whose file it passed over" internal/desk/audit_record.go \
+    '	answer.ExpectUnread = expect.unread' \
+    '	answer.ExpectUnread = nil'
+  mutate go "hand-over: the file API reads the record of hand-overs" internal/desk/watch.go \
+    '	".desk-private": true, // Chat artifacts and runner state are not editable project documents.' \
+    '	".desk-private-none": true, // Chat artifacts and runner state are not editable project documents.'
+  mutate go "hand-over: a new desk has no hand-over folder" internal/desk/desks.go \
+    '".desk-private", deskAuditDir, handoverDir} {' \
+    '".desk-private", deskAuditDir} {'
+  mutate go "hand-over: a failed creation leaves the hand-over folder" internal/desk/desks.go \
+    '	handoverDir, deskAuditDir, ".desk-private",' \
+    '	deskAuditDir, ".desk-private",'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -10857,13 +11058,13 @@ export function assistantTransport(id: string): Transport {
     "{error && <p role=\"alert\">" \
     "{error && <p role=\"alert\" hidden>"
   mutate web "downloads: not beside the report" "$DR" \
-    "                    {rotation(record.keys, record.rotation)}
+    "                    {handoverSection}
                     <TrailDownloads files={record.files ?? []} />" \
-    "                    {rotation(record.keys, record.rotation)}"
+    "                    {handoverSection}"
   mutate web "downloads: not beside the runtime's refusal" "$DR" \
-    "                  {rotation(record.keys, record.rotation)}
+    "                  {handoverSection}
                   <TrailDownloads files={record.files ?? []} />" \
-    "                  {rotation(record.keys, record.rotation)}"
+    "                  {handoverSection}"
   mutate web "downloads: a file name the download does not take is accepted" "$AC" \
     " || !optional(value.files, item => list(item, isTrailFile))" \
     " || !optional(value.files, item => list(item, (entry): entry is TrailFile => text(entry) || isTrailFile(entry)))"
@@ -11023,6 +11224,104 @@ export function assistantTransport(id: string): Transport {
   mutate web "runner key: a run submitted does not ask again" web/src/jobs/JobsView.tsx \
     "clearGuard(); void refreshRunnerKey(queryClient); await queryClient.invalidateQueries({ queryKey: ['jobs-pages', \`jobs/\${job.id}/runs\`] });" \
     "clearGuard(); await queryClient.invalidateQueries({ queryKey: ['jobs-pages', \`jobs/\${job.id}/runs\`] });"
+  # **The hand-over on the page (ADR-0010 PR 5, section 2).** The holders and
+  # what Desk recorded of each, in each state; ADR's sentence beside them; a
+  # download kept as a Blob from the response to the saved file, under the name
+  # it was served with, and refused where its headers do not name it; the
+  # owner's confirmation, sent as downloaded, after which the holders and the
+  # decision record are read again; a stale file and nothing new each said;
+  # and the decision record's sentence when it was given what was handed over.
+  # Every row's name starts "hand-over", so `mutation-check.sh web hand-over`
+  # runs exactly these.
+  HP=web/src/audit/Handover.tsx
+  AC=web/src/audit/client.ts
+  DR=web/src/audit/DecisionRecord.tsx
+  mutate web "hand-over client: the checkpoints are read as text" "$AC" \
+    "  return { blob: await response.blob(), name," \
+    "  return { blob: new Blob([await response.text()]), name,"
+  mutate web "hand-over page: saved under another name" "$HP" \
+    "  link.href = url; link.download = name" \
+    "  link.href = url; link.download = 'checkpoints.jsonl'"
+  mutate web "hand-over page: the decision record is not checked again after a confirmation" "$HP" \
+    "      void query.refetch()
+      onConfirmed()" \
+    "      void query.refetch()"
+  mutate web "hand-over page: the holders are not read again after a confirmation" "$HP" \
+    "      void query.refetch()
+      onConfirmed()" \
+    "      onConfirmed()"
+  mutate web "hand-over page: the stale sentence is not said" "$HP" \
+    "{notice?.kind === 'stale' && <p role=\"alert\">" \
+    "{notice?.kind === 'stale' && busy && <p role=\"alert\">"
+  mutate web "hand-over page: a stale download still waits for its confirmation" "$HP" \
+    "      if (cause instanceof StaleHandover) set(holder.id, undefined, { kind: 'stale' })" \
+    "      if (cause instanceof StaleHandover) set(holder.id, pending, { kind: 'stale' })"
+  mutate web "hand-over client: a stale refusal is not told apart" "$AC" \
+    "  if (response.status === 409 && body.reason === 'stale') return" \
+    "  if (response.status === 409 && body.reason === 'never') return"
+  mutate web "hand-over page: nothing new is not said" "$HP" \
+    "{notice?.kind === 'nothing-new' && <p role=\"status\">" \
+    "{notice?.kind === 'nothing-new' && busy && <p role=\"status\">"
+  mutate web "hand-over client: nothing new is read as a download" "$AC" \
+    "  if (response.status === 204) return null" \
+    "  if (response.status === 999) return null"
+  mutate web "hand-over client: a refusal that is not JSON is not said" "$AC" \
+    "  return new Error(text(body.error) ? body.error : fallback)" \
+    "  return new Error(text(body.error) ? body.error : '')"
+  mutate web "hand-over client: a download whose headers disagree is taken" "$AC" \
+    "    || name !== \`checkpoints-\${trail}-\${from + 1}-\${through}.jsonl\`) throw new Error(failed)" \
+    "    || name === undefined) throw new Error(failed)"
+  mutate web "hand-over client: the confirmation names another cursor" "$AC" \
+    "body: JSON.stringify({ trail, from, through, digest }) })" \
+    "body: JSON.stringify({ trail, from: from + 1, through, digest }) })"
+  mutate web "hand-over client: a holder is added in other words" "$AC" \
+    "body: JSON.stringify({ label, channel }) })" \
+    "body: JSON.stringify({ label: channel, channel }) })"
+  mutate web "hand-over client: holders of another shape are read" "$AC" \
+    "&& count(value.trail.sequence) && value.trail.sequence > 0 && value.diagnostics === undefined" \
+    "&& count(value.trail.sequence)"
+  mutate web "hand-over page: ADR's sentence is not beside the list" "$HP" \
+    "{msg(\"This is Desk's own record." \
+    "{msg(\"This is Desk's record."
+  mutate web "hand-over page: the SHA-256 handed over is not shown" "$HP" \
+    "        <CodeBlock text={record.digest} label={msg('SHA-256 of what was handed over')} />
+" \
+    ""
+  mutate web "hand-over page: records since are not shown" "$HP" \
+    "{trail && record.unwitnessed !== undefined && <p>" \
+    "{false && record.unwitnessed !== undefined && <p>"
+  mutate web "hand-over page: records since are shown with no current trail" "$HP" \
+    "{trail && record.unwitnessed !== undefined && <p>" \
+    "{record.unwitnessed !== undefined && <p>"
+  mutate web "hand-over page: a holder of a trail moved aside reads as handed nothing" "$HP" \
+    "      </> : holder.otherTrail ? <p>" \
+    "      </> : false ? <p>"
+  mutate web "hand-over page: a download is offered with no trail" "$HP" \
+    "      {trail && <div className={styles.actions}><Button disabled={busy} onClick={onDownload}>" \
+    "      {<div className={styles.actions}><Button disabled={busy} onClick={onDownload}>"
+  mutate web "hand-over page: the holders follow every change to the project" "$HP" \
+    "    meta: ON_REQUEST_ONLY," \
+    "    meta: {},"
+  mutate web "hand-over page: a refused holder is not said" "$HP" \
+    "    {error && <p role=\"alert\">{systemMessage(error)}</p>}" \
+    "    {error && <p role=\"alert\" hidden>{systemMessage(error)}</p>}"
+  mutate web "hand-over page: the held statement is not said" "$DR" \
+    "{record.expected ? msg(" \
+    "{false ? msg("
+  mutate web "hand-over page: a holder's file passed over is not named" "$DR" \
+    "{record.expectUnread && <p role=\"alert\">" \
+    "{false && record.expectUnread && <p role=\"alert\">"
+  mutate web "hand-over page: not beside the report" "$DR" \
+    "                    {rotation(record.keys, record.rotation)}
+                    {handoverSection}" \
+    "                    {rotation(record.keys, record.rotation)}"
+  mutate web "hand-over page: not beside the runtime's refusal" "$DR" \
+    "                  {rotation(record.keys, record.rotation)}
+                  {handoverSection}" \
+    "                  {rotation(record.keys, record.rotation)}"
+  mutate web "hand-over page: a waiting download outlives opening the panel again" "$DR" \
+    "  useEffect(() => { if (visible) setHandover(NO_HANDOVER) }, [visible])" \
+    "  useEffect(() => { if (visible) void 0 }, [visible])"
 fi
 
 restore
