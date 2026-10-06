@@ -473,11 +473,11 @@ func TestARotationTheRuntimeRefusesChangesNothing(t *testing.T) {
 		why      string
 	}{
 		{"no chained record yet", 0, "", rotateAsTheRuntime, "",
-			"The runtime did not rotate the key, and nothing was changed: the current key still signs. It said: The trail has no chained record yet, so there is no trail to rotate the key of; the first record is signed with whichever key the project names."},
+			"The runtime did not rotate the key, and nothing was changed: Desk kept the current key. It said: The trail has no chained record yet, so there is no trail to rotate the key of; the first record is signed with whichever key the project names."},
 		{"an incomplete last line", 2, recordLine(standInKeyID, 1), func(string) string { return refusingWith(rotateIncomplete, 4) }, "",
-			"The runtime did not rotate the key, and nothing was changed: the current key still signs. It said: Audit record could not be written: the audit trail's last line is incomplete, and no record is chained after an incomplete line."},
+			"The runtime did not rotate the key, and nothing was changed: Desk kept the current key. It said: Audit record could not be written: the audit trail's last line is incomplete, and no record is chained after an incomplete line."},
 		{"a current key not in force", 2, recordLine(standInKeyID, 1), func(string) string { return refusingWith(rotateNotInForce, 1) }, "",
-			"The runtime did not rotate the key, and nothing was changed: the current key still signs. It said: The project's signing key is not the key in force in the signature sidecar, so it cannot hand signing over; only the key in force can."},
+			"The runtime did not rotate the key, and nothing was changed: Desk kept the current key. It said: The project's signing key is not the key in force in the signature sidecar, so it cannot hand signing over; only the key in force can."},
 		{"a next key the runtime will not generate", 1, recordLine(standInKeyID, 1), rotateAsTheRuntime,
 			"  printf 'part of a seed' > \"$4\"\n  printf '%s\\n' " + shellQuote(`{"outputVersion":"2","command":"audit key generate","status":"error","diagnostics":[{"code":"JPS-AUDIT-KEY-EXISTS","message":"Something is already there, and a key is never written over anything."}]}`) + "\n  exit 4",
 			"Nothing was rotated: the runtime did not generate its signing key: Something is already there, and a key is never written over anything."},
@@ -512,6 +512,43 @@ func TestARotationTheRuntimeRefusesChangesNothing(t *testing.T) {
 		}
 		if got := r.describe(t); got != ".keys.jsonl,.seed seed=2 next=absent keys=2 rotations=1" {
 			t.Errorf("the signing folder holds %s", got)
+		}
+	})
+}
+
+// **A rotation the runtime did not write says Desk kept its key, and no
+// more** (issue #239). Another runtime rotated the trail after Desk read it,
+// so the runtime refuses: the desk's key is not the key in force. Desk removes
+// the next key and the marker and keeps the current seed, and says that; it
+// never says that key still signs, which it did not check, and which the
+// runtime has just said it does not. The panel says the same of a rotation a
+// stop left before the runtime wrote its line.
+func TestARotationTheRuntimeDidNotWriteSaysDeskKeptItsKey(t *testing.T) {
+	t.Run("another runtime rotated the trail", func(t *testing.T) {
+		r := newRotationRig(t, "c2000000000000000000000000000002", "")
+		r.writeTrail(t, 1, recordLine(standInKeyID, 1))
+		token := r.token(t)
+		rotatingAs(t, r.rig.calls, "  printf '%s' "+shellQuote(rotationLine(1, standInKeyID, thirdPublicKey))+" >> .desk-private/audit/signatures.jsonl\n"+refusingWith(rotateNotInForce, 1))
+		status, data := r.rotate(t, token)
+		want := "The runtime did not rotate the key, and nothing was changed: Desk kept the current key. It said: The project's signing key is not the key in force in the signature sidecar, so it cannot hand signing over; only the key in force can."
+		if status != http.StatusConflict || refusalOf(data) != want {
+			t.Errorf("the rotation answered %d %q, want 409 %q", status, refusalOf(data), want)
+		}
+		if got := r.describe(t); got != ".keys.jsonl,.seed seed=1 next=absent keys=1 rotations=1" {
+			t.Errorf("the signing folder holds %s, want the current key alone", got)
+		}
+	})
+
+	t.Run("the panel, on a rotation the runtime did not write", func(t *testing.T) {
+		r := newRotationRig(t, "c2000000000000000000000000000003", "")
+		r.writeTrail(t, 1, recordLine(standInKeyID, 1))
+		if os.WriteFile(filepath.Join(r.signing, r.id+rotatingSuffix), nil, 0o600) != nil || os.WriteFile(r.nextPath(), []byte(secondSeed+"\n"), 0o600) != nil {
+			t.Fatal("could not leave a rotation unfinished")
+		}
+		answer, _ := r.panel(t)
+		want := "The runtime did not write the rotation: Desk removes the next key when it next starts, and keeps the current key."
+		if answer.Rotation.State != rotationUnfinished || answer.Rotation.Reason != want {
+			t.Errorf("the panel says %+v, want unfinished: %q", answer.Rotation, want)
 		}
 	})
 }
@@ -738,7 +775,7 @@ func TestARotationsAnswersNameNoPath(t *testing.T) {
 		{"c4000000000000000000000000000001", "a refusal to generate", "  printf '%s\\n' " + shellQuote(`{"outputVersion":"2","command":"audit key generate","status":"error","diagnostics":[{"code":"JPS-AUDIT-KEY-REFUSED","message":`+jsonString(naming("c4000000000000000000000000000001"))+`}]}`) + "\n  exit 1", "",
 			"Nothing was rotated: the runtime did not generate its signing key: The next key at … is refused: the directory … is not the one held; also … and (…)."},
 		{"c4000000000000000000000000000002", "a refusal to rotate", "", refusingWith(`{"outputVersion":"2","command":"audit key rotate","status":"error","diagnostics":[{"code":"JPS-AUDIT-KEY-REFUSED","message":`+jsonString(naming("c4000000000000000000000000000002"))+`}]}`, 1),
-			"The runtime did not rotate the key, and nothing was changed: the current key still signs. It said: The next key at … is refused: the directory … is not the one held; also … and (…)."},
+			"The runtime did not rotate the key, and nothing was changed: Desk kept the current key. It said: The next key at … is refused: the directory … is not the one held; also … and (…)."},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newRotationRig(t, tc.id, config)
@@ -908,7 +945,7 @@ func (r *rotationRig) restart(t *testing.T) (*Server, *httptest.Server, *bytes.B
 
 // **A rotation stopped at any step is finished or undone at the next start.**
 // Stopped before the runtime wrote its line, the next key and the marker go,
-// and the first key still signs; stopped after it, the list is written with
+// and Desk keeps the first key; stopped after it, the list is written with
 // the next key at the sequence the line gives, the next seed is renamed over
 // the current one, and the marker goes. What each stop left is checked, and
 // what the start made of it; the panel then passes the keys the desk has.
@@ -1144,7 +1181,7 @@ func TestAnAnswerThatIsNotTheRotationAskedForIsNotTakenForOne(t *testing.T) {
 			r.writeTrail(t, 1, recordLine(standInKeyID, 1))
 			rotatingAs(t, r.rig.calls, refusingWith(answer(tc.change), 0))
 			status, data := r.rotate(t, r.token(t))
-			if status != http.StatusConflict || refusalOf(data) != "The runtime did not rotate the key, and nothing was changed: the current key still signs. It said: its audit key rotate did not answer as documented." {
+			if status != http.StatusConflict || refusalOf(data) != "The runtime did not rotate the key, and nothing was changed: Desk kept the current key. It said: its audit key rotate did not answer as documented." {
 				t.Errorf("the rotation answered %d %s", status, data)
 			}
 			r.assertUnchanged(t)
@@ -1193,6 +1230,24 @@ func TestWhatChangedWhileARotationFinishedIsNotWrittenOver(t *testing.T) {
 			replace(t, filepath.Join(r.signing, r.id+rotatingSuffix), "")
 		}, renamed, ".keys.jsonl,.rotating,.rotating.aside,.seed seed=2 next=absent keys=2 rotations=1",
 			"Nothing of it is left to do but remove its marker, which Desk does when it next starts.", []deskPublicKey{key1, {secondPublicKey, secondKeyID, 1}}},
+		// Issue #239: the old list put back once the new one is written, the
+		// list edited in place, the same file with other bytes, and the next
+		// key replaced just before the rename. None is renamed against, and
+		// the marker and the current seed stay.
+		{"the list, put back after it was written", "rotation: list written", func(t *testing.T, r *rotationRig) {
+			replace(t, filepath.Join(r.signing, r.id+keysSuffix), wantKeyLine(standInPublicKey, standInKeyID, 0))
+		}, notRenamed, ".keys.jsonl,.keys.jsonl.aside,.next.seed,.rotating,.seed seed=1 next=2 keys=1 rotations=1",
+			"The runtime wrote the rotation, and Desk did not finish it: Desk finishes it when it next starts. Until then, records are written unsigned.", nil},
+		{"the list, edited in place", "rotation: line written", func(t *testing.T, r *rotationRig) {
+			if err := os.WriteFile(filepath.Join(r.signing, r.id+keysSuffix), []byte(wantKeyLine(thirdPublicKey, thirdKeyID, 0)), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}, notRenamed, ".keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=1 rotations=1",
+			"Desk cannot tell whether the runtime wrote the rotation, so it changes nothing: the list of this desk's public keys ends in neither the current key nor the next one.", nil},
+		{"the next key, before the rename", "rotation: list written", func(t *testing.T, r *rotationRig) {
+			replace(t, r.nextPath(), secondSeed+"\n")
+		}, notRenamed, ".keys.jsonl,.next.seed,.next.seed.aside,.rotating,.seed seed=1 next=2 keys=2 rotations=1",
+			"The runtime wrote the rotation, and Desk did not finish it: Desk finishes it when it next starts. Until then, records are written unsigned.", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newRotationRig(t, "c8000000000000000000000000000004", "")
@@ -1226,6 +1281,83 @@ func TestWhatChangedWhileARotationFinishedIsNotWrittenOver(t *testing.T) {
 				t.Errorf("the panel shows the keys %+v, want %+v", answer.Keys, tc.passed)
 			}
 		})
+	}
+}
+
+// **A start renames no key against a list put back since it inspected it**
+// (issue #239). A rotation stops once its list is written. At the next start,
+// after the recovery has inspected that list as written, the old list is put
+// back in its place: the recovery does not rename the next key over the
+// current one, and keeps the marker, so the panel says a rotation did not
+// finish, where it would otherwise pass no key and offer nothing to finish.
+// The start after it, with nothing changed under it, finishes the rotation.
+func TestAStartRenamesNoKeyAgainstAListPutBackSinceItsInspection(t *testing.T) {
+	r := newRotationRig(t, "c6000000000000000000000000000002", "")
+	r.writeTrail(t, 1, recordLine(standInKeyID, 1))
+	r.abandonRotation(t, "rotation: list written")
+	if got := r.describe(t); got != ".keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=2 rotations=1" {
+		t.Fatalf("the stop left %s", got)
+	}
+	list := filepath.Join(r.signing, r.id+keysSuffix)
+	testHookKeyBetween = func(at string) {
+		if at == "rotation: inspected" {
+			if os.Rename(list, list+".aside") != nil || os.WriteFile(list, []byte(wantKeyLine(standInPublicKey, standInKeyID, 0)), 0o600) != nil {
+				t.Error("could not put the old list back")
+			}
+		}
+	}
+	t.Cleanup(func() { testHookKeyBetween = nil })
+	again, ts, logged := r.restart(t)
+	testHookKeyBetween = nil
+	if got := r.describe(t); got != ".keys.jsonl,.keys.jsonl.aside,.next.seed,.rotating,.seed seed=1 next=2 keys=1 rotations=1" {
+		t.Errorf("after the start the signing folder holds %s, want the seed, the next key and the marker as the stop left them (%s)", got, logged)
+	}
+	if !strings.Contains(logged.String(), "could not be finished") {
+		t.Errorf("Desk's log does not say the rotation was not finished: %s", logged)
+	}
+	answer, _ := panelOn(t, ts, r.id)
+	if answer.Rotation.State != rotationUnfinished || answer.Rotation.Reason != "The runtime wrote the rotation, and Desk did not finish it: Desk finishes it when it next starts. Until then, records are written unsigned." {
+		t.Errorf("after the start the panel says %+v", answer.Rotation)
+	}
+
+	ts.Close()
+	last, logged := restartedServer(t, again)
+	ts = httptest.NewServer(last)
+	t.Cleanup(ts.Close)
+	if got := r.describe(t); got != ".keys.jsonl,.keys.jsonl.aside,.seed seed=2 next=absent keys=2 rotations=1" {
+		t.Errorf("after the start after it the signing folder holds %s (%s)", got, logged)
+	}
+	answer, _ = panelOn(t, ts, r.id)
+	if answer.Keys.State != keysKept || !slices.Equal(answer.Keys.Public, []deskPublicKey{key1, {secondPublicKey, secondKeyID, 1}}) || answer.Rotation.State == rotationUnfinished {
+		t.Errorf("after the start after it the panel shows %+v and %+v", answer.Keys, answer.Rotation)
+	}
+}
+
+// **A panic in a rotation leaves the desk working** (issue #239). The
+// request's handler panics once the marker is written, as a fault in it
+// would, and net/http recovers it. The desk's key lock is released with the
+// signing folder's: on the same Desk, with no restart, the decision record
+// answers and says a rotation did not finish, and a rotation is refused for
+// that, not left waiting.
+func TestAPanicInARotationLeavesTheDeskWorking(t *testing.T) {
+	r := newRotationRig(t, "c8000000000000000000000000000005", "")
+	r.writeTrail(t, 1, recordLine(standInKeyID, 1))
+	r.abandonRotation(t, "rotation: marker written")
+	// The lock is asked first: a request would otherwise wait on it for good.
+	if !r.s.desks[r.id].keyMu.TryLock() {
+		t.Fatal("the desk's key lock is still held after the panic was recovered")
+	}
+	r.s.desks[r.id].keyMu.Unlock()
+	answer, _ := r.panel(t)
+	if answer.Rotation.State != rotationUnfinished || answer.Rotation.Reason != "Nothing of it is left to do but remove its marker, which Desk does when it next starts." {
+		t.Errorf("after the panic the panel says %+v", answer.Rotation)
+	}
+	if answer.Keys == nil || answer.Keys.State != keysKept || !slices.Equal(answer.Keys.Public, []deskPublicKey{key1}) {
+		t.Errorf("after the panic the panel shows the keys %+v", answer.Keys)
+	}
+	status, data := r.rotate(t, strings.Repeat("a", 64))
+	if status != http.StatusConflict || !strings.HasPrefix(refusalOf(data), "A rotation of this desk's key did not finish, so Desk starts no other.") {
+		t.Errorf("a rotation after the panic answered %d %s", status, data)
 	}
 }
 
@@ -1353,7 +1485,7 @@ func TestRotatingADesksKeyWithTheRuntime(t *testing.T) {
 
 	// Before any record: the runtime's refusal, and nothing left.
 	status, data := rotate(t, ts)
-	if status != http.StatusConflict || refusalOf(data) != "The runtime did not rotate the key, and nothing was changed: the current key still signs. It said: The trail has no chained record yet, so there is no trail to rotate the key of; the first record is signed with whichever key the project names." {
+	if status != http.StatusConflict || refusalOf(data) != "The runtime did not rotate the key, and nothing was changed: Desk kept the current key. It said: The trail has no chained record yet, so there is no trail to rotate the key of; the first record is signed with whichever key the project names." {
 		t.Errorf("a rotation before any record answered %d %s", status, data)
 	}
 	if names := namesIn(t, signing); !slices.Equal(names, []string{row.ID + keysSuffix, row.ID + seedSuffix}) {

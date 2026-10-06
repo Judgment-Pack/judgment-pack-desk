@@ -3577,21 +3577,25 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if found, err := d.root.Lstat(seedName); err != nil || found == nil {'
   mutate go "rotation: the seed is renamed before the list is written" "$RO" \
     '	if state.finished != nil {
-		if err := dir.replaceKeys(keysName, state.list, state.finished); err != nil {
+		written, err := dir.replaceKeys(keysName, state.list, state.finished)
+		if err != nil {
 			return false, fmt.Errorf("the list of public keys could not be written with the next key: %w", err)
 		}
+		list = written
 	}
 	keyBetween("rotation: list written")
-	if err := dir.promoteNext(nextName, seedName, state.next, state.seed); err != nil {
+	if err := dir.promoteNext(nextName, seedName, keysName, list, state.next, state.seed); err != nil {
 		return false, err
 	}' \
-    '	if err := dir.promoteNext(nextName, seedName, state.next, state.seed); err != nil {
+    '	if err := dir.promoteNext(nextName, seedName, keysName, list, state.next, state.seed); err != nil {
 		return false, err
 	}
 	if state.finished != nil {
-		if err := dir.replaceKeys(keysName, state.list, state.finished); err != nil {
+		written, err := dir.replaceKeys(keysName, state.list, state.finished)
+		if err != nil {
 			return false, fmt.Errorf("the list of public keys could not be written with the next key: %w", err)
 		}
+		list = written
 	}
 	keyBetween("rotation: list written")'
   mutate go "rotation: the marker stays after a rotation" "$RO" \
@@ -3690,6 +3694,34 @@ func (b *cappedBuffer) exceeded() bool {'
 			s.log.Printf("desk: the marker of a finished' \
     '		if err := dir.removeMade(markerName+".none", state.marker); err != nil {
 			s.log.Printf("desk: the marker of a finished'
+  # Issue #239, the four follow-ups of #231's review round: the list checked
+  # again immediately before the rename, at the start as in a rotation; a
+  # rotation the runtime did not write says Desk kept its key, never that it
+  # signs; the desk's key lock released by a defer, so a panic leaves the desk
+  # working; and the list's bytes, and the next key's identity, each held by a
+  # test of its own.
+  mutate go "rotation: the next key is renamed against a list that changed since" "$RO" \
+    '	if _, now, found, err := d.readKeysFile(keysName); err != nil || !found || !os.SameFile(now.info, list.info) || !bytes.Equal(now.data, list.data) {' \
+    '	if false {'
+  mutate go "rotation: a refusal says the current key still signs" "$RO" \
+    'nothing was changed: Desk kept the current key. It said: ' \
+    'nothing was changed: the current key still signs. It said: '
+  mutate go "rotation: the panel says the current key still signs" "$RO" \
+    'Desk removes the next key when it next starts, and keeps the current key.",' \
+    'Desk removes the next key when it next starts. The current key still signs.",'
+  mutate go "rotation: a panic leaves the desk's key lock held" "$RO" \
+    '	s.keyMu.Lock()
+	defer s.keyMu.Unlock()
+	answer, failure := s.rotateKey(r.Context(), project, request.Token)' \
+    '	s.keyMu.Lock()
+	answer, failure := s.rotateKey(r.Context(), project, request.Token)
+	s.keyMu.Unlock()'
+  mutate go "rotation: the list is written over a list edited in place" "$RO" \
+    '	if err != nil || !found || !os.SameFile(now.info, read.info) || !bytes.Equal(now.data, read.data) {' \
+    '	if err != nil || !found || !os.SameFile(now.info, read.info) {'
+  mutate go "rotation: a next key replaced before the rename is renamed" "$RO" \
+    '	if found, err := d.root.Lstat(nextName); err != nil || !os.SameFile(found, next) {' \
+    '	if found, err := d.root.Lstat(nextName); err != nil || found == nil {'
 
   # **One lock for every change to keys in the signing folder (issue #230).**
   # A creation, the start's sweep, a rotation and the start's recovery each
