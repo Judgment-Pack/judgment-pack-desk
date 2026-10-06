@@ -1,0 +1,175 @@
+name: Mutation rows, nightly
+
+# Every row of scripts/mutation-check.sh, once a night, each against the tests
+# that can notice it (issue #253). A row is decided by its selection only when
+# a test in it fails; anything else runs the whole suite before it is called a
+# survivor, so a selection's blind spot shows up here, on a schedule, and not
+# on a PR. Any row not caught fails the run. Not a required check.
+#
+# One job cannot run the list inside GitHub's six-hour limit, so the rows are
+# shared out with --shard: every n-th row, from the k-th. The shards' tables
+# are put back in row order in one table, published with the record each
+# shard left (--record): a line that differs from the tracked
+# scripts/mutation-expects.tsv is one to commit.
+on:
+  schedule:
+    - cron: '41 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-nightly
+  cancel-in-progress: false
+
+jobs:
+  rows:
+    name: ${{ matrix.half }} rows, shard ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 345
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { half: go, shard: 1/4 }
+          - { half: go, shard: 2/4 }
+          - { half: go, shard: 3/4 }
+          - { half: go, shard: 4/4 }
+          - { half: web, shard: 1/6 }
+          - { half: web, shard: 2/6 }
+          - { half: web, shard: 3/6 }
+          - { half: web, shard: 4/6 }
+          - { half: web, shard: 5/6 }
+          - { half: web, shard: 6/6 }
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v7
+        if: matrix.half == 'go'
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v7
+        if: matrix.half == 'web'
+        with:
+          node-version: 22
+
+      - name: npm ci
+        if: matrix.half == 'web'
+        run: npm --prefix web ci
+
+      # The web suite reads the bundle (src/testing/bundle.test.ts), so it is
+      # built first, as CI's own web job does.
+      - name: vite build
+        if: matrix.half == 'web'
+        working-directory: web
+        run: npx vite build
+
+      # The step's own limit sits inside the job's, so a shard that runs out
+      # of time still publishes the rows it finished: --record writes each
+      # row's line as the row ends.
+      - name: Run the shard's rows
+        timeout-minutes: 330
+        env:
+          HALF: ${{ matrix.half }}
+          SHARD: ${{ matrix.shard }}
+        run: |
+          out="$RUNNER_TEMP/shard"
+          mkdir -p "$out"
+          echo "$HALF ${SHARD%/*} ${SHARD#*/}" > "$out/shard.txt"
+          bash scripts/mutation-check.sh "$HALF" --shard "$SHARD" --record > "$out/table.md" 2> "$out/progress.log"
+
+      - name: Keep the record this shard left
+        if: always()
+        run: cp scripts/mutation-expects.tsv "$RUNNER_TEMP/shard/"
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: mutation-shard-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/shard/
+          if-no-files-found: error
+          retention-days: 14
+
+  table:
+    name: One table
+    needs: rows
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: mutation-shard-*
+          path: ${{ runner.temp }}/shards
+
+      # Round-robin shards put back in turn give the rows in the harness's own
+      # order. A shard with no closing line did not finish, and says so.
+      - name: Put the shards back together
+        run: |
+          python3 - "$RUNNER_TEMP/shards" "$RUNNER_TEMP/table" <<'PY'
+          import pathlib, sys
+          shards, out = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+          out.mkdir()
+          def record(path):
+              lines = {}
+              if path.exists():
+                  for line in path.read_text().splitlines():
+                      if line:
+                          kind, name, tests = line.split('\t')
+                          lines[(kind, name)] = tests
+              return lines
+          base = record(pathlib.Path('scripts/mutation-expects.tsv'))
+          merged, halves = dict(base), {}
+          for d in sorted(p for p in shards.iterdir() if (p / 'shard.txt').exists()):
+              half, k, n = (d / 'shard.txt').read_text().split()
+              text = (d / 'table.md').read_text() if (d / 'table.md').exists() else ''
+              rows = [l for l in text.splitlines() if l.startswith('| ') and not l.startswith(('| mutation |', '| --- |'))]
+              halves.setdefault(half, {})[int(k)] = (int(n), rows, 'discriminating:' in text)
+              mine = record(d / 'mutation-expects.tsv')
+              for key in set(mine) | set(base):
+                  if mine.get(key) != base.get(key):
+                      if key in mine:
+                          merged[key] = mine[key]
+                      else:
+                          merged.pop(key, None)
+          table, missed = ['| mutation | test that failed |', '| --- | --- |'], []
+          for half in ('go', 'web'):
+              parts = halves.get(half, {})
+              n = max([p[0] for p in parts.values()] or [0])
+              for k in range(1, n + 1):
+                  if k not in parts or not parts[k][2]:
+                      missed.append('| %s shard %d/%d | **DID NOT FINISH — see its progress.log** |' % (half, k, n))
+              for i in range(max([len(p[1]) for p in parts.values()] or [0])):
+                  for k in range(1, n + 1):
+                      if k in parts and i < len(parts[k][1]):
+                          table.append(parts[k][1][i])
+          table += missed
+          failed = [l for l in table[2:] if '**' in l or '| MUTATION DID NOT APPLY |' in l]
+          (out / 'table.md').write_text('\n'.join(table) + '\n')
+          with open(out / 'mutation-expects.tsv', 'w') as f:
+              for key in sorted(merged):
+                  f.write('%s\t%s\t%s\n' % (key[0], key[1], merged[key]))
+          changed = sum(1 for key in set(merged) | set(base) if merged.get(key) != base.get(key))
+          summary = ['%d rows reported; %d not caught or not run; %d lines of the record changed' % (len(table) - 2 - len(missed), len(failed), changed), '']
+          summary += table[:2] + failed if failed else ['Every row was caught.']
+          with open(out / 'summary.md', 'w') as f:
+              f.write('\n'.join(summary) + '\n')
+          PY
+          cat "$RUNNER_TEMP/table/summary.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mutation-table
+          path: |
+            ${{ runner.temp }}/table/table.md
+            ${{ runner.temp }}/table/mutation-expects.tsv
+          if-no-files-found: error
+          retention-days: 30

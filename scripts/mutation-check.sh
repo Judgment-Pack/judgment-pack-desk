@@ -10,9 +10,71 @@
 #   scripts/mutation-check.sh            # every mutation
 #   scripts/mutation-check.sh go         # the Go ones only
 #   scripts/mutation-check.sh web        # the web ones only
+#   scripts/mutation-check.sh go origin  # the Go rows whose name contains "origin"
+#
+# and, after those, any of:
+#
+#   --rows <file>   only the rows named in the file, one exact name a line
+#   --record        keep what each row's run found in scripts/mutation-expects.tsv
+#   --whole         run every row against the whole suite, as before #253
+#   --shard <k>/<n> run every n-th row, from the k-th (the nightly run's shards)
 #
 # The tree must be clean: this edits tracked files and restores them with
-# `git checkout`, which would discard uncommitted work. Commit first.
+# `git checkout`, which would discard uncommitted work. Commit first. The one
+# exception is the record this writes (below): a `go --record` run can be
+# followed by a `web --record` run before either is committed. The web suite
+# reads the built bundle (`src/testing/bundle.test.ts`): run `npx vite build`
+# in `web/` first, or the web baseline is not green.
+#
+# **A row runs against the tests that can notice it** (issue #253). Every row
+# used to run its whole suite: two to five minutes a row, a working day for the
+# rows in the files one PR touches, and days for the list. Selection is how
+# mutation tools run a mutant, and it is how this runs a row:
+#
+# - **A Go row** with an entry in the record runs `go test ./internal/desk -run
+#   '^(Test1|Test2|…)$'`, the top-level tests its entry names. A Go row with no
+#   entry runs the whole package, as before: one package has no import graph
+#   finer than itself to choose from.
+# - **A web row** runs vitest on the test files that import the mutated file,
+#   directly or through one module between, the file itself where it is a
+#   test, the test files that name it in a string (a test that reads a source
+#   as text imports nothing), and the files its entry names. The walk is this
+#   script's own (`web_tests_of`), and takes a second: `vitest related` follows
+#   imports to any depth, and on six mutated files it chose 133 test files to
+#   the walk's 64. The walk needs no record, so a web row with no entry runs
+#   its walk's files first too.
+# - **Selection can only make a run faster; it never weakens a verdict.** A
+#   selected run decides a row only when a test in it fails. Anything else —
+#   nothing failed, a timeout, a panic, a run that did not compile or ran no
+#   tests — is not reported: the row runs again against the whole suite,
+#   exactly as before, and that run decides. No row is ever called NOT
+#   DISCRIMINATING, or INCONCLUSIVE, on a selection's word. Where a selection
+#   differs, it differs toward evidence: a mutation that also hangs a test
+#   outside the selection makes the whole suite outlive its bound
+#   (INCONCLUSIVE), while the selection sees its own test fail, a catch.
+# - **A selection is trusted only where it passes unmutated.** The baseline
+#   below says the whole suite is green, and a Go selection is a different run:
+#   a test that passes after the tests before it can fail without them, and
+#   that failure would read as a catch. So each Go selection first runs once on
+#   the unmutated tree, from a test binary built once per run; one that is not
+#   green is set aside, and its row runs the whole package. Vitest runs each
+#   test file isolated from the others, so a web file passes alone as it
+#   passes in the baseline.
+# - **The record**, `scripts/mutation-expects.tsv`, is one line a row:
+#   `kind<TAB>row name<TAB>tests`, comma-separated. For a Go row the tests are
+#   the top-level tests that failed; for a web row, the test files whose tests
+#   failed (a test's title can hold a comma; a path does not). `--record`
+#   writes each row's line as the row ends, so a run that is stopped keeps what
+#   it found: a caught row's line becomes what caught it this time, a row
+#   nothing caught loses its line, and an INCONCLUSIVE one keeps it. A line
+#   that is stale costs a whole-suite run, never a verdict. Without `--record`
+#   the file is not touched, and the run says how many lines it would change.
+#   A PR that adds or changes rows records them with its own run.
+# - **The nightly run** (`.github/workflows/mutation-nightly.yml`) runs every
+#   row with selection on, in shards (`--shard`), and fails on any row not
+#   caught. Its table, and the record as that run left it, are published as
+#   artifacts, so a selection's blind spot is found on a schedule rather than
+#   on a PR. `--whole` stays for a run that should not trust the record at all.
 #
 # **Stopping a batch from outside.** Every suite runs in the harness's own
 # process group (`bounded`, below), so a watchdog that bounds that group, by
@@ -26,34 +88,92 @@
 # outside: the harness ends its whole process tree and goes on.
 set -uo pipefail
 
-cd "$(dirname "$0")/.."
-which="${1:-all}"
+usage() {
+  echo "usage: $0 [all|go|web] [row-name-substring] [--rows file] [--record] [--whole] [--shard k/n]" >&2
+  exit 2
+}
+which=all
 # An optional substring: run only the rows whose name contains it. Re-verifying
 # one repaired row should not mean re-running a half that takes forty minutes,
 # and a filter kept in the harness is reproducible where an ad-hoc helper is not.
-only="${2:-}"
+only=""
+# An exact list, for the rows one PR touches: a substring cannot name them.
+rows=""
+record=0
+whole=0
+shard_k=1
+shard_n=1
+positional=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --record) record=1 ;;
+    --whole) whole=1 ;;
+    --rows)
+      [ $# -ge 2 ] || usage
+      rows="$2"
+      shift
+      ;;
+    --shard)
+      [ $# -ge 2 ] || usage
+      case "$2" in
+        */*) shard_k="${2%%/*}" shard_n="${2#*/}" ;;
+        *) usage ;;
+      esac
+      case "$shard_k$shard_n" in *[!0-9]*|"") usage ;; esac
+      [ "$shard_k" -ge 1 ] && [ "$shard_k" -le "$shard_n" ] || usage
+      shift
+      ;;
+    -*) usage ;;
+    *)
+      case "$positional" in
+        0) which="$1" ;;
+        1) only="$1" ;;
+        *) usage ;;
+      esac
+      positional=$((positional + 1))
+      ;;
+  esac
+  shift
+done
+case "$which" in
+  all|go|web) ;;
+  *) usage ;;
+esac
+# The list is read from the caller's directory, before the one below.
+if [ -n "$rows" ]; then
+  case "$rows" in /*) ;; *) rows="$PWD/$rows" ;; esac
+  [ -r "$rows" ] || { echo "cannot read the row list $rows" >&2; exit 2; }
+fi
 
-if [ -n "$(git status --porcelain)" ]; then
+cd "$(dirname "$0")/.."
+
+expects=scripts/mutation-expects.tsv
+if [ -n "$(git status --porcelain -- . ":(exclude)$expects")" ]; then
   echo "the tree is not clean; commit before mutating (this restores with git checkout)" >&2
   exit 2
 fi
 
 commit="$(git rev-parse HEAD)"
+work="$(mktemp -d)" || exit 2
+: > "$work/named"
 
 restore() { git checkout -- internal web/src 2>/dev/null; }
 # However this ends — a failing mutation, Ctrl-C, a kill — the tree goes back.
 # A harness that leaves a mutation in place is worse than no harness: the next
 # thing anyone runs is testing something nobody wrote.
-trap restore EXIT INT TERM
-
-case "$which" in
-  all|go|web) ;;
-  *) echo "usage: $0 [all|go|web] [row-name-substring]" >&2; exit 2 ;;
-esac
+trap 'restore; rm -rf "$work"' EXIT
+trap restore INT TERM
 
 pass=0
 fail=0
 matched=0
+# How each row was decided, for the closing line (selection_report).
+by_selection=0
+fell_back=0
+set_aside=0
+no_selection=0
+by_whole=0
+changed=0
 
 # apply <file> <needle> <replacement> — asserts the needle is present, so a
 # mutation that silently no-ops cannot be read as "the suite survived it".
@@ -72,6 +192,80 @@ PY
 
 report() { # report <name> <result-line>
   printf '| %-52s | %s |\n' "$1" "$2"
+}
+
+# expect_of <kind> <name>: the row's line in the record, its tests only; nothing
+# where it has none.
+expect_of() {
+  [ -f "$expects" ] || return 0
+  want_kind="$1" want_name="$2" awk -F'\t' \
+    '$1 == ENVIRON["want_kind"] && $2 == ENVIRON["want_name"] { print $3; exit }' "$expects"
+}
+
+# keep_entry <kind> <name> <tests>: write the row's line; no tests removes it.
+# The file is rewritten whole, sorted, and moved into place, so a run stopped
+# mid-write leaves the last complete record.
+keep_entry() {
+  python3 - "$expects" "$1" "$2" "$3" <<'PY'
+import os, sys
+path, kind, name, tests = sys.argv[1:5]
+lines = {}
+if os.path.exists(path):
+    for line in open(path, encoding='utf-8'):
+        line = line.rstrip('\n')
+        if line:
+            k, n, t = line.split('\t')
+            lines[(k, n)] = t
+if tests:
+    lines[(kind, name)] = tests
+else:
+    lines.pop((kind, name), None)
+with open(path + '.new', 'w', encoding='utf-8') as out:
+    for key in sorted(lines):
+        out.write('%s\t%s\t%s\n' % (key[0], key[1], lines[key]))
+os.replace(path + '.new', path)
+PY
+}
+
+# web_tests_of <file>: the test files, relative to web/, that can notice a
+# change to the file: those that import it, directly or through one module
+# between, the file itself where it is a test, and those that name it in a
+# string. Read on the unmutated tree, once a file a run.
+web_tests_of() {
+  local memo="$work/tests-of-${1//\//_}"
+  if [ ! -f "$memo" ]; then
+    python3 - "$1" > "$memo.new" <<'PY' && mv "$memo.new" "$memo"
+import os, re, sys
+target = os.path.normpath(sys.argv[1])
+SPEC = re.compile(r"""(?:\bfrom\s*|\bimport\s*\(?\s*|\bimportActual\s*(?:<[^>]*>)?\(\s*)['"](\.{1,2}/[^'"]+)['"]""")
+TEST = re.compile(r'\.test\.[cm]?[jt]sx?$')
+files = []
+for d, _, names in os.walk('web/src'):
+    files += [os.path.normpath(os.path.join(d, n)) for n in names if re.search(r'\.[cm]?[jt]sx?$', n)]
+def resolve(base, spec):
+    p = os.path.normpath(os.path.join(os.path.dirname(base), spec.split('?')[0]))
+    candidates = [p + e for e in ('', '.ts', '.tsx', '.js', '.jsx', '/index.ts', '/index.tsx')]
+    if p.endswith('.js'):
+        candidates += [p[:-3] + '.ts', p[:-3] + '.tsx']
+    return next((c for c in candidates if os.path.isfile(c)), None)
+text, importers = {}, {}
+for f in files:
+    text[f] = open(f, encoding='utf-8', errors='replace').read()
+    for spec in SPEC.findall(text[f]):
+        r = resolve(f, spec)
+        if r:
+            importers.setdefault(r, set()).add(f)
+near = {target} | importers.get(target, set())
+for f in list(near):
+    near |= importers.get(f, set())
+named = re.compile(r"""['"`/]""" + re.escape(os.path.basename(target)) + r"""['"`]""")
+chosen = {f for f in near if TEST.search(f)}
+chosen |= {f for f in files if TEST.search(f) and named.search(text[f])}
+for f in sorted(chosen):
+    print(os.path.relpath(f, 'web'))
+PY
+  fi
+  cat "$memo" 2>/dev/null
 }
 
 # **A bound that ends the whole suite** (issue #237). Each suite runs in the
@@ -125,8 +319,9 @@ bounded() {
 # A mutation that does not compile, panics, or hangs the suite has not been
 # survived — it has not been tested. Reporting any of those as "nothing failed"
 # would be the most dangerous thing this script could do, so each is named.
+#
+# run_go [pattern]: the whole package, or only the tests the pattern names.
 run_go() {
-  local out code named
   # **240s, and the number is not arbitrary.** The bound exists to turn a
   # mutation that hangs a handler into a reported hang rather than a stalled
   # table. It was 45s, which was already marginal: two relay rows remove an
@@ -137,7 +332,9 @@ run_go() {
   # key-custody tests (ADR-0010 PR 3a) brought the clean suite to about 103s
   # on an idle machine, mostly waiting rather than computing: any load then
   # pushed a working suite past the bound. A deliberate wait inside a test is
-  # not a hang; a real one is minutes, and 240s still catches it.
+  # not a hang; a real one is minutes, and 240s still catches it. A selection
+  # keeps the same bound: one that ran out is run again whole (`mutate`), so a
+  # shorter one could only cost a second run, never a verdict.
   #
   # **Now the harness's own bound** (issue #237). When `go test -timeout`
   # fires, the test binary panics and exits, and what its tests started runs
@@ -145,13 +342,37 @@ run_go() {
   # tree: `-timeout` is set past it, as a backstop only. The build comes
   # first, apart, with a bound of its own (a cold cache can take minutes, and
   # a build is not a hang), so that the 240s is the run's, and the link's.
-  local log
+  local log code
   log="$(mktemp)"
   bounded 1800 "$log" go test ./internal/desk -count=1 -run '^$'
-  bounded 240 "$log" go test ./internal/desk -count=1 -timeout 300s
+  if [ -n "${1:-}" ]; then
+    bounded 240 "$log" go test ./internal/desk -count=1 -timeout 300s -run "$1"
+  else
+    bounded 240 "$log" go test ./internal/desk -count=1 -timeout 300s
+  fi
   code=$?
-  out="$(cat "$log")"
+  go_verdict "$code" "$log"
   rm -f "$log"
+}
+
+# run_go_unmutated <pattern>: the selection, on the test binary built from the
+# unmutated tree (go_binary), run where `go test` runs it.
+run_go_unmutated() {
+  local log code
+  log="$(mktemp)"
+  bounded 240 "$log" bash -c 'cd internal/desk && exec "$0" -test.paniconexit0 -test.count=1 -test.timeout=300s -test.run "$1"' \
+    "$work/desk.test" "$1"
+  code=$?
+  go_verdict "$code" "$log"
+  rm -f "$log"
+}
+
+# go_verdict <status> <log>: what a `go test` run says about the mutation, and
+# the top-level tests that failed, kept in $work/caught for the record.
+go_verdict() {
+  local code="$1" out named
+  out="$(cat "$2")"
+  rm -f "$work/caught"
   if [ "$code" -eq 124 ]; then
     echo "INCONCLUSIVE — suite timed out (the mutation hangs a handler)"
     return
@@ -186,20 +407,23 @@ run_go() {
   # A package that ran no tests exits zero and prints `ok`. For this package
   # that is not a pass: the suite is what the mutation is being measured
   # against, and a build that compiled the tests away would otherwise read as
-  # "nothing failed".
+  # "nothing failed". A selection whose tests have all been renamed lands here
+  # too, and is run again whole.
   if grep -q 'no tests to run' <<<"$out"; then
     echo "INCONCLUSIVE — go test ran no tests"
     return
   fi
+  grep -E '^--- FAIL: ' <<<"$out" | sed 's/^--- FAIL: //;s/ (.*//' | LC_ALL=C sort -u | paste -sd, - > "$work/caught"
   echo "$named"
 }
 
+# run_web [test-file...]: the whole suite, or only the files named.
 run_web() {
-  local out named
   # The project's own command. An invocation of vitest that differs from it —
   # a different root, a different config resolution — can fail a test that has
   # nothing to do with the mutation, and that failure would appear in every row
-  # and make a mutation nothing catches look caught.
+  # and make a mutation nothing catches look caught. A selection is the same
+  # command with the files after it, which `vitest run` takes as its filter.
   #
   # Bounded, because a mutation can hang a render as easily as a handler, and an
   # unbounded run would stall the whole table rather than report the hang. The
@@ -214,10 +438,22 @@ run_web() {
   # harness's group neither counts it nor ends it.
   local log code
   log="$(mktemp)"
-  bounded 900 "$log" timeout --foreground 960 npm --prefix web test
+  if [ $# -gt 0 ]; then
+    bounded 900 "$log" timeout --foreground 960 npm --prefix web test -- "$@"
+  else
+    bounded 900 "$log" timeout --foreground 960 npm --prefix web test
+  fi
   code=$?
-  out="$(cat "$log")"
+  web_verdict "$code" "$log"
   rm -f "$log"
+}
+
+# web_verdict <status> <log>: what a vitest run says about the mutation, and
+# the test files whose tests failed, kept in $work/caught for the record.
+web_verdict() {
+  local code="$1" out named
+  out="$(cat "$2")"
+  rm -f "$work/caught"
   if [ "$code" -eq 124 ]; then
     echo "INCONCLUSIVE — web suite timed out"
     return
@@ -247,7 +483,23 @@ run_web() {
     echo "INCONCLUSIVE — the web suite ran no tests"
     return
   fi
+  grep -E '^ FAIL ' <<<"$out" | sed -E 's/^ FAIL +//;s/ .*//' | grep -E '\.test\.[cm]?[jt]sx?$' \
+    | LC_ALL=C sort -u | paste -sd, - > "$work/caught"
   echo "$named"
+}
+
+# go_selection_green <pattern>: whether the selection passes on the unmutated
+# tree. Each pattern is run once a run.
+go_selection_green() {
+  grep -qxF -- "$1" "$work/green" 2>/dev/null && return 0
+  grep -qxF -- "$1" "$work/not-green" 2>/dev/null && return 1
+  if [ -x "$work/desk.test" ] && [ -z "$(run_go_unmutated "$1")" ]; then
+    printf '%s\n' "$1" >> "$work/green"
+    return 0
+  fi
+  printf '%s\n' "$1" >> "$work/not-green"
+  echo "the tests recorded for a row do not pass by themselves on the unmutated tree; it runs the whole package: $1" >&2
+  return 1
 }
 
 mutate() { # mutate <lang> <name> <file> <needle> <replacement>
@@ -256,16 +508,49 @@ mutate() { # mutate <lang> <name> <file> <needle> <replacement>
     *"$only"*) ;;
     *) return ;;
   esac
+  if [ -n "$rows" ] && ! grep -qxF -- "$name" "$rows"; then return; fi
   matched=$((matched + 1))
+  printf '%s\n' "$name" >> "$work/named"
+  # --shard k/n: every n-th row matched, from the k-th.
+  [ $(((matched - 1) % shard_n)) -eq $((shard_k - 1)) ] || return
   restore
+  local entry how started=$SECONDS pattern="" selection=() line failures caught=""
+  entry="$(expect_of "$lang" "$name")"
+  # The selection, chosen on the unmutated tree (see the header).
+  if [ "$whole" -eq 1 ]; then
+    how=whole
+  elif [ "$lang" = go ] && [ -n "$entry" ]; then
+    if go_selection_green "^(${entry//,/|})\$"; then
+      pattern="^(${entry//,/|})\$"
+      how=selected
+    else
+      how=set-aside
+    fi
+  elif [ "$lang" = web ]; then
+    while IFS= read -r line; do
+      [ -n "$line" ] && selection+=("$line")
+    done < <({ tr , '\n' <<<"$entry"; web_tests_of "$file"; } | LC_ALL=C sort -u)
+    if [ "${#selection[@]}" -gt 0 ]; then how=selected; else how=no-selection; fi
+  else
+    how=no-selection
+  fi
   if ! apply "$file" "$needle" "$replacement"; then
     report "$name" "MUTATION DID NOT APPLY"
     fail=$((fail + 1))
     restore
     return
   fi
-  local failures
-  if [ "$lang" = go ]; then failures="$(run_go)"; else failures="$(run_web)"; fi
+  if [ "$how" = selected ]; then
+    if [ "$lang" = go ]; then failures="$(run_go "$pattern")"; else failures="$(run_web "${selection[@]}")"; fi
+    # Only a failing test decides on a selection's word; everything else is
+    # run again whole, which decides as it always did.
+    case "$failures" in
+      ""|INCONCLUSIVE*) how=fallback ;;
+    esac
+  fi
+  if [ "$how" != selected ]; then
+    if [ "$lang" = go ]; then failures="$(run_go)"; else failures="$(run_web)"; fi
+  fi
   restore
   case "$failures" in
     "")
@@ -277,12 +562,50 @@ mutate() { # mutate <lang> <name> <file> <needle> <replacement>
       # mutation becomes evidence of coverage.
       report "$name" "**$failures**"
       fail=$((fail + 1))
+      caught="$entry"
       ;;
     *)
       report "$name" "$failures"
       pass=$((pass + 1))
+      caught="$(cat "$work/caught" 2>/dev/null)"
+      [ -n "$caught" ] || caught="$entry"
       ;;
   esac
+  case "$how" in
+    selected) by_selection=$((by_selection + 1)) ;;
+    fallback) fell_back=$((fell_back + 1)) ;;
+    set-aside) set_aside=$((set_aside + 1)) ;;
+    no-selection) no_selection=$((no_selection + 1)) ;;
+    whole) by_whole=$((by_whole + 1)) ;;
+  esac
+  if [ "$caught" != "$entry" ]; then
+    changed=$((changed + 1))
+    [ "$record" -eq 0 ] || keep_entry "$lang" "$name" "$caught"
+  fi
+  printf '%5ss  %-12s %s\n' "$((SECONDS - started))" "$how" "$name" >&2
+}
+
+# selection_report: how the rows were decided, and whether every row the list
+# named was found. Answers nonzero where one was not.
+selection_report() {
+  echo "decided by a selection: $by_selection; by the whole suite: $((fell_back + set_aside + no_selection + by_whole))" \
+    "(selection caught nothing: $fell_back, selection not green unmutated: $set_aside," \
+    "nothing to select: $no_selection, --whole: $by_whole)" >&2
+  if [ "$changed" -gt 0 ] && [ "$record" -eq 1 ]; then
+    echo "$changed lines of $expects written from this run" >&2
+  elif [ "$changed" -gt 0 ]; then
+    echo "$changed rows found other than their line in $expects says; --record keeps what they found" >&2
+  fi
+  [ -n "$rows" ] || return 0
+  # A name in the list that matched no row is the --rows form of a filter that
+  # matched nothing: a row that was renamed or never existed, reported as
+  # verified when no mutation was applied.
+  local missing
+  missing="$(grep -v '^$' "$rows" | grep -vxF -f "$work/named")"
+  [ -z "$missing" ] && return 0
+  echo "named in $rows but matching no row — not checked:" >&2
+  sed 's/^/  /' <<<"$missing" >&2
+  return 1
 }
 
 # A baseline that is not green makes every row meaningless: an unrelated failing
@@ -308,6 +631,12 @@ if [ -n "$baseline_go" ] || [ -n "$baseline_web" ]; then
   echo "| --- | --- |"
   report "${only:-every row}" "**BASELINE NOT GREEN — not run**"
   exit 2
+fi
+# The unmutated test binary each Go selection is first run on. Where it cannot
+# be built, no Go selection is trusted, and each Go row runs the whole package.
+if [ "$whole" -eq 0 ] && { [ "$which" = all ] || [ "$which" = go ]; }; then
+  bounded 1800 "$work/desk.test.log" go test -c -o "$work/desk.test" ./internal/desk \
+    || echo "the unmutated test binary did not build; every Go row runs the whole package" >&2
 fi
 
 echo "mutation check against $commit"
@@ -11701,5 +12030,8 @@ if [ -n "$only" ] && [ "$matched" -eq 0 ]; then
   echo "no row matched \"$only\" — nothing was checked" >&2
   exit 2
 fi
+selection_report
+all_named=$?
 echo "discriminating: $pass    not discriminating: $fail"
+[ "$all_named" -eq 0 ] || exit 2
 [ "$fail" -eq 0 ]
