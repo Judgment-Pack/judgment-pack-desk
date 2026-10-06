@@ -501,6 +501,14 @@ error, never a report over a shorter copy. What it says: "Desk ran this over
 its own copy of the runner's chain of runs, with the keys and checkpoints it
 keeps. It shows what a holder would see. It is not evidence to anyone who does
 not trust this installation."
+*Amended 2026-10-06, issue #216:* the panel passes no `--public-key`,
+because Runner's key signs each run's record in that run's own attempt, the
+signature travels with the run's export (version 5) for `jpack-runner
+verify-run` to check, and the chain of runs has no signature sidecar, so a key
+passed here would check nothing; the panel instead shows Runner's key as `GET
+/api/runner-key` reports it, says that each run's signature is checked by
+`verify-run` on that run's export, and says the sentence above without "the
+keys and".
 
 ### 5. Runner
 

@@ -587,6 +587,62 @@ of the trail is held to what they kept with `jpack audit verify --expect`.
 - **What Desk's record of hand-overs establishes:** nothing, to a holder or to
   anyone else. It is yours, and you can change it. Only the holder's own copy
   counts. The panel says so beside the list.
+- **Runner's chain of runs, too** (ADR-0010, section 5). Where the desk has a
+  Runner, each holder shows two rows: the decision record's, and "Jobs runs",
+  each with its own record, download and confirmation. The chain's row works
+  the same way on a private copy of the chain: for each listing, download and
+  confirmation, Desk asks Runner for `GET /v1/run-chain`, holds the answer
+  whole within 67,174,400 bytes, and writes it to
+  `.desk-private/handover/jobs-chain.jsonl` in place of the copy before; a
+  transfer that ends early, an answer other than 200 or one past the bound is
+  an error, never a shorter chain. The checkpoints are the exact bytes
+  `jpack audit checkpoint --trail .desk-private/handover/jobs-chain.jsonl
+  --since <n> --limit 300` printed, saved as
+  `jobs-checkpoints-<identity>-<from>-<through>.jsonl`. A confirmation
+  (`"chain":"jobs"`) takes a fresh copy and records the same bytes only, in
+  the holder's record under `jobs` and in its file
+  `jobs-<identity>.jsonl`, with a cursor of its own: it never moves the desk
+  trail's, and the desk trail's never moves it. Nothing new, a chain shorter
+  than what was handed over, and a stale file are said as for the trail.
+  Where the desk has no Runner, the section says so once; where Runner is not
+  running, no run is chained yet, or the chain could not be read, the row says
+  so and offers nothing. The hand-over lives in the decision record, so a
+  project whose `jpack.json` declares no audit directory hands over neither.
+
+**The Jobs record, beside the decision record** (ADR-0010, section 4, "A
+Jobs record panel"). Where the desk has a Runner, **Admin → Project → Jobs
+record** checks the chain of runs when you ask ("Check the chain of runs"),
+and again after a hand-over of the chain is confirmed; never when it opens or
+on a timer. Desk takes a fresh private copy of the chain, as above, and runs
+`jpack audit verify --trail .desk-private/handover/jobs-chain.jsonl --format
+json`, with `--expect` for each holder's file of the chain's checkpoints for
+the identity the copy has, held to Desk's record as the decision record holds
+its files, and with nothing else: no `--config`, which the runtime refuses
+beside `--trail`, no `--public-key`, no time-stamping roots and no
+`--require-…`. It shows the runtime's status, coverage, findings by name and
+its sentences on what the result establishes and what it does not, as the
+decision record does, with the copy's line count, and says: "Desk ran this
+over its own copy of the runner's chain of runs, with the checkpoints it
+keeps. It shows what a holder would see. It is not evidence to anyone who
+does not trust this installation." "Download the chain" saves
+`run-chain.jsonl` as the Runs page does. With an older runtime it says the
+decision record's sentence; where Runner is not running, it says so.
+
+- **Without a held checkpoint, nothing against the operator** (Runner's
+  `docs/MAPPING-V2.md`, "What the chain establishes"): you keep the store and
+  the chain, and can rewrite it from any point with every link recomputed, so
+  a supplied chain only shows that it is consistent.
+- **With a checkpoint held independently of you that covers a run's entry**,
+  the entries up to it are the ones that existed when it was handed over.
+  It does not establish anything after the last held checkpoint, that a
+  checkpoint was held independently, when it was made, or anything about a
+  run that never reached the chain.
+- **Signatures are per run.** Runner's key signs each run's record in that
+  run's own attempt, and the signature travels with the run's export
+  (version 5); `jpack-runner verify-run --public-key` checks it there. The
+  chain has no signature of its own, so the Jobs record passes no key, shows
+  Runner's key as Gates does, and says that each run's signature is checked
+  by `verify-run` on that run's export, not here.
 
 **`requireComparableFacts`** (runtime ADR-0046).
 
@@ -6049,8 +6105,9 @@ was started.
   says signed only once Runner has started and answered with the key.
 - Whom it binds is whom a desk's key binds: nothing against you, who hold
   it, or against an agent that can read your files.
-- Not yet: rotating Runner's key, and the Jobs record panel that checks the
-  chain of runs with it (ADR-0010's delivery table, PR 3b and row 12).
+- Not yet: rotating Runner's key. The Jobs record (under Gates, above) checks
+  the chain of runs, and no signature: each run's is checked by `verify-run`
+  on that run's export.
 
 
 ### Jobs and Runs workspace

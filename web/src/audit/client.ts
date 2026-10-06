@@ -26,10 +26,21 @@
  * owner's word that the file went to the holder. Desk's record of it proves
  * nothing to anyone: only the holder's own copy counts. With it, the check
  * above is also given the checkpoints Desk handed over, and says how many.
+ * Each holder may hold Runner's chain of runs too (ADR-0010, section 5), with
+ * a cursor of its own: the same routes, with `chain=jobs` on a download and
+ * `"chain":"jobs"` in a confirmation, read a fresh copy of the chain.
+ *
+ * The Jobs record (ADR-0010, section 4, "A Jobs record panel"): `GET
+ * /api/audit/jobs-verify` answers the runtime's `audit verify --trail` over a
+ * fresh copy of Runner's chain of runs, with the checkpoints of it handed
+ * over and nothing else held, with Runner's key as Desk reports it; or that
+ * this desk has no Runner, or Runner is not running.
  */
+import type { QueryClient } from '@tanstack/react-query'
 import { deskFetch } from '../files/client'
 import { msg } from '../i18n'
 import { sourceMessage } from '../i18n/source'
+import { runnerKeyOf, type RunnerKey } from '../jobs/runnerKey'
 
 /** One protection's reach, as runtime 0.26.0 reports it. */
 export type AuditCoverageState = { status: string; through?: number; detail?: string }
@@ -285,18 +296,36 @@ export async function rotateSigningKey(token: string): Promise<RotationResult> {
 
 /** What Desk recorded of one trail handed over to one holder; `unwitnessed`, for the current trail only. */
 export type HolderTrail = { through: number; confirmedAt: number; digest: string; unwitnessed?: number }
-/** One holder: the owner's label and channel, and Desk's record of each trail handed over to it. */
-export type Holder = { id: string; label: string; channel: string; addedAt: number; trails: Record<string, HolderTrail>; otherTrail?: boolean }
+/**
+ * One holder: the owner's label and channel, and Desk's record of each trail
+ * handed over to it; under `jobs`, of each identity of Runner's chain of runs,
+ * apart from the trail's.
+ */
+export type Holder = { id: string; label: string; channel: string; addedAt: number; trails: Record<string, HolderTrail>; otherTrail?: boolean
+  jobs?: Record<string, HolderTrail>; otherJobsChain?: boolean }
 /** The trail as the runtime gives it now: its identity and the sequence of its last chained record. */
 export type HandoverTrail = { identity: string; sequence: number }
+/** Which chain a hand-over is of: the desk's own trail, or Runner's chain of runs. */
+export type HandoverChain = 'trail' | 'jobs'
+/**
+ * Runner's chain of runs, as the hand-over shows it beside each holder: none
+ * where this desk has no Runner, or Runner is not running; no run chained
+ * yet; its identity and last sequence; or why Desk could not tell, in its
+ * words or the runtime's.
+ */
+export type JobsChain =
+  | { state: 'no-runner' | 'not-running' | 'empty' }
+  | { state: 'chain'; chain: HandoverTrail }
+  | { state: 'unread'; diagnostics?: AuditDiagnostic[]; problem?: string }
 /**
  * The holders, and the trail: none where it has no chained record yet, or the
  * runtime gives no checkpoint of it, and then `diagnostics` say why in the
- * runtime's words.
+ * runtime's words. `jobs` is Runner's chain of runs, given where Desk keeps a
+ * holder.
  */
-export type Holders = { holders: Holder[]; trail: HandoverTrail | null; diagnostics?: AuditDiagnostic[] }
-/** A download of checkpoints: the bytes as served, the name to save them under, and what the headers named. */
-export type Checkpoints = { blob: Blob; name: string; trail: string; from: number; through: number; digest: string; more: boolean }
+export type Holders = { holders: Holder[]; trail: HandoverTrail | null; diagnostics?: AuditDiagnostic[]; jobs?: JobsChain }
+/** A download of checkpoints: the bytes as served, the name to save them under, what the headers named, and which chain it is of. */
+export type Checkpoints = { blob: Blob; name: string; trail: string; from: number; through: number; digest: string; more: boolean; chain: HandoverChain }
 
 export const HOLDERS_KEY = ['desk-audit-holders'] as const
 
@@ -331,11 +360,25 @@ export function isHolder(value: unknown): value is Holder {
   return object(value) && holderId(value.id) && named(value.label) && named(value.channel) && count(value.addedAt)
     && object(value.trails) && Object.entries(value.trails).every(([trail, entry]) => trailIdentity(trail) && isHolderTrail(entry))
     && optional(value.otherTrail, item => typeof item === 'boolean')
+    && optional(value.jobs, item => object(item) && Object.entries(item).every(([chain, entry]) => trailIdentity(chain) && isHolderTrail(entry)))
+    && optional(value.otherJobsChain, item => typeof item === 'boolean')
+}
+
+/** Runner's chain of runs, as the chassis says it: a chain with its identity and a last record, or why not, and nothing else. */
+export function isJobsChain(value: unknown): value is JobsChain {
+  if (!object(value)) return false
+  switch (value.state) {
+    case 'no-runner': case 'not-running': case 'empty': return value.chain === undefined && value.diagnostics === undefined && value.problem === undefined
+    case 'chain': return object(value.chain) && trailIdentity(value.chain.identity) && count(value.chain.sequence) && value.chain.sequence > 0
+    case 'unread': return value.chain === undefined && optional(value.diagnostics, item => list(item, isDiagnostic) && item.length > 0) && optional(value.problem, named)
+      && (value.diagnostics !== undefined || value.problem !== undefined)
+  }
+  return false
 }
 
 /** The holders and the trail: a trail with no runtime refusal beside it, or none and perhaps the runtime's words. */
 export function isHolders(value: unknown): value is Holders {
-  if (!object(value) || !list(value.holders, isHolder) || !optional(value.diagnostics, item => list(item, isDiagnostic) && item.length > 0)) return false
+  if (!object(value) || !list(value.holders, isHolder) || !optional(value.diagnostics, item => list(item, isDiagnostic) && item.length > 0) || !optional(value.jobs, isJobsChain)) return false
   if (value.trail === null) return true
   return object(value.trail) && trailIdentity(value.trail.identity) && count(value.trail.sequence) && value.trail.sequence > 0 && value.diagnostics === undefined
 }
@@ -369,32 +412,122 @@ export async function addHolder(label: string, channel: string): Promise<Holder>
  * The checkpoints after a holder's cursor, as Desk served them: the bytes read
  * as a Blob and never as text, so nothing decodes or encodes them, and the
  * headers that name them. `null` where there is nothing new to hand over.
+ * With `jobs`, those of Runner's chain of runs, after the holder's cursor for
+ * the chain, saved under a name that says so.
  */
-export async function downloadCheckpoints(holder: string): Promise<Checkpoints | null> {
+export async function downloadCheckpoints(holder: string, chain: HandoverChain = 'trail'): Promise<Checkpoints | null> {
   const failed = msg('The checkpoints could not be downloaded. Please try again.')
-  const response = await deskFetch(`/api/audit/checkpoints?holder=${encodeURIComponent(holder)}`)
+  const response = await deskFetch(`/api/audit/checkpoints?holder=${encodeURIComponent(holder)}${chain === 'jobs' ? '&chain=jobs' : ''}`)
   if (response.status === 204) return null
   if (!response.ok) throw await handoverRefusal(response, failed)
   const header = (name: string) => response.headers.get(name) ?? ''
   const trail = header('Desk-Checkpoints-Trail'), digest = header('Desk-Checkpoints-Digest'), more = header('Desk-Checkpoints-More')
   const from = /^\d+$/.test(header('Desk-Checkpoints-From')) ? Number(header('Desk-Checkpoints-From')) : -1
   const through = /^\d+$/.test(header('Desk-Checkpoints-Through')) ? Number(header('Desk-Checkpoints-Through')) : -1
-  const name = /^attachment; filename="(checkpoints-[0-9a-f]{32}-\d+-\d+\.jsonl)"$/.exec(header('Content-Disposition'))?.[1]
+  const name = /^attachment; filename="((?:jobs-)?checkpoints-[0-9a-f]{32}-\d+-\d+\.jsonl)"$/.exec(header('Content-Disposition'))?.[1]
+  const prefix = chain === 'jobs' ? 'jobs-' : ''
   if (!trailIdentity(trail) || !sha256(digest) || !['true', 'false'].includes(more) || !count(from) || !count(through) || through <= from
-    || name !== `checkpoints-${trail}-${from + 1}-${through}.jsonl`) throw new Error(failed)
-  return { blob: await response.blob(), name, trail, from, through, digest, more: more === 'true' }
+    || name !== `${prefix}checkpoints-${trail}-${from + 1}-${through}.jsonl`) throw new Error(failed)
+  return { blob: await response.blob(), name, trail, from, through, digest, more: more === 'true', chain }
 }
 
 /**
  * The owner's word that a download went to the holder. Desk records it only
  * where the trail still gives those bytes from the holder's cursor;
- * `StaleHandover` where it does not.
+ * `StaleHandover` where it does not. A download of Runner's chain of runs is
+ * confirmed as one, against the holder's cursor for the chain.
  */
-export async function confirmHandover(holder: string, checkpoints: Pick<Checkpoints, 'trail' | 'from' | 'through' | 'digest'>): Promise<Holder> {
-  const { trail, from, through, digest } = checkpoints
-  const response = await deskFetch(`/api/audit/holders/${encodeURIComponent(holder)}/confirm`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ trail, from, through, digest }) })
+export async function confirmHandover(holder: string, checkpoints: Pick<Checkpoints, 'trail' | 'from' | 'through' | 'digest' | 'chain'>): Promise<Holder> {
+  const { trail, from, through, digest, chain } = checkpoints
+  const body = chain === 'jobs' ? { chain, trail, from, through, digest } : { trail, from, through, digest }
+  const response = await deskFetch(`/api/audit/holders/${encodeURIComponent(holder)}/confirm`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   if (!response.ok) throw await handoverRefusal(response, msg('The hand-over could not be recorded. Please try again.'))
   const value: unknown = await response.json()
   if (!isHolder(value) || value.id !== holder) throw new Error(msg('The hand-over could not be recorded. Please try again.'))
   return value
+}
+
+/* The Jobs record ----------------------------------------------------------- */
+
+/**
+ * The Jobs record: the runtime's report on Desk's copy of Runner's chain of
+ * runs, or its refusal to make one, each with the checkpoints Desk passed,
+ * Runner's key as Desk reports it (`GET /api/runner-key`), and the copy's
+ * line count; the decision record's older-runtime state; or that Runner is
+ * not running, or that this desk has none.
+ */
+export type JobsRecord =
+  | ({ state: 'report'; runtime?: string; report: AuditReport; runnerKey?: RunnerKey; chainLines: number } & HeldInputs)
+  | ({ state: 'unverified'; runtime?: string; diagnostics: AuditDiagnostic[]; runnerKey?: RunnerKey; chainLines: number } & HeldInputs)
+  | { state: 'older-runtime'; runtime?: string; floor: string }
+  | { state: 'not-running'; runnerKey?: RunnerKey }
+  | { state: 'no-runner' }
+
+export const JOBS_RECORD_KEY = ['desk-jobs-record'] as const
+
+/**
+ * The chassis's own sentences about the chain of runs, as it says them, so
+ * that the page can show each in the owner's language (`systemMessage`).
+ */
+export const JOBS_REASONS = [
+  sourceMessage('This desk has no Runner, so it has no chain of runs to hand over.'),
+  sourceMessage('Runner is not running on this desk now, so Desk could not read its chain of runs.'),
+  sourceMessage('No run is chained yet, so there is nothing to hand over.'),
+  sourceMessage('This desk holds no project folder for Desk to run the runtime in.')
+]
+
+/**
+ * A Jobs record as the chassis answers one: a report or a refusal with the
+ * copy's line count, the held inputs and Runner's key each of their shapes;
+ * and nothing of a report's where there is none.
+ */
+export function isJobsRecord(value: unknown): value is JobsRecord {
+  if (!object(value) || !optional(value.runtime, text) || !optional(value.expected, count) || !optional(value.expectUnread, item => list(item, named))
+    || !optional(value.handoverProblem, named) || !optional(value.chainLines, count) || value.runnerKey !== undefined && runnerKeyOf(value.runnerKey) === undefined) return false
+  switch (value.state) {
+    case 'report': return isAuditReport(value.report) && count(value.chainLines)
+    case 'unverified': return count(value.chainLines) && list(value.diagnostics, isDiagnostic) && value.diagnostics.length > 0
+    case 'older-runtime': return text(value.floor) && value.report === undefined
+    case 'not-running': case 'no-runner': return value.report === undefined && value.chainLines === undefined
+  }
+  return false
+}
+
+/** The runtime's check of a fresh copy of Runner's chain of runs, run now. */
+export async function readJobsRecord(signal?: AbortSignal): Promise<JobsRecord> {
+  const failed = msg('The chain of runs could not be checked. Please try again.')
+  const response = await deskFetch('/api/audit/jobs-verify', { signal })
+  if (!response.ok) {
+    let body: { error?: unknown } = {}
+    try { body = await response.json() as typeof body } catch { /* The status is still an answer. */ }
+    throw new Error(text(body.error) ? body.error : failed)
+  }
+  const value: unknown = await response.json()
+  if (!isJobsRecord(value)) throw new Error(failed)
+  if ('runnerKey' in value && value.runnerKey !== undefined) return { ...value, runnerKey: runnerKeyOf(value.runnerKey) }
+  return value
+}
+
+/**
+ * Check the chain of runs again, as after a hand-over of it is confirmed. The
+ * Jobs record's query is disabled, so this fetches into it; a failure is the
+ * query's to show.
+ */
+export async function checkJobsRecordAgain(client: QueryClient): Promise<void> {
+  await client.fetchQuery({ queryKey: JOBS_RECORD_KEY, queryFn: ({ signal }) => readJobsRecord(signal), staleTime: 0, retry: false }).catch(() => undefined)
+}
+
+/**
+ * Runner's whole chain of runs, as Desk passed it on (`GET
+ * /api/operations/run-chain`): read as a Blob and never as text, so nothing
+ * decodes or encodes it, or a refusal in Desk's words.
+ */
+export async function downloadRunChain(): Promise<Blob> {
+  const response = await deskFetch('/api/operations/run-chain')
+  if (!response.ok) {
+    let body: { error?: unknown } = {}
+    try { body = await response.json() as typeof body } catch { /* The status is still an answer. */ }
+    throw new Error(text(body.error) ? body.error : msg('The chain of runs could not be downloaded. Please try again.'))
+  }
+  return response.blob()
 }

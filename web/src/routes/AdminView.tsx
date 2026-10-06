@@ -75,6 +75,7 @@ import { SourceCard, StatusLine, type SourceStatus } from '../admin/SourceCard'
 import { useDefaultProject } from '../admin/DefaultProject'
 import { ProjectGates } from '../packs/upgrade/UpgradeNote'
 import { DecisionRecord } from '../audit/DecisionRecord'
+import { JobsRecord } from '../audit/JobsRecord'
 import { OrganizationForm, StorageForm, StorageKind } from '../admin/projectFileCards'
 import { useHashTarget } from '../shell/useHashTarget'
 import { useDetailsPortal, useDetailsSlot } from '../shell/DetailsSlot'
@@ -225,6 +226,10 @@ ${effective.desk.chassis.runtimeBin}`} />
                 {/* Beside the gates, what the runtime finds in the trail they
                     keep (ADR-0010, section 4). */}
                 <DecisionRecord visible={open.id === 'project'} />
+                {/* Beside it, where this desk has a Runner, what the runtime
+                    finds in a copy of Runner's chain of runs (ADR-0010,
+                    section 4, "A Jobs record panel"). */}
+                <JobsRecord visible={open.id === 'project'} />
               </RetainedPanel>
               <RetainedPanel active={open.id === 'organization'}>
                 <SourceCard

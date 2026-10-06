@@ -185,7 +185,12 @@ function reach(kind: Protection, state: AuditCoverageState) {
   return words ?? <><code>{state.status}</code>{state.detail && <span lang="en"> {state.detail}</span>}</>
 }
 
-function Report({ report }: { report: AuditReport }) {
+/**
+ * The runtime's report, as the panel shows it: its status, coverage,
+ * segments, discontinuities, findings, and its own sentences. The Jobs record
+ * shows its report the same way (`JobsRecord`).
+ */
+export function Report({ report }: { report: AuditReport }) {
   const { coverage } = report
   const words = statusWords(report.status)
   const listed = (shown: number, total: number) => total > shown && <p className={styles.quiet}>{msg('Listed: {{shown}} of {{total}}.', { shown, total })}</p>
