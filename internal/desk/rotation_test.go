@@ -23,6 +23,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -1248,6 +1249,21 @@ func TestWhatChangedWhileARotationFinishedIsNotWrittenOver(t *testing.T) {
 			replace(t, r.nextPath(), secondSeed+"\n")
 		}, notRenamed, ".keys.jsonl,.next.seed,.next.seed.aside,.rotating,.seed seed=1 next=2 keys=2 rotations=1",
 			"The runtime wrote the rotation, and Desk did not finish it: Desk finishes it when it next starts. Until then, records are written unsigned.", nil},
+		// Review round 1: the check before the rename holds the list to its
+		// file and to its bytes, each alone. The list written is rolled back
+		// in place, the same file with the old bytes; and replaced by another
+		// file with the very bytes written.
+		{"the list, rolled back in place after it was written", "rotation: list written", func(t *testing.T, r *rotationRig) {
+			if err := os.WriteFile(filepath.Join(r.signing, r.id+keysSuffix), []byte(wantKeyLine(standInPublicKey, standInKeyID, 0)), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}, notRenamed, ".keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=1 rotations=1",
+			"The runtime wrote the rotation, and Desk did not finish it: Desk finishes it when it next starts. Until then, records are written unsigned.", nil},
+		{"the list, replaced by the same bytes after it was written", "rotation: list written", func(t *testing.T, r *rotationRig) {
+			list := filepath.Join(r.signing, r.id+keysSuffix)
+			replace(t, list, readFile(t, list))
+		}, notRenamed, ".keys.jsonl,.keys.jsonl.aside,.next.seed,.rotating,.seed seed=1 next=2 keys=2 rotations=1",
+			"The runtime wrote the rotation, and Desk did not finish it: Desk finishes it when it next starts. Until then, records are written unsigned.", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newRotationRig(t, "c8000000000000000000000000000004", "")
@@ -1359,6 +1375,64 @@ func TestAPanicInARotationLeavesTheDeskWorking(t *testing.T) {
 	if status != http.StatusConflict || !strings.HasPrefix(refusalOf(data), "A rotation of this desk's key did not finish, so Desk starts no other.") {
 		t.Errorf("a rotation after the panic answered %d %s", status, data)
 	}
+}
+
+// stalledWriter is a response writer whose writes wait until release is
+// closed, as a client that stops reading holds a writer; writing is closed
+// once a write waits.
+type stalledWriter struct {
+	header           http.Header
+	writing, release chan struct{}
+	once             sync.Once
+}
+
+func (w *stalledWriter) Header() http.Header { return w.header }
+func (w *stalledWriter) WriteHeader(int)     {}
+func (w *stalledWriter) Write(p []byte) (int, error) {
+	w.once.Do(func() { close(w.writing) })
+	<-w.release
+	return len(p), nil
+}
+
+// **A client that stops reading holds no key lock** (issue #239, review
+// round 1). The answer to a rotation is written once the rotation is over and
+// the desk's key lock released: while the writer of that answer waits, the
+// decision record answers, and so does another rotation.
+func TestAStalledAnswerToARotationHoldsNoKeyLock(t *testing.T) {
+	r := newRotationRig(t, "c8000000000000000000000000000006", "")
+	r.writeTrail(t, 1, recordLine(standInKeyID, 1))
+	stalled := &stalledWriter{header: http.Header{}, writing: make(chan struct{}), release: make(chan struct{})}
+	var release sync.Once
+	t.Cleanup(func() { release.Do(func() { close(stalled.release) }) })
+	request := httptest.NewRequest("POST", "/api/audit/key/rotate", strings.NewReader(`{"token":"`+strings.Repeat("a", 64)+`"}`))
+	request.Header.Set("Authorization", "Bearer "+testToken)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-Jpack-Desk", r.id)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		r.s.ServeHTTP(stalled, request)
+	}()
+	select {
+	case <-stalled.writing:
+	case <-done:
+		t.Fatal("the rotation answered without writing")
+	case <-time.After(30 * time.Second):
+		t.Fatal("the rotation's answer was never written")
+	}
+	// The lock is asked first: a request would otherwise wait on it for good.
+	if !r.s.desks[r.id].keyMu.TryLock() {
+		t.Fatal("the desk's key lock is held while the rotation's answer is written")
+	}
+	r.s.desks[r.id].keyMu.Unlock()
+	if answer, data := r.panel(t); answer.Rotation.State != rotationAvailable {
+		t.Errorf("while an answer waits the panel says %s", data)
+	}
+	if status, data := r.rotate(t, strings.Repeat("a", 64)); status != http.StatusConflict || refusalOf(data) != "This desk's keys changed after the decision record showed them, so nothing was rotated. Check the decision record again." {
+		t.Errorf("while an answer waits another rotation answered %d %s", status, data)
+	}
+	release.Do(func() { close(stalled.release) })
+	<-done
 }
 
 // **A refused rotation whose sidecar cannot be read is left as it is.** The

@@ -965,12 +965,16 @@ func (s *Server) handleRotateKey(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, refusal)
 		return
 	}
-	// **Released by a defer** (issue #239): a panic in a rotation, which
-	// net/http recovers, would otherwise leave this desk's key lock held, and
-	// every later reading of its keys waiting until Desk restarts.
-	s.keyMu.Lock()
-	defer s.keyMu.Unlock()
-	answer, failure := s.rotateKey(r.Context(), project, request.Token)
+	// **The desk's key lock around the rotation alone, released by a defer**
+	// (issue #239, review round 1). A panic in a rotation, which net/http
+	// recovers, would otherwise leave the lock held, and a client that stops
+	// reading the answer would hold it while the answer is written: either
+	// way every later reading of this desk's keys, and every rotation, waits.
+	answer, failure := func() (*rotationAnswer, *lockFailure) {
+		s.keyMu.Lock()
+		defer s.keyMu.Unlock()
+		return s.rotateKey(r.Context(), project, request.Token)
+	}()
 	if failure != nil {
 		message := s.withoutPaths(failure.message)
 		if message != failure.message {

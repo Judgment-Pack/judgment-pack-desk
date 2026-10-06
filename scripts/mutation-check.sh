@@ -3710,12 +3710,31 @@ func (b *cappedBuffer) exceeded() bool {'
     'Desk removes the next key when it next starts, and keeps the current key.",' \
     'Desk removes the next key when it next starts. The current key still signs.",'
   mutate go "rotation: a panic leaves the desk's key lock held" "$RO" \
-    '	s.keyMu.Lock()
-	defer s.keyMu.Unlock()
-	answer, failure := s.rotateKey(r.Context(), project, request.Token)' \
+    '	answer, failure := func() (*rotationAnswer, *lockFailure) {
+		s.keyMu.Lock()
+		defer s.keyMu.Unlock()
+		return s.rotateKey(r.Context(), project, request.Token)
+	}()' \
     '	s.keyMu.Lock()
 	answer, failure := s.rotateKey(r.Context(), project, request.Token)
 	s.keyMu.Unlock()'
+  # Review round 1 on #244: the lock around the rotation alone, not the
+  # writing of its answer; and the check before the rename, its two halves.
+  mutate go "rotation: the key lock is held while the answer is written" "$RO" \
+    '	answer, failure := func() (*rotationAnswer, *lockFailure) {
+		s.keyMu.Lock()
+		defer s.keyMu.Unlock()
+		return s.rotateKey(r.Context(), project, request.Token)
+	}()' \
+    '	s.keyMu.Lock()
+	defer s.keyMu.Unlock()
+	answer, failure := s.rotateKey(r.Context(), project, request.Token)'
+  mutate go "rotation: the next key is renamed against a list rolled back in place" "$RO" \
+    '	if _, now, found, err := d.readKeysFile(keysName); err != nil || !found || !os.SameFile(now.info, list.info) || !bytes.Equal(now.data, list.data) {' \
+    '	if _, now, found, err := d.readKeysFile(keysName); err != nil || !found || !os.SameFile(now.info, list.info) {'
+  mutate go "rotation: the next key is renamed against a list replaced by the same bytes" "$RO" \
+    '	if _, now, found, err := d.readKeysFile(keysName); err != nil || !found || !os.SameFile(now.info, list.info) || !bytes.Equal(now.data, list.data) {' \
+    '	if _, now, found, err := d.readKeysFile(keysName); err != nil || !found || !bytes.Equal(now.data, list.data) {'
   mutate go "rotation: the list is written over a list edited in place" "$RO" \
     '	if err != nil || !found || !os.SameFile(now.info, read.info) || !bytes.Equal(now.data, read.data) {' \
     '	if err != nil || !found || !os.SameFile(now.info, read.info) {'
