@@ -717,6 +717,11 @@ func TestEachHolderHasACursorOfItsOwn(t *testing.T) {
 	if len(listed.Holders) != 2 || len(listed.Holders[1].Trails) != 0 || since(listed.Holders[0].Trails[handoverTrail]) != 1 {
 		t.Errorf("the holders are %+v", listed)
 	}
+	// A trail now shorter than what was handed over to a holder: nothing.
+	rig.chain(t, chainOf(handoverTrail, 1, 2))
+	if status, _, data := rig.download(t, "holder="+holderA); status != http.StatusConflict || refusalOf(data) != "Desk recorded checkpoints through record 3 as handed over to this holder, and the trail's last chained record is now record 2: the trail is shorter than what was handed over, so Desk hands nothing over." {
+		t.Errorf("a trail shorter than what was handed over answered %d %s", status, data)
+	}
 	if status, _, data := rig.download(t, "holder="+holderC); status != http.StatusNotFound || refusalOf(data) != noSuchHolderWords {
 		t.Errorf("a holder Desk does not keep answered %d %s", status, data)
 	}

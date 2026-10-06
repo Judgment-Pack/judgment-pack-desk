@@ -4061,6 +4061,9 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "hand-over: nothing new is not said" "$HO" \
     '	if cursor == head.Sequence {' \
     '	if false {'
+  mutate go "hand-over: a trail shorter than what was handed over is read" "$HO" \
+    '	if cursor > head.Sequence {' \
+    '	if false {'
   mutate go "hand-over: the cursor is not the holder's record" "$HO" \
     '	cursor := record.Trails[head.Identity].Through' \
     '	cursor := int64(0) * record.Trails[head.Identity].Through'
