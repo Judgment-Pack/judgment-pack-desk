@@ -13,6 +13,18 @@
 #
 # The tree must be clean: this edits tracked files and restores them with
 # `git checkout`, which would discard uncommitted work. Commit first.
+#
+# **Stopping a batch from outside.** Every suite runs in the harness's own
+# process group (run_web's `timeout --foreground`; run_go's `go test` is not
+# wrapped), so a watchdog that bounds that group, by resident memory or by
+# time, counts the suites too, and ending the group ends them. Stop a batch by
+# sending KILL to the whole group: `kill -KILL -- -<pgid>`, or run it under
+# `setsid` and a watchdog that does, or under `timeout -s KILL`. A TERM or an
+# INT is not enough: it ends the row's suite, the trap below restores the
+# tree, and the batch goes on with its next row. Nothing restores the tree
+# after a KILL, so restore it by hand: `git checkout -- internal web/src`. A
+# web suite that hangs past run_web's own bound is ended only from outside,
+# so a long web batch wants such a watchdog anyway.
 set -uo pipefail
 
 cd "$(dirname "$0")/.."
@@ -131,7 +143,16 @@ run_web() {
   # bound is well clear of a clean run — the suite takes under a minute — and
   # clear of the per-case ceiling in `vitest.config.ts` times the handful of
   # cases one mutation can hang, so a hang is still reported as a hang.
-  out="$(timeout 900 npm --prefix web test 2>&1)"
+  #
+  # **`--foreground`, so vitest stays in the harness's process group** (issue
+  # #237). Without it `timeout` puts the suite in a group of its own: a
+  # watchdog bounding the harness's group then neither counts vitest's memory
+  # nor ends vitest when it ends the group. The cost: the bound's own signal
+  # now goes to npm alone, and ends npm and its shell but not vitest (measured
+  # with npm 10.9), so a suite that outlives the bound runs on, and this waits
+  # for its output until it ends or its group is ended. Bound a batch from
+  # outside too (the header says how).
+  out="$(timeout --foreground 900 npm --prefix web test 2>&1)"
   local code=$?
   if [ "$code" -eq 124 ]; then
     echo "INCONCLUSIVE — web suite timed out"
