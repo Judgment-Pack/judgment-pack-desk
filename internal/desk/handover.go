@@ -519,11 +519,12 @@ type checkpoints struct {
 // <n> --limit 300`, in the human form, again after the last sequence
 // received until fewer than 300 come back, at most handoverBatches times.
 //
-// Each line must be a checkpoint of identity, after the last one received;
-// the lines are kept as printed, and the bytes end at the newline of the line
-// whose sequence is through. A trail of another identity, or one that ends
-// before through, is errCheckpointsChanged; a batch the runtime fails, or a
-// line that is not a checkpoint or comes out of order, is an error.
+// Each line must be a checkpoint of identity, after the last one received
+// and up to through; the lines are kept as printed, and the bytes end at the
+// newline of the line whose sequence is through. A trail of another identity,
+// one that passes through without it, or one that ends before it, is
+// errCheckpointsChanged; a batch the runtime fails, or a line that is not a
+// checkpoint or comes out of order, is an error.
 func (s *Server) readCheckpoints(ctx context.Context, dir heldDir, identity string, from, through int64) (checkpoints, error) {
 	var data []byte
 	last := from
@@ -550,7 +551,9 @@ func (s *Server) readCheckpoints(ctx context.Context, dir heldDir, identity stri
 			case checkpoint.sequence <= last:
 				return checkpoints{}, errors.New("the runtime's audit checkpoint printed its checkpoints out of order")
 			case checkpoint.sequence > through:
-				return checkpoints{data: data, through: last}, nil
+				// After the last one received and past the record read first:
+				// that record is no longer a chained record of this trail.
+				return checkpoints{}, errCheckpointsChanged
 			}
 			received++
 			data = append(data, line...)

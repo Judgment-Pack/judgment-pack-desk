@@ -307,6 +307,32 @@ func modeOf(path string) string {
 	return info.Mode().String()
 }
 
+// since is an entry's count of records since, or -1 where it has none, so
+// that a test reads it without dereferencing a nil.
+func since(entry holderTrailAnswer) int64 {
+	if entry.Unwitnessed == nil {
+		return -1
+	}
+	return *entry.Unwitnessed
+}
+
+// holderAt is the answer's holder at index, or a zero holder where there is
+// none.
+func holderAt(answer holdersAnswer, index int) holderAnswer {
+	if index >= len(answer.Holders) {
+		return holderAnswer{}
+	}
+	return answer.Holders[index]
+}
+
+// lastOf is the last of calls, or "" where there is none.
+func lastOf(calls []string) string {
+	if len(calls) == 0 {
+		return ""
+	}
+	return calls[len(calls)-1]
+}
+
 func digestOfString(data string) string {
 	sum := sha256.Sum256([]byte(data))
 	return "sha256:" + hex.EncodeToString(sum[:])
@@ -479,7 +505,7 @@ func TestCheckpointsAreHandedOverAsTheRuntimePrintedThem(t *testing.T) {
 	if again, twice := rig.downloaded(t, holderA); !bytes.Equal(twice, data) || again.Get(checkpointsDigestHeader) != digestOfString(lines) {
 		t.Errorf("a second download gave %q", twice)
 	}
-	if holder := rig.holders(t).Holders[0]; len(holder.Trails) != 0 {
+	if holder := holderAt(rig.holders(t), 0); holder.ID != holderA || len(holder.Trails) != 0 {
 		t.Errorf("a download recorded %+v", holder.Trails)
 	}
 	if _, err := os.Lstat(rig.handoverPath(holderA)); !os.IsNotExist(err) {
@@ -544,6 +570,26 @@ func TestALineThatIsNotTheNextCheckpointServesNothing(t *testing.T) {
 	}
 }
 
+// **A trail that passes the record read first without it serves nothing.**
+// The JSON form names record 5, and the listing goes from record 4 to record
+// 6: record 5 is no longer a chained record of the trail. However many
+// checkpoints follow, past the bound included, nothing is handed over, and a
+// confirmation through record 5 is stale.
+func TestATrailThatSkipsTheRecordReadFirstServesNothing(t *testing.T) {
+	rig := newHandoverRig(t, holderA)
+	rig.addHolder(t, "Auditor", "e-mail")
+	rig.heads(t, 0, `{"outputVersion":"2","command":"audit checkpoint","status":"checkpointed","checkpoint":`+strings.TrimSuffix(checkpointOf(handoverTrail, 5), "\n")+`}`)
+	rig.chain(t, chainOf(handoverTrail, 1, 2, 3, 4)+chainOf(handoverTrail, upTo(handoverBatches*handoverBatch + 10)[5:]...))
+	status, header, data := rig.download(t, "holder="+holderA)
+	if status != http.StatusInternalServerError || !strings.Contains(refusalOf(data), "the trail changed while Desk read its checkpoints") || header.Get(checkpointsDigestHeader) != "" {
+		t.Errorf("a trail past the record read first answered %d %v %.200s", status, header, data)
+	}
+	body := map[string]any{"trail": handoverTrail, "from": 0, "through": 5, "digest": digestOfString(chainOf(handoverTrail, 1, 2, 3, 4, 5))}
+	if status, data := rig.confirm(t, holderA, body); status != http.StatusConflict || !bytes.Contains(data, []byte(`"reason":"stale"`)) {
+		t.Errorf("a confirmation through the record no longer there answered %d %s", status, data)
+	}
+}
+
 // **In batches of 300, and bounded.** The runtime is asked again after the
 // last sequence received until fewer than 300 come back, and the batches are
 // joined as printed; at most 20 batches, 6,000 checkpoints, in one answer,
@@ -578,7 +624,7 @@ func TestCheckpointsAreAskedForInBatchesAndBounded(t *testing.T) {
 		t.Errorf("past the bound, %d bytes came back through %s, more %s, as %s", len(data), header.Get(checkpointsThroughHeader), header.Get(checkpointsMoreHeader), header.Get("Content-Disposition"))
 	}
 	if calls := rig.checkpointCalls(t); len(calls) != 1+handoverBatches || calls[handoverBatches] != sinceCall(5700) {
-		t.Errorf("past the bound, the download ran %d commands, the last %q", len(calls), calls[len(calls)-1])
+		t.Errorf("past the bound, the download ran %d commands, the last %q", len(calls), lastOf(calls))
 	}
 	rig.confirmed(t, holderA, header)
 	header, data = rig.downloaded(t, holderA)
@@ -602,7 +648,7 @@ func TestAConfirmationRecordsExactlyWhatWasDownloaded(t *testing.T) {
 	answer := rig.confirmed(t, holderA, header)
 	unwitnessed := int64(0)
 	want := holderTrailAnswer{handedOver: handedOver{Through: 3, ConfirmedAt: handoverNow, Digest: digestOfString(first)}, Unwitnessed: &unwitnessed}
-	if len(answer.Trails) != 1 || answer.Trails[handoverTrail].handedOver != want.handedOver || answer.Trails[handoverTrail].Unwitnessed == nil || *answer.Trails[handoverTrail].Unwitnessed != 0 || answer.OtherTrail {
+	if len(answer.Trails) != 1 || answer.Trails[handoverTrail].handedOver != want.handedOver || since(answer.Trails[handoverTrail]) != 0 || answer.OtherTrail {
 		t.Errorf("the confirmation answered %+v", answer)
 	}
 	if calls := rig.checkpointCalls(t); !slices.Equal(calls, []string{headCall, sinceCall(0)}) {
@@ -631,8 +677,8 @@ func TestAConfirmationRecordsExactlyWhatWasDownloaded(t *testing.T) {
 
 	// Two more records: only they come back, and the record counts them.
 	rig.chain(t, chainOf(handoverTrail, 1, 2, 3, 4, 5))
-	listed := rig.holders(t).Holders[0].Trails[handoverTrail]
-	if listed.Unwitnessed == nil || *listed.Unwitnessed != 2 || listed.Through != 3 {
+	listed := holderAt(rig.holders(t), 0).Trails[handoverTrail]
+	if since(listed) != 2 || listed.Through != 3 {
 		t.Errorf("after two more records the holder shows %+v", listed)
 	}
 	header, data = rig.downloaded(t, holderA)
@@ -643,7 +689,7 @@ func TestAConfirmationRecordsExactlyWhatWasDownloaded(t *testing.T) {
 	}
 	handoverClock = func() time.Time { return time.Unix(handoverNow+60, 0) }
 	answer = rig.confirmed(t, holderA, header)
-	if entry := answer.Trails[handoverTrail]; entry.Through != 5 || entry.ConfirmedAt != handoverNow+60 || entry.Digest != digestOfString(second) || *entry.Unwitnessed != 0 {
+	if entry := answer.Trails[handoverTrail]; entry.Through != 5 || entry.ConfirmedAt != handoverNow+60 || entry.Digest != digestOfString(second) || since(entry) != 0 {
 		t.Errorf("the second confirmation answered %+v", entry)
 	}
 	if got := readFile(t, held); got != first+second {
@@ -668,7 +714,7 @@ func TestEachHolderHasACursorOfItsOwn(t *testing.T) {
 		t.Errorf("the holder handed nothing is given %v %q", header, data)
 	}
 	listed := rig.holders(t)
-	if len(listed.Holders) != 2 || len(listed.Holders[1].Trails) != 0 || *listed.Holders[0].Trails[handoverTrail].Unwitnessed != 1 {
+	if len(listed.Holders) != 2 || len(listed.Holders[1].Trails) != 0 || since(listed.Holders[0].Trails[handoverTrail]) != 1 {
 		t.Errorf("the holders are %+v", listed)
 	}
 	if status, _, data := rig.download(t, "holder="+holderC); status != http.StatusNotFound || refusalOf(data) != noSuchHolderWords {
@@ -853,7 +899,7 @@ func TestAHolderStartsAt0ForATrailMovedAside(t *testing.T) {
 	rig.confirmed(t, holderA, header)
 	rig.chain(t, chainOf(movedTrail, 1, 2))
 	listed := rig.holders(t)
-	holder := listed.Holders[0]
+	holder := holderAt(listed, 0)
 	if !holder.OtherTrail || len(holder.Trails) != 1 || holder.Trails[handoverTrail].Through != 3 || holder.Trails[handoverTrail].Unwitnessed != nil ||
 		listed.Trail == nil || listed.Trail.Identity != movedTrail {
 		t.Errorf("after the trail was moved aside the holders are %+v", listed)
@@ -1016,16 +1062,16 @@ func TestTheDecisionRecordIsHeldToTheCheckpointsHandedOver(t *testing.T) {
 		t.Errorf("with two files the panel answered %+v", answer)
 	}
 	want = verifyCall[:len(verifyCall)-len(" [JPACK_CONFIG=unset]")] + " --expect .desk-private/handover/" + holderA + "/" + handoverTrail + ".jsonl --expect .desk-private/handover/" + holderC + "/" + handoverTrail + ".jsonl [JPACK_CONFIG=unset]"
-	if calls := rig.ran(t); calls[len(calls)-1] != want {
-		t.Errorf("the panel ran %q, want %q", calls[len(calls)-1], want)
+	if calls := rig.ran(t); lastOf(calls) != want {
+		t.Errorf("the panel ran %q, want %q", lastOf(calls), want)
 	}
 	// The trail moved aside: B's file, and only B's.
 	rig.chain(t, chainOf(movedTrail, 1))
 	rig.ran(t)
 	readAudit(t, rig.ts, "")
 	want = verifyCall[:len(verifyCall)-len(" [JPACK_CONFIG=unset]")] + " --expect .desk-private/handover/" + holderB + "/" + movedTrail + ".jsonl [JPACK_CONFIG=unset]"
-	if calls := rig.ran(t); calls[len(calls)-1] != want {
-		t.Errorf("after the trail was moved aside the panel ran %q, want %q", calls[len(calls)-1], want)
+	if calls := rig.ran(t); lastOf(calls) != want {
+		t.Errorf("after the trail was moved aside the panel ran %q, want %q", lastOf(calls), want)
 	}
 	// No chained record: nothing passed.
 	rig.chain(t, "")
@@ -1033,8 +1079,8 @@ func TestTheDecisionRecordIsHeldToTheCheckpointsHandedOver(t *testing.T) {
 	if _, answer, _ := readAudit(t, rig.ts, ""); answer.Expected != 0 {
 		t.Errorf("with no chained record the panel answered %+v", answer)
 	}
-	if calls := rig.ran(t); calls[len(calls)-1] != verifyCall {
-		t.Errorf("with no chained record the panel ran %q", calls[len(calls)-1])
+	if calls := rig.ran(t); lastOf(calls) != verifyCall {
+		t.Errorf("with no chained record the panel ran %q", lastOf(calls))
 	}
 }
 
@@ -1069,8 +1115,8 @@ func TestAHeldFileThatCannotBeReadIsPassedOverAndNamed(t *testing.T) {
 		if status != http.StatusOK || answer.State != auditStateReport || answer.Expected != 1 || !slices.Equal(answer.ExpectUnread, []string{"Auditor"}) {
 			t.Errorf("%s: the panel answered %d %+v %q", tc.name, status, answer, refusal)
 		}
-		if calls := rig.ran(t); !strings.HasSuffix(calls[len(calls)-1], "--format json"+onlyB) {
-			t.Errorf("%s: the panel ran %q, want B's file alone", tc.name, calls[len(calls)-1])
+		if calls := rig.ran(t); !strings.HasSuffix(lastOf(calls), "--format json"+onlyB) {
+			t.Errorf("%s: the panel ran %q, want B's file alone", tc.name, lastOf(calls))
 		}
 		os.Remove(held)
 		if err := os.WriteFile(held, []byte(lines), 0o600); err != nil {
@@ -1264,7 +1310,7 @@ func TestHandOverWithTheRuntime(t *testing.T) {
 	status, data = call("GET", "/api/audit/holders", nil)
 	var listed holdersAnswer
 	if status != http.StatusOK || json.Unmarshal(data, &listed) != nil || listed.Trail == nil || listed.Trail.Sequence != 4 ||
-		listed.Holders[0].Trails[listed.Trail.Identity].Unwitnessed == nil || *listed.Holders[0].Trails[listed.Trail.Identity].Unwitnessed != 1 {
+		since(holderAt(listed, 0).Trails[listed.Trail.Identity]) != 1 {
 		t.Errorf("after one more record the holders answered %d %s", status, data)
 	}
 	status, header, second := get("holder=" + holderA)
