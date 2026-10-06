@@ -766,7 +766,7 @@ their meaning. The status column is as of 2026-10-05.
 | 2 | The decision-record panel: capability check, `audit verify` with no held inputs, the older-runtime line; download of the trail, sidecar and stamps as exact bytes | the runtime pin | shipped: #204 (2a) and #205 (2b), in v0.5.1 |
 | 3 | Key custody: generate per project; new desks at `"6"` with `audit.signingKey`; public keys shown; `packs validate`'s check shown; rotation | 2; questions 1–3 | 3a: #219, custody for the desks Desk makes, in no release yet; 3b, rotation, not built |
 | 4 | The upgrade offer learns `"6"` and the signing key, as its own item | ADR-0009 PR D merged; 3 | |
-| 5 | Hand-over by download or copy: holders, the checkpoints route, cursors, Desk's record; verification against that record | 2; question 4 | |
+| 5 | Hand-over by download or copy: holders, the checkpoints route, cursors, Desk's record; verification against that record | 2; question 4 | built: PR #241 |
 | 6 | The repair offer | 2; question 8 | |
 | 7 | Stamping: settings, scheduler, pending records; verification with roots | 2; question 5 | |
 | 8a | Export version 5 and labelling, `run-chain` pass-through | nothing: #200 pinned Runner v0.5.0; question 7 | merged: #220, on `main`, in no release yet |
