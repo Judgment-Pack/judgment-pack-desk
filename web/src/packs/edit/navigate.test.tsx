@@ -16,6 +16,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   chassis,
   drawPack,
+  FIRST_DRAW,
   forgetSlot,
   servedPacks,
   CLEAN_REPORT,
@@ -123,7 +124,7 @@ describe('the gap between the two answers', () => {
       hold: [BRAVO_PATH]
     })
     const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
-    const title = await screen.findByDisplayValue('Alpha pack')
+    const title = await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
     fireEvent.change(title, { target: { value: 'Alpha pack, revised' } })
 
     vi.stubGlobal('confirm', () => true)
@@ -159,7 +160,7 @@ describe('the gap between the two answers', () => {
       also: { [BRAVO_PATH]: { content: BRAVO, sha256: BRAVO_DIGEST } }
     })
     const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
-    await screen.findByDisplayValue('Alpha pack')
+    await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
     await act(async () => {
       await router.navigate('/packs/bravo?edit=1')
     })
@@ -200,7 +201,7 @@ describe('a path that moves under one address', () => {
       validate: () => ({ text: CLEAN_REPORT })
     }
     const { queryClient } = drawPack(handlers, { path: '/packs/alpha?edit=1' })
-    const title = await screen.findByDisplayValue('Alpha pack')
+    const title = await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
     fireEvent.change(title, { target: { value: 'Alpha pack, revised' } })
 
     servedPath = BRAVO_PATH
@@ -256,7 +257,7 @@ describe('a path that moves under one address', () => {
       validate: () => ({ text: CLEAN_REPORT })
     }
     const { queryClient } = drawPack(handlers, { path: '/packs/alpha?edit=1' })
-    await screen.findByDisplayValue('Alpha pack')
+    await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
 
     const operand = inside(document.getElementById('/rules/0/when/value')!).getByDisplayValue(
       '"5000"'
@@ -295,7 +296,7 @@ describe('a path that moves under one address', () => {
       servedPacks([{ id: 'alpha', path: PACK_PATH, text: ALPHA_FACT, sha256: PACK_DIGEST }]),
       { path: '/packs/alpha?edit=1' }
     )
-    await screen.findByDisplayValue('Alpha pack')
+    await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
 
     // The file moves on disk, which is what puts Reload on screen.
     act(() => {
@@ -359,7 +360,7 @@ describe('a path that moves under one address', () => {
       validate: () => ({ text: CLEAN_REPORT })
     }
     const { queryClient } = drawPack(handlers, { path: '/packs/alpha?edit=1' })
-    const title = await screen.findByDisplayValue('Alpha pack')
+    const title = await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
     fireEvent.change(title, { target: { value: 'Alpha pack, revised' } })
 
     servedPath = BRAVO_PATH
@@ -402,7 +403,7 @@ describe('a path that moves under one address', () => {
       validate: () => ({ text: CLEAN_REPORT })
     }
     const { queryClient } = drawPack(handlers, { path: '/packs/alpha?edit=1' })
-    const title = await screen.findByDisplayValue('Alpha pack')
+    const title = await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
     fireEvent.change(title, { target: { value: 'Alpha pack, revised' } })
 
     servedPath = BRAVO_PATH
@@ -431,7 +432,7 @@ describe('a read that lands after the page has moved on', () => {
     const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
 
     // A conflict on A, which is what puts Reload on screen.
-    const alpha = await screen.findByDisplayValue('Alpha pack')
+    const alpha = await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
     fireEvent.change(alpha, { target: { value: 'Alpha pack, revised' } })
     fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
     const alert = await screen.findByRole('alert')
@@ -480,7 +481,7 @@ describe('a read that lands after the page has moved on', () => {
     })
     vi.stubGlobal('confirm', () => true)
     const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
-    const alpha = await screen.findByDisplayValue('Alpha pack')
+    const alpha = await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
     fireEvent.change(alpha, { target: { value: 'Alpha pack, revised' } })
     const release = log.holdWrite()
     fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
@@ -523,7 +524,7 @@ describe('a read that lands after the page has moved on', () => {
     })
     vi.stubGlobal('confirm', () => true)
     const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
-    const alpha = await screen.findByDisplayValue('Alpha pack')
+    const alpha = await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
     fireEvent.change(alpha, { target: { value: 'Alpha pack, revised' } })
     const release = log.holdWrite()
     fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
@@ -558,7 +559,7 @@ describe('a read that lands after the page has moved on', () => {
       staleWith: { sha256: 'c0c0c0'.padEnd(64, '0') }
     })
     drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
-    const alpha = await screen.findByDisplayValue('Alpha pack')
+    const alpha = await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
     fireEvent.change(alpha, { target: { value: 'Alpha pack, revised' } })
     fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
     const alert = await screen.findByRole('alert')
@@ -580,7 +581,7 @@ describe('a read that lands after the page has moved on', () => {
     })
     vi.stubGlobal('confirm', () => true)
     const { router, queryClient } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
-    await screen.findByDisplayValue('Alpha pack')
+    await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
 
     // The file moves under A, which is what puts Reload on screen.
     act(() => {
@@ -626,7 +627,7 @@ describe('a read that lands after the page has moved on', () => {
     })
     vi.stubGlobal('confirm', () => true)
     const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
-    const alpha = await screen.findByDisplayValue('Alpha pack')
+    const alpha = await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
 
     const releaseFirst = log.holdWrite()
     fireEvent.change(alpha, { target: { value: 'Alpha, once' } })
@@ -678,7 +679,7 @@ describe('a read that lands after the page has moved on', () => {
     })
     vi.stubGlobal('confirm', () => true)
     const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
-    const alpha = await screen.findByDisplayValue('Alpha pack')
+    const alpha = await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
     fireEvent.change(alpha, { target: { value: 'Alpha pack, revised' } })
     fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
     await waitFor(() => expect(log.writes).toHaveLength(1))
@@ -705,7 +706,7 @@ describe('the buffer follows the address', () => {
   it('draws the pack the URL names after moving to another one', async () => {
     bothOnDisk()
     const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
-    await screen.findByDisplayValue('Alpha pack')
+    await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
     await act(async () => {
       await router.navigate('/packs/bravo?edit=1')
     })
@@ -719,7 +720,7 @@ describe('the buffer follows the address', () => {
   it('sends the second pack’s bytes, digest and path when it is saved', async () => {
     const log = bothOnDisk()
     const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
-    await screen.findByDisplayValue('Alpha pack')
+    await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
     await act(async () => {
       await router.navigate('/packs/bravo?edit=1')
     })
@@ -744,7 +745,7 @@ describe('the buffer follows the address', () => {
     bothOnDisk({ sha256: 'c0c0c0'.padEnd(64, '0') })
     vi.stubGlobal('confirm', () => true)
     const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
-    const title = await screen.findByDisplayValue('Alpha pack')
+    const title = await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
     fireEvent.change(title, { target: { value: 'Alpha pack, edited' } })
     fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
     const alert = await screen.findByRole('alert')
@@ -763,7 +764,7 @@ describe('the buffer follows the address', () => {
     bothOnDisk()
     vi.stubGlobal('confirm', () => true)
     const { router } = drawPack(servedPacks(PACKS), { path: '/packs/alpha?edit=1' })
-    const title = await screen.findByDisplayValue('Alpha pack')
+    const title = await screen.findByDisplayValue('Alpha pack', undefined, FIRST_DRAW)
     fireEvent.change(title, { target: { value: 'Alpha pack, edited' } })
     await waitFor(() => expect(screen.getByText('Editing · Unsaved changes')).toBeTruthy())
     await act(async () => {

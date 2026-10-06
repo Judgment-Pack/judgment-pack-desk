@@ -16,7 +16,7 @@ import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { chassis, drawPack, forgetSlot, served, PACK_DIGEST, PACK_PATH } from './editHarness'
+import { chassis, drawPack, forgetSlot, served, FIRST_DRAW, PACK_DIGEST, PACK_PATH } from './editHarness'
 import { forgetAuthorBridge } from '../../shell/authorBridge'
 
 const PACK_TEXT = readFileSync(
@@ -53,7 +53,7 @@ afterEach(() => {
 })
 
 async function editable(): Promise<HTMLTextAreaElement> {
-  const area = (await screen.findByLabelText("The document's bytes")) as HTMLTextAreaElement
+  const area = (await screen.findByLabelText("The document's bytes", undefined, FIRST_DRAW)) as HTMLTextAreaElement
   await waitFor(() => expect(area.readOnly).toBe(false))
   return area
 }

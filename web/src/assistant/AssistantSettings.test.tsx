@@ -71,7 +71,8 @@ it('keeps a login challenge out of the query cache and cancels the owning attemp
  expect(link.getAttribute('href')).toContain('TRANSIENT_CHALLENGE')
  expect(JSON.stringify(client.getQueryCache().getAll().map(q=>q.state.data))).not.toContain('TRANSIENT_CHALLENGE')
  expect(calls.find(c=>c.path.endsWith('/login'))?.body).toEqual({method:'browser'})
- fireEvent.click(screen.getByRole('button',{name:'Cancel sign-in'}))
+ // The link is drawn when the login answers; the sign-in's own Cancel replaces the connection's only once the status refresh after it answers.
+ fireEvent.click(await screen.findByRole('button',{name:'Cancel sign-in'}))
  await waitFor(()=>expect(screen.queryByRole('link',{name:'Continue sign-in in your browser'})).toBeNull())
  expect(calls.find(c=>c.path.endsWith('/cancel'))?.body).toEqual({id:'attempt'})
 })
@@ -129,8 +130,9 @@ it('prepares on Connect, shows progress, and continues to sign-in without restar
  expect(screen.getByRole('button',{name:'Cancel'})).toBeTruthy()
  await act(async()=>state.finishPreparation())
  await screen.findByRole('link',{name:'Continue sign-in in your browser'})
+ // The link is drawn when the login answers; the preparation's progress ends only once the status refresh after it answers.
+ await waitFor(()=>expect(screen.queryByText('Preparing ChatGPT…')).toBeNull())
  expect(state.calls.filter(c=>c.path.endsWith('/login'))).toHaveLength(1)
- expect(screen.queryByText('Preparing ChatGPT…')).toBeNull()
 })
 it('allows canceling preparation without leaving an error or a sign-in link',async()=>{
  const state=setup({connected:false,model:null,runtimeMissing:true,holdLogin:true})
