@@ -151,6 +151,16 @@ describe('the hand-over section', () => {
     expect(followsTheProject(client.getQueryCache().find({ queryKey: HOLDERS_KEY })!)).toBe(false)
   })
 
+  it('reads the holders again each time the decision record is checked again', async () => {
+    holders = [{ holders: [auditor], trail: { identity: trail, sequence: 3 } }, { holders: [handed], trail: { identity: trail, sequence: 5 } }]
+    show()
+    await (await opened()).findByText('Nothing handed over yet')
+    fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
+    expect(await (await opened()).findByText('Records since: 2')).toBeTruthy()
+    expect(count('/api/audit/verify')).toBe(2)
+    expect(count('/api/audit/holders')).toBe(2)
+  })
+
   it('adds a holder by the owner’s words, and lists it', async () => {
     holders = [{ holders: [], trail: { identity: trail, sequence: 3 } }, { holders: [{ id: '0f1e2d3c4b5a6978', label: 'Regulator', channel: 'portal', addedAt: 1791201600, trails: {} }], trail: { identity: trail, sequence: 3 } }]
     show()

@@ -18,8 +18,9 @@
  * After a confirmation the holders and the decision record are read again: the
  * check then runs with what was handed over.
  *
- * The query runs when the section is shown, and after an action: never on a
- * timer, on focus, on a reconnect or on a change to the project. What a
+ * The query runs when the section is shown, with each reading of the
+ * decision record, and after an action: never on a timer, on focus, on a
+ * reconnect or on a change to the project. What a
  * download or a confirmation answered is kept by the panel, which unmounts
  * this section while it checks the trail again.
  */
@@ -45,8 +46,12 @@ export type HandoverNotice =
 export type HandoverState = { pending: Record<string, PendingHandover>; notices: Record<string, HandoverNotice> }
 export const NO_HANDOVER: HandoverState = { pending: {}, notices: {} }
 
-/** The section's one query: run each time it is shown, and on request, and at no other time. */
-export function useHolders() {
+/**
+ * The section's one query: run each time it is shown, each time the decision
+ * record beside it is read (`checkedAt`, when it was), and after an action,
+ * and at no other time.
+ */
+export function useHolders(checkedAt: number) {
   const query = useQuery({
     queryKey: HOLDERS_KEY,
     queryFn: ({ signal }) => readHolders(signal),
@@ -62,7 +67,7 @@ export function useHolders() {
   const refetch = useRef(query.refetch)
   refetch.current = query.refetch
   // Joins a run already in flight rather than starting a second.
-  useEffect(() => { void refetch.current({ cancelRefetch: false }) }, [])
+  useEffect(() => { void refetch.current({ cancelRefetch: false }) }, [checkedAt])
   return query
 }
 
@@ -77,14 +82,16 @@ function save(blob: Blob, name: string) {
 const when = (seconds: number) => formatDate(seconds * 1000, { dateStyle: 'medium', timeStyle: 'short' })
 const messageOf = (cause: unknown) => cause instanceof Error ? cause.message : String(cause)
 
-export function Handover({ state, onState, onConfirmed }: {
+export function Handover({ checkedAt, state, onState, onConfirmed }: {
+  /** When the decision record beside this was last read: the holders are read again with it. */
+  checkedAt: number
   state: HandoverState
   onState: (update: (state: HandoverState) => HandoverState) => void
   /** Run the decision record's check again: it runs with what was handed over. */
   onConfirmed: () => void
 }) {
   useLocale()
-  const query = useHolders()
+  const query = useHolders(checkedAt)
   const [busy, setBusy] = useState<string>()
   const data = query.data
   const set = (holder: string, pending: PendingHandover | undefined, notice: HandoverNotice | undefined) => onState(previous => {

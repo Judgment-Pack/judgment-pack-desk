@@ -4172,7 +4172,7 @@ func (b *cappedBuffer) exceeded() bool {'
 		return heldDir{}, &lockFailure{http.StatusConflict, CodeBadRequest, noTrailWords}'
   mutate go "hand-over: the decision record is given no held checkpoint" "$HO" \
     '			held.args = append(held.args, "--expect", path.Join(handoverDir, holder.ID, name))' \
-    '			held.args = append(held.args)'
+    '			_ = path.Join(handoverDir, holder.ID, name)'
   mutate go "hand-over: every file a holder keeps is passed" "$HO" \
     '			err = checkHeldFile(folder, name)
 			folder.Close()' \
@@ -11241,11 +11241,12 @@ export function assistantTransport(id: string): Transport {
     "  return { blob: new Blob([await response.text()]), name,"
   mutate web "hand-over page: saved under another name" "$HP" \
     "  link.href = url; link.download = name" \
-    "  link.href = url; link.download = 'checkpoints.jsonl'"
+    "  link.href = url; link.download = name.replace(/^checkpoints-/, 'saved-')"
   mutate web "hand-over page: the decision record is not checked again after a confirmation" "$HP" \
     "      void query.refetch()
       onConfirmed()" \
-    "      void query.refetch()"
+    "      void query.refetch()
+      void onConfirmed"
   mutate web "hand-over page: the holders are not read again after a confirmation" "$HP" \
     "      void query.refetch()
       onConfirmed()" \
@@ -11267,7 +11268,7 @@ export function assistantTransport(id: string): Transport {
     "  if (response.status === 999) return null"
   mutate web "hand-over client: a refusal that is not JSON is not said" "$AC" \
     "  return new Error(text(body.error) ? body.error : fallback)" \
-    "  return new Error(text(body.error) ? body.error : '')"
+    "  return new Error(text(body.error) ? body.error : fallback.slice(0, 0))"
   mutate web "hand-over client: a download whose headers disagree is taken" "$AC" \
     "    || name !== \`checkpoints-\${trail}-\${from + 1}-\${through}.jsonl\`) throw new Error(failed)" \
     "    || name === undefined) throw new Error(failed)"
@@ -11276,7 +11277,7 @@ export function assistantTransport(id: string): Transport {
     "body: JSON.stringify({ trail, from: from + 1, through, digest }) })"
   mutate web "hand-over client: a holder is added in other words" "$AC" \
     "body: JSON.stringify({ label, channel }) })" \
-    "body: JSON.stringify({ label: channel, channel }) })"
+    "body: JSON.stringify({ label: channel || label, channel }) })"
   mutate web "hand-over client: holders of another shape are read" "$AC" \
     "&& count(value.trail.sequence) && value.trail.sequence > 0 && value.diagnostics === undefined" \
     "&& count(value.trail.sequence)"
@@ -11289,7 +11290,7 @@ export function assistantTransport(id: string): Transport {
     ""
   mutate web "hand-over page: records since are not shown" "$HP" \
     "{trail && record.unwitnessed !== undefined && <p>" \
-    "{false && record.unwitnessed !== undefined && <p>"
+    "{trail && record.unwitnessed === -1 && <p>"
   mutate web "hand-over page: records since are shown with no current trail" "$HP" \
     "{trail && record.unwitnessed !== undefined && <p>" \
     "{record.unwitnessed !== undefined && <p>"
@@ -11301,7 +11302,7 @@ export function assistantTransport(id: string): Transport {
     "      {<div className={styles.actions}><Button disabled={busy} onClick={onDownload}>"
   mutate web "hand-over page: the holders follow every change to the project" "$HP" \
     "    meta: ON_REQUEST_ONLY," \
-    "    meta: {},"
+    "    meta: { ...ON_REQUEST_ONLY, onRequestOnly: false },"
   mutate web "hand-over page: a refused holder is not said" "$HP" \
     "    {error && <p role=\"alert\">{systemMessage(error)}</p>}" \
     "    {error && <p role=\"alert\" hidden>{systemMessage(error)}</p>}"
@@ -11310,7 +11311,7 @@ export function assistantTransport(id: string): Transport {
     "{false ? msg("
   mutate web "hand-over page: a holder's file passed over is not named" "$DR" \
     "{record.expectUnread && <p role=\"alert\">" \
-    "{false && record.expectUnread && <p role=\"alert\">"
+    "{record.expectUnread && record.expectUnread.length < 0 && <p role=\"alert\">"
   mutate web "hand-over page: not beside the report" "$DR" \
     "                    {rotation(record.keys, record.rotation)}
                     {handoverSection}" \
@@ -11319,6 +11320,9 @@ export function assistantTransport(id: string): Transport {
     "                  {rotation(record.keys, record.rotation)}
                   {handoverSection}" \
     "                  {rotation(record.keys, record.rotation)}"
+  mutate web "hand-over page: the holders are not read again with the decision record" "$HP" \
+    "  useEffect(() => { void refetch.current({ cancelRefetch: false }) }, [checkedAt])" \
+    "  useEffect(() => { void refetch.current({ cancelRefetch: false }) }, [checkedAt > 0])"
   mutate web "hand-over page: a waiting download outlives opening the panel again" "$DR" \
     "  useEffect(() => { if (visible) setHandover(NO_HANDOVER) }, [visible])" \
     "  useEffect(() => { if (visible) void 0 }, [visible])"

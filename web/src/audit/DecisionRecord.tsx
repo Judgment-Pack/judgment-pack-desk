@@ -80,7 +80,7 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
   // runs; dropped when the panel is opened again.
   const [handover, setHandover] = useState<HandoverState>(NO_HANDOVER)
   useEffect(() => { if (visible) setHandover(NO_HANDOVER) }, [visible])
-  const handoverSection = <Handover state={handover} onState={setHandover} onConfirmed={() => void query.refetch()} />
+  const handoverSection = <Handover checkedAt={query.dataUpdatedAt} state={handover} onState={setHandover} onConfirmed={() => void query.refetch()} />
   const rotation = (keys?: AuditKeys, rotation?: AuditRotation) => <RotateSigningKey rotation={rotation} keyCount={keys?.state === 'kept' ? keys.public.length : 0}
     outcome={rotated} onOutcome={outcome => { setRotated(outcome); void query.refetch() }} />
   const again = <div><Button onClick={() => { setRotated(undefined); void query.refetch() }}>{msg('Check again')}</Button></div>
