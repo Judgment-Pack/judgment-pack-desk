@@ -4,7 +4,7 @@ import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/re
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { chassis, drawPack, forgetSlot, served, PACK_DIGEST } from './editHarness'
+import { chassis, drawPack, forgetSlot, served, FIRST_DRAW, PACK_DIGEST } from './editHarness'
 
 const original = readFileSync(join(import.meta.dirname, '../__fixtures__/full.pack.json'), 'utf8')
 const changed = original.replace('Vendor onboarding', 'Revised onboarding')
@@ -13,7 +13,7 @@ const route = '/packs/vendor-onboarding'
 afterEach(() => { cleanup(); forgetSlot(); vi.unstubAllGlobals() })
 
 async function editBytes() {
-  const area = await screen.findByLabelText<HTMLTextAreaElement>("The document's bytes")
+  const area = await screen.findByLabelText<HTMLTextAreaElement>("The document's bytes", undefined, FIRST_DRAW)
   await waitFor(() => expect(area.readOnly).toBe(false))
   fireEvent.change(area, { target: { value: changed } })
   return area
@@ -28,7 +28,7 @@ describe('view and edit transitions', () => {
   it('pins save and return outside the scrolling body and removes saved-pack navigation while editing', async () => {
     chassis({ content: original, sha256: PACK_DIGEST })
     const { router } = drawPack(served(original), { path: `${route}?view=logic&layout=list&at=%2Frules%2F1` })
-    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }, FIRST_DRAW))
     const back = await screen.findByRole('button', { name: 'Back to pack' })
     for (const name of ['Back to pack', 'Save', 'Test draft']) {
       const control = screen.getByRole('button', { name })
@@ -113,7 +113,7 @@ describe('view and edit transitions', () => {
     const source = JSON.stringify(doc)
     const log = chassis({ content: source, sha256: PACK_DIGEST })
     drawPack(served(source), { path: `${route}?edit=1` })
-    const operand = await screen.findByDisplayValue('"green"')
+    const operand = await screen.findByDisplayValue('"green"', undefined, FIRST_DRAW)
     fireEvent.change(operand, { target: { value: '{"unfinished"' } })
     const dialog = await leave()
     expect(dialog.getByRole('button', { name: 'Save and return' }).hasAttribute('disabled')).toBe(true)

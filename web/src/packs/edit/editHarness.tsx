@@ -28,6 +28,29 @@ import { PackView } from '../../routes/PackView'
 export const PACK_PATH = 'packs/vendor-onboarding.pack.json'
 export const PACK_DIGEST = 'a1b2c3'.padEnd(64, '0')
 
+/**
+ * **The bound on the first wait after `drawPack`**, which is a wait for the
+ * whole route's first draw.
+ *
+ * testing-library's default bound is one second, which is sized for a
+ * component. The first draw of this route, with its five answers, the
+ * document and the form, took two to five seconds of the wait itself on a
+ * host running the web suite beside the Go suite (#236), and 6.8 under a
+ * heavier load. A wait that runs past its bound fails only when the bound's
+ * timer gets a turn before the draw lands, so the same case passed or failed
+ * with the machine's load, and the first case in a file, drawing on cold
+ * code, failed most.
+ *
+ * Fifteen seconds is the bound this suite already gives a wait for a whole
+ * run (`DescribeIt`, `AssistantPane`), twice the slowest first draw measured,
+ * and inside the per-case ceiling in `vitest.config.ts`, so a draw that never
+ * comes still fails on this wait, with the page printed, before the case's
+ * ceiling. Every later wait keeps the default: none waits for the route to
+ * stand up from nothing, none has failed, and the slowest of them, a redraw
+ * for another pack, took 0.8 seconds there and 1.2 under a heavier load.
+ */
+export const FIRST_DRAW = { timeout: 15_000 } as const
+
 export const CLEAN_REPORT = JSON.stringify({
   outputVersion: '2',
   status: 'valid',

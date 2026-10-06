@@ -56,7 +56,10 @@ function holding(journal: StandInJournal, held: string, records: Parameters<type
   return () => release()
 }
 
-describe('reading a large journal', () => {
+// Every case here but one reads 2,000 to 3,000 entries 50 at a time, drawing the page between pages, and
+// renders hundreds of rows. Under load, four of them ran past the default 20 seconds (#236), so each has the
+// 60 seconds the case rendering 1,500 rows already had.
+describe('reading a large journal', { timeout: 60_000 }, () => {
   it('says how far it has read while it reads, and shows no entry until it has read to the end', async () => {
     const answer = holding({ entries: busy(3000) }, events(1500), { runs: [runs.signed, runs.queued], occurrences: [] })
     showPage()
@@ -164,7 +167,8 @@ describe('reading a large journal', () => {
   })
 })
 
-describe('a record row', () => {
+// It reads a journal of 2,004 entries twice and renders 500 rows each time: the same 60 seconds.
+describe('a record row', { timeout: 60_000 }, () => {
   it('says the same of a run’s state with the whole journal, a bounded one, and none', async () => {
     const run = runs.running
     const about = [

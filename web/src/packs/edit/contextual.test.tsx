@@ -2,13 +2,13 @@ import {readFileSync} from 'node:fs'
 import {join} from 'node:path'
 import {cleanup,fireEvent,screen,waitFor} from '@testing-library/react'
 import {afterEach,expect,it,vi} from 'vitest'
-import {chassis,drawPack,forgetSlot,served,PACK_DIGEST} from './editHarness'
+import {chassis,drawPack,forgetSlot,served,FIRST_DRAW,PACK_DIGEST} from './editHarness'
 const original=readFileSync(join(import.meta.dirname,'../__fixtures__/full.pack.json'),'utf8')
 afterEach(()=>{cleanup();forgetSlot();vi.unstubAllGlobals();vi.restoreAllMocks();localStorage.clear()})
 it('edits a selected rule beside Logic and saves through the existing guarded file writer',async()=>{
  const disk=chassis({content:original,sha256:PACK_DIGEST})
  drawPack(served(original),{inspector:true,path:'/packs/vendor-onboarding?view=logic&layout=list&at=%2Frules%2F0'})
- fireEvent.click(await screen.findByRole('button',{name:'Edit rule'}))
+ fireEvent.click(await screen.findByRole('button',{name:'Edit rule'}, FIRST_DRAW))
  await screen.findByRole('button',{name:'Back to pack'})
  expect(screen.getByRole('region',{name:'Pack logic'})).toBeTruthy()
  const input=await screen.findByLabelText('Description',{exact:true})

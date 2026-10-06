@@ -15,7 +15,7 @@ import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/re
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { chassis, drawPack, forgetSlot, served, PACK_DIGEST } from './editHarness'
+import { chassis, drawPack, forgetSlot, served, FIRST_DRAW, PACK_DIGEST } from './editHarness'
 
 const EDIT = '/packs/vendor-onboarding?edit=1'
 
@@ -63,7 +63,7 @@ afterEach(() => {
 async function draft(path = EDIT): Promise<void> {
   chassis({ content: DRAFT, sha256: PACK_DIGEST })
   drawPack(served(DRAFT), { path })
-  await screen.findByRole('button', { name: /On this page/ })
+  await screen.findByRole('button', { name: /On this page/ }, FIRST_DRAW)
 }
 
 /** The raw bytes, once the form has been left for the JSON view. */
@@ -205,7 +205,7 @@ describe('what the form can now reach', () => {
   async function wider(): Promise<void> {
     chassis({ content: WIDER, sha256: PACK_DIGEST })
     drawPack(served(WIDER), { path: EDIT })
-    await screen.findByRole('button', { name: /On this page/ })
+    await screen.findByRole('button', { name: /On this page/ }, FIRST_DRAW)
   }
 
   it('edits applicability with the same builder a rule’s when gets', async () => {
@@ -256,7 +256,7 @@ describe('what the form can now reach', () => {
     )}\n`
     chassis({ content: noAuthors, sha256: PACK_DIGEST })
     drawPack(served(noAuthors), { path: EDIT })
-    await screen.findByRole('button', { name: /On this page/ })
+    await screen.findByRole('button', { name: /On this page/ }, FIRST_DRAW)
     const group = document.getElementById('/metadata/authors')
     expect(group).toBeTruthy()
     fireEvent.click(within(group!).getByRole('button', { name: 'Add an author' }))
@@ -328,7 +328,7 @@ describe('text that is not written yet is work', () => {
   it('asks before leaving, because leaving would take it', async () => {
     chassis({ content: DRAFT, sha256: PACK_DIGEST })
     drawPack(served(DRAFT), { path: EDIT, nav: true })
-    await screen.findByRole('button', { name: /On this page/ })
+    await screen.findByRole('button', { name: /On this page/ }, FIRST_DRAW)
     const operand = within(document.getElementById(OPERAND)!).getByDisplayValue('"green"')
     fireEvent.change(operand, { target: { value: '{"shade"' } })
     await waitFor(() => expect(screen.getByText('1 field is not written yet')).toBeTruthy())
@@ -372,7 +372,7 @@ describe('text that is not written yet is work', () => {
     )}\n`
     chassis({ content: twins, sha256: PACK_DIGEST })
     drawPack(served(twins), { path: EDIT })
-    await screen.findByRole('button', { name: /On this page/ })
+    await screen.findByRole('button', { name: /On this page/ }, FIRST_DRAW)
 
     const operand = within(document.getElementById('/rules/0/when/value')!).getByDisplayValue(
       '"green"'
