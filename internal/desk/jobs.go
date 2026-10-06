@@ -76,6 +76,14 @@ type jobsCompanion struct {
 	url, token                          string
 	closed                              bool
 	stop                                chan struct{}
+	// key is the signing key Desk keeps for this Runner (runner_key.go).
+	key *runnerKey
+	// started is closed once the server that owns this Runner is built: on
+	// the startup desk, once the start's sweep of the desks' keys has taken
+	// and let go of the key-custody lock (`resumeDesks`). The first start of
+	// Runner waits for it, so that its key's decision does not hold the lock
+	// that sweep would otherwise find held, and skip.
+	started chan struct{}
 }
 
 func (s *Server) initJobs() {
@@ -92,8 +100,17 @@ func (s *Server) initJobs() {
 		s.jobs.dir = filepath.Join(s.projectDir, ".desk-private", "jobs")
 		s.jobs.workspace = s.cfg.deskID
 	}
+	// Runner's own key is kept under the name of its workspace: the desk's
+	// id, or the startup desk's state directory's name (ADR-0010, section 5).
+	s.jobs.key = s.newRunnerKey(s.jobs.workspace)
+	s.jobs.started = make(chan struct{})
 	// Resume durable queued work when Desk starts, without requiring an open tab.
 	go func() {
+		select {
+		case <-s.jobs.started:
+		case <-s.jobs.stop:
+			return
+		}
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
 		for {
@@ -129,30 +146,67 @@ func (j *jobsCompanion) endpoint() (string, string, error) {
 	if err := os.MkdirAll(j.dir, 0700); err != nil {
 		return "", "", err
 	}
+	// **Runner's own key, or none** (ADR-0010, section 5). Where Runner
+	// refuses it at boot, it is started again at once without it, so its runs
+	// go on, unsigned, and the key is left as it is. What the key is reported
+	// as is published only once Runner has started and answered: until then
+	// it is starting, and a Runner that did not start is reported as not
+	// running, never as signing.
+	signingKey, decided := j.key.prepare()
+	refusal, err := j.start(signingKey)
+	if err != nil && signingKey != "" && refusal != nil {
+		decided = j.key.refused(*refusal)
+		_, err = j.start("")
+	}
+	if err != nil {
+		j.key.notRunning(err)
+		return "", "", err
+	}
+	j.key.started(decided)
+	return j.url, j.token, nil
+}
+
+// start starts Runner and reads its handshake, naming signingKey on the boot
+// line where it is not empty. Where Runner did not start, and what it wrote
+// to its standard error says it refused a signing key, refusal is its reason.
+func (j *jobsCompanion) start(signingKey string) (refusal *string, err error) {
 	var secret [32]byte
 	if _, err := rand.Read(secret[:]); err != nil {
-		return "", "", err
+		return nil, err
 	}
 	j.token = hex.EncodeToString(secret[:])
 	cmd := exec.Command(j.bin)
 	cmd.Env = []string{"LANG=C", "LC_ALL=C"}
 	cmd.Dir = j.dir
-	cmd.Stderr = io.Discard
+	// Kept, to a bound, only to read a refusal of the key from it.
+	said := &cappedBuffer{limit: runnerSaidLimit}
+	cmd.Stderr = said
 	input, err := cmd.StdinPipe()
 	if err != nil {
-		return "", "", err
+		return nil, err
 	}
 	output, err := cmd.StdoutPipe()
 	if err != nil {
 		input.Close()
-		return "", "", err
+		return nil, err
 	}
 	if err = cmd.Start(); err != nil {
 		input.Close()
-		return "", "", err
+		return nil, err
 	}
 	done := make(chan struct{})
 	go func() { _ = cmd.Wait(); close(done) }()
+	// failed stops this Runner and answers err, with Runner's refusal of the
+	// key where it wrote one: once it has exited, all it wrote has been read.
+	failed := func(err error) (*string, error) {
+		input.Close()
+		cmd.Process.Kill()
+		<-done
+		if reason, refused := runnerKeyRefusal(said.Bytes()); refused {
+			return &reason, err
+		}
+		return nil, err
+	}
 	boot := map[string]any{"dir": j.dir, "runtime": j.runtime, "workspace": j.workspace, "owner": j.owner, "token": j.token, "inputRoot": j.inputRoot}
 	if len(j.connections) > 0 {
 		var connections struct {
@@ -160,10 +214,7 @@ func (j *jobsCompanion) endpoint() (string, string, error) {
 			Gateway json.RawMessage `json:"gateway"`
 		}
 		if err = json.Unmarshal(j.connections, &connections); err != nil {
-			input.Close()
-			cmd.Process.Kill()
-			<-done
-			return "", "", errors.New("invalid background connections")
+			return failed(errors.New("invalid background connections"))
 		}
 		if len(connections.Cloud) > 0 {
 			boot["cloudConnections"] = connections.Cloud
@@ -178,11 +229,11 @@ func (j *jobsCompanion) endpoint() (string, string, error) {
 	// The installation's choice goes on the boot line either way, so turning
 	// the policy off never rests on the Runner's own default.
 	boot["requireTestedReleases"] = j.requireTested
+	if signingKey != "" {
+		boot["signingKey"] = signingKey
+	}
 	if err = json.NewEncoder(input).Encode(boot); err != nil {
-		input.Close()
-		cmd.Process.Kill()
-		<-done
-		return "", "", err
+		return failed(err)
 	}
 	handshake := make(chan []byte, 1)
 	go func() {
@@ -202,13 +253,10 @@ func (j *jobsCompanion) endpoint() (string, string, error) {
 	}
 	u, parseErr := url.Parse(hello.URL)
 	if err != nil || parseErr != nil || hello.Protocol != "jobs/1" || u.Scheme != "http" || u.Hostname() != "127.0.0.1" || u.Port() == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
-		input.Close()
-		cmd.Process.Kill()
-		<-done
-		return "", "", errors.New("runner unavailable")
+		return failed(errors.New("runner unavailable"))
 	}
 	j.cmd, j.input, j.done, j.url = cmd, input, done, hello.URL
-	return j.url, j.token, nil
+	return nil, nil
 }
 func (j *jobsCompanion) close() {
 	j.mu.Lock()

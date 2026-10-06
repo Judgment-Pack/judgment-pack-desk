@@ -927,7 +927,9 @@ func (s *Server) sweepUnfinishedKeys() {
 		return
 	}
 	defer dir.Close()
+	keyBetween("before desks sweep")
 	unlock, err := lockSigning(dir)
+	keyBetween("desks sweep tried")
 	if err != nil {
 		s.log.Printf("desk: unfinished creations' keys were left for the next start, because the signing folder's lock was not taken: %v", err)
 		return

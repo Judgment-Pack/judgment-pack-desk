@@ -19,9 +19,12 @@ forwards `GET /v1/jobs/{job}/events` and its cursor; Runner's store-wide journal
 forwarded. Desk's verification download asks for version 5 and names the file for the version
 Runner answered, which is earlier where the run lacks what a later version carries. Desk
 passes `GET /v1/run-chain` through as Runner's exact bytes, up to 67,174,400 bytes (about
-64 MiB), or fails the download. It does not yet give Runner a signing key (row 11 of
-[ADR-0010](adr/0010-defensible-decision-records.md)'s delivery table, after PR 3), check
-a chain entry (row 12, the Jobs record panel) or hand the chain over (row 8b).
+64 MiB), or fails the download. Each desk's Runner is given a signing key of its own,
+which Desk keeps in its custody and names on Runner's boot line (row 11 of
+[ADR-0010](adr/0010-defensible-decision-records.md)'s delivery table, #229), so where
+Runner and the runtime accept the key, each run's record is signed and its version-5
+export carries the signature sidecar. Desk does not yet rotate that key, check a chain
+entry (row 12, the Jobs record panel) or hand the chain over (row 8b).
 
 **Back up every desk's Jobs store before updating to a Desk that pins Runner
 `v0.6.0`.** Its first start migrates each store to Runner's schema `"2"`, and Runner

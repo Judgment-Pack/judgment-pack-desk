@@ -235,6 +235,10 @@ type JobsPolicy struct {
 	// release whose saved tests were not run. Always present, so `false` is a
 	// statement that the policy is off, not a missing answer.
 	RequireTestedReleases bool `json:"requireTestedReleases"`
+	// RunnerKey is what this desk's Runner signs its runs with, or why it
+	// signs none (runner_key.go), with no path. Absent where this desk has
+	// no Runner.
+	RunnerKey *RunnerKeyStatus `json:"runnerKey,omitempty"`
 }
 
 // ProjectPaths is the project this desk is open on, as the chassis resolved it.
@@ -360,7 +364,7 @@ func (s *Server) handleDeskConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) jobsPolicy() JobsPolicy {
-	return JobsPolicy{RequireTestedReleases: s.cfg.requireTestedReleases()}
+	return JobsPolicy{RequireTestedReleases: s.cfg.requireTestedReleases(), RunnerKey: s.jobs.keyStatus()}
 }
 
 // projectPaths is the resolved root and the project file inside it.

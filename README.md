@@ -5956,6 +5956,59 @@ fails and saves nothing.
 Desk verifies neither file. Runner's `verify-run` reads the export, and with
 `--chain` the chain.
 
+**Runner's signing key** ([ADR-0010](docs/adr/0010-defensible-decision-records.md),
+section 5). Each desk's Runner signs the audit record of each run with a key of
+its own: never a project's key, and never a `JPACK_SIGNING_KEY` set where Desk
+was started.
+
+- Desk keeps it at `secrets/signing/runner/<name>.seed` in its configuration
+  folder, with its list of public keys, `<name>.keys.jsonl`, in the form a
+  desk's list has, under the custody a desk's key has (see "The signing key
+  of a desk Desk makes" under Gates). `<name>` is the desk's id; for the
+  project Desk was started on, it is the name of its Runner's state folder,
+  `jobs/<name>`: the hex SHA-256 of the project's path.
+- Every decision on a Runner key is taken under one exclusive lock for all
+  of Desk's key custody: a `flock` on the signing folder Desk holds, which a
+  start's sweep of the desks' keys takes too. It is held from the first look
+  at the key's files to the last effect of the decision, and released before
+  Runner starts. A start that would remove an unfinished creation does not
+  wait for it; any other start waits up to 10 seconds. Where the lock stays
+  held, Runner starts without a key, nothing is changed, and Gates says the
+  key folder was in use.
+- At a Runner's start, where nothing is kept under its name, the runtime
+  Desk runs makes the key (`jpack audit key generate`), with a creation
+  marker beside it until it is whole, as a desk's key has. Desk names it on
+  Runner's boot line, as `signingKey`, only where no marker is left, the
+  runtime reads it as a key under its own rules (`jpack audit key public`),
+  and the list holds that one key. Runner checks it again at boot and gives
+  it to the runtime of each operational evaluation only. A run so signed is
+  exported at version 5, with `run.auditSignatures`; check it with
+  `jpack-runner verify-run --public-key <key> --require-signed`, giving the
+  public key Help & About → Gates shows.
+- Otherwise Runner starts without a key, and its runs go on, unsigned, and
+  are exported at version 4. Gates says why: custody refuses a folder on the
+  key's path, the runtime did not make the key or refuses it, Runner refused
+  it at boot (Runner is then started again at once without it), the seed is
+  lost, the key folder was in use, or something could not be read just now.
+  Desk never removes, or makes again, a key it could not read, a key that
+  was refused, or one whose seed is lost: all three names are looked at
+  before anything is decided, and any failure but "not there" changes
+  nothing.
+- A creation that did not finish leaves its marker. A creation holds the
+  lock while its marker stands, so a marker found under the lock marks a key
+  that was never named and never signed anything. The next start removes
+  it: the list, the seed and then the marker, each only while it is the file
+  just looked at, so a removal that stops leaves the marker for the start
+  after; then it makes another key.
+- Gates asks Desk again every few seconds while it is open
+  (`GET /api/runner-key`), so it says what Runner signs with now: starting,
+  signed with the key shown, not signed and why, or not running and why. It
+  says signed only once Runner has started and answered with the key.
+- Whom it binds is whom a desk's key binds: nothing against you, who hold
+  it, or against an agent that can read your files.
+- Not yet: rotating Runner's key, and the Jobs record panel that checks the
+  chain of runs with it (ADR-0010's delivery table, PR 3b and row 12).
+
 
 ### Jobs and Runs workspace
 

@@ -144,7 +144,7 @@ jobs:
         run: |
           go -C .ci-runner build -trimpath -o "$RUNNER_TEMP/jpack-runner" ./cmd/jpack-runner
           go -C .ci-runtime build -trimpath -o "$RUNNER_TEMP/jpack" ./cmd/jpack
-      - name: Real Jobs boot, recovery, profiles and planning
+      - name: Real Jobs boot, recovery, profiles, planning and signing
         run: |
           JPACK_RUNNER_TEST_BIN="$RUNNER_TEMP/jpack-runner" JPACK_BIN="$RUNNER_TEMP/jpack" \
             go test -race ./internal/desk -run 'TestJobs|TestRunnerInputProfiles' -count=1
