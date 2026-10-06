@@ -3832,7 +3832,7 @@
   "The key could not be rotated. Check the decision record again.": "鍵をローテーションできませんでした。判断の記録をもう一度確認してください。",
   "The key was rotated: key {{number}} signs the records after record {{at}}, and key {{previous}} signs nothing more. Hand the new public key to each holder.": "鍵をローテーションしました。鍵 {{number}} が記録 {{at}} より後の記録に署名し、鍵 {{previous}} はもう何にも署名しません。新しい公開鍵を各保管者に渡してください。",
   "The old key’s file loses its name, but its bytes may remain on the disk.": "古い鍵のファイルは名前を失いますが、そのバイトはディスク上に残ることがあります。",
-  "The runtime did not write the rotation: Desk removes the next key when it next starts. The current key still signs.": "ランタイムはローテーションを書き込みませんでした。Desk は次回起動時に次の鍵を削除します。現在の鍵は引き続き署名します。",
+  "The runtime did not write the rotation: Desk removes the next key when it next starts, and keeps the current key.": "ランタイムはローテーションを書き込みませんでした。Desk は次回起動時に次の鍵を削除し、現在の鍵は保持します。",
   "The runtime wrote the rotation, and Desk did not finish it: Desk finishes it when it next starts. Until then, records are written unsigned.": "ランタイムはローテーションを書き込みましたが、Desk はそれを完了していません。Desk は次回起動時に完了します。それまで、記録は署名なしで書き込まれます。",
   "This desk's key took over after record {{record}}, and no record has been signed since: a rotation now would take over after the same record. Make a deciding run first.": "このデスクの鍵は記録 {{record}} の後に引き継がれ、それ以降どの記録も署名されていません。今ローテーションすると、同じ記録の後に引き継ぐことになります。先に判断実行を行ってください。",
   "This is the project Desk was started on. Desk keeps no signing key for it in this version, so it has none to rotate.": "これは Desk の起動対象のプロジェクトです。このバージョンでは Desk はこのプロジェクトの署名鍵を保管していないため、ローテーションする鍵がありません。",

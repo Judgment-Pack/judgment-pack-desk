@@ -149,7 +149,7 @@ describe('rotating the signing key', () => {
   })
 
   it('shows a refusal in Desk’s words, and checks the trail again', async () => {
-    const refused = 'The runtime did not rotate the key, and nothing was changed: the current key still signs. It said: The trail has no chained record yet, so there is no trail to rotate the key of; the first record is signed with whichever key the project names.'
+    const refused = 'The runtime did not rotate the key, and nothing was changed: Desk kept the current key. It said: The trail has no chained record yet, so there is no trail to rotate the key of; the first record is signed with whichever key the project names.'
     rotation = () => json(409, { error: refused, code: 'bad-request' })
     show()
     fireEvent.click(await screen.findByRole('button', { name: 'Rotate signing key' }))

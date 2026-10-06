@@ -3832,7 +3832,7 @@
   "The key could not be rotated. Check the decision record again.": "无法轮换密钥。请再次检查决策记录。",
   "The key was rotated: key {{number}} signs the records after record {{at}}, and key {{previous}} signs nothing more. Hand the new public key to each holder.": "密钥已轮换：密钥 {{number}} 为记录 {{at}} 之后的记录签名，密钥 {{previous}} 不再签署任何内容。请把新公钥交给每位保管者。",
   "The old key’s file loses its name, but its bytes may remain on the disk.": "旧密钥的文件失去了名称，但其字节可能仍留在磁盘上。",
-  "The runtime did not write the rotation: Desk removes the next key when it next starts. The current key still signs.": "运行时没有写入轮换：Desk 会在下次启动时移除下一个密钥。当前密钥仍在签名。",
+  "The runtime did not write the rotation: Desk removes the next key when it next starts, and keeps the current key.": "运行时没有写入轮换：Desk 会在下次启动时移除下一个密钥，并保留当前密钥。",
   "The runtime wrote the rotation, and Desk did not finish it: Desk finishes it when it next starts. Until then, records are written unsigned.": "运行时已写入轮换，但 Desk 尚未完成：Desk 会在下次启动时完成。在此之前，记录以无签名方式写入。",
   "This desk's key took over after record {{record}}, and no record has been signed since: a rotation now would take over after the same record. Make a deciding run first.": "此工作台的密钥在记录 {{record}} 之后接管，此后没有任何记录被签名：现在轮换将在同一条记录之后接管。请先进行一次决策运行。",
   "This is the project Desk was started on. Desk keeps no signing key for it in this version, so it has none to rotate.": "这是 Desk 启动时所在的项目。在此版本中，Desk 不为它保管签名密钥，因此没有可轮换的密钥。",

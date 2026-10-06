@@ -3832,7 +3832,7 @@
   "The key could not be rotated. Check the decision record again.": "輪替唔到金鑰。請再檢查一次決定記錄。",
   "The key was rotated: key {{number}} signs the records after record {{at}}, and key {{previous}} signs nothing more. Hand the new public key to each holder.": "金鑰已經輪替：金鑰 {{number}} 簽署記錄 {{at}} 之後嘅記錄，金鑰 {{previous}} 唔再簽署任何嘢。請將新嘅公開金鑰交俾每位保管者。",
   "The old key’s file loses its name, but its bytes may remain on the disk.": "舊金鑰嘅檔案會冇咗名，但佢嘅位元組可能仲留喺磁碟上面。",
-  "The runtime did not write the rotation: Desk removes the next key when it next starts. The current key still signs.": "運行環境冇寫入輪替：Desk 下次啟動嗰陣會移除下一條金鑰。而家嘅金鑰仍然簽署緊。",
+  "The runtime did not write the rotation: Desk removes the next key when it next starts, and keeps the current key.": "運行環境冇寫入輪替：Desk 下次啟動嗰陣會移除下一條金鑰，並保留而家嘅金鑰。",
   "The runtime wrote the rotation, and Desk did not finish it: Desk finishes it when it next starts. Until then, records are written unsigned.": "運行環境已經寫入輪替，但 Desk 未完成：Desk 下次啟動嗰陣會完成。喺嗰之前，記錄會以冇簽署嘅方式寫入。",
   "This desk's key took over after record {{record}}, and no record has been signed since: a rotation now would take over after the same record. Make a deciding run first.": "呢個工作台嘅金鑰喺記錄 {{record}} 之後接手，之後冇任何記錄被簽署：而家輪替會喺同一筆記錄之後接手。請先做一次決策執行。",
   "This is the project Desk was started on. Desk keeps no signing key for it in this version, so it has none to rotate.": "呢個係 Desk 啟動時所用嘅項目。喺呢個版本，Desk 冇為佢保管簽署金鑰，所以冇金鑰可以輪替。",

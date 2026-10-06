@@ -38,6 +38,7 @@ package desk
 //     its sequence: staged, synced and renamed over the old list, after a
 //     check that the old list is still the file and the bytes read;
 //  5. the next seed renamed over the current seed's name, in the same folder,
+//     after a check that the list is still the file and the bytes written,
 //     and the seed's pathname checked to name the file renamed;
 //  6. the marker removed.
 //
@@ -414,56 +415,72 @@ func keysLines(keys []deskPublicKey) []byte {
 // moment leaves the old list or the new one at its name, never a part of one;
 // a stage it leaves is never read as a list. The moment between the check and
 // the rename is in a folder only this user can change, under the desk's key
-// lock.
-func (d *signingDir) replaceKeys(name string, read keysFile, keys []deskPublicKey) error {
+// lock. It answers the list as written: the file renamed into place, and its
+// bytes.
+func (d *signingDir) replaceKeys(name string, read keysFile, keys []deskPublicKey) (keysFile, error) {
 	data := keysLines(keys)
 	if _, err := parseDeskKeys(data); err != nil {
-		return fmt.Errorf("the list with the next key is not one Desk keeps: %w", err)
+		return keysFile{}, fmt.Errorf("the list with the next key is not one Desk keeps: %w", err)
 	}
 	staged, stagedName, err := d.stage()
 	if err != nil {
-		return err
+		return keysFile{}, err
 	}
 	defer d.root.Remove(stagedName)
 	if _, err := staged.Write(data); err != nil {
 		staged.Close()
-		return err
+		return keysFile{}, err
 	}
 	if err := staged.Chmod(custodyFileMode); err != nil {
 		staged.Close()
-		return err
+		return keysFile{}, err
 	}
 	if err := staged.Sync(); err != nil {
 		staged.Close()
-		return err
+		return keysFile{}, err
+	}
+	written, err := staged.Stat()
+	if err != nil {
+		staged.Close()
+		return keysFile{}, err
 	}
 	if err := staged.Close(); err != nil {
-		return err
+		return keysFile{}, err
 	}
 	_, now, found, err := d.readKeysFile(name)
 	if err != nil || !found || !os.SameFile(now.info, read.info) || !bytes.Equal(now.data, read.data) {
-		return errKeysChanged
+		return keysFile{}, errKeysChanged
 	}
 	if err := d.root.Rename(stagedName, name); err != nil {
-		return err
+		return keysFile{}, err
 	}
 	if dir, err := d.root.Open("."); err == nil {
 		_ = dir.Sync()
 		_ = dir.Close()
 	}
-	return nil
+	return keysFile{info: written, data: data}, nil
 }
 
 // promoteNext renames the next seed over the current seed's name, in the
-// folder held, while each name still holds the file found there, and checks
-// that the seed's name, and its pathname, then name the file that was the
-// next seed: the file the desk's configuration now names.
-func (d *signingDir) promoteNext(nextName, seedName string, next, seed os.FileInfo) error {
+// folder held, while each name still holds the file found there and the list
+// of public keys is still list, the file and the bytes the rotation wrote or
+// read; and checks that the seed's name, and its pathname, then name the file
+// that was the next seed: the file the desk's configuration now names.
+//
+// **The list, again, immediately before the rename** (issue #239). A list put
+// back in its place after it was written, or after the start inspected it as
+// written, would otherwise leave the desk naming a key its list does not end
+// in, and no marker to say so: the panel would pass no key, and offer nothing
+// to finish. On any difference the marker stays, for the next start.
+func (d *signingDir) promoteNext(nextName, seedName, keysName string, list keysFile, next, seed os.FileInfo) error {
 	if found, err := d.root.Lstat(nextName); err != nil || !os.SameFile(found, next) {
 		return errors.New("the next key is not the file the rotation made")
 	}
 	if found, err := d.root.Lstat(seedName); err != nil || !os.SameFile(found, seed) {
 		return errors.New("the current key is not the file the rotation read")
+	}
+	if _, now, found, err := d.readKeysFile(keysName); err != nil || !found || !os.SameFile(now.info, list.info) || !bytes.Equal(now.data, list.data) {
+		return errors.New("the list of public keys is not the file, or not the bytes, the rotation wrote or read")
 	}
 	if err := d.root.Rename(nextName, seedName); err != nil {
 		return fmt.Errorf("the next key could not be renamed over the current one: %w", err)
@@ -655,13 +672,18 @@ func (s *Server) inspectRotation(ctx context.Context, project heldDir, dir *sign
 // rotated, or that the next key signs, before it.
 func (s *Server) finishRotation(dir *signingDir, state rotationState) (renamed bool, err error) {
 	markerName, nextName, seedName, keysName := rotationNames(s.cfg.deskID)
+	// The list the next key is renamed against: the one written here, or,
+	// where it was written already, the one inspected.
+	list := state.list
 	if state.finished != nil {
-		if err := dir.replaceKeys(keysName, state.list, state.finished); err != nil {
+		written, err := dir.replaceKeys(keysName, state.list, state.finished)
+		if err != nil {
 			return false, fmt.Errorf("the list of public keys could not be written with the next key: %w", err)
 		}
+		list = written
 	}
 	keyBetween("rotation: list written")
-	if err := dir.promoteNext(nextName, seedName, state.next, state.seed); err != nil {
+	if err := dir.promoteNext(nextName, seedName, keysName, list, state.next, state.seed); err != nil {
 		return false, err
 	}
 	keyBetween("rotation: seed renamed")
@@ -785,7 +807,7 @@ func (s *Server) recoverRotation(dir *signingDir) {
 			s.log.Printf("desk: a rotation of desk %s's key that the runtime did not write could not be undone: %v", s.cfg.deskID, err)
 			return
 		}
-		s.log.Printf("desk: a rotation of desk %s's key that the runtime did not write was undone; key %s still signs", s.cfg.deskID, state.current.KeyID)
+		s.log.Printf("desk: a rotation of desk %s's key that the runtime did not write was undone; Desk kept key %s", s.cfg.deskID, state.current.KeyID)
 	case rotationUnknown:
 		s.log.Printf("desk: an unfinished rotation of desk %s's key was left as it is: %s", s.cfg.deskID, state.why)
 	}
@@ -867,7 +889,7 @@ func (s *Server) unfinishedRotation(ctx context.Context, project heldDir, dir *s
 		rotationNone:      "Its marker was removed while Desk looked.",
 		rotationSettled:   "Nothing of it is left to do but remove its marker, which Desk does when it next starts.",
 		rotationWritten:   "The runtime wrote the rotation, and Desk did not finish it: Desk finishes it when it next starts. Until then, records are written unsigned.",
-		rotationUnwritten: "The runtime did not write the rotation: Desk removes the next key when it next starts. The current key still signs.",
+		rotationUnwritten: "The runtime did not write the rotation: Desk removes the next key when it next starts, and keeps the current key.",
 	}[state.outcome]
 	if state.outcome == rotationUnknown {
 		reason = "Desk cannot tell whether the runtime wrote the rotation, so it changes nothing: " + strings.TrimRight(state.why, ".") + "."
@@ -943,9 +965,16 @@ func (s *Server) handleRotateKey(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, refusal)
 		return
 	}
-	s.keyMu.Lock()
-	answer, failure := s.rotateKey(r.Context(), project, request.Token)
-	s.keyMu.Unlock()
+	// **The desk's key lock around the rotation alone, released by a defer**
+	// (issue #239, review round 1). A panic in a rotation, which net/http
+	// recovers, would otherwise leave the lock held, and a client that stops
+	// reading the answer would hold it while the answer is written: either
+	// way every later reading of this desk's keys, and every rotation, waits.
+	answer, failure := func() (*rotationAnswer, *lockFailure) {
+		s.keyMu.Lock()
+		defer s.keyMu.Unlock()
+		return s.rotateKey(r.Context(), project, request.Token)
+	}()
 	if failure != nil {
 		message := s.withoutPaths(failure.message)
 		if message != failure.message {
@@ -1119,7 +1148,10 @@ func (s *Server) makeRotation(ctx context.Context, project heldDir, reading *key
 	}
 	switch state.outcome {
 	case rotationUnwritten:
-		return undo(state.next, &lockFailure{http.StatusConflict, CodeBadRequest, "The runtime did not rotate the key, and nothing was changed: the current key still signs. It said: " + strings.TrimRight(said, ".") + "."})
+		// **Desk kept its key; whether that key signs, it did not check**
+		// (issue #239). A refusal can be the runtime's word that another key
+		// is in force: another runtime rotated the trail after Desk read it.
+		return undo(state.next, &lockFailure{http.StatusConflict, CodeBadRequest, "The runtime did not rotate the key, and nothing was changed: Desk kept the current key. It said: " + strings.TrimRight(said, ".") + "."})
 	case rotationWritten:
 		// 4 to 6.
 		if renamed, err := s.finishRotation(dir, state); err != nil {

@@ -110,7 +110,7 @@ export const ROTATION_REASONS = [
   sourceMessage('Desk reads the trail\'s signature sidecar to tell whether a rotation was written, and it could not be read: {{reason}}. So Desk does not rotate the key now.'),
   sourceMessage('Nothing of it is left to do but remove its marker, which Desk does when it next starts.'),
   sourceMessage('The runtime wrote the rotation, and Desk did not finish it: Desk finishes it when it next starts. Until then, records are written unsigned.'),
-  sourceMessage('The runtime did not write the rotation: Desk removes the next key when it next starts. The current key still signs.'),
+  sourceMessage('The runtime did not write the rotation: Desk removes the next key when it next starts, and keeps the current key.'),
   sourceMessage('Its marker was removed while Desk looked.'),
   sourceMessage('Desk cannot tell whether the runtime wrote the rotation, so it changes nothing: {{reason}}.')
 ]
