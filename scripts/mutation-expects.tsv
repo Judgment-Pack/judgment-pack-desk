@@ -1,0 +1,39 @@
+go	audit: a path not configured is passed on	TestARefusalTheRuntimeExplainsIsShownInItsWords,TestThePanelQuotesNoPath,TestTheRuntimesOwnWordsStayInDesksLog
+go	component versions: digest-approved Gateway reported as checked	TestDigestApprovedGatewayRevisionIsNotReportedAsChecked
+go	component versions: source worker borrows Runner's identity	TestSourceWorkerIdentityIsReadBesideRunnerAndNeverBorrowed
+go	createParents resolves a pathname instead of the pinned root	TestRetargetedProjectRootIsNotAdopted
+go	key list: a list past the bound is read	TestAListOfKeysDeskCannotReadPassesNoKey
+go	new desk: the fallback keeps requireComparableFacts	TestANewDeskFallsBackToVersion4WhenTheRuntimeCannotRead5
+go	publication: a read that failed counts as too large	TestAManifestNotReadNowKeepsItsKey
+go	review: a review read follows a link	TestTheReviewReadsByTheFileAPIsRules,TestTheUpgradeGoesThroughNoLink
+go	rotation: an answer to another keyId is taken	TestAnAnswerThatIsNotTheRotationAskedForIsNotTakenForOne
+go	runner key: a creation proceeds after its bounded wait	TestACreationWaitsForTheLockAndThenRefuses,TestAKeyCustodyLockHeldByAnotherProcess,TestARotationWaitsForTheLockAndThenRefuses
+go	runner key: reported unsigned before any start	TestWhatRunnerSignsIsReportedOnlyOnceRunnerAnswers
+go	signing key: the inherited key is not said	TestAnInheritedSigningKeyStaysWithTheStartupDesk
+go	signing key: the startup desk's commands drop it	TestAReviewOfAnUnreadableProjectKeepsTheSigningKeyOnlyOnTheStartupDesk,TestAnUpgradeConfirmationKeepsTheSigningKeyOnlyOnTheStartupDesk,TestThePanelsCommandsKeepTheSigningKeyOnlyOnTheStartupDesk,TestTheReviewCommandsKeepTheSigningKeyOnlyOnTheStartupDesk
+go	the child is started from the pathname again	TestAChildActuallyLandsInThePinnedDirectory,TestAMissingShellIsRefusedByNameAtTheSpawn,TestTheRuntimeStartsInTheDirectoryThatWasPinned
+go	the page may nominate a project it is not running in	TestAPageMayNominateOnlyTheProjectThisDeskIsRunningIn,TestOnlyTheExactSpellingThisDeskReportedIsAccepted,TestTheReviewsRootNominationDoesNotSurviveIntoTheNextLaunch
+go	the pre-spawn identity check is removed on the pathname path	TestThePathnameFallbackRefusesAMovedProject
+go	trail: a query that does not parse is taken	TestABadTrailRequestIsRefused
+go	upgrade: a token does not cover the configuration written	TestAStaleUpgradeConfirmationWritesNothing
+go	verification export: limit past Runner's MaxExportSize	TestJobsReadsAnExportUpToRunnersLimit
+web	component versions: unconfigured Runner shown as Unknown	src/updates/Updates.test.tsx
+web	downloads: offered with no files	src/audit/trailDownloads.test.tsx
+web	help: the tested-releases setting is not read	src/routes/HelpAbout.test.tsx
+web	jobs standing: Runner's reviewed field is not explained	src/jobs/ReleaseStanding.test.tsx
+web	jobs standing: the comparison is inverted	src/jobs/JobsView.test.tsx,src/jobs/ReleaseStanding.test.tsx,src/jobs/reviewedSet.desks.test.ts
+web	new desk notice: a notice that is not words is accepted	src/desks/DeskSwitcher.test.tsx
+web	record: every query follows the project	src/audit/decisionRecord.test.tsx,src/audit/decisionRecordLifecycle.test.tsx
+web	record: not in Admin → Project	src/routes/AdminView.test.tsx
+web	review: a first lock's files are shown closed	src/packs/review/review.test.tsx
+web	review: a stale confirmation reads as any failure	src/packs/review/review.test.tsx
+web	rotation client: a rotation to another sequence is taken	src/audit/rotateSigningKey.test.tsx
+web	rotation page: offered where the chassis offers none	src/audit/rotateSigningKey.test.tsx
+web	run chain: not offered on the Jobs page	src/jobs/JobsIndex.test.tsx
+web	runner key: a malformed public key read	src/jobs/runnerKey.test.tsx
+web	signing key: config read drops the member	src/config/queries.test.tsx,src/routes/HelpAbout.test.tsx
+web	tested releases: page never reads the policy	src/jobs/JobsView.test.tsx,src/jobs/ReleaseReadiness.test.tsx
+web	the lock line states a verdict about the reviewed set	src/packs/edit/lockLine.test.tsx
+web	upgrade: Admin → Project does not offer it	src/packs/upgrade/upgrade.test.tsx
+web	upgrade: the confirmation does not carry the token	src/packs/upgrade/upgrade.test.tsx
+web	upgrade: the note is not on Packs	src/packs/upgrade/upgrade.test.tsx
