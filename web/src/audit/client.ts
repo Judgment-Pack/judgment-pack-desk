@@ -130,10 +130,12 @@ export const TRAIL_FILES = { evaluations: 'evaluations.jsonl', signatures: 'sign
 export type TrailFile = keyof typeof TRAIL_FILES
 /**
  * Beside a report or a refusal: how many holders' files of checkpoints Desk
- * passed to the check as `--expect`, and the labels of the holders whose file
- * it could not read now, and passed over.
+ * passed to the check as `--expect`; the labels of the holders whose file it
+ * passed over, because it could not be read now or is not what Desk recorded
+ * as handed over; and, where Desk could not read its record of hand-overs at
+ * all, or tell which trail is current, why it passed none.
  */
-type HeldInputs = { expected?: number; expectUnread?: string[] }
+type HeldInputs = { expected?: number; expectUnread?: string[]; handoverProblem?: string }
 export type AuditRecord =
   | ({ state: 'report'; runtime?: string; report: AuditReport; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation } & HeldInputs)
   | ({ state: 'unverified'; runtime?: string; diagnostics: AuditDiagnostic[]; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation } & HeldInputs)
@@ -218,7 +220,7 @@ export function isAuditReport(value: unknown): value is AuditReport {
 export function isAuditRecord(value: unknown): value is AuditRecord {
   if (!object(value) || !optional(value.runtime, text) || !optional(value.files, item => list(item, isTrailFile))
     || !optional(value.keys, isAuditKeys) || !optional(value.signing, isAuditSigning) || !optional(value.rotation, isAuditRotation)
-    || !optional(value.expected, count) || !optional(value.expectUnread, item => list(item, named))) return false
+    || !optional(value.expected, count) || !optional(value.expectUnread, item => list(item, named)) || !optional(value.handoverProblem, named)) return false
   switch (value.state) {
     case 'report': return isAuditReport(value.report)
     case 'unverified': return list(value.diagnostics, isDiagnostic) && value.diagnostics.length > 0
@@ -312,7 +314,10 @@ export const HANDOVER_REASONS = [
   sourceMessage('The trail has no chained record yet, so there is nothing to hand over.'),
   sourceMessage('Desk keeps at most {{count}} holders for one desk, so it adds no more.'),
   sourceMessage('The runtime gives no checkpoint of this trail now: {{reason}}'),
-  sourceMessage('Desk recorded checkpoints through record {{cursor}} as handed over to this holder, and the trail\'s last chained record is now record {{sequence}}: the trail is shorter than what was handed over, so Desk hands nothing over.')
+  sourceMessage('Desk recorded checkpoints through record {{cursor}} as handed over to this holder, and the trail\'s last chained record is now record {{sequence}}: the trail is shorter than what was handed over, so Desk hands nothing over.'),
+  sourceMessage("With this holder, Desk's list of holders would be larger than the {{limit}} bytes Desk reads of it, so it adds no more. Shorter labels and channels take less room."),
+  sourceMessage('Desk could not read its record of hand-overs, so it passed none of the checkpoints it handed over to the check: {{reason}}.'),
+  sourceMessage('Desk could not tell which trail the checkpoints it handed over belong to, so it passed none of them to the check: {{reason}}')
 ]
 
 const trailIdentity = hex(32)

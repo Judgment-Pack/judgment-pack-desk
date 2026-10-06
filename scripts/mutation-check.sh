@@ -4105,8 +4105,8 @@ func (b *cappedBuffer) exceeded() bool {'
     'ConfirmedAt: handoverClock().Unix(), Digest: sha256Digest(data)}' \
     'ConfirmedAt: 0, Digest: sha256Digest(data)}'
   mutate go "hand-over: the record moves to another record" "$HO" \
-    '	trails[trail] = handedOver{Through: through,' \
-    '	trails[trail] = handedOver{Through: through - 1,'
+    '	trails[trail] = handedOver{From: from, Through: through,' \
+    '	trails[trail] = handedOver{From: from, Through: through - 1,'
   mutate go "hand-over: records since are not counted from the record" "$HO" \
     '			since := max(head.Sequence-handed.Through, 0)' \
     '			since := max(head.Sequence, 0)'
@@ -4174,26 +4174,100 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if !declared && false {
 		return heldDir{}, &lockFailure{http.StatusConflict, CodeBadRequest, noTrailWords}'
   mutate go "hand-over: the decision record is given no held checkpoint" "$HO" \
-    '			held.args = append(held.args, "--expect", path.Join(handoverDir, holder.ID, name))' \
-    '			_ = path.Join(handoverDir, holder.ID, name)'
+    '			held.args = append(held.args, "--expect", path.Join(handoverDir, holder.ID, head.Identity+".jsonl"))' \
+    '			_ = path.Join(handoverDir, holder.ID, head.Identity+".jsonl")'
   mutate go "hand-over: every file a holder keeps is passed" "$HO" \
-    '			err = checkHeldFile(folder, name)
-			folder.Close()' \
-    '			if entries, _ := fs.ReadDir(folder.FS(), "."); len(entries) > 0 {
-				for _, entry := range entries {
-					if strings.HasSuffix(entry.Name(), ".jsonl") {
-						name = entry.Name()
-					}
+    '		err := checkHeldFile(handover, holder.ID, head.Identity)' \
+    '		trail := head.Identity
+		if folder, err := openHolderFolder(handover, holder.ID, false); err == nil {
+			if record, err := readHandoverRecord(folder); err == nil {
+				for other := range record.Trails {
+					trail = other
 				}
 			}
-			err = checkHeldFile(folder, name)
-			folder.Close()'
+			folder.Close()
+		}
+		err := checkHeldFile(handover, holder.ID, trail)
+		head := &checkpointHead{Identity: trail}'
   mutate go "hand-over: a held file that cannot be read is passed" "$HO" \
-    '			err = checkHeldFile(folder, name)' \
-    '			err = nil'
+    '		err := checkHeldFile(handover, holder.ID, head.Identity)' \
+    '		err := error(nil)'
   mutate go "hand-over: a held file passed over is not named" "$HO" \
     '			held.unread = append(held.unread, holder.Label)' \
     '			_ = holder.Label'
+  # **Review round 1 (finding 1): a held file is passed only where it is what
+  # Desk recorded as handed over**, read whole, never on its metadata alone.
+  mutate go "hand-over: a held file is passed on its metadata alone" "$HO" \
+    '	return heldAgrees(data, entry, trail)
+}' \
+    '	if len(data) < 0 {
+		return heldAgrees(data, entry, trail)
+	}
+	return nil
+}'
+  mutate go "hand-over: a held file with no last newline is passed" "$HO" \
+    "	if len(data) == 0 || data[len(data)-1] != '\\n' {" \
+    "	if len(data) == 0 {"
+  mutate go "hand-over: a held file of another trail is passed" "$HO" \
+    '		case checkpoint.trail != trail:' \
+    '		case false:'
+  mutate go "hand-over: a held file out of order is passed" "$HO" \
+    '		case checkpoint.sequence <= last:
+			return errors.New("the file of checkpoints holds its checkpoints out of order")' \
+    '		case false:
+			return errors.New("the file of checkpoints holds its checkpoints out of order")'
+  mutate go "hand-over: a held file that ends elsewhere than its record is passed" "$HO" \
+    '	if last != entry.Through {' \
+    '	if false {'
+  mutate go "hand-over: a held file's last batch is not checked" "$HO" \
+    '	if batch < 0 || sha256Digest(data[batch:]) != entry.Digest {' \
+    '	if batch < 0 {'
+  mutate go "hand-over: a held file's last batch is read from its start" "$HO" \
+    '		if batch < 0 && checkpoint.sequence > entry.From {' \
+    '		if batch < 0 && checkpoint.sequence > 0 {'
+  mutate go "hand-over: a record with no file is not named" "$HO" \
+    '	case errors.Is(err, fs.ErrNotExist):
+		return errors.New("Desk'"'"'s record names checkpoints of this trail handed over, and the file of them is not there")' \
+    '	case errors.Is(err, fs.ErrNotExist):
+		return errNothingHeld'
+  mutate go "hand-over: the record does not keep where the last batch starts" "$HO" \
+    '	trails[trail] = handedOver{From: from,' \
+    '	trails[trail] = handedOver{From: 0,'
+
+  # **Review round 1 (finding 2): each list is written only within the bound
+  # it is read with**, newline and all.
+  mutate go "hand-over: a list of holders one byte past its bound is written" "$HO" \
+    '	if err == nil && len(data)+1 > handoverListLimit {' \
+    '	if err == nil && len(data) > handoverListLimit {'
+  mutate go "hand-over: a list of holders past its bound is written" "$HO" \
+    '	if err == nil && len(data)+1 > handoverListLimit {' \
+    '	if false && err == nil && len(data)+1 > handoverListLimit {'
+  mutate go "hand-over: a holder's record past its bound is written" "$HO" \
+    '	if len(written)+1 > handoverListLimit {' \
+    '	if len(written) > 2*handoverListLimit {'
+
+  # **Review round 1 (finding 3): a record of hand-overs Desk cannot read is
+  # said, never taken for none.**
+  mutate go "hand-over: a hand-over folder Desk cannot open is said as none" "$HO" \
+    '		s.log.Printf("desk: the record of hand-overs could not be opened for the decision record: %v", err)
+		held.problem = handoverWords(recordUnreadWords, err)' \
+    '		s.log.Printf("desk: the record of hand-overs could not be opened for the decision record: %v", err)'
+  mutate go "hand-over: a list of holders Desk cannot read is said as none" "$HO" \
+    '		s.log.Printf("desk: the list of holders could not be read for the decision record: %v", err)
+		held.problem = handoverWords(recordUnreadWords, err)' \
+    '		s.log.Printf("desk: the list of holders could not be read for the decision record: %v", err)'
+  mutate go "hand-over: a trail the runtime does not name is said as none" "$HO" \
+    '		held.problem = handoverWords(trailUnknownWords, err)' \
+    '		_ = err'
+  mutate go "hand-over: a trail the runtime refuses is said as none" "$HO" \
+    '		held.problem = trailUnknownWords + runtimeRefusalWords(refusal)' \
+    '		_ = refusal'
+  mutate go "hand-over: the panel is not told why nothing was passed" internal/desk/audit_record.go \
+    '	answer.HandoverProblem = expect.problem' \
+    '	answer.HandoverProblem = ""'
+  mutate go "hand-over: the panel's word on the record names a path" internal/desk/audit_record.go \
+    '	answer.HandoverProblem = clean(answer.HandoverProblem)' \
+    '	answer.HandoverProblem = answer.HandoverProblem + ""'
   mutate go "hand-over: the panel passes no held checkpoint" internal/desk/audit_record.go \
     '	args = append(args, expect.args...)' \
     '	_ = expect.args'
@@ -11320,6 +11394,20 @@ export function assistantTransport(id: string): Transport {
   mutate web "hand-over page: the holders are not read again with the decision record" "$HP" \
     "  useEffect(() => { void refetch.current({ cancelRefetch: false }) }, [checkedAt])" \
     "  useEffect(() => { void refetch.current({ cancelRefetch: false }) }, [checkedAt > 0])"
+  # Review round 1 (finding 3): a record Desk could not read is said.
+  mutate web "hand-over page: a record Desk could not read is not said beside the report" "$DR" \
+    "{record.handoverProblem && <p role=\"alert\">{systemMessage(record.handoverProblem)}</p>}
+                    {record.expectUnread" \
+    "{record.handoverProblem && record.handoverProblem.length < 0 && <p role=\"alert\">{systemMessage(record.handoverProblem)}</p>}
+                    {record.expectUnread"
+  mutate web "hand-over page: a record Desk could not read is not said beside the runtime's refusal" "$DR" \
+    "</ul>
+                  {record.handoverProblem && <p role=\"alert\">" \
+    "</ul>
+                  {record.handoverProblem && record.handoverProblem.length < 0 && <p role=\"alert\">"
+  mutate web "hand-over client: an empty word on the record is read" "$AC" \
+    " || !optional(value.handoverProblem, named)) return false" \
+    " || !optional(value.handoverProblem, text)) return false"
   mutate web "hand-over page: a waiting download outlives opening the panel again" "$DR" \
     "  useEffect(() => { if (visible) setHandover(NO_HANDOVER) }, [visible])" \
     "  useEffect(() => { if (visible) void 0 }, [visible])"

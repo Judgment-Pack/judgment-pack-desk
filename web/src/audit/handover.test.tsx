@@ -293,6 +293,18 @@ describe('the decision record with what was handed over', () => {
     expect(await screen.findByText(HELD_STATEMENT)).toBeTruthy()
   })
 
+  it('says why it passed none of the checkpoints it handed over, where it could not read its record of them', async () => {
+    const problem = 'Desk could not read its record of hand-overs, so it passed none of the checkpoints it handed over to the check: handover is open to other users (-rwxr-x---), so Desk does not keep its record of hand-overs in it.'
+    record = { state: 'report', runtime: '0.27.1', report, handoverProblem: problem }
+    show()
+    expect((await screen.findByText(problem)).getAttribute('role')).toBe('alert')
+    cleanup()
+    record = { state: 'unverified', runtime: '0.27.1', diagnostics: [{ code: 'JPS-AUDIT-TRAIL-READ', message: 'None yet.' }], handoverProblem: problem }
+    show()
+    expect((await screen.findByText(problem)).getAttribute('role')).toBe('alert')
+    expect(isAuditRecord({ state: 'report', report, handoverProblem: '' })).toBe(false)
+  })
+
   it('names the holders whose checkpoints it could not read', async () => {
     record = { state: 'report', runtime: '0.27.1', report, expected: 1, expectUnread: ['Auditor', 'Regulator'] }
     show()
@@ -328,7 +340,7 @@ describe('the hand-over client', () => {
 
   it('names, as Desk’s own sentences, only sentences the chassis says', () => {
     const source = readFileSync(join(import.meta.dirname, '../../../internal/desk/handover.go'), 'utf8')
-    expect(HANDOVER_REASONS).toHaveLength(6)
+    expect(HANDOVER_REASONS).toHaveLength(9)
     for (const reason of HANDOVER_REASONS) {
       for (const part of reason.split(/\{\{\w+\}\}/)) {
         expect(source.includes(part) ? part : `missing: ${part}`, reason).toBe(part)

@@ -3890,5 +3890,8 @@
   "This is Desk's own record. You keep it, and you can change it, so it proves nothing to a holder or to anyone else. Only the holder's own copy counts.": "這是 Desk 自己的記錄。它由你保管，你也可以更改它，因此它對保管者或其他任何人都證明不了任何事。只有保管者自己的副本才算數。",
   "What you downloaded is not what the trail gives now. Download it again and hand over that file.": "你下載的內容與軌跡現在提供的不一致。請重新下載並移交那個檔案。",
   "Who holds the checkpoints, in your words.": "用你自己的話寫下誰保管檢查點。",
-  "e-mail to records@…": "寄電子郵件到 records@…"
+  "e-mail to records@…": "寄電子郵件到 records@…",
+  "With this holder, Desk's list of holders would be larger than the {{limit}} bytes Desk reads of it, so it adds no more. Shorter labels and channels take less room.": "加入此保管者後，Desk 的保管者清單會超過 Desk 讀取的 {{limit}} 位元組，因此不再新增。更短的標籤和管道佔用更少空間。",
+  "Desk could not read its record of hand-overs, so it passed none of the checkpoints it handed over to the check: {{reason}}.": "Desk 無法讀取它的移交記錄，因此沒有把任何已移交的檢查點交給檢查：{{reason}}。",
+  "Desk could not tell which trail the checkpoints it handed over belong to, so it passed none of them to the check: {{reason}}": "Desk 無法判斷已移交的檢查點屬於哪條軌跡，因此沒有把任何一個交給檢查：{{reason}}"
 }

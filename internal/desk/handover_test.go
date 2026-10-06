@@ -695,6 +695,14 @@ func TestAConfirmationRecordsExactlyWhatWasDownloaded(t *testing.T) {
 	if got := readFile(t, held); got != first+second {
 		t.Errorf("the holder's file holds %q, want both hand-overs, in order", got)
 	}
+	// The record keeps where the last confirmed checkpoints start, so that
+	// the check can hold the file to them; and the file is passed.
+	if got := readFile(t, rig.handoverPath(holderA, handoverRecordName)); !strings.Contains(got, `"from":3,"through":5,`) {
+		t.Errorf("record.json holds %s, want the second hand-over from record 3 through record 5", got)
+	}
+	if _, answer, _ := readAudit(t, rig.ts, ""); answer.Expected != 1 || answer.ExpectUnread != nil {
+		t.Errorf("after two hand-overs the panel answered %+v", answer)
+	}
 }
 
 // **Each holder has a cursor of its own.** One holder handed records 1 to 3
@@ -1308,6 +1316,23 @@ func TestHandOverWithTheRuntime(t *testing.T) {
 		answer.Report.Coverage.Checkpointed != (auditCoverageState{Status: "through", Through: 3}) {
 		t.Fatalf("after the hand-over the panel answered %+v %q", answer, refusal)
 	}
+	// Desk's file cut short to its first checkpoint, or with its last newline
+	// gone, is passed over and named, never passed as confirmed (review round
+	// 1, finding 1).
+	heldPath := filepath.Join(row.Folder, ".desk-private", "handover", holderA, firstConfirmation["trail"].(string)+".jsonl")
+	whole := readFile(t, heldPath)
+	for _, broken := range []string{whole[:strings.Index(whole, "\n")+1], strings.TrimSuffix(whole, "\n")} {
+		if err := os.WriteFile(heldPath, []byte(broken), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, answer, _ := readAudit(t, ts, row.ID); answer.Report == nil || answer.Expected != 0 || !slices.Equal(answer.ExpectUnread, []string{"Auditor"}) ||
+			answer.Report.Coverage.Witnessed != 0 || answer.Report.Coverage.Checkpointed.Status != "not-supplied" {
+			t.Errorf("with the held file %q the panel answered %+v", broken, answer)
+		}
+	}
+	if err := os.WriteFile(heldPath, []byte(whole), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	evaluateIn(t, bin, row.Folder)
 	if _, answer, _ := readAudit(t, ts, row.ID); answer.Report == nil || answer.Report.Coverage.Witnessed != 3 || answer.Report.Coverage.Unwitnessed != 1 {
 		t.Errorf("after one more record the panel answered %+v", answer)
@@ -1392,5 +1417,285 @@ func TestTheHandOverQuotesNoPathWithTheRuntime(t *testing.T) {
 		if !bytes.Contains(said, []byte("evaluations.jsonl")) {
 			t.Errorf("the answer does not say which file: %s", said)
 		}
+	}
+}
+
+/* Review round 1 ---------------------------------------------------------- */
+
+// recordOf is a holder's record.json naming one trail, as Desk writes it.
+func recordOf(trail string, from, through int64, digest string) string {
+	return fmt.Sprintf(`{"version":"1","trails":{%q:{"from":%d,"through":%d,"confirmedAt":1,"digest":%q}}}`, trail, from, through, digest) + "\n"
+}
+
+// **A held file is passed only where it is what Desk recorded as handed
+// over** (review round 1, finding 1). Read whole, every line a complete
+// checkpoint of the record's trail, in strictly increasing order, ending at
+// the record's last sequence, and ending in the very bytes last confirmed. A
+// file cut short to its first checkpoint, one whose last newline is gone, one
+// ending before its record (with a digest made to match), one of another
+// trail, one out of order, one whose last batch is not the one confirmed, or
+// was confirmed from another cursor, one ahead of its record, a record with
+// no file, and a file with no record are each passed over and named, and the
+// check runs without them.
+func TestAHeldFileThatIsNotWhatWasHandedOverIsPassedOverAndNamed(t *testing.T) {
+	rig := newHandoverRig(t, holderA)
+	lines := chainOf(handoverTrail, 1, 2, 3)
+	rig.chain(t, lines)
+	rig.addHolder(t, "Auditor", "e-mail")
+	header, _ := rig.downloaded(t, holderA)
+	rig.confirmed(t, holderA, header)
+	held := rig.handoverPath(holderA, handoverTrail+".jsonl")
+	recordPath := rig.handoverPath(holderA, handoverRecordName)
+	record := readFile(t, recordPath)
+	if !strings.Contains(record, `"from":0,"through":3`) {
+		t.Fatalf("record.json holds %s", record)
+	}
+	passedAlone := verifyCall[:len(verifyCall)-len(" [JPACK_CONFIG=unset]")] + " --expect .desk-private/handover/" + holderA + "/" + handoverTrail + ".jsonl [JPACK_CONFIG=unset]"
+	rig.ran(t)
+	if _, answer, _ := readAudit(t, rig.ts, ""); answer.Expected != 1 || answer.ExpectUnread != nil || answer.HandoverProblem != "" {
+		t.Fatalf("with the file as handed over the panel answered %+v", answer)
+	}
+	if calls := rig.ran(t); lastOf(calls) != passedAlone {
+		t.Fatalf("with the file as handed over the panel ran %q", lastOf(calls))
+	}
+	altered := strings.Replace(checkpointOf(handoverTrail, 3), "sha256:0", "sha256:d", 1)
+	reordered := chainOf(handoverTrail, 1, 3, 2)
+	elsewhere := chainOf(movedTrail, 1, 2, 3)
+	for _, tc := range []struct {
+		name, file, record string
+	}{
+		{"cut short to its first checkpoint", checkpointOf(handoverTrail, 1), ""},
+		{"its last newline removed", strings.TrimSuffix(lines, "\n"), ""},
+		{"its last newline removed, with a digest made to match", strings.TrimSuffix(lines, "\n"), recordOf(handoverTrail, 0, 3, digestOfString(strings.TrimSuffix(lines, "\n")))},
+		{"ending before its record, with a digest made to match", chainOf(handoverTrail, 1, 2), recordOf(handoverTrail, 0, 3, digestOfString(chainOf(handoverTrail, 1, 2)))},
+		{"of another trail, with a digest made to match", elsewhere, recordOf(handoverTrail, 0, 3, digestOfString(elsewhere))},
+		{"out of order, with a digest made to match", reordered, recordOf(handoverTrail, 0, 2, digestOfString(reordered))},
+		{"a last batch that is not the one confirmed", chainOf(handoverTrail, 1, 2) + altered, ""},
+		{"a last batch confirmed from another cursor", lines, recordOf(handoverTrail, 1, 3, digestOfString(lines))},
+		{"ahead of its record", lines, recordOf(handoverTrail, 0, 2, digestOfString(chainOf(handoverTrail, 1, 2)))},
+		{"a line that is not a checkpoint", checkpointOf(handoverTrail, 1) + "not a checkpoint\n" + checkpointOf(handoverTrail, 3), ""},
+		{"a record with no file", "", ""},
+		{"a file with no record", lines, `{"version":"1","trails":{}}` + "\n"},
+	} {
+		os.Remove(held)
+		if tc.file != "" {
+			if err := os.WriteFile(held, []byte(tc.file), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if tc.record != "" {
+			if err := os.WriteFile(recordPath, []byte(tc.record), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		rig.ran(t)
+		status, answer, refusal := readAudit(t, rig.ts, "")
+		if status != http.StatusOK || answer.State != auditStateReport || answer.Expected != 0 || !slices.Equal(answer.ExpectUnread, []string{"Auditor"}) || answer.HandoverProblem != "" {
+			t.Errorf("%s: the panel answered %d %+v %q", tc.name, status, answer, refusal)
+		}
+		if calls := rig.ran(t); lastOf(calls) != verifyCall {
+			t.Errorf("%s: the panel ran %q, want audit verify with no held checkpoint", tc.name, lastOf(calls))
+		}
+		if err := os.WriteFile(held, []byte(lines), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(recordPath, []byte(record), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// **A record of hand-overs Desk cannot read is said, never taken for none**
+// (review round 1, finding 3). A hand-over folder others can read, a list of
+// holders others can read or that is not one Desk writes, and a runtime that
+// does not say which trail is current each leave the check with no held
+// checkpoint, and the answer says why; a folder with no holder says nothing.
+func TestARecordOfHandOversDeskCannotReadIsSaid(t *testing.T) {
+	rig := newHandoverRig(t, holderA)
+	rig.chain(t, chainOf(handoverTrail, 1, 2, 3))
+	rig.addHolder(t, "Auditor", "e-mail")
+	header, _ := rig.downloaded(t, holderA)
+	rig.confirmed(t, holderA, header)
+	holders := rig.handoverPath(handoverHoldersName)
+	list := readFile(t, holders)
+	for _, tc := range []struct {
+		name, says   string
+		break_, mend func()
+	}{
+		{"a hand-over folder others can read", "open to other users",
+			func() { os.Chmod(rig.handoverPath(), 0o750) }, func() { os.Chmod(rig.handoverPath(), 0o700) }},
+		{"a list of holders others can read", "readable or writable by someone other than its owner",
+			func() { os.Chmod(holders, 0o644) }, func() { os.Chmod(holders, 0o600) }},
+		{"a list of holders Desk did not write", "is not a list of holders Desk wrote",
+			func() { os.WriteFile(holders, []byte(`{"version":"1","holders":[{"id":"x"}]}`), 0o600) }, func() { os.WriteFile(holders, []byte(list), 0o600) }},
+		{"a runtime that does not say which trail is current", "Desk could not tell which trail the checkpoints it handed over belong to, so it passed none of them to the check: its audit checkpoint did not answer as documented",
+			func() { rig.heads(t, 0, "not JSON") }, func() { os.Remove(rig.calls + ".head") }},
+		{"a trail the runtime gives no checkpoint of", "Desk could not tell which trail the checkpoints it handed over belong to, so it passed none of them to the check: The runtime gives no checkpoint of this trail now: The trail fails 1 check(s)",
+			func() { rig.heads(t, 1, checkpointRefused) }, func() { os.Remove(rig.calls + ".head") }},
+		{"a trail the runtime cannot open, named by its path", "Desk could not tell which trail the checkpoints it handed over belong to, so it passed none of them to the check: The runtime gives no checkpoint of this trail now: The project's trail …/evaluations.jsonl could not be opened as one regular file inside the project.",
+			func() {
+				writeProject(t, rig.project, map[string]string{".desk-private/audit/evaluations.jsonl": ""})
+				rig.heads(t, 4, `{"outputVersion":"2","command":"audit checkpoint","status":"error","diagnostics":[{"code":"JPS-AUDIT-TRAIL-READ","message":"The project's trail `+filepath.Join(rig.project, ".desk-private", "audit", "evaluations.jsonl")+` could not be opened as one regular file inside the project."}]}`)
+			}, func() {
+				os.Remove(rig.calls + ".head")
+				os.Remove(filepath.Join(rig.project, ".desk-private", "audit", "evaluations.jsonl"))
+			}},
+	} {
+		tc.break_()
+		rig.ran(t)
+		status, answer, refusal := readAudit(t, rig.ts, "")
+		if status != http.StatusOK || answer.Expected != 0 || answer.ExpectUnread != nil || !strings.Contains(answer.HandoverProblem, tc.says) {
+			t.Errorf("%s: the panel answered %d %+v %q", tc.name, status, answer, refusal)
+		}
+		if !strings.HasPrefix(tc.says, "Desk could not tell") && !strings.HasPrefix(answer.HandoverProblem, "Desk could not read its record of hand-overs, so it passed none of the checkpoints it handed over to the check: ") {
+			t.Errorf("%s: the panel says %q", tc.name, answer.HandoverProblem)
+		}
+		if strings.Contains(answer.HandoverProblem, rig.project) {
+			t.Errorf("%s: the panel names the project's folder: %q", tc.name, answer.HandoverProblem)
+		}
+		if calls := rig.ran(t); lastOf(calls) != verifyCall {
+			t.Errorf("%s: the panel ran %q, want audit verify with no held checkpoint", tc.name, lastOf(calls))
+		}
+		tc.mend()
+	}
+	if _, answer, _ := readAudit(t, rig.ts, ""); answer.Expected != 1 || answer.HandoverProblem != "" {
+		t.Errorf("mended, the panel answered %+v", answer)
+	}
+	// A folder that keeps no holder says nothing.
+	if err := os.WriteFile(holders, []byte(`{"version":"1","holders":[]}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, answer, _ := readAudit(t, rig.ts, ""); answer.Expected != 0 || answer.HandoverProblem != "" || answer.ExpectUnread != nil {
+		t.Errorf("with no holder the panel answered %+v", answer)
+	}
+}
+
+// holderWords is a label and a channel whose JSON, as Desk writes it, is
+// exactly bytes long: ASCII where it can be, and `&` (written `&`, six
+// bytes) and `"` (written `\"`, two) where it must be longer than its
+// characters.
+func holderWords(t *testing.T, bytes int) (string, string) {
+	t.Helper()
+	if bytes < 2 || bytes > 6*(holderLabelLimit+holderChannelLimit) {
+		t.Fatalf("no label and channel take %d bytes", bytes)
+	}
+	if bytes <= holderLabelLimit+holderChannelLimit {
+		label := min(holderLabelLimit, bytes-1)
+		return strings.Repeat("x", label), strings.Repeat("y", bytes-label)
+	}
+	extra := bytes - holderLabelLimit - holderChannelLimit
+	sixes, twos := extra/5, extra%5
+	chars := []rune(strings.Repeat("&", sixes) + strings.Repeat(`"`, twos) + strings.Repeat("x", holderLabelLimit+holderChannelLimit-sixes-twos))
+	return string(chars[:holderLabelLimit]), string(chars[holderLabelLimit:])
+}
+
+// **The list of holders is written only within the bound it is read with**
+// (review round 1, finding 2). Holders with labels of emoji and JSON-escaped
+// characters fill the list; a holder that would take it one byte past 65,536
+// is refused in plain words and changes nothing; one that takes it to exactly
+// 65,536, newline included, is added; and the list is read, and a hand-over
+// made, afterwards.
+func TestTheListOfHoldersIsWrittenWithinTheBoundItIsReadWith(t *testing.T) {
+	ids := make([]string, maxHolders+5)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("%016x", i+1)
+	}
+	rig := newHandoverRig(t, ids...)
+	rig.chain(t, chainOf(handoverTrail, 1))
+	big := handoverHolder{Label: strings.Repeat("😀", 100) + strings.Repeat("&", 20), Channel: strings.Repeat("<", 150) + strings.Repeat(`"`, 50), AddedAt: handoverNow}
+	size := func(holders []handoverHolder) int {
+		data, err := json.Marshal(holdersFile{Version: "1", Holders: holders})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(data) + 1
+	}
+	kept := []handoverHolder{}
+	next := 0
+	for {
+		candidate := big
+		candidate.ID = ids[next]
+		if size(append(slices.Clone(kept), candidate))+100 > handoverListLimit {
+			break
+		}
+		added := rig.addHolder(t, big.Label, big.Channel)
+		if added.handoverHolder != candidate {
+			t.Fatalf("holder %d was added as %+v", next, added.handoverHolder)
+		}
+		kept = append(kept, candidate)
+		next++
+	}
+	if next < 30 {
+		t.Fatalf("only %d large holders fit; the test means to fill the list", next)
+	}
+	if got := len(readFile(t, rig.handoverPath(handoverHoldersName))); got != size(kept) {
+		t.Fatalf("holders.json is %d bytes, want %d", got, size(kept))
+	}
+	// The bytes a last holder's words may take: the room left, less what a
+	// holder with one-character words takes beyond them.
+	least := handoverHolder{ID: ids[next], Label: "x", Channel: "y", AddedAt: handoverNow}
+	room := handoverListLimit - size(append(slices.Clone(kept), least)) + 2
+	label, channel := holderWords(t, room+1)
+	before := rig.snapshot(t)
+	status, data := reviewCall(t, rig.ts, "POST", "/api/audit/holders", "", map[string]string{"label": label, "channel": channel}, bearer)
+	if status != http.StatusConflict || refusalOf(data) != fmt.Sprintf(holdersFullWords, handoverListLimit) {
+		t.Errorf("a holder one byte past the bound answered %d %s", status, data)
+	}
+	if rig.snapshot(t) != before {
+		t.Error("a holder past the bound changed Desk's record")
+	}
+	next++ // the refused holder took an id
+	label, channel = holderWords(t, room)
+	added := rig.addHolder(t, label, channel)
+	if added.ID != ids[next] || added.Label != label || added.Channel != channel {
+		t.Errorf("the holder that fills the list was added as %+v", added.handoverHolder)
+	}
+	if got := len(readFile(t, rig.handoverPath(handoverHoldersName))); got != handoverListLimit {
+		t.Errorf("holders.json is %d bytes, want exactly %d", got, handoverListLimit)
+	}
+	if listed := rig.holders(t); len(listed.Holders) != len(kept)+1 {
+		t.Errorf("Desk lists %d holders, want %d", len(listed.Holders), len(kept)+1)
+	}
+	if status, data := reviewCall(t, rig.ts, "POST", "/api/audit/holders", "", map[string]string{"label": "x", "channel": "y"}, bearer); status != http.StatusConflict {
+		t.Errorf("a holder after the list is full answered %d %s", status, data)
+	}
+	header, _ := rig.downloaded(t, added.ID)
+	rig.confirmed(t, added.ID, header)
+}
+
+// **A holder's record is written only within the bound it is read with**, and
+// a confirmation that would pass it writes nothing: neither the record nor
+// the holder's file.
+func TestAHoldersRecordIsWrittenWithinTheBoundItIsReadWith(t *testing.T) {
+	rig := newHandoverRig(t, holderA)
+	rig.chain(t, chainOf(handoverTrail, 1))
+	rig.addHolder(t, "Auditor", "e-mail")
+	if err := os.Mkdir(rig.handoverPath(holderA), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// A record of other trails, moved aside, with no room for one more.
+	entry := func(i int) string {
+		return fmt.Sprintf(`"%032x":{"from":0,"through":1,"confirmedAt":1,"digest":"sha256:%064x"}`, i+1, i)
+	}
+	var entries []string
+	for {
+		candidate := `{"version":"1","trails":{` + strings.Join(append(slices.Clone(entries), entry(len(entries))), ",") + "}}\n"
+		if len(candidate) > handoverListLimit {
+			break
+		}
+		entries = append(entries, entry(len(entries)))
+	}
+	record := `{"version":"1","trails":{` + strings.Join(entries, ",") + "}}\n"
+	if err := os.WriteFile(rig.handoverPath(holderA, handoverRecordName), []byte(record), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before := rig.snapshot(t)
+	header, _ := rig.downloaded(t, holderA)
+	status, data := rig.confirm(t, holderA, confirmation(t, header))
+	if status != http.StatusInternalServerError || !strings.Contains(refusalOf(data), "would be larger than the 65536 bytes Desk reads of it") {
+		t.Errorf("a confirmation past the record's bound answered %d %s", status, data)
+	}
+	if rig.snapshot(t) != before {
+		t.Error("a confirmation past the record's bound wrote to Desk's record")
 	}
 }

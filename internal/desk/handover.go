@@ -148,6 +148,9 @@ const (
 	noChainedWords    = "The trail has no chained record yet, so there is nothing to hand over."
 	staleWords        = "What you downloaded is not what the trail gives now. Download it again and hand over that file."
 	noTrailWords      = "This project keeps no trail: its jpack.json declares no audit directory, so the runtime records none of its deciding runs."
+	holdersFullWords  = "With this holder, Desk's list of holders would be larger than the %d bytes Desk reads of it, so it adds no more. Shorter labels and channels take less room."
+	recordUnreadWords = "Desk could not read its record of hand-overs, so it passed none of the checkpoints it handed over to the check: "
+	trailUnknownWords = "Desk could not tell which trail the checkpoints it handed over belong to, so it passed none of them to the check: "
 )
 
 // holderIDForm is a holder's id: 16 lowercase hexadecimal characters.
@@ -192,9 +195,10 @@ type holdersFile struct {
 }
 
 // handedOver is what Desk recorded of one trail handed over to one holder:
-// the last sequence confirmed, when, and the SHA-256 of the bytes last
-// confirmed.
+// the cursor the last confirmed checkpoints followed, the last sequence
+// confirmed, when, and the SHA-256 of the bytes last confirmed.
 type handedOver struct {
+	From        int64  `json:"from"`
 	Through     int64  `json:"through"`
 	ConfirmedAt int64  `json:"confirmedAt"`
 	Digest      string `json:"digest"`
@@ -351,7 +355,7 @@ func readHandoverRecord(holder *os.Root) (handoverRecord, error) {
 		return handoverRecord{}, fmt.Errorf("%s is not a record Desk wrote", handoverRecordName)
 	}
 	for trail, handed := range record.Trails {
-		if !keyIDForm.MatchString(trail) || handed.Through < 1 || handed.ConfirmedAt < 0 || !recordForm.MatchString(handed.Digest) {
+		if !keyIDForm.MatchString(trail) || handed.From < 0 || handed.Through <= handed.From || handed.ConfirmedAt < 0 || !recordForm.MatchString(handed.Digest) {
 			return handoverRecord{}, fmt.Errorf("%s is not a record Desk wrote", handoverRecordName)
 		}
 	}
@@ -784,6 +788,13 @@ func (s *Server) handleAddHolder(w http.ResponseWriter, r *http.Request) {
 	}
 	holder := handoverHolder{ID: id, Label: label, Channel: channel, AddedAt: handoverClock().Unix()}
 	data, err := json.Marshal(holdersFile{Version: handoverVersion, Holders: append(holders, holder)})
+	if err == nil && len(data)+1 > handoverListLimit {
+		// **The writer holds the list to the reader's bound** (`readHolders`),
+		// newline and all: a list written past it could not be read again,
+		// and every hand-over after it would fail.
+		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, fmt.Sprintf(holdersFullWords, handoverListLimit))
+		return
+	}
 	if err == nil {
 		err = writePrivateData(handover, handoverHoldersName, append(data, '\n'))
 	}
@@ -1041,16 +1052,21 @@ func (s *Server) recordHandover(id, trail string, from, through int64, data []by
 	if err != nil {
 		return err
 	}
-	if err := writePrivateData(folder, name, next); err != nil {
-		return err
-	}
 	trails := maps.Clone(record.Trails)
 	if trails == nil {
 		trails = map[string]handedOver{}
 	}
-	trails[trail] = handedOver{Through: through, ConfirmedAt: handoverClock().Unix(), Digest: sha256Digest(data)}
+	trails[trail] = handedOver{From: from, Through: through, ConfirmedAt: handoverClock().Unix(), Digest: sha256Digest(data)}
 	written, err := json.Marshal(handoverRecord{Version: handoverVersion, Trails: trails})
 	if err != nil {
+		return err
+	}
+	// Both writes are checked before either is made: the record is held to
+	// the bound it is read with, newline and all.
+	if len(written)+1 > handoverListLimit {
+		return fmt.Errorf("Desk's record of this holder would be larger than the %d bytes Desk reads of it", handoverListLimit)
+	}
+	if err := writePrivateData(folder, name, next); err != nil {
 		return err
 	}
 	if err := writePrivateData(folder, handoverRecordName, append(written, '\n')); err != nil {
@@ -1064,21 +1080,35 @@ func (s *Server) recordHandover(id, trail string, from, through int64, data []by
 
 // heldExpectations is what the decision record passes `audit verify` of
 // Desk's record of hand-overs: an `--expect` for each holder's file of
-// checkpoints for the current trail, and the labels of the holders whose file
-// could not be read now, or is not ours, and was passed over.
+// checkpoints for the current trail; the labels of the holders whose file
+// was passed over, because it could not be read now, is not ours, or does
+// not agree with Desk's record of it; and, where Desk could not read that
+// record at all, or tell which trail is current, why, and nothing passed.
 type heldExpectations struct {
-	args   []string
-	count  int
-	unread []string
+	args    []string
+	count   int
+	unread  []string
+	problem string
 }
+
+// errNothingHeld is a holder with no record and no file for the trail: no
+// hand-over of it, and nothing to say.
+var errNothingHeld = errors.New("nothing was handed over to this holder for this trail")
 
 // heldCheckpoints is the decision record's `--expect` arguments: one for each
 // holder whose file of checkpoints for the trail as it is now (`audit
-// checkpoint --format json`) is there, by its path relative to the project,
-// where `runRuntime` runs. A holder's file for another trail identity is never
-// passed: a held checkpoint of another trail fails the check. A file that
-// cannot be read now, or is not ours, is passed over and named. Where Desk
-// keeps no holder, nothing is run and nothing passed.
+// checkpoint --format json`) agrees with Desk's record of it (`checkHeldFile`),
+// by its path relative to the project, where `runRuntime` runs. A holder's
+// file for another trail identity is never passed: a held checkpoint of
+// another trail fails the check. A file that does not agree, or cannot be
+// read now, is passed over and named.
+//
+// **A record Desk cannot read is said, never taken for none.** Where Desk
+// keeps no hand-over folder, or no holder, nothing is run and nothing passed.
+// Where the folder or the list of holders cannot be read, or the runtime does
+// not say which trail is current, nothing is passed either, and the answer
+// says why: a check with no held checkpoint must not read as one with no
+// holder.
 func (s *Server) heldCheckpoints(ctx context.Context, dir heldDir) heldExpectations {
 	s.handoverMu.Lock()
 	defer s.handoverMu.Unlock()
@@ -1089,70 +1119,120 @@ func (s *Server) heldCheckpoints(ctx context.Context, dir heldDir) heldExpectati
 	}
 	if err != nil {
 		s.log.Printf("desk: the record of hand-overs could not be opened for the decision record: %v", err)
+		held.problem = handoverWords(recordUnreadWords, err)
 		return held
 	}
 	defer handover.Close()
 	holders, err := readHolders(handover)
 	if err != nil {
 		s.log.Printf("desk: the list of holders could not be read for the decision record: %v", err)
+		held.problem = handoverWords(recordUnreadWords, err)
 		return held
 	}
 	if len(holders) == 0 {
 		return held
 	}
-	head, _, err := s.readCheckpointHead(ctx, dir)
-	if err != nil || head == nil {
+	head, refusal, err := s.readCheckpointHead(ctx, dir)
+	switch {
+	case err != nil:
+		held.problem = handoverWords(trailUnknownWords, err)
+		return held
+	case refusal != nil:
+		held.problem = trailUnknownWords + runtimeRefusalWords(refusal)
+		return held
+	case head == nil:
+		// No chained record: no checkpoint of the trail is held, and none
+		// is passed.
 		return held
 	}
-	name := head.Identity + ".jsonl"
 	for _, holder := range holders {
-		folder, err := openHolderFolder(handover, holder.ID, false)
-		if err == nil {
-			err = checkHeldFile(folder, name)
-			folder.Close()
-		}
+		err := checkHeldFile(handover, holder.ID, head.Identity)
 		switch {
-		case errors.Is(err, fs.ErrNotExist):
+		case errors.Is(err, errNothingHeld):
 		case err != nil:
 			s.log.Printf("desk: the checkpoints handed over to holder %s were not passed to the decision record: %v", holder.ID, err)
 			held.unread = append(held.unread, holder.Label)
 		default:
-			held.args = append(held.args, "--expect", path.Join(handoverDir, holder.ID, name))
+			held.args = append(held.args, "--expect", path.Join(handoverDir, holder.ID, head.Identity+".jsonl"))
 			held.count++
 		}
 	}
 	return held
 }
 
-// checkHeldFile is whether a holder's file of checkpoints can be read now and
-// is ours: as `readPrivateData` reads a file, owner-only, owned by this user,
-// a regular file and not a link, the one that was looked at, and within the
-// runtime's bound; and not empty, as Desk never writes it.
-func checkHeldFile(folder *os.Root, name string) error {
-	info, err := folder.Lstat(name)
+// checkHeldFile is whether the holder id's file of checkpoints for trail can
+// be passed to the check: read whole now, within the runtime's bound, as
+// `readPrivateData` reads a file (owner-only, owned by this user, a regular
+// file and not a link, the one that was looked at), and agreeing with Desk's
+// record of the holder (`heldAgrees`). errNothingHeld where there is neither
+// a record nor a file for the trail; a record with no file, or a file with no
+// record, is an error.
+func checkHeldFile(handover *os.Root, id, trail string) error {
+	folder, err := openHolderFolder(handover, id, false)
+	if errors.Is(err, fs.ErrNotExist) {
+		return errNothingHeld
+	}
 	if err != nil {
 		return err
 	}
-	if err := ownerOnlyFile(name, info.Mode()); err != nil {
-		return err
-	}
-	if err := ownedByUs(name, info); err != nil {
-		return err
-	}
-	if info.Size() == 0 || info.Size() > handoverHeldLimit {
-		return fmt.Errorf("%s holds %d bytes", name, info.Size())
-	}
-	file, err := folder.OpenFile(name, os.O_RDONLY|openNoFollow|openNonBlocking, 0)
+	defer folder.Close()
+	record, err := readHandoverRecord(folder)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-	opened, err := file.Stat()
-	if err != nil {
+	entry, recorded := record.Trails[trail]
+	data, err := readPrivateData(folder, trail+".jsonl", handoverHeldLimit)
+	switch {
+	case errors.Is(err, fs.ErrNotExist) && !recorded:
+		return errNothingHeld
+	case errors.Is(err, fs.ErrNotExist):
+		return errors.New("Desk's record names checkpoints of this trail handed over, and the file of them is not there")
+	case err != nil:
 		return err
+	case !recorded:
+		return errors.New("the file of checkpoints has no record of their hand-over")
 	}
-	if !os.SameFile(info, opened) {
-		return errPrivateDataChanged
+	return heldAgrees(data, entry, trail)
+}
+
+// heldAgrees is whether data, a holder's file of checkpoints for trail, is
+// what Desk recorded as handed over: complete lines, each a checkpoint
+// document of trail, in strictly increasing sequence, ending at the record's
+// last sequence, and ending in the very bytes last confirmed (the lines after
+// the record's `from`, whose SHA-256 the record keeps). A file cut short, a
+// last line with no newline, a line of another trail or out of order, and
+// one whose last batch is not what was confirmed are each refused, as is a
+// file ahead of its record, which a confirmation stopped between its two
+// writes leaves until the next one (`heldAfter`).
+func heldAgrees(data []byte, entry handedOver, trail string) error {
+	if len(data) == 0 || data[len(data)-1] != '\n' {
+		return errors.New("the file of checkpoints does not end with a whole line")
+	}
+	last, batch, offset := int64(0), -1, 0
+	for _, line := range bytes.SplitAfter(data, []byte("\n")) {
+		if len(line) == 0 {
+			continue
+		}
+		checkpoint, ok := readCheckpointLine(bytes.TrimSuffix(line, []byte("\n")))
+		switch {
+		case !ok:
+			return errors.New("the file of checkpoints holds a line that is not a checkpoint")
+		case checkpoint.trail != trail:
+			return errors.New("the file of checkpoints holds a checkpoint of another trail")
+		case checkpoint.sequence <= last:
+			return errors.New("the file of checkpoints holds its checkpoints out of order")
+		}
+		if batch < 0 && checkpoint.sequence > entry.From {
+			batch = offset
+		}
+		last = checkpoint.sequence
+		offset += len(line)
+	}
+	if last != entry.Through {
+		return fmt.Errorf("the file of checkpoints ends at record %d, and Desk's record of it at record %d", last, entry.Through)
+	}
+	if batch < 0 || sha256Digest(data[batch:]) != entry.Digest {
+		return errors.New("the last checkpoints in the file are not the ones last confirmed")
 	}
 	return nil
 }

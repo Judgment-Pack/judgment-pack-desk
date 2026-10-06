@@ -3890,5 +3890,8 @@
   "This is Desk's own record. You keep it, and you can change it, so it proves nothing to a holder or to anyone else. Only the holder's own copy counts.": "これは Desk 自身の記録です。あなたが保管し、変更することもできるため、保管者にも他の誰にも何も証明しません。意味があるのは保管者自身のコピーだけです。",
   "What you downloaded is not what the trail gives now. Download it again and hand over that file.": "ダウンロードしたものは、現在の証跡が出すものと一致しません。もう一度ダウンロードし、そのファイルを引き渡してください。",
   "Who holds the checkpoints, in your words.": "チェックポイントを保管する人を、あなたの言葉で。",
-  "e-mail to records@…": "records@… へのメール"
+  "e-mail to records@…": "records@… へのメール",
+  "With this holder, Desk's list of holders would be larger than the {{limit}} bytes Desk reads of it, so it adds no more. Shorter labels and channels take less room.": "この保管者を加えると、Desk の保管者一覧は Desk が読み取る {{limit}} バイトを超えるため、これ以上追加しません。短いラベルとチャネルなら場所を取りません。",
+  "Desk could not read its record of hand-overs, so it passed none of the checkpoints it handed over to the check: {{reason}}.": "Desk は引き渡しの記録を読み取れなかったため、引き渡したチェックポイントを 1 つも確認に渡しませんでした: {{reason}}。",
+  "Desk could not tell which trail the checkpoints it handed over belong to, so it passed none of them to the check: {{reason}}": "Desk は引き渡したチェックポイントがどの証跡のものか判断できなかったため、1 つも確認に渡しませんでした: {{reason}}"
 }

@@ -3890,5 +3890,8 @@
   "This is Desk's own record. You keep it, and you can change it, so it proves nothing to a holder or to anyone else. Only the holder's own copy counts.": "呢個係 Desk 自己嘅記錄。佢由你保管，你亦可以改佢，所以佢對保管者或者任何其他人都證明唔到任何嘢。只有保管者自己嗰份副本先算數。",
   "What you downloaded is not what the trail gives now. Download it again and hand over that file.": "你下載咗嘅嘢同軌跡而家俾出嘅唔一樣。請再下載多次，然後交出嗰個檔案。",
   "Who holds the checkpoints, in your words.": "用你自己嘅講法寫低邊個保管檢查點。",
-  "e-mail to records@…": "電郵去 records@…"
+  "e-mail to records@…": "電郵去 records@…",
+  "With this holder, Desk's list of holders would be larger than the {{limit}} bytes Desk reads of it, so it adds no more. Shorter labels and channels take less room.": "加入呢個保管者之後，Desk 嘅保管者清單會大過 Desk 讀取嘅 {{limit}} 位元組，所以唔會再加。短啲嘅標籤同渠道會用少啲位。",
+  "Desk could not read its record of hand-overs, so it passed none of the checkpoints it handed over to the check: {{reason}}.": "Desk 讀唔到佢嘅移交記錄，所以冇將任何已交出嘅檢查點交俾檢查：{{reason}}。",
+  "Desk could not tell which trail the checkpoints it handed over belong to, so it passed none of them to the check: {{reason}}": "Desk 分唔到已交出嘅檢查點屬於邊條軌跡，所以冇將任何一個交俾檢查：{{reason}}"
 }

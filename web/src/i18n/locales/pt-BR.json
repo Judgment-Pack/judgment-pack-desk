@@ -3914,5 +3914,8 @@
   "This is Desk's own record. You keep it, and you can change it, so it proves nothing to a holder or to anyone else. Only the holder's own copy counts.": "Este é o registro do próprio Desk. Você o guarda e pode alterá-lo, então ele não prova nada a quem guarda os pontos de verificação nem a mais ninguém. Só conta a cópia dessa pessoa.",
   "What you downloaded is not what the trail gives now. Download it again and hand over that file.": "O que você baixou não é o que a trilha fornece agora. Baixe de novo e entregue esse arquivo.",
   "Who holds the checkpoints, in your words.": "Quem guarda os pontos de verificação, nas suas palavras.",
-  "e-mail to records@…": "e-mail para records@…"
+  "e-mail to records@…": "e-mail para records@…",
+  "With this holder, Desk's list of holders would be larger than the {{limit}} bytes Desk reads of it, so it adds no more. Shorter labels and channels take less room.": "Com esta pessoa, a lista do Desk de quem guarda os pontos de verificação passaria dos {{limit}} bytes que o Desk lê dela, então não adiciona mais. Rótulos e canais mais curtos ocupam menos espaço.",
+  "Desk could not read its record of hand-overs, so it passed none of the checkpoints it handed over to the check: {{reason}}.": "O Desk não conseguiu ler o seu registro de entregas, então não passou à verificação nenhum dos pontos de verificação entregues: {{reason}}.",
+  "Desk could not tell which trail the checkpoints it handed over belong to, so it passed none of them to the check: {{reason}}": "O Desk não conseguiu saber a que trilha pertencem os pontos de verificação entregues, então não passou nenhum à verificação: {{reason}}"
 }

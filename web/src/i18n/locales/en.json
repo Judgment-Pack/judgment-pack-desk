@@ -3678,5 +3678,8 @@
   "This is Desk's own record. You keep it, and you can change it, so it proves nothing to a holder or to anyone else. Only the holder's own copy counts.": "This is Desk's own record. You keep it, and you can change it, so it proves nothing to a holder or to anyone else. Only the holder's own copy counts.",
   "What you downloaded is not what the trail gives now. Download it again and hand over that file.": "What you downloaded is not what the trail gives now. Download it again and hand over that file.",
   "Who holds the checkpoints, in your words.": "Who holds the checkpoints, in your words.",
-  "e-mail to records@…": "e-mail to records@…"
+  "e-mail to records@…": "e-mail to records@…",
+  "With this holder, Desk's list of holders would be larger than the {{limit}} bytes Desk reads of it, so it adds no more. Shorter labels and channels take less room.": "With this holder, Desk's list of holders would be larger than the {{limit}} bytes Desk reads of it, so it adds no more. Shorter labels and channels take less room.",
+  "Desk could not read its record of hand-overs, so it passed none of the checkpoints it handed over to the check: {{reason}}.": "Desk could not read its record of hand-overs, so it passed none of the checkpoints it handed over to the check: {{reason}}.",
+  "Desk could not tell which trail the checkpoints it handed over belong to, so it passed none of them to the check: {{reason}}": "Desk could not tell which trail the checkpoints it handed over belong to, so it passed none of them to the check: {{reason}}"
 }

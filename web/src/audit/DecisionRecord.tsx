@@ -94,6 +94,7 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
                 : record?.state === 'unverified' ? <>
                   <p>{msg('The runtime did not check the trail.')}</p>
                   <ul className={styles.list} aria-label={msg('What the runtime said')}>{record.diagnostics.map((item, index) => <li key={index} lang="en"><code>{item.code}</code> {item.message}</li>)}</ul>
+                  {record.handoverProblem && <p role="alert">{systemMessage(record.handoverProblem)}</p>}
                   <SigningKey keys={record.keys} signing={record.signing} />
                   {rotation(record.keys, record.rotation)}
                   {handoverSection}
@@ -105,6 +106,7 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
                       : <>{record.keys?.state === 'kept'
                         ? msg('Desk ran this on your machine, over your trail, with the public keys it keeps for this desk and no checkpoints: it checked the signatures against those keys, and no held checkpoint and no stamp. It is not evidence to anyone who does not trust you: you hold the key. A holder runs the same command on a copy, with what it holds.')
                         : msg('Desk ran this on your machine, over your trail, with no keys and no checkpoints: it checked no signature, no held checkpoint and no stamp. It is not evidence to anyone who does not trust you. A holder runs the same command on a copy, with what it holds.')}</>}</p>
+                    {record.handoverProblem && <p role="alert">{systemMessage(record.handoverProblem)}</p>}
                     {record.expectUnread && <p role="alert">{msg('Desk could not read the checkpoints it keeps as handed over to {{holders}}, so the check ran without them.', { holders: record.expectUnread.join(', ') })}</p>}
                     <Report report={record.report} />
                     <SigningKey keys={record.keys} signing={record.signing} />

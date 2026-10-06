@@ -192,6 +192,10 @@ type auditAnswer struct {
 	// is not zero or empty.
 	Expected     int      `json:"expected,omitempty"`
 	ExpectUnread []string `json:"expectUnread,omitempty"`
+	// HandoverProblem is why Desk passed none of the checkpoints it handed
+	// over, where it could not read its record of hand-overs, or tell which
+	// trail is current: never the same as keeping none.
+	HandoverProblem string `json:"handoverProblem,omitempty"`
 }
 
 // What the panel holds of the desk's keys.
@@ -482,6 +486,7 @@ func (s *Server) withoutPathsIn(answer auditAnswer) auditAnswer {
 	auditDir, _, _ := s.projectAuditDir()
 	clean := func(message string) string { return s.withoutPathsUnder(message, auditDir) }
 	answer = withoutPathsInKeys(answer, clean)
+	answer.HandoverProblem = clean(answer.HandoverProblem)
 	if answer.Diagnostics != nil {
 		said := make([]runtimeDiagnostic, len(answer.Diagnostics))
 		for i, diagnostic := range answer.Diagnostics {
@@ -643,6 +648,7 @@ func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, err
 	answer.Rotation = &rotation
 	answer.Expected = expect.count
 	answer.ExpectUnread = expect.unread
+	answer.HandoverProblem = expect.problem
 	return answer, nil
 }
 
