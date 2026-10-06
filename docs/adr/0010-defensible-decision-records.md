@@ -778,9 +778,9 @@ their meaning. The status column is as of 2026-10-05.
 | 6 | The repair offer | 2; question 8 | |
 | 7 | Stamping: settings, scheduler, pending records; verification with roots | 2; question 5 | |
 | 8a | Export version 5 and labelling, `run-chain` pass-through | nothing: #200 pinned Runner v0.5.0; question 7 | merged: #220, on `main`, in no release yet |
-| 8b | The Jobs chain in hand-over: `audit checkpoint --trail <file> --since <cursor> --limit 300`, with a cursor of its own | 5 | |
+| 8b | The Jobs chain in hand-over: `audit checkpoint --trail <file> --since <cursor> --limit 300`, with a cursor of its own | 5 | built: PR #254 |
 | 11 | Runner signing key in Desk's custody, `secrets/signing/runner/<desk id>.seed` under the same custody checks, passed as the boot-line `signingKey` | 3; policy settled by question 7; Runner #36 closed by #37 in v0.5.0 | #229, in no release yet |
-| 12 | The Jobs record panel beside the Decision record: `audit verify --trail <copy>` with the Runner key and the held checkpoints | 5 and 11 | |
+| 12 | The Jobs record panel beside the Decision record: `audit verify --trail <copy>` with the Runner key and the held checkpoints | 5 and 11 | built: PR #254 |
 | 9 | The README and in-app help: what each part establishes and does not, and the agent setup with the key | each of the above | |
 | 10 | Hand-over to an HTTPS endpoint | a holder who runs one; question 4 | |
 
