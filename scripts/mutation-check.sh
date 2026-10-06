@@ -11243,14 +11243,8 @@ export function assistantTransport(id: string): Transport {
     "  link.href = url; link.download = name" \
     "  link.href = url; link.download = name.replace(/^checkpoints-/, 'saved-')"
   mutate web "hand-over page: the decision record is not checked again after a confirmation" "$HP" \
-    "      void query.refetch()
-      onConfirmed()" \
-    "      void query.refetch()
-      void onConfirmed"
-  mutate web "hand-over page: the holders are not read again after a confirmation" "$HP" \
-    "      void query.refetch()
-      onConfirmed()" \
-    "      onConfirmed()"
+    "      onConfirmed()" \
+    "      void onConfirmed"
   mutate web "hand-over page: the stale sentence is not said" "$HP" \
     "{notice?.kind === 'stale' && <p role=\"alert\">" \
     "{notice?.kind === 'stale' && busy && <p role=\"alert\">"

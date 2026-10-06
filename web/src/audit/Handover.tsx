@@ -121,7 +121,7 @@ export function Handover({ checkedAt, state, onState, onConfirmed }: {
     try {
       await confirmHandover(holder.id, pending)
       set(holder.id, undefined, { kind: 'recorded', through: pending.through })
-      void query.refetch()
+      // The decision record is read again, and the holders with it.
       onConfirmed()
     } catch (cause) {
       if (cause instanceof StaleHandover) set(holder.id, undefined, { kind: 'stale' })
