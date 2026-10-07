@@ -12497,8 +12497,8 @@ export function assistantTransport(id: string): Transport {
     "{ version: record.runtime ?? '?', floor: record.floor }" \
     "{ version: record.floor, floor: record.floor }"
   mutate web "record: what Desk did not give is not said" "$DR" \
-    "    : msg('Desk ran this on your machine, over your trail, with no keys and no checkpoints" \
-    "    : '' && msg('Desk ran this on your machine, over your trail, with no keys and no checkpoints"
+    "    : msg('Desk ran this on your machine, over your trail, with no keys and no checkpoints: it checked no signature, no held checkpoint and no stamp. It is not evidence to anyone who does not trust you. A holder runs the same command on a copy, with what it holds.')" \
+    "    : ''"
   mutate web "record: the establishes sentences are not marked English" "$DR" \
     "<ul className={styles.list} lang=\"en\">{report.establishes" \
     "<ul className={styles.list}>{report.establishes"
