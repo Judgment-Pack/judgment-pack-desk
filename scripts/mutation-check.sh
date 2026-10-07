@@ -5884,7 +5884,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # open already read, so the needle moved with it; the claim is unchanged.
   mutate web "the base rebases onto background refetches" "$A" \
     '  const [base, setBase] = useState<FileContent | undefined>(()=>loaded.data)' \
-    '  const [baseIgnored, setBase] = useState<FileContent | undefined>(()=>loaded.data); void baseIgnored; const base = loaded.data'
+    '  const [baseIgnored, setBase] = useState<FileContent | undefined>(()=>loaded.data); void baseIgnored; const base: FileContent | undefined = (() => loaded.data)()'
   # **These five moved with the code they are about.** The save discipline was
   # lifted out of `AuthorView.FileEditor` into `files/useFileEditing.ts` so a
   # second editor could hold the same rules rather than a second spelling of
@@ -5933,7 +5933,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '                setBuffer(base.content);clearFormat()'
   mutate web 'switching files does not ask about unsaved work' 'web/src/routes/AuthorView.tsx' \
     '    if (dirty && !opening && !await confirmDiscard(msg('"'"'Discard unsaved changes to this file?'"'"'), { name: selected })) return' \
-    '    void dirty'
+    '    if (dirty && !opening && false && !await confirmDiscard(msg('"'"'Discard unsaved changes to this file?'"'"'), { name: selected })) return'
   mutate web "reload is available during an in-flight write" "$A" \
     '              <DropdownMenu.Item className="desk-menu-item" disabled={write.isPending || editing.reloading} onSelect={()=>void reload()}>' \
     '              <DropdownMenu.Item className="desk-menu-item" disabled={false} onSelect={()=>void reload()}>'
@@ -13245,8 +13245,8 @@ export function assistantTransport(id: string): Transport {
     'c.timeoutSeconds>(v.timeout?.maxSeconds??120)' \
     'c.timeoutSeconds>(120)'
   mutate web "search and files: a timeout past its bounds is sent" "$SWS" \
-    "  if(action==='save'&&timeout&&(" \
-    "  if(false&&action==='save'&&timeout&&("
+    '(!Number.isSafeInteger(form.timeoutSeconds)||form.timeoutSeconds!<timeout.minSeconds||form.timeoutSeconds!>timeout.maxSeconds)' \
+    '(!Number.isSafeInteger(form.timeoutSeconds)&&form.timeoutSeconds!<timeout.minSeconds&&form.timeoutSeconds!>timeout.maxSeconds)'
   mutate web "search and files: settings that could not be read are reported as a failed save" "$SWS" \
     "{preferences.isError?msg('Search settings could not be read. Reload before making changes.'):" \
     "{false?msg('Search settings could not be read. Reload before making changes.'):"
