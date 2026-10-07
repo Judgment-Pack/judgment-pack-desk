@@ -292,6 +292,18 @@ describe('the Jobs record', () => {
     expect(saved).toHaveLength(1)
     expect((await panel()).queryByText('Saved run-chain.jsonl.')).toBeNull()
   })
+
+  it('offers no repair, though its report names an incomplete last line: the chain of runs is Runner’s', async () => {
+    const torn = { ...witnessed, findings: [{ name: 'incomplete-last-line', line: 4, detail: 'the trail ends in 8 bytes with no newline: a write that did not complete' }] }
+    // Even an answer that carried an offer is shown with none.
+    jobs = () => json(200, { ...report({ report: torn }), repair: { state: 'available', line: 4, token: 'ab'.repeat(48) } })
+    show()
+    await check()
+    expect(await (await panel()).findByText('incomplete-last-line')).toBeTruthy()
+    expect(screen.queryByRole('region', { name: 'Repairing the trail' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Repair the trail' })).toBeNull()
+    expect(count('/api/audit/repair', 'POST')).toBe(0)
+  })
 })
 
 /* The chain of runs in the hand-over ------------------------------------------- */

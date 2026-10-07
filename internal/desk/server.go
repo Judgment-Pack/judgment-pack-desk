@@ -153,6 +153,14 @@ type Server struct {
 	// handoverMu serializes every reading and change of this desk's record
 	// of checkpoint hand-overs, `.desk-private/handover` (handover.go).
 	handoverMu sync.Mutex
+	// repairMu serializes this desk's repairs of its trail, from the fresh
+	// reading the token is held to until the runtime's answer
+	// (audit_repair.go), so that two confirmations in this process run one
+	// repair.
+	repairMu sync.Mutex
+	// repairNonces holds the nonce of each repair token spent in this
+	// process, under repairMu: a token confirms one attempt.
+	repairNonces map[string]bool
 	// reviewKey is this desk's own key for review tokens (`reviewToken`):
 	// random per process, so a token names one desk and does not outlive it.
 	reviewKey [32]byte
@@ -443,6 +451,7 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("GET /api/audit/verify", s.handleAuditVerify)
 	s.mux.HandleFunc("GET /api/audit/trail", s.handleAuditTrail)
 	s.mux.HandleFunc("POST /api/audit/key/rotate", s.handleRotateKey)
+	s.mux.HandleFunc("POST /api/audit/repair", s.handleAuditRepair)
 	s.mux.HandleFunc("GET /api/audit/holders", s.handleHolders)
 	s.mux.HandleFunc("POST /api/audit/holders", s.handleAddHolder)
 	s.mux.HandleFunc("POST /api/audit/holders/{id}/confirm", s.handleConfirmHandover)
