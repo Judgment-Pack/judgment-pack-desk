@@ -632,6 +632,12 @@ func TestAConfirmationIsBoundToItsDesk(t *testing.T) {
 		writeProject(t, row.Folder, map[string]string{name: readFile(t, filepath.Join(project, filepath.FromSlash(name)))})
 	}
 	startup, named := readReview(t, ts, ""), readReview(t, ts, row.ID)
+	// Said before anything is indexed: a named desk that read nothing (its root
+	// was not the one it was given) has no files to compare, and indexing them
+	// is a panic that hides which safeguard failed.
+	if len(startup.Files) == 0 || len(named.Files) != len(startup.Files) {
+		t.Fatalf("the two desks do not list the same files: startup %+v, named %+v", startup.Files, named.Files)
+	}
 	for i := range startup.Files {
 		if startup.Files[i].Digest != named.Files[i].Digest {
 			t.Fatalf("the two desks hold different bytes: %+v %+v", startup.Files[i], named.Files[i])

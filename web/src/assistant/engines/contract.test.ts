@@ -146,6 +146,19 @@ describe('one await on the world outside an engine', () => {
     await expect(waiting).rejects.toThrow(RunCancelled)
   })
 
+  it('notices a run that closed while the work ran, even when the work then answers', async () => {
+    // The abort fires inside the work, before `withAbort` has a listener, and the
+    // work goes on to resolve with a value. A listener alone never hears it; only
+    // the read after the listener exists does. Without it the closed run is
+    // handed an answer it must never see.
+    const controller = new AbortController()
+    const closing = withAbort(() => {
+      controller.abort()
+      return Promise.resolve('an answer for a run that is over')
+    }, controller.signal)
+    await expect(closing).rejects.toThrow(RunCancelled)
+  })
+
   it('carries the work’s own answer, and its own failure', async () => {
     const live = new AbortController().signal
     await expect(withAbort(() => Promise.resolve('answered'), live)).resolves.toBe('answered')
