@@ -12206,8 +12206,8 @@ export function assistantTransport(id: string): Transport {
     "if (reconnecting) await queryClient.invalidateQueries({ predicate: followsTheProject })" \
     "if (reconnecting) await queryClient.invalidateQueries()"
   mutate web "record: asking again runs nothing" "$DR" \
-    "  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); void query.refetch() }}" \
-    "  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined) }}"
+    "  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); void query.refetch() }}" \
+    "  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined) }}"
   mutate web "record: an older runtime's line claims signing" "$DR" \
     "            : record?.state === 'older-runtime' ? <p>{msg(" \
     "            : record?.state === 'older-runtime' ? <p>{msg('Signed through record {{sequence}}', { sequence: 0 })} {msg("
@@ -12258,10 +12258,10 @@ export function assistantTransport(id: string): Transport {
   return value" \
     "  return value as AuditRecord"
   mutate web "record: an answer of no known state is accepted" "$AC" \
-    "    case 'no-trail': return true
+    "    case 'no-trail': return value.stamping === undefined
   }
   return false" \
-    "    case 'no-trail': return true
+    "    case 'no-trail': return value.stamping === undefined
   }
   return true"
   mutate web "record: a report with no coverage is accepted" "$AC" \
@@ -12400,13 +12400,13 @@ export function assistantTransport(id: string): Transport {
     "{error && <p role=\"alert\">" \
     "{error && <p role=\"alert\" hidden>"
   mutate web "downloads: not beside the report" "$DR" \
-    "                    {handoverSection}
+    "                    {stampingSection(record.stamping, record.report)}
                     <TrailDownloads files={record.files ?? []} />" \
-    "                    {handoverSection}"
+    "                    {stampingSection(record.stamping, record.report)}"
   mutate web "downloads: not beside the runtime's refusal" "$DR" \
-    "                  {handoverSection}
+    "                  {stampingSection(record.stamping)}
                   <TrailDownloads files={record.files ?? []} />" \
-    "                  {handoverSection}"
+    "                  {stampingSection(record.stamping)}"
   mutate web "downloads: a file name the download does not take is accepted" "$AC" \
     " || !optional(value.files, item => list(item, isTrailFile))" \
     " || !optional(value.files, item => list(item, (entry): entry is TrailFile => text(entry) || isTrailFile(entry)))"
@@ -12497,8 +12497,8 @@ export function assistantTransport(id: string): Transport {
     "onOutcome={outcome => { setRotated(outcome); void query.refetch() }}" \
     "onOutcome={outcome => { setRotated(outcome) }}"
   mutate web "rotation page: an outcome outlives a later check" "$DR" \
-    "onClick={() => { setRotated(undefined); setRepaired(undefined); void query.refetch() }}" \
-    "onClick={() => { setRepaired(undefined); void query.refetch() }}"
+    "onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); void query.refetch() }}" \
+    "onClick={() => { setRepaired(undefined); setStamped(undefined); void query.refetch() }}"
   mutate web "rotation page: an outcome outlives opening the panel again" "$DR" \
     "  useEffect(() => { if (visible) setRotated(undefined) }, [visible])" \
     "  useEffect(() => { if (visible) void 0 }, [visible])"
@@ -12834,8 +12834,8 @@ export function assistantTransport(id: string): Transport {
     'onOutcome={outcome => { setRepaired(outcome); void query.refetch() }} />' \
     'onOutcome={outcome => { setRepaired(outcome) }} />'
   mutate web 'repair page: an outcome outlives a later check' "$RDR" \
-    '{ setRotated(undefined); setRepaired(undefined); void query.refetch() }' \
-    '{ setRotated(undefined); void query.refetch() }'
+    '{ setRotated(undefined); setRepaired(undefined); setStamped(undefined); void query.refetch() }' \
+    '{ setRotated(undefined); setStamped(undefined); void query.refetch() }'
   mutate web 'repair page: an outcome outlives opening the panel again' "$RDR" \
     '  useEffect(() => { if (visible) setRepaired(undefined) }, [visible])' \
     '  useEffect(() => { if (visible && false) setRepaired(undefined) }, [visible])'
@@ -12943,9 +12943,9 @@ export function assistantTransport(id: string): Transport {
     '                        : false
 '
   mutate web 'stamping client: the decision record’s stamping is not checked' "$SAC" \
-    '
-    || !optional(value.stamping, isAuditStamping)) return false' \
-    ') return false'
+    '  if (!optional(value.stamping, isAuditStamping)) return false
+' \
+    ''
   mutate web 'stamping client: settings with no root are read' "$SAC" \
     'list(value.roots, isRoot) && value.roots.length > 0' \
     'list(value.roots, isRoot)'

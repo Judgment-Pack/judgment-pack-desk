@@ -272,8 +272,8 @@ export function isAuditReport(value: unknown): value is AuditReport {
 export function isAuditRecord(value: unknown): value is AuditRecord {
   if (!object(value) || !optional(value.runtime, text) || !optional(value.files, item => list(item, isTrailFile))
     || !optional(value.keys, isAuditKeys) || !optional(value.signing, isAuditSigning) || !optional(value.rotation, isAuditRotation)
-    || !optional(value.expected, count) || !optional(value.expectUnread, item => list(item, named)) || !optional(value.handoverProblem, named)
-    || !optional(value.stamping, isAuditStamping)) return false
+    || !optional(value.expected, count) || !optional(value.expectUnread, item => list(item, named)) || !optional(value.handoverProblem, named)) return false
+  if (!optional(value.stamping, isAuditStamping)) return false
   switch (value.state) {
     case 'report': return isAuditReport(value.report) && optional(value.repair, isAuditRepair)
     case 'unverified': return list(value.diagnostics, isDiagnostic) && value.diagnostics.length > 0 && value.repair === undefined
@@ -779,7 +779,8 @@ export function isAuditStamping(value: unknown): value is AuditStamping {
 async function stampingRefusal(response: Response, fallback: string): Promise<Error> {
   let body: { error?: unknown } = {}
   try { body = await response.json() as typeof body } catch { /* The status is still an answer. */ }
-  return new Error(text(body.error) ? body.error : fallback)
+  const message = text(body.error) ? body.error : fallback
+  return new Error(message)
 }
 
 const postJSON = (url: string, body: unknown) => deskFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
