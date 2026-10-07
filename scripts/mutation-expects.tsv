@@ -585,6 +585,15 @@ go	runner key: the runtime is not asked	TestARunnerKeyIsMadeOnceAndFoundAfter,Te
 go	runner key: the runtime's refusal is taken for a read	TestEachStateARunnerKeyCanBeFoundIn
 go	runner key: the startup desk's key not named by its state directory	TestEachDesksRunnerIsNamedAKeyOfItsOwn
 go	runner key: what Runner answered with is not recorded	TestARunnerThatRefusesItsKeyStartsWithout,TestDesksStartSweepsBeforeItsRunnerTakesTheLock,TestEachDesksRunnerIsNamedAKeyOfItsOwn,TestTheRunnerKeyRouteIsGuardedAndAnswersEachDesk,TestTwoStartsNeverRemoveANamedKey,TestWhatRunnerSignsIsReportedOnlyOnceRunnerAnswers
+go	search and files: a configuration that could not be read is taken to declare nothing	TestProjectFilesHoldRecordsWhenTheConfigurationCannotBeRead
+go	search and files: a file's read-only mode is not held	TestWriteRefusesAReadOnlyFile
+go	search and files: a read-only file is written over	TestProjectFilesCannotCreateRuntimeLock,TestProjectFilesHoldRecordsWhenTheConfigurationCannotBeRead,TestProjectFilesReadOnlyOutputs,TestWriteRefusesAReadOnlyFile
+go	search and files: an outside gateway is given search's envelope	TestSearchRelayBudgetOnlyExtendsManagedSearch
+go	search and files: any source is given search's envelope	TestSearchRelayBudgetOnlyExtendsManagedSearch
+go	search and files: every source is given search's longer envelope	TestLocalPlanSearchAllowsLongerEnvelopeWithoutExtendingOtherSources
+go	search and files: records in the declared directory are editable	TestProjectFilesReadOnlyOutputs
+go	search and files: search's envelope is past its bound	TestLocalPlanSearchAllowsLongerEnvelopeWithoutExtendingOtherSources
+go	search and files: the runtime's lock is editable	TestProjectFilesCannotCreateRuntimeLock,TestProjectFilesReadOnlyOutputs
 go	signed desk: a failed generation's refusal names a path	TestAKeyTheRuntimeFailsToGenerateMakesNoDeskAndLeavesNoKey,TestNoPartOfTheKeysPathIsPassedOn
 go	signed desk: a manifest that fails leaves the key	TestAManifestThatCannotBeWrittenLeavesNoKey
 go	signed desk: a path jpack.json cannot name is used	TestASigningFolderJpackJSONCannotNameIsNotUsed

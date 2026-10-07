@@ -65,8 +65,12 @@ function storedWidth(key: string): number {
 export function AuthorView() {
   useLocale()
   const listing = useFileListing()
-  if (!listing.data) return <article className="detail authoring" data-layout="page"><PageHeader title={msg('Project files')}/><div className={styles.feedback}>{listing.error ? <ErrorBox title={msg("Could not list the project's files")} error={listing.error}/> : <Loading what={msg("the project's files")}/>}</div></article>
-  return <FileWorkspace key={listing.data.root} listing={listing}/>
+  // One page element for every state, so the page's measure is stated once.
+  // The workspace is keyed by the project, so its remembered state is per project.
+  return <article className="detail authoring" data-measure="full" data-layout="page">
+    {listing.data ? <FileWorkspace key={listing.data.root} listing={listing}/>
+      : <><PageHeader title={msg('Project files')}/><div className={styles.feedback}>{listing.error ? <ErrorBox title={msg("Could not list the project's files")} error={listing.error}/> : <Loading what={msg("the project's files")}/>}</div></>}
+  </article>
 }
 function FileWorkspace({listing}:{listing:ReturnType<typeof useFileListing>}) {
   const root = listing.data!.root
@@ -181,7 +185,7 @@ function FileWorkspace({listing}:{listing:ReturnType<typeof useFileListing>}) {
 
 
   return (
-    <article className="detail authoring" data-measure="full" data-layout="page">
+    <>
       <div ref={frame} className={styles.frame} data-compact={compact || undefined}
         style={{ '--files-width': `${paneWidth}px` } as CSSProperties}>
         <aside id={paneId} className={styles.browser} aria-label={msg('Browse files')} hidden={compact ? !showBrowser : collapsed}>
@@ -211,7 +215,7 @@ function FileWorkspace({listing}:{listing:ReturnType<typeof useFileListing>}) {
           </>}
         </section>
       </div>
-    </article>
+    </>
   )
 }
 

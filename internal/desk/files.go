@@ -1079,7 +1079,7 @@ func (s *Server) handleFileRead(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, status, err)
 		return
 	}
-	info, _ := s.root.Lstat(clean)
+	info, _ := s.root.Lstat(osPath(clean))
 	content.ReadOnlyReason = s.fileAccessPolicy().readOnlyReason(clean, info)
 	writeJSON(w, http.StatusOK, content)
 }
@@ -1145,7 +1145,7 @@ func (s *Server) commitWriteLocked(clean string, req WriteRequest) (int, any) {
 	}
 	afterSymlinkWalk(clean)
 
-	info, _ := s.root.Lstat(clean)
+	info, _ := s.root.Lstat(osPath(clean))
 	if reason := s.fileAccessPolicy().readOnlyReason(clean, info); reason != "" {
 		return http.StatusForbidden, errorBody(withCode(CodeForbidden, errors.New(readOnlyFileMessage(reason))))
 	}
