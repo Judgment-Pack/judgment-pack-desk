@@ -229,7 +229,7 @@ function AuthorityForm({ settings, onCancel, onSet }: { settings?: StampingSetti
   }
   return <form aria-label={msg('Time-stamping authority')} className={styles.card} onSubmit={event => { event.preventDefault(); void review() }}>
     <Field label={msg('Authority’s address')} hint={msg('An http or https address. Desk passes it to jpack audit stamp as --tsa, and never writes it into jpack.json.')}>
-      {wiring => <Input {...wiring} value={authority} placeholder="https://" onChange={event => setAuthority(event.target.value)} />}
+      {wiring => <Input {...wiring} value={authority} onChange={event => setAuthority(event.target.value)} />}
     </Field>
     <Field label={msg('Interval, in minutes')} hint={msg('From 5 to 1440. Desk stamps at this interval, only when records were added, and only while it is running.')}>
       {wiring => <Input {...wiring} inputMode="numeric" value={minutes} onChange={event => setMinutes(event.target.value)} />}

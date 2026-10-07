@@ -1534,7 +1534,7 @@ web	record: an older runtime's line claims signing	src/audit/decisionRecord.test
 web	record: an older runtime's line has a control beside it	src/audit/decisionRecord.test.tsx
 web	record: an older runtime's line names another version	src/audit/decisionRecord.test.tsx
 web	record: an unchecked signature reads as none	src/audit/decisionRecord.test.tsx,src/audit/jobsRecord.test.tsx
-web	record: asking again runs nothing	src/audit/decisionRecord.test.tsx,src/audit/handover.test.tsx,src/audit/rotateSigningKey.test.tsx
+web	record: asking again runs nothing	src/audit/decisionRecord.test.tsx,src/audit/handover.test.tsx,src/audit/repairTrail.test.tsx,src/audit/rotateSigningKey.test.tsx,src/audit/stamping.test.tsx
 web	record: becoming visible again runs nothing	src/audit/decisionRecord.test.tsx,src/audit/handover.test.tsx,src/audit/rotateSigningKey.test.tsx,src/routes/AdminView.test.tsx
 web	record: every query follows the project	src/audit/decisionRecord.test.tsx,src/audit/decisionRecordLifecycle.test.tsx
 web	record: findings that disagree with the status are accepted	src/audit/decisionRecord.test.tsx,src/audit/jobsRecord.test.tsx
@@ -1557,6 +1557,7 @@ web	removal is offered where there is nothing to remove	src/assistant/AssistantS
 web	removing a member leaves its comma	src/packs/documentText.test.ts,src/packs/edit/conditionOps.test.ts
 web	removing the endpoint discards the tier	src/assistant/endpointForm.test.tsx
 web	removing the endpoint writes an endpoint object anyway	src/assistant/endpointForm.test.tsx
+web	repair page: an outcome outlives a later check	src/audit/repairTrail.test.tsx
 web	review: a diff is drawn without the locked bytes	src/packs/review/review.test.tsx
 web	review: a file is left out of the review	src/packs/review/review.test.tsx
 web	review: a finding is given other words	src/jobs/ReleaseStanding.test.tsx,src/packs/review/findings.test.ts,src/packs/review/review.test.tsx
