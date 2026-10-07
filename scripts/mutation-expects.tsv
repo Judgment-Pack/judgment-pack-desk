@@ -1667,6 +1667,26 @@ web	runner key: the words Desk passed on not said	src/jobs/runnerKey.test.tsx,sr
 web	runner key: why its runs are unsigned not said	src/jobs/runnerKey.test.tsx,src/routes/HelpAbout.test.tsx
 web	runner key: words that are not text read	src/jobs/runnerKey.test.tsx
 web	samePath stops folding altogether	src/packs/packPath.test.ts
+web	search and files: a connection's timeout is not held to the advertised bounds	src/search/connections.test.ts
+web	search and files: a failed search's reply carries the gateway's words	src/search/tools.test.ts
+web	search and files: a failure code Desk did not author is kept on the step	src/search/failures.test.ts
+web	search and files: a read-only file is offered for saving	src/routes/AuthorView.test.tsx
+web	search and files: a read-only file opens in an editable editor	src/routes/AuthorView.test.tsx
+web	search and files: a search row takes its provider from the model's call	src/chat/messageOwnership.test.ts
+web	search and files: a search step names a provider that is not an identifier	src/search/step.test.ts
+web	search and files: a search step's reference is for another query	src/search/step.test.ts
+web	search and files: a timeout past its bounds is sent	src/search/WebSearchSettings.test.tsx
+web	search and files: a word Desk uses for its own failures is taken from the adapter	src/search/failures.test.ts
+web	search and files: formatted JSON is held to the bound in characters, not bytes	src/files/formatJson.test.ts
+web	search and files: formatting re-encodes a token	src/files/formatJson.test.ts,src/routes/AuthorView.test.tsx
+web	search and files: saved history names a cause Desk did not author	src/search/failures.test.ts
+web	search and files: settings that could not be read are reported as a failed save	src/search/WebSearchSettings.test.tsx
+web	search and files: settings that could not be read let the first turn run	src/chat/ChatProvider.search.test.tsx
+web	search and files: the advertised timeout may exceed 120 seconds	src/search/connections.test.ts
+web	search and files: the attribution frame runs the provider's scripts	src/search/AttributionFrame.test.tsx
+web	search and files: the attribution policy does not forbid scripts	src/search/AttributionFrame.test.tsx
+web	search and files: the first turn runs before the search connections are known	src/chat/ChatProvider.search.test.tsx
+web	search and files: the formatter offers more than the files API writes	src/files/formatJson.test.ts
 web	shortcuts fire inside the editor	src/shell/QuickSwitcher.test.tsx,src/shell/shortcuts.test.tsx
 web	signing key: config read drops the member	src/config/queries.test.tsx,src/routes/HelpAbout.test.tsx
 web	signing key: config read takes a member that is not a boolean	src/config/queries.test.tsx
@@ -1706,6 +1726,7 @@ web	stamping page: the trust sentence is left out	src/audit/stamping.test.tsx
 web	stamping page: what a stamp does not establish is not said	src/audit/stamping.test.tsx
 web	stamping page: what a stamp establishes is not said	src/audit/stamping.test.tsx
 web	storage defaults are not applied when the member is absent	src/admin/projectFileCards.test.tsx,src/config/deskConfig.test.ts,src/config/queries.test.tsx,src/routes/AdminView.test.tsx,src/shell/AppShell.test.tsx,src/shell/CreatePackDialog.test.tsx,src/shell/DescribeIt.test.tsx
+web	switching files does not ask about unsaved work	src/routes/AuthorView.test.tsx
 web	tested releases: Create job shown the existing-job note	src/jobs/JobsView.test.tsx
 web	tested releases: Runner's refusal not shown in place of the job	src/jobs/JobsView.test.tsx
 web	tested releases: config read drops the policy	src/config/queries.test.tsx,src/jobs/JobsView.test.tsx,src/jobs/ReleaseReadiness.test.tsx
