@@ -9,9 +9,10 @@ package desk
 // not.
 //
 // **It runs with the keys and checkpoints Desk keeps, and nothing else
-// held.** On a desk Desk made and keeps a key for, each public key in
-// `<desk id>.keys.jsonl`, in order, as `--public-key` (signing.go); on the
-// startup desk, none in this version. For each holder Desk handed checkpoints
+// held.** On a desk Desk keeps a key for, each public key in its list,
+// `<name>.keys.jsonl`, in order, as `--public-key` (signing.go): a desk Desk
+// made, and the project Desk was started on where its upgrade made one
+// (startup_key.go). For each holder Desk handed checkpoints
 // of the current trail over to, the file of those it kept, as `--expect`
 // (handover.go). No `--tsa-…`, because this desk holds no stamping roots yet,
 // and never a `--require-…` flag: those are a reader's demands, not the
@@ -207,7 +208,7 @@ const (
 	// or before Desk kept keys.
 	keysNone = "none"
 	// keysStartup: the project Desk was started on, for which Desk keeps no
-	// key in this version.
+	// key: the upgrade that offers one was not taken.
 	keysStartup = "startup"
 	// keysUnread: Desk could not read or pass the keys it keeps, Problem says
 	// why, and none was passed.
@@ -350,12 +351,16 @@ func (s *Server) withoutPathsUnder(message, auditDir string) string {
 	}
 	// The key Desk keeps for this desk, its list, and every folder on the way
 	// to them, the home folder among them.
-	spans = append(spans, s.custodySpans(s.cfg.deskID, held)...)
+	spans = append(spans, s.custodySpans(s.signingKeyName(), held)...)
 	for _, path := range []struct{ value, name string }{
 		{strings.TrimSpace(os.Getenv(runtimeConfigEnv)), runtimeConfigEnv},
 		{s.cfg.JpackBin, filepath.Base(s.cfg.JpackBin)},
 		{s.projectDir, "the project's folder"},
 		{s.cfg.ProjectDir, "the project's folder"},
+		// And as the runtime prints it, a control or separator character as
+		// "?" (`displayedPath`).
+		{displayedPath(s.projectDir), "the project's folder"},
+		{displayedPath(s.cfg.ProjectDir), "the project's folder"},
 	} {
 		if path.value != "" && path.value != path.name && filepath.IsAbs(path.value) {
 			spans = append(spans, pathSpan{value: path.value, with: path.name})
@@ -694,10 +699,11 @@ func (k *keyReading) Close() {
 // passed. A sidecar that cannot be read now is said in Desk's log, and the
 // list is passed on the other checks: `audit verify` reads the sidecar
 // itself.
+//
+// **The project Desk was started on is read as a desk is**, under its own
+// name (`signingKeyName`): where its upgrade made a key, that key and its
+// list are held to the same rules and passed the same way.
 func (s *Server) heldKeys(ctx context.Context, project heldDir) (auditKeys, *keyReading) {
-	if s.cfg.deskID == "" {
-		return auditKeys{State: keysStartup}, nil
-	}
 	dir, err := s.assistant.openSigning(false)
 	keys, reading := s.keysIn(ctx, project, dir, err)
 	if reading == nil {
@@ -706,16 +712,24 @@ func (s *Server) heldKeys(ctx context.Context, project heldDir) (auditKeys, *key
 	return keys, reading
 }
 
+// noKeys is what the panel says where Desk keeps neither a key nor a list of
+// keys for this desk: that it keeps none for this desk, or, on the project
+// Desk was started on, none for the project it was started on.
+func (s *Server) noKeys() auditKeys {
+	if s.cfg.deskID == "" {
+		return auditKeys{State: keysStartup}
+	}
+	return auditKeys{State: keysNone}
+}
+
 // keysIn is heldKeys's reading, through dir, the signing folder the caller
 // opened (openErr where it could not), and closes nothing: a rotation reads
 // its keys so through the folder it holds the lock of (rotation.go). The
-// reading it answers refers to dir.
-//
-// It is asked only for a desk Desk made: heldKeys answers the startup desk
-// itself, and a rotation is refused there before it reads anything.
+// reading it answers refers to dir. The keys are those kept under this
+// desk's name (`signingKeyName`).
 func (s *Server) keysIn(ctx context.Context, project heldDir, dir *signingDir, openErr error) (auditKeys, *keyReading) {
 	if errors.Is(openErr, errNoSigningDir) {
-		return auditKeys{State: keysNone}, nil
+		return s.noKeys(), nil
 	}
 	if err := openErr; err != nil {
 		s.log.Printf("desk: the signing folder could not be opened for the decision record: %v", err)
@@ -724,14 +738,15 @@ func (s *Server) keysIn(ctx context.Context, project heldDir, dir *signingDir, o
 	unread := func(problem string) (auditKeys, *keyReading) {
 		return auditKeys{State: keysUnread, Problem: problem}, nil
 	}
-	seedName := s.cfg.deskID + seedSuffix
+	name := s.signingKeyName()
+	seedName := name + seedSuffix
 	seed, seedErr := dir.root.Lstat(seedName)
-	public, list, found, err := dir.readKeysFile(s.cfg.deskID + keysSuffix)
+	public, list, found, err := dir.readKeysFile(name + keysSuffix)
 	switch {
 	case err != nil:
 		return unread("Desk could not read the public keys it keeps for this desk: " + err.Error() + ".")
 	case !found && errors.Is(seedErr, fs.ErrNotExist):
-		return auditKeys{State: keysNone}, nil
+		return s.noKeys(), nil
 	case !found:
 		return unread("Desk keeps a key for this desk, but no list of its public keys, so it passed no key.")
 	case seedErr != nil:
@@ -753,7 +768,7 @@ func (s *Server) keysIn(ctx context.Context, project heldDir, dir *signingDir, o
 	reading := &keyReading{dir: dir, seed: seed, list: list, keys: public, current: current}
 	reading.sidecar, reading.sidecarErr = s.readSidecar(ctx)
 	if reading.sidecarErr != nil {
-		s.log.Printf("desk: the signature sidecar of desk %s could not be read to check its list of keys: %v", s.cfg.deskID, reading.sidecarErr)
+		s.log.Printf("desk: the signature sidecar of desk %s could not be read to check its list of keys: %v", name, reading.sidecarErr)
 	} else if err := checkKeysAgainst(public, current, &reading.sidecar); err != nil {
 		return unread("Desk's list of this desk's public keys does not agree with the key rotations in the trail's signature sidecar, so it passed no key: " + err.Error() + ".")
 	}

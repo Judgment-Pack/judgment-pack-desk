@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { deskFetch } from '../files/client'
 import { testQueryClient } from '../testing/harness'
 import { followsTheProject } from '../mcp/projectChange'
-import { AUDIT_KEY, isAuditRecord, readAuditRecord, type AuditRecord, type AuditReport } from './client'
+import { AUDIT_KEY, checkDecisionRecordAgain, isAuditRecord, readAuditRecord, type AuditRecord, type AuditReport } from './client'
 import { DecisionRecord } from './DecisionRecord'
 
 vi.mock(import('../files/client'), async original => ({ ...(await original()), deskFetch: vi.fn() }))
@@ -67,6 +67,24 @@ function show(client: QueryClient = testQueryClient(), visible = true) {
 const panel = () => screen.getByTestId('decision-record')
 
 describe('the decision-record client', () => {
+  // After the upgrade that makes the project's key (packs/upgrade): a check
+  // of its own, never one asked before the key was made and still in flight,
+  // and run only on request, so a change to the project does not cancel it.
+  it('checks again after the key is made, never joining a check asked before it', async () => {
+    const client = testQueryClient()
+    let release!: (response: Response) => void
+    answers = [() => new Promise<Response>(resolve => { release = resolve }) as unknown as Response, () => json(200, { state: 'report', runtime: '0.27.1', report: signedReport, keys: { state: 'kept', public: [deskKey] } } satisfies AuditRecord)]
+    const before = client.fetchQuery({ queryKey: AUDIT_KEY, queryFn: ({ signal }) => readAuditRecord(signal) }).catch(() => undefined)
+    await waitFor(() => expect(asked).toBe(1))
+    await checkDecisionRecordAgain(client)
+    release(json(200, { state: 'report', runtime: '0.27.1', report: valid, keys: { state: 'startup' } }))
+    await before
+    expect(asked).toBe(2)
+    const query = client.getQueryCache().find({ queryKey: AUDIT_KEY })!
+    expect((query.state.data as AuditRecord & { keys?: unknown }).keys).toEqual({ state: 'kept', public: [deskKey] })
+    expect(followsTheProject(query)).toBe(false)
+  })
+
   it('refuses an answer that is not one', async () => {
     for (const body of [{ state: 'report' }, { state: 'report', report: { ...valid, coverage: undefined } }, { state: 'report', report: { ...valid, establishes: [1] } },
       { state: 'unverified', diagnostics: [] }, { state: 'older-runtime' }, { state: 'chained' }, { state: 'report', runtime: 6, report: valid },

@@ -566,7 +566,8 @@ func TestARotationTheRuntimeDidNotWriteSaysDeskKeptItsKey(t *testing.T) {
 }
 
 // **Where no rotation can be made, none is, and the panel says why.** The
-// project Desk was started on keeps no key Desk rotates; a desk with no key
+// project Desk was started on, where its upgrade made no key, has none to
+// rotate; a desk with no key
 // has none to rotate; a token the panel did not give is stale; a rotation
 // that did not finish blocks another; a runtime that does not read "6" has no
 // audit key rotate; a key that took over after the last record cannot hand
@@ -588,12 +589,12 @@ func TestARotationIsMadeOnlyWhereItCanBe(t *testing.T) {
 	t.Run("the project Desk was started on", func(t *testing.T) {
 		writeProject(t, r.s.projectDir, map[string]string{"jpack.json": auditedConfig})
 		answer, _ := panelOn(t, r.ts, "")
-		want := "This is the project Desk was started on. Desk keeps no signing key for it in this version, so it has none to rotate."
+		want := "Desk keeps no signing key for the project it was started on, so it has none to rotate."
 		if answer.Rotation.State != rotationUnavailable || answer.Rotation.Reason != want {
 			t.Errorf("the startup desk's panel offers %+v", answer.Rotation)
 		}
 		status, data := reviewCall(t, r.ts, "POST", "/api/audit/key/rotate", "", map[string]string{"token": strings.Repeat("a", 64)}, bearer)
-		if status != http.StatusConflict || refusalOf(data) != want {
+		if status != http.StatusConflict || refusalOf(data) != "Nothing was rotated. "+want {
 			t.Errorf("the startup desk answered %d %s", status, data)
 		}
 		noGenerate(t)

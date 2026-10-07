@@ -170,7 +170,8 @@ describe('rotating the signing key', () => {
   })
 
   it('says why none is offered, and offers none', async () => {
-    for (const reason of ['This is the project Desk was started on. Desk keeps no signing key for it in this version, so it has none to rotate.', 'Desk keeps no signing key for this desk, so it has none to rotate.']) {
+    for (const reason of ['Desk keeps no signing key for the project it was started on, so it has none to rotate.', 'Desk keeps no signing key for this desk, so it has none to rotate.',
+      'JPACK_SIGNING_KEY is set where Desk was started, and the runtime signs this project\'s records with the key it names, not with the key Desk keeps, so Desk rotates no key here.']) {
       records = [{ ...offered, rotation: { state: 'unavailable', reason } }]
       show()
       expect(await screen.findByText(reason)).toBeTruthy()
@@ -211,7 +212,7 @@ describe('the rotation client', () => {
     // Each sentence's words between its placeholders, as the chassis's Go
     // source spells them.
     const source = readFileSync(join(import.meta.dirname, '../../../internal/desk/rotation.go'), 'utf8')
-    expect(ROTATION_REASONS).toHaveLength(11)
+    expect(ROTATION_REASONS).toHaveLength(12)
     for (const reason of ROTATION_REASONS) {
       for (const part of reason.split(/\{\{\w+\}\}/)) {
         expect(source.includes(part) ? part : `missing: ${part}`, reason).toBe(part)

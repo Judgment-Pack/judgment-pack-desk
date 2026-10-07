@@ -101,7 +101,7 @@ func TestUpgradedConfigKeepsEveryOtherByte(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, changed := upgradedConfig([]byte(tc.before), members, tc.to, tc.facts)
+			got, changed := upgradedConfig([]byte(tc.before), members, tc.to, tc.facts, "")
 			if string(got) != tc.want {
 				t.Errorf("upgraded to\n%s\nwant\n%s", got, tc.want)
 			}
@@ -631,7 +631,7 @@ func TestTheUpgradeOffersOnlyWhatTheRuntimeReads(t *testing.T) {
 	}{
 		{"a runtime that reads no 4", upToVersion3, upgradeBefore, "runtime 0.24.0 and later"},
 		{"a configuration the runtime does not read", upToVersion4, strings.Replace(upgradeBefore, `"3"`, `"5"`, 1), "and not 5"},
-		{"a configuration version Desk does not know", `["1","2","3","4","5","6"]`, strings.Replace(upgradeBefore, `"3"`, `"6"`, 1), "which Desk does not upgrade"},
+		{"a configuration version Desk does not know", `["1","2","3","4","5","6","7"]`, strings.Replace(upgradeBefore, `"3"`, `"7"`, 1), "which Desk does not upgrade"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, ts, rig, project := upgradeProject(t, tc.versions, "", map[string]string{"jpack.json": tc.config})

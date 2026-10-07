@@ -14,7 +14,9 @@ package desk
 // are unsigned, never refused. A desk's `jpack.json` names its key by
 // `<config>/secrets/signing/<desk id>.seed`, so Desk makes the next key the
 // one named by renaming it over that name. `jpack.json` never changes, and no
-// lock is written.
+// lock is written. The project Desk was started on, where its upgrade made a
+// key, is rotated the same way, under its own name (`signingKeyName`, the
+// hex SHA-256 of its path), wherever this file says `<desk id>`.
 //
 // # The steps, under the desk's key lock and the signing folder's lock
 //
@@ -550,7 +552,7 @@ func rotationNames(id string) (marker, next, seed, keys string) {
 // the next seed and its key, where there is one. Anything that could not be
 // read makes it rotationUnknown, with why.
 func (s *Server) inspectRotation(ctx context.Context, project heldDir, dir *signingDir, marker os.FileInfo) rotationState {
-	markerName, nextName, seedName, keysName := rotationNames(s.cfg.deskID)
+	markerName, nextName, seedName, keysName := rotationNames(s.signingKeyName())
 	state := rotationState{marker: marker}
 	unknown := func(why string) rotationState {
 		state.outcome, state.why = rotationUnknown, why
@@ -600,7 +602,7 @@ func (s *Server) inspectRotation(ctx context.Context, project heldDir, dir *sign
 	state.list = list
 	sidecar, err := s.readSidecar(ctx)
 	if err != nil {
-		s.log.Printf("desk: the signature sidecar of desk %s could not be read to finish a rotation: %v", s.cfg.deskID, err)
+		s.log.Printf("desk: the signature sidecar of desk %s could not be read to finish a rotation: %v", s.signingKeyName(), err)
 		return unknown("the trail's signature sidecar could not be read: " + sidecarProblem(err))
 	}
 	next, err := dir.root.Lstat(nextName)
@@ -671,7 +673,7 @@ func (s *Server) inspectRotation(ctx context.Context, project heldDir, dir *sign
 // checked, which is the rotation's effect: nothing may say the key was
 // rotated, or that the next key signs, before it.
 func (s *Server) finishRotation(dir *signingDir, state rotationState) (renamed bool, err error) {
-	markerName, nextName, seedName, keysName := rotationNames(s.cfg.deskID)
+	markerName, nextName, seedName, keysName := rotationNames(s.signingKeyName())
 	// The list the next key is renamed against: the one written here, or,
 	// where it was written already, the one inspected.
 	list := state.list
@@ -708,7 +710,7 @@ func unfinishedWords(renamed bool, at int64, err error) string {
 // made, by identity, and then its marker. The current seed is never touched.
 // Where the next seed cannot be removed, the marker stays.
 func (s *Server) undoRotation(dir *signingDir, next, marker os.FileInfo) error {
-	markerName, nextName, _, _ := rotationNames(s.cfg.deskID)
+	markerName, nextName, _, _ := rotationNames(s.signingKeyName())
 	if err := dir.removeMade(nextName, next); err != nil {
 		return fmt.Errorf("the next key could not be removed: %w", err)
 	}
@@ -728,7 +730,8 @@ func (s *Server) undoRotation(dir *signingDir, next, marker os.FileInfo) error {
 // none can be taken here, nothing may be removed; either way it changes
 // nothing, and leaves every marker for the next start. It acts only on
 // markers named `<desk id>.rotating` directly in the signing folder, of a
-// desk the registry opened, and on nothing in a folder below it.
+// desk the registry opened, or under the name of the project Desk was started
+// on, and on nothing in a folder below it.
 func (s *Server) recoverRotations() {
 	dir, err := s.assistant.openSigning(false)
 	if errors.Is(err, errNoSigningDir) {
@@ -751,7 +754,7 @@ func (s *Server) recoverRotations() {
 	var markers []string
 	for _, entry := range entries {
 		id, isMarker := strings.CutSuffix(entry.Name(), rotatingSuffix)
-		if isMarker && deskIDPattern.MatchString(id) && entry.Type().IsRegular() {
+		if isMarker && (deskIDPattern.MatchString(id) || s.startupKey(id)) && entry.Type().IsRegular() {
 			markers = append(markers, id)
 		}
 	}
@@ -766,6 +769,9 @@ func (s *Server) recoverRotations() {
 	defer unlock()
 	for _, id := range markers {
 		child := s.desks[id]
+		if s.startupKey(id) {
+			child = s
+		}
 		if child == nil {
 			s.log.Printf("desk: an unfinished rotation of desk %s's key was left as it is, because that desk is not open", id)
 			continue
@@ -783,33 +789,33 @@ func (s *Server) recoverRotation(dir *signingDir) {
 	defer s.keyMu.Unlock()
 	project, refusal := s.auditRuntime()
 	if refusal != "" {
-		s.log.Printf("desk: an unfinished rotation of desk %s's key was left as it is: %s", s.cfg.deskID, refusal)
+		s.log.Printf("desk: an unfinished rotation of desk %s's key was left as it is: %s", s.signingKeyName(), refusal)
 		return
 	}
 	state := s.inspectRotation(context.Background(), project, dir, nil)
 	keyBetween("rotation: inspected")
 	switch state.outcome {
 	case rotationSettled:
-		markerName, _, _, _ := rotationNames(s.cfg.deskID)
+		markerName, _, _, _ := rotationNames(s.signingKeyName())
 		if err := dir.removeMade(markerName, state.marker); err != nil {
-			s.log.Printf("desk: the marker of a finished rotation of desk %s's key could not be removed: %v", s.cfg.deskID, err)
+			s.log.Printf("desk: the marker of a finished rotation of desk %s's key could not be removed: %v", s.signingKeyName(), err)
 			return
 		}
-		s.log.Printf("desk: a rotation of desk %s's key had nothing left to do; its marker was removed", s.cfg.deskID)
+		s.log.Printf("desk: a rotation of desk %s's key had nothing left to do; its marker was removed", s.signingKeyName())
 	case rotationWritten:
 		if renamed, err := s.finishRotation(dir, state); err != nil {
-			s.log.Printf("desk: a rotation of desk %s's key that the runtime wrote could not be finished (the next key named: %v): %v", s.cfg.deskID, renamed, err)
+			s.log.Printf("desk: a rotation of desk %s's key that the runtime wrote could not be finished (the next key named: %v): %v", s.signingKeyName(), renamed, err)
 			return
 		}
-		s.log.Printf("desk: a rotation of desk %s's key that a stop cut short was finished: records after %d are signed with key %s", s.cfg.deskID, state.at, state.nextKey.KeyID)
+		s.log.Printf("desk: a rotation of desk %s's key that a stop cut short was finished: records after %d are signed with key %s", s.signingKeyName(), state.at, state.nextKey.KeyID)
 	case rotationUnwritten:
 		if err := s.undoRotation(dir, state.next, state.marker); err != nil {
-			s.log.Printf("desk: a rotation of desk %s's key that the runtime did not write could not be undone: %v", s.cfg.deskID, err)
+			s.log.Printf("desk: a rotation of desk %s's key that the runtime did not write could not be undone: %v", s.signingKeyName(), err)
 			return
 		}
-		s.log.Printf("desk: a rotation of desk %s's key that the runtime did not write was undone; Desk kept key %s", s.cfg.deskID, state.current.KeyID)
+		s.log.Printf("desk: a rotation of desk %s's key that the runtime did not write was undone; Desk kept key %s", s.signingKeyName(), state.current.KeyID)
 	case rotationUnknown:
-		s.log.Printf("desk: an unfinished rotation of desk %s's key was left as it is: %s", s.cfg.deskID, state.why)
+		s.log.Printf("desk: an unfinished rotation of desk %s's key was left as it is: %s", s.signingKeyName(), state.why)
 	}
 }
 
@@ -842,8 +848,14 @@ var rotationKeyLimit = maxDeskKeys
 // the token that confirms it, from what the panel read of its keys. It runs
 // under the desk's key lock.
 func (s *Server) rotationOffer(ctx context.Context, project heldDir, keys auditKeys, reading *keyReading) auditRotation {
-	if s.cfg.deskID == "" {
-		return auditRotation{State: rotationUnavailable, Reason: "This is the project Desk was started on. Desk keeps no signing key for it in this version, so it has none to rotate."}
+	// **No key action where the runtime would act on another key** (ADR-0010,
+	// section 1): on the project Desk was started on, an inherited
+	// JPACK_SIGNING_KEY is the key the runtime signs and rotates with.
+	if s.inheritsSigningKey() {
+		return auditRotation{State: rotationUnavailable, Reason: "JPACK_SIGNING_KEY is set where Desk was started, and the runtime signs this project's records with the key it names, not with the key Desk keeps, so Desk rotates no key here."}
+	}
+	if keys.State == keysStartup {
+		return auditRotation{State: rotationUnavailable, Reason: "Desk keeps no signing key for the project it was started on, so it has none to rotate."}
 	}
 	if keys.State == keysNone {
 		return auditRotation{State: rotationUnavailable, Reason: "Desk keeps no signing key for this desk, so it has none to rotate."}
@@ -859,7 +871,7 @@ func (s *Server) rotationOffer(ctx context.Context, project heldDir, keys auditK
 		defer opened.Close()
 		dir = opened
 	}
-	markerName, _, _, _ := rotationNames(s.cfg.deskID)
+	markerName, _, _, _ := rotationNames(s.signingKeyName())
 	if _, err := dir.root.Lstat(markerName); !errors.Is(err, fs.ErrNotExist) {
 		return s.unfinishedRotation(ctx, project, dir)
 	}
@@ -956,10 +968,6 @@ func (s *Server) handleRotateKey(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, "Confirm the rotation with the token the decision record gave.")
 		return
 	}
-	if s.cfg.deskID == "" {
-		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, "This is the project Desk was started on. Desk keeps no signing key for it in this version, so it has none to rotate.")
-		return
-	}
 	project, refusal := s.auditRuntime()
 	if refusal != "" {
 		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, refusal)
@@ -978,7 +986,7 @@ func (s *Server) handleRotateKey(w http.ResponseWriter, r *http.Request) {
 	if failure != nil {
 		message := s.withoutPaths(failure.message)
 		if message != failure.message {
-			s.log.Printf("desk: the rotation of desk %s's key, as said: %s", s.cfg.deskID, failure.message)
+			s.log.Printf("desk: the rotation of desk %s's key, as said: %s", s.signingKeyName(), failure.message)
 		}
 		writeJSONCoded(w, failure.status, failure.code, message)
 		return
@@ -1001,7 +1009,7 @@ func (s *Server) rotateKey(ctx context.Context, project heldDir, token string) (
 		case errors.Is(err, errSigningBusy):
 			return nil, &lockFailure{http.StatusConflict, CodeBadRequest, "Nothing was rotated: " + signingBusyWords}
 		case err != nil:
-			s.log.Printf("desk: desk %s's key is rotated without the signing folder's lock: %v", s.cfg.deskID, err)
+			s.log.Printf("desk: desk %s's key is rotated without the signing folder's lock: %v", s.signingKeyName(), err)
 		default:
 			defer unlock()
 		}
@@ -1057,7 +1065,7 @@ func (s *Server) checkRotation(ctx context.Context, project heldDir, token strin
 // the desk names (`finishRotation`); a rotation the runtime wrote and Desk
 // could not finish is said as one that did not finish.
 func (s *Server) makeRotation(ctx context.Context, project heldDir, reading *keyReading) (*rotationAnswer, *lockFailure) {
-	dir, id := reading.dir, s.cfg.deskID
+	dir, id := reading.dir, s.signingKeyName()
 	markerName, nextName, _, _ := rotationNames(id)
 	nextPath := filepath.Join(dir.path, nextName)
 

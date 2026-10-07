@@ -351,8 +351,36 @@ person's approval, and it records no name.
   where one cannot be, the answer and Desk's log say so. A build that
   cannot establish who owns a directory keeps no key; on such a build Desk
   makes no desk at all, since its desks folder is held to the same custody.
-- Not yet: a key for the project Desk was started on, handing over
-  checkpoints, repair and stamping (ADR-0010's delivery table).
+- Not yet: repair and stamping (ADR-0010's delivery table).
+
+**The signing key of the project Desk was started on** (ADR-0010, section 1
+and question 2). That project is the owner's own, so Desk never names a key in
+it unasked: its upgrade offer (Admin → Project → Gates, and the note on Packs)
+lists "Sign this project's decisions" as an item of its own, never chosen for
+you, and only where the runtime reads configVersion `"6"` and Desk's custody
+can keep a key; elsewhere the item says why in one sentence (the runtime reads
+no `"6"`; custody keeps no key there, or something is already kept under the
+project's name; `JPACK_SIGNING_KEY` is inherited, and the runtime signs with
+that instead; the audit member turns its chain off; or Desk's signing folder
+is inside the project, which the runtime refuses on a key's path). The item
+lists its costs before anything is confirmed: the home path in a committed
+file, since `audit.signingKey` names the seed by its absolute path; `packs
+validate` failing in CI, in any checkout where the key is not present; and
+runtimes before the floor (0.26.0) refusing the project, which is written at
+`"6"`. Chosen, the confirmation, under the offer's token and the signing
+folder's lock, first has the runtime make the key as a desk's is made (the
+same marker, checks and list of public keys), at
+`secrets/signing/<name>.seed`, where `<name>` is the hex SHA-256 of the
+project's resolved path, the name its Runner's state folder and Runner key
+already have; then writes `jpack.json` at `"6"` with `audit.signingKey`
+naming the seed, every other byte its own, through the upgrade's own write,
+and locks it; and removes the marker only once the lock is checked. A failure
+at any step puts every file back and removes the key; a stopped upgrade's
+marker is cleared at the next start on that project, which keeps the key only
+where `jpack.json` names it. The decision record then reads the project as a
+desk with a key: it passes its public keys to `audit verify`, shows them, and
+offers rotation, except while `JPACK_SIGNING_KEY` is inherited, which the
+runtime takes over the configuration's key.
 
 **Rotating a desk's key** (ADR-0010, section 1, "Rotating it").
 
@@ -363,7 +391,8 @@ person's approval, and it records no name.
   earlier rotation, a record has been signed since, because a rotation with no
   record after the last one would take over after the same record, which the
   list of keys cannot hold. Otherwise the panel says why. The project Desk was
-  started on has no key Desk rotates, and says so; a runtime older than
+  started on is offered a rotation where its upgrade made a key (above), and
+  not while `JPACK_SIGNING_KEY` is inherited; a runtime older than
   0.26.0 has no `audit key rotate`, and the panel shows only that it has no
   audit commands.
 - The confirmation says what the runtime does: the current key stops signing,
@@ -413,7 +442,8 @@ person's approval, and it records no name.
   it changes nothing, and the marker stays.
 - **At start**, after the desks are opened and before any request is served,
   each `<desk id>.rotating` marker directly in the signing folder, of a desk
-  the registry opened, is read the same way, under the signing folder's lock,
+  the registry opened or of the project Desk was started on, under its name,
+  is read the same way, under the signing folder's lock,
   taken once (above):
   - the runtime wrote the line: the rotation is finished;
   - no line names the next key: the next seed and the marker are removed;
@@ -477,7 +507,8 @@ reads a key from the
 file it names, so each is written for that run to a file of its own in a new
 folder in Desk's signing folder, and removed after it (a Desk stopped during
 the check leaves that folder, which holds public keys only). On the project
-Desk was started on it passes no key. For each holder you confirmed
+Desk was started on it passes the keys its upgrade made, if any, and
+otherwise none. For each holder you confirmed
 checkpoints of the trail as it is now as handed over to (the hand-over, below),
 it passes Desk's file of them as `--expect`, once it has read the file whole
 and found it to be what it recorded as handed over: complete lines, each a
@@ -676,8 +707,10 @@ that they cover the pack. See "Local operational Jobs pilot" below.
   step that lists each change: `jpack.json` moved to configVersion `"5"` with
   `requireReviewed` and `.desk-private/audit`, every other byte kept; the line
   `.desk-private/` added at the end of `.gitignore` in a Git work tree whose
-  `.gitignore` does not already end with it; the first Review and lock; and
-  `requireComparableFacts`, which you can decline on its own. Nothing is written
+  `.gitignore` does not already end with it; the first Review and lock;
+  `requireComparableFacts`, which you can decline on its own; and, on the
+  project Desk was started on, a signing key, never chosen for you (see "The
+  signing key of the project Desk was started on" above). Nothing is written
   before you confirm, and the configuration and the first lock are written
   together, or every file is put back. A project that already keeps a lock, for
   example one a CI step checks, is told that the new `jpack.json` is

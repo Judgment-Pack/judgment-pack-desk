@@ -2623,8 +2623,8 @@ func (b *cappedBuffer) exceeded() bool {'
     '		dir.startup = true
 		verified, err = s.runVerify(ctx, dir)'
   mutate go "signing key: the startup desk's upgrade drops it" internal/desk/upgrade.go \
-    'func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string, facts bool) (any, *lockFailure) {' \
-    'func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string, facts bool) (any, *lockFailure) {
+    'func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string, facts, sign bool) (any, *lockFailure) {' \
+    'func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string, facts, sign bool) (any, *lockFailure) {
 	dir.startup = false'
   mutate go "signing key: a named desk's project is marked the startup desk's" internal/desk/review.go \
     'info: s.project.info, startup: s.cfg.deskID == ""}' \
@@ -3189,11 +3189,6 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "key panel: kept keys are not passed" "$AR" \
     '				args = append(args, "--public-key", file)' \
     '				_ = file'
-  mutate go "key panel: the startup desk is read for keys" "$AR" \
-    '	if s.cfg.deskID == "" {
-		return auditKeys{State: keysStartup}, nil
-	}' \
-    ''
   mutate go "key panel: reading the keys makes a signing folder" "$AR" \
     '	dir, err := s.assistant.openSigning(false)' \
     '	dir, err := s.assistant.openSigning(true)'
@@ -3234,7 +3229,7 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if key := strings.TrimSpace(os.Getenv(runtimeSigningKeyEnv)); filepath.IsAbs(key) {' \
     '	if key := strings.TrimSpace(os.Getenv(runtimeSigningKeyEnv)); false && filepath.IsAbs(key) {'
   mutate go "key panel: the key's path and its folders are not spans" "$AR" \
-    '	spans = append(spans, s.custodySpans(s.cfg.deskID, held)...)' \
+    '	spans = append(spans, s.custodySpans(s.signingKeyName(), held)...)' \
     ''
   mutate go "key panel: the signatures are not shown" "$AR" \
     '	if sig := got.Signatures; sig != nil {' \
@@ -3666,8 +3661,8 @@ func (b *cappedBuffer) exceeded() bool {'
     '	sort.Slice(edits, func(i, j int) bool { return edits[i].start > edits[j].start })' \
     '	sort.Slice(edits, func(i, j int) bool { return edits[i].start < edits[j].start })'
   mutate go "upgrade: an existing audit directory is replaced" "$UP" \
-    '	step("audit", !declared, auditMember)' \
-    '	step("audit", !declared || true, auditMember)'
+    '	step("audit", !declared, func(sep, colon string) string { return auditMember(sep, colon, signingKey) })' \
+    '	step("audit", !declared || true, func(sep, colon string) string { return auditMember(sep, colon, signingKey) })'
   mutate go "upgrade: requireComparableFacts cannot be declined" "$UP" \
     '	plan.choice = facts && plan.facts == "off"' \
     '	plan.choice = plan.facts == "off"'
@@ -3806,11 +3801,200 @@ func (b *cappedBuffer) exceeded() bool {'
     '	review, err := s.reviewOf(ctx, dir, plan.upgraded, nil)' \
     '	review, err := s.reviewOf(ctx, dir, plan.snap, nil)'
   mutate go "upgrade: an existing lock is not said" "$UP" \
-    '		Locked: plan.snap.hasLock, ConfigBefore: string(plan.snap.config)}' \
-    '		Locked: false, ConfigBefore: string(plan.snap.config)}'
+    '		Locked: plan.snap.hasLock, ConfigBefore: string(plan.snap.config), SigningKey: plan.signing, Sign: plan.sign}' \
+    '		Locked: false, ConfigBefore: string(plan.snap.config), SigningKey: plan.signing, Sign: plan.sign}'
   mutate go "upgrade: no copies are kept" "$UP" \
     '	if err := s.storeReviewedCopies(plan.upgraded); err != nil {' \
     '	if err := error(nil); err != nil {'
+
+  # **The signing key of the project Desk was started on (ADR-0010, section 1
+  # and question 2; delivery row 4).** The upgrade offers it as an item of its
+  # own, on that project only, never chosen for the owner, and only where the
+  # runtime reads "6", custody can keep a key and the runtime would sign with
+  # it; the confirmation makes the key first, under the signing folder's lock,
+  # names it at "6" in jpack.json only where it is still where it was made, and
+  # removes it with every file where the upgrade does not complete; the next
+  # start keeps a stopped upgrade's key only where jpack.json names it; and the
+  # decision record and rotation read the project as a desk with a key. Every
+  # row's name says "upgrade key", so `mutation-check.sh go "upgrade key"` runs
+  # exactly these. startup_key_test.go drives a stand-in runtime.
+  SK=internal/desk/startup_key.go
+  mutate go "upgrade key: the item is offered on a desk Desk made" "$SK" \
+    '	if s.cfg.deskID != "" {
+		return nil, ""
+	}' \
+    '	if false {
+		return nil, ""
+	}'
+  mutate go "upgrade key: the item is offered where the runtime reads no 6" "$SK" \
+    '	if !slices.Contains(schema.supported, signedFromVersion) {
+		return notOffered(' \
+    '	if false {
+		return notOffered('
+  mutate go "upgrade key: the item is offered under an inherited JPACK_SIGNING_KEY" "$SK" \
+    '	if s.inheritsSigningKey() {
+		return notOffered(keyNotOfferedInherited)' \
+    '	if false {
+		return notOffered(keyNotOfferedInherited)'
+  mutate go "upgrade key: the item is offered where custody keeps no key" "$SK" \
+    '	seed, err := s.startupSeedPath()
+	if err != nil {' \
+    '	seed, err := s.startupSeedPath()
+	if err != nil && false {'
+  mutate go "upgrade key: the item is offered over something kept under the project's name" "$SK" \
+    'range []string{name + seedSuffix, name + keysSuffix, name + creatingSuffix} {' \
+    'range []string{} {'
+  mutate go "upgrade key: the item is offered where the signing folder is inside the project" "$SK" \
+    '	case pathContains(s.projectDir, folder):' \
+    '	case false:'
+  mutate go "upgrade key: the item is offered over a key jpack.json names" "$SK" \
+    '			case member.name == "signingKey":' \
+    '			case false:'
+  mutate go "upgrade key: the item is offered over a chain turned off" "$SK" \
+    '			case member.name == "chain" && audit[member.start:member.end] == "false":' \
+    '			case false:'
+  mutate go "upgrade key: the item is offered over an audit member that is not an object" "$SK" \
+    '		if err != nil {
+			return notOffered(keyNotOfferedAuditShape)' \
+    '		if false {
+			return notOffered(keyNotOfferedAuditShape)'
+  mutate go "upgrade key: the item is chosen for the owner" "$UP" \
+    '	sign := r.URL.Query().Get("signingKey") == "true"' \
+    '	sign := true'
+  mutate go "upgrade key: a confirmation's choice is not the owner's" "$UP" \
+    'request.RequireComparableFacts, request.SigningKey)' \
+    'request.RequireComparableFacts, true)'
+  mutate go "upgrade key: the offer's item is not given" "$UP" \
+    'SigningKey: plan.signing, Sign: plan.sign}' \
+    'SigningKey: nil, Sign: plan.sign}'
+  mutate go "upgrade key: the configuration names no key" "$UP" \
+    '	if plan.sign {
+		seed = plan.seed
+	}' \
+    '	if false {
+		seed = plan.seed
+	}'
+  mutate go "upgrade key: the key is named below configVersion 6" "$UP" \
+    '	if plan.sign {
+		plan.to = signedFromVersion
+	}' \
+    '	if false {
+		plan.to = signedFromVersion
+	}'
+  mutate go "upgrade key: a project at 6 is written at a lower version" "$UP" \
+    '	if to, _ := strconv.Atoi(plan.to); number > to {' \
+    '	if to, _ := strconv.Atoi(plan.to); false && number > to {'
+  mutate go "upgrade key: jpack.json names a key that was not made" "$UP" \
+    '		if key, failure = s.makeStartupKey(ctx, dir, plan.seed); failure != nil {' \
+    '		if key, failure = nil, nil; failure != nil {'
+  mutate go "upgrade key: a failed upgrade leaves the key it made" "$UP" \
+    '		if err := key.unmake(); err != nil {' \
+    '		if err := error(nil); err != nil {'
+  mutate go "upgrade key: a project not put back loses the key jpack.json may name" "$UP" \
+    '			if key != nil {
+				message += " The signing key Desk made' \
+    '			if key != nil {
+				_ = key.unmake()
+				message += " The signing key Desk made'
+  mutate go "upgrade key: the key is named although its folder was replaced" "$UP" \
+    '		if key.stillNamed() != nil {' \
+    '		if false {'
+  mutate go "upgrade key: the marker is left after the upgrade" "$UP" \
+    '		if err := key.settle(); err != nil {' \
+    '		if err := error(nil); err != nil {'
+  mutate go "upgrade key: the marker goes before jpack.json names the key" "$UP" \
+    '		keyBetween("upgrade: before naming")' \
+    '		_ = key.settle()
+		keyBetween("upgrade: before naming")'
+  mutate go "upgrade key: the key made is not answered" "$UP" \
+    '		result.SigningKey = &key.public' \
+    '		_ = key.public'
+  mutate go "upgrade key: a refusal names a path" "$UP" \
+    '		message := s.withoutPaths(failure.message)' \
+    '		message := failure.message'
+  mutate go "upgrade key: the key is made without the signing folder's lock" "$SK" \
+    '	unlock, err := lockSigningWithin(ctx, dir, signingLockWait)' \
+    '	unlock, err := func() {}, error(nil)'
+  mutate go "upgrade key: a signing folder held elsewhere is made in anyway" "$SK" \
+    '	if errors.Is(err, errSigningBusy) {
+		dir.Close()
+		return nil, &lockFailure{http.StatusConflict, CodeBadRequest, "Nothing was written: " + signingBusyWords}' \
+    '	if false {
+		dir.Close()
+		return nil, &lockFailure{http.StatusConflict, CodeBadRequest, "Nothing was written: " + signingBusyWords}'
+  mutate go "upgrade key: a failed generation keeps the signing folder's lock" "$SK" \
+    '		if !handedOver {
+			unlock()
+			dir.Close()' \
+    '		if false {
+			unlock()
+			dir.Close()'
+  mutate go "upgrade key: the startup project's key is kept under no name of its own" "$SK" \
+    '	return digestOf([]byte(s.projectDir))' \
+    '	return s.cfg.deskID'
+  mutate go "upgrade key: another project's marker is the startup project's" "$SK" \
+    '	return s.cfg.deskID == "" && name == s.signingKeyName()' \
+    '	return s.cfg.deskID == "" && len(name) == 64'
+  mutate go "upgrade key: the sweep leaves a stopped upgrade's key" "$SG" \
+    '		if !isMarker || !deskIDPattern.MatchString(id) && !s.startupKey(id) {' \
+    '		if !isMarker || !deskIDPattern.MatchString(id) {'
+  mutate go "upgrade key: the sweep removes a key jpack.json names" "$SG" \
+    '			published, err = s.startupKeyNamed(filepath.Join(dir.path, id+seedSuffix))' \
+    '			published, err = false, nil'
+  mutate go "upgrade key: a jpack.json that cannot be read now names no key" "$SK" \
+    '	if err != nil {
+		return false, err
+	}
+	var config struct {' \
+    '	if err != nil {
+		return false, nil
+	}
+	var config struct {'
+  mutate go "upgrade key: no jpack.json is taken for one that cannot be read" "$SK" \
+    '	if codeOf(err) == CodeNotFound {
+		return false, nil
+	}' \
+    '	if false {
+		return false, nil
+	}'
+  mutate go "upgrade key: the startup desk with no key is said to be a made desk's" "$AR" \
+    '	if s.cfg.deskID == "" {
+		return auditKeys{State: keysStartup}
+	}' \
+    '	if false {
+		return auditKeys{State: keysStartup}
+	}'
+  mutate go "upgrade key: the project's folder as the runtime prints it is said" "$AR" \
+    '		{displayedPath(s.projectDir), "the project'"'"'s folder"},
+		{displayedPath(s.cfg.ProjectDir), "the project'"'"'s folder"},
+' \
+    ''
+  mutate go "upgrade key: rotation offered under an inherited key" internal/desk/rotation.go \
+    '	if s.inheritsSigningKey() {
+		return auditRotation{' \
+    '	if false {
+		return auditRotation{'
+  mutate go "upgrade key: rotation offered on the startup desk with no key" internal/desk/rotation.go \
+    '	if keys.State == keysStartup {
+		return auditRotation{' \
+    '	if false {
+		return auditRotation{'
+  mutate go "upgrade key: the start leaves the startup desk's rotation" internal/desk/rotation.go \
+    '(deskIDPattern.MatchString(id) || s.startupKey(id))' \
+    'deskIDPattern.MatchString(id)'
+  mutate go "upgrade key: the startup desk's rotation is recovered as no desk's" internal/desk/rotation.go \
+    '		if s.startupKey(id) {
+			child = s
+		}
+' \
+    ''
+  mutate go "upgrade key: the start recovers rotations only where a desks folder is" internal/desk/desks.go \
+    '	defer s.recoverRotations()' \
+    '	defer func() {
+		if _, err := s.assistant.root.Lstat("desks"); err == nil {
+			s.recoverRotations()
+		}
+	}()'
 
   # **Rotating a desk's signing key (ADR-0010 PR 3b).** Only the owner's
   # confirmed request rotates, and only where a rotation can be made; the
@@ -3829,16 +4013,6 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "rotation: the token binds the key alone" "$RO" \
     '}{"rotate-signing-key", s.cfg.deskID, s.projectDir, sha256Digest(reading.list.data), reading.current.PublicKey, len(reading.sidecar.rotations)})' \
     '}{"rotate-signing-key", s.cfg.deskID, s.projectDir, "", reading.current.PublicKey, 0})'
-  mutate go "rotation: offered on the startup desk" "$RO" \
-    '	if s.cfg.deskID == "" {
-		return auditRotation{' \
-    '	if false {
-		return auditRotation{'
-  mutate go "rotation: the startup desk's request reaches the rotation" "$RO" \
-    '	if s.cfg.deskID == "" {
-		writeJSONCoded(w, http.StatusConflict' \
-    '	if false {
-		writeJSONCoded(w, http.StatusConflict'
   mutate go "rotation: offered over a rotation that did not finish" "$RO" \
     '!errors.Is(err, fs.ErrNotExist) {
 		return s.unfinishedRotation(ctx, project, dir)' \
@@ -4000,7 +4174,7 @@ func (b *cappedBuffer) exceeded() bool {'
 	if err != nil {'
   # What the start does with a marker left.
   mutate go "rotation recovery: the start does not look for rotations" internal/desk/desks.go \
-    '	s.recoverRotations()' \
+    '	defer s.recoverRotations()' \
     ''
   mutate go "rotation recovery: a next key the sidecar names elsewhere is removed" "$RO" \
     '		if sidecar.names(nextKey) {' \
@@ -11309,20 +11483,20 @@ export function assistantTransport(id: string): Transport {
   UV=web/src/packs/upgrade/UpgradeView.tsx
   UN=web/src/packs/upgrade/UpgradeNote.tsx
   mutate web "upgrade: the confirmation does not carry the token" "$UC" \
-    "body: JSON.stringify({ token, requireComparableFacts }) })" \
-    "body: JSON.stringify({ requireComparableFacts }) })"
+    "body: JSON.stringify({ token, requireComparableFacts, ...(signingKey ? { signingKey } : {}) }) })" \
+    "body: JSON.stringify({ requireComparableFacts, ...(signingKey ? { signingKey } : {}) }) })"
   mutate web "upgrade: the confirmation does not carry the owner's choice" "$UC" \
-    "body: JSON.stringify({ token, requireComparableFacts }) })" \
-    "body: JSON.stringify({ token, requireComparableFacts: true }) })"
+    "body: JSON.stringify({ token, requireComparableFacts, ...(signingKey ? { signingKey } : {}) }) })" \
+    "body: JSON.stringify({ token, requireComparableFacts: true, ...(signingKey ? { signingKey } : {}) }) })"
   mutate web "upgrade: a stale confirmation reads as any failure" "$UC" \
     "  return body.code === 'stale' ? new StaleUpgrade(message) : new Error(message)" \
     "  return new Error(message)"
   mutate web "upgrade: the offer is asked for with requireComparableFacts whatever the choice" "$UC" \
-    "deskFetch(requireComparableFacts ? '/api/upgrade' : '/api/upgrade?requireComparableFacts=false', { signal })" \
-    "deskFetch('/api/upgrade', { signal })"
+    "const asked = [...(requireComparableFacts ? [] : ['requireComparableFacts=false']), ...(signingKey ? ['signingKey=true'] : [])]" \
+    "const asked = [...(signingKey ? ['signingKey=true'] : [])]"
   mutate web "upgrade: declining requireComparableFacts asks for nothing new" "$UV" \
-    "queryFn: ({ signal }) => readUpgrade(facts, signal)" \
-    "queryFn: ({ signal }) => readUpgrade(true, signal)"
+    "queryFn: ({ signal }) => readUpgrade(facts, sign, signal)" \
+    "queryFn: ({ signal }) => readUpgrade(true, sign, signal)"
   mutate web "upgrade: a change is not listed" "$UV" \
     "{upgrade.changes.includes('requireReviewed') && <li>" \
     "{false && <li>"
@@ -11359,6 +11533,78 @@ export function assistantTransport(id: string): Transport {
   mutate web "upgrade: Admin → Project does not offer it" "$UN" \
     "              <div><ButtonLink to=\"/packs/_upgrade\">{msg('Review the upgrade')}</ButtonLink></div>" \
     "              <div />"
+
+  # **The signing key of the project Desk was started on, on the page
+  # (ADR-0010, row 4).** Never chosen for the owner; asked for, and confirmed,
+  # with the owner's choice and that offer's token; its costs and what a
+  # signature does not establish shown before anything is confirmed; why it is
+  # not offered said; and the decision record checked again once the key is
+  # made, with a check of its own.
+  AC=web/src/audit/client.ts
+  mutate web "upgrade key: the page chooses the item for the owner" "$UV" \
+    '  const [sign, setSign] = useState(false)' \
+    '  const [sign, setSign] = useState(true)'
+  mutate web "upgrade key: the offer is not asked for the owner's choice" "$UV" \
+    'queryFn: ({ signal }) => readUpgrade(facts, sign, signal)' \
+    'queryFn: ({ signal }) => readUpgrade(facts, false, signal)'
+  mutate web "upgrade key: the client asks for the key whatever the choice" "$UC" \
+    '...(signingKey ? ['"'"'signingKey=true'"'"'] : [])]' \
+    ''"'"'signingKey=true'"'"']'
+  mutate web "upgrade key: the confirmation does not carry the choice" "$UV" \
+    'confirmUpgrade(upgrade.token, upgrade.requireComparableFacts, upgrade.sign === true)' \
+    'confirmUpgrade(upgrade.token, upgrade.requireComparableFacts)'
+  mutate web "upgrade key: the client sends no choice" "$UC" \
+    '...(signingKey ? { signingKey } : {}) }) })' \
+    '...({}) }) })'
+  mutate web "upgrade key: the client takes an item of any state" "$UC" \
+    '    case '"'"'offered'"'"': case '"'"'named'"'"': return value.reason === undefined' \
+    '    case '"'"'offered'"'"': case '"'"'named'"'"': case '"'"'chosen'"'"': return value.reason === undefined'
+  mutate web "upgrade key: the client takes an offer that signs without offering" "$UC" \
+    'value.sign === true && (value.signingKey as UpgradeSigning | undefined)?.state !== '"'"'offered'"'"'' \
+    'false'
+  mutate web "upgrade key: the client takes any key as the one made" "$UC" \
+    '|| !optional(value.signingKey, key => object(key) && hex(64)(key.publicKey) && hex(32)(key.keyId) && key.at === 0)' \
+    ''
+  mutate web "upgrade key: the costs are not shown before confirmation" "$UV" \
+    '    <section className={styles.warning} aria-label={msg('"'"'What a signing key costs this project'"'"')}>' \
+    '    <section hidden className={styles.warning} aria-label={msg('"'"'What a signing key costs this project'"'"')}>'
+  mutate web "upgrade key: what a signature does not establish is not said" "$UV" \
+    '{msg('"'"'A signature establishes that a holder of the key signed these exact bytes.' \
+    '{false && msg('"'"'A signature establishes that a holder of the key signed these exact bytes.'
+  mutate web "upgrade key: why it is not offered is not said" "$UV" \
+    '  if (item?.state === '"'"'unavailable'"'"') return <p>{systemMessage(item.reason)}</p>' \
+    '  if (item?.state === '"'"'unavailable'"'"') return <p />'
+  mutate web "upgrade key: a key jpack.json names is offered again" "$UV" \
+    '  if (item?.state === '"'"'named'"'"') return <p>' \
+    '  if (false) return <p>'
+  mutate web "upgrade key: the item is not listed in the offer" "$UV" \
+    '      {upgrade.signingKey && <li className={styles.item} aria-labelledby="upgrade-signing">' \
+    '      {false && <li className={styles.item} aria-labelledby="upgrade-signing">'
+  mutate web "upgrade key: the item is not listed where the gates are on" "$UV" \
+    '    {upgrade.state === '"'"'unchanged'"'"' && upgrade.signingKey && <section' \
+    '    {false && <section'
+  mutate web "upgrade key: the key's line in jpack.json is not listed" "$UV" \
+    '{upgrade.changes.includes('"'"'signingKey'"'"') && <li>' \
+    '{false && <li>'
+  mutate web "upgrade key: the key made is not said" "$UV" \
+    '{outcome.done.signingKey && <> {msg('"'"'Desk keeps a signing key for this project now' \
+    '{false && <> {msg('"'"'Desk keeps a signing key for this project now'
+  mutate web "upgrade key: the decision record is not checked again" "$UV" \
+    '      if (done.signingKey) void checkDecisionRecordAgain(client)' \
+    '      void done.signingKey'
+  mutate web "upgrade key: a check in flight is joined after the key is made" "$AC" \
+    '  await client.cancelQueries({ queryKey: AUDIT_KEY })
+' \
+    ''
+  mutate web "upgrade key: the check after the key is made follows every change to the project" "$AC" \
+    'queryFn: ({ signal }) => readAuditRecord(signal), meta: ON_REQUEST_ONLY, staleTime: 0, retry: false' \
+    'queryFn: ({ signal }) => readAuditRecord(signal), staleTime: 0, retry: false'
+  mutate web "upgrade key: Admin → Project does not offer it" "$UN" \
+    '{upgrade.signingKey?.state === '"'"'offered'"'"' && <div><ButtonLink' \
+    '{false && <div><ButtonLink'
+  mutate web "upgrade key: Admin → Project does not say why it is not offered" "$UN" \
+    '{upgrade.signingKey?.state === '"'"'unavailable'"'"' && <p' \
+    '{false && <p'
 
   # **Help & About → Gates.** The command it gives an outside agent names this
   # desk's own configuration, quoted for a shell, and the tested-releases
@@ -12030,8 +12276,8 @@ export function assistantTransport(id: string): Transport {
 ' \
     ''
   mutate web "jobs record client: the check after a confirmation follows every change to the project" "$AC" \
-    'meta: ON_REQUEST_ONLY, staleTime: 0, retry: false' \
-    'staleTime: 0, retry: false'
+    'queryFn: ({ signal }) => readJobsRecord(signal), meta: ON_REQUEST_ONLY, staleTime: 0, retry: false' \
+    'queryFn: ({ signal }) => readJobsRecord(signal), staleTime: 0, retry: false'
   mutate web "jobs record page: an error leaves an earlier report shown" "$JRP" \
     '        : query.error ? <p role="alert">{systemMessage(query.error.message)}</p>' \
     '        : query.error && !record ? <p role="alert">{systemMessage(query.error.message)}</p>'
