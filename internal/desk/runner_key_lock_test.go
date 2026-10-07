@@ -233,7 +233,19 @@ func TestTwoStartsNeverRemoveANamedKey(t *testing.T) {
 	if _, _, err := a.endpoint(); err != nil {
 		t.Fatal(err)
 	}
-	cPath := <-cDone
+	// **C is waited for only where it was started, and for a bounded time**
+	// (issue #252). C starts from inside A's start, once A reads its list
+	// under the lock; an A that made no key never gets there, and a wait on C
+	// with no bound then held the whole suite past its own.
+	if !cLaunched.Load() {
+		t.Fatalf("A never read its list under the lock, so C never started: A reports %+v", *a.keyStatus())
+	}
+	var cPath string
+	select {
+	case cPath = <-cDone:
+	case <-time.After(30 * time.Second):
+		t.Fatal("C, waiting on A's lock, never decided")
+	}
 	testHookKeyBetween = nil
 	testHookRunnerKeyIO = nil
 

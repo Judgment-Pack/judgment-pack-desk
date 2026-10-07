@@ -235,6 +235,17 @@ func (r *rotationRig) panel(t *testing.T) (auditAnswer, string) {
 	return panelOn(t, r.ts, r.id)
 }
 
+// keysOf is the keys a panel gave with its answer. A panel that gave none
+// fails the test here, by assertion: read through a nil pointer, it ended the
+// whole suite in a panic that named no test (issue #252).
+func keysOf(t *testing.T, answer auditAnswer) auditKeys {
+	t.Helper()
+	if answer.Keys == nil {
+		t.Fatalf("the panel gave no keys with its answer: %+v", answer)
+	}
+	return *answer.Keys
+}
+
 // rotate asks for a rotation with token.
 func (r *rotationRig) rotate(t *testing.T, token string) (int, []byte) {
 	t.Helper()
@@ -664,8 +675,8 @@ func TestARotationIsMadeOnlyWhereItCanBe(t *testing.T) {
 			r.writeTrail(t, 1, recordLine(standInKeyID, 1))
 		}()
 		answer, _ := r.panel(t)
-		if answer.Keys.State != keysKept || answer.Rotation.State != rotationUnavailable || !strings.HasPrefix(answer.Rotation.Reason, "This desk's key took over after record 1, and no record has been signed since") {
-			t.Errorf("the panel shows %+v and %+v", answer.Keys, answer.Rotation)
+		if keys := keysOf(t, answer); keys.State != keysKept || answer.Rotation.State != rotationUnavailable || !strings.HasPrefix(answer.Rotation.Reason, "This desk's key took over after record 1, and no record has been signed since") {
+			t.Errorf("the panel shows %+v and %+v", keys, answer.Rotation)
 		}
 	})
 
@@ -677,8 +688,8 @@ func TestARotationIsMadeOnlyWhereItCanBe(t *testing.T) {
 		defer os.Remove(filepath.Join(r.auditFolder(), "copy.jsonl"))
 		answer, _ := r.panel(t)
 		want := "Desk reads the trail's signature sidecar to tell whether a rotation was written, and it could not be read: it, or the trail it is read beside, has another name as well, a hard link. So Desk does not rotate the key now."
-		if answer.Keys.State != keysKept || answer.Rotation.State != rotationUnavailable || answer.Rotation.Reason != want {
-			t.Errorf("the panel shows %+v and %+v", answer.Keys, answer.Rotation)
+		if keys := keysOf(t, answer); keys.State != keysKept || answer.Rotation.State != rotationUnavailable || answer.Rotation.Reason != want {
+			t.Errorf("the panel shows %+v and %+v", keys, answer.Rotation)
 		}
 	})
 
@@ -868,17 +879,18 @@ func TestTheListOfKeysIsHeldToTheSidecar(t *testing.T) {
 			}
 			r.writeTrail(t, 4, tc.sidecar)
 			answer, data := r.panel(t)
+			keys := keysOf(t, answer)
 			if tc.why == "" {
-				if answer.Keys.State != keysKept || !slices.Equal(answer.Keys.Public, []deskPublicKey{key1, key2}) {
-					t.Errorf("the panel shows the keys %+v", answer.Keys)
+				if keys.State != keysKept || !slices.Equal(keys.Public, []deskPublicKey{key1, key2}) {
+					t.Errorf("the panel shows the keys %+v", keys)
 				}
 				if seen := r.rig.keysSeen(t); !slices.Equal(seen, []string{standInPublicKey, secondPublicKey}) {
 					t.Errorf("audit verify was given %q", seen)
 				}
 				return
 			}
-			if answer.Keys.State != keysUnread || answer.Keys.Problem != tc.why || answer.Keys.Public != nil {
-				t.Errorf("the panel shows the keys %+v, want unread: %q", answer.Keys, tc.why)
+			if keys.State != keysUnread || keys.Problem != tc.why || keys.Public != nil {
+				t.Errorf("the panel shows the keys %+v, want unread: %q", keys, tc.why)
 			}
 			if seen := r.rig.keysSeen(t); seen != nil {
 				t.Errorf("audit verify was given %q", seen)
@@ -903,8 +915,8 @@ func TestTheListOfKeysIsHeldToTheSidecar(t *testing.T) {
 			t.Fatal(err)
 		}
 		answer, _ := r.panel(t)
-		if answer.Keys.State != keysKept || !slices.Equal(answer.Keys.Public, []deskPublicKey{key1, key2}) {
-			t.Errorf("the panel shows the keys %+v", answer.Keys)
+		if keys := keysOf(t, answer); keys.State != keysKept || !slices.Equal(keys.Public, []deskPublicKey{key1, key2}) {
+			t.Errorf("the panel shows the keys %+v", keys)
 		}
 		if !strings.Contains(r.logged.String(), "could not be read to check its list of keys") {
 			t.Errorf("Desk's log does not say the sidecar was not read: %s", r.logged)
@@ -982,8 +994,8 @@ func TestAStoppedRotationIsFinishedOrUndoneAtTheNextStart(t *testing.T) {
 					t.Errorf("the list is %q", got)
 				}
 			}
-			if answer.Keys.State != keysKept || !slices.Equal(answer.Keys.Public, want) || answer.Rotation.State == rotationUnfinished {
-				t.Errorf("after the next start the panel shows %+v and %+v", answer.Keys, answer.Rotation)
+			if keys := keysOf(t, answer); keys.State != keysKept || !slices.Equal(keys.Public, want) || answer.Rotation.State == rotationUnfinished {
+				t.Errorf("after the next start the panel shows %+v and %+v", keys, answer.Rotation)
 			}
 		})
 	}
@@ -1289,12 +1301,12 @@ func TestWhatChangedWhileARotationFinishedIsNotWrittenOver(t *testing.T) {
 			if answer.Rotation.State != rotationUnfinished || answer.Rotation.Reason != tc.reason {
 				t.Errorf("the panel says %+v, want unfinished: %q", answer.Rotation, tc.reason)
 			}
-			if tc.passed == nil {
-				if answer.Keys.State == keysKept || r.rig.keysSeen(t) != nil {
-					t.Errorf("the panel passed keys %+v while the rotation is not finished", answer.Keys)
+			if keys := keysOf(t, answer); tc.passed == nil {
+				if keys.State == keysKept || r.rig.keysSeen(t) != nil {
+					t.Errorf("the panel passed keys %+v while the rotation is not finished", keys)
 				}
-			} else if answer.Keys.State != keysKept || !slices.Equal(answer.Keys.Public, tc.passed) {
-				t.Errorf("the panel shows the keys %+v, want %+v", answer.Keys, tc.passed)
+			} else if keys.State != keysKept || !slices.Equal(keys.Public, tc.passed) {
+				t.Errorf("the panel shows the keys %+v, want %+v", keys, tc.passed)
 			}
 		})
 	}
@@ -1344,8 +1356,8 @@ func TestAStartRenamesNoKeyAgainstAListPutBackSinceItsInspection(t *testing.T) {
 		t.Errorf("after the start after it the signing folder holds %s (%s)", got, logged)
 	}
 	answer, _ = panelOn(t, ts, r.id)
-	if answer.Keys.State != keysKept || !slices.Equal(answer.Keys.Public, []deskPublicKey{key1, {secondPublicKey, secondKeyID, 1}}) || answer.Rotation.State == rotationUnfinished {
-		t.Errorf("after the start after it the panel shows %+v and %+v", answer.Keys, answer.Rotation)
+	if keys := keysOf(t, answer); keys.State != keysKept || !slices.Equal(keys.Public, []deskPublicKey{key1, {secondPublicKey, secondKeyID, 1}}) || answer.Rotation.State == rotationUnfinished {
+		t.Errorf("after the start after it the panel shows %+v and %+v", keys, answer.Rotation)
 	}
 }
 
