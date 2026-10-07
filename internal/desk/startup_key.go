@@ -66,6 +66,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -241,6 +242,37 @@ func (s *Server) makeStartupKey(ctx context.Context, project heldDir, seed strin
 	}
 	key.unlock, handedOver = unlock, true
 	return key, nil
+}
+
+// startupSeedNamed is nil where the project's jpack.json names, by its audit
+// member's signingKey, the seed Desk keeps for it: Desk's own path to the
+// seed, and that path naming seed, the file found through dir, the signing
+// folder Desk holds. Otherwise it says why, in words with no path: a rotation
+// renames the next key over that seed, which signs for the project only where
+// jpack.json names that very file (review round 1 of #261).
+func (s *Server) startupSeedNamed(dir *signingDir, seed os.FileInfo) error {
+	name := s.signingKeyName() + seedSuffix
+	named, err := s.startupKeyNamed(filepath.Join(dir.path, name))
+	switch {
+	case err != nil:
+		return errors.New("its jpack.json could not be read now")
+	case !named:
+		return errors.New("its jpack.json names another file, or none")
+	case dir.namesFile(name, seed) != nil:
+		return errors.New("the path its jpack.json names is not the key Desk found in its signing folder")
+	}
+	return nil
+}
+
+// tokenSeed binds a rotation's confirmation, on the project Desk was started
+// on, to the very seed file the panel read: one replaced since, even by a
+// copy holding the same key, makes the confirmation stale. "" on a desk Desk
+// made.
+func (s *Server) tokenSeed(reading *keyReading) string {
+	if s.cfg.deskID != "" {
+		return ""
+	}
+	return identityKey(reading.seed)
 }
 
 // startupKeyNamed is whether the project's jpack.json names seed as its

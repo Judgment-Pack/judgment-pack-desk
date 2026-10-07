@@ -3934,5 +3934,6 @@
   "jpack.json already names a signing key.": "jpack.json 已指定签名密钥。",
   "Make the signing key and lock {{count}} files": "创建签名密钥并锁定 {{count}} 个文件",
   "Make the signing key and lock {{count}} files_one": "创建签名密钥并锁定 {{count}} 个文件",
-  "Make the signing key and lock {{count}} files_other": "创建签名密钥并锁定 {{count}} 个文件"
+  "Make the signing key and lock {{count}} files_other": "创建签名密钥并锁定 {{count}} 个文件",
+  "Desk rotates the signing key of the project it was started on only where its jpack.json names the key Desk keeps: {{reason}}. A rotation now would hand signing over in the trail while jpack.json named a key that signs nothing more.": "Desk 只在其启动时所在项目的 jpack.json 指定 Desk 保管的密钥时，才轮换该项目的签名密钥：{{reason}}。现在轮换，会在轨迹中交接签名，而 jpack.json 指定的却是一个不再签署任何内容的密钥。"
 }

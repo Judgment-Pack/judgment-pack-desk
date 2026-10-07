@@ -382,7 +382,11 @@ marker is cleared at the next start on that project, which keeps the key only
 where `jpack.json` names it. The decision record then reads the project as a
 desk with a key: it passes its public keys to `audit verify`, shows them, and
 offers rotation, except while `JPACK_SIGNING_KEY` is inherited, which the
-runtime takes over the configuration's key.
+runtime takes over the configuration's key, and except where `jpack.json`
+names another file than Desk's seed, even a copy of the same key: a rotation
+renames the next key over Desk's seed, so it is offered, confirmed (the
+confirmation is bound to that seed file) and reported made only while
+`jpack.json` names that very file.
 
 **Rotating a desk's key** (ADR-0010, section 1, "Rotating it").
 

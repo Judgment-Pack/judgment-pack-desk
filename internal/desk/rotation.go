@@ -875,9 +875,20 @@ func (s *Server) rotationOffer(ctx context.Context, project heldDir, keys auditK
 	if _, err := dir.root.Lstat(markerName); !errors.Is(err, fs.ErrNotExist) {
 		return s.unfinishedRotation(ctx, project, dir)
 	}
+	// **On the project Desk was started on, only the key its jpack.json names,
+	// by Desk's own path to it, is rotated** (review round 1 of #261). A
+	// rotation renames the next key over Desk's seed: where jpack.json names
+	// another file, even one holding the same key, the trail would hand
+	// signing over while jpack.json named a key that signs nothing more.
+	var unnamed error
+	if s.cfg.deskID == "" && reading != nil {
+		unnamed = s.startupSeedNamed(reading.dir, reading.seed)
+	}
 	switch {
 	case keys.State != keysKept || reading == nil:
 		return auditRotation{State: rotationUnavailable, Reason: "Desk rotates only a key it can read, with a list of public keys that agrees with it."}
+	case unnamed != nil:
+		return auditRotation{State: rotationUnavailable, Reason: "Desk rotates the signing key of the project it was started on only where its jpack.json names the key Desk keeps: " + unnamed.Error() + ". A rotation now would hand signing over in the trail while jpack.json named a key that signs nothing more."}
 	case reading.sidecarErr != nil:
 		return auditRotation{State: rotationUnavailable, Reason: "Desk reads the trail's signature sidecar to tell whether a rotation was written, and it could not be read: " + sidecarProblem(reading.sidecarErr) + ". So Desk does not rotate the key now."}
 	case len(reading.keys) >= rotationKeyLimit:
@@ -921,7 +932,8 @@ func (s *Server) rotationToken(reading *keyReading) string {
 		Keys      string `json:"keys"`
 		Current   string `json:"current"`
 		Rotations int    `json:"rotations"`
-	}{"rotate-signing-key", s.cfg.deskID, s.projectDir, sha256Digest(reading.list.data), reading.current.PublicKey, len(reading.sidecar.rotations)})
+		Seed      string `json:"seed"`
+	}{"rotate-signing-key", s.cfg.deskID, s.projectDir, sha256Digest(reading.list.data), reading.current.PublicKey, len(reading.sidecar.rotations), s.tokenSeed(reading)})
 	mac := hmac.New(sha256.New, s.reviewKey[:])
 	mac.Write(payload)
 	return hex.EncodeToString(mac.Sum(nil))
@@ -1165,6 +1177,19 @@ func (s *Server) makeRotation(ctx context.Context, project heldDir, reading *key
 		if renamed, err := s.finishRotation(dir, state); err != nil {
 			s.log.Printf("desk: the rotation of desk %s's key was written and could not be finished (the next key named: %v): %v", id, renamed, err)
 			return nil, &lockFailure{http.StatusInternalServerError, CodeInternal, unfinishedWords(renamed, state.at, err)}
+		}
+		// **Reported made only where jpack.json still names the key**, on the
+		// project Desk was started on, whose jpack.json is the owner's to edit
+		// meanwhile (review round 1 of #261).
+		if s.cfg.deskID == "" {
+			seed, err := dir.root.Lstat(id + seedSuffix)
+			if err == nil {
+				err = s.startupSeedNamed(dir, seed)
+			}
+			if err != nil {
+				s.log.Printf("desk: the rotation of this project's key was made, and its jpack.json no longer names the key Desk keeps: %v", err)
+				return nil, &lockFailure{http.StatusConflict, CodeBadRequest, fmt.Sprintf("The runtime handed signing over after record %d and Desk now keeps the next key, but this project's jpack.json no longer names the key Desk keeps: %s. Records are not signed by Desk's key until jpack.json names it again.", state.at, strings.TrimRight(err.Error(), "."))}
+			}
 		}
 		from := reading.keys[len(reading.keys)-1]
 		next := deskPublicKey{PublicKey: state.nextKey.PublicKey, KeyID: state.nextKey.KeyID, At: state.at}

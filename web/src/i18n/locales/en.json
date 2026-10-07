@@ -3722,5 +3722,6 @@
   "jpack.json already names a signing key.": "jpack.json already names a signing key.",
   "Make the signing key and lock {{count}} files": "Make the signing key and lock {{count}} files",
   "Make the signing key and lock {{count}} files_one": "Make the signing key and lock {{count}} file",
-  "Make the signing key and lock {{count}} files_other": "Make the signing key and lock {{count}} files"
+  "Make the signing key and lock {{count}} files_other": "Make the signing key and lock {{count}} files",
+  "Desk rotates the signing key of the project it was started on only where its jpack.json names the key Desk keeps: {{reason}}. A rotation now would hand signing over in the trail while jpack.json named a key that signs nothing more.": "Desk rotates the signing key of the project it was started on only where its jpack.json names the key Desk keeps: {{reason}}. A rotation now would hand signing over in the trail while jpack.json named a key that signs nothing more."
 }

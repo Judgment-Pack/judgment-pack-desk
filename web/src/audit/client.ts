@@ -136,7 +136,8 @@ export const ROTATION_REASONS = [
   sourceMessage('Its marker was removed while Desk looked.'),
   sourceMessage('Desk cannot tell whether the runtime wrote the rotation, so it changes nothing: {{reason}}.'),
   sourceMessage('Desk keeps no signing key for the project it was started on, so it has none to rotate.'),
-  sourceMessage('JPACK_SIGNING_KEY is set where Desk was started, and the runtime signs this project\'s records with the key it names, not with the key Desk keeps, so Desk rotates no key here.')
+  sourceMessage('JPACK_SIGNING_KEY is set where Desk was started, and the runtime signs this project\'s records with the key it names, not with the key Desk keeps, so Desk rotates no key here.'),
+  sourceMessage('Desk rotates the signing key of the project it was started on only where its jpack.json names the key Desk keeps: {{reason}}. A rotation now would hand signing over in the trail while jpack.json named a key that signs nothing more.')
 ]
 
 /** The runtime's files a download can hand over, by the name the download takes. */

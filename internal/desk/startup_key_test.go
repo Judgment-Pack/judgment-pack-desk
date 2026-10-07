@@ -1075,3 +1075,121 @@ func TestTheUpgradeWritesNoFileLargerThanDeskReads(t *testing.T) {
 		t.Errorf("past the bound the offer answered %s %q", answer.State, answer.Reason)
 	}
 }
+
+// signedThenRotatable is a project upgraded with its key, with a trail of one
+// record its key signed, and the stand-in steered to rotate as the runtime
+// does; and the panel's token for a rotation.
+func signedThenRotatable(t *testing.T) (*signingUpgrade, string) {
+	t.Helper()
+	u := newSigningUpgrade(t, nil)
+	answer := u.offer(t, true)
+	u.rig.locks(t, upgradeLock(t, u.project, u.signed(), bothPacks))
+	if status, data := u.confirm(t, answer.Token, true); status != http.StatusOK {
+		t.Fatalf("the confirmation answered %d %s", status, data)
+	}
+	audit := filepath.Join(u.project, ".desk-private", "audit")
+	if err := os.WriteFile(filepath.Join(audit, "evaluations.jsonl"), []byte("{\"line\":1}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(audit, "signatures.jsonl"), []byte(recordLine(standInKeyID, 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	generatingAs(t, u.rig.calls, generateBySeed(u.rig.calls))
+	readingKeyAs(t, u.rig.calls, publicBySeed)
+	rotatingAs(t, u.rig.calls, rotateAsTheRuntime(u.rig.calls))
+	_, panel, _ := readAudit(t, u.ts, "")
+	if panel.Rotation == nil || panel.Rotation.State != rotationAvailable {
+		t.Fatalf("the panel offers %+v", panel.Rotation)
+	}
+	return u, panel.Rotation.Token
+}
+
+// nameInConfig points the project's audit.signingKey at path.
+func (u *signingUpgrade) nameInConfig(t *testing.T, path string) {
+	t.Helper()
+	config := strings.Replace(readFile(t, filepath.Join(u.project, "jpack.json")), `"signingKey": "`+u.seed+`"`, `"signingKey": "`+path+`"`, 1)
+	if !strings.Contains(config, path) {
+		t.Fatal("jpack.json did not name the key Desk keeps")
+	}
+	if err := os.WriteFile(filepath.Join(u.project, "jpack.json"), []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// copyOfSeed is a private copy of the project's seed, the same key in another
+// file, at path.
+func (u *signingUpgrade) copyOfSeed(t *testing.T, path string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(readFile(t, u.seed)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// **On the project Desk was started on, only the key its jpack.json names is
+// rotated** (review round 1 of #261). Where jpack.json names a copy of the key,
+// the same key in another file, no rotation is offered, and a confirmation
+// with the token given before rotates nothing; a seed replaced by a copy since
+// the panel makes its token stale; and where jpack.json stops naming Desk's
+// key while a rotation runs, the rotation is not reported made.
+func TestARotationOfTheStartupKeyFollowsWhatJpackJsonNames(t *testing.T) {
+	rotatedNothing := func(t *testing.T, u *signingUpgrade) {
+		t.Helper()
+		list := readFile(t, strings.TrimSuffix(u.seed, ".seed")+".keys.jsonl")
+		sidecar := readFile(t, filepath.Join(u.project, ".desk-private", "audit", "signatures.jsonl"))
+		if seedIs(u.seed) != "1" || list != wantKeyLine(standInPublicKey, standInKeyID, 0) || strings.Contains(sidecar, "key-rotation") {
+			t.Errorf("a refused rotation left the seed %s, the list %q, the sidecar %q", seedIs(u.seed), list, sidecar)
+		}
+	}
+
+	t.Run("jpack.json names a copy of the key", func(t *testing.T) {
+		u, token := signedThenRotatable(t)
+		elsewhere := filepath.Join(t.TempDir(), "copy.seed")
+		u.copyOfSeed(t, elsewhere)
+		u.nameInConfig(t, elsewhere)
+		want := "Desk rotates the signing key of the project it was started on only where its jpack.json names the key Desk keeps: its jpack.json names another file, or none. A rotation now would hand signing over in the trail while jpack.json named a key that signs nothing more."
+		_, panel, _ := readAudit(t, u.ts, "")
+		if panel.Rotation == nil || panel.Rotation.State != rotationUnavailable || panel.Rotation.Reason != want {
+			t.Errorf("the panel offers %+v", panel.Rotation)
+		}
+		status, data := reviewCall(t, u.ts, "POST", "/api/audit/key/rotate", "", map[string]string{"token": token}, bearer)
+		if status != http.StatusConflict || refusalOf(data) != "Nothing was rotated. "+want {
+			t.Errorf("the rotation answered %d %s", status, data)
+		}
+		rotatedNothing(t, u)
+	})
+
+	t.Run("Desk's seed replaced by a copy since the panel", func(t *testing.T) {
+		u, token := signedThenRotatable(t)
+		staged := strings.TrimSuffix(u.seed, ".seed") + ".copy"
+		u.copyOfSeed(t, staged)
+		if err := os.Rename(staged, u.seed); err != nil {
+			t.Fatal(err)
+		}
+		status, data := reviewCall(t, u.ts, "POST", "/api/audit/key/rotate", "", map[string]string{"token": token}, bearer)
+		if status != http.StatusConflict || refusalOf(data) != "This desk's keys changed after the decision record showed them, so nothing was rotated. Check the decision record again." {
+			t.Errorf("the rotation answered %d %s", status, data)
+		}
+		rotatedNothing(t, u)
+		if _, panel, _ := readAudit(t, u.ts, ""); panel.Rotation == nil || panel.Rotation.State != rotationAvailable || panel.Rotation.Token == token {
+			t.Errorf("after the copy the panel offers %+v", panel.Rotation)
+		}
+	})
+
+	t.Run("jpack.json changed while the rotation runs", func(t *testing.T) {
+		u, token := signedThenRotatable(t)
+		elsewhere := filepath.Join(t.TempDir(), "copy.seed")
+		u.copyOfSeed(t, elsewhere)
+		testHookKeyBetween = func(at string) {
+			if at == "rotation: line written" {
+				u.nameInConfig(t, elsewhere)
+			}
+		}
+		t.Cleanup(func() { testHookKeyBetween = nil })
+		status, data := reviewCall(t, u.ts, "POST", "/api/audit/key/rotate", "", map[string]string{"token": token}, bearer)
+		testHookKeyBetween = nil
+		if status != http.StatusConflict || !strings.HasPrefix(refusalOf(data), "The runtime handed signing over after record 1 and Desk now keeps the next key, but this project's jpack.json no longer names the key Desk keeps: its jpack.json names another file, or none.") ||
+			strings.Contains(string(data), `"rotated"`) || strings.Contains(string(data), elsewhere) {
+			t.Errorf("the rotation answered %d %s", status, data)
+		}
+	})
+}

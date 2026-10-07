@@ -3959,5 +3959,6 @@
   "Make the signing key and lock {{count}} files": "Crea la chiave di firma e blocca {{count}} file",
   "Make the signing key and lock {{count}} files_one": "Crea la chiave di firma e blocca {{count}} file",
   "Make the signing key and lock {{count}} files_other": "Crea la chiave di firma e blocca {{count}} file",
-  "Make the signing key and lock {{count}} files_many": "Crea la chiave di firma e blocca {{count}} file"
+  "Make the signing key and lock {{count}} files_many": "Crea la chiave di firma e blocca {{count}} file",
+  "Desk rotates the signing key of the project it was started on only where its jpack.json names the key Desk keeps: {{reason}}. A rotation now would hand signing over in the trail while jpack.json named a key that signs nothing more.": "Desk ruota la chiave di firma del progetto con cui è stato avviato solo dove il suo jpack.json indica la chiave che Desk conserva: {{reason}}. Una rotazione ora passerebbe la firma nella traccia mentre jpack.json indica una chiave che non firma più nulla."
 }

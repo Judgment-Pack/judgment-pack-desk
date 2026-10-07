@@ -3985,6 +3985,16 @@ func (b *cappedBuffer) exceeded() bool {'
 		return auditRotation{' \
     '	if false {
 		return auditRotation{'
+  mutate go "upgrade key: a rotation is offered where jpack.json names another file" internal/desk/rotation.go \
+    '	case unnamed != nil:' \
+    '	case false:'
+  mutate go "upgrade key: a rotation's token does not bind the startup key's file" "$SK" \
+    '	return identityKey(reading.seed)' \
+    '	return ""'
+  mutate go "upgrade key: a rotation is reported made where jpack.json no longer names the key" internal/desk/rotation.go \
+    '			if err != nil {
+				s.log.Printf("desk: the rotation of this project'"'"'s key was made' \
+    '			if false {
 				s.log.Printf("desk: the rotation of this project'"'"'s key was made'
   mutate go "upgrade key: rotation offered on the startup desk with no key" internal/desk/rotation.go \
     '	if keys.State == keysStartup {
@@ -4023,8 +4033,8 @@ func (b *cappedBuffer) exceeded() bool {'
     '	case !hmac.Equal([]byte(offer.Token), []byte(token)):' \
     '	case false:'
   mutate go "rotation: the token binds the key alone" "$RO" \
-    '}{"rotate-signing-key", s.cfg.deskID, s.projectDir, sha256Digest(reading.list.data), reading.current.PublicKey, len(reading.sidecar.rotations)})' \
-    '}{"rotate-signing-key", s.cfg.deskID, s.projectDir, "", reading.current.PublicKey, 0})'
+    '}{"rotate-signing-key", s.cfg.deskID, s.projectDir, sha256Digest(reading.list.data), reading.current.PublicKey, len(reading.sidecar.rotations), s.tokenSeed(reading)})' \
+    '}{"rotate-signing-key", s.cfg.deskID, s.projectDir, "", reading.current.PublicKey, 0, s.tokenSeed(reading)})'
   mutate go "rotation: offered over a rotation that did not finish" "$RO" \
     '!errors.Is(err, fs.ErrNotExist) {
 		return s.unfinishedRotation(ctx, project, dir)' \

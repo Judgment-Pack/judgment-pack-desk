@@ -3934,5 +3934,6 @@
   "jpack.json already names a signing key.": "jpack.json 已指定簽署金鑰。",
   "Make the signing key and lock {{count}} files": "建立簽署金鑰並鎖定 {{count}} 個檔案",
   "Make the signing key and lock {{count}} files_one": "建立簽署金鑰並鎖定 {{count}} 個檔案",
-  "Make the signing key and lock {{count}} files_other": "建立簽署金鑰並鎖定 {{count}} 個檔案"
+  "Make the signing key and lock {{count}} files_other": "建立簽署金鑰並鎖定 {{count}} 個檔案",
+  "Desk rotates the signing key of the project it was started on only where its jpack.json names the key Desk keeps: {{reason}}. A rotation now would hand signing over in the trail while jpack.json named a key that signs nothing more.": "Desk 只在其啟動時所在專案的 jpack.json 指定 Desk 保管的金鑰時，才輪替該專案的簽署金鑰：{{reason}}。現在輪替，會在軌跡中交接簽署，而 jpack.json 指定的卻是一把不再簽署任何內容的金鑰。"
 }

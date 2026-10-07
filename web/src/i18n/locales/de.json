@@ -3934,5 +3934,6 @@
   "jpack.json already names a signing key.": "jpack.json nennt bereits einen Signaturschlüssel.",
   "Make the signing key and lock {{count}} files": "Signaturschlüssel erstellen und {{count}} Dateien sperren",
   "Make the signing key and lock {{count}} files_one": "Signaturschlüssel erstellen und {{count}} Datei sperren",
-  "Make the signing key and lock {{count}} files_other": "Signaturschlüssel erstellen und {{count}} Dateien sperren"
+  "Make the signing key and lock {{count}} files_other": "Signaturschlüssel erstellen und {{count}} Dateien sperren",
+  "Desk rotates the signing key of the project it was started on only where its jpack.json names the key Desk keeps: {{reason}}. A rotation now would hand signing over in the trail while jpack.json named a key that signs nothing more.": "Desk rotiert den Signaturschlüssel des Projekts, mit dem Desk gestartet wurde, nur dort, wo dessen jpack.json den Schlüssel nennt, den Desk verwahrt: {{reason}}. Eine Rotation jetzt würde die Signatur im Verlauf übergeben, während jpack.json einen Schlüssel nennt, der nichts mehr signiert."
 }

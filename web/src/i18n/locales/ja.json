@@ -3934,5 +3934,6 @@
   "jpack.json already names a signing key.": "jpack.json はすでに署名鍵を指定しています。",
   "Make the signing key and lock {{count}} files": "署名鍵を作成して {{count}} 件のファイルをロック",
   "Make the signing key and lock {{count}} files_one": "署名鍵を作成して {{count}} 件のファイルをロック",
-  "Make the signing key and lock {{count}} files_other": "署名鍵を作成して {{count}} 件のファイルをロック"
+  "Make the signing key and lock {{count}} files_other": "署名鍵を作成して {{count}} 件のファイルをロック",
+  "Desk rotates the signing key of the project it was started on only where its jpack.json names the key Desk keeps: {{reason}}. A rotation now would hand signing over in the trail while jpack.json named a key that signs nothing more.": "Desk が起動対象のプロジェクトの署名鍵をローテーションするのは、その jpack.json が Desk の保管する鍵を指定している場合だけです: {{reason}}。いまローテーションすると、証跡では署名が引き継がれる一方、jpack.json はもう何にも署名しない鍵を指定することになります。"
 }

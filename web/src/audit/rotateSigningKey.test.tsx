@@ -212,7 +212,7 @@ describe('the rotation client', () => {
     // Each sentence's words between its placeholders, as the chassis's Go
     // source spells them.
     const source = readFileSync(join(import.meta.dirname, '../../../internal/desk/rotation.go'), 'utf8')
-    expect(ROTATION_REASONS).toHaveLength(12)
+    expect(ROTATION_REASONS).toHaveLength(13)
     for (const reason of ROTATION_REASONS) {
       for (const part of reason.split(/\{\{\w+\}\}/)) {
         expect(source.includes(part) ? part : `missing: ${part}`, reason).toBe(part)
