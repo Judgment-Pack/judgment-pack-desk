@@ -367,11 +367,21 @@ run_go_unmutated() {
   rm -f "$log"
 }
 
+# plain <log>: the log as text, without the terminal's colour codes (every
+# CSI sequence: ESC, `[`, parameters, a final byte). **A verdict is read from
+# text, and a suite decides for itself when to colour it**: vitest colours
+# its output on GitHub's runner even into a file, and there `Tests` and `5089
+# passed` sit with codes between them, so the summary was not found and a
+# green suite read as one that "ran no tests" (the first nightly run, every
+# web shard). Here the same command prints plain text, which is why no local
+# run ever met it.
+plain() { sed $'s/\e\\[[0-9;?]*[ -/]*[@-~]//g' "$1"; }
+
 # go_verdict <status> <log>: what a `go test` run says about the mutation, and
 # the top-level tests that failed, kept in $work/caught for the record.
 go_verdict() {
   local code="$1" out named
-  out="$(cat "$2")"
+  out="$(plain "$2")"
   rm -f "$work/caught"
   if [ "$code" -eq 124 ]; then
     echo "INCONCLUSIVE — suite timed out (the mutation hangs a handler)"
@@ -452,7 +462,7 @@ run_web() {
 # the test files whose tests failed, kept in $work/caught for the record.
 web_verdict() {
   local code="$1" out named
-  out="$(cat "$2")"
+  out="$(plain "$2")"
   rm -f "$work/caught"
   if [ "$code" -eq 124 ]; then
     echo "INCONCLUSIVE — web suite timed out"
