@@ -261,6 +261,10 @@ Not measured:
   project, and Desk's agent setup puts it in the `env` of the `jpack mcp`
   server entry. A caller started without it records unsigned. Nothing fails, so
   nothing tells it.
+
+  *Amended 2026-10-08:* Desk does not copy the key into an agent's setup. The
+  key is named by `jpack.json` through the upgrade, or inherited from where
+  Desk started.
 - **An inherited `JPACK_SIGNING_KEY` is removed** from every runtime Desk starts
   for a desk it made, as `JPACK_CONFIG` is (`runtimeEnv`, `runRuntime`).
   Measured:
@@ -780,23 +784,23 @@ the first needs Desk to pin a runtime release that includes #211 to #215 and
 *Amended 2026-10-05:* #200 pinned Runtime v0.26.0, which includes them. PR 8
 is split into 8a and 8b. Rows 11 and 12 are added where they fall in this
 order, and are numbered after 10 so that the PR numbers already cited keep
-their meaning. The status column is as of 2026-10-05.
+their meaning. The status column was as of 2026-10-05, and is as of 2026-10-08.
 
-| PR | What | Needs | Status, 2026-10-05 |
+| PR | What | Needs | Status, 2026-10-08 |
 |---|---|---|---|
 | 1 | Remove an inherited `JPACK_SIGNING_KEY` from the runtimes of desks Desk made, and show one inherited on the startup desk | nothing; can ship now | shipped: #202, in v0.5.1 |
 | 2 | The decision-record panel: capability check, `audit verify` with no held inputs, the older-runtime line; download of the trail, sidecar and stamps as exact bytes | the runtime pin | shipped: #204 (2a) and #205 (2b), in v0.5.1 |
-| 3 | Key custody: generate per project; new desks at `"6"` with `audit.signingKey`; public keys shown; `packs validate`'s check shown; rotation | 2; questions 1–3 | 3a: #219, custody for the desks Desk makes, in no release yet; 3b, rotation, not built |
-| 4 | The upgrade offer learns `"6"` and the signing key, as its own item | ADR-0009 PR D merged; 3 | built: PR #261 |
-| 5 | Hand-over by download or copy: holders, the checkpoints route, cursors, Desk's record; verification against that record | 2; question 4 | built: PR #241 |
-| 6 | The repair offer, only on a chained trail (an audit member that does not say `"chain": false`) | 2; question 8 | built: PR #263 |
-| 7 | Stamping: settings, scheduler, pending records; verification with roots | 2; question 5 | built: PR #274 |
-| 8a | Export version 5 and labelling, `run-chain` pass-through | nothing: #200 pinned Runner v0.5.0; question 7 | merged: #220, on `main`, in no release yet |
-| 8b | The Jobs chain in hand-over: `audit checkpoint --trail <file> --since <cursor> --limit 300`, with a cursor of its own | 5 | built: PR #254 |
-| 11 | Runner signing key in Desk's custody, `secrets/signing/runner/<desk id>.seed` under the same custody checks, passed as the boot-line `signingKey` | 3; policy settled by question 7; Runner #36 closed by #37 in v0.5.0 | #229, in no release yet |
-| 12 | The Jobs record panel beside the Decision record: `audit verify --trail <copy>` with the Runner key and the held checkpoints | 5 and 11 | built: PR #254 |
-| 9 | The README and in-app help: what each part establishes and does not, and the agent setup with the key | each of the above | built: PR #281 |
-| 10 | Hand-over to an HTTPS endpoint | a holder who runs one; question 4 | |
+| 3 | Key custody: generate per project; new desks at `"6"` with `audit.signingKey`; public keys shown; `packs validate`'s check shown; rotation | 2; questions 1–3 | 3a: #219, custody for the desks Desk makes, and 3b: #231, rotation; both shipped in v0.6.0 |
+| 4 | The upgrade offer learns `"6"` and the signing key, as its own item | ADR-0009 PR D merged; 3 | merged: PR #261, in no release yet |
+| 5 | Hand-over by download or copy: holders, the checkpoints route, cursors, Desk's record; verification against that record | 2; question 4 | shipped: #241, in v0.7.0 |
+| 6 | The repair offer, only on a chained trail (an audit member that does not say `"chain": false`) | 2; question 8 | merged: PR #263, in no release yet |
+| 7 | Stamping: settings, scheduler, pending records; verification with roots | 2; question 5 | merged: PR #274, in no release yet |
+| 8a | Export version 5 and labelling, `run-chain` pass-through | nothing: #200 pinned Runner v0.5.0; question 7 | shipped: #220, in v0.5.2 |
+| 8b | The Jobs chain in hand-over: `audit checkpoint --trail <file> --since <cursor> --limit 300`, with a cursor of its own | 5 | shipped: #254, in v0.7.0 |
+| 11 | Runner signing key in Desk's custody, `secrets/signing/runner/<desk id>.seed` under the same custody checks, passed as the boot-line `signingKey` | 3; policy settled by question 7; Runner #36 closed by #37 in v0.5.0 | shipped: #232, in v0.7.0 |
+| 12 | The Jobs record panel beside the Decision record: `audit verify --trail <copy>` with the Runner key and the held checkpoints | 5 and 11 | shipped: #254, in v0.7.0 |
+| 9 | The README and in-app help: what each part establishes and does not, and the agent setup with the key | each of the above | merged: PR #281, in no release yet |
+| 10 | Hand-over to an HTTPS endpoint | a holder who runs one; question 4 | not built: waits for a holder who runs an endpoint |
 
 Not in this line:
 - the gateway's `requireSignedRecord`, since Desk sends no writes through
