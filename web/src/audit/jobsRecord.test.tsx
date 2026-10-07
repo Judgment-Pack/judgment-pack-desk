@@ -18,7 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { deskFetch } from '../files/client'
 import { followsTheProject } from '../mcp/projectChange'
 import { testQueryClient } from '../testing/harness'
-import { downloadCheckpoints, isHolders, isJobsChain, isJobsRecord, JOBS_REASONS, JOBS_RECORD_KEY, type AuditReport, type AuditRecord, type Holder, type Holders, type JobsRecord as JobsAnswer } from './client'
+import { checkJobsRecordAgain, downloadCheckpoints, isHolders, isJobsChain, isJobsRecord, JOBS_REASONS, JOBS_RECORD_KEY, type AuditReport, type AuditRecord, type Holder, type Holders, type JobsRecord as JobsAnswer } from './client'
 import { DecisionRecord } from './DecisionRecord'
 import { JobsRecord } from './JobsRecord'
 
@@ -51,6 +51,14 @@ const report = (more: Partial<Extract<JobsAnswer, { state: 'report' }>> = {}): J
 /** Bytes a re-encoding would change: CRLF, a byte that is not UTF-8, and no final newline. */
 const served = new Uint8Array([0x7b, 0x7d, 0x0d, 0x0a, 0xff, 0xfe, 0x7b, 0x22, 0x26, 0x22, 0x7d])
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+/** A Jobs record whose held checkpoints reach through record `through`. */
+const witnessedThrough = (through: number) => json(200, report({ report: { ...valid, coverage: { ...valid.coverage, checkpointed: { status: 'through', through }, witnessed: through, unwitnessed: 5 - through } } }))
+/** A response the test lets go of when it chooses. */
+function deferred() {
+  let release!: (response: Response) => void
+  const response = new Promise<Response>(resolve => { release = resolve })
+  return { response, release }
+}
 
 let runner: unknown
 let jobs: () => Response | Promise<Response>
@@ -371,8 +379,6 @@ describe('the chain of runs in the hand-over', () => {
     expect(await (await panel()).findByText('Witnessed through record 5')).toBeTruthy()
   })
 
-  /** A Jobs record whose held checkpoints reach through record `through`. */
-  const witnessedThrough = (through: number) => json(200, report({ report: { ...valid, coverage: { ...valid.coverage, checkpointed: { status: 'through', through }, witnessed: through, unwitnessed: 5 - through } } }))
   /** One holder handed the chain through record 3, with records 4 and 5 to download and confirm. */
   function handingOverThroughFive() {
     const recorded = { ...auditor, jobs: { [chainId]: { through: 5, confirmedAt: 1791205200, digest: fileDigest, unwitnessed: 0 } } }
@@ -380,12 +386,6 @@ describe('the chain of runs in the hand-over', () => {
       { holders: [recorded], trail: { identity: trail, sequence: 3 }, jobs: { state: 'chain', chain: { identity: chainId, sequence: 5 } } }]
     download = () => jobsCheckpoints()
     confirm = () => json(200, recorded)
-  }
-  /** A response the test lets go of when it chooses. */
-  function deferred() {
-    let release!: (response: Response) => void
-    const response = new Promise<Response>(resolve => { release = resolve })
-    return { response, release }
   }
 
   it('checks the chain again after a confirmation of it, though a check asked before is still in flight, and shows the later one', async () => {
@@ -484,6 +484,23 @@ describe('the Jobs record client', () => {
     download = () => jobsCheckpoints()
     await expect(downloadCheckpoints(auditor.id)).rejects.toThrow('The checkpoints could not be downloaded. Please try again.')
     expect((await downloadCheckpoints(auditor.id, 'jobs'))?.chain).toBe('jobs')
+  })
+
+  it('runs the check after a confirmation only on request, so a change to the project does not cancel it', async () => {
+    // The fetch's own options, with no panel mounted to set them again.
+    const client = testQueryClient()
+    const after = deferred()
+    jobs = () => after.response
+    const checking = checkJobsRecordAgain(client)
+    await waitFor(() => expect(count('/api/audit/jobs-verify')).toBe(1))
+    expect(followsTheProject(client.getQueryCache().find({ queryKey: JOBS_RECORD_KEY })!)).toBe(false)
+    // What McpProvider does on desk/fileChanged, and after a reconnect.
+    await client.cancelQueries({ predicate: followsTheProject })
+    await client.invalidateQueries({ predicate: followsTheProject })
+    after.release(witnessedThrough(5))
+    await checking
+    expect(client.getQueryData<JobsAnswer>(JOBS_RECORD_KEY)?.state).toBe('report')
+    expect(count('/api/audit/jobs-verify')).toBe(1)
   })
 
   it('names, as Desk’s own sentences, only sentences the chassis says', () => {
