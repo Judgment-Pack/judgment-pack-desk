@@ -1343,17 +1343,20 @@ func TestAChangeOrRemovalWaitsForTheStampInProgress(t *testing.T) {
 		// that confirms it waits.
 		written := make(chan stampingAnswered, 1)
 		go func() { written <- c.write() }()
+		var answer stampingAnswered
 		select {
-		case got := <-written:
-			t.Errorf("%s was answered while the stamp ran: %d %s", c.name, got.status, got.data)
+		case answer = <-written:
+			t.Errorf("%s was answered while the stamp ran: %d %s", c.name, answer.status, answer.data)
 		case <-time.After(time.Second):
+			hold.free()
+			answer = <-written
 		}
 		hold.free()
 		if got := <-first; got.status != http.StatusOK || !strings.Contains(got.data, `"status":"stamped"`) {
 			t.Errorf("%s: the stamp in progress answered %d %s", c.name, got.status, got.data)
 		}
-		if got := <-written; got.status != http.StatusOK {
-			t.Errorf("%s answered %d %s after the stamp", c.name, got.status, got.data)
+		if answer.status != http.StatusOK {
+			t.Errorf("%s answered %d %s after the stamp", c.name, answer.status, answer.data)
 		}
 		if n := stampsTo(r.ran(t), testAuthorityAddress); n != 1 {
 			t.Errorf("%s: the stamp in progress asked the authority it read %d times", c.name, n)
