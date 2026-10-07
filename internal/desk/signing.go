@@ -917,7 +917,11 @@ func (s *Server) custodyWords(message string) string {
 // there whether its jpack.json names the seed (`startupKeyNamed`), which the
 // upgrade wrote only after the key was made, and a jpack.json that cannot be
 // read now never costs the project its key. A marker of another project's
-// name is left for a start on that project.
+// name is left for a start on that project. **The key goes only under the
+// name the project's own identity file holds** (`startupBound`, issue #283):
+// under its path's hash, which a project moved away from that path left as
+// well, a jpack.json that names no key says nothing of the project the
+// creation was for, and only a marker whose seed jpack.json names is removed.
 //
 // **Under the signing folder's lock, taken once** (signing_lock.go). Where
 // another Desk process holds it, a creation may be under way there: the sweep
@@ -981,6 +985,10 @@ func (s *Server) sweepUnfinishedKeys() {
 		}
 		if err != nil {
 			s.log.Printf("desk: an unfinished creation's key was left, because whether desk %s was made could not be told: %v", id, err)
+			continue
+		}
+		if !published && s.startupKey(id) && !s.startupBound() {
+			s.log.Printf("desk: the key of an unfinished creation under this project's path, %s, was left: its jpack.json does not name it, and a name made from a path is not bound to one project, so the key may be one a project moved away from here still names", id)
 			continue
 		}
 		keyBetween("sweep: inspected")

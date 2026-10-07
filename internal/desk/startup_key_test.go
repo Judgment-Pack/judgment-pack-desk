@@ -38,8 +38,20 @@ type signingUpgrade struct {
 	audit   *auditRig
 	project string
 	// seed is where the project's key is made: Desk's signing folder, under
-	// the hex SHA-256 of the project's resolved path, spelled out here.
+	// the project's identity, or the name the offer shows until it has one.
 	seed string
+}
+
+// startupNameOf is the name s keeps the project's key under, or makes its
+// first key under: its identity, or the name the offer shows until it has
+// one (startup_identity.go).
+func startupNameOf(t *testing.T, s *Server) string {
+	t.Helper()
+	name, err := s.newStartupKeyName()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return name
 }
 
 func newSigningUpgrade(t *testing.T, files map[string]string) *signingUpgrade {
@@ -58,7 +70,7 @@ func newSigningUpgrade(t *testing.T, files map[string]string) *signingUpgrade {
 		t.Fatal(err)
 	}
 	audit.answers(t, 0, auditValidReport)
-	seed := filepath.Join(s.configDir, "secrets", "signing", digestOf([]byte(s.projectDir))+".seed")
+	seed := filepath.Join(s.configDir, "secrets", "signing", startupNameOf(t, s)+".seed")
 	return &signingUpgrade{s: s, ts: ts, rig: rig, audit: audit, project: project, seed: seed}
 }
 
@@ -343,7 +355,7 @@ func TestChoosingTheSigningKeyWritesSixAndTheKeyTogether(t *testing.T) {
 	if generate < 0 || lock < 0 || generate > lock {
 		t.Errorf("the runtime was run as %q, want the key made before the lock", calls)
 	}
-	name := digestOf([]byte(u.s.projectDir))
+	name := startupNameOf(t, u.s)
 	if got := u.keyFiles(t); !slices.Equal(got, []string{name + ".keys.jsonl", name + ".seed"}) {
 		t.Errorf("the signing folder holds %q", got)
 	}
@@ -504,7 +516,7 @@ func TestAFailedSigningUpgradeLeavesNoKeyAndNoChange(t *testing.T) {
 			t.Cleanup(func() { testHookKeyBetween, testHookBeforeUpgradePublish, testHookAfterCustodyCheck = nil, nil, nil })
 			status, data := u.confirm(t, answer.Token, true)
 			testHookKeyBetween, testHookBeforeUpgradePublish, testHookAfterCustodyCheck = nil, nil, nil
-			says := strings.ReplaceAll(tc.says, "%NAME%", digestOf([]byte(u.s.projectDir)))
+			says := strings.ReplaceAll(tc.says, "%NAME%", startupNameOf(t, u.s))
 			if status != tc.status || !strings.Contains(refusalOf(data), says) {
 				t.Errorf("the confirmation answered %d %s, want %d saying %q", status, data, tc.status, says)
 			}
@@ -520,7 +532,7 @@ func TestAFailedSigningUpgradeLeavesNoKeyAndNoChange(t *testing.T) {
 			sameProject(t, before, treeOf(t, u.project), "a failed upgrade")
 			for _, folder := range []string{filepath.Dir(u.seed), filepath.Dir(u.seed) + ".held"} {
 				for _, name := range namesIn(t, folder) {
-					if info, err := os.Lstat(filepath.Join(folder, name)); err == nil && info.Mode().IsRegular() && strings.HasPrefix(name, digestOf([]byte(u.s.projectDir))) {
+					if info, err := os.Lstat(filepath.Join(folder, name)); err == nil && info.Mode().IsRegular() && strings.HasPrefix(name, startupNameOf(t, u.s)) {
 						t.Errorf("%s was left in %s", name, filepath.Base(folder))
 					}
 				}
@@ -580,7 +592,7 @@ func TestTheSigningUpgradeWaitsForTheSigningFolder(t *testing.T) {
 // jpack.json that cannot be read now leaves everything for a later start, and
 // a marker of another project's name is left for a start on that project.
 func TestAStoppedSigningUpgradeIsSweptAtTheNextStart(t *testing.T) {
-	name := func(u *signingUpgrade) string { return digestOf([]byte(u.s.projectDir)) }
+	name := func(u *signingUpgrade) string { return startupNameOf(t, u.s) }
 	for _, tc := range []struct {
 		at   string
 		left func(n string) []string
@@ -803,7 +815,7 @@ func TestTheStartFinishesARotationOfTheStartupKey(t *testing.T) {
 	t.Cleanup(func() { testHookKeyBetween = nil })
 	u.abandon(t, "/api/audit/key/rotate", map[string]any{"token": panel.Rotation.Token})
 	testHookKeyBetween = nil
-	n := digestOf([]byte(u.s.projectDir))
+	n := startupNameOf(t, u.s)
 	if got := u.keyFiles(t); !slices.Contains(got, n+".rotating") {
 		t.Fatalf("the stopped rotation left %q", got)
 	}
@@ -833,7 +845,7 @@ func TestNoPathOfTheStartupKeyReachesThePage(t *testing.T) {
 	rig.answers(t, "error")
 	s, ts := startDesk(t, Config{ProjectDir: project, JpackBin: rig.bin, Token: testToken, DeskConfigDir: config, Logger: log.New(io.Discard, "", 0)})
 	t.Cleanup(func() { s.Close(); ts.Close() })
-	seed := filepath.Join(config, "secrets", "signing", digestOf([]byte(s.projectDir))+".seed")
+	seed := filepath.Join(config, "secrets", "signing", startupNameOf(t, s)+".seed")
 	leaks := func(t *testing.T, what, said string) {
 		t.Helper()
 		for _, part := range []string{"SECRET", "TAIL", "KEYS", root, runtimePrints(config), runtimePrints(project)} {
@@ -880,7 +892,9 @@ func TestNoPathOfTheStartupKeyReachesThePage(t *testing.T) {
 // deciding run, as an outside caller makes one, is recorded; and the decision
 // record, with the project's public key, reports that record signed by it,
 // and `packs validate` that the key signs, with no part of either path in
-// what the page is told. A key the runtime refuses to make, for a folder made
+// what the page is told. The project is then moved, and another put at its
+// path: a start there takes nothing, and on the moved project the key is
+// still the project's, and signs the next record. A key the runtime refuses to make, for a folder made
 // open after custody's check, writes nothing, leaves no key, and is told with
 // no part of any path.
 func TestSigningTheStartupProjectWithTheRuntime(t *testing.T) {
@@ -929,7 +943,7 @@ func TestSigningTheStartupProjectWithTheRuntime(t *testing.T) {
 		}
 		t.Fatalf("the offer answered %+v", answer.SigningKey)
 	}
-	seed := filepath.Join(config, "secrets", "signing", digestOf([]byte(s.projectDir))+".seed")
+	seed := filepath.Join(config, "secrets", "signing", startupNameOf(t, s)+".seed")
 	want := `{"configVersion":"6","requireReviewed":true,"requireComparableFacts":true,"audit":{"dir":".desk-private/audit","signingKey":` + jsonString(seed) + `},"packs":{"alpha":{"path":"packs/a.json"}}}` + "\n"
 	if !answer.Sign || answer.To != "6" || answer.ConfigAfter != want {
 		t.Fatalf("the offer answered %+v", answer)
@@ -986,6 +1000,52 @@ func TestSigningTheStartupProjectWithTheRuntime(t *testing.T) {
 	}
 	leaks(t, root, "the panel", string(data))
 
+	// **Moved, the project keeps its key, and another project at its old
+	// path takes nothing** (issue #283): the project's identity moved with
+	// it, so the next start names the key jpack.json names, the runtime
+	// still signs with it, and the decision record reads it.
+	name := strings.TrimSuffix(filepath.Base(seed), ".seed")
+	s.Close()
+	ts.Close()
+	moved := project + " moved"
+	if err := os.Rename(project, moved); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(project, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeProject(t, project, map[string]string{"jpack.json": `{"configVersion":"3","packs":{"alpha":{"path":"packs/a.json"}}}` + "\n", "packs/a.json": reviewPack})
+	there, tsThere := startDesk(t, Config{ProjectDir: project, JpackBin: bin, Token: testToken, DeskConfigDir: config, Logger: log.New(io.Discard, "", 0)})
+	if there.signingKeyName() == name {
+		t.Errorf("the project at the old path is named %s, the moved project's name", name)
+	}
+	there.Close()
+	tsThere.Close()
+	if _, err := os.Lstat(seed); err != nil {
+		t.Fatalf("the moved project's key is gone after a start at its old path: %v", err)
+	}
+	again, tsAgain := startDesk(t, Config{ProjectDir: moved, JpackBin: bin, Token: testToken, DeskConfigDir: config, Logger: log.New(io.Discard, "", 0)})
+	t.Cleanup(func() { again.Close(); tsAgain.Close() })
+	if again.signingKeyName() != name {
+		t.Errorf("the moved project is named %s, want %s", again.signingKeyName(), name)
+	}
+	jpackIn(t, bin, moved, "experimental", "evaluate", "--config", "jpack.json", "--pack-id", "alpha", "--facts", facts, "--format", "json")
+	status, data = reviewCall(t, tsAgain, "GET", "/api/audit/verify", "", nil, bearer)
+	record = auditAnswer{}
+	if status != http.StatusOK || json.Unmarshal(data, &record) != nil || record.Report == nil {
+		t.Fatalf("the moved project's panel answered %d %s", status, data)
+	}
+	if report := record.Report; report.Status != "valid" || report.Coverage.SignedRecords != 2 || report.Signatures == nil || report.Signatures.KeyInForce != public.KeyID {
+		t.Errorf("after the move the panel reports %+v, signatures %+v; want both records signed by key %s", report, report.Signatures, public.KeyID)
+	}
+	if record.Keys == nil || record.Keys.State != keysKept || !slices.Equal(record.Keys.Public, []deskPublicKey{{public.PublicKey, public.KeyID, 0}}) {
+		t.Errorf("after the move the panel shows the keys %+v", record.Keys)
+	}
+	if record.Signing == nil || record.Signing.Status != "passed" {
+		t.Errorf("after the move the panel shows the key check %+v", record.Signing)
+	}
+	leaks(t, root, "the panel after the move", string(data))
+
 	t.Run("a key the runtime refuses to make", func(t *testing.T) {
 		if !runtimeChecksKeyFolders(t, bin) {
 			t.Skip("this runtime does not check the folders on a key's path")
@@ -1031,7 +1091,7 @@ func TestAnUpgradeNotPutBackLeavesTheKeyForTheNextStart(t *testing.T) {
 		!strings.Contains(refusalOf(data), "The signing key Desk made for this project was left with its creation marker: when Desk next starts, it removes the key unless jpack.json names it.") {
 		t.Fatalf("the confirmation answered %d %s", status, data)
 	}
-	n := digestOf([]byte(u.s.projectDir))
+	n := startupNameOf(t, u.s)
 	if got := u.keyFiles(t); !slices.Equal(got, []string{n + ".creating", n + ".keys.jsonl", n + ".seed"}) {
 		t.Fatalf("the signing folder holds %q", got)
 	}
@@ -1196,13 +1256,15 @@ func TestARotationOfTheStartupKeyFollowsWhatJpackJsonNames(t *testing.T) {
 	})
 }
 
-// **The project's key is named by the project's resolved path** (review round
-// 1 of #261): the same name, and so the same key, whether Desk is started on
-// the project through a linked checkout, with a trailing slash, or by a
-// relative path; another name for another project. A stopped upgrade made
-// through the link is finished at a start through the trailing slash, and the
-// key it made is the one the decision record finds there, and from a relative
-// start.
+// **The project's key is named by the project, wherever it is reached from**
+// (review round 1 of #261, issue #283): the same name, and so the same key,
+// whether Desk is started on the project through a linked checkout, with a
+// trailing slash, or by a relative path; another name for another project.
+// Before it has an identity, a project is named by its resolved path's hash;
+// the upgrade that makes its key writes its identity, which every later start
+// reads. A stopped upgrade made through the link is finished at a start
+// through the trailing slash, and the key it made is the one the decision
+// record finds there, and from a relative start.
 func TestTheStartupKeyIsNamedByTheResolvedProject(t *testing.T) {
 	t.Setenv("JPACK_CONFIG", "")
 	t.Setenv("JPACK_SIGNING_KEY", "")
@@ -1224,7 +1286,7 @@ func TestTheStartupKeyIsNamedByTheResolvedProject(t *testing.T) {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256([]byte(resolved))
-	want := hex.EncodeToString(sum[:])
+	byPath := hex.EncodeToString(sum[:])
 
 	rig := newReviewRigReading(t, withAuditVersions, "", "")
 	rig.answers(t, "error")
@@ -1243,14 +1305,18 @@ func TestTheStartupKeyIsNamedByTheResolvedProject(t *testing.T) {
 	}
 
 	s, ts := start(t, link)
-	if got := s.signingKeyName(); got != want {
-		t.Fatalf("started through a link, the key is named %s, want %s", got, want)
+	if got := s.signingKeyName(); got != byPath {
+		t.Fatalf("started through a link, a project with no identity is named %s, want %s", got, byPath)
 	}
 	// A stopped upgrade, made through the link.
 	status, data := reviewCall(t, ts, "GET", "/api/upgrade?signingKey=true", "", nil, bearer)
 	var offer upgradeAnswer
 	if status != http.StatusOK || json.Unmarshal(data, &offer) != nil || !offer.Sign {
 		t.Fatalf("the offer answered %d %s", status, data)
+	}
+	want := startupNameOf(t, s)
+	if want == byPath || !startupIDForm.MatchString(want) || !strings.Contains(offer.ConfigAfter, want+".seed") {
+		t.Fatalf("the offer names the key %s in %s", want, offer.ConfigAfter)
 	}
 	rig.locks(t, upgradeLock(t, real, offer.ConfigAfter, bothPacks))
 	testHookKeyBetween = func(at string) {
@@ -1270,6 +1336,9 @@ func TestTheStartupKeyIsNamedByTheResolvedProject(t *testing.T) {
 	signing := filepath.Join(config, "secrets", "signing")
 	if names := namesIn(t, signing); !slices.Equal(names, []string{want + ".creating", want + ".keys.jsonl", want + ".seed"}) {
 		t.Fatalf("the stopped upgrade left %q", names)
+	}
+	if got := readFile(t, filepath.Join(real, ".desk-private", "project.json")); got != `{"id":"`+want+`"}`+"\n" {
+		t.Fatalf("the project's identity is %q", got)
 	}
 	s.Close()
 	ts.Close()
@@ -1295,7 +1364,13 @@ func TestTheStartupKeyIsNamedByTheResolvedProject(t *testing.T) {
 	if _, panel, refusal := readAudit(t, ts, ""); panel.Keys == nil || panel.Keys.State != keysKept {
 		t.Errorf("started by a relative path, the panel shows %+v %q", panel.Keys, refusal)
 	}
-	if elsewhere, _ := start(t, other); elsewhere.signingKeyName() == want {
+	relative.Close()
+	ts.Close()
+	through, _ := start(t, link)
+	if got := through.signingKeyName(); got != want {
+		t.Errorf("started through the link again, the key is named %s, want %s", got, want)
+	}
+	if elsewhere, _ := start(t, other); elsewhere.signingKeyName() == want || startupNameOf(t, elsewhere) == want {
 		t.Errorf("another project's key is named %s too", want)
 	}
 }

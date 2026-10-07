@@ -21,10 +21,12 @@ package desk
 //
 // As a desk's key is (signing.go), at `<config>/secrets/signing/<name>.seed`,
 // with its list of public keys `<name>.keys.jsonl` and, while it is made, its
-// creation marker `<name>.creating`. `<name>` is the hex SHA-256 of the
-// project's resolved path (`signingKeyName`): the name its Runner's state
-// directory and its Runner key already have. No desk id is 64 characters
-// long, so the two never meet.
+// creation marker `<name>.creating`. `<name>` is the project's identity
+// (startup_identity.go, `signingKeyName`): 64 hexadecimal characters kept in
+// its `.desk-private/project.json`, which move with the project; a project
+// that has none is named by the hex SHA-256 of its resolved path, for what
+// Desk kept under that name before. No desk id is 64 characters long, so the
+// two never meet.
 //
 // # When it is offered
 //
@@ -40,11 +42,13 @@ package desk
 //
 // # How it is made
 //
-// On the owner's confirmation, under the upgrade's token, and under the
-// signing folder's lock (signing_lock.go) from before the marker to its
-// removal: the key first (`generateDeskKey`, the same marker, checks and list
-// as a made desk's), then the upgrade's own writes, `jpack.json` at "6" with
-// `audit.signingKey` naming the seed, and its lock. The seed's pathname must
+// On the owner's confirmation, under the upgrade's token, under this
+// project's lock (project_lock.go), and under the signing folder's lock
+// (signing_lock.go) from before the marker to its removal: the project's
+// identity first, where it has none, with the name the offer showed; then the
+// key (`generateDeskKey`, the same marker, checks and list as a made desk's);
+// then the upgrade's own writes, `jpack.json` at "6" with `audit.signingKey`
+// naming the seed, and its lock. The seed's pathname must
 // still name the seed found immediately before `jpack.json` is written. A
 // failure at any step puts every file back and removes the key; where the
 // files could not be put back, the key and its marker are left, for the next
@@ -55,9 +59,12 @@ package desk
 // A stopped upgrade leaves the marker. The start's sweep
 // (`sweepUnfinishedKeys`) reads the project's `jpack.json`: where it names
 // the seed, the upgrade wrote it, and only the marker is removed; where it
-// names no key, or another, the list, the seed and the marker are removed;
-// where it cannot be read now, nothing is. A marker of another project's name
-// is left for a start on that project.
+// names no key, or another, the list, the seed and the marker are removed,
+// only under the name the project's own identity file holds; where it cannot
+// be read now, nothing is. A marker of another project's name is left for a
+// start on that project, wherever that project is now; and a marker under the
+// path's hash, which a project that was moved away left as well as one that
+// was not, loses only itself, where jpack.json names its seed (issue #283).
 
 import (
 	"context"
@@ -106,23 +113,22 @@ type upgradeSigning struct {
 	Reason string `json:"reason,omitempty"`
 }
 
-// signingKeyName is the name Desk keeps this desk's signing key under in its
-// signing folder: a desk Desk made by its id, and the project Desk was
-// started on by the hex SHA-256 of its resolved path, the name its Runner's
-// state directory and its Runner key already have (ADR-0010, sections 1 and
-// 5).
+// signingKeyName is the name Desk keeps this desk's signing key, and its
+// stamping settings, under: a desk Desk made by its id, and the project Desk
+// was started on by its identity (`startupName`, startup_identity.go); ""
+// where that identity could not be read now, which names nothing kept.
 func (s *Server) signingKeyName() string {
 	if s.cfg.deskID != "" {
 		return s.cfg.deskID
 	}
-	return digestOf([]byte(s.projectDir))
+	return s.startupName()
 }
 
 // startupKey is whether name is the name the project Desk was started on
 // keeps its key under, on that project's own server: what the start's sweep
 // and its recovery of rotations act on besides the desks' ids.
 func (s *Server) startupKey(name string) bool {
-	return s.cfg.deskID == "" && name == s.signingKeyName()
+	return s.cfg.deskID == "" && name != "" && name == s.signingKeyName()
 }
 
 // planSigning is the item for this project, from what the runtime reads and
@@ -164,12 +170,21 @@ func (s *Server) planSigning(schema runtimeSchema, audit string) (*upgradeSignin
 }
 
 // startupSeedPath is the absolute path the project's seed would be made at,
-// where Desk's custody can keep it there now: the signing folder is one
-// custody accepts, or is not there yet and would be made; its path can be
-// named in jpack.json and is not inside the project; and nothing is kept
-// under the project's name. It reads, and makes nothing.
+// under its identity or the name the offer shows until it has one
+// (`newStartupKeyName`), where Desk's custody can keep it there now: the
+// signing folder is one custody accepts, or is not there yet and would be
+// made; its path can be named in jpack.json and is not inside the project;
+// and nothing is kept under that name. It reads, and makes nothing.
 func (s *Server) startupSeedPath() (string, error) {
-	name := s.signingKeyName()
+	name, err := s.newStartupKeyName()
+	if err != nil {
+		return "", err
+	}
+	if !s.startupBound() {
+		if err := s.identityFolderUsable(); err != nil {
+			return "", err
+		}
+	}
 	dir, err := s.assistant.openSigning(false)
 	var folder string
 	switch {
@@ -203,6 +218,9 @@ func (s *Server) startupSeedPath() (string, error) {
 // nothing in the project has been written then.
 func (s *Server) makeStartupKey(ctx context.Context, project heldDir, seed string) (*madeKey, *lockFailure) {
 	name := s.signingKeyName()
+	if !s.startupBound() || filepath.Base(seed) != name+seedSuffix {
+		return nil, &lockFailure{http.StatusConflict, CodeStale, "This project's identity is not the one the offer named its key by, so nothing was written. Review the upgrade again."}
+	}
 	dir, err := s.assistant.openSigning(true)
 	if err != nil {
 		s.log.Printf("desk: no signing key was made for this project: %v", err)

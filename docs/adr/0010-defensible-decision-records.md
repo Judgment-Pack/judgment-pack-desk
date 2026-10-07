@@ -177,6 +177,15 @@ bytes, wherever a record travels").
 - **`<project>`** is the desk's id, for a desk Desk made. For the project Desk
   was started on, it is the hex SHA-256 of the project's path, as Runner names
   that project's Jobs store.
+  *Amended 2026-10-07 (issue #283):* a path names no project for long: a moved
+  project lost its key's name, and a start on a project put at its old path
+  could remove the moved project's key. The project Desk was started on is
+  named by an identity of 64 hexadecimal characters, kept in its
+  `.desk-private/project.json`, written once by the upgrade that makes its key
+  or by a start where that folder is there; a project with none keeps the
+  path's hash for what Desk kept under it. A start removes an unfinished
+  creation's key only under the identity's name. Runner's Jobs store stays
+  named by the path, which Runner scopes it to.
 - **The seed** is 0600, and stays the only name of its file.
 
 One key per project, not one per installation:

@@ -43,6 +43,13 @@ package desk
 // holding one without the other. Where the owner chose the signing key, the
 // key is made first, and taken away with every file where the upgrade does
 // not complete.
+//
+// **One upgrade at a time on a project, in every Desk process** (issue
+// #284): the confirmation takes this project's lock (project_lock.go) before
+// its fresh reading and holds it until its last write or its last file put
+// back. And a file is put back only where it still holds what the upgrade
+// wrote: the lock, where it holds what the upgrade's `packs lock` left.
+// Anything else was written since, and is left as it is, and said.
 
 import (
 	"bytes"
@@ -717,6 +724,14 @@ func (s *Server) handleUpgradeConfirm(w http.ResponseWriter, r *http.Request) {
 // where jpack.json names it (startup_key.go).
 func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string, facts, sign bool) (any, *lockFailure) {
 	stale := &lockFailure{http.StatusConflict, CodeStale, "The project changed after you reviewed the upgrade, so nothing was written. Review it again."}
+	// **This project's lock, from before the fresh reading to the last file
+	// put back** (issue #284), released last, after the key's and the held
+	// folders'.
+	unlock, failure := s.lockProjectFor(ctx, "an upgrade")
+	if failure != nil {
+		return nil, failure
+	}
+	defer unlock()
 	schema, err := readRuntimeSchema(ctx, s.cfg.JpackBin, dir)
 	if err != nil {
 		return nil, &lockFailure{http.StatusInternalServerError, CodeInternal, "Nothing was written: " + strings.TrimRight(err.Error(), ".") + "."}
@@ -726,14 +741,7 @@ func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string
 		return nil, stale
 	}
 	var key *madeKey
-	if plan.sign {
-		var failure *lockFailure
-		if key, failure = s.makeStartupKey(ctx, dir, plan.seed); failure != nil {
-			return nil, failure
-		}
-		defer key.close()
-	}
-	undo := &upgradeUndo{s: s, plan: plan, key: key}
+	undo := &upgradeUndo{s: s, plan: plan}
 	defer undo.close()
 	fail := func(failure *lockFailure) (any, *lockFailure) {
 		if err := undo.run(); err != nil {
@@ -749,6 +757,24 @@ func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string
 			failure.message += " The signing key made for this project could not be removed, and was left in Desk's signing folder; jpack.json does not name it."
 		}
 		return nil, failure
+	}
+	// **The project's identity before its key** (issue #283): the key is made
+	// under the name the project keeps, so that the next start finds it, and
+	// recovers a stopped creation, wherever the project is then.
+	if plan.sign {
+		if err := undo.establishIdentity(); err != nil {
+			if errors.Is(err, errIdentityChanged) {
+				return fail(&lockFailure{http.StatusConflict, CodeStale, "This project's identity changed after you reviewed the upgrade, so nothing was written. Review it again."})
+			}
+			s.log.Printf("desk: this project's identity was not written: %v", err)
+			return fail(&lockFailure{http.StatusInternalServerError, CodeInternal, "Nothing was written, because Desk could not keep this project's identity in its private folder: " + strings.TrimRight(err.Error(), ".") + "."})
+		}
+		var failure *lockFailure
+		if key, failure = s.makeStartupKey(ctx, dir, plan.seed); failure != nil {
+			return fail(failure)
+		}
+		undo.key = key
+		defer key.close()
 	}
 	if plan.audit.State == "create" {
 		if err := undo.makeAuditFolder(); err != nil {
@@ -771,14 +797,15 @@ func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string
 	if err := undo.write(runtimeConfigName, plan.snap.config, true, plan.upgraded.config); err != nil {
 		return fail(writeFailure(err))
 	}
-	undo.locking = true
+	undo.locking, undo.lockLeft = true, projectFile{err: errNotReadYet}
 	lockErr := lockRuntimeProjectAt(ctx, s.cfg.JpackBin, dir)
+	// What the runtime left at the lock, read whatever it answered: the
+	// lock this upgrade puts back only over these bytes.
+	undo.lockLeft = s.readProjectFile(runtimeLockName)
 	locked := false
-	if lockErr == nil {
-		if after, err := s.readReviewFile(runtimeLockName); err == nil {
-			if pinned, _, err := lockedSet(after); err == nil && pinned.equal(plan.upgraded.set) {
-				locked = true
-			}
+	if lockErr == nil && undo.lockLeft.err == nil && undo.lockLeft.present {
+		if pinned, _, err := lockedSet(undo.lockLeft.data); err == nil && pinned.equal(plan.upgraded.set) {
+			locked = true
 		}
 	}
 	if !locked {
@@ -816,6 +843,9 @@ func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string
 			s.log.Printf("desk: this project's new signing key keeps its creation marker; the next start removes it: %v", err)
 		}
 		result.SigningKey = &key.public
+	}
+	if made := undo.identity; made != nil && made.record.From != "" {
+		s.finishStartupMove(made.root, made.record, made.info)
 	}
 	if err := s.storeReviewedCopies(plan.upgraded); err != nil {
 		s.log.Printf("desk: the reviewed copies were not stored: %v", err)
@@ -855,6 +885,19 @@ type upgradeUndo struct {
 	// where it names one: jpack.json is published only while the key's
 	// pathname names the key made (`write`).
 	key *madeKey
+	// lockLeft is what the upgrade's `packs lock` left at the lock, read
+	// right after it ran: the bytes the previous lock is put back over.
+	lockLeft projectFile
+	// identity is the project's identity file, where this upgrade wrote it.
+	identity *madeIdentity
+}
+
+// madeIdentity is an identity file an upgrade wrote: the folder held it is
+// in, the file as written, and what it says.
+type madeIdentity struct {
+	root   *os.Root
+	info   os.FileInfo
+	record identityRecord
 }
 
 // upgradeMade is a folder the upgrade made: its name in the held folder it
@@ -869,6 +912,8 @@ type upgradeWritten struct {
 	name    string
 	before  []byte
 	present bool
+	// after is what the upgrade wrote: the bytes it is put back over.
+	after []byte
 }
 
 // testHookAuditFolderChecked runs after each part of the audit folder's path
@@ -976,7 +1021,77 @@ func (u *upgradeUndo) write(name string, before []byte, present bool, after []by
 	if err != nil {
 		return err
 	}
-	u.written = append(u.written, upgradeWritten{name, before, present})
+	u.written = append(u.written, upgradeWritten{name, before, present, after})
+	return nil
+}
+
+// establishIdentity writes the project's identity, where it has none, with
+// the name the offer showed its key under (`newStartupKeyName`): in
+// `.desk-private/`, made owner-only through the folder held where it is
+// missing, never over anything. Where it is written, the stamping settings
+// kept under the path's hash move to it once the upgrade is done
+// (`finishStartupMove`), and, where the upgrade is put back whole, it is
+// removed with what else the upgrade made (`run`). errIdentityChanged where
+// the project took another identity since the offer.
+func (u *upgradeUndo) establishIdentity() error {
+	s := u.s
+	if s.startupBound() {
+		return nil
+	}
+	name, err := s.newStartupKeyName()
+	if err != nil {
+		return err
+	}
+	if filepath.Base(u.plan.seed) != name+seedSuffix {
+		return errIdentityChanged
+	}
+	info, err := s.root.Lstat(startupIdentityDir)
+	if errors.Is(err, fs.ErrNotExist) {
+		if err = s.root.Mkdir(startupIdentityDir, custodyDirMode); err != nil {
+			return err
+		}
+		if info, err = s.root.Lstat(startupIdentityDir); err != nil {
+			return err
+		}
+		u.made = append(u.made, upgradeMade{s.root, startupIdentityDir, info})
+	}
+	if err != nil {
+		return err
+	}
+	private, err := s.openIdentityFolder()
+	if err != nil {
+		return err
+	}
+	u.held = append(u.held, private)
+	if opened, err := private.Stat("."); err != nil || !os.SameFile(info, opened) {
+		return fmt.Errorf("%s changed while it was being opened", startupIdentityDir)
+	}
+	signing, err := s.assistant.openSigning(false)
+	switch {
+	case errors.Is(err, errNoSigningDir):
+		signing = nil
+	case err != nil:
+		return err
+	default:
+		defer signing.Close()
+	}
+	record := identityRecord{ID: name}
+	if record.From, err = s.legacyStampingToMove(signing); err != nil {
+		return err
+	}
+	written, err := writeIdentity(private, record, nil)
+	if errors.Is(err, errIdentityChanged) {
+		// Another writer gave the project its identity first: the next offer
+		// names the key by that one.
+		if found, _, ok, readErr := readIdentity(private); readErr == nil && ok {
+			s.setStartup(identityKept, found.ID, found.From, "")
+		}
+	}
+	if err != nil {
+		return err
+	}
+	u.identity = &madeIdentity{root: private, info: written, record: record}
+	s.setStartup(identityKept, record.ID, record.From, "")
 	return nil
 }
 
@@ -991,29 +1106,46 @@ func (u *upgradeUndo) run() error {
 	var problems []string
 	u.s.writes.Lock()
 	if u.locking {
-		if err := u.s.restoreLock(u.plan.snap.lock, u.plan.snap.hasLock); err != nil {
+		if err := u.s.restoreLock(u.plan.snap.lock, u.plan.snap.hasLock, u.lockLeft); err != nil {
 			problems = append(problems, runtimeLockName+": "+err.Error())
 		}
 	}
 	for i := len(u.written) - 1; i >= 0; i-- {
 		written := u.written[i]
-		err := u.s.refuseSymlinkedPath(written.name)
-		switch {
-		case err != nil:
-		case written.present:
-			err = u.s.atomicWrite(written.name, written.before)
-		default:
-			if err = u.s.root.Remove(written.name); errors.Is(err, fs.ErrNotExist) {
-				err = nil
-			}
-		}
+		// **Only over what this upgrade wrote** (issue #284): a file another
+		// writer changed since, another Desk process's upgrade among them,
+		// is left as it is.
+		err := u.s.putBack(written.name, projectFile{data: written.after, present: true}, projectFile{data: written.before, present: written.present})
 		if err != nil {
 			problems = append(problems, written.name+": "+err.Error())
 		}
 	}
 	u.s.writes.Unlock()
+	// The project's identity goes only with everything else: where anything
+	// was left, the key and its marker may be left too, and the next start
+	// recovers them only under the name the identity file holds.
+	keptIdentity := u.identity != nil && len(problems) > 0
+	if made := u.identity; made != nil && !keptIdentity {
+		found, err := made.root.Lstat(startupIdentityName)
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+		case err != nil || !os.SameFile(found, made.info):
+			problems = append(problems, startupIdentityDir+"/"+startupIdentityName+": it is no longer the file the upgrade wrote, so it was left")
+			keptIdentity = true
+		default:
+			if err := made.root.Remove(startupIdentityName); err != nil {
+				problems = append(problems, startupIdentityDir+"/"+startupIdentityName+": "+err.Error())
+				keptIdentity = true
+			} else {
+				u.s.setStartup(identityNone, "", "", "")
+			}
+		}
+	}
 	for i := len(u.made) - 1; i >= 0; i-- {
 		made := u.made[i]
+		if keptIdentity && made.in == u.s.root && made.name == startupIdentityDir {
+			continue
+		}
 		info, err := made.in.Lstat(made.name)
 		switch {
 		case errors.Is(err, fs.ErrNotExist):

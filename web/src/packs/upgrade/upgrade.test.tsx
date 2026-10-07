@@ -253,6 +253,8 @@ describe('the signing key, on the project Desk was started on', () => {
     expect(costs.textContent).toContain('packs validate failing in CI: in any checkout where the key is not present, packs validate answers invalid and exits 1.')
     expect(costs.textContent).toContain('Runtimes before the floor refusing the project: a runtime older than 0.26.0 refuses a project at configVersion 6, for every command.')
     expect(item.textContent).toContain('A signature establishes that a holder of the key signed these exact bytes. It does not establish anything against you, who hold the key; anything after the key is copied; anything against an agent that can read the key; or that the trail is complete.')
+    // What it writes in the project besides jpack.json (issue #283).
+    expect(item.textContent).toContain('Desk first writes the name it keeps the key under in .desk-private/project.json, which is private to this desk and never committed, so that the key stays this project’s when the project is moved. Desk makes the folder, open only to you, where it is missing.')
     // Not chosen: the offer and its confirmation are the ones without it.
     expect(screen.getByRole('listitem', { name: 'jpack.json' }).textContent).not.toContain('signingKey')
     expect(screen.getByRole('button', { name: 'Turn the gates on and lock 2 files' })).toBeTruthy()

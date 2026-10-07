@@ -184,6 +184,7 @@ function Signing({ upgrade, sign, setSign, busy }: { upgrade: Upgrade; sign: boo
   return <>
     <label className="checkbox"><input type="checkbox" checked={sign} disabled={busy} onChange={event => setSign(event.target.checked)} />{msg('Make a signing key for this project, and name it in jpack.json')}</label>
     <p className={styles.quiet}>{msg('Desk has the runtime make an Ed25519 key for this project in Desk’s own configuration folder, outside the project, and jpack.json, at configVersion 6, names it. Every runtime that reads jpack.json then signs each record it adds to the chained trail, if it accepts the key.')}</p>
+    <p className={styles.quiet}><Message text="Desk first writes the name it keeps the key under in <0/>, which is private to this desk and never committed, so that the key stays this project’s when the project is moved. Desk makes the folder, open only to you, where it is missing." slots={[<code>.desk-private/project.json</code>]} /></p>
     <section className={styles.warning} aria-label={msg('What a signing key costs this project')}>
       <h3 className={styles.subheading}>{msg('What a signing key costs this project')}</h3>
       <ul className={styles.changes}>

@@ -886,6 +886,11 @@ func (s *Server) keysIn(ctx context.Context, project heldDir, dir *signingDir, o
 		return auditKeys{State: keysUnread, Problem: problem}, nil
 	}
 	name := s.signingKeyName()
+	if name == "" {
+		// The project's identity could not be read now (issue #283): what
+		// Desk keeps for it cannot be found, which is not "none".
+		return unread("Desk could not read this project's identity, which names the key Desk keeps for it, so it passed no key.")
+	}
 	seedName := name + seedSuffix
 	seed, seedErr := dir.root.Lstat(seedName)
 	public, list, found, err := dir.readKeysFile(name + keysSuffix)
