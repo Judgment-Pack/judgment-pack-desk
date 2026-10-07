@@ -171,6 +171,10 @@ const (
 	trailUnknownWords = "Desk could not tell which trail the checkpoints it handed over belong to, so it passed none of them to the check: "
 )
 
+// handoverKept is what Desk keeps in the hand-over folder, as a refusal to
+// open it names it (`openOwnFolder`).
+const handoverKept = "its record of hand-overs"
+
 // holderIDForm is a holder's id: 16 lowercase hexadecimal characters.
 var holderIDForm = regexp.MustCompile(`^[0-9a-f]{16}$`)
 
@@ -308,9 +312,10 @@ func holderText(value string, limit int) (string, bool) {
 // openOwnFolder opens parts, one directory under another, from start: each a
 // directory, not a link, owned by this user and open to no one else, and the
 // directory that was looked at. With create, a missing one is made
-// owner-only; made says whether the last one was. The root it answers is the
-// caller's to close; start is never closed.
-func openOwnFolder(start *os.Root, parts []string, create bool) (root *os.Root, made bool, err error) {
+// owner-only; made says whether the last one was. keeps names what Desk keeps
+// there, for a refusal's words. The root it answers is the caller's to close;
+// start is never closed.
+func openOwnFolder(start *os.Root, parts []string, create bool, keeps string) (root *os.Root, made bool, err error) {
 	current := start
 	var opened *os.Root
 	defer func() {
@@ -335,10 +340,10 @@ func openOwnFolder(start *os.Root, parts []string, create bool) (root *os.Root, 
 			return nil, false, lookErr
 		}
 		if info.Mode()&fs.ModeSymlink != 0 || !info.IsDir() {
-			return nil, false, fmt.Errorf("%s is not a folder Desk keeps its record of hand-overs in", part)
+			return nil, false, fmt.Errorf("%s is not a folder Desk keeps %s in", part, keeps)
 		}
 		if info.Mode().Perm()&0o077 != 0 {
-			return nil, false, fmt.Errorf("%s is open to other users (%v), so Desk does not keep its record of hand-overs in it", part, info.Mode().Perm())
+			return nil, false, fmt.Errorf("%s is open to other users (%v), so Desk does not keep %s in it", part, info.Mode().Perm(), keeps)
 		}
 		if err := ownedByUs(part, info); err != nil {
 			return nil, false, err
@@ -365,7 +370,7 @@ func openOwnFolder(start *os.Root, parts []string, create bool) (root *os.Root, 
 // `.desk-private/` may not be ignored yet, and what it holds names the
 // owner's counterparties.
 func (s *Server) openHandover(create bool) (*os.Root, error) {
-	root, made, err := openOwnFolder(s.root, strings.Split(handoverDir, "/"), create)
+	root, made, err := openOwnFolder(s.root, strings.Split(handoverDir, "/"), create, handoverKept)
 	if err != nil {
 		return nil, err
 	}
@@ -383,7 +388,7 @@ func openHolderFolder(handover *os.Root, id string, create bool) (*os.Root, erro
 	if !holderIDForm.MatchString(id) {
 		return nil, errors.New("not a holder's id")
 	}
-	root, _, err := openOwnFolder(handover, []string{id}, create)
+	root, _, err := openOwnFolder(handover, []string{id}, create, handoverKept)
 	return root, err
 }
 

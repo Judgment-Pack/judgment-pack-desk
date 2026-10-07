@@ -6,8 +6,9 @@
  * name, and the runtime's sentences about what the result establishes and
  * what it does not, verbatim and in English, as Desk shows the runtime's
  * diagnostics. Desk runs it with the public keys it keeps for this desk, if
- * any, the checkpoints it handed over to holders, if any, and no stamping
- * roots, and the panel says which.
+ * any, the checkpoints it handed over to holders, if any, and the roots of
+ * the time-stamping authority the owner set, if any, and the panel says
+ * which.
  *
  * Beside it: the public keys Desk keeps, for the owner to hand to a holder,
  * each labelled by its place and the record it signs after; `packs
@@ -17,7 +18,9 @@
  * checkpoints to holders, with Desk's own record of it (ADR-0010, section 2;
  * `Handover`). Where the report names the finding `incomplete-last-line`,
  * and only there, the repair, on the owner's word (ADR-0010, section 4;
- * `RepairTrail`).
+ * `RepairTrail`). And stamping: the owner's time-stamping authority, kept by
+ * Desk, the records pending a stamp, the last stamp run and "Stamp now"
+ * (ADR-0010, section 3; `Stamping`).
  *
  * It runs when the panel becomes visible and when the owner asks again: never
  * on a timer, on focus, on a reconnect or on a change to the project. The
@@ -36,11 +39,12 @@ import { msg, systemMessage, useLocale } from '../i18n'
 import { Button } from '../ui/Button'
 import { CodeBlock } from '../ui/CodeBlock'
 import { SettingsSection } from '../ui/SettingsSection'
-import { AUDIT_KEY, AuditUnavailable, readAuditRecord, type AuditCoverageState, type AuditKeys, type AuditRepair, type AuditReport, type AuditRotation, type AuditSigning } from './client'
+import { AUDIT_KEY, AuditUnavailable, readAuditRecord, type AuditCoverageState, type AuditKeys, type AuditRepair, type AuditReport, type AuditRotation, type AuditSigning, type AuditStamping } from './client'
 import styles from './DecisionRecord.module.css'
 import { Handover, NO_HANDOVER, type HandoverState } from './Handover'
 import { RepairTrail, type RepairOutcome } from './RepairTrail'
 import { RotateSigningKey, type RotationOutcome } from './RotateSigningKey'
+import { Stamping, type StampingOutcome } from './Stamping'
 import { TrailDownloads } from './TrailDownloads'
 
 /**
@@ -90,10 +94,17 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
   useEffect(() => { if (visible) setRepaired(undefined) }, [visible])
   const repairSection = (repair?: AuditRepair) => <RepairTrail repair={repair} outcome={repaired}
     onOutcome={outcome => { setRepaired(outcome); void query.refetch() }} />
+  // What a stamping action answered, kept across the check run after it, as
+  // a rotation's is, and dropped when the owner checks again or opens the
+  // panel again.
+  const [stamped, setStamped] = useState<StampingOutcome>()
+  useEffect(() => { if (visible) setStamped(undefined) }, [visible])
+  const stampingSection = (stamping?: AuditStamping, report?: AuditReport) => <Stamping stamping={stamping} report={report} outcome={stamped}
+    onOutcome={outcome => { setStamped(outcome); void query.refetch() }} />
   const handoverSection = <Handover checkedAt={query.dataUpdatedAt} state={handover} onState={setHandover} onConfirmed={() => void query.refetch()} />
   const rotation = (keys?: AuditKeys, rotation?: AuditRotation) => <RotateSigningKey rotation={rotation} keyCount={keys?.state === 'kept' ? keys.public.length : 0}
     outcome={rotated} onOutcome={outcome => { setRotated(outcome); void query.refetch() }} />
-  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); void query.refetch() }}>{msg('Check again')}</Button></div>
+  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); void query.refetch() }}>{msg('Check again')}</Button></div>
   return <SettingsSection title={msg('Decision record')} description={msg('Jobs runs are recorded by the runner, not in this trail.')} variant="plain">
     <div className={styles.card} data-testid="decision-record">
       {query.isPending || query.isFetching ? <p role="status" className={styles.quiet}>{msg('Asking the runtime…')}</p>
@@ -109,14 +120,19 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
                   <SigningKey keys={record.keys} signing={record.signing} />
                   {rotation(record.keys, record.rotation)}
                   {handoverSection}
+                  {stampingSection(record.stamping)}
                   <TrailDownloads files={record.files ?? []} />
                   {again}
                 </>
                   : record?.state === 'report' && <>
                     <p className={styles.statement}>{record.expected ? msg('Desk ran this on your machine, over your trail, with keys and checkpoints you keep. It shows what a holder would see. It is not evidence to anyone who does not trust you. A holder runs the same command on a copy, with what it holds.')
                       : <>{record.keys?.state === 'kept'
-                        ? msg('Desk ran this on your machine, over your trail, with the public keys it keeps for this desk and no checkpoints: it checked the signatures against those keys, and no held checkpoint and no stamp. It is not evidence to anyone who does not trust you: you hold the key. A holder runs the same command on a copy, with what it holds.')
-                        : msg('Desk ran this on your machine, over your trail, with no keys and no checkpoints: it checked no signature, no held checkpoint and no stamp. It is not evidence to anyone who does not trust you. A holder runs the same command on a copy, with what it holds.')}</>}</p>
+                        ? record.stamping?.passed
+                          ? msg('Desk ran this on your machine, over your trail, with the public keys it keeps for this desk, the time-stamping roots you gave and no checkpoints: it checked the signatures against those keys and the stamps against those roots, and no held checkpoint. It is not evidence to anyone who does not trust you: you hold the key. A holder runs the same command on a copy, with what it holds.')
+                          : msg('Desk ran this on your machine, over your trail, with the public keys it keeps for this desk and no checkpoints: it checked the signatures against those keys, and no held checkpoint and no stamp. It is not evidence to anyone who does not trust you: you hold the key. A holder runs the same command on a copy, with what it holds.')
+                        : record.stamping?.passed
+                          ? msg('Desk ran this on your machine, over your trail, with the time-stamping roots you gave and no keys or checkpoints: it checked the stamps against those roots, and no signature and no held checkpoint. It is not evidence to anyone who does not trust you. A holder runs the same command on a copy, with what it holds.')
+                          : msg('Desk ran this on your machine, over your trail, with no keys and no checkpoints: it checked no signature, no held checkpoint and no stamp. It is not evidence to anyone who does not trust you. A holder runs the same command on a copy, with what it holds.')}</>}</p>
                     {record.handoverProblem && <p role="alert">{systemMessage(record.handoverProblem)}</p>}
                     {record.expectUnread && <p role="alert">{msg('Desk could not read the checkpoints it keeps as handed over to {{holders}}, so the check ran without them.', { holders: record.expectUnread.join(', ') })}</p>}
                     <Report report={record.report} />
@@ -124,6 +140,7 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
                     <SigningKey keys={record.keys} signing={record.signing} />
                     {rotation(record.keys, record.rotation)}
                     {handoverSection}
+                    {stampingSection(record.stamping, record.report)}
                     <TrailDownloads files={record.files ?? []} />
                     {record.runtime && <p className={styles.quiet}>{msg('Checked by jpack {{version}}.', { version: record.runtime })}</p>}
                     {again}

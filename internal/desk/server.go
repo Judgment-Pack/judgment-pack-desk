@@ -161,6 +161,16 @@ type Server struct {
 	// repairNonces holds the nonce of each repair token spent in this
 	// process, under repairMu: a token confirms one attempt.
 	repairNonces map[string]bool
+	// stampingMu guards this desk's stamping settings in Desk's
+	// configuration folder: read under it, written and removed under it for
+	// writing, and held for reading while the decision record's runtime
+	// reads the roots (stamping.go). stampingNonces holds the nonce of each
+	// stamping token spent in this process, under it for writing.
+	stampingMu     sync.RWMutex
+	stampingNonces map[string]bool
+	// stamping is this desk's scheduler of stamps: one loop, one run at a
+	// time, stopped by Close (stamping.go).
+	stamping *stampScheduler
 	// reviewKey is this desk's own key for review tokens (`reviewToken`):
 	// random per process, so a token names one desk and does not outlive it.
 	reviewKey [32]byte
@@ -457,6 +467,10 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("POST /api/audit/holders/{id}/confirm", s.handleConfirmHandover)
 	s.mux.HandleFunc("GET /api/audit/checkpoints", s.handleCheckpoints)
 	s.mux.HandleFunc("GET /api/audit/jobs-verify", s.handleJobsVerify)
+	s.mux.HandleFunc("POST /api/audit/stamping/check", s.handleStampingCheck)
+	s.mux.HandleFunc("POST /api/audit/stamping", s.handleStampingSet)
+	s.mux.HandleFunc("POST /api/audit/stamping/remove", s.handleStampingRemove)
+	s.mux.HandleFunc("POST /api/audit/stamping/stamp", s.handleStampNow)
 	s.mux.HandleFunc("GET /api/upgrade", s.handleUpgrade)
 	s.mux.HandleFunc("POST /api/upgrade", s.handleUpgradeConfirm)
 	s.mux.HandleFunc("GET /api/source-reviews", s.handleSourceReviews)
@@ -518,6 +532,9 @@ func New(cfg Config) (*Server, error) {
 	}
 	s.initJobs()
 	s.initModelProviders()
+	// This desk's stamping, off the decision path: a loop that stamps where
+	// the owner set an authority, until Close (stamping.go).
+	s.startStamping()
 	if cfg.parent == nil {
 		s.resumeDesks()
 	}
@@ -554,6 +571,9 @@ func (s *Server) closeAll() error {
 	if s.jobs != nil {
 		s.jobs.close()
 	}
+	// Before the project's folder is let go: a stamp in progress is waited
+	// for, never killed mid-write.
+	s.stamping.close()
 	if s.codex != nil {
 		s.codex.Close()
 	}

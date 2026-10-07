@@ -38,6 +38,16 @@
  * a cursor of its own: the same routes, with `chain=jobs` on a download and
  * `"chain":"jobs"` in a confirmation, read a fresh copy of the chain.
  *
+ * Stamping (ADR-0010, section 3; question 5: no authority by default): the
+ * decision record says what Desk keeps of this desk's time-stamping
+ * authority, whether its roots were given to the check, how many records are
+ * pending a stamp, and the last stamp run since Desk started.
+ * `POST /api/audit/stamping/check` holds a proposal to Desk's rules and
+ * answers what Desk would keep, with a token; `POST /api/audit/stamping`
+ * keeps it on that token, once; `POST /api/audit/stamping/remove` removes the
+ * settings the decision record showed; and `POST /api/audit/stamping/stamp`
+ * runs one stamp on the owner's request.
+ *
  * The Jobs record (ADR-0010, section 4, "A Jobs record panel"): `GET
  * /api/audit/jobs-verify` answers the runtime's `audit verify --trail` over a
  * fresh copy of Runner's chain of runs, with the checkpoints of it handed
@@ -72,6 +82,19 @@ export type AuditDiscontinuity = { line: number; reason: string; damagedLine: nu
 export type AuditFinding = { name: string; line: number; detail: string }
 /** The signature sidecar as the runtime read it, given where a key was passed. */
 export type AuditSignatures = { lines: number; unreadable: number; rotations: number; keysSupplied: number; revocations: number; firstKey: string; keyInForce: string }
+/**
+ * The runtime's lag between each covered record's `at` and the time the first
+ * stamp covering it attests, as it reports it: over `records` records, the
+ * longest and its record, the shortest and its record.
+ */
+export type AuditStampLag = { records: number; maxSeconds: number; maxSequence?: number; minSeconds: number; minSequence?: number; atAfterStamp: boolean; atUnreadable: number }
+/**
+ * The stamps file as the runtime read it, given where time-stamping roots were
+ * passed: its lines, those it could not read, those that hold under the roots
+ * (`trusted`, the runtime's word), how many of those had revocation checked,
+ * the time the stamped records existed by, and the lag.
+ */
+export type AuditStamps = { lines: number; unreadable: number; trusted: number; revocationChecked: number; revocationNotChecked: number; coveredBy?: string; lag: AuditStampLag }
 export type AuditReport = {
   /** The runtime's: `valid`, `segmented` or `invalid`. */
   status: string
@@ -86,6 +109,7 @@ export type AuditReport = {
   findings: AuditFinding[]
   findingsTotal: number
   signatures?: AuditSignatures
+  stamps?: AuditStamps
   /** The runtime's own sentences, in English, as it wrote them. */
   establishes: string[]
   doesNotEstablish: string[]
@@ -159,8 +183,8 @@ export type TrailFile = keyof typeof TRAIL_FILES
  */
 type HeldInputs = { expected?: number; expectUnread?: string[]; handoverProblem?: string }
 export type AuditRecord =
-  | ({ state: 'report'; runtime?: string; report: AuditReport; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation; repair?: AuditRepair } & HeldInputs)
-  | ({ state: 'unverified'; runtime?: string; diagnostics: AuditDiagnostic[]; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation } & HeldInputs)
+  | ({ state: 'report'; runtime?: string; report: AuditReport; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation; repair?: AuditRepair; stamping?: AuditStamping } & HeldInputs)
+  | ({ state: 'unverified'; runtime?: string; diagnostics: AuditDiagnostic[]; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation; stamping?: AuditStamping } & HeldInputs)
   | { state: 'older-runtime'; runtime?: string; floor: string }
   | { state: 'no-trail' }
 
@@ -191,6 +215,12 @@ const hex = (length: number) => (value: unknown): value is string => text(value)
 const isSignatures = (value: unknown): value is AuditSignatures => object(value)
   && ['lines', 'unreadable', 'rotations', 'keysSupplied', 'revocations'].every(name => count(value[name])) && named(value.firstKey) && named(value.keyInForce)
 const isPublicKey = (value: unknown): value is DeskPublicKey => object(value) && hex(64)(value.publicKey) && hex(32)(value.keyId) && count(value.at)
+const number = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
+const isLag = (value: unknown): value is AuditStampLag => object(value) && count(value.records) && number(value.maxSeconds) && number(value.minSeconds)
+  && typeof value.atAfterStamp === 'boolean' && count(value.atUnreadable)
+  && (value.records === 0 || count(value.maxSequence) && value.maxSequence > 0 && count(value.minSequence) && value.minSequence > 0)
+const isStamps = (value: unknown): value is AuditStamps => object(value)
+  && ['lines', 'unreadable', 'trusted', 'revocationChecked', 'revocationNotChecked'].every(name => count(value[name])) && optional(value.coveredBy, named) && isLag(value.lag)
 
 /** The keys Desk keeps, as the chassis lists them: a kept list is at least one key, in order of the record each signs after. */
 export function isAuditKeys(value: unknown): value is AuditKeys {
@@ -234,7 +264,7 @@ export function isAuditReport(value: unknown): value is AuditReport {
     && isCoverage(value.coverage) && list(value.segments, isSegment) && count(value.segmentsTotal)
     && list(value.discontinuities, isDiscontinuity) && count(value.discontinuitiesTotal)
     && list(value.findings, isFinding) && count(value.findingsTotal)
-    && list(value.establishes, text) && list(value.doesNotEstablish, text) && optional(value.signatures, isSignatures)
+    && list(value.establishes, text) && list(value.doesNotEstablish, text) && optional(value.signatures, isSignatures) && optional(value.stamps, isStamps)
     && value.segments.length <= value.segmentsTotal && value.discontinuities.length <= value.discontinuitiesTotal
     && value.findings.length <= value.findingsTotal && (value.status === 'invalid') === (value.findingsTotal > 0)
 }
@@ -242,12 +272,13 @@ export function isAuditReport(value: unknown): value is AuditReport {
 export function isAuditRecord(value: unknown): value is AuditRecord {
   if (!object(value) || !optional(value.runtime, text) || !optional(value.files, item => list(item, isTrailFile))
     || !optional(value.keys, isAuditKeys) || !optional(value.signing, isAuditSigning) || !optional(value.rotation, isAuditRotation)
-    || !optional(value.expected, count) || !optional(value.expectUnread, item => list(item, named)) || !optional(value.handoverProblem, named)) return false
+    || !optional(value.expected, count) || !optional(value.expectUnread, item => list(item, named)) || !optional(value.handoverProblem, named)
+    || !optional(value.stamping, isAuditStamping)) return false
   switch (value.state) {
     case 'report': return isAuditReport(value.report) && optional(value.repair, isAuditRepair)
     case 'unverified': return list(value.diagnostics, isDiagnostic) && value.diagnostics.length > 0 && value.repair === undefined
-    case 'older-runtime': return text(value.floor)
-    case 'no-trail': return true
+    case 'older-runtime': return text(value.floor) && value.stamping === undefined
+    case 'no-trail': return value.stamping === undefined
   }
   return false
 }
@@ -636,4 +667,151 @@ export async function downloadRunChain(): Promise<Blob> {
     throw new Error(text(body.error) ? body.error : msg('The chain of runs could not be downloaded. Please try again.'))
   }
   return response.blob()
+}
+
+/* Stamping ------------------------------------------------------------------ */
+
+/** One root certificate Desk keeps: its subject, and the SHA-256 of its DER bytes. */
+export type StampingRoot = { subject: string; sha256: string }
+/** One revocation-list file Desk keeps: the SHA-256 of its bytes, and how many lists it holds. */
+export type StampingList = { sha256: string; lists: number }
+/** Stamping settings, as Desk keeps them or would keep them: `setAt` by Desk's clock, once kept. */
+export type StampingSettings = { authority: string; intervalMinutes: number; policies: string[]; roots: StampingRoot[]; crls: StampingList[]; setAt?: number }
+/**
+ * One stamp run's outcome, by Desk's clock (`at`, in seconds): the runtime's
+ * answer, a stamp or a checkpoint stamped already, with the checkpoint it
+ * named and, for a stamp, the authority's time and policy as the runtime
+ * printed them; the runtime's refusal, in its words; or Desk's.
+ */
+export type StampRun = {
+  at: number; requested?: boolean
+  status: 'stamped' | 'already-stamped' | 'refused' | 'problem'
+  trail?: string; sequence?: number; stampedAt?: string; existedBy?: string; policy?: string
+  diagnostics?: AuditDiagnostic[]; problem?: string
+}
+/**
+ * The decision record's word on stamping: no authority; one set, its
+ * settings, and whether their roots were given to the check (and why not);
+ * settings Desk could not read now, and why; or none kept here, and why.
+ * Beside it, the records pending a stamp where the runtime checked the
+ * stamps, the last stamp run since Desk started, whether one is running, and
+ * the token that confirms a removal of the settings shown.
+ */
+export type AuditStamping = {
+  state: 'none' | 'set' | 'unread' | 'unavailable'
+  settings?: StampingSettings; problem?: string; removeToken?: string
+  passed?: boolean; passProblem?: string; pending?: number; last?: StampRun; running?: boolean
+}
+/** What the owner proposes: the roots as PEM text, each revocation list's bytes in base64. */
+export type StampingProposal = { authority: string; intervalMinutes?: number; roots: string; policies: string[]; crls: string[] }
+/** What a check answers: what Desk would keep, and the token that confirms it. */
+export type StampingChecked = { token: string; shown: StampingSettings }
+
+/**
+ * The chassis's own sentences about stamping, as it says them, so that the
+ * page can show each in the owner's language (`systemMessage`). A reason that
+ * carries the runtime's or custody's words keeps them as they were said.
+ */
+export const STAMPING_REASONS = [
+  sourceMessage("Send the stamping settings as JSON: the authority's address, the interval in minutes, the root certificates, and any policy OIDs and revocation lists."),
+  sourceMessage("Give the authority's address as an http or https URL of at most 2048 characters, with a host, and with no user name, password, fragment, space or control character."),
+  sourceMessage('Give the interval as a whole number of minutes from 5 to 1440.'),
+  sourceMessage('Give the root certificates you trust for this authority as PEM, at most 262144 bytes, holding at least one certificate, each of which can be read.'),
+  sourceMessage('Give at most 8 policy OIDs, each once, each a dotted object identifier such as 1.2.3.4 of at most 64 characters.'),
+  sourceMessage('Give at most 4 revocation lists, each once, each PEM or DER of at most 262144 bytes, holding at least one list that can be read.'),
+  sourceMessage('Confirm the stamping settings with the token Desk gave when it showed them.'),
+  sourceMessage('Remove the time-stamping authority with the token the decision record gave.'),
+  sourceMessage('The stamping settings changed after Desk showed them, so nothing was changed. Check the decision record again.'),
+  sourceMessage('This confirmation was used already, so nothing was changed. Check the decision record again for a fresh one.'),
+  sourceMessage('No time-stamping authority is set for this desk, so Desk stamps nothing.'),
+  sourceMessage('A stamp run for this desk is in progress, so Desk starts no other. The decision record shows its outcome once it ends.'),
+  sourceMessage('Desk is stopping, so it starts no stamp run.'),
+  sourceMessage("The runtime's audit stamp did not answer as documented, so Desk cannot say whether it stamped. The decision record, checked again, shows the stamps the runtime accepts."),
+  sourceMessage('A stamp request needs no settings: send {} as JSON.'),
+  sourceMessage('Desk could not read the stamping settings it keeps for this desk, so it uses none of them now: {{reason}}.'),
+  sourceMessage('Desk could not keep these stamping settings, and the decision record shows the settings it reads now: {{reason}}.'),
+  sourceMessage('Desk keeps no stamping settings here: {{reason}}.'),
+  sourceMessage('The stamp run did not finish: {{reason}}.'),
+  sourceMessage('Desk could not tell where the trail ends now, so it asked for no stamp: {{reason}}.'),
+  sourceMessage('This runtime (jpack {{version}}) has no audit stamp. Stamping needs jpack {{floor}} or later.'),
+  sourceMessage('Desk could not hand the runtime the roots it keeps for this desk, so no stamp was checked: {{reason}}.'),
+  sourceMessage("A cross-site request cannot change this desk's stamping.")
+]
+
+const sha256Form = (value: unknown): value is string => text(value) && /^sha256:[0-9a-f]{64}$/.test(value)
+const isRoot = (value: unknown): value is StampingRoot => object(value) && text(value.subject) && sha256Form(value.sha256)
+const isList = (value: unknown): value is StampingList => object(value) && sha256Form(value.sha256) && count(value.lists) && value.lists > 0
+const instant = (value: unknown): value is string => named(value) && !Number.isNaN(Date.parse(value))
+
+/** Settings as the chassis shows them: an address, an interval within its bounds, at least one root, and lists of their shapes. */
+export function isStampingSettings(value: unknown): value is StampingSettings {
+  return object(value) && named(value.authority) && /^https?:\/\//i.test(value.authority) && count(value.intervalMinutes) && value.intervalMinutes >= 5 && value.intervalMinutes <= 1440
+    && list(value.policies, named) && list(value.roots, isRoot) && value.roots.length > 0 && list(value.crls, isList) && optional(value.setAt, count)
+}
+
+/** A stamp run as the chassis says it: each outcome with what it carries, and nothing else. */
+export function isStampRun(value: unknown): value is StampRun {
+  if (!object(value) || !count(value.at) || !optional(value.requested, item => typeof item === 'boolean')) return false
+  const checkpoint = hex(32)(value.trail) && count(value.sequence) && value.sequence > 0
+  const stamp = ['stampedAt', 'existedBy', 'policy'].map(name => value[name])
+  switch (value.status) {
+    case 'stamped': return checkpoint && instant(value.stampedAt) && instant(value.existedBy) && named(value.policy) && value.diagnostics === undefined && value.problem === undefined
+    case 'already-stamped': return checkpoint && stamp.every(item => item === undefined) && value.diagnostics === undefined && value.problem === undefined
+    case 'refused': return list(value.diagnostics, isDiagnostic) && value.diagnostics.length > 0 && value.problem === undefined && value.trail === undefined
+    case 'problem': return named(value.problem) && value.diagnostics === undefined && value.trail === undefined
+  }
+  return false
+}
+
+/** The decision record's word on stamping: each state with what it carries, a removal token of 96 hexadecimal characters, and a count pending. */
+export function isAuditStamping(value: unknown): value is AuditStamping {
+  if (!object(value) || !optional(value.removeToken, hex(96)) || !optional(value.passed, item => typeof item === 'boolean') || !optional(value.passProblem, named)
+    || !optional(value.pending, count) || !optional(value.last, isStampRun) || !optional(value.running, item => typeof item === 'boolean')) return false
+  switch (value.state) {
+    case 'none': return value.settings === undefined && value.removeToken === undefined && !value.passed && value.problem === undefined
+    case 'set': return isStampingSettings(value.settings) && value.problem === undefined && typeof value.removeToken === 'string'
+    case 'unread': return value.settings === undefined && named(value.problem) && !value.passed
+    case 'unavailable': return value.settings === undefined && named(value.problem) && value.removeToken === undefined && !value.passed
+  }
+  return false
+}
+
+async function stampingRefusal(response: Response, fallback: string): Promise<Error> {
+  let body: { error?: unknown } = {}
+  try { body = await response.json() as typeof body } catch { /* The status is still an answer. */ }
+  return new Error(text(body.error) ? body.error : fallback)
+}
+
+const postJSON = (url: string, body: unknown) => deskFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+
+/** Hold a proposal to Desk's rules: what Desk would keep, and the token that confirms it, or why not, in Desk's words. */
+export async function checkStamping(proposal: StampingProposal): Promise<StampingChecked> {
+  const failed = msg('The stamping settings could not be checked. Please try again.')
+  const response = await postJSON('/api/audit/stamping/check', proposal)
+  if (!response.ok) throw await stampingRefusal(response, failed)
+  const value: unknown = await response.json()
+  if (!object(value) || !hex(96)(value.token) || !isStampingSettings(value.shown)) throw new Error(failed)
+  return value as StampingChecked
+}
+
+/** Keep the proposal the token confirms, or say why not in Desk's words: the settings or the proposal changed since, or the token was used. */
+export async function setStamping(proposal: StampingProposal, token: string): Promise<void> {
+  const response = await postJSON('/api/audit/stamping', { ...proposal, token })
+  if (!response.ok) throw await stampingRefusal(response, msg('The stamping settings could not be kept. Check the decision record again.'))
+}
+
+/** Remove the settings the decision record showed, or say why not in Desk's words: they changed since, or the token was used. */
+export async function removeStamping(token: string): Promise<void> {
+  const response = await postJSON('/api/audit/stamping/remove', { token })
+  if (!response.ok) throw await stampingRefusal(response, msg('The time-stamping authority could not be removed. Check the decision record again.'))
+}
+
+/** One stamp run, on the owner's request: its outcome, or why none ran, in Desk's words. */
+export async function stampNow(): Promise<StampRun> {
+  const failed = msg('Desk could not read what the stamp run answered. The decision record, checked again, shows the stamps the runtime accepts.')
+  const response = await postJSON('/api/audit/stamping/stamp', {})
+  if (!response.ok) throw await stampingRefusal(response, failed)
+  const value: unknown = await response.json()
+  if (!object(value) || !isStampRun(value.run)) throw new Error(failed)
+  return value.run
 }
