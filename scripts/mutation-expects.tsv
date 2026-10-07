@@ -283,6 +283,7 @@ go	publication: the manifest is written in place	TestAStoppedCreationLeavesNoKey
 go	publication: the marker is removed before publication	TestAManifestNotReadNowKeepsItsKey,TestAManifestThatIsNotWholeIsNotAPublication,TestAStoppedCreationLeavesNoKeyPastTheNextStart
 go	repair: Desk's own sentence is passed on with its path	TestARepairSaysNoPathOfItsOwn
 go	repair: a confirmation need not be JSON	TestARepairIsAskedForInOneWay
+go	repair: a confirmation past its bound is read	TestARepairIsAskedForInOneWay
 go	repair: a confirmation with a short token runs	TestARepairIsAskedForInOneWay
 go	repair: a cross-site request repairs	TestARepairIsAskedForInOneWay
 go	repair: a digest of another form is read	TestAnAnswerTheRepairDoesNotDocumentIsNotARepair
