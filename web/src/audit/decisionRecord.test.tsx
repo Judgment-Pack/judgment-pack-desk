@@ -235,6 +235,46 @@ describe('the decision-record panel', () => {
     }
   })
 
+  // Line audit, finding 6: the headline is composed from what was passed to
+  // audit verify, keys, held checkpoints and roots, each on its own. A held
+  // checkpoint with no key passed (an unsigned startup project, a desk made
+  // unsigned, keys Desk could not read) never says keys were used, and says
+  // what the signing section says: no public key.
+  it('says it ran with keys only where it passed them, whatever checkpoints and roots it passed beside them', async () => {
+    const HELD = 'Desk ran this on your machine, over your trail, with keys and checkpoints you keep. It shows what a holder would see. It is not evidence to anyone who does not trust you. A holder runs the same command on a copy, with what it holds.'
+    const HELD_NO_KEY = 'Desk ran this on your machine, over your trail, with checkpoints you keep and no public key: it checked the trail against those checkpoints, and no signature and no stamp. It shows what a holder would see. It is not evidence to anyone who does not trust you. A holder runs the same command on a copy, with what it holds.'
+    const HELD_ROOTS_NO_KEY = 'Desk ran this on your machine, over your trail, with checkpoints you keep, the time-stamping roots you gave and no public key: it checked the trail against those checkpoints and the stamps against those roots, and no signature. It shows what a holder would see. It is not evidence to anyone who does not trust you. A holder runs the same command on a copy, with what it holds.'
+    const KEYED_ROOTS = 'Desk ran this on your machine, over your trail, with the public keys it keeps for this desk, the time-stamping roots you gave and no checkpoints: it checked the signatures against those keys and the stamps against those roots, and no held checkpoint. It is not evidence to anyone who does not trust you: you hold the key. A holder runs the same command on a copy, with what it holds.'
+    const ROOTS = 'Desk ran this on your machine, over your trail, with the time-stamping roots you gave and no keys or checkpoints: it checked the stamps against those roots, and no signature and no held checkpoint. It is not evidence to anyone who does not trust you. A holder runs the same command on a copy, with what it holds.'
+    const unread = { state: 'unread', problem: 'Desk could not read the public keys it keeps for this desk: line 1 is not in the form Desk writes.' } as const
+    const kept = { state: 'kept', public: [deskKey] } as const
+    const passed = { state: 'set', passed: true } as const
+    for (const [name, inputs, says, noKeyWords] of [
+      ['an unsigned startup project, with a confirmed checkpoint', { keys: { state: 'startup' }, expected: 1 }, HELD_NO_KEY, 'Desk keeps no signing key for the project it was started on, so it passed no public key.'],
+      ['keys Desk could not read, with a confirmed checkpoint', { keys: unread, expected: 1 }, HELD_NO_KEY, unread.problem],
+      ['a desk made unsigned, with checkpoints of two holders and roots', { keys: { state: 'none' }, expected: 2, stamping: passed }, HELD_ROOTS_NO_KEY, 'Desk keeps no signing key for this desk, so it passed no public key.'],
+      ['keys and a checkpoint', { keys: kept, expected: 1 }, HELD, undefined],
+      ['keys, a checkpoint and roots', { keys: kept, expected: 1, stamping: passed }, HELD, undefined],
+      ['keys and roots', { keys: kept, stamping: passed }, KEYED_ROOTS, undefined],
+      ['keys alone', { keys: kept }, KEYED_STATEMENT, undefined],
+      ['roots alone', { keys: { state: 'startup' }, stamping: passed }, ROOTS, 'Desk keeps no signing key for the project it was started on, so it passed no public key.'],
+      ['nothing', { keys: { state: 'startup' } }, KEYLESS_STATEMENT, 'Desk keeps no signing key for the project it was started on, so it passed no public key.'],
+      ['roots Desk keeps and could not pass', { keys: { state: 'startup' }, expected: 1, stamping: { state: 'set', passProblem: 'Desk could not hand the runtime the roots it keeps for this desk, so no stamp was checked: the path of a file Desk keeps does not name the file it read.' } }, HELD_NO_KEY, undefined]
+    ] as const) {
+      const settings = { authority: 'https://tsa.example/stamp', intervalMinutes: 60, policies: [], roots: [{ subject: 'CN=root', sha256: 'sha256:' + '1f'.repeat(32) }], crls: [] }
+      const stamping = 'stamping' in inputs ? { ...inputs.stamping, settings, removeToken: 'ab'.repeat(48) } : undefined
+      const record = { state: 'report', runtime: '0.27.1', report: valid, signing: { state: 'no-key' }, ...inputs, stamping }
+      expect(isAuditRecord(record), name).toBe(true)
+      answers = [() => json(200, record)]
+      show()
+      const headline = await screen.findByText(/^Desk ran this on your machine/)
+      expect(headline.textContent, name).toBe(says)
+      if (noKeyWords) expect(within(screen.getByRole('region', { name: 'Signing key' })).getByText(noKeyWords), name).toBeTruthy()
+      if (inputs.keys.state !== 'kept') expect(headline.textContent, name).not.toMatch(/with keys|public keys it keeps|you hold the key/)
+      cleanup()
+    }
+  })
+
   it('shows a key the runtime refuses, and a check it did not make, in its words', async () => {
     const refused = 'The signing key the audit member\'s signingKey names, Desk\'s signing folder/abc.seed, is refused, so records are written unsigned: the signing key can be read or written by its group or by other users.'
     answers = [() => json(200, { state: 'report', runtime: '0.26.0', report: valid, keys: { state: 'kept', public: [deskKey] }, signing: { state: 'check', status: 'failed', detail: refused } } satisfies AuditRecord)]

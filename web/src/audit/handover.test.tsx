@@ -28,6 +28,7 @@ const digest = 'sha256:' + 'ab'.repeat(32)
 const fileDigest = 'sha256:' + 'cd'.repeat(32)
 const ADR_SENTENCE = "This is Desk's own record. You keep it, and you can change it, so it proves nothing to a holder or to anyone else. Only the holder's own copy counts."
 const HELD_STATEMENT = 'Desk ran this on your machine, over your trail, with keys and checkpoints you keep. It shows what a holder would see. It is not evidence to anyone who does not trust you. A holder runs the same command on a copy, with what it holds.'
+const HELD_NO_KEY_STATEMENT = 'Desk ran this on your machine, over your trail, with checkpoints you keep and no public key: it checked the trail against those checkpoints, and no signature and no stamp. It shows what a holder would see. It is not evidence to anyone who does not trust you. A holder runs the same command on a copy, with what it holds.'
 const STALE = 'What you downloaded is not what the trail gives now. Download it again and hand over that file.'
 const report: AuditReport = { status: 'valid', lines: 5, bytes: 10, snapshotBetweenWrites: true,
   coverage: { legacyPrefix: 0, chained: 5, unchained: 0, uncovered: 0, damaged: 0, signed: { status: 'not-checked' }, signedRecords: 0, unsignedRecords: 0,
@@ -287,10 +288,16 @@ describe('handing checkpoints over', () => {
 })
 
 describe('the decision record with what was handed over', () => {
-  it('says what Desk ran it with when it passed checkpoints it handed over', async () => {
-    record = { state: 'report', runtime: '0.27.1', report, expected: 1 }
+  it('says what Desk ran it with when it passed checkpoints it handed over, and keys only where it passed them', async () => {
+    record = { state: 'report', runtime: '0.27.1', report, expected: 1, keys: { state: 'kept', public: [{ publicKey: '88'.repeat(32), keyId: '4b'.repeat(16), at: 0 }] } }
     show()
     expect(await screen.findByText(HELD_STATEMENT)).toBeTruthy()
+    cleanup()
+    // Line audit, finding 6: checkpoints and no key are not "keys and checkpoints".
+    record = { state: 'report', runtime: '0.27.1', report, expected: 1 }
+    show()
+    expect(await screen.findByText(HELD_NO_KEY_STATEMENT)).toBeTruthy()
+    expect(screen.queryByText(HELD_STATEMENT)).toBeNull()
   })
 
   it('says why it passed none of the checkpoints it handed over, where it could not read its record of them', async () => {

@@ -12424,8 +12424,8 @@ export function assistantTransport(id: string): Transport {
     "{ version: record.runtime ?? '?', floor: record.floor }" \
     "{ version: record.floor, floor: record.floor }"
   mutate web "record: what Desk did not give is not said" "$DR" \
-    "                      : msg('Desk ran this on your machine, over your trail, with no keys and no checkpoints" \
-    "                      : false && msg('Desk ran this on your machine, over your trail, with no keys and no checkpoints"
+    "    : msg('Desk ran this on your machine, over your trail, with no keys and no checkpoints" \
+    "    : '' && msg('Desk ran this on your machine, over your trail, with no keys and no checkpoints"
   mutate web "record: the establishes sentences are not marked English" "$DR" \
     "<ul className={styles.list} lang=\"en\">{report.establishes" \
     "<ul className={styles.list}>{report.establishes"
@@ -12503,11 +12503,11 @@ export function assistantTransport(id: string): Transport {
   # what a creation made without is said, paragraph by paragraph, before the
   # desk opens.
   mutate web "key panel: the statement claims keys it did not pass" "$DR" \
-    "{record.keys?.state === 'kept'" \
-    "{true"
+    "  const keys = record.keys?.state === 'kept'" \
+    "  const keys = true"
   mutate web "key panel: the statement says no keys where it passed some" "$DR" \
-    "{record.keys?.state === 'kept'" \
-    "{false"
+    "  const keys = record.keys?.state === 'kept'" \
+    "  const keys = false"
   mutate web "key panel: the public keys are not shown" "$DR" \
     "{keys.public.map((key, index) =>" \
     "{keys.public.slice(0, 0).map((key, index) =>"
@@ -12849,8 +12849,8 @@ export function assistantTransport(id: string): Transport {
     "    {error && <p role=\"alert\">{systemMessage(error)}</p>}" \
     "    {error && <p role=\"alert\" hidden>{systemMessage(error)}</p>}"
   mutate web "hand-over page: the held statement is not said" "$DR" \
-    "{record.expected ? msg(" \
-    "{false ? msg("
+    "  const held = (record.expected ?? 0) > 0" \
+    "  const held = false"
   mutate web "hand-over page: a holder's file passed over is not named" "$DR" \
     "{record.expectUnread && <p role=\"alert\">" \
     "{record.expectUnread && record.expectUnread.length < 0 && <p role=\"alert\">"
@@ -13144,10 +13144,8 @@ export function assistantTransport(id: string): Transport {
     '{ setRotated(undefined); setRepaired(undefined); setStamped(undefined); void query.refetch() }' \
     '{ setRotated(undefined); setRepaired(undefined); void query.refetch() }'
   mutate web 'stamping page: the statement says no stamp was checked with roots given' "$SDR" \
-    '                        : record.stamping?.passed
-' \
-    '                        : false
-'
+    '  const roots = record.stamping?.passed === true' \
+    '  const roots = false'
   mutate web 'stamping client: the decision record’s stamping is not checked' "$SAC" \
     '  if (!optional(value.stamping, isAuditStamping)) return false
 ' \
@@ -13314,6 +13312,21 @@ export function assistantTransport(id: string): Transport {
   mutate web "search and files: a stored default timeout is saved as the default's value" "$SWS" \
     'timeoutSeconds:original?.timeoutSeconds??0' \
     'timeoutSeconds:original?.timeoutSeconds||timeout.defaultSeconds'
+  # The ADR-0010 line audit's claim findings (issues #287-#289), on the page:
+  # the decision record's headline composed from what was passed, keys,
+  # held checkpoints and roots, each on its own (finding 6).
+  AFD=web/src/audit/DecisionRecord.tsx
+  mutate web 'audit fix: checkpoints with no key say keys were used' "$AFD" \
+    '  if (keys && held) return msg(' \
+    '  if (held) return msg('
+  mutate web 'audit fix: keys Desk could not read are taken for keys passed' "$AFD" \
+    "  const keys = record.keys?.state === 'kept'" \
+    "  const keys = record.keys !== undefined && record.keys.state !== 'none' && record.keys.state !== 'startup'"
+  mutate web 'audit fix: checkpoints and roots with no key leave the roots out' "$AFD" \
+    '  if (held) {
+    return roots' \
+    '  if (held) {
+    return false'
 fi
 
 restore

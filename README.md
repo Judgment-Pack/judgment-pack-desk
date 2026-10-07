@@ -422,9 +422,11 @@ time-stamping authority (stamping, below), it passes that authority's roots as
 `--tsa-crls`. It passes no `--require-…` flag, so the runtime checks the chain,
 the signatures against the keys it was given, the trail against the
 checkpoints it was given and the stamps against the roots it was given, and
-says what it did not check. Its sentence above the report says which: with
-keys and checkpoints you keep, with this desk's public keys, with the
-time-stamping roots you gave, or with no keys. The panel shows the runtime's status,
+says what it did not check. Its sentence above the report says which, from
+what Desk passed and nothing else: with keys and checkpoints you keep, only
+where it passed both; with checkpoints you keep and no public key; with this
+desk's public keys; with the time-stamping roots you gave; or with no keys.
+The panel shows the runtime's status,
 its coverage counts, segments, discontinuities and findings by name, and its
 sentences on what the result establishes and what it does not, in English as
 the runtime writes them, and, where a key was passed, the key in force at the

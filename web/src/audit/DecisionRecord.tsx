@@ -39,7 +39,7 @@ import { msg, systemMessage, useLocale } from '../i18n'
 import { Button } from '../ui/Button'
 import { CodeBlock } from '../ui/CodeBlock'
 import { SettingsSection } from '../ui/SettingsSection'
-import { AUDIT_KEY, AuditUnavailable, readAuditRecord, type AuditCoverageState, type AuditKeys, type AuditRepair, type AuditReport, type AuditRotation, type AuditSigning, type AuditStamping } from './client'
+import { AUDIT_KEY, AuditUnavailable, readAuditRecord, type AuditCoverageState, type AuditKeys, type AuditRecord, type AuditRepair, type AuditReport, type AuditRotation, type AuditSigning, type AuditStamping } from './client'
 import styles from './DecisionRecord.module.css'
 import { Handover, NO_HANDOVER, type HandoverState } from './Handover'
 import { RepairTrail, type RepairOutcome } from './RepairTrail'
@@ -125,14 +125,7 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
                   {again}
                 </>
                   : record?.state === 'report' && <>
-                    <p className={styles.statement}>{record.expected ? msg('Desk ran this on your machine, over your trail, with keys and checkpoints you keep. It shows what a holder would see. It is not evidence to anyone who does not trust you. A holder runs the same command on a copy, with what it holds.')
-                      : <>{record.keys?.state === 'kept'
-                        ? record.stamping?.passed
-                          ? msg('Desk ran this on your machine, over your trail, with the public keys it keeps for this desk, the time-stamping roots you gave and no checkpoints: it checked the signatures against those keys and the stamps against those roots, and no held checkpoint. It is not evidence to anyone who does not trust you: you hold the key. A holder runs the same command on a copy, with what it holds.')
-                          : msg('Desk ran this on your machine, over your trail, with the public keys it keeps for this desk and no checkpoints: it checked the signatures against those keys, and no held checkpoint and no stamp. It is not evidence to anyone who does not trust you: you hold the key. A holder runs the same command on a copy, with what it holds.')
-                        : record.stamping?.passed
-                          ? msg('Desk ran this on your machine, over your trail, with the time-stamping roots you gave and no keys or checkpoints: it checked the stamps against those roots, and no signature and no held checkpoint. It is not evidence to anyone who does not trust you. A holder runs the same command on a copy, with what it holds.')
-                          : msg('Desk ran this on your machine, over your trail, with no keys and no checkpoints: it checked no signature, no held checkpoint and no stamp. It is not evidence to anyone who does not trust you. A holder runs the same command on a copy, with what it holds.')}</>}</p>
+                    <p className={styles.statement}>{ranWith(record)}</p>
                     {record.handoverProblem && <p role="alert">{systemMessage(record.handoverProblem)}</p>}
                     {record.expectUnread && <p role="alert">{msg('Desk could not read the checkpoints it keeps as handed over to {{holders}}, so the check ran without them.', { holders: record.expectUnread.join(', ') })}</p>}
                     <Report report={record.report} />
@@ -147,6 +140,36 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
                   </>}
     </div>
   </SettingsSection>
+}
+
+/**
+ * What Desk says it ran the check with: composed from what it passed to
+ * `audit verify`, and from nothing else (line audit, finding 6). Public keys
+ * where the keys it keeps were passed (`kept`; never where it keeps none or
+ * could not read them); held checkpoints where it passed a holder's file
+ * (`expected`); time-stamping roots where it passed them (`passed`). The
+ * ADR's sentence (section 4), "with keys and checkpoints you keep", only
+ * where both keys and checkpoints were passed; with checkpoints and no key, a
+ * sentence that says no public key was passed, as the signing section does.
+ */
+function ranWith(record: Extract<AuditRecord, { state: 'report' }>): string {
+  const keys = record.keys?.state === 'kept'
+  const held = (record.expected ?? 0) > 0
+  const roots = record.stamping?.passed === true
+  if (keys && held) return msg('Desk ran this on your machine, over your trail, with keys and checkpoints you keep. It shows what a holder would see. It is not evidence to anyone who does not trust you. A holder runs the same command on a copy, with what it holds.')
+  if (keys) {
+    return roots
+      ? msg('Desk ran this on your machine, over your trail, with the public keys it keeps for this desk, the time-stamping roots you gave and no checkpoints: it checked the signatures against those keys and the stamps against those roots, and no held checkpoint. It is not evidence to anyone who does not trust you: you hold the key. A holder runs the same command on a copy, with what it holds.')
+      : msg('Desk ran this on your machine, over your trail, with the public keys it keeps for this desk and no checkpoints: it checked the signatures against those keys, and no held checkpoint and no stamp. It is not evidence to anyone who does not trust you: you hold the key. A holder runs the same command on a copy, with what it holds.')
+  }
+  if (held) {
+    return roots
+      ? msg('Desk ran this on your machine, over your trail, with checkpoints you keep, the time-stamping roots you gave and no public key: it checked the trail against those checkpoints and the stamps against those roots, and no signature. It shows what a holder would see. It is not evidence to anyone who does not trust you. A holder runs the same command on a copy, with what it holds.')
+      : msg('Desk ran this on your machine, over your trail, with checkpoints you keep and no public key: it checked the trail against those checkpoints, and no signature and no stamp. It shows what a holder would see. It is not evidence to anyone who does not trust you. A holder runs the same command on a copy, with what it holds.')
+  }
+  return roots
+    ? msg('Desk ran this on your machine, over your trail, with the time-stamping roots you gave and no keys or checkpoints: it checked the stamps against those roots, and no signature and no held checkpoint. It is not evidence to anyone who does not trust you. A holder runs the same command on a copy, with what it holds.')
+    : msg('Desk ran this on your machine, over your trail, with no keys and no checkpoints: it checked no signature, no held checkpoint and no stamp. It is not evidence to anyone who does not trust you. A holder runs the same command on a copy, with what it holds.')
 }
 
 /**
