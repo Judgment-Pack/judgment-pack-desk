@@ -285,10 +285,13 @@ that they cover the pack. See "Local operational Jobs pilot" below.
   together, or every file is put back. One upgrade, or one Review and lock, runs
   on a project at a time, whichever Desk process started it: each holds a
   `flock` on the project's folder from its fresh reading to its last write, and
-  waits up to 10 seconds for another's, then refuses with nothing written. A
-  file is put back only where it still holds what Desk wrote there, the lock
-  only where it holds what the runtime's `packs lock` left; a file another
-  writer changed since is left as it is, and the answer names it. A project that already keeps a lock, for
+  waits up to 10 seconds for another's, then refuses with nothing written;
+  where no such lock can be taken at all, it refuses too. A file is put back
+  only where it still holds what Desk wrote there, and the lock only where it
+  pins the configuration this upgrade or lock wrote or locked (or is no lock
+  at all), never because it was read right after the runtime ran; a file or
+  lock another writer changed since is left as it is, and the answer names
+  it. A project that already keeps a lock, for
   example one a CI step checks, is told that the new `jpack.json` is
   `config-drift` to it: commit `jpack.json` and `jpack.lock.json` together.
   Desk offers no configuration version the runtime it runs cannot read: `"4"`
@@ -607,9 +610,14 @@ same marker, checks and list of public keys), at
 `secrets/signing/<name>.seed`, where `<name>` is the project's identity: 64
 hexadecimal characters Desk writes once, before the key, in
 `.desk-private/project.json`, the private folder the upgrade keeps out of Git,
-made open only to you where it is missing. The identity moves with the
-project, so a project that is moved keeps its key, its list and its stamping
-settings, and a project put at its old path takes none of them. (A project
+made open only to you where it is missing, with the folder it was written
+in. The identity moves with the project, so a project that is moved keeps its
+key, its list and its stamping settings, and a project put at its old path
+takes none of them. A copy carries the identity too: a start whose identity
+was written in another folder that still holds it takes it as shared, and
+then recovers nothing under it, makes and rotates no key for it, and says so;
+where that folder no longer holds it, the project was moved, and its
+identity is written again with its new folder. (A project
 that has no identity is named by the hex SHA-256 of its resolved path, for
 what Desk kept under that name before; a start on a project whose
 `.desk-private/` is there writes it its identity: the name of the seed its
@@ -624,10 +632,15 @@ seed's path must name the seed made at the last moment before `jpack.json` is
 published, its bytes staged, and again before the marker goes. A failure
 at any step puts every file back and removes the key; a stopped upgrade's
 marker is cleared at the next start on that project, wherever it is then,
-which keeps the key only where `jpack.json` names it, and removes a key only
-under the name the project's identity holds: a marker under a path's hash,
-which a project moved away from that path may still need, loses only itself,
-where `jpack.json` names its seed. The decision record then reads the project as a
+which keeps the key where `jpack.json` names it. It removes the key only where
+the marker binds the creation to this project and this upgrade: the marker
+records the identity, the project's folder and the digest of the `jpack.json`
+the upgrade set out to replace, and all three must be as found, under an
+identity no other folder holds. Anything else leaves the key, its list and
+its marker, and the log, the offer and the decision record say so; a marker
+under a path's hash loses only itself, where `jpack.json` names its seed. An
+upgrade that does not complete takes its key away before the identity, and
+keeps the identity wherever the key, or what its creation made, is left. The decision record then reads the project as a
 desk with a key: it passes its public keys to `audit verify`, shows them, and
 offers rotation, except while `JPACK_SIGNING_KEY` is inherited, which the
 runtime takes over the configuration's key, and except where `jpack.json`
