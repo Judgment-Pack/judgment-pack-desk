@@ -14,11 +14,13 @@ package desk
 // made, and the project Desk was started on where its upgrade made one
 // (startup_key.go). For each holder Desk handed checkpoints
 // of the current trail over to, the file of those it kept, as `--expect`
-// (handover.go). No `--tsa-…`, because this desk holds no stamping roots yet,
-// and never a `--require-…` flag: those are a reader's demands, not the
-// operator's. The runtime then checks the chain, the signatures against the
-// keys it was given, and the trail against the checkpoints it was given, and
-// says so in its own sentences.
+// (handover.go). Where the owner set a time-stamping authority, its roots as
+// `--tsa-roots`, and its policies and revocation lists as `--tsa-policy` and
+// `--tsa-crls` (stamping.go). Never a `--require-…` flag: those are a
+// reader's demands, not the operator's. The runtime then checks the chain,
+// the signatures against the keys it was given, the trail against the
+// checkpoints it was given, and the stamps against the roots it was given,
+// and says so in its own sentences.
 //
 // **Beside it, the runtime's word on the key** (ADR-0010, section 1): `packs
 // validate`'s `audit-signing-key` check, which says whether the key the
@@ -53,6 +55,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 	"unicode"
 )
 
@@ -136,6 +139,38 @@ type auditSignatures struct {
 	KeyInForce   string `json:"keyInForce"`
 }
 
+// auditStamps is the stamps file as a verification read it, by runtime
+// 0.27.1's own member names: its lines, those of no shape it reads, the stamps
+// that hold under the roots supplied and match the trail ("trusted", the
+// runtime's word), how many of those had their certificates' revocation
+// checked against a supplied list and how many did not, the time the stamped
+// records existed by, and the lag between records' `at` and their first such
+// stamp.
+type auditStamps struct {
+	Lines                int64         `json:"lines"`
+	Unreadable           int64         `json:"unreadable"`
+	Trusted              int64         `json:"trusted"`
+	RevocationChecked    int64         `json:"revocationChecked"`
+	RevocationNotChecked int64         `json:"revocationNotChecked"`
+	CoveredBy            string        `json:"coveredBy,omitempty"`
+	Lag                  auditStampLag `json:"lag"`
+}
+
+// auditStampLag is the runtime's lag between each covered record's `at`, the
+// operator's word, and the time the first stamp covering it attests: over
+// Records records, the longest and its record, the shortest and its record;
+// whether some record's `at` is later than that time; and how many covered
+// records' `at` could not be read.
+type auditStampLag struct {
+	Records      int64   `json:"records"`
+	MaxSeconds   float64 `json:"maxSeconds"`
+	MaxSequence  int64   `json:"maxSequence,omitempty"`
+	MinSeconds   float64 `json:"minSeconds"`
+	MinSequence  int64   `json:"minSequence,omitempty"`
+	AtAfterStamp bool    `json:"atAfterStamp"`
+	AtUnreadable int64   `json:"atUnreadable"`
+}
+
 // auditReport is the part of `audit verify --format json` the panel shows,
 // by runtime 0.26.0's own member names (`result.AuditVerification`). The
 // lists hold at most the runtime's first hundred of each; the totals count
@@ -156,6 +191,9 @@ type auditReport struct {
 	// Signatures is the signature sidecar as the runtime read it, given
 	// where a public key was passed (`result.AuditSignatures`).
 	Signatures *auditSignatures `json:"signatures,omitempty"`
+	// Stamps is the stamps file as the runtime read it, given where
+	// time-stamping roots were passed (`result.AuditStamps`).
+	Stamps *auditStamps `json:"stamps,omitempty"`
 	// Establishes and DoesNotEstablish are the runtime's own sentences, in
 	// English, passed through as it wrote them.
 	Establishes      []string `json:"establishes"`
@@ -205,6 +243,11 @@ type auditAnswer struct {
 	// given only with a report that names the finding incomplete-last-line,
 	// on the decision record and nowhere else (audit_repair.go).
 	Repair *auditRepair `json:"repair,omitempty"`
+	// Stamping is this desk's stamping: its settings, whether their roots
+	// were passed, the records pending a stamp and the last stamp run
+	// (stamping.go). It is given with a report and with the runtime's
+	// refusal, on the decision record and nowhere else.
+	Stamping *auditStamping `json:"stamping,omitempty"`
 }
 
 // What the panel holds of the desk's keys.
@@ -500,6 +543,24 @@ func (s *Server) withoutPathsIn(answer auditAnswer) auditAnswer {
 	clean := func(message string) string { return s.withoutPathsUnder(message, auditDir) }
 	answer = withoutPathsInKeys(answer, clean)
 	answer.HandoverProblem = clean(answer.HandoverProblem)
+	if answer.Stamping != nil {
+		stamping := *answer.Stamping
+		stamping.Problem = clean(stamping.Problem)
+		stamping.PassProblem = clean(stamping.PassProblem)
+		if stamping.Last != nil {
+			last := *stamping.Last
+			last.Problem = clean(last.Problem)
+			if last.Diagnostics != nil {
+				said := make([]runtimeDiagnostic, len(last.Diagnostics))
+				for i, diagnostic := range last.Diagnostics {
+					said[i] = runtimeDiagnostic{Code: diagnostic.Code, Message: clean(diagnostic.Message)}
+				}
+				last.Diagnostics = said
+			}
+			stamping.Last = &last
+		}
+		answer.Stamping = &stamping
+	}
 	if answer.Diagnostics != nil {
 		said := make([]runtimeDiagnostic, len(answer.Diagnostics))
 		for i, diagnostic := range answer.Diagnostics {
@@ -646,7 +707,12 @@ func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, err
 	}
 	expect := s.heldCheckpoints(ctx, dir)
 	args = append(args, expect.args...)
+	// The stamping settings' roots, held for reading until the runtime has
+	// read them.
+	stamping := s.stampingForVerify()
+	args = append(args, stamping.args...)
 	out, runErr := runRuntime(ctx, s.cfg.JpackBin, dir, args...)
+	stamping.done()
 	answer, err := readAuditVerification(out, runErr)
 	if err != nil {
 		return auditAnswer{}, err
@@ -654,6 +720,7 @@ func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, err
 	if answer.State == auditStateOlder {
 		return older, nil
 	}
+	answer.Stamping = s.stampingAfterVerify(stamping.view, answer.Report)
 	answer.Runtime = schema.version
 	answer.Files = s.auditFilesPresent()
 	answer.Keys = &keys
@@ -896,6 +963,7 @@ type auditVerification struct {
 	Findings             []wireAuditFinding       `json:"findings"`
 	FindingsTotal        *int64                   `json:"findingsTotal"`
 	Signatures           *wireAuditSignatures     `json:"signatures"`
+	Stamps               *wireAuditStamps         `json:"stamps"`
 	Trail                *string                  `json:"trail"`
 	Establishes          []string                 `json:"establishes"`
 	DoesNotEstablish     []string                 `json:"doesNotEstablish"`
@@ -949,6 +1017,61 @@ type wireAuditSignatures struct {
 	Revocations  *int64  `json:"revocations"`
 	FirstKey     *string `json:"firstKey"`
 	KeyInForce   *string `json:"keyInForce"`
+}
+
+type wireAuditStamps struct {
+	Lines                *int64             `json:"lines"`
+	Unreadable           *int64             `json:"unreadable"`
+	Trusted              *int64             `json:"trusted"`
+	RevocationChecked    *int64             `json:"revocationChecked"`
+	RevocationNotChecked *int64             `json:"revocationNotChecked"`
+	CoveredBy            *string            `json:"coveredBy"`
+	Lag                  *wireAuditStampLag `json:"lag"`
+}
+
+type wireAuditStampLag struct {
+	Records      *int64   `json:"records"`
+	MaxSeconds   *float64 `json:"maxSeconds"`
+	MaxSequence  *int64   `json:"maxSequence"`
+	MinSeconds   *float64 `json:"minSeconds"`
+	MinSequence  *int64   `json:"minSequence"`
+	AtAfterStamp *bool    `json:"atAfterStamp"`
+	AtUnreadable *int64   `json:"atUnreadable"`
+}
+
+// stamps is the stamps file as the runtime read it: every count present and
+// not negative, a lag of every member, its records' sequences present where
+// it covers any record, and a time the stamped records existed by exactly
+// where the stamps reach a record (`stamped`).
+func (p *auditPresence) stamps(value *wireAuditStamps, stamped auditCoverageState) *auditStamps {
+	if value == nil {
+		return nil
+	}
+	stamps := &auditStamps{Lines: p.count(value.Lines), Unreadable: p.count(value.Unreadable), Trusted: p.count(value.Trusted),
+		RevocationChecked: p.count(value.RevocationChecked), RevocationNotChecked: p.count(value.RevocationNotChecked)}
+	if value.CoveredBy != nil {
+		if _, err := time.Parse(time.RFC3339Nano, *value.CoveredBy); err != nil {
+			p.missing = true
+		}
+		stamps.CoveredBy = *value.CoveredBy
+	}
+	if (stamps.CoveredBy != "") != (stamped.Status == "through") || stamps.RevocationChecked+stamps.RevocationNotChecked != stamps.Trusted {
+		p.missing = true
+	}
+	lag := value.Lag
+	if lag == nil || lag.MaxSeconds == nil || lag.MinSeconds == nil || lag.AtAfterStamp == nil {
+		p.missing = true
+		return stamps
+	}
+	stamps.Lag = auditStampLag{Records: p.count(lag.Records), MaxSeconds: *lag.MaxSeconds, MinSeconds: *lag.MinSeconds,
+		AtAfterStamp: *lag.AtAfterStamp, AtUnreadable: p.count(lag.AtUnreadable)}
+	if stamps.Lag.Records > 0 {
+		stamps.Lag.MaxSequence, stamps.Lag.MinSequence = p.count(lag.MaxSequence), p.count(lag.MinSequence)
+		if stamps.Lag.MaxSequence < 1 || stamps.Lag.MinSequence < 1 {
+			p.missing = true
+		}
+	}
+	return stamps
 }
 
 // auditPresence reads required members, and remembers whether any was
@@ -1032,6 +1155,7 @@ func (got auditVerification) report() (*auditReport, bool) {
 	for _, finding := range got.Findings {
 		report.Findings = append(report.Findings, auditFinding{Name: p.text(finding.Name, true), Line: p.count(finding.Line), Detail: p.text(finding.Detail, false)})
 	}
+	report.Stamps = p.stamps(got.Stamps, report.Coverage.Stamped)
 	if sig := got.Signatures; sig != nil {
 		report.Signatures = &auditSignatures{
 			Lines: p.count(sig.Lines), Unreadable: p.count(sig.Unreadable), Rotations: p.count(sig.Rotations),

@@ -351,7 +351,7 @@ person's approval, and it records no name.
   where one cannot be, the answer and Desk's log say so. A build that
   cannot establish who owns a directory keeps no key; on such a build Desk
   makes no desk at all, since its desks folder is held to the same custody.
-- Not yet: repair and stamping (ADR-0010's delivery table).
+- Repair and stamping: in the decision record (below).
 
 **The signing key of the project Desk was started on** (ADR-0010, section 1
 and question 2). That project is the owner's own, so Desk never names a key in
@@ -522,12 +522,15 @@ checkpoint of that trail, in order, ending at the last record confirmed and in
 the very bytes last confirmed. A file that is not, that it cannot read now, or
 that is not yours, is left out and the panel names its holder; where Desk
 cannot read its record of hand-overs at all, or the runtime does not say which
-trail is current, it passes none and the panel says why. It passes no
-time-stamping roots and no `--require-…` flag, so the runtime checks the chain,
-the signatures against the keys it was given and the trail against the
-checkpoints it was given, and says what it did not check. Its sentence above
-the report says which: with keys and checkpoints you keep, with this desk's
-public keys, or with no keys. The panel shows the runtime's status,
+trail is current, it passes none and the panel says why. Where you set a
+time-stamping authority (stamping, below), it passes that authority's roots as
+`--tsa-roots`, and its policies and revocation lists as `--tsa-policy` and
+`--tsa-crls`. It passes no `--require-…` flag, so the runtime checks the chain,
+the signatures against the keys it was given, the trail against the
+checkpoints it was given and the stamps against the roots it was given, and
+says what it did not check. Its sentence above the report says which: with
+keys and checkpoints you keep, with this desk's public keys, with the
+time-stamping roots you gave, or with no keys. The panel shows the runtime's status,
 its coverage counts, segments, discontinuities and findings by name, and its
 sentences on what the result establishes and what it does not, in English as
 the runtime writes them, and, where a key was passed, the key in force at the
@@ -629,6 +632,55 @@ digest, and the runtime's sentences. Beside it Desk says only: "The trail now
 has a new segment after the damaged line; the lost line is not restored."
 Where the runtime does not read configVersion `"6"`, or the project declares
 no audit directory, nothing is offered.
+
+**Stamping, in the decision record** (ADR-0010, section 3, and the
+maintainer's answer to its question 5). A stamp is a time-stamping
+authority's signed statement that a checkpoint of your trail, and every line
+before it, existed by the time the authority states. **There is no authority
+by default.** Choosing one is a trust decision, and each stamp sends that
+party the SHA-256 of the checkpoint, a nonce and a request for its
+certificate, and nothing else of the trail. You set one in the decision
+record: its http or https address (with no user name or password: Desk keeps
+no credential for an authority), the root certificates you trust for it
+(PEM certificate blocks and nothing else), any policy OIDs and revocation
+lists (PEM list blocks and nothing else, or DER), and an interval from
+5 minutes to 24 hours, an hour unless you say otherwise. Desk first holds what
+you propose to those rules and shows what it would keep; its confirmation
+says, before anything is kept, that choosing an authority is a trust
+decision, that each stamp sends it the checkpoint's digest, and that nothing
+on the decision path waits for a stamp, and it confirms that proposal, on
+this desk, against the settings as Desk read them, once. Desk keeps the
+settings outside the project, in its own configuration folder under
+`stamping/` and the desk's name (its id, or, for the project Desk was started
+on, the SHA-256 of its path), in owner-only files read back whole and held to
+their record before any of it is used; settings it cannot read are said, and
+none of them is used. It never writes `audit.timestampAuthority` into
+`jpack.json`: it passes the address as `--tsa`. Desk, the resident process,
+then runs `jpack audit stamp --config jpack.json --tsa <address> --timeout 15s
+--format json` in the desk's folder at that interval, one run at a time per
+desk, and only where the trail's head has moved past the last checkpoint
+stamped; "Stamp now" runs one on request. Each run reads the settings again
+just before it asks, and asks for nothing where they changed since it
+started; a change or a removal confirmed while it asks waits for it, at most
+20 seconds, so once a removal is answered Desk stamps nothing more. The
+request goes from the runtime's process, with Desk's environment: a proxy set
+there, or an authority that redirects it, carries it on, since the runtime's
+`audit stamp` follows redirects. Nothing a deciding run does waits for it,
+and while Desk is not running nothing is stamped and records stay pending. A failure (no authority named, one that does not answer, a trail
+that fails a check) is shown in the runtime's words, with no path, and tried
+again at the next interval, once; stopping Desk never kills a stamp
+mid-write. The decision record passes the roots to `audit verify`, so the
+stamps the runtime accepted, how far they reach, the lag between each
+record's `at` and its first stamp, and the records still pending a stamp are
+the runtime's; without roots the runtime checks no stamp, and Desk labels the
+sequence its last stamp run named as the authority's answer to Desk's
+request, not as a stamp checked. Removing the authority stops the stamping
+and keeps the trail's stamps as they are. In ADR-0010's words, a stamp
+establishes that "the checkpoint, and every line before it, existed by the
+authority's stated time, as far as that authority is independent of the
+operator", and not "when any record was made: a stamp is an upper bound on
+existence; anything against an authority that colludes; revocation, where no
+supplied list speaks for it; anything after the last checkpoint stamped".
 
 **The hand-over, in the decision record** (ADR-0010, section 2). A hand-over
 gives a checkpoint of your trail to someone who keeps it apart from you, a

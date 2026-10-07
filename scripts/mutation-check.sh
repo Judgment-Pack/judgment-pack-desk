@@ -5131,6 +5131,352 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'repair: a repair with another digest is said as the one confirmed' "$RPR" \
     'repaired.Digest != read.tailDigest {' \
     'false {'
+  # ADR-0010 row 7, stamping (stamping.go, and the decision record's use of it
+  # in audit_record.go and server.go): the settings held to their bounds and to
+  # their record, outside the project; the confirmation's token bound to the
+  # proposal, the desk, the settings and one attempt; the scheduler at the
+  # interval, only where the head moved, one run at a time, stopped with the
+  # server and never killing a stamp; the runtime's answer read as documented;
+  # the roots, policies and lists passed to the check; and no path said.
+  STP=internal/desk/stamping.go
+  STA=internal/desk/audit_record.go
+  STS=internal/desk/server.go
+  mutate go 'stamping: an authority with a user is kept' "$STP" \
+    '		parsed.User == nil && parsed.Fragment == ""' \
+    '		parsed.Fragment == ""'
+  mutate go 'stamping: an authority of another scheme is kept' "$STP" \
+    '(parsed.Scheme == "http" || parsed.Scheme == "https")' \
+    'parsed.Scheme != ""'
+  mutate go 'stamping: an authority past its bound is kept' "$STP" \
+    'len(address) > stampingAuthorityLimit ||' \
+    'len(address) > stampingAuthorityLimit+1 ||'
+  mutate go 'stamping: an authority with a fragment is kept' "$STP" \
+    'parsed.Fragment == "" && !strings.Contains(address, "#")' \
+    'true'
+  mutate go 'stamping: an interval under five minutes is kept' "$STP" \
+    'if plan.interval < stampingMinInterval || plan.interval > stampingMaxInterval {' \
+    'if plan.interval > stampingMaxInterval {'
+  mutate go 'stamping: an interval past a day is kept' "$STP" \
+    'if plan.interval < stampingMinInterval || plan.interval > stampingMaxInterval {' \
+    'if plan.interval < stampingMinInterval {'
+  mutate go 'stamping: no interval is not an hour' "$STP" \
+    'interval: stampingDefaultInterval,' \
+    'interval: stampingMinInterval,'
+  mutate go 'stamping: roots past their bound are kept' "$STP" \
+    'if len(data) == 0 || len(data) > stampingFileLimit {
+		return nil, false
+	}
+	blocks, ok := pemOnly(data, "CERTIFICATE")' \
+    'if len(data) == 0 || len(data) > stampingFileLimit+1 {
+		return nil, false
+	}
+	blocks, ok := pemOnly(data, "CERTIFICATE")'
+  mutate go 'stamping: roots with no certificate are kept' "$STP" \
+    'return roots, len(roots) > 0' \
+    'return roots, true'
+  mutate go 'stamping: a list past its bound is kept' "$STP" \
+    'if len(data) == 0 || len(data) > stampingFileLimit {
+		return nil, false
+	}
+	if bytes.HasPrefix(bytes.TrimLeft(data, " \t\r\n"), []byte("-----BEGIN ")) {' \
+    'if len(data) == 0 || len(data) > stampingFileLimit+1 {
+		return nil, false
+	}
+	if bytes.HasPrefix(bytes.TrimLeft(data, " \t\r\n"), []byte("-----BEGIN ")) {'
+  mutate go 'stamping: nine policies are kept' "$STP" \
+    'if len(p.Policies) > stampingMaxPolicies {' \
+    'if len(p.Policies) > stampingMaxPolicies+1 {'
+  mutate go 'stamping: a policy twice is kept' "$STP" \
+    'if !checkPolicy(policy) || slices.Contains(p.Policies[:i], policy) {' \
+    'if !checkPolicy(policy) || i < 0 {'
+  mutate go 'stamping: a policy of no form is kept' "$STP" \
+    'var policyForm = regexp.MustCompile(`^(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*))+$`)' \
+    'var policyForm = regexp.MustCompile(`.`)'
+  mutate go 'stamping: five lists are kept' "$STP" \
+    'if len(p.CRLs) > stampingMaxCRLs {' \
+    'if len(p.CRLs) > stampingMaxCRLs+1 {'
+  mutate go 'stamping: a list twice is kept' "$STP" \
+    'if err != nil || seen[sha256Digest(data)] {' \
+    'if err != nil {'
+  mutate go 'stamping: the token is not the desk'"'"'s own' "$STP" \
+    '	mac := hmac.New(sha256.New, s.reviewKey[:])' \
+    '	mac := hmac.New(sha256.New, []byte("one key for every desk"))'
+  mutate go 'stamping: the token binds no proposal' "$STP" \
+    '}{purpose, nonce, s.cfg.deskID, s.projectDir, proposal, current})' \
+    '}{purpose, nonce, s.cfg.deskID, s.projectDir, "", current})'
+  mutate go 'stamping: the token binds no settings' "$STP" \
+    '}{purpose, nonce, s.cfg.deskID, s.projectDir, proposal, current})' \
+    '}{purpose, nonce, s.cfg.deskID, s.projectDir, proposal, ""})'
+  mutate go 'stamping: the token binds no purpose' "$STP" \
+    '}{purpose, nonce, s.cfg.deskID, s.projectDir, proposal, current})' \
+    '}{"", nonce, s.cfg.deskID, s.projectDir, proposal, current})'
+  mutate go 'stamping: the token binds no nonce' "$STP" \
+    '}{purpose, nonce, s.cfg.deskID, s.projectDir, proposal, current})' \
+    '}{purpose, "", s.cfg.deskID, s.projectDir, proposal, current})'
+  mutate go 'stamping: the token is not checked' "$STP" \
+    'if !hmac.Equal([]byte(s.stampingToken(stampingSetPurpose, nonce, plan.digest(), currentDigest(raw, found))), []byte(token)) {' \
+    'if !hmac.Equal([]byte(s.stampingToken(stampingSetPurpose, nonce, plan.digest(), currentDigest(raw, found))), []byte(token)) && false {'
+  mutate go 'stamping: a used token is not refused' "$STP" \
+    '	nonce := token[:stampingNonceLength]
+	if s.stampingNonces[nonce] {
+		return nil, &lockFailure{' \
+    '	nonce := token[:stampingNonceLength]
+	if false {
+		return nil, &lockFailure{'
+  mutate go 'stamping: a confirmation is not spent' "$STP" \
+    '	s.spendStampingNonce(token)
+	keepFailed :=' \
+    '	keepFailed :='
+  mutate go 'stamping: a used removal token is not refused' "$STP" \
+    '	nonce := token[:stampingNonceLength]
+	if s.stampingNonces[nonce] {
+		return &lockFailure{' \
+    '	nonce := token[:stampingNonceLength]
+	if false {
+		return &lockFailure{'
+  mutate go 'stamping: the removal token is not checked' "$STP" \
+    '	case !hmac.Equal([]byte(s.stampingToken(stampingRemovePurpose, nonce, "", currentDigest(raw, true))), []byte(token)):' \
+    '	case !hmac.Equal([]byte(s.stampingToken(stampingRemovePurpose, nonce, "", currentDigest(raw, true))), []byte(token)) && false:'
+  mutate go 'stamping: a cross-site request changes stamping' "$STP" \
+    '	if r.Header.Get("Sec-Fetch-Site") == "cross-site" {' \
+    '	if false {'
+  mutate go 'stamping: a request need not be JSON' "$STP" \
+    '	if err != nil || media != "application/json" {' \
+    '	if err != nil && media != "application/json" {'
+  mutate go 'stamping: a check past its bound is read' "$STP" \
+    'if !stampingRequest(w, r, stampingRequestLimit, &proposal, stampingRequestWords) {' \
+    'if !stampingRequest(w, r, 2*stampingRequestLimit, &proposal, stampingRequestWords) {'
+  mutate go 'stamping: a token of another length is read' "$STP" \
+    '	if len(request.Token) != stampingTokenLength {
+		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, stampingConfirmWords)' \
+    '	if len(request.Token) < stampingNonceLength {
+		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, stampingConfirmWords)'
+  mutate go 'stamping: the settings are kept in the project' "$STP" \
+    'root, _, err := openOwnFolder(s.assistant.root, []string{stampingDirName, name}, create, stampingKept)' \
+    'root, _, err := openOwnFolder(s.root, []string{stampingDirName, name}, create, stampingKept)'
+  mutate go 'stamping: the startup desk keeps its settings under another name' "$STP" \
+    '	name := s.signingKeyName()
+	if !stampingName.MatchString(name) {' \
+    '	name := digestOf([]byte(s.configDir))
+	if !stampingName.MatchString(name) {'
+  mutate go 'stamping: a roots file of other bytes is used' "$STP" \
+    '		if sha256Digest(data) != digest {' \
+    '		if false {'
+  mutate go 'stamping: settings of another shape are used' "$STP" \
+    'if err := decodeDataJSON(raw, &file); err != nil || !checkStampingFile(file) {' \
+    'if err := json.Unmarshal(raw, &file); err != nil || !checkStampingFile(file) {'
+  mutate go 'stamping: settings that cannot be read are taken for none' "$STP" \
+    '	folder, err := s.openStamping(false)
+	if errors.Is(err, fs.ErrNotExist) {
+		inputs.view = auditStamping{State: stampingStateNone}' \
+    '	folder, err := s.openStamping(false)
+	if err != nil {
+		inputs.view = auditStamping{State: stampingStateNone}'
+  mutate go 'stamping: the roots are not passed' "$STP" \
+    '	inputs.args = []string{"--tsa-roots", s.stampingPath(names[0])}' \
+    '	inputs.args = []string{}'
+  mutate go 'stamping: the policies are not passed' "$STP" \
+    '		inputs.args = append(inputs.args, "--tsa-policy", policy)
+' \
+    '		_ = policy
+'
+  mutate go 'stamping: the lists are not passed' "$STP" \
+    '		inputs.args = append(inputs.args, "--tsa-crls", s.stampingPath(name))
+' \
+    '		_ = name
+'
+  mutate go 'stamping: a path that names another file is passed' "$STP" \
+    'if err := stampingNames(settings.found[name], s.stampingPath(name)); err != nil {' \
+    'if err := stampingNames(settings.found[name], s.stampingPath(name)); err != nil && name == "" {'
+  mutate go 'stamping: pending counts records stamped' "$STP" \
+    'pending := max(report.Lines-stamped.Through, 0)' \
+    'pending := report.Lines'
+  mutate go 'stamping: pending is said without roots' "$STP" \
+    'if report != nil && view.Passed {' \
+    'if report != nil {'
+  mutate go 'stamping: a check with roots tells the scheduler nothing' "$STP" \
+    '			s.stamping.noteStamped(report.Trail, stamped.Through)
+' \
+    ''
+  mutate go 'stamping: the scheduler stamps whatever the head' "$STP" \
+    'if known != nil && known.Identity == head.Identity && head.Sequence <= known.Sequence {' \
+    'if known != nil && false {'
+  mutate go 'stamping: a trail moved aside is not stamped' "$STP" \
+    'if known != nil && known.Identity == head.Identity && head.Sequence <= known.Sequence {' \
+    'if known != nil && head.Sequence <= known.Sequence {'
+  mutate go 'stamping: the scheduler stamps before the interval' "$STP" \
+    '(st.lastAttempt.IsZero() || !now.Before(st.lastAttempt.Add(time.Duration(settings.file.IntervalMinutes)*time.Minute)))' \
+    'true'
+  mutate go 'stamping: an attempt is not counted' "$STP" \
+    '	st.mu.Lock()
+	st.lastAttempt = now
+	st.mu.Unlock()
+' \
+    ''
+  mutate go 'stamping: a change of settings waits for the interval' "$STP" \
+    '	st.lastAttempt = time.Time{}
+' \
+    ''
+  mutate go 'stamping: the scheduler stamps without an authority' "$STP" \
+    'due := err == nil && found && !st.closed &&' \
+    'due := err == nil && (found || !found) && !st.closed &&'
+  mutate go 'stamping: a wake runs beside a run in progress' "$STP" \
+    '	if !due || !st.turn.TryLock() {
+		return
+	}' \
+    '	if !due {
+		return
+	}
+	st.turn.Lock()'
+  mutate go 'stamping: a second Stamp now waits for the first' "$STP" \
+    '	if !st.turn.TryLock() {
+		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, stampingBusyWords)
+		return
+	}' \
+    '	st.turn.Lock()'
+  mutate go 'stamping: a stop kills the stamp' "$STP" \
+    'out, runErr := runRuntime(context.WithoutCancel(st.ctx), s.cfg.JpackBin, dir,' \
+    'out, runErr := runRuntime(st.ctx, s.cfg.JpackBin, dir,'
+  mutate go 'stamping: Close does not wait for a run' "$STP" \
+    '	st.cancel()
+	<-st.done
+	st.turn.Lock()
+	st.turn.Unlock()
+' \
+    '	st.cancel()
+'
+  mutate go 'stamping: the timeout is not the runtime'"'"'s own' "$STP" \
+    '"--timeout", stampTimeout,' \
+    '"--timeout", "30s",'
+  mutate go 'stamping: the authority is not passed as --tsa' "$STP" \
+    '"--tsa", now.file.Authority,' \
+    '"--tsa", "https://tsa.example/",'
+  mutate go 'stamping: Stamp now with no authority runs' "$STP" \
+    '	case !found:
+		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, stampingNoneWords)' \
+    '	case !found && false:
+		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, stampingNoneWords)'
+  mutate go 'stamping: a run is not recorded' "$STP" \
+    '	st.last = &kept
+' \
+    '	_ = kept
+'
+  mutate go 'stamping: an answer of another outputVersion is read' "$STP" \
+    ' || got.OutputVersion != "2" {' \
+    ' {'
+  mutate go 'stamping: a stamp with a failed exit is read as one' "$STP" \
+    'case code == 0 && got.Command == auditStampCommand &&' \
+    'case got.Command == auditStampCommand &&'
+  mutate go 'stamping: a refusal with exit 0 is read as one' "$STP" \
+    'case code > 0 && (got.Status == "error" || got.Status == "unsupported")' \
+    'case (got.Status == "error" || got.Status == "unsupported")'
+  mutate go 'stamping: a refusal with no words is read' "$STP" \
+    '(got.Status == "error" || got.Status == "unsupported") && (auditVerification{Diagnostics: got.Diagnostics}).said():' \
+    '(got.Status == "error" || got.Status == "unsupported"):'
+  mutate go 'stamping: a checkpoint of no shape is read' "$STP" \
+    'if !ok || got.Status == stampStamped' \
+    'if !ok && false || got.Status == stampStamped'
+  mutate go 'stamping: a stamp with no time is read' "$STP" \
+    'got.Status == stampStamped && !stamped || ' \
+    ''
+  mutate go 'stamping: stamped already with a time is read' "$STP" \
+    ' || got.Status == stampAlready && !none {' \
+    ' || got.Status == stampAlready && !none && false {'
+  mutate go 'stamping: a time of no form is read' "$STP" \
+    'if _, err := time.Parse(time.RFC3339Nano, at); err != nil {' \
+    'if _, err := time.Parse(time.RFC3339Nano, at); err != nil && at == "" {'
+  mutate go 'stamping: a policy of no form is read from the runtime' "$STP" \
+    '			if !checkPolicy(*got.Policy) {' \
+    '			if false {'
+  mutate go 'stamping: a removal keeps the settings file' "$STP" \
+    '	if err := folder.Remove(stampingSettingsName); err != nil {' \
+    '	if err := error(nil); err != nil {'
+  mutate go 'stamping: files no settings name are kept' "$STP" \
+    '			if err := folder.Remove(name); err != nil {' \
+    '			if err := error(nil); err != nil {'
+  mutate go 'stamping: a file of another name is removed' "$STP" \
+    'stampingFileName.MatchString(name) && !kept[name]' \
+    '!kept[name]'
+  mutate go 'stamping: Stamp now'"'"'s answer is passed on with its path' "$STP" \
+    '			said[i] = runtimeDiagnostic{Code: diagnostic.Code, Message: s.withoutPaths(diagnostic.Message)}' \
+    '			said[i] = runtimeDiagnostic{Code: diagnostic.Code, Message: diagnostic.Message}'
+  mutate go 'stamping: the decision record passes nothing of the settings' "$STA" \
+    '	args = append(args, stamping.args...)
+' \
+    ''
+  mutate go 'stamping: the decision record says nothing of stamping' "$STA" \
+    '	answer.Stamping = s.stampingAfterVerify(stamping.view, answer.Report)
+' \
+    ''
+  mutate go 'stamping: a run'"'"'s refusal is shown with its path' "$STA" \
+    '			last.Problem = clean(last.Problem)
+			if last.Diagnostics != nil {
+				said := make([]runtimeDiagnostic, len(last.Diagnostics))
+				for i, diagnostic := range last.Diagnostics {
+					said[i] = runtimeDiagnostic{Code: diagnostic.Code, Message: clean(diagnostic.Message)}' \
+    '			last.Problem = clean(last.Problem)
+			if last.Diagnostics != nil {
+				said := make([]runtimeDiagnostic, len(last.Diagnostics))
+				for i, diagnostic := range last.Diagnostics {
+					said[i] = runtimeDiagnostic{Code: diagnostic.Code, Message: diagnostic.Message}'
+  mutate go 'stamping: a report'"'"'s stamps are not read' "$STA" \
+    '	report.Stamps = p.stamps(got.Stamps, report.Coverage.Stamped)
+' \
+    ''
+  mutate go 'stamping: a lag with a member missing is read' "$STA" \
+    'if lag == nil || lag.MaxSeconds == nil || lag.MinSeconds == nil || lag.AtAfterStamp == nil {' \
+    'if lag == nil {'
+  mutate go 'stamping: a lag naming no record is read' "$STA" \
+    '		if stamps.Lag.MaxSequence < 1 || stamps.Lag.MinSequence < 1 {' \
+    '		if false {'
+  mutate go 'stamping: no time stamped through is read' "$STA" \
+    'if (stamps.CoveredBy != "") != (stamped.Status == "through") || ' \
+    'if '
+  mutate go 'stamping: revocation counts that miss are read' "$STA" \
+    ' || stamps.RevocationChecked+stamps.RevocationNotChecked != stamps.Trusted {' \
+    ' {'
+  mutate go 'stamping: a time stamped through of no form is read' "$STA" \
+    '		if _, err := time.Parse(time.RFC3339Nano, *value.CoveredBy); err != nil {' \
+    '		if _, err := time.Parse(time.RFC3339Nano, *value.CoveredBy); err != nil && false {'
+  mutate go 'stamping: the settings are not read again before the stamp' "$STP" \
+    'if err != nil || !found || !bytes.Equal(now.raw, settings.raw) {' \
+    'if err != nil || !found {'
+  mutate go 'stamping: a setting does not wait for the stamp' "$STP" \
+    '	s.stampingMu.RLock()
+	defer s.stampingMu.RUnlock()
+	now, found, err := s.readStamping()' \
+    '	now, found, err := s.readStamping()'
+  mutate go 'stamping: Close does not wait for a Stamp now' "$STP" \
+    '	<-st.done
+	st.turn.Lock()
+	st.turn.Unlock()
+' \
+    '	<-st.done
+'
+  mutate go 'stamping: an authority with a format character is kept' "$STP" \
+    'unicode.IsControl(r) || unicode.Is(unicode.Cf, r) }) >= 0' \
+    'unicode.IsControl(r) }) >= 0'
+  mutate go 'stamping: roots of no certificate are read back' "$STP" \
+    'if _, ok := readRoots(settings.roots); !ok {' \
+    'if _, ok := readRoots(settings.roots); !ok && false {'
+  mutate go 'stamping: text outside the blocks is kept' "$STP" \
+    '		if !bytes.HasPrefix(rest, []byte("-----BEGIN ")) {' \
+    '		if false {'
+  mutate go 'stamping: a block with headers is kept' "$STP" \
+    ' || len(block.Headers) > 0 {' \
+    ' {'
+  mutate go 'stamping: the scheduler is not started' "$STS" \
+    '	s.startStamping()
+' \
+    ''
+  mutate go 'stamping: the server does not stop its scheduler' "$STS" \
+    '	s.stamping.close()
+' \
+    ''
+  mutate go 'stamping: the routes are not served' "$STS" \
+    '	s.mux.HandleFunc("POST /api/audit/stamping/check", s.handleStampingCheck)
+' \
+    ''
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -11887,8 +12233,8 @@ export function assistantTransport(id: string): Transport {
     "if (reconnecting) await queryClient.invalidateQueries({ predicate: followsTheProject })" \
     "if (reconnecting) await queryClient.invalidateQueries()"
   mutate web "record: asking again runs nothing" "$DR" \
-    "  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); void query.refetch() }}" \
-    "  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined) }}"
+    "  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); void query.refetch() }}" \
+    "  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined) }}"
   mutate web "record: an older runtime's line claims signing" "$DR" \
     "            : record?.state === 'older-runtime' ? <p>{msg(" \
     "            : record?.state === 'older-runtime' ? <p>{msg('Signed through record {{sequence}}', { sequence: 0 })} {msg("
@@ -11939,10 +12285,10 @@ export function assistantTransport(id: string): Transport {
   return value" \
     "  return value as AuditRecord"
   mutate web "record: an answer of no known state is accepted" "$AC" \
-    "    case 'no-trail': return true
+    "    case 'no-trail': return value.stamping === undefined
   }
   return false" \
-    "    case 'no-trail': return true
+    "    case 'no-trail': return value.stamping === undefined
   }
   return true"
   mutate web "record: a report with no coverage is accepted" "$AC" \
@@ -12081,13 +12427,13 @@ export function assistantTransport(id: string): Transport {
     "{error && <p role=\"alert\">" \
     "{error && <p role=\"alert\" hidden>"
   mutate web "downloads: not beside the report" "$DR" \
-    "                    {handoverSection}
+    "                    {stampingSection(record.stamping, record.report)}
                     <TrailDownloads files={record.files ?? []} />" \
-    "                    {handoverSection}"
+    "                    {stampingSection(record.stamping, record.report)}"
   mutate web "downloads: not beside the runtime's refusal" "$DR" \
-    "                  {handoverSection}
+    "                  {stampingSection(record.stamping)}
                   <TrailDownloads files={record.files ?? []} />" \
-    "                  {handoverSection}"
+    "                  {stampingSection(record.stamping)}"
   mutate web "downloads: a file name the download does not take is accepted" "$AC" \
     " || !optional(value.files, item => list(item, isTrailFile))" \
     " || !optional(value.files, item => list(item, (entry): entry is TrailFile => text(entry) || isTrailFile(entry)))"
@@ -12178,8 +12524,8 @@ export function assistantTransport(id: string): Transport {
     "onOutcome={outcome => { setRotated(outcome); void query.refetch() }}" \
     "onOutcome={outcome => { setRotated(outcome) }}"
   mutate web "rotation page: an outcome outlives a later check" "$DR" \
-    "onClick={() => { setRotated(undefined); setRepaired(undefined); void query.refetch() }}" \
-    "onClick={() => { setRepaired(undefined); void query.refetch() }}"
+    "onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); void query.refetch() }}" \
+    "onClick={() => { setRepaired(undefined); setStamped(undefined); void query.refetch() }}"
   mutate web "rotation page: an outcome outlives opening the panel again" "$DR" \
     "  useEffect(() => { if (visible) setRotated(undefined) }, [visible])" \
     "  useEffect(() => { if (visible) void 0 }, [visible])"
@@ -12515,8 +12861,8 @@ export function assistantTransport(id: string): Transport {
     'onOutcome={outcome => { setRepaired(outcome); void query.refetch() }} />' \
     'onOutcome={outcome => { setRepaired(outcome) }} />'
   mutate web 'repair page: an outcome outlives a later check' "$RDR" \
-    '{ setRotated(undefined); setRepaired(undefined); void query.refetch() }' \
-    '{ setRotated(undefined); void query.refetch() }'
+    '{ setRotated(undefined); setRepaired(undefined); setStamped(undefined); void query.refetch() }' \
+    '{ setRotated(undefined); setStamped(undefined); void query.refetch() }'
   mutate web 'repair page: an outcome outlives opening the panel again' "$RDR" \
     '  useEffect(() => { if (visible) setRepaired(undefined) }, [visible])' \
     '  useEffect(() => { if (visible && false) setRepaired(undefined) }, [visible])'
@@ -12551,6 +12897,120 @@ export function assistantTransport(id: string): Transport {
   mutate web 'repair client: an unavailable offer with a token is read' "$RAC" \
     '    case '"'"'unavailable'"'"': return named(value.reason) && value.token === undefined' \
     '    case '"'"'unavailable'"'"': return named(value.reason)'
+  # ADR-0010 row 7, stamping, on the page (Stamping.tsx, DecisionRecord.tsx)
+  # and in the client: the proposal kept only on the confirmation, its three
+  # sentences and section 7's row; Stamp now and the removal; the record
+  # checked again after each action; the not-checked labelling; the runtime's
+  # words; and what the client reads as settings, a run or stamps.
+  STG=web/src/audit/Stamping.tsx
+  SAC=web/src/audit/client.ts
+  SDR=web/src/audit/DecisionRecord.tsx
+  mutate web 'stamping page: the authority is kept before it is confirmed' "$STG" \
+    '      setChecked({ proposal, answer: await checkStamping(proposal) })' \
+    '      await setStamping(proposal, (await checkStamping(proposal)).token)
+      onSet()'
+  mutate web 'stamping page: the trust sentence is left out' "$STG" \
+    '        <li>{msg('"'"'Choosing an authority is a trust decision.'"'"')}</li>
+' \
+    ''
+  mutate web 'stamping page: the digest sentence is left out' "$STG" \
+    '        <li>{msg('"'"'Each stamp sends this authority the SHA-256 digest of the trail’s checkpoint, a nonce and a request for its certificate, and nothing else of the trail.'"'"')}</li>
+' \
+    ''
+  mutate web 'stamping page: the decision-path sentence is left out' "$STG" \
+    '        <li>{msg('"'"'Nothing on the decision path waits for a stamp: a deciding run is recorded at once, and stamped later, while Desk is running.'"'"')}</li>
+' \
+    ''
+  mutate web 'stamping page: what a stamp establishes is not said' "$STG" \
+    '<dd>{msg('"'"'the checkpoint, and every line before it, existed by the authority’s stated time, as far as that authority is independent of the operator'"'"')}</dd>' \
+    '<dd />'
+  mutate web 'stamping page: what a stamp does not establish is not said' "$STG" \
+    '<dd>{msg('"'"'when any record was made: a stamp is an upper bound on existence; anything against an authority that colludes; revocation, where no supplied list speaks for it; anything after the last checkpoint stamped'"'"')}</dd>' \
+    '<dd />'
+  mutate web 'stamping page: Stamp now is offered with no authority' "$STG" \
+    '{stamping.state === '"'"'set'"'"' && <Button disabled={busy || stamping.running} onClick={() => void run()}>' \
+    '{stamping.state !== '"'"'unavailable'"'"' && <Button disabled={busy || stamping.running} onClick={() => void run()}>'
+  mutate web 'stamping page: Stamp now asks nothing' "$STG" \
+    '      await stampNow()
+' \
+    ''
+  mutate web 'stamping page: the removal runs before it is confirmed' "$STG" \
+    'onClick={() => setRemoving(true)}>{msg('"'"'Remove the authority'"'"')}</Button>' \
+    'onClick={() => void remove()}>{msg('"'"'Remove the authority'"'"')}</Button>'
+  mutate web 'stamping page: the sequence of the last run is not labelled' "$STG" \
+    '      {named?.sequence !== undefined && !covered && <p>' \
+    '      {false && <p>'
+  mutate web 'stamping page: the runtime did not check the stamps is not said' "$STG" \
+    '      {stamped?.status === '"'"'not-checked'"'"' && (named || stamping.state === '"'"'set'"'"') && <p>' \
+    '      {false && <p>'
+  mutate web 'stamping page: a refused run’s words are not shown' "$STG" \
+    '{(run.diagnostics ?? []).map((item, index) =>' \
+    '{(run.diagnostics ?? []).slice(1).map((item, index) =>'
+  mutate web 'stamping page: a refusal is not said' "$STG" \
+    '      {outcome?.kind === '"'"'failed'"'"' && <p role="alert">' \
+    '      {false && <p role="alert">'
+  mutate web 'stamping page: settings Desk could not read are not said' "$STG" \
+    '      {(stamping.state === '"'"'unread'"'"' || stamping.state === '"'"'unavailable'"'"') && <p role="alert">' \
+    '      {stamping.state === '"'"'unavailable'"'"' && <p role="alert">'
+  mutate web 'stamping page: the records pending are not shown' "$STG" \
+    '      {stamping.pending !== undefined && <dl' \
+    '      {false && <dl'
+  mutate web 'stamping page: the lists are read as text' "$STG" \
+    '  const bytes = new Uint8Array(await file.arrayBuffer())' \
+    '  const bytes = new TextEncoder().encode(await file.text())'
+  mutate web 'stamping page: the decision record is not checked again after an action' "$SDR" \
+    '    onOutcome={outcome => { setStamped(outcome); void query.refetch() }} />' \
+    '    onOutcome={outcome => { setStamped(outcome) }} />'
+  mutate web 'stamping page: an outcome outlives a later check' "$SDR" \
+    '{ setRotated(undefined); setRepaired(undefined); setStamped(undefined); void query.refetch() }' \
+    '{ setRotated(undefined); setRepaired(undefined); void query.refetch() }'
+  mutate web 'stamping page: the statement says no stamp was checked with roots given' "$SDR" \
+    '                        : record.stamping?.passed
+' \
+    '                        : false
+'
+  mutate web 'stamping client: the decision record’s stamping is not checked' "$SAC" \
+    '  if (!optional(value.stamping, isAuditStamping)) return false
+' \
+    ''
+  mutate web 'stamping client: settings with no root are read' "$SAC" \
+    'list(value.roots, isRoot) && value.roots.length > 0' \
+    'list(value.roots, isRoot)'
+  mutate web 'stamping client: an interval out of its bounds is read' "$SAC" \
+    'count(value.intervalMinutes) && value.intervalMinutes >= 5 && value.intervalMinutes <= 1440' \
+    'count(value.intervalMinutes)'
+  mutate web 'stamping client: an address of another scheme is read' "$SAC" \
+    'named(value.authority) && /^https?:\/\//i.test(value.authority)' \
+    'named(value.authority)'
+  mutate web 'stamping client: a removal token of no form is read' "$SAC" \
+    '!optional(value.removeToken, hex(96))' \
+    '!optional(value.removeToken, text)'
+  mutate web 'stamping client: a run of another status is read' "$SAC" \
+    '    case '"'"'problem'"'"': return named(value.problem) && value.diagnostics === undefined && value.trail === undefined
+  }
+  return false' \
+    '    case '"'"'problem'"'"': return named(value.problem) && value.diagnostics === undefined && value.trail === undefined
+  }
+  return true'
+  mutate web 'stamping client: a stamp with no time is read' "$SAC" \
+    'case '"'"'stamped'"'"': return checkpoint && instant(value.stampedAt) && instant(value.existedBy) && ' \
+    'case '"'"'stamped'"'"': return checkpoint && '
+  mutate web 'stamping client: a refusal with no words is read' "$SAC" \
+    'case '"'"'refused'"'"': return list(value.diagnostics, isDiagnostic) && value.diagnostics.length > 0 && ' \
+    'case '"'"'refused'"'"': return list(value.diagnostics, isDiagnostic) && '
+  mutate web 'stamping client: a report’s stamps are not checked' "$SAC" \
+    ' && optional(value.stamps, isStamps)' \
+    ''
+  mutate web 'stamping client: a lag naming no record is read' "$SAC" \
+    '
+  && (value.records === 0 || count(value.maxSequence) && value.maxSequence > 0 && count(value.minSequence) && value.minSequence > 0)' \
+    ''
+  mutate web 'stamping client: Stamp now’s answer is not checked' "$SAC" \
+    'if (!object(value) || !isStampRun(value.run)) throw new Error(failed)' \
+    'if (!object(value)) throw new Error(failed)'
+  mutate web 'stamping page: a run the checked stamps do not reach is not labelled' "$STG" \
+    '(stamped.through ?? 0) >= named.sequence' \
+    'true'
 fi
 
 restore
