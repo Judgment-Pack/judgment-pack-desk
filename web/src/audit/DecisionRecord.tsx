@@ -160,6 +160,7 @@ function SigningKey({ keys, signing }: { keys?: AuditKeys; signing?: AuditSignin
     <div className={styles.card}>
       {keys?.state === 'kept' && <>
         <p className={styles.quiet}>{msg('Desk keeps this desk’s signing key in its own configuration folder, outside the project, and passed these public keys to the check, in this order. Hand them to a holder: a holder checks a copy of the trail with jpack audit verify --public-key, one file for each key, in this order.')}</p>
+        <p className={styles.quiet}>{msg('A signature establishes that a holder of the key signed these exact bytes. It does not establish anything against the operator, who holds the key; anything after the key is copied; anything against an agent that can read the key; that the trail is complete.')}</p>
         {keys.public.map((key, index) => <CodeBlock key={key.publicKey} text={key.publicKey} label={key.at === 0
           ? msg('Public key {{number}}, keyId {{keyId}}, signing from the first record', { number: index + 1, keyId: key.keyId })
           : msg('Public key {{number}}, keyId {{keyId}}, signing the records after record {{at}}', { number: index + 1, keyId: key.keyId, at: key.at })} />)}

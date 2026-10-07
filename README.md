@@ -237,7 +237,128 @@ locks exactly the files it showed, or nothing. Locking records that you
 confirmed these exact files as this project's reviewed set. It is not a second
 person's approval, and it records no name.
 
-**The audit trail: `.desk-private/audit`** (runtime ADR-0018).
+**The audit trail: `.desk-private/audit`** (runtime ADR-0018 and ADR-0047).
+
+- It holds one line for each completed deciding run, and says nothing about
+  rehearsals, tests or refusals, which write nothing. Whether anything in it can
+  be shown against the operator, and what each part does and does not establish,
+  is in [A defensible decision record](#a-defensible-decision-record), below.
+
+**`requireComparableFacts`** (runtime ADR-0046).
+
+- It holds: no evaluation of the project reads a present fact of a JSON type
+  that the comparison reading it can never match. The refusal,
+  `JPS-FACTS-COMPARABLE-REQUIRED`, names each pointer, its type and what the
+  comparison can match, and never a value.
+- It refuses rehearsals too: in Desk, the Evaluate page, Test draft, a single
+  test case run without an expectation, and the assistant's checks. Saved test
+  suites and Jobs are not refused.
+- It does not say that a fact is true, or present: an absent fact is not
+  refused.
+
+**Tested releases** (Runner's `release_untested`). An installation refuses a
+new job from a release whose saved tests were not run; jobs created earlier keep
+running. To allow untested releases, start Desk with
+`--runner-require-tested-releases=false`; it applies to every desk of the
+installation. It holds that the release's saved tests ran and passed, against
+that release's pack and runtime. It does not say that the tests are right, or
+that they cover the pack. See "Local operational Jobs pilot" below.
+
+### Which projects have them
+
+- **A new desk** starts with all of them: `requireReviewed`,
+  `requireComparableFacts`, the audit trail and a lock of its empty project,
+  and, with runtime 0.26.0 or later, a signing key Desk keeps for it (see "A defensible decision record", below).
+  See "Named desks" below.
+- **The project Desk was started on, and a desk made before this**, are
+  offered them and never put under them. A note on Packs, shown until you
+  dismiss it, and **Admin → Project → Gates**, where the offer stays, open a
+  step that lists each change: `jpack.json` moved to configVersion `"5"` with
+  `requireReviewed` and `.desk-private/audit`, every other byte kept; the line
+  `.desk-private/` added at the end of `.gitignore` in a Git work tree whose
+  `.gitignore` does not already end with it; the first Review and lock;
+  `requireComparableFacts`, which you can decline on its own; and, on the
+  project Desk was started on, a signing key, never chosen for you (see "The
+  signing key of the project Desk was started on" under "A defensible decision
+  record", below). Nothing is written
+  before you confirm, and the configuration and the first lock are written
+  together, or every file is put back. A project that already keeps a lock, for
+  example one a CI step checks, is told that the new `jpack.json` is
+  `config-drift` to it: commit `jpack.json` and `jpack.lock.json` together.
+  Desk offers no configuration version the runtime it runs cannot read: `"4"`
+  needs runtime 0.24.0, and `"5"` needs 0.25.0.
+
+### In Desk itself, nothing is refused for being unreviewed, and nothing is recorded
+
+Every evaluation Desk makes is a rehearsal: the Evaluate page, Test draft, the
+test workspace, research checks, and every call the assistant makes, which the
+ToolGate rewrites to `rehearsal: true` on the wire. A rehearsal consults no
+reviewed set and writes no record (runtime ADR-0028). The one exception is a
+runtime whose tool listing Desk could not read: the Evaluate page and Test
+draft then cannot know the argument exists, send their call without it, and say
+so; that call is a deciding run, refused for a draft and recorded for a
+reviewed pack. So in Desk,
+`requireReviewed` refuses nothing and the audit trail stays empty; only
+`requireComparableFacts` can refuse a rehearsal. The gates hold the project's
+other callers: an agent given the project's `jpack mcp`, a script, a CI step.
+Jobs never read the project's configuration: Runner writes its own for each
+release and evaluates under its own lock of it, so every Jobs run record says
+`reviewed: true` about Runner's lock, not the project's. **Review this release**
+in Create job says whether the release's pack bytes are in the project's
+reviewed set, and refuses nothing.
+
+### Whom `requireReviewed` binds
+
+It binds a caller that neither chooses which configuration a run reads, nor can
+edit that configuration or its lock (runtime ADR-0044, point 5).
+
+- **Desk's assistant** reaches only the five tools the ToolGate allows, over the
+  `jpack mcp` Desk started, and has no file tool; a Codex run has no environment
+  ([ADR-0008](docs/adr/0008-codex-subscription-agent.md)). It is a caller of the
+  bound kind, but every evaluation it makes is a rehearsal, so the requirement
+  never refuses it and it never records.
+- **You, in Desk,** are not bound, by design: Desk's editor can write
+  `jpack.json` and `jpack.lock.json`, and Review and lock is yours.
+- **An agent with the project folder** (file or shell tools, or a coding agent
+  working in the folder) is not bound. It can edit a pack and run `packs lock`,
+  or point `--config` at another file.
+- **An agent given only a `jpack mcp` that someone else started** on this
+  desk's configuration, with no file or shell tools, is bound.
+
+### Giving an outside agent the project's tools
+
+Start `jpack mcp` for the agent with `JPACK_CONFIG` naming the desk's own
+`jpack.json`, and give the agent no file or shell tools:
+
+```sh
+JPACK_CONFIG=/absolute/path/to/the/desk/jpack.json jpack mcp
+```
+
+For a desk Desk made, the folder is under Desk's desks directory (the desk
+switcher's **Create desk…** names it), and Help & About shows the command with
+this desk's own path and runtime. The agent can then neither choose the
+configuration nor edit it, so a deciding run of a draft is refused and each
+deciding run is recorded. **This holds only as far as the agent's client really
+withholds file and shell tools:** the server runs as your user, and an agent
+that can reach the folder another way is not bound. Desk does not host an MCP
+endpoint for outside agents; that would be a new authenticated surface, and
+needs its own design (ADR-0009, question 5).
+
+## A defensible decision record
+
+The runtime chains each desk's audit trail, and can sign it, check it against
+checkpoints someone else holds, and have it time-stamped. Desk's part, set out
+in [ADR-0010](docs/adr/0010-defensible-decision-records.md), is to keep the
+key, to show what the runtime's own check finds, to hand checkpoints to holders
+you name, and to run the stamping, all on the owner's word. Desk adds no claim
+of its own: where this section quotes a sentence, it is the runtime's or
+Runner's, or ADR-0010's, as written. **Help & About → Gates** and the panels in
+**Admin → Project** say the same in brief. A runtime older than 0.26.0 has none
+of this, and Desk offers none of it with one.
+
+### What the record is
+
+**The trail: `.desk-private/audit`** (runtime ADR-0018 and ADR-0047).
 
 - It holds: each completed deciding run against the project adds one line,
   with the pack's digest, the inputs and the disposition.
@@ -263,6 +384,111 @@ person's approval, and it records no name.
 - The folder is private: owner-only, never committed (`.desk-private/` is in a
   new desk's `.gitignore`), not shown or editable in Desk's file editor, and in
   no backup. Losing the desk's folder loses its records.
+
+**The decision record, in Admin → Project** (ADR-0010, sections 4 and 6).
+Beside the Gates card, Desk runs the runtime's own `jpack audit verify --config
+jpack.json --format json` in the desk's folder each time you open Project and
+when you ask again: never on a timer, on a reconnect, or because a project file
+changed. On a desk Desk made and keeps a key for, it first asks the runtime
+for the seed's public key, with `jpack audit key public <seed> --format json`
+(Desk never reads the seed itself), and passes the list only where its key in
+force, its last, is that key. A seed with no list, a list with no seed, or a
+list whose last key is not the seed's passes no key, and the panel says why;
+only a desk with neither shows that Desk keeps no key. Where the trail's
+signature sidecar can be read, under the trail's lock, the list must also
+agree with the key rotations it records: each later key is the one a rotation
+hands over to, in order, made by the key before it, at the sequence the list
+gives. A list that does not passes no key, and the panel says where they
+differ. A sidecar Desk cannot read now is noted in Desk's log, and the list is
+passed on the other checks, since `audit verify` reads the sidecar itself. It
+passes
+each public key in the desk's list, in order, as `--public-key`: the runtime
+reads a key from the
+file it names, so each is written for that run to a file of its own in a new
+folder in Desk's signing folder, and removed after it (a Desk stopped during
+the check leaves that folder, which holds public keys only). On the project
+Desk was started on it passes the keys its upgrade made, if any, and
+otherwise none. For each holder you confirmed
+checkpoints of the trail as it is now as handed over to (the hand-over, below),
+it passes Desk's file of them as `--expect`, once it has read the file whole
+and found it to be what it recorded as handed over: complete lines, each a
+checkpoint of that trail, in order, ending at the last record confirmed and in
+the very bytes last confirmed. A file that is not, that it cannot read now, or
+that is not yours, is left out and the panel names its holder; where Desk
+cannot read its record of hand-overs at all, or the runtime does not say which
+trail is current, it passes none and the panel says why. Where you set a
+time-stamping authority (stamping, below), it passes that authority's roots as
+`--tsa-roots`, and its policies and revocation lists as `--tsa-policy` and
+`--tsa-crls`. It passes no `--require-…` flag, so the runtime checks the chain,
+the signatures against the keys it was given, the trail against the
+checkpoints it was given and the stamps against the roots it was given, and
+says what it did not check. Its sentence above the report says which: with
+keys and checkpoints you keep, with this desk's public keys, with the
+time-stamping roots you gave, or with no keys. The panel shows the runtime's status,
+its coverage counts, segments, discontinuities and findings by name, and its
+sentences on what the result establishes and what it does not, in English as
+the runtime writes them, and, where a key was passed, the key in force at the
+end of the trail and the signature lines the runtime could not read. Beside the
+report it shows the desk's public keys, in order, each labelled by its place
+and the record it signs after, with a copy button, for you to hand to a
+holder, who checks a copy with `jpack audit verify
+--public-key`, one file per key, in that order; or that Desk keeps no key for
+this desk, or could not read the keys it keeps, and passed none. It also runs
+`packs validate --config jpack.json --format json` and shows its
+`audit-signing-key` check, the runtime's word on whether the key the project
+names signs its records, with its status and its sentence; the runtime reports
+no such check where no key is named, and the panel says so. Where `jpack.json`
+declares packs, Desk names the first with `--id`, so one pack's report keeps
+the answer within Desk's 64 KiB bound; the configuration's own checks are made
+either way. Exit 1 with a report is a failed check, and the report
+is shown, once every member a report has is there; a refusal the runtime
+explains, on any non-zero exit, is shown in its words; any other answer is
+shown as an error. In every sentence the panel passes on, the audit directory,
+wherever `jpack.json` puts it, and any other path from the root of a file
+system are replaced by “…”, keeping only the name of one of the runtime's own
+files, so the panel does not say where your files are. The desk's seed, its
+list of public keys, and every folder on the way to them, Desk's configuration
+folder and the home folder above it among them, are replaced whole, as Go
+writes each and as the runtime prints it, and so are an inherited
+`JPACK_SIGNING_KEY`'s path and every folder on the way to it, so that a space
+in a folder's name does not leave the rest of its path behind. One generator
+gives all of these: each path as it was given, as it is cleaned, and as it
+resolves through links, and every folder on the way to each, since the
+runtime prints a key's path as it was given and a folder's as it cleans it. Desk's log keeps the sentence whole. Desk ran it on your machine, over your trail: it is not
+evidence to anyone who does not trust you. A holder runs the same command on a
+copy, with what it holds. With a runtime that does not read configVersion `"6"`
+(before 0.26.0), or whose command parser says, and says only, that it has no
+`audit verify`, the panel says so in one sentence and runs nothing more; a
+`packs schema` that fails is an error, not an older runtime. A project whose
+`jpack.json` declares no audit directory keeps no trail, and the panel runs
+nothing. On the project Desk was started on, under a `JPACK_CONFIG` that names
+another project's configuration, the panel is unavailable, as Review and lock
+is; it names the variable, not its value.
+
+Beside the report, the panel offers a download of each of the runtime's own
+files the audit directory holds: `evaluations.jsonl`, `signatures.jsonl` and
+`stamps.jsonl` (`GET /api/audit/trail?file=evaluations`, `signatures` or
+`stamps`; any other request is refused). Desk opens the file through the
+project's root, refusing a link anywhere on the way, an audit directory outside
+the project, a file or folder that is not the one it looked at, and a file with
+another name as well (a hard link, which can put a file from elsewhere under
+the runtime's name); the trail read only for its lock is held to the same.
+For the trail and its sidecar it takes the shared `flock` on the trail, which
+the runtime's writer takes exclusively while it appends to both and its
+verifier takes shared; for the stamps, the shared `flock` on `stamps.jsonl`,
+which the stamps' own writer takes. It reads the size, releases the lock, and
+streams exactly that many bytes, untouched, as `application/octet-stream` under
+the runtime's own name. The lock keeps the size from cutting an append in
+progress; it does not mend the file, so a last line a write left incomplete
+before, which `audit verify` reports as `incomplete-last-line`, is served as it
+is on disk. A recipient checks a copied record with `signatures.jsonl` beside
+it. A refusal names the setting (`audit.dir`, `JPACK_CONFIG`) and why, never
+its value. Desk takes that lock on Linux, macOS and the BSDs. On any other
+build, and on a file system that supports no `flock`, the download is refused
+rather than made from a size that may fall inside a write; on Windows the
+runtime takes a different lock, which Desk does not take.
+
+### The key in Desk's custody
 
 **The signing key of a desk Desk makes** (ADR-0010, section 1).
 
@@ -388,12 +614,68 @@ renames the next key over Desk's seed, so it is offered, confirmed (the
 confirmation is bound to that seed file) and reported made only while
 `jpack.json` names that very file.
 
+**Runner's signing key** ([ADR-0010](docs/adr/0010-defensible-decision-records.md),
+section 5). Each desk's Runner signs the audit record of each run with a key of
+its own: never a project's key, and never a `JPACK_SIGNING_KEY` set where Desk
+was started.
+
+- Desk keeps it at `secrets/signing/runner/<name>.seed` in its configuration
+  folder, with its list of public keys, `<name>.keys.jsonl`, in the form a
+  desk's list has, under the custody a desk's key has (see "The signing key
+  of a desk Desk makes" above). `<name>` is the desk's id; for the
+  project Desk was started on, it is the name of its Runner's state folder,
+  `jobs/<name>`: the hex SHA-256 of the project's path.
+- Every decision on a Runner key is taken under one exclusive lock for all
+  of Desk's key custody: a `flock` on the signing folder Desk holds, which a
+  start's sweep of the desks' keys takes too. It is held from the first look
+  at the key's files to the last effect of the decision, and released before
+  Runner starts. A start that would remove an unfinished creation does not
+  wait for it; any other start waits up to 10 seconds. Where the lock stays
+  held, Runner starts without a key, nothing is changed, and Gates says the
+  key folder was in use.
+- At a Runner's start, where nothing is kept under its name, the runtime
+  Desk runs makes the key (`jpack audit key generate`), with a creation
+  marker beside it until it is whole, as a desk's key has. Desk names it on
+  Runner's boot line, as `signingKey`, only where no marker is left, the
+  runtime reads it as a key under its own rules (`jpack audit key public`),
+  and the list holds that one key. Runner checks it again at boot and gives
+  it to the runtime of each operational evaluation only. A run so signed is
+  exported at version 5, with `run.auditSignatures`; check it with
+  `jpack-runner verify-run --public-key <key> --require-signed`, giving the
+  public key Help & About → Gates shows.
+- Otherwise Runner starts without a key, and its runs go on, unsigned, and
+  are exported at version 4. Gates says why: custody refuses a folder on the
+  key's path, the runtime did not make the key or refuses it, Runner refused
+  it at boot (Runner is then started again at once without it), the seed is
+  lost, the key folder was in use, or something could not be read just now.
+  Desk never removes, or makes again, a key it could not read, a key that
+  was refused, or one whose seed is lost: all three names are looked at
+  before anything is decided, and any failure but "not there" changes
+  nothing.
+- A creation that did not finish leaves its marker. A creation holds the
+  lock while its marker stands, so a marker found under the lock marks a key
+  that was never named and never signed anything. The next start removes
+  it: the list, the seed and then the marker, each only while it is the file
+  just looked at, so a removal that stops leaves the marker for the start
+  after; then it makes another key.
+- Gates asks Desk again every few seconds while it is open
+  (`GET /api/runner-key`), so it says what Runner signs with now: starting,
+  signed with the key shown, not signed and why, or not running and why. It
+  says signed only once Runner has started and answered with the key.
+- Whom it binds is whom a desk's key binds: nothing against you, who hold
+  it, or against an agent that can read your files.
+- Desk rotates a desk's key (below) and not Runner's. The Jobs record (below)
+  checks the chain of runs, and no signature: each run's is checked by
+  `verify-run` on that run's export.
+
+### Rotation
+
 **Rotating a desk's key** (ADR-0010, section 1, "Rotating it").
 
 - Rotation is yours to ask for, and never scheduled. It is offered only for a
   desk Desk made and keeps a key for, in the decision record in Admin →
   Project, as "Rotate signing key", where: Desk passed the desk's keys to the
-  check (below); the trail's signature sidecar could be read; and, after an
+  check (in "What the record is", above); the trail's signature sidecar could be read; and, after an
   earlier rotation, a record has been signed since, because a rotation with no
   record after the last one would take over after the same record, which the
   list of keys cannot hold. Otherwise the panel says why. The project Desk was
@@ -476,123 +758,102 @@ confirmation is bound to that seed file) and reported made only while
   move away from a lost key: Desk shows the runtime's refusal, and does not
   move a trail aside (ADR-0010, question 9).
 
-**Whom a desk's key binds** (ADR-0010, section 1, "Whom the key binds").
+### Hand-over to holders
 
-- **Desk's assistant** has no file tool and Codex runs with no environment, so
-  it cannot read the key; it only rehearses, so it signs nothing either.
-- **An agent given only the desk's `jpack mcp`**, with no file or shell tools,
-  cannot read the key. Its deciding runs are signed with a key it cannot use,
-  so a line it writes into the trail by any other path carries no valid
-  signature. This is the case signing answers.
-- **An agent with file or shell tools, running as your user,** can read the
-  seed: mode 0600 keeps out other users, not this one. Against such an agent a
-  signature binds nothing. Only another OS user, a sandbox that denies reading
-  Desk's configuration folder, or giving it MCP tools only keeps it apart, and
-  Desk cannot check which holds.
-- **You** hold the key. A signature establishes nothing against you.
+**The hand-over, in the decision record** (ADR-0010, section 2). A hand-over
+gives a checkpoint of your trail to someone who keeps it apart from you, a
+holder: a counterparty, an auditor, a store you do not control. Later, a copy
+of the trail is held to what they kept with `jpack audit verify --expect`.
 
-**The decision record, in Admin → Project** (ADR-0010, sections 4 and 6).
-Beside the Gates card, Desk runs the runtime's own `jpack audit verify --config
-jpack.json --format json` in the desk's folder each time you open Project and
-when you ask again: never on a timer, on a reconnect, or because a project file
-changed. On a desk Desk made and keeps a key for, it first asks the runtime
-for the seed's public key, with `jpack audit key public <seed> --format json`
-(Desk never reads the seed itself), and passes the list only where its key in
-force, its last, is that key. A seed with no list, a list with no seed, or a
-list whose last key is not the seed's passes no key, and the panel says why;
-only a desk with neither shows that Desk keeps no key. Where the trail's
-signature sidecar can be read, under the trail's lock, the list must also
-agree with the key rotations it records: each later key is the one a rotation
-hands over to, in order, made by the key before it, at the sequence the list
-gives. A list that does not passes no key, and the panel says where they
-differ. A sidecar Desk cannot read now is noted in Desk's log, and the list is
-passed on the other checks, since `audit verify` reads the sidecar itself. It
-passes
-each public key in the desk's list, in order, as `--public-key`: the runtime
-reads a key from the
-file it names, so each is written for that run to a file of its own in a new
-folder in Desk's signing folder, and removed after it (a Desk stopped during
-the check leaves that folder, which holds public keys only). On the project
-Desk was started on it passes the keys its upgrade made, if any, and
-otherwise none. For each holder you confirmed
-checkpoints of the trail as it is now as handed over to (the hand-over, below),
-it passes Desk's file of them as `--expect`, once it has read the file whole
-and found it to be what it recorded as handed over: complete lines, each a
-checkpoint of that trail, in order, ending at the last record confirmed and in
-the very bytes last confirmed. A file that is not, that it cannot read now, or
-that is not yours, is left out and the panel names its holder; where Desk
-cannot read its record of hand-overs at all, or the runtime does not say which
-trail is current, it passes none and the panel says why. Where you set a
-time-stamping authority (stamping, below), it passes that authority's roots as
-`--tsa-roots`, and its policies and revocation lists as `--tsa-policy` and
-`--tsa-crls`. It passes no `--require-…` flag, so the runtime checks the chain,
-the signatures against the keys it was given, the trail against the
-checkpoints it was given and the stamps against the roots it was given, and
-says what it did not check. Its sentence above the report says which: with
-keys and checkpoints you keep, with this desk's public keys, with the
-time-stamping roots you gave, or with no keys. The panel shows the runtime's status,
-its coverage counts, segments, discontinuities and findings by name, and its
-sentences on what the result establishes and what it does not, in English as
-the runtime writes them, and, where a key was passed, the key in force at the
-end of the trail and the signature lines the runtime could not read. Beside the
-report it shows the desk's public keys, in order, each labelled by its place
-and the record it signs after, with a copy button, for you to hand to a
-holder, who checks a copy with `jpack audit verify
---public-key`, one file per key, in that order; or that Desk keeps no key for
-this desk, or could not read the keys it keeps, and passed none. It also runs
-`packs validate --config jpack.json --format json` and shows its
-`audit-signing-key` check, the runtime's word on whether the key the project
-names signs its records, with its status and its sentence; the runtime reports
-no such check where no key is named, and the panel says so. Where `jpack.json`
-declares packs, Desk names the first with `--id`, so one pack's report keeps
-the answer within Desk's 64 KiB bound; the configuration's own checks are made
-either way. Exit 1 with a report is a failed check, and the report
-is shown, once every member a report has is there; a refusal the runtime
-explains, on any non-zero exit, is shown in its words; any other answer is
-shown as an error. In every sentence the panel passes on, the audit directory,
-wherever `jpack.json` puts it, and any other path from the root of a file
-system are replaced by “…”, keeping only the name of one of the runtime's own
-files, so the panel does not say where your files are. The desk's seed, its
-list of public keys, and every folder on the way to them, Desk's configuration
-folder and the home folder above it among them, are replaced whole, as Go
-writes each and as the runtime prints it, and so are an inherited
-`JPACK_SIGNING_KEY`'s path and every folder on the way to it, so that a space
-in a folder's name does not leave the rest of its path behind. One generator
-gives all of these: each path as it was given, as it is cleaned, and as it
-resolves through links, and every folder on the way to each, since the
-runtime prints a key's path as it was given and a folder's as it cleans it. Desk's log keeps the sentence whole. Desk ran it on your machine, over your trail: it is not
-evidence to anyone who does not trust you. A holder runs the same command on a
-copy, with what it holds. With a runtime that does not read configVersion `"6"`
-(before 0.26.0), or whose command parser says, and says only, that it has no
-`audit verify`, the panel says so in one sentence and runs nothing more; a
-`packs schema` that fails is an error, not an older runtime. A project whose
-`jpack.json` declares no audit directory keeps no trail, and the panel runs
-nothing. On the project Desk was started on, under a `JPACK_CONFIG` that names
-another project's configuration, the panel is unavailable, as Review and lock
-is; it names the variable, not its value.
+- **Holders.** You add each by a label and a channel of your own words, such
+  as "Counterparty: procurement desk" and "e-mail to records@…". Desk keeps
+  them, and its record of what went to each, in `.desk-private/handover/`
+  under the project: owner-only, opened through the project's root and never
+  through a link, refused by the file API, and in no backup, like the trail.
+- **Download or copy is the one channel.** Desk sends a checkpoint to no
+  endpoint itself. "Download
+  checkpoints" saves the checkpoints after that holder's last confirmed record
+  as the exact bytes `jpack audit checkpoint --since <n> --limit 300` printed,
+  batch after batch, up to 6,000 in one file, which is named for the trail and
+  the records. You send it by any channel the holder keeps. A download moves
+  nothing.
+- **Your confirmation moves the cursor.** "Confirm" asks the runtime for the
+  same checkpoints again, and Desk records them only where they are the same
+  bytes: appended to its file for that holder and trail, with the record the
+  file started after, its last record, the time by Desk's clock and the
+  SHA-256 of the file. The list of holders and each holder's record are
+  written only within the 64 KiB they are read with: a holder past it is
+  refused, and says so. Otherwise it records
+  nothing and says the file is stale. Where the trail was moved aside, each
+  holder starts again at 0 for the new trail. The decision record is then
+  checked again, with what was handed over.
+- **What a held checkpoint establishes:** the records up to it are the ones
+  that existed when it was handed over, against an operator who does not hold
+  the holder's copy. **It does not establish** anything after it, that the
+  holder kept every checkpoint, or when it was made or handed over.
+- **What Desk's record of hand-overs establishes:** nothing, to a holder or to
+  anyone else. It is yours, and you can change it. Only the holder's own copy
+  counts. The panel says so beside the list.
+- **Runner's chain of runs, too** (ADR-0010, section 5). Where the desk has a
+  Runner, each holder shows two rows: the decision record's, and "Jobs runs",
+  each with its own record, download and confirmation. The chain's row works
+  the same way on a private copy of the chain: for each listing, download and
+  confirmation, Desk asks Runner for `GET /v1/run-chain`, holds the answer
+  whole within 67,174,400 bytes, and writes it to
+  `.desk-private/handover/jobs-chain.jsonl` in place of the copy before; a
+  transfer that ends early, an answer other than 200 or one past the bound is
+  an error, never a shorter chain. The checkpoints are the exact bytes
+  `jpack audit checkpoint --trail .desk-private/handover/jobs-chain.jsonl
+  --since <n> --limit 300` printed, saved as
+  `jobs-checkpoints-<identity>-<from>-<through>.jsonl`. A confirmation
+  (`"chain":"jobs"`) takes a fresh copy and records the same bytes only, in
+  the holder's record under `jobs` and in its file
+  `jobs-<identity>.jsonl`, with a cursor of its own: it never moves the desk
+  trail's, and the desk trail's never moves it. Nothing new, a chain shorter
+  than what was handed over, and a stale file are said as for the trail.
+  Where the desk has no Runner, the section says so once; where Runner is not
+  running, no run is chained yet, or the chain could not be read, the row says
+  so and offers nothing. The hand-over lives in the decision record, so a
+  project whose `jpack.json` declares no audit directory hands over neither.
 
-Beside the report, the panel offers a download of each of the runtime's own
-files the audit directory holds: `evaluations.jsonl`, `signatures.jsonl` and
-`stamps.jsonl` (`GET /api/audit/trail?file=evaluations`, `signatures` or
-`stamps`; any other request is refused). Desk opens the file through the
-project's root, refusing a link anywhere on the way, an audit directory outside
-the project, a file or folder that is not the one it looked at, and a file with
-another name as well (a hard link, which can put a file from elsewhere under
-the runtime's name); the trail read only for its lock is held to the same.
-For the trail and its sidecar it takes the shared `flock` on the trail, which
-the runtime's writer takes exclusively while it appends to both and its
-verifier takes shared; for the stamps, the shared `flock` on `stamps.jsonl`,
-which the stamps' own writer takes. It reads the size, releases the lock, and
-streams exactly that many bytes, untouched, as `application/octet-stream` under
-the runtime's own name. The lock keeps the size from cutting an append in
-progress; it does not mend the file, so a last line a write left incomplete
-before, which `audit verify` reports as `incomplete-last-line`, is served as it
-is on disk. A recipient checks a copied record with `signatures.jsonl` beside
-it. A refusal names the setting (`audit.dir`, `JPACK_CONFIG`) and why, never
-its value. Desk takes that lock on Linux, macOS and the BSDs. On any other
-build, and on a file system that supports no `flock`, the download is refused
-rather than made from a size that may fall inside a write; on Windows the
-runtime takes a different lock, which Desk does not take.
+### The Jobs record
+
+**The Jobs record, beside the decision record** (ADR-0010, section 4, "A
+Jobs record panel"). Where the desk has a Runner, **Admin → Project → Jobs
+record** checks the chain of runs when you ask ("Check the chain of runs"),
+and again after a hand-over of the chain is confirmed; never when it opens or
+on a timer. Desk takes a fresh private copy of the chain, as above, and runs
+`jpack audit verify --trail .desk-private/handover/jobs-chain.jsonl --format
+json`, with `--expect` for each holder's file of the chain's checkpoints for
+the identity the copy has, held to Desk's record as the decision record holds
+its files, and with nothing else: no `--config`, which the runtime refuses
+beside `--trail`, no `--public-key`, no time-stamping roots and no
+`--require-…`. It shows the runtime's status, coverage, findings by name and
+its sentences on what the result establishes and what it does not, as the
+decision record does, with the copy's line count, and says: "Desk ran this
+over its own copy of the runner's chain of runs, with the checkpoints it
+keeps. It shows what a holder would see. It is not evidence to anyone who
+does not trust this installation." "Download the chain" saves
+`run-chain.jsonl` as the Runs page does. With an older runtime it says the
+decision record's sentence; where Runner is not running, it says so.
+
+- **Without a held checkpoint, nothing against the operator** (Runner's
+  `docs/MAPPING-V2.md`, "What the chain establishes"): you keep the store and
+  the chain, and can rewrite it from any point with every link recomputed, so
+  a supplied chain only shows that it is consistent.
+- **With a checkpoint held independently of you that covers a run's entry**,
+  the entries up to it are the ones that existed when it was handed over.
+  It does not establish anything after the last held checkpoint, that a
+  checkpoint was held independently, when it was made, or anything about a
+  run that never reached the chain.
+- **Signatures are per run.** Runner's key signs each run's record in that
+  run's own attempt, and the signature travels with the run's export
+  (version 5); `jpack-runner verify-run --public-key` checks it there. The
+  chain has no signature of its own, so the Jobs record passes no key, shows
+  Runner's key as Gates does, and says that each run's signature is checked
+  by `verify-run` on that run's export, not here.
+
+### Repair
 
 **The repair, in the decision record** (ADR-0010, section 4, "Repair"). A
 write that did not complete leaves the trail's last line with no newline, and
@@ -632,6 +893,8 @@ digest, and the runtime's sentences. Beside it Desk says only: "The trail now
 has a new segment after the damaged line; the lost line is not restored."
 Where the runtime does not read configVersion `"6"`, or the project declares
 no audit directory, nothing is offered.
+
+### Stamping
 
 **Stamping, in the decision record** (ADR-0010, section 3, and the
 maintainer's answer to its question 5). A stamp is a time-stamping
@@ -682,194 +945,54 @@ operator", and not "when any record was made: a stamp is an upper bound on
 existence; anything against an authority that colludes; revocation, where no
 supplied list speaks for it; anything after the last checkpoint stamped".
 
-**The hand-over, in the decision record** (ADR-0010, section 2). A hand-over
-gives a checkpoint of your trail to someone who keeps it apart from you, a
-holder: a counterparty, an auditor, a store you do not control. Later, a copy
-of the trail is held to what they kept with `jpack audit verify --expect`.
+### What each part establishes, and does not
 
-- **Holders.** You add each by a label and a channel of your own words, such
-  as "Counterparty: procurement desk" and "e-mail to records@…". Desk keeps
-  them, and its record of what went to each, in `.desk-private/handover/`
-  under the project: owner-only, opened through the project's root and never
-  through a link, refused by the file API, and in no backup, like the trail.
-- **Download or copy is the one channel in this version.** "Download
-  checkpoints" saves the checkpoints after that holder's last confirmed record
-  as the exact bytes `jpack audit checkpoint --since <n> --limit 300` printed,
-  batch after batch, up to 6,000 in one file, which is named for the trail and
-  the records. You send it by any channel the holder keeps. A download moves
-  nothing.
-- **Your confirmation moves the cursor.** "Confirm" asks the runtime for the
-  same checkpoints again, and Desk records them only where they are the same
-  bytes: appended to its file for that holder and trail, with the record the
-  file started after, its last record, the time by Desk's clock and the
-  SHA-256 of the file. The list of holders and each holder's record are
-  written only within the 64 KiB they are read with: a holder past it is
-  refused, and says so. Otherwise it records
-  nothing and says the file is stale. Where the trail was moved aside, each
-  holder starts again at 0 for the new trail. The decision record is then
-  checked again, with what was handed over.
-- **What a held checkpoint establishes:** the records up to it are the ones
-  that existed when it was handed over, against an operator who does not hold
-  the holder's copy. **It does not establish** anything after it, that the
-  holder kept every checkpoint, or when it was made or handed over.
-- **What Desk's record of hand-overs establishes:** nothing, to a holder or to
-  anyone else. It is yours, and you can change it. Only the holder's own copy
-  counts. The panel says so beside the list.
-- **Runner's chain of runs, too** (ADR-0010, section 5). Where the desk has a
-  Runner, each holder shows two rows: the decision record's, and "Jobs runs",
-  each with its own record, download and confirmation. The chain's row works
-  the same way on a private copy of the chain: for each listing, download and
-  confirmation, Desk asks Runner for `GET /v1/run-chain`, holds the answer
-  whole within 67,174,400 bytes, and writes it to
-  `.desk-private/handover/jobs-chain.jsonl` in place of the copy before; a
-  transfer that ends early, an answer other than 200 or one past the bound is
-  an error, never a shorter chain. The checkpoints are the exact bytes
-  `jpack audit checkpoint --trail .desk-private/handover/jobs-chain.jsonl
-  --since <n> --limit 300` printed, saved as
-  `jobs-checkpoints-<identity>-<from>-<through>.jsonl`. A confirmation
-  (`"chain":"jobs"`) takes a fresh copy and records the same bytes only, in
-  the holder's record under `jobs` and in its file
-  `jobs-<identity>.jsonl`, with a cursor of its own: it never moves the desk
-  trail's, and the desk trail's never moves it. Nothing new, a chain shorter
-  than what was handed over, and a stale file are said as for the trail.
-  Where the desk has no Runner, the section says so once; where Runner is not
-  running, no run is chained yet, or the chain could not be read, the row says
-  so and offers nothing. The hand-over lives in the decision record, so a
-  project whose `jpack.json` declares no audit directory hands over neither.
+This is ADR-0010, section 7, as written. A check Desk runs shows what is in the
+first column and nothing in the second.
 
-**The Jobs record, beside the decision record** (ADR-0010, section 4, "A
-Jobs record panel"). Where the desk has a Runner, **Admin → Project → Jobs
-record** checks the chain of runs when you ask ("Check the chain of runs"),
-and again after a hand-over of the chain is confirmed; never when it opens or
-on a timer. Desk takes a fresh private copy of the chain, as above, and runs
-`jpack audit verify --trail .desk-private/handover/jobs-chain.jsonl --format
-json`, with `--expect` for each holder's file of the chain's checkpoints for
-the identity the copy has, held to Desk's record as the decision record holds
-its files, and with nothing else: no `--config`, which the runtime refuses
-beside `--trail`, no `--public-key`, no time-stamping roots and no
-`--require-…`. It shows the runtime's status, coverage, findings by name and
-its sentences on what the result establishes and what it does not, as the
-decision record does, with the copy's line count, and says: "Desk ran this
-over its own copy of the runner's chain of runs, with the checkpoints it
-keeps. It shows what a holder would see. It is not evidence to anyone who
-does not trust this installation." "Download the chain" saves
-`run-chain.jsonl` as the Runs page does. With an older runtime it says the
-decision record's sentence; where Runner is not running, it says so.
+| Part | Establishes | Does not establish |
+|---|---|---|
+| The chain | the lines are consistent with one another | that the trail is complete; that its last line, or lines rewritten from some point with their links recomputed, are the ones first written |
+| A held checkpoint | the records up to it are the ones that existed when it was handed over, against an operator who does not hold the holder's copy | anything after it; that the holder kept every checkpoint; when it was made or handed over |
+| A signature | a holder of the key signed these exact bytes | anything against the operator, who holds the key; anything after the key is copied; anything against an agent that can read the key; that the trail is complete |
+| A stamp | the checkpoint, and every line before it, existed by the authority's stated time, as far as that authority is independent of the operator | when any record was made: a stamp is an upper bound on existence; anything against an authority that colludes; revocation, where no supplied list speaks for it; anything after the last checkpoint stamped |
+| A record's `at` | — | anything: it is the operator's clock, and the runtime reports the lag to a stamp for the reader to judge |
+| The local gateway's receipts | that the operator's gateway saw those bytes | anything against the operator: it is the operator's, and no witness |
+| Desk's record of hand-overs | — | anything to a holder: it is the operator's, and the operator can change it |
+| Desk's verification | what the operator's own copies show | anything to someone who does not trust the operator |
 
-- **Without a held checkpoint, nothing against the operator** (Runner's
-  `docs/MAPPING-V2.md`, "What the chain establishes"): you keep the store and
-  the chain, and can rewrite it from any point with every link recomputed, so
-  a supplied chain only shows that it is consistent.
-- **With a checkpoint held independently of you that covers a run's entry**,
-  the entries up to it are the ones that existed when it was handed over.
-  It does not establish anything after the last held checkpoint, that a
-  checkpoint was held independently, when it was made, or anything about a
-  run that never reached the chain.
-- **Signatures are per run.** Runner's key signs each run's record in that
-  run's own attempt, and the signature travels with the run's export
-  (version 5); `jpack-runner verify-run --public-key` checks it there. The
-  chain has no signature of its own, so the Jobs record passes no key, shows
-  Runner's key as Gates does, and says that each run's signature is checked
-  by `verify-run` on that run's export, not here.
+### The agent setup with the key
 
-**`requireComparableFacts`** (runtime ADR-0046).
+Start `jpack mcp` for the agent as in "Giving an outside agent the project's
+tools", above, with `JPACK_CONFIG` naming the desk's own `jpack.json`, and give
+the agent no file or shell tools. For a desk Desk made at configVersion `"6"`,
+that `jpack.json` names the signing key (`audit.signingKey`), so the agent's
+runtime signs each deciding run it records, if it accepts the key. The agent
+is never given the key, and never sets `JPACK_SIGNING_KEY`. For the project
+Desk was started on, the runtime signs only where you chose a key in its
+upgrade (above), or where `JPACK_SIGNING_KEY` is set where Desk was started,
+which is yours and which Desk never copies into an agent's setup; otherwise
+the agent's records are unsigned, and nothing fails to tell it.
 
-- It holds: no evaluation of the project reads a present fact of a JSON type
-  that the comparison reading it can never match. The refusal,
-  `JPS-FACTS-COMPARABLE-REQUIRED`, names each pointer, its type and what the
-  comparison can match, and never a value.
-- It refuses rehearsals too: in Desk, the Evaluate page, Test draft, a single
-  test case run without an expectation, and the assistant's checks. Saved test
-  suites and Jobs are not refused.
-- It does not say that a fact is true, or present: an absent fact is not
-  refused.
+**Whom the key binds** (ADR-0010, section 1, "Whom the key binds").
 
-**Tested releases** (Runner's `release_untested`). An installation refuses a
-new job from a release whose saved tests were not run; jobs created earlier keep
-running. To allow untested releases, start Desk with
-`--runner-require-tested-releases=false`; it applies to every desk of the
-installation. It holds that the release's saved tests ran and passed, against
-that release's pack and runtime. It does not say that the tests are right, or
-that they cover the pack. See "Local operational Jobs pilot" below.
+- **Desk's assistant** has no file tool and Codex runs with no environment, so
+  it cannot read the key; it only rehearses, so it signs nothing either.
+- **An agent given only the desk's `jpack mcp`**, with no file or shell tools,
+  cannot read the key. Its deciding runs are signed with a key it cannot use,
+  so a line it writes into the trail by any other path carries no valid
+  signature. This is the case signing answers.
+- **An agent with file or shell tools, running as your user,** can read the
+  seed: mode 0600 keeps out other users, not this one. Against such an agent a
+  signature binds nothing. Only another OS user, a sandbox that denies reading
+  Desk's configuration folder, or giving it MCP tools only keeps it apart, and
+  Desk cannot check which holds.
+- **You** hold the key. A signature establishes nothing against you.
 
-### Which projects have them
-
-- **A new desk** starts with all of them: `requireReviewed`,
-  `requireComparableFacts`, the audit trail and a lock of its empty project,
-  and, with runtime 0.26.0 or later, a signing key Desk keeps for it (above).
-  See "Named desks" below.
-- **The project Desk was started on, and a desk made before this**, are
-  offered them and never put under them. A note on Packs, shown until you
-  dismiss it, and **Admin → Project → Gates**, where the offer stays, open a
-  step that lists each change: `jpack.json` moved to configVersion `"5"` with
-  `requireReviewed` and `.desk-private/audit`, every other byte kept; the line
-  `.desk-private/` added at the end of `.gitignore` in a Git work tree whose
-  `.gitignore` does not already end with it; the first Review and lock;
-  `requireComparableFacts`, which you can decline on its own; and, on the
-  project Desk was started on, a signing key, never chosen for you (see "The
-  signing key of the project Desk was started on" above). Nothing is written
-  before you confirm, and the configuration and the first lock are written
-  together, or every file is put back. A project that already keeps a lock, for
-  example one a CI step checks, is told that the new `jpack.json` is
-  `config-drift` to it: commit `jpack.json` and `jpack.lock.json` together.
-  Desk offers no configuration version the runtime it runs cannot read: `"4"`
-  needs runtime 0.24.0, and `"5"` needs 0.25.0.
-
-### In Desk itself, nothing is refused for being unreviewed, and nothing is recorded
-
-Every evaluation Desk makes is a rehearsal: the Evaluate page, Test draft, the
-test workspace, research checks, and every call the assistant makes, which the
-ToolGate rewrites to `rehearsal: true` on the wire. A rehearsal consults no
-reviewed set and writes no record (runtime ADR-0028). The one exception is a
-runtime whose tool listing Desk could not read: the Evaluate page and Test
-draft then cannot know the argument exists, send their call without it, and say
-so; that call is a deciding run, refused for a draft and recorded for a
-reviewed pack. So in Desk,
-`requireReviewed` refuses nothing and the audit trail stays empty; only
-`requireComparableFacts` can refuse a rehearsal. The gates hold the project's
-other callers: an agent given the project's `jpack mcp`, a script, a CI step.
-Jobs never read the project's configuration: Runner writes its own for each
-release and evaluates under its own lock of it, so every Jobs run record says
-`reviewed: true` about Runner's lock, not the project's. **Review this release**
-in Create job says whether the release's pack bytes are in the project's
-reviewed set, and refuses nothing.
-
-### Whom `requireReviewed` binds
-
-It binds a caller that neither chooses which configuration a run reads, nor can
-edit that configuration or its lock (runtime ADR-0044, point 5).
-
-- **Desk's assistant** reaches only the five tools the ToolGate allows, over the
-  `jpack mcp` Desk started, and has no file tool; a Codex run has no environment
-  ([ADR-0008](docs/adr/0008-codex-subscription-agent.md)). It is a caller of the
-  bound kind, but every evaluation it makes is a rehearsal, so the requirement
-  never refuses it and it never records.
-- **You, in Desk,** are not bound, by design: Desk's editor can write
-  `jpack.json` and `jpack.lock.json`, and Review and lock is yours.
-- **An agent with the project folder** (file or shell tools, or a coding agent
-  working in the folder) is not bound. It can edit a pack and run `packs lock`,
-  or point `--config` at another file.
-- **An agent given only a `jpack mcp` that someone else started** on this
-  desk's configuration, with no file or shell tools, is bound.
-
-### Giving an outside agent the project's tools
-
-Start `jpack mcp` for the agent with `JPACK_CONFIG` naming the desk's own
-`jpack.json`, and give the agent no file or shell tools:
-
-```sh
-JPACK_CONFIG=/absolute/path/to/the/desk/jpack.json jpack mcp
-```
-
-For a desk Desk made, the folder is under Desk's desks directory (the desk
-switcher's **Create desk…** names it), and Help & About shows the command with
-this desk's own path and runtime. The agent can then neither choose the
-configuration nor edit it, so a deciding run of a draft is refused and each
-deciding run is recorded. **This holds only as far as the agent's client really
-withholds file and shell tools:** the server runs as your user, and an agent
-that can reach the folder another way is not bound. Desk does not host an MCP
-endpoint for outside agents; that would be a new authenticated surface, and
-needs its own design (ADR-0009, question 5).
+Desk ran every check in this section on your machine, over your files, and its
+record of hand-overs is yours to change: none of it is evidence to anyone who
+does not trust the operator. A holder runs `jpack audit verify` on a copy, with
+what the holder keeps.
 
 ## What it shows
 
@@ -6184,61 +6307,6 @@ Runner's whole chain as `run-chain.jsonl`, exactly as Runner sent it, up to
 fails and saves nothing.
 Desk verifies neither file. Runner's `verify-run` reads the export, and with
 `--chain` the chain.
-
-**Runner's signing key** ([ADR-0010](docs/adr/0010-defensible-decision-records.md),
-section 5). Each desk's Runner signs the audit record of each run with a key of
-its own: never a project's key, and never a `JPACK_SIGNING_KEY` set where Desk
-was started.
-
-- Desk keeps it at `secrets/signing/runner/<name>.seed` in its configuration
-  folder, with its list of public keys, `<name>.keys.jsonl`, in the form a
-  desk's list has, under the custody a desk's key has (see "The signing key
-  of a desk Desk makes" under Gates). `<name>` is the desk's id; for the
-  project Desk was started on, it is the name of its Runner's state folder,
-  `jobs/<name>`: the hex SHA-256 of the project's path.
-- Every decision on a Runner key is taken under one exclusive lock for all
-  of Desk's key custody: a `flock` on the signing folder Desk holds, which a
-  start's sweep of the desks' keys takes too. It is held from the first look
-  at the key's files to the last effect of the decision, and released before
-  Runner starts. A start that would remove an unfinished creation does not
-  wait for it; any other start waits up to 10 seconds. Where the lock stays
-  held, Runner starts without a key, nothing is changed, and Gates says the
-  key folder was in use.
-- At a Runner's start, where nothing is kept under its name, the runtime
-  Desk runs makes the key (`jpack audit key generate`), with a creation
-  marker beside it until it is whole, as a desk's key has. Desk names it on
-  Runner's boot line, as `signingKey`, only where no marker is left, the
-  runtime reads it as a key under its own rules (`jpack audit key public`),
-  and the list holds that one key. Runner checks it again at boot and gives
-  it to the runtime of each operational evaluation only. A run so signed is
-  exported at version 5, with `run.auditSignatures`; check it with
-  `jpack-runner verify-run --public-key <key> --require-signed`, giving the
-  public key Help & About → Gates shows.
-- Otherwise Runner starts without a key, and its runs go on, unsigned, and
-  are exported at version 4. Gates says why: custody refuses a folder on the
-  key's path, the runtime did not make the key or refuses it, Runner refused
-  it at boot (Runner is then started again at once without it), the seed is
-  lost, the key folder was in use, or something could not be read just now.
-  Desk never removes, or makes again, a key it could not read, a key that
-  was refused, or one whose seed is lost: all three names are looked at
-  before anything is decided, and any failure but "not there" changes
-  nothing.
-- A creation that did not finish leaves its marker. A creation holds the
-  lock while its marker stands, so a marker found under the lock marks a key
-  that was never named and never signed anything. The next start removes
-  it: the list, the seed and then the marker, each only while it is the file
-  just looked at, so a removal that stops leaves the marker for the start
-  after; then it makes another key.
-- Gates asks Desk again every few seconds while it is open
-  (`GET /api/runner-key`), so it says what Runner signs with now: starting,
-  signed with the key shown, not signed and why, or not running and why. It
-  says signed only once Runner has started and answered with the key.
-- Whom it binds is whom a desk's key binds: nothing against you, who hold
-  it, or against an agent that can read your files.
-- Not yet: rotating Runner's key. The Jobs record (under Gates, above) checks
-  the chain of runs, and no signature: each run's is checked by `verify-run`
-  on that run's export.
-
 
 ### Jobs and Runs workspace
 

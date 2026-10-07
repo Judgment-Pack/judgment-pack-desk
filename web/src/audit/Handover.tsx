@@ -153,6 +153,7 @@ export function Handover({ checkedAt, state, onState, onConfirmed }: {
     <h4 className={styles.heading}>{msg('Hand-over')}</h4>
     <div className={styles.card}>
       <p className={styles.quiet}>{msg("This is Desk's own record. You keep it, and you can change it, so it proves nothing to a holder or to anyone else. Only the holder's own copy counts.")}</p>
+      <p className={styles.quiet}>{msg('A held checkpoint establishes that the records up to it are the ones that existed when it was handed over, against an operator who does not hold the holder’s copy. It does not establish anything after it; that the holder kept every checkpoint; when it was made or handed over.')}</p>
       <p className={styles.quiet}>{msg('Download a holder’s checkpoints and send the file by any channel the holder keeps: an e-mail attachment, a ticket, or a folder the holder controls. Then confirm that it went to them.')}</p>
       {query.isPending || (query.isFetching && !data) ? <p role="status" className={styles.quiet}>{msg('Asking the runtime…')}</p>
         : query.error ? <div role="alert" className={styles.card}><p>{systemMessage(query.error.message)}</p><div><Button onClick={() => void query.refetch()}>{msg('Retry')}</Button></div></div>
