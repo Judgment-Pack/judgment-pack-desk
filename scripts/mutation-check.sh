@@ -77,6 +77,9 @@
 #   selection's blind spot is found on a schedule rather than on a PR. It
 #   blocks nothing: regular CI protects merges and releases, and this checks
 #   the tests. `--whole` stays for a run that should not trust the record.
+# - **A pull request's own rows** (the ones it adds or changes) run in CI's
+#   "mutation rows" job (`.github/workflows/mutation-rows.yml`), found by
+#   `scripts/mutation-rows-changed.sh`; it is not a required check either.
 #
 # **Stopping a batch from outside.** Every suite runs in the harness's own
 # process group (`bounded`, below), so a watchdog that bounds that group, by
