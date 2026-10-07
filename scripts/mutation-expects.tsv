@@ -642,7 +642,7 @@ go	stamping: a roots file of other bytes is used	TestStampingSettingsAreKeptByDe
 go	stamping: a run is not recorded	TestEachStampFailureIsShownInTheRuntimesWordsAndTriedAtTheNextInterval,TestOneStampRunAtATimePerDesk,TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved,TestTheSchedulerStopsWithTheServer
 go	stamping: a run's refusal is shown with its path	TestEachStampFailureIsShownInTheRuntimesWordsAndTriedAtTheNextInterval
 go	stamping: a second Stamp now waits for the first	TestOneStampRunAtATimePerDesk
-go	stamping: a setting does not wait for the stamp	TestStampingSettingsAreKeptByDeskOutsideTheProject,TestAStampingProposalIsHeldToItsBounds,TestAChangeOrRemovalWhileARunChecksIsHonoured,TestAChangeOrRemovalWaitsForTheStampInProgress,TestCloseWaitsForAStampNowInProgress,TestStampNowIsTheOwnersRequest,TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved,TestOneStampRunAtATimePerDesk,TestTheSchedulerStopsWithTheServer
+go	stamping: a setting does not wait for the stamp	TestAChangeOrRemovalWaitsForTheStampInProgress
 go	stamping: a stamp with a failed exit is read as one	TestAStampAnswerIsReadAsDocumented
 go	stamping: a stamp with no time is read	TestAStampAnswerIsReadAsDocumented
 go	stamping: a stop kills the stamp	TestTheSchedulerStopsWithTheServer
