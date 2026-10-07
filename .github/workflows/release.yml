@@ -1,4 +1,7 @@
 name: Release Desk
+# A release needs the regular suite (ci.yml) and its archives
+# (release-build.yml), nothing else. The mutation rows (mutation-nightly.yml)
+# check the test suite's quality on a schedule, and never hold a release.
 on:
   push:
     tags: ['v*.*.*']

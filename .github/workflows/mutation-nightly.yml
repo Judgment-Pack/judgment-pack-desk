@@ -1,20 +1,35 @@
 name: Mutation rows, nightly
+run-name: ${{ inputs.half && inputs.half != 'all' && format('Mutation rows, {0} only', inputs.half) || 'Mutation rows, nightly' }}
 
-# Every row of scripts/mutation-check.sh, once a night, each against the tests
-# that can notice it (issue #253). A row is decided by its selection only when
-# a test in it fails; anything else runs the whole suite before it is called a
+# Every row of scripts/mutation-check.sh, each against the tests that can
+# notice it (issue #253). A row is decided by its selection only when a test
+# in it fails; anything else runs the whole suite before it is called a
 # survivor, so a selection's blind spot shows up here, on a schedule, and not
-# on a PR. Any row not caught fails the run. Not a required check.
+# on a PR.
+#
+# **This run blocks nothing.** Regular CI protects merges and releases: branch
+# protection on main requires Go, Web and DCO from ci.yml, and a release
+# (release.yml) runs ci.yml and release-build.yml and nothing else. This
+# workflow checks the test suite's quality: it is not a required check, no
+# workflow waits on it or is started by it, and a red run means a gap in the
+# tests to fix (it opens a `mutation-survivor` issue), never a release to
+# hold.
+#
+# **It runs when main changed.** The first job compares main's head with every
+# completed run of this workflow on main, whatever started it: where one has
+# already run every row of this commit, the scheduled run ends there, green,
+# and starts no shard. A dispatch always runs.
 #
 # One job cannot run the list inside GitHub's six-hour limit, so the rows are
 # shared out with --shard: every n-th row, from the k-th. The shards' tables
 # are put back in row order in one table, published with the record each
 # shard left (--record): a line that differs from the tracked
-# scripts/mutation-expects.tsv is one to commit.
+# scripts/mutation-expects.tsv is one to commit, by hand.
 #
 # A dispatch can run one half (`gh workflow run mutation-nightly.yml -f
 # half=web`), and on any branch (`--ref`): one run at a time per branch, so a
-# branch's run does not wait for main's.
+# branch's run does not wait for main's. Only a run on main opens, updates or
+# closes the survivor issue.
 on:
   schedule:
     - cron: '41 5 * * *'
@@ -34,8 +49,40 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  changed:
+    name: Has main changed since the last run
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      # A completed run counts where it ran every row (a dispatch of one half
+      # is titled "… only") and was not cancelled: a run cancelled in the
+      # queue checked nothing. Where the list cannot be read, the rows run.
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          if [ "$EVENT" != schedule ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          done_before="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/mutation-nightly.yml/runs?branch=main&status=completed&head_sha=$SHA&per_page=100" \
+            --jq '[.workflow_runs[] | select(.conclusion == "success" or .conclusion == "failure") | select(.display_title | endswith(" only") | not)] | length' || echo unknown)"
+          case "$done_before" in
+            0) echo "run=true" >> "$GITHUB_OUTPUT" ;;
+            unknown) echo "the earlier runs could not be read: running every row" | tee -a "$GITHUB_STEP_SUMMARY"; echo "run=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "main is still ${SHA:0:7}, which an earlier run of this workflow already checked: nothing to do" | tee -a "$GITHUB_STEP_SUMMARY"; echo "run=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
   rows:
     name: ${{ matrix.half }} rows, shard ${{ matrix.k }}/${{ matrix.half == 'go' && '4' || '6' }}
+    needs: changed
+    if: needs.changed.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 345
     strategy:
@@ -106,10 +153,13 @@ jobs:
 
   table:
     name: One table
-    needs: rows
-    if: always()
+    needs: [changed, rows]
+    if: always() && needs.changed.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -120,60 +170,35 @@ jobs:
           pattern: mutation-shard-*
           path: ${{ runner.temp }}/shards
 
-      # Round-robin shards put back in turn give the rows in the harness's own
-      # order. A shard with no closing line did not finish, and says so.
       - name: Put the shards back together
+        env:
+          HALF: ${{ inputs.half || 'all' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          python3 - "$RUNNER_TEMP/shards" "$RUNNER_TEMP/table" <<'PY'
-          import pathlib, sys
-          shards, out = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
-          out.mkdir()
-          def record(path):
-              lines = {}
-              if path.exists():
-                  for line in path.read_text().splitlines():
-                      if line:
-                          kind, name, tests = line.split('\t')
-                          lines[(kind, name)] = tests
-              return lines
-          base = record(pathlib.Path('scripts/mutation-expects.tsv'))
-          merged, halves = dict(base), {}
-          for d in sorted(p for p in shards.iterdir() if (p / 'shard.txt').exists()):
-              half, k, n = (d / 'shard.txt').read_text().split()
-              text = (d / 'table.md').read_text() if (d / 'table.md').exists() else ''
-              rows = [l for l in text.splitlines() if l.startswith('| ') and not l.startswith(('| mutation |', '| --- |'))]
-              halves.setdefault(half, {})[int(k)] = (int(n), rows, 'discriminating:' in text)
-              mine = record(d / 'mutation-expects.tsv')
-              for key in set(mine) | set(base):
-                  if mine.get(key) != base.get(key):
-                      if key in mine:
-                          merged[key] = mine[key]
-                      else:
-                          merged.pop(key, None)
-          table, missed = ['| mutation | test that failed |', '| --- | --- |'], []
-          for half in ('go', 'web'):
-              parts = halves.get(half, {})
-              n = max([p[0] for p in parts.values()] or [0])
-              for k in range(1, n + 1):
-                  if k not in parts or not parts[k][2]:
-                      missed.append('| %s shard %d/%d | **DID NOT FINISH — see its progress.log** |' % (half, k, n))
-              for i in range(max([len(p[1]) for p in parts.values()] or [0])):
-                  for k in range(1, n + 1):
-                      if k in parts and i < len(parts[k][1]):
-                          table.append(parts[k][1][i])
-          table += missed
-          failed = [l for l in table[2:] if '**' in l or '| MUTATION DID NOT APPLY |' in l]
-          (out / 'table.md').write_text('\n'.join(table) + '\n')
-          with open(out / 'mutation-expects.tsv', 'w') as f:
-              for key in sorted(merged):
-                  f.write('%s\t%s\t%s\n' % (key[0], key[1], merged[key]))
-          changed = sum(1 for key in set(merged) | set(base) if merged.get(key) != base.get(key))
-          summary = ['%d rows reported; %d not caught or not run; %d lines of the record changed' % (len(table) - 2 - len(missed), len(failed), changed), '']
-          summary += table[:2] + failed if failed else ['Every row was caught.']
-          with open(out / 'summary.md', 'w') as f:
-              f.write('\n'.join(summary) + '\n')
-          PY
+          python3 scripts/mutation-nightly-table.py "$RUNNER_TEMP/shards" "$RUNNER_TEMP/table" \
+            --half "$HALF" --run-url "$RUN_URL" --date "$(date -u +%F)"
           cat "$RUNNER_TEMP/table/summary.md" >> "$GITHUB_STEP_SUMMARY"
+
+      # One open `mutation-survivor` issue at a time: a run with a survivor or
+      # an INCONCLUSIVE row opens it, or comments on it; a run of every row
+      # that caught every row closes it. Runs on other branches leave it be.
+      - name: Open, update or close the survivor issue
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          t="$RUNNER_TEMP/table"
+          open="$(gh issue list --repo "$GITHUB_REPOSITORY" --label mutation-survivor --state open --json number --jq '.[0].number // empty')"
+          if [ -f "$t/issue.md" ] && [ -n "$open" ]; then
+            gh issue comment "$open" --repo "$GITHUB_REPOSITORY" --body-file "$t/issue.md"
+          elif [ -f "$t/issue.md" ]; then
+            gh label create mutation-survivor --repo "$GITHUB_REPOSITORY" --color B60205 \
+              --description "A mutation row the test suite did not catch: a test-suite gap, never a release blocker" 2>/dev/null || true
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$(cat "$t/issue-title.txt")" --label mutation-survivor --body-file "$t/issue.md"
+          elif [ "$(cat "$t/clean")" = true ] && [ -n "$open" ]; then
+            gh issue close "$open" --repo "$GITHUB_REPOSITORY" --comment "Run $RUN_URL ran every row and caught every one: closing."
+          fi
 
       - uses: actions/upload-artifact@v7
         with:

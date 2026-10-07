@@ -71,10 +71,12 @@
 #   the file is not touched, and the run says how many lines it would change.
 #   A PR that adds or changes rows records them with its own run.
 # - **The nightly run** (`.github/workflows/mutation-nightly.yml`) runs every
-#   row with selection on, in shards (`--shard`), and fails on any row not
-#   caught. Its table, and the record as that run left it, are published as
-#   artifacts, so a selection's blind spot is found on a schedule rather than
-#   on a PR. `--whole` stays for a run that should not trust the record at all.
+#   row with selection on, in shards (`--shard`), when main has changed, and
+#   fails on any row not caught. Its table, and the record as that run left
+#   it, are published as artifacts, and a survivor opens an issue, so a
+#   selection's blind spot is found on a schedule rather than on a PR. It
+#   blocks nothing: regular CI protects merges and releases, and this checks
+#   the tests. `--whole` stays for a run that should not trust the record.
 #
 # **Stopping a batch from outside.** Every suite runs in the harness's own
 # process group (`bounded`, below), so a watchdog that bounds that group, by
