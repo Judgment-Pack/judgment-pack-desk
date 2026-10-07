@@ -284,6 +284,7 @@ go	publication: the marker is removed before publication	TestAManifestNotReadNow
 go	repair: Desk's own sentence is passed on with its path	TestARepairSaysNoPathOfItsOwn
 go	repair: a confirmation need not be JSON	TestARepairIsAskedForInOneWay
 go	repair: a confirmation past its bound is read	TestARepairIsAskedForInOneWay
+go	repair: a confirmation runs on a trail that is not chained	TestARepairIsOfferedOnlyOnAChainedTrail
 go	repair: a confirmation with a short token runs	TestARepairIsAskedForInOneWay
 go	repair: a cross-site request repairs	TestARepairIsAskedForInOneWay
 go	repair: a digest of another form is read	TestAnAnswerTheRepairDoesNotDocumentIsNotARepair
@@ -294,22 +295,31 @@ go	repair: a discontinuity with a member missing is read	TestAnAnswerTheRepairDo
 go	repair: a project that keeps no trail is checked	TestARepairIsNotRunWithoutTheCommandOrATrail
 go	repair: a refusal to check again is taken for the trail as shown	TestARepairIsNotRunWhereTheTrailIsNotCheckedAgain
 go	repair: a refusal with no words is passed on	TestAnAnswerTheRepairDoesNotDocumentIsNotARepair
+go	repair: a repair of another damaged line is said as the one confirmed	TestARepairOfOtherBytesIsNotTheOneConfirmed
+go	repair: a repair of other damaged bytes is said as the one confirmed	TestARepairOfOtherBytesIsNotTheOneConfirmed
 go	repair: a repair with a failed exit is read as one	TestAnAnswerTheRepairDoesNotDocumentIsNotARepair
+go	repair: a repair with another digest is said as the one confirmed	TestARepairOfOtherBytesIsNotTheOneConfirmed
 go	repair: a request that goes away stops the repair	TestARepairIsNotStoppedByARequestThatGoesAway
 go	repair: a runtime that does not read 6 is asked	TestARepairIsNotRunWithoutTheCommandOrATrail,TestARepairSaysNoPathOfItsOwn
+go	repair: a used token is not refused	TestARepairRunsOnceOnTheOwnersConfirmation,TestARepairTokenConfirmsOneAttempt
+go	repair: a used token runs again	TestARepairRunsOnceOnTheOwnersConfirmation,TestARepairTokenConfirmsOneAttempt
 go	repair: an answer of another command is read as a repair	TestAnAnswerTheRepairDoesNotDocumentIsNotARepair
 go	repair: an answer of another outputVersion is read	TestAnAnswerTheRepairDoesNotDocumentIsNotARepair
 go	repair: an answer of another status is read as a repair	TestAnAnswerTheRepairDoesNotDocumentIsNotARepair
+go	repair: offered over a trail Desk could not read	TestARepairIsNotOfferedOverATrailDeskCannotRead
 go	repair: offered without the finding	TestTheRepairIsOfferedOnlyWhereTheReportNamesTheFinding
+go	repair: the damaged bytes are read as the whole trail	TestARepairAnswerNamesNoPath,TestARepairIsAskedForInOneWay,TestARepairRunsOnceOnTheOwnersConfirmation,TestARepairTokenConfirmsOneAttempt,TestTwoConfirmationsAtOnceRunOneRepair
 go	repair: the decision record offers no repair	TestARepairAnswerNamesNoPath,TestARepairIsAskedForInOneWay,TestARepairIsNotRunWhereTheTrailIsNotCheckedAgain,TestARepairIsNotStoppedByARequestThatGoesAway,TestARepairRefusalIsPassedOnInTheRuntimesWords,TestARepairRunsOnceOnTheOwnersConfirmation,TestARepairThatDoesNotFinishIsSaid,TestARepairTokenIsBoundToWhatWasShown,TestAnAnswerTheRepairDoesNotDocumentIsNotARepair,TestTheRepairIsOfferedOnlyWhereTheReportNamesTheFinding,TestTwoConfirmationsAtOnceRunOneRepair
 go	repair: the discontinuity's reason is passed on with its path	TestARepairAnswerNamesNoPath
 go	repair: the lock is kept after the repair	TestARepairAnswerNamesNoPath,TestARepairIsAskedForInOneWay,TestARepairIsNotRunWhereTheTrailIsNotCheckedAgain,TestARepairIsNotStoppedByARequestThatGoesAway,TestARepairRefusalIsPassedOnInTheRuntimesWords,TestARepairRunsOnceOnTheOwnersConfirmation,TestARepairThatDoesNotFinishIsSaid,TestARepairTokenIsBoundToWhatWasShown,TestAnAnswerTheRepairDoesNotDocumentIsNotARepair,TestTwoConfirmationsAtOnceRunOneRepair
 go	repair: the runtime's refusal is passed on with its path	TestARepairIsNotRunWhereTheTrailIsNotCheckedAgain,TestARepairRefusalIsPassedOnInTheRuntimesWords
+go	repair: the token binds no content	TestARepairTokenIsBoundToTheTrailsBytesAndFile
+go	repair: the token binds no file	TestARepairTokenIsBoundToTheTrailsBytesAndFile
 go	repair: the token binds no line	TestARepairTokenIsBoundToWhatWasShown
+go	repair: the token binds no nonce	TestARepairTokenConfirmsOneAttempt
 go	repair: the token binds no size	TestARepairTokenIsBoundToWhatWasShown
 go	repair: the token binds no trail identity	TestARepairTokenIsBoundToWhatWasShown
 go	repair: the token is not checked	TestARepairTokenIsBoundToWhatWasShown
-go	repair: the token is not the desk's own	TestARepairTokenIsBoundToWhatWasShown
 go	repair: two confirmations at once run two repairs	TestTwoConfirmationsAtOnceRunOneRepair
 go	review: a JPACK_CONFIG in another directory passes	TestTheReviewOnTheStartupDeskAndANamedDesk
 go	review: a JPACK_CONFIG of another name passes	TestTheReviewOnTheStartupDeskAndANamedDesk
@@ -650,10 +660,12 @@ web	repair client: a discontinuity before its damaged line is read	src/audit/rep
 web	repair client: a refusal to check carries an offer	src/audit/repairTrail.test.tsx
 web	repair client: an answer that is not a repair is read as one	src/audit/repairTrail.test.tsx
 web	repair client: an offer without a token is read	src/audit/repairTrail.test.tsx
+web	repair client: an unavailable offer with a token is read	src/audit/repairTrail.test.tsx
 web	repair client: the decision record's offer is not checked	src/audit/repairTrail.test.tsx
 web	repair client: the runtime's words are dropped from a refusal	src/audit/repairTrail.test.tsx
 web	repair page: a refusal is not said	src/audit/repairTrail.test.tsx
 web	repair page: a sentence of the confirmation is left out	src/audit/repairTrail.test.tsx
+web	repair page: an offer that is not available opens a confirmation	src/audit/repairTrail.test.tsx
 web	repair page: an outcome outlives a later check	src/audit/repairTrail.test.tsx
 web	repair page: an outcome outlives opening the panel again	src/audit/repairTrail.test.tsx
 web	repair page: the decision record is not checked again after a repair	src/audit/repairTrail.test.tsx
@@ -662,6 +674,7 @@ web	repair page: the outcome is not shown beside a refusal to check	src/audit/re
 web	repair page: the repair's sentence is not said	src/audit/repairTrail.test.tsx
 web	repair page: the runtime's words are not shown	src/audit/repairTrail.test.tsx
 web	repair page: the section is shown where nothing is offered	src/audit/repairTrail.test.tsx
+web	repair page: why no repair is offered is not said	src/audit/repairTrail.test.tsx
 web	review: a first lock's files are shown closed	src/packs/review/review.test.tsx
 web	review: a stale confirmation reads as any failure	src/packs/review/review.test.tsx
 web	rotation client: a rotation to another sequence is taken	src/audit/rotateSigningKey.test.tsx

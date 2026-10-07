@@ -368,11 +368,25 @@ func TestARepairTokenIsBoundToWhatWasShown(t *testing.T) {
 		writeTornTrail(t, rot.desk)
 		rot.rig.answers(t, 1, auditInvalidReport)
 		made, startup := offerOn(t, rot.ts, rot.id), offerOn(t, rot.ts, "")
-		if made.Token == startup.Token {
-			t.Fatal("two desks gave the same token for the same report")
-		}
 		refused(t, rot.ts, "", made.Token, rot.rig, rot.s)
 		refused(t, rot.ts, rot.id, startup.Token, rot.rig, rot.s.desks[rot.id])
+		// A MAC under another desk's key, over this desk's own report and
+		// its own reading of its trail, is refused: the key is the desk's own,
+		// and nothing else of the token tells two desks apart here.
+		var wire auditVerification
+		if err := json.Unmarshal([]byte(auditInvalidReport), &wire); err != nil {
+			t.Fatal(err)
+		}
+		report, ok := wire.report()
+		if !ok {
+			t.Fatal("the stand-in's report is not one")
+		}
+		desk := rot.s.desks[rot.id]
+		read, err := desk.readTrail(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		refused(t, rot.ts, rot.id, rot.s.repairToken(newRepairNonce(), report, 4, read), rot.rig, desk)
 	})
 }
 

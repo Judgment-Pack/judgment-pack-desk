@@ -5080,7 +5080,7 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'repair: offered on a trail that is not chained' "$RPR" \
     '	case !chained:
 		return unavailable(repairUnchainedWords)' \
-    '	case false:
+    '	case chained && !chained:
 		return unavailable(repairUnchainedWords)'
   mutate go 'repair: a confirmation runs on a trail that is not chained' "$RPR" \
     '	} else if !chained {' \
