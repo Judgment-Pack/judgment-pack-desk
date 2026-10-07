@@ -69,19 +69,26 @@ go	ai connections: a ChatGPT model id has no bound	TestSharedFixturesDecodeAsThe
 go	ai connections: a ChatGPT run takes a model nobody allowed	TestAgentSocketEnforcesSavedModelPolicy
 go	ai connections: a connection id may be any string	TestARegistryConnectionIdIsOneOfItsOwn,TestAssistantProfileSharedFixtures
 go	ai connections: a connection's method changes under its credential	TestAConnectionsMethodIsNotEditable
+go	ai connections: a connection's name is not counted in characters	TestAConnectionNameIsCountedInCharacters
 go	ai connections: a connection's settings skip the desk file's reader	TestARegistryConnectionCarryingACredentialIsRefused
 go	ai connections: a desk profile over its bound is decoded	TestTheAssistantProfileIsReadToItsBoundAndNoFurther
 go	ai connections: a desk sends through a connection it did not enable	TestAIConnectionsDiscoveryDoesNotGrantInference
+go	ai connections: a disabled ChatGPT connection runs	TestAChatGPTRunNeedsAnEnabledConnectionAndItsRevision
 go	ai connections: a disabled connection is relayed	TestAIConnectionsDiscoveryDoesNotGrantInference
 go	ai connections: a key is reported stored whatever reads back	TestAKeyThatReadsBackOtherwiseIsNotReportedStored
+go	ai connections: a model member in another case is read as the model	TestTheModelIsReadByItsExactName
 go	ai connections: a model the desk did not enable is relayed	TestAIConnectionsDiscoveryDoesNotGrantInference
 go	ai connections: a named desk closes the account it shares	TestNamedDesksShareCodexAccountManagerAndOnlyRootClosesIt
 go	ai connections: a registry is reported saved whatever reads back	TestARegistryThatReadsBackOtherwiseIsNotReportedSaved
+go	ai connections: a relayed request naming no revision is sent	TestARelayedRequestWithNoRevisionIsNotSent
+go	ai connections: a run naming no revision is sent	TestAChatGPTRunNeedsAnEnabledConnectionAndItsRevision
 go	ai connections: a stale registry write is laid over the newer one	TestAStaleRegistrySaveStagesNothing
 go	ai connections: a stale revision is sent with today's settings	TestAStaleConnectionRevisionIsNotSent
 go	ai connections: an unreadable desk profile is read as inheritance	TestTheAssistantProfileIsReadToItsBoundAndNoFurther
 go	ai connections: every connection presents the desk's one key	TestAIConnectionKeyIsKeptAsTheDesksKeyIs
+go	ai connections: one of two model members is chosen	TestTheModelIsReadByItsExactName
 go	ai connections: the compare is not made again at the rename	TestTheRegistryCompareHoldsUntilTheRename
+go	ai connections: the registry's answer is written under every desk's lock	TestTheRegistryAnswerIsWrittenAfterTheLockIsReleased
 go	ai connections: the run socket takes any query	TestAgentSocketRejectsUnrelatedQueries
 go	ai connections: the writer writes a registry its reader refuses	TestTheRegistryWriterRefusesWhatItsReaderRefuses
 go	an absent desk-level file is a refusal	TestARunnerThatRefusesItsKeyStartsWithout,TestAWrittenDefaultProjectIsTheOneTheNextLaunchOpens,TestDeskConfigRead,TestDeskConfigReadCarriesTheDigestItsWriteWillQuote,TestDeskConfigReadCarriesTheProjectAndRuntimeItWasLaunchedWith,TestDeskConfigReportsAnInheritedSigningKeyOnTheStartupDeskOnly,TestDeskConfigReportsTestedReleasesPolicy,TestDeskConfigWriteRefusesABodyNamingNeitherMember,TestEachDesksRunnerIsNamedAKeyOfItsOwn,TestNoRouteEverSetsASessionCookie,TestTheBearerAuthorizesEveryGatedRoute,TestTheReportedProjectDirIsTheResolvedOne,TestTheReviewsRootNominationDoesNotSurviveIntoTheNextLaunch
@@ -1219,11 +1226,15 @@ web	a web research chat draft whose trace was cut short reads as citing nothing	
 web	a wrap re-serializes the child instead of moving its bytes	src/packs/edit/conditionOps.test.ts
 web	a write erases the choices an earlier visit made	src/shell/inspectorWidth.test.tsx,src/shell/overlayGeometry.test.ts,src/shell/paneState.test.ts
 web	add over a conditions that is not a list does nothing	src/packs/edit/conditionOps.test.ts
+web	ai connections: Test connection's probe names no connection	src/assistant/endpointForm.test.tsx
 web	ai connections: a ChatGPT allowlist has no bound on the page	src/config/fixtures.test.ts
 web	ai connections: a desk profile over its bound is written	src/config/assistantProfile.test.ts
 web	ai connections: a desk profile over its bound is written, version 2	src/config/assistantProfile.test.ts
+web	ai connections: a name the desk refuses is offered for saving	src/assistant/aiConnections.test.tsx
 web	ai connections: a reply's attribution names a connection that is not one	src/assistant/aiConnections.test.tsx
 web	ai connections: a saved chat names a connection that is not one	src/chat/store.test.ts
+web	ai connections: the page's requests name no connection	src/assistant/aiConnections.test.tsx,src/assistant/endpointForm.test.tsx,src/assistant/session.test.ts
+web	ai connections: the run socket names no connection	src/assistant/agentTransport.test.ts
 web	an Admin row composes a summary the decoder did not say	src/routes/AdminView.test.tsx
 web	an aborted call rethrows the error it caught	src/assistant/session.test.ts
 web	an absent base digest is read as a match	src/packs/inspector/PackInspector.test.tsx
