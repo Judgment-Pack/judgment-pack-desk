@@ -76,7 +76,12 @@ function SubscriptionSettings({active,unavailable,onDirtyChange}:{active:boolean
       const body=name==='login'?{method}:name==='cancel'?{id:challenge?.id??status.data?.login?.id}:{}
       const answer=await providerRequest<ProviderChallenge>(name,body,controller.signal)
       if(!mounted.current||turn!==generation.current)return
-      if(name==='login')setChallenge(answer);else setChallenge(null)
+      // **The link, "Cancel sign-in" and the end of the progress line come
+      // from this one answer** (issue #243). The status refresh below only
+      // confirms it: while it ran, the connection's "Cancel" was still drawn
+      // beside the link, and a click on it ended the local state, sent no
+      // cancel for the attempt, and left the link.
+      if(name==='login'){setChallenge(answer);setBusy(false);setConnecting(false)}else setChallenge(null)
       if(name==='logout'){client.removeQueries({queryKey:['model-provider','openai','models']});setDisconnect(false)}
       await refresh()
     } catch(error){
@@ -120,7 +125,7 @@ function SubscriptionSettings({active,unavailable,onDirtyChange}:{active:boolean
         <RunStatus running={connecting}>{connecting?needsRuntime?msg('Preparing ChatGPT…'):msg('Connecting to ChatGPT…'):connected?msg('Connected to ChatGPT'):pending?msg('Waiting for sign-in…'):status.isPending?msg('Checking the ChatGPT connection…'):msg('Not connected')}</RunStatus>
         {connecting?<Button onClick={cancelConnection}>{msg('Cancel')}</Button>:connected?<Button ref={disconnectButton} disabled={busy} onClick={()=>setDisconnect(true)}>{msg('Disconnect')}</Button>:pending?(challenge?.id||status.data?.login?.id)?<Button disabled={busy} onClick={()=>void action('cancel')}>{msg('Cancel sign-in')}</Button>:<Button disabled={busy} onClick={()=>void status.refetch()}>{msg('Refresh')}</Button>:<Button disabled={busy||unavailable||!provider.engineReady||!canConnect} onClick={()=>void action('login')}>{msg('Connect ChatGPT')}</Button>}
       </div>
-      {needsRuntime&&!connecting&&<p className="quiet">{msg('Desk prepares the connection automatically the first time you connect.')}</p>}
+      {needsRuntime&&!connecting&&!pending&&<p className="quiet">{msg('Desk prepares the connection automatically the first time you connect.')}</p>}
       {!connected&&!pending&&!connecting&&<Field label={msg('Sign-in method')}>{wiring=><Select {...wiring} value={method} disabled={busy} onValueChange={setMethod} options={provider.loginMethods.map(value=>({value,label:value==='device'?msg('Device code'):msg('Browser')}))}/>}</Field>}
       {status.error && !busy && <p className="quiet">{msg(status.error.message)} <Button variant="inline" onClick={()=>void status.refetch()}>{msg('Refresh')}</Button></p>}
       {challenge && <div className={styles.challenge}>
