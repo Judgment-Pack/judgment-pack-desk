@@ -35,8 +35,8 @@ const coverage: AuditReport['coverage'] = { legacyPrefix: 0, chained: 3, unchain
 const unchecked: AuditReport = { status: 'valid', lines: 3, bytes: 3533, snapshotBetweenWrites: true, coverage, segments: [{ firstLine: 1, lastLine: 3 }], segmentsTotal: 1,
   discontinuities: [], discontinuitiesTotal: 0, findings: [], findingsTotal: 0, establishes: [], doesNotEstablish: [] }
 // What runtime 0.27.1 reported over three records, the first two stamped,
-// with the roots given.
-const checked: AuditReport = { ...unchecked, coverage: { ...coverage, stamped: { status: 'through', through: 2 } },
+// with the roots given, naming the trail by its identity.
+const checked: AuditReport = { ...unchecked, trail, coverage: { ...coverage, stamped: { status: 'through', through: 2 } },
   stamps: { lines: 2, unreadable: 0, trusted: 2, revocationChecked: 0, revocationNotChecked: 2, coveredBy: '2026-10-07T13:29:22Z',
     lag: { records: 2, maxSeconds: 14.607222481, maxSequence: 2, minSeconds: 10.92565753, minSequence: 1, atAfterStamp: false, atUnreadable: 0 } } }
 const settings = { authority: 'https://tsa.example/stamp', intervalMinutes: 60, policies: ['1.3.6.1.4.1.99999.1'], roots: [{ subject: 'CN=test time-stamping root', sha256: rootDigest }],
@@ -237,6 +237,24 @@ describe('stamping', () => {
     }
   })
 
+  // Line audit, finding 5: the stamps of another trail, whatever the record
+  // they reach, are not a check of the checkpoint the last run named; nor
+  // are stamps of a report that names no trail.
+  it('labels the checkpoint the last run named where the stamps the runtime checked are another trail’s, whatever their sequence', async () => {
+    const label = 'The last stamp run named the checkpoint at record 2: that is the authority’s answer to Desk’s request, not a stamp the runtime checked.'
+    const moved = 'c962ef5fa560f62c67bd4c1c29e011e3'
+    for (const report of [{ ...checked, trail: moved }, { ...checked, trail: moved, coverage: { ...checked.coverage, stamped: { status: 'through', through: 9 } } }, { ...checked, trail: undefined }]) {
+      records = [{ ...set, report }]
+      show()
+      expect(await screen.findByText(label), JSON.stringify(report.trail)).toBeTruthy()
+      cleanup()
+    }
+    records = [{ ...set, report: { ...checked, coverage: { ...checked.coverage, stamped: { status: 'through', through: 9 } } } }]
+    show()
+    await screen.findByRole('button', { name: 'Stamp now' })
+    expect(screen.queryByText(label)).toBeNull()
+  })
+
   it('says settings Desk could not read, passes nothing of them, and offers their removal', async () => {
     const problem = 'Desk could not read the stamping settings it keeps for this desk, so it uses none of them now: settings.json is not a settings file Desk wrote.'
     records = [{ ...none, stamping: { state: 'unread', problem, removeToken } }]
@@ -293,7 +311,9 @@ describe('the stamping client', () => {
     expect(isStampRun({ at: 1, status: 'already-stamped', trail, sequence: 2 })).toBe(true)
     expect(isStampRun({ at: 1, status: 'refused', diagnostics: [{ code: 'JPS-X', message: 'Why.' }] })).toBe(true)
     expect(isStampRun({ at: 1, status: 'problem', problem: 'Why.' })).toBe(true)
+    expect(isStampRun({ ...stamped, digest: 'sha256:' + '0a'.repeat(32) })).toBe(true)
     for (const value of [{ ...stamped, existedBy: undefined }, { ...stamped, sequence: 0 }, { ...stamped, trail: 'x' }, { at: 1, status: 'already-stamped', trail, sequence: 2, policy: '1.2' },
+      { ...stamped, digest: 'sha256:x' }, { at: 1, status: 'problem', problem: 'Why.', digest: 'sha256:' + '0a'.repeat(32) },
       { at: 1, status: 'refused', diagnostics: [] }, { at: 1, status: 'problem' }, { at: 1, status: 'refused', diagnostics: [{ code: 'JPS-X', message: 'Why.' }], trail }, { status: 'problem', problem: 'Why.' }]) {
       expect(isStampRun(value), JSON.stringify(value)).toBe(false)
     }
@@ -301,6 +321,8 @@ describe('the stamping client', () => {
 
   it('reads the stamps of a report as the runtime gives them', () => {
     expect(isAuditReport(checked)).toBe(true)
+    expect(isAuditReport({ ...checked, trail: undefined })).toBe(true)
+    expect(isAuditReport({ ...checked, trail: 'x' })).toBe(false)
     for (const stamps of [{ ...checked.stamps, lag: undefined }, { ...checked.stamps, trusted: -1 }, { ...checked.stamps, lag: { ...checked.stamps!.lag, maxSequence: undefined } },
       { ...checked.stamps, coveredBy: '' }, { ...checked.stamps, lag: { ...checked.stamps!.lag, atAfterStamp: 'no' } }]) {
       expect(isAuditReport({ ...checked, stamps }), JSON.stringify(stamps)).toBe(false)

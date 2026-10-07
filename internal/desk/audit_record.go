@@ -199,9 +199,11 @@ type auditReport struct {
 	Establishes      []string `json:"establishes"`
 	DoesNotEstablish []string `json:"doesNotEstablish"`
 	// Trail is the trail's identity as the runtime read it, where it read
-	// one: a trail with no chained line has none. The page is not given it;
-	// the repair's token binds it (audit_repair.go).
-	Trail string `json:"-"`
+	// one: a trail with no chained line has none. The repair's token binds
+	// it (audit_repair.go), and the page is given it, so that it tells the
+	// checkpoint a stamp run named of this trail from one of another
+	// (Stamping.tsx; line audit, finding 5).
+	Trail string `json:"trail,omitempty"`
 }
 
 // auditAnswer is what `GET /api/audit/verify` answers.

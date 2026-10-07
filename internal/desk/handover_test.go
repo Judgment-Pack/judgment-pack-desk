@@ -369,7 +369,7 @@ func sinceCall(since int) string {
 func TestAHolderIsAddedInTheOwnersWords(t *testing.T) {
 	rig := newHandoverRig(t, holderA)
 	rig.chain(t, chainOf(handoverTrail, 1, 2, 3))
-	if listed := rig.holders(t); len(listed.Holders) != 0 || listed.Trail == nil || *listed.Trail != (checkpointHead{handoverTrail, 3}) {
+	if listed := rig.holders(t); len(listed.Holders) != 0 || listed.Trail == nil || *listed.Trail != (checkpointHead{Identity: handoverTrail, Sequence: 3}) {
 		t.Fatalf("before any holder, the holders are %+v", listed)
 	}
 	added := rig.addHolder(t, "  Counterparty: procurement desk ", "\te-mail to records@example.com\n")
@@ -379,7 +379,7 @@ func TestAHolderIsAddedInTheOwnersWords(t *testing.T) {
 	}
 	listed := rig.holders(t)
 	if len(listed.Holders) != 1 || listed.Holders[0].handoverHolder != want || len(listed.Holders[0].Trails) != 0 || listed.Holders[0].OtherTrail ||
-		listed.Trail == nil || *listed.Trail != (checkpointHead{handoverTrail, 3}) || listed.Diagnostics != nil {
+		listed.Trail == nil || *listed.Trail != (checkpointHead{Identity: handoverTrail, Sequence: 3}) || listed.Diagnostics != nil {
 		t.Errorf("the holders are %+v", listed)
 	}
 	for path, mode := range map[string]os.FileMode{rig.handoverPath(): 0o700 | os.ModeDir, rig.handoverPath(handoverHoldersName): 0o600, rig.handoverPath(".gitignore"): 0o600} {

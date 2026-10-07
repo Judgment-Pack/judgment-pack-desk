@@ -5298,15 +5298,15 @@ func (b *cappedBuffer) exceeded() bool {'
     'if report != nil && view.Passed {' \
     'if report != nil {'
   mutate go 'stamping: a check with roots tells the scheduler nothing' "$STP" \
-    '			s.stamping.noteStamped(report.Trail, stamped.Through)
+    '			s.stamping.knowStamped(&checkpointHead{Identity: report.Trail, Sequence: stamped.Through})
 ' \
     ''
   mutate go 'stamping: the scheduler stamps whatever the head' "$STP" \
-    'if known != nil && known.Identity == head.Identity && head.Sequence <= known.Sequence {' \
+    'if known != nil && known.Identity == head.Identity && head.Sequence == known.Sequence && (known.Digest == "" || known.Digest == head.Digest) {' \
     'if known != nil && false {'
   mutate go 'stamping: a trail moved aside is not stamped' "$STP" \
-    'if known != nil && known.Identity == head.Identity && head.Sequence <= known.Sequence {' \
-    'if known != nil && head.Sequence <= known.Sequence {'
+    'if known != nil && known.Identity == head.Identity && head.Sequence == known.Sequence' \
+    'if known != nil && head.Sequence == known.Sequence'
   mutate go 'stamping: the scheduler stamps before the interval' "$STP" \
     '(st.lastAttempt.IsZero() || !now.Before(st.lastAttempt.Add(time.Duration(settings.file.IntervalMinutes)*time.Minute)))' \
     'true'
@@ -5643,6 +5643,40 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "search and files: a request's deadline is counted from after its body is read" "$SRR" \
     '	deadline = start.Add(budget)' \
     '	deadline = time.Now().Add(budget)'
+  # The ADR-0010 line audit's claim findings (issues #287-#289). Finding 5:
+  # the report names its trail to the page; the scheduler holds the head to
+  # the checkpoint it last knew stamped by trail, sequence and digest, and
+  # each run's answer and each check with roots replaces what it knows.
+  AFR=internal/desk/audit_record.go
+  AFS=internal/desk/stamping.go
+  AFH=internal/desk/handover.go
+  mutate go 'audit fix: the page is not given the trail'"'"'s identity' "$AFR" \
+    'Trail string `json:"trail,omitempty"`' \
+    'Trail string `json:"-"`'
+  mutate go 'audit fix: a head below the checkpoint stamped is not stamped' "$AFS" \
+    'head.Sequence == known.Sequence && (known.Digest' \
+    'head.Sequence <= known.Sequence && (known.Digest'
+  mutate go 'audit fix: another record at the sequence stamped is not stamped' "$AFS" \
+    ' && (known.Digest == "" || known.Digest == head.Digest) {' \
+    ' {'
+  mutate go 'audit fix: a run keeps no record digest' "$AFS" \
+    'Sequence: checkpoint.sequence, Digest: checkpoint.digest}' \
+    'Sequence: checkpoint.sequence}'
+  mutate go 'audit fix: the head keeps no record digest' "$AFH" \
+    'Sequence: line.sequence, Digest: line.digest}' \
+    'Sequence: line.sequence}'
+  mutate go 'audit fix: what the scheduler knows only advances' "$AFS" \
+    '	known := *checkpoint
+	st.stamped = &known' \
+    '	if st.stamped != nil && st.stamped.Identity == checkpoint.Identity && st.stamped.Sequence > checkpoint.Sequence {
+		return
+	}
+	known := *checkpoint
+	st.stamped = &known'
+  mutate go 'audit fix: a check that finds no stamp leaves what the scheduler knows' "$AFS" \
+    '			s.stamping.knowStamped(nil)
+' \
+    ''
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -13163,10 +13197,10 @@ export function assistantTransport(id: string): Transport {
     '!optional(value.removeToken, hex(96))' \
     '!optional(value.removeToken, text)'
   mutate web 'stamping client: a run of another status is read' "$SAC" \
-    '    case '"'"'problem'"'"': return named(value.problem) && value.diagnostics === undefined && value.trail === undefined
+    '    case '"'"'problem'"'"': return named(value.problem) && value.diagnostics === undefined && value.trail === undefined && value.digest === undefined
   }
   return false' \
-    '    case '"'"'problem'"'"': return named(value.problem) && value.diagnostics === undefined && value.trail === undefined
+    '    case '"'"'problem'"'"': return named(value.problem) && value.diagnostics === undefined && value.trail === undefined && value.digest === undefined
   }
   return true'
   mutate web 'stamping client: a stamp with no time is read' "$SAC" \
@@ -13316,6 +13350,8 @@ export function assistantTransport(id: string): Transport {
   # the decision record's headline composed from what was passed, keys,
   # held checkpoints and roots, each on its own (finding 6).
   AFD=web/src/audit/DecisionRecord.tsx
+  AFT=web/src/audit/Stamping.tsx
+  AFC=web/src/audit/client.ts
   mutate web 'audit fix: checkpoints with no key say keys were used' "$AFD" \
     '  if (keys && held) return msg(' \
     '  if (held) return msg('
@@ -13327,6 +13363,18 @@ export function assistantTransport(id: string): Transport {
     return roots' \
     '  if (held) {
     return false'
+  # Finding 5: the last run's checkpoint is taken as checked only by the
+  # stamps of its own trail.
+  mutate web 'audit fix: another trail'"'"'s stamps reach the last run'"'"'s checkpoint' "$AFT" \
+    'report?.trail !== undefined && named.trail === report.trail' \
+    'true'
+  mutate web 'audit fix: a report'"'"'s trail of no form is read' "$AFC" \
+    '    && optional(value.trail, hex(32))
+' \
+    ''
+  mutate web 'audit fix: a run'"'"'s digest of no form is read' "$AFC" \
+    ' && optional(value.digest, sha256Form)' \
+    ''
 fi
 
 restore

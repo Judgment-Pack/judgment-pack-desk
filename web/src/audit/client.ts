@@ -110,6 +110,8 @@ export type AuditReport = {
   findingsTotal: number
   signatures?: AuditSignatures
   stamps?: AuditStamps
+  /** The trail's identity as the runtime read it; none where no line is chained. */
+  trail?: string
   /** The runtime's own sentences, in English, as it wrote them. */
   establishes: string[]
   doesNotEstablish: string[]
@@ -265,6 +267,7 @@ export function isAuditReport(value: unknown): value is AuditReport {
     && list(value.discontinuities, isDiscontinuity) && count(value.discontinuitiesTotal)
     && list(value.findings, isFinding) && count(value.findingsTotal)
     && list(value.establishes, text) && list(value.doesNotEstablish, text) && optional(value.signatures, isSignatures) && optional(value.stamps, isStamps)
+    && optional(value.trail, hex(32))
     && value.segments.length <= value.segmentsTotal && value.discontinuities.length <= value.discontinuitiesTotal
     && value.findings.length <= value.findingsTotal && (value.status === 'invalid') === (value.findingsTotal > 0)
 }
@@ -680,13 +683,14 @@ export type StampingSettings = { authority: string; intervalMinutes: number; pol
 /**
  * One stamp run's outcome, by Desk's clock (`at`, in seconds): the runtime's
  * answer, a stamp or a checkpoint stamped already, with the checkpoint it
- * named and, for a stamp, the authority's time and policy as the runtime
- * printed them; the runtime's refusal, in its words; or Desk's.
+ * named (its trail, sequence and record digest) and, for a stamp, the
+ * authority's time and policy as the runtime printed them; the runtime's
+ * refusal, in its words; or Desk's.
  */
 export type StampRun = {
   at: number; requested?: boolean
   status: 'stamped' | 'already-stamped' | 'refused' | 'problem'
-  trail?: string; sequence?: number; stampedAt?: string; existedBy?: string; policy?: string
+  trail?: string; sequence?: number; digest?: string; stampedAt?: string; existedBy?: string; policy?: string
   diagnostics?: AuditDiagnostic[]; problem?: string
 }
 /**
@@ -753,13 +757,13 @@ export function isStampingSettings(value: unknown): value is StampingSettings {
 /** A stamp run as the chassis says it: each outcome with what it carries, and nothing else. */
 export function isStampRun(value: unknown): value is StampRun {
   if (!object(value) || !count(value.at) || !optional(value.requested, item => typeof item === 'boolean')) return false
-  const checkpoint = hex(32)(value.trail) && count(value.sequence) && value.sequence > 0
+  const checkpoint = hex(32)(value.trail) && count(value.sequence) && value.sequence > 0 && optional(value.digest, sha256Form)
   const stamp = ['stampedAt', 'existedBy', 'policy'].map(name => value[name])
   switch (value.status) {
     case 'stamped': return checkpoint && instant(value.stampedAt) && instant(value.existedBy) && named(value.policy) && value.diagnostics === undefined && value.problem === undefined
     case 'already-stamped': return checkpoint && stamp.every(item => item === undefined) && value.diagnostics === undefined && value.problem === undefined
-    case 'refused': return list(value.diagnostics, isDiagnostic) && value.diagnostics.length > 0 && value.problem === undefined && value.trail === undefined
-    case 'problem': return named(value.problem) && value.diagnostics === undefined && value.trail === undefined
+    case 'refused': return list(value.diagnostics, isDiagnostic) && value.diagnostics.length > 0 && value.problem === undefined && value.trail === undefined && value.digest === undefined
+    case 'problem': return named(value.problem) && value.diagnostics === undefined && value.trail === undefined && value.digest === undefined
   }
   return false
 }

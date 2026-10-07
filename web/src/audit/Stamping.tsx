@@ -22,11 +22,12 @@
  * and the lag it measured, in its own numbers; and the last stamp run since
  * Desk started, by Desk's clock, in the runtime's words where it refused.
  * Where the runtime did not check the stamps, the page says so; and wherever
- * no stamp the runtime checked reaches the record the last run named (no
- * roots, none holding, or one below it), that record is labelled as the
- * authority's answer to Desk's request, not as a stamp the runtime checked
- * (review round 1). "Stamp now" runs one
- * stamp on request, in the desk's one turn, and the decision record is
+ * no stamp the runtime checked reaches the checkpoint the last run named in
+ * the same trail (no roots, none holding, one below it, or the stamps of
+ * another trail, which the report names by its identity), that checkpoint is
+ * labelled as the authority's answer to Desk's request, not as a stamp the
+ * runtime checked (review round 1; line audit, finding 5). "Stamp now" runs
+ * one stamp on request, in the desk's one turn, and the decision record is
  * checked again after it.
  */
 import { useRef, useState } from 'react'
@@ -71,9 +72,12 @@ export function Stamping({ stamping, report, outcome, onOutcome }: {
   const { settings } = stamping
   const stamped = report?.coverage.stamped
   const named = stamping.last && (stamping.last.status === 'stamped' || stamping.last.status === 'already-stamped') ? stamping.last : undefined
-  // Whether a stamp the runtime checked reaches the record the last run
-  // named: only then is that record not labelled as the authority's answer.
-  const covered = named?.sequence !== undefined && stamped?.status === 'through' && (stamped.through ?? 0) >= named.sequence
+  // Whether a stamp the runtime checked reaches the checkpoint the last run
+  // named, in the trail the run named: only then is that checkpoint not
+  // labelled as the authority's answer. Another trail's stamps reach no
+  // checkpoint of this one, whatever their sequence.
+  const covered = named?.sequence !== undefined && report?.trail !== undefined && named.trail === report.trail
+    && stamped?.status === 'through' && (stamped.through ?? 0) >= named.sequence
   async function run() {
     setBusy(true)
     try {

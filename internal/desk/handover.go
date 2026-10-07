@@ -487,17 +487,22 @@ func (s *Server) readHolderRecord(id string) (holder handoverHolder, record hand
 /* The runtime's checkpoints ------------------------------------------------- */
 
 // checkpointHead is the trail's identity and the sequence of its last
-// chained record, as `audit checkpoint --format json` gives them.
+// chained record, as `audit checkpoint --format json` gives them, and the
+// SHA-256 of that record's line, which the page is not given: the stamping
+// scheduler holds a head to the checkpoint it last knew stamped by all three
+// (stamping.go).
 type checkpointHead struct {
 	Identity string `json:"identity"`
 	Sequence int64  `json:"sequence"`
+	Digest   string `json:"-"`
 }
 
 // checkpointLine is what Desk reads of one checkpoint document: its trail
-// identity and sequence.
+// identity, sequence and record digest.
 type checkpointLine struct {
 	trail    string
 	sequence int64
+	digest   string
 }
 
 // readCheckpointLine holds one checkpoint document to the runtime's own shape
@@ -521,7 +526,7 @@ func readCheckpointLine(document []byte) (checkpointLine, bool) {
 		!sidecarString(members["recordDigest"], &digest) || !recordForm.MatchString(digest) {
 		return checkpointLine{}, false
 	}
-	return checkpointLine{trail: trail, sequence: sequence}, true
+	return checkpointLine{trail: trail, sequence: sequence, digest: digest}, true
 }
 
 // readCheckpointHead asks the runtime for the chain's last chained record:
@@ -567,7 +572,7 @@ func (s *Server) readCheckpointHead(ctx context.Context, dir heldDir, chain hand
 	switch {
 	case code == 0 && got.Command == auditCheckpointCommand && got.Status == "checkpointed":
 		if line, ok := readCheckpointLine(got.Checkpoint); ok {
-			return &checkpointHead{Identity: line.trail, Sequence: line.sequence}, nil, nil
+			return &checkpointHead{Identity: line.trail, Sequence: line.sequence, Digest: line.digest}, nil, nil
 		}
 	case code > 0 && (got.Status == "error" || got.Status == "unsupported") && (auditVerification{Diagnostics: got.Diagnostics}).said():
 		if len(got.Diagnostics) == 1 && (got.Diagnostics[0].Code == "JPS-AUDIT-CHECKPOINT-NONE" ||

@@ -937,9 +937,13 @@ again at the next interval, once; stopping Desk never kills a stamp
 mid-write. The decision record passes the roots to `audit verify`, so the
 stamps the runtime accepted, how far they reach, the lag between each
 record's `at` and its first stamp, and the records still pending a stamp are
-the runtime's; without roots the runtime checks no stamp, and Desk labels the
-sequence its last stamp run named as the authority's answer to Desk's
-request, not as a stamp checked. Removing the authority stops the stamping
+the runtime's; wherever the stamps the runtime accepts do not reach the
+checkpoint its last stamp run named in that same trail (without roots, with
+none holding, with one below it, or with the stamps of another trail),
+Desk labels that checkpoint as the authority's answer to Desk's request,
+not as a stamp checked. The scheduler stamps again wherever the trail's last
+checkpoint is not the one it last knew stamped, so a trail restored to an
+earlier point and written or repaired since is stamped again. Removing the authority stops the stamping
 and keeps the trail's stamps as they are. In ADR-0010's words, a stamp
 establishes that "the checkpoint, and every line before it, existed by the
 authority's stated time, as far as that authority is independent of the

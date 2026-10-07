@@ -60,6 +60,12 @@ func stampedAnswer(trail string, sequence int) string {
 	return fmt.Sprintf(`{"outputVersion":"2","tool":{"name":"jpack","version":"0.27.1"},"command":"audit stamp","status":"stamped","trailPath":"/project/.desk-private/audit/evaluations.jsonl","checkpoint":{"checkpointVersion":"1","recordDigest":"sha256:%064x","sequence":%d,"trail":"%s"},"stampedAt":"2026-10-07T13:29:07Z","existedBy":"2026-10-07T13:29:07Z","policy":"1.3.6.1.4.1.99999.1"}`, sequence, sequence, trail)
 }
 
+// standInDigest is the record digest the stand-in's checkpoint at sequence
+// names, in its answers to `audit checkpoint` and `audit stamp` alike.
+func standInDigest(sequence int) string {
+	return fmt.Sprintf("sha256:%064x", sequence)
+}
+
 func alreadyStamped(trail string, sequence int) string {
 	return fmt.Sprintf(`{"outputVersion":"2","tool":{"name":"jpack","version":"0.27.1"},"command":"audit stamp","status":"already-stamped","trailPath":"/project/.desk-private/audit/evaluations.jsonl","checkpoint":{"checkpointVersion":"1","recordDigest":"sha256:%064x","sequence":%d,"trail":"%s"}}`, sequence, sequence, trail)
 }
@@ -908,7 +914,7 @@ func TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved(t *testing.T) {
 	}
 	last := stampingOf(t, r.ts, "").Last
 	if last == nil || last.At != handoverNow+60 || last.Requested ||
-		!sameRun(*last, stampRun{Status: stampStamped, Trail: handoverTrail, Sequence: 3, StampedAt: "2026-10-07T13:29:07Z", ExistedBy: "2026-10-07T13:29:07Z", Policy: "1.3.6.1.4.1.99999.1"}) {
+		!sameRun(*last, stampRun{Status: stampStamped, Trail: handoverTrail, Sequence: 3, Digest: standInDigest(3), StampedAt: "2026-10-07T13:29:07Z", ExistedBy: "2026-10-07T13:29:07Z", Policy: "1.3.6.1.4.1.99999.1"}) {
 		t.Errorf("the last run is %+v", last)
 	}
 	r.ran(t)
@@ -976,6 +982,148 @@ func TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved(t *testing.T) {
 	}
 	if after := stampingOf(t, r.ts, "").Last; after == nil || after.At != before.At || !sameRun(*after, *before) {
 		t.Errorf("with no chained record the last run became %+v", after)
+	}
+}
+
+// rewrittenAt is the stand-in's checkpoints of records 1 to n of trail, the
+// record at n another than the one stampedAnswer and chainIs name there: a
+// trail restored to an earlier point and written since, with its identity.
+func (rig *auditRig) rewrittenAt(t *testing.T, trail string, n int) {
+	t.Helper()
+	last := strings.Replace(checkpointOf(trail, n), standInDigest(n), rewrittenDigest(n), 1)
+	if err := os.WriteFile(rig.calls+".lines", []byte(chainOf(trail, upTo(n-1)...)+last), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// rewrittenDigest is the record digest of that other record at sequence.
+func rewrittenDigest(sequence int) string {
+	return fmt.Sprintf("sha256:%064x", 0x1000+sequence)
+}
+
+// **A trail restored to an earlier point is stamped again** (line audit,
+// finding 5). The scheduler holds the head to the checkpoint it last knew
+// stamped, by trail, sequence and record digest, and stamps wherever it is
+// not that checkpoint. The trail stamped at record 5, then restored to an
+// earlier point and repaired, ends at record 4: below the checkpoint
+// stamped, and stamped. Another trail, moved in, ends at record 4 too, with
+// a checkpoint of the same digest: stamped. Restored and written since, it
+// ends at record 4 again, another record of the same trail: stamped. And
+// where the head is the checkpoint the last run named, nothing is asked.
+func TestTheSchedulerStampsATrailRestoredToAnEarlierPointAgain(t *testing.T) {
+	w := fixStamping(t)
+	r := newStampRig(t)
+	r.set(t, r.proposal(nil))
+	r.chainIs(t, handoverTrail, 5)
+	r.stampsWith(t, 0, stampedAnswer(handoverTrail, 5))
+	r.ran(t)
+	stamps := []string{schemaCall, stampHeadCall, stampCall}
+	asks := []string{schemaCall, stampHeadCall}
+	w.at(t, time.Minute)
+	if calls := r.ran(t); !slices.Equal(calls, stamps) {
+		t.Fatalf("the first wake ran %q", calls)
+	}
+	// Restored to an earlier point and repaired: the same identity, its last
+	// record below the one stamped.
+	r.chainIs(t, handoverTrail, 4)
+	r.stampsWith(t, 0, stampedAnswer(handoverTrail, 4))
+	w.at(t, time.Hour+time.Minute)
+	if calls := r.ran(t); !slices.Equal(calls, stamps) {
+		t.Errorf("with the head below the checkpoint stamped a wake ran %q", calls)
+	}
+	w.at(t, 2*time.Hour+time.Minute)
+	if calls := r.ran(t); !slices.Equal(calls, asks) {
+		t.Errorf("with the head the checkpoint stamped a wake ran %q", calls)
+	}
+	// Another trail at the very sequence, whose checkpoint names the same
+	// digest the stand-in gives every record 4: only its identity differs.
+	r.chainIs(t, movedTrail, 4)
+	r.stampsWith(t, 0, stampedAnswer(movedTrail, 4))
+	w.at(t, 3*time.Hour+time.Minute)
+	if calls := r.ran(t); !slices.Equal(calls, stamps) {
+		t.Errorf("with another trail at the sequence stamped a wake ran %q", calls)
+	}
+	// Another record at the sequence stamped, in the same trail: only its
+	// digest differs.
+	r.rewrittenAt(t, movedTrail, 4)
+	r.stampsWith(t, 0, strings.Replace(stampedAnswer(movedTrail, 4), standInDigest(4), rewrittenDigest(4), 1))
+	w.at(t, 4*time.Hour+time.Minute)
+	if calls := r.ran(t); !slices.Equal(calls, stamps) {
+		t.Errorf("with another record at the sequence stamped a wake ran %q", calls)
+	}
+	if last := stampingOf(t, r.ts, "").Last; last == nil || last.Trail != movedTrail || last.Digest != rewrittenDigest(4) {
+		t.Errorf("the last run is %+v", last)
+	}
+	r.ran(t)
+	w.at(t, 5*time.Hour+time.Minute)
+	if calls := r.ran(t); !slices.Equal(calls, asks) {
+		t.Errorf("with the head the checkpoint just stamped a wake ran %q", calls)
+	}
+}
+
+// **A check with roots replaces what the scheduler knows, and never only
+// advances it** (line audit, finding 5). After a stamp of record 5, a check
+// whose stamps the runtime accepts reach only record 2 makes the next wake
+// ask the runtime again, which answers that the checkpoint is stamped
+// already: nothing is asked of the authority, and the wake after asks
+// nothing. A check that finds no stamp covering a record leaves nothing
+// known: the next wake asks again. A check whose stamps reach record 5,
+// which names no record digest, and then the trail restored to record 4:
+// below the checkpoint known stamped, and stamped. The decision record's
+// report names the trail's identity to the page.
+func TestACheckWithRootsReplacesWhatTheSchedulerKnows(t *testing.T) {
+	w := fixStamping(t)
+	r := newStampRig(t)
+	r.set(t, r.proposal(nil))
+	r.chainIs(t, handoverTrail, 5)
+	r.stampsWith(t, 0, stampedAnswer(handoverTrail, 5))
+	r.ran(t)
+	stamps := []string{schemaCall, stampHeadCall, stampCall}
+	asks := []string{schemaCall, stampHeadCall}
+	w.at(t, time.Minute)
+	if calls := r.ran(t); !slices.Equal(calls, stamps) {
+		t.Fatalf("the first wake ran %q", calls)
+	}
+	w.at(t, time.Hour+time.Minute)
+	if calls := r.ran(t); !slices.Equal(calls, asks) {
+		t.Fatalf("with the head stamped a wake ran %q", calls)
+	}
+	lower := strings.Replace(strings.Replace(stampsReport, `"lines":3,`, `"lines":5,`, 1), `"chained":3,`, `"chained":5,`, 1)
+	r.answers(t, 0, lower)
+	status, answer, _ := readAudit(t, r.ts, "")
+	if status != http.StatusOK || answer.Report == nil || answer.Report.Trail != handoverTrail || answer.Report.Coverage.Stamped.Through != 2 {
+		t.Fatalf("the decision record answered %d %+v", status, answer.Report)
+	}
+	r.ran(t)
+	r.stampsWith(t, 0, alreadyStamped(handoverTrail, 5))
+	w.at(t, 2*time.Hour+time.Minute)
+	if calls := r.ran(t); !slices.Equal(calls, stamps) {
+		t.Errorf("after a check whose stamps reach a lower record a wake ran %q", calls)
+	}
+	w.at(t, 3*time.Hour+time.Minute)
+	if calls := r.ran(t); !slices.Equal(calls, asks) {
+		t.Errorf("after the runtime said the head is stamped already a wake ran %q", calls)
+	}
+	none := strings.Replace(strings.Replace(lower, `"stamped":{"status":"through","through":2}`, `"stamped":{"status":"none"}`, 1), `"coveredBy":"2026-10-07T13:29:22Z",`, ``, 1)
+	r.answers(t, 0, strings.Replace(none, `"trusted":2,"revocationChecked":0,"revocationNotChecked":2`, `"trusted":0,"revocationChecked":0,"revocationNotChecked":0`, 1))
+	if got := stampingOf(t, r.ts, ""); !got.Passed {
+		t.Fatalf("the check was not given the roots: %+v", got)
+	}
+	r.ran(t)
+	w.at(t, 4*time.Hour+time.Minute)
+	if calls := r.ran(t); !slices.Equal(calls, stamps) {
+		t.Errorf("after a check that finds no stamp a wake ran %q", calls)
+	}
+	r.answers(t, 0, strings.Replace(lower, `"stamped":{"status":"through","through":2}`, `"stamped":{"status":"through","through":5}`, 1))
+	if got := stampingOf(t, r.ts, ""); !got.Passed {
+		t.Fatalf("the check was not given the roots: %+v", got)
+	}
+	r.chainIs(t, handoverTrail, 4)
+	r.stampsWith(t, 0, stampedAnswer(handoverTrail, 4))
+	r.ran(t)
+	w.at(t, 5*time.Hour+time.Minute)
+	if calls := r.ran(t); !slices.Equal(calls, stamps) {
+		t.Errorf("with the head below the checkpoint a check found stamped a wake ran %q", calls)
 	}
 }
 
@@ -1413,8 +1561,8 @@ func TestAStampAnswerIsReadAsDocumented(t *testing.T) {
 		body string
 		want stampRun
 	}{
-		{"a stamp", 0, stampedAnswer(handoverTrail, 3), stampRun{Status: stampStamped, Trail: handoverTrail, Sequence: 3, StampedAt: "2026-10-07T13:29:07Z", ExistedBy: "2026-10-07T13:29:07Z", Policy: "1.3.6.1.4.1.99999.1"}},
-		{"stamped already", 0, alreadyStamped(handoverTrail, 3), stampRun{Status: stampAlready, Trail: handoverTrail, Sequence: 3}},
+		{"a stamp", 0, stampedAnswer(handoverTrail, 3), stampRun{Status: stampStamped, Trail: handoverTrail, Sequence: 3, Digest: standInDigest(3), StampedAt: "2026-10-07T13:29:07Z", ExistedBy: "2026-10-07T13:29:07Z", Policy: "1.3.6.1.4.1.99999.1"}},
+		{"stamped already", 0, alreadyStamped(handoverTrail, 3), stampRun{Status: stampAlready, Trail: handoverTrail, Sequence: 3, Digest: standInDigest(3)}},
 		{"unreachable", 4, stampUnreachable, stampRun{Status: stampRefused, Diagnostics: []runtimeDiagnostic{{"JPS-AUDIT-STAMP-UNREACHABLE", "the time-stamping authority could not be asked, or did not answer: the request was not answered. Nothing was written, and the trail and the decisions in it are as they were; asking again stamps the same checkpoint."}}}},
 		{"a stamp with a failed exit", 1, stampedAnswer(handoverTrail, 3), stampRun{Status: stampProblem, Problem: stampingUndocumented}},
 		{"a refusal with exit 0", 0, stampUnreachable, stampRun{Status: stampProblem, Problem: stampingUndocumented}},
@@ -1441,7 +1589,7 @@ func TestAStampAnswerIsReadAsDocumented(t *testing.T) {
 }
 
 func sameRun(a, b stampRun) bool {
-	return a.Status == b.Status && a.Trail == b.Trail && a.Sequence == b.Sequence && a.StampedAt == b.StampedAt && a.ExistedBy == b.ExistedBy &&
+	return a.Status == b.Status && a.Trail == b.Trail && a.Sequence == b.Sequence && a.Digest == b.Digest && a.StampedAt == b.StampedAt && a.ExistedBy == b.ExistedBy &&
 		a.Policy == b.Policy && a.Problem == b.Problem && slices.Equal(a.Diagnostics, b.Diagnostics)
 }
 
