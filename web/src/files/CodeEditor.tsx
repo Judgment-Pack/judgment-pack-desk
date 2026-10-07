@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useImperativeHandle, useRef, type Ref } from 'react'
-import { Annotation, Compartment, EditorState, Text } from '@codemirror/state'
+import { Annotation, Compartment, EditorState } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, drawSelection, highlightActiveLine } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { bracketMatching, codeFolding, foldGutter, foldKeymap, indentOnInput, syntaxHighlighting, HighlightStyle } from '@codemirror/language'
@@ -79,7 +79,16 @@ export default function CodeEditor(props:CodeEditorProps){
   view.current=editor
   return()=>{view.current=null;editor.destroy()}
  },[])
- useEffect(()=>{const editor=view.current;if(editor&&editor.state.sliceDoc()!==props.value)editor.dispatch({changes:{from:0,to:editor.state.doc.length,insert:Text.of(props.value.split(/\r\n|\n/))},effects:lineEnding.current.reconfigure(EditorState.lineSeparator.of(props.value.includes('\r\n')?'\r\n':'\n')),annotations:external.of(true)})},[props.value])
+ // A value from outside (Reload, Discard, Format, Undo format) keeps its exact
+ // bytes: the separator is chosen first, and the value is split on that
+ // separator only, so a lone LF in a CRLF file stays a lone LF when the next
+ // keystroke reads the document back.
+ useEffect(()=>{
+  const editor=view.current
+  if(!editor||editor.state.sliceDoc()===props.value)return
+  editor.dispatch({effects:lineEnding.current.reconfigure(EditorState.lineSeparator.of(props.value.includes('\r\n')?'\r\n':'\n')),annotations:external.of(true)})
+  editor.dispatch({changes:{from:0,to:editor.state.doc.length,insert:editor.state.toText(props.value)},annotations:external.of(true)})
+ },[props.value])
  useEffect(()=>{view.current?.dispatch({effects:wrapping.current.reconfigure(props.wrap?EditorView.lineWrapping:[])})},[props.wrap])
  useEffect(()=>{view.current?.dispatch({effects:description.current.reconfigure(EditorView.contentAttributes.of({'aria-label':msg('File contents'),tabindex:'0','aria-readonly':String(Boolean(props.readOnly)),id:props.id,...(props.describedBy?{'aria-describedby':props.describedBy}:{})}))})},[props.id,props.describedBy,locale,props.readOnly])
  useEffect(()=>{view.current?.dispatch({effects:access.current.reconfigure([EditorState.readOnly.of(Boolean(props.readOnly)),EditorView.editable.of(!props.readOnly)])})},[props.readOnly])

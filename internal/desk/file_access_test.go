@@ -178,3 +178,79 @@ func TestProjectFilesHoldTheRuntimesOutputsWithTheRuntime(t *testing.T) {
 		t.Fatalf("the pack is not editable: %d %v", status, body)
 	}
 }
+
+// Review round 1, finding 1. On a case-insensitive filesystem (APFS, NTFS)
+// every one of these names the lock or a record, so each is held whatever its
+// case, and a declared directory is matched whatever its case. Decided by
+// names alone (no file to compare), so it runs the same on Linux.
+func TestReadOnlyNamesAreComparedWithoutCase(t *testing.T) {
+	p := fileAccessPolicy{auditDir: "Records/Decisions"}
+	for name, want := range map[string]string{
+		"jpack.lock.json":                      "runtime-lock",
+		"JPACK.LOCK.JSON":                      "runtime-lock",
+		"Jpack.Lock.Json":                      "runtime-lock",
+		"AUDIT/evaluations.jsonl":              "audit-record",
+		"audit/Evaluations.JSONL":              "audit-record",
+		".Desk-Private/AUDIT/signatures.jsonl": "audit-record",
+		"Records/Decisions/stamps.jsonl":       "audit-record",
+		"records/decisions/STAMPS.jsonl":       "audit-record",
+		"notes/evaluations.jsonl":              "",
+		"packs/jpack.lock.json":                "",
+		"audit/notes.jsonl":                    "",
+		"records/evaluations.jsonl":            "",
+	} {
+		if got := p.readOnlyReason(name, nil); got != want {
+			t.Errorf("%s: %q, want %q", name, got, want)
+		}
+	}
+}
+
+// Through the API: a lock or a record cannot be created under another case,
+// and a directory declared as `Records` holds the records in `records`.
+func TestProjectFilesRefuseTheLockAndRecordsUnderAnotherCase(t *testing.T) {
+	_, ts, project := filesServer(t)
+	for _, name := range []string{"JPACK.LOCK.JSON", "AUDIT/Evaluations.jsonl", "audit/STAMPS.jsonl"} {
+		if status, body := putJSON(t, ts, WriteRequest{Path: name, Content: "{}", CreateParents: true}); status != http.StatusForbidden || body["code"] != CodeForbidden {
+			t.Fatalf("create %s: %d %v", name, status, body)
+		}
+	}
+	writeProjectFile(t, project, "jpack.json", `{"configVersion":"6","audit":{"dir":"Records"},"packs":{}}`)
+	abs := writeProjectFile(t, project, "records/evaluations.jsonl", "{}\n")
+	status, body := putJSON(t, ts, WriteRequest{Path: "records/evaluations.jsonl", Content: "changed", BaseSHA256: digestOf([]byte("{}\n"))})
+	if status != http.StatusForbidden || body["code"] != CodeForbidden {
+		t.Fatalf("write to the declared directory under another case: %d %v", status, body)
+	}
+	if data, err := os.ReadFile(abs); err != nil || string(data) != "{}\n" {
+		t.Fatalf("protected bytes changed: %q %v", data, err)
+	}
+}
+
+// A file that is the record, reached by another path (here a hard link, the
+// one other spelling Linux has), is the record: compared by identity, it is
+// listed, read and refused as one.
+func TestProjectFilesHoldTheRecordUnderAnyPathThatReachesIt(t *testing.T) {
+	_, ts, project := filesServer(t)
+	writeProjectFile(t, project, "jpack.json", `{"configVersion":"6","audit":{"dir":"records/decisions"},"packs":{}}`)
+	record := writeProjectFile(t, project, "records/decisions/evaluations.jsonl", "{}\n")
+	lock := writeProjectFile(t, project, "jpack.lock.json", "{}\n")
+	if err := os.MkdirAll(filepath.Join(project, "notes"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for alias, target := range map[string]string{"notes/held.jsonl": record, "notes/lock-copy.json": lock} {
+		if err := os.Link(target, filepath.Join(project, filepath.FromSlash(alias))); err != nil {
+			t.Skipf("no hard links here: %v", err)
+		}
+	}
+	for alias, reason := range map[string]string{"notes/held.jsonl": "audit-record", "notes/lock-copy.json": "runtime-lock"} {
+		status, body := getJSON(t, ts, "/api/file?path="+url.QueryEscape(alias))
+		if status != http.StatusOK || body["readOnlyReason"] != reason {
+			t.Fatalf("read %s: %d %v", alias, status, body["readOnlyReason"])
+		}
+		if status, body = putJSON(t, ts, WriteRequest{Path: alias, Content: "changed", BaseSHA256: digestOf([]byte("{}\n"))}); status != http.StatusForbidden {
+			t.Fatalf("write %s: %d %v", alias, status, body)
+		}
+	}
+	if data, err := os.ReadFile(record); err != nil || string(data) != "{}\n" {
+		t.Fatalf("the record changed: %q %v", data, err)
+	}
+}

@@ -5445,9 +5445,21 @@ read for any *other* reason is named in `partial` instead, so "too large" is
 never said about a permission error. Reads and writes are refused alike for every one of these: an API that
 reads and writes a path by different rules is one nobody can reason about.
 
-Otherwise it is the user's own files on the user's own machine, and this API is
-their hand, not a policy layer. It does not consult `jpack.json` and forms no
-opinion about what any file is.
+Otherwise it is the user's own files on the user's own machine, and this API
+edits them without judging their content, with one exception: what the runtime
+generates and what the filesystem forbids. `jpack.lock.json`; the audit records
+(`evaluations.jsonl`, `signatures.jsonl`, `stamps.jsonl`) in `audit/`,
+`.desk-private/audit/` or the audit directory `jpack.json` declares; and any file
+whose mode has no write bit are listed and read with a `readOnlyReason`
+(`runtime-lock`, `audit-record`, `file-permissions`) and refused on write
+(`403`), with or without `override`. Names are compared without case, so
+`JPACK.LOCK.JSON` on a case-insensitive filesystem is the lock, and a file that
+exists is also compared by identity with the lock and the records at their own
+paths. To know the declared directory this API reads `jpack.json`; a
+`jpack.json` it cannot read or decode now holds every file with a record's name
+read-only, wherever it is, and only an absent one declares none. It forms no
+opinion about what any other file is. This is Project files' rule, not a
+protection of the records: anything else that can write the folder still can.
 
 **Writing requires an existing directory, unless the write asks otherwise.** A
 `PUT` whose parent directory is not there answers `404` naming it, rather than

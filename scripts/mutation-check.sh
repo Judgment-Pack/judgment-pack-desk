@@ -5592,18 +5592,20 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "search and files: a read-only file is written over" "$SFI" \
     '	if reason := s.fileAccessPolicy().readOnlyReason(clean, info); reason != "" {' \
     '	if reason := s.fileAccessPolicy().readOnlyReason(clean, info); false && reason != "" {'
+  # Review round 1: names are compared without case, and files by identity;
+  # these four rows follow their moved lines, each claim unchanged.
   mutate go "search and files: the runtime's lock is editable" "$SFA" \
-    '	if name == runtimeLockName {' \
+    '	if strings.EqualFold(name, runtimeLockName) {' \
     '	if false {'
   mutate go "search and files: records in the declared directory are editable" "$SFA" \
-    'p.auditDir != "" && dir == p.auditDir {' \
-    'p.auditDir != "" && false {'
+    '	return p.auditDir != "" && strings.EqualFold(dir, p.auditDir)' \
+    '	return false'
   mutate go "search and files: a configuration that could not be read is taken to declare nothing" "$SFA" \
-    '		if codeOf(err) == CodeNotFound {' \
-    '		if err != nil {'
+    '	case err != nil && codeOf(err) != CodeNotFound:' \
+    '	case false:'
   mutate go "search and files: a file's read-only mode is not held" "$SFA" \
-    '	if info != nil && info.Mode().Perm()&0o222 == 0 {' \
-    '	if false && info != nil {'
+    '		if info.Mode().Perm()&0o222 == 0 {' \
+    '		if false {'
   mutate go "search and files: every source is given search's longer envelope" "$SLP" \
     '		if source.ID == "web-search" {' \
     '		if true {'
@@ -5616,6 +5618,31 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "search and files: any source is given search's envelope" "$SRR" \
     'request.Source == "web-search" {' \
     'request.Source != "" {'
+  # Review round 1, findings 1 and 3.
+  mutate go "search and files: the lock's name is compared by its case" "$SFA" \
+    '	if strings.EqualFold(name, runtimeLockName) {' \
+    '	if name == runtimeLockName {'
+  mutate go "search and files: a record's name is compared by its case" "$SFA" \
+    '		if strings.EqualFold(name, record) {' \
+    '		if name == record {'
+  mutate go "search and files: the default audit directories are compared by their case" "$SFA" \
+    '		if strings.EqualFold(dir, held) {' \
+    '		if dir == held {'
+  mutate go "search and files: the declared directory is compared by its case" "$SFA" \
+    '	return p.auditDir != "" && strings.EqualFold(dir, p.auditDir)' \
+    '	return p.auditDir != "" && dir == p.auditDir'
+  mutate go "search and files: a file that is the record by another path is written" "$SFA" \
+    '			if os.SameFile(info, held.info) {' \
+    '			if false {'
+  mutate go "search and files: the declared directory's records are not compared by identity" "$SFA" \
+    '		dirs = append(dirs, declared)' \
+    '		_ = declared'
+  mutate go "search and files: the relay's search envelope is decided as if no gateway were managed" "$SRR" \
+    'researchRequestTiming(gateway.managedLocal, suffix, body)' \
+    'researchRequestTiming(false, suffix, body)'
+  mutate go "search and files: a request's deadline is counted from after its body is read" "$SRR" \
+    '	deadline = start.Add(budget)' \
+    '	deadline = time.Now().Add(budget)'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -13242,8 +13269,8 @@ export function assistantTransport(id: string): Transport {
     't.maxSeconds>120' \
     't.maxSeconds>1200'
   mutate web "search and files: a connection's timeout is not held to the advertised bounds" "$SCN" \
-    'c.timeoutSeconds>(v.timeout?.maxSeconds??120)' \
-    'c.timeoutSeconds>(120)'
+    'c.timeoutSeconds<=(v.timeout?.maxSeconds??120)' \
+    'c.timeoutSeconds<=(120)'
   mutate web "search and files: a timeout past its bounds is sent" "$SWS" \
     '(!Number.isSafeInteger(form.timeoutSeconds)||form.timeoutSeconds!<timeout.minSeconds||form.timeoutSeconds!>timeout.maxSeconds)' \
     '(!Number.isSafeInteger(form.timeoutSeconds)&&form.timeoutSeconds!<timeout.minSeconds&&form.timeoutSeconds!>timeout.maxSeconds)'
@@ -13274,6 +13301,19 @@ export function assistantTransport(id: string): Transport {
   mutate web "search and files: a read-only file opens in an editable editor" "$SAV" \
     'readOnly={readOnly} describedBy=' \
     'readOnly={false} describedBy='
+  # Review round 1, findings 2, 4 and 5.
+  mutate web "search and files: a value from outside has every line ending made the file's" web/src/files/CodeEditor.tsx \
+    'insert:editor.state.toText(props.value)' \
+    'insert:props.value.split(/\r\n|\n/).join(editor.state.lineBreak)'
+  mutate web "search and files: Ctrl/⌘ S saves a read-only file" "$SAV" \
+    '    if (readOnly || buffer === undefined || base === undefined) return' \
+    '    if (buffer === undefined || base === undefined) return'
+  mutate web "search and files: one connection's timeout refuses the whole status" "$SCN" \
+    '  return {...kept,timeoutRefused:true as const}' \
+    "  if(kept)throw new Error('Invalid search timeout');return {...kept,timeoutRefused:true as const}"
+  mutate web "search and files: a stored default timeout is saved as the default's value" "$SWS" \
+    'timeoutSeconds:original?.timeoutSeconds??0' \
+    'timeoutSeconds:original?.timeoutSeconds||timeout.defaultSeconds'
 fi
 
 restore

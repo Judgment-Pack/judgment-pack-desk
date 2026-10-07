@@ -58,14 +58,21 @@ const (
 )
 
 var (
-	// researchDeadline is the overall bound on one relayed request. A gateway
-	// gives its source thirty seconds and then canonicalizes and signs what
-	// came back; a reader service's answer to a long PDF is megabytes. Vars,
-	// not consts, so a test can show the bounds apply.
+	// researchDeadline is the overall bound on one relayed request, counted
+	// from its arrival, the body's read included. A gateway gives its source
+	// thirty seconds and then canonicalizes and signs what came back; a reader
+	// service's answer to a long PDF is megabytes. Vars, not consts, so a test
+	// can show the bounds apply.
 	researchDeadline = 90 * time.Second
 	// researchIdle is the bound between two bytes of the answer, and on the
 	// wait for its first one.
 	researchIdle = 60 * time.Second
+	// researchSearchDeadline and researchSearchIdle replace the two above for
+	// one request only: a managed local gateway's acquire from `web-search`,
+	// whose source may be given up to 130 seconds (local_gateway_plan.go).
+	// Counted from the same arrival.
+	researchSearchDeadline = 140 * time.Second
+	researchSearchIdle     = 135 * time.Second
 )
 
 // researchRoutes is the closed list: the suffix the page names, and the one
@@ -242,7 +249,10 @@ func (s *Server) handleResearchRelay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deadline := time.Now().Add(researchDeadline)
+	// The start is the request's arrival: the body's read counts against the
+	// bound, whichever bound the body then selects.
+	start := time.Now()
+	deadline := start.Add(researchDeadline)
 	controller := http.NewResponseController(w)
 
 	// The whole body first, bounded, so a request this desk refuses is one the
@@ -262,7 +272,7 @@ func (s *Server) handleResearchRelay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	budget, idle := researchRequestTiming(gateway.managedLocal, suffix, body)
-	deadline = time.Now().Add(budget)
+	deadline = start.Add(budget)
 	ctx, cancel := context.WithDeadline(r.Context(), deadline)
 	defer cancel()
 	r = r.WithContext(ctx)
@@ -335,7 +345,7 @@ func researchRequestTiming(local bool, suffix string, body []byte) (time.Duratio
 			Source string `json:"source"`
 		}
 		if json.Unmarshal(body, &request) == nil && request.Source == "web-search" {
-			return 140 * time.Second, 135 * time.Second
+			return researchSearchDeadline, researchSearchIdle
 		}
 	}
 	return researchDeadline, researchIdle

@@ -9,7 +9,8 @@ import { AuthorView } from './AuthorView'
 import type { CodeEditorProps } from '../files/CodeEditor'
 // Save/conflict tests exercise the real file buffer and wire API. The native
 // editor's selection, layout and keyboard behavior are checked in Chromium.
-vi.mock('../files/CodeEditor',()=>({default:({id,value,readOnly,onChange,onFormat}:CodeEditorProps)=><textarea id={id} aria-label="File contents" readOnly={readOnly} value={value} onChange={event=>onChange(event.target.value)} onKeyDown={event=>{if(event.altKey&&event.shiftKey&&event.code==='KeyF'){event.preventDefault();onFormat()}}}/>}))
+// The stand-in keeps the editor's two keys: Alt+Shift+F formats, Ctrl/⌘ S saves.
+vi.mock('../files/CodeEditor',()=>({default:({id,value,readOnly,onChange,onFormat,onSave}:CodeEditorProps)=><textarea id={id} aria-label="File contents" readOnly={readOnly} value={value} onChange={event=>onChange(event.target.value)} onKeyDown={event=>{if(event.altKey&&event.shiftKey&&event.code==='KeyF'){event.preventDefault();onFormat()}if((event.ctrlKey||event.metaKey)&&event.key==='s'){event.preventDefault();onSave()}}}/>}))
 function fileAction(name:string){
  if(!screen.queryByRole('menu'))fireEvent.keyDown(screen.getByRole('button',{name:'File actions'}),{key:'ArrowDown'})
  return screen.getByRole('menuitem',{name})
@@ -1112,4 +1113,33 @@ it('opens a file the desk reports read-only without a way to save it', async () 
   expect(screen.queryByRole('button', { name: 'Save' })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Format JSON' })).toBeNull()
   expect(calls.some(call => call.method === 'PUT')).toBe(false)
+})
+
+// Review round 1, finding 4: Ctrl/⌘ S reaches save() without the Save button,
+// so save() itself refuses a read-only file. The first half shows the key
+// saves an ordinary file, so the second half's silence is the guard's.
+it('saves with Ctrl/⌘ S, and never a file the desk reports read-only', async () => {
+  const lock = '{"lockVersion":"1"}\n'
+  const calls = chassis({
+    files: () => ({ status: 200, body: { root: '/project', files: [...LISTING.files, { path: 'jpack.lock.json', bytes: lock.length, sha256: 'e'.repeat(64), readOnlyReason: 'runtime-lock' }] } }),
+    file: (url) => url.includes('jpack.lock.json')
+      ? { status: 200, body: { path: 'jpack.lock.json', bytes: lock.length, sha256: 'e'.repeat(64), content: lock, readOnlyReason: 'runtime-lock' } }
+      : { status: 200, body: READ },
+    write: (body) => ({ status: 200, body: { path: body.path, bytes: String(body.content).length, sha256: EDITED_SHA, content: body.content } })
+  })
+  render()
+  const box = await openTheFile()
+  fireEvent.change(box, { target: { value: EDITED } })
+  fireEvent.keyDown(box, { key: 's', ctrlKey: true })
+  await screen.findByText(/Saved, and verified/)
+  expect(calls.filter(call => call.method === 'PUT').map(call => call.body?.path)).toEqual(['packs/vendor-onboarding.pack.json'])
+
+  fireEvent.click(await screen.findByRole('button', { name: 'jpack.lock.json' }))
+  await waitFor(() => expect((screen.getByLabelText('File contents') as HTMLTextAreaElement).value).toBe(lock))
+  const editor = screen.getByLabelText('File contents') as HTMLTextAreaElement
+  fireEvent.change(editor, { target: { value: '{}\n' } })
+  fireEvent.keyDown(editor, { key: 's', metaKey: true })
+  fireEvent.keyDown(editor, { key: 's', ctrlKey: true })
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+  expect(calls.filter(call => call.method === 'PUT')).toHaveLength(1)
 })

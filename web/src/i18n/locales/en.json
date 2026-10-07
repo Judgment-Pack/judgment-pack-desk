@@ -3981,5 +3981,6 @@
   "View search details": "View search details",
   "View {{provider}} details": "View {{provider}} details",
   "Whole word": "Whole word",
-  "{{matches}} of {{total}} files": "{{matches}} of {{total}} files"
+  "{{matches}} of {{total}} files": "{{matches}} of {{total}} files",
+  "The saved timeout is outside the range this gateway supports. Saving sets the value shown.": "The saved timeout is outside the range this gateway supports. Saving sets the value shown."
 }

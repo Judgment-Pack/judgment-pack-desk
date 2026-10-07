@@ -45,7 +45,7 @@ export function WebSearchSettings(){
 }
 function SearchEditor({original,providers,timeout,onClose,registerClose}:{original:SearchConnection|null;providers:SearchProvider[];timeout?:SearchTimeout;onClose:()=>void;registerClose:(close:()=>void)=>void}){
  const client=useQueryClient(),confirm=useConfirmDiscard(),id=useId()
- const initial={id:original?.id??`search-${crypto.randomUUID().slice(0,8)}`,revision:original?.revision??'',name:original?.name??'',provider:original?.provider??providers[0]?.id??'',project:original?.project??'',location:original?.location??'global',model:original?.model??'gemini-2.5-flash',dailyLimit:original?.dailyLimit??100,...(timeout?{timeoutSeconds:original?.timeoutSeconds||timeout.defaultSeconds}:{}),credential:''}
+ const initial={id:original?.id??`search-${crypto.randomUUID().slice(0,8)}`,revision:original?.revision??'',name:original?.name??'',provider:original?.provider??providers[0]?.id??'',project:original?.project??'',location:original?.location??'global',model:original?.model??'gemini-2.5-flash',dailyLimit:original?.dailyLimit??100,...(timeout?{timeoutSeconds:original?.timeoutSeconds??0}:{}),credential:''}
  const [form,setForm]=useState(initial),[baseline]=useState(initial),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[removing,setRemoving]=useState(false),[typed,setTyped]=useState('')
  const dirty=JSON.stringify(form)!==JSON.stringify(baseline)
  const clearDirty=useDirtyGuard(dirty,msg('Leaving will discard unsaved changes in the open editors.'),{busy,shouldBlock:()=>true})
@@ -56,7 +56,7 @@ function SearchEditor({original,providers,timeout,onClose,registerClose}:{origin
  async function act(action:'save'|'test'|'remove'){
   if(busy)return
   // The gateway refuses a timeout outside the bounds it advertised; refuse it here first, so nothing is sent.
-  if(action==='save'&&timeout&&(!Number.isSafeInteger(form.timeoutSeconds)||form.timeoutSeconds!<timeout.minSeconds||form.timeoutSeconds!>timeout.maxSeconds)){setError(msg('Choose a search timeout from {{min}} to {{max}} seconds.',{min:timeout.minSeconds,max:timeout.maxSeconds}));return}
+  if(action==='save'&&timeout&&form.timeoutSeconds!==0&&(!Number.isSafeInteger(form.timeoutSeconds)||form.timeoutSeconds!<timeout.minSeconds||form.timeoutSeconds!>timeout.maxSeconds)){setError(msg('Choose a search timeout from {{min}} to {{max}} seconds.',{min:timeout.minSeconds,max:timeout.maxSeconds}));return}
   setBusy(true);setError('');setNotice('')
   try{
    if(action==='save'){
@@ -86,7 +86,7 @@ function SearchEditor({original,providers,timeout,onClose,registerClose}:{origin
    {provider&&<a href={provider.docs} target="_blank" rel="noreferrer">{msg('Setup instructions')}</a>}
    <label className={styles.field}>{msg('Daily request limit')}<Input type="number" required min={1} max={10000} value={form.dailyLimit} disabled={busy} onChange={e=>update('dailyLimit',Number(e.target.value))}/></label>
    <p className={styles.caption}>{msg('Testing makes one provider request and counts toward this limit. Limits reset at midnight UTC.')}</p>
-   {timeout&&<Disclosure title={msg('Advanced settings')}><label className={styles.field}>{msg('Search timeout (seconds)')}<Input type="number" required min={timeout.minSeconds} max={timeout.maxSeconds} step={1} value={form.timeoutSeconds??timeout.defaultSeconds} disabled={busy} onChange={e=>update('timeoutSeconds',Number(e.target.value))}/></label><p className={styles.caption}>{msg('Maximum wait for one search, including authentication. Default: {{seconds}} seconds.',{seconds:timeout.defaultSeconds})}</p></Disclosure>}
+   {timeout&&<Disclosure title={msg('Advanced settings')}><label className={styles.field}>{msg('Search timeout (seconds)')}<Input type="number" required min={timeout.minSeconds} max={timeout.maxSeconds} step={1} value={form.timeoutSeconds||timeout.defaultSeconds} disabled={busy} onChange={e=>update('timeoutSeconds',Number(e.target.value))}/></label><p className={styles.caption}>{msg('Maximum wait for one search, including authentication. Default: {{seconds}} seconds.',{seconds:timeout.defaultSeconds})}</p>{original?.timeoutRefused&&<p className={styles.caption} role="status">{msg('The saved timeout is outside the range this gateway supports. Saving sets the value shown.')}</p>}</Disclosure>}
    {error&&<p role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}
    <div className={styles.footer}>{original&&<Button variant="quiet" disabled={busy||dirty} onClick={()=>setRemoving(true)}>{msg('Remove connection')}</Button>}<Button disabled={busy||dirty||!form.revision} onClick={()=>void act('test')}>{msg('Test connection')}</Button><Button onClick={()=>void close()} disabled={busy}>{msg('Cancel')}</Button><Button type="submit" variant="primary" disabled={busy||!form.name.trim()||!dirty}>{busy?msg('Saving…'):msg('Save')}</Button></div>
   </form>
