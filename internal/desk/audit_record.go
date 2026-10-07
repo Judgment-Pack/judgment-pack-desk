@@ -160,6 +160,10 @@ type auditReport struct {
 	// English, passed through as it wrote them.
 	Establishes      []string `json:"establishes"`
 	DoesNotEstablish []string `json:"doesNotEstablish"`
+	// Trail is the trail's identity as the runtime read it, where it read
+	// one: a trail with no chained line has none. The page is not given it;
+	// the repair's token binds it (audit_repair.go).
+	Trail string `json:"-"`
 }
 
 // auditAnswer is what `GET /api/audit/verify` answers.
@@ -197,6 +201,10 @@ type auditAnswer struct {
 	// over, where it could not read its record of hand-overs, or tell which
 	// trail is current: never the same as keeping none.
 	HandoverProblem string `json:"handoverProblem,omitempty"`
+	// Repair is the offer of `audit repair`, with the token that confirms it,
+	// given only with a report that names the finding incomplete-last-line,
+	// on the decision record and nowhere else (audit_repair.go).
+	Repair *auditRepair `json:"repair,omitempty"`
 }
 
 // What the panel holds of the desk's keys.
@@ -651,6 +659,7 @@ func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, err
 	answer.Keys = &keys
 	answer.Signing = &signing
 	answer.Rotation = &rotation
+	answer.Repair = s.repairOffer(answer.Report)
 	answer.Expected = expect.count
 	answer.ExpectUnread = expect.unread
 	answer.HandoverProblem = expect.problem
@@ -887,6 +896,7 @@ type auditVerification struct {
 	Findings             []wireAuditFinding       `json:"findings"`
 	FindingsTotal        *int64                   `json:"findingsTotal"`
 	Signatures           *wireAuditSignatures     `json:"signatures"`
+	Trail                *string                  `json:"trail"`
 	Establishes          []string                 `json:"establishes"`
 	DoesNotEstablish     []string                 `json:"doesNotEstablish"`
 }
@@ -1006,6 +1016,9 @@ func (got auditVerification) report() (*auditReport, bool) {
 		Discontinuities: []auditDiscontinuity{}, DiscontinuitiesTotal: p.count(got.DiscontinuitiesTotal),
 		Findings: []auditFinding{}, FindingsTotal: p.count(got.FindingsTotal),
 		Establishes: got.Establishes, DoesNotEstablish: got.DoesNotEstablish,
+	}
+	if got.Trail != nil {
+		report.Trail = *got.Trail
 	}
 	for _, segment := range got.Segments {
 		report.Segments = append(report.Segments, auditSegment{FirstLine: p.count(segment.FirstLine), LastLine: p.count(segment.LastLine)})

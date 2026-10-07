@@ -4961,6 +4961,107 @@ func (b *cappedBuffer) exceeded() bool {'
 		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, noRunChainedWords)' \
     '	case head == nil && chain.jobs:
 		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, noChainedWords)'
+  # ADR-0010 row 6, the repair offer (audit_repair.go): offered only with the
+  # finding incomplete-last-line; the token bound to this desk and to what the
+  # panel showed; the guards on the confirmation; one repair at a time, not
+  # stopped by a request that goes away, its lock released; the runtime's
+  # answer read under outputVersion "2"; and no path in anything said.
+  RPR=internal/desk/audit_repair.go
+  RPA=internal/desk/audit_record.go
+  mutate go 'repair: offered without the finding' "$RPR" \
+    '		if finding.Name == incompleteLastLine {' \
+    '		if finding.Name != "" {'
+  mutate go 'repair: the decision record offers no repair' "$RPA" \
+    '	answer.Repair = s.repairOffer(answer.Report)
+' \
+    ''
+  mutate go 'repair: the token is not the desk'"'"'s own' "$RPR" \
+    '	mac := hmac.New(sha256.New, s.reviewKey[:])' \
+    '	mac := hmac.New(sha256.New, []byte("one key for every desk"))'
+  mutate go 'repair: the token binds no trail identity' "$RPR" \
+    '		Trail:   trail,' \
+    '		Trail:   "",'
+  mutate go 'repair: the token binds no line' "$RPR" \
+    '		Line:    line,' \
+    '		Line:    0,'
+  mutate go 'repair: the token binds no size' "$RPR" \
+    '		Bytes:   size,' \
+    '		Bytes:   0,'
+  mutate go 'repair: the token is not checked' "$RPR" \
+    '	if offer == nil || !hmac.Equal([]byte(offer.Token), []byte(token)) {' \
+    '	if offer == nil {'
+  mutate go 'repair: a cross-site request repairs' "$RPR" \
+    '	if r.Header.Get("Sec-Fetch-Site") == "cross-site" {' \
+    '	if false {'
+  mutate go 'repair: a confirmation need not be JSON' "$RPR" \
+    '	if err != nil || media != "application/json" {' \
+    '	if err != nil && media != "application/json" {'
+  mutate go 'repair: a confirmation past its bound is read' "$RPR" \
+    '	repairConfirmLimit = 4 << 10' \
+    '	repairConfirmLimit = 4 << 20'
+  mutate go 'repair: a confirmation with a short token runs' "$RPR" \
+    'len(request.Token) != 64 {' \
+    'len(request.Token) > 64 {'
+  mutate go 'repair: a runtime that does not read 6 is asked' "$RPR" \
+    '	if !slices.Contains(schema.supported, auditConfigVersion) {' \
+    '	if false {'
+  mutate go 'repair: a project that keeps no trail is checked' "$RPR" \
+    '	} else if !declared {' \
+    '	} else if !declared && false {'
+  mutate go 'repair: a refusal to check again is taken for the trail as shown' "$RPR" \
+    '	case now.State == auditStateUnverified:' \
+    '	case false:'
+  mutate go 'repair: a request that goes away stops the repair' "$RPR" \
+    'runRuntime(context.WithoutCancel(ctx), s.cfg.JpackBin, project, "audit", "repair"' \
+    'runRuntime(ctx, s.cfg.JpackBin, project, "audit", "repair"'
+  mutate go 'repair: two confirmations at once run two repairs' "$RPR" \
+    '		s.repairMu.Lock()
+		defer s.repairMu.Unlock()
+' \
+    ''
+  mutate go 'repair: the lock is kept after the repair' "$RPR" \
+    '		defer s.repairMu.Unlock()
+' \
+    ''
+  mutate go 'repair: the runtime'"'"'s refusal is passed on with its path' "$RPR" \
+    'Message: clean(diagnostic.Message)}' \
+    'Message: diagnostic.Message}'
+  mutate go 'repair: Desk'"'"'s own sentence is passed on with its path' "$RPR" \
+    '	message := clean(failure.message)' \
+    '	message := failure.message'
+  mutate go 'repair: the discontinuity'"'"'s reason is passed on with its path' "$RPR" \
+    '	shown.Discontinuity.Reason = clean(answer.Discontinuity.Reason)' \
+    '	shown.Discontinuity.Reason = answer.Discontinuity.Reason'
+  mutate go 'repair: an answer of another outputVersion is read' "$RPR" \
+    'json.Unmarshal(out, &got) != nil || got.OutputVersion != repairOutputVersion {' \
+    'json.Unmarshal(out, &got) != nil {'
+  mutate go 'repair: an answer of another command is read as a repair' "$RPR" \
+    'got.Command == auditRepairCommand && ' \
+    ''
+  mutate go 'repair: an answer of another status is read as a repair' "$RPR" \
+    'got.Status == "repaired" && ' \
+    ''
+  mutate go 'repair: a repair with a failed exit is read as one' "$RPR" \
+    '	case code == 0 && got.Command' \
+    '	case got.Command'
+  mutate go 'repair: a refusal with no words is passed on' "$RPR" \
+    '(auditVerification{Diagnostics: got.Diagnostics}).said():' \
+    'true:'
+  mutate go 'repair: a discontinuity with a member missing is read' "$RPR" \
+    '	if p.missing || read.DamagedLine < 1' \
+    '	if read.DamagedLine < 1'
+  mutate go 'repair: a discontinuity naming no damaged line is read' "$RPR" \
+    'read.DamagedLine < 1 || ' \
+    ''
+  mutate go 'repair: a discontinuity at or before its damaged line is read' "$RPR" \
+    'read.Line <= read.DamagedLine || ' \
+    ''
+  mutate go 'repair: a discontinuity of no bytes is read' "$RPR" \
+    'read.Bytes < 1 || ' \
+    ''
+  mutate go 'repair: a digest of another form is read' "$RPR" \
+    '!recordForm.MatchString(read.Digest)' \
+    'false'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -11708,8 +11809,8 @@ export function assistantTransport(id: string): Transport {
     "if (reconnecting) await queryClient.invalidateQueries({ predicate: followsTheProject })" \
     "if (reconnecting) await queryClient.invalidateQueries()"
   mutate web "record: asking again runs nothing" "$DR" \
-    "  const again = <div><Button onClick={() => { setRotated(undefined); void query.refetch() }}" \
-    "  const again = <div><Button onClick={() => { setRotated(undefined) }}"
+    "  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); void query.refetch() }}" \
+    "  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined) }}"
   mutate web "record: an older runtime's line claims signing" "$DR" \
     "            : record?.state === 'older-runtime' ? <p>{msg(" \
     "            : record?.state === 'older-runtime' ? <p>{msg('Signed through record {{sequence}}', { sequence: 0 })} {msg("
@@ -11999,8 +12100,8 @@ export function assistantTransport(id: string): Transport {
     "onOutcome={outcome => { setRotated(outcome); void query.refetch() }}" \
     "onOutcome={outcome => { setRotated(outcome) }}"
   mutate web "rotation page: an outcome outlives a later check" "$DR" \
-    "onClick={() => { setRotated(undefined); void query.refetch() }}" \
-    "onClick={() => { void query.refetch() }}"
+    "onClick={() => { setRotated(undefined); setRepaired(undefined); void query.refetch() }}" \
+    "onClick={() => { setRepaired(undefined); void query.refetch() }}"
   mutate web "rotation page: an outcome outlives opening the panel again" "$DR" \
     "  useEffect(() => { if (visible) setRotated(undefined) }, [visible])" \
     "  useEffect(() => { if (visible) void 0 }, [visible])"
@@ -12306,6 +12407,63 @@ export function assistantTransport(id: string): Transport {
   mutate web "jobs record page: an error leaves an earlier report shown" "$JRP" \
     '        : query.error ? <p role="alert">{systemMessage(query.error.message)}</p>' \
     '        : query.error && !record ? <p role="alert">{systemMessage(query.error.message)}</p>'
+  # ADR-0010 row 6, the repair offer, on the page (RepairTrail.tsx) and in the
+  # client: the confirmation before anything runs, its three sentences; the
+  # record checked again after a repair; what a repair answered, and when it
+  # is dropped; and what the client reads as an offer, a repair or a refusal.
+  RTP=web/src/audit/RepairTrail.tsx
+  RDR=web/src/audit/DecisionRecord.tsx
+  RAC=web/src/audit/client.ts
+  mutate web 'repair page: the opener runs the repair before it is confirmed' "$RTP" \
+    '<Button ref={opener} onClick={() => setOpen(true)}>{msg('"'"'Repair the trail'"'"')}</Button>' \
+    '<Button ref={opener} onClick={() => void confirm()}>{msg('"'"'Repair the trail'"'"')}</Button>'
+  mutate web 'repair page: a sentence of the confirmation is left out' "$RTP" \
+    '        <li>{msg('"'"'It never restores the lost line.'"'"')}</li>
+' \
+    ''
+  mutate web 'repair page: the section is shown where nothing is offered' "$RTP" \
+    '  if (!repair && !outcome) return null' \
+    '  if (false) return null'
+  mutate web 'repair page: the repair'"'"'s sentence is not said' "$RTP" \
+    '{outcome?.kind === '"'"'repaired'"'"' && <p role="status">' \
+    '{false && <p role="status">'
+  mutate web 'repair page: a refusal is not said' "$RTP" \
+    '{outcome?.kind === '"'"'failed'"'"' && <>' \
+    '{false && <>'
+  mutate web 'repair page: the runtime'"'"'s words are not shown' "$RTP" \
+    '{outcome.diagnostics.length > 0 && <ul' \
+    '{false && <ul'
+  mutate web 'repair page: the decision record is not checked again after a repair' "$RDR" \
+    'onOutcome={outcome => { setRepaired(outcome); void query.refetch() }} />' \
+    'onOutcome={outcome => { setRepaired(outcome) }} />'
+  mutate web 'repair page: an outcome outlives a later check' "$RDR" \
+    '{ setRotated(undefined); setRepaired(undefined); void query.refetch() }' \
+    '{ setRotated(undefined); void query.refetch() }'
+  mutate web 'repair page: an outcome outlives opening the panel again' "$RDR" \
+    '  useEffect(() => { if (visible) setRepaired(undefined) }, [visible])' \
+    '  useEffect(() => { if (visible && false) setRepaired(undefined) }, [visible])'
+  mutate web 'repair page: the outcome is not shown beside a refusal to check' "$RDR" \
+    '                  {repairSection()}
+' \
+    ''
+  mutate web 'repair client: an offer without a token is read' "$RAC" \
+    '  return object(value) && count(value.line) && value.line > 0 && hex(64)(value.token)' \
+    '  return object(value) && count(value.line) && value.line > 0'
+  mutate web 'repair client: the decision record'"'"'s offer is not checked' "$RAC" \
+    '    case '"'"'report'"'"': return isAuditReport(value.report) && optional(value.repair, isAuditRepair)' \
+    '    case '"'"'report'"'"': return isAuditReport(value.report)'
+  mutate web 'repair client: a refusal to check carries an offer' "$RAC" \
+    'value.diagnostics.length > 0 && value.repair === undefined' \
+    'value.diagnostics.length > 0'
+  mutate web 'repair client: an answer that is not a repair is read as one' "$RAC" \
+    'value.state !== '"'"'repaired'"'"' || ' \
+    ''
+  mutate web 'repair client: a discontinuity before its damaged line is read' "$RAC" \
+    ' || value.discontinuity.line <= value.discontinuity.damagedLine) {' \
+    ') {'
+  mutate web 'repair client: the runtime'"'"'s words are dropped from a refusal' "$RAC" \
+    'list(body.diagnostics, isDiagnostic) ? body.diagnostics : []' \
+    '[]'
 fi
 
 restore

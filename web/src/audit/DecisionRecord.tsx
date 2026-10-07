@@ -15,7 +15,9 @@
  * the runtime's own sentence; and rotating the key, on the owner's word
  * (ADR-0010, section 1; `RotateSigningKey`); and the hand-over of
  * checkpoints to holders, with Desk's own record of it (ADR-0010, section 2;
- * `Handover`).
+ * `Handover`). Where the report names the finding `incomplete-last-line`,
+ * and only there, the repair, on the owner's word (ADR-0010, section 4;
+ * `RepairTrail`).
  *
  * It runs when the panel becomes visible and when the owner asks again: never
  * on a timer, on focus, on a reconnect or on a change to the project. The
@@ -34,9 +36,10 @@ import { msg, systemMessage, useLocale } from '../i18n'
 import { Button } from '../ui/Button'
 import { CodeBlock } from '../ui/CodeBlock'
 import { SettingsSection } from '../ui/SettingsSection'
-import { AUDIT_KEY, AuditUnavailable, readAuditRecord, type AuditCoverageState, type AuditKeys, type AuditReport, type AuditRotation, type AuditSigning } from './client'
+import { AUDIT_KEY, AuditUnavailable, readAuditRecord, type AuditCoverageState, type AuditKeys, type AuditRepair, type AuditReport, type AuditRotation, type AuditSigning } from './client'
 import styles from './DecisionRecord.module.css'
 import { Handover, NO_HANDOVER, type HandoverState } from './Handover'
+import { RepairTrail, type RepairOutcome } from './RepairTrail'
 import { RotateSigningKey, type RotationOutcome } from './RotateSigningKey'
 import { TrailDownloads } from './TrailDownloads'
 
@@ -80,10 +83,17 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
   // runs; dropped when the panel is opened again.
   const [handover, setHandover] = useState<HandoverState>(NO_HANDOVER)
   useEffect(() => { if (visible) setHandover(NO_HANDOVER) }, [visible])
+  // What a repair answered, kept across the check run after it, as a
+  // rotation's is, and dropped when the owner checks again or opens the panel
+  // again.
+  const [repaired, setRepaired] = useState<RepairOutcome>()
+  useEffect(() => { if (visible) setRepaired(undefined) }, [visible])
+  const repairSection = (repair?: AuditRepair) => <RepairTrail repair={repair} outcome={repaired}
+    onOutcome={outcome => { setRepaired(outcome); void query.refetch() }} />
   const handoverSection = <Handover checkedAt={query.dataUpdatedAt} state={handover} onState={setHandover} onConfirmed={() => void query.refetch()} />
   const rotation = (keys?: AuditKeys, rotation?: AuditRotation) => <RotateSigningKey rotation={rotation} keyCount={keys?.state === 'kept' ? keys.public.length : 0}
     outcome={rotated} onOutcome={outcome => { setRotated(outcome); void query.refetch() }} />
-  const again = <div><Button onClick={() => { setRotated(undefined); void query.refetch() }}>{msg('Check again')}</Button></div>
+  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); void query.refetch() }}>{msg('Check again')}</Button></div>
   return <SettingsSection title={msg('Decision record')} description={msg('Jobs runs are recorded by the runner, not in this trail.')} variant="plain">
     <div className={styles.card} data-testid="decision-record">
       {query.isPending || query.isFetching ? <p role="status" className={styles.quiet}>{msg('Asking the runtime…')}</p>
@@ -95,6 +105,7 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
                   <p>{msg('The runtime did not check the trail.')}</p>
                   <ul className={styles.list} aria-label={msg('What the runtime said')}>{record.diagnostics.map((item, index) => <li key={index} lang="en"><code>{item.code}</code> {item.message}</li>)}</ul>
                   {record.handoverProblem && <p role="alert">{systemMessage(record.handoverProblem)}</p>}
+                  {repairSection()}
                   <SigningKey keys={record.keys} signing={record.signing} />
                   {rotation(record.keys, record.rotation)}
                   {handoverSection}
@@ -109,6 +120,7 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
                     {record.handoverProblem && <p role="alert">{systemMessage(record.handoverProblem)}</p>}
                     {record.expectUnread && <p role="alert">{msg('Desk could not read the checkpoints it keeps as handed over to {{holders}}, so the check ran without them.', { holders: record.expectUnread.join(', ') })}</p>}
                     <Report report={record.report} />
+                    {repairSection(record.repair)}
                     <SigningKey keys={record.keys} signing={record.signing} />
                     {rotation(record.keys, record.rotation)}
                     {handoverSection}

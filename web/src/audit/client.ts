@@ -18,6 +18,12 @@
  * as the panel showed it, or changes nothing (ADR-0010, section 1, "Rotating
  * it").
  *
+ * Where the report names the finding `incomplete-last-line`, and only there,
+ * the answer offers `jpack audit repair`, with the line it names and a token;
+ * `POST /api/audit/repair` sends the token back, and the desk runs the repair
+ * once, where the trail is still as the report read it, or runs nothing
+ * (ADR-0010, section 4, "Repair").
+ *
  * The hand-over (ADR-0010, section 2): `GET /api/audit/holders` lists the
  * holders the owner added and what Desk recorded as handed over to each,
  * against the trail as the runtime gives it now; `POST /api/audit/holders`
@@ -152,7 +158,7 @@ export type TrailFile = keyof typeof TRAIL_FILES
  */
 type HeldInputs = { expected?: number; expectUnread?: string[]; handoverProblem?: string }
 export type AuditRecord =
-  | ({ state: 'report'; runtime?: string; report: AuditReport; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation } & HeldInputs)
+  | ({ state: 'report'; runtime?: string; report: AuditReport; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation; repair?: AuditRepair } & HeldInputs)
   | ({ state: 'unverified'; runtime?: string; diagnostics: AuditDiagnostic[]; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation } & HeldInputs)
   | { state: 'older-runtime'; runtime?: string; floor: string }
   | { state: 'no-trail' }
@@ -237,8 +243,8 @@ export function isAuditRecord(value: unknown): value is AuditRecord {
     || !optional(value.keys, isAuditKeys) || !optional(value.signing, isAuditSigning) || !optional(value.rotation, isAuditRotation)
     || !optional(value.expected, count) || !optional(value.expectUnread, item => list(item, named)) || !optional(value.handoverProblem, named)) return false
   switch (value.state) {
-    case 'report': return isAuditReport(value.report)
-    case 'unverified': return list(value.diagnostics, isDiagnostic) && value.diagnostics.length > 0
+    case 'report': return isAuditReport(value.report) && optional(value.repair, isAuditRepair)
+    case 'unverified': return list(value.diagnostics, isDiagnostic) && value.diagnostics.length > 0 && value.repair === undefined
     case 'older-runtime': return text(value.floor)
     case 'no-trail': return true
   }
@@ -307,6 +313,67 @@ export async function rotateSigningKey(token: string): Promise<RotationResult> {
     throw new Error(msg('The key could not be rotated. Check the decision record again.'))
   }
   return value as RotationResult
+}
+
+/* The repair ---------------------------------------------------------------- */
+
+/**
+ * The decision record's offer of `jpack audit repair`: the incomplete line the
+ * runtime's report names, and the token that confirms the repair of the trail
+ * as that report read it.
+ */
+export type AuditRepair = { line: number; token: string }
+/** A repair made: the discontinuity record the runtime reports it wrote, by its own member names. */
+export type RepairResult = { state: 'repaired'; discontinuity: AuditDiscontinuity }
+/**
+ * Nothing was repaired, or Desk cannot say whether it was: Desk's sentence,
+ * and the runtime's own words, where it gave them, each as it said them.
+ */
+export class RepairRefused extends Error {
+  constructor(message: string, readonly diagnostics: AuditDiagnostic[] = []) { super(message); this.name = 'RepairRefused' }
+}
+
+/**
+ * The chassis's own sentences about a repair, as it says them, so that the
+ * page can show each in the owner's language (`systemMessage`). The runtime's
+ * words beside them are shown as it said them.
+ */
+export const REPAIR_REASONS = [
+  sourceMessage('The trail changed after the decision record showed it, so nothing was repaired. Check the decision record again.'),
+  sourceMessage('Nothing was repaired: this project\'s jpack.json declares no audit directory, so it keeps no trail.'),
+  sourceMessage('Nothing was repaired: the runtime did not check the trail again, so Desk could not tell that it is the trail the decision record showed. It said:'),
+  sourceMessage('The runtime did not report a repair. It said:'),
+  sourceMessage('The runtime\'s audit repair did not answer as documented, so Desk cannot say whether it repaired the trail. Check the decision record again: it shows what the trail holds now.'),
+  sourceMessage('The runtime\'s audit repair did not finish as asked: {{reason}}. Desk cannot say whether it repaired the trail. Check the decision record again: it shows what the trail holds now.'),
+  sourceMessage('Nothing was repaired: the runtime this Desk runs (jpack {{version}}) does not read configVersion 6 and has no audit repair. A runtime of {{floor}} or later has it.'),
+  sourceMessage('Nothing was repaired: {{reason}}.'),
+  sourceMessage('A cross-site request cannot repair this desk\'s trail.'),
+  sourceMessage('Confirm the repair with the token the decision record gave.')
+]
+
+/** The offer: a line the report names, and a token of 64 hexadecimal characters. */
+export function isAuditRepair(value: unknown): value is AuditRepair {
+  return object(value) && count(value.line) && value.line > 0 && hex(64)(value.token)
+}
+
+/**
+ * Repair this desk's trail, as the decision record the token names showed it.
+ * A refusal says why in Desk's words, with the runtime's beside them where it
+ * gave any.
+ */
+export async function repairTrail(token: string): Promise<RepairResult> {
+  const unread = msg('Desk could not read what the repair answered. The decision record, checked again, shows what the trail holds now.')
+  const response = await deskFetch('/api/audit/repair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) })
+  if (!response.ok) {
+    let body: { error?: unknown; diagnostics?: unknown } = {}
+    try { body = await response.json() as typeof body } catch { /* The status is still an answer. */ }
+    throw new RepairRefused(text(body.error) ? body.error : unread, list(body.diagnostics, isDiagnostic) ? body.diagnostics : [])
+  }
+  const value: unknown = await response.json()
+  if (!object(value) || value.state !== 'repaired' || !isDiscontinuity(value.discontinuity) || value.discontinuity.line <= value.discontinuity.damagedLine) {
+    throw new RepairRefused(unread)
+  }
+  return value as RepairResult
 }
 
 /* The hand-over ------------------------------------------------------------- */
