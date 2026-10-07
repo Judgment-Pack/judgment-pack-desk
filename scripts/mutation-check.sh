@@ -3829,7 +3829,7 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "upgrade key: the item is offered where the runtime reads no 6" "$SK" \
     '	if !slices.Contains(schema.supported, signedFromVersion) {
 		return notOffered(' \
-    '	if false {
+    '	if !slices.Contains(schema.supported, signedFromVersion) && false {
 		return notOffered('
   mutate go "upgrade key: the item is offered under an inherited JPACK_SIGNING_KEY" "$SK" \
     '	if s.inheritsSigningKey() {
@@ -3856,7 +3856,7 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "upgrade key: the item is offered over an audit member that is not an object" "$SK" \
     '		if err != nil {
 			return notOffered(keyNotOfferedAuditShape)' \
-    '		if false {
+    '		if err != nil && false {
 			return notOffered(keyNotOfferedAuditShape)'
   mutate go "upgrade key: the item is chosen for the owner" "$UP" \
     '	sign := r.URL.Query().Get("signingKey") == "true"' \
@@ -3929,7 +3929,7 @@ func (b *cappedBuffer) exceeded() bool {'
     '		if !handedOver {
 			unlock()
 			dir.Close()' \
-    '		if false {
+    '		if !handedOver && false {
 			unlock()
 			dir.Close()'
   mutate go "upgrade key: the startup project's key is kept under no name of its own" "$SK" \

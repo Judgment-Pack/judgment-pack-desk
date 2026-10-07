@@ -459,6 +459,7 @@ go	signing key: false left out of the desk-config answer	TestDeskConfigReportsAn
 go	signing key: the inherited key is not said	TestAnInheritedSigningKeyStaysWithTheStartupDesk
 go	signing key: the launch names the key's path	TestAnInheritedSigningKeyStaysWithTheStartupDesk
 go	signing key: the startup desk's commands drop it	TestAReviewOfAnUnreadableProjectKeepsTheSigningKeyOnlyOnTheStartupDesk,TestAnUpgradeConfirmationKeepsTheSigningKeyOnlyOnTheStartupDesk,TestThePanelsCommandsKeepTheSigningKeyOnlyOnTheStartupDesk,TestTheReviewCommandsKeepTheSigningKeyOnlyOnTheStartupDesk
+go	signing key: the startup desk's upgrade drops it	TestAnUpgradeConfirmationKeepsTheSigningKeyOnlyOnTheStartupDesk
 go	signing lock: a creation lets the lock go before its marker goes	TestTheLockIsHeldFromTheFirstLookToTheLastChange
 go	signing lock: a creation takes no lock	TestACreationWaitsForTheLockAndThenRefuses,TestTheLockIsHeldFromTheFirstLookToTheLastChange
 go	signing lock: a rotation takes no lock	TestARotationWaitsForTheLockAndThenRefuses,TestTheLockIsHeldFromTheFirstLookToTheLastChange
@@ -538,7 +539,49 @@ go	trail: the panel names no files	TestAHardLinkedFileIsRefused,TestThePanelName
 go	trail: the sidecar is read under its own lock	TestAWriterInTheMiddleOfAnAppendIsWaitedFor
 go	trail: the size is read after the lock is let go	TestTheSizeIsReadBeforeTheLockIsLetGo
 go	trail: the stamps are read under the trail's lock	TestAWriterInTheMiddleOfAnAppendIsWaitedFor
+go	upgrade key: a failed generation keeps the signing folder's lock	TestAFailedSigningUpgradeLeavesNoKeyAndNoChange,TestAStoppedSigningUpgradeIsSweptAtTheNextStart
+go	upgrade key: a failed upgrade leaves the key it made	TestAFailedSigningUpgradeLeavesNoKeyAndNoChange
+go	upgrade key: a jpack.json larger than Desk reads is offered	TestTheUpgradeWritesNoFileLargerThanDeskReads
+go	upgrade key: a jpack.json that cannot be read now names no key	TestAStoppedSigningUpgradeIsSweptAtTheNextStart
+go	upgrade key: a project at 6 is written at a lower version	TestChoosingTheSigningKeyWritesSixAndTheKeyTogether
+go	upgrade key: a project not put back loses the key jpack.json may name	TestAnUpgradeNotPutBackLeavesTheKeyForTheNextStart
+go	upgrade key: a refusal names a path	TestNoPathOfTheStartupKeyReachesThePage
+go	upgrade key: a signing folder held elsewhere is made in anyway	TestTheSigningUpgradeWaitsForTheSigningFolder
+go	upgrade key: another project's marker is the startup project's	TestAStoppedSigningUpgradeIsSweptAtTheNextStart
+go	upgrade key: jpack.json names a key that was not made	TestChoosingTheSigningKeyWritesSixAndTheKeyTogether
+go	upgrade key: no jpack.json is taken for one that cannot be read	TestAStoppedSigningUpgradeIsSweptAtTheNextStart
+go	upgrade key: rotation offered on the startup desk with no key	TestARotationIsMadeOnlyWhereItCanBe,TestTheDecisionRecordReadsTheStartupKeyAfterTheUpgrade
+go	upgrade key: rotation offered under an inherited key	TestAnInheritedKeyHoldsTheStartupKeyStill
+go	upgrade key: the configuration names no key	TestChoosingTheSigningKeyWritesSixAndTheKeyTogether
+go	upgrade key: the item is chosen for the owner	TestTheSigningItemIsShownOnlyWhereItCanBeKept
+go	upgrade key: the item is offered on a desk Desk made	TestTheSigningItemIsShownOnlyWhereItCanBeKept
+go	upgrade key: the item is offered over a chain turned off	TestTheSigningItemIsShownOnlyWhereItCanBeKept
+go	upgrade key: the item is offered over a key jpack.json names	TestTheSigningItemIsShownOnlyWhereItCanBeKept
+go	upgrade key: the item is offered over an audit member that is not an object	TestTheSigningItemIsShownOnlyWhereItCanBeKept
+go	upgrade key: the item is offered over something kept under the project's name	TestTheSigningItemIsShownOnlyWhereItCanBeKept
+go	upgrade key: the item is offered under an inherited JPACK_SIGNING_KEY	TestTheSigningItemIsShownOnlyWhereItCanBeKept
+go	upgrade key: the item is offered where custody keeps no key	TestNoPathOfTheStartupKeyReachesThePage,TestTheSigningItemIsShownOnlyWhereItCanBeKept
+go	upgrade key: the item is offered where the runtime reads no 6	TestTheSigningItemIsShownOnlyWhereItCanBeKept
+go	upgrade key: the item is offered where the signing folder is inside the project	TestTheSigningItemIsShownOnlyWhereItCanBeKept
+go	upgrade key: the key is made without the signing folder's lock	TestTheSigningUpgradeWaitsForTheSigningFolder
+go	upgrade key: the key is named although its folder was replaced	TestAFailedSigningUpgradeLeavesNoKeyAndNoChange
+go	upgrade key: the key is named below configVersion 6	TestChoosingTheSigningKeyWritesSixAndTheKeyTogether
+go	upgrade key: the key made is not answered	TestChoosingTheSigningKeyWritesSixAndTheKeyTogether
+go	upgrade key: the marker goes before jpack.json names the key	TestAStoppedSigningUpgradeIsSweptAtTheNextStart
+go	upgrade key: the marker is left after the upgrade	TestChoosingTheSigningKeyWritesSixAndTheKeyTogether
+go	upgrade key: the offer's item is not given	TestTheSigningItemIsShownOnlyWhereItCanBeKept
+go	upgrade key: the project's folder as the runtime prints it is said	TestNoPathOfTheStartupKeyReachesThePage
+go	upgrade key: the start leaves the startup desk's rotation	TestTheStartFinishesARotationOfTheStartupKey
+go	upgrade key: the start recovers rotations only where a desks folder is	TestTheStartFinishesARotationOfTheStartupKey
+go	upgrade key: the startup desk with no key is said to be a made desk's	TestTheDecisionRecordReadsTheStartupKeyAfterTheUpgrade,TestWhereDeskKeepsNoKeyNoneIsPassed
+go	upgrade key: the startup desk's rotation is recovered as no desk's	TestTheStartFinishesARotationOfTheStartupKey
+go	upgrade key: the startup project's key is kept under no name of its own	TestChoosingTheSigningKeyWritesSixAndTheKeyTogether
+go	upgrade key: the sweep leaves a stopped upgrade's key	TestAStoppedSigningUpgradeIsSweptAtTheNextStart
+go	upgrade key: the sweep removes a key jpack.json names	TestAStoppedSigningUpgradeIsSweptAtTheNextStart
+go	upgrade: a configuration version Desk does not know is upgraded	TestTheUpgradeOffersOnlyWhatTheRuntimeReads
 go	upgrade: a token does not cover the configuration written	TestAStaleUpgradeConfirmationWritesNothing
+go	upgrade: an existing audit directory is replaced	TestAnExistingAuditDirectoryIsKept,TestChoosingTheSigningKeyWritesSixAndTheKeyTogether,TestTheDecisionRecordReadsTheStartupKeyAfterTheUpgrade,TestTheSigningKeyIsAddedInsideTheAuditMember,TestUpgradedConfigKeepsEveryOtherByte
+go	upgrade: an existing lock is not said	TestAnExistingLockIsSaidToDrift
 go	verification export: any one version forwarded	TestJobsRefusesAnyOtherVerificationVersion
 go	verification export: empty version read as none	TestJobsRefusesAnyOtherVerificationVersion
 go	verification export: every route read to the export limit	TestJobsReadsAnExportUpToRunnersLimit
@@ -552,7 +595,9 @@ go	verification export: version 6 forwarded	TestJobsRefusesAnyOtherVerificationV
 go	verification export: version forwarded on every route	TestJobsForwardsAJobsJournalWithItsCursorAlone,TestJobsForwardsVerificationVersionOnlyOnItsRoute,TestJobsReadsAnExportUpToRunnersLimit
 web	component versions: unconfigured Runner shown as Unknown	src/updates/Updates.test.tsx
 web	downloads: offered with no files	src/audit/trailDownloads.test.tsx
+web	gates help: the signatures paragraph is not said as written	src/routes/HelpAbout.test.tsx
 web	help: the tested-releases setting is not read	src/routes/HelpAbout.test.tsx
+web	jobs record client: the check after a confirmation follows every change to the project	src/audit/jobsRecord.test.tsx
 web	jobs standing: Runner's reviewed field is not explained	src/jobs/ReleaseStanding.test.tsx
 web	jobs standing: the comparison is inverted	src/jobs/JobsView.test.tsx,src/jobs/ReleaseStanding.test.tsx,src/jobs/reviewedSet.desks.test.ts
 web	new desk notice: a notice that is not words is accepted	src/desks/DeskSwitcher.test.tsx
@@ -570,6 +615,30 @@ web	sign-in cancel: the progress line outlasts the login answer	src/assistant/As
 web	signing key: config read drops the member	src/config/queries.test.tsx,src/routes/HelpAbout.test.tsx
 web	tested releases: page never reads the policy	src/jobs/JobsView.test.tsx,src/jobs/ReleaseReadiness.test.tsx
 web	the lock line states a verdict about the reviewed set	src/packs/edit/lockLine.test.tsx
+web	upgrade key: Admin → Project does not offer it	src/packs/upgrade/upgrade.test.tsx
+web	upgrade key: Admin → Project does not say why it is not offered	src/packs/upgrade/upgrade.test.tsx
+web	upgrade key: a check in flight is joined after the key is made	src/audit/decisionRecord.test.tsx
+web	upgrade key: a key jpack.json names is offered again	src/packs/upgrade/upgrade.test.tsx
+web	upgrade key: the check after the key is made follows every change to the project	src/audit/decisionRecord.test.tsx
+web	upgrade key: the client asks for the key whatever the choice	src/packs/upgrade/upgrade.test.tsx
+web	upgrade key: the client sends no choice	src/packs/upgrade/upgrade.test.tsx
+web	upgrade key: the client takes an item of any state	src/packs/upgrade/upgrade.test.tsx
+web	upgrade key: the client takes an offer that signs without offering	src/packs/upgrade/upgrade.test.tsx
+web	upgrade key: the client takes any key as the one made	src/packs/upgrade/upgrade.test.tsx
+web	upgrade key: the confirmation does not carry the choice	src/packs/upgrade/upgrade.test.tsx
+web	upgrade key: the costs are not shown before confirmation	src/packs/upgrade/upgrade.test.tsx
+web	upgrade key: the decision record is not checked again	src/packs/upgrade/upgrade.test.tsx
+web	upgrade key: the item is not listed in the offer	src/packs/upgrade/upgrade.test.tsx
+web	upgrade key: the item is not listed where the gates are on	src/packs/upgrade/upgrade.test.tsx
+web	upgrade key: the key made is not said	src/packs/upgrade/upgrade.test.tsx
+web	upgrade key: the key's line in jpack.json is not listed	src/packs/upgrade/upgrade.test.tsx
+web	upgrade key: the offer is not asked for the owner's choice	src/packs/upgrade/upgrade.test.tsx
+web	upgrade key: the page chooses the item for the owner	src/packs/upgrade/upgrade.test.tsx
+web	upgrade key: what a signature does not establish is not said	src/packs/upgrade/upgrade.test.tsx
+web	upgrade key: why it is not offered is not said	src/packs/upgrade/upgrade.test.tsx
 web	upgrade: Admin → Project does not offer it	src/packs/upgrade/upgrade.test.tsx
+web	upgrade: declining requireComparableFacts asks for nothing new	src/packs/upgrade/upgrade.test.tsx
+web	upgrade: the confirmation does not carry the owner's choice	src/packs/upgrade/upgrade.test.tsx
 web	upgrade: the confirmation does not carry the token	src/packs/upgrade/upgrade.test.tsx
 web	upgrade: the note is not on Packs	src/packs/upgrade/upgrade.test.tsx
+web	upgrade: the offer is asked for with requireComparableFacts whatever the choice	src/packs/upgrade/upgrade.test.tsx

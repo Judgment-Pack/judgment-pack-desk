@@ -387,16 +387,19 @@ func TestChoosingTheSigningKeyWritesSixAndTheKeyTogether(t *testing.T) {
 
 // **A confirmation writes the offer it names, and only that.** The token of
 // the offer with the key does not confirm a request without it, nor the
-// other way round; neither writes a file or makes a key.
+// other way round: each is stale, and neither writes a file or makes a key,
+// though the runtime would lock the configuration the key's offer showed.
 func TestTheSigningChoiceIsBoundToTheOfferShown(t *testing.T) {
 	u := newSigningUpgrade(t, nil)
 	before := treeOf(t, u.project)
 	with, without := u.offer(t, true), u.offer(t, false)
+	u.rig.locks(t, upgradeLock(t, u.project, u.signed(), bothPacks))
 	for _, tc := range []struct {
 		token string
 		sign  bool
 	}{{with.Token, false}, {without.Token, true}} {
-		if status, data := u.confirm(t, tc.token, tc.sign); status != http.StatusConflict {
+		status, data := u.confirm(t, tc.token, tc.sign)
+		if status != http.StatusConflict || refusalOf(data) != "The project changed after you reviewed the upgrade, so nothing was written. Review it again." {
 			t.Errorf("a confirmation with the key %v answered %d %s", tc.sign, status, data)
 		}
 	}
