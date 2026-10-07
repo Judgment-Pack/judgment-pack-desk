@@ -727,6 +727,29 @@ describe('what it says when it cannot', () => {
     expect(sent).toEqual([])
   })
 
+  it('takes Create away when a listing it was ready on fails to answer again', async () => {
+    // `listing.isSuccess` and not merely "not pending". A refetch that fails
+    // keeps the last answer's data, and a listing in error is not pending, so
+    // a gate that asked only whether the listing was still loading offered
+    // Create against files nobody could read. Everything else is ready here,
+    // which the first half shows: the failed answer is the only thing taking
+    // the control away.
+    const answers: Parameters<typeof serveProject>[0] = { project: PROJECT }
+    const sent = serveProject(answers)
+    const { queryClient } = renderDialog()
+    await waitFor(() => expect(screen.getByLabelText('Template').textContent).toContain('minimal'))
+    await nameIt('Vendor Onboarding')
+    answers.listing = { status: 503, body: { error: 'the project could not be read' } }
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['desk-files'] })
+    })
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('This project’s files could not be read, so nothing was created.')
+    expect(createButton().disabled).toBe(true)
+    fireEvent.click(createButton())
+    expect(sent).toEqual([])
+  })
+
   it('says a name is taken rather than quoting an editor’s override advice', async () => {
     // The chassis answers a 409 with "reload it, or write again with override",
     // which is what it tells an editor. This dialog has no override to offer
@@ -1125,6 +1148,29 @@ describe('what it does while it is working', () => {
     expect(alert.textContent).toContain(
       'The pack was created but could not be registered. Nothing else was changed.'
     )
+  })
+
+  it('cannot be dismissed mid-sequence where nothing was typed, either', async () => {
+    // A handover arrives with its name and description filled in, so there is
+    // no typing to lose and the discard question, which refuses while a
+    // sequence runs too, is never asked. The dialog's own refusal is then the
+    // only thing keeping the one place the outcome is stated on the screen.
+    const { gate, release } = held()
+    const sent = serveProject({ project: PROJECT, gate })
+    const { closed } = renderDialog(handoverStub(), { ...FULL_CAPS, validateSupported: true }, effectiveConfig(undefined), {
+      research: researchHandover(),
+      presentation: 'dialog'
+    })
+    await waitFor(() => expect(createButton().disabled).toBe(false))
+    fireEvent.click(createButton())
+    await waitFor(() => expect(sent).toHaveLength(1))
+
+    fireEvent.keyDown(document.body, { key: 'Escape', code: 'Escape' })
+    await act(async () => {})
+    expect(closed).toEqual([])
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    release()
+    await waitFor(() => expect(sent).toHaveLength(4))
   })
 
   it('disables Cancel while it works, so the affordance agrees with the behaviour', async () => {

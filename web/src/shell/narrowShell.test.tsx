@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react'
+import { useMemo, useRef, type ReactNode } from 'react'
 import { useInspectorSlot } from './InspectorSlot'
 import { useInspectorPresentation } from './InspectorPresentation'
 import { useShellState } from './paneState'
@@ -132,7 +132,15 @@ function PreviewRoute() {
     onClick={shell.toggleInspector}>Preview</button></>
 }
 
-function renderShell(panes?: PanesConfig, declaredPanes: DeclaredPanes = NOTHING_DECLARED) {
+/**
+ * The shell, around the preview route unless a case names another. A route
+ * that registers no presentation is the case where nothing sizes the pane.
+ */
+function renderShell(
+  panes?: PanesConfig,
+  declaredPanes: DeclaredPanes = NOTHING_DECLARED,
+  route: ReactNode = <PreviewRoute />
+) {
   const router = createMemoryRouter(
     [
       {
@@ -146,9 +154,7 @@ function renderShell(panes?: PanesConfig, declaredPanes: DeclaredPanes = NOTHING
                 declaredPanes
               }}
             >
-              <AppShell>
-                <PreviewRoute />
-              </AppShell>
+              <AppShell>{route}</AppShell>
             </DeskConfigFixture>
           </McpContext.Provider>
         )
@@ -334,6 +340,20 @@ describe('the shell at 1000px, where the Inspector is a drawer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
     const drawer = await screen.findByRole('dialog', { name: 'Preview' })
     expect(drawer.style.getPropertyValue('--drawer-w')).toBe('360px')
+  })
+
+  it('leaves a drawer nothing sizes at the stylesheet’s own width', async () => {
+    // Diagnostics on a route with no contextual pane: no presentation, no
+    // brief, no width in the file and none the viewer chose. The drawer then
+    // states no width of its own and the stylesheet's 320px applies. The
+    // configured 360px is the docked column's default, and handing it to the
+    // drawer would move every unconfigured desk's drawer to it.
+    viewport(1000)
+    renderShell(undefined, NOTHING_DECLARED, <h1>a route</h1>)
+    fireEvent.keyDown(document.body, { key: 'j', ctrlKey: true, altKey: true })
+    const drawer = await screen.findByRole('dialog', { name: 'Diagnostics' })
+    expect(drawer.classList.contains('desk-drawer')).toBe(true)
+    expect(drawer.style.getPropertyValue('--drawer-w')).toBe('')
   })
 
   it('returns focus to the contextual preview action when its drawer closes', async () => {

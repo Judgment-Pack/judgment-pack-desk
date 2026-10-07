@@ -37,6 +37,9 @@ function Panel() {
       <button type="button" onClick={shell.toggleRail}>
         toggle the rail
       </button>
+      <button type="button" onClick={shell.openInspector}>
+        open the inspector
+      </button>
       <button type="button" onClick={() => shell.resetPanes()}>
         reset
       </button>
@@ -89,6 +92,33 @@ describe('the shell state provider', () => {
     cleanup()
     renderProvider()
     expect(screen.getByTestId('key-resolved').textContent).toBe('true')
+  })
+
+  it('writes nothing under the provisional key, even for a pane the viewer moved', async () => {
+    // Until the chassis names the project the key is the literal `default`. A
+    // layout written there is one project's, stored under a name that belongs
+    // to whichever project answers slowly next. The toggle makes the write
+    // one the debounce would otherwise send: a touched pane is the only thing
+    // this provider ever stores.
+    renderProvider(null)
+    act(() => screen.getByRole('button', { name: 'toggle the console' }).click())
+    expect(screen.getByTestId('console-open').textContent).toBe('true')
+    await pastTheDebounce()
+    expect(window.localStorage.getItem(shellStateKey('default'))).toBeNull()
+    expect(window.localStorage.length).toBe(0)
+  })
+
+  it('opens the Inspector where it is asked to, and asking again leaves it open', () => {
+    // `openInspector` is not a toggle. A route arriving with a selection asks
+    // for the pane, and StrictMode, which production runs in, runs that
+    // effect twice on purpose: a flip read twice closed the pane it had just
+    // opened.
+    renderProvider()
+    expect(screen.getByTestId('inspector-open').textContent).toBe('false')
+    act(() => screen.getByRole('button', { name: 'open the inspector' }).click())
+    expect(screen.getByTestId('inspector-open').textContent).toBe('true')
+    act(() => screen.getByRole('button', { name: 'open the inspector' }).click())
+    expect(screen.getByTestId('inspector-open').textContent).toBe('true')
   })
 
   it('keeps the chosen rail while applying arriving configuration to untouched panes', () => {

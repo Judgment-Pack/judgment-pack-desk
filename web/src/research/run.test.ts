@@ -1140,6 +1140,51 @@ describe('invalid expectation review', () => {
     expect(state.expectationIssues[0]!.resolved).toBeUndefined()
   })
 
+  it('applies nothing where Stop lands after the approval’s validation has answered', async () => {
+    // The case above stops the call itself, and the call's own abort refuses
+    // it. This one stops the run in the microtasks between the runtime's
+    // answer and the approval being applied, which no call is guarding: the
+    // answer is read, and reading it is when Stop is pressed. Without the check
+    // there, the correction joined the suite, its retest refused on the closed
+    // run, and the rollback reported an approval the person had stopped before
+    // it was made.
+    const native = fakeRuntime()
+    let stopOnAnswer = false
+    let stop = (): void => {}
+    const { run } = await blockedRun([correctionTurn()], {
+      callTool: async (name, args) => {
+        const answer = await native.callTool(name, args)
+        if (!stopOnAnswer || name !== EXPECTATION_TOOL) return answer
+        stopOnAnswer = false
+        return {
+          ...answer,
+          get content() {
+            stop()
+            return answer.content
+          }
+        }
+      }
+    })
+    stop = () => run.stop()
+    run.proposeExpectationCorrection('hours-missing')
+    const issue = (await settled(run)).expectationIssues[0]!
+    const seen: RunState[] = []
+    const unsubscribe = run.subscribe(() => seen.push(run.getSnapshot()))
+    stopOnAnswer = true
+    run.approveExpectationCorrection(issue.id, issue.proposal!.token)
+    const state = await settled(run)
+    unsubscribe()
+    // The answer was read, so the stop landed where this case says it did.
+    expect(stopOnAnswer).toBe(false)
+    expect(state.status).toBe('stopped')
+    expect(state.detail).toBe('Stopped. The last completed stage is kept.')
+    expect(state.cases).toHaveLength(2)
+    expect(state.expectationIssues[0]!.resolved).toBeUndefined()
+    // Not applied and taken back: never applied at all.
+    expect(seen.filter(snapshot => snapshot.cases.length !== 2)).toEqual([])
+    expect(state.expectationIssues[0]!.proposal?.token).toBe(issue.proposal!.token)
+  })
+
   it('rolls an approval back when its retest is stopped, and applies it when it is approved again', async () => {
     // Applied before its retest, a Stop left the correction in place with the
     // issue resolved and nothing checked: propose and approve both close on

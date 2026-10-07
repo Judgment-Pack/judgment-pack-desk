@@ -7142,20 +7142,27 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '    setStack([])
     onDiscard?.()' \
     '    setStack([])'
-  # **Repaired twice, and re-pinned.** Dropping the guard outright rebases on
-  # every render and exhausts a worker's heap, which the harness reports as
-  # INCONCLUSIVE: caught, and caught in a way that names no test. Keying the
-  # guard on the content while still *recording* the path does the same thing,
-  # because the two never match. Keying **both** on the content settles after
-  # one re-seed and is the defect itself and nothing else: a watcher answer
-  # carrying different bytes silently becomes the base, so the save that
-  # follows overwrites a change nobody saw, without the 409 that exists to
-  # prevent exactly that.
+  # **Repaired three times.** Dropping the guard outright rebases on every
+  # render and exhausts a worker's heap. Keying the guard on the content while
+  # still *recording* the path does the same, because the two never match:
+  # that was this row until the first nightly run (issue #271), where it hung
+  # every file that renders the buffer, inside `act`, where no test's timeout
+  # can fire, and the suite ran out its bound as INCONCLUSIVE. Keying both on
+  # the content is no longer one line, and would also make the identity a
+  # save hands back name bytes rather than a path. So the guard stays and the
+  # mutant does what it exists to prevent, once, inside it: a watcher answer
+  # about the same file, carrying different bytes, becomes the base, and the
+  # text stays where it is, so the save that follows states a digest nobody
+  # read against and overwrites a change nobody saw, without the 409 that
+  # exists to prevent exactly that. The updater keeps the base it has where
+  # the bytes are the same, so a test that hands the hook a new answer on
+  # every render settles after one move instead of rendering without end.
   mutate web "the base moves on a watcher refetch" "$BUF" \
     '    if (loaded === undefined) return
     if (seeded.current === loaded.path) {' \
     '    if (loaded === undefined) return
-    if (seeded.current === loaded.content) {'
+    if (seeded.current === loaded.path) {
+      setBase((was) => (was === undefined || was.content === loaded.content ? was : loaded))'
   # The other half of the same line, and the defect this PR's round found: the
   # buffer seeded once and never again, so another pack drew the first one.
   mutate web "the buffer stays on the pack it opened" "$BUF" \
@@ -7633,8 +7640,10 @@ function usePacks() { useExampleListing(); return readPacks() }'
       write.reset()
       setOutcome(undefined)'
   # The author is free to keep typing while the PUT is in the air.
+  # (The needle lost its `true` when `landed` began answering whether it took
+  # the save: the mutant read `void submitted true`, which does not compile.)
   mutate web "a save that lands takes the last sentence with it" "$BUF" \
-    '    if (current.current !== submitted || fresh.content !== submitted) return' \
+    '    if (current.current !== submitted || fresh.content !== submitted) return true' \
     '    void submitted'
   mutate web "a path that moves under one address replaces unsaved work" "$BUF" \
     '    if (seeded.current !== undefined && (dirtyNow.current || otherWork.current)) {
