@@ -15,7 +15,6 @@ go	a configured query is read as bytes the browser cannot read	TestAConfiguredQu
 go	a configured query may carry a credential	TestAConfiguredQueryCannotCarryWhatTheRelayReserves,TestAConfiguredQueryCarryingACredentialIsNeverProbed,TestARefusedFileSendsNothing,TestSharedFixturesDecodeAsTheVerdictSays,TestTheConfiguredQueryRuleNamesEachClass
 go	a configured query may use a name the relay reserves	TestAConfiguredQueryCannotCarryWhatTheRelayReserves,TestARefusedFileSendsNothing,TestSharedFixturesDecodeAsTheVerdictSays,TestTheConfiguredQueryRuleNamesEachClass
 go	a control character in a key is carried	TestAssistantKeyRefusals
-go	a cookie authorizes a gated route	TestNoCookieAuthorizesAnyGatedRoute
 go	a create that found something is called stale	TestEveryCodeHasAStatusAndAWitness,TestRefusalsCarryAStableCode
 go	a created file keeps the staging mode instead of taking the umask	TestCreatedFileTakesTheUmaskLikeItsDirectory
 go	a decode failure is not a refusal	TestRelayRefusesAListingThatIsNotOneJSONDocument
@@ -54,7 +53,6 @@ go	a retained member is reflowed rather than copied	TestDeskConfigWriteKeepsEver
 go	a rewrite drops the other members of the file	TestComposeDeskFileKeepsTheBytesItWasGiven,TestConnectionCatalogProcessBoundsAndValidation,TestConnectionCatalogV3Metadata,TestDeskConfigWriteKeepsEveryOtherMemberByteForByte,TestDeskConfigWriteRefusesAComposedFilePastTheReadBound,TestDeskConfigWriteReplacesOnlyTheMembersItWasSent,TestDocumentConfigurationConditionalWrite,TestLocalPlanLaunchesNewSourceOnlyFromInstalledManifest
 go	a second copy of the stream pair is admitted	TestRelayRefusesEveryOtherSpellingOfTheStreamPair
 go	a session id is accepted on the upgrade's header	TestOnlyTheOfferCarriesASessionOntoTheUpgrade
-go	a session id on the query authorizes a request	TestTheQueryAuthorizesNothingAnywhere
 go	a short key is fingerprinted into the open	TestAssistantFingerprintRefusesToDiscloseAShortKey,TestRelayTakesALongKeyOutOfAnAnswerWhereverItSits
 go	a staging-file refusal carries no code	TestEveryCodeHasAStatusAndAWitness,TestStagingFilesAreNeitherListedNorWatched
 go	a stalled listing is bounded only by the overall deadline	TestRelayBoundsAStalledListingByTheIdleDeadline
@@ -353,7 +351,6 @@ go	key panel: the check's words are passed on with their paths	TestNoPartOfTheKe
 go	key panel: the key's path and its folders are not spans	TestARotationsAnswersNameNoPath,TestNoPartOfTheKeysPathIsPassedOn
 go	key panel: the keys are not given with the answer	TestAListOfKeysDeskCannotReadPassesNoKey,TestWhereDeskKeepsNoKeyNoneIsPassed
 go	key panel: the signatures are not shown	TestTheSignaturesTheRuntimeReadAreShown
-go	key panel: the startup desk is read for keys	TestWhereDeskKeepsNoKeyNoneIsPassed
 go	key panel: validate's exit is not held to its status	TestThePanelShowsTheRuntimesWordOnTheKey
 go	key panel: validate's refusal is undocumented	TestThePanelShowsTheRuntimesWordOnTheKey
 go	key panel: validate's refusal on exit 0 is shown	TestThePanelShowsTheRuntimesWordOnTheKey
@@ -479,7 +476,6 @@ go	rotation: an answer of another status is taken	TestAnAnswerThatIsNotTheRotati
 go	rotation: an answer to another key is taken	TestAnAnswerThatIsNotTheRotationAskedForIsNotTakenForOne
 go	rotation: an answer to another keyId is taken	TestAnAnswerThatIsNotTheRotationAskedForIsNotTakenForOne
 go	rotation: an unfinished rotation is answered as rotated	TestWhatChangedWhileARotationFinishedIsNotWrittenOver
-go	rotation: offered on the startup desk	TestARotationIsMadeOnlyWhereItCanBe
 go	rotation: offered over a rotation that did not finish	TestAPanicInARotationLeavesTheDeskWorking,TestARotationDeskCannotTellAboutChangesNothing,TestARotationFromElsewhereIsLeftAsItIs,TestARotationIsMadeOnlyWhereItCanBe,TestARotationTheRuntimeDidNotWriteSaysDeskKeptItsKey,TestARotationsAnswersNameNoPath,TestAStartRenamesNoKeyAgainstAListPutBackSinceItsInspection,TestWhatChangedWhileARotationFinishedIsNotWrittenOver
 go	rotation: offered past the key list's bound	TestNoRotationPastTheKeyListsBound
 go	rotation: offered where the sidecar cannot be read	TestARotationIsMadeOnlyWhereItCanBe
@@ -499,7 +495,6 @@ go	rotation: the panel says the current key still signs	TestARotationTheRuntimeD
 go	rotation: the panel's word on a rotation names a path	TestARotationsAnswersNameNoPath
 go	rotation: the seed is renamed before the list is written	TestARotationRunsItsStepsInOrder,TestAStartRenamesNoKeyAgainstAListPutBackSinceItsInspection,TestAStoppedRotationIsFinishedOrUndoneAtTheNextStart,TestWhatChangedWhileARotationFinishedIsNotWrittenOver
 go	rotation: the seed is renamed over a seed that changed	TestWhatChangedWhileARotationFinishedIsNotWrittenOver
-go	rotation: the startup desk's request reaches the rotation	TestARotationIsMadeOnlyWhereItCanBe
 go	rotation: the token binds the key alone	TestARotationIsMadeOnlyWhereItCanBe
 go	rotation: the token is not checked	TestARotationIsMadeOnlyWhereItCanBe,TestAStalledAnswerToARotationHoldsNoKeyLock
 go	rotation: what a failed generation left stays	TestARotationTheRuntimeRefusesChangesNothing
@@ -771,7 +766,6 @@ go	upgrade key: the item is offered where custody keeps no key	TestNoPathOfTheSt
 go	upgrade key: the item is offered where the runtime reads no 6	TestTheSigningItemIsShownOnlyWhereItCanBeKept
 go	upgrade key: the item is offered where the signing folder is inside the project	TestTheSigningItemIsShownOnlyWhereItCanBeKept
 go	upgrade key: the key is made without the signing folder's lock	TestTheSigningUpgradeWaitsForTheSigningFolder
-go	upgrade key: the key is named although its folder was replaced	TestAFailedSigningUpgradeLeavesNoKeyAndNoChange
 go	upgrade key: the key is named below configVersion 6	TestChoosingTheSigningKeyWritesSixAndTheKeyTogether
 go	upgrade key: the key made is not answered	TestChoosingTheSigningKeyWritesSixAndTheKeyTogether
 go	upgrade key: the marker goes although the key's folder was replaced after the lock	TestAFailedSigningUpgradeLeavesNoKeyAndNoChange
@@ -851,37 +845,1014 @@ go	verification export: refused version still forwarded	TestJobsRefusesAnyOtherV
 go	verification export: run read to the ordinary limit	TestJobsReadsAnExportUpToRunnersLimit
 go	verification export: version 6 forwarded	TestJobsRefusesAnyOtherVerificationVersion
 go	verification export: version forwarded on every route	TestJobsForwardsAJobsJournalWithItsCursorAlone,TestJobsForwardsVerificationVersionOnlyOnItsRoute,TestJobsReadsAnExportUpToRunnersLimit
+web	Accept is drawn on the reading route	src/assistant/AssistantPane.test.tsx
+web	Accept is enabled while the session is still running	src/assistant/acceptProposal.test.ts
+web	Accept pushes a second undo entry	src/assistant/AssistantPane.test.tsx
+web	Accept trusts the rendered busy state at the click	src/assistant/AssistantPane.test.tsx
+web	Accept writes the whole document instead of splicing it	src/assistant/AssistantPane.test.tsx,src/assistant/acceptProposal.test.ts
+web	Admin claims a location the listing does not show	src/routes/AdminView.test.tsx
+web	Admin sources every unread reason to the chassis	src/admin/SourceCard.test.tsx,src/routes/AdminView.test.tsx
+web	Basics says the name's problem twice	src/shell/CreatePackDialog.test.tsx
+web	Cancel stays live while the sequence runs	src/shell/CreatePackDialog.test.tsx
+web	Create answers a chat draft asked without a basis	src/research/run.test.ts
+web	Create answers on a chat draft's old basis	src/research/run.test.ts,src/research/ui/ReviewPanel.test.tsx
+web	Create is enabled while the assistant is still running	src/shell/DescribeIt.test.tsx
 web	Create is offered against a listing that never answered	src/shell/CreatePackDialog.test.tsx
+web	Create is offered on a chat draft over an untraced citation	src/research/run.test.ts
+web	Create is offered on a chat draft while its citations are traced	src/research/run.test.ts,src/research/ui/ReviewPanel.test.tsx
+web	Create is offered on a web research chat draft citing nothing	src/research/run.test.ts,src/research/ui/ReviewPanel.test.tsx
+web	Create is offered while a turn is in flight	src/research/run.test.ts
+web	Create is withdrawn by the status of the last action	src/research/run.test.ts
+web	Create writes the proposal without shaping it	src/shell/DescribeIt.test.tsx
+web	Ctrl and Meta together are read as one modifier	src/shell/shortcuts.test.tsx
+web	Discard leaves the text it did not write	src/packs/edit/forms.test.tsx
+web	Enter on a block selects nothing	src/packs/document/PackDocumentView.test.tsx
+web	Escape discards the buffer	src/packs/edit/save.test.tsx
+web	Fix re-serializes the runtime's diagnostics	src/packs/checks.test.ts
+web	Mod+S is a subtree’s chord again, so the body reaches nothing	src/packs/edit/resilience.test.tsx
+web	Mod+S is swallowed inside the field it exists to fire in	src/packs/edit/save.test.tsx
+web	Overwrite anyway is the primary control	src/packs/edit/save.test.tsx
+web	Reload after a refused write takes the file over the unsaved values	src/admin/projectFileCards.test.tsx
+web	Reload clears the notice without reading the file again	src/assistant/slotAfterSave.test.tsx
+web	Stop writes no terminal event	src/assistant/useAssistantRun.test.tsx
+web	Test connection asks the probe and never the listing	src/assistant/endpointForm.test.tsx
+web	Try it runs twice for one press of the button	src/packs/edit/TryItPane.test.tsx
+web	a 401 does not forget the id	src/mcp/session.test.tsx
+web	a 409 is read as an ordinary error	src/admin/defaultProject.test.tsx,src/admin/projectFileCards.test.tsx,src/admin/projectFileWrite.test.tsx,src/assistant/configWrite.test.tsx,src/assistant/endpointForm.test.tsx,src/assistant/slotAfterSave.test.tsx,src/routes/AdminView.test.tsx,src/routes/AuthorView.test.tsx
+web	a CRLF jpack.json is rewritten with the platform's line ending	src/packs/jpackConfig.test.ts
+web	a Content disclosure back in Admin's main column	src/routes/AdminView.test.tsx
+web	a Stop leaves a chat draft's trace at rest running	src/research/run.test.ts
+web	a Stop starts new work on a chat draft whose basis moved	src/research/run.test.ts
+web	a Stop that ends in an error starts new work on a chat draft	src/research/run.test.ts
+web	a blank description is written as an empty string	src/packs/jpackConfig.test.ts,src/shell/CreatePackDialog.test.tsx
+web	a box back on a member (border and background)	src/admin/adminSheets.test.ts
+web	a browser error is attributed to the chassis	src/config/liveConfig.test.tsx,src/config/queries.test.tsx
+web	a cancelled handle is fired anyway	src/assistant/conformance/conformance.test.ts
+web	a cancelled immediate is fired by the drain anyway	src/assistant/conformance/conformance.test.ts
+web	a card's Save is sent without the identity it read against	src/admin/projectFileCards.test.tsx,src/admin/projectFileWrite.test.tsx
+web	a card's Save overwrites whatever it finds	src/admin/projectFileWrite.test.tsx
+web	a card's Save rewrites the whole file instead of one member	src/admin/projectFileCards.test.tsx,src/admin/projectFileSave.test.ts,src/admin/projectFileWrite.test.tsx
+web	a carried signature is compared with every signature ever seen	src/assistant/engines/vercel/engine.test.ts
+web	a chassis call does not await the bootstrap	src/mcp/session.test.tsx
+web	a chassis code has no Create sentence	src/packs/createRefusal.test.ts
+web	a chat case check carried and repeated is shown twice	src/packs/test-workspace/model.test.ts
+web	a chat case disagreement is repaired without the person	src/research/run.test.ts
+web	a chat case rests on a message the person never sent	src/research/run.test.ts
+web	a chat case rests on a page the draft did not trace	src/research/run.test.ts
+web	a chat case's blocked expectation cannot be reached	src/research/ui/ReviewPanel.test.tsx
+web	a chat case's message reads as a link into the Inspector	src/research/ui/ReviewPanel.test.tsx
+web	a chat case's reviewer is shown the assistant's turns	src/research/run.test.ts
+web	a chat case's reviewer is shown the draft's rules	src/research/run.test.ts
+web	a chat draft citing nothing is shown as 0 of 0	src/research/ui/ReviewPanel.test.tsx
+web	a chat draft is not traced again when its pin or documents change	src/research/run.test.ts,src/research/useResearchRun.web.test.tsx
+web	a chat draft is ready without a chat case	src/research/run.test.ts
+web	a chat draft keeps its readiness when its pin or documents change	src/research/run.test.ts
+web	a chat draft settles at ready on a moved basis	src/research/run.test.ts
+web	a chat draft settles at ready over an untraced citation	src/research/run.test.ts
+web	a chat draft settles on a trace taken before the settle	src/research/run.test.ts
+web	a chat draft whose trace was cut short reads as citing nothing	src/research/ui/ReviewPanel.test.tsx
+web	a chat draft's action ends without tracing the basis that moved under it	src/research/run.test.ts
+web	a chat draft's basis ignores the pin	src/research/run.test.ts,src/research/useResearchRun.web.test.tsx
+web	a chat draft's citation is traced on a document that did not verify	src/research/run.test.ts
+web	a chat draft's citation is traced on a page the chat did not keep	src/research/run.test.ts
+web	a chat draft's citation is traced on pages nobody confirmed	src/research/run.test.ts
+web	a chat draft's citation is traced under a URL it was not read from	src/research/run.test.ts
+web	a chat draft's citation is traced under the chat's unsigned note of its link	src/research/run.test.ts
+web	a chat draft's citation is traced without its quote on the page	src/research/run.test.ts
+web	a chat draft's citations are not traced again when its documents change	src/research/useResearchRun.web.test.tsx
+web	a chat draft's documents are verified under the live pin	src/research/run.test.ts
+web	a chat draft's interrupted trace keeps the last trace's readiness	src/research/run.test.ts
+web	a chat draft's owner going away leaves its trace at rest running	src/research/run.test.ts,src/research/useResearchRun.web.test.tsx
+web	a chat draft's run outlives its owner	src/research/useResearchRun.web.test.tsx
+web	a chat draft's superseded trace at rest drops the settle it owed	src/research/run.test.ts
+web	a chat draft's trace lands after a Stop	src/research/run.test.ts
+web	a chat draft's trace lands on a basis that moved under it	src/research/run.test.ts
+web	a chat draft's traced page citation opens nothing	src/research/ui/ReviewPanel.test.tsx
+web	a check that has not answered reads as a clean bill	src/packs/inspector/PackInspector.test.tsx
+web	a choice survives the chassis naming a different project	src/shell/appearanceProvider.test.tsx
+web	a closed iterator's pending next waits on the closing too	src/assistant/engines/contract.test.ts,src/assistant/engines/vercel/engine.test.ts
+web	a code this desk does not know invents a sentence	src/packs/createRefusal.test.ts,src/shell/CreatePackDialog.test.tsx
+web	a colour in a module outside src/ui goes unreported	src/ui/convention.test.ts
+web	a colour literal back in a rule of styles.css	src/ui/palette.test.ts
+web	a colour literal back in shell.css	src/ui/palette.test.ts
+web	a colour token dropped from one dark block	src/ui/palette.test.ts
+web	a compact spacing token equal to its comfortable value	src/ui/palette.test.ts
+web	a companion failure keeps the name locked	src/shell/CreatePackDialog.test.tsx
+web	a composite condition may be spelled any way at all	src/packs/document/ConditionTree.test.tsx,src/packs/document/PackDocumentView.test.tsx,src/packs/edit/ConditionBuilder.test.tsx,src/packs/edit/EditView.test.tsx,src/packs/edit/conditionOps.test.ts,src/packs/edit/shape.test.ts,src/packs/fixtures.test.ts,src/packs/inspector/LogicInspector.test.tsx
+web	a config problem no longer refuses the whole file	src/admin/DocumentProcessingSettings.test.tsx,src/admin/projectFileCards.test.tsx,src/admin/projectFileSave.test.ts,src/admin/projectFileWrite.test.tsx,src/assistant/enforcement.test.ts,src/config/deskConfig.test.ts,src/config/fixtures.test.ts,src/config/liveConfig.test.tsx,src/config/queries.test.tsx,src/documents/config.test.ts,src/i18n/language.test.tsx,src/identity/enforcement.test.ts,src/routes/AdminView.test.tsx
+web	a configured pane may take the whole frame	src/shell/shellSheet.test.ts
+web	a configured query is not held to any rule	src/assistant/endpointForm.test.tsx,src/config/fixtures.test.ts
+web	a control character is accepted in a pack location	src/admin/projectFileCards.test.tsx,src/config/deskConfig.test.ts
 web	a correction is applied after the run was stopped	src/research/run.test.ts
+web	a dark text/background pair pushed under AA	src/ui/palette.test.ts
+web	a deep link stops at the group instead of the control	src/packs/edit/resilience.test.tsx
+web	a diagnostic anchored on the document is counted and never printed	src/routes/PackView.test.tsx
+web	a diagnostic is printed beside its field rather than described to it	src/packs/edit/EditView.test.tsx,src/packs/edit/forms.test.tsx
+web	a diagnostic is rendered as the bare word	src/assistant/endpointForm.test.tsx
+web	a diagnostic re-anchors after the bytes move	src/packs/checks.test.ts,src/routes/PackView.test.tsx
+web	a diagnostic under the selected member is hidden	src/packs/checks.test.ts
+web	a diagnostic with no exact match is dropped	src/packs/checks.test.ts
+web	a dialog with no description points a reader at an empty one	src/desks/DeskSwitcher.test.tsx,src/ui/ui.test.tsx
+web	a directory the desk never writes into is accepted as the location	src/config/deskConfig.test.ts,src/config/fixtures.test.ts
+web	a disagreeing row hides what it disagrees about	src/research/ui/ExpectationReview.test.tsx
+web	a draft follows its pointer onto another rule	src/packs/edit/forms.test.tsx
+web	a draft is masked rather than retired	src/packs/edit/forms.test.tsx
+web	a draft run drops the rehearsal declaration	src/mcp/buildEvaluateArguments.test.ts,src/packs/edit/TryItPane.test.tsx,src/routes/PackEvaluate.test.tsx
+web	a draft run sends both pack and pack_id	src/mcp/buildEvaluateArguments.test.ts,src/packs/edit/TryItPane.test.tsx,src/routes/PackEvaluate.test.tsx
+web	a duplicated id is resolved to one of the two	src/packs/inspector/PackInspector.test.tsx,src/packs/references.test.ts
+web	a failed model call rethrows the browser's own error	src/assistant/session.test.ts
+web	a failed refresh still displays stale packs	src/packs/PacksPane.test.tsx
+web	a failed reload leaves the page with nothing on it	src/packs/edit/save.test.tsx
+web	a failed reload names whatever file is on screen	src/packs/edit/navigate.test.tsx,src/packs/edit/save.test.tsx
+web	a failed setup leaves the connection open	src/assistant/session.test.ts
+web	a failure after the run's terminal event is dropped	src/assistant/AssistantPane.test.tsx,src/assistant/useAssistantRun.test.tsx,src/shell/DescribeIt.test.tsx
+web	a field group cannot take focus at all	src/packs/edit/forms.test.tsx
+web	a field over an absent object is drawn as writable	src/packs/edit/forms.test.tsx
+web	a file another entry already claims is written over	src/shell/CreatePackDialog.test.tsx
+web	a file another pack already names is not a collision	src/packs/newPack.test.ts,src/shell/CreatePackDialog.test.tsx
+web	a file at the pack location is not seen at all	src/routes/AdminView.test.tsx
+web	a file is adopted over text nobody has written yet	src/packs/edit/navigate.test.tsx
+web	a first refusal at off is read as a model that always thinks	src/assistant/thinking.test.ts
+web	a fixture may assert a shape the spec forbids	src/packs/edit/shape.test.ts,src/packs/fixtures.test.ts
+web	a form goes on holding what it typed after the save landed	src/admin/projectFileCards.test.tsx
+web	a fragment counts as a navigation	src/shell/DescribeIt.test.tsx
+web	a fragment on the endpoint is accepted	src/config/fixtures.test.ts
+web	a frame need not be a message the SDK would accept	src/assistant/toolGate.test.ts
+web	a frame this gate cannot read is passed as harmless traffic	src/assistant/toolGate.test.ts
+web	a grouped unit is looked up under its own id	src/packs/document/members.test.ts,src/routes/PackView.test.tsx
+web	a handoff target that contradicts its own disposition is admitted	src/research/run.test.ts
+web	a held field survives the seed catching up with it	src/admin/projectFileCards.test.tsx
+web	a held proposal is reused for a draft it was never proposed for	src/research/run.test.ts
 web	a key held down saves once a frame	src/packs/edit/save.test.tsx
+web	a key smuggled into the URL is accepted	src/config/fixtures.test.ts
+web	a kind change re-serializes a subtree it only renamed	src/packs/edit/conditionOps.test.ts
+web	a kind change throws away the operand the author wrote	src/packs/edit/conditionOps.test.ts
+web	a landed write waits for a second read before the shell reflects it	src/admin/projectFileWrite.test.tsx
+web	a layer nothing listed is reported as passed	src/i18n/language.test.tsx,src/packs/checks.test.ts
 web	a layout is written under the provisional key	src/shell/shellState.test.tsx
+web	a letter with no decomposition is dropped rather than carried	src/packs/newPack.test.ts
+web	a link's fragment reaches the gateway	src/chat/linkTools.test.ts,src/documents/link.test.ts
+web	a listed Gemini id is offered without asking the decoder	src/assistant/modelListing.test.ts
+web	a listed id is offered without asking the decoder	src/assistant/modelListing.test.ts
+web	a listing that failed is reported as a project with no jpack.json	src/shell/CreatePackDialog.test.tsx
+web	a listing that has not answered describes the location anyway	src/routes/AdminView.test.tsx
+web	a live interval is not reported	src/assistant/conformance/conformance.test.ts
+web	a location repeated on a card under a group header	src/admin/SourceCard.test.tsx,src/routes/AdminView.test.tsx
+web	a malformed answer loses the fact that it was an answer	src/config/queries.test.tsx
+web	a malformed escape is read as ordinary text	src/packs/pointers.test.ts
+web	a masked box stands beside a key that is already stored	src/assistant/endpointForm.test.tsx
+web	a measured box is taken once and never again	src/shell/inspectorSize.test.tsx,src/shell/inspectorSlot.test.tsx
+web	a member of the wrong shape is handed to the controls anyway	src/packs/edit/resilience.test.tsx
+web	a member refused as a credential is also refused as unknown	src/assistant/enforcement.test.ts,src/config/deskConfig.test.ts
+web	a member that is not a list is mapped over anyway	src/packs/edit/resilience.test.tsx
+web	a member that is not there yet is written nowhere	src/admin/projectFileSave.test.ts,src/packs/edit/writes.test.ts
+web	a module outside src/ui may spell a colour	src/ui/convention.test.ts
+web	a module spells a radius of its own	src/ui/convention.test.ts
+web	a module-local colour definition is never inspected	src/ui/convention.test.ts
+web	a module-local colour property is a token	src/ui/convention.test.ts
+web	a move drops the run in front of a comma	src/packs/documentText.test.ts
+web	a move leaves the array exactly as it was	src/assistant/acceptProposal.test.ts,src/packs/documentText.test.ts,src/packs/edit/writes.test.ts
+web	a name inside a name map is read as a name-map keyword	src/assistant/geminiSchema.test.ts
+web	a name too long for the file it names is accepted	src/packs/newPack.test.ts
+web	a named colour is not a colour	src/ui/convention.test.ts
+web	a near-spelling of tools/call is waved through	src/assistant/toolGate.test.ts
+web	a nested member of any shape is reached through	src/packs/edit/resilience.test.tsx
+web	a new member is appended rather than placed by the schema	src/packs/edit/writes.test.ts
+web	a new module scroller that positions nothing	src/ui/containingBlock.test.ts
+web	a pack the route comes back to has nothing to edit	src/packs/edit/useDocumentBuffer.test.ts
+web	a pane dimension of zero or twenty thousand is accepted	src/admin/projectFileSave.test.ts,src/config/deskConfig.test.ts,src/config/fixtures.test.ts
+web	a paragraph is reintroduced above the cards	src/routes/AdminView.test.tsx
+web	a path that moves under one address replaces unsaved work	src/packs/edit/useDocumentBuffer.test.ts
+web	a pending template listing is an empty one again	src/shell/CreatePackDialog.test.tsx
+web	a pointer selects a member from the prototype chain	src/packs/pointers.test.ts,src/packs/references.test.ts
+web	a pointer step is concatenated rather than escaped	src/packs/pointers.test.ts
+web	a post-end failure does not withdraw the proposal	src/assistant/AssistantPane.test.tsx,src/assistant/runOutcome.test.ts,src/shell/DescribeIt.test.tsx
+web	a previous verdict survives the next save	src/routes/AuthorView.test.tsx
+web	a proposal from an earlier submission is read anyway	src/shell/DescribeIt.test.tsx
+web	a proposal the critic never checked is rendered as not refuted	src/assistant/engines/codex/codex.test.ts,src/assistant/engines/vercel/engine.test.ts,src/assistant/refutation.test.ts
+web	a readiness withdrawn by a verdict is withdrawn silently	src/research/run.test.ts
+web	a receipt failing after ready leaves Create standing	src/research/run.test.ts
+web	a recheck writes a chat case with the model	src/research/run.test.ts
+web	a record from another shell version is restored anyway	src/shell/paneState.test.ts
+web	a record with nothing chosen in it is owned again	src/shell/appearanceState.test.ts
+web	a refusal leaves the answer before it on screen	src/packs/edit/TryItPane.test.tsx
+web	a refusal need not name a member the desk sent	src/assistant/conformance/conformance.test.ts,src/assistant/thinking.test.ts
+web	a refusal replaces the page that could repair it	src/packs/edit/resilience.test.tsx
+web	a refusal with no reason given is quoted at the user anyway	src/shell/CreatePackDialog.test.tsx
+web	a refused answer's body is left in flight	src/mcp/session.test.tsx
+web	a refused credential is painted as reachable	src/assistant/endpointForm.test.tsx
+web	a refused deletion still moves the panes	src/identity/identity.test.tsx,src/shell/shellState.test.tsx
+web	a refused example listing is dropped on the floor	src/shell/CreatePackDialog.test.tsx
+web	a refused file's bytes are rendered anyway	src/admin/ConfigPane.test.tsx,src/routes/AdminView.test.tsx
+web	a refused pack listing is called again on every route change	src/mcp/queries.test.tsx
+web	a refused reload still clears the editor it landed in	src/packs/edit/navigate.test.tsx
+web	a refused row discloses a pair the runtime never gave	src/research/ui/ExpectationReview.test.tsx
+web	a refused testing prompt is waited for for ever	src/assistant/AssistantPane.test.tsx
+web	a refused tier member is sent again on the next request	src/assistant/conformance/conformance.test.ts,src/assistant/engines/vercel/engine.test.ts,src/assistant/thinking.test.ts
+web	a reload adopts over an edit made while it was in flight	src/packs/edit/useDocumentBuffer.test.ts
+web	a removal takes its neighbour layout rather than its own	src/packs/documentText.test.ts
+web	a removed condition is called a kind this desk does not know	src/packs/edit/forms.test.tsx
+web	a reopened chat draft is not traced again	src/research/run.test.ts,src/research/useResearchRun.web.test.tsx
+web	a reserved query name in another case is accepted	src/config/fixtures.test.ts
+web	a retry leaves no trace in the transcript	src/research/run.test.ts
+web	a reviewed handover is editable at Build	src/shell/CreatePackDialog.test.tsx
+web	a revision that is not on disk is called the file on disk	src/packs/edit/navigate.test.tsx,src/packs/edit/resilience.test.tsx,src/packs/edit/save.test.tsx
+web	a rolled-back approval is not reported	src/research/run.test.ts
+web	a rolled-back approval rests at the phase its retest reached	src/research/run.test.ts
+web	a row that is not rendered yet is never focused	src/packs/PacksPane.test.tsx
+web	a rule that is not an object is drawn as a card	src/packs/edit/resilience.test.tsx
+web	a rule with no outcome still gets an unresolved-id line	src/packs/references.test.ts
+web	a run settles at ready with an expectation still open	src/research/run.test.ts
+web	a run stays fresh after the buffer moves	src/packs/edit/TryItPane.test.tsx
+web	a runtime limit reads as a Core defect	src/packs/test-workspace/TestsWorkspace.findings.test.tsx,src/research/expectations.test.ts
+web	a save left in flight by a navigation wedges every later one	src/packs/edit/navigate.test.tsx
+web	a save refused for any other reason says nothing	src/packs/edit/save.test.tsx,src/packs/edit/transition.test.tsx
+web	a save that answers to nobody is not reported	src/packs/edit/navigate.test.tsx,src/packs/edit/save.test.tsx
 web	a save that lands takes the last sentence with it	src/packs/edit/useDocumentBuffer.test.ts
+web	a saved chat case is grounded in a message sent after it	src/research/run.test.ts
+web	a saved chat case suite is kept smaller	src/research/run.test.ts
+web	a scrolling pane cannot shrink below its content	src/shell/shellSheet.test.ts
+web	a second consumer of the channel is admitted	src/assistant/engines/vercel/engine.test.ts
+web	a second end is appended rather than dropped	src/assistant/AssistantPane.test.tsx,src/assistant/useAssistantRun.test.tsx,src/shell/DescribeIt.test.tsx
+web	a second run of the same policy is suppressed	src/assistant/AssistantPane.test.tsx
+web	a selection arriving in an address the route is already at opens nothing	src/routes/PackView.test.tsx
+web	a selection under a member marks no outline entry	src/packs/useDocumentSpy.test.tsx,src/routes/PackView.test.tsx
+web	a served document that is not one is handed to the readers	src/packs/edit/resilience.test.tsx
+web	a session aborted before the run is not closed, only aborted	src/assistant/engines/contract.test.ts,src/assistant/engines/vercel/engine.test.ts
+web	a session's end is published to nobody	src/auth/SessionGate.test.tsx,src/mcp/session.test.tsx,src/shell/DescribeIt.test.tsx
+web	a settling save releases whichever latch is held	src/packs/edit/navigate.test.tsx
+web	a shifted chord fires a shortcut it never declared	src/shell/shortcuts.test.tsx
+web	a shorter list keeps the scroll position of the longer one	src/packs/useWindowedRows.test.tsx
+web	a shorter row height leaves the scroll where it was	src/packs/useWindowedRows.test.tsx
+web	a shorthand is not somewhere a colour can be written	src/ui/convention.test.ts
+web	a signature on a function call is called malformed	src/assistant/conformance/conformance.test.ts
+web	a slug that does not begin with a letter is accepted	src/i18n/language.test.tsx,src/packs/newPack.test.ts,src/shell/CreatePackDialog.test.tsx
+web	a spent handoff forgets the id	src/mcp/session.test.tsx
+web	a stale check still issues its clean bill	src/packs/inspector/PackInspector.test.tsx
+web	a stale check survives an approved correction	src/research/run.test.ts
+web	a stale report is anchored onto the document anyway	src/packs/edit/EditView.test.tsx,src/routes/PackView.test.tsx
+web	a standing selection outranks what is on screen	src/packs/useDocumentSpy.test.tsx
+web	a status of zero is painted as an answer	src/assistant/AssistantSection.test.tsx
+web	a storage kind other than filesystem is accepted	src/config/deskConfig.test.ts,src/config/fixtures.test.ts
+web	a superseded chat draft trace goes on loading	src/research/useResearchRun.web.test.tsx
+web	a taken pack file is reported in an editor's words	src/shell/CreatePackDialog.test.tsx
+web	a throwing callback escapes the cleanup	src/assistant/conformance/conformance.test.ts
+web	a throwing localStorage takes the shell down	src/shell/paneState.test.ts
+web	a tool result in flight is delivered after the end	src/mcp/session.test.tsx
+web	a tool the session never offered is bound to the model	src/assistant/engines/vercel/engine.test.ts
+web	a tool with no served schema is given an invented one	src/assistant/engines/contract.test.ts,src/assistant/engines/vercel/engine.test.ts,src/assistant/geminiSchema.test.ts
+web	a tool-only turn counts as evidence of no thinking	src/assistant/engines/vercel/engine.test.ts,src/assistant/thinking.test.ts
+web	a tool-only turn wipes the off-tier count	src/assistant/engines/vercel/engine.test.ts,src/assistant/thinking.test.ts
+web	a truncated list still claims nothing else was found	src/packs/checks.test.ts,src/packs/inspector/PackInspector.test.tsx
+web	a truncated thinking signature is sent back anyway	src/assistant/engines/vercel/engine.test.ts
+web	a var() fallback is not inspected	src/ui/convention.test.ts
+web	a var() reference stops at the first closing paren	src/ui/convention.test.ts
+web	a web research chat draft settles at ready citing nothing	src/research/run.test.ts,src/research/ui/ReviewPanel.test.tsx
+web	a web research chat draft whose trace was cut short reads as citing nothing	src/research/ui/ReviewPanel.test.tsx
+web	a wrap re-serializes the child instead of moving its bytes	src/packs/edit/conditionOps.test.ts
+web	a write erases the choices an earlier visit made	src/shell/inspectorWidth.test.tsx,src/shell/overlayGeometry.test.ts,src/shell/paneState.test.ts
+web	add over a conditions that is not a list does nothing	src/packs/edit/conditionOps.test.ts
+web	an Admin row composes a summary the decoder did not say	src/routes/AdminView.test.tsx
+web	an aborted call rethrows the error it caught	src/assistant/session.test.ts
+web	an absent base digest is read as a match	src/packs/inspector/PackInspector.test.tsx
+web	an absent required member gets an omission line	src/packs/document/PackDocumentView.test.tsx,src/packs/document/members.test.ts,src/routes/PackView.test.tsx
+web	an absent tool list grants every tool	src/assistant/enforcement.test.ts,src/config/fixtures.test.ts
+web	an accepted proposal stays accepted after Undo	src/assistant/AssistantPane.test.tsx
+web	an added member invents its own indentation	src/assistant/acceptProposal.test.ts,src/packs/documentText.test.ts,src/packs/edit/conditionOps.test.ts,src/packs/edit/writes.test.ts
+web	an address that arrives with a selection opens no pane	src/routes/PackView.test.tsx
+web	an address the document does not carry still answers	src/packs/references.test.ts
+web	an answer with no runtime status is recorded as refused	src/assistant/refutation.test.ts
+web	an appearance is written under the provisional key	src/identity/identity.test.tsx,src/shell/appearanceProvider.test.tsx
+web	an approval applies to a draft its proposal never saw	src/research/run.test.ts
+web	an approval rewrites an established case	src/research/run.test.ts
+web	an array index is read with Number rather than the grammar	src/packs/pointers.test.ts,src/packs/references.test.ts
+web	an arrival with no selection is not recorded as visited	src/routes/PackView.test.tsx
+web	an author cannot be added to a list that is not there	src/packs/edit/forms.test.tsx
+web	an await on the world is started before the signal is read	src/assistant/engines/contract.test.ts,src/assistant/engines/vercel/engine.test.ts
+web	an earlier reload answers over a later one	src/packs/edit/save.test.tsx
+web	an element drags its own indentation across a move	src/packs/documentText.test.ts
+web	an empty document is sent to be refused	src/mcp/queries.test.tsx
+web	an empty organization name is accepted	src/admin/projectFileWrite.test.tsx,src/config/deskConfig.test.ts,src/config/fixtures.test.ts
+web	an empty pack with no specVersion is written	src/packs/newPack.test.ts,src/shell/CreatePackDialog.test.tsx
+web	an empty version is drawn as a version	src/packs/PacksPane.test.tsx
+web	an endpoint may be committed to a project	src/assistant/enforcement.test.ts
+web	an endpoint with no model is refused again	src/assistant/AssistantPane.test.tsx,src/assistant/endpointForm.test.tsx,src/assistant/enforcement.test.ts,src/config/fixtures.test.ts,src/shell/DescribeIt.test.tsx
+web	an error after a proposal leaves it on offer	src/assistant/runOutcome.test.ts,src/shell/DescribeIt.test.tsx
+web	an escaping pack directory is accepted	src/config/deskConfig.test.ts,src/config/fixtures.test.ts,src/routes/AdminView.test.tsx
+web	an evaluate that reads as rehearsed is forwarded unchanged	src/assistant/toolGate.test.ts
+web	an example's value is the bare name the runtime gave it	src/shell/CreatePackDialog.test.tsx,src/shell/DescribeIt.test.tsx,src/shell/createFromRail.test.tsx
+web	an expired handoff forgets the id of a tab that has one	src/mcp/session.test.tsx
+web	an id declared twice keeps only the last place it was declared	src/packs/inspector/PackInspector.test.tsx,src/packs/references.test.ts
+web	an identity member marks no outline entry	src/routes/PackView.test.tsx
+web	an idle callback is scheduled but not tracked	src/assistant/conformance/conformance.test.ts
+web	an incomplete listing is treated as a complete one	src/shell/CreatePackDialog.test.tsx
+web	an intentional control-flow code is treated as an omission	src/packs/createRefusal.test.ts
+web	an interrupted approval retest keeps the correction	src/research/run.test.ts
+web	an off-window row is never brought on screen	src/packs/PacksPane.test.tsx,src/packs/useWindowedRows.test.tsx
+web	an offer off the address may still be accepted	src/packs/edit/useDocumentBuffer.test.ts
+web	an offer outlives the address that produced it	src/packs/edit/useDocumentBuffer.test.ts
+web	an old save rebases whatever buffer is on screen	src/packs/edit/useDocumentBuffer.test.ts
+web	an omission is drawn after the members rather than in its place	src/packs/document/PackDocumentView.test.tsx
+web	an omitted member renders nothing	src/i18n/language.test.tsx,src/packs/document/PackDocumentView.test.tsx
+web	an opaque redirect is delivered to the engine	src/mcp/session.test.tsx
+web	an open console can be capped down to no height at all	src/shell/shellSheet.test.ts
+web	an ordered comparison emits a number rather than a decimal string	src/packs/edit/ConditionBuilder.test.tsx
+web	an outline entry fills the Back stack	src/routes/PackView.test.tsx
+web	an over-deep packs directory decodes clean	src/config/deskConfig.test.ts
+web	an unadvertised rehearsal is probed silently	src/packs/edit/TryItPane.test.tsx
+web	an unchanged member is written again under Accept	src/assistant/AssistantPane.test.tsx,src/assistant/acceptProposal.test.ts
+web	an unchosen model is written as the empty string	src/assistant/endpointForm.test.tsx
 web	an unconfigured desk's drawer moves to the column's width	src/shell/narrowShell.test.tsx
+web	an unknown config key is accepted silently	src/assistant/enforcement.test.ts,src/config/deskConfig.test.ts,src/config/fixtures.test.ts,src/config/liveConfig.test.tsx,src/config/queries.test.tsx
+web	an unknown fragment opens no section	src/routes/AdminView.test.tsx
+web	an unknown storage key is accepted	src/config/deskConfig.test.ts
+web	an unmount releases the run without finishing it	src/assistant/useAssistantRun.test.tsx
+web	an unreadable configuration is reported as an absent one	src/config/liveConfig.test.tsx,src/config/queries.test.tsx
+web	an unreadable configuration is reported as no assistant	src/assistant/AssistantPane.test.tsx,src/assistant/slotAfterSave.test.tsx,src/shell/DescribeIt.test.tsx
+web	an unreadable configuration is silent outside Admin	src/config/liveConfig.test.tsx
+web	an unregistered engine id loads something anyway	src/assistant/engines/vercel/engine.test.ts
+web	an unsupported Latin letter is deleted rather than named	src/packs/newPack.test.ts
+web	an untouched pane is persisted along with the touched one	src/shell/AppShell.test.tsx,src/shell/inspectorWidth.test.tsx,src/shell/overlayGeometry.test.ts,src/shell/paneState.test.ts
+web	an unwritten operand is the field’s own again	src/packs/edit/ConditionBuilder.test.tsx
+web	an uppercase clause folds the Turkish dotless i into i	src/packs/packPath.test.ts
+web	any 401 ends the session on the desk's own fetch	src/mcp/session.test.tsx
+web	any marked relay 401 ends the session	src/mcp/session.test.tsx
+web	any relay 401 ends the session	src/assistant/modelListing.test.ts,src/mcp/session.test.tsx
+web	applicability is read-only, whatever mode the page is in	src/packs/edit/forms.test.tsx
+web	applicability renders two elements at one pointer	src/packs/document/PackDocumentView.test.tsx
+web	blanking a nonEmptyString writes an empty string	src/packs/edit/writes.test.ts
+web	bytes that are not a document are handed to the readers	src/packs/edit/resilience.test.tsx
+web	case establishment runs again over a blocked expectation	src/research/run.test.ts
+web	changing the operator retypes the author’s operand	src/packs/edit/ConditionBuilder.test.tsx,src/packs/edit/conditionOps.test.ts
+web	closing Create drops focus on the body	src/admin/ChatDataSettings.test.tsx,src/admin/DocumentProcessingSettings.test.tsx,src/jobs/JobIntegrationPicker.test.tsx,src/shell/QuickSwitcher.test.tsx,src/shell/useDirtyGuard.test.tsx
+web	closing the rail drawer drops focus on the body	src/shell/narrowShell.test.tsx
+web	component versions: a differing component raises no alert	src/updates/Updates.test.tsx
+web	component versions: development pin called a release	src/updates/Updates.test.tsx
+web	component versions: digest-approved Gateway called matching	src/updates/Updates.test.tsx
+web	component versions: modified build called matching	src/updates/Updates.test.tsx
+web	component versions: pinned version shown for another build	src/updates/Updates.test.tsx
+web	component versions: stopped Gateway compared as running	src/routes/HelpAboutUpdates.test.tsx
 web	component versions: unconfigured Runner shown as Unknown	src/updates/Updates.test.tsx
+web	create leaves its request behind when the editor is already open	src/routes/AuthorView.test.tsx
+web	create writes the pack and never registers it	src/shell/CreatePackDialog.test.tsx,src/shell/DescribeIt.test.tsx,src/shell/createFromRail.test.tsx
+web	createParents is not sent	src/shell/CreatePackDialog.test.tsx
+web	declared paths are compared as raw strings again	src/shell/CreatePackDialog.test.tsx
+web	diacritics are dropped rather than folded	src/packs/newPack.test.ts
+web	dirty is a parse comparison rather than a byte one	src/packs/edit/useDocumentBuffer.test.ts
+web	dirty means 'something was typed'	src/routes/AuthorView.test.tsx
+web	discard leaves the conflict standing	src/routes/AuthorView.test.tsx
+web	discard leaves the last save attempt’s verdict standing	src/packs/edit/useDocumentBuffer.test.ts
+web	downloads: a button for a file not held	src/audit/trailDownloads.test.tsx
+web	downloads: a file name the download does not take is accepted	src/audit/trailDownloads.test.tsx
+web	downloads: a refusal is not said	src/audit/trailDownloads.test.tsx
+web	downloads: another file is asked for	src/audit/trailDownloads.test.tsx
+web	downloads: not beside the report	src/audit/trailDownloads.test.tsx
+web	downloads: not beside the runtime's refusal	src/audit/trailDownloads.test.tsx
 web	downloads: offered with no files	src/audit/trailDownloads.test.tsx
+web	downloads: saved under another name	src/audit/trailDownloads.test.tsx
+web	downloads: the bytes are read as text	src/audit/trailDownloads.test.tsx
+web	duplicate members are read last-wins	src/admin/projectFileSave.test.ts,src/assistant/acceptProposal.test.ts,src/assistant/proposalDiff.test.ts,src/packs/documentText.test.ts,src/routes/PackView.test.tsx
+web	escalation triggers are read as evidence requirement ids	src/packs/references.test.ts
+web	every acquisition is pinned to the local gateway	src/documents/link-ingest.test.ts
+web	every answered reason is quoted as the chassis' own	src/config/queries.test.tsx
+web	every field is recorded as touched, not only the one that changed	src/admin/projectFileCards.test.tsx
+web	every hold counts as an edit, released or not	src/packs/edit/heldText.test.ts
+web	every metadata member is render-only, not only the reviews	src/packs/edit/forms.test.tsx
+web	every rerender reopens a pane the viewer closed	src/routes/PackView.test.tsx
+web	expectedVersion no longer matches the document's own version	src/packs/jpackConfig.test.ts,src/shell/CreatePackDialog.test.tsx
+web	extensions that are not an object are enumerated	src/packs/edit/resilience.test.tsx
+web	fields are drawn over a member that is not an object	src/packs/edit/resilience.test.tsx
+web	focus does not follow a rule that moved	src/packs/edit/EditView.test.tsx,src/packs/edit/resilience.test.tsx
+web	folding compares UTF-16 units rather than code points	src/packs/packPath.test.ts
+web	forgetting a buffer leaves its generation for the next render	src/packs/edit/useDocumentBuffer.test.ts
+web	form mode is offered over a document the two readings disagree about	src/packs/edit/EditView.test.tsx
+web	gates help: says no record is signed	src/routes/HelpAbout.test.tsx
 web	gates help: the signatures paragraph is not said as written	src/routes/HelpAbout.test.tsx
+web	hand-over client: a download whose headers disagree is taken	src/audit/handover.test.tsx,src/audit/jobsRecord.test.tsx
+web	hand-over client: a holder is added in other words	src/audit/handover.test.tsx
+web	hand-over client: a refusal that is not JSON is not said	src/audit/handover.test.tsx
+web	hand-over client: a stale refusal is not told apart	src/audit/handover.test.tsx
+web	hand-over client: an empty word on the record is read	src/audit/handover.test.tsx
+web	hand-over client: holders of another shape are read	src/audit/handover.test.tsx
+web	hand-over client: nothing new is read as a download	src/audit/handover.test.tsx,src/audit/jobsRecord.test.tsx
+web	hand-over client: the checkpoints are read as text	src/audit/handover.test.tsx,src/audit/jobsRecord.test.tsx
+web	hand-over client: the confirmation names another cursor	src/audit/handover.test.tsx,src/audit/jobsRecord.test.tsx
+web	hand-over page: ADR's sentence is not beside the list	src/audit/handover.test.tsx
+web	hand-over page: a download is offered with no trail	src/audit/handover.test.tsx,src/audit/jobsRecord.test.tsx
+web	hand-over page: a holder of a trail moved aside reads as handed nothing	src/audit/handover.test.tsx,src/audit/jobsRecord.test.tsx
+web	hand-over page: a holder's file passed over is not named	src/audit/handover.test.tsx
+web	hand-over page: a record Desk could not read is not said beside the report	src/audit/handover.test.tsx
+web	hand-over page: a record Desk could not read is not said beside the runtime's refusal	src/audit/handover.test.tsx
+web	hand-over page: a refused holder is not said	src/audit/handover.test.tsx
+web	hand-over page: a stale download still waits for its confirmation	src/audit/handover.test.tsx
+web	hand-over page: a waiting download outlives opening the panel again	src/audit/handover.test.tsx
+web	hand-over page: not beside the report	src/audit/handover.test.tsx,src/audit/jobsRecord.test.tsx
+web	hand-over page: not beside the runtime's refusal	src/audit/handover.test.tsx
+web	hand-over page: nothing new is not said	src/audit/handover.test.tsx,src/audit/jobsRecord.test.tsx
+web	hand-over page: records since are not shown	src/audit/handover.test.tsx,src/audit/jobsRecord.test.tsx
+web	hand-over page: records since are shown with no current trail	src/audit/handover.test.tsx
+web	hand-over page: saved under another name	src/audit/handover.test.tsx
+web	hand-over page: the SHA-256 handed over is not shown	src/audit/handover.test.tsx,src/audit/jobsRecord.test.tsx
+web	hand-over page: the decision record is not checked again after a confirmation	src/audit/handover.test.tsx,src/audit/jobsRecord.test.tsx
+web	hand-over page: the held statement is not said	src/audit/handover.test.tsx
+web	hand-over page: the holders are not read again with the decision record	src/audit/handover.test.tsx
+web	hand-over page: the holders follow every change to the project	src/audit/handover.test.tsx
+web	hand-over page: the stale sentence is not said	src/audit/handover.test.tsx
+web	help: a path is not quoted for the shell	src/routes/HelpAbout.test.tsx
+web	help: the agent command names no configuration	src/routes/HelpAbout.test.tsx
 web	help: the tested-releases setting is not read	src/routes/HelpAbout.test.tsx
+web	identity may be configured in the shared project file	src/config/deskConfig.test.ts
+web	jobs activity (by): a trigger's run is said to be this installation	src/jobs/ActivityView.test.tsx,src/jobs/RunRecord.test.tsx,src/jobs/activity.test.ts
+web	jobs activity (by): an unrecorded requester is said to be this installation	src/jobs/ActivityView.test.tsx,src/jobs/RunRecord.test.tsx,src/jobs/activity.test.ts
+web	jobs activity (evidence): bytes are measured as their base64 text	src/jobs/ActivityView.test.tsx,src/jobs/RunRecord.test.tsx
+web	jobs activity (evidence): evidence is read from the list, which strips it	src/jobs/ActivityJournal.test.tsx,src/jobs/ActivityJournalBounds.test.tsx,src/jobs/ActivityView.test.tsx
+web	jobs activity (evidence): receipts are said present without a citation	src/jobs/activity.test.ts
+web	jobs activity (evidence): record bytes are read from the parsed record	src/jobs/activity.test.ts
+web	jobs activity (evidence): the evidence column says verified	src/jobs/ActivityJournal.test.tsx,src/jobs/ActivityJournalBounds.test.tsx,src/jobs/ActivityView.test.tsx
+web	jobs activity (evidence): the sidecar's presence is not read	src/jobs/ActivityView.test.tsx,src/jobs/RunRecord.test.tsx,src/jobs/activity.test.ts
+web	jobs activity (filters): the kind filter keeps every kind	src/jobs/ActivityView.test.tsx,src/jobs/activity.test.ts
+web	jobs activity (filters): the state filter is not sent to Runner	src/jobs/ActivityView.test.tsx,src/jobs/activity.test.ts
+web	jobs activity (filters): the trigger filter keeps every initiator	src/jobs/ActivityView.test.tsx,src/jobs/activity.test.ts
+web	jobs activity (page): the Activity tab is not offered	src/jobs/ActivityView.test.tsx
+web	jobs activity (page): the Decision record panel does not say Jobs runs are elsewhere	src/jobs/decisionRecordSentence.test.tsx
+web	jobs activity (rows): a waiting occurrence is not a preparation	src/jobs/ActivityView.test.tsx,src/jobs/activity.test.ts
+web	jobs activity (rows): rows a later page could put above are shown	src/jobs/ActivityView.test.tsx,src/jobs/activity.test.ts
+web	jobs activity (rows): rows are shown before every list has answered	src/jobs/ActivityView.test.tsx
+web	jobs activity (rows): rows keep Runner's list order, not time	src/jobs/ActivityJournal.test.tsx,src/jobs/ActivityJournalBounds.test.tsx,src/jobs/ActivityView.test.tsx,src/jobs/activity.test.ts
+web	jobs activity (rows): the older floor limits instead of the newer	src/jobs/activity.test.ts
+web	jobs activity (time): a run row without its submission time is given one	src/jobs/activity.test.ts
+web	jobs activity (time): a start is shown that Runner never stored	src/jobs/ActivityView.test.tsx,src/jobs/activity.test.ts
+web	jobs activity (time): an interrupted run's finish is called finished	src/jobs/ActivityView.test.tsx,src/jobs/activity.test.ts
+web	jobs activity (time): an occurrence row without its receipt time is given one	src/jobs/ActivityView.test.tsx,src/jobs/activity.test.ts
+web	jobs activity (time): the run page calls an interrupted run's finish finished	src/jobs/ActivityView.test.tsx,src/jobs/RunRecord.test.tsx
+web	jobs activity (time): the run page does not show when the run started	src/jobs/ActivityView.test.tsx,src/jobs/RunRecord.test.tsx
+web	jobs hand-over client: a download of the chain is taken under the trail's name	src/audit/jobsRecord.test.tsx
+web	jobs hand-over client: the chain beside the holders is read in any shape	src/audit/jobsRecord.test.tsx
+web	jobs hand-over client: the chain's confirmation does not name the chain	src/audit/jobsRecord.test.tsx
+web	jobs hand-over client: the chain's download asks for the trail	src/audit/jobsRecord.test.tsx
+web	jobs hand-over page: a chain with another identity reads as handed nothing	src/audit/jobsRecord.test.tsx
+web	jobs hand-over page: a confirmation of the trail checks the Jobs record again	src/audit/jobsRecord.test.tsx
+web	jobs hand-over page: no Runner is not said	src/audit/jobsRecord.test.tsx
+web	jobs hand-over page: the Jobs record is not checked again after a confirmation of the chain	src/audit/jobsRecord.test.tsx
+web	jobs hand-over page: the chain's download is the trail's	src/audit/jobsRecord.test.tsx
+web	jobs hand-over page: the chain's notices are the trail's	src/audit/jobsRecord.test.tsx
+web	jobs hand-over page: the chain's record is the trail's	src/audit/jobsRecord.test.tsx
+web	jobs hand-over page: the chain's row is shown where there is no Runner	src/audit/jobsRecord.test.tsx
+web	jobs hand-over page: the chain's row offers a download where the chain was not read	src/audit/jobsRecord.test.tsx
+web	jobs hand-over page: why the chain's row offers nothing is not said	src/audit/jobsRecord.test.tsx
+web	jobs journal (begins): the line is never shown	src/jobs/ActivityJournal.test.tsx
+web	jobs journal (begins): the line is shown whatever the job's age	src/jobs/ActivityJournal.test.tsx,src/jobs/journal.test.ts
+web	jobs journal (bound): entries dropped are not counted	src/jobs/ActivityJournalBounds.test.tsx,src/jobs/journal.test.ts
+web	jobs journal (bound): every entry read is kept	src/jobs/ActivityJournalBounds.test.tsx,src/jobs/journal.test.ts
+web	jobs journal (bound): the bounds are not the ones stated	src/jobs/journal.test.ts
+web	jobs journal (bound): the entries read and not kept are not said	src/jobs/ActivityJournalBounds.test.tsx
+web	jobs journal (by): a key issued before the journal is given a revision	src/jobs/ActivityJournal.test.tsx
+web	jobs journal (by): the installation is shown as its owner	src/jobs/ActivityJournal.test.tsx
+web	jobs journal (filters): entries are shown under a filter	src/jobs/ActivityJournal.test.tsx
+web	jobs journal (kinds): a kind Runner writes is not worded	src/jobs/ActivityJournal.test.tsx,src/jobs/journal.test.ts
+web	jobs journal (kinds): a kind this Desk does not know is dropped	src/jobs/ActivityJournal.test.tsx,src/jobs/journal.test.ts
+web	jobs journal (order): a place does not count the entries read and not kept	src/jobs/activity.test.ts
+web	jobs journal (order): a record stands by its time, not its creation entry	src/jobs/ActivityJournal.test.tsx,src/jobs/activity.test.ts
+web	jobs journal (order): entries are ordered by their time, not Runner's order	src/jobs/ActivityJournal.test.tsx,src/jobs/activity.test.ts
+web	jobs journal (order): the oldest record's own creation entry is held back	src/jobs/activity.test.ts
+web	jobs journal (pace): no turn for the browser between pages	src/jobs/ActivityJournalBounds.test.tsx,src/jobs/journal.test.ts
+web	jobs journal (pace): the refresh does not wait for the catch-up	src/jobs/ActivityJournal.test.tsx,src/jobs/ActivityJournalBounds.test.tsx
+web	jobs journal (pace): the turn is a microtask, not a task	src/jobs/ActivityJournalBounds.test.tsx,src/jobs/journal.test.ts
+web	jobs journal (progress): a journal read to its end is not said to be	src/jobs/ActivityJournalBounds.test.tsx
+web	jobs journal (progress): entries are shown before the journal is read to its end	src/jobs/ActivityJournalBounds.test.tsx
+web	jobs journal (progress): the reading's progress is not said	src/jobs/ActivityJournalBounds.test.tsx
+web	jobs journal (progress): the table is not said to wait for the end	src/jobs/ActivityJournalBounds.test.tsx
+web	jobs journal (progress): what was last read to the end is dropped while newer pages are read	src/jobs/ActivityJournalBounds.test.tsx
+web	jobs journal (reading): a 404 is an error, not a runner without a journal	src/jobs/ActivityJournal.test.tsx,src/jobs/ActivityJournalBounds.test.tsx
+web	jobs journal (reading): a refusal that is not JSON loses its status	src/jobs/client.test.ts
+web	jobs journal (reading): a runner that serves no journal is asked again	src/jobs/ActivityJournal.test.tsx
+web	jobs journal (reading): asked again faster than every five seconds	src/jobs/ActivityJournal.test.tsx,src/jobs/journal.test.ts
+web	jobs journal (reading): only the first page is read	src/jobs/ActivityJournal.test.tsx,src/jobs/ActivityJournalBounds.test.tsx,src/jobs/journal.test.ts
+web	jobs journal (reading): the reader starts from 0 whatever it holds	src/jobs/ActivityJournal.test.tsx,src/jobs/ActivityJournalBounds.test.tsx,src/jobs/journal.test.ts
+web	jobs journal (reading): the tab reads from 0 again on every refresh	src/jobs/ActivityJournal.test.tsx,src/jobs/ActivityJournalBounds.test.tsx
+web	jobs journal (record): a run row takes its state from the journal	src/jobs/ActivityJournal.test.tsx,src/jobs/ActivityJournalBounds.test.tsx
+web	jobs journal (source): an entry is labelled a record	src/jobs/ActivityJournal.test.tsx
+web	jobs journal (stop): a failure is not said	src/jobs/ActivityJournalBounds.test.tsx
+web	jobs journal (stop): a page answered after the reading was abandoned is read	src/jobs/journal.test.ts
+web	jobs journal (stop): continuing starts from 0	src/jobs/ActivityJournalBounds.test.tsx
+web	jobs journal (time): a time that does not read as one is formatted	src/jobs/ActivityJournal.test.tsx
+web	jobs journal (window): every entry kept is rendered	src/jobs/ActivityJournalBounds.test.tsx
+web	jobs journal (window): the newest-entries line is not shown	src/jobs/ActivityJournalBounds.test.tsx
+web	jobs journal (window): the step control is offered past what is kept	src/jobs/ActivityJournalBounds.test.tsx
+web	jobs journal (window): the step control shows nothing more	src/jobs/ActivityJournalBounds.test.tsx
+web	jobs record client: a check in flight is joined after a confirmation of the chain	src/audit/jobsRecord.test.tsx
+web	jobs record client: a refusal that is not JSON is not said	src/audit/jobsRecord.test.tsx
+web	jobs record client: an answer of another shape is read	src/audit/jobsRecord.test.tsx
+web	jobs record client: the chain is asked of another route	src/audit/jobsRecord.test.tsx
 web	jobs record client: the check after a confirmation follows every change to the project	src/audit/jobsRecord.test.tsx
+web	jobs record page: Runner not running is not said	src/audit/jobsRecord.test.tsx
+web	jobs record page: Runner's key is not shown	src/audit/jobsRecord.test.tsx
+web	jobs record page: a holder's file passed over is not named	src/audit/jobsRecord.test.tsx
+web	jobs record page: an error leaves an earlier report shown	src/audit/jobsRecord.test.tsx
+web	jobs record page: an older runtime is not said	src/audit/jobsRecord.test.tsx
+web	jobs record page: it follows every change to the project	src/audit/jobsRecord.test.tsx
+web	jobs record page: it runs on a timer	src/audit/jobsRecord.test.tsx
+web	jobs record page: it runs on its own	src/audit/jobsRecord.test.tsx
+web	jobs record page: no Runner is not said	src/audit/jobsRecord.test.tsx
+web	jobs record page: shown where the desk has no Runner	src/audit/jobsRecord.test.tsx
+web	jobs record page: the chain is read as text	src/audit/jobsRecord.test.tsx
+web	jobs record page: the chain is saved under another name	src/audit/jobsRecord.test.tsx
+web	jobs record page: the copy's lines are not said	src/audit/jobsRecord.test.tsx
+web	jobs record page: the report is not shown	src/audit/jobsRecord.test.tsx
+web	jobs record page: the sentence claims keys it did not pass	src/audit/jobsRecord.test.tsx
+web	jobs record page: where each run's signature is checked is not said	src/audit/jobsRecord.test.tsx
+web	jobs run times (#223): the Runs table formats the time unguarded	src/jobs/JobsView.test.tsx
+web	jobs run times (#223): the Runs table's helper formats a time Runner did not store	src/jobs/JobsIndex.test.tsx,src/jobs/JobsView.test.tsx
+web	jobs run times (#223): the Runs table's helper formats a time that does not read as one	src/jobs/JobsIndex.test.tsx,src/jobs/JobsView.test.tsx
+web	jobs run times (#223): the index dot's label formats the time unguarded	src/jobs/JobsIndex.test.tsx
+web	jobs run times (#223): the index dot's tooltip formats the time unguarded	src/jobs/JobsIndex.test.tsx
+web	jobs run times (#223): the run page calls a start not stored yet Not recorded	src/jobs/RunRecord.test.tsx
+web	jobs run times (#223): the run page calls a submission time Runner did not store —	src/jobs/RunRecord.test.tsx
+web	jobs run times (#223): the run page formats a time that does not read as one	src/jobs/RunRecord.test.tsx
+web	jobs run times (#223): the run page formats its finish unguarded	src/jobs/RunRecord.test.tsx
+web	jobs run times (#223): the run page formats its start unguarded	src/jobs/RunRecord.test.tsx
+web	jobs run times (#223): the run page formats its submission time unguarded	src/jobs/RunRecord.test.tsx
+web	jobs standing: Runner's own pack id is compared	src/jobs/JobsView.test.tsx
 web	jobs standing: Runner's reviewed field is not explained	src/jobs/ReleaseStanding.test.tsx
+web	jobs standing: a cached reading is kept while it is read again	src/jobs/ReleaseStanding.test.tsx
+web	jobs standing: a cached reading is kept while its read is paused	src/jobs/ReleaseStanding.test.tsx
+web	jobs standing: a cached reading outlives a failed refresh	src/jobs/ReleaseStanding.test.tsx
+web	jobs standing: a lock entry that is not text is accepted	src/jobs/ReleaseStanding.test.tsx
+web	jobs standing: a lock the runtime could not read is compared	src/jobs/ReleaseStanding.test.tsx
+web	jobs standing: a project file change is not shown	src/jobs/ReleaseStanding.test.tsx
+web	jobs standing: a review that cannot be read is never said	src/jobs/JobsView.test.tsx,src/jobs/ReleaseStanding.test.tsx
+web	jobs standing: a review that stopped is compared	src/jobs/ReleaseStanding.test.tsx
+web	jobs standing: an invalidated reading is kept until it is read again	src/jobs/ReleaseStanding.test.tsx
+web	jobs standing: another pack's findings are shown	src/jobs/ReleaseStanding.test.tsx
+web	jobs standing: no lock is not told apart	src/jobs/ReleaseStanding.test.tsx
+web	jobs standing: not shown in Review this release	src/jobs/JobsView.test.tsx
 web	jobs standing: the comparison is inverted	src/jobs/JobsView.test.tsx,src/jobs/ReleaseStanding.test.tsx,src/jobs/reviewedSet.desks.test.ts
+web	jobs standing: the file's current digest is compared	src/jobs/ReleaseStanding.test.tsx,src/jobs/reviewedSet.desks.test.ts
+web	jobs standing: the first pack's entry is compared	src/jobs/ReleaseStanding.test.tsx
+web	jobs standing: the parsed pack is hashed, not its bytes	src/jobs/ReleaseStanding.test.tsx,src/jobs/reviewedSet.desks.test.ts
+web	key panel: a check of any status is accepted	src/audit/decisionRecord.test.tsx
+web	key panel: a failed check reads as passed	src/audit/decisionRecord.test.tsx
+web	key panel: a kept list out of order is accepted	src/audit/decisionRecord.test.tsx
+web	key panel: a key not in lowercase hex is accepted	src/audit/decisionRecord.test.tsx
+web	key panel: a made desk without a key is not said	src/audit/decisionRecord.test.tsx
+web	key panel: an empty kept list is accepted	src/audit/decisionRecord.test.tsx
+web	key panel: keys Desk could not read are not said	src/audit/decisionRecord.test.tsx
+web	key panel: keys and the check are not checked	src/audit/decisionRecord.test.tsx
+web	key panel: no key named is not said	src/audit/decisionRecord.test.tsx
+web	key panel: signatures are not checked	src/audit/decisionRecord.test.tsx
+web	key panel: the check's words are dropped	src/audit/decisionRecord.test.tsx
+web	key panel: the key in force is not shown	src/audit/decisionRecord.test.tsx
+web	key panel: the public keys are not shown	src/audit/decisionRecord.test.tsx,src/audit/rotateSigningKey.test.tsx,src/packs/upgrade/upgrade.test.tsx
+web	key panel: the public keys are shown out of order	src/audit/decisionRecord.test.tsx,src/audit/rotateSigningKey.test.tsx
+web	key panel: the runtime's diagnostics on the key are not shown	src/audit/decisionRecord.test.tsx
+web	key panel: the statement claims keys it did not pass	src/audit/decisionRecord.test.tsx
+web	key panel: the statement says no keys where it passed some	src/audit/decisionRecord.test.tsx
+web	members render in canonical order rather than the document's	src/packs/document/PackDocumentView.test.tsx
+web	new bytes are written with this module's line ending	src/packs/edit/conditionOps.test.ts
 web	new desk notice: a notice that is not words is accepted	src/desks/DeskSwitcher.test.tsx
+web	new desk notice: a paragraph is not translated	src/desks/DeskSwitcher.test.tsx
+web	new desk notice: its paragraphs are not each translated	src/desks/DeskSwitcher.test.tsx
+web	new desk notice: not shown	src/desks/DeskSwitcher.test.tsx
+web	new desk notice: the desk opens before it is read	src/desks/DeskSwitcher.test.tsx
+web	no block is reachable by keyboard	src/packs/document/PackDocumentView.test.tsx
+web	no jpack.json is claimed for any failed read	src/shell/CreatePackDialog.test.tsx
+web	nothing is selected while the templates are still being asked	src/shell/CreatePackDialog.test.tsx
+web	off is expressed by omission on the Gemini wire too	src/assistant/conformance/conformance.test.ts,src/assistant/thinking.test.ts
+web	one quiet turn makes an endpoint with no thinking	src/assistant/engines/vercel/engine.test.ts,src/assistant/thinking.test.ts
+web	one reasoning turn makes a model that always thinks	src/assistant/engines/vercel/engine.test.ts,src/assistant/thinking.test.ts
+web	one rule's pointer is read as a prefix of another's	src/packs/checks.test.ts
+web	one settled status is used for every check	src/assistant/engines/codex/codex.test.ts,src/assistant/engines/vercel/engine.test.ts,src/assistant/refutation.test.ts
+web	only the bytes make an answer stale	src/packs/edit/TryItPane.test.tsx
 web	opening the Inspector is a toggle	src/shell/shellState.test.tsx
+web	override is always sent	src/admin/projectFileWrite.test.tsx,src/routes/AuthorView.test.tsx,src/shell/CreatePackDialog.test.tsx
+web	pane state is not persisted	src/config/liveConfig.test.tsx,src/shell/AppShell.test.tsx,src/shell/inspectorWidth.test.tsx
+web	paths are folded by lowercasing rather than by orbit	src/packs/packPath.test.ts
+web	position dropped from .desk, so the frame clips nothing	src/ui/containingBlock.test.ts
+web	position dropped from .desk-main, so the pane contains nothing	src/ui/containingBlock.test.ts
+web	provenance is inferred from the status again	src/admin/SourceCard.test.tsx,src/routes/AdminView.test.tsx
+web	rail calls the whole-project graph walk	src/config/liveConfig.test.tsx,src/packs/collectionPreview.test.tsx,src/routes/AdminView.test.tsx,src/shell/AppShell.test.tsx,src/shell/DescribeIt.test.tsx,src/shell/LeftRail.test.tsx,src/shell/createFromRail.test.tsx,src/shell/inspectorSlot.test.tsx,src/shell/narrowShell.test.tsx
+web	re-seeding overrides a layout the viewer chose	src/shell/inspectorWidth.test.tsx
+web	read mode hands over an editable buffer	src/packs/edit/resilience.test.tsx
+web	read_link hands the model the whole page	src/chat/linkTools.test.ts
+web	read_link reads a link without supplied or verified provenance	src/chat/linkTools.test.ts,src/search/tools.test.ts
+web	readiness is asked whether it is set, not what it was set about	src/research/run.test.ts
+web	record: Admin says it is always visible	src/routes/AdminView.test.tsx
+web	record: Desk's refusal reads as a failure	src/audit/decisionRecord.test.tsx,src/jobs/decisionRecordSentence.test.tsx
+web	record: a count that is missing is accepted	src/audit/decisionRecord.test.tsx
+web	record: a diagnostic with no words is accepted	src/audit/decisionRecord.test.tsx
+web	record: a discontinuity is not shown	src/audit/decisionRecord.test.tsx
+web	record: a file change cancels its run	src/audit/decisionRecordLifecycle.test.tsx
+web	record: a file change invalidates it	src/audit/decisionRecordLifecycle.test.tsx
+web	record: a finding is not named	src/audit/decisionRecord.test.tsx,src/audit/jobsRecord.test.tsx
+web	record: a list longer than its total is accepted	src/audit/decisionRecord.test.tsx
+web	record: a reconnect invalidates it	src/audit/decisionRecordLifecycle.test.tsx
+web	record: a report with no coverage is accepted	src/audit/decisionRecord.test.tsx
+web	record: a snapshot taken with no lock is not said	src/audit/decisionRecord.test.tsx
+web	record: an answer of no known state is accepted	src/audit/decisionRecord.test.tsx
+web	record: an answer that is not one is shown	src/audit/decisionRecord.test.tsx
+web	record: an older runtime's line claims signing	src/audit/decisionRecord.test.tsx
+web	record: an older runtime's line has a control beside it	src/audit/decisionRecord.test.tsx
+web	record: an older runtime's line names another version	src/audit/decisionRecord.test.tsx
+web	record: an unchecked signature reads as none	src/audit/decisionRecord.test.tsx,src/audit/jobsRecord.test.tsx
+web	record: asking again runs nothing	src/audit/decisionRecord.test.tsx,src/audit/handover.test.tsx,src/audit/rotateSigningKey.test.tsx
+web	record: becoming visible again runs nothing	src/audit/decisionRecord.test.tsx,src/audit/handover.test.tsx,src/audit/rotateSigningKey.test.tsx,src/routes/AdminView.test.tsx
 web	record: every query follows the project	src/audit/decisionRecord.test.tsx,src/audit/decisionRecordLifecycle.test.tsx
+web	record: findings that disagree with the status are accepted	src/audit/decisionRecord.test.tsx,src/audit/jobsRecord.test.tsx
+web	record: findings the runtime did not list are not counted	src/audit/decisionRecord.test.tsx
+web	record: it runs while hidden	src/audit/decisionRecord.test.tsx,src/routes/AdminView.test.tsx
 web	record: not in Admin → Project	src/routes/AdminView.test.tsx
+web	record: not marked to run only on request	src/audit/decisionRecord.test.tsx,src/audit/decisionRecordLifecycle.test.tsx
+web	record: signature counts are shown where none was checked	src/audit/decisionRecord.test.tsx
+web	record: the establishes sentences are not marked English	src/audit/decisionRecord.test.tsx,src/audit/jobsRecord.test.tsx
+web	record: the query runs on its own	src/audit/decisionRecord.test.tsx
+web	record: the runtime's refusal with nothing said is accepted	src/audit/decisionRecord.test.tsx
+web	record: through no record is accepted	src/audit/decisionRecord.test.tsx
+web	record: uncovered lines are shown as unchained	src/audit/decisionRecord.test.tsx
+web	record: unwitnessed records are shown as witnessed	src/audit/decisionRecord.test.tsx,src/audit/jobsRecord.test.tsx
+web	record: what Desk did not give is not said	src/audit/decisionRecord.test.tsx
+web	record: what the result does not establish is not shown	src/audit/decisionRecord.test.tsx,src/audit/jobsRecord.test.tsx
+web	reload is available during an in-flight write	src/routes/AuthorView.test.tsx
+web	reload trusts refetch rather than its own read	src/files/useFileEditing.test.ts,src/routes/AuthorView.test.tsx
+web	removal is offered where there is nothing to remove	src/assistant/AssistantSection.test.tsx,src/routes/AdminView.test.tsx
+web	removing a member leaves its comma	src/packs/documentText.test.ts,src/packs/edit/conditionOps.test.ts
+web	removing the endpoint discards the tier	src/assistant/endpointForm.test.tsx
+web	removing the endpoint writes an endpoint object anyway	src/assistant/endpointForm.test.tsx
+web	review: a diff is drawn without the locked bytes	src/packs/review/review.test.tsx
+web	review: a file is left out of the review	src/packs/review/review.test.tsx
+web	review: a finding is given other words	src/jobs/ReleaseStanding.test.tsx,src/packs/review/findings.test.ts,src/packs/review/review.test.tsx
+web	review: a finding is put beside another file	src/packs/review/findings.test.ts
 web	review: a first lock's files are shown closed	src/packs/review/review.test.tsx
+web	review: a graph's finding is shown beside a pack	src/packs/review/findings.test.ts
+web	review: a lock is offered over a file that cannot be shown	src/packs/review/review.test.tsx
+web	review: a lock is offered when every file matches	src/packs/review/review.test.tsx
 web	review: a stale confirmation reads as any failure	src/packs/review/review.test.tsx
+web	review: an unknown finding is dropped	src/packs/review/findings.test.ts
+web	review: no finding beside a pack's name	src/packs/review/review.test.tsx
+web	review: the confirmation does not carry the token	src/packs/review/review.test.tsx
+web	review: the step is not shown again after a stale confirmation	src/packs/review/review.test.tsx
+web	reviews that are not a list are mapped over	src/packs/edit/resilience.test.tsx
 web	rotation client: a rotation to another sequence is taken	src/audit/rotateSigningKey.test.tsx
+web	rotation client: a stale refusal is not told apart	src/audit/rotateSigningKey.test.tsx
+web	rotation client: a token of another form is taken	src/audit/rotateSigningKey.test.tsx
+web	rotation page: a key's label does not say the record it signs after	src/audit/decisionRecord.test.tsx,src/audit/rotateSigningKey.test.tsx
+web	rotation page: a refusal is not said	src/audit/rotateSigningKey.test.tsx
+web	rotation page: a rotation that did not finish is not said	src/audit/rotateSigningKey.test.tsx
+web	rotation page: an outcome outlives a later check	src/audit/rotateSigningKey.test.tsx
+web	rotation page: an outcome outlives opening the panel again	src/audit/rotateSigningKey.test.tsx
 web	rotation page: offered where the chassis offers none	src/audit/rotateSigningKey.test.tsx
+web	rotation page: the button rotates without a confirmation	src/audit/rotateSigningKey.test.tsx
+web	rotation page: the confirmation omits a record that may be unsigned	src/audit/rotateSigningKey.test.tsx
+web	rotation page: the confirmation omits that a lost key stays lost	src/audit/rotateSigningKey.test.tsx
+web	rotation page: the confirmation omits that nothing is revoked	src/audit/rotateSigningKey.test.tsx
+web	rotation page: the confirmation omits that the current key stops signing	src/audit/rotateSigningKey.test.tsx
+web	rotation page: the confirmation omits the old key's bytes	src/audit/rotateSigningKey.test.tsx
+web	rotation page: the panel is not checked again after a rotation	src/audit/rotateSigningKey.test.tsx
+web	rotation page: the token sent is not the panel's	src/audit/rotateSigningKey.test.tsx
+web	routes read the Inspector slot's closed default	src/packs/collectionPreview.test.tsx,src/shell/AppShell.test.tsx,src/shell/inspectorSlot.test.tsx,src/shell/narrowShell.test.tsx
+web	run chain: a refusal saved	src/jobs/RunChainDownload.test.tsx
+web	run chain: a transfer that ended early saved	src/jobs/RunChainDownload.test.tsx
+web	run chain: another route asked	src/jobs/RunChainDownload.test.tsx
+web	run chain: earlier saved line kept after a failed attempt	src/jobs/RunChainDownload.test.tsx
 web	run chain: not offered on the Jobs page	src/jobs/JobsIndex.test.tsx
+web	run chain: not said to be unverified	src/jobs/RunChainDownload.test.tsx
+web	run chain: saved as text decoded from the answer	src/jobs/RunChainDownload.test.tsx
+web	run chain: saved under another name	src/jobs/RunChainDownload.test.tsx
+web	runner key: Runner not running not said	src/jobs/runnerKey.test.tsx,src/routes/HelpAbout.test.tsx
+web	runner key: a Jobs action does not ask again	src/jobs/JobsView.test.tsx
 web	runner key: a malformed public key read	src/jobs/runnerKey.test.tsx
-web	sign-in cancel: Cancel sign-in is held until the status refresh	src/assistant/AssistantSettings.test.tsx
-web	sign-in cancel: the first-connect hint shows beside the sign-in link	src/assistant/AssistantSettings.test.tsx
-web	sign-in cancel: the progress line outlasts the login answer	src/assistant/AssistantSettings.test.tsx
+web	runner key: a reason the page has no words for read	src/jobs/runnerKey.test.tsx
+web	runner key: a run submitted does not ask again	src/jobs/JobsView.test.tsx
+web	runner key: its public key not shown	src/audit/jobsRecord.test.tsx,src/jobs/runnerKey.test.tsx,src/routes/HelpAbout.test.tsx
+web	runner key: not asked again while shown	src/jobs/runnerKey.test.tsx
+web	runner key: not shown on Gates	src/routes/HelpAbout.test.tsx
+web	runner key: the folder in use not said	src/routes/HelpAbout.test.tsx
+web	runner key: the words Desk passed on not said	src/jobs/runnerKey.test.tsx,src/routes/HelpAbout.test.tsx
+web	runner key: why its runs are unsigned not said	src/jobs/runnerKey.test.tsx,src/routes/HelpAbout.test.tsx
+web	runner key: words that are not text read	src/jobs/runnerKey.test.tsx
+web	samePath stops folding altogether	src/packs/packPath.test.ts
+web	shortcuts fire inside the editor	src/shell/QuickSwitcher.test.tsx,src/shell/shortcuts.test.tsx
 web	signing key: config read drops the member	src/config/queries.test.tsx,src/routes/HelpAbout.test.tsx
+web	signing key: config read takes a member that is not a boolean	src/config/queries.test.tsx
+web	signing key: the line never shows	src/routes/HelpAbout.test.tsx
+web	signing key: the line shows for a value that is not a boolean	src/routes/HelpAbout.test.tsx
+web	signing key: the line shows for false	src/routes/HelpAbout.test.tsx
+web	spec_version is sent to example tools that do not take it	src/shell/CreatePackDialog.test.tsx
+web	storage defaults are not applied when the member is absent	src/admin/projectFileCards.test.tsx,src/config/deskConfig.test.ts,src/config/queries.test.tsx,src/routes/AdminView.test.tsx,src/shell/AppShell.test.tsx,src/shell/CreatePackDialog.test.tsx,src/shell/DescribeIt.test.tsx
+web	tested releases: Create job shown the existing-job note	src/jobs/JobsView.test.tsx
+web	tested releases: Runner's refusal not shown in place of the job	src/jobs/JobsView.test.tsx
+web	tested releases: config read drops the policy	src/config/queries.test.tsx,src/jobs/JobsView.test.tsx,src/jobs/ReleaseReadiness.test.tsx
+web	tested releases: config read takes a policy that is not a boolean	src/config/queries.test.tsx
+web	tested releases: existing job told it predates a policy that is off	src/jobs/ReleaseReadiness.test.tsx
+web	tested releases: existing job told it will be refused	src/jobs/JobsView.test.tsx
+web	tested releases: note claims the policy on where Desk did not say	src/jobs/JobsView.test.tsx,src/jobs/ReleaseReadiness.test.tsx
+web	tested releases: note never says the policy is off	src/jobs/ReleaseReadiness.test.tsx
+web	tested releases: note never says the policy is on	src/jobs/JobsView.test.tsx,src/jobs/ReleaseReadiness.test.tsx
 web	tested releases: page never reads the policy	src/jobs/JobsView.test.tsx,src/jobs/ReleaseReadiness.test.tsx
+web	text held beside the bytes moves no revision	src/packs/edit/heldText.test.ts
+web	the Appearance Save back (a write to /appearance from Admin)	src/admin/projectFileCards.test.tsx,src/routes/AdminView.test.tsx
+web	the Assistant tab ignores what the run failed with	src/assistant/AssistantPane.test.tsx
+web	the Gemini re-framing decides from the body rather than the address	src/assistant/conformance/conformance.test.ts
+web	the Gemini rebuild strips the tier from the top level	src/assistant/engines/vercel/engine.test.ts
+web	the Gemini scanner reads a signature only off a thought part	src/assistant/engines/vercel/engine.test.ts
+web	the Gemini tier is not translated into the SDK's provider option	src/assistant/engines/vercel/engine.test.ts
+web	the Inspector binds the page to a file it has not read	src/packs/inspector/PackInspector.test.tsx
+web	the Inspector claim is never released, so Admin's pane outlives it	src/shell/inspectorSlot.test.tsx
+web	the Inspector falls back to the document the runtime served	src/packs/edit/resilience.test.tsx
+web	the Inspector says nothing about having no document	src/packs/edit/resilience.test.tsx
+web	the Panes Save back (a write to /panes from Admin)	src/admin/projectFileCards.test.tsx,src/routes/AdminView.test.tsx
+web	the Project row's summary composed from something the decoder did not say	src/routes/AdminView.test.tsx
+web	the Project section drops the default-project control	src/routes/AdminView.test.tsx
+web	the SDK's Gemini signature is ledgered under the wrong provider	src/assistant/engines/vercel/engine.test.ts
+web	the SDK's absolute URL is handed to the capability whole	src/assistant/engines/vercel/engine.test.ts
+web	the SDK's reasoning parts are dropped	src/assistant/engines/vercel/engine.test.ts
+web	the SDK's rehearsal hook never fires, and only the gate holds	src/assistant/engines/vercel/engine.test.ts
+web	the SDK's result promises are read and left unclaimed	src/assistant/engines/vercel/engine.test.ts
+web	the SDK-backed engine classifies a schema refusal on every family	src/assistant/engines/vercel/engine.test.ts
+web	the SDK-backed engine swallows a refused schema keyword	src/assistant/engines/vercel/engine.test.ts
+web	the Select goes uncontrolled while the listing is in flight	src/shell/CreatePackDialog.test.tsx
+web	the Tests workspace drops the limit sentence	src/packs/test-workspace/TestsWorkspace.findings.test.tsx
+web	the Tests workspace drops the unreachable sentence	src/packs/test-workspace/TestsWorkspace.findings.test.tsx
+web	the Tests workspace shows an invalid expectation's bare message	src/packs/test-workspace/TestsWorkspace.findings.test.tsx
+web	the allow-list check is removed	src/assistant/conformance/conformance.test.ts,src/assistant/session.test.ts,src/assistant/toolGate.test.ts
+web	the amended configuration is left in the cache as it was	src/shell/CreatePackDialog.test.tsx
+web	the amended file is reformatted rather than followed	src/packs/jpackConfig.test.ts
+web	the answer's headers are not filtered	src/assistant/session.test.ts
+web	the appearance reset does not remove the key	src/identity/identity.test.tsx,src/shell/appearanceState.test.ts
+web	the arguments are copied rather than canonicalized	src/assistant/toolGate.test.ts
+web	the arrow keys move nothing	src/packs/document/PackDocumentView.test.tsx
+web	the assistant reuses one shared transport	src/assistant/session.test.ts
 web	the base moves on a watcher refetch	src/packs/edit/useDocumentBuffer.test.ts
+web	the base rebases onto background refetches	src/routes/AuthorView.test.tsx
+web	the bootstrap is no longer memoised	src/assistant/AssistantPane.test.tsx,src/assistant/AssistantSettings.test.tsx,src/assistant/configWrite.test.tsx,src/assistant/conformance/conformance.test.ts,src/assistant/modelListing.test.ts,src/assistant/session.test.ts,src/assistant/useAssistantRun.test.tsx,src/auth/SessionGate.test.tsx,src/config/liveConfig.test.tsx,src/files/useFileEditing.test.ts,src/jobs/reviewedSet.desks.test.ts,src/mcp/session.test.tsx,src/packs/collectionPreview.test.tsx,src/routes/AdminView.test.tsx,src/routes/HelpAbout.test.tsx,src/routes/PackView.test.tsx,src/shell/AppShell.test.tsx,src/shell/CreatePackDialog.test.tsx,src/shell/DescribeIt.test.tsx,src/shell/createFromRail.test.tsx,src/shell/narrowShell.test.tsx
+web	the buffer stays on the pack it opened	src/packs/edit/useDocumentBuffer.test.ts
+web	the buffer takes a revision it is no longer about	src/packs/edit/useDocumentBuffer.test.ts
+web	the caches are left disagreeing with the read-back	src/routes/AuthorView.test.tsx
+web	the caps reserve no room for main at all	src/shell/shellSheet.test.ts
+web	the chassis code never reaches the client	src/assistant/configWrite.test.tsx,src/shell/CreatePackDialog.test.tsx
+web	the chassis sentence is put in front of whoever typed a name	src/shell/CreatePackDialog.test.tsx
+web	the check gates the save	src/packs/edit/save.test.tsx
+web	the check on a proposed document is not required	src/shell/CreatePackDialog.test.tsx,src/shell/DescribeIt.test.tsx,src/shell/createFromRail.test.tsx
+web	the check query is keyed on the buffer alone	src/mcp/queries.test.tsx
+web	the closed inspector stays tabbable	src/admin/ConnectionSettings.test.tsx,src/config/liveConfig.test.tsx,src/packs/collectionPreview.test.tsx,src/shell/AppShell.test.tsx,src/shell/createFromRail.test.tsx,src/shell/narrowShell.test.tsx
+web	the configured pane default never arrives	src/config/liveConfig.test.tsx,src/packs/collectionPreview.test.tsx,src/shell/inspectorWidth.test.tsx,src/shell/narrowShell.test.tsx,src/shell/shellState.test.tsx
+web	the configured rail width is decoded and never applied	src/config/liveConfig.test.tsx
+web	the configured theme is decoded and never applied	src/config/liveConfig.test.tsx,src/identity/identity.test.tsx,src/shell/appearanceProvider.test.tsx
+web	the connection is closed once per release, not once	src/assistant/session.test.ts
+web	the connection verdict read from the runtime it last met	src/routes/AdminView.test.tsx
+web	the console floor is smaller than a console	src/shell/shellSheet.test.ts
+web	the console floor may push the strip out of the frame	src/shell/shellSheet.test.ts
+web	the console may grow past the route it sits under	src/shell/shellSheet.test.ts
+web	the control-character rule is asked after the trim has hidden the edges	src/config/deskConfig.test.ts
+web	the correction reviewer is not shown a chat case's message	src/research/run.test.ts
+web	the correction's digest goes back to being unnamed	src/research/run.test.ts
+web	the create dialog renders no failure at all	src/shell/CreatePackDialog.test.tsx
+web	the creation dialog does not say how a chat case suite agrees	src/shell/CreatePackDialog.test.tsx
+web	the creation dialog does not say what a chat draft cites	src/shell/CreatePackDialog.test.tsx
+web	the creation page never focuses its name field	src/shell/createFromRail.test.tsx
+web	the credential scan does not look inside arrays	src/config/fixtures.test.ts
+web	the credential scan never runs	src/admin/projectFileSave.test.ts,src/assistant/enforcement.test.ts,src/config/deskConfig.test.ts,src/config/fixtures.test.ts,src/routes/AdminView.test.tsx
+web	the critic is compared against the main loop's blocks	src/assistant/engines/vercel/engine.test.ts
+web	the critic runs on the desk's sentence alone	src/assistant/refutation.test.ts
+web	the cue's accessible name is whichever spelling is painted	src/config/liveConfig.test.tsx
+web	the declared SDK removal set is widened by hand	src/assistant/conformance/conformance.test.ts
+web	the declared narrowing is not applied to what the model is shown	src/assistant/conformance/conformance.test.ts
+web	the decoder cannot say which dimensions the file stated	src/config/deskConfig.test.ts
+web	the decoder is not asked before a card's Save is sent	src/admin/projectFileCards.test.tsx,src/admin/projectFileSave.test.ts,src/admin/projectFileWrite.test.tsx
+web	the default is accepted outside the enabled set	src/config/fixtures.test.ts
+web	the deferred barrier is a fixed wait again	src/assistant/conformance/conformance.test.ts
+web	the degrade is announced more than once	src/assistant/thinking.test.ts
+web	the degraded request is filtered rather than rebuilt	src/assistant/engines/vercel/engine.test.ts
+web	the delivery path does not read the closed gate	src/assistant/engines/contract.test.ts,src/assistant/engines/vercel/engine.test.ts
+web	the density attribute is never written	src/shell/appearanceProvider.test.tsx
+web	the derivation fixture drops a keyword the runtime emits	src/assistant/conformance/conformance.test.ts
+web	the desk rewrites the format version the proposal wrote	src/packs/newPack.test.ts,src/shell/CreatePackDialog.test.tsx,src/shell/DescribeIt.test.tsx
+web	the desk's connection ignores the session ending	src/mcp/session.test.tsx
+web	the desk-level file is never read	src/admin/projectFileCards.test.tsx,src/assistant/slotAfterSave.test.tsx,src/config/liveConfig.test.tsx,src/config/queries.test.tsx,src/jobs/JobsView.test.tsx,src/jobs/ReleaseReadiness.test.tsx,src/routes/HelpAbout.test.tsx
+web	the desk-level file outranks the project's own	src/config/deskConfig.test.ts
 web	the dialog can be dismissed mid-sequence	src/shell/CreatePackDialog.test.tsx
-web	the lock line states a verdict about the reviewed set	src/packs/edit/lockLine.test.tsx
+web	the dialog never says it created anything	src/shell/createFromRail.test.tsx
+web	the diff follows the live buffer instead of the baseline	src/assistant/AssistantPane.test.tsx
+web	the diff is not computed against the draft	src/assistant/AssistantPane.test.tsx,src/assistant/proposalDiff.test.ts,src/packs/SnapshotComparison.test.tsx
+web	the disagreement gate walks the prototype chain	src/packs/documentText.test.ts
+web	the discard replaced by the filter (a choice hidden, not cleared)	src/shell/appearanceProvider.test.tsx
+web	the draft is left out of the first message	src/assistant/AssistantPane.test.tsx
+web	the draft may move under a proposal and still be accepted	src/assistant/AssistantPane.test.tsx
+web	the drafts are dropped before the file is taken	src/packs/edit/navigate.test.tsx
+web	the drain does not settle the event it was yielding	src/assistant/engines/vercel/engine.test.ts
+web	the drain fires every pending handle at once again	src/assistant/conformance/conformance.test.ts
+web	the drain runs an engine's interval on its behalf	src/assistant/conformance/conformance.test.ts
+web	the dvh cap is a second declaration rather than a guarded one	src/shell/shellSheet.test.ts
+web	the editor header hides unfinished fields	src/packs/edit/forms.test.tsx,src/packs/edit/navigate.test.tsx
+web	the empty pack invents outcomes to satisfy minItems	src/packs/newPack.test.ts
+web	the empty-schema omission is incorrectly declared	src/assistant/conformance/conformance.test.ts
+web	the enabled dialect's response allowance is dropped	src/assistant/conformance/conformance.test.ts,src/assistant/thinking.test.ts
+web	the engine's caller is bound to an ungated client	src/assistant/conformance/conformance.test.ts,src/assistant/engines/codex/codex.test.ts,src/assistant/session.test.ts
+web	the entry's other state goes out with the handover	src/shell/CreatePackDialog.test.tsx
+web	the evaluator version the runtime reports is ignored	src/shell/CreatePackDialog.test.tsx
+web	the example capability is read from one tool	src/mcp/capabilities.test.ts
+web	the facade carries the answer's own body stream	src/assistant/session.test.ts
+web	the field describes an element it did not render	src/ui/ui.test.tsx
+web	the field is cleared only once the store has answered	src/assistant/endpointForm.test.tsx
+web	the field's hint is not announced	src/assistant/endpointForm.test.tsx,src/shell/CreatePackDialog.test.tsx,src/ui/ui.test.tsx
+web	the fieldset reset removed, so the browser frames every form	src/admin/adminSheets.test.ts
+web	the file channel is fed by nothing	src/shell/consoleLog.test.ts
+web	the fold table loses the letters JavaScript will not close	src/packs/packPath.test.ts
+web	the foot prints the project’s decision id rather than the payload’s	src/packs/edit/TryItPane.test.tsx
+web	the form is editable over a file this desk could not read	src/assistant/slotAfterSave.test.tsx
+web	the form is offered over bytes that are not a document	src/packs/edit/resilience.test.tsx
+web	the form refuses an empty in list	src/packs/edit/ConditionBuilder.test.tsx
+web	the form-level failure is not announced	src/admin/DocumentProcessingSettings.test.tsx,src/connections/ConnectionsPane.test.tsx,src/connections/WebSourcePane.test.tsx,src/packs/review/review.test.tsx,src/packs/upgrade/upgrade.test.tsx,src/shell/CreatePackDialog.test.tsx,src/ui/ui.test.tsx
+web	the frame has no definite height	src/shell/shellSheet.test.ts,src/ui/containingBlock.test.ts
+web	the frame is classified before it is canonicalized	src/assistant/conformance/conformance.test.ts,src/assistant/engines/codex/codex.test.ts,src/assistant/session.test.ts,src/assistant/toolGate.test.ts,src/mcp/session.test.tsx
+web	the gate is handed the call the adapter already rehearsed	src/assistant/engines/vercel/engine.test.ts
+web	the gate is not installed on the assistant's transport	src/assistant/conformance/conformance.test.ts,src/assistant/engines/codex/codex.test.ts,src/assistant/session.test.ts
+web	the held proposal drops the reviewer's unknowns	src/research/run.test.ts
+web	the held proposal outlives the establishment that answered it	src/research/run.test.ts
+web	the id hint prints the pattern at the author	src/packs/edit/forms.test.tsx
+web	the id is not re-checked against the file as it is now	src/shell/CreatePackDialog.test.tsx
+web	the id prefix is not normalised, so ids run together	src/admin/projectFileCards.test.tsx,src/config/deskConfig.test.ts,src/routes/AdminView.test.tsx,src/shell/CreatePackDialog.test.tsx
+web	the identity slot admits a discriminator one level up	src/identity/enforcement.test.ts
+web	the identity type grows a second field	src/identity/enforcement.test.ts
+web	the idle callback is fired before its deadline	src/assistant/conformance/conformance.test.ts
+web	the idle deadline never reports its own timeout	src/assistant/conformance/conformance.test.ts
+web	the idle deadline reports no budget at all	src/assistant/conformance/conformance.test.ts
+web	the ingested proposal is left mutable	src/assistant/enforcement.test.ts,src/assistant/useAssistantRun.test.tsx
+web	the inspector drawer answers to no id	src/shell/narrowShell.test.tsx
+web	the inspector drawer is a width nobody configured	src/shell/narrowShell.test.tsx
+web	the iterator cancels only after it has waited	src/assistant/engines/contract.test.ts,src/assistant/engines/vercel/engine.test.ts
+web	the key binding is not re-read after a write	src/assistant/configWrite.test.tsx,src/assistant/slotAfterSave.test.tsx
+web	the key field is an ordinary text input	src/assistant/AssistantSection.test.tsx,src/routes/AdminView.test.tsx
+web	the key is handed to the mutation as its variable	src/assistant/AssistantSection.test.tsx
+web	the key row consults the page before the chassis	src/assistant/keyBinding.test.ts
+web	the kind rendered as a Select with one option	src/routes/AdminView.test.tsx
+web	the last write’s verdict follows the viewer to another pack	src/packs/edit/navigate.test.tsx
+web	the latch is released only through the mutation observer	src/packs/edit/navigate.test.tsx,src/packs/edit/save.test.tsx
+web	the layer sentence drops the status and every row but the failure	src/i18n/language.test.tsx,src/packs/checks.test.ts,src/routes/PackView.test.tsx
+web	the layout key is not the project the chassis pinned	src/config/liveConfig.test.tsx,src/packs/collectionPreview.test.tsx,src/shell/AppShell.test.tsx,src/shell/narrowShell.test.tsx
+web	the legend is written only for a run that had a correction	src/research/run.test.ts
+web	the listing address is built on the page	src/assistant/endpointForm.test.tsx
+web	the listing is asked for while the form says another endpoint	src/assistant/endpointForm.test.tsx
+web	the listing is asked for with no key bound to the endpoint	src/assistant/endpointForm.test.tsx
+web	the lock line shows with no lock file listed	src/packs/edit/lockLine.test.tsx
+web	the mark's size bound is counted in code units	src/config/deskConfig.test.ts
+web	the mirrored code set drifts from the chassis'	src/packs/createRefusal.test.ts
+web	the mirrored nonEmptyString list loses a member	src/packs/edit/shape.test.ts
+web	the model answer is handed back as fetch produced it	src/assistant/session.test.ts
+web	the model call accepts any suffix at all	src/assistant/session.test.ts
+web	the model call forwards every header it is handed	src/assistant/session.test.ts
+web	the model is not told how a chat draft cites	src/research/run.test.ts
+web	the model is saved from the listing label rather than its id	src/assistant/endpointForm.test.tsx
+web	the move chord is bound inside the card again	src/packs/edit/forms.test.tsx,src/packs/edit/resilience.test.tsx
+web	the name field loses to the name the proposal gave itself	src/shell/DescribeIt.test.tsx
+web	the name's problem is never said where Create is pressed	src/shell/CreatePackDialog.test.tsx
+web	the name's problem outranks the runtime's refusal	src/shell/CreatePackDialog.test.tsx
+web	the narration sweep measures only single text nodes	src/routes/AdminView.test.tsx
+web	the narrow strip paints the full sentence over the console control	src/config/liveConfig.test.tsx
+web	the narrowing notice is measured against the raw schema	src/assistant/conformance/conformance.test.ts
+web	the observer outlives the document it was built for	src/packs/useDocumentSpy.test.tsx
+web	the outline is rebuilt on every keystroke	src/packs/edit/resilience.test.tsx
+web	the outline lists each identity member separately	src/packs/document/PackDocumentView.test.tsx,src/packs/document/members.test.ts,src/routes/PackView.test.tsx
+web	the pack is written before the project is known to have a jpack.json	src/shell/CreatePackDialog.test.tsx
+web	the packs pane never takes focus to the row it arrowed to	src/packs/PacksPane.test.tsx,src/packs/collectionPreview.test.tsx
+web	the page accepts a thinking tier nothing implements	src/assistant/AssistantPane.test.tsx,src/assistant/endpointDraft.test.ts,src/assistant/endpointForm.test.tsx,src/assistant/enforcement.test.ts,src/assistant/slotAfterSave.test.tsx,src/assistant/useAssistantSlot.test.tsx,src/config/fixtures.test.ts,src/routes/AdminView.test.tsx,src/shell/DescribeIt.test.tsx
+web	the page accepts an engine nobody certified	src/assistant/AssistantSettings.test.tsx,src/assistant/enforcement.test.ts,src/config/fixtures.test.ts
+web	the page decides the binding for itself again	src/assistant/endpointForm.test.tsx,src/assistant/keyBinding.test.ts
+web	the page draws a buffer that is another file's	src/packs/edit/navigate.test.tsx,src/routes/PackView.test.tsx
+web	the page draws the served document while the form writes the buffer	src/packs/edit/resilience.test.tsx,src/packs/edit/transition.test.tsx,src/routes/PackView.test.tsx
+web	the page measure centred again (margin: 0 auto)	src/shell/shellSheet.test.ts
+web	the page measure unstated by a route (graphs takes the default)	src/routes/measure.test.ts
+web	the page measure's form cap removed from its :has rule	src/shell/shellSheet.test.ts
+web	the page measure's gutter: compact equal to comfortable	src/shell/shellSheet.test.ts,src/ui/palette.test.ts
+web	the page never asks whether the check ran over these bytes	src/packs/edit/EditView.test.tsx,src/routes/PackView.test.tsx
+web	the page refuses the withdrawn engine rather than migrating it	src/assistant/endpointForm.test.tsx,src/assistant/enforcement.test.ts,src/config/fixtures.test.ts
+web	the page's mirror admits a colon method in a middle segment	src/assistant/session.test.ts
+web	the page's mirror admits a method the chassis does not	src/assistant/enforcement.test.ts,src/assistant/session.test.ts
+web	the page's mirror admits the stream pair on every kind	src/assistant/enforcement.test.ts,src/assistant/session.test.ts
+web	the page's mirror compares the pair by name rather than by bytes	src/assistant/session.test.ts
+web	the pane asks for eight pixels it does not take	src/packs/edit/resilience.test.tsx
+web	the pane is never published for measurement	src/shell/inspectorSlot.test.tsx
+web	the pane publishes no portal target	src/admin/ConnectionSettings.test.tsx,src/packs/collectionPreview.test.tsx,src/shell/AppShell.test.tsx,src/shell/inspectorSlot.test.tsx,src/shell/narrowShell.test.tsx
+web	the pane quotes a file the decoder refused	src/admin/ConfigPane.test.tsx,src/routes/AdminView.test.tsx
+web	the pane shows a re-serialisation instead of the member's bytes	src/admin/ConfigPane.test.tsx,src/routes/AdminView.test.tsx
+web	the panel invents provenance it was not given	src/packs/inspector/PackInspector.test.tsx
+web	the panel picks one of two identically named outcomes	src/packs/inspector/PackInspector.test.tsx
+web	the path cleaner leaves an interior dot segment alone	src/packs/packPath.test.ts,src/shell/CreatePackDialog.test.tsx
+web	the path is only ever the one get_pack names	src/packs/edit/resilience.test.tsx
+web	the preference does not override the project default	src/config/liveConfig.test.tsx,src/identity/identity.test.tsx,src/shell/appearanceProvider.test.tsx,src/shell/appearanceState.test.ts
+web	the previous proposal is not withdrawn at the press	src/shell/DescribeIt.test.tsx
+web	the primary button is not a submit (Enter does nothing)	src/admin/ChatBackupSettings.test.tsx,src/admin/ChatDataSettings.test.tsx,src/admin/DocumentProcessingSettings.test.tsx,src/assistant/endpointForm.test.tsx,src/audit/handover.test.tsx,src/connections/ConnectionsPane.test.tsx,src/connections/WebSourcePane.test.tsx,src/packs/folders/FolderBrowser.test.tsx,src/packs/test-workspace/CaseEditor.test.tsx,src/packs/test-workspace/TestAssistant.test.tsx,src/packs/test-workspace/TestsWorkspace.findings.test.tsx,src/routes/AdminView.test.tsx,src/routes/ResearchAuthoringPage.test.tsx,src/routes/StorageFilesView.test.tsx,src/search/WebSearchSettings.test.tsx,src/shell/CreatePackDialog.test.tsx,src/shell/DescribeIt.test.tsx,src/ui/ui.test.tsx
+web	the probe names its own destination	src/assistant/AssistantSection.test.tsx
+web	the project default is not applied when no preference exists	src/config/liveConfig.test.tsx,src/identity/identity.test.tsx,src/shell/appearanceProvider.test.tsx,src/shell/appearanceState.test.ts
+web	the proposal is written from event.document, not the snapshot	src/assistant/AssistantPane.test.tsx,src/assistant/useAssistantRun.test.tsx,src/research/run.test.ts,src/shell/DescribeIt.test.tsx
+web	the proposal reaches the pane uncanonicalized	src/assistant/AssistantPane.test.tsx,src/assistant/useAssistantRun.test.tsx,src/shell/DescribeIt.test.tsx
+web	the provenance line survives an unsaved edit	src/packs/edit/resilience.test.tsx
+web	the provider object admits a discriminator	src/config/deskConfig.test.ts,src/identity/enforcement.test.ts
+web	the provider object grows a ninth member	src/identity/enforcement.test.ts
+web	the provisional application restored (a default nobody read)	src/config/liveConfig.test.tsx,src/shell/appearanceProvider.test.tsx
+web	the provisional record is read even though it is not written	src/shell/shellState.test.tsx
+web	the rail dot is one global flag again	src/shell/LeftRail.test.tsx
+web	the rail drawer stays open over the page it navigated to	src/shell/narrowShell.test.tsx
+web	the rail fetches starter templates on every route	src/shell/LeftRail.test.tsx
+web	the rail renders the file's head again	src/routes/AdminView.test.tsx
+web	the read-back is assumed, not verified	src/files/useFileEditing.test.ts,src/routes/AuthorView.test.tsx
+web	the record leaves out the message a chat case rests on	src/research/run.test.ts
+web	the record renames a digest the legend still names	src/research/run.test.ts
+web	the record stops saying which reason the matrix carries	src/research/run.test.ts
+web	the refusal is cleared when Reload is pressed rather than when it lands	src/admin/projectFileCards.test.tsx
+web	the refusal shows only the first diagnostic	src/shell/DescribeIt.test.tsx
+web	the refused tier member is sent again after the endpoint refused it	src/assistant/conformance/conformance.test.ts,src/assistant/engines/vercel/engine.test.ts,src/assistant/thinking.test.ts
+web	the refutation pass runs even with the tier off	src/assistant/conformance/conformance.test.ts,src/assistant/engines/vercel/engine.test.ts,src/assistant/thinking.test.ts
+web	the refutation verdict is read out of the critic's prose	src/assistant/engines/codex/codex.test.ts,src/assistant/engines/vercel/engine.test.ts,src/assistant/refutation.test.ts
+web	the registered row keeps the superseded rationale	src/research/run.test.ts
+web	the registration bumps configVersion	src/packs/jpackConfig.test.ts,src/shell/CreatePackDialog.test.tsx
+web	the registration names the path that was asked for, not the one written	src/shell/CreatePackDialog.test.tsx
+web	the registration replaces the file rather than amending it	src/packs/jpackConfig.test.ts,src/shell/CreatePackDialog.test.tsx
+web	the registration writes a digest it did not read	src/shell/CreatePackDialog.test.tsx
+web	the rehearsal confirmation is a flag again	src/packs/edit/TryItPane.test.tsx
+web	the removal list is applied at the top level only	src/assistant/conformance/conformance.test.ts,src/assistant/geminiSchema.test.ts
+web	the removal list loses the keyword every runtime schema carries	src/assistant/geminiSchema.test.ts
+web	the replaced entry loses its search and its fragment	src/shell/CreatePackDialog.test.tsx
+web	the report claims bytes it did not check	src/mcp/queries.test.tsx,src/routes/PackView.test.tsx,src/shell/CreatePackDialog.test.tsx,src/shell/DescribeIt.test.tsx
+web	the reset action missing from the shell	src/identity/identity.test.tsx
+web	the reset clears a key that is not this project's	src/identity/identity.test.tsx
+web	the reset clears more than one key	src/identity/identity.test.tsx,src/shell/paneState.test.ts
+web	the reset is keyed on the member list rather than the document	src/packs/useDocumentSpy.test.tsx
+web	the reset leaves the panes marked as chosen	src/shell/inspectorWidth.test.tsx,src/shell/shellState.test.tsx
+web	the reset removes whatever is under the key	src/identity/identity.test.tsx,src/shell/paneState.test.ts
+web	the reset reports a deletion it did not verify	src/identity/identity.test.tsx,src/shell/paneState.test.ts,src/shell/shellState.test.tsx
+web	the restored layout is not clamped to the viewport	src/shell/paneState.test.ts
+web	the retry declines to repair the draft it establishes over	src/research/run.test.ts
+web	the retry is offered for a draft the hold predates	src/research/run.test.ts,src/research/ui/Conversation.test.tsx
+web	the retry is offered while validation is still in flight	src/research/run.test.ts
+web	the reviewer's proposal is discarded before validation	src/research/run.test.ts
+web	the reviewer's spelling is stored instead of the canonical assertion	src/research/run.test.ts
+web	the revision follows the watcher while a value is unsaved	src/admin/projectFileCards.test.tsx
+web	the room the console may take reserves main's share too	src/shell/shellSheet.test.ts
+web	the route never says the check is still running	src/routes/PackView.test.tsx
+web	the rows are hidden when the endpoint moves rather than cleared	src/assistant/endpointForm.test.tsx
+web	the rules member is treated as optional	src/packs/document/PackDocumentView.test.tsx,src/packs/document/members.test.ts
+web	the run is a generator again, with end yielded from its finally	src/assistant/engines/vercel/engine.test.ts
+web	the run is aborted and released before it is marked closed	src/assistant/engines/contract.test.ts
+web	the run is left open when the dialog closes	src/shell/DescribeIt.test.tsx
+web	the run starts before the runtime's testing prompt arrives	src/assistant/AssistantPane.test.tsx
+web	the runtime vocabulary ignores the recorded pack schema	src/assistant/conformance/conformance.test.ts
+web	the save read-back installs over a newer read	src/routes/AuthorView.test.tsx
+web	the scanner assigns member names into a plain object	src/packs/documentText.test.ts
+web	the scroll listener stays on the element that was replaced	src/packs/useWindowedRows.test.tsx
+web	the seal goes up after the engine's chunk is loaded	src/assistant/conformance/conformance.test.ts
+web	the section links go nowhere	src/routes/AdminView.test.tsx
+web	the select reports back a value nobody offered	src/shell/CreatePackDialog.test.tsx,src/ui/ui.test.tsx
+web	the settled table is read through its prototype	src/assistant/refutation.test.ts
+web	the shell flips the Inspector where a route asked it to open	src/packs/collectionPreview.test.tsx,src/shell/inspectorSlot.test.tsx
+web	the short cue is never the one painted	src/shell/shellSheet.test.ts
+web	the short hash restored (a truncated project key)	src/assistant/pickedModel.test.ts,src/shell/appearanceProvider.test.tsx,src/shell/appearanceState.test.ts,src/shell/paneState.test.ts
+web	the signature ledger has no turn boundary	src/assistant/engines/vercel/engine.test.ts
+web	the slot is claimed for a node that is not there	src/shell/inspectorSlot.test.tsx
+web	the slug is not checked against existing files	src/packs/newPack.test.ts,src/shell/CreatePackDialog.test.tsx
+web	the slug is not checked against existing pack keys	src/packs/newPack.test.ts,src/shell/CreatePackDialog.test.tsx
+web	the spent entry is pushed rather than replaced	src/shell/CreatePackDialog.test.tsx
+web	the spent handover stays on the history entry	src/shell/CreatePackDialog.test.tsx
+web	the splice replaces the first matching text rather than the span	src/packs/documentText.test.ts,src/packs/edit/writes.test.ts
+web	the splice reserializes the whole document	src/admin/projectFileCards.test.tsx,src/admin/projectFileSave.test.ts,src/admin/projectFileWrite.test.tsx,src/assistant/AssistantPane.test.tsx,src/assistant/acceptProposal.test.ts,src/packs/documentText.test.ts,src/packs/edit/ConditionBuilder.test.tsx,src/packs/edit/writes.test.ts
+web	the strip is silent about a refused desk-level file	src/config/liveConfig.test.tsx
+web	the strip's warning is the half that disappears	src/shell/shellSheet.test.ts
+web	the suffix is not required to be a primitive string	src/assistant/session.test.ts
+web	the template's specVersion is overwritten	src/packs/newPack.test.ts,src/shell/CreatePackDialog.test.tsx,src/shell/DescribeIt.test.tsx
+web	the tier member is sent when the tier is off	src/assistant/engines/vercel/engine.test.ts,src/assistant/thinking.test.ts
+web	the tier picker offers a value outside the union	src/assistant/endpointForm.test.tsx
+web	the tool list is open	src/assistant/enforcement.test.ts,src/config/fixtures.test.ts
+web	the trim restored (two roots that differ only in whitespace)	src/shell/paneState.test.ts
+web	the truncation notice waits for the next stream part	src/assistant/engines/vercel/engine.test.ts
+web	the undo stack survives a change of pack	src/packs/edit/useDocumentBuffer.test.ts
+web	the union check removed from ownership (an impossible value owned)	src/config/liveConfig.test.tsx,src/identity/identity.test.tsx,src/shell/appearanceState.test.ts
+web	the vercel adapter's tool call is not bounded by the run	src/assistant/engines/vercel/engine.test.ts
+web	the vercel engine ends twice on the error path	src/assistant/engines/vercel/engine.test.ts
+web	the vh cap is the one that never applies	src/shell/shellSheet.test.ts
+web	the walker knows only two of the schema name maps	src/assistant/geminiSchema.test.ts
+web	the what-if placement measures the box it resizes	src/packs/edit/resilience.test.tsx
+web	the windowed list renders nothing when the viewport cannot be measured	src/packs/PacksPane.test.tsx,src/packs/useWindowedRows.test.tsx
+web	the wrapper forwards every header the SDK set	src/assistant/engines/vercel/engine.test.ts
+web	the write carries the wrong base digest	src/files/useFileEditing.test.ts,src/routes/AuthorView.test.tsx
+web	the write's own answer is thrown away	src/assistant/configWrite.test.tsx,src/assistant/slotAfterSave.test.tsx
+web	the writer canonicalizes the proposal again	src/assistant/enforcement.test.ts
+web	the writer re-serializes the document instead of splicing it	src/admin/projectFileCards.test.tsx,src/admin/projectFileSave.test.ts,src/admin/projectFileWrite.test.tsx,src/assistant/AssistantPane.test.tsx,src/assistant/acceptProposal.test.ts,src/packs/documentText.test.ts,src/packs/edit/writes.test.ts
+web	the written object is spread from the draft rather than named	src/assistant/endpointDraft.test.ts,src/assistant/endpointForm.test.tsx
+web	there is nothing to write for an absent required object	src/packs/edit/shape.test.ts
+web	two blocks signed the same collapse into one	src/assistant/engines/vercel/engine.test.ts
+web	two chords in one frame issue two writes against one base	src/packs/edit/navigate.test.tsx,src/packs/edit/save.test.tsx
+web	two elements carry Create's help id	src/shell/CreatePackDialog.test.tsx
+web	two rows about one position share an identity	src/assistant/AssistantPane.test.tsx,src/assistant/proposalDiff.test.ts
+web	two spellings of one file are compared case-sensitively	src/packs/packPath.test.ts
+web	undo lies about how far back it can go	src/packs/edit/useDocumentBuffer.test.ts
+web	undo pushes one entry per keystroke	src/packs/edit/useDocumentBuffer.test.ts
+web	unknown members ignored again (ownership read off the version)	src/shell/appearanceState.test.ts
+web	unreachable expectation: a proposed correction refused in bare words	src/research/run.test.ts
+web	unreachable expectation: a saved case is restored as a case	src/research/run.test.ts
+web	unreachable expectation: an approved correction is applied	src/research/run.test.ts
+web	unreachable expectation: established as a case	src/research/run.test.ts
+web	unreachable expectation: read as a Core defect	src/packs/test-workspace/TestsWorkspace.findings.test.tsx,src/research/expectations.test.ts,src/research/run.test.ts
+web	unreachable expectation: summary drops the runtime's reason	src/packs/test-workspace/TestsWorkspace.findings.test.tsx,src/research/expectations.test.ts,src/research/run.test.ts
+web	unwritten text is not work, so leaving takes it	src/packs/edit/forms.test.tsx,src/packs/edit/navigate.test.tsx,src/packs/edit/transition.test.tsx
 web	upgrade key: Admin → Project does not offer it	src/packs/upgrade/upgrade.test.tsx
 web	upgrade key: Admin → Project does not say why it is not offered	src/packs/upgrade/upgrade.test.tsx
 web	upgrade key: a check in flight is joined after the key is made	src/audit/decisionRecord.test.tsx
@@ -904,8 +1875,41 @@ web	upgrade key: the page chooses the item for the owner	src/packs/upgrade/upgra
 web	upgrade key: what a signature does not establish is not said	src/packs/upgrade/upgrade.test.tsx
 web	upgrade key: why it is not offered is not said	src/packs/upgrade/upgrade.test.tsx
 web	upgrade: Admin → Project does not offer it	src/packs/upgrade/upgrade.test.tsx
+web	upgrade: Packs' review is not read again after a confirmation	src/packs/upgrade/upgrade.test.tsx
+web	upgrade: a change is not listed	src/packs/upgrade/upgrade.test.tsx
+web	upgrade: a confirmation is offered without a token	src/packs/upgrade/upgrade.test.tsx
+web	upgrade: a dismissal is not kept	src/packs/upgrade/upgrade.test.tsx
+web	upgrade: a kept dismissal is not read	src/packs/upgrade/upgrade.test.tsx
+web	upgrade: a stale confirmation reads as any failure	src/packs/upgrade/upgrade.test.tsx
+web	upgrade: an existing lock is not told what the upgrade does to it	src/packs/upgrade/upgrade.test.tsx
 web	upgrade: declining requireComparableFacts asks for nothing new	src/packs/upgrade/upgrade.test.tsx
 web	upgrade: the confirmation does not carry the owner's choice	src/packs/upgrade/upgrade.test.tsx
 web	upgrade: the confirmation does not carry the token	src/packs/upgrade/upgrade.test.tsx
 web	upgrade: the note is not on Packs	src/packs/upgrade/upgrade.test.tsx
+web	upgrade: the note is shown where the gates are on	src/packs/upgrade/upgrade.test.tsx
 web	upgrade: the offer is asked for with requireComparableFacts whatever the choice	src/packs/upgrade/upgrade.test.tsx
+web	upgrade: the offer is not read again after a confirmation	src/packs/upgrade/upgrade.test.tsx
+web	upgrade: the runtime's finding about the new jpack.json is not shown	src/packs/upgrade/upgrade.test.tsx
+web	upgrade: why nothing can be offered is not said	src/packs/upgrade/upgrade.test.tsx
+web	uppercase back on an Admin section title	src/admin/adminSheets.test.ts
+web	validate is assumed present	src/mcp/capabilities.test.ts
+web	verification compares against the live buffer	src/files/useFileEditing.test.ts,src/routes/AuthorView.test.tsx
+web	verification export: any sequence taken	src/jobs/VerificationDownload.test.tsx
+web	verification export: any version saved	src/jobs/VerificationDownload.test.tsx
+web	verification export: chain entry read from the checkpoint	src/jobs/VerificationDownload.test.tsx
+web	verification export: chain standing not shown	src/jobs/VerificationDownload.test.tsx
+web	verification export: comparison offered for version 2	src/jobs/VerificationDownload.test.tsx
+web	verification export: earlier saved line kept after a failed attempt	src/jobs/VerificationDownload.test.tsx
+web	verification export: named for the version asked	src/jobs/VerificationDownload.test.tsx
+web	verification export: saved as text decoded from the answer	src/jobs/VerificationDownload.test.tsx
+web	verification export: saved encoded again	src/jobs/VerificationDownload.test.tsx
+web	verification export: version 4 clause dropped	src/jobs/VerificationDownload.test.tsx
+web	verification export: version 4 saved without a chain entry it can read	src/jobs/VerificationDownload.test.tsx
+web	verification export: version 5 clause dropped	src/jobs/VerificationDownload.test.tsx
+web	verification export: version 5 not asked for	src/jobs/VerificationDownload.test.tsx
+web	verification export: version 6 saved	src/jobs/VerificationDownload.test.tsx
+web	what a save actually did is never printed	src/packs/edit/navigate.test.tsx,src/packs/edit/save.test.tsx,src/packs/edit/transition.test.tsx
+web	what was seen in one document is kept for the next	src/packs/useDocumentSpy.test.tsx
+web	widening never gives an untouched pane its layout back	src/shell/narrowShell.test.tsx
+web	write state dropped from the card's status comparison	src/routes/AdminView.test.tsx
+web	writing a chat case is offered over established ones	src/research/run.test.ts,src/research/ui/ReviewPanel.test.tsx
