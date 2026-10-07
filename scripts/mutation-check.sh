@@ -352,7 +352,7 @@ run_go() {
   fi
   code=$?
   go_verdict "$code" "$log"
-  rm -f "$log"
+  mv -f "$log" "$work/last-go.log"
 }
 
 # run_go_unmutated <pattern>: the selection, on the test binary built from the
@@ -445,7 +445,7 @@ run_web() {
   fi
   code=$?
   web_verdict "$code" "$log"
-  rm -f "$log"
+  mv -f "$log" "$work/last-web.log"
 }
 
 # web_verdict <status> <log>: what a vitest run says about the mutation, and
@@ -622,6 +622,16 @@ if [ -n "$baseline_go" ] || [ -n "$baseline_web" ]; then
   echo "the unmutated suite is not green — every row below would be meaningless" >&2
   echo "  go:  ${baseline_go:-clean}" >&2
   echo "  web: ${baseline_web:-clean}" >&2
+  # **And what the suite said, as it said it.** A verdict is read from the
+  # suite's text, so a baseline that is not green is first a question about
+  # that text: the last lines, with control characters shown (`cat -v`), on
+  # stderr, where a run elsewhere (the nightly job) keeps them.
+  for half in go web; do
+    verdict="baseline_$half"
+    [ -n "${!verdict}" ] && [ -s "$work/last-$half.log" ] || continue
+    echo "  the last lines of the unmutated $half suite's output:" >&2
+    tail -n 30 "$work/last-$half.log" | cat -v | sed 's/^/    /' >&2
+  done
   # **And say so on stdout, in the table's own shape.** This used to write only
   # to stderr and exit, so a caller running one row at a time and collecting
   # rows with `grep '^|'` recorded a *silent gap*: the row it asked for produced

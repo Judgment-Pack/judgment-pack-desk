@@ -11,37 +11,44 @@ name: Mutation rows, nightly
 # are put back in row order in one table, published with the record each
 # shard left (--record): a line that differs from the tracked
 # scripts/mutation-expects.tsv is one to commit.
+#
+# A dispatch can run one half (`gh workflow run mutation-nightly.yml -f
+# half=web`), and on any branch (`--ref`): one run at a time per branch, so a
+# branch's run does not wait for main's.
 on:
   schedule:
     - cron: '41 5 * * *'
   workflow_dispatch:
+    inputs:
+      half:
+        description: The rows to run
+        type: choice
+        options: [all, go, web]
+        default: all
 
 permissions:
   contents: read
 
 concurrency:
-  group: mutation-nightly
+  group: mutation-nightly-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   rows:
-    name: ${{ matrix.half }} rows, shard ${{ matrix.shard }}
+    name: ${{ matrix.half }} rows, shard ${{ matrix.k }}/${{ matrix.half == 'go' && '4' || '6' }}
     runs-on: ubuntu-latest
     timeout-minutes: 345
     strategy:
       fail-fast: false
+      # Four Go shards and six web ones; a dispatch that names one half
+      # leaves the other out.
       matrix:
-        include:
-          - { half: go, shard: 1/4 }
-          - { half: go, shard: 2/4 }
-          - { half: go, shard: 3/4 }
-          - { half: go, shard: 4/4 }
-          - { half: web, shard: 1/6 }
-          - { half: web, shard: 2/6 }
-          - { half: web, shard: 3/6 }
-          - { half: web, shard: 4/6 }
-          - { half: web, shard: 5/6 }
-          - { half: web, shard: 6/6 }
+        half: [go, web]
+        k: [1, 2, 3, 4, 5, 6]
+        exclude:
+          - { half: go, k: 5 }
+          - { half: go, k: 6 }
+          - half: ${{ inputs.half == 'go' && 'web' || inputs.half == 'web' && 'go' || 'neither' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -70,17 +77,20 @@ jobs:
 
       # The step's own limit sits inside the job's, so a shard that runs out
       # of time still publishes the rows it finished: --record writes each
-      # row's line as the row ends.
+      # row's line as the row ends. The progress lines go to the job's log as
+      # they come, as well as to the shard's progress.log.
       - name: Run the shard's rows
         timeout-minutes: 330
         env:
           HALF: ${{ matrix.half }}
-          SHARD: ${{ matrix.shard }}
+          SHARD: ${{ matrix.k }}/${{ matrix.half == 'go' && '4' || '6' }}
         run: |
+          # The shard fails with the harness, not with tee.
+          set -o pipefail
           out="$RUNNER_TEMP/shard"
           mkdir -p "$out"
           echo "$HALF ${SHARD%/*} ${SHARD#*/}" > "$out/shard.txt"
-          bash scripts/mutation-check.sh "$HALF" --shard "$SHARD" --record > "$out/table.md" 2> "$out/progress.log"
+          { bash scripts/mutation-check.sh "$HALF" --shard "$SHARD" --record 2>&1 1>&3 3>&- | tee "$out/progress.log" >&2; } 3> "$out/table.md"
 
       - name: Keep the record this shard left
         if: always()
