@@ -21,9 +21,11 @@
  * the stamps with the roots; what the runtime said of the stamps it accepted
  * and the lag it measured, in its own numbers; and the last stamp run since
  * Desk started, by Desk's clock, in the runtime's words where it refused.
- * Where the runtime did not check the stamps, the page says so, and the
- * sequence the last run named is labelled as the authority's answer to
- * Desk's request, not as a stamp the runtime checked. "Stamp now" runs one
+ * Where the runtime did not check the stamps, the page says so; and wherever
+ * no stamp the runtime checked reaches the record the last run named (no
+ * roots, none holding, or one below it), that record is labelled as the
+ * authority's answer to Desk's request, not as a stamp the runtime checked
+ * (review round 1). "Stamp now" runs one
  * stamp on request, in the desk's one turn, and the decision record is
  * checked again after it.
  */
@@ -69,6 +71,9 @@ export function Stamping({ stamping, report, outcome, onOutcome }: {
   const { settings } = stamping
   const stamped = report?.coverage.stamped
   const named = stamping.last && (stamping.last.status === 'stamped' || stamping.last.status === 'already-stamped') ? stamping.last : undefined
+  // Whether a stamp the runtime checked reaches the record the last run
+  // named: only then is that record not labelled as the authority's answer.
+  const covered = named?.sequence !== undefined && stamped?.status === 'through' && (stamped.through ?? 0) >= named.sequence
   async function run() {
     setBusy(true)
     try {
@@ -119,7 +124,7 @@ export function Stamping({ stamping, report, outcome, onOutcome }: {
       </dl>}
       {report?.stamps && <Stamps report={report} />}
       {stamped?.status === 'not-checked' && (named || stamping.state === 'set') && <p>{msg('The runtime did not check the stamps.')}{stamped.detail && <> <span lang="en">{stamped.detail}</span></>}</p>}
-      {stamped?.status === 'not-checked' && named?.sequence !== undefined && <p>{msg('The last stamp run named the checkpoint at record {{sequence}}: that is the authority’s answer to Desk’s request, not a stamp the runtime checked.', { sequence: named.sequence })}</p>}
+      {named?.sequence !== undefined && !covered && <p>{msg('The last stamp run named the checkpoint at record {{sequence}}: that is the authority’s answer to Desk’s request, not a stamp the runtime checked.', { sequence: named.sequence })}</p>}
       {stamping.last ? <LastRun run={stamping.last} /> : stamping.state === 'set' && <p className={styles.quiet}>{msg('No stamp run since Desk started.')}</p>}
       {editing && <AuthorityForm settings={settings} onCancel={() => setEditing(false)} onSet={() => { setEditing(false); onOutcome({ kind: 'set' }) }} />}
     </div>

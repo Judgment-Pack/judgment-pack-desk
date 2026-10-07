@@ -5166,11 +5166,11 @@ func (b *cappedBuffer) exceeded() bool {'
     'if len(data) == 0 || len(data) > stampingFileLimit {
 		return nil, false
 	}
-	var roots []*x509.Certificate' \
+	blocks, ok := pemOnly(data, "CERTIFICATE")' \
     'if len(data) == 0 || len(data) > stampingFileLimit+1 {
 		return nil, false
 	}
-	var roots []*x509.Certificate'
+	blocks, ok := pemOnly(data, "CERTIFICATE")'
   mutate go 'stamping: roots with no certificate are kept' "$STP" \
     'return roots, len(roots) > 0' \
     'return roots, true'
@@ -5178,11 +5178,11 @@ func (b *cappedBuffer) exceeded() bool {'
     'if len(data) == 0 || len(data) > stampingFileLimit {
 		return nil, false
 	}
-	var lists []*x509.RevocationList' \
+	if bytes.HasPrefix(bytes.TrimLeft(data, " \t\r\n"), []byte("-----BEGIN ")) {' \
     'if len(data) == 0 || len(data) > stampingFileLimit+1 {
 		return nil, false
 	}
-	var lists []*x509.RevocationList'
+	if bytes.HasPrefix(bytes.TrimLeft(data, " \t\r\n"), []byte("-----BEGIN ")) {'
   mutate go 'stamping: nine policies are kept' "$STP" \
     'if len(p.Policies) > stampingMaxPolicies {' \
     'if len(p.Policies) > stampingMaxPolicies+1 {'
@@ -5349,7 +5349,7 @@ func (b *cappedBuffer) exceeded() bool {'
     '"--timeout", stampTimeout,' \
     '"--timeout", "30s",'
   mutate go 'stamping: the authority is not passed as --tsa' "$STP" \
-    '"--tsa", authority,' \
+    '"--tsa", now.file.Authority,' \
     '"--tsa", "https://tsa.example/",'
   mutate go 'stamping: Stamp now with no authority runs' "$STP" \
     '	case !found:
@@ -5438,6 +5438,33 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'stamping: a time stamped through of no form is read' "$STA" \
     '		if _, err := time.Parse(time.RFC3339Nano, *value.CoveredBy); err != nil {' \
     '		if _, err := time.Parse(time.RFC3339Nano, *value.CoveredBy); err != nil && false {'
+  mutate go 'stamping: the settings are not read again before the stamp' "$STP" \
+    'if err != nil || !found || !bytes.Equal(now.raw, settings.raw) {' \
+    'if err != nil || !found {'
+  mutate go 'stamping: a setting does not wait for the stamp' "$STP" \
+    '	s.stampingMu.RLock()
+	defer s.stampingMu.RUnlock()
+	now, found, err := s.readStamping()' \
+    '	now, found, err := s.readStamping()'
+  mutate go 'stamping: Close does not wait for a Stamp now' "$STP" \
+    '	<-st.done
+	st.turn.Lock()
+	st.turn.Unlock()
+' \
+    '	<-st.done
+'
+  mutate go 'stamping: an authority with a format character is kept' "$STP" \
+    'unicode.IsControl(r) || unicode.Is(unicode.Cf, r) }) >= 0' \
+    'unicode.IsControl(r) }) >= 0'
+  mutate go 'stamping: roots of no certificate are read back' "$STP" \
+    'if _, ok := readRoots(settings.roots); !ok {' \
+    'if _, ok := readRoots(settings.roots); !ok && false {'
+  mutate go 'stamping: text outside the blocks is kept' "$STP" \
+    '		if !bytes.HasPrefix(rest, []byte("-----BEGIN ")) {' \
+    '		if false {'
+  mutate go 'stamping: a block with headers is kept' "$STP" \
+    ' || len(block.Headers) > 0 {' \
+    ' {'
   mutate go 'stamping: the scheduler is not started' "$STS" \
     '	s.startStamping()
 ' \
@@ -12911,7 +12938,7 @@ export function assistantTransport(id: string): Transport {
     'onClick={() => setRemoving(true)}>{msg('"'"'Remove the authority'"'"')}</Button>' \
     'onClick={() => void remove()}>{msg('"'"'Remove the authority'"'"')}</Button>'
   mutate web 'stamping page: the sequence of the last run is not labelled' "$STG" \
-    '      {stamped?.status === '"'"'not-checked'"'"' && named?.sequence !== undefined && <p>' \
+    '      {named?.sequence !== undefined && !covered && <p>' \
     '      {false && <p>'
   mutate web 'stamping page: the runtime did not check the stamps is not said' "$STG" \
     '      {stamped?.status === '"'"'not-checked'"'"' && (named || stamping.state === '"'"'set'"'"') && <p>' \
@@ -12981,6 +13008,9 @@ export function assistantTransport(id: string): Transport {
   mutate web 'stamping client: Stamp now’s answer is not checked' "$SAC" \
     'if (!object(value) || !isStampRun(value.run)) throw new Error(failed)' \
     'if (!object(value)) throw new Error(failed)'
+  mutate web 'stamping page: a run the checked stamps do not reach is not labelled' "$STG" \
+    '(stamped.through ?? 0) >= named.sequence' \
+    'true'
 fi
 
 restore

@@ -3832,9 +3832,9 @@
   "Send the stamping settings as JSON: the authority's address, the interval in minutes, the root certificates, and any policy OIDs and revocation lists.": "請用 JSON 傳送時間戳設定：機構地址、以分鐘計嘅間隔、根憑證，同埋任何原則 OID 同撤銷清單。",
   "Give the authority's address as an http or https URL of at most 2048 characters, with a host, and with no user name, password, fragment, space or control character.": "請將機構地址指定為唔超過 2048 個字元嘅 http 或者 https URL，要有主機，而且唔可以有使用者名稱、密碼、片段、空格或者控制字元。",
   "Give the interval as a whole number of minutes from 5 to 1440.": "請將間隔指定為 5 至 1440 之間嘅整數分鐘。",
-  "Give the root certificates you trust for this authority as PEM, at most 262144 bytes, holding at least one certificate, each of which can be read.": "請用 PEM 指定你為呢個機構信任嘅根憑證，唔超過 262144 位元組，最少有一張憑證，而且每張都讀得到。",
+  "Give the root certificates you trust for this authority as PEM, at most 262144 bytes of CERTIFICATE blocks and nothing else, at least one, each of which can be read.": "請用 PEM 指定你為呢個機構信任嘅根憑證：只可以有 CERTIFICATE 區塊，唔超過 262144 位元組，最少一張，而且每張都讀得到。",
   "Give at most 8 policy OIDs, each once, each a dotted object identifier such as 1.2.3.4 of at most 64 characters.": "請指定最多 8 個原則 OID，每個只出現一次，每個都係好似 1.2.3.4 咁用點分隔、唔超過 64 個字元嘅物件識別碼。",
-  "Give at most 4 revocation lists, each once, each PEM or DER of at most 262144 bytes, holding at least one list that can be read.": "請指定最多 4 份撤銷清單，每份只出現一次，每份都係唔超過 262144 位元組嘅 PEM 或者 DER，而且最少有一份讀得到嘅清單。",
+  "Give at most 4 revocation lists, each once, each of at most 262144 bytes: X509 CRL blocks in PEM and nothing else, or one list in DER, each of which can be read.": "請指定最多 4 份撤銷清單，每份只出現一次，每份唔超過 262144 位元組：只可以係 PEM 嘅 X509 CRL 區塊，或者一份 DER 清單，而且每份都讀得到。",
   "Confirm the stamping settings with the token Desk gave when it showed them.": "請用 Desk 顯示設定嗰陣畀嘅權杖確認時間戳設定。",
   "Remove the time-stamping authority with the token the decision record gave.": "請用決定記錄畀嘅權杖移除時間戳機構。",
   "The stamping settings changed after Desk showed them, so nothing was changed. Check the decision record again.": "Desk 顯示咗時間戳設定之後，設定改咗，所以冇改任何嘢。請再檢查一次決定記錄。",
@@ -3854,5 +3854,6 @@
   "The stamping settings could not be checked. Please try again.": "檢查唔到時間戳設定。請再試。",
   "The stamping settings could not be kept. Check the decision record again.": "保管唔到時間戳設定。請再檢查一次決定記錄。",
   "The time-stamping authority could not be removed. Check the decision record again.": "移除唔到時間戳機構。請再檢查一次決定記錄。",
-  "Desk could not read what the stamp run answered. The decision record, checked again, shows the stamps the runtime accepts.": "Desk 讀唔到加時間戳嘅答覆。再檢查一次嘅決定記錄會顯示運行環境接受嘅時間戳。"
+  "Desk could not read what the stamp run answered. The decision record, checked again, shows the stamps the runtime accepts.": "Desk 讀唔到加時間戳嘅答覆。再檢查一次嘅決定記錄會顯示運行環境接受嘅時間戳。",
+  "The stamping settings changed while the stamp run made its checks, so it asked for no stamp. The next run uses the settings as they are now.": "加時間戳檢查緊嘅時候，時間戳設定改咗，所以冇請求時間戳。下一次會用而家嘅設定。"
 }

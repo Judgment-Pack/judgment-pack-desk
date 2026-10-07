@@ -642,7 +642,8 @@ party the SHA-256 of the checkpoint, a nonce and a request for its
 certificate, and nothing else of the trail. You set one in the decision
 record: its http or https address (with no user name or password: Desk keeps
 no credential for an authority), the root certificates you trust for it
-(PEM), any policy OIDs and revocation lists (PEM or DER), and an interval from
+(PEM certificate blocks and nothing else), any policy OIDs and revocation
+lists (PEM list blocks and nothing else, or DER), and an interval from
 5 minutes to 24 hours, an hour unless you say otherwise. Desk first holds what
 you propose to those rules and shows what it would keep; its confirmation
 says, before anything is kept, that choosing an authority is a trust
@@ -658,9 +659,14 @@ none of them is used. It never writes `audit.timestampAuthority` into
 then runs `jpack audit stamp --config jpack.json --tsa <address> --timeout 15s
 --format json` in the desk's folder at that interval, one run at a time per
 desk, and only where the trail's head has moved past the last checkpoint
-stamped; "Stamp now" runs one on request. Nothing a deciding run does waits
-for it, and while Desk is not running nothing is stamped and records stay
-pending. A failure (no authority named, one that does not answer, a trail
+stamped; "Stamp now" runs one on request. Each run reads the settings again
+just before it asks, and asks for nothing where they changed since it
+started; a change or a removal confirmed while it asks waits for it, at most
+20 seconds, so once a removal is answered Desk stamps nothing more. The
+request goes from the runtime's process, with Desk's environment: a proxy set
+there, or an authority that redirects it, carries it on, since the runtime's
+`audit stamp` follows redirects. Nothing a deciding run does waits for it,
+and while Desk is not running nothing is stamped and records stay pending. A failure (no authority named, one that does not answer, a trail
 that fails a check) is shown in the runtime's words, with no path, and tried
 again at the next interval, once; stopping Desk never kills a stamp
 mid-write. The decision record passes the roots to `audit verify`, so the

@@ -3832,9 +3832,9 @@
   "Send the stamping settings as JSON: the authority's address, the interval in minutes, the root certificates, and any policy OIDs and revocation lists.": "타임스탬프 설정을 JSON으로 보내세요: 기관 주소, 분 단위 간격, 루트 인증서, 그리고 필요하면 정책 OID와 폐기 목록.",
   "Give the authority's address as an http or https URL of at most 2048 characters, with a host, and with no user name, password, fragment, space or control character.": "기관 주소는 호스트가 있고 사용자 이름, 비밀번호, 프래그먼트, 공백, 제어 문자가 없는 2048자 이하의 http 또는 https URL로 지정하세요.",
   "Give the interval as a whole number of minutes from 5 to 1440.": "간격은 5에서 1440까지의 정수 분으로 지정하세요.",
-  "Give the root certificates you trust for this authority as PEM, at most 262144 bytes, holding at least one certificate, each of which can be read.": "이 기관에 대해 신뢰하는 루트 인증서를 PEM으로 지정하세요. 262144바이트 이하이고, 인증서가 하나 이상 있으며, 모두 읽을 수 있어야 합니다.",
+  "Give the root certificates you trust for this authority as PEM, at most 262144 bytes of CERTIFICATE blocks and nothing else, at least one, each of which can be read.": "이 기관에 대해 신뢰하는 루트 인증서를 PEM으로 지정하세요. CERTIFICATE 블록만으로 262144바이트 이하이고, 하나 이상이며, 모두 읽을 수 있어야 합니다.",
   "Give at most 8 policy OIDs, each once, each a dotted object identifier such as 1.2.3.4 of at most 64 characters.": "정책 OID는 8개까지, 각각 한 번씩, 1.2.3.4처럼 점으로 구분된 64자 이하의 객체 식별자로 지정하세요.",
-  "Give at most 4 revocation lists, each once, each PEM or DER of at most 262144 bytes, holding at least one list that can be read.": "폐기 목록은 4개까지, 각각 한 번씩, 262144바이트 이하의 PEM 또는 DER로, 읽을 수 있는 목록을 하나 이상 담아 지정하세요.",
+  "Give at most 4 revocation lists, each once, each of at most 262144 bytes: X509 CRL blocks in PEM and nothing else, or one list in DER, each of which can be read.": "폐기 목록은 4개까지, 각각 한 번씩, 262144바이트 이하로 지정하세요. PEM의 X509 CRL 블록만 있거나 DER 목록 하나여야 하며, 모두 읽을 수 있어야 합니다.",
   "Confirm the stamping settings with the token Desk gave when it showed them.": "Desk가 설정을 보여 줄 때 준 토큰으로 타임스탬프 설정을 확정하세요.",
   "Remove the time-stamping authority with the token the decision record gave.": "판단 기록이 준 토큰으로 타임스탬프 기관을 제거하세요.",
   "The stamping settings changed after Desk showed them, so nothing was changed. Check the decision record again.": "Desk가 보여 준 뒤 타임스탬프 설정이 바뀌어 아무것도 바꾸지 않았습니다. 판단 기록을 다시 확인하세요.",
@@ -3854,5 +3854,6 @@
   "The stamping settings could not be checked. Please try again.": "타임스탬프 설정을 확인하지 못했습니다. 다시 시도하세요.",
   "The stamping settings could not be kept. Check the decision record again.": "타임스탬프 설정을 보관하지 못했습니다. 판단 기록을 다시 확인하세요.",
   "The time-stamping authority could not be removed. Check the decision record again.": "타임스탬프 기관을 제거하지 못했습니다. 판단 기록을 다시 확인하세요.",
-  "Desk could not read what the stamp run answered. The decision record, checked again, shows the stamps the runtime accepts.": "Desk가 타임스탬프 찍기의 응답을 읽지 못했습니다. 다시 확인한 판단 기록에 런타임이 받아들이는 타임스탬프가 표시됩니다."
+  "Desk could not read what the stamp run answered. The decision record, checked again, shows the stamps the runtime accepts.": "Desk가 타임스탬프 찍기의 응답을 읽지 못했습니다. 다시 확인한 판단 기록에 런타임이 받아들이는 타임스탬프가 표시됩니다.",
+  "The stamping settings changed while the stamp run made its checks, so it asked for no stamp. The next run uses the settings as they are now.": "타임스탬프 찍기가 확인하는 동안 타임스탬프 설정이 바뀌어 타임스탬프를 요청하지 않았습니다. 다음 찍기는 지금의 설정을 사용합니다."
 }

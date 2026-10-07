@@ -188,9 +188,9 @@ const (
 	stampingRequestWords   = "Send the stamping settings as JSON: the authority's address, the interval in minutes, the root certificates, and any policy OIDs and revocation lists."
 	stampingAuthorityWords = "Give the authority's address as an http or https URL of at most 2048 characters, with a host, and with no user name, password, fragment, space or control character."
 	stampingIntervalWords  = "Give the interval as a whole number of minutes from 5 to 1440."
-	stampingRootsWords     = "Give the root certificates you trust for this authority as PEM, at most 262144 bytes, holding at least one certificate, each of which can be read."
+	stampingRootsWords     = "Give the root certificates you trust for this authority as PEM, at most 262144 bytes of CERTIFICATE blocks and nothing else, at least one, each of which can be read."
 	stampingPoliciesWords  = "Give at most 8 policy OIDs, each once, each a dotted object identifier such as 1.2.3.4 of at most 64 characters."
-	stampingCRLsWords      = "Give at most 4 revocation lists, each once, each PEM or DER of at most 262144 bytes, holding at least one list that can be read."
+	stampingCRLsWords      = "Give at most 4 revocation lists, each once, each of at most 262144 bytes: X509 CRL blocks in PEM and nothing else, or one list in DER, each of which can be read."
 	stampingConfirmWords   = "Confirm the stamping settings with the token Desk gave when it showed them."
 	stampingRemoveWords    = "Remove the time-stamping authority with the token the decision record gave."
 	stampingStaleWords     = "The stamping settings changed after Desk showed them, so nothing was changed. Check the decision record again."
@@ -200,6 +200,7 @@ const (
 	stampingClosedWords    = "Desk is stopping, so it starts no stamp run."
 	stampingUndocumented   = "The runtime's audit stamp did not answer as documented, so Desk cannot say whether it stamped. The decision record, checked again, shows the stamps the runtime accepts."
 	stampingStartWords     = "A stamp request needs no settings: send {} as JSON."
+	stampingMovedWords     = "The stamping settings changed while the stamp run made its checks, so it asked for no stamp. The next run uses the settings as they are now."
 	// With a reason, in Desk's or the custody's words.
 	stampingUnreadWords  = "Desk could not read the stamping settings it keeps for this desk, so it uses none of them now: %s."
 	stampingKeepWords    = "Desk could not keep these stamping settings, and the decision record shows the settings it reads now: %s."
@@ -240,15 +241,19 @@ var newStampWake = func(name string) (<-chan time.Time, func()) {
 }
 
 // testHookStampWoke runs after a scheduler has acted on each wake, and is nil
-// outside tests. testHookStampRun runs inside a stamp run's turn, before the
-// runtime is asked to stamp, and is nil outside tests: a test holds a run
-// there to see a second one refused. testHookStampingRead runs after the
+// outside tests. testHookStampRun runs inside a stamp run's turn, with the
+// settings read again and held, before the runtime is asked to stamp, and is
+// nil outside tests: a test holds a run there to see a second one refused,
+// or a change of settings wait. testHookStampChecked runs in the turn after
+// Desk's checks and the head, before the settings are read again, and is nil
+// outside tests: a test changes the settings there. testHookStampingRead runs after the
 // decision record has read the settings, before it checks the paths it
 // passes, and is nil outside tests: a test puts another file under a name
 // there.
 var (
 	testHookStampWoke    func()
 	testHookStampRun     func()
+	testHookStampChecked func()
 	testHookStampingRead func()
 )
 
@@ -321,19 +326,44 @@ func checkPolicy(text string) bool {
 	return true
 }
 
+// pemOnly is the PEM blocks data holds, where it holds blocks of kind and
+// nothing else: no block of another type, no headers, and nothing outside
+// the blocks but white space. Desk keeps the file as given, so a block the
+// runtime would pass over, a private key among them, is never kept beside
+// what the page shows (review round 1).
+func pemOnly(data []byte, kind string) ([]*pem.Block, bool) {
+	var blocks []*pem.Block
+	rest := data
+	for {
+		rest = bytes.TrimLeft(rest, " \t\r\n")
+		if len(rest) == 0 {
+			return blocks, true
+		}
+		if !bytes.HasPrefix(rest, []byte("-----BEGIN ")) {
+			return nil, false
+		}
+		block, after := pem.Decode(rest)
+		if block == nil || block.Type != kind || len(block.Headers) > 0 {
+			return nil, false
+		}
+		blocks = append(blocks, block)
+		rest = after
+	}
+}
+
 // readRoots is the root certificates in data, as the runtime reads them
 // (runtime 0.27.1, `readStampOptions`): each PEM block of type CERTIFICATE,
-// which must be one; at least one. Other blocks are passed over, as the
-// runtime passes them.
+// which must be one; at least one; and nothing else (`pemOnly`).
 func readRoots(data []byte) ([]*x509.Certificate, bool) {
 	if len(data) == 0 || len(data) > stampingFileLimit {
 		return nil, false
 	}
+	blocks, ok := pemOnly(data, "CERTIFICATE")
+	if !ok {
+		return nil, false
+	}
 	var roots []*x509.Certificate
-	for block, rest := pem.Decode(data); block != nil; block, rest = pem.Decode(rest) {
-		if block.Type != "CERTIFICATE" {
-			continue
-		}
+	for _, block := range blocks {
 		certificate, err := x509.ParseCertificate(block.Bytes)
 		if err != nil {
 			return nil, false
@@ -344,24 +374,25 @@ func readRoots(data []byte) ([]*x509.Certificate, bool) {
 }
 
 // readCRLs is the revocation lists in data, as the runtime reads them
-// (runtime 0.27.1, `parseCRLs`): each PEM block of type X509 CRL, or else one
-// DER list; at least one.
+// (runtime 0.27.1, `parseCRLs`): PEM blocks of type X509 CRL and nothing
+// else (`pemOnly`), or else one DER list; at least one.
 func readCRLs(data []byte) ([]*x509.RevocationList, bool) {
 	if len(data) == 0 || len(data) > stampingFileLimit {
 		return nil, false
 	}
-	var lists []*x509.RevocationList
-	for block, rest := pem.Decode(data); block != nil; block, rest = pem.Decode(rest) {
-		if block.Type != "X509 CRL" {
-			continue
-		}
-		list, err := x509.ParseRevocationList(block.Bytes)
-		if err != nil {
+	if bytes.HasPrefix(bytes.TrimLeft(data, " \t\r\n"), []byte("-----BEGIN ")) {
+		blocks, ok := pemOnly(data, "X509 CRL")
+		if !ok {
 			return nil, false
 		}
-		lists = append(lists, list)
-	}
-	if len(lists) > 0 {
+		var lists []*x509.RevocationList
+		for _, block := range blocks {
+			list, err := x509.ParseRevocationList(block.Bytes)
+			if err != nil {
+				return nil, false
+			}
+			lists = append(lists, list)
+		}
 		return lists, true
 	}
 	list, err := x509.ParseRevocationList(data)
@@ -433,18 +464,14 @@ func readStampingIn(folder *os.Root) (settings stampingSettings, found bool, err
 	}
 	settings = stampingSettings{file: file, raw: raw, found: map[string]os.FileInfo{}}
 	read := func(name, digest string) ([]byte, error) {
-		data, err := readPrivateData(folder, name, stampingFileLimit)
+		data, opened, err := readPrivateFile(folder, name, stampingFileLimit)
 		if err != nil {
 			return nil, err
 		}
 		if sha256Digest(data) != digest {
 			return nil, fmt.Errorf("%s is not the file its settings name", name)
 		}
-		info, err := folder.Lstat(name)
-		if err != nil {
-			return nil, err
-		}
-		settings.found[name] = info
+		settings.found[name] = opened
 		return data, nil
 	}
 	if settings.roots, err = read(rootsFileName(file.Roots), file.Roots); err != nil {
@@ -890,15 +917,24 @@ func (st *stampScheduler) wake() {
 		st.record(stampRun{At: now.Unix(), Status: stampProblem, Problem: failure.message})
 		return
 	}
-	st.attempt(dir, settings.file.Authority, false)
+	st.attempt(dir, settings, false)
 }
 
 // attempt is one attempt in dir, after Desk's checks, in the turn the caller
-// holds: the head for a scheduled attempt, and the stamp, recorded as the
-// last run. A scheduled attempt stamps only where the head has moved past
-// the last checkpoint known stamped; one the owner asked for always asks the
-// runtime, whose answer for a checkpoint stamped already costs nothing.
-func (st *stampScheduler) attempt(dir heldDir, authority string, requested bool) stampRun {
+// holds, with the settings the caller read: the head for a scheduled attempt,
+// and the stamp, recorded as the last run. A scheduled attempt stamps only
+// where the head has moved past the last checkpoint known stamped; one the
+// owner asked for always asks the runtime, whose answer for a checkpoint
+// stamped already costs nothing.
+//
+// **The settings stamped with are the settings in force** (review round 1).
+// Immediately before the stamp, the settings are read again under
+// stampingMu, held for reading until the runtime has answered, and must be
+// the very bytes read first: a removal or a change confirmed meanwhile is
+// never followed by a stamp to the authority it replaced, and a removal or a
+// change confirmed after that waits for the stamp, at most runRuntime's
+// bound, and is answered only once it is over.
+func (st *stampScheduler) attempt(dir heldDir, settings stampingSettings, requested bool) stampRun {
 	s := st.s
 	st.running.Store(true)
 	defer st.running.Store(false)
@@ -925,6 +961,15 @@ func (st *stampScheduler) attempt(dir heldDir, authority string, requested bool)
 			return stampRun{}
 		}
 	}
+	if testHookStampChecked != nil {
+		testHookStampChecked()
+	}
+	s.stampingMu.RLock()
+	defer s.stampingMu.RUnlock()
+	now, found, err := s.readStamping()
+	if err != nil || !found || !bytes.Equal(now.raw, settings.raw) {
+		return problem(stampingMovedWords)
+	}
 	if testHookStampRun != nil {
 		testHookStampRun()
 	}
@@ -932,7 +977,7 @@ func (st *stampScheduler) attempt(dir heldDir, authority string, requested bool)
 	// that goes away. The runtime's own --timeout ends its wait inside
 	// runRuntime's bound.
 	out, runErr := runRuntime(context.WithoutCancel(st.ctx), s.cfg.JpackBin, dir,
-		"audit", "stamp", "--config", runtimeConfigName, "--tsa", authority, "--timeout", stampTimeout, "--format", "json")
+		"audit", "stamp", "--config", runtimeConfigName, "--tsa", now.file.Authority, "--timeout", stampTimeout, "--format", "json")
 	run := readStamped(out, runErr)
 	run.At, run.Requested = at, requested
 	if run.Status == stampStamped || run.Status == stampAlready {
@@ -1511,7 +1556,7 @@ func (s *Server) handleStampNow(w http.ResponseWriter, r *http.Request) {
 		if closed {
 			return stampRun{}, true
 		}
-		return st.attempt(dir, settings.file.Authority, true), false
+		return st.attempt(dir, settings, true), false
 	}()
 	if closed {
 		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, stampingClosedWords)

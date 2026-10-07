@@ -83,33 +83,41 @@ func openPrivateDataRoot(dir string, create bool) (*os.Root, error) {
 var errPrivateDataChanged = errors.New("private data changed while being opened")
 
 func readPrivateData(root *os.Root, name string, limit int) ([]byte, error) {
+	data, _, err := readPrivateFile(root, name, limit)
+	return data, err
+}
+
+// readPrivateFile is readPrivateData, and the file it read, as the open
+// file's own Stat gave it: what a caller that hands the file on by its path
+// holds that path to.
+func readPrivateFile(root *os.Root, name string, limit int) ([]byte, os.FileInfo, error) {
 	info, err := root.Lstat(name)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err = ownerOnlyFile(name, info.Mode()); err != nil {
-		return nil, withCode(CodeForbidden, err)
+		return nil, nil, withCode(CodeForbidden, err)
 	}
 	if err = ownedByUs(name, info); err != nil {
-		return nil, withCode(CodeForbidden, err)
+		return nil, nil, withCode(CodeForbidden, err)
 	}
 	file, err := root.OpenFile(name, os.O_RDONLY|openNoFollow|openNonBlocking, 0)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer file.Close()
 	opened, err := file.Stat()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if !os.SameFile(info, opened) {
-		return nil, withCode(CodeForbidden, errPrivateDataChanged)
+		return nil, nil, withCode(CodeForbidden, errPrivateDataChanged)
 	}
 	if err = ownerOnlyFile(name, opened.Mode()); err != nil {
-		return nil, withCode(CodeForbidden, err)
+		return nil, nil, withCode(CodeForbidden, err)
 	}
 	if err = ownedByUs(name, opened); err != nil {
-		return nil, withCode(CodeForbidden, err)
+		return nil, nil, withCode(CodeForbidden, err)
 	}
 	var data []byte
 	if testHookPrivateRead != nil {
@@ -121,16 +129,16 @@ func readPrivateData(root *os.Root, name string, limit int) ([]byte, error) {
 	var over overLimit
 	switch {
 	case errors.As(err, &over):
-		return nil, withCode(CodeTooLarge, fmt.Errorf("%s exceeds its %d-byte storage limit", name, limit))
+		return nil, nil, withCode(CodeTooLarge, fmt.Errorf("%s exceeds its %d-byte storage limit", name, limit))
 	case err != nil:
 		// **A failure to read is not "too large".** It says nothing of the
 		// file, and is kept as itself, uncoded: a reader that decides from
 		// the code what a file is (readDeskManifest, and so a start's sweep
 		// of unfinished keys) must be able to tell "this is not a desk's
 		// manifest" from "it could not be read now".
-		return nil, fmt.Errorf("%s could not be read: %w", name, err)
+		return nil, nil, fmt.Errorf("%s could not be read: %w", name, err)
 	}
-	return data, nil
+	return data, opened, nil
 }
 
 // testHookPrivateRead runs before a private file's bytes are read, and is nil

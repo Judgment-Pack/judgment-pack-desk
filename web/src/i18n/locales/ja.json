@@ -3832,9 +3832,9 @@
   "Send the stamping settings as JSON: the authority's address, the interval in minutes, the root certificates, and any policy OIDs and revocation lists.": "タイムスタンプの設定を JSON で送信してください：局のアドレス、分単位の間隔、ルート証明書、必要ならポリシー OID と失効リスト。",
   "Give the authority's address as an http or https URL of at most 2048 characters, with a host, and with no user name, password, fragment, space or control character.": "局のアドレスは、ホストを含み、ユーザー名、パスワード、フラグメント、空白、制御文字を含まない、2048 文字以内の http または https の URL で指定してください。",
   "Give the interval as a whole number of minutes from 5 to 1440.": "間隔は 5 から 1440 までの整数の分で指定してください。",
-  "Give the root certificates you trust for this authority as PEM, at most 262144 bytes, holding at least one certificate, each of which can be read.": "この局について信頼するルート証明書を PEM で指定してください。262144 バイト以内で、少なくとも 1 つの証明書を含み、どれも読み取れる必要があります。",
+  "Give the root certificates you trust for this authority as PEM, at most 262144 bytes of CERTIFICATE blocks and nothing else, at least one, each of which can be read.": "この局について信頼するルート証明書を PEM で指定してください。CERTIFICATE ブロックのみで 262144 バイト以内、少なくとも 1 つ含み、どれも読み取れる必要があります。",
   "Give at most 8 policy OIDs, each once, each a dotted object identifier such as 1.2.3.4 of at most 64 characters.": "ポリシー OID は 8 個まで、それぞれ 1 回ずつ、1.2.3.4 のようなドット区切りのオブジェクト識別子で 64 文字以内で指定してください。",
-  "Give at most 4 revocation lists, each once, each PEM or DER of at most 262144 bytes, holding at least one list that can be read.": "失効リストは 4 個まで、それぞれ 1 回ずつ、262144 バイト以内の PEM または DER で、読み取れるリストを少なくとも 1 つ含むものを指定してください。",
+  "Give at most 4 revocation lists, each once, each of at most 262144 bytes: X509 CRL blocks in PEM and nothing else, or one list in DER, each of which can be read.": "失効リストは 4 個まで、それぞれ 1 回ずつ、262144 バイト以内で指定してください。PEM の X509 CRL ブロックのみ、または DER のリスト 1 つで、どれも読み取れる必要があります。",
   "Confirm the stamping settings with the token Desk gave when it showed them.": "Desk が設定を表示したときに渡したトークンで、タイムスタンプの設定を確定してください。",
   "Remove the time-stamping authority with the token the decision record gave.": "判断の記録が渡したトークンで、タイムスタンプ局を削除してください。",
   "The stamping settings changed after Desk showed them, so nothing was changed. Check the decision record again.": "Desk が表示した後にタイムスタンプの設定が変わったため、何も変更しませんでした。判断の記録をもう一度確認してください。",
@@ -3854,5 +3854,6 @@
   "The stamping settings could not be checked. Please try again.": "タイムスタンプの設定を確認できませんでした。もう一度お試しください。",
   "The stamping settings could not be kept. Check the decision record again.": "タイムスタンプの設定を保管できませんでした。判断の記録をもう一度確認してください。",
   "The time-stamping authority could not be removed. Check the decision record again.": "タイムスタンプ局を削除できませんでした。判断の記録をもう一度確認してください。",
-  "Desk could not read what the stamp run answered. The decision record, checked again, shows the stamps the runtime accepts.": "Desk はタイムスタンプ付与の応答を読めませんでした。もう一度確認した判断の記録に、ランタイムが受け入れるタイムスタンプが表示されます。"
+  "Desk could not read what the stamp run answered. The decision record, checked again, shows the stamps the runtime accepts.": "Desk はタイムスタンプ付与の応答を読めませんでした。もう一度確認した判断の記録に、ランタイムが受け入れるタイムスタンプが表示されます。",
+  "The stamping settings changed while the stamp run made its checks, so it asked for no stamp. The next run uses the settings as they are now.": "タイムスタンプ付与の確認中にタイムスタンプの設定が変わったため、タイムスタンプを要求しませんでした。次の付与では現在の設定を使います。"
 }

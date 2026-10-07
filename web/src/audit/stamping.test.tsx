@@ -183,6 +183,8 @@ describe('stamping', () => {
     expect(stamps.getByText('10.92565753 s, record 1')).toBeTruthy()
     expect(region().getByText(`Last stamp run, ${when(1791205200)} by Desk’s clock: the authority stamped the checkpoint at record 2, stating it existed by 2026-10-07T13:29:07Z, under policy 1.3.6.1.4.1.99999.1.`)).toBeTruthy()
     expect(region().queryByText('The runtime did not check the stamps.')).toBeNull()
+    // The stamps the runtime checked reach the record the run named: no label.
+    expect(region().queryByText(/the authority’s answer to Desk’s request/)).toBeNull()
     expect(screen.getByText(/with the time-stamping roots you gave and no keys or checkpoints: it checked the stamps against those roots/)).toBeTruthy()
   })
 
@@ -222,6 +224,17 @@ describe('stamping', () => {
     expect(said.textContent).toBe('The runtime did not check the stamps. no time-stamping roots were supplied')
     expect(said.querySelector('[lang="en"]')!.textContent).toBe('no time-stamping roots were supplied')
     expect(screen.getByText('The last stamp run named the checkpoint at record 2: that is the authority’s answer to Desk’s request, not a stamp the runtime checked.')).toBeTruthy()
+  })
+
+  it('labels the record the last run named wherever no stamp the runtime checked reaches it, with roots given or not', async () => {
+    const label = 'The last stamp run named the checkpoint at record 2: that is the authority’s answer to Desk’s request, not a stamp the runtime checked.'
+    for (const stampedState of [{ status: 'none' }, { status: 'through', through: 1 }]) {
+      records = [{ ...set, report: { ...checked, coverage: { ...checked.coverage, stamped: stampedState } } }]
+      show()
+      expect(await screen.findByText(label), JSON.stringify(stampedState)).toBeTruthy()
+      expect(screen.queryByText('The runtime did not check the stamps.')).toBeNull()
+      cleanup()
+    }
   })
 
   it('says settings Desk could not read, passes nothing of them, and offers their removal', async () => {
@@ -303,7 +316,7 @@ describe('the stamping client', () => {
 
   it('names, as Desk’s own sentences, only sentences the chassis says', () => {
     const source = readFileSync(join(import.meta.dirname, '../../../internal/desk/stamping.go'), 'utf8')
-    expect(STAMPING_REASONS).toHaveLength(23)
+    expect(STAMPING_REASONS).toHaveLength(24)
     for (const reason of STAMPING_REASONS) {
       for (const part of reason.split(/\{\{\w+\}\}/)) {
         expect(source.includes(part) ? part : `missing: ${part}`, reason).toBe(part)

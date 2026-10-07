@@ -3832,9 +3832,9 @@
   "Send the stamping settings as JSON: the authority's address, the interval in minutes, the root certificates, and any policy OIDs and revocation lists.": "請以 JSON 傳送時間戳設定：機構位址、以分鐘為單位的間隔、根憑證，以及任何原則 OID 和撤銷清單。",
   "Give the authority's address as an http or https URL of at most 2048 characters, with a host, and with no user name, password, fragment, space or control character.": "請將機構位址指定為不超過 2048 個字元的 http 或 https URL，包含主機，且不含使用者名稱、密碼、片段、空格或控制字元。",
   "Give the interval as a whole number of minutes from 5 to 1440.": "請將間隔指定為 5 到 1440 之間的整數分鐘數。",
-  "Give the root certificates you trust for this authority as PEM, at most 262144 bytes, holding at least one certificate, each of which can be read.": "請以 PEM 指定你為此機構信任的根憑證，不超過 262144 位元組，至少包含一張憑證，且每張都可讀取。",
+  "Give the root certificates you trust for this authority as PEM, at most 262144 bytes of CERTIFICATE blocks and nothing else, at least one, each of which can be read.": "請以 PEM 指定你為此機構信任的根憑證：只含 CERTIFICATE 區塊，不超過 262144 位元組，至少一張，且每張都可讀取。",
   "Give at most 8 policy OIDs, each once, each a dotted object identifier such as 1.2.3.4 of at most 64 characters.": "請指定最多 8 個原則 OID，每個只出現一次，每個都是像 1.2.3.4 這樣以點分隔、不超過 64 個字元的物件識別碼。",
-  "Give at most 4 revocation lists, each once, each PEM or DER of at most 262144 bytes, holding at least one list that can be read.": "請指定最多 4 份撤銷清單，每份只出現一次，每份都是不超過 262144 位元組的 PEM 或 DER，且至少包含一份可讀取的清單。",
+  "Give at most 4 revocation lists, each once, each of at most 262144 bytes: X509 CRL blocks in PEM and nothing else, or one list in DER, each of which can be read.": "請指定最多 4 份撤銷清單，每份只出現一次，每份不超過 262144 位元組：只含 PEM 的 X509 CRL 區塊，或一份 DER 清單，且每份都可讀取。",
   "Confirm the stamping settings with the token Desk gave when it showed them.": "請用 Desk 顯示設定時給出的權杖確認時間戳設定。",
   "Remove the time-stamping authority with the token the decision record gave.": "請用決策記錄給出的權杖移除時間戳機構。",
   "The stamping settings changed after Desk showed them, so nothing was changed. Check the decision record again.": "Desk 顯示時間戳設定後，設定已變更，因此沒有做任何變更。請再次檢查決策記錄。",
@@ -3854,5 +3854,6 @@
   "The stamping settings could not be checked. Please try again.": "無法檢查時間戳設定。請重試。",
   "The stamping settings could not be kept. Check the decision record again.": "無法保管時間戳設定。請再次檢查決策記錄。",
   "The time-stamping authority could not be removed. Check the decision record again.": "無法移除時間戳機構。請再次檢查決策記錄。",
-  "Desk could not read what the stamp run answered. The decision record, checked again, shows the stamps the runtime accepts.": "Desk 無法讀取加上時間戳的答覆。再次檢查的決策記錄會顯示執行環境接受的時間戳。"
+  "Desk could not read what the stamp run answered. The decision record, checked again, shows the stamps the runtime accepts.": "Desk 無法讀取加上時間戳的答覆。再次檢查的決策記錄會顯示執行環境接受的時間戳。",
+  "The stamping settings changed while the stamp run made its checks, so it asked for no stamp. The next run uses the settings as they are now.": "加上時間戳在檢查期間，時間戳設定發生了變更，因此沒有請求時間戳。下一次將使用現在的設定。"
 }

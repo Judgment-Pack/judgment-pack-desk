@@ -15,10 +15,15 @@ package desk
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"io/fs"
@@ -369,14 +374,22 @@ type stampHold struct {
 	once    sync.Once
 }
 
-// holdStampRuns holds the stamp runs of the servers of this test. The test
-// frees them in its cleanup, which runs before the server it made before
-// this closes, so that a test that stops early never leaves a run held
-// and a Close waiting for it.
+// holdStampRuns holds the stamp runs of the servers of this test where the
+// stamp is about to be asked for, with the settings read again and held
+// (testHookStampRun). The test frees them in its cleanup, which runs before
+// the server it made before this closes, so that a test that stops early
+// never leaves a run held and a Close waiting for it.
 func holdStampRuns(t *testing.T) *stampHold {
 	t.Helper()
+	return holdAt(t, &testHookStampRun)
+}
+
+// holdAt is holdStampRuns at the hook given; its cleanup also clears the
+// hook, after the server closes.
+func holdAt(t *testing.T, hook *func()) *stampHold {
+	t.Helper()
 	h := &stampHold{started: make(chan struct{}, 8), release: make(chan struct{})}
-	testHookStampRun = func() { h.started <- struct{}{}; <-h.release }
+	*hook = func() { h.started <- struct{}{}; <-h.release }
 	t.Cleanup(h.free)
 	return h
 }
@@ -504,6 +517,21 @@ func TestStampingSettingsAreKeptByDeskOutsideTheProject(t *testing.T) {
 		t.Fatal(err)
 	}
 	unread(t, true)
+	// Roots the settings name by their very digest, holding no certificate
+	// (review round 1): held to what the runtime reads, not to the digest
+	// alone.
+	noCertificate := []byte("not a certificate\n")
+	written := filepath.Join(folder, "roots-"+fileDigest(noCertificate)+".pem")
+	if err := os.WriteFile(written, noCertificate, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(settingsPath, []byte(strings.Replace(settings, "sha256:"+fileDigest([]byte(r.roots)), "sha256:"+fileDigest(noCertificate), 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	unread(t, true)
+	if err := os.Remove(written); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(settingsPath, []byte(settings), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -670,7 +698,7 @@ func TestRemovingTheAuthorityKeepsTheStamps(t *testing.T) {
 // and keeps nothing.
 func TestAStampingProposalIsHeldToItsBounds(t *testing.T) {
 	r := newStampRig(t)
-	pad := func(n int, tail string) string { return strings.Repeat("#", n-len(tail)-1) + "\n" + tail }
+	pad := func(n int, tail string) string { return strings.Repeat("\n", n-len(tail)) + tail }
 	crlPEM := string(r.crl)
 	b64 := func(data string) string { return base64.StdEncoding.EncodeToString([]byte(data)) }
 	authority, _ := newTestAuthority()
@@ -689,11 +717,17 @@ func TestAStampingProposalIsHeldToItsBounds(t *testing.T) {
 		{"a fragment", map[string]any{"authority": "https://tsa.example/#part"}, stampingAuthorityWords},
 		{"a space", map[string]any{"authority": "https://tsa.example/a b"}, stampingAuthorityWords},
 		{"a control character", map[string]any{"authority": "https://tsa.example/\u0007"}, stampingAuthorityWords},
+		{"a right-to-left override", map[string]any{"authority": "https://tsa.example/\u202e"}, stampingAuthorityWords},
+		{"a zero-width space", map[string]any{"authority": "https://tsa.\u200bexample/"}, stampingAuthorityWords},
 		{"an address past its bound", map[string]any{"authority": long + "a"}, stampingAuthorityWords},
 		{"no address", map[string]any{"authority": nil}, stampingAuthorityWords},
 		{"an interval of 4 minutes", map[string]any{"intervalMinutes": 4}, stampingIntervalWords},
 		{"an interval of 1441 minutes", map[string]any{"intervalMinutes": 1441}, stampingIntervalWords},
 		{"no roots", map[string]any{"roots": nil}, stampingRootsWords},
+		{"roots of white space alone", map[string]any{"roots": "\n \n"}, stampingRootsWords},
+		{"roots with a private key", map[string]any{"roots": r.roots + privateKeyPEM(t)}, stampingRootsWords},
+		{"roots with text outside the blocks", map[string]any{"roots": "# the authority's root\n" + r.roots}, stampingRootsWords},
+		{"roots with a block's headers", map[string]any{"roots": withHeaders(t, r.roots)}, stampingRootsWords},
 		{"roots that are not PEM", map[string]any{"roots": "not a certificate"}, stampingRootsWords},
 		{"roots past their bound", map[string]any{"roots": pad(stampingBoundBytes+1, r.roots)}, stampingRootsWords},
 		{"a broken certificate", map[string]any{"roots": "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n"}, stampingRootsWords},
@@ -706,6 +740,7 @@ func TestAStampingProposalIsHeldToItsBounds(t *testing.T) {
 		{"five lists", map[string]any{"crls": []string{b64(crlPEM), b64(string(otherCRL)), b64(string(derOf(t, r.crl))), b64(string(otherCRLOf(t))), b64(string(otherCRLOf(t)))}}, stampingCRLsWords},
 		{"a list twice", map[string]any{"crls": []string{b64(crlPEM), b64(crlPEM)}}, stampingCRLsWords},
 		{"a list that is not one", map[string]any{"crls": []string{b64("not a list")}}, stampingCRLsWords},
+		{"a list with text outside the blocks", map[string]any{"crls": []string{b64(crlPEM + "# kept beside it\n")}}, stampingCRLsWords},
 		{"a list not in base64", map[string]any{"crls": []string{"%%%"}}, stampingCRLsWords},
 		{"a list past its bound", map[string]any{"crls": []string{b64(pad(stampingBoundBytes+1, crlPEM))}}, stampingCRLsWords},
 	} {
@@ -772,6 +807,31 @@ func TestAStampingProposalIsHeldToItsBounds(t *testing.T) {
 	if status != http.StatusUnauthorized {
 		t.Errorf("a check with no bearer answered %d", status)
 	}
+}
+
+// privateKeyPEM is a private key, PEM: what must never be kept beside the
+// roots.
+func privateKeyPEM(t *testing.T) string {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der}))
+}
+
+// withHeaders is the first certificate of roots, PEM, with a header.
+func withHeaders(t *testing.T, roots string) string {
+	t.Helper()
+	block, _ := pem.Decode([]byte(roots))
+	if block == nil {
+		t.Fatal("no PEM block")
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: block.Type, Headers: map[string]string{"Comment": "kept beside it"}, Bytes: block.Bytes}))
 }
 
 // stampingBoundBytes is the most of the roots, and of one list, Desk keeps
@@ -1172,6 +1232,167 @@ func TestTheSchedulerStopsWithTheServer(t *testing.T) {
 	}
 	if got := stampingCall(t, r.ts, "/api/audit/stamping/stamp", "", map[string]any{}); got.status == http.StatusOK || stampsRun(r.ran(t)) != 0 {
 		t.Errorf("Stamp now after Close answered %d %s", got.status, got.data)
+	}
+}
+
+// stampsTo is how many `audit stamp` calls among calls name the authority
+// at address.
+func stampsTo(calls []string, address string) int {
+	n := 0
+	for _, call := range calls {
+		if strings.HasPrefix(call, "audit stamp ") && strings.Contains(call, " --tsa "+address+" ") {
+			n++
+		}
+	}
+	return n
+}
+
+// **The settings stamped with are the settings in force** (review round 1).
+// A change to another authority, or a removal, confirmed while a run makes
+// its checks, is answered at once, and the run then asks for no stamp at all,
+// on the owner's request or the scheduler's: never to the authority replaced.
+// The next request stamps with the authority now set.
+func TestAChangeOrRemovalWhileARunChecksIsHonoured(t *testing.T) {
+	t.Cleanup(func() { testHookStampChecked = nil })
+	w := fixStamping(t)
+	r := newStampRig(t)
+	r.chainIs(t, handoverTrail, 2)
+	r.stampsWith(t, 0, stampedAnswer(handoverTrail, 2))
+	r.set(t, r.proposal(nil))
+	hold := holdAt(t, &testHookStampChecked)
+	r.ran(t)
+	first := make(chan stampingAnswered, 1)
+	go func() { first <- stampingCall(t, r.ts, "/api/audit/stamping/stamp", "", map[string]any{}) }()
+	hold.arrived(t)
+	other := "https://other.example/stamp"
+	changed := r.proposal(map[string]any{"authority": other})
+	if got := setOn(t, r.ts, "", changed, checkOn(t, r.ts, "", changed).Token); got.status != http.StatusOK {
+		t.Fatalf("a change while the run checked answered %d %s", got.status, got.data)
+	}
+	hold.free()
+	got := <-first
+	var run struct {
+		Run stampRun `json:"run"`
+	}
+	if got.status != http.StatusOK || json.Unmarshal([]byte(got.data), &run) != nil || run.Run.Status != stampProblem || run.Run.Problem != stampingMovedWords {
+		t.Errorf("Stamp now across a change answered %d %s", got.status, got.data)
+	}
+	if n := stampsRun(r.ran(t)); n != 0 {
+		t.Errorf("across a change the run asked for %d stamps", n)
+	}
+	if got := stampingCall(t, r.ts, "/api/audit/stamping/stamp", "", map[string]any{}); got.status != http.StatusOK {
+		t.Fatalf("Stamp now answered %d %s", got.status, got.data)
+	}
+	if calls := r.ran(t); stampsTo(calls, other) != 1 || stampsTo(calls, testAuthorityAddress) != 0 {
+		t.Errorf("after the change Stamp now ran %q", calls)
+	}
+
+	// The scheduler's run, across a removal, with a record added since.
+	r.chainIs(t, handoverTrail, 3)
+	hold2 := holdAt(t, &testHookStampChecked)
+	woke := make(chan bool, 1)
+	go func() { woke <- w.send(3 * time.Hour) }()
+	hold2.arrived(t)
+	token := stampingOf(t, r.ts, "").RemoveToken
+	if got := stampingCall(t, r.ts, "/api/audit/stamping/remove", "", map[string]string{"token": token}); got.status != http.StatusOK {
+		t.Fatalf("a removal while the run checked answered %d %s", got.status, got.data)
+	}
+	hold2.free()
+	if !<-woke {
+		t.Fatal("the scheduler did not act on its wake")
+	}
+	if n := stampsRun(r.ran(t)); n != 0 {
+		t.Errorf("across a removal the scheduler asked for %d stamps", n)
+	}
+	if last := stampingOf(t, r.ts, ""); last.Last == nil || last.Last.Problem != stampingMovedWords || last.Last.Requested {
+		t.Errorf("across a removal the last run is %+v", last.Last)
+	}
+}
+
+// **A change or a removal confirmed while the stamp is being asked for waits
+// for it** (review round 1). The settings are held from the moment they are
+// read again until the runtime answers: a removal, and a change, posted then
+// are not answered while the stamp runs, and are answered once it is over;
+// the stamp in progress goes to the authority it read; and after the removal
+// no run starts.
+func TestAChangeOrRemovalWaitsForTheStampInProgress(t *testing.T) {
+	t.Cleanup(func() { testHookStampRun = nil })
+	w := fixStamping(t)
+	r := newStampRig(t)
+	r.chainIs(t, handoverTrail, 2)
+	r.stampsWith(t, 0, stampedAnswer(handoverTrail, 2))
+	r.set(t, r.proposal(nil))
+	for _, c := range []struct {
+		name  string
+		write func() stampingAnswered
+	}{
+		{"a change", func() stampingAnswered {
+			changed := r.proposal(map[string]any{"intervalMinutes": 30})
+			return setOn(t, r.ts, "", changed, checkOn(t, r.ts, "", changed).Token)
+		}},
+		{"a removal", func() stampingAnswered {
+			return stampingCall(t, r.ts, "/api/audit/stamping/remove", "", map[string]string{"token": stampingOf(t, r.ts, "").RemoveToken})
+		}},
+	} {
+		hold := holdStampRuns(t)
+		r.ran(t)
+		first := make(chan stampingAnswered, 1)
+		go func() { first <- stampingCall(t, r.ts, "/api/audit/stamping/stamp", "", map[string]any{}) }()
+		hold.arrived(t)
+		// The token is taken before the run holds the settings; the write
+		// that confirms it waits.
+		written := make(chan stampingAnswered, 1)
+		go func() { written <- c.write() }()
+		select {
+		case got := <-written:
+			t.Errorf("%s was answered while the stamp ran: %d %s", c.name, got.status, got.data)
+		case <-time.After(time.Second):
+		}
+		hold.free()
+		if got := <-first; got.status != http.StatusOK || !strings.Contains(got.data, `"status":"stamped"`) {
+			t.Errorf("%s: the stamp in progress answered %d %s", c.name, got.status, got.data)
+		}
+		if got := <-written; got.status != http.StatusOK {
+			t.Errorf("%s answered %d %s after the stamp", c.name, got.status, got.data)
+		}
+		if n := stampsTo(r.ran(t), testAuthorityAddress); n != 1 {
+			t.Errorf("%s: the stamp in progress asked the authority it read %d times", c.name, n)
+		}
+	}
+	w.at(t, 6*time.Hour)
+	if calls := r.ran(t); calls != nil {
+		t.Errorf("after the removal a wake ran %q", calls)
+	}
+}
+
+// **Close waits for a "Stamp now" in progress** (review round 1): the loop is
+// idle, and Close returns only once the owner's run is over.
+func TestCloseWaitsForAStampNowInProgress(t *testing.T) {
+	t.Cleanup(func() { testHookStampRun = nil })
+	fixStamping(t)
+	r := newStampRig(t)
+	r.chainIs(t, handoverTrail, 2)
+	r.stampsWith(t, 0, stampedAnswer(handoverTrail, 2))
+	r.set(t, r.proposal(nil))
+	hold := holdStampRuns(t)
+	r.ran(t)
+	first := make(chan stampingAnswered, 1)
+	go func() { first <- stampingCall(t, r.ts, "/api/audit/stamping/stamp", "", map[string]any{}) }()
+	hold.arrived(t)
+	closed := make(chan struct{})
+	go func() { r.s.Close(); close(closed) }()
+	select {
+	case <-closed:
+		t.Error("Close returned while a Stamp now was running")
+	case <-time.After(time.Second):
+	}
+	hold.free()
+	if got := <-first; got.status != http.StatusOK || !strings.Contains(got.data, `"status":"stamped"`) {
+		t.Errorf("the Stamp now in progress at Close answered %d %s", got.status, got.data)
+	}
+	<-closed
+	if n := stampsRun(r.ran(t)); n != 1 {
+		t.Errorf("the Stamp now in progress at Close ran %d stamps", n)
 	}
 }
 

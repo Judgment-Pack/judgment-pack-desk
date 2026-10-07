@@ -716,9 +716,9 @@ export const STAMPING_REASONS = [
   sourceMessage("Send the stamping settings as JSON: the authority's address, the interval in minutes, the root certificates, and any policy OIDs and revocation lists."),
   sourceMessage("Give the authority's address as an http or https URL of at most 2048 characters, with a host, and with no user name, password, fragment, space or control character."),
   sourceMessage('Give the interval as a whole number of minutes from 5 to 1440.'),
-  sourceMessage('Give the root certificates you trust for this authority as PEM, at most 262144 bytes, holding at least one certificate, each of which can be read.'),
+  sourceMessage('Give the root certificates you trust for this authority as PEM, at most 262144 bytes of CERTIFICATE blocks and nothing else, at least one, each of which can be read.'),
   sourceMessage('Give at most 8 policy OIDs, each once, each a dotted object identifier such as 1.2.3.4 of at most 64 characters.'),
-  sourceMessage('Give at most 4 revocation lists, each once, each PEM or DER of at most 262144 bytes, holding at least one list that can be read.'),
+  sourceMessage('Give at most 4 revocation lists, each once, each of at most 262144 bytes: X509 CRL blocks in PEM and nothing else, or one list in DER, each of which can be read.'),
   sourceMessage('Confirm the stamping settings with the token Desk gave when it showed them.'),
   sourceMessage('Remove the time-stamping authority with the token the decision record gave.'),
   sourceMessage('The stamping settings changed after Desk showed them, so nothing was changed. Check the decision record again.'),
@@ -735,7 +735,8 @@ export const STAMPING_REASONS = [
   sourceMessage('Desk could not tell where the trail ends now, so it asked for no stamp: {{reason}}.'),
   sourceMessage('This runtime (jpack {{version}}) has no audit stamp. Stamping needs jpack {{floor}} or later.'),
   sourceMessage('Desk could not hand the runtime the roots it keeps for this desk, so no stamp was checked: {{reason}}.'),
-  sourceMessage("A cross-site request cannot change this desk's stamping.")
+  sourceMessage("A cross-site request cannot change this desk's stamping."),
+  sourceMessage('The stamping settings changed while the stamp run made its checks, so it asked for no stamp. The next run uses the settings as they are now.')
 ]
 
 const sha256Form = (value: unknown): value is string => text(value) && /^sha256:[0-9a-f]{64}$/.test(value)
