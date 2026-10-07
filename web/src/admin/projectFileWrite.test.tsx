@@ -68,6 +68,7 @@ function servesDesk(options: { write: (body: Record<string, unknown>) => Respons
       desk.puts.push({ url, body })
       return options.write(body)
     }
+    if (url.includes('jpack-assistant.json')) return answered({error:'not found',code:'not-found'},404)
     desk.reads += 1
     if (desk.reads > 1) return new Promise(() => {})
     return answered({

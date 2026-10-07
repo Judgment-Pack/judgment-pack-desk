@@ -38,6 +38,7 @@ export function MessageDetails({ text, input, turn }: { text: string; input?: st
   return <ReadingDetails title={msg('Message details')}>
     {turn && <dl className={styles.metadata}><dt>{msg('Sender')}</dt><dd>{messageSpeaker(turn)}</dd>
       <dt>{turn.role === 'user' && turn.kind !== 'note' ? msg('Sent') : msg('Recorded')}</dt><dd>{formatted ? <time dateTime={turn.at}>{formatted.full}</time> : msg('Time unavailable')}</dd>
+      {turn.target&&<><dt>{msg('AI connection')}</dt><dd>{turn.target.connectionName}</dd><dt>{msg('Model')}</dt><dd>{turn.target.model}</dd></>}
       {turn.interrupted && <><dt>{msg('Status')}</dt><dd>{msg('Response interrupted')}</dd></>}
     </dl>}
     <p className={styles.text}>{text}</p>

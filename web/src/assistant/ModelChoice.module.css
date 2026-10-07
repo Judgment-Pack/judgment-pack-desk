@@ -36,6 +36,7 @@
   align-items: center;
   gap: var(--space-2);
   min-height: var(--density-row);
+  font-size: var(--text-sm);
   padding: var(--space-1) var(--space-2);
   cursor: pointer;
 }
@@ -101,3 +102,5 @@
 .choice > div:last-child {
   margin-bottom: 0;
 }
+
+.bulk { display: flex; gap: var(--space-2); align-items: center; margin-bottom: var(--space-2); }

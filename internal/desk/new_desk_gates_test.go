@@ -317,6 +317,11 @@ func assertGatedFolder(t *testing.T, folder, config string) {
 	if got := readFile(t, filepath.Join(folder, "jpack-desk.json")); got != "{\"deskConfigVersion\":1}\n" {
 		t.Errorf("jpack-desk.json is %q", got)
 	}
+	// The desk's own model preferences (docs/ai-connections.md), inheriting
+	// the shared connections and defaults, and naming no credential.
+	if got := readFile(t, filepath.Join(folder, "jpack-assistant.json")); got != "{\n  \"profileVersion\": 1,\n  \"codex\": { \"inherit\": true },\n  \"api\": { \"inherit\": true }\n}\n" {
+		t.Errorf("jpack-assistant.json is %q", got)
+	}
 }
 
 // desksLeft is what is in the installation's desks folder.

@@ -23,6 +23,13 @@ type providerAccountManager interface {
 }
 
 func (s *Server) initModelProviders() {
+	// The account profile and its exclusive lease belong to this Desk process.
+	// Named desks share that manager, while each run's tools and cancellation
+	// remain bound to its own authenticated socket and desk.
+	if s.cfg.parent != nil {
+		s.codex = s.cfg.parent.codex
+		return
+	}
 	if s.cfg.CodexBin == "off" || !s.assistant.usable() {
 		return
 	}
@@ -114,13 +121,18 @@ func (s *Server) handleModelProviders(w http.ResponseWriter, r *http.Request) {
 		}}})
 		return
 	}
+	account, connectionErr := s.accountForConnection(r)
+	if connectionErr != nil {
+		providerReply(w, 409, map[string]string{"error": "connection-unavailable"})
+		return
+	}
 	switch action {
 	case "models":
 		if r.Method != http.MethodGet {
 			providerReply(w, 405, map[string]string{"error": "method"})
 			return
 		}
-		lister, ok := s.codex.(interface {
+		lister, ok := account.(interface {
 			Models(context.Context) ([]codexbridge.Model, error)
 		})
 		if !ok {
@@ -159,13 +171,13 @@ func (s *Server) handleModelProviders(w http.ResponseWriter, r *http.Request) {
 		providerReply(w, 404, map[string]string{"error": "not-found"})
 		return
 	}
-	if s.codex == nil {
+	if account == nil {
 		providerFailure(w, codexbridge.ErrUnavailable)
 		return
 	}
 	switch action {
 	case "status":
-		status, err := s.codex.Status(r.Context(), owner.ID, false)
+		status, err := account.Status(r.Context(), owner.ID, false)
 		if err != nil {
 			providerFailure(w, err)
 			return
@@ -182,7 +194,7 @@ func (s *Server) handleModelProviders(w http.ResponseWriter, r *http.Request) {
 			providerReply(w, 400, map[string]string{"error": "invalid-login-method"})
 			return
 		}
-		challenge, err := s.codex.StartLogin(r.Context(), owner, request.Method)
+		challenge, err := account.StartLogin(r.Context(), owner, request.Method)
 		if err != nil {
 			providerFailure(w, err)
 			return
@@ -199,7 +211,7 @@ func (s *Server) handleModelProviders(w http.ResponseWriter, r *http.Request) {
 			providerReply(w, 400, map[string]string{"error": "invalid-request"})
 			return
 		}
-		if err := s.codex.CancelLogin(r.Context(), owner.ID, request.ID); err != nil {
+		if err := account.CancelLogin(r.Context(), owner.ID, request.ID); err != nil {
 			providerFailure(w, err)
 			return
 		}
@@ -210,13 +222,13 @@ func (s *Server) handleModelProviders(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if action == "logout" {
-			if err := s.codex.Logout(r.Context()); err != nil {
+			if err := account.Logout(r.Context()); err != nil {
 				providerFailure(w, err)
 				return
 			}
 			providerReply(w, 200, map[string]string{"state": "signed-out"})
 		} else {
-			status, err := s.codex.Status(r.Context(), owner.ID, true)
+			status, err := account.Status(r.Context(), owner.ID, true)
 			if err != nil {
 				providerFailure(w, err)
 				return

@@ -56,17 +56,19 @@ import { OverflowTooltip } from '../ui/Tooltip'
  * config-supplied path would be a local-code-execution surface. The status
  * line reports what the process was started with.
  */
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { SignInSettings } from '../auth/SignInSettings'
 import { ConnectionSettings } from '../admin/ConnectionSettings'
 import { DocumentProcessingSettings } from '../admin/DocumentProcessingSettings'
 import { ChatDataSettings } from '../admin/ChatDataSettings'
 import { AssistantSection } from '../assistant/AssistantSection'
+import { SharedAssistantSettings } from '../assistant/AssistantSettings'
 import { AdminStatusLine } from '../admin/AdminStatusLine'
 import { PageHeader, PageBody } from '../ui/PageLayout'
 import { Popover } from '../ui/Popover'
-import { Button } from '../ui/Button'
+import { Button, ButtonLink } from '../ui/Button'
+import { SettingsSection } from '../ui/SettingsSection'
 import { RetainedPanel } from '../ui/RetainedPanel'
 import { DraftScope } from '../shell/DraftScope'
 import { ConfigPane } from '../admin/ConfigPane'
@@ -131,6 +133,11 @@ export function AdminView() {
   // The Project section's one field and its Save, sharing one draft across two
   // of that section's slots.
   const defaultProject = useDefaultProject()
+  // **One unsaved draft at a time between the desk's model preferences and the
+  // shared AI connections.** Each blocks the other while it holds an edit, so
+  // a save on one never lands on a base the other has moved.
+  const [profileDirty, setProfileDirty] = useState(false)
+  const [sharedDirty, setSharedDirty] = useState(false)
   const { hash } = useLocation()
   // Below 1100px the Inspector is a drawer and the shell is one column: the
   // list stacks above the open section, and the rows that are not open say
@@ -258,12 +265,25 @@ ${effective.desk.chassis.runtimeBin}`} />
                 <WebSearchSettings />
               </RetainedPanel>
               <RetainedPanel active={open.id === 'assistant'}>
+                {sharedDirty && <p role="status" className={styles.explanation}>{msg('Save or discard changes in Connections before editing desk preferences.')}</p>}
                 <AssistantSection
                   id={sectionId(SECTION.assistant!.id)}
                   title={SECTION.assistant!.title}
                   level={2}
                   under={deskStatus(effective)}
+                  blocked={sharedDirty}
+                  onDirtyChange={setProfileDirty}
                 />
+              </RetainedPanel>
+              {/* AI connections are shared on this computer (docs/ai-connections.md):
+                  kept mounted, like the Assistant section, so an unsaved edit
+                  survives a visit to another section. */}
+              <RetainedPanel active={open.id === 'connections'}>
+                <SettingsSection title={msg('AI')} level={2} variant="standalone" description={msg('Connections are shared on this computer. Each desk chooses which connections and models to use.')}>
+                  {profileDirty && <p role="status" className={styles.explanation}>{msg('Save or discard changes in Assistant before editing shared AI settings.')}</p>}
+                  <SharedAssistantSettings unavailable={profileDirty} onDirtyChange={setSharedDirty} />
+                  <ButtonLink variant="quiet" to="/admin#assistant">{msg('Model preferences for this desk')}</ButtonLink>
+                </SettingsSection>
               </RetainedPanel>
               {open.id === 'connections' && <ConnectionSettings />}
               {open.id === 'identity-provider' && <SignInSettings />}

@@ -1,5 +1,5 @@
 /**
- * Admin › Assistant, driven against a stub of the chassis it calls.
+ * Admin › Connections › AI, driven against a stub of the chassis it calls.
  *
  * The assertions are about **what the page says and what it sends**, on the
  * wire: which request each control makes, what it renders from the answer, and
@@ -17,7 +17,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DeskConfigFixture } from '../config/DeskConfigProvider'
 import { decodeDeskConfig, effectiveConfig, type EffectiveConfig } from '../config/deskConfig'
 import { testQueryClient } from '../testing/harness'
-import { AssistantSection } from './AssistantSection'
+import { SharedAssistantSettings } from './AssistantSettings'
 
 afterEach(() => {
   cleanup()
@@ -187,7 +187,7 @@ function renderSection(
   return render(
     <QueryClientProvider client={client}>
       <DeskConfigFixture value={value}>
-        <AssistantSection id="assistant" title="Assistant" />
+        <SharedAssistantSettings unavailable={false}/>
       </DeskConfigFixture>
     </QueryClientProvider>
   )
@@ -207,22 +207,12 @@ function retainedVariables(client: QueryClient): unknown[] {
     .filter((variables) => variables !== undefined)
 }
 
-describe('the Assistant section', () => {
-  it('renders as a card: the file it is in, its state, and no paragraph', () => {
-    // The three paragraphs that stood here — a standing sentence, three
-    // deployment states and a note about the one branching member — were prose
-    // about a slot the card now states in four facts. What is left is the
-    // states, each of which is one answer out of a fixed set.
+describe('shared AI settings', () => {
+  it('renders shared connections without desk model preferences', () => {
     stubChassis({})
-    const { container } = renderSection()
-    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Assistant')
-    const keys = Array.from(container.querySelectorAll('dt')).map((each) => each.textContent)
-    expect(keys).toEqual(['Location', 'Status'])
-    expect(screen.getByText(DESK_PATH)).toBeTruthy()
-    expect(screen.getByText('not present — defaults in use')).toBeTruthy()
-    // Still not three shapes: the form has one endpoint, and the deployment
-    // states were never a choice on it.
-    expect(screen.queryByRole('radio')).toBeNull()
+    renderSection()
+    expect(screen.getByLabelText('Connection method')).toBeTruthy()
+    expect(screen.queryByRole('checkbox', {name:'Use shared defaults'})).toBeNull()
   })
 
   it('asks for the key where a person would look for it, and says where it lives', () => {
@@ -232,7 +222,7 @@ describe('the Assistant section', () => {
     stubChassis({ key: BOUND })
     const { container } = renderSection()
     const labels = Array.from(container.querySelectorAll('label')).map((each) => each.textContent)
-    expect(labels.slice(0, 4)).toEqual(['Access', 'Provider', 'API key', 'Endpoint URL'])
+    expect(labels.slice(0, 4)).toEqual(['Connection method', 'Provider', 'API key', 'Endpoint URL'])
     expect(
       screen.getByText('Stored on this computer only, never in the project. Readable by your user account only.')
     ).toBeTruthy()

@@ -1,3 +1,5 @@
+import { ASSISTANT_PROFILE_PATH } from '../config/assistantProfile'
+import { DESK_CONFIG_QUERY_KEY } from '../config/queries'
 /**
  * One file, open: the base revision, the save, and the proof the save left
  * behind.
@@ -210,6 +212,7 @@ export function useFileEditing(): FileEditing {
             delivered = true
             setOutcome({ submitted, landed })
             input.onSaved?.(landed)
+            if (input.path === ASSISTANT_PROFILE_PATH) void queryClient.invalidateQueries({ queryKey: DESK_CONFIG_QUERY_KEY })
             // The read-back is authoritative about the bytes this save wrote,
             // and *not* about anything that happened afterwards. A watcher
             // refetch that completed while this PUT was in flight is newer

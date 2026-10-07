@@ -96,6 +96,11 @@ export function ModelChoice({
           onChange={(event) => setSearch(event.target.value)} />}
       </Field>
       <p className="quiet" role="status"><Message text={"<0/> enabled · <1/> shown"} slots={[draft.models.length, filtered.length]} /></p>
+      <div className={styles.bulk}>
+        <Button variant="quiet" disabled={choices.length===0||choices.every(row=>draft.models.includes(row.id))}
+          onClick={()=>onChange(choices.reduce((next,row)=>withModel(next,row.id,true),draft))}>{msg('Select all')}</Button>
+        <Button variant="quiet" disabled={draft.models.length===0} onClick={()=>onChange({...draft,models:[],model:''})}>{msg('Remove all')}</Button>
+      </div>
       <div className={styles.list}>
         {filtered.length > 0 && <div className={styles.heading} aria-hidden="true">
           <span>{msg("Enabled / Model")}</span><span>{msg("Default")}</span>

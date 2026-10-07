@@ -1,3 +1,4 @@
+import { aiHeaders } from './aiConnections'
 import { sourceMessage } from '../i18n/source'
 /**
  * The assistant slot's four chassis calls.
@@ -134,8 +135,8 @@ export interface ProbeResult {
   diagnostic: string
 }
 
-export async function readAssistantKey(signal?: AbortSignal): Promise<AssistantKeyState> {
-  return answer<AssistantKeyState>(await deskFetch(chassisUrl('/api/assistant/key'), { signal }))
+export async function readAssistantKey(signal?: AbortSignal, connectionId?:string, revision?:string): Promise<AssistantKeyState> {
+  return answer<AssistantKeyState>(await deskFetch(chassisUrl('/api/assistant/key'), { signal, headers:aiHeaders(connectionId,revision) }))
 }
 
 /**
@@ -146,19 +147,19 @@ export async function readAssistantKey(signal?: AbortSignal): Promise<AssistantK
  * a file in a shared checkout. So it does not go through the file API — which
  * writes only inside the project — and gets this instead.
  */
-export async function storeAssistantKey(key: string): Promise<AssistantKeyState> {
+export async function storeAssistantKey(key: string, connectionId?:string, revision?:string): Promise<AssistantKeyState> {
   return answer<AssistantKeyState>(
     await deskFetch(chassisUrl('/api/assistant/key'), {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...aiHeaders(connectionId,revision) },
       body: JSON.stringify({ key })
     })
   )
 }
 
-export async function removeAssistantKey(): Promise<AssistantKeyState> {
+export async function removeAssistantKey(connectionId?:string, revision?:string): Promise<AssistantKeyState> {
   return answer<AssistantKeyState>(
-    await deskFetch(chassisUrl('/api/assistant/key'), { method: 'DELETE' })
+    await deskFetch(chassisUrl('/api/assistant/key'), { method: 'DELETE',headers:aiHeaders(connectionId,revision) })
   )
 }
 
@@ -171,9 +172,9 @@ export async function removeAssistantKey(): Promise<AssistantKeyState> {
  * from the desk-level file on that machine instead, so a request body cannot
  * move it.
  */
-export async function probeAssistantEndpoint(signal?: AbortSignal): Promise<ProbeResult> {
+export async function probeAssistantEndpoint(signal?: AbortSignal, connectionId?:string,revision?:string): Promise<ProbeResult> {
   return answer<ProbeResult>(
-    await deskFetch(chassisUrl('/api/assistant/probe'), { method: 'POST', signal })
+    await deskFetch(chassisUrl('/api/assistant/probe'), { method: 'POST', signal,headers:aiHeaders(connectionId,revision) })
   )
 }
 
@@ -196,6 +197,7 @@ export interface AssistantConfigWrite {
 
 /** What the chassis answers a desk-level write with. */
 export interface AssistantConfigWritten {
+  connectionRevision?:string
   /** Absolute, on that machine. */
   path: string
   /** The digest of the bytes that landed, for the next write's `ifMatch`. */

@@ -1,3 +1,5 @@
+import { useAIConnectionScope, resolveAIConnection } from './aiConnections'
+import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { bindExecution } from './target'
 import { sourceMessage } from '../i18n/source'
 /**
@@ -241,6 +243,9 @@ export function useAssistantRun(options: {
    */
   hostTools?: HostTool[]
 }): AssistantRun {
+  const connectionScope=useAIConnectionScope(),effective=useEffectiveConfig()
+  const selectedConnection=connectionScope?.connection??resolveAIConnection(effective).connection
+  const connectionTarget=selectedConnection?{connectionId:selectedConnection.id,connectionRevision:selectedConnection.revision}:{}
   const [status, setStatus] = useState<RunStatus>('idle')
   const [runningEngine, setRunningEngine] = useState(options.engine)
   const [events, setEvents] = useState<AssistantEvent[]>([])
@@ -250,8 +255,8 @@ export function useAssistantRun(options: {
   const terminals = useRef({ count: 0 })
   // Read at call time rather than captured, so a run started with one
   // configuration is not carried on with another.
-  const settings = useRef(options)
-  settings.current = options
+  const settings = useRef({...options,connectionTarget})
+  settings.current = {...options,connectionTarget}
 
   /**
    * Put one event on the stream, for the run that produced it.
@@ -338,7 +343,7 @@ export function useAssistantRun(options: {
   const start = useCallback(
     (prompt: string) => {
       if (active.current !== null && !active.current.ended) return
-      const { endpoint, agent, model, engine, thinking, testPrompt, hostTools, purpose } = settings.current
+      const { endpoint, agent, model, engine, thinking, testPrompt, hostTools, purpose, connectionTarget } = settings.current
       const run: Active = { controller: new AbortController(), connection: null, ended: false }
       active.current = run
       setEvents([])
@@ -382,7 +387,7 @@ export function useAssistantRun(options: {
               // chosen is a saved endpoint whose assistant is not ready; a run
               // that substituted the empty string would put a request on the
               // wire naming no model and read whatever came back as an answer.
-              ...bindExecution({ endpoint, agent, engine }, modelOf(model), thinking),
+              ...bindExecution({ endpoint, agent, engine, ...connectionTarget }, modelOf(model), thinking),
               signal: run.controller.signal
             },
             (event) => push(run, event)

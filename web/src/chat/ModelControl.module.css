@@ -1,0 +1,23 @@
+.trigger { display: inline-flex; align-items: center; gap: var(--space-2); max-width: min(24rem, 100%); min-width: 0; height: var(--density-control); padding: 0 var(--space-2); border-width: 1px; border-style: solid; border-color: transparent; border-radius: var(--radius-sm); background: transparent; color: var(--ink); font: inherit; font-size: var(--text-control); cursor: pointer; }
+.trigger:hover, .trigger[data-state='open'] { background: var(--accent-soft); }
+.trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.trigger:disabled { color: var(--ink-faint); cursor: not-allowed; }
+.trigger > svg { flex: none; color: var(--ink-faint); }
+.model { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.depth { flex: none; white-space: nowrap; color: var(--ink-soft); }
+.settings { padding: var(--space-3); border-top: 1px solid var(--border); display: grid; gap: var(--space-1); min-width: 0; }
+.caption, .scale { color: var(--ink-soft); font-size: var(--text-xs); }
+.reasoning { display: grid; gap: var(--space-2); padding-bottom: var(--space-2); }
+.heading { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); }
+.heading > label { color: var(--ink-soft); }
+.level { margin-inline-start: auto; font-weight: 500; }
+.slider { position: relative; display: flex; align-items: center; height: var(--density-control); width: 100%; user-select: none; touch-action: none; }
+.track { position: relative; flex: 1; height: var(--space-2); overflow: hidden; border-radius: var(--radius-pill); background: var(--border-strong); }
+.range { position: absolute; height: 100%; background: var(--ink-soft); }
+.stops { position: absolute; inset-inline: var(--space-2); display: flex; justify-content: space-between; pointer-events: none; }
+.stops > span { width: 3px; height: 3px; border-radius: var(--radius-pill); background: var(--surface-raised); }
+.thumb { display: block; width: var(--space-4); height: var(--space-4); border-radius: var(--radius-pill); background: var(--ink); border: 2px solid var(--surface-raised); box-shadow: 0 0 0 1px var(--border-strong); cursor: grab; }
+.thumb:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.thumb:active { cursor: grabbing; }
+.slider[data-disabled] { opacity: .5; }
+.scale { display: flex; justify-content: space-between; gap: var(--space-2); }

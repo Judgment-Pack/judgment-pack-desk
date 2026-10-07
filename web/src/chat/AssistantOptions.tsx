@@ -20,8 +20,8 @@ import { ConfigureAssistant } from './ConfigureAssistant'
 import styles from './ChatWorkspace.module.css'
 
 /** One compact settings summary, shared by the home and pack conversations. */
-export function AssistantOptions({ researchMode, searchConnection, searchOptions, thinking, tools, mode = 'draft', review = false, onReview, disabled, notice, linkReading = false, websiteExploration=false }: {
-  researchMode?:'auto'|'provided'; searchConnection?:string; searchOptions?:ReactNode; thinking: ThinkingTier; tools: readonly string[]; mode?: AuthoringMode; review?: boolean
+export function AssistantOptions({ reasoning, researchMode, searchConnection, searchOptions, thinking, tools, mode = 'draft', review = false, onReview, disabled, notice, linkReading = false, websiteExploration=false }: {
+  reasoning?: string; researchMode?:'auto'|'provided'; searchConnection?:string; searchOptions?:ReactNode; thinking: ThinkingTier; tools: readonly string[]; mode?: AuthoringMode; review?: boolean
   onReview?: (value: boolean) => void; disabled?: boolean; notice?: string
   /** Whether an ordinary chat may read links the person gives (the gateway offers the web source). */
   linkReading?: boolean; websiteExploration?:boolean
@@ -54,7 +54,7 @@ export function AssistantOptions({ researchMode, searchConnection, searchOptions
       trigger={<button ref={trigger} className="desk-icon-button" type="button" aria-label={msg("Assistant settings")}><IconGear /></button>}>
       <div className={styles.settingsBody}>
         {searchOptions}
-        <dl className={styles.setting}><dt>{config.assistant.engine === "codex" ? msg("Codex reasoning") : msg("Thinking requested")}</dt><dd>{config.assistant.engine === "codex" ? config.assistant.agent?.effort ?? msg("Model default") : thinking === 'off' ? msg("Off") : thinking === 'ultra' ? msg("Ultra") : msg("On")}</dd></dl>
+        <dl className={styles.setting}><dt>{config.assistant.engine === "codex" ? msg("Codex reasoning") : msg("Thinking requested")}</dt><dd>{config.assistant.engine === "codex" ? reasoning ?? msg("Model default") : thinking === 'off' ? msg("Off") : thinking === 'ultra' ? msg("Ultra") : msg("On")}</dd></dl>
         <p className={styles.caption}>{(notice ? systemMessage(notice) : undefined) || msg("Reasoning support depends on the selected model.")}</p>
         {onReview && <label className={styles.reviewOption}><Message text={"<0/> Adversarial review"} slots={[<input type="checkbox" checked={review} disabled={disabled || !reviewAvailable} onChange={event => onReview(event.target.checked)} />]} /></label>}
         <p className={styles.caption}>{reviewAvailable ? msg("Optional model review of proposed changes. Runtime validation remains required.") : msg("Connect a runtime with test_pack to enable adversarial review.")}</p>

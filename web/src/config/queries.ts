@@ -1,3 +1,4 @@
+import { ASSISTANT_PROFILE_PATH, PROFILE_PROBLEM, decodeAssistantProfile, type AssistantProfileRead } from './assistantProfile'
 /**
  * `jpack-desk.json`, read through the file API the desk already has.
  *
@@ -177,6 +178,7 @@ export async function loadDeskConfig(signal?: AbortSignal): Promise<EffectiveCon
   // Both files, and neither read waits on the other: they are two independent
   // questions to the same chassis, and a slow one should not delay the other.
   const deskLevel = loadDeskLevelConfig(signal)
+  const profile = loadAssistantProfile(signal)
   // **The whole answer, digest included.** Only the bytes were kept, and the
   // digest is what a write states as the bytes it replaces — so a card that
   // saves one member of this file has to carry it from the read that produced
@@ -206,7 +208,7 @@ export async function loadDeskConfig(signal?: AbortSignal): Promise<EffectiveCon
     // Admin say the request never got an answer.
     if (cause instanceof FileRequestError) {
       if (cause.status === 404) {
-        return effectiveConfig(undefined, reasonFor(cause), undefined, await deskLevel)
+        return effectiveConfig(undefined, reasonFor(cause), undefined, await deskLevel, undefined, undefined, await profile)
       }
       return effectiveConfig(
         undefined,
@@ -217,14 +219,14 @@ export async function loadDeskConfig(signal?: AbortSignal): Promise<EffectiveCon
           status: cause.status,
           source: cause.source
         },
-        await deskLevel
+        await deskLevel, undefined, undefined, await profile
       )
     }
     return effectiveConfig(
       undefined,
       undefined,
       { reason: messageOf(cause), responseReceived: false, source: 'browser' },
-      await deskLevel
+      await deskLevel, undefined, undefined, await profile
     )
   }
   return effectiveConfig(
@@ -233,7 +235,8 @@ export async function loadDeskConfig(signal?: AbortSignal): Promise<EffectiveCon
     undefined,
     await deskLevel,
     read.content,
-    read.sha256
+    read.sha256,
+    await profile
   )
 }
 
@@ -252,4 +255,12 @@ export function useDeskConfig(): UseQueryResult<EffectiveConfig, Error> {
     retry: false,
     queryFn: ({ signal }) => loadDeskConfig(signal)
   })
+}
+
+export async function loadAssistantProfile(signal?: AbortSignal): Promise<AssistantProfileRead> {
+  let file: FileContent
+  try { file=await readFile(ASSISTANT_PROFILE_PATH,signal) }
+  catch(error){return error instanceof FileRequestError&&error.status===404 ? {present:false,sha256:''} : {present:false,problem:PROFILE_PROBLEM}}
+  try { return {present:true,sha256:file.sha256,text:file.content,value:decodeAssistantProfile(file.content)} }
+  catch { return {present:true,sha256:file.sha256,text:file.content,problem:PROFILE_PROBLEM} }
 }

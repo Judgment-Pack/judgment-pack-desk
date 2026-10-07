@@ -122,6 +122,17 @@ func afterKeyStat(path string) {
 	}
 }
 
+// testHookAfterKeyStored runs after a key has been renamed into place and
+// before it is read back, and is nil outside tests. It is where a test puts
+// down a file other than the one that was written.
+var testHookAfterKeyStored func(name string)
+
+func afterKeyStored(name string) {
+	if testHookAfterKeyStored != nil {
+		testHookAfterKeyStored(name)
+	}
+}
+
 // testHookAfterConfigStat is testHookAfterKeyStat for the desk-level file.
 var testHookAfterConfigStat func(path string)
 
@@ -444,11 +455,15 @@ func ensureOwnedDirectoryIn(root *os.Root, label, name string) error {
 // plain `git checkout` or a text editor leaves. What is refused is one anybody
 // else could have *written*.
 func (s *assistantStore) readConfigFile() (present bool, data []byte, err error) {
+	return s.readConfigNamed(deskConfigName)
+}
+
+func (s *assistantStore) readConfigNamed(fileName string) (present bool, data []byte, err error) {
 	if !s.usable() {
 		return false, nil, s.problem
 	}
-	at := filepath.Join(s.dir, deskConfigName)
-	info, err := s.root.Lstat(deskConfigName)
+	at := filepath.Join(s.dir, fileName)
+	info, err := s.root.Lstat(fileName)
 	if errors.Is(err, os.ErrNotExist) {
 		return false, nil, nil
 	}
@@ -476,7 +491,7 @@ func (s *assistantStore) readConfigFile() (present bool, data []byte, err error)
 	// decides where a credential is sent, so a swap between the check and the
 	// open is worth a test of its own.
 	afterConfigStat(at)
-	file, err := s.root.OpenFile(deskConfigName, os.O_RDONLY|openNoFollow|openNonBlocking, 0)
+	file, err := s.root.OpenFile(fileName, os.O_RDONLY|openNoFollow|openNonBlocking, 0)
 	if err != nil {
 		return false, nil, err
 	}
@@ -569,6 +584,10 @@ func ownedByUs(path string, info fs.FileInfo) error {
 // exists to close it. It is stated here and in the README rather than implied
 // away.
 func (s *assistantStore) writeConfigFile(data []byte, stillMatches func() error) error {
+	return s.writeConfigNamed(deskConfigName, data, stillMatches)
+}
+
+func (s *assistantStore) writeConfigNamed(fileName string, data []byte, stillMatches func() error) error {
 	if !s.usable() {
 		return s.problem
 	}
@@ -606,14 +625,14 @@ func (s *assistantStore) writeConfigFile(data []byte, stillMatches func() error)
 	// `desk.json` with bytes nobody here has seen, at the instant where it
 	// would matter. Without it the argument above would rest on reading the
 	// code and believing it.
-	beforeConfigRename(filepath.Join(s.dir, deskConfigName))
+	beforeConfigRename(filepath.Join(s.dir, fileName))
 	if stillMatches != nil {
 		if err := stillMatches(); err != nil {
 			remove()
 			return err
 		}
 	}
-	if err := s.root.Rename(name, deskConfigName); err != nil {
+	if err := s.root.Rename(name, fileName); err != nil {
 		remove()
 		return err
 	}
@@ -705,12 +724,16 @@ type storedKeyFile struct {
 // open and the open refuses to traverse a link regardless. The mode is checked
 // too: a key file somebody else can read is not a key this desk will present.
 func (s *assistantStore) readKey() (storedKey, error) {
+	return s.readKeyNamed(assistantKeyName)
+}
+
+func (s *assistantStore) readKeyNamed(keyName string) (storedKey, error) {
 	var none storedKey
 	if !s.usable() {
 		return none, s.problem
 	}
-	keyPath := filepath.Join(s.dir, secretsDirName, assistantKeyName)
-	info, err := s.secrets.Lstat(assistantKeyName)
+	keyPath := filepath.Join(s.dir, secretsDirName, keyName)
+	info, err := s.secrets.Lstat(keyName)
 	if errors.Is(err, os.ErrNotExist) {
 		return none, nil
 	}
@@ -742,8 +765,8 @@ func (s *assistantStore) readKey() (storedKey, error) {
 	// every test still pass. What actually closes the window is comparing the
 	// file that was opened with the file that was inspected: a swapped-in link
 	// resolves to a different inode, and a different inode is not this key.
-	afterKeyStat(filepath.Join(s.dir, secretsDirName, assistantKeyName))
-	file, err := s.secrets.OpenFile(assistantKeyName, os.O_RDONLY|openNoFollow|openNonBlocking, 0)
+	afterKeyStat(filepath.Join(s.dir, secretsDirName, keyName))
+	file, err := s.secrets.OpenFile(keyName, os.O_RDONLY|openNoFollow|openNonBlocking, 0)
 	if err != nil {
 		return none, err
 	}
@@ -755,7 +778,7 @@ func (s *assistantStore) readKey() (storedKey, error) {
 	if !os.SameFile(info, opened) {
 		return none, fmt.Errorf(
 			"%s changed between being inspected and being opened, and was not read",
-			filepath.Join(s.dir, secretsDirName, assistantKeyName))
+			filepath.Join(s.dir, secretsDirName, keyName))
 	}
 	// Re-asserted on the descriptor, because the checks above were made on a
 	// name. These two are cheap and they are the ones that matter.
@@ -802,6 +825,10 @@ const storedKeyEnvelope = 2048
 // documented as racing a regular-file-to-symlink swap on Unix, and a chmod
 // that lands on a link is a chmod on somebody else's file.
 func (s *assistantStore) storeKey(bound storedKey) error {
+	return s.storeKeyNamed(assistantKeyName, bound)
+}
+
+func (s *assistantStore) storeKeyNamed(keyName string, bound storedKey) error {
 	if !s.usable() {
 		return s.problem
 	}
@@ -838,7 +865,7 @@ func (s *assistantStore) storeKey(bound storedKey) error {
 		remove()
 		return err
 	}
-	if err := s.secrets.Rename(name, assistantKeyName); err != nil {
+	if err := s.secrets.Rename(name, keyName); err != nil {
 		remove()
 		return err
 	}
@@ -876,10 +903,14 @@ func (s *assistantStore) stage() (*os.File, string, error) {
 // removeKey deletes the key. Deleting one that is not there is not a failure:
 // the caller asked for a state, and that state already holds.
 func (s *assistantStore) removeKey() error {
+	return s.removeKeyNamed(assistantKeyName)
+}
+
+func (s *assistantStore) removeKeyNamed(keyName string) error {
 	if !s.usable() {
 		return s.problem
 	}
-	err := s.secrets.Remove(assistantKeyName)
+	err := s.secrets.Remove(keyName)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}

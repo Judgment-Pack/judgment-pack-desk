@@ -563,7 +563,8 @@ export function configAfterProjectFileWrite(
     undefined,
     deskReadOf(previous),
     landed.content,
-    landed.sha256
+    landed.sha256,
+    previous.assistantProfile
   )
 }
 

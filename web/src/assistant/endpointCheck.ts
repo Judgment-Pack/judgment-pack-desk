@@ -1,3 +1,4 @@
+import { useAIConnectionScope } from './aiConnections'
 /**
  * **Test connection**: one press, one question — *can this desk reach that
  * endpoint, and what does it offer?*
@@ -90,6 +91,7 @@ export interface EndpointCheck {
  * already on screen is still about the endpoint on screen.
  */
 export function useEndpointCheck(draft: EndpointDraft, saved: AssistantEndpointConfig | null): EndpointCheck {
+  const scope=useAIConnectionScope()
   const [answer, setAnswer] = useState<CheckAnswer | undefined>(undefined)
   // **Which answer is still the current one.** Every press takes a number and
   // only the latest may land; a cleanup that cancelled on re-render would
@@ -148,7 +150,7 @@ export function useEndpointCheck(draft: EndpointDraft, saved: AssistantEndpointC
     // path suffix; the address, this chassis' token and the credential are none
     // of its business. The family is the file's, so a listing cannot talk its
     // way into a query its endpoint does not admit.
-    void listModels(target.kind, bindModelCall(target.kind)).then(
+    void listModels(target.kind, bindModelCall(target.kind,scope?{connectionId:scope.connection.id,connectionRevision:scope.connection.revision}:undefined)).then(
       (rows) => landed((previous) => ({ ...previous, rows })),
       (cause: unknown) =>
         landed((previous) => ({ ...previous, listingRefusal: said(cause) }))

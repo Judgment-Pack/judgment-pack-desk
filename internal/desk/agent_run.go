@@ -7,6 +7,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -40,7 +42,32 @@ func decodeAgentInput(data []byte) (agentInput, error) {
 
 func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 	id, problem := offeredSessionID(r)
-	if problem != "" || r.URL.RawQuery != "" {
+	// routeDesk has authenticated and selected the named desk. Browser sockets
+	// carry that selector in the URL; accept only this desk's exact selector,
+	// retaining the rejection of credentials, duplicates, and other queries.
+	validQuery := true
+	query, queryErr := url.ParseQuery(r.URL.RawQuery)
+	if queryErr != nil {
+		validQuery = false
+	}
+	for key, values := range query {
+		if len(values) != 1 || key != "desk" && key != "connection" && key != "revision" {
+			validQuery = false
+		}
+	}
+	if query.Has("desk") && s.cfg.deskID == "" || query.Get("desk") != s.cfg.deskID || strings.Contains(r.URL.RawQuery, ";") {
+		validQuery = false
+	}
+	if query.Get("connection") != "" {
+		if !aiIDPattern.MatchString(query.Get("connection")) {
+			validQuery = false
+		}
+		r.Header.Set(aiConnectionHeader, query.Get("connection"))
+		r.Header.Set(aiRevisionHeader, query.Get("revision"))
+	} else if query.Has("connection") || query.Has("revision") {
+		validQuery = false
+	}
+	if problem != "" || r.URL.ForceQuery || !validQuery {
 		providerReply(w, 400, map[string]string{"error": "invalid-request"})
 		return
 	}
@@ -52,7 +79,12 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.signInBrowser(w, r); !ok {
 		return
 	}
-	runner, ok := s.codex.(providerRunner)
+	account, connectionErr := s.accountForConnection(r)
+	if connectionErr != nil {
+		providerFailure(w, codexbridge.ErrUnavailable)
+		return
+	}
+	runner, ok := account.(providerRunner)
 	if !ok {
 		providerFailure(w, codexbridge.ErrUnavailable)
 		return
@@ -146,6 +178,10 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 	}()
 	defer func() { cancel(); <-readerDone }()
 	if send(map[string]string{"type": "started", "runId": runID}) != nil {
+		return
+	}
+	if !s.connectionAgentAllowed(r, start.Request.Model) {
+		_ = send(map[string]string{"type": "end", "runId": runID, "error": "model-not-allowed"})
 		return
 	}
 	err = runner.Run(ctx, owner, *start.Request, func(event codexbridge.RunEvent) error {

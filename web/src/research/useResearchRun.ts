@@ -1,6 +1,8 @@
+import { chatReasoningAgent, type ChatReasoning } from '../chat/reasoning'
 import { conversationMode, type AuthoringMode } from './mode'
 import { bindExecution } from '../assistant/target'
 import { selectedAssistant } from '../assistant/target'
+import { useProviderModels } from '../assistant/providers'
 import { assistantReady } from '../assistant/useAssistantSlot'
 import { sourceMessage } from '../i18n/source'
 import { systemMessage, useLocale } from '../i18n'
@@ -90,15 +92,15 @@ export function researchBlockedReason(state: {
   const { slot, research, mcp } = state
   return slot.state === 'unavailable'
     ? sourceMessage("The desk-level configuration could not be read, so no assistant is available.")
-    : slot.engine === 'codex' && (!slot.agent || slot.unusable) ? slot.unusable ?? sourceMessage('Connect your ChatGPT account in Assistant settings.')
+    : slot.engine === 'codex' && (!slot.agent || slot.unusable) ? slot.unusable ?? sourceMessage('Connect your ChatGPT account in Connections > AI.')
     : slot.engine !== 'codex' && slot.endpoint === null
-      ? sourceMessage("No assistant endpoint is configured. Configure one in Admin › Assistant.")
+      ? sourceMessage("No assistant endpoint is configured. Configure one in Admin › Connections › AI.")
       : slot.engine !== 'codex' && slot.keyStatus === 'pending'
         ? sourceMessage("Checking the saved API key…")
         : slot.engine !== 'codex' && slot.keyStatus === 'error'
           ? sourceMessage("The saved API key could not be checked. Retry in Configure Assistant.")
         : slot.engine !== 'codex' && !slot.keyPresent
-          ? sourceMessage("No API key is stored for the assistant. Save one in Admin › Assistant.")
+          ? sourceMessage("No API key is stored for the assistant. Save one in Admin › Connections › AI.")
           : !state.modelPicked
             ? sourceMessage("Choose an enabled model in Admin › Assistant.")
             : conversationMode(state.mode) ? ''
@@ -120,7 +122,10 @@ export function researchBlockedReason(state: {
 }
 
 export function useResearchRun(options?: {
+  apiThinking?:import('../config/deskConfig').ThinkingTier
+  connectionId?:string
   model?: string
+  reasoning?: ChatReasoning
   mode?: AuthoringMode
   adversarialReview?: boolean
   /** Per-message policy for Chat and web Research; legacy research keeps its source-led contract. */
@@ -130,16 +135,24 @@ export function useResearchRun(options?: {
   documents?: () => readonly ChatAttachment[]
 }): ResearchRunBinding {
   useLocale()
-  const slot = useAssistantSlot()
+  const slot = useAssistantSlot(options?.connectionId)
   const selected = selectedAssistant(slot)
   const listing = useFileListing()
   const defaultPicked = usePickedModel(selected?.models ?? EMPTY_MODELS, selected?.model ?? null, listing.data?.root)
-  const picked = { ...defaultPicked, model: options?.model && defaultPicked.models.includes(options.model) ? options.model : defaultPicked.model }
+  const nativeModels = useProviderModels(slot.engine === 'codex' && assistantReady(slot),slot.connectionId)
+  const picked = { ...defaultPicked, model: slot.engine === 'codex' ? options?.model || selected?.model || ''
+    : options?.model || defaultPicked.model }
+  // Preserve an unavailable saved choice so it can be repaired, never silently
+  // run Admin's default instead. The backend rechecks this catalog at admission.
+  const modelProblem = slot.engine !== 'codex' ? options?.model && !selected?.models.includes(options.model) ? sourceMessage('Choose an enabled model in Admin › Assistant.') : '' : nativeModels.isPending ? sourceMessage('Loading models…')
+    : nativeModels.isError ? nativeModels.error.message
+    : !selected?.models.includes(picked.model) ? sourceMessage('Choose an enabled model in Admin › Assistant.')
+    : !nativeModels.data?.models.some(model => model.id === picked.model) ? sourceMessage('This model is no longer available. Choose another model.') : ''
   const prompts = usePromptNames()
   const advertised = (prompts.data ?? []).includes(AUTHOR_PACK_PROMPT)
   const authorPrompt = usePromptText(AUTHOR_PACK_PROMPT, advertised)
   const advertisesTest = (prompts.data ?? []).includes(TEST_PACK_PROMPT)
-  const testPrompt = usePromptText(TEST_PACK_PROMPT, (slot.thinking !== 'off' || options?.adversarialReview === true) && advertisesTest)
+  const testPrompt = usePromptText(TEST_PACK_PROMPT, ((options?.apiThinking??slot.thinking) !== 'off' || options?.adversarialReview === true) && advertisesTest)
   const { config } = useEffectiveConfig()
   const research = config.research
   const mcp = useMcp()
@@ -152,22 +165,24 @@ export function useResearchRun(options?: {
     research,
     mode: options?.mode,
     mcp
-  })
+  }) || modelProblem
 
   const ledgerRef = useRef<Ledger | null>(null)
   if (ledgerRef.current === null) ledgerRef.current = new Ledger(newResearchSession())
   const ledger = ledgerRef.current
 
   // The settings a turn reads, as of the moment it starts.
-  const settings = useRef({ slot, picked, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools, documents: options?.documents })
-  settings.current = { slot, picked, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools, documents: options?.documents }
+  const settings = useRef({ slot, picked, modelProblem, reasoning: options?.reasoning, apiThinking:options?.apiThinking, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools, documents: options?.documents })
+  settings.current = { slot, picked, modelProblem, reasoning: options?.reasoning, apiThinking:options?.apiThinking, authorPrompt: authorPrompt.data?.text ?? '', testPrompt: testPrompt.data?.text ?? '', research, mcp, mode: options?.mode, adversarialReview: options?.adversarialReview, researchPolicy:options?.researchPolicy, draftTools: options?.draftTools, documents: options?.documents }
 
   const run = useMemo(() => {
     const log = (text: string) => recordActivity(text, 'research')
     const spent = { searches: 0, reads: 0, bytes: 0, startedAt: Date.now() }
     const turn = async (request: TurnRequest, signal: AbortSignal, deliver: (event: AssistantEvent) => void) => {
-      const { slot, picked, testPrompt } = settings.current
+      const { slot, picked, testPrompt, reasoning, modelProblem, apiThinking } = settings.current
       if (!assistantReady(slot)) throw new Error(slot.unusable ?? sourceMessage('Configure Assistant before starting.'))
+      if (modelProblem) throw new Error(modelProblem)
+      request.onTarget?.(slot.connectionId?{connectionId:slot.connectionId,connectionName:slot.connectionName??slot.connectionId,model:picked.model}:undefined)
       // What the engine actually did, as it did it, on the Console: every
       // call and answer, every guardrail, every refusal -- the same line the
       // Assistant tab would show -- and never the model's prose or a page.
@@ -194,7 +209,7 @@ export function useResearchRun(options?: {
             tools: ready.tools,
             callTool: ready.callTool,
             hostTools: request.hostTools,
-            ...bindExecution(slot, picked.model, request.reviewer ? 'off' : slot.thinking),
+            ...bindExecution({ ...slot, agent:chatReasoningAgent(slot.agent, picked.model, reasoning) }, picked.model, request.reviewer ? 'off' : apiThinking??slot.thinking),
             signal
           },
           onEvent

@@ -1,3 +1,5 @@
+import { useAIConnectionScope, useConnectionConfigWriter } from './aiConnections'
+import { applyAssistantProfile } from '../config/assistantProfile'
 /**
  * The assistant slot as react-query hooks.
  *
@@ -39,13 +41,14 @@ export const ASSISTANT_KEY_QUERY_KEY = ['assistant-key'] as const
  * when this page changes it, and the two mutations below write the result they
  * were given straight into the cache rather than asking again.
  */
-export function useAssistantKey(enabled = true): UseQueryResult<AssistantKeyState, Error> {
+export function useAssistantKey(enabled = true, connectionId?:string, revision?:string): UseQueryResult<AssistantKeyState, Error> {
+  const scope=useAIConnectionScope();const id=connectionId??scope?.connection.id,rev=revision??scope?.connection.revision
   return useQuery({
-    queryKey: ASSISTANT_KEY_QUERY_KEY,
+    queryKey: [...ASSISTANT_KEY_QUERY_KEY,...(id?[id,rev]:[])],
     enabled,
     staleTime: Infinity,
     retry: false,
-    queryFn: ({ signal }) => readAssistantKey(signal)
+    queryFn: ({ signal }) => readAssistantKey(signal,id,rev)
   })
 }
 
@@ -78,6 +81,7 @@ export interface StoreAssistantKey {
   submit: (
     key: string,
     handlers?: {
+      connectionRevision?:string
       onError?: (error: Error) => void
       onStored?: (state: AssistantKeyState) => void
     }
@@ -86,25 +90,31 @@ export interface StoreAssistantKey {
 }
 
 export function useStoreAssistantKey(): StoreAssistantKey {
+  const scope=useAIConnectionScope(),keyQuery=[...ASSISTANT_KEY_QUERY_KEY,...(scope?[scope.connection.id,scope.connection.revision]:[])]
   const client = useQueryClient()
   const pending = useRef<string | null>(null)
+  const revision=useRef<string|undefined>(undefined)
   const mutation = useMutation<AssistantKeyState, Error, void>({
     mutationFn: async () => {
       const key = pending.current ?? ''
       // Dropped before the promise is awaited, not after it resolves: a
       // request that never comes back must not leave it here.
       pending.current = null
-      return storeAssistantKey(key)
+      return storeAssistantKey(key,scope?.connection.id,revision.current??scope?.connection.revision)
     },
     // The chassis answers with the state it now holds, so the cache is set
     // from that rather than invalidated and re-read. Setting it from what was
     // *sent* would be the page reporting its own request as an outcome.
-    onSuccess: (state) => client.setQueryData(ASSISTANT_KEY_QUERY_KEY, state)
+    onSuccess: (state) => {
+      client.setQueryData(scope?[...ASSISTANT_KEY_QUERY_KEY,scope.connection.id,revision.current??scope.connection.revision]:keyQuery,state)
+      if(scope)void client.invalidateQueries({queryKey:[...ASSISTANT_KEY_QUERY_KEY,scope.connection.id]})
+    }
   })
   return {
     isPending: mutation.isPending,
     submit: (key, handlers) => {
       pending.current = key
+      revision.current=handlers?.connectionRevision
       mutation.mutate(undefined, {
         onError: handlers?.onError,
         onSuccess: (state) => handlers?.onStored?.(state),
@@ -117,15 +127,17 @@ export function useStoreAssistantKey(): StoreAssistantKey {
 }
 
 export function useRemoveAssistantKey(): UseMutationResult<AssistantKeyState, Error, void> {
+  const scope=useAIConnectionScope(),keyQuery=[...ASSISTANT_KEY_QUERY_KEY,...(scope?[scope.connection.id,scope.connection.revision]:[])]
   const client = useQueryClient()
   return useMutation({
-    mutationFn: () => removeAssistantKey(),
-    onSuccess: (state) => client.setQueryData(ASSISTANT_KEY_QUERY_KEY, state)
+    mutationFn: () => removeAssistantKey(scope?.connection.id,scope?.connection.revision),
+    onSuccess: (state) => client.setQueryData(keyQuery, state)
   })
 }
 
 export function useProbeAssistant(): UseMutationResult<ProbeResult, Error, void> {
-  return useMutation({ mutationFn: () => probeAssistantEndpoint() })
+  const scope=useAIConnectionScope()
+  return useMutation({ mutationFn: () => probeAssistantEndpoint(undefined,scope?.connection.id,scope?.connection.revision) })
 }
 
 /**
@@ -154,7 +166,8 @@ export function configAfterWrite(
   if (previous === undefined) return undefined
   return {
     ...previous,
-    config: { ...previous.config, assistant: written.assistant },
+    machineAssistant: written.assistant,
+    config: { ...previous.config, assistant: applyAssistantProfile(written.assistant,previous.assistantProfile) },
     // `assistant` may only come from the desk-level file, and there now is one.
     sources: { ...previous.sources, assistant: 'desk file' },
     desk: { path: written.path, present: true, problems: [], sha256: written.sha256 }
@@ -187,14 +200,14 @@ export function useUpdateAssistantConfig(): UseMutationResult<
   Error,
   AssistantConfigWrite
 > {
-  const client = useQueryClient()
+  const client = useQueryClient(), scopedWrite=useConnectionConfigWriter()
   return useMutation({
-    mutationFn: (input: AssistantConfigWrite) => updateAssistantConfig(input),
+    mutationFn: (input: AssistantConfigWrite) => scopedWrite?scopedWrite(input):updateAssistantConfig(input),
     retry: false,
     // On success only: a refused write changed nothing, and re-reading after
     // one would be this page telling itself that something happened.
     onSuccess: (written) => {
-      client.setQueryData<EffectiveConfig>(DESK_CONFIG_QUERY_KEY, (previous) =>
+      if(!scopedWrite)client.setQueryData<EffectiveConfig>(DESK_CONFIG_QUERY_KEY, (previous) =>
         configAfterWrite(previous, written)
       )
       void client.invalidateQueries({ queryKey: DESK_CONFIG_QUERY_KEY })

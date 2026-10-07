@@ -71,9 +71,13 @@ function ChatWorker({ store, chat }: { store: ChatStore; chat: Chat }) {
     },
     log: text => recordActivity(text, 'research')
   }), [store, chat.id])
-  const binding = useResearchRun({ model: chat.model, mode: chat.mode, adversarialReview: chat.adversarialReview, researchPolicy:()=>!latest.current.researchEnabled
+  const binding = useResearchRun({ connectionId:chat.aiConnection, apiThinking:chat.apiThinking, model: chat.model, reasoning: chat.reasoning, mode: chat.mode, adversarialReview: chat.adversarialReview, researchPolicy:()=>!latest.current.researchEnabled
     ? 'WEB RESEARCH POLICY: Use only sources supplied in this conversation. Web search and website exploration are disabled for this conversation; do not request configuration as a workaround.'
     : `WEB RESEARCH POLICY: ${latest.current.mode === 'web-research' ? 'Research requested. For substantive research requests, use the available web tools and cite sources actually read. Ask for a source or explain a missing capability when necessary.' : 'Auto. Choose web tools when the request needs research, verification or current sources.'} ${latest.current.connection?'The configured search connection is '+latest.current.connection.provider+'.':'No web-search connection is configured. Supplied-link reading and website exploration may still be available; check your tool list.'}`, draftTools, documents: () => chatOf(store, chat.id)?.documents ?? [] })
+  // A saved chat that predates AI connections names no connection. Its next
+  // send waits for an explicit choice rather than taking today's default.
+  const legacyTargetMissing=!!effective.aiConnections&&!chat.aiConnection&&!!chat.checkpoint?.state.turns.length
+  const blocked = legacyTargetMissing?sourceMessage('Choose an AI connection for this saved chat.'):binding.blocked
   const initial = useRef(chat.checkpoint)
   const restoring = useRef(false)
   const [restored, setRestored] = useState(!initial.current)
@@ -86,7 +90,7 @@ function ChatWorker({ store, chat }: { store: ChatStore; chat: Chat }) {
     } catch (error) { store.problem(sourceMessage('Chat could not be restored: {{reason}}', { reason: (error as Error).message })) }
   }, [binding.run, binding.ledger, store])
   useEffect(() => {
-    if (restored) store.report(chat.id, binding)
-  }, [store, chat.id, restored, binding.run, binding.state, binding.ledger, binding.sources, binding.blocked, binding.model, binding.researchConfigured])
+    if (restored) store.report(chat.id, {...binding, blocked})
+  }, [store, chat.id, restored, binding.run, binding.state, binding.ledger, binding.sources, blocked, binding.model, binding.researchConfigured])
   return null
 }

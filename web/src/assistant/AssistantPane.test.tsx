@@ -277,7 +277,7 @@ describe('where there is no assistant to run', () => {
   it('says where an endpoint is configured, and offers no control', async () => {
     await draw({ assistant: { endpoint: null } })
     expect(await screen.findByText(/No assistant is configured on this desk/)).toBeTruthy()
-    expect(screen.getByText(/Admin › Assistant/)).toBeTruthy()
+    expect(screen.getByText(/Admin › Connections › AI/)).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Run' })).toBeNull()
   })
 

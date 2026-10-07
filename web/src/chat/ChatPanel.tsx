@@ -1,3 +1,5 @@
+import { ModelControl } from './ModelControl'
+import { chatReasoningAgent } from './reasoning'
 import { composeMessageInput } from './messageInput'
 import { SearchAttribution } from '../search/SearchSources'
 import { ChatSearchOptions } from '../search/ChatSearchOptions'
@@ -62,7 +64,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
   const formatTime = useMemo(() => messageTimeFormatter(clock.locale, clock.timeZone), [clock.locale, clock.timeZone])
   const times = useMemo(() => state.turns.map(turn => formatTime(turn.at)), [state.turns, formatTime])
   const days = useMemo(() => dayBoundaries(times), [times])
-  const slot = useAssistantSlot()
+  const slot = useAssistantSlot(chat.aiConnection)
   const selected = selectedAssistant(slot)
   const pane = useInspectorControls()
   const { reference, remove: removeReference } = useChatReference(chat.id, placement === 'pane')
@@ -111,6 +113,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
   const send = async () => {
     if (!store || !hasMessage || locked || running || connectionBusy || upload.isReading()) return
     if (needsConfig) return
+    if(slot.connectionId)store.update(chat.id,{aiConnection:slot.connectionId,aiConnectionName:slot.connectionName,model:binding?.model||selected?.model||chat.model})
     const text = chat.composer.trim() || msg('Please review the attached files.')
     const material = await upload.prepare(attachments)
     if (material === undefined) return
@@ -240,9 +243,8 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
             onMore={() => openConnection()}
             connections={connectionCatalog.entries.filter(item => !item.status.isError && item.status.data?.state === 'connected').map(item => ({ descriptor: item.descriptor, provider: item.descriptor.id, selection: item.descriptor.selection, onSelect: () => openConnection(item.descriptor.id) }))} />
           <div className={styles.pick}><VisuallyHidden.Root asChild><label htmlFor={`${id}-mode`}>{msg("Task tools")}</label></VisuallyHidden.Root><Select quiet id={`${id}-mode`} value={chat.mode} disabled={running || locked || (chat.mode === 'research' && state.candidates.length > 0)} onValueChange={mode => store?.update(chat.id, { mode: mode as Chat['mode'] })} options={[{ value: 'draft', label: msg("Chat") }, { value: chat.mode === 'research' ? 'research' : 'web-research', label: msg("Research") }]} /></div>
-          {(selected?.models.length ?? 0) > 0 && <div className={styles.model}><VisuallyHidden.Root asChild><label htmlFor={`${id}-model`}>{msg("Model")}</label></VisuallyHidden.Root><Select quiet id={`${id}-model`} value={binding?.model} disabled={running || locked} onValueChange={model => store?.update(chat.id, { model })} options={selected!.models.map(model => ({ value: model, label: model }))} /></div>}
-          {slot.engine === 'codex' && <span className={styles.caption}>{msg('ChatGPT · Codex')}</span>}
-          <AssistantOptions researchMode={chat.researchMode} searchConnection={chat.searchConnection} searchOptions={chat.mode !== 'research' && <ChatSearchOptions chat={chat} disabled={running||locked} onChange={patch=>store?.update(chat.id,patch)}/>} thinking={slot.thinking} tools={selected?.tools ?? []} mode={chat.mode} websiteExploration={websiteReadable(research,{local:localDrive,catalogWeb:connectionCatalog.web,catalogDiscovery:connectionCatalog.discovery})} linkReading={linkReadable(research, { local: localDrive, catalogWeb: connectionCatalog.web })} review={chat.adversarialReview === true} onReview={value => store?.update(chat.id, { adversarialReview: value })} disabled={running || locked} notice={[...state.events].reverse().find(event => event.type === "thinking_unavailable")?.detail} />
+          {((selected?.models.length ?? 0)>0||effective.aiConnections?.data?.connections.some(c=>c.enabled))&&<ModelControl id={`${id}-model`} model={binding?.model||selected?.model||''} models={selected?.models??[]} thinking={slot.thinking} thinkingOverride={chat.apiThinking} onThinkingChange={apiThinking=>store?.update(chat.id,{apiThinking})} connectionId={chat.aiConnection??slot.connectionId} onConnectionChange={(aiConnection,aiConnectionName,model)=>store?.update(chat.id,{aiConnection,aiConnectionName,model,apiThinking:undefined,reasoning:{model,effort:null}})} agent={slot.agent} value={chat.reasoning} codex={slot.engine==='codex'} enabled={assistantReady(slot)} disabled={running||locked} onModelChange={model=>store?.update(chat.id,{model,...(slot.engine==='codex'?{reasoning:{model,effort:null}}:{})})} onReasoningChange={reasoning=>store?.update(chat.id,{reasoning})}/>}
+          <AssistantOptions reasoning={chatReasoningAgent(slot.agent, binding?.model || selected?.model || '', chat.reasoning)?.effort} researchMode={chat.researchMode} searchConnection={chat.searchConnection} searchOptions={chat.mode !== 'research' && <ChatSearchOptions chat={chat} disabled={running||locked} onChange={patch=>store?.update(chat.id,patch)}/>} thinking={slot.thinking} tools={selected?.tools ?? []} mode={chat.mode} websiteExploration={websiteReadable(research,{local:localDrive,catalogWeb:connectionCatalog.web,catalogDiscovery:connectionCatalog.discovery})} linkReading={linkReadable(research, { local: localDrive, catalogWeb: connectionCatalog.web })} review={chat.adversarialReview === true} onReview={value => store?.update(chat.id, { adversarialReview: value })} disabled={running || locked} notice={[...state.events].reverse().find(event => event.type === "thinking_unavailable")?.detail} />
           <span className={styles.grow} />
           <Tooltip content={running ? msg("Stop") : msg("Send")}><Button className={styles.send} variant={running ? "secondary" : "primary"} aria-label={running ? msg("Stop") : msg("Send")} disabled={!running && (needsConfig || !hasMessage || !binding || Boolean(otherRun) || locked || upload.reading || connectionBusy || Boolean(blocked && !needsConfig))} onClick={running ? () => binding?.run?.stop() : send}>{running ? <IconStop /> : <IconSend />}</Button></Tooltip>
         </div>

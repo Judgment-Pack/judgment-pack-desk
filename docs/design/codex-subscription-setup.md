@@ -20,9 +20,14 @@ for an authenticated subscription or additional operating systems.
    A failed preparation can be retried with the same button. Follow the
    returned official sign-in link; enter the code if using device sign-in.
    Return to Desk. The page polls account state without running a model.
-4. Choose a model from the account's native Codex catalog. Keep **Model default**
-   reasoning or select an effort that this model advertises. Review **Allowed
-   pack tools** and click **Save selection**.
+4. Under **This desk**, uncheck **Use shared defaults** to customize this
+   desk. Open **Allowed models** to search and enable models from the account's native
+   Codex catalog. **Select all** enables the current catalog; **Remove all** clears
+   the set and its default. Choose a **Default model** within the enabled set.
+   Keep **Model default** reasoning or select a supported effort. Review **Allowed
+   pack tools** under **Shared AI settings** (Admin › Connections › AI) when configuring shared
+   setup. Click **Save preferences** for desk choices, or **Save shared settings** for
+   shared setup. Unsaved edits are guarded independently.
 5. Optionally click **Test connection**. This explicitly starts a bounded model
    run and requires an actual successful `get_schema` tool result through Desk.
    It is not run automatically after login, model discovery, save or refresh.
@@ -85,12 +90,30 @@ The desk-level `assistant` object accepts an optional credential-free `agent`:
       "provider": "openai",
       "authMethod": "subscription",
       "model": "an-explicitly-selected-catalog-model",
+      "models": ["an-explicitly-selected-catalog-model"],
       "tools": ["get_schema", "list_examples", "get_example", "validate"],
       "effort": "high"
     }
   }
 }
 ```
+
+`models` is the explicit allowlist (at most 128 unique model IDs). The default
+`model` must belong to it. An empty set requires `model: null`. Older files that
+omit `models` allow only their existing default; discovering additional models
+never grants them. Each socket run checks the selected desk's saved allowlist
+before invoking Codex, and the native bridge still checks model availability.
+
+The composer offers the intersection of enabled and currently available models
+in a searchable flat list, with the selected model's reasoning slider below.
+Model and effort choices belong to the conversation and never expand Admin's
+allowlist. Removing a saved chat's model blocks its next send until a permitted
+model is selected. Resetting effort uses native catalog defaults.
+
+The interaction follows Linear's general guidance on compact controls, searchable
+choices, quiet separators and theme consistency; the model/effort arrangement is
+Desk's own adaptation. References: [design refresh](https://linear.app/now/behind-the-latest-design-refresh)
+and [multi-selection](https://linear.app/docs/select-issues).
 
 `effort` is optional: omission requests the selected model's supported default.
 `model: null` is valid saved configuration, but cannot run. `tools` is mandatory
@@ -117,6 +140,16 @@ effort before starting; later UI/configuration changes cannot retarget it.
 Existing tool, source, proposal acceptance, cancellation and critique ownership
 remain unchanged. The chat composer identifies the subscription engine, and its
 settings show native effort separately from adversarial review.
+
+## Account ownership across desks
+
+The running Desk process owns one Codex account manager and private profile.
+Named desks share that account and the existing one-run limit; switching desks
+never acquires a second lease for the same profile. Each run still has a fresh
+native thread, with tools, results and cancellation bound to its own browser
+socket. Closing a named desk cancels its sockets; only shutting down the Desk
+process closes the shared account manager. Disconnecting ChatGPT affects all
+desks using that account.
 
 ## Discovery and limits
 
@@ -285,3 +318,57 @@ run with a listed model is decided upstream and is not checked locally. For the
 models that select code mode by default, the host tool is advertised inside a
 `functions` namespace and the tool call arrives without a namespace; the probe
 accepts both forms of the name.
+
+## Desk model profiles
+
+`jpack-assistant.json` lives in each project root, including the startup desk.
+It is an ordinary editable file shown in **Project files**. Named desks created
+by Desk include it automatically. Existing projects without it inherit machine
+defaults; saving preferences creates it without replacing another file.
+
+```json
+{
+  "profileVersion": 1,
+  "codex": {
+    "inherit": false,
+    "models": ["a-model", "another-model"],
+    "model": "a-model",
+    "effort": "high"
+  },
+  "api": { "inherit": true }
+}
+```
+
+Each provider section is independently inherited. `{ "inherit": true }` carries
+no other members; omitted sections also inherit. Custom sections require an
+explicit unique `models` list and a `model` in that list. Empty `models` requires
+`model: null` and disables that provider's models in this desk. The Codex section
+may include `effort`; omitting it requests the selected model's native default.
+The API section may include `thinking` (`off`, `on`, `ultra`); omission inherits
+the machine's existing setting. Accounts, endpoint addresses, credentials, tool
+grants and the active connection type remain machine-owned. This profile cannot
+change any of them.
+
+Resolution is per-conversation selection within the desk's allowed models,
+then this desk's custom preferences, then shared defaults in the machine's
+`desk.json`. A conversation referring to a removed model must choose an enabled
+model before sending. A new provider model does not automatically enter a custom
+allowlist. Shared settings are edited under **Shared AI settings** (Admin › Connections › AI);
+that section names its scope explicitly.
+
+The profile is capped at 64 KiB, 128 unique model IDs, and 128 UTF-8 bytes per ID.
+Unknown keys and invalid profiles are rejected. Failed reads or malformed files
+block the assistant instead of broadening permissions by falling back. The
+backend resolves the selected desk's file on each Codex admission and API relay;
+API model selectors are checked without altering the forwarded body. Native
+Codex catalog/effort checks still apply.
+
+Admin saves retain the revision at the start of editing, preserve the inactive
+provider section, and use the existing file API's conditional atomic write.
+Project-file editor saves invalidate the effective configuration immediately;
+external edits are picked up by the watcher. Returning to inheritance writes an
+explicit inheritance record, preserving shared defaults and other desks.
+
+Validation covers shared Go/TypeScript profile fixtures, named-desk isolation,
+restoring inheritance, failed/invalid reads, Codex socket admission, API upstream
+refusal, stale writes, inactive-provider preservation and editor/composer flows.

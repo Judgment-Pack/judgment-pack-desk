@@ -40,7 +40,9 @@ import { verifySession, type Finding, type HeldReceipt, type SessionVerdict } fr
 export type Phase = 'idle' | 'research' | 'cases' | 'check' | 'repair' | 'conversation' | 'review'
 export type Status = 'idle' | 'running' | 'complete' | 'ready' | 'needs-input' | 'budget' | 'stalled' | 'stopped' | 'failed'
 
+export interface AssistantProvenance { connectionId:string; connectionName:string; model:string }
 export interface Turn {
+  target?:AssistantProvenance
   id?: string
   /** Exact attachments selected when this message was submitted. */
   attachments?: ChatAttachment[]
@@ -141,6 +143,7 @@ export interface RunState {
 }
 
 export interface TurnRequest {
+  onTarget?:(target:AssistantProvenance|undefined)=>void
   prompt: string
   hostTools: HostTool[]
   /** A reviewer turn runs with thinking off: fresh, and no critic. */
@@ -552,8 +555,9 @@ export class AuthoringRun {
     this.responseEvents = []
   }
 
+  private currentAITarget?:AssistantProvenance
   private addTurn(turn: Omit<Turn, 'at'>, patch: Partial<RunState> = {}): void {
-    this.set({ ...patch, turns: [...this.state.turns, { ...turn, id: turn.id ?? crypto.randomUUID(), at: this.stamp() }] })
+    this.set({ ...patch, turns: [...this.state.turns, { ...turn, ...(turn.role==='assistant'&&turn.kind==='message'&&this.currentAITarget?{target:{...this.currentAITarget}}:{}), id: turn.id ?? crypto.randomUUID(), at: this.stamp() }] })
   }
 
   get running(): boolean {
@@ -1043,6 +1047,7 @@ export class AuthoringRun {
     this.check(signal)
     if (prompt.length > 200_000) throw new Error(sourceMessage("This conversation exceeds the 200,000-character context limit. Start a new chat with the relevant text, or attach a smaller excerpt. Nothing was sent to the model."))
     if (this.responseId) this.finishResponse()
+    this.currentAITarget = undefined
     this.responseId = crypto.randomUUID()
     this.responseEvents = []
     this.set({responses: [...(this.state.responses ?? []), {id: this.responseId, afterTurnId: this.state.turns.at(-1)?.id,
@@ -1066,7 +1071,7 @@ export class AuthoringRun {
     this.set({ streaming: '', streamingId: crypto.randomUUID() })
     const observed: AssistantEvent[] = []
     const responseId = this.responseId
-    await this.ports.turn({ prompt, hostTools: reviewer ? hostTools : [instructions, ...hostTools], reviewer, conversation: !reviewer && producedBy !== 'repair' }, signal, (incoming) => {
+    await this.ports.turn({onTarget:target=>{this.currentAITarget=target}, prompt, hostTools: reviewer ? hostTools : [instructions, ...hostTools], reviewer, conversation: !reviewer && producedBy !== 'repair' }, signal, (incoming) => {
       if (signal.aborted || this.responseId !== responseId) return
       if (incoming.type === 'tool_call' || incoming.type === 'tool_result') observed.push(incoming)
       const event = incoming.type === 'proposal' ? canonicalProposal(incoming) : incoming

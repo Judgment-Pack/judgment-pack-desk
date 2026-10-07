@@ -138,7 +138,7 @@ const ENDPOINT_KEYS = ['url', 'kind', 'model', 'models', 'tools'] as const
  */
 // Key presence and the read lifecycle are separate facts. Retry re-reads metadata;
 // it never returns, replaces or stores the credential.
-const SLOT_KEYS = ['agent', 'state', 'endpoint', 'unusable', 'keyPresent', 'keyStatus', 'retryKey', 'engine', 'thinking'] as const
+const SLOT_KEYS = ['connectionId','connectionRevision','connectionName','agent', 'state', 'endpoint', 'unusable', 'recovery', 'retrying', 'keyPresent', 'keyStatus', 'retryKey', 'engine', 'thinking'] as const
 
 const assistantKeysAreExact: Exactly<keyof AssistantConfig, (typeof ASSISTANT_KEYS)[number]> = true
 const endpointKeysAreExact: Exactly<

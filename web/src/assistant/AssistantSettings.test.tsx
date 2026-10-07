@@ -4,16 +4,17 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { DeskConfigFixture } from '../config/DeskConfigProvider'
 import { decodeDeskConfig, effectiveConfig } from '../config/deskConfig'
 import { testQueryClient } from '../testing/harness'
-import { AssistantSettings } from './AssistantSettings'
+import { MachineAssistantSettings as AssistantSettings } from './AssistantSettings'
 import { assistantReady, useAssistantSlot } from './useAssistantSlot'
 
 const agent={provider:'openai',authMethod:'subscription',model:'model',tools:['get_schema','validate']}
 const endpoint={url:'https://api.example.invalid/v1',kind:'openai-compatible',model:'api-model',models:['api-model'],tools:['validate']}
 const digest='a'.repeat(64)
 afterEach(()=>{cleanup();vi.unstubAllGlobals()})
-function setup(options:{connected?:boolean;enabled?:boolean;modelError?:boolean;model?:string|null;slotOnly?:boolean;tools?:string[];runtimeMissing?:boolean;holdLogin?:boolean;failLoginOnce?:boolean;alreadyConnected?:boolean;holdStatusAfterLogin?:boolean}={}) {
+function setup(options:{connected?:boolean;enabled?:boolean;modelError?:boolean;model?:string|null;slotOnly?:boolean;tools?:string[];runtimeMissing?:boolean;holdLogin?:boolean;failLoginOnce?:boolean;alreadyConnected?:boolean;holdStatusAfterLogin?:boolean;statusBusy?:boolean;unavailable?:boolean}={}) {
   let connected=options.connected??true
   let pending=false
+  let statusBusy=options.statusBusy??false
   let prepared=!options.runtimeMissing, loginFailed=false
   let releaseLogin:()=>void=()=>{}
   // #243: the first status refresh after a login answers is held until the test releases it or the page abandons it.
@@ -27,6 +28,7 @@ function setup(options:{connected?:boolean;enabled?:boolean;modelError?:boolean;
     calls.push({path,method,body})
     let value:unknown={},status=200
     if(path==='/api/model-providers')value={providers:[{id:'openai',authMethod:'subscription',agent:'codex',configured:options.enabled!==false,enabled:options.enabled!==false,engineReady:options.enabled!==false,requiredVersion:'codex-cli 0.157.1',availability:options.enabled===false?'disabled':'available',loginMethods:['browser','device']}]}
+    else if(path.endsWith('/status')&&statusBusy){status=409;value={error:'provider-busy'}}
     else if(path.endsWith('/status')){
       if(options.holdStatusAfterLogin&&loginAnswered&&heldStatus==='none'){
         heldStatus='waiting'
@@ -35,7 +37,7 @@ function setup(options:{connected?:boolean;enabled?:boolean;modelError?:boolean;
       }
       value={provider:'openai',authMethod:'subscription',agent:'codex',runtime:prepared?'available':'not-installed',account:connected?'connected':pending?'login-pending':'signed-out',...(pending?{login:{id:'attempt',state:'pending',expiresAt:new Date(Date.now()+60_000).toISOString()}}:{})}
     }
-    else if(path.endsWith('/models')) {value=options.modelError?{error:'provider-unavailable'}:{models:[{id:'model',name:'Account model',efforts:['medium','high'],defaultEffort:'medium'}]};if(options.modelError)status=503}
+    else if(path.endsWith('/models')) {value=options.modelError?{error:'provider-unavailable'}:{models:[{id:'model',name:'Account model',efforts:['medium','high'],defaultEffort:'medium'},{id:'second',name:'Second',efforts:['low'],defaultEffort:'low'}]};if(options.modelError)status=503}
     else if(path.endsWith('/login')){
       if(options.holdLogin)await new Promise<void>((resolve,reject)=>{releaseLogin=resolve;init.signal?.addEventListener('abort',()=>reject(new DOMException('Canceled','AbortError')),{once:true})})
       if(options.failLoginOnce&&!loginFailed){loginFailed=true;return new Response(JSON.stringify({error:'runtime-install-failed'}),{status:503})}
@@ -49,8 +51,8 @@ function setup(options:{connected?:boolean;enabled?:boolean;modelError?:boolean;
     return new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json'}})
   })
   function Reading(){const slot=useAssistantSlot();return <output>{assistantReady(slot)?'ready':slot.unusable??'not ready'}</output>}
-  const view=render(<QueryClientProvider client={client}><DeskConfigFixture value={config}>{options.slotOnly?<Reading/>:<AssistantSettings unavailable={false}/>}</DeskConfigFixture></QueryClientProvider>)
-  return {calls,client,view,finishPreparation:()=>releaseLogin(),connect:()=>{connected=true;pending=false},statusHeld:()=>heldStatus==='waiting',releaseStatus:()=>releaseStatus()}
+  const view=render(<QueryClientProvider client={client}><DeskConfigFixture value={config}>{options.slotOnly?<Reading/>:<AssistantSettings unavailable={options.unavailable??false}/>}</DeskConfigFixture></QueryClientProvider>)
+  return {calls,client,view,allowStatus:()=>{statusBusy=false},finishPreparation:()=>releaseLogin(),connect:()=>{connected=true;pending=false},statusHeld:()=>heldStatus==='waiting',releaseStatus:()=>releaseStatus()}
 }
 async function pick(label:string,option:string){const trigger=screen.getByRole('combobox',{name:label}) as HTMLButtonElement;await waitFor(()=>expect(trigger.disabled).toBe(false));fireEvent.click(trigger);fireEvent.click(await screen.findByRole('option',{name:option}))}
 
@@ -64,12 +66,12 @@ it('explains an administrator-disabled connection without executable setup instr
 it('saves an explicit subscription selection and retains the inactive API target without a key',async()=>{
  const {calls}=setup()
  await screen.findByText('Connected to ChatGPT')
- await screen.findByRole('combobox',{name:'Reasoning'})
- await pick('Reasoning','high')
- fireEvent.click(screen.getByRole('button',{name:'Save selection'}))
+ await screen.findByRole('combobox',{name:'Reasoning effort'})
+ await pick('Reasoning effort','high')
+ fireEvent.click(screen.getByRole('button',{name:'Save shared settings'}))
  await waitFor(()=>expect(calls.some(c=>c.method==='PUT')).toBe(true))
  const write=calls.find(c=>c.method==='PUT')!.body
- expect(write).toEqual({ifMatch:digest,assistant:{engine:'codex',endpoint,thinking:'off',agent:{...agent,effort:'high'}}})
+ expect(write).toEqual({ifMatch:digest,assistant:{engine:'codex',endpoint,thinking:'off',agent:{...agent,models:['model'],effort:'high'}}})
  expect(calls.some(c=>c.path.startsWith('/api/model/'))).toBe(false)
  expect(screen.getByLabelText('API key').closest('[hidden]')).not.toBeNull()
 })
@@ -93,7 +95,7 @@ it('loads account models after sign-in and removes the completed challenge',asyn
  await screen.findByRole('link',{name:'Continue sign-in in your browser'})
  state.connect();await act(async()=>{await state.client.invalidateQueries({queryKey:['model-provider']})})
  await screen.findByText('Connected to ChatGPT')
- await pick('Model','Account model')
+ fireEvent.click(await screen.findByRole('button',{name:'Allowed models'}));fireEvent.click(await screen.findByRole('checkbox',{name:'model'}));fireEvent.keyDown(screen.getByRole('dialog',{name:'Allowed models'}),{key:'Escape'})
  expect(screen.queryByRole('link',{name:'Continue sign-in in your browser'})).toBeNull()
  expect((screen.getByRole('button',{name:'Test connection'}) as HTMLButtonElement).disabled).toBe(true)
 })
@@ -111,7 +113,7 @@ it('requires the styled confirmation before disconnecting and clears available m
 it('refuses a stale model selection when discovery fails',async()=>{
  setup({modelError:true})
  await screen.findByText('This model is no longer available. Choose another model.')
- expect((screen.getByRole('button',{name:'Save selection'}) as HTMLButtonElement).disabled).toBe(true)
+ expect((screen.getByRole('button',{name:'Save shared settings'}) as HTMLButtonElement).disabled).toBe(true)
  expect((screen.getByRole('button',{name:'Test connection'}) as HTMLButtonElement).disabled).toBe(true)
 })
 it('makes subscription readiness independent of the saved API key',async()=>{
@@ -123,7 +125,7 @@ it('makes subscription readiness independent of the saved API key',async()=>{
 it('does not grant an excluded tool for the connection test',async()=>{
  setup({tools:[]})
  await screen.findByText('Connected to ChatGPT')
- await screen.findByRole('combobox',{name:'Reasoning'})
+ await screen.findByRole('combobox',{name:'Reasoning effort'})
  expect((screen.getByRole('button',{name:'Test connection'}) as HTMLButtonElement).disabled).toBe(true)
  expect(screen.getByText('Enable and save get_schema in Allowed pack tools to test the connection.')).toBeTruthy()
 })
@@ -194,7 +196,61 @@ it('recovers a remembered account after runtime preparation without requiring an
  const connect=await screen.findByRole('button',{name:'Connect ChatGPT'})
  await waitFor(()=>expect((connect as HTMLButtonElement).disabled).toBe(false));fireEvent.click(connect)
  await screen.findByText('Connected to ChatGPT')
- await screen.findByRole('combobox',{name:'Model'})
+ await screen.findByRole('combobox',{name:'Default model'})
  expect(screen.queryByRole('alert')).toBeNull()
  expect(screen.queryByRole('link',{name:'Continue sign-in in your browser'})).toBeNull()
+})
+
+it('keeps an unknown account distinct from signed out and rechecks without starting login',async()=>{
+ const state=setup({statusBusy:true})
+ await screen.findByText('Connection unavailable')
+ expect(screen.queryByText('Not connected')).toBeNull()
+ expect(screen.queryByRole('button',{name:'Connect ChatGPT'})).toBeNull()
+ expect(screen.queryByRole('combobox',{name:'Sign-in method'})).toBeNull()
+ state.allowStatus()
+ fireEvent.click(screen.getByRole('button',{name:'Check again'}))
+ await screen.findByText('Connected to ChatGPT')
+ expect(state.calls.some(call=>call.path.endsWith('/login')||call.path.endsWith('/logout'))).toBe(false)
+})
+
+it('saves bulk model grants and keeps the default inside the allowed set',async()=>{
+ const {calls}=setup();await screen.findByText('Connected to ChatGPT')
+ const trigger=screen.getByRole('button',{name:'Allowed models'}) as HTMLButtonElement
+ await waitFor(()=>expect(trigger.disabled).toBe(false));fireEvent.click(trigger)
+ expect((screen.getByRole('checkbox',{name:'model'}) as HTMLInputElement).checked).toBe(true)
+ expect((screen.getByRole('checkbox',{name:'second'}) as HTMLInputElement).checked).toBe(false)
+ fireEvent.click(screen.getByRole('button',{name:'Select all'}))
+ expect(calls.some(c=>c.method==='PUT')).toBe(false)
+ fireEvent.keyDown(screen.getByRole('dialog',{name:'Allowed models'}),{key:'Escape'})
+ await pick('Default model','second')
+ fireEvent.click(screen.getByRole('button',{name:'Save shared settings'}))
+ await waitFor(()=>expect(calls.some(c=>c.method==='PUT')).toBe(true))
+ expect(calls.find(c=>c.method==='PUT')!.body).toEqual({ifMatch:digest,assistant:{engine:'codex',endpoint,thinking:'off',agent:{...agent,model:'second',models:['model','second']}}})
+})
+it('saves Remove all as a disabled model set with no default',async()=>{
+ const {calls}=setup();await screen.findByText('Connected to ChatGPT')
+ const trigger=screen.getByRole('button',{name:'Allowed models'}) as HTMLButtonElement
+ await waitFor(()=>expect(trigger.disabled).toBe(false));fireEvent.click(trigger)
+ fireEvent.click(screen.getByRole('button',{name:'Remove all'}));fireEvent.keyDown(screen.getByRole('dialog',{name:'Allowed models'}),{key:'Escape'})
+ fireEvent.click(screen.getByRole('button',{name:'Save shared settings'}))
+ await waitFor(()=>expect(calls.some(c=>c.method==='PUT')).toBe(true))
+ expect(calls.find(c=>c.method==='PUT')!.body).toEqual({ifMatch:digest,assistant:{engine:'codex',endpoint,thinking:'off',agent:{...agent,model:null,models:[]}}})
+})
+
+it('cancel restores shared model settings without saving',async()=>{
+ const {calls}=setup()
+ await screen.findByText('Connected to ChatGPT')
+ await screen.findByRole('combobox',{name:'Reasoning effort'})
+ await pick('Reasoning effort','high')
+ fireEvent.click(screen.getByRole('button',{name:'Cancel'}))
+ await waitFor(()=>expect(screen.getByRole('combobox',{name:'Reasoning effort'}).textContent).toContain('Model default'))
+ expect(screen.queryByRole('button',{name:'Cancel'})).toBeNull()
+ expect((screen.getByRole('button',{name:'Save shared settings'}) as HTMLButtonElement).disabled).toBe(true)
+ expect(calls.some(call=>call.method==='PUT')).toBe(false)
+})
+it('shared model and reasoning controls honor the desk-preference lock',async()=>{
+ setup({unavailable:true})
+ await screen.findByRole('combobox',{name:'Reasoning effort'})
+ expect((screen.getByRole('combobox',{name:'Reasoning effort'}) as HTMLButtonElement).disabled).toBe(true)
+ expect((screen.getByRole('button',{name:'Allowed models'}) as HTMLButtonElement).disabled).toBe(true)
 })

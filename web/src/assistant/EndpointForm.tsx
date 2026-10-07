@@ -1,3 +1,4 @@
+import { useAIConnectionScope } from './aiConnections'
 import { sourceMessage } from '../i18n/source'
 import { Message } from '../i18n/Message'
 import { systemMessage, msg, useLocale } from '../i18n'
@@ -137,6 +138,7 @@ export function EndpointForm({
   unavailable: boolean
 }) {
   useLocale()
+  const connectionScope=useAIConnectionScope()
   const { config, desk } = useEffectiveConfig()
   const client = useQueryClient()
   const write = useUpdateAssistantConfig()
@@ -238,7 +240,7 @@ export function EndpointForm({
   const commit = (
     assistant: unknown,
     said: (answer: AssistantConfigWritten) => string,
-    then?: () => void
+    then?: (answer:AssistantConfigWritten) => void
   ) => {
     if (digest === undefined) return
     setSaved(undefined)
@@ -254,7 +256,7 @@ export function EndpointForm({
           setRemoving(false)
           setSaved(said(answer))
           setRebindAsked(answer.keyRebindRequired)
-          then?.()
+          then?.(answer)
         }
       }
     )
@@ -271,9 +273,10 @@ export function EndpointForm({
     return value
   }
 
-  const storeKey = (value: string, onStored?: () => void) => {
+  const storeKey = (value: string, onStored?: () => void, connectionRevision?:string) => {
     setStoreProblem(undefined)
     store.submit(value, {
+      connectionRevision,
       onError: (error) => setStoreProblem(error.message),
       onStored: () => {
         setRebindAsked(false)
@@ -295,7 +298,7 @@ export function EndpointForm({
   const whyNotTest = editingKey ? msg(KEY_NOT_SAVED) : !here && configured !== null ? msg(NOT_SAVED) : msg(NOTHING_TO_TEST)
   const canSaveKey = typed && !blocked && !busy && !checking && !unavailable && key.isSuccess
 
-  const settingsChanged = configured === null ||
+  const settingsChanged = config.assistant.engine!=='vercel' || configured === null ||
     JSON.stringify(assistantWrite(draft)) !== JSON.stringify(assistantWrite(draftFrom(config.assistant)))
   useUnsavedChanges(dirty || typed)
 
@@ -319,7 +322,7 @@ export function EndpointForm({
     else commit(
       assistantWrite(draft),
       (answer) => (answer.created ? sourceMessage(CREATED) : sourceMessage(SAVED)),
-      () => storeKey(value)
+      answer => storeKey(value,undefined,answer.connectionRevision)
     )
   }
 
@@ -471,7 +474,7 @@ export function EndpointForm({
           <ToolChoice draft={draft} onChange={edit} problem={problemFor('assistant.endpoint.tools')} />
 
           <Field
-            label={msg("Thinking")}
+            label={msg("Reasoning effort")}
             hint={msg("How much reasoning the model may do before answering.")}
             error={problemFor('assistant.thinking')}
           >
@@ -496,7 +499,7 @@ export function EndpointForm({
           <Button variant={binding === 'bound' && !replacingKey ? 'primary' : 'secondary'} type="submit" disabled={!settingsChanged || blocked || busy || checking || editingKey}>{msg("Save settings")}</Button>
         </div>
 
-        {configured !== null && (
+        {configured !== null && !connectionScope && (
           <section className={styles.dangerSection} aria-label={msg("Remove endpoint")}>
             <h3>{msg("Remove endpoint")}</h3>
             <p>{msg("Disconnect this provider from the assistant.")}</p>

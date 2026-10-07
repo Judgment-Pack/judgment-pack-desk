@@ -1,3 +1,4 @@
+import { aiHeaders, type AITarget } from './aiConnections'
 import { deskHeaders } from '../desks/scope'
 import { currentLanguage } from '../i18n/locales'
 /**
@@ -272,8 +273,9 @@ const CALL_FAILED =
  * an engine choosing what its endpoint admits. It is required rather than
  * defaulted, because a default is a grant nobody wrote down.
  */
-export function bindModelCall(family: EndpointKind): ModelCall {
+export function bindModelCall(family: EndpointKind, target?:AITarget): ModelCall {
   const send = globalThis.fetch.bind(globalThis)
+  const boundDeskHeaders=deskHeaders()
   return async (suffix: string, request: ModelRequest): Promise<Response> => {
     const problem = suffixProblem(suffix, family)
     if (problem !== '') throw new Error(problem)
@@ -317,7 +319,7 @@ export function bindModelCall(family: EndpointKind): ModelCall {
         // admits. A `GET` carries no body: `fetch` refuses one that does, and
         // the model listing is the only caller that asks for either.
         method: request.method ?? 'POST',
-        headers: { ...headers, ...deskHeaders(), Authorization: `Bearer ${id}` },
+        headers: { ...headers, ...boundDeskHeaders, ...aiHeaders(target?.connectionId,target?.connectionRevision), Authorization: `Bearer ${id}` },
         body: request.method === 'GET' ? undefined : request.body,
         signal: request.signal
       })

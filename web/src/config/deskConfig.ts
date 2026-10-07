@@ -1,3 +1,5 @@
+import type { AIRegistryRead } from "../assistant/aiConnections"
+import { applyAssistantProfile, type AssistantProfileRead } from './assistantProfile'
 import { sourceMessage } from '../i18n/source'
 /**
  * The desk's configuration: one schema, and a decoder that refuses by name.
@@ -283,6 +285,8 @@ export const CODEX_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh
 export interface AssistantAgentConfig {
   provider: 'openai'
   authMethod: 'subscription'
+  /** Allowed models; legacy configs allow only their saved default. */
+  models?: string[]
   model: string | null
   tools: AssistantTool[]
   effort?: (typeof CODEX_EFFORTS)[number]
@@ -2268,6 +2272,9 @@ export interface DeskLevelSummary {
 }
 
 export interface EffectiveConfig {
+  aiConnections?: AIRegistryRead
+  machineAssistant?: AssistantConfig
+  assistantProfile?: AssistantProfileRead
   /** Distinguishes an inherited local-user caption from an explicit name. */
   userNameDefaulted?: true
   config: DeskConfig
@@ -2354,7 +2361,8 @@ export function effectiveConfig(
   readFailure?: ReadFailure,
   desk?: DeskLevelRead,
   text?: string,
-  sha256?: string
+  sha256?: string,
+  assistantProfile?: AssistantProfileRead
 ): EffectiveConfig {
   const values = decoded?.values
   const deskValues = desk?.decoded?.values
@@ -2379,6 +2387,8 @@ export function effectiveConfig(
     : deskValues?.user !== undefined ? desk?.decoded?.userNameDefaulted : true
   return {
     ...(userNameDefaulted ? { userNameDefaulted: true as const } : {}),
+    machineAssistant: deskValues?.assistant ?? DESK_DEFAULTS.assistant,
+    assistantProfile,
     config: {
       deskConfigVersion: DESK_CONFIG_VERSION,
       organization: pick('organization'),
@@ -2386,7 +2396,7 @@ export function effectiveConfig(
       // Never in a project file, so never from one: the desk-level file or the
       // default, and nothing in between.
       identity: deskValues?.identity ?? DESK_DEFAULTS.identity,
-      assistant: deskValues?.assistant ?? DESK_DEFAULTS.assistant,
+      assistant: applyAssistantProfile(deskValues?.assistant ?? DESK_DEFAULTS.assistant, assistantProfile),
       research: withLocalGateway(deskValues?.research ?? DESK_DEFAULTS.research, !desk?.readFailure && !desk?.decoded?.problems.length ? desk?.localGateway : undefined),
       project: deskValues?.project ?? DESK_DEFAULTS.project,
       appearance: pick('appearance'),
@@ -2431,7 +2441,7 @@ export function effectiveConfig(
 
 /** Credential-free provider target. Unknown fields refuse the whole file. */
 function agentValue(value: unknown, problems: ConfigProblem[]): AssistantAgentConfig | undefined {
-  const a = section(value, 'assistant.agent', ['provider', 'authMethod', 'model', 'tools', 'effort'], problems)
+  const a = section(value, 'assistant.agent', ['provider', 'authMethod', 'model', 'models', 'tools', 'effort'], problems)
   if (!a) return undefined
   if (a.provider !== 'openai') problems.push({ key: 'assistant.agent.provider', reason: 'must be openai' })
   if (a.authMethod !== 'subscription') problems.push({ key: 'assistant.agent.authMethod', reason: 'must be subscription' })
@@ -2440,6 +2450,15 @@ function agentValue(value: unknown, problems: ConfigProblem[]): AssistantAgentCo
     if (typeof a.model !== 'string' || !a.model.trim() || new TextEncoder().encode(a.model).byteLength > 128 || /[\r\n\0]/.test(a.model)) problems.push({ key: 'assistant.agent.model', reason: 'must be a non-empty model ID of at most 128 characters, or null' })
     else model = a.model.trim()
   }
+  let models: string[] | undefined
+  if (a.models !== undefined) {
+    if (!Array.isArray(a.models) || a.models.length > 128 || a.models.some(id => typeof id !== 'string' || !id.trim() || id !== id.trim() || new TextEncoder().encode(id).byteLength > 128 || /[\r\n\0]/.test(id)) || new Set(a.models).size !== a.models.length) {
+      problems.push({key:'assistant.agent.models',reason:'must be an array of at most 128 unique model IDs'})
+    } else {
+      models = a.models as string[]
+      if (model === null ? models.length > 0 : !models.includes(model)) problems.push({key:'assistant.agent.model',reason:'must be an allowed model, or null when no models are allowed'})
+    }
+  }
   const validTools = Array.isArray(a.tools) && a.tools.every(tool => typeof tool === 'string' && (ASSISTANT_TOOLS as readonly string[]).includes(tool))
   if (!validTools) problems.push({ key: 'assistant.agent.tools', reason: 'must be an explicit array of allowed assistant tools' })
   let effort: AssistantAgentConfig['effort']
@@ -2447,5 +2466,10 @@ function agentValue(value: unknown, problems: ConfigProblem[]): AssistantAgentCo
     if (typeof a.effort !== 'string' || !(CODEX_EFFORTS as readonly string[]).includes(a.effort)) problems.push({ key: 'assistant.agent.effort', reason: 'must be a supported Codex reasoning effort' })
     else effort = a.effort as AssistantAgentConfig['effort']
   }
-  return { provider: 'openai', authMethod: 'subscription', model, tools: validTools ? a.tools as AssistantTool[] : [], ...(effort ? { effort } : {}) }
+  return { provider: 'openai', authMethod: 'subscription', model, ...(models === undefined ? {} : {models}), tools: validTools ? a.tools as AssistantTool[] : [], ...(effort ? { effort } : {}) }
+}
+
+/** An omitted allowlist preserves the legacy single-model grant. */
+export function allowedAgentModels(agent?: AssistantAgentConfig): readonly string[] {
+  return agent?.models ?? (agent?.model ? [agent.model] : [])
 }

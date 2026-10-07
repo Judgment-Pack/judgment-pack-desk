@@ -428,16 +428,16 @@ export function AssistantPane({
       <div className={styles.empty}>
         {/* Configuration, key-read status and model readiness are separate.
             A pending or failed read establishes no absence on disk. */}
-        {slot.engine === 'codex' ? msg(slot.unusable ?? 'Configure a ChatGPT subscription in Assistant settings.') : slot.state === 'unavailable'
+        {slot.engine === 'codex' ? msg(slot.unusable ?? 'Configure a ChatGPT subscription in Connections > AI.') : slot.state === 'unavailable'
           ? msg("This desk could not read its own configuration, so it cannot say what assistant is configured. Admin › Assistant names the problem.")
           : slot.endpoint === null
-            ? msg("No assistant is configured on this desk. Configure an endpoint in Admin › Assistant.")
+            ? msg("No assistant is configured on this desk. Configure a connection in Admin › Connections › AI.")
             : slot.keyStatus === 'pending'
               ? CHECKING_KEY
               : slot.keyStatus === 'error'
                 ? UNREAD_KEY
                 : !slot.keyPresent
-                  ? msg("An endpoint is configured and no key is stored on this machine. Add one in Admin › Assistant.")
+                  ? msg("An endpoint is configured and no key is stored on this machine. Add one in Admin › Connections › AI.")
                   : msg("An endpoint is configured and no model is chosen for it. Pick one in Admin › Assistant.")}
         {slot.engine !== 'codex' && slot.state === 'configured' && slot.keyStatus === 'error' && (
           <p><Button variant="quiet" onClick={slot.retryKey}>{msg("Retry key status")}</Button></p>
