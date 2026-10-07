@@ -21,6 +21,12 @@ import (
 	"testing"
 )
 
+// identityLine is the identity file Desk writes for id in the folder dir,
+// with the stamping settings' move from from, where it is not empty.
+func identityLine(id, dir, from string) string {
+	return string(identityRecord{ID: id, Path: dir, From: from}.line())
+}
+
 // startedAt closes s and starts Desk on dir with s's folders and runtime,
 // and a log the test reads.
 func startedAt(t *testing.T, s *Server, dir string) (*Server, *httptest.Server, *bytes.Buffer) {
@@ -179,7 +185,7 @@ func TestAKeyFromBeforeTheIdentityIsKeptWhenItsProjectMoves(t *testing.T) {
 			if got := again.signingKeyName(); got != legacy {
 				t.Errorf("the moved project is named %s, want the name its jpack.json names, %s: %s", got, legacy, logged)
 			}
-			if got := readFile(t, filepath.Join(moved, ".desk-private", "project.json")); got != `{"id":"`+legacy+`"}`+"\n" {
+			if got := readFile(t, filepath.Join(moved, ".desk-private", "project.json")); got != identityLine(legacy, again.projectDir, "") {
 				t.Errorf("the moved project's identity is %q", got)
 			}
 			if got := keysUnder(t, u, legacy); !slices.Equal(got, all[1:]) {
@@ -252,7 +258,7 @@ func TestTheIdentityMovesStampingSettingsAndAStopIsFinished(t *testing.T) {
 		if id == legacy || !startupIDForm.MatchString(id) || !again.startupBound() {
 			t.Fatalf("the project is named %s after the start: %s", id, logged)
 		}
-		if got := readFile(t, file); got != `{"id":"`+id+`"}`+"\n" {
+		if got := readFile(t, file); got != identityLine(id, again.projectDir, "") {
 			t.Errorf("the identity file is %q", got)
 		}
 		if got := readFile(t, filepath.Join(u.s.configDir, "stamping", id, "settings.json")); got != "kept\n" {
@@ -269,7 +275,7 @@ func TestTheIdentityMovesStampingSettingsAndAStopIsFinished(t *testing.T) {
 		stopped, logged := restartedServer(t, u.s)
 		testHookIdentityStep = nil
 		id := stopped.signingKeyName()
-		if got := readFile(t, file); got != `{"id":"`+id+`","from":"`+legacy+`"}`+"\n" {
+		if got := readFile(t, file); got != identityLine(id, stopped.projectDir, legacy) {
 			t.Fatalf("the stopped migration left the identity file %q: %s", got, logged)
 		}
 		if got := readFile(t, filepath.Join(u.s.configDir, "stamping", legacy, "settings.json")); got != "kept\n" {
@@ -279,7 +285,7 @@ func TestTheIdentityMovesStampingSettingsAndAStopIsFinished(t *testing.T) {
 		if got := again.signingKeyName(); got != id {
 			t.Errorf("the next start named the project %s, want %s", got, id)
 		}
-		if got := readFile(t, file); got != `{"id":"`+id+`"}`+"\n" {
+		if got := readFile(t, file); got != identityLine(id, again.projectDir, "") {
 			t.Errorf("the next start left the identity file %q: %s", got, logged)
 		}
 		if got := readFile(t, filepath.Join(u.s.configDir, "stamping", id, "settings.json")); got != "kept\n" {
@@ -299,7 +305,7 @@ func TestTheIdentityMovesStampingSettingsAndAStopIsFinished(t *testing.T) {
 			t.Errorf("the stopped migration left %q in the private folder", got)
 		}
 		again, _ := restartedServer(t, stopped)
-		if id := again.signingKeyName(); id == legacy || readFile(t, file) != `{"id":"`+id+`"}`+"\n" {
+		if id := again.signingKeyName(); id == legacy || readFile(t, file) != identityLine(id, again.projectDir, "") {
 			t.Errorf("the next start named the project %s, with the file %q", id, readFile(t, file))
 		}
 	})
@@ -333,13 +339,14 @@ func TestAnIdentityThatCannotBeReadNamesNothing(t *testing.T) {
 		name, data string
 		mode       os.FileMode
 	}{
-		{"another spelling", `{"id": "` + strings.Repeat("a", 64) + `"}` + "\n", 0o600},
-		{"no newline", `{"id":"` + strings.Repeat("a", 64) + `"}`, 0o600},
-		{"a desk's id", `{"id":"` + strings.Repeat("a", 32) + `"}` + "\n", 0o600},
-		{"a member besides", `{"id":"` + strings.Repeat("a", 64) + `","x":1}` + "\n", 0o600},
-		{"a move from itself", `{"id":"` + strings.Repeat("a", 64) + `","from":"` + strings.Repeat("a", 64) + `"}` + "\n", 0o600},
-		{"past its bound", `{"id":"` + strings.Repeat("a", 64) + `"}` + strings.Repeat(" ", startupIdentityLimit) + "\n", 0o600},
-		{"open to others", `{"id":"` + strings.Repeat("a", 64) + `"}` + "\n", 0o644},
+		{"another spelling", `{"id": "` + strings.Repeat("a", 64) + `","path":"/p"}` + "\n", 0o600},
+		{"no newline", `{"id":"` + strings.Repeat("a", 64) + `","path":"/p"}`, 0o600},
+		{"a desk's id", `{"id":"` + strings.Repeat("a", 32) + `","path":"/p"}` + "\n", 0o600},
+		{"a member besides", `{"id":"` + strings.Repeat("a", 64) + `","path":"/p","x":1}` + "\n", 0o600},
+		{"a move from itself", `{"id":"` + strings.Repeat("a", 64) + `","path":"/p","from":"` + strings.Repeat("a", 64) + `"}` + "\n", 0o600},
+		{"a folder that is not a path", `{"id":"` + strings.Repeat("a", 64) + `","path":"p"}` + "\n", 0o600},
+		{"past its bound", `{"id":"` + strings.Repeat("a", 64) + `","path":"/p"}` + strings.Repeat(" ", startupIdentityLimit) + "\n", 0o600},
+		{"open to others", `{"id":"` + strings.Repeat("a", 64) + `","path":"/p"}` + "\n", 0o644},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			u := newSigningUpgrade(t, nil)
@@ -402,7 +409,7 @@ func TestTheIdentityIsWrittenOnlyUnderBothLocks(t *testing.T) {
 			}
 			release()
 			again, _ := restartedServer(t, stopped)
-			if !again.startupBound() || readFile(t, file) != `{"id":"`+again.signingKeyName()+`"}`+"\n" {
+			if !again.startupBound() || readFile(t, file) != identityLine(again.signingKeyName(), again.projectDir, "") {
 				t.Errorf("the next start did not write the identity")
 			}
 		})
@@ -425,7 +432,7 @@ func TestTheUpgradeWritesTheIdentityBeforeTheKey(t *testing.T) {
 	file := filepath.Join(u.project, ".desk-private", "project.json")
 	testHookKeyBetween = func(at string) {
 		if at == "before generate" {
-			if got := readFile(t, file); got != `{"id":"`+name+`"}`+"\n" {
+			if got := readFile(t, file); got != identityLine(name, u.s.projectDir, "") {
 				t.Errorf("the key was made with the identity file %q", got)
 			}
 			if mode := permOf(t, filepath.Dir(file)); mode != 0o700 {
@@ -435,8 +442,8 @@ func TestTheUpgradeWritesTheIdentityBeforeTheKey(t *testing.T) {
 	}
 	t.Cleanup(func() { testHookKeyBetween = nil })
 	before := treeOf(t, u.project)
-	// The lock pins another configuration: the upgrade is put back whole.
-	u.rig.locks(t, upgradeLock(t, u.project, upgradeBefore, bothPacks))
+	// The lock pins one pack fewer: the upgrade is put back whole.
+	u.rig.locks(t, upgradeLock(t, u.project, u.signed(), map[string]string{"alpha": "packs/a.json"}))
 	status, data := u.confirm(t, answer.Token, true)
 	testHookKeyBetween = nil
 	if status != http.StatusConflict {
@@ -455,7 +462,7 @@ func TestTheUpgradeWritesTheIdentityBeforeTheKey(t *testing.T) {
 	if status, data := u.confirm(t, again.Token, true); status != http.StatusOK {
 		t.Fatalf("the confirmation answered %d %s", status, data)
 	}
-	if got := readFile(t, file); got != `{"id":"`+name+`"}`+"\n" || u.s.signingKeyName() != name {
+	if got := readFile(t, file); got != identityLine(name, u.s.projectDir, "") || u.s.signingKeyName() != name {
 		t.Errorf("after the upgrade the identity file is %q, the project named %s", got, u.s.signingKeyName())
 	}
 }
@@ -474,7 +481,7 @@ func TestAKeyIsMadeOnlyUnderTheProjectsIdentity(t *testing.T) {
 	}
 	byPath := filepath.Join(filepath.Dir(u.seed), digestOf([]byte(u.s.projectDir))+".seed")
 	for _, seed := range []string{u.seed, byPath} {
-		key, failure := u.s.makeStartupKey(context.Background(), dir, seed)
+		key, failure, _ := u.s.makeStartupKey(context.Background(), dir, seed, []byte(upgradeBefore))
 		if key != nil || failure == nil || failure.status != http.StatusConflict || failure.code != CodeStale || !strings.Contains(failure.message, "identity") {
 			t.Errorf("a key at %s with no identity written answered %+v %+v", filepath.Base(seed), key, failure)
 		}

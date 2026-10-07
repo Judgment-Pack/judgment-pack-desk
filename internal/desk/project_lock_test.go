@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -102,8 +103,8 @@ func TestTwoDesksOnOneProjectUpgradeOneAtATime(t *testing.T) {
 	before := treeOf(t, project)
 
 	offerB := readUpgrade(t, tsB, "", true)
-	// B's lock will pin another configuration than the one it wrote.
-	rigB.locks(t, upgradeLock(t, project, upgradeBefore, bothPacks))
+	// B's lock will pin one pack fewer than B's upgrade shows.
+	rigB.locks(t, upgradeLock(t, project, upgradeAfter, map[string]string{"alpha": "packs/a.json"}))
 	answered := make(chan answer, 1)
 	go func() {
 		status, data := confirmUpgrade(t, tsB, "", offerB.Token, true)
@@ -148,19 +149,23 @@ func TestTwoDesksOnOneProjectUpgradeOneAtATime(t *testing.T) {
 // writer left it, and the answer says so; every other file is put back.
 func TestARollbackPutsBackOnlyWhatItWrote(t *testing.T) {
 	const theirs = `{"configVersion":"3","packs":{},"theirs":true}` + "\n"
-	const theirLock = `{"lockVersion":"1","theirs":true}` + "\n"
+	theirLock := `{"lockVersion":"1","config":{"digest":"` + sha256Digest([]byte(theirs)) + `"}}` + "\n"
 	for _, tc := range []struct {
-		name, lockFirst, at, file, content string
+		name, lockFirst, at, file, content, says string
 	}{
-		{"jpack.json, written while the runtime locked", "  printf '%s\\n' '" + strings.TrimSuffix(theirs, "\n") + "' > jpack.json", "", "jpack.json", theirs},
-		{"jpack.json, written after the old bytes were staged", "", "jpack.json", "jpack.json", theirs},
-		{"the lock, written after the runtime ran", "", runtimeLockName, runtimeLockName, theirLock},
+		{"jpack.json, written while the runtime locked", "  printf '%s\\n' '" + strings.TrimSuffix(theirs, "\n") + "' > jpack.json", "", "jpack.json", theirs, errPutBackChanged.Error()},
+		{"jpack.json, written after the old bytes were staged", "", "jpack.json", "jpack.json", theirs, errPutBackChanged.Error()},
+		{"the lock, written after the runtime ran", "", runtimeLockName, runtimeLockName, theirLock, errLockNotOurs.Error()},
+		// Review round 1 of #296: another's lock, there when this upgrade's
+		// runtime failed, is not taken for the one it wrote because it was
+		// read after the runtime ran.
+		{"the lock, there when the runtime failed", "  printf '%s\\n' '" + strings.TrimSuffix(theirLock, "\n") + "' > jpack.lock.json\n  exit 1", "", runtimeLockName, theirLock, errLockNotOurs.Error()},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, ts, rig, project := upgradeProject(t, allConfigVersions, tc.lockFirst, nil)
 			rig.answers(t, "error")
 			offer := readUpgrade(t, ts, "", true)
-			rig.locks(t, upgradeLock(t, project, upgradeBefore, bothPacks))
+			rig.locks(t, upgradeLock(t, project, upgradeAfter, map[string]string{"alpha": "packs/a.json"}))
 			if tc.at != "" {
 				testHookBeforePutBack = func(name string) {
 					if name == tc.at {
@@ -173,7 +178,7 @@ func TestARollbackPutsBackOnlyWhatItWrote(t *testing.T) {
 			}
 			status, data := confirmUpgrade(t, ts, "", offer.Token, true)
 			testHookBeforePutBack = nil
-			if status != http.StatusInternalServerError || !strings.Contains(refusalOf(data), "the project could not be put back as it was: "+tc.file+": another writer changed it after Desk wrote it, so it was left as it is") {
+			if status != http.StatusInternalServerError || !strings.Contains(refusalOf(data), "the project could not be put back as it was: "+tc.file+": "+tc.says) {
 				t.Errorf("the confirmation answered %d %s", status, data)
 			}
 			if got := readFile(t, filepath.Join(project, tc.file)); got != tc.content {
@@ -214,7 +219,7 @@ func TestAReviewLockWaitsForThisProjectsLockAndPutsBackOnlyItsOwn(t *testing.T) 
 	}
 	release()
 
-	const theirLock = `{"lockVersion":"1","theirs":true}` + "\n"
+	theirLock := `{"lockVersion":"1","config":{"digest":"sha256:` + strings.Repeat("a", 64) + `"}}` + "\n"
 	rig.locks(t, lockOf(t, project, map[string]string{"alpha": "packs/a.json"}))
 	testHookBeforePutBack = func(name string) {
 		if name == runtimeLockName {
@@ -226,10 +231,58 @@ func TestAReviewLockWaitsForThisProjectsLockAndPutsBackOnlyItsOwn(t *testing.T) 
 	t.Cleanup(func() { testHookBeforePutBack = nil })
 	status, data = confirm(t, ts, "", review.Token)
 	testHookBeforePutBack = nil
-	if status != http.StatusInternalServerError || !strings.Contains(refusalOf(data), "the previous lock could not be put back: another writer changed it after Desk wrote it, so it was left as it is") {
+	if status != http.StatusInternalServerError || !strings.Contains(refusalOf(data), "the previous lock could not be put back: "+errLockNotOurs.Error()) {
 		t.Errorf("the confirmation answered %d %s", status, data)
 	}
 	if got := readFile(t, filepath.Join(project, runtimeLockName)); got != theirLock {
 		t.Errorf("the lock is %q, not the other writer's", got)
 	}
+}
+
+// noProjectLock stands in a file system on which no flock can be taken on
+// the project's folder.
+func noProjectLock(t *testing.T) {
+	t.Helper()
+	was := lockProjectFile
+	lockProjectFile = func(*os.File) error { return syscall.ENOTSUP }
+	t.Cleanup(func() { lockProjectFile = was })
+}
+
+// **Without the project's lock, nothing is written** (review round 1 of
+// #296, finding 3): where no lock can be taken on the project's folder, an
+// upgrade, signed or not, and a review's lock each refuse in plain words,
+// with no path, and the project is left as it is. No transaction runs
+// without the exclusion.
+func TestWithNoProjectLockNothingIsWritten(t *testing.T) {
+	for _, sign := range []bool{false, true} {
+		t.Run(map[bool]string{false: "an upgrade", true: "a signing upgrade"}[sign], func(t *testing.T) {
+			u := newSigningUpgrade(t, nil)
+			answer := u.offer(t, sign)
+			before := treeOf(t, u.project)
+			noProjectLock(t)
+			status, data := u.confirm(t, answer.Token, sign)
+			if status != http.StatusConflict || refusalOf(data) != "Nothing was written: "+projectNoLockWords {
+				t.Errorf("the confirmation answered %d %s", status, data)
+			}
+			if strings.Contains(string(data), u.project) {
+				t.Errorf("the refusal names a path: %s", data)
+			}
+			sameProject(t, before, treeOf(t, u.project), "an upgrade with no project lock")
+			if got := u.keyFiles(t); len(got) != 0 {
+				t.Errorf("an upgrade with no project lock made %q", got)
+			}
+		})
+	}
+	t.Run("a review's lock", func(t *testing.T) {
+		_, ts, rig, project := reviewProject(t, "", "")
+		rig.answers(t, "valid")
+		review := readReview(t, ts, "")
+		before := treeOf(t, project)
+		noProjectLock(t)
+		status, data := confirm(t, ts, "", review.Token)
+		if status != http.StatusConflict || refusalOf(data) != "Nothing was locked: "+projectNoLockWords {
+			t.Errorf("the confirmation answered %d %s", status, data)
+		}
+		sameProject(t, before, treeOf(t, project), "a review's lock with no project lock")
+	})
 }

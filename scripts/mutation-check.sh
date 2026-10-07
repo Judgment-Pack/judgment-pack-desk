@@ -3110,7 +3110,7 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if k.dir.namesFile(k.seedName, k.seed) != nil {' \
     '	if k.dir.namesFile(k.seedName, k.seed) != nil && false {'
   mutate go "key list: no marker is written" "$SG" \
-    '	marker, err := dir.writeMarker(made.markerName)' \
+    '	marker, err := dir.writeMarkerHolding(made.markerName, record)' \
     '	marker, err := os.FileInfo(nil), error(nil)'
   mutate go "key list: a failed creation leaves its marker" "$SG" \
     '}{{k.keysName, k.keys}, {k.seedName, k.seed}, {k.markerName, k.marker}} {' \
@@ -3494,8 +3494,8 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if remaining := reviewEarlierLimit - e.shown; remaining < limit {' \
     '	if remaining := reviewEarlierLimit - e.shown; false && remaining < limit {'
   mutate go "review: the lock is not checked against the reading" "$RV" \
-    '		if pinned, _, err := lockedSet(left.data); err == nil && pinned.equal(snap.set) {' \
-    '		if _, _, err := lockedSet(left.data); err == nil {'
+    '			if pinned, _, err := lockedSet(after.data); err == nil && pinned.equal(snap.set) {' \
+    '			if _, _, err := lockedSet(after.data); err == nil {'
   mutate go "review: the lock's configuration digest is not compared" "$RV" \
     '	if a.Config != b.Config || len(a.Entries) != len(b.Entries) {' \
     '	if len(a.Entries) != len(b.Entries) {'
@@ -3510,7 +3510,7 @@ func (b *cappedBuffer) exceeded() bool {'
     '			entries = lock.Graphs' \
     '			entries = lock.Packs'
   mutate go "review: the previous lock is not put back" "$RV" \
-    '	return s.putBack(runtimeLockName, left, before)' \
+    '	return s.putBack(runtimeLockName, pinsConfig(config), before)' \
     '	return nil'
   mutate go "review: a lock is left where there was none" internal/desk/project_lock.go \
     '	if err := s.root.Remove(name); err != nil && !errors.Is(err, fs.ErrNotExist) {' \
@@ -3809,10 +3809,10 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if err := undo.write(runtimeConfigName, plan.snap.config, true, plan.upgraded.config); err != nil {
 		return nil, writeFailure(err)'
   mutate go "upgrade: the lock is not checked against what was shown" "$UP" \
-    '		if pinned, _, err := lockedSet(undo.lockLeft.data); err == nil && pinned.equal(plan.upgraded.set) {' \
-    '		if _, _, err := lockedSet(undo.lockLeft.data); err == nil {'
+    '			if pinned, _, err := lockedSet(after.data); err == nil && pinned.equal(plan.upgraded.set) {' \
+    '			if _, _, err := lockedSet(after.data); err == nil {'
   mutate go "upgrade: the previous lock is not put back" "$UP" \
-    '		if err := u.s.restoreLock(u.plan.snap.lock, u.plan.snap.hasLock, u.lockLeft); err != nil {' \
+    '		if err := u.s.restoreLock(u.plan.snap.lock, u.plan.snap.hasLock, u.plan.upgraded.set.Config); err != nil {' \
     '		if err := error(nil); err != nil {'
   mutate go "upgrade: a file the upgrade replaced is not put back" internal/desk/project_lock.go \
     '		return s.atomicWriteChecked(name, previous.data, func(string) error { beforePutBack(); return holds() })' \
@@ -3873,7 +3873,7 @@ func (b *cappedBuffer) exceeded() bool {'
     '	seed, err := s.startupSeedPath()
 	if err != nil && false {'
   mutate go "upgrade key: the item is offered over something kept under the project's name" "$SK" \
-    'range []string{name + seedSuffix, name + keysSuffix, name + creatingSuffix} {' \
+    'range []string{name + creatingSuffix, name + seedSuffix, name + keysSuffix} {' \
     'range []string{} {'
   mutate go "upgrade key: the item is offered where the signing folder is inside the project" "$SK" \
     '	case pathContains(s.projectDir, folder):' \
@@ -3919,17 +3919,19 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if to, _ := strconv.Atoi(plan.to); number > to {' \
     '	if to, _ := strconv.Atoi(plan.to); false && number > to {'
   mutate go "upgrade key: jpack.json names a key that was not made" "$UP" \
-    '		if key, failure = s.makeStartupKey(ctx, dir, plan.seed); failure != nil {' \
-    '		if key, failure = nil, nil; failure != nil {'
+    '		if key, failure, undo.creationLeft = s.makeStartupKey(ctx, dir, plan.seed, plan.snap.config); failure != nil {' \
+    '		if key, failure, undo.creationLeft = nil, nil, false; failure != nil {'
   mutate go "upgrade key: a failed upgrade leaves the key it made" "$UP" \
-    '		if err := key.unmake(); err != nil {' \
-    '		if err := error(nil); err != nil {'
+    '			if err := u.key.unmake(); err != nil {' \
+    '			if err := error(nil); err != nil {'
   mutate go "upgrade key: a project not put back loses the key jpack.json may name" "$UP" \
-    '			if key != nil {
-				message += " The signing key Desk made' \
-    '			if key != nil {
-				_ = key.unmake()
-				message += " The signing key Desk made'
+    '		if len(problems) > 0 {
+			result.keyLeft = true
+		} else {' \
+    '		if len(problems) > 0 {
+			result.keyLeft = true
+			_ = u.key.unmake()
+		} else {'
   mutate go "upgrade key: jpack.json is published naming a key whose folder was replaced" "$UP" \
     '		if name == runtimeConfigName && u.key.stillNamed() != nil {' \
     '		if false {'
@@ -4039,11 +4041,11 @@ func (b *cappedBuffer) exceeded() bool {'
     '(deskIDPattern.MatchString(id) || s.startupKey(id))' \
     'deskIDPattern.MatchString(id)'
   mutate go "upgrade key: the startup desk's rotation is recovered as no desk's" internal/desk/rotation.go \
-    '		if s.startupKey(id) {
-			child = s
+    '			child = s
 		}
 ' \
-    ''
+    '		}
+'
   mutate go "upgrade key: the start recovers rotations only where a desks folder is" internal/desk/desks.go \
     '	defer s.recoverRotations()' \
     '	defer func() {
@@ -4069,11 +4071,11 @@ func (b *cappedBuffer) exceeded() bool {'
 	case identityUnread:
 		return ""'
   mutate go 'audit fix: the sweep removes a key under a name no identity binds' "$SG" \
-    '		if !published && s.startupKey(id) && !s.startupBound() {' \
-    '		if false {'
+    '			if why := s.creationBound(dir, id, inspected[2]); why != "" {' \
+    '			if why := ""; why != "" {'
   mutate go "audit fix: a project with no identity takes its path's hash as one" "$SI" \
-    '	record := identityRecord{ID: randomStartupID()}' \
-    '	record := identityRecord{ID: digestOf([]byte(s.projectDir))}'
+    '	record := identityRecord{ID: randomStartupID(), Path: s.projectDir}' \
+    '	record := identityRecord{ID: digestOf([]byte(s.projectDir)), Path: s.projectDir}'
   mutate go 'audit fix: a moved project does not take the key its jpack.json names' "$SI" \
     '		if named != "" {' \
     '		if false {'
@@ -4100,8 +4102,12 @@ func (b *cappedBuffer) exceeded() bool {'
     '			_, err := dir.root.Lstat(legacy + suffix)
 			if false {'
   mutate go "audit fix: the identity is written without this project's lock" "$SI" \
-    '	unlock, err := s.lockProject(context.Background(), 0)' \
-    '	unlock, err := func() {}, context.Background().Err()'
+    '	unlock, err := s.lockProject(context.Background(), 0)
+	if err != nil {
+		s.log.Printf("desk: this project'"'"'s identity was left for the next start' \
+    '	unlock, err := func() {}, context.Background().Err()
+	if err != nil {
+		s.log.Printf("desk: this project'"'"'s identity was left for the next start'
   mutate go "audit fix: the identity is written without the signing folder's lock" "$SI" \
     '		unlockSigning, err := lockSigning(dir)' \
     '		unlockSigning, err := func() {}, error(nil)'
@@ -4118,21 +4124,21 @@ func (b *cappedBuffer) exceeded() bool {'
     '			if err := made.root.Remove(startupIdentityName); err != nil {' \
     '			if err := error(nil); err != nil {'
   mutate go 'audit fix: an upgrade not put back removes the identity its key needs' "$UP" \
-    '	keptIdentity := u.identity != nil && len(problems) > 0' \
-    '	keptIdentity := false'
+    '	if u.identity != nil && (result.keyLeft || u.creationLeft) {' \
+    '	if u.identity != nil && false {'
   mutate go 'audit fix: an unread identity is said to keep no key' "$AR" \
     '	if name == "" {
 		// The project'"'"'s identity could not be read now (issue #283): what' \
     '	if false {
 		// The project'"'"'s identity could not be read now (issue #283): what'
   mutate go "audit fix: an upgrade runs without this project's lock" "$UP" \
-    '	unlock, failure := s.lockProjectFor(ctx, "an upgrade")' \
+    '	unlock, failure := s.lockProjectFor(ctx, "an upgrade", "written")' \
     '	unlock, failure := func() {}, (*lockFailure)(nil)'
   mutate go "audit fix: a review's lock runs without this project's lock" internal/desk/review.go \
-    '	unlock, failure := s.lockProjectFor(ctx, "a review'"'"'s lock")' \
+    '	unlock, failure := s.lockProjectFor(ctx, "a review'"'"'s lock", "locked")' \
     '	unlock, failure := func() {}, (*lockFailure)(nil)'
   mutate go 'audit fix: a file is put back over what another writer wrote' internal/desk/project_lock.go \
-    '		if !now.holds(wrote) {' \
+    '		if !now.holds(projectFile{data: wrote, present: true}) {' \
     '		if false {'
   mutate go 'audit fix: a file is compared before its old bytes are staged, not before they are published' internal/desk/project_lock.go \
     '		return s.atomicWriteChecked(name, previous.data, func(string) error { beforePutBack(); return holds() })' \
@@ -4140,6 +4146,56 @@ func (b *cappedBuffer) exceeded() bool {'
 			return err
 		}
 		return s.atomicWrite(name, previous.data)'
+
+  # Review round 1 of #296: a creation's key goes only with its own
+  # transaction; an identity two folders hold recovers, makes and rotates
+  # nothing; a rollback takes the key away before its identity; and no
+  # transaction runs without the project's lock, nor puts a lock back over
+  # another configuration's.
+  mutate go 'audit fix: a creation is removed whose marker names another folder' "$SK" \
+    '	case record.Project != s.projectDir:' \
+    '	case false:'
+  mutate go 'audit fix: a creation is removed after jpack.json changed' "$SK" \
+    '	case record.Config != sha256Digest(config):' \
+    '	case record.Config != sha256Digest(config) && false:'
+  mutate go "audit fix: a copied identity is taken as this folder's own" "$SI" \
+    '	if err != nil || holds {
+		s.setShared()' \
+    '	if (err != nil || holds) && false {
+		s.setShared()'
+  mutate go 'audit fix: a rotation is recovered under an identity another folder holds' internal/desk/rotation.go \
+    '			if s.startupShared() {
+				s.log.Printf(' \
+    '			if false {
+				s.log.Printf('
+  mutate go 'audit fix: a rotation is offered under an identity another folder holds' internal/desk/rotation.go \
+    '	if s.startupShared() {
+		return auditRotation{' \
+    '	if false {
+		return auditRotation{'
+  mutate go 'audit fix: a key is offered under an identity another folder holds' "$SK" \
+    '	if s.startupShared() {
+		return notOffered(' \
+    '	if false {
+		return notOffered('
+  mutate go 'audit fix: a rollback that put every file back leaves the key it made' "$UP" \
+    '		if len(problems) > 0 {
+			result.keyLeft = true' \
+    '		if true {
+			result.keyLeft = true'
+  mutate go "audit fix: a key's removal goes on past a file it could not remove" "$SG" \
+    '		if err := k.dir.removeMade(made.name, made.info); err != nil {
+			return err
+		}' \
+    '		if err := k.dir.removeMade(made.name, made.info); err != nil {
+			continue
+		}'
+  mutate go 'audit fix: an upgrade goes on where no project lock can be taken' internal/desk/project_lock.go \
+    '		return nil, &lockFailure{http.StatusConflict, CodeBadRequest, "Nothing was " + done + ": " + projectNoLockWords}' \
+    '		return func() {}, nil'
+  mutate go 'audit fix: a lock of another configuration is put back over' internal/desk/project_lock.go \
+    '		if pinned, _, err := lockedSet(now.data); err == nil && recordForm.MatchString(pinned.Config) && pinned.Config != config {' \
+    '		if pinned, _, err := lockedSet(now.data); err == nil && false && pinned.Config != config {'
 
   # **Rotating a desk's signing key (ADR-0010 PR 3b).** Only the owner's
   # confirmed request rotates, and only where a rotation can be made; the

@@ -400,22 +400,24 @@ func (d *signingDir) removeMade(name string, info os.FileInfo) error {
 }
 
 // unmake removes the list of public keys, the seed and the marker a creation
-// made, each only while its name still holds the file that was made, and
-// only through the folder this holds. A nil key made nothing.
+// made, in that order, each only while its name still holds the file that
+// was made, and only through the folder this holds; it stops at the first
+// that cannot be removed, so the marker stays wherever anything else does,
+// for the next start's sweep (review round 1 of #296). A nil key made
+// nothing.
 func (k *madeKey) unmake() error {
 	if k == nil {
 		return nil
 	}
-	var errs []error
 	for _, made := range []struct {
 		name string
 		info os.FileInfo
 	}{{k.keysName, k.keys}, {k.seedName, k.seed}, {k.markerName, k.marker}} {
 		if err := k.dir.removeMade(made.name, made.info); err != nil {
-			errs = append(errs, err)
+			return err
 		}
 	}
-	return errors.Join(errs...)
+	return nil
 }
 
 // generateDeskKey has the runtime write desk id's seed into dir, checks what
@@ -431,13 +433,20 @@ func (k *madeKey) unmake() error {
 // seed is checked, a later failure removes it by identity (`unmake`). The
 // seed's pathname must then name the seed found through the folder held.
 func generateDeskKey(ctx context.Context, bin string, held heldDir, dir *signingDir, id string) (*madeKey, error) {
+	return generateKeyMarked(ctx, bin, held, dir, id, nil)
+}
+
+// generateKeyMarked is generateDeskKey with a marker that holds record, one
+// line binding the creation to what it was made for, where record is not nil
+// (the startup project's key, `startupCreation`); a desk's marker is empty.
+func generateKeyMarked(ctx context.Context, bin string, held heldDir, dir *signingDir, id string, record []byte) (*madeKey, error) {
 	made := &madeKey{dir: dir, seedName: id + seedSuffix, keysName: id + keysSuffix, markerName: id + creatingSuffix}
 	for _, name := range []string{made.seedName, made.keysName, made.markerName} {
 		if _, err := dir.root.Lstat(name); !errors.Is(err, fs.ErrNotExist) {
 			return nil, fmt.Errorf("something is already kept as %s, and a key is never written over anything", name)
 		}
 	}
-	marker, err := dir.writeMarker(made.markerName)
+	marker, err := dir.writeMarkerHolding(made.markerName, record)
 	if err != nil {
 		return nil, fmt.Errorf("the creation's marker could not be written: %w", err)
 	}
@@ -460,7 +469,7 @@ func generateDeskKey(ctx context.Context, bin string, held heldDir, dir *signing
 		removed := dir.root.Remove(made.seedName)
 		failure := generationFailure(answer.Diagnostics, runErr)
 		if removed != nil && !errors.Is(removed, fs.ErrNotExist) {
-			failure = fmt.Errorf("%w; what it left at %s could not be removed: %v", failure, made.seedName, removed)
+			failure = keyMadeLeft{fmt.Errorf("%w; what it left at %s could not be removed: %v", failure, made.seedName, removed)}
 		}
 		return nil, unmadeAfter(made, failure)
 	}
@@ -508,13 +517,21 @@ func checkSeed(name string, info os.FileInfo) error {
 	return nil
 }
 
-// unmadeAfter is err, after removing what a creation made of its key so far.
+// unmadeAfter is err, after removing what a creation made of its key so far;
+// a keyMadeLeft where any of it could not be removed.
 func unmadeAfter(made *madeKey, err error) error {
 	if removed := made.unmake(); removed != nil {
-		return fmt.Errorf("%w; and what was made of its key could not be removed: %v", err, removed)
+		return keyMadeLeft{fmt.Errorf("%w; and what was made of its key could not be removed: %v", err, removed)}
 	}
 	return err
 }
+
+// keyMadeLeft is a creation that stopped and left some of what it made of
+// its key, in its own words: the upgrade keeps the project's identity beside
+// it (review round 1 of #296).
+type keyMadeLeft struct{ error }
+
+func (e keyMadeLeft) Unwrap() error { return e.error }
 
 // generationFailure is why the runtime did not generate a key: its own words
 // where it gave any, else how the run failed.
@@ -537,9 +554,26 @@ func generationFailure(diagnostics []runtimeDiagnostic, runErr error) error {
 // writeMarker writes a creation's marker, empty and 0600, never over
 // anything, through the folder this holds, and answers it as written.
 func (d *signingDir) writeMarker(name string) (os.FileInfo, error) {
+	return d.writeMarkerHolding(name, nil)
+}
+
+// writeMarkerHolding is writeMarker, the marker holding data, synced.
+func (d *signingDir) writeMarkerHolding(name string, data []byte) (os.FileInfo, error) {
 	file, err := d.root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL|openNoFollow, custodyFileMode)
 	if err != nil {
 		return nil, err
+	}
+	if len(data) > 0 {
+		if _, err := file.Write(data); err != nil {
+			file.Close()
+			_ = d.root.Remove(name)
+			return nil, err
+		}
+		if err := file.Sync(); err != nil {
+			file.Close()
+			_ = d.root.Remove(name)
+			return nil, err
+		}
 	}
 	info, err := file.Stat()
 	if closed := file.Close(); err == nil {
@@ -987,9 +1021,16 @@ func (s *Server) sweepUnfinishedKeys() {
 			s.log.Printf("desk: an unfinished creation's key was left, because whether desk %s was made could not be told: %v", id, err)
 			continue
 		}
-		if !published && s.startupKey(id) && !s.startupBound() {
-			s.log.Printf("desk: the key of an unfinished creation under this project's path, %s, was left: its jpack.json does not name it, and a name made from a path is not bound to one project, so the key may be one a project moved away from here still names", id)
-			continue
+		// **A key goes only with the transaction it was made in** (issue
+		// #283; review round 1 of #296): its marker must name this project's
+		// identity, held by no other folder, its folder, and the jpack.json it
+		// set out to replace, as found now. Anything else leaves the key, its
+		// list and its marker, and the panel says so.
+		if !published && s.startupKey(id) {
+			if why := s.creationBound(dir, id, inspected[2]); why != "" {
+				s.log.Printf("desk: the key of an unfinished creation under this project's name, %s, was left, with its list and its marker: %s", id, why)
+				continue
+			}
 		}
 		keyBetween("sweep: inspected")
 		remove := []int{0, 1, 2}

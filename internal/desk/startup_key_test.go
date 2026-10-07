@@ -246,7 +246,7 @@ func TestTheSigningItemIsShownOnlyWhereItCanBeKept(t *testing.T) {
 			if err := os.WriteFile(strings.TrimSuffix(u.seed, ".seed")+".creating", nil, 0o600); err != nil {
 				t.Fatal(err)
 			}
-		}, upgradeSigning{signingNotOffered, "This project is not offered a signing key, because Desk could not keep one for it: Desk's signing folder already holds a key, or an unfinished one, under this project's name, and a key is never written over anything."}},
+		}, upgradeSigning{signingNotOffered, "This project is not offered a signing key, because Desk could not keep one for it: a signing key's creation for this project did not finish, and Desk keeps that key, its list and its marker until it can tell that it was this project's own; a key is never written over anything."}},
 		{"a key jpack.json names already", withAuditVersions, map[string]string{"jpack.json": `{"configVersion":"6","requireReviewed":true,"audit":{"dir":"a","signingKey":"/elsewhere/k.seed"},"packs":{}}`}, nil,
 			upgradeSigning{State: signingNamed}},
 		{"a chain turned off", withAuditVersions, map[string]string{"jpack.json": `{"configVersion":"6","audit":{"dir":"a","chain":false},"packs":{}}`}, nil,
@@ -501,7 +501,7 @@ func TestAFailedSigningUpgradeLeavesNoKeyAndNoChange(t *testing.T) {
 			}
 		}, http.StatusInternalServerError, "The runtime did not lock the project"},
 		{"a lock that pins something else", func(t *testing.T, u *signingUpgrade) {
-			u.rig.locks(t, upgradeLock(t, u.project, upgradeAfter, bothPacks))
+			u.rig.locks(t, upgradeLock(t, u.project, u.signed(), map[string]string{"alpha": "packs/a.json"}))
 		}, http.StatusConflict, "A file changed while the project was being locked, so every file was put back as it was."},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -678,9 +678,15 @@ func TestAStoppedSigningUpgradeIsSweptAtTheNextStart(t *testing.T) {
 			t.Fatal(err)
 		}
 		u.ts.Close()
-		restartedServer(t, u.s)
-		if got := u.keyFiles(t); len(got) != 0 {
+		// The jpack.json the upgrade set out to replace is gone: the creation
+		// cannot be bound to this transaction, and nothing is removed (review
+		// round 1 of #296).
+		_, logged := restartedServer(t, u.s)
+		if got := u.keyFiles(t); len(got) != 3 {
 			t.Errorf("a start with no jpack.json left %q", got)
+		}
+		if !strings.Contains(logged.String(), "jpack.json could not be read now, or is not there") {
+			t.Errorf("the start did not say why it left the key: %s", logged)
 		}
 	})
 
@@ -1088,7 +1094,7 @@ func TestAnUpgradeNotPutBackLeavesTheKeyForTheNextStart(t *testing.T) {
 	}
 	status, data := u.confirm(t, answer.Token, true)
 	if status != http.StatusInternalServerError || !strings.Contains(refusalOf(data), "the project could not be put back as it was") ||
-		!strings.Contains(refusalOf(data), "The signing key Desk made for this project was left with its creation marker: when Desk next starts, it removes the key unless jpack.json names it.") {
+		!strings.Contains(refusalOf(data), keyLeftWords) {
 		t.Fatalf("the confirmation answered %d %s", status, data)
 	}
 	n := startupNameOf(t, u.s)
@@ -1337,7 +1343,7 @@ func TestTheStartupKeyIsNamedByTheResolvedProject(t *testing.T) {
 	if names := namesIn(t, signing); !slices.Equal(names, []string{want + ".creating", want + ".keys.jsonl", want + ".seed"}) {
 		t.Fatalf("the stopped upgrade left %q", names)
 	}
-	if got := readFile(t, filepath.Join(real, ".desk-private", "project.json")); got != `{"id":"`+want+`"}`+"\n" {
+	if got := readFile(t, filepath.Join(real, ".desk-private", "project.json")); got != identityLine(want, resolved, "") {
 		t.Fatalf("the project's identity is %q", got)
 	}
 	s.Close()

@@ -16,12 +16,23 @@ package desk
 // # What it is
 //
 // A name of 64 lowercase hexadecimal characters, kept in the project, in
-// Desk's private folder, as `.desk-private/project.json`:
+// Desk's private folder, as `.desk-private/project.json`, with the resolved
+// path of the folder it was written in:
 //
-//	{"id":"<64 hex>"}
+//	{"id":"<64 hex>","path":"<the project's resolved path>"}
 //
-// It moves with the project, and no other project has it. A new name is
-// random. It is not kept in `jpack-desk.json`: that file is the project's
+// It moves with the project. A new name is random.
+//
+// # A copy holds it too
+//
+// A copy of the project carries the file, and so the name (review round 1 of
+// #296). A start whose file names another folder looks there: where that
+// folder holds the same name still, two folders hold one identity, and this
+// one is a copy, or the other is: Desk makes no destructive recovery under
+// that name, makes and rotates no key for it here, and says so
+// (`startupShared`). Where the other folder is gone, or holds another name,
+// the project was moved, and the file is written again with this folder's
+// path. Where it cannot be told now, the identity is taken as shared. It is not kept in `jpack-desk.json`: that file is the project's
 // shared configuration, committed and the same in every clone, and its
 // decoders, here and in the page, refuse the whole file for a member they do
 // not know. `.desk-private/` is never committed: the upgrade adds it to
@@ -67,10 +78,14 @@ package desk
 // # What recovery may remove
 //
 // A start's sweep removes an unfinished creation's key only under this
-// project's own name, read from its identity file (`startupBound`). A
-// creation marker under the path's hash, left by a Desk before this one, is
-// not bound to any project: where jpack.json names its seed, only the marker
-// goes; otherwise nothing does.
+// project's own name, read from its identity file and held by no other
+// folder (`startupBound`), and only where the creation's marker binds it to
+// this project and this transaction (`creationBound`, startup_key.go): the
+// identity, the project's resolved path and the digest of the jpack.json the
+// upgrade set out to replace, all three as found. A creation marker under the
+// path's hash, left by a Desk before this one, is not bound to any project:
+// where jpack.json names its seed, only the marker goes; otherwise nothing
+// does.
 
 import (
 	"bytes"
@@ -131,6 +146,8 @@ type startupIdentity struct {
 	from string
 	// problem says, for identityUnread, why, in words with no path.
 	problem string
+	// shared is set where another folder holds this identity too.
+	shared bool
 	// candidate is the name the offer shows a first key under, where the
 	// project has none yet: random, the same for this server's life.
 	candidate string
@@ -167,14 +184,35 @@ func (s *Server) startupName() string {
 	return digestOf([]byte(s.projectDir))
 }
 
-// startupBound is whether the project's name is the one its own identity
-// file holds, which a recovery may remove a key under: never the path's
-// hash, which another project at the same path has too.
-func (s *Server) startupBound() bool {
+// startupKept is whether the project's name is the one its own identity
+// file holds.
+func (s *Server) startupKept() bool {
 	s.startup.mu.RLock()
 	defer s.startup.mu.RUnlock()
 	return s.cfg.deskID == "" && s.startup.state == identityKept
 }
+
+// startupBound is whether the project's name is the one its own identity
+// file holds, and no other folder holds: the only name a recovery may remove
+// a key under. Never the path's hash, which another project at the same
+// path has too, and never an identity a copy shares.
+func (s *Server) startupBound() bool {
+	s.startup.mu.RLock()
+	defer s.startup.mu.RUnlock()
+	return s.cfg.deskID == "" && s.startup.state == identityKept && !s.startup.shared
+}
+
+// startupShared is whether another folder holds this project's identity
+// too, as a copy of the project does.
+func (s *Server) startupShared() bool {
+	s.startup.mu.RLock()
+	defer s.startup.mu.RUnlock()
+	return s.cfg.deskID == "" && s.startup.state == identityKept && s.startup.shared
+}
+
+// sharedWords is what the panel says of a project whose identity another
+// folder holds too.
+const sharedWords = "this project's identity is also held by another folder, as a copy of the project holds it, so Desk makes and rotates no key for it here, and recovers nothing under it"
 
 // newStartupKeyName is the name a first key of this project is made under:
 // its identity, or the candidate the offer shows until one is written; an
@@ -198,7 +236,14 @@ func (s *Server) newStartupKeyName() (string, error) {
 func (s *Server) setStartup(state identityState, id, from, problem string) {
 	s.startup.mu.Lock()
 	defer s.startup.mu.Unlock()
-	s.startup.state, s.startup.id, s.startup.from, s.startup.problem = state, id, from, problem
+	s.startup.state, s.startup.id, s.startup.from, s.startup.problem, s.startup.shared = state, id, from, problem, false
+}
+
+// setShared records that another folder holds this identity too.
+func (s *Server) setShared() {
+	s.startup.mu.Lock()
+	defer s.startup.mu.Unlock()
+	s.startup.shared = true
 }
 
 // randomStartupID is a new project name. crypto/rand never fails, and never
@@ -212,6 +257,7 @@ func randomStartupID() string {
 // identityRecord is the identity file, as Desk writes it.
 type identityRecord struct {
 	ID   string `json:"id"`
+	Path string `json:"path"`
 	From string `json:"from,omitempty"`
 }
 
@@ -226,7 +272,7 @@ func (r identityRecord) line() []byte {
 // where it says so.
 func parseIdentity(data []byte) (identityRecord, error) {
 	var record identityRecord
-	if json.Unmarshal(data, &record) != nil || !startupIDForm.MatchString(record.ID) ||
+	if json.Unmarshal(data, &record) != nil || !startupIDForm.MatchString(record.ID) || !filepath.IsAbs(record.Path) ||
 		record.From != "" && (!startupIDForm.MatchString(record.From) || record.From == record.ID) ||
 		!bytes.Equal(record.line(), data) {
 		return identityRecord{}, errors.New("its identity file is not one Desk writes")
@@ -361,11 +407,79 @@ func (s *Server) resolveStartupIdentity() {
 		return
 	case found:
 		s.setStartup(identityKept, record.ID, record.From, "")
+		if record.Path != s.projectDir {
+			if record, info = s.copiedOrMoved(private, record, info); s.startupShared() {
+				return
+			}
+		}
 		if record.From == "" {
 			return
 		}
 	}
 	s.migrateStartupIdentity(private, record, info, found)
+}
+
+// copiedOrMoved tells, for an identity file written in another folder,
+// whether that folder holds the same identity still: a copy, which makes the
+// identity shared (`startupShared`); or not, a move, after which the file is
+// written again with this folder's path, under this project's lock taken
+// once. Where it cannot be told now, the identity is taken as shared. It
+// answers the record and the file as they are then.
+func (s *Server) copiedOrMoved(private *os.Root, record identityRecord, info os.FileInfo) (identityRecord, os.FileInfo) {
+	holds, err := s.folderHoldsIdentity(record.Path, record.ID)
+	if err != nil || holds {
+		s.setShared()
+		s.log.Printf("desk: this project's identity is also held by %s, or that could not be told now (%v), so Desk makes and rotates no key under it here, and recovers nothing under it", record.Path, err)
+		return record, info
+	}
+	unlock, err := s.lockProject(context.Background(), 0)
+	if err != nil {
+		s.log.Printf("desk: this project was moved from %s; its identity is written again with its folder at the next start, because this project's lock was not taken: %v", record.Path, err)
+		return record, info
+	}
+	defer unlock()
+	moved := identityRecord{ID: record.ID, Path: s.projectDir, From: record.From}
+	written, err := writeIdentity(private, moved, info)
+	if err != nil {
+		s.log.Printf("desk: this project was moved from %s, and its identity could not be written again with its folder: %v", record.Path, err)
+		return record, info
+	}
+	s.log.Printf("desk: this project was moved from %s, and keeps its identity", record.Path)
+	return moved, written
+}
+
+// folderHoldsIdentity is whether the folder at path, another than this
+// project's, holds id in its identity file: false where there is no folder
+// there, or it holds no identity or another; an error where that could not
+// be read now. The folder at path that is this project's own, reached by
+// another spelling, holds none other.
+func (s *Server) folderHoldsIdentity(path, id string) (bool, error) {
+	other, err := os.OpenRoot(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	defer other.Close()
+	if here, err := s.root.Stat("."); err == nil {
+		if there, err := other.Stat("."); err == nil && os.SameFile(here, there) {
+			return false, nil
+		}
+	}
+	private, _, err := openOwnFolder(other, []string{startupIdentityDir}, false, startupIdentityKept)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	defer private.Close()
+	record, _, found, err := readIdentity(private)
+	if err != nil {
+		return false, err
+	}
+	return found && record.ID == id, nil
 }
 
 // migrateStartupIdentity writes the project's identity where its private
@@ -430,10 +544,10 @@ func (s *Server) chooseStartupIdentity(dir *signingDir) (identityRecord, error) 
 			return identityRecord{}, err
 		}
 		if named != "" {
-			return identityRecord{ID: named}, nil
+			return identityRecord{ID: named, Path: s.projectDir}, nil
 		}
 	}
-	record := identityRecord{ID: randomStartupID()}
+	record := identityRecord{ID: randomStartupID(), Path: s.projectDir}
 	from, err := s.legacyStampingToMove(dir)
 	if err != nil {
 		return identityRecord{}, err
@@ -544,7 +658,7 @@ func (s *Server) finishStartupMove(private *os.Root, record identityRecord, info
 		}
 		s.log.Printf("desk: the stamping settings kept under this project's former name, %s, are kept under its name from now on", record.From)
 	}
-	if _, err := writeIdentity(private, identityRecord{ID: record.ID}, info); err != nil {
+	if _, err := writeIdentity(private, identityRecord{ID: record.ID, Path: record.Path}, info); err != nil {
 		s.log.Printf("desk: this project's identity still names its former name, for the next start: %v", err)
 		return
 	}

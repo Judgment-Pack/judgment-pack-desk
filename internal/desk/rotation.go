@@ -770,6 +770,12 @@ func (s *Server) recoverRotations() {
 	for _, id := range markers {
 		child := s.desks[id]
 		if s.startupKey(id) {
+			// **No recovery under an identity another folder holds**
+			// (review round 1 of #296): its trail may be a copy's.
+			if s.startupShared() {
+				s.log.Printf("desk: an unfinished rotation of this project's key was left as it is, because %s", sharedWords)
+				continue
+			}
 			child = s
 		}
 		if child == nil {
@@ -821,6 +827,10 @@ func (s *Server) recoverRotation(dir *signingDir) {
 
 /* The offer, and the owner's confirmation ------------------------------------ */
 
+// creationLeftWords is what the panel says where a creation of the startup
+// project's key did not finish, and the start left it.
+const creationLeftWords = "A signing key's creation for this project did not finish, and Desk could not establish that it was this project's own, from this folder, over the jpack.json found now: it keeps that key, its list and its creation's marker as they are, and rotates no key until they are resolved."
+
 // What the panel says of rotating the desk's key.
 const (
 	// rotationAvailable: the owner can rotate it; Token confirms it.
@@ -854,6 +864,9 @@ func (s *Server) rotationOffer(ctx context.Context, project heldDir, keys auditK
 	if s.inheritsSigningKey() {
 		return auditRotation{State: rotationUnavailable, Reason: "JPACK_SIGNING_KEY is set where Desk was started, and the runtime signs this project's records with the key it names, not with the key Desk keeps, so Desk rotates no key here."}
 	}
+	if s.startupShared() {
+		return auditRotation{State: rotationUnavailable, Reason: "Desk rotates no key here: " + sharedWords + "."}
+	}
 	if keys.State == keysStartup {
 		return auditRotation{State: rotationUnavailable, Reason: "Desk keeps no signing key for the project it was started on, so it has none to rotate."}
 	}
@@ -874,6 +887,14 @@ func (s *Server) rotationOffer(ctx context.Context, project heldDir, keys auditK
 	markerName, _, _, _ := rotationNames(s.signingKeyName())
 	if _, err := dir.root.Lstat(markerName); !errors.Is(err, fs.ErrNotExist) {
 		return s.unfinishedRotation(ctx, project, dir)
+	}
+	// **A creation left unfinished, and left by the start** (review round 1
+	// of #296): its key, list and marker stay where the start could not bind
+	// them to this project, and the panel says so.
+	if s.cfg.deskID == "" {
+		if _, err := dir.root.Lstat(s.signingKeyName() + creatingSuffix); !errors.Is(err, fs.ErrNotExist) {
+			return auditRotation{State: rotationUnavailable, Reason: creationLeftWords}
+		}
 	}
 	// **On the project Desk was started on, only the key its jpack.json names,
 	// by Desk's own path to it, is rotated** (review round 1 of #261). A

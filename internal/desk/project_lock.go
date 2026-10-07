@@ -33,9 +33,10 @@ package desk
 //
 // The owner's actions wait a bounded time for it (projectLockWait), then
 // refuse in plain words with no path. A start tries it once, and where it is
-// held, changes nothing until the next start. Where no lock can be taken here
-// (a build or a file system with no flock), the owner's actions go on as
-// before the lock, said in Desk's log, and a start changes nothing.
+// held, changes nothing until the next start. **Where no lock can be taken
+// here** (a build or a file system with no flock), nothing is written: the
+// owner's actions refuse, and say why, and a start changes nothing (review
+// round 1 of #296). No transaction runs without the exclusion.
 //
 // The lock belongs to the open file description, so a second descriptor of
 // the folder, in this process or another, is excluded as another process
@@ -44,10 +45,12 @@ package desk
 // starts inherits it.
 //
 // **And what a transaction puts back, it puts back only over what it wrote**
-// (`putBack`): each file, and the lock its `packs lock` left, is compared
-// with the bytes the transaction wrote, or read right after its runtime ran,
-// immediately before the old bytes are published; a file that holds anything
-// else was written since by another writer, and is left as it is, and said.
+// (`putBack`): each file is compared with the bytes the transaction wrote,
+// and the lock with the configuration the transaction wrote or locked, by the
+// digest the lock pins (`restoreLock`), immediately before the old bytes are
+// published. A lock read after the runtime ran is never taken for the one it
+// wrote. A file that holds anything else was written since by another
+// writer, and is left as it is, and said.
 
 import (
 	"context"
@@ -73,8 +76,12 @@ var (
 )
 
 // projectBusyWords is what an owner's action that could not take the lock in
-// time says, in words with no path.
-const projectBusyWords = "another Desk process is changing this project's jpack.json or its lock; try again."
+// time says, in words with no path; projectNoLockWords what one says where no
+// lock can be taken here at all.
+const (
+	projectBusyWords   = "another Desk process is changing this project's jpack.json or its lock; try again."
+	projectNoLockWords = "Desk can take no lock on this project's folder here, and without one it cannot keep another Desk process from changing jpack.json or its lock at the same time."
+)
 
 // projectLockWait bounds how long an owner's action waits for the lock. A
 // variable only so a test can see the wait end without waiting it out.
@@ -121,16 +128,17 @@ func (s *Server) lockProject(ctx context.Context, wait time.Duration) (unlock fu
 }
 
 // lockProjectFor is the lock an owner's action takes, bounded: the release,
-// or the refusal to answer with nothing written. Where no lock can be taken
-// here, the action goes on as before the lock, and Desk's log says so.
-func (s *Server) lockProjectFor(ctx context.Context, what string) (func(), *lockFailure) {
+// or the refusal, done names what was not done ("written", "locked"). Where
+// no lock can be taken here, the action is refused too: no fallback without
+// exclusion.
+func (s *Server) lockProjectFor(ctx context.Context, what, done string) (func(), *lockFailure) {
 	unlock, err := s.lockProject(ctx, projectLockWait)
 	switch {
 	case errors.Is(err, errProjectBusy):
-		return nil, &lockFailure{http.StatusConflict, CodeBadRequest, "Nothing was written: " + projectBusyWords}
+		return nil, &lockFailure{http.StatusConflict, CodeBadRequest, "Nothing was " + done + ": " + projectBusyWords}
 	case err != nil:
-		s.log.Printf("desk: %s goes on without this project's lock: %v", what, err)
-		return func() {}, nil
+		s.log.Printf("desk: %s was refused, because this project's lock could not be taken: %v", what, err)
+		return nil, &lockFailure{http.StatusConflict, CodeBadRequest, "Nothing was " + done + ": " + projectNoLockWords}
 	}
 	return unlock, nil
 }
@@ -148,10 +156,6 @@ type projectFile struct {
 	present bool
 	err     error
 }
-
-// errNotReadYet is a file a transaction's runtime may have written, read
-// before it was.
-var errNotReadYet = errors.New("it was not read after the runtime ran")
 
 // readProjectFile reads name, a project file Desk writes, by the file API's
 // rules for the path: what it holds now.
@@ -175,16 +179,13 @@ func (f projectFile) holds(wrote projectFile) bool {
 	return f.err == nil && wrote.err == nil && f.present == wrote.present && (!f.present || string(f.data) == string(wrote.data))
 }
 
-// putBack puts previous back at name, only where name still holds wrote,
-// what the transaction wrote there: compared after previous is staged,
-// immediately before it is published, and before a file that was not there
-// is removed. Anything else is errPutBackChanged, or the reason it could not
-// be read, and the file is left as it is. The caller holds the desk's write
-// lock and the project's.
-func (s *Server) putBack(name string, wrote, previous projectFile) error {
-	if wrote.err != nil {
-		return fmt.Errorf("Desk could not tell whether it still holds what Desk wrote, so it was left as it is: %w", wrote.err)
-	}
+// putBack puts previous back at name, only where name still holds what the
+// transaction wrote there: ours says so of what it holds now, nil where it
+// does. It is asked after previous is staged, immediately before it is
+// published, and before a file that was not there is removed. Anything else
+// is ours's reason, or the reason it could not be read, and the file is left
+// as it is. The caller holds the desk's write lock and the project's.
+func (s *Server) putBack(name string, ours func(now projectFile) error, previous projectFile) error {
 	if err := s.refuseSymlinkedPath(name); err != nil {
 		return err
 	}
@@ -193,10 +194,7 @@ func (s *Server) putBack(name string, wrote, previous projectFile) error {
 		if now.err != nil {
 			return fmt.Errorf("it could not be read now, so it was left as it is: %w", now.err)
 		}
-		if !now.holds(wrote) {
-			return errPutBackChanged
-		}
-		return nil
+		return ours(now)
 	}
 	beforePutBack := func() {
 		if testHookBeforePutBack != nil {
@@ -214,4 +212,37 @@ func (s *Server) putBack(name string, wrote, previous projectFile) error {
 		return err
 	}
 	return nil
+}
+
+// wroteBytes is putBack's test for a file the transaction wrote whole: it
+// holds exactly those bytes.
+func wroteBytes(wrote []byte) func(projectFile) error {
+	return func(now projectFile) error {
+		if !now.holds(projectFile{data: wrote, present: true}) {
+			return errPutBackChanged
+		}
+		return nil
+	}
+}
+
+// errLockNotOurs is a lock that pins another configuration than the one the
+// transaction wrote or locked: another writer's.
+var errLockNotOurs = errors.New("it is a lock of another configuration than the one Desk wrote or locked, so it is another writer's, and was left as it is")
+
+// pinsConfig is putBack's test for the lock: it is no other transaction's
+// lock. A lock that pins config, the digest of the configuration the
+// transaction wrote or locked, is its own; a file that is not a lock at all
+// (none, one cut short, one that names no configuration's digest) is no
+// transaction's work; a lock of another configuration is another writer's,
+// however soon after the transaction's runtime it was read.
+func pinsConfig(config string) func(projectFile) error {
+	return func(now projectFile) error {
+		if !now.present {
+			return nil
+		}
+		if pinned, _, err := lockedSet(now.data); err == nil && recordForm.MatchString(pinned.Config) && pinned.Config != config {
+			return errLockNotOurs
+		}
+		return nil
+	}
 }

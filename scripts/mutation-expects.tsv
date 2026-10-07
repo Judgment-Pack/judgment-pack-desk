@@ -122,17 +122,26 @@ go	any world-writable ancestor is admitted	TestARefusedStoreTouchesTheFilesystem
 go	audit fix: a check that finds no stamp leaves what the scheduler knows	TestACheckWithRootsReplacesWhatTheSchedulerKnows
 go	audit fix: a check with roots keeps no digest of the head	TestACheckKeepsTheDigestOfTheHeadItFindsStamped,TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved
 go	audit fix: a checkpoint known with no digest is taken for the head	TestACheckWithRootsReplacesWhatTheSchedulerKnows
+go	audit fix: a copied identity is taken as this folder's own	TestACopyOfAProjectRemovesNoKeyOfTheOriginal,TestARotationUnderASharedIdentityIsLeft
 go	audit fix: a count since a hand-over is given for another trail	TestTheRecordsSinceAHandOverAreTheReports
 go	audit fix: a count since a hand-over is of another record	TestTheRecordsSinceAHandOverAreTheReports
+go	audit fix: a creation is removed after jpack.json changed	TestACreationIsRemovedOnlyWhereItsMarkerBindsIt,TestAStoppedSigningUpgradeIsSweptAtTheNextStart
+go	audit fix: a creation is removed whose marker names another folder	TestACreationIsRemovedOnlyWhereItsMarkerBindsIt
 go	audit fix: a file is compared before its old bytes are staged, not before they are published	TestAReviewLockWaitsForThisProjectsLockAndPutsBackOnlyItsOwn,TestARollbackPutsBackOnlyWhatItWrote
 go	audit fix: a file is put back over what another writer wrote	TestAReviewLockWaitsForThisProjectsLockAndPutsBackOnlyItsOwn,TestARollbackPutsBackOnlyWhatItWrote
 go	audit fix: a key is made under a name the project does not keep	TestAKeyIsMadeOnlyUnderTheProjectsIdentity
+go	audit fix: a key is offered under an identity another folder holds	TestACopyOfAProjectRemovesNoKeyOfTheOriginal
 go	audit fix: a key is offered where the identity cannot be kept	TestAKeyIsNotOfferedWhereItsIdentityCannotBeKept
+go	audit fix: a key's removal goes on past a file it could not remove	TestAnUpgradePutBackLeavesNoKeyWithoutItsIdentity
+go	audit fix: a lock of another configuration is put back over	TestARollbackPutsBackOnlyWhatItWrote,TestAFailedUpgradeLockPutsEveryFileBack,TestALockOfAnythingElseIsPutBack
 go	audit fix: a moved project does not take the key its jpack.json names	TestAKeyFromBeforeTheIdentityIsKeptWhenItsProjectMoves
 go	audit fix: a project with no identity takes its path's hash as one	TestAKeyFromBeforeTheIdentityIsKeptWhenItsProjectMoves,TestTheIdentityMovesStampingSettingsAndAStopIsFinished
 go	audit fix: a project's key is named by its path, not its identity	TestAFailedSigningUpgradeLeavesNoKeyAndNoChange,TestAKeyFromBeforeTheIdentityIsKeptWhenItsProjectMoves,TestAMovedProjectKeepsItsKeyAndItsPathTakesNothing,TestARotationOfTheStartupKeyFollowsWhatJpackJsonNames,TestAStoppedSigningUpgradeIsSweptAtTheNextStart,TestAnInheritedKeyHoldsTheStartupKeyStill,TestAnUpgradeNotPutBackLeavesTheKeyForTheNextStart,TestAnUpgradeWaitsForThisProjectsLockAndThenRefuses,TestChoosingTheSigningKeyWritesSixAndTheKeyTogether,TestNoPathOfTheStartupKeyReachesThePage,TestTheDecisionRecordReadsTheStartupKeyAfterTheUpgrade,TestTheIdentityIsWrittenOnlyUnderBothLocks,TestTheIdentityMovesStampingSettingsAndAStopIsFinished,TestTheSigningUpgradeWaitsForTheSigningFolder,TestTheStartFinishesARotationOfTheStartupKey,TestTheStartupKeyIsNamedByTheResolvedProject,TestTheUpgradeWritesTheIdentityBeforeTheKey
 go	audit fix: a repaired trail's lines are counted as records	TestTheRecordsPendingAStampAfterARepairAreTheReports,TestTheRecordsSinceAHandOverAreTheReports,TestWhatFollowsARecordIsCountedFromTheReport
 go	audit fix: a review's lock runs without this project's lock	TestAReviewLockWaitsForThisProjectsLockAndPutsBackOnlyItsOwn
+go	audit fix: a rollback that put every file back leaves the key it made	TestAnUpgradePutBackLeavesNoKeyWithoutItsIdentity,TestAFailedSigningUpgradeLeavesNoKeyAndNoChange
+go	audit fix: a rotation is offered under an identity another folder holds	TestARotationUnderASharedIdentityIsLeft
+go	audit fix: a rotation is recovered under an identity another folder holds	TestARotationUnderASharedIdentityIsLeft
 go	audit fix: a run keeps no record digest	TestAStampAnswerIsReadAsDocumented,TestTheSchedulerStampsATrailRestoredToAnEarlierPointAgain,TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved
 go	audit fix: a stopped migration is not finished at the next start	TestTheIdentityMovesStampingSettingsAndAStopIsFinished
 go	audit fix: a trail's unchained lines are counted as records	TestWhatFollowsARecordIsCountedFromTheReport
@@ -140,6 +149,7 @@ go	audit fix: after no record, every line is pending	TestWhatFollowsARecordIsCou
 go	audit fix: an identity in another spelling is read	TestAnIdentityThatCannotBeReadNamesNothing
 go	audit fix: an identity that cannot be read is taken for none	TestAnIdentityThatCannotBeReadNamesNothing
 go	audit fix: an unread identity is said to keep no key	TestAnIdentityThatCannotBeReadNamesNothing
+go	audit fix: an upgrade goes on where no project lock can be taken	TestWithNoProjectLockNothingIsWritten
 go	audit fix: an upgrade not put back removes the identity its key needs	TestAnUpgradeNotPutBackLeavesTheKeyForTheNextStart
 go	audit fix: an upgrade put back whole keeps the identity it wrote	TestAFailedSigningUpgradeLeavesNoKeyAndNoChange,TestNoPathOfTheStartupKeyReachesThePage,TestTheSigningUpgradeWaitsForTheSigningFolder,TestTheUpgradeWritesTheIdentityBeforeTheKey
 go	audit fix: an upgrade runs without this project's lock	TestAnUpgradeWaitsForThisProjectsLockAndThenRefuses,TestTwoDesksOnOneProjectUpgradeOneAtATime
