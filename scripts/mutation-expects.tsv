@@ -125,21 +125,21 @@ go	audit fix: a checkpoint known with no digest is taken for the head	TestACheck
 go	audit fix: a copied identity is taken as this folder's own	TestACopyOfAProjectRemovesNoKeyOfTheOriginal,TestARotationUnderASharedIdentityIsLeft
 go	audit fix: a count since a hand-over is given for another trail	TestTheRecordsSinceAHandOverAreTheReports
 go	audit fix: a count since a hand-over is of another record	TestTheRecordsSinceAHandOverAreTheReports
-go	audit fix: a creation is removed after jpack.json changed	TestACreationIsRemovedOnlyWhereItsMarkerBindsIt,TestAStoppedSigningUpgradeIsSweptAtTheNextStart
+go	audit fix: a creation is removed after jpack.json changed	TestACreationIsRemovedOnlyWhereItsMarkerBindsIt
 go	audit fix: a creation is removed whose marker names another folder	TestACreationIsRemovedOnlyWhereItsMarkerBindsIt
 go	audit fix: a file is compared before its old bytes are staged, not before they are published	TestAReviewLockWaitsForThisProjectsLockAndPutsBackOnlyItsOwn,TestARollbackPutsBackOnlyWhatItWrote
-go	audit fix: a file is put back over what another writer wrote	TestAReviewLockWaitsForThisProjectsLockAndPutsBackOnlyItsOwn,TestARollbackPutsBackOnlyWhatItWrote
+go	audit fix: a file is put back over what another writer wrote	TestARollbackPutsBackOnlyWhatItWrote
 go	audit fix: a key is made under a name the project does not keep	TestAKeyIsMadeOnlyUnderTheProjectsIdentity
 go	audit fix: a key is offered under an identity another folder holds	TestACopyOfAProjectRemovesNoKeyOfTheOriginal
 go	audit fix: a key is offered where the identity cannot be kept	TestAKeyIsNotOfferedWhereItsIdentityCannotBeKept
 go	audit fix: a key's removal goes on past a file it could not remove	TestAnUpgradePutBackLeavesNoKeyWithoutItsIdentity
-go	audit fix: a lock of another configuration is put back over	TestARollbackPutsBackOnlyWhatItWrote,TestAFailedUpgradeLockPutsEveryFileBack,TestALockOfAnythingElseIsPutBack
+go	audit fix: a lock of another configuration is put back over	TestAFailedUpgradeLockPutsEveryFileBack,TestALockOfAnythingElseIsPutBack,TestARollbackPutsBackOnlyWhatItWrote
 go	audit fix: a moved project does not take the key its jpack.json names	TestAKeyFromBeforeTheIdentityIsKeptWhenItsProjectMoves
 go	audit fix: a project with no identity takes its path's hash as one	TestAKeyFromBeforeTheIdentityIsKeptWhenItsProjectMoves,TestTheIdentityMovesStampingSettingsAndAStopIsFinished
 go	audit fix: a project's key is named by its path, not its identity	TestAFailedSigningUpgradeLeavesNoKeyAndNoChange,TestAKeyFromBeforeTheIdentityIsKeptWhenItsProjectMoves,TestAMovedProjectKeepsItsKeyAndItsPathTakesNothing,TestARotationOfTheStartupKeyFollowsWhatJpackJsonNames,TestAStoppedSigningUpgradeIsSweptAtTheNextStart,TestAnInheritedKeyHoldsTheStartupKeyStill,TestAnUpgradeNotPutBackLeavesTheKeyForTheNextStart,TestAnUpgradeWaitsForThisProjectsLockAndThenRefuses,TestChoosingTheSigningKeyWritesSixAndTheKeyTogether,TestNoPathOfTheStartupKeyReachesThePage,TestTheDecisionRecordReadsTheStartupKeyAfterTheUpgrade,TestTheIdentityIsWrittenOnlyUnderBothLocks,TestTheIdentityMovesStampingSettingsAndAStopIsFinished,TestTheSigningUpgradeWaitsForTheSigningFolder,TestTheStartFinishesARotationOfTheStartupKey,TestTheStartupKeyIsNamedByTheResolvedProject,TestTheUpgradeWritesTheIdentityBeforeTheKey
 go	audit fix: a repaired trail's lines are counted as records	TestTheRecordsPendingAStampAfterARepairAreTheReports,TestTheRecordsSinceAHandOverAreTheReports,TestWhatFollowsARecordIsCountedFromTheReport
 go	audit fix: a review's lock runs without this project's lock	TestAReviewLockWaitsForThisProjectsLockAndPutsBackOnlyItsOwn
-go	audit fix: a rollback that put every file back leaves the key it made	TestAnUpgradePutBackLeavesNoKeyWithoutItsIdentity,TestAFailedSigningUpgradeLeavesNoKeyAndNoChange
+go	audit fix: a rollback that put every file back leaves the key it made	TestAFailedSigningUpgradeLeavesNoKeyAndNoChange,TestAnUpgradePutBackLeavesNoKeyWithoutItsIdentity
 go	audit fix: a rotation is offered under an identity another folder holds	TestARotationUnderASharedIdentityIsLeft
 go	audit fix: a rotation is recovered under an identity another folder holds	TestARotationUnderASharedIdentityIsLeft
 go	audit fix: a run keeps no record digest	TestAStampAnswerIsReadAsDocumented,TestTheSchedulerStampsATrailRestoredToAnEarlierPointAgain,TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved
@@ -928,7 +928,6 @@ go	upgrade key: a rotation is offered where jpack.json names another file	TestAR
 go	upgrade key: a rotation is reported made where jpack.json no longer names the key	TestARotationOfTheStartupKeyFollowsWhatJpackJsonNames
 go	upgrade key: a rotation's token does not bind the startup key's file	TestARotationOfTheStartupKeyFollowsWhatJpackJsonNames
 go	upgrade key: a signing folder held elsewhere is made in anyway	TestTheSigningUpgradeWaitsForTheSigningFolder
-go	upgrade key: another project's marker is the startup project's	TestAKeyFromBeforeTheIdentityIsKeptWhenItsProjectMoves
 go	upgrade key: jpack.json is published naming a key whose folder was replaced	TestAFailedSigningUpgradeLeavesNoKeyAndNoChange
 go	upgrade key: jpack.json names a key that was not made	TestChoosingTheSigningKeyWritesSixAndTheKeyTogether
 go	upgrade key: no jpack.json is taken for one that cannot be read	TestAStoppedSigningUpgradeIsSweptAtTheNextStart

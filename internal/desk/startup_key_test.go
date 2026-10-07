@@ -697,8 +697,16 @@ func TestAStoppedSigningUpgradeIsSweptAtTheNextStart(t *testing.T) {
 		if err := os.MkdirAll(folder, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		for _, file := range []string{other + ".creating", other + ".seed"} {
-			if err := os.WriteFile(filepath.Join(folder, file), nil, 0o600); err != nil {
+		// The project has an identity of its own, and the marker under the
+		// other name records this very folder and jpack.json, as a creation
+		// under a name this project no longer has would: only the name tells
+		// it is not this project's (review round 1 of #296).
+		if err := os.Mkdir(filepath.Join(u.project, ".desk-private"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		marker := startupCreation{ID: other, Project: u.s.projectDir, Config: sha256Digest([]byte(readFile(t, filepath.Join(u.project, "jpack.json"))))}.line()
+		for file, data := range map[string][]byte{other + ".creating": marker, other + ".seed": nil} {
+			if err := os.WriteFile(filepath.Join(folder, file), data, 0o600); err != nil {
 				t.Fatal(err)
 			}
 		}
