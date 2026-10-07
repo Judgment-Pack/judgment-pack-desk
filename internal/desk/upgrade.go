@@ -733,7 +733,7 @@ func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string
 		}
 		defer key.close()
 	}
-	undo := &upgradeUndo{s: s, plan: plan}
+	undo := &upgradeUndo{s: s, plan: plan, key: key}
 	defer undo.close()
 	fail := func(failure *lockFailure) (any, *lockFailure) {
 		if err := undo.run(); err != nil {
@@ -761,12 +761,12 @@ func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string
 		}
 	}
 	// **The key is still where the configuration names it**, or nothing names
-	// it: the seed's pathname must name the seed found through the folder held.
+	// it: the seed's pathname must name the seed found through the folder
+	// held, asked at the last moment before jpack.json is published, once its
+	// bytes are staged and synced (`upgradeUndo.write`), and again before the
+	// marker goes.
 	if key != nil {
 		keyBetween("upgrade: before naming")
-		if key.stillNamed() != nil {
-			return fail(&lockFailure{http.StatusConflict, CodeStale, "Desk's signing folder was replaced before jpack.json named the key, so every file was put back as it was. Review the upgrade again."})
-		}
 	}
 	if err := undo.write(runtimeConfigName, plan.snap.config, true, plan.upgraded.config); err != nil {
 		return fail(writeFailure(err))
@@ -787,6 +787,16 @@ func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string
 		}
 		return fail(&lockFailure{http.StatusConflict, CodeStale, "A file changed while the project was being locked, so every file was put back as it was. Review the upgrade again."})
 	}
+	// The key's pathname, checked again now jpack.json names it and the lock
+	// pins it: a folder replaced since the configuration was published leaves
+	// it naming a seed that is not there, so every file goes back, and the
+	// key, found through the folder held, with them (review round 1 of #261).
+	if key != nil {
+		keyBetween("upgrade: named")
+		if key.stillNamed() != nil {
+			return fail(&lockFailure{http.StatusConflict, CodeStale, "Desk's signing folder was replaced while the project was being locked, so every file was put back as it was. Review the upgrade again."})
+		}
+	}
 	result := struct {
 		Files                  int    `json:"files"`
 		ConfigVersion          string `json:"configVersion"`
@@ -802,7 +812,6 @@ func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string
 	// The key is named and pinned: its marker goes. Where it cannot, the next
 	// start removes the marker alone, since jpack.json names the key.
 	if key != nil {
-		keyBetween("upgrade: named")
 		if err := key.settle(); err != nil {
 			s.log.Printf("desk: this project's new signing key keeps its creation marker; the next start removes it: %v", err)
 		}
@@ -820,6 +829,9 @@ var errUpgradeMoved = errors.New("a file changed after you reviewed the upgrade"
 
 // writeFailure is a write the upgrade could not make.
 func writeFailure(err error) *lockFailure {
+	if errors.Is(err, errMovedBeforePublish) {
+		return &lockFailure{http.StatusConflict, CodeStale, "Desk's signing folder was replaced before jpack.json named the key, so every file was put back as it was. Review the upgrade again."}
+	}
 	if errors.Is(err, errUpgradeMoved) {
 		return &lockFailure{http.StatusConflict, CodeStale, "The project changed after you reviewed the upgrade, so every file was put back as it was. Review it again."}
 	}
@@ -839,6 +851,10 @@ type upgradeUndo struct {
 	written []upgradeWritten
 	// locking is set once the runtime may have written a lock.
 	locking bool
+	// key is the signing key the configuration this upgrade writes names,
+	// where it names one: jpack.json is published only while the key's
+	// pathname names the key made (`write`).
+	key *madeKey
 }
 
 // upgradeMade is a folder the upgrade made: its name in the held folder it
@@ -940,6 +956,14 @@ func (u *upgradeUndo) write(name string, before []byte, present bool, after []by
 			return errUpgradeMoved
 		case !present && codeOf(err) != CodeNotFound:
 			return errUpgradeMoved
+		}
+		// **The configuration names the key only while the key is where it
+		// was made**, asked here, at the last moment before jpack.json is
+		// published: a signing folder replaced while its bytes were staged
+		// would otherwise leave it naming a seed that is not there (review
+		// round 1 of #261).
+		if name == runtimeConfigName && u.key.stillNamed() != nil {
+			return errMovedBeforePublish
 		}
 		return nil
 	}

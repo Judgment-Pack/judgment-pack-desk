@@ -452,6 +452,24 @@ func TestAFailedSigningUpgradeLeavesNoKeyAndNoChange(t *testing.T) {
 				}
 			}
 		}, http.StatusConflict, "Desk's signing folder was replaced before jpack.json named the key, so every file was put back as it was."},
+		// Review round 1 of #261: the folder replaced after the seed's
+		// pathname was checked and before jpack.json is published, while its
+		// bytes are staged; and after it is published and locked, before the
+		// marker goes.
+		{"a signing folder replaced while jpack.json is staged", func(t *testing.T, u *signingUpgrade) {
+			testHookBeforeUpgradePublish = func(target, staged string) {
+				if target == runtimeConfigName {
+					swapSigningFolder(t, filepath.Dir(u.seed))
+				}
+			}
+		}, http.StatusConflict, "Desk's signing folder was replaced before jpack.json named the key, so every file was put back as it was."},
+		{"a signing folder replaced while the project is locked", func(t *testing.T, u *signingUpgrade) {
+			testHookKeyBetween = func(at string) {
+				if at == "upgrade: named" {
+					swapSigningFolder(t, filepath.Dir(u.seed))
+				}
+			}
+		}, http.StatusConflict, "Desk's signing folder was replaced while the project was being locked, so every file was put back as it was."},
 		{"jpack.json changed before it was written", func(t *testing.T, u *signingUpgrade) {
 			testHookBeforeUpgradePublish = func(target, staged string) {
 				if target == runtimeConfigName {

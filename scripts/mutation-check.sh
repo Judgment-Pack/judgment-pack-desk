@@ -3899,9 +3899,17 @@ func (b *cappedBuffer) exceeded() bool {'
     '			if key != nil {
 				_ = key.unmake()
 				message += " The signing key Desk made'
-  mutate go "upgrade key: the key is named although its folder was replaced" "$UP" \
-    '		if key.stillNamed() != nil {' \
+  mutate go "upgrade key: jpack.json is published naming a key whose folder was replaced" "$UP" \
+    '		if name == runtimeConfigName && u.key.stillNamed() != nil {' \
     '		if false {'
+  mutate go "upgrade key: the marker goes although the key's folder was replaced after the lock" "$UP" \
+    '		if key.stillNamed() != nil {
+			return fail(&lockFailure{http.StatusConflict, CodeStale, "Desk'"'"'s signing folder was replaced while the project was being locked' \
+    '		if false {
+			return fail(&lockFailure{http.StatusConflict, CodeStale, "Desk'"'"'s signing folder was replaced while the project was being locked'
+  mutate go "upgrade key: a replaced signing folder is said as a failed write" "$UP" \
+    '	if errors.Is(err, errMovedBeforePublish) {' \
+    '	if false {'
   mutate go "upgrade key: the marker is left after the upgrade" "$UP" \
     '		if err := key.settle(); err != nil {' \
     '		if err := error(nil); err != nil {'
@@ -3977,6 +3985,7 @@ func (b *cappedBuffer) exceeded() bool {'
 		return auditRotation{' \
     '	if false {
 		return auditRotation{'
+				s.log.Printf("desk: the rotation of this project'"'"'s key was made'
   mutate go "upgrade key: rotation offered on the startup desk with no key" internal/desk/rotation.go \
     '	if keys.State == keysStartup {
 		return auditRotation{' \

@@ -374,7 +374,9 @@ same marker, checks and list of public keys), at
 project's resolved path, the name its Runner's state folder and Runner key
 already have; then writes `jpack.json` at `"6"` with `audit.signingKey`
 naming the seed, every other byte its own, through the upgrade's own write,
-and locks it; and removes the marker only once the lock is checked. A failure
+and locks it; and removes the marker only once the lock is checked. The
+seed's path must name the seed made at the last moment before `jpack.json` is
+published, its bytes staged, and again before the marker goes. A failure
 at any step puts every file back and removes the key; a stopped upgrade's
 marker is cleared at the next start on that project, which keeps the key only
 where `jpack.json` names it. The decision record then reads the project as a
