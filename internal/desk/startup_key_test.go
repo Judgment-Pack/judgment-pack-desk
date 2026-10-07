@@ -12,6 +12,8 @@ package desk
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"log"
@@ -1192,4 +1194,108 @@ func TestARotationOfTheStartupKeyFollowsWhatJpackJsonNames(t *testing.T) {
 			t.Errorf("the rotation answered %d %s", status, data)
 		}
 	})
+}
+
+// **The project's key is named by the project's resolved path** (review round
+// 1 of #261): the same name, and so the same key, whether Desk is started on
+// the project through a linked checkout, with a trailing slash, or by a
+// relative path; another name for another project. A stopped upgrade made
+// through the link is finished at a start through the trailing slash, and the
+// key it made is the one the decision record finds there, and from a relative
+// start.
+func TestTheStartupKeyIsNamedByTheResolvedProject(t *testing.T) {
+	t.Setenv("JPACK_CONFIG", "")
+	t.Setenv("JPACK_SIGNING_KEY", "")
+	base := t.TempDir()
+	real := filepath.Join(base, "real")
+	other := filepath.Join(base, "other")
+	for _, dir := range []string{real, other} {
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		writeProject(t, dir, map[string]string{"jpack.json": upgradeBefore, "packs/a.json": reviewPack, "packs/b.json": otherPack})
+	}
+	link := filepath.Join(base, "checkout")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := filepath.EvalSymlinks(real)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte(resolved))
+	want := hex.EncodeToString(sum[:])
+
+	rig := newReviewRigReading(t, withAuditVersions, "", "")
+	rig.answers(t, "error")
+	audit := &auditRig{bin: rig.bin, calls: rig.calls, answer: filepath.Join(t.TempDir(), "verify.json")}
+	script := bytes.Replace([]byte(readFile(t, rig.bin)), []byte("'packs lock')\n"), []byte(auditVerifyCase(audit)+"'packs lock')\n"), 1)
+	if err := os.WriteFile(rig.bin, script, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	audit.answers(t, 0, auditValidReport)
+	config := t.TempDir()
+	start := func(t *testing.T, dir string) (*Server, *httptest.Server) {
+		t.Helper()
+		s, ts := startDesk(t, Config{ProjectDir: dir, JpackBin: rig.bin, Token: testToken, DeskConfigDir: config, Logger: log.New(io.Discard, "", 0)})
+		t.Cleanup(func() { s.Close(); ts.Close() })
+		return s, ts
+	}
+
+	s, ts := start(t, link)
+	if got := s.signingKeyName(); got != want {
+		t.Fatalf("started through a link, the key is named %s, want %s", got, want)
+	}
+	// A stopped upgrade, made through the link.
+	status, data := reviewCall(t, ts, "GET", "/api/upgrade?signingKey=true", "", nil, bearer)
+	var offer upgradeAnswer
+	if status != http.StatusOK || json.Unmarshal(data, &offer) != nil || !offer.Sign {
+		t.Fatalf("the offer answered %d %s", status, data)
+	}
+	rig.locks(t, upgradeLock(t, real, offer.ConfigAfter, bothPacks))
+	testHookKeyBetween = func(at string) {
+		if at == "upgrade: named" {
+			panic(http.ErrAbortHandler)
+		}
+	}
+	t.Cleanup(func() { testHookKeyBetween = nil })
+	body, _ := json.Marshal(map[string]any{"token": offer.Token, "requireComparableFacts": true, "signingKey": true})
+	request, _ := http.NewRequest("POST", ts.URL+"/api/upgrade", bytes.NewReader(body))
+	request.Header.Set("Authorization", "Bearer "+testToken)
+	request.Header.Set("Content-Type", "application/json")
+	if response, err := ts.Client().Do(request); err == nil {
+		response.Body.Close()
+	}
+	testHookKeyBetween = nil
+	signing := filepath.Join(config, "secrets", "signing")
+	if names := namesIn(t, signing); !slices.Equal(names, []string{want + ".creating", want + ".keys.jsonl", want + ".seed"}) {
+		t.Fatalf("the stopped upgrade left %q", names)
+	}
+	s.Close()
+	ts.Close()
+
+	again, ts := start(t, real+string(filepath.Separator))
+	if got := again.signingKeyName(); got != want {
+		t.Errorf("started with a trailing slash, the key is named %s, want %s", got, want)
+	}
+	if names := namesIn(t, signing); !slices.Equal(names, []string{want + ".keys.jsonl", want + ".seed"}) {
+		t.Errorf("the start with a trailing slash left %q", names)
+	}
+	if _, panel, refusal := readAudit(t, ts, ""); panel.Keys == nil || panel.Keys.State != keysKept || !slices.Equal(panel.Keys.Public, []deskPublicKey{key1}) {
+		t.Errorf("started with a trailing slash, the panel shows %+v %q", panel.Keys, refusal)
+	}
+	again.Close()
+	ts.Close()
+
+	t.Chdir(base)
+	relative, ts := start(t, "real")
+	if got := relative.signingKeyName(); got != want {
+		t.Errorf("started by a relative path, the key is named %s, want %s", got, want)
+	}
+	if _, panel, refusal := readAudit(t, ts, ""); panel.Keys == nil || panel.Keys.State != keysKept {
+		t.Errorf("started by a relative path, the panel shows %+v %q", panel.Keys, refusal)
+	}
+	if elsewhere, _ := start(t, other); elsewhere.signingKeyName() == want {
+		t.Errorf("another project's key is named %s too", want)
+	}
 }

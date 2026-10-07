@@ -3996,6 +3996,9 @@ func (b *cappedBuffer) exceeded() bool {'
 				s.log.Printf("desk: the rotation of this project'"'"'s key was made' \
     '			if false {
 				s.log.Printf("desk: the rotation of this project'"'"'s key was made'
+  mutate go "upgrade key: the startup project's key is named by the path as given" "$SK" \
+    '	return digestOf([]byte(s.projectDir))' \
+    '	return digestOf([]byte(s.cfg.ProjectDir))'
   mutate go "upgrade key: rotation offered on the startup desk with no key" internal/desk/rotation.go \
     '	if keys.State == keysStartup {
 		return auditRotation{' \
