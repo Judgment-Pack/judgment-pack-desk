@@ -26,7 +26,18 @@ func localBootstrap(t *testing.T, s *Server, ts *httptest.Server, id string) (in
 		r.Header.Set("Authorization", "Bearer "+id)
 	}
 	w := httptest.NewRecorder()
-	s.ServeHTTP(w, r)
+	// **Served on the test's own goroutine**, where no server recovers a
+	// panicking handler: one ended the whole package in a panic that named no
+	// test (issue #266). It fails the test that made the request instead, by
+	// assertion.
+	func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				t.Fatalf("POST /api/session panicked: %v", recovered)
+			}
+		}()
+		s.ServeHTTP(w, r)
+	}()
 	var body map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &body)
 	return w.Code, body

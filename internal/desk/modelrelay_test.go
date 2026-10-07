@@ -1680,7 +1680,16 @@ func TestRelayBoundsOneRequestOverall(t *testing.T) {
 }
 
 func TestRelayBoundsTheGapBetweenWrites(t *testing.T) {
-	shortDeadlines(t, time.Minute, 150*time.Millisecond)
+	// **Cut at the idle bound, and timed** (issue #266). This test used to
+	// stall for five seconds under a one-minute overall bound and ask only
+	// that the stream end in an error, and with the idle bound removed it
+	// still did: when the endpoint gave up, the closing write to the page
+	// missed the write deadline the page's half had been given long before,
+	// so the stream ended in an error five seconds in, which is not the cut
+	// the bound promises. Now the overall bound is long, the stall outlasts
+	// the test's own wait, and the wait is bounded: only the idle bound can
+	// end this in time.
+	shortDeadlines(t, 30*time.Second, 150*time.Millisecond)
 	stop := make(chan struct{})
 	t.Cleanup(func() { close(stop) })
 	u := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
@@ -1696,7 +1705,7 @@ func TestRelayBoundsTheGapBetweenWrites(t *testing.T) {
 		select {
 		case <-stop:
 		case <-r.Context().Done():
-		case <-time.After(5 * time.Second):
+		case <-time.After(20 * time.Second):
 		}
 	})
 	_, ts, _ := relayDesk(t, "anthropic", u)
@@ -1708,13 +1717,29 @@ func TestRelayBoundsTheGapBetweenWrites(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status %d — the answer had already begun", resp.StatusCode)
 	}
-	read, err := io.ReadAll(resp.Body)
-	if !strings.Contains(string(read), "first") {
-		t.Errorf("what did arrive was %q", read)
+	type outcome struct {
+		read []byte
+		err  error
+	}
+	done := make(chan outcome, 1)
+	began := time.Now()
+	go func() {
+		read, err := io.ReadAll(resp.Body)
+		done <- outcome{read, err}
+	}()
+	var got outcome
+	select {
+	case got = <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("a stream that stalled after its first event was still open %s later, "+
+			"so the idle bound did not cut it", time.Since(began).Round(time.Second))
+	}
+	if !strings.Contains(string(got.read), "first") {
+		t.Errorf("what did arrive was %q", got.read)
 	}
 	// The stream is cut rather than left open for ever: what a stalled answer
 	// must not do is hold the page until something else gives up.
-	if err == nil {
+	if got.err == nil {
 		t.Error("a stalled stream ended cleanly, so nothing bounded it")
 	}
 }
@@ -1800,14 +1825,19 @@ func relaySlotIsReleased(t *testing.T, overall, idle time.Duration) {
 		}
 	}
 	// All four in the endpoint's hands, so all four slots are taken.
+	//
+	// **One deadline, set once** (issue #266). This wait was a `select` on a
+	// fresh `time.After` each time round, beside a `default` that is always
+	// ready, so the ten seconds never ran out: a desk that refused the four
+	// requests before they reached the endpoint — one that could not read its
+	// own key — held the suite here until the harness's bound ended it.
+	arrived := time.Now().Add(10 * time.Second)
 	for len(u.arrivals()) < maxRelayInFlight {
-		select {
-		case <-time.After(10 * time.Second):
+		if time.Now().After(arrived) {
 			t.Fatalf("only %d of %d requests reached the endpoint",
 				len(u.arrivals()), maxRelayInFlight)
-		default:
-			time.Sleep(10 * time.Millisecond)
 		}
+		time.Sleep(10 * time.Millisecond)
 	}
 
 	// **The assertion**: a fifth request succeeds once the stalled writes have
@@ -2408,22 +2438,52 @@ func TestRelayRefusesAListingPastTheBound(t *testing.T) {
 	// A listing this desk cannot read to the end is one it cannot say anything
 	// about, and forwarding the part it did read would be the truncation every
 	// other bound here refuses.
-	u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":["`))
-		_, _ = w.Write(bytes.Repeat([]byte("a"), maxListingBody+16))
-		_, _ = w.Write([]byte(`"]}`))
-	})
-	_, ts, _ := relayDeskAt(t, "openai-compatible", u.server.URL+"/v1")
-	resp, body := relayGet(t, ts, "models")
-	if resp.StatusCode != http.StatusBadGateway {
-		t.Fatalf("status %d, want 502: %.80s", resp.StatusCode, body)
-	}
-	if got := codeOfBody(t, body); got != CodeAssistantListingRefused {
-		t.Errorf("code %q, want %q", got, CodeAssistantListingRefused)
-	}
-	if strings.Contains(body, strings.Repeat("a", 64)) {
-		t.Error("part of the over-long listing was forwarded")
+	//
+	// **Refused for its length, and said so** (issue #266). A listing cut
+	// mid-string is also not one JSON document, so with the bound's own
+	// refusal removed the scan refused it for that instead, under the same
+	// code, and a test that read only the code held nothing. Two listings, and
+	// each must be refused with the bound's own sentence: the second is one
+	// whole document followed by whitespace past the bound, so what was read up
+	// to the bound passes the scan, and only the bound stands between it and
+	// the page.
+	want := fmt.Sprintf("the endpoint's model listing is past the %d bytes this desk "+
+		"reads, so none of it was listed", maxListingBody)
+	for _, testCase := range []struct {
+		name  string
+		write func(io.Writer)
+	}{
+		{"a model id past the bound", func(w io.Writer) {
+			_, _ = w.Write([]byte(`{"data":["`))
+			_, _ = w.Write(bytes.Repeat([]byte("a"), maxListingBody+16))
+			_, _ = w.Write([]byte(`"]}`))
+		}},
+		{"a whole document with whitespace past the bound", func(w io.Writer) {
+			_, _ = w.Write([]byte(`{"data":[{"id":"a-model"}]}`))
+			_, _ = w.Write(bytes.Repeat([]byte(" "), maxListingBody))
+		}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			u := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				testCase.write(w)
+			})
+			_, ts, _ := relayDeskAt(t, "openai-compatible", u.server.URL+"/v1")
+			resp, body := relayGet(t, ts, "models")
+			if resp.StatusCode != http.StatusBadGateway {
+				t.Fatalf("status %d, want 502: %.80s", resp.StatusCode, body)
+			}
+			if got := codeOfBody(t, body); got != CodeAssistantListingRefused {
+				t.Errorf("code %q, want %q", got, CodeAssistantListingRefused)
+			}
+			var refusal struct{ Error string }
+			if err := json.Unmarshal([]byte(body), &refusal); err != nil || refusal.Error != want {
+				t.Errorf("refused with %q (%v), want the bound's own sentence %q", refusal.Error, err, want)
+			}
+			if strings.Contains(body, strings.Repeat("a", 64)) || strings.Contains(body, "a-model") {
+				t.Error("part of the over-long listing was forwarded")
+			}
+		})
 	}
 }
 
