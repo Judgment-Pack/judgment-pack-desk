@@ -115,6 +115,7 @@
   --radius: 8px;
   --radius-sm: 4px;
   --radius-panel: 12px;
+  --radius-pill: 999px;
 
   /* The spacing scale, which `appearance.density` chooses between.
      ------------------------------------------------------------------------

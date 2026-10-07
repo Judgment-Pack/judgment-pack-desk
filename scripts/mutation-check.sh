@@ -998,13 +998,15 @@ if [ "$which" = all ] || [ "$which" = go ]; then
     '	custodyFileMode = 0o644'
   # A truncate-and-write keeps the file it opened, and leaves a window in which
   # a reader sees neither key whole.
+  # Repaired: the key's name is the connection's now (AI connections), and the
+  # legacy key is one of them. The mutation is the same defect.
   mutate go "the key is written in place rather than replaced" "$CU" \
-    '	if err := s.secrets.Rename(name, assistantKeyName); err != nil {
+    '	if err := s.secrets.Rename(name, keyName); err != nil {
 		remove()
 		return err
 	}' \
     '	remove()
-	if err := s.secrets.WriteFile(assistantKeyName, encoded, custodyFileMode); err != nil {
+	if err := s.secrets.WriteFile(keyName, encoded, custodyFileMode); err != nil {
 		return err
 	}'
   # **Repaired**: the line gained the destination the key is bound to, which
@@ -2467,9 +2469,10 @@ if [ "$which" = all ] || [ "$which" = go ]; then
   # absolute path.
   NDG=internal/desk/desks.go
   NRT=internal/desk/runtime.go
+  # Repaired: gofmt aligned the map when the desk's assistant profile joined it.
   mutate go "new desk: written at configVersion 3 again" "$NDG" \
-    '		runtimeConfigName: string(gates.config),' \
-    '		runtimeConfigName: "{\"configVersion\":\"3\",\"packs\":{}}\n",'
+    '		runtimeConfigName:    string(gates.config),' \
+    '		runtimeConfigName:    "{\"configVersion\":\"3\",\"packs\":{}}\n",'
   mutate go "new desk: a runtime that reads 5 gets the fallback" "$NDG" \
     '	if slices.Contains(schema.supported, comparableFactsFromVersion) {' \
     '	if false {'
@@ -5477,6 +5480,108 @@ func (b *cappedBuffer) exceeded() bool {'
     '	s.mux.HandleFunc("POST /api/audit/stamping/check", s.handleStampingCheck)
 ' \
     ''
+
+  # ---- AI connections: several credentials in custody, one registry --------
+  #
+  # docs/ai-connections.md. Each AI connection's credential is a key file of
+  # its own in the custody store, and the registry beside desk.json names where
+  # each one goes; every row here breaks one of the rules the desk's one key
+  # was already held to, now that there are many.
+  AIC=internal/desk/ai_connections.go
+  APR=internal/desk/assistant_profile.go
+  mutate go "ai connections: a stale registry write is laid over the newer one" "$AIC" \
+    '	if current.SHA256 != expected {' \
+    '	if false {'
+  mutate go "ai connections: the compare is not made again at the rename" "$AIC" \
+    '		if now.SHA256 != expected {' \
+    '		if false && now.SHA256 != expected {'
+  mutate go "ai connections: a registry is reported saved whatever reads back" "$AIC" \
+    '	if answer.SHA256 != digestOf(written) {' \
+    '	if false {'
+  mutate go "ai connections: the writer writes a registry its reader refuses" "$AIC" \
+    '	if len(written) > maxAIRegistryBytes {' \
+    '	if false {'
+  mutate go "ai connections: a connection's method changes under its credential" "$AIC" \
+    '			if c.ID == old.ID && c.Assistant.Engine != old.Assistant.Engine {' \
+    '			if c.ID == old.ID && false {'
+  mutate go "ai connections: a connection's settings skip the desk file's reader" "$AIC" \
+    '		if decoded.refused() || decoded.Engine == "codex" &&' \
+    '		if false || decoded.Engine == "codex" &&'
+  mutate go "ai connections: a connection id may be any string" "$AIC" \
+    'var aiIDPattern = regexp.MustCompile(`^(legacy-api|legacy-codex|ai-[a-f0-9]{24})$`)' \
+    'var aiIDPattern = regexp.MustCompile(`^.+$`)'
+  mutate go "ai connections: every connection presents the desk's one key" "$AIC" \
+    '	return "assistant-" + c.ID' \
+    '	return assistantKeyName'
+  mutate go "ai connections: a stale revision is sent with today's settings" "$AIC" \
+    '			if revision := r.Header.Get(aiRevisionHeader); revision != "" && revision != c.Revision {' \
+    '			if revision := r.Header.Get(aiRevisionHeader); false && revision != c.Revision {'
+  mutate go "ai connections: a disabled connection is relayed" "$MR" \
+    '		if r.Header.Get(aiRevisionHeader) == "" || !connection.Enabled || profile.Version == 2' \
+    '		if r.Header.Get(aiRevisionHeader) == "" || profile.Version == 2'
+  mutate go "ai connections: a desk sends through a connection it did not enable" "$MR" \
+    '!*profile.Inherit && !contains(profile.Connections, connection.ID) {' \
+    '!*profile.Inherit && false {'
+  mutate go "ai connections: a model the desk did not enable is relayed" "$MR" \
+    '	if !listing && connection != nil && !profileAPIModelAllowed(endpoint.kind, suffix, body, connectionModels(connection, profile)) {' \
+    '	if false {'
+  mutate go "ai connections: a ChatGPT run takes a model nobody allowed" internal/desk/agent_run.go \
+    '	if !s.connectionAgentAllowed(r, start.Request.Model) {' \
+    '	if false {'
+  mutate go "ai connections: the run socket takes any query" internal/desk/agent_run.go \
+    '		if len(values) != 1 || key != "desk" && key != "connection" && key != "revision" {' \
+    '		if len(values) != 1 || false && key != "desk" {'
+  mutate go "ai connections: a named desk closes the account it shares" internal/desk/server.go \
+    '	if s.cfg.parent == nil && s.codex != nil {' \
+    '	if s.codex != nil {'
+  mutate go "ai connections: a key is reported stored whatever reads back" "$A" \
+    '		back.key != bound.key || back.origin != bound.origin || back.kind != bound.kind {' \
+    '		false {'
+  mutate go "ai connections: an unreadable desk profile is read as inheritance" "$APR" \
+    '		if status == http.StatusNotFound {' \
+    '		if true || status == http.StatusNotFound {'
+  mutate go "ai connections: a desk profile over its bound is decoded" "$APR" \
+    '	if len(data) > 65536 || !validUTF8(data) {' \
+    '	if !validUTF8(data) {'
+  mutate go "ai connections: a ChatGPT allowlist has no bound" internal/desk/assistant_agent.go \
+    '		valid := ok && len(values) <= 128' \
+    '		valid := ok'
+  mutate go "ai connections: a ChatGPT model id has no bound" internal/desk/assistant_agent.go \
+    'strings.TrimSpace(id) != id || len(id) > 128 ||' \
+    'strings.TrimSpace(id) != id ||'
+  # Review round 1 on #276: the registry's answer written after every desk's
+  # writes lock is released; a disabled ChatGPT connection, and a run or a
+  # relayed request naming no revision, refused; the model a request names
+  # read by its exact name only; a connection's name counted in characters.
+  mutate go "ai connections: the registry's answer is written under every desk's lock" "$AIC" \
+    '		s.writes.Lock()
+		defer s.writes.Unlock()
+		return s.saveAIRegistryLocked(expected, next)
+	}()
+	answer.write(w)' \
+    '		s.writes.Lock()
+		return s.saveAIRegistryLocked(expected, next)
+	}()
+	answer.write(w)
+	s.writes.Unlock()'
+  mutate go "ai connections: a disabled ChatGPT connection runs" "$AIC" \
+    '				if !c.Enabled {' \
+    '				if false {'
+  mutate go "ai connections: a run naming no revision is sent" "$AIC" \
+    '				if r.Header.Get(aiRevisionHeader) == "" {' \
+    '				if false {'
+  mutate go "ai connections: a relayed request naming no revision is sent" "$MR" \
+    'if r.Header.Get(aiRevisionHeader) == "" || !connection.Enabled ||' \
+    'if !connection.Enabled ||'
+  mutate go "ai connections: a model member in another case is read as the model" "$APR" \
+    '			if key != "model" {' \
+    '			if false {'
+  mutate go "ai connections: one of two model members is chosen" "$APR" \
+    '	if found != 1 {' \
+    '	if found == 0 {'
+  mutate go "ai connections: a connection's name is not counted in characters" "$AIC" \
+    '		utf8.RuneCountInString(name) > maxAIConnectionName {' \
+    '		len(name) > maxAIConnectionName && utf8.ValidString(name) {'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -6139,12 +6244,13 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # 13. A 413, a permission refusal or a dead socket resolved to the defaults
   # with the reason recorded where nothing rendered it, so a desk that could
   # not open its own file looked exactly like a desk with no file.
+  # Repaired: the read carries the desk's assistant profile beside the two files.
   mutate web "an unreadable configuration is reported as an absent one" "$Z" \
     '      if (cause.status === 404) {
-        return effectiveConfig(undefined, reasonFor(cause), undefined, await deskLevel)
+        return effectiveConfig(undefined, reasonFor(cause), undefined, await deskLevel, undefined, undefined, await profile)
       }' \
     '      if (true) {
-        return effectiveConfig(undefined, reasonFor(cause), undefined, await deskLevel)
+        return effectiveConfig(undefined, reasonFor(cause), undefined, await deskLevel, undefined, undefined, await profile)
       }'
   mutate web "an unreadable configuration is silent outside Admin" "$S" \
     '        {!refused && unread && (' \
@@ -8231,11 +8337,13 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '  if (!answered) return '"'"'No key stored'"'"''
   # If the probe named a URL, anything holding the token could point the desk
   # — and the key it holds — at a host of its choosing.
+  # Repaired: the probe names the AI connection it asks about, in headers.
   mutate web "the probe names its own destination" "$AC" \
-    "    await deskFetch(chassisUrl('/api/assistant/probe'), { method: 'POST', signal })" \
+    "    await deskFetch(chassisUrl('/api/assistant/probe'), { method: 'POST', signal,headers:aiHeaders(connectionId,revision) })" \
     "    await deskFetch(chassisUrl('/api/assistant/probe'), {
       method: 'POST',
       signal,
+      headers: aiHeaders(connectionId, revision),
       body: JSON.stringify({ url: 'http://127.0.0.1:1/v1' })
     })"
 
@@ -8439,8 +8547,10 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # tab, Describe it and the key row to a second GET meant a write that landed
   # under a read that hung left every one of them describing the endpoint that
   # had just been replaced, under a form that said "Saved".
+  # Repaired: a write scoped to one AI connection answers its own cache; the
+  # desk-level write still sets the configuration from its answer.
   mutate web "the write's own answer is thrown away" "$AQ" \
-    '      client.setQueryData<EffectiveConfig>(DESK_CONFIG_QUERY_KEY, (previous) =>
+    '      if(!scopedWrite)client.setQueryData<EffectiveConfig>(DESK_CONFIG_QUERY_KEY, (previous) =>
         configAfterWrite(previous, written)
       )' \
     '      void written'
@@ -8501,8 +8611,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # **The page names a suffix; the desk builds the address.** A listing that
   # built its own URL would hold the endpoint — and, on this route, this
   # chassis' session token — in page code that no gate is on.
+  # Repaired: the listing names the AI connection it lists, through the desk.
   mutate web "the listing address is built on the page" "$ECK" \
-    '    void listModels(target.kind, bindModelCall(target.kind)).then(' \
+    '    void listModels(target.kind, bindModelCall(target.kind,scope?{connectionId:scope.connection.id,connectionRevision:scope.connection.revision}:undefined)).then(' \
     "    void listModels(target.kind, async (suffix) =>
       globalThis.fetch(\`\${target.url}/\${suffix}\`, { method: 'GET' })
     ).then("
@@ -8525,8 +8636,9 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # the endpoint's own model listing, and a button that made only the first of
   # them leaves the Models list showing the file's set for ever — with nothing
   # on the page saying the endpoint was never asked.
+  # Repaired with the row above.
   mutate web "Test connection asks the probe and never the listing" "$ECK" \
-    "    void listModels(target.kind, bindModelCall(target.kind)).then(
+    "    void listModels(target.kind, bindModelCall(target.kind,scope?{connectionId:scope.connection.id,connectionRevision:scope.connection.revision}:undefined)).then(
       (rows) => landed((previous) => ({ ...previous, rows })),
       (cause: unknown) =>
         landed((previous) => ({ ...previous, listingRefusal: said(cause) }))
@@ -8905,9 +9017,10 @@ export function assistantTransport(id: string): Transport {
   # Which of the enabled models a piece of work wants is decided at the run;
   # a hook that reached past the pick would run something nobody chose, under a
   # picker and a standing line both showing something else.
+  # Repaired: the run carries the AI connection it was started on.
   mutate web 'the run ignores the model that was picked' web/src/assistant/useAssistantRun.ts \
-    '              ...bindExecution({ endpoint, agent, engine }, modelOf(model), thinking),' \
-    '              ...bindExecution({ endpoint, agent, engine }, endpoint?.model ?? agent?.model ?? '"'"''"'"', thinking),'
+    '              ...bindExecution({ endpoint, agent, engine, ...connectionTarget }, modelOf(model), thinking),' \
+    '              ...bindExecution({ endpoint, agent, engine, ...connectionTarget }, endpoint?.model ?? agent?.model ?? '"'"''"'"', thinking),'
   mutate web "Stop writes no terminal event" "$AR" \
     '    finish(run)
     release(run)
@@ -10030,13 +10143,14 @@ export function assistantTransport(id: string): Transport {
   # The tab's own half of the same sentence: it renders the state directly
   # rather than through `unusableBecause`, so breaking one does not break the
   # other and each has its own row.
+  # Repaired (both rows): the sentence names Connections > AI now.
   mutate web 'the tab describes an unreadable configuration as having no assistant' web/src/assistant/AssistantPane.tsx \
-    '        {slot.engine === '"'"'codex'"'"' ? msg(slot.unusable ?? '"'"'Configure a ChatGPT subscription in Assistant settings.'"'"') : slot.state === '"'"'unavailable'"'"'' \
-    '        {slot.engine === '"'"'codex'"'"' ? msg(slot.unusable ?? '"'"'Configure a ChatGPT subscription in Assistant settings.'"'"') : false'
+    '        {slot.engine === '"'"'codex'"'"' ? msg(slot.unusable ?? '"'"'Configure a ChatGPT subscription in Connections > AI.'"'"') : slot.state === '"'"'unavailable'"'"'' \
+    '        {slot.engine === '"'"'codex'"'"' ? msg(slot.unusable ?? '"'"'Configure a ChatGPT subscription in Connections > AI.'"'"') : false'
   mutate web 'an unreadable configuration is described as having no assistant' web/src/shell/DescribeIt.tsx \
-    '      slot.engine === '"'"'codex'"'"' ? msg(slot.unusable ?? '"'"'Configure a ChatGPT subscription in Assistant settings.'"'"') : slot.state === '"'"'unavailable'"'"'
+    '      slot.engine === '"'"'codex'"'"' ? msg(slot.unusable ?? '"'"'Configure a ChatGPT subscription in Connections > AI.'"'"') : slot.state === '"'"'unavailable'"'"'
         ? msg(UNREAD_CONFIGURATION)' \
-    '      slot.engine === '"'"'codex'"'"' ? msg(slot.unusable ?? '"'"'Configure a ChatGPT subscription in Assistant settings.'"'"') : false
+    '      slot.engine === '"'"'codex'"'"' ? msg(slot.unusable ?? '"'"'Configure a ChatGPT subscription in Connections > AI.'"'"') : false
         ? msg(UNREAD_CONFIGURATION)'
 
   # Closing the dialog ends the session, and it has to end it **through the run
@@ -11413,9 +11527,11 @@ export function assistantTransport(id: string): Transport {
   # on the branch this replaces, so every model listing and every generation
   # turn answered 401 the moment the session stopped being a cookie — and the
   # builder's own drive never reached either path.
+  # Repaired: the desk headers are bound with the call, and the AI connection's
+  # headers travel beside them.
   mutate web 'the assistant'"'"'s relay sends no bearer' 'web/src/assistant/session.ts' \
-    '        headers: { ...headers, ...deskHeaders(), Authorization: `Bearer ${id}` },' \
-    '        headers: { ...headers, ...deskHeaders() },'
+    '        headers: { ...headers, ...boundDeskHeaders, ...aiHeaders(target?.connectionId,target?.connectionRevision), Authorization: `Bearer ${id}` },' \
+    '        headers: { ...headers, ...boundDeskHeaders, ...aiHeaders(target?.connectionId,target?.connectionRevision) },'
   # **A response nobody reads is a request nobody closes.** A body stream that
   # is neither consumed nor cancelled leaves the request in flight for the life
   # of the page: invisible in using the desk, and caught by the containment
@@ -13011,6 +13127,43 @@ export function assistantTransport(id: string): Transport {
   mutate web 'stamping page: a run the checked stamps do not reach is not labelled' "$STG" \
     '(stamped.through ?? 0) >= named.sequence' \
     'true'
+
+  # ---- AI connections, on the page side -------------------------------------
+  #
+  # docs/ai-connections.md. The page writes jpack-assistant.json and the saved
+  # chats that name a connection; each row breaks a rule the desk's reader
+  # holds them to, so the writer would write what the reader refuses.
+  APF=web/src/config/assistantProfile.ts
+  mutate web "ai connections: a desk profile over its bound is written" "$APF" \
+    '  if(new TextEncoder().encode(text).byteLength>65536 || !object(value)' \
+    '  if(!object(value)'
+  mutate web "ai connections: a desk profile over its bound is written, version 2" "$APF" \
+    ' if(new TextEncoder().encode(text).byteLength>65536||typeof value.inherit!==' \
+    ' if(typeof value.inherit!=='
+  mutate web "ai connections: a ChatGPT allowlist has no bound on the page" web/src/config/deskConfig.ts \
+    '    if (!Array.isArray(a.models) || a.models.length > 128 ||' \
+    '    if (!Array.isArray(a.models) ||'
+  mutate web "ai connections: a saved chat names a connection that is not one" web/src/chat/store.ts \
+    '    if (chat.aiConnection !== undefined && !validAIConnectionId(chat.aiConnection))' \
+    '    if (false)'
+  mutate web "ai connections: a reply's attribution names a connection that is not one" web/src/chat/checkpoint.ts \
+    '||!validAIConnectionId(turn.target.connectionId)||' \
+    '||'
+  # Review round 1 on #276: every request names its AI connection — the
+  # probe beside the listing, the key routes, the relay and the run socket —
+  # and a name the desk refuses is not offered for saving.
+  mutate web "ai connections: Test connection's probe names no connection" web/src/assistant/endpointCheck.ts \
+    '    void probeAssistantEndpoint(undefined, scope?.connection.id, scope?.connection.revision).then(' \
+    '    void probeAssistantEndpoint().then('
+  mutate web "ai connections: the page's requests name no connection" web/src/assistant/aiConnections.tsx \
+    "export const aiHeaders=(id?:string,revision?:string):Record<string,string>=>id?{'X-Assistant-Connection':id,...(revision?{'X-Assistant-Revision':revision}:{})}:{}" \
+    'export const aiHeaders=(_id?:string,_revision?:string):Record<string,string>=>({})'
+  mutate web "ai connections: the run socket names no connection" web/src/assistant/agentTransport.ts \
+    "  if(target?.connectionId){url.searchParams.set('connection',target.connectionId);if(target.connectionRevision)url.searchParams.set('revision',target.connectionRevision)}" \
+    ''
+  mutate web "ai connections: a name the desk refuses is offered for saving" web/src/assistant/AIConnectionsSettings.tsx \
+    'export const aiConnectionNameTooLong=(name:string)=>[...name.trim()].length>128' \
+    'export const aiConnectionNameTooLong=(name:string)=>name.trim().length>256'
 fi
 
 restore

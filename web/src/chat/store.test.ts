@@ -240,3 +240,26 @@ it('keeps saved research checkpoints on their source-led lifecycle', async () =>
   await restored.store.load()
   expect(restored.store.getSnapshot().chats.find(c => c.id === chat.id)?.mode).toBe('research')
 })
+
+it('round-trips model-scoped chat reasoning and rejects invalid saved effort without rewriting history', async () => {
+ const {store,write}=setup();await store.load();const chat=store.create()
+ store.update(chat.id,{reasoning:{model:'chosen',effort:'low'}});await store.flush()
+ const saved=write.mock.calls.at(-1)![0] as {version:1;chats:import('./store').Chat[]}
+ const restored=setup({read:async()=>({project:'/project',sha256:'saved',content:saved})});await restored.store.load()
+ expect(restored.store.getSnapshot().chats[0]?.reasoning).toEqual({model:'chosen',effort:'low'})
+ restored.store.update(chat.id,{reasoning:{model:'chosen',effort:null}});await restored.store.flush()
+ expect((restored.write.mock.calls.at(-1)![0] as typeof saved).chats[0]?.reasoning?.effort).toBeNull()
+ const invalid=setup({read:async()=>({project:'/project',sha256:'saved',content:{...saved,chats:[{...saved.chats[0],reasoning:{model:'chosen',effort:'invented'}}]}})})
+ await invalid.store.load();expect(invalid.store.getSnapshot().ready).toBe(false);expect(invalid.write).not.toHaveBeenCalled()
+})
+
+it('refuses a saved chat whose AI connection is not a connection id, without rewriting history', async () => {
+ const {store,write}=setup();await store.load();const chat=store.create()
+ store.update(chat.id,{aiConnection:'ai-111111111111111111111111',aiConnectionName:'Work'});await store.flush()
+ const saved=write.mock.calls.at(-1)![0] as {version:1;chats:import('./store').Chat[]}
+ expect(saved.chats[0]?.aiConnection).toBe('ai-111111111111111111111111')
+ for(const aiConnection of ['../secrets/assistant','ai-XYZ','legacy-other']){
+  const invalid=setup({read:async()=>({project:'/project',sha256:'saved',content:{...saved,chats:[{...saved.chats[0],aiConnection}]}})})
+  await invalid.store.load();expect(invalid.store.getSnapshot().ready,aiConnection).toBe(false);expect(invalid.write).not.toHaveBeenCalled()
+ }
+})

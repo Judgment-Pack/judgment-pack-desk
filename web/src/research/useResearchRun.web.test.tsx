@@ -4,10 +4,11 @@ import type { HostTool } from '../assistant/engine'
 import { useResearchRun } from './useResearchRun'
 import type { AuthoringMode } from './mode'
 
-const fake = vi.hoisted(() => ({ session: vi.fn(), tools: vi.fn(), policy: vi.fn(() => 'WEB POLICY FOR THIS MESSAGE'), load: vi.fn(), gateway: { authority: 'test', signer: { public: 'test' } } }))
+const fake = vi.hoisted(() => ({ engine:'test', allowed:['test-model','second-model'], models:{isPending:false,isError:false,error:new Error('Models unavailable'),data:{models:[{id:'test-model'},{id:'second-model'}]}}, bind:vi.fn((slot:any)=>({effort:slot.agent?.effort})), session: vi.fn(), tools: vi.fn(), policy: vi.fn(() => 'WEB POLICY FOR THIS MESSAGE'), load: vi.fn(), gateway: { authority: 'test', signer: { public: 'test' } } }))
 vi.mock('../documents/client', async (original) => ({ ...(await original<typeof import('../documents/client')>()), loadDocument: fake.load }))
-vi.mock('../assistant/target', () => ({ bindExecution: () => ({}), selectedAssistant: () => ({ models: ['test-model'], model: 'test-model', tools: [] }) }))
-vi.mock('../assistant/useAssistantSlot', () => ({ assistantReady: () => true, useAssistantSlot: () => ({ state: 'ready', endpoint: 'https://example.invalid', keyStatus: 'stored', keyPresent: true, engine: 'test', thinking: 'off' }) }))
+vi.mock('../assistant/providers',()=>({useProviderModels:()=>fake.models}))
+vi.mock('../assistant/target', () => ({ bindExecution: fake.bind, selectedAssistant: () => ({ models: fake.allowed, model: 'test-model', tools: [] }) }))
+vi.mock('../assistant/useAssistantSlot', () => ({ assistantReady: () => true, useAssistantSlot: () => ({ state: 'ready', endpoint: 'https://example.invalid', keyStatus: 'stored', keyPresent: true, engine: fake.engine, thinking: 'off', agent:{model:'test-model',provider:'openai',authMethod:'subscription',tools:[],effort:'medium'} }) }))
 vi.mock('../assistant/pickedModel', () => ({ usePickedModel: () => ({ model: 'test-model', models: ['test-model'] }) }))
 vi.mock('../assistant/engines', () => ({ loadEngine: async () => ({}) }))
 vi.mock('../assistant/session', () => ({ runAssistantSession: fake.session }))
@@ -17,7 +18,7 @@ vi.mock('../mcp/McpProvider', () => ({ useMcp: () => ({ status: 'disconnected', 
 vi.mock('../mcp/prompts', () => ({ AUTHOR_PACK_PROMPT: 'author_pack', TEST_PACK_PROMPT: 'test_pack', usePromptNames: () => ({ data: [] }), usePromptText: () => ({}) }))
 vi.mock('../config/DeskConfigProvider', () => ({ useEffectiveConfig: () => ({ config: { research: { gateway: fake.gateway, sources: { search: null, read: null }, limits: { seconds: 30 } } } }) }))
 vi.mock('../shell/consoleLog', () => ({ recordActivity: () => {} }))
-afterEach(() => { cleanup(); vi.clearAllMocks() })
+afterEach(() => { cleanup(); vi.clearAllMocks();fake.engine='test';fake.allowed=['test-model','second-model'];fake.models.isPending=false;fake.models.isError=false })
 
 it('offers current web tools and policy on the first Research message and its follow-up', async () => {
   const search: HostTool = { name: 'search_sources', description: 'Fixture search', inputSchema: {}, execute: vi.fn(async () => ({ content: [] })) }
@@ -145,4 +146,58 @@ it('traces a reopened chat draft again under a pin that moves while it loads, an
   expect(result.current.state.citations.map(citation => citation.traced)).toEqual([true, true])
   expect(result.current.state.tracedBasis).toBe(result.current.run!.basisNow())
   fake.gateway = { authority: 'test', signer: { public: 'test' } }
+})
+
+it('passes chat reasoning into each turn independently of Chat or Research mode',async()=>{
+ fake.tools.mockReturnValue([])
+ fake.session.mockImplementation(async(_engine,_request,deliver)=>{deliver({type:'message',text:'Connection check.'})})
+ const {result,rerender}=renderHook(({mode,effort}:{mode:AuthoringMode;effort:'low'|'high'|null})=>useResearchRun({mode,reasoning:{model:'test-model',effort},draftTools:fake.tools}),{initialProps:{mode:'draft' as AuthoringMode,effort:'low' as 'low'|'high'|null}})
+ act(()=>result.current.run!.start('First',[]));await waitFor(()=>expect(result.current.state.status).toBe('complete'))
+ expect(fake.session.mock.lastCall?.[1].effort).toBe('low')
+ rerender({mode:'web-research',effort:'high'})
+ act(()=>result.current.run!.send('Second'));await waitFor(()=>expect(result.current.state.status).toBe('complete'))
+ expect(fake.session.mock.lastCall?.[1].effort).toBe('high')
+ rerender({mode:'draft',effort:null})
+ act(()=>result.current.run!.send('Third'));await waitFor(()=>expect(result.current.state.status).toBe('complete'))
+ expect(fake.session.mock.lastCall?.[1].effort).toBeUndefined()
+})
+
+it('uses the chat-selected subscription model for the actual turn without inheriting another model effort',async()=>{
+ fake.engine='codex';fake.tools.mockReturnValue([])
+ fake.session.mockImplementation(async(_engine,_request,deliver)=>deliver({type:'message',text:'Selected model ran.'}))
+ const {result}=renderHook(()=>useResearchRun({model:'second-model',mode:'draft',reasoning:{model:'test-model',effort:'high'},draftTools:fake.tools}))
+ expect(result.current.model).toBe('second-model');expect(result.current.blocked).toBe('')
+ act(()=>result.current.run!.start('Test',[]));await waitFor(()=>expect(result.current.state.status).toBe('complete'))
+ expect(fake.bind.mock.lastCall?.[0].agent).toMatchObject({model:'second-model',effort:undefined,tools:[]})
+ expect((fake.bind.mock.lastCall as unknown[])?.[1]).toBe('second-model')
+ expect(fake.session.mock.lastCall?.[1].effort).toBeUndefined()
+})
+it('blocks an unavailable saved subscription model instead of substituting the default',async()=>{
+ fake.allowed=['test-model','removed-model'];fake.engine='codex';fake.tools.mockReturnValue([])
+ const {result}=renderHook(()=>useResearchRun({model:'removed-model',mode:'draft',draftTools:fake.tools}))
+ expect(result.current.model).toBe('removed-model');expect(result.current.blocked).toContain('This model is no longer available')
+ act(()=>result.current.run!.start('Test',[]));await waitFor(()=>expect(result.current.state.status).not.toBe('running'))
+ expect(fake.session).not.toHaveBeenCalled();expect(fake.bind).not.toHaveBeenCalled()
+})
+it('waits for the subscription catalog and keeps read failures visible before sending',()=>{
+ fake.engine='codex';fake.models.isPending=true
+ const {result,rerender}=renderHook(()=>useResearchRun({model:'second-model',mode:'draft',draftTools:fake.tools}))
+ expect(result.current.blocked).toBe('Loading models…')
+ fake.models.isPending=false;fake.models.isError=true;rerender();expect(result.current.blocked).toBe('Models unavailable')
+})
+
+it('blocks a removed grant before binding a chat-selected subscription model',async()=>{
+ fake.engine='codex';fake.allowed=['test-model'];fake.tools.mockReturnValue([])
+ const {result}=renderHook(()=>useResearchRun({model:'second-model',mode:'draft',draftTools:fake.tools}))
+ expect(result.current.blocked).toBe('Choose an enabled model in Admin › Assistant.')
+ act(()=>result.current.run!.start('Test',[]));await waitFor(()=>expect(result.current.state.status).not.toBe('running'))
+ expect(fake.session).not.toHaveBeenCalled();expect(fake.bind).not.toHaveBeenCalled()
+})
+
+it('blocks a chat-selected API model removed from this desk allowlist',async()=>{
+ fake.engine='vercel';fake.allowed=['test-model'];fake.tools.mockReturnValue([])
+ const {result}=renderHook(()=>useResearchRun({model:'second-model',mode:'draft',draftTools:fake.tools}))
+ expect(result.current.model).toBe('second-model');expect(result.current.blocked).toBe('Choose an enabled model in Admin › Assistant.')
+ act(()=>result.current.run!.start('Test',[]));await waitFor(()=>expect(result.current.state.status).not.toBe('running'))
+ expect(fake.session).not.toHaveBeenCalled();expect(fake.bind).not.toHaveBeenCalled()
 })

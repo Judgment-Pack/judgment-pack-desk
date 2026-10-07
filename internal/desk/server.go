@@ -175,10 +175,11 @@ type Server struct {
 	// random per process, so a token names one desk and does not outlive it.
 	reviewKey [32]byte
 
-	updates *updateService
-	builds  ComponentBuilds
-	jobs    *jobsCompanion
-	codex   providerAccountManager
+	updates    *updateService
+	builds     ComponentBuilds
+	jobs       *jobsCompanion
+	codex      providerAccountManager
+	aiAccounts aiManagers
 
 	localGateway        *localGateway
 	providerMu          sync.Mutex
@@ -425,6 +426,7 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("/api/job-events/{trigger}", s.handleJobEvent)
 	s.mux.HandleFunc("/api/job-events/{trigger}/occurrences/{occurrence}", s.handleJobEventResult)
 	s.mux.HandleFunc("/api/agent/run", s.handleAgentRun)
+	s.mux.HandleFunc("/api/ai-connections", s.handleAIConnections)
 	s.mux.HandleFunc("/api/model-providers", s.handleModelProviders)
 	s.mux.HandleFunc("/api/model-providers/openai/{action}", s.handleModelProviders)
 	// The file API (issue #14, phase 1). Everything else the desk shows comes
@@ -574,7 +576,10 @@ func (s *Server) closeAll() error {
 	// Before the project's folder is let go: a stamp in progress is waited
 	// for, never killed mid-write.
 	s.stamping.close()
-	if s.codex != nil {
+	if s.cfg.parent == nil {
+		s.closeAIAccounts()
+	}
+	if s.cfg.parent == nil && s.codex != nil {
 		s.codex.Close()
 	}
 	if s.cfg.parent == nil {

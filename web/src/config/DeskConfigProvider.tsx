@@ -1,3 +1,4 @@
+import { useAIRegistry, resolveAIConnection } from '../assistant/aiConnections'
 /**
  * The effective configuration, in one context.
  *
@@ -38,7 +39,11 @@ export function useDeskConfigRead(): boolean {
 
 export function DeskConfigProvider({ children }: { children: ReactNode }) {
   const { data } = useDeskConfig()
-  const value = data ?? DEFAULTS
+  const registry = useAIRegistry()
+  const base = data ?? DEFAULTS
+  const connected = {...base, aiConnections:{data:registry.data,loading:registry.isPending,problem:registry.error?.message}}
+  const target = resolveAIConnection(connected)
+  const value = {...connected,config:{...base.config,assistant:target.assistant}}
   // **The theme is no longer applied here**, and the move is the point.
   // `appearance` in the project file is now the *default*, not the answer: what
   // this desk paints is the viewer's own preference where they have one, and

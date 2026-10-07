@@ -279,3 +279,34 @@ func TestModelProviderInstallationCanBeDisabled(t *testing.T) {
 		t.Fatal("disabled installation created profile", err)
 	}
 }
+
+func TestNamedDesksShareCodexAccountManagerAndOnlyRootClosesIt(t *testing.T) {
+	s, server, _ := assistantServer(t)
+	if s.codex != nil {
+		s.codex.Close()
+	}
+	stub := &accountStub{}
+	s.codex = stub
+	first := createTestDesk(t, server, "First")
+	second := createTestDesk(t, server, "Second")
+	for _, id := range []string{first.ID, second.ID} {
+		if s.desks[id].codex != s.codex {
+			t.Fatal("named desk owns a competing manager for the same account profile")
+		}
+	}
+	if err := s.desks[first.ID].Close(); err != nil {
+		t.Fatal(err)
+	}
+	if stub.closed {
+		t.Fatal("closing a named desk disconnected the shared account")
+	}
+	if _, err := s.desks[second.ID].codex.Status(context.Background(), "session", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !stub.closed {
+		t.Fatal("root shutdown did not close the shared account")
+	}
+}

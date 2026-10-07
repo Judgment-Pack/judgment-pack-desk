@@ -163,13 +163,15 @@ describe('the desk reading jpack-desk.json', () => {
     // desk that could not read its own desk-level configuration, and it is
     // this read that changed rather than the file API.
     expect(asked.some((url) => url.includes('/api/desk-config'))).toBe(true)
-    // Project files, configuration, and the named desk directory use the chassis.
+    // Project files, configuration, the named desk directory and the AI
+    // connections shared on this computer use the chassis.
     expect(
       asked.every(
         (url) =>
           url.includes('/api/file?') ||
           url.includes('/api/files') ||
-          url.includes('/api/desk-config') || url === '/api/desks'
+          url.includes('/api/desk-config') || url === '/api/desks' ||
+          url.includes('/api/ai-connections')
       )
     ).toBe(true)
   })

@@ -74,9 +74,9 @@ export const UNREAD_CONFIGURATION =
   'configured. Admin › Assistant names the problem.'
 
 export const NO_ASSISTANT =
-  'No assistant is configured on this desk. Configure an endpoint in Admin › Assistant.'
+  'No assistant is configured on this desk. Configure a connection in Admin › Connections › AI.'
 export const NO_KEY =
-  'An endpoint is configured and no key is stored on this machine. Add one in Admin › Assistant.'
+  'An endpoint is configured and no key is stored on this machine. Add one in Admin › Connections › AI.'
 
 /** Why Create cannot act on a proposal, where the reason is the section's. */
 export const STILL_RUNNING = 'The assistant is still running. Stop it or wait for it to end.'
@@ -478,7 +478,7 @@ export function useDescribeIt(): DescribeItState {
   return {
     usable,
     unusableBecause:
-      slot.engine === 'codex' ? msg(slot.unusable ?? 'Configure a ChatGPT subscription in Assistant settings.') : slot.state === 'unavailable'
+      slot.engine === 'codex' ? msg(slot.unusable ?? 'Configure a ChatGPT subscription in Connections > AI.') : slot.state === 'unavailable'
         ? msg(UNREAD_CONFIGURATION)
         : slot.endpoint === null
           ? msg(NO_ASSISTANT)

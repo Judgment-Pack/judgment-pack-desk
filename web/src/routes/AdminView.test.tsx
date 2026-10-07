@@ -500,7 +500,12 @@ describe('Admin, with no overview', () => {
       const addresses = Array.from(page(container).querySelectorAll('a'))
         .map((each) => each.getAttribute('href') ?? '')
         .filter((href) => href.startsWith('/admin'))
-      expect(addresses, path).toEqual(ADMIN_SECTIONS.map((section) => `/admin#${section.id}`))
+      // The rail names every section once, in order; and an address inside a
+      // section — the desk's model preferences point at the shared AI
+      // settings under Connections — is a section's address too.
+      const sections = ADMIN_SECTIONS.map((section) => `/admin#${section.id}`)
+      expect(addresses.slice(0, sections.length), path).toEqual(sections)
+      expect(addresses.filter((each) => !sections.includes(each)), path).toEqual([])
       cleanup()
     }
   })
@@ -1319,20 +1324,11 @@ describe('one section at a time', () => {
       ['organization', ['Upload file', 'Reset to default', 'Upload file', 'Use logo', 'Save']],
       ['storage', ['Save', 'Set up', 'Manage', 'Add connection']],
       [
-        // **No Test connection here**, and that is the section reading
-        // truthfully: this desk has no endpoint saved and no key stored, and
-        // the button is offered once it has both. `Add` is the Models list's,
-        // for an id somebody types rather than one an endpoint listed.
+        // **This desk's model preferences**, and nothing that writes the
+        // shared connection: the endpoint, its key and its models moved to
+        // Connections › AI (docs/ai-connections.md).
         'assistant',
-        [
-          'OpenAI-compatibleAnthropicGoogle Gemini',
-          'Save API key',
-          'Reset to default',
-          'Test connection',
-          'Add',
-          'offstandarddeep',
-          'Save settings'
-        ]
+        ['Save preferences', 'Reload from disk']
       ],
       ['identity-provider', []]
     ] as const) {
@@ -1351,7 +1347,10 @@ describe('one section at a time', () => {
   })
 
   it('offers access, API provider and review settings without an engine implementation picker', () => {
-    const { container } = renderAdmin(effectiveConfig(undefined), '/admin#assistant')
+    // The shared AI settings, under Connections: with no AI connections read,
+    // the desk-level assistant slot as it was.
+    renderAdmin(effectiveConfig(undefined), '/admin#connections')
+    const container = screen.getByRole('region', { name: 'AI' })
     const triggers = Array.from(container.querySelectorAll('[role="combobox"]')).map(
       (element) => element.textContent
     )
@@ -1864,15 +1863,15 @@ describe('Admin carries no narration', () => {
  * at all.
  */
 describe('every control on Admin comes through the same component', () => {
-  /** Every button under the article, which is the whole page. */
-  const buttonsOf = (container: HTMLElement) =>
-    Array.from(page(container).querySelectorAll('button'))
+  /** Every button under one element. */
+  const buttonsOf = (element: HTMLElement) => Array.from(element.querySelectorAll('button'))
 
   it('renders every button through Button, and every picker through Select', () => {
-    // The assistant section, because it is the one that carries every shape:
-    // three pickers, a probe, a listing and a Save.
-    const { container } = renderAdmin(effectiveConfig(undefined), '/admin#assistant')
-    const buttons = buttonsOf(container)
+    // The shared AI settings, because they carry every shape: three pickers,
+    // a probe, a listing and a Save.
+    renderAdmin(effectiveConfig(undefined), '/admin#connections')
+    // The AI region only: the file connections below it are their own page.
+    const buttons = buttonsOf(screen.getByRole('region', { name: 'AI' }))
     // A count, so an exemption cannot quietly become the whole list.
     expect(buttons.length).toBeGreaterThan(4)
     // The one shape that is a `<button>` and is not an action: a Radix Select

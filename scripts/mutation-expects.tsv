@@ -64,6 +64,33 @@ go	a thinking tier nothing implements is accepted	TestARefusedFileSendsNothing,T
 go	a trailer staged by the proxy still reaches the page	TestAnUpstreamCannotWearThisDesksRefusalMark,TestRelayForwardsNoTrailer,TestWithoutTrailersClearsWhatAProxyStages
 go	a write across a host change reports no new key is needed	TestTheReviewsRetargetSequenceReachesTheAttackerWithNothing
 go	a write is not capped by the overall deadline	TestRelayReleasesASlotHeldByAClientThatStoppedReading
+go	ai connections: a ChatGPT allowlist has no bound	TestSharedFixturesDecodeAsTheVerdictSays
+go	ai connections: a ChatGPT model id has no bound	TestSharedFixturesDecodeAsTheVerdictSays
+go	ai connections: a ChatGPT run takes a model nobody allowed	TestAgentSocketEnforcesSavedModelPolicy
+go	ai connections: a connection id may be any string	TestARegistryConnectionIdIsOneOfItsOwn,TestAssistantProfileSharedFixtures
+go	ai connections: a connection's method changes under its credential	TestAConnectionsMethodIsNotEditable
+go	ai connections: a connection's name is not counted in characters	TestAConnectionNameIsCountedInCharacters
+go	ai connections: a connection's settings skip the desk file's reader	TestARegistryConnectionCarryingACredentialIsRefused
+go	ai connections: a desk profile over its bound is decoded	TestTheAssistantProfileIsReadToItsBoundAndNoFurther
+go	ai connections: a desk sends through a connection it did not enable	TestAIConnectionsDiscoveryDoesNotGrantInference
+go	ai connections: a disabled ChatGPT connection runs	TestAChatGPTRunNeedsAnEnabledConnectionAndItsRevision
+go	ai connections: a disabled connection is relayed	TestAIConnectionsDiscoveryDoesNotGrantInference
+go	ai connections: a key is reported stored whatever reads back	TestAKeyThatReadsBackOtherwiseIsNotReportedStored
+go	ai connections: a model member in another case is read as the model	TestTheModelIsReadByItsExactName
+go	ai connections: a model the desk did not enable is relayed	TestAIConnectionsDiscoveryDoesNotGrantInference
+go	ai connections: a named desk closes the account it shares	TestNamedDesksShareCodexAccountManagerAndOnlyRootClosesIt
+go	ai connections: a registry is reported saved whatever reads back	TestARegistryThatReadsBackOtherwiseIsNotReportedSaved
+go	ai connections: a relayed request naming no revision is sent	TestARelayedRequestWithNoRevisionIsNotSent
+go	ai connections: a run naming no revision is sent	TestAChatGPTRunNeedsAnEnabledConnectionAndItsRevision
+go	ai connections: a stale registry write is laid over the newer one	TestAStaleRegistrySaveStagesNothing
+go	ai connections: a stale revision is sent with today's settings	TestAStaleConnectionRevisionIsNotSent
+go	ai connections: an unreadable desk profile is read as inheritance	TestTheAssistantProfileIsReadToItsBoundAndNoFurther
+go	ai connections: every connection presents the desk's one key	TestAIConnectionKeyIsKeptAsTheDesksKeyIs
+go	ai connections: one of two model members is chosen	TestTheModelIsReadByItsExactName
+go	ai connections: the compare is not made again at the rename	TestTheRegistryCompareHoldsUntilTheRename
+go	ai connections: the registry's answer is written under every desk's lock	TestTheRegistryAnswerIsWrittenAfterTheLockIsReleased
+go	ai connections: the run socket takes any query	TestAgentSocketRejectsUnrelatedQueries
+go	ai connections: the writer writes a registry its reader refuses	TestTheRegistryWriterRefusesWhatItsReaderRefuses
 go	an absent desk-level file is a refusal	TestARunnerThatRefusesItsKeyStartsWithout,TestAWrittenDefaultProjectIsTheOneTheNextLaunchOpens,TestDeskConfigRead,TestDeskConfigReadCarriesTheDigestItsWriteWillQuote,TestDeskConfigReadCarriesTheProjectAndRuntimeItWasLaunchedWith,TestDeskConfigReportsAnInheritedSigningKeyOnTheStartupDeskOnly,TestDeskConfigReportsTestedReleasesPolicy,TestDeskConfigWriteRefusesABodyNamingNeitherMember,TestEachDesksRunnerIsNamedAKeyOfItsOwn,TestNoRouteEverSetsASessionCookie,TestTheBearerAuthorizesEveryGatedRoute,TestTheReportedProjectDirIsTheResolvedOne,TestTheReviewsRootNominationDoesNotSurviveIntoTheNextLaunch
 go	an accepted engine decodes to the default anyway	TestSharedFixturesDecodeAsTheVerdictSays,TestSubscriptionSelectionKeepsTheAPIEndpointInactive
 go	an accepted thinking tier decodes to the default anyway	TestDeskConfigWriteCreatesAFileWhereThereWasNone,TestDeskConfigWriteRoundTrips,TestSharedFixturesDecodeAsTheVerdictSays
@@ -1199,6 +1226,15 @@ web	a web research chat draft whose trace was cut short reads as citing nothing	
 web	a wrap re-serializes the child instead of moving its bytes	src/packs/edit/conditionOps.test.ts
 web	a write erases the choices an earlier visit made	src/shell/inspectorWidth.test.tsx,src/shell/overlayGeometry.test.ts,src/shell/paneState.test.ts
 web	add over a conditions that is not a list does nothing	src/packs/edit/conditionOps.test.ts
+web	ai connections: Test connection's probe names no connection	src/assistant/endpointForm.test.tsx
+web	ai connections: a ChatGPT allowlist has no bound on the page	src/config/fixtures.test.ts
+web	ai connections: a desk profile over its bound is written	src/config/assistantProfile.test.ts
+web	ai connections: a desk profile over its bound is written, version 2	src/config/assistantProfile.test.ts
+web	ai connections: a name the desk refuses is offered for saving	src/assistant/aiConnections.test.tsx
+web	ai connections: a reply's attribution names a connection that is not one	src/assistant/aiConnections.test.tsx
+web	ai connections: a saved chat names a connection that is not one	src/chat/store.test.ts
+web	ai connections: the page's requests name no connection	src/assistant/aiConnections.test.tsx,src/assistant/endpointForm.test.tsx,src/assistant/session.test.ts
+web	ai connections: the run socket names no connection	src/assistant/agentTransport.test.ts
 web	an Admin row composes a summary the decoder did not say	src/routes/AdminView.test.tsx
 web	an aborted call rethrows the error it caught	src/assistant/session.test.ts
 web	an absent base digest is read as a match	src/packs/inspector/PackInspector.test.tsx
@@ -1254,6 +1290,7 @@ web	an unknown config key is accepted silently	src/assistant/enforcement.test.ts
 web	an unknown fragment opens no section	src/routes/AdminView.test.tsx
 web	an unknown storage key is accepted	src/config/deskConfig.test.ts
 web	an unmount releases the run without finishing it	src/assistant/useAssistantRun.test.tsx
+web	an unreadable configuration is described as having no assistant	src/shell/DescribeIt.test.tsx
 web	an unreadable configuration is reported as an absent one	src/config/liveConfig.test.tsx,src/config/queries.test.tsx
 web	an unreadable configuration is reported as no assistant	src/assistant/AssistantPane.test.tsx,src/assistant/slotAfterSave.test.tsx,src/shell/DescribeIt.test.tsx
 web	an unreadable configuration is silent outside Admin	src/config/liveConfig.test.tsx
@@ -1700,6 +1737,7 @@ web	the appearance reset does not remove the key	src/identity/identity.test.tsx,
 web	the arguments are copied rather than canonicalized	src/assistant/toolGate.test.ts
 web	the arrow keys move nothing	src/packs/document/PackDocumentView.test.tsx
 web	the assistant reuses one shared transport	src/assistant/session.test.ts
+web	the assistant's relay sends no bearer	src/assistant/conformance/conformance.test.ts,src/assistant/modelListing.test.ts,src/assistant/session.test.ts,src/mcp/session.test.tsx
 web	the base moves on a watcher refetch	src/packs/edit/useDocumentBuffer.test.ts
 web	the base rebases onto background refetches	src/routes/AuthorView.test.tsx
 web	the bootstrap is no longer memoised	src/assistant/AssistantPane.test.tsx,src/assistant/AssistantSettings.test.tsx,src/assistant/configWrite.test.tsx,src/assistant/conformance/conformance.test.ts,src/assistant/modelListing.test.ts,src/assistant/session.test.ts,src/assistant/useAssistantRun.test.tsx,src/auth/SessionGate.test.tsx,src/config/liveConfig.test.tsx,src/files/useFileEditing.test.ts,src/jobs/reviewedSet.desks.test.ts,src/mcp/session.test.tsx,src/packs/collectionPreview.test.tsx,src/routes/AdminView.test.tsx,src/routes/HelpAbout.test.tsx,src/routes/PackView.test.tsx,src/shell/AppShell.test.tsx,src/shell/CreatePackDialog.test.tsx,src/shell/DescribeIt.test.tsx,src/shell/createFromRail.test.tsx,src/shell/narrowShell.test.tsx
@@ -1860,7 +1898,7 @@ web	the path is only ever the one get_pack names	src/packs/edit/resilience.test.
 web	the preference does not override the project default	src/config/liveConfig.test.tsx,src/identity/identity.test.tsx,src/shell/appearanceProvider.test.tsx,src/shell/appearanceState.test.ts
 web	the previous proposal is not withdrawn at the press	src/shell/DescribeIt.test.tsx
 web	the primary button is not a submit (Enter does nothing)	src/admin/ChatBackupSettings.test.tsx,src/admin/ChatDataSettings.test.tsx,src/admin/DocumentProcessingSettings.test.tsx,src/assistant/endpointForm.test.tsx,src/audit/handover.test.tsx,src/connections/ConnectionsPane.test.tsx,src/connections/WebSourcePane.test.tsx,src/packs/folders/FolderBrowser.test.tsx,src/packs/test-workspace/CaseEditor.test.tsx,src/packs/test-workspace/TestAssistant.test.tsx,src/packs/test-workspace/TestsWorkspace.findings.test.tsx,src/routes/AdminView.test.tsx,src/routes/ResearchAuthoringPage.test.tsx,src/routes/StorageFilesView.test.tsx,src/search/WebSearchSettings.test.tsx,src/shell/CreatePackDialog.test.tsx,src/shell/DescribeIt.test.tsx,src/ui/ui.test.tsx
-web	the probe names its own destination	src/assistant/AssistantSection.test.tsx
+web	the probe names its own destination	src/assistant/SharedAssistantSettings.test.tsx
 web	the project default is not applied when no preference exists	src/config/liveConfig.test.tsx,src/identity/identity.test.tsx,src/shell/appearanceProvider.test.tsx,src/shell/appearanceState.test.ts
 web	the proposal is written from event.document, not the snapshot	src/assistant/AssistantPane.test.tsx,src/assistant/useAssistantRun.test.tsx,src/research/run.test.ts,src/shell/DescribeIt.test.tsx
 web	the proposal reaches the pane uncanonicalized	src/assistant/AssistantPane.test.tsx,src/assistant/useAssistantRun.test.tsx,src/shell/DescribeIt.test.tsx
@@ -1910,6 +1948,7 @@ web	the room the console may take reserves main's share too	src/shell/shellSheet
 web	the route never says the check is still running	src/routes/PackView.test.tsx
 web	the rows are hidden when the endpoint moves rather than cleared	src/assistant/endpointForm.test.tsx
 web	the rules member is treated as optional	src/packs/document/PackDocumentView.test.tsx,src/packs/document/members.test.ts
+web	the run ignores the model that was picked	src/assistant/AssistantPane.test.tsx,src/assistant/useAssistantRun.test.tsx
 web	the run is a generator again, with end yielded from its finally	src/assistant/engines/vercel/engine.test.ts
 web	the run is aborted and released before it is marked closed	src/assistant/engines/contract.test.ts
 web	the run is left open when the dialog closes	src/shell/DescribeIt.test.tsx
@@ -1936,6 +1975,7 @@ web	the splice reserializes the whole document	src/admin/projectFileCards.test.t
 web	the strip is silent about a refused desk-level file	src/config/liveConfig.test.tsx
 web	the strip's warning is the half that disappears	src/shell/shellSheet.test.ts
 web	the suffix is not required to be a primitive string	src/assistant/session.test.ts
+web	the tab describes an unreadable configuration as having no assistant	src/assistant/AssistantPane.test.tsx
 web	the template's specVersion is overwritten	src/packs/newPack.test.ts,src/shell/CreatePackDialog.test.tsx,src/shell/DescribeIt.test.tsx
 web	the tier member is sent when the tier is off	src/assistant/engines/vercel/engine.test.ts,src/assistant/thinking.test.ts
 web	the tier picker offers a value outside the union	src/assistant/endpointForm.test.tsx

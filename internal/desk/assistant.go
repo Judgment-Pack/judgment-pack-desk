@@ -1266,7 +1266,12 @@ func (s *Server) handleAssistantKeyRead(w http.ResponseWriter, r *http.Request) 
 	if s.refuseUnusableStore(w) {
 		return
 	}
-	stored, err := s.assistant.readKey()
+	configured, keyName, _, targetErr := s.endpointForConnection(r, false)
+	if targetErr != nil && (r.Header.Get(aiConnectionHeader) != "" || keyName == "") {
+		writeJSONError(w, statusForRefusal(targetErr), targetErr)
+		return
+	}
+	stored, err := s.assistant.readKeyNamed(keyName)
 	if err != nil {
 		s.refuseKeyRead(w, err)
 		return
@@ -1275,7 +1280,7 @@ func (s *Server) handleAssistantKeyRead(w http.ResponseWriter, r *http.Request) 
 	// value gives no origin and no binding, which is the honest answer: a
 	// refused file authorises no relayed request either, so a key it names
 	// nothing for is a key that goes nowhere.
-	configured, _ := s.configuredEndpoint()
+
 	writeJSON(w, http.StatusOK, keyState(stored, configured))
 }
 
@@ -1358,7 +1363,7 @@ func (s *Server) handleAssistantKeyWrite(w http.ResponseWriter, r *http.Request)
 	// sentence Admin already renders for that state: a key with nothing to be
 	// bound to would be a key bound to whatever is configured next, which is
 	// the arrangement this replaces.
-	endpoint, err := s.configuredEndpoint()
+	endpoint, keyName, _, err := s.endpointForConnection(r, false)
 	if err != nil {
 		writeJSONError(w, statusForRefusal(err), err)
 		return
@@ -1370,9 +1375,19 @@ func (s *Server) handleAssistantKeyWrite(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	bound := storedKey{present: true, key: key, origin: origin, kind: endpoint.kind}
-	if err := s.assistant.storeKey(bound); err != nil {
+	if err := s.assistant.storeKeyNamed(keyName, bound); err != nil {
 		writeJSONCoded(w, http.StatusInternalServerError, CodeInternal,
 			fmt.Sprintf("the assistant key could not be stored: %v", err))
+		return
+	}
+	// **Read back and held to what was written.** The key, its origin and its
+	// protocol are what the next relayed request will present; a file that
+	// reads back as anything else is not reported as stored.
+	afterKeyStored(keyName)
+	if back, err := s.assistant.readKeyNamed(keyName); err != nil || !back.present ||
+		back.key != bound.key || back.origin != bound.origin || back.kind != bound.kind {
+		writeJSONCoded(w, http.StatusInternalServerError, CodeInternal,
+			"the assistant key was written, and what reads back is not what was written; it is not reported as stored")
 		return
 	}
 	// The event and the destination, never the value. This line is what the
@@ -1390,7 +1405,12 @@ func (s *Server) handleAssistantKeyDelete(w http.ResponseWriter, r *http.Request
 	if s.refuseUnusableStore(w) {
 		return
 	}
-	if err := s.assistant.removeKey(); err != nil {
+	configured, keyName, _, targetErr := s.endpointForConnection(r, false)
+	if targetErr != nil && (r.Header.Get(aiConnectionHeader) != "" || keyName == "") {
+		writeJSONError(w, statusForRefusal(targetErr), targetErr)
+		return
+	}
+	if err := s.assistant.removeKeyNamed(keyName); err != nil {
 		writeJSONCoded(w, http.StatusInternalServerError, CodeInternal,
 			fmt.Sprintf("the assistant key could not be removed: %v", err))
 		return
@@ -1399,7 +1419,7 @@ func (s *Server) handleAssistantKeyDelete(w http.ResponseWriter, r *http.Request
 	// The endpoint is still configured after a removal — the two are separate,
 	// which is the sentence Admin carries — so the origin travels and the
 	// verdict is the one a desk with no key has.
-	configured, _ := s.configuredEndpoint()
+
 	writeJSON(w, http.StatusOK, keyState(storedKey{}, configured))
 }
 
@@ -1676,12 +1696,12 @@ func (s *Server) handleAssistantProbe(w http.ResponseWriter, r *http.Request) {
 	if s.refuseUnusableStore(w) {
 		return
 	}
-	endpoint, err := s.configuredEndpoint()
+	endpoint, keyName, _, err := s.endpointForConnection(r, false)
 	if err != nil {
 		writeJSONError(w, statusForRefusal(err), err)
 		return
 	}
-	stored, err := s.assistant.readKey()
+	stored, err := s.assistant.readKeyNamed(keyName)
 	if err != nil {
 		s.refuseKeyRead(w, err)
 		return

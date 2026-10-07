@@ -1,0 +1,630 @@
+[
+  {
+    "name": "inherit both",
+    "value": {
+      "profileVersion": 1,
+      "codex": {
+        "inherit": true
+      },
+      "api": {
+        "inherit": true
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "implicit inheritance",
+    "value": {
+      "profileVersion": 1
+    },
+    "accepted": true
+  },
+  {
+    "name": "custom codex",
+    "value": {
+      "profileVersion": 1,
+      "codex": {
+        "inherit": false,
+        "models": [
+          "first",
+          "second"
+        ],
+        "model": "second",
+        "effort": "high"
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "custom api",
+    "value": {
+      "profileVersion": 1,
+      "api": {
+        "inherit": false,
+        "models": [
+          "gemini-test"
+        ],
+        "model": "gemini-test",
+        "thinking": "on"
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "disable models",
+    "value": {
+      "profileVersion": 1,
+      "codex": {
+        "inherit": false,
+        "models": [],
+        "model": null
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "duplicate",
+    "value": {
+      "profileVersion": 1,
+      "codex": {
+        "inherit": false,
+        "models": [
+          "a",
+          "a"
+        ],
+        "model": "a"
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "missing default",
+    "value": {
+      "profileVersion": 1,
+      "codex": {
+        "inherit": false,
+        "models": [
+          "a"
+        ]
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "outside default",
+    "value": {
+      "profileVersion": 1,
+      "codex": {
+        "inherit": false,
+        "models": [
+          "a"
+        ],
+        "model": "b"
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "whitespace",
+    "value": {
+      "profileVersion": 1,
+      "codex": {
+        "inherit": false,
+        "models": [
+          " a"
+        ],
+        "model": " a"
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "too many",
+    "value": {
+      "profileVersion": 1,
+      "codex": {
+        "inherit": false,
+        "models": [
+          "0",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15",
+          "16",
+          "17",
+          "18",
+          "19",
+          "20",
+          "21",
+          "22",
+          "23",
+          "24",
+          "25",
+          "26",
+          "27",
+          "28",
+          "29",
+          "30",
+          "31",
+          "32",
+          "33",
+          "34",
+          "35",
+          "36",
+          "37",
+          "38",
+          "39",
+          "40",
+          "41",
+          "42",
+          "43",
+          "44",
+          "45",
+          "46",
+          "47",
+          "48",
+          "49",
+          "50",
+          "51",
+          "52",
+          "53",
+          "54",
+          "55",
+          "56",
+          "57",
+          "58",
+          "59",
+          "60",
+          "61",
+          "62",
+          "63",
+          "64",
+          "65",
+          "66",
+          "67",
+          "68",
+          "69",
+          "70",
+          "71",
+          "72",
+          "73",
+          "74",
+          "75",
+          "76",
+          "77",
+          "78",
+          "79",
+          "80",
+          "81",
+          "82",
+          "83",
+          "84",
+          "85",
+          "86",
+          "87",
+          "88",
+          "89",
+          "90",
+          "91",
+          "92",
+          "93",
+          "94",
+          "95",
+          "96",
+          "97",
+          "98",
+          "99",
+          "100",
+          "101",
+          "102",
+          "103",
+          "104",
+          "105",
+          "106",
+          "107",
+          "108",
+          "109",
+          "110",
+          "111",
+          "112",
+          "113",
+          "114",
+          "115",
+          "116",
+          "117",
+          "118",
+          "119",
+          "120",
+          "121",
+          "122",
+          "123",
+          "124",
+          "125",
+          "126",
+          "127",
+          "128"
+        ],
+        "model": "0"
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "unicode bytes",
+    "value": {
+      "profileVersion": 1,
+      "codex": {
+        "inherit": false,
+        "models": [
+          "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9"
+        ],
+        "model": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9"
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "unsupported effort",
+    "value": {
+      "profileVersion": 1,
+      "codex": {
+        "inherit": false,
+        "models": [
+          "a"
+        ],
+        "model": "a",
+        "effort": "ultra"
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "url",
+    "value": {
+      "profileVersion": 1,
+      "codex": {
+        "inherit": false,
+        "models": [
+          "a"
+        ],
+        "model": "a",
+        "url": "https://example.invalid"
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "tools",
+    "value": {
+      "profileVersion": 1,
+      "codex": {
+        "inherit": false,
+        "models": [
+          "a"
+        ],
+        "model": "a",
+        "tools": [
+          "exec"
+        ]
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "credential",
+    "value": {
+      "profileVersion": 1,
+      "codex": {
+        "inherit": false,
+        "models": [
+          "a"
+        ],
+        "model": "a",
+        "apiKey": "fixture"
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "inherit with overrides",
+    "value": {
+      "profileVersion": 1,
+      "codex": {
+        "inherit": true,
+        "models": [
+          "a"
+        ]
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "null profile",
+    "value": {
+      "profileVersion": 1,
+      "codex": null
+    },
+    "accepted": false
+  },
+  {
+    "name": "unknown version",
+    "value": {
+      "profileVersion": 2
+    },
+    "accepted": false
+  },
+  {
+    "name": "unknown section",
+    "value": {
+      "profileVersion": 1,
+      "endpoint": {}
+    },
+    "accepted": false
+  },
+  {
+    "name": "effort in api",
+    "value": {
+      "profileVersion": 1,
+      "api": {
+        "inherit": false,
+        "models": [],
+        "model": null,
+        "effort": "high"
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "v2 inherit",
+    "value": {
+      "profileVersion": 2,
+      "inherit": true
+    },
+    "accepted": true
+  },
+  {
+    "name": "v2 no connections",
+    "value": {
+      "profileVersion": 2,
+      "inherit": false,
+      "connections": [],
+      "defaultConnection": null
+    },
+    "accepted": true
+  },
+  {
+    "name": "v2 independent models",
+    "value": {
+      "profileVersion": 2,
+      "inherit": false,
+      "connections": [
+        "ai-111111111111111111111111",
+        "ai-222222222222222222222222"
+      ],
+      "defaultConnection": "ai-111111111111111111111111",
+      "models": {
+        "ai-111111111111111111111111": {
+          "inherit": false,
+          "models": [
+            "one"
+          ],
+          "model": "one",
+          "thinking": "on"
+        },
+        "ai-222222222222222222222222": {
+          "inherit": false,
+          "models": [
+            "two"
+          ],
+          "model": "two",
+          "effort": "high"
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "v2 omitted models",
+    "value": {
+      "profileVersion": 2,
+      "inherit": false,
+      "connections": [
+        "ai-111111111111111111111111",
+        "ai-222222222222222222222222"
+      ],
+      "defaultConnection": "ai-111111111111111111111111"
+    },
+    "accepted": true
+  },
+  {
+    "name": "v2 inherited connection preferences",
+    "value": {
+      "profileVersion": 2,
+      "inherit": false,
+      "connections": [
+        "ai-111111111111111111111111",
+        "ai-222222222222222222222222"
+      ],
+      "defaultConnection": "ai-111111111111111111111111",
+      "models": {
+        "ai-111111111111111111111111": {
+          "inherit": true
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "v2 missing default",
+    "value": {
+      "profileVersion": 2,
+      "inherit": false,
+      "connections": [
+        "ai-111111111111111111111111",
+        "ai-222222222222222222222222"
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "name": "v2 null models",
+    "value": {
+      "profileVersion": 2,
+      "inherit": false,
+      "connections": [
+        "ai-111111111111111111111111",
+        "ai-222222222222222222222222"
+      ],
+      "defaultConnection": "ai-111111111111111111111111",
+      "models": null
+    },
+    "accepted": false
+  },
+  {
+    "name": "v2 unexpected fields",
+    "value": {
+      "profileVersion": 2,
+      "inherit": false,
+      "connections": [
+        "ai-111111111111111111111111",
+        "ai-222222222222222222222222"
+      ],
+      "defaultConnection": "ai-111111111111111111111111",
+      "endpoint": "https://example.invalid"
+    },
+    "accepted": false
+  },
+  {
+    "name": "v2 inherited with local settings",
+    "value": {
+      "profileVersion": 2,
+      "inherit": true,
+      "connections": [
+        "ai-111111111111111111111111"
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "name": "v2 duplicated connections",
+    "value": {
+      "profileVersion": 2,
+      "inherit": false,
+      "connections": [
+        "ai-111111111111111111111111",
+        "ai-111111111111111111111111"
+      ],
+      "defaultConnection": "ai-111111111111111111111111"
+    },
+    "accepted": false
+  },
+  {
+    "name": "v2 unknown default",
+    "value": {
+      "profileVersion": 2,
+      "inherit": false,
+      "connections": [
+        "ai-111111111111111111111111",
+        "ai-222222222222222222222222"
+      ],
+      "defaultConnection": "legacy-api"
+    },
+    "accepted": false
+  },
+  {
+    "name": "v2 inactive model preferences",
+    "value": {
+      "profileVersion": 2,
+      "inherit": false,
+      "connections": [
+        "ai-111111111111111111111111",
+        "ai-222222222222222222222222"
+      ],
+      "defaultConnection": "ai-111111111111111111111111",
+      "models": {
+        "legacy-api": {
+          "inherit": true
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "v2 mixed reasoning types",
+    "value": {
+      "profileVersion": 2,
+      "inherit": false,
+      "connections": [
+        "ai-111111111111111111111111",
+        "ai-222222222222222222222222"
+      ],
+      "defaultConnection": "ai-111111111111111111111111",
+      "models": {
+        "ai-111111111111111111111111": {
+          "inherit": false,
+          "models": [
+            "one"
+          ],
+          "model": "one",
+          "effort": "low",
+          "thinking": "on"
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "v2 no default with empty connections",
+    "value": {
+      "profileVersion": 2,
+      "inherit": false,
+      "connections": []
+    },
+    "accepted": false
+  },
+  {
+    "name": "v2 path traversal",
+    "value": {
+      "profileVersion": 2,
+      "inherit": false,
+      "connections": [
+        "../bad"
+      ],
+      "defaultConnection": "../bad"
+    },
+    "accepted": false
+  },
+  {
+    "name": "v2 default outside model allowlist",
+    "value": {
+      "profileVersion": 2,
+      "inherit": false,
+      "connections": [
+        "ai-111111111111111111111111",
+        "ai-222222222222222222222222"
+      ],
+      "defaultConnection": "ai-111111111111111111111111",
+      "models": {
+        "ai-111111111111111111111111": {
+          "inherit": false,
+          "models": [
+            "one"
+          ],
+          "model": "two"
+        }
+      }
+    },
+    "accepted": false
+  }
+]

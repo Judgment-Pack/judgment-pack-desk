@@ -723,10 +723,22 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 	if s.refuseUnusableStore(w) {
 		return
 	}
-	endpoint, err := s.configuredEndpoint()
+	endpoint, keyName, connection, err := s.endpointForConnection(r, false)
 	if err != nil {
 		writeJSONError(w, statusForRefusal(err), err)
 		return
+	}
+	listing := r.Method == http.MethodGet && suffix == relayListingSuffix[endpoint.kind]
+	profile, profileErr := s.readAssistantProfile()
+	if profileErr != nil && !listing {
+		writeJSONCoded(w, http.StatusConflict, CodeAssistantUnconfigured, assistantProfileProblem)
+		return
+	}
+	if !listing && connection != nil {
+		if r.Header.Get(aiRevisionHeader) == "" || !connection.Enabled || profile.Version == 2 && profile.Inherit != nil && !*profile.Inherit && !contains(profile.Connections, connection.ID) {
+			writeJSONCoded(w, http.StatusConflict, CodeAssistantUnconfigured, "This AI connection is unavailable for this desk. Choose another connection.")
+			return
+		}
 	}
 	// **The other half of the query rule, and it is here because this is the
 	// first line at which the kind is known.** The shape was settled before
@@ -740,7 +752,7 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 				"all; nothing was sent", endpoint.kind))
 		return
 	}
-	stored, err := s.assistant.readKey()
+	stored, err := s.assistant.readKeyNamed(keyName)
 	if err != nil {
 		s.refuseKeyRead(w, err)
 		return
@@ -779,7 +791,6 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 	// person copy. Read off the configured kind rather than off anything the
 	// page said, so a page cannot ask for the scan to be skipped — or asked
 	// for.
-	listing := r.Method == http.MethodGet && suffix == relayListingSuffix[endpoint.kind]
 
 	target, err := relayTarget(endpoint.url, suffix, extra)
 	if err != nil {
@@ -843,6 +854,14 @@ func (s *Server) handleModelRelay(w http.ResponseWriter, r *http.Request) {
 		// repeated: what a reader needs is that it was not forwarded.
 		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest,
 			"the request body could not be read, and nothing was sent")
+		return
+	}
+	if !listing && connection != nil && !profileAPIModelAllowed(endpoint.kind, suffix, body, connectionModels(connection, profile)) {
+		writeJSONCoded(w, http.StatusForbidden, CodeForbidden, "Choose a model enabled for this AI connection and desk.")
+		return
+	}
+	if !listing && connection == nil && profile.API != nil && !profile.API.Inherit && !profileAPIModelAllowed(endpoint.kind, suffix, body, profile.API.Models) {
+		writeJSONCoded(w, http.StatusForbidden, CodeForbidden, "Choose an enabled model in Admin › Assistant.")
 		return
 	}
 	r.Body = io.NopCloser(bytes.NewReader(body))

@@ -1,3 +1,4 @@
+import { validAIConnectionId } from '../assistant/aiConnections'
 import { readAttachments, readMessageId, readResponseHistory } from './responseHistory'
 import { readPreviousCheck, readProbes } from '../research/runtimeProbes'
 import { INITIAL_STATE, type RunState, type Turn } from '../research/run'
@@ -43,7 +44,8 @@ export function decodeCheckpoint(value: unknown): Checkpoint {
   const turns: Turn[] = state.turns.map((turn, index) => {
     if (!object(turn) || (turn.role !== 'user' && turn.role !== 'assistant') || typeof turn.text !== 'string'
       || (turn.statement !== undefined && typeof turn.statement !== 'string') || (turn.input !== undefined && typeof turn.input !== 'string') || (turn.interrupted !== undefined && typeof turn.interrupted !== 'boolean') || typeof turn.at !== 'string' || !['brief', 'message', 'unknowns', 'note'].includes(String(turn.kind))) return invalid()
-    return { id: readMessageId(turn.id) ?? `legacy-turn-${index}`, ...(turn.attachments !== undefined ? {attachments: readAttachments(turn.attachments, 4)} : {}), role: turn.role, text: turn.text, at: turn.at, kind: turn.kind as Turn['kind'], ...(typeof turn.statement === 'string' ? { statement: turn.statement } : {}), ...(typeof turn.input === 'string' ? { input: turn.input } : {}), ...(turn.interrupted === true ? { interrupted: true } : {}) }
+    if(turn.target!==undefined&&(!object(turn.target)||!validAIConnectionId(turn.target.connectionId)||typeof turn.target.connectionName!=='string'||turn.target.connectionName.length>128||typeof turn.target.model!=='string'||!turn.target.model||turn.target.model.length>128))return invalid()
+    return { ...(turn.target?{target:turn.target as unknown as NonNullable<Turn['target']>}:{}), id: readMessageId(turn.id) ?? `legacy-turn-${index}`, ...(turn.attachments !== undefined ? {attachments: readAttachments(turn.attachments, 4)} : {}), role: turn.role, text: turn.text, at: turn.at, kind: turn.kind as Turn['kind'], ...(typeof turn.statement === 'string' ? { statement: turn.statement } : {}), ...(typeof turn.input === 'string' ? { input: turn.input } : {}), ...(turn.interrupted === true ? { interrupted: true } : {}) }
   })
   if (new Set(turns.map(turn => turn.id)).size !== turns.length) return invalid()
   const candidates = state.candidates.map((candidate, index) => {

@@ -61,6 +61,7 @@ function servesAMovedFile(deskFile?: object): {
 } {
   const seen = { puts: 0, reads: 0, bodies: [] as Record<string, unknown>[] }
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (String(url).includes('jpack-assistant.json')) return answered({code:'not-found',error:'no profile'},404)
     if (url.includes('/api/desk-config')) {
       return answered({
         path: '/home/someone/.config/jpack-desk/desk.json',
@@ -145,6 +146,7 @@ function servesTwoRevisions(first: string, second: string): {
 } {
   const seen = { reads: 0, bodies: [] as Record<string, unknown>[] }
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (String(url).includes('jpack-assistant.json')) return answered({code:'not-found',error:'no profile'},404)
     if (url.includes('/api/desk-config')) {
       return answered({
         path: '/home/someone/.config/jpack-desk/desk.json',
@@ -195,6 +197,7 @@ function servesTwoRevisions(first: string, second: string): {
 function servesLandingWrites(content: string): { bodies: Record<string, unknown>[] } {
   const seen = { bodies: [] as Record<string, unknown>[], latest: content, digest: 'a'.repeat(64) }
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (String(url).includes('jpack-assistant.json')) return answered({code:'not-found',error:'no profile'},404)
     if (url.includes('/api/desk-config')) {
       return answered({
         path: '/home/someone/.config/jpack-desk/desk.json',
@@ -229,6 +232,7 @@ function servesLandingWrites(content: string): { bodies: Record<string, unknown>
 function servesRefusedThenUnreadable(): { puts: number } {
   const seen = { puts: 0, reads: 0 }
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (String(url).includes('jpack-assistant.json')) return answered({code:'not-found',error:'no profile'},404)
     if (url.includes('/api/desk-config')) {
       return answered({
         path: '/home/someone/.config/jpack-desk/desk.json',
@@ -285,6 +289,7 @@ function servesThreeRevisions(first: string, second: string): {
     digest: 'b'.repeat(64)
   }
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (String(url).includes('jpack-assistant.json')) return answered({code:'not-found',error:'no profile'},404)
     if (url.includes('/api/desk-config')) {
       return answered({
         path: '/home/someone/.config/jpack-desk/desk.json',

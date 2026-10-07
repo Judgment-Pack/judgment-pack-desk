@@ -1,3 +1,4 @@
+import type { AITarget } from './aiConnections'
 import { deskSocketURL } from '../desks/scope'
 import { chassisUrl } from '../files/client'
 import { socketProtocols } from '../mcp/McpProvider'
@@ -11,9 +12,10 @@ const failure = () => new Error('The Codex connection ended before the run compl
 
 /** Bound outside the engine, just like bindModelCall. Captures one constructor,
  * one selected model and a fixed route; never retries a run or changes engines. */
-export function bindAgentRun(model: string): AgentRun {
+export function bindAgentRun(model: string, target?:AITarget): AgentRun {
   const Socket = globalThis.WebSocket
   const url = new URL(deskSocketURL(chassisUrl('/api/agent/run')), globalThis.location.href)
+  if(target?.connectionId){url.searchParams.set('connection',target.connectionId);if(target.connectionRevision)url.searchParams.set('revision',target.connectionRevision)}
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
   return async (request, callbacks) => {
     if (callbacks.signal.aborted) throw new RunCancelled()
@@ -77,6 +79,7 @@ export function bindAgentRun(model: string): AgentRun {
           if (typeof value.error !== 'string') throw failure()
           const messages: Record<string, string> = {
             busy: 'Another Codex operation is active',
+            'model-not-allowed': 'Choose an enabled model in Admin › Assistant.',
             'sign-in-required': 'Connect a ChatGPT account before running Codex',
             limit: 'The Codex run reached its limit',
             unavailable: 'Codex is unavailable',

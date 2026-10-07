@@ -513,9 +513,10 @@ func (s *Server) makeDeskFolder(ctx context.Context, folder *os.Root, entry, id 
 		return deskGates{}, failure
 	}
 	for name, body := range map[string]string{
-		runtimeConfigName: string(gates.config),
-		"jpack-desk.json": "{\"deskConfigVersion\":1}\n",
-		".gitignore":      ".desk-private/\n",
+		runtimeConfigName:    string(gates.config),
+		"jpack-desk.json":    "{\"deskConfigVersion\":1}\n",
+		assistantProfilePath: inheritedAssistantProfile,
+		".gitignore":         ".desk-private/\n",
 	} {
 		if err = folder.WriteFile(name, []byte(body), 0600); err != nil {
 			return failed(storageRefusal(err))
@@ -657,7 +658,7 @@ func (s *Server) abandonDesk(w http.ResponseWriter, folder *os.Root, entry strin
 // deskFolderMade is everything a creation makes inside a new desk's folder,
 // in the order it is removed: what is in a directory before the directory.
 var deskFolderMade = []string{
-	deskManifest, runtimeLockName, runtimeConfigName, "jpack-desk.json", ".gitignore",
+	deskManifest, runtimeLockName, runtimeConfigName, "jpack-desk.json", assistantProfilePath, ".gitignore",
 	handoverDir, deskAuditDir, ".desk-private", ".desk/job-drafts", ".desk", "packs", "sources",
 }
 

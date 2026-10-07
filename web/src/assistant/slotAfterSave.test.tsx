@@ -1,3 +1,6 @@
+import { MemoryRouter } from 'react-router-dom'
+import type { ReactNode } from 'react'
+import { effectiveConfig } from '../config/deskConfig'
 /**
  * A save reaches the surfaces that read the slot, without a reload.
  *
@@ -15,11 +18,22 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DeskConfigProvider, useEffectiveConfig } from '../config/DeskConfigProvider'
-import { DESK_CONFIG_QUERY_KEY } from '../config/queries'
+import { DeskConfigFixture, useEffectiveConfig } from '../config/DeskConfigProvider'
+import { useDeskConfig, DESK_CONFIG_QUERY_KEY } from '../config/queries'
 import { testQueryClient } from '../testing/harness'
 import { AssistantSection } from './AssistantSection'
 import { useAssistantSlot } from './useAssistantSlot'
+
+// Exercise the legacy shared-config writer under the section's read/refusal shell.
+// Production Assistant now edits desk preferences; named connections have their own suite.
+vi.mock('./AssistantSettings',async original=>{const actual=await original<typeof import('./AssistantSettings')>();return {...actual,AssistantSettings:actual.SharedAssistantSettings}})
+
+// Keep the legacy config writer contract exercised against a live query.
+// Named connection writes and their consumers are covered by aiConnections.test.
+function DeskConfigProvider({children}:{children:ReactNode}) {
+ const {data}=useDeskConfig()
+ return <DeskConfigFixture value={data??effectiveConfig(undefined)}>{children}</DeskConfigFixture>
+}
 
 afterEach(() => {
   cleanup()
@@ -157,13 +171,13 @@ function renderWith(client: ReturnType<typeof testQueryClient>) {
   return {
     client,
     ...render(
-    <QueryClientProvider client={client}>
+    <QueryClientProvider client={client}><MemoryRouter>
       <DeskConfigProvider>
         <DigestReading />
         <SlotReading />
         <AssistantSection id="assistant" title="Assistant" />
       </DeskConfigProvider>
-    </QueryClientProvider>
+    </MemoryRouter></QueryClientProvider>
     )
   }
 }
@@ -193,7 +207,7 @@ describe('what a save reaches', () => {
       )
     )
     chooseModel('the-model-chosen')
-    fireEvent.click(screen.getByRole('combobox', { name: 'Thinking' }))
+    fireEvent.click(screen.getByRole('combobox', { name: 'Reasoning effort' }))
     fireEvent.click(await screen.findByRole('option', { name: 'deep' }))
     fireEvent.click(screen.getByRole('button', { name: 'Save settings' }))
 

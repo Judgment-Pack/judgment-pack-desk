@@ -1,3 +1,6 @@
+import { ASSISTANT_THINKING, type ThinkingTier } from '../config/deskConfig'
+import { validAIConnectionId } from '../assistant/aiConnections'
+import { validChatReasoning, type ChatReasoning } from './reasoning'
 import type { AuthoringMode } from '../research/mode'
 import { validSearchReference, type SearchReference } from '../search/results'
 import { migrateMessageOwnership } from './messageOwnership'
@@ -33,9 +36,13 @@ export function retainSentDocuments(previous: ChatAttachment[], sent: ChatAttach
   return [...documents.values()]
 }
 export interface Chat {
+  apiThinking?:ThinkingTier
+  aiConnection?:string
+  aiConnectionName?:string
   id: string; title: string; pinned: boolean; archived: boolean; updatedAt: string
   /** First accepted submission; absent for history predating this field. */
   createdAt?: string
+  reasoning?: ChatReasoning
   composer: string; model: string; mode: AuthoringMode; view: 'chat' | 'draft'
   pack?: { id: string; path: string; digest: string }
   checkpoint?: Checkpoint
@@ -73,6 +80,10 @@ function decode(value: unknown): Chat[] {
       || typeof chat.title !== 'string' || typeof chat.composer !== 'string' || typeof chat.model !== 'string'
       || typeof chat.pinned !== 'boolean' || typeof chat.archived !== 'boolean'
       || typeof chat.updatedAt !== 'string' || !Number.isFinite(Date.parse(chat.updatedAt)) || !['draft', 'research', 'web-research'].includes(chat.mode) || !['chat', 'draft'].includes(chat.view)) throw new Error(sourceMessage("Invalid saved chat. History has not been changed."))
+    if (chat.apiThinking!==undefined&&!ASSISTANT_THINKING.includes(chat.apiThinking))throw new Error(sourceMessage('Invalid saved chat'))
+    if (chat.aiConnection !== undefined && !validAIConnectionId(chat.aiConnection)) throw new Error(sourceMessage('Invalid saved chat'))
+    if (chat.aiConnectionName !== undefined && (typeof chat.aiConnectionName!=='string'||chat.aiConnectionName.length>128)) throw new Error(sourceMessage('Invalid saved chat'))
+    if (chat.reasoning !== undefined && !validChatReasoning(chat.reasoning)) throw new Error(sourceMessage('Invalid saved chat'))
     if (chat.createdAt !== undefined && (typeof chat.createdAt !== 'string' || !timestampDate(chat.createdAt))) throw new Error(sourceMessage("Invalid saved chat"))
     if (chat.targetFolderId !== undefined && (typeof chat.targetFolderId !== 'string' || !/^[a-zA-Z0-9-]{1,80}$/.test(chat.targetFolderId))) throw new Error(sourceMessage("Invalid saved pack context"))
     if (chat.draftId !== undefined && (typeof chat.draftId !== 'string' || !/^draft-[a-z0-9-]{1,160}$/.test(chat.draftId))) throw new Error(sourceMessage('Invalid saved pack context'))
@@ -93,7 +104,7 @@ function decode(value: unknown): Chat[] {
     if(chat.searches!==undefined && (!Array.isArray(chat.searches)||chat.searches.length>64||!chat.searches.every(validSearchReference)||new Set(chat.searches.map(s=>s.id)).size!==chat.searches.length))throw new Error(sourceMessage('Invalid saved attachments'))
     if(chat.researchMode!==undefined&&!['auto','provided'].includes(chat.researchMode)||chat.searchConnection!==undefined&&(typeof chat.searchConnection!=='string'||!/^([a-z][a-z0-9-]{0,47})$/.test(chat.searchConnection)))throw new Error(sourceMessage('Invalid saved chat'))
     if (chat.pack && (typeof chat.pack.id !== 'string' || typeof chat.pack.path !== 'string' || typeof chat.pack.digest !== 'string')) throw new Error(sourceMessage("Invalid saved pack context"))
-    return { id: chat.id, title: chat.title, composer: chat.composer, model: chat.model, pinned: chat.pinned, archived: chat.archived,
+    return { id: chat.id, title: chat.title, composer: chat.composer, model: chat.model, ...(chat.apiThinking?{apiThinking:chat.apiThinking}:{}), ...(chat.aiConnection?{aiConnection:chat.aiConnection,aiConnectionName:chat.aiConnectionName}:{}), ...(chat.reasoning ? {reasoning:{model:chat.reasoning.model,effort:chat.reasoning.effort}} : {}), pinned: chat.pinned, archived: chat.archived,
       updatedAt: chat.updatedAt, ...(chat.createdAt !== undefined ? { createdAt: chat.createdAt } : {}), mode: chat.mode === 'research' && !chat.checkpoint && !chat.draftId ? 'web-research' : chat.mode, view: chat.view, attachments: chat.attachments ?? [], documents: chat.documents ?? [], websites:chat.websites ?? [], searches:chat.searches??[], researchMode:chat.researchMode, searchConnection:chat.searchConnection, adversarialReview: chat.adversarialReview === true, titleEdited: chat.titleEdited === true, ...(chat.pack ? { pack: chat.pack } : {}),
       ...(chat.draftId ? { draftId: chat.draftId, draftGeneration:chat.draftGeneration } : {}),
       ...(chat.targetFolderId !== undefined ? { targetFolderId: chat.targetFolderId } : {}),

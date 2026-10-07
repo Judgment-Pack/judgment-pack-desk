@@ -1,28 +1,6 @@
 import { msg, useLocale } from '../i18n'
-/**
- * Admin › Assistant: the endpoint this desk is configured for, and the one key
- * it keeps — as one of Admin's cards.
- *
- * **The card is a heading, a location, a status and one form.** The rows of
- * facts that used to sit above the form said, in a second vocabulary, what the
- * fields below them already say: which endpoint, whether a key is stored, what
- * the probe answered. One order, one set of words, and the person setting this
- * up reads down it once. `EndpointForm` is that form.
- *
- * **A configuration this desk could not read is its own state here**, and it is
- * the card's Status line rather than a warning note: the form then holds the
- * built-in defaults rather than anything anybody configured, so it is shown and
- * not edited.
- *
- * **And a member this desk migrated is a Status line too.** A file naming the
- * withdrawn engine is accepted and decodes to the engine that runs; the decoder
- * says so, in its own words, and this is where that sentence is shown. It is a
- * notice and never a refusal — the file was read, and everything in it is in
- * use.
- *
- * Nothing here says chassis, bytes or path to the reader. The words are the
- * desk, this computer, and the file.
- */
+/** Per-desk model preferences. Shared accounts and defaults live in Connections.
+ * Keep configuration failures visible while hiding healthy storage metadata. */
 import { SourceCard, type SourceStatus } from '../admin/SourceCard'
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
 import { NO_MODEL_CHOSEN, type DeskLevelSummary } from '../config/deskConfig'
@@ -33,10 +11,12 @@ export function AssistantSection({
   id,
   title,
   under,
-  level
+  level, blocked = false, onDirtyChange
 }: {
   id: string
   title: string
+  blocked?: boolean
+  onDirtyChange?: (dirty:boolean)=>void
   /**
    * The status of the group header this card sits under, where there is one.
    *
@@ -78,7 +58,7 @@ export function AssistantSection({
         )
       }
       status={under !== undefined && setupOnly ? under : status}
-      save={<AssistantSettings unavailable={slot.state === 'unavailable'} />}
+      save={<AssistantSettings unavailable={blocked || slot.state === 'unavailable'} onDirtyChange={onDirtyChange}/>}
     />
   )
 }

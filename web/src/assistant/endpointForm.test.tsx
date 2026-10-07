@@ -24,6 +24,7 @@ import { testQueryClient } from '../testing/harness'
 import { narrationIn } from '../admin/narration'
 import type { AssistantKeyState } from './client'
 import { EndpointForm } from './EndpointForm'
+import { AIConnectionScope, type AIConnection } from './aiConnections'
 import { PREFILLED_URL } from './endpointDraft'
 
 afterEach(() => {
@@ -354,7 +355,7 @@ describe('the fields', () => {
   it('offers exactly the tiers the file admits', async () => {
     stubWrites([{}])
     renderForm()
-    fireEvent.click(screen.getByRole('combobox', { name: 'Thinking' }))
+    fireEvent.click(screen.getByRole('combobox', { name: 'Reasoning effort' }))
     const offered = (await screen.findAllByRole('option')).map((option) => option.textContent)
     expect(offered).toEqual(['off', 'standard', 'deep'])
   })
@@ -574,7 +575,7 @@ describe('Test connection: the probe and the listing, in one press', () => {
       'Search models',
       'Other model… (type an id)',
       'Tools the assistant may use',
-      'Thinking'
+      'Reasoning effort'
     ])
     cleanup()
 
@@ -587,8 +588,33 @@ describe('Test connection: the probe and the listing, in one press', () => {
     expect(order.indexOf('Test connection')).toBeGreaterThan(order.indexOf('Endpoint URL'))
     expect(order.indexOf('Test connection')).toBeLessThan(order.indexOf('Models'))
     expect(order.indexOf('Models')).toBeLessThan(order.indexOf('Tools the assistant may use'))
-    expect(order.indexOf('Tools the assistant may use')).toBeLessThan(order.indexOf('Thinking'))
-    expect(order.indexOf('Thinking')).toBeLessThan(order.indexOf('Save settings'))
+    expect(order.indexOf('Tools the assistant may use')).toBeLessThan(order.indexOf('Reasoning effort'))
+    expect(order.indexOf('Reasoning effort')).toBeLessThan(order.indexOf('Save settings'))
+  })
+
+  it('names the AI connection it belongs to on the probe and the listing alike', async () => {
+    // Once ai-connections.json exists the desk refuses a probe or a listing
+    // that names no connection, so a form inside a connection names it on both.
+    const seen = servesCheck(LISTED)
+    const connection: AIConnection = { id: 'ai-' + '1'.repeat(24), name: 'Work', enabled: true, revision: 'd'.repeat(64), assistant: GEMINI.config.assistant }
+    keyAnswer = keyState(true)
+    render(
+      <QueryClientProvider client={testQueryClient()}>
+        <AIConnectionScope value={{ connection, registry: { version: 1, defaultConnection: connection.id, connections: [connection], sha256: DIGEST, path: 'ai-connections.json' } }}>
+          <DeskConfigFixture value={GEMINI}>
+            <EndpointForm unavailable={false} />
+          </DeskConfigFixture>
+        </AIConnectionScope>
+      </QueryClientProvider>
+    )
+    await test()
+    await waitFor(() => expect(probed(seen.urls)).toHaveLength(1))
+    await waitFor(() => expect(relayed(seen.urls)).toHaveLength(1))
+    for (const url of [probed(seen.urls)[0]!, relayed(seen.urls)[0]!]) {
+      const headers = new Headers(seen.inits[seen.urls.indexOf(url)]!.headers)
+      expect(headers.get('X-Assistant-Connection'), url).toBe(connection.id)
+      expect(headers.get('X-Assistant-Revision'), url).toBe(connection.revision)
+    }
   })
 
   it('asks nothing at all until it is pressed', async () => {
