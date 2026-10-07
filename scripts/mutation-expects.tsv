@@ -547,8 +547,13 @@ go	upgrade key: a jpack.json that cannot be read now names no key	TestAStoppedSi
 go	upgrade key: a project at 6 is written at a lower version	TestChoosingTheSigningKeyWritesSixAndTheKeyTogether
 go	upgrade key: a project not put back loses the key jpack.json may name	TestAnUpgradeNotPutBackLeavesTheKeyForTheNextStart
 go	upgrade key: a refusal names a path	TestNoPathOfTheStartupKeyReachesThePage
+go	upgrade key: a replaced signing folder is said as a failed write	TestAFailedSigningUpgradeLeavesNoKeyAndNoChange
+go	upgrade key: a rotation is offered where jpack.json names another file	TestARotationOfTheStartupKeyFollowsWhatJpackJsonNames
+go	upgrade key: a rotation is reported made where jpack.json no longer names the key	TestARotationOfTheStartupKeyFollowsWhatJpackJsonNames
+go	upgrade key: a rotation's token does not bind the startup key's file	TestARotationOfTheStartupKeyFollowsWhatJpackJsonNames
 go	upgrade key: a signing folder held elsewhere is made in anyway	TestTheSigningUpgradeWaitsForTheSigningFolder
 go	upgrade key: another project's marker is the startup project's	TestAStoppedSigningUpgradeIsSweptAtTheNextStart
+go	upgrade key: jpack.json is published naming a key whose folder was replaced	TestAFailedSigningUpgradeLeavesNoKeyAndNoChange
 go	upgrade key: jpack.json names a key that was not made	TestChoosingTheSigningKeyWritesSixAndTheKeyTogether
 go	upgrade key: no jpack.json is taken for one that cannot be read	TestAStoppedSigningUpgradeIsSweptAtTheNextStart
 go	upgrade key: rotation offered on the startup desk with no key	TestARotationIsMadeOnlyWhereItCanBe,TestTheDecisionRecordReadsTheStartupKeyAfterTheUpgrade
@@ -568,6 +573,7 @@ go	upgrade key: the key is made without the signing folder's lock	TestTheSigning
 go	upgrade key: the key is named although its folder was replaced	TestAFailedSigningUpgradeLeavesNoKeyAndNoChange
 go	upgrade key: the key is named below configVersion 6	TestChoosingTheSigningKeyWritesSixAndTheKeyTogether
 go	upgrade key: the key made is not answered	TestChoosingTheSigningKeyWritesSixAndTheKeyTogether
+go	upgrade key: the marker goes although the key's folder was replaced after the lock	TestAFailedSigningUpgradeLeavesNoKeyAndNoChange
 go	upgrade key: the marker goes before jpack.json names the key	TestAStoppedSigningUpgradeIsSweptAtTheNextStart
 go	upgrade key: the marker is left after the upgrade	TestChoosingTheSigningKeyWritesSixAndTheKeyTogether
 go	upgrade key: the offer's item is not given	TestTheSigningItemIsShownOnlyWhereItCanBeKept
@@ -577,9 +583,13 @@ go	upgrade key: the start recovers rotations only where a desks folder is	TestTh
 go	upgrade key: the startup desk with no key is said to be a made desk's	TestTheDecisionRecordReadsTheStartupKeyAfterTheUpgrade,TestWhereDeskKeepsNoKeyNoneIsPassed
 go	upgrade key: the startup desk's rotation is recovered as no desk's	TestTheStartFinishesARotationOfTheStartupKey
 go	upgrade key: the startup project's key is kept under no name of its own	TestChoosingTheSigningKeyWritesSixAndTheKeyTogether
+go	upgrade key: the startup project's key is named by the path as given	TestTheStartupKeyIsNamedByTheResolvedProject
 go	upgrade key: the sweep leaves a stopped upgrade's key	TestAStoppedSigningUpgradeIsSweptAtTheNextStart
 go	upgrade key: the sweep removes a key jpack.json names	TestAStoppedSigningUpgradeIsSweptAtTheNextStart
 go	upgrade: a configuration version Desk does not know is upgraded	TestTheUpgradeOffersOnlyWhatTheRuntimeReads
+go	upgrade: a failed configuration write leaves what the upgrade wrote	TestAFailedConfigurationWritePutsBackWhatTheUpgradeWrote,TestAFailedSigningUpgradeLeavesNoKeyAndNoChange,TestAnEditDuringTheUpgradeWriteIsNotOverwritten
+go	upgrade: a file is compared before it is staged, not before it is published	TestAFailedSigningUpgradeLeavesNoKeyAndNoChange,TestAnEditDuringTheUpgradeWriteIsNotOverwritten
+go	upgrade: a link found at publication is answered as a failure, not as stale	TestAnEditDuringTheUpgradeWriteIsNotOverwritten
 go	upgrade: a token does not cover the configuration written	TestAStaleUpgradeConfirmationWritesNothing
 go	upgrade: an existing audit directory is replaced	TestAnExistingAuditDirectoryIsKept,TestChoosingTheSigningKeyWritesSixAndTheKeyTogether,TestTheDecisionRecordReadsTheStartupKeyAfterTheUpgrade,TestTheSigningKeyIsAddedInsideTheAuditMember,TestUpgradedConfigKeepsEveryOtherByte
 go	upgrade: an existing lock is not said	TestAnExistingLockIsSaidToDrift
