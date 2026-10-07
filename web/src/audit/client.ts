@@ -184,8 +184,16 @@ export type TrailFile = keyof typeof TRAIL_FILES
  * all, or tell which trail is current, why it passed none.
  */
 type HeldInputs = { expected?: number; expectUnread?: string[]; handoverProblem?: string }
+/**
+ * For a holder whose checkpoints were passed to the check: the last record
+ * handed over to it, of the trail the report is of, and what follows it, as
+ * the report says it. `records` where the report says how many chained
+ * records follow; `lines` in its place where it does not, since a line a
+ * repair names as damaged is not a record.
+ */
+export type HandedSince = { holder: string; trail: string; through: number; records?: number; lines?: number }
 export type AuditRecord =
-  | ({ state: 'report'; runtime?: string; report: AuditReport; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation; repair?: AuditRepair; stamping?: AuditStamping } & HeldInputs)
+  | ({ state: 'report'; runtime?: string; report: AuditReport; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation; repair?: AuditRepair; stamping?: AuditStamping; since?: HandedSince[] } & HeldInputs)
   | ({ state: 'unverified'; runtime?: string; diagnostics: AuditDiagnostic[]; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation; stamping?: AuditStamping } & HeldInputs)
   | { state: 'older-runtime'; runtime?: string; floor: string }
   | { state: 'no-trail' }
@@ -278,12 +286,18 @@ export function isAuditRecord(value: unknown): value is AuditRecord {
     || !optional(value.expected, count) || !optional(value.expectUnread, item => list(item, named)) || !optional(value.handoverProblem, named)) return false
   if (!optional(value.stamping, isAuditStamping)) return false
   switch (value.state) {
-    case 'report': return isAuditReport(value.report) && optional(value.repair, isAuditRepair)
-    case 'unverified': return list(value.diagnostics, isDiagnostic) && value.diagnostics.length > 0 && value.repair === undefined
+    case 'report': return isAuditReport(value.report) && optional(value.repair, isAuditRepair) && optional(value.since, item => list(item, isHandedSince))
+    case 'unverified': return list(value.diagnostics, isDiagnostic) && value.diagnostics.length > 0 && value.repair === undefined && value.since === undefined
     case 'older-runtime': return text(value.floor) && value.stamping === undefined
     case 'no-trail': return value.stamping === undefined
   }
   return false
+}
+
+/** A holder's count after the last record handed over: of records, or of lines, never both. */
+function isHandedSince(value: unknown): value is HandedSince {
+  return object(value) && hex(16)(value.holder) && hex(32)(value.trail) && count(value.through) && value.through > 0
+    && (count(value.records) && value.lines === undefined || count(value.lines) && value.records === undefined)
 }
 
 async function refusal(response: Response): Promise<Error> {
@@ -426,8 +440,13 @@ export async function repairTrail(token: string): Promise<RepairResult> {
 
 /* The hand-over ------------------------------------------------------------- */
 
-/** What Desk recorded of one trail handed over to one holder; `unwitnessed`, for the current trail only. */
-export type HolderTrail = { through: number; confirmedAt: number; digest: string; unwitnessed?: number }
+/**
+ * What Desk recorded of one trail handed over to one holder; `linesSince`, for
+ * the current trail only, the lines after the last record handed over through
+ * the last chained one: lines, never records, since a line a repair names as
+ * damaged is one of them.
+ */
+export type HolderTrail = { through: number; confirmedAt: number; digest: string; linesSince?: number }
 /**
  * One holder: the owner's label and channel, and Desk's record of each trail
  * handed over to it; under `jobs`, of each identity of Runner's chain of runs,
@@ -485,7 +504,7 @@ const trailIdentity = hex(32)
 const sha256 = (value: unknown): value is string => text(value) && /^sha256:[0-9a-f]{64}$/.test(value)
 const holderId = hex(16)
 const isHolderTrail = (value: unknown): value is HolderTrail => object(value) && count(value.through) && value.through > 0 && count(value.confirmedAt)
-  && sha256(value.digest) && optional(value.unwitnessed, count)
+  && sha256(value.digest) && optional(value.linesSince, count)
 
 /** One holder, as the chassis shows it: an id of its form, the owner's words, and a record keyed by trail identity. */
 export function isHolder(value: unknown): value is Holder {
@@ -697,14 +716,15 @@ export type StampRun = {
  * The decision record's word on stamping: no authority; one set, its
  * settings, and whether their roots were given to the check (and why not);
  * settings Desk could not read now, and why; or none kept here, and why.
- * Beside it, the records pending a stamp where the runtime checked the
- * stamps, the last stamp run since Desk started, whether one is running, and
- * the token that confirms a removal of the settings shown.
+ * Beside it, where the runtime checked the stamps, the records pending a
+ * stamp, or, where its report does not say how many records, the lines
+ * (`pendingLines`); the last stamp run since Desk started, whether one is
+ * running, and the token that confirms a removal of the settings shown.
  */
 export type AuditStamping = {
   state: 'none' | 'set' | 'unread' | 'unavailable'
   settings?: StampingSettings; problem?: string; removeToken?: string
-  passed?: boolean; passProblem?: string; pending?: number; last?: StampRun; running?: boolean
+  passed?: boolean; passProblem?: string; pending?: number; pendingLines?: number; last?: StampRun; running?: boolean
 }
 /** What the owner proposes: the roots as PEM text, each revocation list's bytes in base64. */
 export type StampingProposal = { authority: string; intervalMinutes?: number; roots: string; policies: string[]; crls: string[] }
@@ -768,10 +788,11 @@ export function isStampRun(value: unknown): value is StampRun {
   return false
 }
 
-/** The decision record's word on stamping: each state with what it carries, a removal token of 96 hexadecimal characters, and a count pending. */
+/** The decision record's word on stamping: each state with what it carries, a removal token of 96 hexadecimal characters, and a count pending, of records or of lines. */
 export function isAuditStamping(value: unknown): value is AuditStamping {
   if (!object(value) || !optional(value.removeToken, hex(96)) || !optional(value.passed, item => typeof item === 'boolean') || !optional(value.passProblem, named)
-    || !optional(value.pending, count) || !optional(value.last, isStampRun) || !optional(value.running, item => typeof item === 'boolean')) return false
+    || !optional(value.pending, count) || !optional(value.pendingLines, count) || value.pending !== undefined && value.pendingLines !== undefined
+    || !optional(value.last, isStampRun) || !optional(value.running, item => typeof item === 'boolean')) return false
   switch (value.state) {
     case 'none': return value.settings === undefined && value.removeToken === undefined && !value.passed && value.problem === undefined
     case 'set': return isStampingSettings(value.settings) && value.problem === undefined && typeof value.removeToken === 'string'

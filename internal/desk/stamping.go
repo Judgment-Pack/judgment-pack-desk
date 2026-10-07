@@ -98,12 +98,16 @@ package desk
 // The decision record's `audit verify` is given `--tsa-roots`, and
 // `--tsa-policy` and `--tsa-crls` where set (audit_record.go), so the
 // report's `coverage.stamped`, the stamps it accepted and the lag between
-// records' `at` and their first stamp are the runtime's. Records after
-// `stamped.through` are pending a stamp. Without roots the runtime says the
-// stamps were not checked. The page shows the checkpoint the last stamp run
-// named as the authority's answer to Desk's request, not as a stamp checked,
-// wherever the report's stamps do not reach it in the same trail: no roots,
-// no stamp, one below it, or another trail's (line audit, finding 5).
+// records' `at` and their first stamp are the runtime's. The chained records
+// after `stamped.through` are pending a stamp, counted from what the report
+// says of them (`chainedAfter`), never by subtracting one line's number from
+// another's: a line a repair names as damaged is not a record (line audit,
+// finding 7). Where the report does not say, the count is of lines, and is
+// said as one. Without roots the runtime says the stamps were not checked.
+// The page shows the checkpoint the last stamp run named as the authority's
+// answer to Desk's request, not as a stamp checked, wherever the report's
+// stamps do not reach it in the same trail: no roots, no stamp, one below it,
+// or another trail's (line audit, finding 5).
 //
 // # What a stamp does not establish
 //
@@ -704,11 +708,14 @@ type auditStamping struct {
 	// they were not, PassProblem says why.
 	Passed      bool   `json:"passed,omitempty"`
 	PassProblem string `json:"passProblem,omitempty"`
-	// Pending is the records after the last one a stamp the runtime
-	// accepted covers: every record, where none does.
-	Pending *int64    `json:"pending,omitempty"`
-	Last    *stampRun `json:"last,omitempty"`
-	Running bool      `json:"running,omitempty"`
+	// Pending is the chained records after the last one a stamp the runtime
+	// accepted covers, every one where none does, where the report says how
+	// many (`chainedAfter`); PendingLines, in its place where it does not, is
+	// the lines after that record through the trail's last chained record.
+	Pending      *int64    `json:"pending,omitempty"`
+	PendingLines *int64    `json:"pendingLines,omitempty"`
+	Last         *stampRun `json:"last,omitempty"`
+	Running      bool      `json:"running,omitempty"`
 }
 
 /* The tokens ------------------------------------------------------------------ */
@@ -1188,24 +1195,31 @@ func stampingNames(read os.FileInfo, path string) error {
 
 // stampingAfterVerify completes what the decision record says of stamping
 // once the runtime has answered: the records pending a stamp, where it
-// checked the stamps; what the scheduler last did; and, from a check with
-// roots, the last checkpoint known stamped, in place of the one known before,
-// or none where no stamp covers a record.
+// checked the stamps, or the lines where it does not say how many records;
+// what the scheduler last did; and, from a check with roots, the last
+// checkpoint known stamped, in place of the one known before, or none where
+// no stamp covers a record.
 func (s *Server) stampingAfterVerify(view auditStamping, report *auditReport) *auditStamping {
 	if report != nil && view.Passed {
 		switch stamped := report.Coverage.Stamped; stamped.Status {
 		case "through":
-			pending := max(report.Lines-stamped.Through, 0)
-			view.Pending = &pending
+			view.Pending, view.PendingLines = countedAs(chainedAfter(report, stamped.Through))
 			s.stamping.knowStamped(&checkpointHead{Identity: report.Trail, Sequence: stamped.Through})
 		case "none":
-			pending := report.Lines
-			view.Pending = &pending
+			view.Pending, view.PendingLines = countedAs(chainedAfter(report, 0))
 			s.stamping.knowStamped(nil)
 		}
 	}
 	view.Last, view.Running = s.stamping.report()
 	return &view
+}
+
+// countedAs is a count as the page is given it: records, or lines.
+func countedAs(count int64, records bool) (*int64, *int64) {
+	if records {
+		return &count, nil
+	}
+	return nil, &count
 }
 
 /* The routes ------------------------------------------------------------------ */

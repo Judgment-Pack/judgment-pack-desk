@@ -188,6 +188,17 @@ describe('stamping', () => {
     expect(screen.getByText(/with the time-stamping roots you gave and no keys or checkpoints: it checked the stamps against those roots/)).toBeTruthy()
   })
 
+  // Line audit, finding 7: where the report does not say how many records
+  // follow the last one stamped (a repair named a line damaged), the count
+  // is of lines, and said as one.
+  it('says the lines pending a stamp as lines, where the report does not say how many records', async () => {
+    records = [{ ...set, stamping: { ...set.stamping!, pending: undefined, pendingLines: 2 } }]
+    show()
+    const pending = within(await screen.findByLabelText('Pending'))
+    expect([pending.getByRole('term').textContent, pending.getByRole('definition').textContent]).toEqual(['Lines pending a stamp', '2'])
+    expect(region().queryByText('Records pending a stamp')).toBeNull()
+  })
+
   it('runs one stamp on request, and checks the decision record again', async () => {
     const after: Reported = { ...set, stamping: { ...set.stamping!, pending: 0, last: { ...stamped, sequence: 3, requested: true } } }
     records = [set, after]
@@ -292,14 +303,15 @@ describe('stamping', () => {
 
 describe('the stamping client', () => {
   it('reads the decision record’s word on stamping, and refuses what is not one', () => {
-    for (const value of [set.stamping, none.stamping, { state: 'unread', problem: 'Why.' }, { state: 'unavailable', problem: 'Why.' }] as AuditStamping[]) {
+    for (const value of [set.stamping, none.stamping, { state: 'unread', problem: 'Why.' }, { state: 'unavailable', problem: 'Why.' }, { ...set.stamping, pending: undefined, pendingLines: 2 }] as AuditStamping[]) {
       expect(isAuditStamping(value), JSON.stringify(value)).toBe(true)
       expect(isAuditRecord({ ...set, stamping: value })).toBe(true)
     }
     for (const value of [{ state: 'set' }, { state: 'set', settings, removeToken: 'ab' }, { state: 'none', settings }, { state: 'none', passed: true },
       { state: 'unread' }, { state: 'unavailable', problem: 'Why.', removeToken }, { state: 'set', settings: { ...settings, roots: [] }, removeToken },
       { state: 'set', settings: { ...settings, intervalMinutes: 4 }, removeToken }, { state: 'set', settings: { ...settings, authority: 'ftp://x' }, removeToken },
-      { ...set.stamping, pending: -1 }, { ...set.stamping, last: { ...stamped, status: 'done' } }, 'stamping']) {
+      { ...set.stamping, pending: -1 }, { ...set.stamping, pendingLines: -1 }, { ...set.stamping, pending: 1, pendingLines: 2 },
+      { ...set.stamping, last: { ...stamped, status: 'done' } }, 'stamping']) {
       expect(isAuditStamping(value), JSON.stringify(value)).toBe(false)
       expect(isAuditRecord({ ...set, stamping: value }), JSON.stringify(value)).toBe(false)
     }

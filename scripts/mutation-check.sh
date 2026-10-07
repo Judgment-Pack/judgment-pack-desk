@@ -4736,7 +4736,7 @@ func (b *cappedBuffer) exceeded() bool {'
     '			held.args = append(held.args, "--expect", path.Join(handoverDir, holder.ID, chain.heldName(head.Identity)))' \
     '			_ = path.Join(handoverDir, holder.ID, chain.heldName(head.Identity))'
   mutate go "hand-over: every file a holder keeps is passed" "$HO" \
-    '		err := checkHeldFile(handover, holder.ID, chain, head.Identity)' \
+    '		entry, err := checkHeldFile(handover, holder.ID, chain, head.Identity)' \
     '		trail := head.Identity
 		if folder, err := openHolderFolder(handover, holder.ID, false); err == nil {
 			if record, err := readHandoverRecord(folder); err == nil {
@@ -4746,23 +4746,23 @@ func (b *cappedBuffer) exceeded() bool {'
 			}
 			folder.Close()
 		}
-		err := checkHeldFile(handover, holder.ID, chain, trail)
+		entry, err := checkHeldFile(handover, holder.ID, chain, trail)
 		head := &checkpointHead{Identity: trail}'
   mutate go "hand-over: a held file that cannot be read is passed" "$HO" \
-    '		err := checkHeldFile(handover, holder.ID, chain, head.Identity)' \
-    '		err := error(nil)'
+    '		entry, err := checkHeldFile(handover, holder.ID, chain, head.Identity)' \
+    '		entry, err := handedOver{}, error(nil)'
   mutate go "hand-over: a held file passed over is not named" "$HO" \
     '			held.unread = append(held.unread, holder.Label)' \
     '			_ = holder.Label'
   # **Review round 1 (finding 1): a held file is passed only where it is what
   # Desk recorded as handed over**, read whole, never on its metadata alone.
   mutate go "hand-over: a held file is passed on its metadata alone" "$HO" \
-    '	return heldAgrees(data, entry, trail)
+    '	return entry, heldAgrees(data, entry, trail)
 }' \
     '	if len(data) < 0 {
-		return heldAgrees(data, entry, trail)
+		return entry, heldAgrees(data, entry, trail)
 	}
-	return nil
+	return entry, nil
 }'
   mutate go "hand-over: a held file with no last newline is passed" "$HO" \
     "	if len(data) == 0 || data[len(data)-1] != '\\n' {" \
@@ -4786,9 +4786,9 @@ func (b *cappedBuffer) exceeded() bool {'
     '		if batch < 0 && checkpoint.sequence > 0 {'
   mutate go "hand-over: a record with no file is not named" "$HO" \
     '	case errors.Is(err, fs.ErrNotExist):
-		return errors.New("Desk'"'"'s record names checkpoints of this trail handed over, and the file of them is not there")' \
+		return handedOver{}, errors.New("Desk'"'"'s record names checkpoints of this trail handed over, and the file of them is not there")' \
     '	case errors.Is(err, fs.ErrNotExist):
-		return errNothingHeld'
+		return handedOver{}, errNothingHeld'
   mutate go "hand-over: the record does not keep where the last batch starts" "$HO" \
     '	trails[trail] = handedOver{From: from,' \
     '	trails[trail] = handedOver{From: 0,'
@@ -5292,8 +5292,8 @@ func (b *cappedBuffer) exceeded() bool {'
     'if err := stampingNames(settings.found[name], s.stampingPath(name)); err != nil {' \
     'if err := stampingNames(settings.found[name], s.stampingPath(name)); err != nil && name == "" {'
   mutate go 'stamping: pending counts records stamped' "$STP" \
-    'pending := max(report.Lines-stamped.Through, 0)' \
-    'pending := report.Lines'
+    'view.Pending, view.PendingLines = countedAs(chainedAfter(report, stamped.Through))' \
+    'view.Pending, view.PendingLines = countedAs(chainedAfter(report, 0))'
   mutate go 'stamping: pending is said without roots' "$STP" \
     'if report != nil && view.Passed {' \
     'if report != nil {'
@@ -5677,6 +5677,45 @@ func (b *cappedBuffer) exceeded() bool {'
     '			s.stamping.knowStamped(nil)
 ' \
     ''
+  # Finding 7: what follows a record is counted from the report's chained
+  # records, or said as lines, never one sequence taken from another.
+  mutate go 'audit fix: after no record, every line is pending' "$AFR" \
+    '		return c.Chained, true' \
+    '		return report.Lines, true'
+  mutate go 'audit fix: the records after the held checkpoints are not the runtime'"'"'s count' "$AFR" \
+    '	case c.Checkpointed.Status == "through" && c.Checkpointed.Through == through:
+		return c.Unwitnessed, true
+' \
+    ''
+  mutate go 'audit fix: a repaired trail'"'"'s lines are counted as records' "$AFR" \
+    '	case c.Damaged == 0 && c.Unchained == 0:' \
+    '	case c.Unchained == 0:'
+  mutate go 'audit fix: a trail'"'"'s unchained lines are counted as records' "$AFR" \
+    '	case c.Damaged == 0 && c.Unchained == 0:' \
+    '	case c.Damaged == 0:'
+  mutate go 'audit fix: the unchained lines after the last chained one are counted' "$AFR" \
+    '	last := report.Lines - c.Uncovered' \
+    '	last := report.Lines'
+  mutate go 'audit fix: lines are given as records' "$AFS" \
+    '	if records {
+		return &count, nil
+	}' \
+    '	if records || count >= 0 {
+		return &count, nil
+	}'
+  mutate go 'audit fix: the records pending a stamp are one sequence taken from another' "$AFS" \
+    '			view.Pending, view.PendingLines = countedAs(chainedAfter(report, stamped.Through))' \
+    '			view.Pending, view.PendingLines = countedAs(max(report.Lines-stamped.Through, 0), true)'
+  mutate go 'audit fix: no count since a hand-over is given' "$AFR" \
+    '	answer.Since = sinceHandedOver(expect, answer.Report)
+' \
+    ''
+  mutate go 'audit fix: a count since a hand-over is given for another trail' "$AFR" \
+    ' || report.Trail != expect.trail {' \
+    ' {'
+  mutate go 'audit fix: a count since a hand-over is of another record' "$AFH" \
+    '			held.handed = append(held.handed, heldThrough{holder: holder.ID, through: entry.Through})' \
+    '			held.handed = append(held.handed, heldThrough{holder: holder.ID, through: entry.From})'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -12865,11 +12904,11 @@ export function assistantTransport(id: string): Transport {
 " \
     ""
   mutate web "hand-over page: records since are not shown" "$HP" \
-    "{trail && record.unwitnessed !== undefined && <p>" \
-    "{trail && record.unwitnessed === -1 && <p>"
+    "{trail && since && ('records' in since ?" \
+    "{trail && since && trail.sequence < 0 && ('records' in since ?"
   mutate web "hand-over page: records since are shown with no current trail" "$HP" \
-    "{trail && record.unwitnessed !== undefined && <p>" \
-    "{record.unwitnessed !== undefined && <p>"
+    "{trail && since && ('records' in since ?" \
+    "{since && ('records' in since ?"
   mutate web "hand-over page: a holder of a trail moved aside reads as handed nothing" "$HP" \
     "      </> : moved ? <p>" \
     "      </> : false ? <p>"
@@ -12890,11 +12929,11 @@ export function assistantTransport(id: string): Transport {
     "{record.expectUnread && record.expectUnread.length < 0 && <p role=\"alert\">"
   mutate web "hand-over page: not beside the report" "$DR" \
     "                    {rotation(record.keys, record.rotation)}
-                    {handoverSection}" \
+                    {handoverSection(record.since)}" \
     "                    {rotation(record.keys, record.rotation)}"
   mutate web "hand-over page: not beside the runtime's refusal" "$DR" \
     "                  {rotation(record.keys, record.rotation)}
-                  {handoverSection}" \
+                  {handoverSection()}" \
     "                  {rotation(record.keys, record.rotation)}"
   mutate web "hand-over page: the holders are not read again with the decision record" "$HP" \
     "  useEffect(() => { void refetch.current({ cancelRefetch: false }) }, [checkedAt])" \
@@ -13019,8 +13058,8 @@ export function assistantTransport(id: string): Transport {
     'export const rowKey = (holder: string, chain: HandoverChain) => chain === '"'"'jobs'"'"' ? `${holder}:jobs` : holder' \
     'export const rowKey = (holder: string, chain: HandoverChain) => chain === '"'"'jobs'"'"' ? holder : holder'
   mutate web "jobs hand-over page: the chain's record is the trail's" "$HP" \
-    'record={shownRecord(holder.jobs ?? {}, head)}' \
-    'record={shownRecord(holder.trails, head)}'
+    'const jobsRecord = shownRecord(holder.jobs ?? {}, head)' \
+    'const jobsRecord = shownRecord(holder.trails, head)'
   mutate web "jobs hand-over page: a chain with another identity reads as handed nothing" "$HP" \
     '        moved={holder.otherJobsChain ? msg('"'"'The chain of runs has another identity now: this holder starts at 0 for it'"'"') : undefined}' \
     '        moved={undefined}'
@@ -13166,8 +13205,8 @@ export function assistantTransport(id: string): Transport {
     '      {(stamping.state === '"'"'unread'"'"' || stamping.state === '"'"'unavailable'"'"') && <p role="alert">' \
     '      {stamping.state === '"'"'unavailable'"'"' && <p role="alert">'
   mutate web 'stamping page: the records pending are not shown' "$STG" \
-    '      {stamping.pending !== undefined && <dl' \
-    '      {false && <dl'
+    '      {stamping.pending !== undefined ? <dl' \
+    '      {stamping.pending === -1 ? <dl'
   mutate web 'stamping page: the lists are read as text' "$STG" \
     '  const bytes = new Uint8Array(await file.arrayBuffer())' \
     '  const bytes = new TextEncoder().encode(await file.text())'
@@ -13375,6 +13414,40 @@ export function assistantTransport(id: string): Transport {
   mutate web 'audit fix: a run'"'"'s digest of no form is read' "$AFC" \
     ' && optional(value.digest, sha256Form)' \
     ''
+  # Finding 7: the hand-over's records since are the report's, for this
+  # holder, trail and record, and otherwise lines said as lines; the lines
+  # pending a stamp are said as lines.
+  AFP=web/src/audit/Handover.tsx
+  mutate web 'audit fix: the report'"'"'s count since a hand-over is not used' "$AFP" \
+    '  if (counted?.records !== undefined) return { records: counted.records }
+' \
+    ''
+  mutate web 'audit fix: the lines since a hand-over are said as records' "$AFP" \
+    '  return record?.linesSince !== undefined ? { lines: record.linesSince } : undefined' \
+    '  return record?.linesSince !== undefined ? { records: record.linesSince } : undefined'
+  mutate web 'audit fix: the report'"'"'s lines since a hand-over are said as records' "$AFP" \
+    '  if (counted?.lines !== undefined) return { lines: counted.lines }' \
+    '  if (counted?.lines !== undefined) return { records: counted.lines }'
+  mutate web 'audit fix: a count after another record is this row'"'"'s' "$AFP" \
+    ' && item.through === record.through)' \
+    ')'
+  mutate web 'audit fix: a count of another trail is this row'"'"'s' "$AFP" \
+    ' && item.trail === trail.identity && ' \
+    ' && '
+  mutate web 'audit fix: the lines pending a stamp are said as records' "$AFT" \
+    "<dt>{msg('Lines pending a stamp')}</dt>" \
+    "<dt>{msg('Records pending a stamp')}</dt>"
+  mutate web 'audit fix: a count of records and of lines both is read' "$AFC" \
+    '(count(value.records) && value.lines === undefined || count(value.lines) && value.records === undefined)' \
+    '(count(value.records) || count(value.lines))'
+  mutate web 'audit fix: a stamping with records and lines pending both is read' "$AFC" \
+    ' || value.pending !== undefined && value.pendingLines !== undefined
+' \
+    '
+'
+  mutate web 'audit fix: counts since a hand-over beside a refusal are read' "$AFC" \
+    ' && value.repair === undefined && value.since === undefined' \
+    ' && value.repair === undefined'
 fi
 
 restore

@@ -714,10 +714,15 @@ func handoverWords(prefix string, err error) string {
 }
 
 // holderTrailAnswer is one trail in a holder's record, as the page is shown
-// it: unwitnessed, by that holder, only for the current trail.
+// it: LinesSince, only for the current trail, is how many lines follow the
+// last record handed over, through the trail's last chained record. It is a
+// distance between lines, never a count of records: a line a repair names as
+// damaged is one of them (line audit, finding 7). How many chained records
+// follow is the decision record's to say, from the runtime's report
+// (`auditAnswer.Since`).
 type holderTrailAnswer struct {
 	handedOver
-	Unwitnessed *int64 `json:"unwitnessed,omitempty"`
+	LinesSince *int64 `json:"linesSince,omitempty"`
 }
 
 // holderAnswer is one holder as the page is shown it. OtherTrail is true
@@ -754,7 +759,7 @@ func shownHolder(holder handoverHolder, record handoverRecord, head, jobs *check
 }
 
 // shownEntries is what a holder's record keeps of one chain, as the page is
-// shown it against head, that chain as it is now: records since only for
+// shown it against head, that chain as it is now: the lines since only for
 // the current identity; and other, where the record names only identities
 // other than the current one.
 func shownEntries(entries map[string]handedOver, head *checkpointHead) (map[string]holderTrailAnswer, bool) {
@@ -763,7 +768,7 @@ func shownEntries(entries map[string]handedOver, head *checkpointHead) (map[stri
 		entry := holderTrailAnswer{handedOver: handed}
 		if head != nil && trail == head.Identity {
 			since := max(head.Sequence-handed.Through, 0)
-			entry.Unwitnessed = &since
+			entry.LinesSince = &since
 		}
 		shown[trail] = entry
 	}
@@ -1249,11 +1254,22 @@ func (s *Server) recordHandover(id string, chain handoverChain, trail string, fr
 // was passed over, because it could not be read now, is not ours, or does
 // not agree with Desk's record of it; and, where Desk could not read that
 // record at all, or tell which trail is current, why, and nothing passed.
+// For each file passed, trail and handed name the trail and the last record
+// Desk's record of that holder says was handed over.
 type heldExpectations struct {
 	args    []string
 	count   int
 	unread  []string
 	problem string
+	trail   string
+	handed  []heldThrough
+}
+
+// heldThrough is a holder whose file of checkpoints was passed, by id, and
+// the last record Desk's record says was handed over to it.
+type heldThrough struct {
+	holder  string
+	through int64
 }
 
 // errNothingHeld is a holder with no record and no file for the trail: no
@@ -1318,8 +1334,9 @@ func (s *Server) heldOf(ctx context.Context, dir heldDir, chain handoverChain) h
 		// is passed.
 		return held
 	}
+	held.trail = head.Identity
 	for _, holder := range holders {
-		err := checkHeldFile(handover, holder.ID, chain, head.Identity)
+		entry, err := checkHeldFile(handover, holder.ID, chain, head.Identity)
 		switch {
 		case errors.Is(err, errNothingHeld):
 		case err != nil:
@@ -1328,6 +1345,7 @@ func (s *Server) heldOf(ctx context.Context, dir heldDir, chain handoverChain) h
 		default:
 			held.args = append(held.args, "--expect", path.Join(handoverDir, holder.ID, chain.heldName(head.Identity)))
 			held.count++
+			held.handed = append(held.handed, heldThrough{holder: holder.ID, through: entry.Through})
 		}
 	}
 	return held
@@ -1337,35 +1355,35 @@ func (s *Server) heldOf(ctx context.Context, dir heldDir, chain handoverChain) h
 // chain, can be passed to the check: read whole now, within the runtime's
 // bound, as `readPrivateData` reads a file (owner-only, owned by this user, a
 // regular file and not a link, the one that was looked at), and agreeing with
-// Desk's record of the holder for that chain (`heldAgrees`). errNothingHeld
-// where there is neither a record nor a file for the trail; a record with no
-// file, or a file with no record, is an error.
-func checkHeldFile(handover *os.Root, id string, chain handoverChain, trail string) error {
+// Desk's record of the holder for that chain (`heldAgrees`); and that record
+// where it can. errNothingHeld where there is neither a record nor a file for
+// the trail; a record with no file, or a file with no record, is an error.
+func checkHeldFile(handover *os.Root, id string, chain handoverChain, trail string) (handedOver, error) {
 	folder, err := openHolderFolder(handover, id, false)
 	if errors.Is(err, fs.ErrNotExist) {
-		return errNothingHeld
+		return handedOver{}, errNothingHeld
 	}
 	if err != nil {
-		return err
+		return handedOver{}, err
 	}
 	defer folder.Close()
 	record, err := readHandoverRecord(folder)
 	if err != nil {
-		return err
+		return handedOver{}, err
 	}
 	entry, recorded := chain.entries(record)[trail]
 	data, err := readPrivateData(folder, chain.heldName(trail), handoverHeldLimit)
 	switch {
 	case errors.Is(err, fs.ErrNotExist) && !recorded:
-		return errNothingHeld
+		return handedOver{}, errNothingHeld
 	case errors.Is(err, fs.ErrNotExist):
-		return errors.New("Desk's record names checkpoints of this trail handed over, and the file of them is not there")
+		return handedOver{}, errors.New("Desk's record names checkpoints of this trail handed over, and the file of them is not there")
 	case err != nil:
-		return err
+		return handedOver{}, err
 	case !recorded:
-		return errors.New("the file of checkpoints has no record of their hand-over")
+		return handedOver{}, errors.New("the file of checkpoints has no record of their hand-over")
 	}
-	return heldAgrees(data, entry, trail)
+	return entry, heldAgrees(data, entry, trail)
 }
 
 // heldAgrees is whether data, a holder's file of checkpoints for trail, is

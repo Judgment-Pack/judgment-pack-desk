@@ -307,13 +307,13 @@ func modeOf(path string) string {
 	return info.Mode().String()
 }
 
-// since is an entry's count of records since, or -1 where it has none, so
-// that a test reads it without dereferencing a nil.
+// since is an entry's count of lines since, or -1 where it has none, so that
+// a test reads it without dereferencing a nil.
 func since(entry holderTrailAnswer) int64 {
-	if entry.Unwitnessed == nil {
+	if entry.LinesSince == nil {
 		return -1
 	}
-	return *entry.Unwitnessed
+	return *entry.LinesSince
 }
 
 // holderAt is the answer's holder at index, or a zero holder where there is
@@ -646,8 +646,8 @@ func TestAConfirmationRecordsExactlyWhatWasDownloaded(t *testing.T) {
 	header, data := rig.downloaded(t, holderA)
 	rig.ran(t)
 	answer := rig.confirmed(t, holderA, header)
-	unwitnessed := int64(0)
-	want := holderTrailAnswer{handedOver: handedOver{Through: 3, ConfirmedAt: handoverNow, Digest: digestOfString(first)}, Unwitnessed: &unwitnessed}
+	none := int64(0)
+	want := holderTrailAnswer{handedOver: handedOver{Through: 3, ConfirmedAt: handoverNow, Digest: digestOfString(first)}, LinesSince: &none}
 	if len(answer.Trails) != 1 || answer.Trails[handoverTrail].handedOver != want.handedOver || since(answer.Trails[handoverTrail]) != 0 || answer.OtherTrail {
 		t.Errorf("the confirmation answered %+v", answer)
 	}
@@ -913,7 +913,7 @@ func TestAHolderStartsAt0ForATrailMovedAside(t *testing.T) {
 	rig.chain(t, chainOf(movedTrail, 1, 2))
 	listed := rig.holders(t)
 	holder := holderAt(listed, 0)
-	if !holder.OtherTrail || len(holder.Trails) != 1 || holder.Trails[handoverTrail].Through != 3 || holder.Trails[handoverTrail].Unwitnessed != nil ||
+	if !holder.OtherTrail || len(holder.Trails) != 1 || holder.Trails[handoverTrail].Through != 3 || holder.Trails[handoverTrail].LinesSince != nil ||
 		listed.Trail == nil || listed.Trail.Identity != movedTrail {
 		t.Errorf("after the trail was moved aside the holders are %+v", listed)
 	}

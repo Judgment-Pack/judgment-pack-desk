@@ -36,7 +36,7 @@ const report: AuditReport = { status: 'valid', lines: 5, bytes: 10, snapshotBetw
   segments: [{ firstLine: 1, lastLine: 5 }], segmentsTotal: 1, discontinuities: [], discontinuitiesTotal: 0, findings: [], findingsTotal: 0,
   establishes: [], doesNotEstablish: [] }
 const auditor: Holder = { id: 'a1b2c3d4e5f60718', label: 'Auditor', channel: 'e-mail to records@example.com', addedAt: 1791201600, trails: {} }
-const handed: Holder = { ...auditor, trails: { [trail]: { through: 3, confirmedAt: 1791205200, digest, unwitnessed: 2 } } }
+const handed: Holder = { ...auditor, trails: { [trail]: { through: 3, confirmedAt: 1791205200, digest, linesSince: 2 } } }
 /** Bytes a re-encoding would change: CRLF, a byte that is not UTF-8, and no final newline. */
 const served = new Uint8Array([0x7b, 0x7d, 0x0d, 0x0a, 0xff, 0xfe, 0x7b, 0x22, 0x26, 0x22, 0x7d])
 const name = `checkpoints-${trail}-1-3.jsonl`
@@ -59,7 +59,7 @@ beforeEach(() => {
   record = { state: 'report', runtime: '0.27.1', report }
   holders = [{ holders: [auditor], trail: { identity: trail, sequence: 3 } }]
   download = () => checkpoints()
-  confirm = () => json(200, { ...auditor, trails: { [trail]: { through: 3, confirmedAt: 1791205200, digest: fileDigest, unwitnessed: 0 } } })
+  confirm = () => json(200, { ...auditor, trails: { [trail]: { through: 3, confirmedAt: 1791205200, digest: fileDigest, linesSince: 0 } } })
   add = () => json(201, { id: '0f1e2d3c4b5a6978', label: 'Regulator', channel: 'portal', addedAt: 1791201600, trails: {} })
   vi.mocked(deskFetch).mockImplementation(async (url, init) => {
     const method = init?.method ?? 'GET'
@@ -103,7 +103,10 @@ describe('the hand-over section', () => {
     expect(first!.getByText('e-mail to records@example.com')).toBeTruthy()
     expect(first!.getByText(`Handed over through record 3 on ${formatDate(1791205200 * 1000, { dateStyle: 'medium', timeStyle: 'short' })}`)).toBeTruthy()
     expect(first!.getByLabelText('SHA-256 of what was handed over').textContent).toBe(digest)
-    expect(first!.getByText('Records since: 2')).toBeTruthy()
+    // With no count of the decision record's beside it, the lines since, as
+    // lines (line audit, finding 7).
+    expect(first!.getByText('Lines since: 2')).toBeTruthy()
+    expect(first!.queryByText(/^Records since/)).toBeNull()
     expect(second!.getByText('The trail was moved aside since: this holder starts at 0 for the new trail')).toBeTruthy()
     expect(second!.queryByText(/^Handed over/)).toBeNull()
     expect(third!.getByText('Nothing handed over yet')).toBeTruthy()
@@ -124,8 +127,39 @@ describe('the hand-over section', () => {
     show()
     expect(await screen.findByText('The trail has no chained record yet, so there is nothing to hand over.')).toBeTruthy()
     expect(section().getByText(/^Handed over through record 3 on /)).toBeTruthy()
-    expect(section().queryByText(/^Records since/)).toBeNull()
+    expect(section().queryByText(/^(Records|Lines) since/)).toBeNull()
     expect(section().queryByRole('button', { name: 'Download checkpoints' })).toBeNull()
+  })
+
+  // Line audit, finding 7: three records handed over, a torn fourth line and
+  // a repair. The decision record's report counts one chained record since
+  // the hand-over, where the lines since are two: the row says the report's
+  // one record. A count of another record, holder or trail is not this
+  // row's; a count the report gives only as lines is said as lines.
+  it('says the records since a hand-over as the decision record’s report counts them, and lines where it does not', async () => {
+    const regulator: Holder = { ...auditor, id: '1122334455667788', label: 'Regulator', channel: 'portal', trails: { [trail]: { through: 2, confirmedAt: 1791201600, digest, linesSince: 3 } } }
+    const counsel: Holder = { ...auditor, id: '0f1e2d3c4b5a6978', label: 'Counsel', channel: 'ticket', trails: { [trail]: { through: 1, confirmedAt: 1791201600, digest, linesSince: 4 } } }
+    holders = [{ holders: [handed, regulator, counsel], trail: { identity: trail, sequence: 5 } }]
+    record = { state: 'report', runtime: '0.27.1', report: { ...report, trail }, expected: 3, since: [
+      { holder: auditor.id, trail, through: 3, records: 1 },
+      { holder: regulator.id, trail, through: 2, lines: 3 },
+      { holder: counsel.id, trail, through: 2, records: 9 }
+    ] }
+    show()
+    const [auditorRow, regulatorRow, counselRow] = (await screen.findAllByRole('listitem', { name: /^(Auditor|Regulator|Counsel)$/ })).map(item => within(item))
+    expect(auditorRow!.getByText('Records since: 1')).toBeTruthy()
+    expect(auditorRow!.queryByText(/^Lines since/)).toBeNull()
+    expect(regulatorRow!.getByText('Lines since: 3')).toBeTruthy()
+    expect(regulatorRow!.queryByText(/^Records since/)).toBeNull()
+    // Counted after record 2, and this holder was handed record 1: not its count.
+    expect(counselRow!.getByText('Lines since: 4')).toBeTruthy()
+    expect(counselRow!.queryByText(/^Records since/)).toBeNull()
+    cleanup()
+    // The count of another trail is not this trail's.
+    record = { ...record, since: [{ holder: auditor.id, trail: 'c962ef5fa560f62c67bd4c1c29e011e3', through: 3, records: 1 }] }
+    show()
+    const [again] = (await screen.findAllByRole('listitem', { name: /^(Auditor|Regulator|Counsel)$/ })).map(item => within(item))
+    expect(again!.getByText('Lines since: 2')).toBeTruthy()
   })
 
   it('says the runtime’s refusal to give a checkpoint, in its words', async () => {
@@ -157,7 +191,7 @@ describe('the hand-over section', () => {
     show()
     await (await opened()).findByText('Nothing handed over yet')
     fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
-    expect(await (await opened()).findByText('Records since: 2')).toBeTruthy()
+    expect(await (await opened()).findByText('Lines since: 2')).toBeTruthy()
     expect(count('/api/audit/verify')).toBe(2)
     expect(count('/api/audit/holders')).toBe(2)
   })
@@ -195,7 +229,7 @@ describe('the hand-over section', () => {
 
 describe('handing checkpoints over', () => {
   it('saves exactly the bytes served, under their name, and records them on the owner’s confirmation, then checks the trail again', async () => {
-    holders = [{ holders: [auditor], trail: { identity: trail, sequence: 3 } }, { holders: [{ ...auditor, trails: { [trail]: { through: 3, confirmedAt: 1791205200, digest: fileDigest, unwitnessed: 0 } } }], trail: { identity: trail, sequence: 3 } }]
+    holders = [{ holders: [auditor], trail: { identity: trail, sequence: 3 } }, { holders: [{ ...auditor, trails: { [trail]: { through: 3, confirmedAt: 1791205200, digest: fileDigest, linesSince: 0 } } }], trail: { identity: trail, sequence: 3 } }]
     show()
     fireEvent.click(await (await opened()).findByRole('button', { name: 'Download checkpoints' }))
     expect(await (await opened()).findByText(`Saved ${name}: the checkpoints after record 0, through record 3.`)).toBeTruthy()
@@ -330,6 +364,14 @@ describe('the hand-over client', () => {
       expect(isHolders(value), JSON.stringify(value)).toBe(false)
     }
     expect(isAuditRecord({ state: 'report', report, expected: 2, expectUnread: ['Auditor'] })).toBe(true)
+    const counted = { holder: 'a1b2c3d4e5f60718', trail, through: 3 }
+    expect(isAuditRecord({ state: 'report', report, expected: 2, since: [{ ...counted, records: 1 }, { ...counted, lines: 0 }] })).toBe(true)
+    for (const since of [[{ ...counted }], [{ ...counted, records: 1, lines: 2 }], [{ ...counted, records: -1 }], [{ ...counted, holder: 'x', records: 1 }],
+      [{ ...counted, trail: 'x', records: 1 }], [{ ...counted, through: 0, records: 1 }], { ...counted, records: 1 }]) {
+      expect(isAuditRecord({ state: 'report', report, since }), JSON.stringify(since)).toBe(false)
+    }
+    expect(isAuditRecord({ state: 'unverified', diagnostics: [{ code: 'X', message: 'Y' }], since: [{ ...counted, records: 1 }] })).toBe(false)
+    expect(isHolders({ holders: [{ ...auditor, trails: { [trail]: { ...handed.trails[trail], linesSince: -1 } } }], trail: null })).toBe(false)
     expect(isAuditRecord({ state: 'report', report, expected: -1 })).toBe(false)
     expect(isAuditRecord({ state: 'report', report, expectUnread: [''] })).toBe(false)
   })

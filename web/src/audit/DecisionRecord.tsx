@@ -39,7 +39,7 @@ import { msg, systemMessage, useLocale } from '../i18n'
 import { Button } from '../ui/Button'
 import { CodeBlock } from '../ui/CodeBlock'
 import { SettingsSection } from '../ui/SettingsSection'
-import { AUDIT_KEY, AuditUnavailable, readAuditRecord, type AuditCoverageState, type AuditKeys, type AuditRecord, type AuditRepair, type AuditReport, type AuditRotation, type AuditSigning, type AuditStamping } from './client'
+import { AUDIT_KEY, AuditUnavailable, readAuditRecord, type AuditCoverageState, type AuditKeys, type AuditRecord, type AuditRepair, type AuditReport, type AuditRotation, type AuditSigning, type AuditStamping, type HandedSince } from './client'
 import styles from './DecisionRecord.module.css'
 import { Handover, NO_HANDOVER, type HandoverState } from './Handover'
 import { RepairTrail, type RepairOutcome } from './RepairTrail'
@@ -101,7 +101,7 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
   useEffect(() => { if (visible) setStamped(undefined) }, [visible])
   const stampingSection = (stamping?: AuditStamping, report?: AuditReport) => <Stamping stamping={stamping} report={report} outcome={stamped}
     onOutcome={outcome => { setStamped(outcome); void query.refetch() }} />
-  const handoverSection = <Handover checkedAt={query.dataUpdatedAt} state={handover} onState={setHandover} onConfirmed={() => void query.refetch()} />
+  const handoverSection = (since?: HandedSince[]) => <Handover checkedAt={query.dataUpdatedAt} since={since} state={handover} onState={setHandover} onConfirmed={() => void query.refetch()} />
   const rotation = (keys?: AuditKeys, rotation?: AuditRotation) => <RotateSigningKey rotation={rotation} keyCount={keys?.state === 'kept' ? keys.public.length : 0}
     outcome={rotated} onOutcome={outcome => { setRotated(outcome); void query.refetch() }} />
   const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); void query.refetch() }}>{msg('Check again')}</Button></div>
@@ -119,7 +119,7 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
                   {repairSection()}
                   <SigningKey keys={record.keys} signing={record.signing} />
                   {rotation(record.keys, record.rotation)}
-                  {handoverSection}
+                  {handoverSection()}
                   {stampingSection(record.stamping)}
                   <TrailDownloads files={record.files ?? []} />
                   {again}
@@ -132,7 +132,7 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
                     {repairSection(record.repair)}
                     <SigningKey keys={record.keys} signing={record.signing} />
                     {rotation(record.keys, record.rotation)}
-                    {handoverSection}
+                    {handoverSection(record.since)}
                     {stampingSection(record.stamping, record.report)}
                     <TrailDownloads files={record.files ?? []} />
                     {record.runtime && <p className={styles.quiet}>{msg('Checked by jpack {{version}}.', { version: record.runtime })}</p>}

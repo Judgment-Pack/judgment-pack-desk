@@ -788,7 +788,11 @@ of the trail is held to what they kept with `jpack audit verify --expect`.
   refused, and says so. Otherwise it records
   nothing and says the file is stale. Where the trail was moved aside, each
   holder starts again at 0 for the new trail. The decision record is then
-  checked again, with what was handed over.
+  checked again, with what was handed over. Beside each holder, the records
+  since the last one confirmed are those the decision record's report counts,
+  where that holder's checkpoints were passed to it and the report says how
+  many; elsewhere, the lines since, said as lines: after a repair, a line it
+  names as damaged is not a record.
 - **What a held checkpoint establishes:** the records up to it are the ones
   that existed when it was handed over, against an operator who does not hold
   the holder's copy. **It does not establish** anything after it, that the
@@ -937,7 +941,8 @@ again at the next interval, once; stopping Desk never kills a stamp
 mid-write. The decision record passes the roots to `audit verify`, so the
 stamps the runtime accepted, how far they reach, the lag between each
 record's `at` and its first stamp, and the records still pending a stamp are
-the runtime's; wherever the stamps the runtime accepts do not reach the
+the runtime's, counted from its report, or said as lines where the report
+does not say how many records follow (after a repair, for one); wherever the stamps the runtime accepts do not reach the
 checkpoint its last stamp run named in that same trail (without roots, with
 none holding, with one below it, or with the stamps of another trail),
 Desk labels that checkpoint as the authority's answer to Desk's request,
