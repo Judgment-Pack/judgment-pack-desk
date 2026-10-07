@@ -539,6 +539,7 @@ go	trail: the panel names no files	TestAHardLinkedFileIsRefused,TestThePanelName
 go	trail: the sidecar is read under its own lock	TestAWriterInTheMiddleOfAnAppendIsWaitedFor
 go	trail: the size is read after the lock is let go	TestTheSizeIsReadBeforeTheLockIsLetGo
 go	trail: the stamps are read under the trail's lock	TestAWriterInTheMiddleOfAnAppendIsWaitedFor
+go	upgrade key: a confirmation's choice is not the owner's	TestTheSigningChoiceIsBoundToTheOfferShown
 go	upgrade key: a failed generation keeps the signing folder's lock	TestAFailedSigningUpgradeLeavesNoKeyAndNoChange,TestAStoppedSigningUpgradeIsSweptAtTheNextStart
 go	upgrade key: a failed upgrade leaves the key it made	TestAFailedSigningUpgradeLeavesNoKeyAndNoChange
 go	upgrade key: a jpack.json larger than Desk reads is offered	TestTheUpgradeWritesNoFileLargerThanDeskReads
