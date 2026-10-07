@@ -18,21 +18,28 @@
  * After a confirmation the holders and the decision record are read again: the
  * check then runs with what was handed over.
  *
+ * Where this desk has a Runner, each holder shows two rows: the decision
+ * record's, and Runner's chain of runs (ADR-0010, section 5), each with
+ * what Desk recorded of it, its own download and its own confirmation. The
+ * chain's row says where Runner is not running, where no run is chained yet,
+ * and where Desk could not read the chain, and then offers nothing; a
+ * confirmation of the chain checks the Jobs record again.
+ *
  * The query runs when the section is shown, with each reading of the
  * decision record, and after an action: never on a timer, on focus, on a
  * reconnect or on a change to the project. What a
  * download or a confirmation answered is kept by the panel, which unmounts
  * this section while it checks the trail again.
  */
-import { useEffect, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ON_REQUEST_ONLY } from '../mcp/projectChange'
 import { formatDate, msg, systemMessage, useLocale } from '../i18n'
 import { Button } from '../ui/Button'
 import { CodeBlock } from '../ui/CodeBlock'
 import { Field } from '../ui/Field'
 import { Input } from '../ui/Input'
-import { addHolder, confirmHandover, downloadCheckpoints, HOLDERS_KEY, readHolders, StaleHandover, type Checkpoints, type Holder, type HolderTrail, type HandoverTrail } from './client'
+import { addHolder, checkJobsRecordAgain, confirmHandover, downloadCheckpoints, HOLDERS_KEY, readHolders, StaleHandover, type Checkpoints, type HandoverChain, type Holder, type HolderTrail, type HandoverTrail, type JobsChain } from './client'
 import styles from './DecisionRecord.module.css'
 
 /** A download waiting for the owner's word that it went to the holder. */
@@ -42,9 +49,16 @@ export type HandoverNotice =
   | { kind: 'nothing-new' | 'stale' }
   | { kind: 'recorded'; through: number }
   | { kind: 'failed'; message: string }
-/** Each holder's download waiting for a confirmation, and what its last action answered, by holder id. */
+/**
+ * Each holder's download waiting for a confirmation, and what its last action
+ * answered, by row: the holder's id for the decision record's, and the id and
+ * ":jobs" for the chain of runs' (`rowKey`).
+ */
 export type HandoverState = { pending: Record<string, PendingHandover>; notices: Record<string, HandoverNotice> }
 export const NO_HANDOVER: HandoverState = { pending: {}, notices: {} }
+
+/** The key of a holder's row for a chain, in HandoverState. */
+export const rowKey = (holder: string, chain: HandoverChain) => chain === 'jobs' ? `${holder}:jobs` : holder
 
 /**
  * The section's one query: run each time it is shown, each time the decision
@@ -91,6 +105,7 @@ export function Handover({ checkedAt, state, onState, onConfirmed }: {
   onConfirmed: () => void
 }) {
   useLocale()
+  const client = useQueryClient()
   const query = useHolders(checkedAt)
   const [busy, setBusy] = useState<string>()
   const data = query.data
@@ -102,30 +117,34 @@ export function Handover({ checkedAt, state, onState, onConfirmed }: {
     else delete next.notices[holder]
     return next
   })
-  async function download(holder: Holder) {
-    setBusy(holder.id)
+  async function download(holder: Holder, chain: HandoverChain) {
+    const key = rowKey(holder.id, chain)
+    setBusy(key)
     try {
-      const checkpoints = await downloadCheckpoints(holder.id)
-      if (!checkpoints) return set(holder.id, undefined, { kind: 'nothing-new' })
+      const checkpoints = await downloadCheckpoints(holder.id, chain)
+      if (!checkpoints) return set(key, undefined, { kind: 'nothing-new' })
       const { blob, ...named } = checkpoints
       save(blob, named.name)
-      set(holder.id, named, undefined)
+      set(key, named, undefined)
     } catch (cause) {
-      set(holder.id, undefined, { kind: 'failed', message: messageOf(cause) })
+      set(key, undefined, { kind: 'failed', message: messageOf(cause) })
     } finally {
       setBusy(undefined)
     }
   }
   async function confirm(holder: Holder, pending: PendingHandover) {
-    setBusy(holder.id)
+    const key = rowKey(holder.id, pending.chain)
+    setBusy(key)
     try {
       await confirmHandover(holder.id, pending)
-      set(holder.id, undefined, { kind: 'recorded', through: pending.through })
+      set(key, undefined, { kind: 'recorded', through: pending.through })
       // The decision record is read again, and the holders with it.
       onConfirmed()
+      // A hand-over of the chain of runs: the Jobs record is checked again.
+      if (pending.chain === 'jobs') void checkJobsRecordAgain(client)
     } catch (cause) {
-      if (cause instanceof StaleHandover) set(holder.id, undefined, { kind: 'stale' })
-      else set(holder.id, pending, { kind: 'failed', message: messageOf(cause) })
+      if (cause instanceof StaleHandover) set(key, undefined, { kind: 'stale' })
+      else set(key, pending, { kind: 'failed', message: messageOf(cause) })
     } finally {
       setBusy(undefined)
     }
@@ -142,40 +161,95 @@ export function Handover({ checkedAt, state, onState, onConfirmed }: {
               <p>{msg('The runtime gives no checkpoint of this trail now, so nothing can be handed over.')}</p>
               <ul className={styles.list} aria-label={msg('What the runtime said')}>{data.diagnostics.map((item, index) => <li key={index} lang="en"><code>{item.code}</code> {item.message}</li>)}</ul>
             </> : <p>{msg('The trail has no chained record yet, so there is nothing to hand over.')}</p>)}
+            {data.jobs?.state === 'no-runner' && <p className={styles.quiet}>{msg('This desk has no Runner, so it has no chain of runs to hand over.')}</p>}
             {data.holders.length === 0 ? <p>{msg('No holder yet.')}</p>
-              : <ul className={styles.list} aria-label={msg('Holders')}>{data.holders.map(holder => <HolderItem key={holder.id} holder={holder} trail={data.trail}
-                pending={state.pending[holder.id]} notice={state.notices[holder.id]} busy={busy !== undefined}
-                onDownload={() => void download(holder)} onConfirm={pending => void confirm(holder, pending)} />)}</ul>}
+              : <ul className={styles.list} aria-label={msg('Holders')}>{data.holders.map(holder => <HolderItem key={holder.id} holder={holder}
+                trail={data.trail} jobs={data.jobs?.state === 'no-runner' ? undefined : data.jobs} state={state} busy={busy !== undefined}
+                onDownload={chain => void download(holder, chain)} onConfirm={pending => void confirm(holder, pending)} />)}</ul>}
           </>}
       <AddHolder onAdded={() => void query.refetch()} />
     </div>
   </section>
 }
 
-/** The record Desk shows for a holder: the current trail's, or with no current trail the last confirmed. */
-function shownRecord(holder: Holder, trail: HandoverTrail | null): HolderTrail | undefined {
-  if (trail) return holder.trails[trail.identity]
-  return Object.values(holder.trails).sort((a, b) => b.confirmedAt - a.confirmedAt)[0]
+/** The record Desk shows for a holder of one chain: the current identity's, or with none current the last confirmed. */
+function shownRecord(entries: Record<string, HolderTrail>, trail: HandoverTrail | null): HolderTrail | undefined {
+  if (trail) return entries[trail.identity]
+  return Object.values(entries).sort((a, b) => b.confirmedAt - a.confirmedAt)[0]
 }
 
-function HolderItem({ holder, trail, pending, notice, busy, onDownload, onConfirm }: {
+/** A holder: the decision record's row, and, where this desk has a Runner, the chain of runs' row beside it. */
+function HolderItem({ holder, trail, jobs, state, busy, onDownload, onConfirm }: {
   holder: Holder
   trail: HandoverTrail | null
+  /** Runner's chain of runs as it is now; undefined where this desk has no Runner. */
+  jobs?: JobsChain
+  state: HandoverState
+  busy: boolean
+  onDownload: (chain: HandoverChain) => void
+  onConfirm: (pending: PendingHandover) => void
+}) {
+  const head = jobs?.state === 'chain' ? jobs.chain : null
+  return <li aria-label={holder.label}>
+    <div className={styles.card}>
+      <p><strong>{holder.label}</strong> <span className={styles.quiet}>{holder.channel}</span></p>
+      <ChainRow holder={holder} title={jobs ? msg('Decision record') : undefined} trail={trail} record={shownRecord(holder.trails, trail)}
+        moved={holder.otherTrail ? msg('The trail was moved aside since: this holder starts at 0 for the new trail') : undefined}
+        pending={state.pending[rowKey(holder.id, 'trail')]} notice={state.notices[rowKey(holder.id, 'trail')]} busy={busy}
+        onDownload={() => onDownload('trail')} onConfirm={onConfirm} />
+      {jobs && <ChainRow holder={holder} title={msg('Jobs runs')} trail={head} record={shownRecord(holder.jobs ?? {}, head)}
+        moved={holder.otherJobsChain ? msg('The chain of runs has another identity now: this holder starts at 0 for it') : undefined}
+        pending={state.pending[rowKey(holder.id, 'jobs')]} notice={state.notices[rowKey(holder.id, 'jobs')]} busy={busy}
+        onDownload={() => onDownload('jobs')} onConfirm={onConfirm}>
+        <JobsChainWords chain={jobs} />
+      </ChainRow>}
+    </div>
+  </li>
+}
+
+/** Why the chain of runs' row offers nothing, where it does not. */
+function JobsChainWords({ chain }: { chain: JobsChain }) {
+  switch (chain.state) {
+    case 'not-running': return <p>{msg('Runner is not running on this desk now, so Desk could not read its chain of runs.')}</p>
+    case 'empty': return <p>{msg('No run is chained yet, so there is nothing to hand over.')}</p>
+    case 'unread': return <>
+      <p>{msg('Desk could not read the runner’s chain of runs now, so nothing can be handed over from it.')}</p>
+      {chain.diagnostics && <ul className={styles.list} aria-label={msg('What the runtime said')}>{chain.diagnostics.map((item, index) => <li key={index} lang="en"><code>{item.code}</code> {item.message}</li>)}</ul>}
+      {chain.problem && <p className={styles.quiet}>{systemMessage(chain.problem)}</p>}
+    </>
+    default: return null
+  }
+}
+
+/**
+ * One chain's row for a holder: what Desk recorded of it, its download, a
+ * download waiting for its confirmation, and what its last action answered.
+ * Titled, and a group of its own, where the holder shows two.
+ */
+function ChainRow({ holder, title, trail, record, moved, pending, notice, busy, onDownload, onConfirm, children }: {
+  holder: Holder
+  title?: string
+  /** The chain as it is now: null where it has no chained record, or was not read. */
+  trail: HandoverTrail | null
+  record?: HolderTrail
+  /** Where Desk's record names only another identity of the chain, what to say of it. */
+  moved?: string
   pending?: PendingHandover
   notice?: HandoverNotice
   busy: boolean
   onDownload: () => void
   onConfirm: (pending: PendingHandover) => void
+  children?: ReactNode
 }) {
-  const record = shownRecord(holder, trail)
-  return <li aria-label={holder.label}>
+  return <div role={title ? 'group' : undefined} aria-label={title}>
     <div className={styles.card}>
-      <p><strong>{holder.label}</strong> <span className={styles.quiet}>{holder.channel}</span></p>
+      {title && <h5 className={styles.heading}>{title}</h5>}
+      {children}
       {record ? <>
         <p>{msg('Handed over through record {{through}} on {{date}}', { through: record.through, date: when(record.confirmedAt) })}</p>
         <CodeBlock text={record.digest} label={msg('SHA-256 of what was handed over')} />
         {trail && record.unwitnessed !== undefined && <p>{msg('Records since: {{number}}', { number: record.unwitnessed })}</p>}
-      </> : holder.otherTrail ? <p>{msg('The trail was moved aside since: this holder starts at 0 for the new trail')}</p>
+      </> : moved ? <p>{moved}</p>
         : <p>{msg('Nothing handed over yet')}</p>}
       {trail && <div className={styles.actions}><Button disabled={busy} onClick={onDownload}>{msg('Download checkpoints')}</Button></div>}
       {pending && <div className={styles.card}>
@@ -190,7 +264,7 @@ function HolderItem({ holder, trail, pending, notice, busy, onDownload, onConfir
       {notice?.kind === 'stale' && <p role="alert">{msg('What you downloaded is not what the trail gives now. Download it again and hand over that file.')}</p>}
       {notice?.kind === 'failed' && <p role="alert">{systemMessage(notice.message)}</p>}
     </div>
-  </li>
+  </div>
 }
 
 /** A holder, added by the owner's label and channel. */

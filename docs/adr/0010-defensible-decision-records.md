@@ -501,6 +501,14 @@ error, never a report over a shorter copy. What it says: "Desk ran this over
 its own copy of the runner's chain of runs, with the keys and checkpoints it
 keeps. It shows what a holder would see. It is not evidence to anyone who does
 not trust this installation."
+*Amended 2026-10-06, issue #216:* the panel passes no `--public-key`,
+because Runner's key signs each run's record in that run's own attempt, the
+signature travels with the run's export (version 5) for `jpack-runner
+verify-run` to check, and the chain of runs has no signature sidecar, so a key
+passed here would check nothing; the panel instead shows Runner's key as `GET
+/api/runner-key` reports it, says that each run's signature is checked by
+`verify-run` on that run's export, and says the sentence above without "the
+keys and".
 
 ### 5. Runner
 
@@ -770,9 +778,9 @@ their meaning. The status column is as of 2026-10-05.
 | 6 | The repair offer | 2; question 8 | |
 | 7 | Stamping: settings, scheduler, pending records; verification with roots | 2; question 5 | |
 | 8a | Export version 5 and labelling, `run-chain` pass-through | nothing: #200 pinned Runner v0.5.0; question 7 | merged: #220, on `main`, in no release yet |
-| 8b | The Jobs chain in hand-over: `audit checkpoint --trail <file> --since <cursor> --limit 300`, with a cursor of its own | 5 | |
+| 8b | The Jobs chain in hand-over: `audit checkpoint --trail <file> --since <cursor> --limit 300`, with a cursor of its own | 5 | built: PR #254 |
 | 11 | Runner signing key in Desk's custody, `secrets/signing/runner/<desk id>.seed` under the same custody checks, passed as the boot-line `signingKey` | 3; policy settled by question 7; Runner #36 closed by #37 in v0.5.0 | #229, in no release yet |
-| 12 | The Jobs record panel beside the Decision record: `audit verify --trail <copy>` with the Runner key and the held checkpoints | 5 and 11 | |
+| 12 | The Jobs record panel beside the Decision record: `audit verify --trail <copy>` with the Runner key and the held checkpoints | 5 and 11 | built: PR #254 |
 | 9 | The README and in-app help: what each part establishes and does not, and the agent setup with the key | each of the above | |
 | 10 | Hand-over to an HTTPS endpoint | a holder who runs one; question 4 | |
 

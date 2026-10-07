@@ -4065,8 +4065,8 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if cursor > head.Sequence {' \
     '	if false {'
   mutate go "hand-over: the cursor is not the holder's record" "$HO" \
-    '	cursor := record.Trails[head.Identity].Through' \
-    '	cursor := int64(0) * record.Trails[head.Identity].Through'
+    '	cursor := chain.entries(record)[head.Identity].Through' \
+    '	cursor := int64(0) * chain.entries(record)[head.Identity].Through'
   mutate go "hand-over: the digest header is not the bytes' own" "$HO" \
     '	w.Header().Set(checkpointsDigestHeader, sha256Digest(read.data))' \
     '	w.Header().Set(checkpointsDigestHeader, sha256Digest(nil))'
@@ -4074,16 +4074,16 @@ func (b *cappedBuffer) exceeded() bool {'
     '	case read.through != through || sha256Digest(read.data) != request.Digest:' \
     '	case read.through != through:'
   mutate go "hand-over: a confirmation from another cursor is recorded" "$HO" \
-    '	case record.Trails[request.Trail].Through != from:' \
+    '	case chain.entries(record)[request.Trail].Through != from:' \
     '	case false:'
   mutate go "hand-over: a confirmation with no chained record is not stale" "$HO" \
     '	case head == nil:
 		staleRefusal(w)
 		return
 	}
-	read, err := s.readCheckpoints(r.Context(), dir, request.Trail, from, through)' \
+	read, err := s.readCheckpoints(r.Context(), dir, chain, request.Trail, from, through)' \
     '	}
-	read, err := s.readCheckpoints(r.Context(), dir, request.Trail, from, through)'
+	read, err := s.readCheckpoints(r.Context(), dir, chain, request.Trail, from, through)'
   mutate go "hand-over: confirmations are not one at a time" "$HO" \
     '	s.handoverMu.Lock()
 	defer s.handoverMu.Unlock()
@@ -4111,8 +4111,8 @@ func (b *cappedBuffer) exceeded() bool {'
     '			since := max(head.Sequence-handed.Through, 0)' \
     '			since := max(head.Sequence, 0)'
   mutate go "hand-over: a holder of a trail moved aside is not said" "$HO" \
-    '		shown.OtherTrail = !current' \
-    '		shown.OtherTrail = !current && false'
+    '		other = !current' \
+    '		other = !current && false'
   mutate go "hand-over: a record of another trail is counted against this one" "$HO" \
     '		if head != nil && trail == head.Identity {' \
     '		if head != nil {'
@@ -4120,8 +4120,8 @@ func (b *cappedBuffer) exceeded() bool {'
     '(got.Diagnostics[0].Code == "JPS-AUDIT-CHECKPOINT-NONE" ||' \
     '(got.Diagnostics[0].Code == "JPS-AUDIT-CHECKPOINT-NONE-X" ||'
   mutate go "hand-over: a trail not written yet is said as a refusal" "$HO" \
-    '			got.Diagnostics[0].Code == "JPS-AUDIT-TRAIL-READ" && s.trailAbsent()) {' \
-    '			got.Diagnostics[0].Code == "JPS-AUDIT-TRAIL-READ" && s.trailAbsent() && false) {'
+    '			got.Diagnostics[0].Code == "JPS-AUDIT-TRAIL-READ" && !chain.jobs && s.trailAbsent()) {' \
+    '			got.Diagnostics[0].Code == "JPS-AUDIT-TRAIL-READ" && !chain.jobs && s.trailAbsent() && false) {'
   mutate go "hand-over: a trail that cannot be opened is taken for none" "$HO" \
     '	_, err = root.Lstat(auditTrailFiles["evaluations"])
 	return errors.Is(err, fs.ErrNotExist)' \
@@ -4174,10 +4174,10 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if !declared && false {
 		return heldDir{}, &lockFailure{http.StatusConflict, CodeBadRequest, noTrailWords}'
   mutate go "hand-over: the decision record is given no held checkpoint" "$HO" \
-    '			held.args = append(held.args, "--expect", path.Join(handoverDir, holder.ID, head.Identity+".jsonl"))' \
-    '			_ = path.Join(handoverDir, holder.ID, head.Identity+".jsonl")'
+    '			held.args = append(held.args, "--expect", path.Join(handoverDir, holder.ID, chain.heldName(head.Identity)))' \
+    '			_ = path.Join(handoverDir, holder.ID, chain.heldName(head.Identity))'
   mutate go "hand-over: every file a holder keeps is passed" "$HO" \
-    '		err := checkHeldFile(handover, holder.ID, head.Identity)' \
+    '		err := checkHeldFile(handover, holder.ID, chain, head.Identity)' \
     '		trail := head.Identity
 		if folder, err := openHolderFolder(handover, holder.ID, false); err == nil {
 			if record, err := readHandoverRecord(folder); err == nil {
@@ -4187,10 +4187,10 @@ func (b *cappedBuffer) exceeded() bool {'
 			}
 			folder.Close()
 		}
-		err := checkHeldFile(handover, holder.ID, trail)
+		err := checkHeldFile(handover, holder.ID, chain, trail)
 		head := &checkpointHead{Identity: trail}'
   mutate go "hand-over: a held file that cannot be read is passed" "$HO" \
-    '		err := checkHeldFile(handover, holder.ID, head.Identity)' \
+    '		err := checkHeldFile(handover, holder.ID, chain, head.Identity)' \
     '		err := error(nil)'
   mutate go "hand-over: a held file passed over is not named" "$HO" \
     '			held.unread = append(held.unread, holder.Label)' \
@@ -4249,13 +4249,13 @@ func (b *cappedBuffer) exceeded() bool {'
   # **Review round 1 (finding 3): a record of hand-overs Desk cannot read is
   # said, never taken for none.**
   mutate go "hand-over: a hand-over folder Desk cannot open is said as none" "$HO" \
-    '		s.log.Printf("desk: the record of hand-overs could not be opened for the decision record: %v", err)
+    '		s.log.Printf("desk: the record of hand-overs could not be opened for the check: %v", err)
 		held.problem = handoverWords(recordUnreadWords, err)' \
-    '		s.log.Printf("desk: the record of hand-overs could not be opened for the decision record: %v", err)'
+    '		s.log.Printf("desk: the record of hand-overs could not be opened for the check: %v", err)'
   mutate go "hand-over: a list of holders Desk cannot read is said as none" "$HO" \
-    '		s.log.Printf("desk: the list of holders could not be read for the decision record: %v", err)
+    '		s.log.Printf("desk: the list of holders could not be read for the check: %v", err)
 		held.problem = handoverWords(recordUnreadWords, err)' \
-    '		s.log.Printf("desk: the list of holders could not be read for the decision record: %v", err)'
+    '		s.log.Printf("desk: the list of holders could not be read for the check: %v", err)'
   mutate go "hand-over: a trail the runtime does not name is said as none" "$HO" \
     '		held.problem = handoverWords(trailUnknownWords, err)' \
     '		_ = err'
@@ -4286,6 +4286,153 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "hand-over: a failed creation leaves the hand-over folder" internal/desk/desks.go \
     '	handoverDir, deskAuditDir, ".desk-private",' \
     '	deskAuditDir, ".desk-private",'
+  # **Runner's chain of runs, handed over and checked (ADR-0010 rows 8b and 12,
+  # issue #216).** A private copy of the chain, taken whole from Runner for
+  # each use, or an error; the runtime given that copy alone, with no
+  # configuration and no key; a cursor, a record and a file of the chain's own
+  # for each holder, apart from the desk trail's, under the hand-over's own
+  # rules (nothing new, a chain shorter than what was handed over, a stale
+  # file); the Jobs record given each holder's file of the chain's current
+  # identity and no other, and told of one it could not read; no Runner and
+  # Runner not running each said; no path in an answer. Every row's name
+  # starts "jobs record:" or "jobs hand-over:".
+  JR=internal/desk/jobs_record.go
+  mutate go "jobs record: a transfer that ended early is checked" "$JR" \
+    '	if err != nil {
+		return nil, runChainUnread{errors.New("the runner'"'"'s answer did not complete")}
+	}' \
+    '	_ = err'
+  mutate go "jobs record: an answer other than 200 is checked" "$JR" \
+    '	if response.StatusCode != http.StatusOK {' \
+    '	if response.StatusCode >= 600 {'
+  mutate go "jobs record: a chain past its bound is cut to it rather than refused" "$JR" \
+    '	if len(data) > runChainLimit {
+		return nil, runChainUnread{' \
+    '	if len(data) > runChainLimit {
+		data = data[:runChainLimit]
+	}
+	if false {
+		return nil, runChainUnread{'
+  mutate go "jobs record: the copy is not replaced" "$JR" \
+    '	if err := writePrivateData(handover, jobsChainName, data); err != nil {' \
+    '	if _, statErr := handover.Lstat(jobsChainName); statErr == nil {
+	} else if err := writePrivateData(handover, jobsChainName, data); err != nil {'
+  mutate go "jobs record: Runner is not asked with its token" "$JR" \
+    '	request.Header.Set("Authorization", "Bearer "+token)' \
+    '	request.Header.Set("Authorization", "Bearer "+token[:0])'
+  mutate go "jobs record: a public key is passed" "$JR" \
+    '	args := append(append([]string{"audit", "verify"}, jobsChain.source()...), "--format", "json")' \
+    '	args := append(append([]string{"audit", "verify"}, jobsChain.source()...), "--format", "json", "--public-key", jobsChainCopy)'
+  mutate go "jobs record: no checkpoint handed over is passed" "$JR" \
+    '	args = append(args, expect.args...)' \
+    '	_ = expect.args'
+  mutate go "jobs record: the desk trail's checkpoints are passed" "$JR" \
+    '	expect := s.heldOf(ctx, dir, jobsChain)' \
+    '	expect := s.heldOf(ctx, dir, deskTrail)'
+  mutate go "jobs record: the checkpoints passed are not counted" "$JR" \
+    '	answer.Expected = expect.count' \
+    '	answer.Expected = 0'
+  mutate go "jobs record: a holder's file passed over is not named" "$JR" \
+    '	answer.ExpectUnread = expect.unread' \
+    '	answer.ExpectUnread = nil'
+  mutate go "jobs record: why nothing was passed is not said" "$JR" \
+    '	answer.HandoverProblem = expect.problem' \
+    '	answer.HandoverProblem = ""'
+  mutate go "jobs record: the copy's lines are not counted" "$JR" \
+    '	lines := int64(bytes.Count(data, []byte("\n")))' \
+    '	lines := int64(0) * int64(bytes.Count(data, []byte("\n")))'
+  mutate go "jobs record: Runner's key is not given" "$JR" \
+    '	return jobsRecordAnswer{auditAnswer: answer, RunnerKey: s.jobs.keyStatus(), ChainLines: &lines}, nil' \
+    '	return jobsRecordAnswer{auditAnswer: answer, ChainLines: &lines}, nil'
+  mutate go "jobs record: a desk with no Runner is checked" "$JR" \
+    '	if s.jobs == nil {
+		writeJSON(w, http.StatusOK, jobsRecordAnswer{auditAnswer: auditAnswer{State: jobsStateNoRunner}})' \
+    '	if false {
+		writeJSON(w, http.StatusOK, jobsRecordAnswer{auditAnswer: auditAnswer{State: jobsStateNoRunner}})'
+  mutate go "jobs record: Runner not running is an error" "$JR" \
+    '	case errors.As(err, &stopped):
+		s.log.Printf("desk: Runner is not running, so its chain of runs was not checked: %v", err)' \
+    '	case errors.As(err, &stopped) && false:
+		s.log.Printf("desk: Runner is not running, so its chain of runs was not checked: %v", err)'
+  mutate go "jobs record: an older runtime is asked to check" "$JR" \
+    '	if !slices.Contains(schema.supported, auditConfigVersion) {
+		return older, nil
+	}
+	s.handoverMu.Lock()' \
+    '	if !slices.Contains(schema.supported, auditConfigVersion) && false {
+		return older, nil
+	}
+	s.handoverMu.Lock()'
+  mutate go "jobs record: the answer names a path" "$JR" \
+    '	shown.auditAnswer = s.withoutPathsIn(answer.auditAnswer)' \
+    '	shown.auditAnswer = answer.auditAnswer'
+  mutate go "jobs hand-over: the chain's state names a path" "$JR" \
+    '			said = append(said, runtimeDiagnostic{Code: diagnostic.Code, Message: s.withoutPaths(diagnostic.Message)})' \
+    '			said = append(said, runtimeDiagnostic{Code: diagnostic.Code, Message: diagnostic.Message})'
+  mutate go "jobs hand-over: no copy is taken for the chain" "$JR" \
+    '	if !chain.jobs {
+		return nil
+	}
+	_, err := s.takeJobsChain(ctx)' \
+    '	if true {
+		return nil
+	}
+	_, err := s.takeJobsChain(ctx)'
+  mutate go "jobs hand-over: no Runner is said as Runner not running" "$JR" \
+    '		return &lockFailure{http.StatusConflict, CodeBadRequest, noRunnerWords}' \
+    '		return &lockFailure{http.StatusServiceUnavailable, CodeBadRequest, runnerNotRunningWords}'
+  mutate go "jobs hand-over: the holders are not told of the chain" "$HO" \
+    '		answer.Jobs = s.jobsChainNow(r.Context(), dir)' \
+    '		answer.Jobs = &jobsChainState{State: jobsStateEmpty}'
+  mutate go "jobs hand-over: records since are counted against the desk trail" "$HO" \
+    '	shown.Jobs, shown.OtherJobsChain = shownEntries(record.Jobs, jobs)' \
+    '	shown.Jobs, shown.OtherJobsChain = shownEntries(record.Jobs, head)'
+  mutate go "jobs hand-over: the configuration is named beside the copy" "$HO" \
+    '		return []string{"--trail", jobsChainCopy}' \
+    '		return []string{"--config", runtimeConfigName, "--trail", jobsChainCopy}'
+  mutate go "jobs hand-over: the chain's cursor is the desk trail's" "$HO" \
+    '	if c.jobs {
+		return record.Jobs
+	}' \
+    '	if c.jobs {
+		return record.Trails
+	}'
+  mutate go "jobs hand-over: the chain's held file is the desk trail's" "$HO" \
+    '		return "jobs-" + trail + ".jsonl"' \
+    '		return trail + ".jsonl"'
+  mutate go "jobs hand-over: the chain's download is named as the trail's" "$HO" \
+    '		return "jobs-" + checkpointsName(trail, from, through)' \
+    '		return checkpointsName(trail, from, through)'
+  mutate go "jobs hand-over: a confirmation of the chain moves the desk trail's cursor" "$HO" \
+    '	if chain.jobs {
+		updated.Jobs = trails
+	} else {' \
+    '	if chain.jobs {
+		updated.Trails = trails
+	} else {'
+  mutate go "jobs hand-over: a download asks for the chain in another way" "$HO" \
+    '	case len(values) == 2 && len(values["chain"]) == 1 && values["chain"][0] == handoverChainParam:' \
+    '	case len(values) == 2 && len(values["chain"]) >= 1:'
+  mutate go "jobs hand-over: a confirmation names the chain in another way" "$HO" \
+    '		request.Chain != nil && *request.Chain != handoverChainParam {' \
+    '		false {'
+  mutate go "jobs hand-over: nothing new on the chain is not said" "$HO" \
+    '	if cursor == head.Sequence {' \
+    '	if cursor == head.Sequence && !chain.jobs {'
+  mutate go "jobs hand-over: a chain shorter than what was handed over is read" "$HO" \
+    '	if cursor > head.Sequence {' \
+    '	if cursor > head.Sequence && !chain.jobs {'
+  mutate go "jobs hand-over: a confirmation of other bytes of the chain is recorded" "$HO" \
+    '	case read.through != through || sha256Digest(read.data) != request.Digest:' \
+    '	case read.through != through || sha256Digest(read.data) != request.Digest && !chain.jobs:'
+  mutate go "jobs hand-over: a copy the runtime cannot read is taken for an empty chain" "$HO" \
+    '			got.Diagnostics[0].Code == "JPS-AUDIT-TRAIL-READ" && !chain.jobs && s.trailAbsent()) {' \
+    '			got.Diagnostics[0].Code == "JPS-AUDIT-TRAIL-READ" && s.trailAbsent()) {'
+  mutate go "jobs hand-over: no run chained is said as the desk trail's" "$HO" \
+    '	case head == nil && chain.jobs:
+		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, noRunChainedWords)' \
+    '	case head == nil && chain.jobs:
+		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, noChainedWords)'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -11126,8 +11273,12 @@ export function assistantTransport(id: string): Transport {
     "link.download = TRAIL_FILES[which]" \
     "link.download = which + '.json'"
   mutate web "downloads: the bytes are read as text" "$AC" \
-    "  return response.blob()" \
-    "  return new Blob([await response.text()])"
+    "    throw new Error(text(body.error) ? body.error : msg('The file could not be downloaded. Please try again.'))
+  }
+  return response.blob()" \
+    "    throw new Error(text(body.error) ? body.error : msg('The file could not be downloaded. Please try again.'))
+  }
+  return new Blob([await response.text()])"
   mutate web "downloads: another file is asked for" "$AC" \
     "deskFetch(\`/api/audit/trail?file=\${which}\`)" \
     "deskFetch(\`/api/audit/trail?file=\${which.length > 0 ? 'evaluations' : which}\`)"
@@ -11326,8 +11477,8 @@ export function assistantTransport(id: string): Transport {
     "{notice?.kind === 'stale' && <p role=\"alert\">" \
     "{notice?.kind === 'stale' && busy && <p role=\"alert\">"
   mutate web "hand-over page: a stale download still waits for its confirmation" "$HP" \
-    "      if (cause instanceof StaleHandover) set(holder.id, undefined, { kind: 'stale' })" \
-    "      if (cause instanceof StaleHandover) set(holder.id, pending, { kind: 'stale' })"
+    "      if (cause instanceof StaleHandover) set(key, undefined, { kind: 'stale' })" \
+    "      if (cause instanceof StaleHandover) set(key, pending, { kind: 'stale' })"
   mutate web "hand-over client: a stale refusal is not told apart" "$AC" \
     "  if (response.status === 409 && body.reason === 'stale') return" \
     "  if (response.status === 409 && body.reason === 'never') return"
@@ -11341,11 +11492,11 @@ export function assistantTransport(id: string): Transport {
     "  return new Error(text(body.error) ? body.error : fallback)" \
     "  return new Error(text(body.error) ? body.error : fallback.slice(0, 0))"
   mutate web "hand-over client: a download whose headers disagree is taken" "$AC" \
-    "    || name !== \`checkpoints-\${trail}-\${from + 1}-\${through}.jsonl\`) throw new Error(failed)" \
+    "    || name !== \`\${prefix}checkpoints-\${trail}-\${from + 1}-\${through}.jsonl\`) throw new Error(failed)" \
     "    || name === undefined) throw new Error(failed)"
   mutate web "hand-over client: the confirmation names another cursor" "$AC" \
-    "body: JSON.stringify({ trail, from, through, digest }) })" \
-    "body: JSON.stringify({ trail, from: from + 1, through, digest }) })"
+    " : { trail, from, through, digest }" \
+    " : { trail, from: from + 1, through, digest }"
   mutate web "hand-over client: a holder is added in other words" "$AC" \
     "body: JSON.stringify({ label, channel }) })" \
     "body: JSON.stringify({ label: channel || label, channel }) })"
@@ -11366,7 +11517,7 @@ export function assistantTransport(id: string): Transport {
     "{trail && record.unwitnessed !== undefined && <p>" \
     "{record.unwitnessed !== undefined && <p>"
   mutate web "hand-over page: a holder of a trail moved aside reads as handed nothing" "$HP" \
-    "      </> : holder.otherTrail ? <p>" \
+    "      </> : moved ? <p>" \
     "      </> : false ? <p>"
   mutate web "hand-over page: a download is offered with no trail" "$HP" \
     "      {trail && <div className={styles.actions}><Button disabled={busy} onClick={onDownload}>" \
@@ -11411,6 +11562,134 @@ export function assistantTransport(id: string): Transport {
   mutate web "hand-over page: a waiting download outlives opening the panel again" "$DR" \
     "  useEffect(() => { if (visible) setHandover(NO_HANDOVER) }, [visible])" \
     "  useEffect(() => { if (visible) void 0 }, [visible])"
+  # **Runner's chain of runs on the page (ADR-0010 rows 8b and 12, issue
+  # #216).** The Jobs record shown only where the desk has a Runner, run on
+  # request and after a hand-over of the chain is confirmed, never on a timer;
+  # the ADR's sentence without "the keys and", the runtime's report through
+  # the decision record's own, Runner's key in Gates' words and where each
+  # run's signature is checked; no Runner, Runner not running and an older
+  # runtime each said; the chain saved as a Blob; and, beside each holder, the
+  # chain's own row, download, confirmation and notices. Every row's name
+  # starts "jobs record" or "jobs hand-over".
+  JRP=web/src/audit/JobsRecord.tsx
+  mutate web "jobs record page: it runs on its own" "$JRP" \
+    '    queryFn: ({ signal }) => readJobsRecord(signal),
+    enabled: false,' \
+    '    queryFn: ({ signal }) => readJobsRecord(signal),
+    enabled: true,'
+  mutate web "jobs record page: it follows every change to the project" "$JRP" \
+    '    queryFn: ({ signal }) => readJobsRecord(signal),
+    enabled: false,
+    meta: ON_REQUEST_ONLY,' \
+    '    queryFn: ({ signal }) => readJobsRecord(signal),
+    enabled: false,
+    meta: { ...ON_REQUEST_ONLY, onRequestOnly: false },'
+  mutate web "jobs record page: it runs on a timer" "$JRP" \
+    '  const query = useJobsRecord()' \
+    '  const query = useJobsRecord()
+  useEffect(() => { const timer = setInterval(() => void query.refetch(), 60_000); return () => clearInterval(timer) }, [query])'
+  mutate web "jobs record page: shown where the desk has no Runner" "$JRP" \
+    '  if (runner.data === null || runner.isPending) return null' \
+    '  if (runner.isPending) return null'
+  mutate web "jobs record page: the sentence claims keys it did not pass" "$JRP" \
+    'const STATEMENT = "Desk ran this over its own copy of the runner'"'"'s chain of runs, with the checkpoints it keeps.' \
+    'const STATEMENT = "Desk ran this over its own copy of the runner'"'"'s chain of runs, with the keys and checkpoints it keeps.'
+  mutate web "jobs record page: where each run's signature is checked is not said" "$JRP" \
+    '    <p className={styles.quiet}>{msg("Each run'"'"'s signature is checked by jpack-runner verify-run on that run'"'"'s export, not here.")}</p>
+' \
+    ''
+  mutate web "jobs record page: Runner's key is not shown" "$JRP" \
+    '    <RunnerSignatures runnerKey={runnerKey} />' \
+    ''
+  mutate web "jobs record page: the report is not shown" "$JRP" \
+    '      <Report report={record.report} />' \
+    ''
+  mutate web "jobs record page: the copy's lines are not said" "$JRP" \
+    '{msg('"'"'Lines in Desk’s copy of the chain: {{number}}'"'"', { number: record.chainLines })}' \
+    '{msg('"'"'Lines in Desk’s copy of the chain: {{number}}'"'"', { number: 0 })}'
+  mutate web "jobs record page: a holder's file passed over is not named" "$JRP" \
+    '      {record.expectUnread && <p role="alert">' \
+    '      {record.expectUnread && record.expectUnread.length < 0 && <p role="alert">'
+  mutate web "jobs record page: no Runner is not said" "$JRP" \
+    '    case '"'"'no-runner'"'"': return <p>' \
+    '    case '"'"'no-runner'"'"': return null && <p>'
+  mutate web "jobs record page: Runner not running is not said" "$JRP" \
+    '    case '"'"'not-running'"'"': return <p>' \
+    '    case '"'"'not-running'"'"': return null && <p>'
+  mutate web "jobs record page: an older runtime is not said" "$JRP" \
+    '    case '"'"'older-runtime'"'"': return <p>' \
+    '    case '"'"'older-runtime'"'"': return null && <p>'
+  mutate web "jobs record page: the chain is read as text" "$JRP" \
+    '      const chain = await downloadRunChain()' \
+    '      const chain = new Blob([await (await downloadRunChain()).text()])'
+  mutate web "jobs record page: the chain is saved under another name" "$JRP" \
+    '      link.href = url; link.download = RUN_CHAIN_FILE' \
+    '      link.href = url; link.download = '"'"'chain.jsonl'"'"''
+  mutate web "jobs record client: the chain is asked of another route" "$AC" \
+    '  const response = await deskFetch('"'"'/api/operations/run-chain'"'"')' \
+    '  const response = await deskFetch('"'"'/api/operations/runs'"'"')'
+  mutate web "jobs record client: a refusal that is not JSON is not said" "$AC" \
+    '    throw new Error(text(body.error) ? body.error : failed)' \
+    '    throw new Error(text(body.error) ? body.error : failed.slice(0, 0))'
+  mutate web "jobs record client: an answer of another shape is read" "$AC" \
+    '    case '"'"'report'"'"': return isAuditReport(value.report) && count(value.chainLines)' \
+    '    case '"'"'report'"'"': return true'
+  mutate web "jobs hand-over client: the chain's download asks for the trail" "$AC" \
+    '${chain === '"'"'jobs'"'"' ? '"'"'&chain=jobs'"'"' : '"'"''"'"'}' \
+    '${chain === '"'"'jobs'"'"' ? '"'"''"'"' : '"'"''"'"'}'
+  mutate web "jobs hand-over client: the chain's confirmation does not name the chain" "$AC" \
+    '  const body = chain === '"'"'jobs'"'"' ? { chain, trail, from, through, digest } : { trail, from, through, digest }' \
+    '  const body = { trail, from, through, digest }'
+  mutate web "jobs hand-over client: a download of the chain is taken under the trail's name" "$AC" \
+    '  const prefix = chain === '"'"'jobs'"'"' ? '"'"'jobs-'"'"' : '"'"''"'"'' \
+    '  const prefix = '"'"''"'"''
+  mutate web "jobs hand-over client: the chain beside the holders is read in any shape" "$AC" \
+    '    case '"'"'chain'"'"': return object(value.chain) && trailIdentity(value.chain.identity) && count(value.chain.sequence) && value.chain.sequence > 0' \
+    '    case '"'"'chain'"'"': return true'
+  mutate web "jobs hand-over page: the Jobs record is not checked again after a confirmation of the chain" "$HP" \
+    '      if (pending.chain === '"'"'jobs'"'"') void checkJobsRecordAgain(client)' \
+    '      if (pending.chain === '"'"'jobs'"'"') void client'
+  mutate web "jobs hand-over page: a confirmation of the trail checks the Jobs record again" "$HP" \
+    '      if (pending.chain === '"'"'jobs'"'"') void checkJobsRecordAgain(client)' \
+    '      void checkJobsRecordAgain(client)'
+  mutate web "jobs hand-over page: the chain's row is shown where there is no Runner" "$HP" \
+    'jobs={data.jobs?.state === '"'"'no-runner'"'"' ? undefined : data.jobs}' \
+    'jobs={data.jobs}'
+  mutate web "jobs hand-over page: no Runner is not said" "$HP" \
+    '            {data.jobs?.state === '"'"'no-runner'"'"' && <p className={styles.quiet}>' \
+    '            {data.jobs?.state === '"'"'no-runner'"'"' && false && <p className={styles.quiet}>'
+  mutate web "jobs hand-over page: the chain's row offers a download where the chain was not read" "$HP" \
+    '  const head = jobs?.state === '"'"'chain'"'"' ? jobs.chain : null' \
+    '  const head = jobs?.state === '"'"'chain'"'"' ? jobs.chain : { identity: '"'"'0'"'"'.repeat(32), sequence: 1 }'
+  mutate web "jobs hand-over page: the chain's notices are the trail's" "$HP" \
+    'export const rowKey = (holder: string, chain: HandoverChain) => chain === '"'"'jobs'"'"' ? `${holder}:jobs` : holder' \
+    'export const rowKey = (holder: string, chain: HandoverChain) => chain === '"'"'jobs'"'"' ? holder : holder'
+  mutate web "jobs hand-over page: the chain's record is the trail's" "$HP" \
+    'record={shownRecord(holder.jobs ?? {}, head)}' \
+    'record={shownRecord(holder.trails, head)}'
+  mutate web "jobs hand-over page: a chain with another identity reads as handed nothing" "$HP" \
+    '        moved={holder.otherJobsChain ? msg('"'"'The chain of runs has another identity now: this holder starts at 0 for it'"'"') : undefined}' \
+    '        moved={undefined}'
+  mutate web "jobs hand-over page: why the chain's row offers nothing is not said" "$HP" \
+    '    case '"'"'empty'"'"': return <p>' \
+    '    case '"'"'empty'"'"': return null && <p>'
+  mutate web "jobs hand-over page: the chain's download is the trail's" "$HP" \
+    '        onDownload={() => onDownload('"'"'jobs'"'"')} onConfirm={onConfirm}>' \
+    '        onDownload={() => onDownload('"'"'trail'"'"')} onConfirm={onConfirm}>'
+  # Review round 1 on #254: the check after a confirmation of the chain is a
+  # check of its own, never one asked before it and still in flight; it is run
+  # only on request, so a change to the project does not cancel it; and an
+  # error takes the place of an earlier report.
+  mutate web "jobs record client: a check in flight is joined after a confirmation of the chain" "$AC" \
+    '  await client.cancelQueries({ queryKey: JOBS_RECORD_KEY })
+' \
+    ''
+  mutate web "jobs record client: the check after a confirmation follows every change to the project" "$AC" \
+    'meta: ON_REQUEST_ONLY, staleTime: 0, retry: false' \
+    'staleTime: 0, retry: false'
+  mutate web "jobs record page: an error leaves an earlier report shown" "$JRP" \
+    '        : query.error ? <p role="alert">{systemMessage(query.error.message)}</p>' \
+    '        : query.error && !record ? <p role="alert">{systemMessage(query.error.message)}</p>'
 fi
 
 restore

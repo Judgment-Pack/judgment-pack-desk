@@ -33,6 +33,20 @@ package desk
 //     last one confirmed. A line is about 170 bytes, so a batch of 300 stays
 //     within `runRuntime`'s 64 KiB.
 //
+// # Runner's chain of runs, handed over the same way
+//
+// A holder may hold the desk's trail and Runner's chain of runs, with a cursor
+// for each (ADR-0010, section 5; delivery row 8b). The chain is read through
+// a private copy Desk takes for each use (jobs_record.go): Runner's `GET
+// /v1/run-chain`, held whole, written to `jobs-chain.jsonl` in the hand-over
+// folder in place of the one before. The runtime is then given that copy
+// alone, `--trail .desk-private/handover/jobs-chain.jsonl`, where the desk's
+// trail is named by `--config jpack.json`: measured on 0.27.1, the runtime
+// refuses the two together ("Pass --trail or --config, not both"). Everything
+// else is this file's, for either chain (`handoverChain`): the same batches,
+// checks and bounds, the same confirmation, and a record and a file of its
+// own for each holder.
+//
 // # The deliverer's cursor, and Desk's record
 //
 // Desk keeps, under the project, in `.desk-private/handover/`, owner-only and
@@ -42,11 +56,15 @@ package desk
 //     the owner's own words;
 //   - `<holder id>/record.json`: for each trail identity, the last sequence
 //     confirmed as handed over to that holder, when (Desk's clock), and the
-//     SHA-256 of the bytes confirmed;
+//     SHA-256 of the bytes confirmed; under `jobs`, the same for each identity
+//     of Runner's chain of runs, apart from the desk's trail;
 //   - `<holder id>/<trail identity>.jsonl`: every line confirmed as handed
 //     over to that holder for that trail, as the runtime printed it, appended
 //     to only on a confirmation. It is what `audit verify --expect` is given
-//     (audit_record.go).
+//     (audit_record.go); `<holder id>/jobs-<identity>.jsonl` is the same for
+//     the chain of runs, and what the Jobs record is given (jobs_record.go);
+//   - `jobs-chain.jsonl`: Desk's latest private copy of Runner's chain of
+//     runs, replaced on each use.
 //
 // A download moves nothing. The cursor moves only when the owner confirms
 // that the file went to the holder: the confirmation names the trail, the
@@ -204,9 +222,71 @@ type handedOver struct {
 	Digest      string `json:"digest"`
 }
 
+// handoverRecord is a holder's record: Trails for the desk's own trail, and
+// Jobs for Runner's chain of runs, each by identity. Jobs is left out where
+// nothing of the chain was handed over, so a record written before it is the
+// same bytes.
 type handoverRecord struct {
 	Version string                `json:"version"`
 	Trails  map[string]handedOver `json:"trails"`
+	Jobs    map[string]handedOver `json:"jobs,omitempty"`
+}
+
+/* What a hand-over is of ------------------------------------------------------ */
+
+// handoverChain is what a hand-over is of: the desk's own trail, which its
+// jpack.json names, or Runner's chain of runs, through Desk's private copy of
+// it (jobs_record.go). Each has, for each holder, a cursor, a record and a
+// file of its own, never the other's.
+type handoverChain struct{ jobs bool }
+
+var (
+	deskTrail = handoverChain{}
+	jobsChain = handoverChain{jobs: true}
+)
+
+// handoverChainParam is how a request names Runner's chain of runs: `chain=jobs`
+// on a download, `"chain":"jobs"` in a confirmation. Without it, a request is
+// of the desk's own trail.
+const handoverChainParam = "jobs"
+
+// source is the arguments that name the chain to the runtime's `audit
+// checkpoint` and `audit verify`: the project's configuration, which names the
+// desk's trail; or the private copy, by its path in the project, where the
+// commands run. Measured on 0.27.1, the runtime refuses the two together
+// ("Pass --trail or --config, not both: one trail is read."), so the copy is
+// named alone.
+func (c handoverChain) source() []string {
+	if c.jobs {
+		return []string{"--trail", jobsChainCopy}
+	}
+	return []string{"--config", runtimeConfigName}
+}
+
+// entries is what record keeps of this chain, by identity.
+func (c handoverChain) entries(record handoverRecord) map[string]handedOver {
+	if c.jobs {
+		return record.Jobs
+	}
+	return record.Trails
+}
+
+// heldName is the name of a holder's file of the checkpoints of the chain
+// whose identity is trail.
+func (c handoverChain) heldName(trail string) string {
+	if c.jobs {
+		return "jobs-" + trail + ".jsonl"
+	}
+	return trail + ".jsonl"
+}
+
+// downloadName is the file a download of this chain's checkpoints is saved
+// under.
+func (c handoverChain) downloadName(trail string, from, through int64) string {
+	if c.jobs {
+		return "jobs-" + checkpointsName(trail, from, through)
+	}
+	return checkpointsName(trail, from, through)
 }
 
 // holderText is a holder's label or channel as Desk keeps it: trimmed, and
@@ -354,9 +434,11 @@ func readHandoverRecord(holder *os.Root) (handoverRecord, error) {
 	if record.Version != handoverVersion || record.Trails == nil {
 		return handoverRecord{}, fmt.Errorf("%s is not a record Desk wrote", handoverRecordName)
 	}
-	for trail, handed := range record.Trails {
-		if !keyIDForm.MatchString(trail) || handed.From < 0 || handed.Through <= handed.From || handed.ConfirmedAt < 0 || !recordForm.MatchString(handed.Digest) {
-			return handoverRecord{}, fmt.Errorf("%s is not a record Desk wrote", handoverRecordName)
+	for _, entries := range []map[string]handedOver{record.Trails, record.Jobs} {
+		for trail, handed := range entries {
+			if !keyIDForm.MatchString(trail) || handed.From < 0 || handed.Through <= handed.From || handed.ConfirmedAt < 0 || !recordForm.MatchString(handed.Digest) {
+				return handoverRecord{}, fmt.Errorf("%s is not a record Desk wrote", handoverRecordName)
+			}
 		}
 	}
 	return record, nil
@@ -437,22 +519,25 @@ func readCheckpointLine(document []byte) (checkpointLine, bool) {
 	return checkpointLine{trail: trail, sequence: sequence}, true
 }
 
-// readCheckpointHead asks the runtime for the trail's last chained record:
-// `audit checkpoint --config jpack.json --format json`, read whatever the
-// exit.
+// readCheckpointHead asks the runtime for the chain's last chained record:
+// `audit checkpoint --config jpack.json --format json` for the desk's trail,
+// or `audit checkpoint --trail <copy> --format json` for the chain of runs,
+// read whatever the exit.
 //
 //   - Exit 0, "checkpointed", with a checkpoint of the runtime's shape: its
 //     identity and sequence.
 //   - The runtime's refusal because the trail has no chained record
 //     (JPS-AUDIT-CHECKPOINT-NONE), or because there is no trail yet
-//     (JPS-AUDIT-TRAIL-READ, where the trail is not there): nil, and no
-//     refusal. There is nothing to hand over.
+//     (JPS-AUDIT-TRAIL-READ, where the desk's trail is not there): nil, and no
+//     refusal. There is nothing to hand over. The copy of the chain of runs is
+//     always there, so a refusal to read it is a refusal.
 //   - Any other refusal, a non-zero exit with "error" or "unsupported" and
 //     the runtime's own diagnostics: those, in its words.
 //
 // Anything else is not an answer the runtime documents, and is an error.
-func (s *Server) readCheckpointHead(ctx context.Context, dir heldDir) (*checkpointHead, []runtimeDiagnostic, error) {
-	out, runErr := runRuntime(ctx, s.cfg.JpackBin, dir, "audit", "checkpoint", "--config", runtimeConfigName, "--format", "json")
+func (s *Server) readCheckpointHead(ctx context.Context, dir heldDir, chain handoverChain) (*checkpointHead, []runtimeDiagnostic, error) {
+	args := append(append([]string{"audit", "checkpoint"}, chain.source()...), "--format", "json")
+	out, runErr := runRuntime(ctx, s.cfg.JpackBin, dir, args...)
 	code := 0
 	if runErr != nil {
 		var exit *exec.ExitError
@@ -481,7 +566,7 @@ func (s *Server) readCheckpointHead(ctx context.Context, dir heldDir) (*checkpoi
 		}
 	case code > 0 && (got.Status == "error" || got.Status == "unsupported") && (auditVerification{Diagnostics: got.Diagnostics}).said():
 		if len(got.Diagnostics) == 1 && (got.Diagnostics[0].Code == "JPS-AUDIT-CHECKPOINT-NONE" ||
-			got.Diagnostics[0].Code == "JPS-AUDIT-TRAIL-READ" && s.trailAbsent()) {
+			got.Diagnostics[0].Code == "JPS-AUDIT-TRAIL-READ" && !chain.jobs && s.trailAbsent()) {
 			return nil, nil, nil
 		}
 		return nil, got.Diagnostics, nil
@@ -520,8 +605,10 @@ type checkpoints struct {
 
 // readCheckpoints asks the runtime for the checkpoints of identity after
 // from, up to and with through: `audit checkpoint --config jpack.json --since
-// <n> --limit 300`, in the human form, again after the last sequence
-// received until fewer than 300 come back, at most handoverBatches times.
+// <n> --limit 300` for the desk's trail, or `--trail <copy>` in place of
+// `--config jpack.json` for the chain of runs, in the human form, again after
+// the last sequence received until fewer than 300 come back, at most
+// handoverBatches times.
 //
 // Each line must be a checkpoint of identity, after the last one received
 // and up to through; the lines are kept as printed, and the bytes end at the
@@ -529,12 +616,12 @@ type checkpoints struct {
 // one that passes through without it, or one that ends before it, is
 // errCheckpointsChanged; a batch the runtime fails, or a line that is not a
 // checkpoint or comes out of order, is an error.
-func (s *Server) readCheckpoints(ctx context.Context, dir heldDir, identity string, from, through int64) (checkpoints, error) {
+func (s *Server) readCheckpoints(ctx context.Context, dir heldDir, chain handoverChain, identity string, from, through int64) (checkpoints, error) {
 	var data []byte
 	last := from
 	for range handoverBatches {
-		out, err := runRuntime(ctx, s.cfg.JpackBin, dir, "audit", "checkpoint", "--config", runtimeConfigName,
-			"--since", strconv.FormatInt(last, 10), "--limit", strconv.Itoa(handoverBatch))
+		out, err := runRuntime(ctx, s.cfg.JpackBin, dir, append(append([]string{"audit", "checkpoint"}, chain.source()...),
+			"--since", strconv.FormatInt(last, 10), "--limit", strconv.Itoa(handoverBatch))...)
 		if err != nil {
 			return checkpoints{}, err
 		}
@@ -625,43 +712,63 @@ type holderTrailAnswer struct {
 
 // holderAnswer is one holder as the page is shown it. OtherTrail is true
 // where Desk's record of it names only trails other than the current one:
-// the trail was moved aside, and this holder starts at 0 for it.
+// the trail was moved aside, and this holder starts at 0 for it. Jobs and
+// OtherJobsChain are the same for Runner's chain of runs, kept apart.
 type holderAnswer struct {
 	handoverHolder
-	Trails     map[string]holderTrailAnswer `json:"trails"`
-	OtherTrail bool                         `json:"otherTrail,omitempty"`
+	Trails         map[string]holderTrailAnswer `json:"trails"`
+	OtherTrail     bool                         `json:"otherTrail,omitempty"`
+	Jobs           map[string]holderTrailAnswer `json:"jobs,omitempty"`
+	OtherJobsChain bool                         `json:"otherJobsChain,omitempty"`
 }
 
 // holdersAnswer is what `GET /api/audit/holders` answers. Trail is null where
 // the trail has no chained record yet, or the runtime refuses to give a
-// checkpoint, and Diagnostics then say why in its words.
+// checkpoint, and Diagnostics then say why in its words. Jobs is Runner's
+// chain of runs as it is now, given where Desk keeps a holder.
 type holdersAnswer struct {
 	Holders     []holderAnswer      `json:"holders"`
 	Trail       *checkpointHead     `json:"trail"`
 	Diagnostics []runtimeDiagnostic `json:"diagnostics,omitempty"`
+	Jobs        *jobsChainState     `json:"jobs,omitempty"`
 }
 
 // shownHolder is holder, with Desk's record of it, as the page is shown it
-// against head, the trail as it is now (nil where it has no chained record).
-func shownHolder(holder handoverHolder, record handoverRecord, head *checkpointHead) holderAnswer {
-	shown := holderAnswer{handoverHolder: holder, Trails: map[string]holderTrailAnswer{}}
-	for trail, handed := range record.Trails {
+// against head, the trail as it is now, and jobs, Runner's chain of runs as
+// it is now (each nil where it has no chained record, or was not read).
+func shownHolder(holder handoverHolder, record handoverRecord, head, jobs *checkpointHead) holderAnswer {
+	shown := holderAnswer{handoverHolder: holder}
+	shown.Trails, shown.OtherTrail = shownEntries(record.Trails, head)
+	shown.Jobs, shown.OtherJobsChain = shownEntries(record.Jobs, jobs)
+	return shown
+}
+
+// shownEntries is what a holder's record keeps of one chain, as the page is
+// shown it against head, that chain as it is now: records since only for
+// the current identity; and other, where the record names only identities
+// other than the current one.
+func shownEntries(entries map[string]handedOver, head *checkpointHead) (map[string]holderTrailAnswer, bool) {
+	shown := map[string]holderTrailAnswer{}
+	for trail, handed := range entries {
 		entry := holderTrailAnswer{handedOver: handed}
 		if head != nil && trail == head.Identity {
 			since := max(head.Sequence-handed.Through, 0)
 			entry.Unwitnessed = &since
 		}
-		shown.Trails[trail] = entry
+		shown[trail] = entry
 	}
-	if head != nil && len(record.Trails) > 0 {
-		_, current := record.Trails[head.Identity]
-		shown.OtherTrail = !current
+	other := false
+	if head != nil && len(entries) > 0 {
+		_, current := entries[head.Identity]
+		other = !current
 	}
-	return shown
+	return shown, other
 }
 
 // handleHolders answers `GET /api/audit/holders`: the holders Desk keeps, and
-// what it recorded of each, against the trail as the runtime gives it now.
+// what it recorded of each, against the trail as the runtime gives it now,
+// and, where Desk keeps a holder, against Runner's chain of runs as a fresh
+// copy of it gives it now (`jobsChainNow`).
 func (s *Server) handleHolders(w http.ResponseWriter, r *http.Request) {
 	if !s.guard(w, r) {
 		return
@@ -672,7 +779,7 @@ func (s *Server) handleHolders(w http.ResponseWriter, r *http.Request) {
 		s.refuse(w, failure)
 		return
 	}
-	head, refusal, err := s.readCheckpointHead(r.Context(), dir)
+	head, refusal, err := s.readCheckpointHead(r.Context(), dir, deskTrail)
 	if err != nil {
 		s.refuse(w, &lockFailure{http.StatusInternalServerError, CodeInternal, handoverWords("The trail's last checkpoint could not be read: ", err)})
 		return
@@ -698,6 +805,11 @@ func (s *Server) handleHolders(w http.ResponseWriter, r *http.Request) {
 		s.refuse(w, &lockFailure{http.StatusInternalServerError, CodeInternal, handoverWords("Desk's list of holders could not be read: ", err)})
 		return
 	}
+	var jobs *checkpointHead
+	if len(holders) > 0 {
+		answer.Jobs = s.jobsChainNow(r.Context(), dir)
+		jobs = answer.Jobs.Chain
+	}
 	for _, holder := range holders {
 		record := handoverRecord{Version: handoverVersion, Trails: map[string]handedOver{}}
 		folder, err := openHolderFolder(handover, holder.ID, false)
@@ -711,7 +823,7 @@ func (s *Server) handleHolders(w http.ResponseWriter, r *http.Request) {
 			s.refuse(w, &lockFailure{http.StatusInternalServerError, CodeInternal, handoverWords("Desk's record of what was handed over to "+holder.Label+" could not be read: ", err)})
 			return
 		}
-		answer.Holders = append(answer.Holders, shownHolder(holder, record, head))
+		answer.Holders = append(answer.Holders, shownHolder(holder, record, head, jobs))
 	}
 	writeJSON(w, http.StatusOK, answer)
 }
@@ -805,14 +917,21 @@ func (s *Server) handleAddHolder(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, holderAnswer{handoverHolder: holder, Trails: map[string]holderTrailAnswer{}})
 }
 
-// checkpointsRequest reads the one thing a download may ask: `holder`, once,
-// a holder's id. Anything else is refused.
-func checkpointsRequest(raw string) (string, bool) {
+// checkpointsRequest reads the two things a download may ask: `holder`, once,
+// a holder's id; and, for Runner's chain of runs, `chain=jobs`, once.
+// Anything else is refused.
+func checkpointsRequest(raw string) (string, handoverChain, bool) {
 	values, err := url.ParseQuery(raw)
-	if err != nil || len(values) != 1 || len(values["holder"]) != 1 || !holderIDForm.MatchString(values["holder"][0]) {
-		return "", false
+	if err != nil || len(values["holder"]) != 1 || !holderIDForm.MatchString(values["holder"][0]) {
+		return "", deskTrail, false
 	}
-	return values["holder"][0], true
+	switch {
+	case len(values) == 1:
+		return values["holder"][0], deskTrail, true
+	case len(values) == 2 && len(values["chain"]) == 1 && values["chain"][0] == handoverChainParam:
+		return values["holder"][0], jobsChain, true
+	}
+	return "", deskTrail, false
 }
 
 // checkpointsName is the file a download is saved under.
@@ -822,16 +941,20 @@ func checkpointsName(trail string, from, through int64) string {
 
 // handleCheckpoints answers `GET /api/audit/checkpoints?holder=<id>`: the
 // checkpoints after that holder's cursor, through the trail's last chained
-// record, as the exact bytes the runtime printed. It moves nothing: only a
-// confirmation does.
+// record, as the exact bytes the runtime printed; with `&chain=jobs`, the same
+// of Runner's chain of runs, from a fresh copy of it and after the holder's
+// cursor for that chain. It moves nothing: only a confirmation does.
+//
+// It holds handoverMu throughout, so that the copy of the chain of runs the
+// runtime reads is the one this request took.
 func (s *Server) handleCheckpoints(w http.ResponseWriter, r *http.Request) {
 	if !s.guard(w, r) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	id, ok := checkpointsRequest(r.URL.RawQuery)
+	id, chain, ok := checkpointsRequest(r.URL.RawQuery)
 	if !ok {
-		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, "Ask for one holder's checkpoints, once: holder=<its id>.")
+		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, "Ask for one holder's checkpoints, once: holder=<its id>, and chain=jobs for the runner's chain of runs.")
 		return
 	}
 	dir, failure := s.handoverRuntime(r.Context())
@@ -840,8 +963,8 @@ func (s *Server) handleCheckpoints(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.handoverMu.Lock()
+	defer s.handoverMu.Unlock()
 	_, record, found, err := s.readHolderRecord(id)
-	s.handoverMu.Unlock()
 	switch {
 	case err != nil:
 		s.refuse(w, &lockFailure{http.StatusInternalServerError, CodeInternal, handoverWords("Desk's record of hand-overs could not be read: ", err)})
@@ -850,7 +973,11 @@ func (s *Server) handleCheckpoints(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, http.StatusNotFound, CodeNotFound, noSuchHolderWords)
 		return
 	}
-	head, refusal, err := s.readCheckpointHead(r.Context(), dir)
+	if failure := s.copyChain(r.Context(), chain, "nothing was handed over"); failure != nil {
+		s.refuse(w, failure)
+		return
+	}
+	head, refusal, err := s.readCheckpointHead(r.Context(), dir, chain)
 	switch {
 	case err != nil:
 		s.refuse(w, &lockFailure{http.StatusInternalServerError, CodeInternal, handoverWords("The checkpoints could not be read: ", err)})
@@ -858,11 +985,14 @@ func (s *Server) handleCheckpoints(w http.ResponseWriter, r *http.Request) {
 	case refusal != nil:
 		s.refuse(w, &lockFailure{http.StatusConflict, CodeBadRequest, runtimeRefusalWords(refusal)})
 		return
+	case head == nil && chain.jobs:
+		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, noRunChainedWords)
+		return
 	case head == nil:
 		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, noChainedWords)
 		return
 	}
-	cursor := record.Trails[head.Identity].Through
+	cursor := chain.entries(record)[head.Identity].Through
 	if cursor == head.Sequence {
 		w.Header().Set(checkpointsTrailHeader, head.Identity)
 		w.WriteHeader(http.StatusNoContent)
@@ -872,14 +1002,14 @@ func (s *Server) handleCheckpoints(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, fmt.Sprintf("Desk recorded checkpoints through record %d as handed over to this holder, and the trail's last chained record is now record %d: the trail is shorter than what was handed over, so Desk hands nothing over.", cursor, head.Sequence))
 		return
 	}
-	read, err := s.readCheckpoints(r.Context(), dir, head.Identity, cursor, head.Sequence)
+	read, err := s.readCheckpoints(r.Context(), dir, chain, head.Identity, cursor, head.Sequence)
 	if err != nil {
 		s.refuse(w, &lockFailure{http.StatusInternalServerError, CodeInternal, handoverWords("The checkpoints could not be read, and nothing was handed over: ", err)})
 		return
 	}
 	w.Header().Set("Content-Type", "application/jsonl")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Disposition", `attachment; filename="`+checkpointsName(head.Identity, cursor, read.through)+`"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+chain.downloadName(head.Identity, cursor, read.through)+`"`)
 	w.Header().Set("Content-Length", strconv.Itoa(len(read.data)))
 	w.Header().Set(checkpointsTrailHeader, head.Identity)
 	w.Header().Set(checkpointsFromHeader, strconv.FormatInt(cursor, 10))
@@ -950,6 +1080,10 @@ func heldAfter(held, data []byte, from int64) ([]byte, error) {
 // changes nothing, and says the file is stale: a trail with no chained record
 // now, one moved aside (its lines are of another identity), one that ends
 // before the record confirmed, and one that gives other bytes are each that.
+//
+// With `"chain":"jobs"` it is the same for Runner's chain of runs: Desk takes
+// a fresh copy of the chain, asks for the same checkpoints from it, and moves
+// the holder's cursor for the chain, never the desk trail's.
 func (s *Server) handleConfirmHandover(w http.ResponseWriter, r *http.Request) {
 	if !s.guard(w, r) {
 		return
@@ -957,21 +1091,27 @@ func (s *Server) handleConfirmHandover(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	id := r.PathValue("id")
 	var request struct {
-		Trail   string `json:"trail"`
-		From    *int64 `json:"from"`
-		Through *int64 `json:"through"`
-		Digest  string `json:"digest"`
+		Chain   *string `json:"chain"`
+		Trail   string  `json:"trail"`
+		From    *int64  `json:"from"`
+		Through *int64  `json:"through"`
+		Digest  string  `json:"digest"`
 	}
 	const refused = "Confirm a hand-over with the trail, the records and the SHA-256 its download gave."
 	if !handoverRequest(w, r, &request, refused) {
 		return
 	}
 	if !holderIDForm.MatchString(id) || !keyIDForm.MatchString(request.Trail) || request.From == nil || request.Through == nil ||
-		*request.From < 0 || *request.Through <= *request.From || !recordForm.MatchString(request.Digest) {
+		*request.From < 0 || *request.Through <= *request.From || !recordForm.MatchString(request.Digest) ||
+		request.Chain != nil && *request.Chain != handoverChainParam {
 		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, refused)
 		return
 	}
 	from, through := *request.From, *request.Through
+	chain := deskTrail
+	if request.Chain != nil {
+		chain = jobsChain
+	}
 	dir, failure := s.handoverRuntime(r.Context())
 	if failure != nil {
 		s.refuse(w, failure)
@@ -990,11 +1130,15 @@ func (s *Server) handleConfirmHandover(w http.ResponseWriter, r *http.Request) {
 	case !found:
 		writeJSONCoded(w, http.StatusNotFound, CodeNotFound, noSuchHolderWords)
 		return
-	case record.Trails[request.Trail].Through != from:
+	case chain.entries(record)[request.Trail].Through != from:
 		staleRefusal(w)
 		return
 	}
-	head, refusal, err := s.readCheckpointHead(r.Context(), dir)
+	if failure := s.copyChain(r.Context(), chain, "nothing was recorded"); failure != nil {
+		s.refuse(w, failure)
+		return
+	}
+	head, refusal, err := s.readCheckpointHead(r.Context(), dir, chain)
 	switch {
 	case err != nil:
 		s.refuse(w, &lockFailure{http.StatusInternalServerError, CodeInternal, handoverWords("The checkpoints could not be read, and nothing was recorded: ", err)})
@@ -1006,7 +1150,7 @@ func (s *Server) handleConfirmHandover(w http.ResponseWriter, r *http.Request) {
 		staleRefusal(w)
 		return
 	}
-	read, err := s.readCheckpoints(r.Context(), dir, request.Trail, from, through)
+	read, err := s.readCheckpoints(r.Context(), dir, chain, request.Trail, from, through)
 	switch {
 	case errors.Is(err, errCheckpointsChanged):
 		staleRefusal(w)
@@ -1018,18 +1162,23 @@ func (s *Server) handleConfirmHandover(w http.ResponseWriter, r *http.Request) {
 		staleRefusal(w)
 		return
 	}
-	if err := s.recordHandover(id, request.Trail, from, through, read.data, &record); err != nil {
+	if err := s.recordHandover(id, chain, request.Trail, from, through, read.data, &record); err != nil {
 		s.refuse(w, &lockFailure{http.StatusInternalServerError, CodeInternal, handoverWords("The hand-over could not be recorded: ", err)})
 		return
 	}
-	writeJSON(w, http.StatusOK, shownHolder(holder, record, head))
+	if chain.jobs {
+		writeJSON(w, http.StatusOK, shownHolder(holder, record, nil, head))
+		return
+	}
+	writeJSON(w, http.StatusOK, shownHolder(holder, record, head, nil))
 }
 
 // recordHandover appends data, the checkpoints of trail after from through
-// through, to the holder's file for that trail, and then moves its record to
-// them, by Desk's clock. The caller holds handoverMu, and record is the
-// record it read under it, which this updates.
-func (s *Server) recordHandover(id, trail string, from, through int64, data []byte, record *handoverRecord) error {
+// through, to the holder's file for that trail of chain, and then moves its
+// record of that chain to them, by Desk's clock; its record of the other
+// chain is written as it was read. The caller holds handoverMu, and record is
+// the record it read under it, which this updates.
+func (s *Server) recordHandover(id string, chain handoverChain, trail string, from, through int64, data []byte, record *handoverRecord) error {
 	handover, err := s.openHandover(true)
 	if err != nil {
 		return err
@@ -1040,7 +1189,7 @@ func (s *Server) recordHandover(id, trail string, from, through int64, data []by
 		return err
 	}
 	defer folder.Close()
-	name := trail + ".jsonl"
+	name := chain.heldName(trail)
 	held, err := readPrivateData(folder, name, handoverHeldLimit)
 	if errors.Is(err, fs.ErrNotExist) {
 		held, err = nil, nil
@@ -1052,12 +1201,18 @@ func (s *Server) recordHandover(id, trail string, from, through int64, data []by
 	if err != nil {
 		return err
 	}
-	trails := maps.Clone(record.Trails)
+	trails := maps.Clone(chain.entries(*record))
 	if trails == nil {
 		trails = map[string]handedOver{}
 	}
 	trails[trail] = handedOver{From: from, Through: through, ConfirmedAt: handoverClock().Unix(), Digest: sha256Digest(data)}
-	written, err := json.Marshal(handoverRecord{Version: handoverVersion, Trails: trails})
+	updated := handoverRecord{Version: handoverVersion, Trails: record.Trails, Jobs: record.Jobs}
+	if chain.jobs {
+		updated.Jobs = trails
+	} else {
+		updated.Trails = trails
+	}
+	written, err := json.Marshal(updated)
 	if err != nil {
 		return err
 	}
@@ -1072,7 +1227,7 @@ func (s *Server) recordHandover(id, trail string, from, through int64, data []by
 	if err := writePrivateData(folder, handoverRecordName, append(written, '\n')); err != nil {
 		return err
 	}
-	record.Trails = trails
+	*record = updated
 	return nil
 }
 
@@ -1112,27 +1267,35 @@ var errNothingHeld = errors.New("nothing was handed over to this holder for this
 func (s *Server) heldCheckpoints(ctx context.Context, dir heldDir) heldExpectations {
 	s.handoverMu.Lock()
 	defer s.handoverMu.Unlock()
+	return s.heldOf(ctx, dir, deskTrail)
+}
+
+// heldOf is heldCheckpoints for either chain: for Runner's chain of runs, each
+// holder's file of its checkpoints for the identity the copy of the chain has
+// now (`audit checkpoint --trail <copy> --format json`), and never a file of
+// the desk's trail, nor one of another identity. The caller holds handoverMu.
+func (s *Server) heldOf(ctx context.Context, dir heldDir, chain handoverChain) heldExpectations {
 	var held heldExpectations
 	handover, err := s.openHandover(false)
 	if errors.Is(err, fs.ErrNotExist) {
 		return held
 	}
 	if err != nil {
-		s.log.Printf("desk: the record of hand-overs could not be opened for the decision record: %v", err)
+		s.log.Printf("desk: the record of hand-overs could not be opened for the check: %v", err)
 		held.problem = handoverWords(recordUnreadWords, err)
 		return held
 	}
 	defer handover.Close()
 	holders, err := readHolders(handover)
 	if err != nil {
-		s.log.Printf("desk: the list of holders could not be read for the decision record: %v", err)
+		s.log.Printf("desk: the list of holders could not be read for the check: %v", err)
 		held.problem = handoverWords(recordUnreadWords, err)
 		return held
 	}
 	if len(holders) == 0 {
 		return held
 	}
-	head, refusal, err := s.readCheckpointHead(ctx, dir)
+	head, refusal, err := s.readCheckpointHead(ctx, dir, chain)
 	switch {
 	case err != nil:
 		held.problem = handoverWords(trailUnknownWords, err)
@@ -1146,28 +1309,28 @@ func (s *Server) heldCheckpoints(ctx context.Context, dir heldDir) heldExpectati
 		return held
 	}
 	for _, holder := range holders {
-		err := checkHeldFile(handover, holder.ID, head.Identity)
+		err := checkHeldFile(handover, holder.ID, chain, head.Identity)
 		switch {
 		case errors.Is(err, errNothingHeld):
 		case err != nil:
-			s.log.Printf("desk: the checkpoints handed over to holder %s were not passed to the decision record: %v", holder.ID, err)
+			s.log.Printf("desk: the checkpoints handed over to holder %s were not passed to the check: %v", holder.ID, err)
 			held.unread = append(held.unread, holder.Label)
 		default:
-			held.args = append(held.args, "--expect", path.Join(handoverDir, holder.ID, head.Identity+".jsonl"))
+			held.args = append(held.args, "--expect", path.Join(handoverDir, holder.ID, chain.heldName(head.Identity)))
 			held.count++
 		}
 	}
 	return held
 }
 
-// checkHeldFile is whether the holder id's file of checkpoints for trail can
-// be passed to the check: read whole now, within the runtime's bound, as
-// `readPrivateData` reads a file (owner-only, owned by this user, a regular
-// file and not a link, the one that was looked at), and agreeing with Desk's
-// record of the holder (`heldAgrees`). errNothingHeld where there is neither
-// a record nor a file for the trail; a record with no file, or a file with no
-// record, is an error.
-func checkHeldFile(handover *os.Root, id, trail string) error {
+// checkHeldFile is whether the holder id's file of checkpoints for trail, of
+// chain, can be passed to the check: read whole now, within the runtime's
+// bound, as `readPrivateData` reads a file (owner-only, owned by this user, a
+// regular file and not a link, the one that was looked at), and agreeing with
+// Desk's record of the holder for that chain (`heldAgrees`). errNothingHeld
+// where there is neither a record nor a file for the trail; a record with no
+// file, or a file with no record, is an error.
+func checkHeldFile(handover *os.Root, id string, chain handoverChain, trail string) error {
 	folder, err := openHolderFolder(handover, id, false)
 	if errors.Is(err, fs.ErrNotExist) {
 		return errNothingHeld
@@ -1180,8 +1343,8 @@ func checkHeldFile(handover *os.Root, id, trail string) error {
 	if err != nil {
 		return err
 	}
-	entry, recorded := record.Trails[trail]
-	data, err := readPrivateData(folder, trail+".jsonl", handoverHeldLimit)
+	entry, recorded := chain.entries(record)[trail]
+	data, err := readPrivateData(folder, chain.heldName(trail), handoverHeldLimit)
 	switch {
 	case errors.Is(err, fs.ErrNotExist) && !recorded:
 		return errNothingHeld
