@@ -126,6 +126,7 @@ go	audit fix: a count since a hand-over is given for another trail	TestTheRecord
 go	audit fix: a count since a hand-over is of another record	TestTheRecordsSinceAHandOverAreTheReports
 go	audit fix: a file is compared before its old bytes are staged, not before they are published	TestAReviewLockWaitsForThisProjectsLockAndPutsBackOnlyItsOwn,TestARollbackPutsBackOnlyWhatItWrote
 go	audit fix: a file is put back over what another writer wrote	TestAReviewLockWaitsForThisProjectsLockAndPutsBackOnlyItsOwn,TestARollbackPutsBackOnlyWhatItWrote
+go	audit fix: a key is made under a name the project does not keep	TestAKeyIsMadeOnlyUnderTheProjectsIdentity
 go	audit fix: a key is offered where the identity cannot be kept	TestAKeyIsNotOfferedWhereItsIdentityCannotBeKept
 go	audit fix: a moved project does not take the key its jpack.json names	TestAKeyFromBeforeTheIdentityIsKeptWhenItsProjectMoves
 go	audit fix: a project with no identity takes its path's hash as one	TestAKeyFromBeforeTheIdentityIsKeptWhenItsProjectMoves,TestTheIdentityMovesStampingSettingsAndAStopIsFinished
