@@ -27,6 +27,10 @@ jobs:
           gofmt -w .
           git diff --exit-code
 
+      # These check the mutation harness itself, not the test suite: every
+      # row's needle matches its file once, and the harness's own logic holds
+      # against stand-in suites. No mutation row runs here. The rows run in
+      # mutation-nightly.yml, which blocks nothing (see its header).
       - name: mutation needle guards
         run: |
           python3 scripts/component-releases.py check
@@ -40,6 +44,7 @@ jobs:
           python3 scripts/build-bundle_test.py
           python3 scripts/needle-check_test.py
           python3 scripts/mutation-check_test.py
+          python3 scripts/mutation-nightly-table_test.py
           scripts/needle-check.sh .
 
       - name: Verify published component identities

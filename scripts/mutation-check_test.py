@@ -103,13 +103,23 @@ for f in files:
     marker = open(os.path.join(root, "web", f)).readline().split("fails-on:")[1].strip()
     if marker in source:
         bad.append(f)
+# FAKE_NPM_COLOR: colour the lines the harness reads, the way vitest does on
+# GitHub's runner (codes between "Tests" and its count, around the cross, the
+# FAIL badge and each " > ").
+paint = "FAKE_NPM_COLOR" in os.environ
+def c(code, text, close):
+    return "\x1b[%sm%s\x1b[%sm" % (code, text, close) if paint else text
+def counts(failed, passed, total):
+    if failed:
+        return c("1", c("31", "%d failed" % failed, "39"), "22") + c("2", " | ", "22") + c("1", c("32", "%d passed" % passed, "39"), "22") + c("90", " (%d)" % total, "39")
+    return c("1", c("32", "%d passed" % passed, "39"), "22") + c("90", " (%d)" % total, "39")
 for f in bad:
-    print("   × %s holds 1ms" % f)
+    print(c("31", "   " + c("31", "×", "39") + " %s holds" % f, "39") + c("2", " 1ms", "22"))
 for f in bad:
-    print(" FAIL  %s > the suite > %s holds" % (f, f))
+    print(c("41", c("1", " FAIL ", "22"), "49") + " %s%sthe suite%s%s holds" % (f, c("2", " > ", "22"), c("2", " > ", "22"), f))
 passed = len(files) - len(bad)
-print(" Test Files  %s" % ("%d failed | %d passed (%d)" % (len(bad), passed, len(files)) if bad else "%d passed (%d)" % (passed, passed)))
-print("      Tests  %s" % ("%d failed | %d passed (%d)" % (len(bad), passed, len(files)) if bad else "%d passed (%d)" % (passed, passed)))
+print(c("2", " Test Files ", "22") + " " + counts(len(bad), passed, len(files)))
+print(c("2", "      Tests ", "22") + " " + counts(len(bad), passed, len(files)))
 sys.exit(1 if bad else 0)
 '''
 
@@ -347,6 +357,23 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("the tree is not clean", result.stderr)
         self.assertIn("work nobody committed", (self.root / "internal/desk/a.go").read_text())
+
+    def test_coloured_output_is_read_as_plain_text(self):
+        # As vitest prints on GitHub's runner: the first nightly run read a
+        # green suite as one that ran no tests, and stopped every web shard.
+        self.env["FAKE_NPM_COLOR"] = "1"
+        raw = subprocess.run([str(self.dir / "bin/npm"), "--prefix", "web", "test"], cwd=self.root, env=self.env,
+                             capture_output=True, text=True).stdout
+        self.assertIn("\x1b[", raw)
+        self.assertNotRegex(raw, r"Tests +[0-9]+ passed", "the stand-in must colour what the harness reads")
+        result = self.harness("web", "--record")
+        table, how = self.table(result), self.how(result)
+        self.assertNotIn("BASELINE NOT GREEN", result.stdout, result.stderr)
+        self.assertEqual(table["web caught by its walk"], "src/a.test.ts holds,src/c.test.ts holds")
+        self.assertEqual(how["web caught by its walk"], "selected")
+        self.assertEqual(table["web caught two modules away"], "src/far.test.ts holds")
+        self.assertEqual(table["web nothing catches"], "**NOT DISCRIMINATING — nothing failed**")
+        self.assertEqual(self.expects()[("web", "web caught by its walk")], "src/a.test.ts,src/c.test.ts")
 
     def _rows(self, *names):
         path = self.dir / "rows.txt"

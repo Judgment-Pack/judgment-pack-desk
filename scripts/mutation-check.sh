@@ -71,10 +71,12 @@
 #   the file is not touched, and the run says how many lines it would change.
 #   A PR that adds or changes rows records them with its own run.
 # - **The nightly run** (`.github/workflows/mutation-nightly.yml`) runs every
-#   row with selection on, in shards (`--shard`), and fails on any row not
-#   caught. Its table, and the record as that run left it, are published as
-#   artifacts, so a selection's blind spot is found on a schedule rather than
-#   on a PR. `--whole` stays for a run that should not trust the record at all.
+#   row with selection on, in shards (`--shard`), when main has changed, and
+#   fails on any row not caught. Its table, and the record as that run left
+#   it, are published as artifacts, and a survivor opens an issue, so a
+#   selection's blind spot is found on a schedule rather than on a PR. It
+#   blocks nothing: regular CI protects merges and releases, and this checks
+#   the tests. `--whole` stays for a run that should not trust the record.
 #
 # **Stopping a batch from outside.** Every suite runs in the harness's own
 # process group (`bounded`, below), so a watchdog that bounds that group, by
@@ -293,7 +295,10 @@ end_tree() {
 # its status. Where it outlives the bound, end its whole tree (end_tree), wait
 # until none of it is left but a zombie, and answer 124, as `timeout` does.
 # It runs in the background, where bash would have it ignore INT and QUIT:
-# they are given back, so a Ctrl-C still ends the row's suite.
+# they are given back, so a Ctrl-C still ends the row's suite. It looks five
+# times a second: a selected row's suite ends in seconds, and a poll once a
+# second left each one waiting half a second on average after it had ended,
+# two or three times a Go row.
 bounded() {
   local limit="$1" log="$2" pid deadline tries
   shift 2
@@ -311,7 +316,7 @@ bounded() {
       done
       return 124
     fi
-    sleep 1
+    sleep 0.2
   done
   wait "$pid"
 }
@@ -352,7 +357,7 @@ run_go() {
   fi
   code=$?
   go_verdict "$code" "$log"
-  rm -f "$log"
+  mv -f "$log" "$work/last-go.log"
 }
 
 # run_go_unmutated <pattern>: the selection, on the test binary built from the
@@ -367,11 +372,21 @@ run_go_unmutated() {
   rm -f "$log"
 }
 
+# plain <log>: the log as text, without the terminal's colour codes (every
+# CSI sequence: ESC, `[`, parameters, a final byte). **A verdict is read from
+# text, and a suite decides for itself when to colour it**: vitest colours
+# its output on GitHub's runner even into a file, and there `Tests` and `5089
+# passed` sit with codes between them, so the summary was not found and a
+# green suite read as one that "ran no tests" (the first nightly run, every
+# web shard). Here the same command prints plain text, which is why no local
+# run ever met it.
+plain() { sed $'s/\e\\[[0-9;?]*[ -/]*[@-~]//g' "$1"; }
+
 # go_verdict <status> <log>: what a `go test` run says about the mutation, and
 # the top-level tests that failed, kept in $work/caught for the record.
 go_verdict() {
   local code="$1" out named
-  out="$(cat "$2")"
+  out="$(plain "$2")"
   rm -f "$work/caught"
   if [ "$code" -eq 124 ]; then
     echo "INCONCLUSIVE — suite timed out (the mutation hangs a handler)"
@@ -445,14 +460,14 @@ run_web() {
   fi
   code=$?
   web_verdict "$code" "$log"
-  rm -f "$log"
+  mv -f "$log" "$work/last-web.log"
 }
 
 # web_verdict <status> <log>: what a vitest run says about the mutation, and
 # the test files whose tests failed, kept in $work/caught for the record.
 web_verdict() {
   local code="$1" out named
-  out="$(cat "$2")"
+  out="$(plain "$2")"
   rm -f "$work/caught"
   if [ "$code" -eq 124 ]; then
     echo "INCONCLUSIVE — web suite timed out"
@@ -622,6 +637,16 @@ if [ -n "$baseline_go" ] || [ -n "$baseline_web" ]; then
   echo "the unmutated suite is not green — every row below would be meaningless" >&2
   echo "  go:  ${baseline_go:-clean}" >&2
   echo "  web: ${baseline_web:-clean}" >&2
+  # **And what the suite said, as it said it.** A verdict is read from the
+  # suite's text, so a baseline that is not green is first a question about
+  # that text: the last lines, with control characters shown (`cat -v`), on
+  # stderr, where a run elsewhere (the nightly job) keeps them.
+  for half in go web; do
+    verdict="baseline_$half"
+    [ -n "${!verdict}" ] && [ -s "$work/last-$half.log" ] || continue
+    echo "  the last lines of the unmutated $half suite's output:" >&2
+    tail -n 30 "$work/last-$half.log" | cat -v | sed 's/^/    /' >&2
+  done
   # **And say so on stdout, in the table's own shape.** This used to write only
   # to stderr and exit, so a caller running one row at a time and collecting
   # rows with `grep '^|'` recorded a *silent gap*: the row it asked for produced
