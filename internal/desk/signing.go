@@ -52,7 +52,9 @@ package desk
 // desk's manifest is written. A Desk stopped in between leaves the marker, and
 // the next start removes that id's seed, list and marker where no desk of that
 // id was published (`sweepUnfinishedKeys`). A seed or a list with no marker
-// is never removed, whatever the desks folder says.
+// is never removed, whatever the desks folder says. The key the upgrade makes
+// for the project Desk was started on keeps a marker the same way, until
+// jpack.json names it and its lock is checked (startup_key.go).
 //
 // # One lock
 //
@@ -910,6 +912,13 @@ func (s *Server) custodyWords(message string) string {
 //     any reason but its absence, nothing is removed, and the log says so.
 //     A manifest that cannot be read for a moment never costs a desk its key.
 //
+// **And on the marker of the project Desk was started on**, under its own
+// name (`signingKeyName`), on that project's start alone: "published" is
+// there whether its jpack.json names the seed (`startupKeyNamed`), which the
+// upgrade wrote only after the key was made, and a jpack.json that cannot be
+// read now never costs the project its key. A marker of another project's
+// name is left for a start on that project.
+//
 // **Under the signing folder's lock, taken once** (signing_lock.go). Where
 // another Desk process holds it, a creation may be under way there: the sweep
 // changes nothing, and leaves every marker for the next start. Where no lock
@@ -946,7 +955,7 @@ func (s *Server) sweepUnfinishedKeys() {
 	}
 	for _, entry := range entries {
 		id, isMarker := strings.CutSuffix(entry.Name(), creatingSuffix)
-		if !isMarker || !deskIDPattern.MatchString(id) {
+		if !isMarker || !deskIDPattern.MatchString(id) && !s.startupKey(id) {
 			continue
 		}
 		// Every name first: what is removed is what was inspected here.
@@ -964,7 +973,12 @@ func (s *Server) sweepUnfinishedKeys() {
 		if inspected == nil || inspected[2] == nil {
 			continue
 		}
-		published, err := s.deskPublished(id)
+		var published bool
+		if s.startupKey(id) {
+			published, err = s.startupKeyNamed(filepath.Join(dir.path, id+seedSuffix))
+		} else {
+			published, err = s.deskPublished(id)
+		}
 		if err != nil {
 			s.log.Printf("desk: an unfinished creation's key was left, because whether desk %s was made could not be told: %v", id, err)
 			continue

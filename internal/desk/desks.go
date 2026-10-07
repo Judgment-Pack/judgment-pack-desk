@@ -100,17 +100,22 @@ func (g *deskGates) unsigned(paragraph string) {
 
 // signedDeskConfig is the configuration of a signed desk: "5"'s gates at
 // configVersion "6", with the audit member's signingKey naming seedPath after
-// its dir (runtime 0.26.0, `jpack.schema.json`, `$defs.audit`). The path is a
-// JSON string as Go's encoder writes one, with "<", ">" and "&" left as they
-// are; it escapes a control character, U+2028 and U+2029, and the runtime
-// reads each back as the character it was.
+// its dir (runtime 0.26.0, `jpack.schema.json`, `$defs.audit`).
 func signedDeskConfig(seedPath string) []byte {
+	return []byte(`{"configVersion":"6","requireReviewed":true,"requireComparableFacts":true,"audit":{"dir":".desk-private/audit","signingKey":` +
+		quotedPath(seedPath) + `},"packs":{}}` + "\n")
+}
+
+// quotedPath is path as a JSON string as Go's encoder writes one, with "<",
+// ">" and "&" left as they are; it escapes a control character, U+2028 and
+// U+2029, and the runtime reads each back as the character it was. A
+// configuration names a signing key so, a new desk's and the upgrade's alike.
+func quotedPath(path string) string {
 	var quoted bytes.Buffer
 	encoder := json.NewEncoder(&quoted)
 	encoder.SetEscapeHTML(false)
-	_ = encoder.Encode(seedPath)
-	return []byte(`{"configVersion":"6","requireReviewed":true,"requireComparableFacts":true,"audit":{"dir":".desk-private/audit","signingKey":` +
-		strings.TrimSuffix(quoted.String(), "\n") + `},"packs":{}}` + "\n")
+	_ = encoder.Encode(path)
+	return strings.TrimSuffix(quoted.String(), "\n")
 }
 
 // newDeskID is a new desk's id: 128 random bits, in hex. A variable only so
@@ -709,6 +714,10 @@ func (s *Server) resumeDesks() {
 	// Before any desk is opened, the keys of creations a stopped Desk left
 	// unfinished.
 	s.sweepUnfinishedKeys()
+	// Once the desks are open, and still before any request is served, the
+	// rotations of their keys a stopped Desk left unfinished, and of the key
+	// of the project Desk was started on: also where no desk is opened.
+	defer s.recoverRotations()
 	// Read-only on startup: starting an existing Desk creates no registry.
 	root, err := s.assistant.root.OpenRoot("desks")
 	if err != nil {
@@ -753,9 +762,6 @@ func (s *Server) resumeDesks() {
 			s.log.Printf("desk: could not resume %s: %v", name, err)
 		}
 	}
-	// Once the desks are open, and still before any request is served, the
-	// rotations of their keys a stopped Desk left unfinished.
-	s.recoverRotations()
 }
 func (s *Server) closeDesks() {
 	s.desksMu.Lock()

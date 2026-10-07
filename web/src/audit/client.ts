@@ -4,7 +4,8 @@
  *
  * `GET /api/audit/verify` answers what the runtime's own `jpack audit verify`
  * finds in this desk's trail, run with the public keys Desk keeps for the desk
- * (none on the startup desk), no held checkpoint and no stamping roots: the
+ * (on the startup desk, those its upgrade made, if any), no held checkpoint
+ * and no stamping roots: the
  * report, with the runtime's member names; the runtime's refusal to make one;
  * that the runtime has no audit commands; or that the project keeps no trail.
  * Beside a report or a refusal: the keys Desk keeps and passed, `packs
@@ -88,8 +89,8 @@ export type DeskPublicKey = { publicKey: string; keyId: string; at: number }
 /**
  * The keys Desk keeps for this desk: `kept`, each passed to the check in this
  * order; `none`, a desk Desk made with no key; `startup`, the project Desk was
- * started on, which keeps none in this version; `unread`, Desk could not read
- * or pass them, and passed none.
+ * started on, for which Desk keeps none until its upgrade makes one; `unread`,
+ * Desk could not read or pass them, and passed none.
  */
 export type AuditKeys =
   | { state: 'kept'; public: DeskPublicKey[] }
@@ -124,7 +125,6 @@ export class StaleRotation extends Error {}
  * carries the runtime's words or a file's state keeps them as they were said.
  */
 export const ROTATION_REASONS = [
-  sourceMessage('This is the project Desk was started on. Desk keeps no signing key for it in this version, so it has none to rotate.'),
   sourceMessage('Desk keeps no signing key for this desk, so it has none to rotate.'),
   sourceMessage('Desk rotates only a key it can read, with a list of public keys that agrees with it.'),
   sourceMessage('This desk\'s key took over after record {{record}}, and no record has been signed since: a rotation now would take over after the same record. Make a deciding run first.'),
@@ -134,7 +134,10 @@ export const ROTATION_REASONS = [
   sourceMessage('The runtime wrote the rotation, and Desk did not finish it: Desk finishes it when it next starts. Until then, records are written unsigned.'),
   sourceMessage('The runtime did not write the rotation: Desk removes the next key when it next starts, and keeps the current key.'),
   sourceMessage('Its marker was removed while Desk looked.'),
-  sourceMessage('Desk cannot tell whether the runtime wrote the rotation, so it changes nothing: {{reason}}.')
+  sourceMessage('Desk cannot tell whether the runtime wrote the rotation, so it changes nothing: {{reason}}.'),
+  sourceMessage('Desk keeps no signing key for the project it was started on, so it has none to rotate.'),
+  sourceMessage('JPACK_SIGNING_KEY is set where Desk was started, and the runtime signs this project\'s records with the key it names, not with the key Desk keeps, so Desk rotates no key here.'),
+  sourceMessage('Desk rotates the signing key of the project it was started on only where its jpack.json names the key Desk keeps: {{reason}}. A rotation now would hand signing over in the trail while jpack.json named a key that signs nothing more.')
 ]
 
 /** The runtime's files a download can hand over, by the name the download takes. */
@@ -261,6 +264,19 @@ export async function downloadTrailFile(which: TrailFile): Promise<Blob> {
     throw new Error(text(body.error) ? body.error : msg('The file could not be downloaded. Please try again.'))
   }
   return response.blob()
+}
+
+/**
+ * Check the trail again, as after the upgrade that makes the project's
+ * signing key, which changes the keys the check is given. The panel's query
+ * is disabled, so this fetches into it; a failure is the query's to show. As
+ * `checkJobsRecordAgain` does: a check already in flight, asked before the
+ * key was made, is cancelled, never joined, and the fetch is marked to run
+ * only on request.
+ */
+export async function checkDecisionRecordAgain(client: QueryClient): Promise<void> {
+  await client.cancelQueries({ queryKey: AUDIT_KEY })
+  await client.fetchQuery({ queryKey: AUDIT_KEY, queryFn: ({ signal }) => readAuditRecord(signal), meta: ON_REQUEST_ONLY, staleTime: 0, retry: false }).catch(() => undefined)
 }
 
 /** The runtime's check of this desk's trail, run now. */

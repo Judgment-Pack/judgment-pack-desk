@@ -31,7 +31,7 @@ function readDismissed(key: string): boolean {
 
 /** The offer, read once for the note and the Admin card alike. */
 function useOffer(enabled: boolean) {
-  return useQuery({ queryKey: [...UPGRADE_KEY, true], queryFn: ({ signal }) => readUpgrade(true, signal), retry: false, enabled })
+  return useQuery({ queryKey: [...UPGRADE_KEY, true, false], queryFn: ({ signal }) => readUpgrade(true, false, signal), retry: false, enabled })
 }
 
 /** The note on Packs: shown until the owner dismisses it, or takes the upgrade. */
@@ -72,6 +72,8 @@ export function ProjectGates() {
               : upgrade && <>
                 <p>{gatesSay(upgrade)}</p>
                 {upgrade.comparableFacts === 'off' && <div><ButtonLink to="/packs/_upgrade">{msg('Review turning requireComparableFacts on')}</ButtonLink></div>}
+                {upgrade.signingKey?.state === 'offered' && <div><ButtonLink to="/packs/_upgrade">{msg('Review signing this project’s decisions')}</ButtonLink></div>}
+                {upgrade.signingKey?.state === 'unavailable' && <p className={styles.quiet}>{systemMessage(upgrade.signingKey.reason)}</p>}
               </>}
       <p className={styles.quiet}><Link to="/help#gates">{msg('What each gate holds, and whom it binds')}</Link></p>
     </div>

@@ -17,6 +17,11 @@ package desk
 //  3. The first "Review and lock" of the project's packs: PR C's review, over
 //     the configuration as the upgrade would write it.
 //  4. `requireComparableFacts`, which the owner can decline on its own.
+//  5. On the project Desk was started on, "Sign this project's decisions":
+//     configVersion "6", with `audit.signingKey` naming a key Desk makes for
+//     the project (startup_key.go). It is never pre-selected, and it is
+//     offered only where the runtime reads "6" and Desk's custody can keep a
+//     key; elsewhere the offer says why.
 //
 // **Nothing is written before the owner confirms, and what is confirmed is
 // what was shown.** One reading of the project is the offer: the
@@ -35,7 +40,9 @@ package desk
 // refused or anything moved, every file is put back as it was and what the
 // upgrade made is removed. `requireReviewed` with no lock of its
 // configuration refuses every deciding run, so a project is never left
-// holding one without the other.
+// holding one without the other. Where the owner chose the signing key, the
+// key is made first, and taken away with every file where the upgrade does
+// not complete.
 
 import (
 	"bytes"
@@ -66,7 +73,7 @@ const (
 	deskPrivateIgnore = ".desk-private/"
 	// newestKnownConfigVersion is the newest configuration version Desk knows
 	// how to upgrade. A newer one is the runtime's to describe, not Desk's.
-	newestKnownConfigVersion = 5
+	newestKnownConfigVersion = 6
 )
 
 // configMember is one top-level member of a configuration, as it is written:
@@ -151,8 +158,9 @@ type configEdit struct {
 
 // upgradedConfig is data with the gates on, and the names of the members it
 // added or changed: configVersion to, `requireReviewed` true, the audit
-// directory `.desk-private/audit` where none is declared, and, with facts,
-// `requireComparableFacts` true.
+// directory `.desk-private/audit` where none is declared, with facts,
+// `requireComparableFacts` true, and with a signingKey, the audit member's
+// `signingKey` naming it ("signingKey" among the names).
 //
 // **Every other byte is data's own.** A member that is already there is
 // changed in place, by its value's bytes alone, and an `audit` member is not
@@ -163,8 +171,13 @@ type configEdit struct {
 // `{"configVersion":"3","packs":{}}`, comes out exactly as a new desk is
 // written, and a hand-formatted file keeps its own formatting.
 //
-// The caller has checked that `configVersion` is there.
-func upgradedConfig(data []byte, members []configMember, to string, facts bool) ([]byte, []string) {
+// **The signing key goes inside the audit member**: in the one it adds, after
+// `dir`; in one that is there, after its last member, spaced as that member
+// is, and nothing else in it changed.
+//
+// The caller has checked that `configVersion` is there, and, with a
+// signingKey, that an audit member that is there is an object.
+func upgradedConfig(data []byte, members []configMember, to string, facts bool, signingKey string) ([]byte, []string) {
 	index := map[string]configMember{}
 	for _, member := range members {
 		index[member.name] = member
@@ -196,10 +209,16 @@ func upgradedConfig(data []byte, members []configMember, to string, facts bool) 
 	step("configVersion", true, literal(strconv.Quote(to)))
 	step("requireReviewed", true, literal("true"))
 	step("requireComparableFacts", facts, literal("true"))
-	_, declared := index["audit"]
-	step("audit", !declared, auditMember)
+	audit, declared := index["audit"]
+	step("audit", !declared, func(sep, colon string) string { return auditMember(sep, colon, signingKey) })
 	if added != "" {
 		edits = append(edits, configEdit{anchor.end, anchor.end, added})
+	}
+	if signingKey != "" {
+		if declared {
+			edits = append(edits, signingKeyEdit(data, audit, signingKey))
+		}
+		changed = append(changed, "signingKey")
 	}
 	// From the end, so each edit's offsets are still the reading's own.
 	sort.Slice(edits, func(i, j int) bool { return edits[i].start > edits[j].start })
@@ -210,17 +229,34 @@ func upgradedConfig(data []byte, members []configMember, to string, facts bool) 
 	return out, changed
 }
 
-// auditMember is the value of an added `audit` member, laid out as the
-// configuration's own members are: on one line where they are, and otherwise
-// one level deeper than they are.
-func auditMember(sep, colon string) string {
-	dir := `"dir"` + colon + strconv.Quote(deskAuditDir)
+// auditMember is the value of an added `audit` member, with signingKey
+// after `dir` where it is not "", laid out as the configuration's own members
+// are: on one line where they are, and otherwise one level deeper than they
+// are.
+func auditMember(sep, colon, signingKey string) string {
+	inside := []string{`"dir"` + colon + strconv.Quote(deskAuditDir)}
+	if signingKey != "" {
+		inside = append(inside, `"signingKey"`+colon+quotedPath(signingKey))
+	}
 	cut := strings.LastIndexByte(sep, '\n')
 	if cut < 0 {
-		return "{" + dir + "}"
+		return "{" + strings.Join(inside, ","+sep) + "}"
 	}
 	newline, indent := sep[:cut+1], sep[cut+1:]
-	return "{" + newline + indent + indent + dir + newline + indent + "}"
+	return "{" + newline + indent + indent + strings.Join(inside, ","+newline+indent+indent) + newline + indent + "}"
+}
+
+// signingKeyEdit adds `signingKey` naming path to the audit member that is
+// there: after its last member, spaced as that member is, or alone in an
+// empty one.
+func signingKeyEdit(data []byte, audit configMember, path string) configEdit {
+	inside, _ := configMembers(data[audit.start:audit.end])
+	if len(inside) == 0 {
+		return configEdit{audit.start + 1, audit.start + 1, `"signingKey":` + quotedPath(path)}
+	}
+	last := inside[len(inside)-1]
+	at := audit.start + last.end
+	return configEdit{at, at, "," + last.sep + `"signingKey"` + last.colon + quotedPath(path)}
 }
 
 // ignoresDeskPrivate reports whether a `.gitignore`'s last rule is exactly
@@ -347,12 +383,18 @@ type upgradePlan struct {
 	choice    bool
 	gitignore gitignorePlan
 	audit     auditPlan
+	// signing is the item "Sign this project's decisions", on the project
+	// Desk was started on only (startup_key.go); sign is whether this plan
+	// makes the key, at seed, and names it.
+	signing *upgradeSigning
+	sign    bool
+	seed    string
 }
 
 // planUpgrade reads the project once and plans the upgrade for the owner's
-// choice about `requireComparableFacts`. An *upgradeUnavailable says why
-// nothing can be offered.
-func (s *Server) planUpgrade(schema runtimeSchema, facts bool) (*upgradePlan, error) {
+// choices about `requireComparableFacts` and the signing key. An
+// *upgradeUnavailable says why nothing can be offered.
+func (s *Server) planUpgrade(schema runtimeSchema, facts, sign bool) (*upgradePlan, error) {
 	unavailable := func(format string, args ...any) (*upgradePlan, error) {
 		return nil, &upgradeUnavailable{fmt.Sprintf(format, args...)}
 	}
@@ -401,7 +443,9 @@ func (s *Server) planUpgrade(schema runtimeSchema, facts bool) (*upgradePlan, er
 		plan.facts = "unavailable"
 	}
 	plan.choice = facts && plan.facts == "off"
-	if plan.gated && !plan.choice {
+	plan.signing, plan.seed = s.planSigning(schema, raw("audit"))
+	plan.sign = sign && plan.signing != nil && plan.signing.State == signingOffered
+	if plan.gated && !plan.choice && !plan.sign {
 		return plan, nil
 	}
 	if raw("audit") != "" {
@@ -431,7 +475,23 @@ func (s *Server) planUpgrade(schema runtimeSchema, facts bool) (*upgradePlan, er
 	if slices.Contains(schema.supported, comparableFactsFromVersion) {
 		plan.to = comparableFactsFromVersion
 	}
-	config, changed := upgradedConfig(snap.config, members, plan.to, plan.choice)
+	// "6" where the key is named, and never a version below the file's own.
+	if plan.sign {
+		plan.to = signedFromVersion
+	}
+	if to, _ := strconv.Atoi(plan.to); number > to {
+		plan.to = from
+	}
+	seed := ""
+	if plan.sign {
+		seed = plan.seed
+	}
+	config, changed := upgradedConfig(snap.config, members, plan.to, plan.choice, seed)
+	// **No file larger than Desk reads back** (`reviewTextLimit`): the review,
+	// the decision record and a start's sweep each read jpack.json within it.
+	if len(config) > reviewTextLimit {
+		return unavailable("%s as the upgrade would write it is larger than the %d bytes Desk reads, so Desk does not upgrade it.", runtimeConfigName, reviewTextLimit)
+	}
 	plan.upgraded, plan.changed = snap.withConfig(config), changed
 	if plan.gitignore, err = s.planGitignore(); err != nil {
 		return nil, err
@@ -518,13 +578,18 @@ type upgradeAnswer struct {
 	// Review is the first lock's review, over the upgraded configuration.
 	Review *reviewAnswer `json:"review,omitempty"`
 	Token  string        `json:"token,omitempty"`
+	// SigningKey is the item "Sign this project's decisions", on the project
+	// Desk was started on; Sign is whether this offer makes the key and names
+	// it.
+	SigningKey *upgradeSigning `json:"signingKey,omitempty"`
+	Sign       bool            `json:"sign"`
 }
 
 // answer describes a plan.
 func (plan *upgradePlan) answer() upgradeAnswer {
 	answer := upgradeAnswer{State: "unchanged", Runtime: plan.schema.version, Reads: plan.schema.supported, Gated: plan.gated,
 		ComparableFacts: plan.facts, RequireComparableFacts: plan.choice, From: plan.from, To: plan.from, Changes: []string{},
-		Locked: plan.snap.hasLock, ConfigBefore: string(plan.snap.config)}
+		Locked: plan.snap.hasLock, ConfigBefore: string(plan.snap.config), SigningKey: plan.signing, Sign: plan.sign}
 	if plan.upgraded != nil {
 		answer.State, answer.To, answer.Changes, answer.ConfigAfter = "offer", plan.to, plan.changed, string(plan.upgraded.config)
 		answer.Gitignore, answer.Audit = plan.gitignore.state, &plan.audit
@@ -533,21 +598,23 @@ func (plan *upgradePlan) answer() upgradeAnswer {
 }
 
 // handleUpgrade answers `GET /api/upgrade`: what turning the gates on would
-// write in this project, for the owner's choice about
-// `requireComparableFacts` (`?requireComparableFacts=false` declines it), and
-// a token that confirms exactly that. It writes nothing.
+// write in this project, for the owner's choices about
+// `requireComparableFacts` (`?requireComparableFacts=false` declines it) and
+// the signing key (`?signingKey=true` chooses it), and a token that confirms
+// exactly that. It writes nothing.
 func (s *Server) handleUpgrade(w http.ResponseWriter, r *http.Request) {
 	if !s.guard(w, r) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	facts := r.URL.Query().Get("requireComparableFacts") != "false"
+	sign := r.URL.Query().Get("signingKey") == "true"
 	dir, refusal := s.reviewRuntime()
 	if refusal != "" {
 		writeJSON(w, http.StatusOK, upgradeAnswer{State: "unavailable", Reason: refusal, Changes: []string{}})
 		return
 	}
-	answer, err := s.upgradeOffer(r.Context(), dir, facts)
+	answer, err := s.upgradeOffer(r.Context(), dir, facts, sign)
 	if err != nil {
 		writeJSONCoded(w, http.StatusInternalServerError, CodeInternal, "The upgrade could not be prepared: "+strings.TrimRight(err.Error(), ".")+".")
 		return
@@ -555,12 +622,12 @@ func (s *Server) handleUpgrade(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, answer)
 }
 
-func (s *Server) upgradeOffer(ctx context.Context, dir heldDir, facts bool) (upgradeAnswer, error) {
+func (s *Server) upgradeOffer(ctx context.Context, dir heldDir, facts, sign bool) (upgradeAnswer, error) {
 	schema, err := readRuntimeSchema(ctx, s.cfg.JpackBin, dir)
 	if err != nil {
 		return upgradeAnswer{State: "unavailable", Reason: "Desk offers no upgrade here, because " + strings.TrimRight(err.Error(), ".") + ".", Changes: []string{}}, nil
 	}
-	plan, err := s.planUpgrade(schema, facts)
+	plan, err := s.planUpgrade(schema, facts, sign)
 	if unavailable := (*upgradeUnavailable)(nil); errors.As(err, &unavailable) {
 		return upgradeAnswer{State: "unavailable", Reason: unavailable.reason, Runtime: schema.version, Reads: schema.supported, Changes: []string{}}, nil
 	}
@@ -605,6 +672,7 @@ func (s *Server) handleUpgradeConfirm(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		Token                  string `json:"token"`
 		RequireComparableFacts bool   `json:"requireComparableFacts"`
+		SigningKey             bool   `json:"signingKey"`
 	}
 	data, err := readBounded(r.Body, upgradeConfirmLimit)
 	if err != nil || decodeDataJSON(data, &request) != nil || len(request.Token) != 64 {
@@ -616,11 +684,21 @@ func (s *Server) handleUpgradeConfirm(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, refusal)
 		return
 	}
-	s.reviewMu.Lock()
-	answer, failure := s.upgradeConfirmed(r.Context(), dir, request.Token, request.RequireComparableFacts)
-	s.reviewMu.Unlock()
+	// The desk's review lock around the upgrade alone, released by a defer,
+	// so that a panic, which net/http recovers, does not leave it held.
+	answer, failure := func() (any, *lockFailure) {
+		s.reviewMu.Lock()
+		defer s.reviewMu.Unlock()
+		return s.upgradeConfirmed(r.Context(), dir, request.Token, request.RequireComparableFacts, request.SigningKey)
+	}()
 	if failure != nil {
-		writeJSONCoded(w, failure.status, failure.code, failure.message)
+		// **No path reaches the page** (ADR-0010, section 1): the key's, its
+		// folders', the project's or any other. The log keeps the message whole.
+		message := s.withoutPaths(failure.message)
+		if message != failure.message {
+			s.log.Printf("desk: the upgrade, as said: %s", failure.message)
+		}
+		writeJSONCoded(w, failure.status, failure.code, message)
 		return
 	}
 	writeJSON(w, http.StatusOK, answer)
@@ -628,22 +706,47 @@ func (s *Server) handleUpgradeConfirm(w http.ResponseWriter, r *http.Request) {
 
 // upgradeConfirmed writes what the offer the token names showed, and locks
 // it, or puts every file back. The caller holds the desk's review lock.
-func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string, facts bool) (any, *lockFailure) {
+//
+// **Where the offer named a signing key, the key first, then the
+// configuration that names it, then the lock that pins it**, as a new desk is
+// made: the key is made before anything in the project is written, its
+// pathname checked to name it immediately before jpack.json is, and its
+// marker removed only once the lock is checked. A failure at any step puts
+// every file back and removes the key; where the files could not be put back,
+// the key and its marker stay for the next start, which keeps the key only
+// where jpack.json names it (startup_key.go).
+func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string, facts, sign bool) (any, *lockFailure) {
 	stale := &lockFailure{http.StatusConflict, CodeStale, "The project changed after you reviewed the upgrade, so nothing was written. Review it again."}
 	schema, err := readRuntimeSchema(ctx, s.cfg.JpackBin, dir)
 	if err != nil {
 		return nil, &lockFailure{http.StatusInternalServerError, CodeInternal, "Nothing was written: " + strings.TrimRight(err.Error(), ".") + "."}
 	}
-	plan, err := s.planUpgrade(schema, facts)
+	plan, err := s.planUpgrade(schema, facts, sign)
 	if err != nil || plan.upgraded == nil || !hmac.Equal([]byte(s.upgradeToken(plan)), []byte(token)) {
 		return nil, stale
 	}
-	undo := &upgradeUndo{s: s, plan: plan}
+	var key *madeKey
+	if plan.sign {
+		var failure *lockFailure
+		if key, failure = s.makeStartupKey(ctx, dir, plan.seed); failure != nil {
+			return nil, failure
+		}
+		defer key.close()
+	}
+	undo := &upgradeUndo{s: s, plan: plan, key: key}
 	defer undo.close()
 	fail := func(failure *lockFailure) (any, *lockFailure) {
 		if err := undo.run(); err != nil {
 			s.log.Printf("desk: an upgrade that did not complete could not put the project back: %v", err)
-			return nil, &lockFailure{http.StatusInternalServerError, CodeInternal, "The upgrade did not complete, and the project could not be put back as it was: " + err.Error() + ". Check jpack.json, jpack.lock.json and .gitignore before relying on them."}
+			message := "The upgrade did not complete, and the project could not be put back as it was: " + err.Error() + ". Check jpack.json, jpack.lock.json and .gitignore before relying on them."
+			if key != nil {
+				message += " The signing key Desk made for this project was left with its creation marker: when Desk next starts, it removes the key unless jpack.json names it."
+			}
+			return nil, &lockFailure{http.StatusInternalServerError, CodeInternal, message}
+		}
+		if err := key.unmake(); err != nil {
+			s.log.Printf("desk: an upgrade that did not complete could not remove the signing key it made: %v", err)
+			failure.message += " The signing key made for this project could not be removed, and was left in Desk's signing folder; jpack.json does not name it."
 		}
 		return nil, failure
 	}
@@ -656,6 +759,14 @@ func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string
 		if err := undo.write(gitignoreName, plan.gitignore.before, plan.gitignore.present, plan.gitignore.after); err != nil {
 			return fail(writeFailure(err))
 		}
+	}
+	// **The key is still where the configuration names it**, or nothing names
+	// it: the seed's pathname must name the seed found through the folder
+	// held, asked at the last moment before jpack.json is published, once its
+	// bytes are staged and synced (`upgradeUndo.write`), and again before the
+	// marker goes.
+	if key != nil {
+		keyBetween("upgrade: before naming")
 	}
 	if err := undo.write(runtimeConfigName, plan.snap.config, true, plan.upgraded.config); err != nil {
 		return fail(writeFailure(err))
@@ -676,6 +787,16 @@ func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string
 		}
 		return fail(&lockFailure{http.StatusConflict, CodeStale, "A file changed while the project was being locked, so every file was put back as it was. Review the upgrade again."})
 	}
+	// The key's pathname, checked again now jpack.json names it and the lock
+	// pins it: a folder replaced since the configuration was published leaves
+	// it naming a seed that is not there, so every file goes back, and the
+	// key, found through the folder held, with them (review round 1 of #261).
+	if key != nil {
+		keyBetween("upgrade: named")
+		if key.stillNamed() != nil {
+			return fail(&lockFailure{http.StatusConflict, CodeStale, "Desk's signing folder was replaced while the project was being locked, so every file was put back as it was. Review the upgrade again."})
+		}
+	}
 	result := struct {
 		Files                  int    `json:"files"`
 		ConfigVersion          string `json:"configVersion"`
@@ -684,7 +805,18 @@ func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string
 		Audit                  string `json:"audit"`
 		Copies                 string `json:"copies"`
 		CopiesProblem          string `json:"copiesProblem,omitempty"`
-	}{1 + len(plan.upgraded.set.Entries), plan.to, plan.choice, plan.gitignore.state, plan.audit.State, "stored", ""}
+		// SigningKey is the public half of the key jpack.json now names,
+		// where the upgrade made one.
+		SigningKey *deskPublicKey `json:"signingKey,omitempty"`
+	}{1 + len(plan.upgraded.set.Entries), plan.to, plan.choice, plan.gitignore.state, plan.audit.State, "stored", "", nil}
+	// The key is named and pinned: its marker goes. Where it cannot, the next
+	// start removes the marker alone, since jpack.json names the key.
+	if key != nil {
+		if err := key.settle(); err != nil {
+			s.log.Printf("desk: this project's new signing key keeps its creation marker; the next start removes it: %v", err)
+		}
+		result.SigningKey = &key.public
+	}
 	if err := s.storeReviewedCopies(plan.upgraded); err != nil {
 		s.log.Printf("desk: the reviewed copies were not stored: %v", err)
 		result.Copies, result.CopiesProblem = "not-stored", err.Error()
@@ -697,6 +829,9 @@ var errUpgradeMoved = errors.New("a file changed after you reviewed the upgrade"
 
 // writeFailure is a write the upgrade could not make.
 func writeFailure(err error) *lockFailure {
+	if errors.Is(err, errMovedBeforePublish) {
+		return &lockFailure{http.StatusConflict, CodeStale, "Desk's signing folder was replaced before jpack.json named the key, so every file was put back as it was. Review the upgrade again."}
+	}
 	if errors.Is(err, errUpgradeMoved) {
 		return &lockFailure{http.StatusConflict, CodeStale, "The project changed after you reviewed the upgrade, so every file was put back as it was. Review it again."}
 	}
@@ -716,6 +851,10 @@ type upgradeUndo struct {
 	written []upgradeWritten
 	// locking is set once the runtime may have written a lock.
 	locking bool
+	// key is the signing key the configuration this upgrade writes names,
+	// where it names one: jpack.json is published only while the key's
+	// pathname names the key made (`write`).
+	key *madeKey
 }
 
 // upgradeMade is a folder the upgrade made: its name in the held folder it
@@ -817,6 +956,14 @@ func (u *upgradeUndo) write(name string, before []byte, present bool, after []by
 			return errUpgradeMoved
 		case !present && codeOf(err) != CodeNotFound:
 			return errUpgradeMoved
+		}
+		// **The configuration names the key only while the key is where it
+		// was made**, asked here, at the last moment before jpack.json is
+		// published: a signing folder replaced while its bytes were staged
+		// would otherwise leave it naming a seed that is not there (review
+		// round 1 of #261).
+		if name == runtimeConfigName && u.key.stillNamed() != nil {
+			return errMovedBeforePublish
 		}
 		return nil
 	}
