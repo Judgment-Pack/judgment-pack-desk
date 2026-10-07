@@ -459,15 +459,29 @@ func TestCustodyRefusesALinkSwappedInAfterTheCheck(t *testing.T) {
 	if !store.usable() {
 		t.Fatalf("refused: %v", store.problem)
 	}
+	// **The decoy is a key this build would present**, written by the store
+	// itself and then moved aside. It used to be bytes that are not a stored
+	// key, and once the store wrote each key bound to its endpoint (#28) the
+	// format check refused those bytes a step after the identity check: this
+	// test kept passing with the identity check removed (#265). A decoy that
+	// passes every other check leaves the identity check the only thing
+	// between it and the caller, and the refusal is held to that check's
+	// sentence, so a refusal for any other reason fails here rather than
+	// passing for it.
+	key := filepath.Join(config, secretsDirName, assistantKeyName)
+	decoy := filepath.Join(config, secretsDirName, "decoy")
+	planted := boundTestKey
+	planted.key = "sk-not-this-desks-key-9876543210"
+	if err := store.storeKey(planted); err != nil {
+		t.Fatalf("store the decoy: %v", err)
+	}
+	if err := os.Rename(key, decoy); err != nil {
+		t.Fatalf("move the decoy aside: %v", err)
+	}
 	if err := store.storeKey(boundTestKey); err != nil {
 		t.Fatalf("store: %v", err)
 	}
-	decoy := filepath.Join(config, secretsDirName, "decoy")
-	if err := os.WriteFile(decoy, []byte("not-this-desks-key"), 0o600); err != nil {
-		t.Fatalf("write: %v", err)
-	}
 
-	key := filepath.Join(config, secretsDirName, assistantKeyName)
 	restore := testHookAfterKeyStat
 	swapped := false
 	testHookAfterKeyStat = func(string) {
@@ -490,10 +504,13 @@ func TestCustodyRefusesALinkSwappedInAfterTheCheck(t *testing.T) {
 	if err == nil {
 		t.Fatalf("the swapped-in link was followed and answered %q", got.key)
 	}
+	if !strings.Contains(err.Error(), "changed between being inspected and being opened") {
+		t.Errorf("the swap was refused for another reason than the identity check: %v", err)
+	}
 	if got.present || got.key != "" {
 		t.Errorf("a refused read still produced %q", got.key)
 	}
-	if strings.Contains(got.key, "not-this-desks-key") {
+	if strings.Contains(got.key, planted.key) {
 		t.Error("the attacker's file was read as the key")
 	}
 }
