@@ -293,7 +293,10 @@ end_tree() {
 # its status. Where it outlives the bound, end its whole tree (end_tree), wait
 # until none of it is left but a zombie, and answer 124, as `timeout` does.
 # It runs in the background, where bash would have it ignore INT and QUIT:
-# they are given back, so a Ctrl-C still ends the row's suite.
+# they are given back, so a Ctrl-C still ends the row's suite. It looks five
+# times a second: a selected row's suite ends in seconds, and a poll once a
+# second left each one waiting half a second on average after it had ended,
+# two or three times a Go row.
 bounded() {
   local limit="$1" log="$2" pid deadline tries
   shift 2
@@ -311,7 +314,7 @@ bounded() {
       done
       return 124
     fi
-    sleep 1
+    sleep 0.2
   done
   wait "$pid"
 }
