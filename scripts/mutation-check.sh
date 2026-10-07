@@ -11676,6 +11676,20 @@ export function assistantTransport(id: string): Transport {
   mutate web "jobs hand-over page: the chain's download is the trail's" "$HP" \
     '        onDownload={() => onDownload('"'"'jobs'"'"')} onConfirm={onConfirm}>' \
     '        onDownload={() => onDownload('"'"'trail'"'"')} onConfirm={onConfirm}>'
+  # Review round 1 on #254: the check after a confirmation of the chain is a
+  # check of its own, never one asked before it and still in flight; it is run
+  # only on request, so a change to the project does not cancel it; and an
+  # error takes the place of an earlier report.
+  mutate web "jobs record client: a check in flight is joined after a confirmation of the chain" "$AC" \
+    '  await client.cancelQueries({ queryKey: JOBS_RECORD_KEY })
+' \
+    ''
+  mutate web "jobs record client: the check after a confirmation follows every change to the project" "$AC" \
+    'meta: ON_REQUEST_ONLY, staleTime: 0, retry: false' \
+    'staleTime: 0, retry: false'
+  mutate web "jobs record page: an error leaves an earlier report shown" "$JRP" \
+    '        : query.error ? <p role="alert">{systemMessage(query.error.message)}</p>' \
+    '        : query.error && !record ? <p role="alert">{systemMessage(query.error.message)}</p>'
 fi
 
 restore

@@ -53,7 +53,7 @@ const served = new Uint8Array([0x7b, 0x7d, 0x0d, 0x0a, 0xff, 0xfe, 0x7b, 0x22, 0
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
 let runner: unknown
-let jobs: () => Response
+let jobs: () => Response | Promise<Response>
 let chain: () => Response
 let record: AuditRecord
 let holders: Holders[]
@@ -253,6 +253,21 @@ describe('the Jobs record', () => {
     expect((await (await panel()).findByRole('alert')).textContent).toBe('The chain of runs could not be checked. Please try again.')
   })
 
+  it('shows an error in place of an earlier report when the check is asked again, and nothing of that report', async () => {
+    show()
+    await check()
+    const shown = await panel()
+    expect(await shown.findByText(STATEMENT)).toBeTruthy()
+    const said = 'Desk could not take a copy of the runner\'s chain of runs, and nothing was checked: the runner\'s answer did not complete.'
+    jobs = () => json(502, { error: said, code: 'bad-request' })
+    await check()
+    expect((await shown.findByRole('alert')).textContent).toBe(said)
+    expect(count('/api/audit/jobs-verify')).toBe(2)
+    expect(shown.queryByText(STATEMENT)).toBeNull()
+    expect(shown.queryByLabelText('Coverage')).toBeNull()
+    expect(shown.queryByRole('region', { name: 'Signatures' })).toBeNull()
+  })
+
   it('saves the chain as Desk passed it on: a Blob, never read as text, under run-chain.jsonl', async () => {
     show()
     fireEvent.click((await panel()).getByRole('button', { name: 'Download the chain' }))
@@ -354,6 +369,63 @@ describe('the chain of runs in the hand-over', () => {
     // The Jobs record is checked again, and shows what the runtime found.
     await waitFor(() => expect(count('/api/audit/jobs-verify')).toBe(1))
     expect(await (await panel()).findByText('Witnessed through record 5')).toBeTruthy()
+  })
+
+  /** A Jobs record whose held checkpoints reach through record `through`. */
+  const witnessedThrough = (through: number) => json(200, report({ report: { ...valid, coverage: { ...valid.coverage, checkpointed: { status: 'through', through }, witnessed: through, unwitnessed: 5 - through } } }))
+  /** One holder handed the chain through record 3, with records 4 and 5 to download and confirm. */
+  function handingOverThroughFive() {
+    const recorded = { ...auditor, jobs: { [chainId]: { through: 5, confirmedAt: 1791205200, digest: fileDigest, unwitnessed: 0 } } }
+    holders = [{ holders: [{ ...auditor, jobs: { [chainId]: { through: 3, confirmedAt: 1791201000, digest } } }], trail: { identity: trail, sequence: 3 }, jobs: { state: 'chain', chain: { identity: chainId, sequence: 5 } } },
+      { holders: [recorded], trail: { identity: trail, sequence: 3 }, jobs: { state: 'chain', chain: { identity: chainId, sequence: 5 } } }]
+    download = () => jobsCheckpoints()
+    confirm = () => json(200, recorded)
+  }
+  /** A response the test lets go of when it chooses. */
+  function deferred() {
+    let release!: (response: Response) => void
+    const response = new Promise<Response>(resolve => { release = resolve })
+    return { response, release }
+  }
+
+  it('checks the chain again after a confirmation of it, though a check asked before is still in flight, and shows the later one', async () => {
+    handingOverThroughFive()
+    const before = deferred()
+    const answers = [() => before.response, () => witnessedThrough(5)]
+    jobs = () => answers.length > 1 ? answers.shift()!() : answers[0]!()
+    showBoth()
+    // The owner checks, and the check is still running when the hand-over is confirmed.
+    await check()
+    await waitFor(() => expect(count('/api/audit/jobs-verify')).toBe(1))
+    fireEvent.click((await row('Jobs runs')).getByRole('button', { name: 'Download checkpoints' }))
+    fireEvent.click(await (await row('Jobs runs')).findByRole('button', { name: 'Confirm' }))
+    expect(await screen.findByText('Recorded: the file went to Auditor, through record 5.')).toBeTruthy()
+    // A check of its own, after the confirmation: not the one asked before it.
+    await waitFor(() => expect(count('/api/audit/jobs-verify')).toBe(2))
+    expect(await (await panel()).findByText('Witnessed through record 5')).toBeTruthy()
+    // The earlier check's answer, arriving now, shows nothing.
+    await act(async () => { before.release(witnessedThrough(3)); await new Promise(resolve => setTimeout(resolve, 20)) })
+    expect((await panel()).getByText('Witnessed through record 5')).toBeTruthy()
+    expect((await panel()).queryByText('Witnessed through record 3')).toBeNull()
+  })
+
+  it('keeps the check after a confirmation of the chain through a change to the project while it runs', async () => {
+    handingOverThroughFive()
+    const after = deferred()
+    jobs = () => after.response
+    const client = showBoth()
+    fireEvent.click((await row('Jobs runs')).getByRole('button', { name: 'Download checkpoints' }))
+    fireEvent.click(await (await row('Jobs runs')).findByRole('button', { name: 'Confirm' }))
+    await waitFor(() => expect(count('/api/audit/jobs-verify')).toBe(1))
+    // What McpProvider does on desk/fileChanged, and after a reconnect.
+    await act(async () => {
+      await client.cancelQueries({ predicate: followsTheProject })
+      await client.invalidateQueries({ predicate: followsTheProject })
+    })
+    expect(client.getQueryState(JOBS_RECORD_KEY)?.fetchStatus).toBe('fetching')
+    await act(async () => { after.release(witnessedThrough(5)) })
+    expect(await (await panel()).findByText('Witnessed through record 5')).toBeTruthy()
+    expect(count('/api/audit/jobs-verify')).toBe(1)
   })
 
   it('does not check the Jobs record again after a hand-over of the desk’s trail', async () => {

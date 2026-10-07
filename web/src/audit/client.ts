@@ -41,6 +41,7 @@ import { deskFetch } from '../files/client'
 import { msg } from '../i18n'
 import { sourceMessage } from '../i18n/source'
 import { runnerKeyOf, type RunnerKey } from '../jobs/runnerKey'
+import { ON_REQUEST_ONLY } from '../mcp/projectChange'
 
 /** One protection's reach, as runtime 0.26.0 reports it. */
 export type AuditCoverageState = { status: string; through?: number; detail?: string }
@@ -512,9 +513,17 @@ export async function readJobsRecord(signal?: AbortSignal): Promise<JobsRecord> 
  * Check the chain of runs again, as after a hand-over of it is confirmed. The
  * Jobs record's query is disabled, so this fetches into it; a failure is the
  * query's to show.
+ *
+ * **A check already in flight is cancelled, never joined** (review round 1).
+ * It was asked before the confirmation, so it reads the chain without the
+ * checkpoints just handed over; joined, it would stand as the check after
+ * them. **And the fetch is marked to run only on request**, as the panel's own
+ * query is: `fetchQuery` sets the query's options, and without the mark a
+ * change to the project would cancel it, with nothing to run it again.
  */
 export async function checkJobsRecordAgain(client: QueryClient): Promise<void> {
-  await client.fetchQuery({ queryKey: JOBS_RECORD_KEY, queryFn: ({ signal }) => readJobsRecord(signal), staleTime: 0, retry: false }).catch(() => undefined)
+  await client.cancelQueries({ queryKey: JOBS_RECORD_KEY })
+  await client.fetchQuery({ queryKey: JOBS_RECORD_KEY, queryFn: ({ signal }) => readJobsRecord(signal), meta: ON_REQUEST_ONLY, staleTime: 0, retry: false }).catch(() => undefined)
 }
 
 /**
