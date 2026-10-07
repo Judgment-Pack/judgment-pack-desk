@@ -6,6 +6,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { connected, renderConnected } from '../testing/harness'
 import { forgetAuthorBridge, requestOpen } from '../shell/authorBridge'
 import { AuthorView } from './AuthorView'
+import type { CodeEditorProps } from '../files/CodeEditor'
+// Save/conflict tests exercise the real file buffer and wire API. The native
+// editor's selection, layout and keyboard behavior are checked in Chromium.
+vi.mock('../files/CodeEditor',()=>({default:({id,value,readOnly,onChange,onFormat}:CodeEditorProps)=><textarea id={id} aria-label="File contents" readOnly={readOnly} value={value} onChange={event=>onChange(event.target.value)} onKeyDown={event=>{if(event.altKey&&event.shiftKey&&event.code==='KeyF'){event.preventDefault();onFormat()}}}/>}))
+function fileAction(name:string){
+ if(!screen.queryByRole('menu'))fireEvent.keyDown(screen.getByRole('button',{name:'File actions'}),{key:'ArrowDown'})
+ return screen.getByRole('menuitem',{name})
+}
+
 
 /**
  * The authoring shell, driven against a wire-shaped stub of the chassis file
@@ -40,7 +49,7 @@ interface Answer {
 
 function chassis(handlers: {
   files?: () => Answer
-  file?: () => Answer
+  file?: (url:string) => Answer
   write?: (body: Record<string, unknown>) => Answer
 }) {
   const calls: Call[] = []
@@ -55,7 +64,7 @@ function chassis(handlers: {
         ? (handlers.write ?? ((): Answer => ({ status: 500, body: { error: 'no write stub' } })))(body!)
         : url.startsWith('/api/files')
           ? (handlers.files ?? ((): Answer => ({ status: 200, body: { root: '/project', files: [] } })))()
-          : (handlers.file ?? ((): Answer => ({ status: 500, body: { error: 'no read stub' } })))()
+          : (handlers.file ?? ((): Answer => ({ status: 500, body: { error: 'no read stub' } })))(url)
 
     if (answer.delay) await answer.delay
     return new Response(JSON.stringify(answer.body), {
@@ -96,13 +105,14 @@ function render() {
 
 /** Open the pack file and wait for its bytes to be in the editor. */
 async function openTheFile() {
-  fireEvent.click(await screen.findByText('packs/vendor-onboarding.pack.json'))
+  fireEvent.click(await screen.findByRole('button',{name:'packs/vendor-onboarding.pack.json'}))
   return (await screen.findByLabelText('File contents')) as HTMLTextAreaElement
 }
 
 afterEach(() => {
   cleanup()
   forgetAuthorBridge()
+  localStorage.clear()
   vi.unstubAllGlobals()
 })
 
@@ -111,7 +121,7 @@ describe('the authoring shell', () => {
     const calls = chassis({ files: () => ({ status: 200, body: LISTING }) })
     const { container } = render()
     await screen.findByText('jpack.json')
-    expect(container.textContent).toContain('packs/vendor-onboarding.pack.json')
+    expect(container.textContent).toContain('vendor-onboarding.pack.json')
     // The chassis authorizes this page by the session id `deskFetch` sends on
     // the `Authorization` header. Nothing of a credential is on the address,
     // and a page that put one there would be putting it in every log a URL
@@ -146,7 +156,7 @@ describe('the authoring shell', () => {
     fireEvent.change(box, { target: { value: EDITED } })
     const before = calls.length
 
-    fireEvent.click(screen.getByText('Discard changes'))
+    fireEvent.click(fileAction('Discard changes'))
     await waitFor(()=>expect(box.value).toBe(LOADED))
     expect(container.textContent).not.toContain('unsaved changes')
     expect(calls).toHaveLength(before)
@@ -240,7 +250,8 @@ describe('the authoring shell', () => {
     await screen.findByText(/the file changed since you opened it/)
     // Both digests, so the user can see what they had and what is there.
     expect(container.textContent).toContain(`this edit started from`)
-    expect(container.textContent).toContain(LOADED_SHA.slice(0, 12))
+    fileAction('Reload from disk')
+    expect(screen.getByRole('menu').textContent).toContain(LOADED_SHA)
     expect(container.textContent).toContain('on disk now')
     expect(container.textContent).toContain(THEIRS_SHA.slice(0, 12))
     // The edit is not lost, and nothing claims to have been saved.
@@ -322,7 +333,7 @@ describe('the authoring shell', () => {
       file: () => ({ status: 403, body: { error: 'path is not inside the project' } })
     })
     render()
-    fireEvent.click(await screen.findByText('packs/vendor-onboarding.pack.json'))
+    fireEvent.click(await screen.findByRole('button',{name:'packs/vendor-onboarding.pack.json'}))
     await screen.findByText(/Could not read/)
     expect(await screen.findByText(/path is not inside the project/)).toBeTruthy()
   })
@@ -344,7 +355,7 @@ describe('the authoring shell', () => {
     fireEvent.change(box, { target: { value: EDITED } })
     expect(container.textContent).toContain('unsaved changes')
 
-    fireEvent.click(screen.getByText('Reload from disk'))
+    fireEvent.click(fileAction('Reload from disk'))
     await waitFor(() =>
       expect((screen.getByLabelText('File contents') as HTMLTextAreaElement).value).toBe(
         '{"id":"reloaded"}'
@@ -476,7 +487,7 @@ describe('the authoring shell, saving', () => {
     await waitFor(() => expect(screen.getByText('Saving…')).toBeTruthy())
     // Reload cannot be taken while the PUT is unresolved: it is not cancellable,
     // and a reload would set a base the in-flight save is about to supersede.
-    expect((screen.getByText('Reload from disk') as HTMLButtonElement).disabled).toBe(true)
+    expect(fileAction('Reload from disk').hasAttribute('data-disabled')).toBe(true)
 
     // Typing during the write does not change what the write will be judged on.
     fireEvent.change(box, { target: { value: EDITED + '\n// typed during the save' } })
@@ -579,7 +590,8 @@ describe('the authoring shell, not losing an edit to something unrelated', () =>
     // The edit survived, and the base it is measured against did not move.
     expect((screen.getByLabelText('File contents') as HTMLTextAreaElement).value).toBe(EDITED)
     expect(container.textContent).toContain('unsaved changes')
-    expect(container.textContent).toContain(LOADED_SHA.slice(0, 12))
+    fileAction('Reload from disk')
+    expect(screen.getByRole('menu').textContent).toContain(LOADED_SHA)
     expect(container.textContent).not.toContain("Could not list the project's files")
   })
 
@@ -600,7 +612,7 @@ describe('the authoring shell, not losing an edit to something unrelated', () =>
     const box = await openTheFile()
     fireEvent.change(box, { target: { value: EDITED } })
 
-    fireEvent.click(screen.getByText('Reload from disk'))
+    fireEvent.click(fileAction('Reload from disk'))
     await waitFor(() => expect(container.textContent).toContain('unsaved changes'))
     expect((screen.getByLabelText('File contents') as HTMLTextAreaElement).value).toBe(EDITED)
   })
@@ -744,7 +756,7 @@ describe('the authoring shell, after a save', () => {
     fireEvent.click(screen.getByText('Save'))
     await screen.findByText(/the file changed since you opened it/)
 
-    fireEvent.click(screen.getByText('Discard changes'))
+    fireEvent.click(fileAction('Discard changes'))
     // Nothing differs any more, so an offer to overwrite is an offer to write
     // something nobody is proposing.
     await waitFor(() =>
@@ -785,7 +797,7 @@ describe('the authoring shell, when the listing is incomplete', () => {
     await screen.findByText(/This list is incomplete/)
     expect(container.textContent).toContain('deep: too deep')
     // And the files it did read are still usable.
-    expect(container.textContent).toContain('packs/vendor-onboarding.pack.json')
+    expect(container.textContent).toContain('vendor-onboarding.pack.json')
   })
 
   it('says nothing about completeness when the listing is whole', async () => {
@@ -872,7 +884,7 @@ describe('the authoring shell, against answers that arrive out of order', () => 
       void queryClient.cancelQueries()
       await Promise.resolve()
     })
-    fireEvent.click(screen.getByText('Reload from disk'))
+    fireEvent.click(fileAction('Reload from disk'))
 
     await waitFor(() =>
       expect((screen.getByLabelText('File contents') as HTMLTextAreaElement).value).toBe(
@@ -897,7 +909,7 @@ describe('the authoring shell, against answers that arrive out of order', () => 
     const box = await openTheFile()
     fireEvent.change(box, { target: { value: EDITED } })
 
-    fireEvent.click(screen.getByText('Reload from disk'))
+    fireEvent.click(fileAction('Reload from disk'))
     await screen.findByText(/Could not reload/)
     expect((screen.getByLabelText('File contents') as HTMLTextAreaElement).value).toBe(EDITED)
     expect(container.textContent).toContain('unsaved changes')
@@ -925,7 +937,7 @@ describe('the open-request bridge', () => {
       file: () => ({ status: 200, body: READ })
     })
     render()
-    await screen.findByText('packs/vendor-onboarding.pack.json')
+    await screen.findByRole('button',{name:'packs/vendor-onboarding.pack.json'})
     // Nothing is open: the view mounted before any request existed.
     expect(screen.queryByLabelText('File contents')).toBeNull()
 
@@ -973,4 +985,131 @@ describe('project file panes', () => {
     expect(screen.getByLabelText('File contents')).toBe(box)
     expect(box.value).toBe(EDITED)
   })
+})
+
+
+describe('JSON formatting in Project files', () => {
+  it('formats only the buffer, can undo without losing prior edits, and saves against the original digest', async () => {
+    const calls = chassis({
+      files: () => ({ status: 200, body: LISTING }),
+      file: () => ({ status: 200, body: READ }),
+      write: body => ({ status: 200, body: { ...READ, content: body.content, bytes: String(body.content).length, sha256: EDITED_SHA } })
+    })
+    render()
+    const box = await openTheFile()
+    const edit = '{"amount":9007199254740993,"items":[]}'
+    fireEvent.change(box, { target: { value: edit } })
+    fireEvent.click(screen.getByRole('button', { name: 'Format JSON' }))
+    expect(box.value).toBe('{\n  "amount": 9007199254740993,\n  "items": []\n}\n')
+    expect(calls.filter(c => c.method === 'PUT')).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Undo format' }))
+    expect(box.value).toBe(edit)
+    fireEvent.keyDown(box, { code: 'KeyF', altKey: true, shiftKey: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await screen.findByText('Saved, and verified.')
+    expect(calls.find(c => c.method === 'PUT')?.body).toMatchObject({ content: box.value, baseSha256: LOADED_SHA, override: false })
+  })
+  it('keeps invalid edits intact and clears format errors after editing', async () => {
+    chassis({ files: () => ({ status: 200, body: LISTING }), file: () => ({ status: 200, body: READ }) })
+    render()
+    const box = await openTheFile()
+    fireEvent.change(box, { target: { value: '{"broken":}' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Format JSON' }))
+    expect(box.value).toBe('{"broken":}')
+    expect(screen.getByRole('alert').textContent).toContain('Cannot format invalid JSON')
+    fireEvent.change(box, { target: { value: '{}' } })
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+  it('does not offer JSON formatting for plain text files', async () => {
+    chassis({
+      files: () => ({ status: 200, body: { ...LISTING, files: [{ path: '.gitignore', bytes: 4, sha256: LOADED_SHA }] } }),
+      file: () => ({ status: 200, body: { ...READ, path: '.gitignore', content: 'tmp/' } })
+    })
+    render()
+    fireEvent.click(await screen.findByRole('button', { name: '.gitignore' }))
+    await screen.findByLabelText('File contents')
+    expect(screen.queryByRole('button', { name: 'Format JSON' })).toBeNull()
+  })
+})
+
+describe('restored file browsing',()=>{
+ it('restores the selected file and view preferences from this desk only',async()=>{
+  localStorage.setItem('jpack.files-browser.v1:/project',JSON.stringify({selected:READ.path,expanded:['packs'],collapsed:true,search:'',scroll:0,wrap:true}))
+  chassis({files:()=>({status:200,body:LISTING}),file:()=>({status:200,body:READ})})
+  const page=render()
+  const editor=await screen.findByLabelText('File contents') as HTMLTextAreaElement
+  await waitFor(()=>expect(editor.value).toBe(LOADED))
+  expect(screen.getByRole('button',{name:'Expand files'})).toBeTruthy()
+  expect(screen.getByRole('button',{name:'Wrap'}).getAttribute('aria-pressed')).toBe('true')
+  page.unmount()
+  chassis({files:()=>({status:200,body:{...LISTING,root:'/another-desk'}})})
+  render();await screen.findByRole('button',{name:'jpack.json'})
+  expect(screen.queryByLabelText('File contents')).toBeNull()
+ })
+ it('does not open a remembered file that is no longer listed',async()=>{
+  localStorage.setItem('jpack.files-browser.v1:/project',JSON.stringify({selected:'missing.json',expanded:[],search:'',scroll:0}))
+  const calls=chassis({files:()=>({status:200,body:LISTING})})
+  render();await screen.findByRole('button',{name:'jpack.json'})
+  expect(screen.queryByLabelText('File contents')).toBeNull()
+  expect(calls.filter(call=>call.url.startsWith('/api/file?'))).toHaveLength(0)
+ })
+})
+
+
+describe('file switching without a blank editor', () => {
+  it('keeps the old editor mounted during loading and ignores an older late response', async () => {
+    let finish!:()=>void
+    const delayed=new Promise<void>(resolve=>{finish=resolve})
+    const slow={path:'slow.json',bytes:4,sha256:'e'.repeat(64),content:'slow'}
+    const fast={path:'fast.json',bytes:4,sha256:'f'.repeat(64),content:'fast'}
+    chassis({files:()=>({status:200,body:{...LISTING,files:[...LISTING.files,slow,fast]}}),file:url=>({status:200,
+      body:url.includes('slow.json')?slow:url.includes('fast.json')?fast:READ,
+      delay:url.includes('slow.json')?delayed:undefined})})
+    render()
+    const original=await openTheFile()
+    fireEvent.click(screen.getByRole('button',{name:'slow.json'}))
+    await screen.findByRole('status',{name:'Loading…'})
+    expect(screen.getByLabelText('File contents')).toBe(original)
+    expect(original.value).toBe(LOADED)
+    expect(original.closest('section')?.hasAttribute('inert')).toBe(true)
+    fireEvent.click(screen.getByRole('button',{name:'fast.json'}))
+    await waitFor(()=>expect((screen.getByLabelText('File contents') as HTMLTextAreaElement).value).toBe('fast'))
+    await act(async()=>finish())
+    expect((screen.getByLabelText('File contents') as HTMLTextAreaElement).value).toBe('fast')
+    expect(screen.queryByRole('status',{name:'Loading…'})).toBeNull()
+  })
+
+  it('retains the current buffer when the next file cannot be read', async () => {
+    chassis({files:()=>({status:200,body:LISTING}),file:url=>url.includes('jpack.json')?
+      {status:500,body:{error:'Cannot read this file'}}:{status:200,body:READ}})
+    render()
+    const original=await openTheFile()
+    fireEvent.change(original,{target:{value:EDITED}})
+    fireEvent.click(screen.getByRole('button',{name:'jpack.json'}))
+    await screen.findByText('Could not read jpack.json')
+    expect(screen.getByLabelText('File contents')).toBe(original)
+    expect(original.value).toBe(EDITED)
+    expect(screen.getByText('unsaved changes')).toBeTruthy()
+    expect(original.closest('section')?.hasAttribute('inert')).toBe(false)
+  })
+})
+
+// What the runtime generates is shown, not offered for saving: the read
+// answer's reason makes the editor read-only, says why, and leaves no Save.
+it('opens a file the desk reports read-only without a way to save it', async () => {
+  const lock = '{"lockVersion":"1"}\n'
+  const calls = chassis({
+    files: () => ({ status: 200, body: { root: '/project', files: [{ path: 'jpack.lock.json', bytes: lock.length, sha256: 'e'.repeat(64), readOnlyReason: 'runtime-lock' }] } }),
+    file: () => ({ status: 200, body: { path: 'jpack.lock.json', bytes: lock.length, sha256: 'e'.repeat(64), content: lock, readOnlyReason: 'runtime-lock' } })
+  })
+  render()
+  fireEvent.click(await screen.findByRole('button', { name: 'jpack.lock.json' }))
+  const editor = (await screen.findByLabelText('File contents')) as HTMLTextAreaElement
+  expect(editor.value).toBe(lock)
+  expect(editor.readOnly).toBe(true)
+  expect(screen.getByText('Read-only')).toBeTruthy()
+  expect(screen.getByText('This lockfile is generated by the runtime. Update it through the pack review and lock workflow.')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Save' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Format JSON' })).toBeNull()
+  expect(calls.some(call => call.method === 'PUT')).toBe(false)
 })

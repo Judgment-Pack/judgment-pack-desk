@@ -1,6 +1,9 @@
 import { useCallback, useId, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { msg, useLocale } from '../i18n'
+import { Disclosure } from '../ui/Disclosure'
+import { searchFailureMessage } from './failures'
+import { ConnectionRequestError } from '../connections/client'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { Select } from '../ui/Select'
@@ -11,7 +14,7 @@ import { useInspectorPresentation } from '../shell/InspectorPresentation'
 import { useDirtyGuard } from '../shell/useDirtyGuard'
 import { useConfirmDiscard, TypedConfirmation } from '../shell/UnsavedChanges'
 import { Dialog, DialogActions } from '../ui/Dialog'
-import { SEARCH_CONNECTIONS_KEY, useSearchConnections, useSearchPreference, type SearchConnection, type SearchProvider } from './connections'
+import { SEARCH_CONNECTIONS_KEY, useSearchConnections, useSearchPreference, type SearchConnection, type SearchProvider, type SearchTimeout } from './connections'
 import styles from './WebSearchSettings.module.css'
 
 export function WebSearchSettings(){
@@ -23,7 +26,7 @@ export function WebSearchSettings(){
  const close=useCallback(()=>closeRef.current(),[])
  const presentation=useMemo(()=>({title:msg('Web search'),available:selected!==undefined,open:selected!==undefined,onOpenChange:(open:boolean)=>{if(!open)close()},width,onResize:setWidth,onReset:()=>setWidth(480),minimumMainWidth:560,maximumWidth:560,closeOnEscape:true,restoreFocusRef:opener}),[selected,width,close])
  useInspectorPresentation(selected!==undefined?presentation:null)
- const pane=useInspectorPortal(selected!==undefined&&connections.data?<SearchEditor key={selected?.id??'new'} original={selected} providers={connections.data.providers} onClose={()=>setSelected(undefined)} registerClose={action=>{closeRef.current=action}}/>:null)
+ const pane=useInspectorPortal(selected!==undefined&&connections.data?<SearchEditor key={selected?.id??'new'} original={selected} providers={connections.data.providers} timeout={connections.data.timeout} onClose={()=>setSelected(undefined)} registerClose={action=>{closeRef.current=action}}/>:null)
  const pref=preferences.data?.value
  return <SettingsSection title={msg('Web search')} level={2} variant="plain" description={msg('Search connections are shared on this computer. The default applies to this desk.')}>
   <div className={styles.toolbar}><span className={styles.caption}>{msg('Search when needed, then read and cite the original sources.')}</span><Button disabled={!connections.available||!connections.data||selected!==undefined} onClick={e=>{opener.current=e.currentTarget;setSelected(null)}}>{msg('Add connection')}</Button></div>
@@ -36,13 +39,13 @@ export function WebSearchSettings(){
    <div className={styles.field}><label htmlFor={`${id}-connection`}>{msg('Default search connection')}</label><Select id={`${id}-connection`} value={pref.connection??'none'} disabled={preferences.saving||preferences.isError} options={[{value:'none',label:msg('Not configured')},...(connections.data?.connections??[]).map(c=>({value:c.id,label:c.name})),...(pref.connection&&!connections.data?.connections.some(c=>c.id===pref.connection)?[{value:pref.connection,label:msg('Connection unavailable')}]:[])]} onValueChange={connection=>void preferences.save({...pref,connection:connection==='none'?null:connection}).catch(()=>{})}/></div>
    <div className={styles.field}><label htmlFor={`${id}-mode`}>{msg('Research')}</label><Select id={`${id}-mode`} value={pref.mode} disabled={preferences.saving||preferences.isError} options={[{value:'auto',label:msg('Auto')},{value:'provided',label:msg('Provided sources only')}]} onValueChange={mode=>void preferences.save({...pref,mode:mode as 'auto'|'provided'}).catch(()=>{})}/></div>
   </div>}
-  {(preferences.isError||preferences.saveError)&&<p role="alert">{msg('Search settings could not be saved. Reload before trying again.')} <Button onClick={()=>void preferences.refetch()}>{msg('Reload')}</Button></p>}
+  {(preferences.isError||preferences.saveError)&&<p role="alert">{preferences.isError?msg('Search settings could not be read. Reload before making changes.'):msg('Search settings could not be saved. Reload before trying again.')} <Button onClick={()=>void preferences.refetch()}>{msg('Reload')}</Button></p>}
   {pane}
  </SettingsSection>
 }
-function SearchEditor({original,providers,onClose,registerClose}:{original:SearchConnection|null;providers:SearchProvider[];onClose:()=>void;registerClose:(close:()=>void)=>void}){
+function SearchEditor({original,providers,timeout,onClose,registerClose}:{original:SearchConnection|null;providers:SearchProvider[];timeout?:SearchTimeout;onClose:()=>void;registerClose:(close:()=>void)=>void}){
  const client=useQueryClient(),confirm=useConfirmDiscard(),id=useId()
- const initial={id:original?.id??`search-${crypto.randomUUID().slice(0,8)}`,revision:original?.revision??'',name:original?.name??'',provider:original?.provider??providers[0]?.id??'',project:original?.project??'',location:original?.location??'global',model:original?.model??'gemini-2.5-flash',dailyLimit:original?.dailyLimit??100,credential:''}
+ const initial={id:original?.id??`search-${crypto.randomUUID().slice(0,8)}`,revision:original?.revision??'',name:original?.name??'',provider:original?.provider??providers[0]?.id??'',project:original?.project??'',location:original?.location??'global',model:original?.model??'gemini-2.5-flash',dailyLimit:original?.dailyLimit??100,...(timeout?{timeoutSeconds:original?.timeoutSeconds||timeout.defaultSeconds}:{}),credential:''}
  const [form,setForm]=useState(initial),[baseline]=useState(initial),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[removing,setRemoving]=useState(false),[typed,setTyped]=useState('')
  const dirty=JSON.stringify(form)!==JSON.stringify(baseline)
  const clearDirty=useDirtyGuard(dirty,msg('Leaving will discard unsaved changes in the open editors.'),{busy,shouldBlock:()=>true})
@@ -51,7 +54,10 @@ function SearchEditor({original,providers,onClose,registerClose}:{original:Searc
  const provider=providers.find(p=>p.id===form.provider)
  function update(key:string,value:string|number){setForm(f=>({...f,[key]:value}));setError('');setNotice('')}
  async function act(action:'save'|'test'|'remove'){
-  if(busy)return;setBusy(true);setError('');setNotice('')
+  if(busy)return
+  // The gateway refuses a timeout outside the bounds it advertised; refuse it here first, so nothing is sent.
+  if(action==='save'&&timeout&&(!Number.isSafeInteger(form.timeoutSeconds)||form.timeoutSeconds!<timeout.minSeconds||form.timeoutSeconds!>timeout.maxSeconds)){setError(msg('Choose a search timeout from {{min}} to {{max}} seconds.',{min:timeout.minSeconds,max:timeout.maxSeconds}));return}
+  setBusy(true);setError('');setNotice('')
   try{
    if(action==='save'){
     const google=provider?.fields.includes('project')
@@ -62,7 +68,7 @@ function SearchEditor({original,providers,onClose,registerClose}:{original:Searc
    }else{
     await connectionCall('disconnect',{id:form.id,revision:form.revision},undefined,'web-search');clearDirty();await client.invalidateQueries({queryKey:SEARCH_CONNECTIONS_KEY});onClose()
    }
-  }catch{setError(action==='test'?msg('Connection test failed. Check credentials, permissions and quota.'):msg('The connection could not be saved. Check the fields or reload after another edit.'))}
+  }catch(cause){setError(cause instanceof ConnectionRequestError&&cause.code==='search-timeout'?searchFailureMessage('search-timeout')!:action==='test'?msg('Connection test failed. Check credentials, permissions and quota.'):msg('The connection could not be saved. Check the fields or reload after another edit.'))}
   finally{setBusy(false);void client.invalidateQueries({queryKey:SEARCH_CONNECTIONS_KEY})}
  }
  const google=provider?.fields.includes('service-account-json')
@@ -80,6 +86,7 @@ function SearchEditor({original,providers,onClose,registerClose}:{original:Searc
    {provider&&<a href={provider.docs} target="_blank" rel="noreferrer">{msg('Setup instructions')}</a>}
    <label className={styles.field}>{msg('Daily request limit')}<Input type="number" required min={1} max={10000} value={form.dailyLimit} disabled={busy} onChange={e=>update('dailyLimit',Number(e.target.value))}/></label>
    <p className={styles.caption}>{msg('Testing makes one provider request and counts toward this limit. Limits reset at midnight UTC.')}</p>
+   {timeout&&<Disclosure title={msg('Advanced settings')}><label className={styles.field}>{msg('Search timeout (seconds)')}<Input type="number" required min={timeout.minSeconds} max={timeout.maxSeconds} step={1} value={form.timeoutSeconds??timeout.defaultSeconds} disabled={busy} onChange={e=>update('timeoutSeconds',Number(e.target.value))}/></label><p className={styles.caption}>{msg('Maximum wait for one search, including authentication. Default: {{seconds}} seconds.',{seconds:timeout.defaultSeconds})}</p></Disclosure>}
    {error&&<p role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}
    <div className={styles.footer}>{original&&<Button variant="quiet" disabled={busy||dirty} onClick={()=>setRemoving(true)}>{msg('Remove connection')}</Button>}<Button disabled={busy||dirty||!form.revision} onClick={()=>void act('test')}>{msg('Test connection')}</Button><Button onClick={()=>void close()} disabled={busy}>{msg('Cancel')}</Button><Button type="submit" variant="primary" disabled={busy||!form.name.trim()||!dirty}>{busy?msg('Saving…'):msg('Save')}</Button></div>
   </form>

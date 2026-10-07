@@ -1,20 +1,29 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
 import { PageHeader } from '../ui/PageLayout'
 import { Button } from '../ui/Button'
-import { OverflowTooltip } from '../ui/Tooltip'
-import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { Tooltip } from '../ui/Tooltip'
+import { lazy, Suspense, startTransition, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Empty, ErrorBox, Loading, Pill } from '../components/primitives'
-import { StaleWrite, type FileContent } from '../files/client'
+import { readFile, StaleWrite, type FileContent } from '../files/client'
 import { useFileContent, useFileListing } from '../files/queries'
 import { useFileEditing } from '../files/useFileEditing'
+import { formatJson } from '../files/formatJson'
 import { useOpenRequests, usePublishedDirty } from '../shell/authorBridge'
 import { useConfirmDiscard } from '../shell/UnsavedChanges'
 import { useDirtyGuard } from '../shell/useDirtyGuard'
-import { IconChevronLeft, IconDetails } from '../shell/icons'
+import { IconChevronLeft, IconDetails, IconMore, IconSearch } from '../shell/icons'
 import { PaneToggle } from '../shell/PaneToggle'
 import { PaneDivider } from '../ui/PaneDivider'
+import { DropdownMenu } from 'radix-ui'
+import { FileBrowser } from '../files/FileBrowser'
+import { FileLocation } from '../files/FileLocation'
+import { parents, readFileBrowser, writeFileBrowser, type FileBrowserPreferences } from '../files/browserState'
+import type { CodeEditorHandle } from '../files/CodeEditor'
 import styles from './AuthorView.module.css'
+const loadCodeEditor = () => import('../files/CodeEditor')
+const CodeEditor = lazy(loadCodeEditor)
 
 const DEFAULT_FILES_WIDTH = 280
 const MIN_FILES_WIDTH = 220
@@ -56,13 +65,36 @@ function storedWidth(key: string): number {
 export function AuthorView() {
   useLocale()
   const listing = useFileListing()
-  const [selected, setSelected] = useState<string | undefined>(undefined)
+  if (!listing.data) return <article className="detail authoring" data-layout="page"><PageHeader title={msg('Project files')}/><div className={styles.feedback}>{listing.error ? <ErrorBox title={msg("Could not list the project's files")} error={listing.error}/> : <Loading what={msg("the project's files")}/>}</div></article>
+  return <FileWorkspace key={listing.data.root} listing={listing}/>
+}
+function FileWorkspace({listing}:{listing:ReturnType<typeof useFileListing>}) {
+  const root = listing.data!.root
+  const [prefs,setPrefs] = useState(() => readFileBrowser(root))
+  const preference = useRef(prefs), scroll = useRef(prefs.scroll)
+  const updatePrefs = (patch:Partial<FileBrowserPreferences>) => setPrefs(previous => {
+    const next={...previous,...patch,scroll:patch.scroll??scroll.current};preference.current=next;return next
+  })
+  useEffect(() => { writeFileBrowser(root,prefs) },[root,prefs])
+  useEffect(() => {
+    const persist=()=>writeFileBrowser(root,{...preference.current,scroll:scroll.current})
+    window.addEventListener('pagehide',persist)
+    return()=>{window.removeEventListener('pagehide',persist);persist()}
+  },[root])
+  const [selected, setSelected] = useState<string | undefined>(() => listing.data!.files.some(file=>file.path===prefs.selected)?prefs.selected:undefined)
+  const expanded = prefs.expanded ?? [...new Set(listing.data!.files.flatMap(file=>parents(file.path).slice(0,1)).filter(folder=>folder==='packs'))]
   const [dirty, setDirty] = useState(false)
+  const queryClient = useQueryClient()
+  const openRequest = useRef(0)
+  const [opening,setOpening] = useState<string>()
+  const [openError,setOpenError] = useState<{path:string;error:Error}>()
+  useEffect(() => () => { openRequest.current++ }, [])
   const frame = useRef<HTMLDivElement>(null), paneId = useId()
   const [room, setRoom] = useState<number>()
   const [width, setWidth] = useState(DEFAULT_FILES_WIDTH)
   const [browsing, setBrowsing] = useState(false)
-  const [collapsed, setCollapsed] = useState(false)
+  const collapsed = prefs.collapsed
+  const setCollapsed = (value:boolean) => updatePrefs({collapsed:value})
   const expandButton = useRef<HTMLButtonElement>(null)
   const widthKey = listing.data ? `jpack.files-pane.v1:${listing.data.root}` : undefined
   useEffect(() => { if (widthKey) setWidth(storedWidth(widthKey)) }, [widthKey])
@@ -116,11 +148,30 @@ export function AuthorView() {
   useDirtyGuard(dirty, msg('This file has unsaved changes that will be lost. Leave anyway?'), { name: selected })
 
   const choose = async (path: string) => {
-    if (path === selected) { setBrowsing(false); return }
-    if (dirty && !await confirmDiscard(msg('Discard unsaved changes to this file?'), { name: selected })) return
-    setDirty(false)
-    setSelected(path)
-    setBrowsing(false)
+    const request = ++openRequest.current
+    setOpenError(undefined)
+    if (path === selected) { setOpening(undefined); setBrowsing(false); return }
+    if (dirty && !opening && !await confirmDiscard(msg('Discard unsaved changes to this file?'), { name: selected })) return
+    if (request !== openRequest.current) return
+    setOpening(path)
+    try {
+      // Keep the visible document mounted until both bytes and editor code are
+      // ready. Never use the previous file as placeholder data for a new path.
+      await Promise.all([
+        queryClient.ensureQueryData({queryKey:['desk-file',path],queryFn:({signal})=>readFile(path,signal)}),
+        loadCodeEditor()
+      ])
+      if (request !== openRequest.current) return
+      startTransition(() => {
+        setDirty(false); setSelected(path); setOpening(undefined)
+        updatePrefs({selected:path,expanded:[...new Set([...expanded,...parents(path)])]})
+        setBrowsing(false)
+      })
+    } catch(error) {
+      if (request !== openRequest.current) return
+      setOpening(undefined)
+      setOpenError({path,error:error instanceof Error?error:new Error(String(error))})
+    }
   }
 
   // Routed through `choose`, so the dirty-buffer question is asked for a file
@@ -128,32 +179,22 @@ export function AuthorView() {
   // is called here rather than above because `choose` is declared above it.
   useOpenRequests(choose)
 
+
   return (
     <article className="detail authoring" data-measure="full" data-layout="page">
       <div ref={frame} className={styles.frame} data-compact={compact || undefined}
         style={{ '--files-width': `${paneWidth}px` } as CSSProperties}>
         <aside id={paneId} className={styles.browser} aria-label={msg('Browse files')} hidden={compact ? !showBrowser : collapsed}>
           <PageHeader title={msg('Project files')} meta={files.length} leading={!compact && <PaneToggle compact label={msg('Collapse files')} expanded controls={paneId} onClick={collapse} />} />
-          <div className={styles.fileScroll}>
+          <div className={styles.browserContents}>
             {listing.error && !listing.data ? <ErrorBox title={msg("Could not list the project's files")} error={listing.error} />
               : listing.isPending ? <Loading what={msg("the project's files")} /> : <>
               {listing.error && <p className="note note-warn" role="status"><Message text={"<0/> —<1/><2/>. What is shown is the last listing that answered; your edit is untouched."} slots={[<strong>{msg("The file list could not be refreshed")}</strong>, ' ', listing.error.message]} /></p>}
               {partial.length > 0 && <p className="note note-warn" role="status"><Message text={"<0/> The desk could not read everything in the project:<1/><2/>"} slots={[<strong>{msg("This list is incomplete.")}</strong>, <br />, partial.map(problem => <code key={problem} className="partial-reason">{problem}</code>)]} /></p>}
               {files.length === 0 ? <Empty>{partial.length === 0 ? msg("This project directory contains no files.") : msg("Nothing in this project could be read; see above.")}</Empty> :
-                <nav aria-label={msg('Files')}><ul className={styles.fileList}>
-                  {files.map(file => <li key={file.path}>
-                    <OverflowTooltip selector="[data-file-label]" content={file.path}>
-                      <button type="button" className={styles.fileEntry} aria-label={file.path}
-                        aria-current={file.path === selected ? true : undefined} onClick={() => void choose(file.path)}>
-                        <IconDetails />
-                        <span className={styles.fileText}>
-                          <span data-file-label>{file.path.split('/').at(-1)}</span>
-                          {file.path.includes('/') && <small data-file-label>{file.path}</small>}
-                        </span>
-                      </button>
-                    </OverflowTooltip>
-                  </li>)}
-                </ul></nav>}
+                <FileBrowser files={files} selected={selected} dirty={dirty} expanded={expanded} search={prefs.search} scroll={prefs.scroll}
+                  onSearch={search=>{scroll.current=0;updatePrefs({search,scroll:0})}} onExpand={expanded=>updatePrefs({expanded})}
+                  onChoose={path=>void choose(path)} onScroll={value=>{scroll.current=value}}/>}
             </>}
           </div>
           {!compact && !collapsed && <PaneDivider paneSide="start" label={msg('Resize file pane')} controls={paneId}
@@ -161,8 +202,10 @@ export function AuthorView() {
             onReset={() => resize(Math.min(DEFAULT_FILES_WIDTH, maxWidth))} onCollapse={collapse}
             preview={{element:frame.current, property:'--files-width'}} />}
         </aside>
-        <section className={styles.detail} aria-label={msg('Editor')} hidden={showBrowser}>
-          {selected ? <FileEditor key={selected} path={selected} listed={listedNow} onDirty={setDirty} leading={leading} /> : <>
+        {opening && <span className={styles.opening} role="status" aria-label={msg('Loading…')}><span className={styles.spinner} aria-hidden="true"/></span>}
+        <section className={styles.detail} aria-label={msg('Editor')} hidden={showBrowser} aria-busy={!!opening} inert={!!opening}>
+          {openError && <div className={styles.feedback}><ErrorBox title={msg('Could not read {{value0}}',{value0:openError.path})} error={openError.error}/></div>}
+          {selected ? <FileEditor key={selected} path={selected} listed={listedNow} onDirty={setDirty} leading={leading} wrap={prefs.wrap} onWrap={wrap=>updatePrefs({wrap})} /> : <>
             <PageHeader title={msg('Editor')} leading={leading} />
             <div className={styles.empty}><IconDetails /><p>{msg('Choose a file to edit.')}</p></div>
           </>}
@@ -188,17 +231,23 @@ function FileEditor({
   path,
   listed,
   onDirty,
-  leading
+  leading, wrap, onWrap
 }: {
   path: string
   /** Whether the current listing still carries this path. */
   listed: boolean
   onDirty: (dirty: boolean) => void
   leading?: ReactNode
+  wrap:boolean
+  onWrap:(value:boolean)=>void
 }) {
   useLocale()
   const confirmDiscard = useConfirmDiscard()
   const loaded = useFileContent(path)
+  const editor = useRef<CodeEditorHandle>(null)
+  const fileLeading = <>{leading}<FileLocation path={path}/></>
+  const [copied,setCopied] = useState('')
+  const copyPath = async () => { try { await navigator.clipboard.writeText(path); setCopied(msg('Copied')) } catch { setCopied(msg('Select the full value above to copy it.')) } }
   // The base revision, the save and its proof — `files/useFileEditing.ts`,
   // which is this editor's own discipline lifted out so the pack editor holds
   // one story rather than a second spelling of it.
@@ -208,8 +257,21 @@ function FileEditor({
   // The revision this edit is against. Editor-local and immutable except where
   // the user acts: seeded once from the first successful load, replaced by an
   // explicit reload or a successful save. Never by a background refetch.
-  const [base, setBase] = useState<FileContent | undefined>(undefined)
-  const [buffer, setBuffer] = useState<string | undefined>(undefined)
+  const [base, setBase] = useState<FileContent | undefined>(()=>loaded.data)
+  const [buffer, setBuffer] = useState<string | undefined>(()=>loaded.data?.content)
+  const [formatError, setFormatError] = useState<'invalid' | 'too-large'>()
+  const [beforeFormat, setBeforeFormat] = useState<string>()
+  const readOnlyReason = loaded.data ? loaded.data.readOnlyReason : base?.readOnlyReason
+  const readOnly = Boolean(readOnlyReason)
+  const jsonFile = /\.json$/i.test(path)
+  const format = () => {
+    if (readOnly || !jsonFile || buffer === undefined || write.isPending || editing.reloading) return
+    const result = formatJson(buffer)
+    if (!result.ok) { setFormatError(result.reason); return }
+    setFormatError(undefined)
+    if (result.content !== buffer) { setBeforeFormat(buffer); setBuffer(result.content) }
+  }
+  const clearFormat = () => { setFormatError(undefined); setBeforeFormat(undefined) }
 
   useEffect(() => {
     if (loaded.data && base === undefined) {
@@ -245,12 +307,13 @@ function FileEditor({
     editing.reload(path, (fresh) => {
       setBase(fresh)
       setBuffer(fresh.content)
+      clearFormat()
       return true
     })
   }
 
   const save = (override: boolean) => {
-    if (buffer === undefined || base === undefined) return
+    if (readOnly || buffer === undefined || base === undefined) return
     editing.save({
       path,
       content: buffer,
@@ -262,14 +325,14 @@ function FileEditor({
 
   if (loaded.error && base === undefined) {
     return (
-      <><PageHeader title={path.split('/').at(-1)!} leading={leading} /><div className={styles.feedback}>
+      <><PageHeader title={path.split('/').at(-1)!} leading={fileLeading} /><div className={styles.feedback}>
         <ErrorBox title={msg("Could not read {{value0}}", { value0: path })} error={loaded.error} />
       </div></>
     )
   }
   if (base === undefined || buffer === undefined) {
     return (
-      <><PageHeader title={path.split('/').at(-1)!} leading={leading} /><div className={styles.feedback}>
+      <><PageHeader title={path.split('/').at(-1)!} leading={fileLeading} /><div className={styles.feedback}>
         <Loading what={path} />
       </div></>
     )
@@ -277,17 +340,25 @@ function FileEditor({
 
   return (
     <>
-      <PageHeader title={path.split('/').at(-1)!} leading={leading}
-        meta={dirty ? <Pill tone="danger">{msg('unsaved changes')}</Pill> : <span>{msg('saved')}</span>}
-        actions={<Button variant="primary" disabled={!dirty || write.isPending} onClick={() => save(false)}>
-          {write.isPending ? msg('Saving…') : msg('Save')}
-        </Button>} />
+      <PageHeader title={path.split('/').at(-1)!} leading={fileLeading}
+        meta={readOnly ? undefined : dirty ? <Pill tone="danger">{msg('unsaved changes')}</Pill> : <span>{msg('saved')}</span>}
+        actions={<>
+          {!readOnly && <Tooltip content={msg('Save')} shortcut="Ctrl/⌘ S"><Button variant="primary" disabled={!dirty || write.isPending} onClick={() => save(false)}>{write.isPending ? msg('Saving…') : msg('Save')}</Button></Tooltip>}
+          <DropdownMenu.Root><DropdownMenu.Trigger asChild><Button variant="quiet" size="icon" aria-label={msg('File actions')}><IconMore/></Button></DropdownMenu.Trigger>
+            <DropdownMenu.Portal><DropdownMenu.Content className={`desk-menu ${styles.fileMenu}`} align="end" sideOffset={4}>
+              <DropdownMenu.Item className="desk-menu-item" onSelect={()=>void copyPath()}>{msg('Copy {{label}}',{label:msg('Path')})}</DropdownMenu.Item>
+              <DropdownMenu.Item className="desk-menu-item" disabled={write.isPending || editing.reloading} onSelect={()=>void reload()}>{msg('Reload from disk')}</DropdownMenu.Item>
+              <DropdownMenu.Item className="desk-menu-item" disabled={!dirty || write.isPending} onSelect={()=>void (async()=>{
+                if (!await confirmDiscard(msg('Discard unsaved changes to this file?'), { name: path })) return
+                setBuffer(base.content);clearFormat();editing.reset()
+              })()}>{msg('Discard changes')}</DropdownMenu.Item>
+              <DropdownMenu.Separator className="desk-menu-separator"/>
+              <DropdownMenu.Label className="desk-menu-label">{msg('File details')}</DropdownMenu.Label>
+              <div className={styles.fileDetails}><code>{path}</code><span><Message text={"<0/> bytes"} slots={[base.bytes]}/></span><code>sha256 {base.sha256}</code></div>
+            </DropdownMenu.Content></DropdownMenu.Portal>
+          </DropdownMenu.Root>
+        </>} />
       <div className={styles.editorBody}>
-        <div className={styles.fileMeta}>
-          <OverflowTooltip><code tabIndex={0}>{path}</code></OverflowTooltip>
-          <span><Message text={"<0/> bytes"} slots={[base.bytes]} /></span>
-          <code className={styles.digest} title={`sha256 ${base.sha256}`}>sha256 {base.sha256.slice(0, 12)}…</code>
-        </div>
         <div className={styles.notices}>
         {deleted && (
           <p className="note note-warn" role="alert"><Message text={"<0/> Something else deleted or moved it. Your edit is still here and nothing has been written; saving will recreate the file, and will be refused first because the bytes this edit started from are gone."} slots={[<strong>{msg("This file is no longer in the project.")}</strong>]} /></p>
@@ -297,38 +368,32 @@ function FileEditor({
         )}
 
         </div>
-        <label className={styles.editorLabel} htmlFor="authoring-buffer">{msg("File contents")}</label>
-        <textarea
-          id="authoring-buffer"
-          className={`code-editor ${styles.buffer}`}
-          spellCheck={false}
-          value={buffer}
-          onChange={(event) => setBuffer(event.target.value)}
-        />
-
-        <div className={styles.editorActions}>
-          <Button
-            variant="quiet"
-            disabled={!dirty || write.isPending}
-            onClick={async () => {
-              if (!await confirmDiscard(msg('Discard unsaved changes to this file?'), { name: path })) return
-              // Discard puts the buffer back *and* clears what the last attempt
-              // said about it. A stale conflict notice with a live "Overwrite
-              // anyway" beside a buffer that no longer differs is an offer to
-              // write something nobody is proposing.
-              setBuffer(base.content)
-              editing.reset()
-            }}
-          >{msg("Discard changes")}</Button>
-          {/* Disabled while a write is in flight: the PUT cannot be cancelled,
-              so reloading during one would replace the base with bytes that are
-              about to be superseded by a save already on its way. */}
-          <Button
-            variant="quiet"
-            disabled={write.isPending}
-            onClick={reload}
-          >{msg("Reload from disk")}</Button>
+        <div className={styles.editorToolbar}>
+          <div className={styles.editorContext} data-read-only={readOnly||undefined}>
+            <span className={styles.editorType}><span className={styles.editorLabel}>{/\.jsonl?$/i.test(path)?path.toLowerCase().endsWith('.jsonl')?'JSONL':'JSON':msg('File contents')}</span>{readOnly && <Pill>{msg('Read-only')}</Pill>}</span>
+            {readOnly && <p id="authoring-read-only" className={styles.readOnlyNote}>{readOnlyMessage(readOnlyReason!)}</p>}
+          </div>
+          <div className={styles.formatActions}>
+            <Tooltip content={msg('Find in file')} shortcut="Ctrl/⌘ F"><Button variant="quiet" size="icon" aria-label={msg('Find in file')} onClick={()=>editor.current?.find()}><IconSearch/></Button></Tooltip>
+            <Button variant="quiet" aria-pressed={wrap} onClick={()=>onWrap(!wrap)}>{msg('Wrap')}</Button>
+          </div>
+          {jsonFile && !readOnly && <div className={styles.jsonActions}>
+            {beforeFormat !== undefined && <Button variant="quiet" disabled={write.isPending || editing.reloading}
+              onClick={() => { setBuffer(beforeFormat); clearFormat() }}>{msg('Undo format')}</Button>}
+            <Tooltip content={msg('Format JSON')} shortcut="Alt+Shift+F">
+              <Button variant="quiet" disabled={write.isPending || editing.reloading || !buffer.trim()}
+                aria-keyshortcuts="Alt+Shift+F" onClick={format}>{msg('Format JSON')}</Button>
+            </Tooltip>
+          </div>}
         </div>
+        {formatError && <p id="format-error" className="note note-warn" role="alert">{formatError === 'invalid'
+          ? msg('Cannot format invalid JSON. Fix its syntax and try again.')
+          : msg('Formatted JSON exceeds the editor’s 4 MiB limit.')}</p>}
+        <Suspense fallback={<div className={styles.editorLoading} role="status">{msg('Loading editor…')}</div>}>
+          <CodeEditor ref={editor} id="authoring-buffer" path={path} value={buffer} wrap={wrap} readOnly={readOnly} describedBy={[readOnly?'authoring-read-only':undefined,formatError?'format-error':undefined].filter(Boolean).join(' ')||undefined}
+            onChange={value=>{setBuffer(value);clearFormat()}} onFormat={format} onSave={()=>{if(dirty&&!write.isPending)void save(false)}}/>
+        </Suspense>
+        {copied&&<p className={styles.copyStatus} role="status">{copied}</p>}
 
         <div className={styles.notices}>
         {stale && (
@@ -402,4 +467,11 @@ function StaleNotice({
 
 function shortDigest(digest: string): string {
   return digest ? `${digest.slice(0, 12)}…` : msg("(no file)")
+}
+
+function readOnlyMessage(reason:string):string {
+  if(reason==='runtime-lock')return msg('This lockfile is generated by the runtime. Update it through the pack review and lock workflow.')
+  if(reason==='audit-record')return msg('Audit records are generated by the runtime and cannot be edited in Project files.')
+  if(reason==='file-permissions')return msg('This file is read-only on disk. Change its filesystem permissions before editing it.')
+  return msg('This file is read-only.')
 }

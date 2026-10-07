@@ -75,7 +75,7 @@ export function CitationPreview({ name, reference, citation, number, onRead, lin
     </>}</div>
   </Popover></>
 }
-export function SourceReader({ name, reference, citation, link, onUse }: { name: string; reference: DocumentReference; citation?: Citation; link?: ChatLink; onUse?: (file:ChatAttachment)=>void }) {
+export function SourceReader({ name, reference, citation, link, onUse, requestedUrl }: { requestedUrl?:string; name: string; reference: DocumentReference; citation?: Citation; link?: ChatLink; onUse?: (file:ChatAttachment)=>void }) {
   useLocale()
   const source = useSource(reference, true, citation)
   const [refreshOpen,setRefreshOpen] = useState(false)
@@ -94,6 +94,7 @@ export function SourceReader({ name, reference, citation, link, onUse }: { name:
     const link = document.createElement('a'); link.href = url; link.download = name; link.click(); setTimeout(() => URL.revokeObjectURL(url), 0)
   }
   return <ReadingDetails title={name} actions={original && <Button variant="quiet" onClick={download}>{source.value?.record.provenance.source.kind === 'web' && source.value.record.provenance.source.format === 'static-text-v1' ? msg('Download snapshot') : msg('Download original')}</Button>}>
+    {requestedUrl&&<div className={styles.meta}><p>{msg('Requested URL')}</p><p className={styles.identity}>{requestedUrl}</p></div>}
     {!source.value ? <Status error={source.error} retry={source.retry} /> : <>
       <Warnings value={source.value} />
       {source.value.record.provenance.source.kind === 'connection-resource' && source.value.record.provenance.source.url && <p className={styles.meta}><a href={source.value.record.provenance.source.url} target="_blank" rel="noopener noreferrer">{msg('Open source')}</a></p>}

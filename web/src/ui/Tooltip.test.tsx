@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Link, MemoryRouter, Route, Routes } from 'react-router-dom'
-import { Tooltip, TooltipProvider, OverflowTooltip } from './Tooltip'
+import { DOMTooltips, Tooltip, TooltipProvider, OverflowTooltip } from './Tooltip'
 import { Digest } from './Digest'
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
@@ -117,5 +117,45 @@ describe('full digest disclosure', () => {
     render(<Digest value="" />)
     expect(screen.getByText('sha256 (no file)')).toBeTruthy()
     expect(screen.queryByRole('button')).toBeNull()
+  })
+})
+
+
+describe('tooltips for editor-owned DOM', () => {
+  it('uses shared focus hints without replacing the element or its own events', async () => {
+    const host = document.createElement('div'), button = document.createElement('button')
+    button.textContent = 'Aa'; button.dataset.tooltip = 'Match case'
+    button.setAttribute('aria-describedby', 'existing-help')
+    const click = vi.fn(); button.addEventListener('click', click)
+    host.append(button); document.body.append(host)
+    const { unmount } = render(<DOMTooltips container={{current:host}} />)
+    focus(button)
+    expect((await screen.findByRole('tooltip')).textContent).toBe('Match case')
+    expect(button.getAttribute('aria-describedby')).toContain('existing-help')
+    fireEvent.keyDown(button, {key:'Escape'})
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
+    expect(document.activeElement).toBe(button)
+    fireEvent.click(button); expect(click).toHaveBeenCalledOnce()
+    expect(button.hasAttribute('title')).toBe(false)
+    unmount()
+    expect(button.getAttribute('aria-describedby')).toBe('existing-help')
+    fireEvent.click(button); expect(click).toHaveBeenCalledTimes(2)
+    host.remove()
+  })
+
+  it('tracks changing controls and dismisses when the editor removes a trigger', async () => {
+    const host=document.createElement('div'); document.body.append(host)
+    const {unmount}=render(<DOMTooltips container={{current:host}} />)
+    const button=document.createElement('button'); button.dataset.tooltip='Show replacement controls'
+    await act(async()=>{host.append(button)})
+    focus(button)
+    await screen.findByRole('tooltip')
+    await act(async()=>{button.dataset.tooltip='Hide replacement controls'})
+    await waitFor(()=>expect(screen.queryByRole('tooltip')).toBeNull())
+    act(()=>button.blur()); focus(button)
+    expect((await screen.findByRole('tooltip')).textContent).toBe('Hide replacement controls')
+    await act(async()=>button.remove())
+    await waitFor(()=>expect(screen.queryByRole('tooltip')).toBeNull())
+    unmount(); host.remove()
   })
 })

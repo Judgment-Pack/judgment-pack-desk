@@ -1,7 +1,7 @@
 import { ModelControl } from './ModelControl'
 import { chatReasoningAgent } from './reasoning'
 import { composeMessageInput } from './messageInput'
-import { SearchAttribution } from '../search/SearchSources'
+import { searchReferenceKey } from '../search/step'
 import { ChatSearchOptions } from '../search/ChatSearchOptions'
 import { selectedAssistant } from '../assistant/target'
 import { assistantReady } from '../assistant/useAssistantSlot'
@@ -180,9 +180,8 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
   const draftAvailable = packDrafts.some(item => item.id === chat.draftId)
   const hasDetails = (row: ResponseHistory) => row.searches?.length || row.work.items.length || row.work.notices.length || row.work.critique || row.documents.length || row.websites.length || row.sourceIds.length || draftAvailable && state.candidates.some(candidate => candidate.responseId === row.id)
   const renderResponse = (response: ResponseHistory) => hasDetails(response) ? <div key={response.id} className={styles.responseDetails} data-response-id={response.id}>
-    <WorkSummary work={response.work}/>
-    {(response.searches??[]).map(ref=><SearchAttribution key={ref.id} reference={ref}/>)}
-    <MessageSources chatId={chat.id} documents={response.documents} websites={response.websites} searches={response.searches} sourceIds={response.sourceIds} binding={binding} onRead={read}/>
+    <WorkSummary work={response.work} documents={response.documents} onRead={read}/>
+    <MessageSources chatId={chat.id} documents={response.documents} websites={response.websites} searches={response.searches?.filter(ref=>!response.work.items.some(row=>row.search?.reference&&searchReferenceKey(row.search.reference)===searchReferenceKey(ref)))} sourceIds={response.sourceIds} binding={binding} onRead={read}/>
     {draftAvailable && (onOpenDraft || draftVisible) && state.candidates.filter(candidate => candidate.responseId === response.id).map(candidate => <DraftReference key={candidate.revision} candidate={candidate} open={draftVisible} latest={candidate === state.candidates.at(-1)} onOpen={onOpenDraft}/>)}
   </div> : null
   const unassignedSearches=(chat.searches??[]).filter(s=>!responses.some(r=>r.searches?.some(ref=>ref.id===s.id)))

@@ -1,29 +1,13 @@
-.frame { display: flex; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+.frame { position: relative; display: flex; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
 .browser { position: relative; display: flex; flex-direction: column; flex: 0 0 var(--files-width, 280px); min-width: 0; min-height: 0; border-inline-end: 1px solid var(--border); background: var(--surface); }
 .browser > [data-page-header] { padding-inline: var(--space-4); justify-content: flex-start; gap: var(--space-2); background: var(--surface); }
-.fileScroll { position: relative; flex: 1; min-height: 0; overflow: auto; overflow-x: hidden; padding: var(--space-2); scrollbar-gutter: stable; }
-.fileScroll :global(.note), .fileScroll :global(.empty) { margin: var(--space-2); overflow-wrap: anywhere; }
-.fileList { list-style: none; margin: 0; padding: 0; }
-.fileList > li { margin: var(--space-1) 0; min-width: 0; }
-.fileEntry { appearance: none; display: flex; align-items: center; gap: var(--space-2); width: 100%; min-width: 0; min-height: 36px; padding: var(--space-2); border-style: none; border-radius: var(--radius-sm); background: transparent; color: var(--ink-soft); font: inherit; font-size: var(--text-sm); text-align: start; cursor: pointer; }
-.fileEntry > svg { flex: 0 0 16px; }
-.fileEntry:hover, .fileEntry[aria-current] { background: var(--accent-soft); color: var(--ink); }
-.fileEntry:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.fileText { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
-.fileText > span, .fileText > small { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fileText > small { font-size: var(--text-xs); color: var(--ink-faint); }
-.detail { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
-.detail > [data-page-header] h1 { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+.detail { position: relative; display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+.detail > [data-page-header] { column-gap: var(--space-2); }
+.detail > [data-page-header] h1 { display: flex; flex: 1; flex-wrap: wrap; min-width: 0; gap: var(--space-1) var(--space-2); color: var(--ink); }
+.detail > [data-page-header] [data-page-title] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.detail > [data-page-header] [data-page-meta] { display: inline-flex; align-items: center; flex: 0 0 auto; }
 .editorBody { position: relative; display: flex; flex-direction: column; gap: var(--space-2); flex: 1; min-height: 0; min-width: 0; overflow: auto; padding: var(--space-4) var(--density-gutter); }
-.fileMeta { display: flex; align-items: center; gap: var(--space-3); flex: 0 0 auto; min-width: 0; color: var(--ink-faint); font-size: var(--text-xs); }
-.fileMeta > code:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fileMeta > span, .digest { flex: 0 0 auto; }
-.frame[data-compact] .fileMeta { flex-wrap: wrap; }
-.frame[data-compact] .fileMeta > code:first-child { flex-basis: 100%; }
 .editorLabel { color: var(--ink-soft); font-size: var(--text-xs); }
-.buffer:global(.code-editor) { flex: 1 0 12rem; min-height: 12rem; resize: none; tab-size: 2; }
-.buffer:focus-visible { outline-offset: 0; }
-.editorActions { display: flex; flex-wrap: wrap; gap: var(--space-2); flex: 0 0 auto; }
 .notices:empty { display: none; }
 .notices { flex: 0 0 auto; overflow-wrap: anywhere; }
 .notices :global(.note) { margin: 0; }
@@ -36,3 +20,27 @@
 .frame[data-compact] .detail > [data-page-header] { justify-content: start; flex-wrap: wrap; }
 .frame[data-compact] .detail > [data-page-header] h1 { flex: 1; }
 .frame[data-compact] .detail > [data-page-header] [data-page-actions] { margin-inline-start: auto; }
+
+.editorToolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; flex: 0 0 auto; }
+.formatActions { display: flex; align-items: center; gap: var(--space-1); margin-inline-start: auto; }
+
+.browserContents { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
+.browserContents > :global(.note), .browserContents > :global(.empty) { margin: var(--space-2); overflow-wrap: anywhere; }
+.editorLoading { display: flex; flex: 1; min-height: 12rem; align-items: center; justify-content: center; color: var(--ink-faint); font-size: var(--text-sm); }
+.jsonActions { display: flex; gap: var(--space-1); align-items: center; }
+.fileMenu { max-width: min(26rem, calc(100vw - 32px)); }
+.fileDetails { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); font-size: var(--text-xs); color: var(--ink-faint); }
+.fileDetails code { overflow-wrap: anywhere; white-space: normal; user-select: text; }
+.copyStatus { margin: 0; color: var(--ink-soft); font-size: var(--text-xs); }
+
+.editorToolbar button[aria-pressed="true"] { background: var(--accent-soft); color: var(--ink); }
+
+.editorContext { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); flex: 1 1 auto; min-width: 0; }
+.editorContext[data-read-only] { flex-basis: 16rem; }
+.editorType { display: inline-flex; align-items: center; gap: var(--space-2); flex: 0 0 auto; }
+.readOnlyNote { flex: 1 1 20rem; min-width: 0; margin: 0; color: var(--ink-soft); font-size: var(--text-xs); line-height: var(--leading-body); }
+
+.opening { position: absolute; z-index: 1; inset-block-start: var(--space-4); inset-inline-end: var(--space-4); display: flex; align-items: center; justify-content: center; padding: var(--space-1); background: var(--bg); color: var(--ink-soft); border-radius: var(--radius-sm); }
+.spinner { display: block; width: var(--space-4); height: var(--space-4); box-sizing: border-box; border-width: 1.75px; border-style: solid; border-color: currentColor; border-right-color: transparent; border-radius: var(--radius-pill); animation: fileSpin .8s linear infinite; }
+@keyframes fileSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }

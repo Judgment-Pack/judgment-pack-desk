@@ -22,6 +22,7 @@ import { NoSession, discardBody, forgetSession, refusalCode, sessionBearer } fro
  */
 /** One file the project contains, as the listing reports it. */
 export interface FileEntry {
+  readOnlyReason?: string
   /** Project-relative and slash-separated, on every platform. */
   path: string
   bytes: number
@@ -50,6 +51,7 @@ export interface FileListing {
 
 /** One file's bytes and what they hash to. A write answers with this too. */
 export interface FileContent {
+  readOnlyReason?: string
   path: string
   bytes: number
   sha256: string

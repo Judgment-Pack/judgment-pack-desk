@@ -27,7 +27,7 @@
 .runStatus, .work { width: min(100%, var(--measure-form)); margin-inline: auto; color: var(--ink-soft); font-size: var(--text-xs); }
 .runStatus p { margin-block: var(--space-1) 0; }
 .work summary { cursor: pointer; }
-.work ol { display: grid; gap: var(--space-1); padding-left: var(--space-4); overflow-wrap: anywhere; }
+.work ol { display: grid; gap: var(--space-1); padding: 0; list-style: none; overflow-wrap: anywhere; }
 .artifact { display: flex; align-items: center; gap: var(--space-3); width: min(100%, var(--measure-form)); margin-inline: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-3); }
 .artifact > div { min-width: 0; flex: 1; display: grid; gap: var(--space-1); }
 .artifact strong { font-size: var(--text-sm); font-weight: 500; overflow-wrap: anywhere; }
@@ -112,7 +112,7 @@
 .history li.historyGroup:hover { background: transparent; }
 
 .day { color: var(--ink-soft); font-size: var(--text-xs); line-height: 1.6; text-align: center; padding-block: var(--space-1); }
-.documentList { display: grid; justify-items: start; gap: var(--space-2); }
+.documentList { display: grid; width: 100%; min-width: 0; gap: var(--space-1); }
 .send { flex: 0 0 var(--density-control); width: var(--density-control); padding: 0; }
 .messageTable th { font-weight: 600; background: var(--surface); }
 .markdown :not(pre) > code { background: var(--accent-soft); border-radius: var(--radius-sm); padding-inline: var(--space-1); }
@@ -141,3 +141,18 @@
 
 .packWorkspace > [data-page-header] [data-page-actions] { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); max-width: 100%; }
 @container (min-width: 48rem) { .packWorkspace > [data-page-header] h1 > [data-page-context] { flex: 0 1 auto; } }
+
+.workTitle, .workWarning { display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.workWarning, .work li[data-status="failed"] .workIcon, .work li[data-status="failed"] .workState { color: var(--unknown); }
+.workIcon { flex: none; display: flex; padding-top: 2px; }
+.workStep { min-width: 0; flex: 1; display: grid; gap: var(--space-1); }
+.workStep small { color: var(--ink-soft); font-size: inherit; line-height: 1.6; }
+.workState { flex: none; color: var(--ink-faint); }
+
+.workGroup { width: min(100%, var(--measure-form)); min-width: 0; margin-inline: auto; }
+.workRow { display: flex; width: 100%; min-width: 0; gap: var(--space-3); align-items: center; text-align: start; font: inherit; color: inherit; border-width: 0; border-radius: var(--radius-sm); padding: var(--space-2); background: transparent; }
+.workRow:where(button) { cursor: pointer; }
+.workRow:where(button):hover, .workRow[aria-pressed="true"] { background: var(--surface-raised); }
+.workRow:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.workRow .workIcon { padding: 0; }
+.workRow > svg { flex: none; color: var(--ink-faint); }

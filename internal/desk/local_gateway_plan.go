@@ -97,7 +97,11 @@ func decodeLocalSourcePlan(raw []byte, files map[string]string) ([]string, error
 	seen := map[string]bool{}
 	args := []string{}
 	for _, source := range plan.Sources {
-		if !catalogIdentifier.MatchString(source.ID) || seen[source.ID] || !catalogIdentifier.MatchString(source.Executable) || !strings.HasPrefix(source.Executable, "adapter-") || files[executableName(source.Executable)] == "" || len(source.Args) > 16 || source.Timeout < 1 || source.Timeout > 60 {
+		maximum := 60
+		if source.ID == "web-search" {
+			maximum = 130
+		}
+		if !catalogIdentifier.MatchString(source.ID) || seen[source.ID] || !catalogIdentifier.MatchString(source.Executable) || !strings.HasPrefix(source.Executable, "adapter-") || files[executableName(source.Executable)] == "" || len(source.Args) > 16 || source.Timeout < 1 || source.Timeout > maximum {
 			return nil, invalid
 		}
 		if source.Shape != "command" && source.Shape != "http" && source.Shape != "mcp" {

@@ -1,5 +1,5 @@
 import { Tooltip as Primitive } from 'radix-ui'
-import { cloneElement, createContext, useContext, useEffect, useId, useLayoutEffect, useState, type ReactElement, type ReactNode } from 'react'
+import { cloneElement, createContext, useContext, useEffect, useId, useImperativeHandle, useLayoutEffect, useState, type HTMLAttributes, type Ref, type RefObject, type ReactElement, type ReactNode } from 'react'
 import { useInRouterContext, useLocation } from 'react-router-dom'
 import styles from './Tooltip.module.css'
 
@@ -103,4 +103,62 @@ function TooltipContent({ children, content, shortcut, disabled, openOnFocus = t
       </Primitive.Content>
     </Primitive.Portal>
   </Primitive.Root>
+}
+
+
+/** The same Radix tooltip for DOM owned by an embedded editor. No extra roots,
+ * wrappers or tab stops: the existing element keeps its listeners and focus. */
+export function DOMTooltips({ container }: { container: RefObject<HTMLElement | null> }) {
+  const [targets, setTargets] = useState<{ element: HTMLElement; text: string; disabled: boolean }[]>([])
+  useLayoutEffect(() => {
+    const host = container.current
+    if (!host) return
+    const collect = () => {
+      const next = [...host.querySelectorAll<HTMLElement>('[data-tooltip]')].map(element => ({
+        element, text: element.dataset.tooltip ?? '', disabled: element.matches(':disabled') || !!element.closest('[hidden]')
+      }))
+      setTargets(previous => previous.length === next.length && previous.every((item, index) =>
+        item.element === next[index]!.element && item.text === next[index]!.text && item.disabled === next[index]!.disabled) ? previous : next)
+    }
+    const observer = new MutationObserver(collect)
+    observer.observe(host, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-tooltip', 'disabled', 'hidden'] })
+    collect()
+    return () => observer.disconnect()
+  }, [container])
+  return targets.map(({ element, text, disabled }) => <DOMTooltip key={elementKey(element)} element={element} text={text} disabled={disabled} />)
+}
+
+const keys = new WeakMap<HTMLElement, number>()
+let sequence = 0
+function elementKey(element: HTMLElement) {
+  if (!keys.has(element)) keys.set(element, ++sequence)
+  return keys.get(element)!
+}
+function DOMTooltip({ element, text, disabled }: { element: HTMLElement; text: string; disabled: boolean }) {
+  const [description] = useState(() => element.getAttribute('aria-describedby') ?? undefined)
+  return <Tooltip content={text} disabled={disabled}><DOMTrigger element={element} aria-describedby={description} /></Tooltip>
+}
+
+/** Radix asChild supplies its trigger events/ref. Bind them to the existing DOM
+ * instead of rendering a replacement and destroying the editor's own handlers. */
+function DOMTrigger({ element, ref, ...props }: HTMLAttributes<HTMLElement> & { element: HTMLElement; ref?: Ref<HTMLElement> }) {
+  useImperativeHandle(ref, () => element, [element])
+  useLayoutEffect(() => {
+    const disposers: (() => void)[] = []
+    for (const [name, value] of Object.entries(props)) {
+      if (/^on[A-Z]/.test(name) && typeof value === 'function') {
+        const event = name.slice(2).toLowerCase()
+        const listener = value as EventListener
+        element.addEventListener(event, listener)
+        disposers.push(() => element.removeEventListener(event, listener))
+      } else if (name === 'aria-describedby' || name === 'data-state') {
+        const before = element.getAttribute(name)
+        if (value == null) element.removeAttribute(name)
+        else element.setAttribute(name, String(value))
+        disposers.push(() => { if (before === null) element.removeAttribute(name); else element.setAttribute(name, before) })
+      }
+    }
+    return () => disposers.forEach(dispose => dispose())
+  }, [element, props])
+  return null
 }

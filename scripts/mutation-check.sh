@@ -5582,6 +5582,40 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "ai connections: a connection's name is not counted in characters" "$AIC" \
     '		utf8.RuneCountInString(name) > maxAIConnectionName {' \
     '		len(name) > maxAIConnectionName && utf8.ValidString(name) {'
+  # Search and files (topic C). Project files holds what the runtime
+  # generates read-only; managed web search has a longer envelope than other
+  # sources, and only managed web search does.
+  SFA=internal/desk/file_access.go
+  SFI=internal/desk/files.go
+  SLP=internal/desk/local_gateway_plan.go
+  SRR=internal/desk/researchrelay.go
+  mutate go "search and files: a read-only file is written over" "$SFI" \
+    '	if reason := s.fileAccessPolicy().readOnlyReason(clean, info); reason != "" {' \
+    '	if reason := s.fileAccessPolicy().readOnlyReason(clean, info); false && reason != "" {'
+  mutate go "search and files: the runtime's lock is editable" "$SFA" \
+    '	if name == runtimeLockName {' \
+    '	if false {'
+  mutate go "search and files: records in the declared directory are editable" "$SFA" \
+    'p.auditDir != "" && dir == p.auditDir {' \
+    'p.auditDir != "" && false {'
+  mutate go "search and files: a configuration that could not be read is taken to declare nothing" "$SFA" \
+    '		if codeOf(err) == CodeNotFound {' \
+    '		if err != nil {'
+  mutate go "search and files: a file's read-only mode is not held" "$SFA" \
+    '	if info != nil && info.Mode().Perm()&0o222 == 0 {' \
+    '	if false && info != nil {'
+  mutate go "search and files: every source is given search's longer envelope" "$SLP" \
+    '		if source.ID == "web-search" {' \
+    '		if true {'
+  mutate go "search and files: search's envelope is past its bound" "$SLP" \
+    '			maximum = 130' \
+    '			maximum = 131'
+  mutate go "search and files: an outside gateway is given search's envelope" "$SRR" \
+    '	if local && suffix == "acquire" {' \
+    '	if suffix == "acquire" {'
+  mutate go "search and files: any source is given search's envelope" "$SRR" \
+    'request.Source == "web-search" {' \
+    'request.Source != "" {'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -5846,9 +5880,11 @@ function usePacks() { useExampleListing(); return readPacks() }'
   mutate web "dirty means 'something was typed'" "$A" \
     '    () => buffer !== undefined && base !== undefined && buffer !== base.content,' \
     '    () => buffer !== undefined && base !== undefined,'
+  # Repaired (topic C, Project files): the base is seeded from the bytes the
+  # open already read, so the needle moved with it; the claim is unchanged.
   mutate web "the base rebases onto background refetches" "$A" \
-    '  const [base, setBase] = useState<FileContent | undefined>(undefined)' \
-    '  const [baseIgnored, setBase] = useState<FileContent | undefined>(undefined); void baseIgnored; const base = loaded.data'
+    '  const [base, setBase] = useState<FileContent | undefined>(()=>loaded.data)' \
+    '  const [baseIgnored, setBase] = useState<FileContent | undefined>(()=>loaded.data); void baseIgnored; const base = loaded.data'
   # **These five moved with the code they are about.** The save discipline was
   # lifted out of `AuthorView.FileEditor` into `files/useFileEditing.ts` so a
   # second editor could hold the same rules rather than a second spelling of
@@ -5889,18 +5925,18 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '      setOutcome(undefined)
       // Captured here, with the request.' \
     '      // Captured here, with the request.'
+  # Repaired (topic C, Project files): Discard, Reload and the file switch
+  # moved into the file menu and the open that waits for the next file's
+  # bytes; each needle follows its line, and each claim is unchanged.
   mutate web "discard leaves the conflict standing" "$A" \
-    '              setBuffer(base.content)
-              editing.reset()' \
-    '              setBuffer(base.content)'
+    '                setBuffer(base.content);clearFormat();editing.reset()' \
+    '                setBuffer(base.content);clearFormat()'
   mutate web 'switching files does not ask about unsaved work' 'web/src/routes/AuthorView.tsx' \
-    '    if (dirty && !await confirmDiscard(msg('"'"'Discard unsaved changes to this file?'"'"'), { name: selected })) return' \
+    '    if (dirty && !opening && !await confirmDiscard(msg('"'"'Discard unsaved changes to this file?'"'"'), { name: selected })) return' \
     '    void dirty'
   mutate web "reload is available during an in-flight write" "$A" \
-    '            disabled={write.isPending}
-            onClick={reload}' \
-    '            disabled={false}
-            onClick={reload}'
+    '              <DropdownMenu.Item className="desk-menu-item" disabled={write.isPending || editing.reloading} onSelect={()=>void reload()}>' \
+    '              <DropdownMenu.Item className="desk-menu-item" disabled={false} onSelect={()=>void reload()}>'
   mutate web "override is always sent" "$C" \
     '      override: input.override ?? false' \
     '      override: true'
@@ -13164,6 +13200,80 @@ export function assistantTransport(id: string): Transport {
   mutate web "ai connections: a name the desk refuses is offered for saving" web/src/assistant/AIConnectionsSettings.tsx \
     'export const aiConnectionNameTooLong=(name:string)=>[...name.trim()].length>128' \
     'export const aiConnectionNameTooLong=(name:string)=>name.trim().length>256'
+  # Search and files (topic C): whitespace-only JSON formatting within the
+  # files API's bound, search steps bound to their own call, causes only in
+  # Desk's words, the attribution frame, and the timeout's bounds.
+  SFJ=web/src/files/formatJson.ts
+  SST=web/src/search/step.ts
+  SFL=web/src/search/failures.ts
+  SRH=web/src/chat/responseHistory.ts
+  SCN=web/src/search/connections.ts
+  SWS=web/src/search/WebSearchSettings.tsx
+  SAF=web/src/search/AttributionFrame.tsx
+  SRN=web/src/research/run.ts
+  SCP=web/src/chat/ChatProvider.tsx
+  STL=web/src/search/tools.ts
+  SAV=web/src/routes/AuthorView.tsx
+  mutate web "search and files: formatting re-encodes a token" "$SFJ" \
+    "    append(token === ':' ? ': ' : token)" \
+    "    append(token === ':' ? ': ' : /^[{}\[\],]$/.test(token) ? token : JSON.stringify(JSON.parse(token)))"
+  mutate web "search and files: formatted JSON is held to the bound in characters, not bytes" "$SFJ" \
+    "  if (new TextEncoder().encode(content).length > limit) return { ok: false, reason: 'too-large' }" \
+    "  if (content.length > limit) return { ok: false, reason: 'too-large' }"
+  mutate web "search and files: the formatter offers more than the files API writes" "$SFJ" \
+    '  const limit = 4 << 20' \
+    '  const limit = (4 << 20) + 1'
+  mutate web "search and files: a search step names a provider that is not an identifier" "$SST" \
+    "  && (v.provider===undefined || typeof v.provider==='string' && /^[a-z][a-z0-9-]{0,47}$/.test(v.provider))" \
+    "  && (v.provider===undefined || typeof v.provider==='string')"
+  mutate web "search and files: a search step's reference is for another query" "$SST" \
+    ' && v.reference.request.query===v.query)' \
+    ')'
+  mutate web "search and files: a word Desk uses for its own failures is taken from the adapter" "$SFL" \
+    '  if (token && [' \
+    '  if (token && Object.hasOwn(FAILURES, token) || token && ['
+  mutate web "search and files: a failure code Desk did not author is kept on the step" "$SRH" \
+    '      const failure=searchFailureMessage(code)?code as SearchFailureCode:undefined' \
+    '      const failure=code as SearchFailureCode|undefined'
+  mutate web "search and files: saved history names a cause Desk did not author" "$SRH" \
+    "item.failure!==undefined&&(!searchFailureMessage(item.failure)||item.status!=='failed'" \
+    "item.failure!==undefined&&(item.status!=='failed'"
+  mutate web "search and files: the advertised timeout may exceed 120 seconds" "$SCN" \
+    't.maxSeconds>120' \
+    't.maxSeconds>1200'
+  mutate web "search and files: a connection's timeout is not held to the advertised bounds" "$SCN" \
+    'c.timeoutSeconds>(v.timeout?.maxSeconds??120)' \
+    'c.timeoutSeconds>(120)'
+  mutate web "search and files: a timeout past its bounds is sent" "$SWS" \
+    "  if(action==='save'&&timeout&&(" \
+    "  if(false&&action==='save'&&timeout&&("
+  mutate web "search and files: settings that could not be read are reported as a failed save" "$SWS" \
+    "{preferences.isError?msg('Search settings could not be read. Reload before making changes.'):" \
+    "{false?msg('Search settings could not be read. Reload before making changes.'):"
+  mutate web "search and files: the attribution frame runs the provider's scripts" "$SAF" \
+    'sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"' \
+    'sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"'
+  mutate web "search and files: the attribution policy does not forbid scripts" "$SAF" \
+    "const policy=\"default-src 'none'; script-src 'none'; style-src" \
+    "const policy=\"default-src 'none'; style-src"
+  mutate web "search and files: a search row takes its provider from the model's call" "$SRN" \
+    '? {...incoming, presentation: hostTools.find(tool=>tool.name===incoming.name)?.presentation} : incoming' \
+    '? {...incoming} : incoming'
+  mutate web "search and files: settings that could not be read let the first turn run" "$SCP" \
+    "    : searchPreference.isError ? sourceMessage('Search settings could not be read. Reload before sending.')" \
+    "    : false ? sourceMessage('Search settings could not be read. Reload before sending.')"
+  mutate web "search and files: the first turn runs before the search connections are known" "$SCP" \
+    "    : researchEnabled && (catalog.loading || searchConnections.loading) ? sourceMessage('Checking search connections…')" \
+    "    : false ? sourceMessage('Checking search connections…')"
+  mutate web "search and files: a failed search's reply carries the gateway's words" "$STL" \
+    '    return {...reply(`${failure.message} Do not claim' \
+    '    return {...reply(`${String((cause as Error)?.message)} ${failure.message} Do not claim'
+  mutate web "search and files: a read-only file is offered for saving" "$SAV" \
+    "          {!readOnly && <Tooltip content={msg('Save')}" \
+    "          {<Tooltip content={msg('Save')}"
+  mutate web "search and files: a read-only file opens in an editable editor" "$SAV" \
+    'readOnly={readOnly} describedBy=' \
+    'readOnly={false} describedBy='
 fi
 
 restore

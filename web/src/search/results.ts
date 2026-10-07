@@ -1,4 +1,4 @@
-import { sourceMessage } from '../i18n/source'
+import { SearchFailure } from './failures'
 import type { ResearchConfig, ResearchGatewayConfig } from '../config/deskConfig'
 import { answer, deskFetch } from '../files/client'
 import { acquire, newResearchSession, registry, seal } from '../research/gatewayClient'
@@ -17,7 +17,7 @@ export interface SearchResult {
  generatedAnswer?:string; attributionHtml?:string; queries?:string[]
 }
 export interface VerifiedSearch { reference:SearchReference; result:SearchResult }
-const fail = () => new Error(sourceMessage('Search results could not be verified; no links were authorized.'))
+const fail = () => new SearchFailure('search-verification-failed')
 const identifier=(s:unknown)=>typeof s==='string'&&/^[a-z][a-z0-9-]{0,47}$/.test(s)
 export function validSearchReference(ref:unknown):ref is SearchReference {
  const v=ref as SearchReference|undefined,r=v?.request
@@ -39,7 +39,9 @@ export function validateSearch(value:unknown,request:SearchRequest):SearchResult
  return d
 }
 async function save(id:string,object:DocumentObject,digest:string,signal?:AbortSignal){
- return (await answer<{sha256:string}>(await deskFetch(`/api/attachments/${id}`,{method:'PUT',headers:{'Content-Type':'application/json','If-Match':digest},body:JSON.stringify(object),signal}))).sha256
+ try {
+  return (await answer<{sha256:string}>(await deskFetch(`/api/attachments/${id}`,{method:'PUT',headers:{'Content-Type':'application/json','If-Match':digest},body:JSON.stringify(object),signal}))).sha256
+ } catch { signal?.throwIfAborted(); throw new SearchFailure('search-storage-failed') }
 }
 export async function verifySearch(object:DocumentObject,ref:SearchReference,pin:ResearchGatewayConfig):Promise<VerifiedSearch>{
  if(!validSearchReference(ref))throw fail()
@@ -67,12 +69,15 @@ export async function searchWeb(request:SearchRequest,config:ResearchConfig,sign
  if(original.length>1<<20)throw fail()
  const object:DocumentObject={version:1,original:{name:'web-search.json',mediaType:'application/json',bytes:base64(original),sha256:`sha256:${await sha256Hex(original)}`}}
  const stored=await save(id,object,'absent',signal)
- await seal(session,signal,constraint)
- const registryText=(await registry(signal,constraint)).split('\n').filter(line=>line.trim()&&stringMember(parseJsonText(line),'sessionId')===session).join('\n')+'\n'
+ let registryText:string
+ try {
+  await seal(session,signal,constraint)
+  registryText=(await registry(signal,constraint)).split('\n').filter(line=>line.trim()&&stringMember(parseJsonText(line),'sessionId')===session).join('\n')+'\n'
+ } catch { signal.throwIfAborted(); throw new SearchFailure('search-proof-failed') }
  object.proof={session,source:WEB_SEARCH,authority:config.gateway.authority,publicKey:config.gateway.signer.public,response:acquired.text,registry:registryText}
  await save(id,object,stored,signal)
  signal.throwIfAborted()
  const ref={id,request,digest:stringMember(acquired.receipt,'resultDigest')!}
- return verifySearch(object,ref,config.gateway)
+ try { return await verifySearch(object,ref,config.gateway) } catch { throw fail() }
 }
 export async function loadSearch(ref:SearchReference,pin:ResearchGatewayConfig,signal?:AbortSignal){return verifySearch(await readDocumentObject(ref.id,signal),ref,pin)}

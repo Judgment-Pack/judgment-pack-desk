@@ -1,0 +1,7 @@
+.row { display: flex; align-items: center; gap: var(--space-3); width: 100%; min-width: 0; padding: var(--space-3); border-width: 0; border-radius: var(--radius-sm); background: transparent; color: var(--ink); text-decoration: none; text-align: start; font: inherit; font-size: var(--text-sm); line-height: 1.5; cursor: pointer; }
+.row:hover { background: var(--false-soft); }
+.row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.icon, .action { display: flex; flex: none; color: var(--ink-faint); }
+.text { display: grid; min-width: 0; flex: 1; gap: var(--space-1); }
+.title { overflow-wrap: anywhere; }
+.text small { color: var(--ink-soft); font-size: var(--text-xs); overflow-wrap: anywhere; }

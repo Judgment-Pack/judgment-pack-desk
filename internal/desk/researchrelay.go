@@ -242,9 +242,6 @@ func (s *Server) handleResearchRelay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), researchDeadline)
-	defer cancel()
-	r = r.WithContext(ctx)
 	deadline := time.Now().Add(researchDeadline)
 	controller := http.NewResponseController(w)
 
@@ -264,6 +261,11 @@ func (s *Server) handleResearchRelay(w http.ResponseWriter, r *http.Request) {
 			"the request body could not be read, and nothing was sent")
 		return
 	}
+	budget, idle := researchRequestTiming(gateway.managedLocal, suffix, body)
+	deadline = time.Now().Add(budget)
+	ctx, cancel := context.WithDeadline(r.Context(), deadline)
+	defer cancel()
+	r = r.WithContext(ctx)
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	r.ContentLength = int64(len(body))
 	r.TransferEncoding = nil
@@ -282,7 +284,7 @@ func (s *Server) handleResearchRelay(w http.ResponseWriter, r *http.Request) {
 			}
 			out.Header = carried
 		},
-		Transport:     beforeTheFirstByte{inner: relayTransport, cancel: cancel, idle: researchIdle},
+		Transport:     beforeTheFirstByte{inner: relayTransport, cancel: cancel, idle: idle},
 		FlushInterval: -1,
 		ModifyResponse: func(response *http.Response) error {
 			status = response.StatusCode
@@ -299,7 +301,7 @@ func (s *Server) handleResearchRelay(w http.ResponseWriter, r *http.Request) {
 			}
 			response.Header = kept
 			response.Trailer = nil
-			response.Body = boundedByIdleFor(response.Body, cancel, researchIdle)
+			response.Body = boundedByIdleFor(response.Body, cancel, idle)
 			return nil
 		},
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
@@ -319,8 +321,22 @@ func (s *Server) handleResearchRelay(w http.ResponseWriter, r *http.Request) {
 		ResponseWriter: w,
 		controller:     controller,
 		until:          deadline,
-		idle:           researchIdle,
+		idle:           idle,
 	}, r)
 	withoutTrailers(w.Header())
 	s.log.Printf("desk: research relay %s %s answered %d", suffix, loggableOrigin(gateway.url), status)
+}
+
+// Managed search needs a longer envelope. The adapter still enforces the
+// connection's own deadline; this is headroom to return its result.
+func researchRequestTiming(local bool, suffix string, body []byte) (time.Duration, time.Duration) {
+	if local && suffix == "acquire" {
+		var request struct {
+			Source string `json:"source"`
+		}
+		if json.Unmarshal(body, &request) == nil && request.Source == "web-search" {
+			return 140 * time.Second, 135 * time.Second
+		}
+	}
+	return researchDeadline, researchIdle
 }

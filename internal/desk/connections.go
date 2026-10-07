@@ -221,7 +221,11 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 		bundle = s.localGateway.bundle
 		directory = filepath.Join(s.assistant.dir, "gateway-connections")
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 55*time.Second)
+	timeout := 55 * time.Second
+	if provider == "web-search" && method == "test" {
+		timeout = 130 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 	var out json.RawMessage
 	if method == "catalog" {

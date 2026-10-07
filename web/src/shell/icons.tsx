@@ -13,6 +13,7 @@
  * A tooltip is a hint; the label is the name.
  */
 import type { ReactNode } from 'react'
+import { glyphPaths, glyphProps } from './glyph'
 
 export function IconPreview() {
   return <Glyph><path d="M1 8s2.5-4.5 7-4.5S15 8 15 8s-2.5 4.5-7 4.5S1 8 1 8Z" /><circle cx="8" cy="8" r="2" /></Glyph>
@@ -20,18 +21,7 @@ export function IconPreview() {
 
 function Glyph({ children }: { children: ReactNode }) {
   return (
-    <svg
-      width={16}
-      height={16}
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.75}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      focusable={false}
-    >
+    <svg {...glyphProps}>
       {children}
     </svg>
   )
@@ -77,7 +67,7 @@ export function IconChevronLeft() {
 export function IconChevronRight() {
   return (
     <Glyph>
-      <path d="M6 3.5 10.5 8 6 12.5" />
+      <path d={glyphPaths.right} />
     </Glyph>
   )
 }
@@ -85,7 +75,7 @@ export function IconChevronRight() {
 export function IconChevronDown() {
   return (
     <Glyph>
-      <path d="M3.5 6 8 10.5 12.5 6" />
+      <path d={glyphPaths.down} />
     </Glyph>
   )
 }
@@ -93,7 +83,7 @@ export function IconChevronDown() {
 export function IconChevronUp() {
   return (
     <Glyph>
-      <path d="M3.5 10 8 5.5 12.5 10" />
+      <path d={glyphPaths.up} />
     </Glyph>
   )
 }
@@ -189,7 +179,7 @@ export function IconPanelBottom() {
 export function IconClose() {
   return (
     <Glyph>
-      <path d="M4 4l8 8M12 4l-8 8" />
+      <path d={glyphPaths.close} />
     </Glyph>
   )
 }
