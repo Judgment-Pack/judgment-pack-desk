@@ -3935,5 +3935,6 @@
   "Save or discard changes in Connections before editing desk preferences.": "Save or discard changes in Connections before editing desk preferences.",
   "Connections are shared on this computer. Each desk chooses which connections and models to use.": "Connections are shared on this computer. Each desk chooses which connections and models to use.",
   "Save or discard changes in Assistant before editing shared AI settings.": "Save or discard changes in Assistant before editing shared AI settings.",
-  "Model preferences for this desk": "Model preferences for this desk"
+  "Model preferences for this desk": "Model preferences for this desk",
+  "An AI connection's name must be 1 to 128 characters, with no leading or trailing spaces and no control characters.": "An AI connection's name must be 1 to 128 characters, with no leading or trailing spaces and no control characters."
 }

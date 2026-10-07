@@ -119,3 +119,15 @@ it('an already cancelled run never opens a socket', async () => {
   await expect(bindAgentRun('model')(request, { ...callbacks(), signal: controller.signal })).rejects.toMatchObject({ name: 'RunCancelled' })
   expect(Socket.opened).toHaveLength(0)
 })
+
+it('names the AI connection and its revision in the run socket address, and nothing else of its own', async () => {
+  const target = { connectionId: 'ai-' + '1'.repeat(24), connectionRevision: 'd'.repeat(64) }
+  const controller = new AbortController()
+  const run = bindAgentRun('model', target)(request, { ...callbacks(), signal: controller.signal })
+  await vi.waitFor(() => expect(Socket.opened).toHaveLength(1))
+  const url = Socket.opened[0]!.url
+  expect(url.searchParams.get('connection')).toBe(target.connectionId)
+  expect(url.searchParams.get('revision')).toBe(target.connectionRevision)
+  controller.abort()
+  await expect(run).rejects.toBeTruthy()
+})

@@ -1,8 +1,10 @@
 package desk
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 )
@@ -144,13 +146,56 @@ func profileAPIModelAllowed(kind, suffix string, body []byte, models []string) b
 		id, method, ok := strings.Cut(strings.TrimPrefix(suffix, prefix), ":")
 		return ok && contains([]string{"generateContent", "streamGenerateContent", "countTokens"}, method) && contains(models, id)
 	}
-	var input struct {
-		Model string `json:"model"`
+	model, ok := topLevelModel(body)
+	return ok && contains(models, model)
+}
+
+// topLevelModel is a request's one top-level `model` member, read the way a
+// provider reads it: by its exact name. A second member whose name is
+// `model` in any case is refused rather than chosen between, because Go's
+// decoder matches names without case and keeps the last, and a provider that
+// reads the exact name, or the first, would run a model nobody allowed.
+func topLevelModel(body []byte) (string, bool) {
+	d := json.NewDecoder(bytes.NewReader(body))
+	if t, err := d.Token(); err != nil || t != json.Delim('{') {
+		return "", false
 	}
-	if json.Unmarshal(body, &input) != nil {
-		return false
+	var model json.RawMessage
+	found := 0
+	for d.More() {
+		t, err := d.Token()
+		key, ok := t.(string)
+		if err != nil || !ok {
+			return "", false
+		}
+		var value json.RawMessage
+		if d.Decode(&value) != nil {
+			return "", false
+		}
+		if strings.EqualFold(key, "model") {
+			found++
+			if key != "model" {
+				return "", false
+			}
+			model = value
+		}
 	}
-	return contains(models, input.Model)
+	// One whole object and nothing after it: the bytes the provider is sent
+	// are the bytes read here.
+	if t, err := d.Token(); err != nil || t != json.Delim('}') {
+		return "", false
+	}
+	if _, err := d.Token(); err != io.EOF {
+		return "", false
+	}
+	if found != 1 {
+		return "", false
+	}
+	var id string
+	if json.Unmarshal(model, &id) != nil {
+		return "", false
+	}
+	return id, true
 }
 
 func decodeAssistantProfileV2(data []byte, value map[string]any) (*assistantProfile, error) {

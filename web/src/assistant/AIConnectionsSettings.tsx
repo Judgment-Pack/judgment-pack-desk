@@ -20,6 +20,9 @@ import { useProviderStatus } from './providers'
 import { AI_CONNECTIONS_KEY, AIConnectionScope, writeAIRegistry, type AIConnection, type AIRegistry } from './aiConnections'
 import styles from './AIConnectionsSettings.module.css'
 
+/** Counted in characters (code points), as the desk counts it: a name the page takes is one the desk takes. */
+export const AI_CONNECTION_NAME_SAYS=sourceMessage("An AI connection's name must be 1 to 128 characters, with no leading or trailing spaces and no control characters.")
+export const aiConnectionNameTooLong=(name:string)=>[...name.trim()].length>128
 export const aiProviderLabel=(c:AIConnection)=>c.assistant.engine==='codex'?'ChatGPT subscription':c.assistant.endpoint?.kind==='anthropic'?'Anthropic API':c.assistant.endpoint?.kind==='gemini'?'Google Gemini API':'OpenAI-compatible API'
 function Status({connection:c}:{connection:AIConnection}) {
  const native=c.assistant.engine==='codex',account=useProviderStatus(c.enabled&&native,c.id),key=useAssistantKey(c.enabled&&!native,c.id,c.revision)
@@ -78,10 +81,10 @@ export function AIConnectionsSettings({unavailable,onDirtyChange}:{unavailable:b
   <Disclosure title={msg('Advanced settings')}><p className={styles.meta}>{msg('Connection settings are stored on this computer.')}</p><code className={styles.meta}>{registry.path}</code><p className={styles.meta}>{msg('API keys and account credentials are stored separately and are never included in project files.')}</p></Disclosure>
   {save.error&&!adding&&!rename&&<p role="alert">{save.error.message}</p>}
   <Dialog open={adding||!!rename} onOpenChange={open=>{if(!save.isPending&&!open){setAdding(false);setRename(null)}}} title={msg(rename?sourceMessage('Rename connection'):sourceMessage('Add AI connection'))}>
-   <FieldGroup><Field label={msg('Name')}>{w=><Input {...w} value={name} maxLength={128} autoFocus placeholder={msg('For example, Anthropic — Work')} onChange={e=>setName(e.target.value)}/>}</Field>
+   <FieldGroup><Field label={msg('Name')} error={aiConnectionNameTooLong(name)?msg(AI_CONNECTION_NAME_SAYS):undefined}>{w=><Input {...w} value={name} autoFocus placeholder={msg('For example, Anthropic — Work')} onChange={e=>setName(e.target.value)}/>}</Field>
    {adding&&<Field label={msg('Provider')}>{w=><Select {...w} value={provider} onValueChange={setProvider} options={[{value:'codex',label:msg('ChatGPT subscription')},{value:'openai-compatible',label:msg('OpenAI-compatible API')},{value:'anthropic',label:msg('Anthropic API')},{value:'gemini',label:msg('Google Gemini API')}]}/>}</Field>}</FieldGroup>
    {save.error&&<p role="alert">{save.error.message}</p>}
-   <DialogActions><Button variant="quiet" disabled={save.isPending} onClick={()=>{setAdding(false);setRename(null)}}>{msg('Cancel')}</Button><Button disabled={busy||!name.trim()} onClick={()=>rename&&snapshot?save.mutate({base:snapshot,connections:snapshot.connections.map(c=>c.id===rename.id?{...c,name:name.trim()}:c)}):create()}>{msg(save.isPending?'Saving…':rename?sourceMessage('Save name'):'Add connection')}</Button></DialogActions>
+   <DialogActions><Button variant="quiet" disabled={save.isPending} onClick={()=>{setAdding(false);setRename(null)}}>{msg('Cancel')}</Button><Button disabled={busy||!name.trim()||aiConnectionNameTooLong(name)} onClick={()=>rename&&snapshot?save.mutate({base:snapshot,connections:snapshot.connections.map(c=>c.id===rename.id?{...c,name:name.trim()}:c)}):create()}>{msg(save.isPending?'Saving…':rename?sourceMessage('Save name'):'Add connection')}</Button></DialogActions>
   </Dialog>
  </div>
 }

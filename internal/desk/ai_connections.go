@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/Judgment-Pack/judgment-pack-desk/internal/codexbridge"
 )
@@ -124,8 +125,11 @@ func decodeAIRegistry(data []byte) (aiRegistry, error) {
 	defaultFound := value.DefaultConnection == ""
 	for i := range value.Connections {
 		c := &value.Connections[i]
-		if !aiIDPattern.MatchString(c.ID) || seen[c.ID] || c.Name == "" || strings.TrimSpace(c.Name) != c.Name || len(c.Name) > 128 || strings.IndexFunc(c.Name, isControl) >= 0 {
+		if !aiIDPattern.MatchString(c.ID) || seen[c.ID] {
 			return fail()
+		}
+		if problem := aiConnectionNameProblem(c.Name); problem != "" {
+			return value, errors.New(problem)
 		}
 		seen[c.ID] = true
 		raw, _ := json.Marshal(c.Assistant)
@@ -162,6 +166,21 @@ func encodeAIRegistry(value aiRegistry) ([]byte, error) {
 		return nil, errors.New("AI connections exceed the size limit once written; nothing was written.")
 	}
 	return written, nil
+}
+
+// maxAIConnectionName is the longest name a connection takes, counted in
+// characters (code points) here and on the page alike, so a name the page
+// accepts is never one this desk refuses for its bytes.
+const maxAIConnectionName = 128
+
+const aiConnectionNameSays = "An AI connection's name must be 1 to 128 characters, with no leading or trailing spaces and no control characters."
+
+func aiConnectionNameProblem(name string) string {
+	if name == "" || strings.TrimSpace(name) != name || strings.IndexFunc(name, isControl) >= 0 ||
+		utf8.RuneCountInString(name) > maxAIConnectionName {
+		return aiConnectionNameSays
+	}
+	return ""
 }
 
 func aiRevision(c aiConnection) string {
@@ -261,23 +280,55 @@ func (s *Server) handleAIConnections(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, 400, CodeBadRequest, "If-Match is required. Reload connections before saving.")
 		return
 	}
-	s.writes.Lock()
-	defer s.writes.Unlock()
-	current, err := s.readAIRegistry()
-	if err != nil {
-		writeJSONCoded(w, 409, CodeAssistantUnconfigured, err.Error())
+	// **Decided under the lock, written after it.** `s.writes` is shared by
+	// every desk on this Desk, and an answer of up to a mebibyte written to a
+	// slow reader would hold every other desk's writes for as long as that
+	// reader takes. The lock covers the compare and the commit and nothing
+	// else, and is released however they end.
+	answer := func() aiRegistryAnswer {
+		s.writes.Lock()
+		defer s.writes.Unlock()
+		return s.saveAIRegistryLocked(expected, next)
+	}()
+	answer.write(w)
+}
+
+// aiRegistryAnswer is a registry save's status and body, decided under the
+// writes lock and written after it is released.
+type aiRegistryAnswer struct {
+	status  int
+	code    string
+	message string
+	reply   *aiRegistryReply
+}
+
+func (a aiRegistryAnswer) write(w http.ResponseWriter) {
+	if a.reply != nil {
+		writeJSON(w, a.status, a.reply)
 		return
 	}
+	writeJSONCoded(w, a.status, a.code, a.message)
+}
+
+func refusedSave(status int, code, message string) aiRegistryAnswer {
+	return aiRegistryAnswer{status: status, code: code, message: message}
+}
+
+// saveAIRegistryLocked is the compare-and-commit of one registry save. The
+// caller holds `s.writes`.
+func (s *Server) saveAIRegistryLocked(expected string, next aiRegistry) aiRegistryAnswer {
+	current, err := s.readAIRegistry()
+	if err != nil {
+		return refusedSave(409, CodeAssistantUnconfigured, err.Error())
+	}
 	if current.SHA256 != expected {
-		writeJSONCoded(w, 409, CodeDeskConfigChanged, "AI connections changed. Reload before saving; your edits were not written.")
-		return
+		return refusedSave(409, CodeDeskConfigChanged, "AI connections changed. Reload before saving; your edits were not written.")
 	}
 	// A connection's authentication method is identity, not an editable default.
 	for _, old := range current.Connections {
 		for _, c := range next.Connections {
 			if c.ID == old.ID && c.Assistant.Engine != old.Assistant.Engine {
-				writeJSONCoded(w, 422, CodeDeskConfigRefused, "Add a new connection to use a different connection method.")
-				return
+				return refusedSave(422, CodeDeskConfigRefused, "Add a new connection to use a different connection method.")
 			}
 		}
 	}
@@ -286,8 +337,7 @@ func (s *Server) handleAIConnections(w http.ResponseWriter, r *http.Request) {
 	}
 	written, err := encodeAIRegistry(next)
 	if err != nil {
-		writeJSONCoded(w, 413, CodeTooLarge, err.Error())
-		return
+		return refusedSave(413, CodeTooLarge, err.Error())
 	}
 	err = s.assistant.writeConfigNamed(aiConnectionsFile, written, func() error {
 		now, e := s.readAIRegistry()
@@ -300,8 +350,7 @@ func (s *Server) handleAIConnections(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 	if err != nil {
-		writeJSONCoded(w, 409, CodeDeskConfigChanged, err.Error())
-		return
+		return refusedSave(409, CodeDeskConfigChanged, err.Error())
 	}
 	afterAIRegistryWrite(filepath.Join(s.configDir, aiConnectionsFile))
 	// **Read back and held to what was written.** The answer is the registry
@@ -310,15 +359,14 @@ func (s *Server) handleAIConnections(w http.ResponseWriter, r *http.Request) {
 	// not reported as this save.
 	answer, err := s.readAIRegistry()
 	if err != nil {
-		writeJSONCoded(w, 500, CodeInternal, "Connections were saved but could not be reloaded.")
-		return
+		return refusedSave(500, CodeInternal, "Connections were saved but could not be reloaded.")
 	}
 	if answer.SHA256 != digestOf(written) {
-		writeJSONCoded(w, 409, CodeDeskConfigChanged, "AI connections changed after saving. Reload before continuing.")
-		return
+		return refusedSave(409, CodeDeskConfigChanged, "AI connections changed after saving. Reload before continuing.")
 	}
-	writeJSON(w, 200, answer)
+	return aiRegistryAnswer{status: 200, reply: &answer}
 }
+
 func (s *Server) selectedAIConnection(r *http.Request, enforceDesk bool) (*aiConnection, error) {
 	id := r.Header.Get(aiConnectionHeader)
 	if id == "" {

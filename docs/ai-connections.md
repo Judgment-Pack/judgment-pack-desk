@@ -9,9 +9,14 @@ removal action in the UI.
 
 Admin > Assistant controls the current desk. A desk may inherit the shared
 connection/default-model choices or select its own enabled connections, default
-connection, and model/reasoning preferences. Shared connection model lists are
-defaults; a desk's explicit list determines its allowed models. A native account's
-advertised model catalog and reasoning capabilities still apply.
+connection, and model/reasoning preferences. The desk's connections narrow the
+shared ones: only a connection that exists and is enabled on this computer can be
+enabled in a desk. Its model lists do not narrow: shared connection model lists are
+defaults, and a desk's explicit list for a connection replaces that default for the
+desk, and may name any model the provider offers (the picker offers the account's
+whole catalog). The relay and the run socket then admit only the models on
+whichever list applies. A native account's advertised model catalog and reasoning
+capabilities still apply.
 
 The composer selects a connection and model together. Chats retain that selection
 across changes to shared defaults. Switching a connection resets that chat's
@@ -55,7 +60,7 @@ disabled IDs require choosing an available connection in Assistant settings.
 Registry updates use a digest precondition and the existing atomic custody writer.
 Concurrent edits fail explicitly instead of overwriting another connection.
 Inference requests carry a connection ID and revision. The relay resolves that
-connection's endpoint and credential, enforces the desk's connection/model list,
+connection's endpoint and credential, enforces the desk's connections and the model list that applies,
 and removes internal selectors before contacting the provider. Changing the
 shared default does not retarget an already bound request. Changed revisions,
 removed connections, and disabled connections fail explicitly.

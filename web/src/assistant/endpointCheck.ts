@@ -141,7 +141,9 @@ export function useEndpointCheck(draft: EndpointDraft, saved: AssistantEndpointC
       if (done && inFlight.current === mine) inFlight.current = undefined
       return done
     }
-    void probeAssistantEndpoint().then(
+    // The probe names the connection it asks about, as the listing below does:
+    // once AI connections exist, the desk refuses a probe that names none.
+    void probeAssistantEndpoint(undefined, scope?.connection.id, scope?.connection.revision).then(
       (result) => landed((previous) => ({ ...previous, probe: result })),
       (cause: unknown) =>
         landed((previous) => ({ ...previous, probeRefusal: said(cause) }))

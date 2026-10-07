@@ -8,6 +8,7 @@ import { effectiveConfig } from '../config/deskConfig'
 import { testQueryClient } from '../testing/harness'
 import { AI_CONNECTIONS_KEY, connectionAssistant, deskAIConnections, resolveAIConnection, type AIRegistry, type AIConnection } from './aiConnections'
 import { AIConnectionsSettings } from './AIConnectionsSettings'
+import { probeAssistantEndpoint, readAssistantKey, removeAssistantKey, storeAssistantKey } from './client'
 import { DeskAISettings } from './DeskAISettings'
 import { useAssistantSlot } from './useAssistantSlot'
 import { ModelControl } from '../chat/ModelControl'
@@ -91,4 +92,23 @@ it('retains response connection attribution and leaves older replies unattribute
  const base={state:{...INITIAL_STATE,turns:[{id:'first',role:'assistant',kind:'message',text:'Reply',at:'2026-10-06T10:00:00Z',target:{connectionId:alpha,connectionName:'Work',model:'same-model'}},{id:'old',role:'assistant',kind:'message',text:'Older reply',at:'2026-10-05T10:00:00Z'}]},sources:[]}
  const decoded=decodeCheckpoint(base);expect(decoded.state.turns[0]?.target).toEqual(base.state.turns[0]!.target);expect(decoded.state.turns[1]?.target).toBeUndefined()
  expect(()=>decodeCheckpoint({...base,state:{...base.state,turns:[{...base.state.turns[0],target:{connectionId:'../../bad',connectionName:'Bad',model:'same-model'}}]}})).toThrow()
+})
+
+it('names the AI connection and its revision on the key routes and the probe', async () => {
+ const seen:{url:string;headers:Headers}[]=[]
+ vi.stubGlobal('fetch',async(url:string,init:RequestInit={})=>{seen.push({url,headers:new Headers(init.headers)});return Response.json(url.includes('/probe')?{reachable:true,status:200,latencyMs:1,diagnostic:''}:{present:true,bound:true,fingerprint:'f',origin:'',kind:'',configuredOrigin:'',configuredKind:''})})
+ const revision='e'.repeat(64)
+ await readAssistantKey(undefined,alpha,revision);await storeAssistantKey('a-key-for-the-test',alpha,revision);await removeAssistantKey(alpha,revision);await probeAssistantEndpoint(undefined,alpha,revision)
+ expect(seen.map(row=>new URL(row.url,'http://desk.invalid').pathname)).toEqual(['/api/assistant/key','/api/assistant/key','/api/assistant/key','/api/assistant/probe'])
+ for(const row of seen){expect(row.headers.get('X-Assistant-Connection'),row.url).toBe(alpha);expect(row.headers.get('X-Assistant-Revision'),row.url).toBe(revision)}
+})
+it('counts a connection name in characters (not UTF-16 units or bytes), as the desk does, and offers no save past 128',async()=>{
+ setup(<AIConnectionsSettings unavailable={false}/>);await screen.findByText('Work')
+ fireEvent.click(screen.getByRole('button',{name:'Add connection'}))
+ const field=screen.getByRole('textbox',{name:'Name'})
+ const add=()=>screen.getAllByRole('button',{name:'Add connection'}).at(-1) as HTMLButtonElement
+ fireEvent.change(field,{target:{value:'é'.repeat(64)+'😀'.repeat(64)}});expect(add().disabled).toBe(false)
+ expect(screen.queryByText("An AI connection's name must be 1 to 128 characters, with no leading or trailing spaces and no control characters.")).toBeNull()
+ fireEvent.change(field,{target:{value:'é'.repeat(64)+'😀'.repeat(65)}});expect(add().disabled).toBe(true)
+ expect(screen.getByText("An AI connection's name must be 1 to 128 characters, with no leading or trailing spaces and no control characters.")).toBeTruthy()
 })

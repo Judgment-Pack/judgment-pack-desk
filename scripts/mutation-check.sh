@@ -5549,6 +5549,39 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "ai connections: a ChatGPT model id has no bound" internal/desk/assistant_agent.go \
     'strings.TrimSpace(id) != id || len(id) > 128 ||' \
     'strings.TrimSpace(id) != id ||'
+  # Review round 1 on #276: the registry's answer written after every desk's
+  # writes lock is released; a disabled ChatGPT connection, and a run or a
+  # relayed request naming no revision, refused; the model a request names
+  # read by its exact name only; a connection's name counted in characters.
+  mutate go "ai connections: the registry's answer is written under every desk's lock" "$AIC" \
+    '		s.writes.Lock()
+		defer s.writes.Unlock()
+		return s.saveAIRegistryLocked(expected, next)
+	}()
+	answer.write(w)' \
+    '		s.writes.Lock()
+		return s.saveAIRegistryLocked(expected, next)
+	}()
+	answer.write(w)
+	s.writes.Unlock()'
+  mutate go "ai connections: a disabled ChatGPT connection runs" "$AIC" \
+    '				if !c.Enabled {' \
+    '				if false {'
+  mutate go "ai connections: a run naming no revision is sent" "$AIC" \
+    '				if r.Header.Get(aiRevisionHeader) == "" {' \
+    '				if false {'
+  mutate go "ai connections: a relayed request naming no revision is sent" "$MR" \
+    'if r.Header.Get(aiRevisionHeader) == "" || !connection.Enabled ||' \
+    'if !connection.Enabled ||'
+  mutate go "ai connections: a model member in another case is read as the model" "$APR" \
+    '			if key != "model" {' \
+    '			if false {'
+  mutate go "ai connections: one of two model members is chosen" "$APR" \
+    '	if found != 1 {' \
+    '	if found == 0 {'
+  mutate go "ai connections: a connection's name is not counted in characters" "$AIC" \
+    '		utf8.RuneCountInString(name) > maxAIConnectionName {' \
+    '		len(name) > maxAIConnectionName && utf8.ValidString(name) {'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -13116,6 +13149,21 @@ export function assistantTransport(id: string): Transport {
   mutate web "ai connections: a reply's attribution names a connection that is not one" web/src/chat/checkpoint.ts \
     '||!validAIConnectionId(turn.target.connectionId)||' \
     '||'
+  # Review round 1 on #276: every request names its AI connection — the
+  # probe beside the listing, the key routes, the relay and the run socket —
+  # and a name the desk refuses is not offered for saving.
+  mutate web "ai connections: Test connection's probe names no connection" web/src/assistant/endpointCheck.ts \
+    '    void probeAssistantEndpoint(undefined, scope?.connection.id, scope?.connection.revision).then(' \
+    '    void probeAssistantEndpoint().then('
+  mutate web "ai connections: the page's requests name no connection" web/src/assistant/aiConnections.tsx \
+    "export const aiHeaders=(id?:string,revision?:string):Record<string,string>=>id?{'X-Assistant-Connection':id,...(revision?{'X-Assistant-Revision':revision}:{})}:{}" \
+    'export const aiHeaders=(_id?:string,_revision?:string):Record<string,string>=>({})'
+  mutate web "ai connections: the run socket names no connection" web/src/assistant/agentTransport.ts \
+    "  if(target?.connectionId){url.searchParams.set('connection',target.connectionId);if(target.connectionRevision)url.searchParams.set('revision',target.connectionRevision)}" \
+    ''
+  mutate web "ai connections: a name the desk refuses is offered for saving" web/src/assistant/AIConnectionsSettings.tsx \
+    'export const aiConnectionNameTooLong=(name:string)=>[...name.trim()].length>128' \
+    'export const aiConnectionNameTooLong=(name:string)=>name.trim().length>256'
 fi
 
 restore

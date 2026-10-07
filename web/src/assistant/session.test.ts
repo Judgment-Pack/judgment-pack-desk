@@ -49,6 +49,19 @@ describe('the model capability the desk binds', () => {
     expect(calls[0]!.init.credentials).toBe('omit')
   })
 
+  it('names the AI connection and its revision on a relayed call, in headers and never on the address', async () => {
+    const { calls } = recordingFetch()
+    const target = { connectionId: 'ai-' + '1'.repeat(24), connectionRevision: 'd'.repeat(64) }
+    await bindModelCall('openai-compatible', target)('chat/completions', { body: '{}' })
+    const headers = calls[0]!.init.headers as Record<string, string>
+    expect(headers['X-Assistant-Connection']).toBe(target.connectionId)
+    expect(headers['X-Assistant-Revision']).toBe(target.connectionRevision)
+    expect([...new URL(calls[0]!.url, 'http://desk.invalid').searchParams.entries()]).toEqual([])
+    // A call bound with no connection names none.
+    await bindModelCall('openai-compatible')('chat/completions', { body: '{}' })
+    expect(Object.keys(calls[1]!.init.headers as Record<string, string>)).not.toContain('X-Assistant-Connection')
+  })
+
   it('puts the Anthropic suffix after the same mount point', async () => {
     const { calls } = recordingFetch()
     await bindModelCall('openai-compatible')('v1/messages', { body: '{}' })
