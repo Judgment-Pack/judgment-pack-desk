@@ -505,9 +505,11 @@ func TestARepairIsAskedForInOneWay(t *testing.T) {
 		t.Errorf("a GET answered %d %s", status, data)
 	}
 
-	// **The bound, on both sides of it.** A confirmation one byte past
-	// repairConfirmLimit is refused before it is read, though every byte past
-	// the token is JSON's own white space; one at the bound is read.
+	// **The bound, on both sides of it.** A confirmation one byte past 4 KiB
+	// is refused before it is read, though every byte past the token is JSON's
+	// own white space; one at the bound is read. The bound is the test's own
+	// number: repairConfirmLimit would follow a change to itself.
+	const bound = 4 << 10
 	confirmation := `{"token":"` + token + `"}`
 	padded := func(size int) int {
 		t.Helper()
@@ -521,11 +523,11 @@ func TestARepairIsAskedForInOneWay(t *testing.T) {
 		response.Body.Close()
 		return response.StatusCode
 	}
-	if status := padded(repairConfirmLimit + 1); status != http.StatusBadRequest || r.rig.repairs(t) != 0 {
+	if status := padded(bound + 1); status != http.StatusBadRequest || r.rig.repairs(t) != 0 {
 		t.Errorf("a confirmation past the bound answered %d, and the runtime repaired %d times", status, r.rig.repairs(t))
 	}
 	lockFree(t, r.s)
-	if status := padded(repairConfirmLimit); status != http.StatusOK || r.rig.repairs(t) != 1 {
+	if status := padded(bound); status != http.StatusOK || r.rig.repairs(t) != 1 {
 		t.Errorf("a confirmation at the bound answered %d, and the runtime repaired %d times", status, r.rig.repairs(t))
 	}
 	lockFree(t, r.s)
