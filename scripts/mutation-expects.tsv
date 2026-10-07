@@ -851,6 +851,12 @@ go	verification export: refused version still forwarded	TestJobsRefusesAnyOtherV
 go	verification export: run read to the ordinary limit	TestJobsReadsAnExportUpToRunnersLimit
 go	verification export: version 6 forwarded	TestJobsRefusesAnyOtherVerificationVersion
 go	verification export: version forwarded on every route	TestJobsForwardsAJobsJournalWithItsCursorAlone,TestJobsForwardsVerificationVersionOnlyOnItsRoute,TestJobsReadsAnExportUpToRunnersLimit
+web	Create is offered against a listing that never answered	src/shell/CreatePackDialog.test.tsx
+web	a correction is applied after the run was stopped	src/research/run.test.ts
+web	a key held down saves once a frame	src/packs/edit/save.test.tsx
+web	a layout is written under the provisional key	src/shell/shellState.test.tsx
+web	a save that lands takes the last sentence with it	src/packs/edit/useDocumentBuffer.test.ts
+web	an unconfigured desk's drawer moves to the column's width	src/shell/narrowShell.test.tsx
 web	component versions: unconfigured Runner shown as Unknown	src/updates/Updates.test.tsx
 web	downloads: offered with no files	src/audit/trailDownloads.test.tsx
 web	gates help: the signatures paragraph is not said as written	src/routes/HelpAbout.test.tsx
@@ -859,6 +865,7 @@ web	jobs record client: the check after a confirmation follows every change to t
 web	jobs standing: Runner's reviewed field is not explained	src/jobs/ReleaseStanding.test.tsx
 web	jobs standing: the comparison is inverted	src/jobs/JobsView.test.tsx,src/jobs/ReleaseStanding.test.tsx,src/jobs/reviewedSet.desks.test.ts
 web	new desk notice: a notice that is not words is accepted	src/desks/DeskSwitcher.test.tsx
+web	opening the Inspector is a toggle	src/shell/shellState.test.tsx
 web	record: every query follows the project	src/audit/decisionRecord.test.tsx,src/audit/decisionRecordLifecycle.test.tsx
 web	record: not in Admin → Project	src/routes/AdminView.test.tsx
 web	review: a first lock's files are shown closed	src/packs/review/review.test.tsx
@@ -872,6 +879,8 @@ web	sign-in cancel: the first-connect hint shows beside the sign-in link	src/ass
 web	sign-in cancel: the progress line outlasts the login answer	src/assistant/AssistantSettings.test.tsx
 web	signing key: config read drops the member	src/config/queries.test.tsx,src/routes/HelpAbout.test.tsx
 web	tested releases: page never reads the policy	src/jobs/JobsView.test.tsx,src/jobs/ReleaseReadiness.test.tsx
+web	the base moves on a watcher refetch	src/packs/edit/useDocumentBuffer.test.ts
+web	the dialog can be dismissed mid-sequence	src/shell/CreatePackDialog.test.tsx
 web	the lock line states a verdict about the reviewed set	src/packs/edit/lockLine.test.tsx
 web	upgrade key: Admin → Project does not offer it	src/packs/upgrade/upgrade.test.tsx
 web	upgrade key: Admin → Project does not say why it is not offered	src/packs/upgrade/upgrade.test.tsx
