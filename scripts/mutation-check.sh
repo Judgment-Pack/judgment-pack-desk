@@ -4319,7 +4319,7 @@ func (b *cappedBuffer) exceeded() bool {'
 	} else if err := writePrivateData(handover, jobsChainName, data); err != nil {'
   mutate go "jobs record: Runner is not asked with its token" "$JR" \
     '	request.Header.Set("Authorization", "Bearer "+token)' \
-    '	request.Header.Set("Authorization", "Bearer ")'
+    '	request.Header.Set("Authorization", "Bearer "+token[:0])'
   mutate go "jobs record: a public key is passed" "$JR" \
     '	args := append(append([]string{"audit", "verify"}, jobsChain.source()...), "--format", "json")' \
     '	args := append(append([]string{"audit", "verify"}, jobsChain.source()...), "--format", "json", "--public-key", jobsChainCopy)'
@@ -4351,16 +4351,15 @@ func (b *cappedBuffer) exceeded() bool {'
 		writeJSON(w, http.StatusOK, jobsRecordAnswer{auditAnswer: auditAnswer{State: jobsStateNoRunner}})'
   mutate go "jobs record: Runner not running is an error" "$JR" \
     '	case errors.As(err, &stopped):
-		s.log.Printf("desk: Runner is not running, so its chain of runs was not checked: %v", err)
-		return jobsRecordAnswer{auditAnswer: auditAnswer{State: jobsStateNotRunning}, RunnerKey: s.jobs.keyStatus()}, nil
-' \
-    ''
+		s.log.Printf("desk: Runner is not running, so its chain of runs was not checked: %v", err)' \
+    '	case errors.As(err, &stopped) && false:
+		s.log.Printf("desk: Runner is not running, so its chain of runs was not checked: %v", err)'
   mutate go "jobs record: an older runtime is asked to check" "$JR" \
     '	if !slices.Contains(schema.supported, auditConfigVersion) {
 		return older, nil
 	}
 	s.handoverMu.Lock()' \
-    '	if false {
+    '	if !slices.Contains(schema.supported, auditConfigVersion) && false {
 		return older, nil
 	}
 	s.handoverMu.Lock()'
