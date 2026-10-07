@@ -361,6 +361,40 @@ func verifyTSA(t *testing.T, calls []string) []string {
 	return nil
 }
 
+// stampHold holds each stamp run at the moment before the runtime is asked,
+// until it is freed: started hears each run arrive there.
+type stampHold struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+// holdStampRuns holds the stamp runs of the servers of this test. The test
+// frees them in its cleanup, which runs before the server it made before
+// this closes, so that a test that stops early never leaves a run held
+// and a Close waiting for it.
+func holdStampRuns(t *testing.T) *stampHold {
+	t.Helper()
+	h := &stampHold{started: make(chan struct{}, 8), release: make(chan struct{})}
+	testHookStampRun = func() { h.started <- struct{}{}; <-h.release }
+	t.Cleanup(h.free)
+	return h
+}
+
+// free lets every held run, and every later one, go on.
+func (h *stampHold) free() { h.once.Do(func() { close(h.release) }) }
+
+// arrived waits for a run to arrive at the hold, and fails the test where
+// none does within the bound.
+func (h *stampHold) arrived(t *testing.T) {
+	t.Helper()
+	select {
+	case <-h.started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("no stamp run started")
+	}
+}
+
 /* The settings --------------------------------------------------------------- */
 
 // **Kept by Desk, outside the project, under the desk's name, and held to
@@ -982,18 +1016,17 @@ func stampingRunsAs(t *testing.T, rig *auditRig, fragment string) {
 // the decision record says a run is in progress; once it ends, one stamp was
 // asked for, and the turn is free.
 func TestOneStampRunAtATimePerDesk(t *testing.T) {
+	t.Cleanup(func() { testHookStampRun = nil })
 	w := fixStamping(t)
 	r := newStampRig(t)
 	r.chainIs(t, handoverTrail, 2)
 	r.stampsWith(t, 0, stampedAnswer(handoverTrail, 2))
 	r.set(t, r.proposal(nil))
-	started, release := make(chan struct{}), make(chan struct{})
-	testHookStampRun = func() { started <- struct{}{}; <-release }
-	t.Cleanup(func() { testHookStampRun = nil })
+	hold := holdStampRuns(t)
 	r.ran(t)
 	first := make(chan stampingAnswered, 1)
 	go func() { first <- stampingCall(t, r.ts, "/api/audit/stamping/stamp", "", map[string]any{}) }()
-	<-started
+	hold.arrived(t)
 	second := make(chan stampingAnswered, 1)
 	go func() { second <- stampingCall(t, r.ts, "/api/audit/stamping/stamp", "", map[string]any{}) }()
 	select {
@@ -1003,7 +1036,7 @@ func TestOneStampRunAtATimePerDesk(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Error("a second Stamp now waited for the first")
-		close(release)
+		hold.free()
 		<-second
 		<-first
 		t.FailNow()
@@ -1017,7 +1050,7 @@ func TestOneStampRunAtATimePerDesk(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Error("a wake waited for the run in progress")
-		close(release)
+		hold.free()
 		<-first
 		<-woke
 		t.FailNow()
@@ -1025,7 +1058,7 @@ func TestOneStampRunAtATimePerDesk(t *testing.T) {
 	if got := stampingOf(t, r.ts, ""); !got.Running {
 		t.Errorf("during a run the decision record says %+v", got)
 	}
-	close(release)
+	hold.free()
 	got := <-first
 	var run struct {
 		Run stampRun `json:"run"`
@@ -1096,26 +1129,27 @@ func TestStampNowIsTheOwnersRequest(t *testing.T) {
 // recorded, and Close returns only then. After it the loop is gone, and a
 // "Stamp now" starts nothing.
 func TestTheSchedulerStopsWithTheServer(t *testing.T) {
+	t.Cleanup(func() { testHookStampRun = nil })
 	w := fixStamping(t)
 	r := newStampRig(t)
 	r.chainIs(t, handoverTrail, 2)
 	r.stampsWith(t, 0, stampedAnswer(handoverTrail, 2))
 	r.set(t, r.proposal(nil))
-	started, release := make(chan struct{}), make(chan struct{})
-	testHookStampRun = func() { started <- struct{}{}; <-release }
-	t.Cleanup(func() { testHookStampRun = nil })
+	hold := holdStampRuns(t)
 	r.ran(t)
 	woke := make(chan bool, 1)
 	go func() { woke <- w.send(time.Minute) }()
-	<-started
+	hold.arrived(t)
 	closed := make(chan struct{})
 	go func() { r.s.Close(); close(closed) }()
+	// A Close that does not wait returns at once; one that waits is still
+	// waiting a second later.
 	select {
 	case <-closed:
 		t.Fatal("Close returned while a stamp was running")
-	default:
+	case <-time.After(time.Second):
 	}
-	close(release)
+	hold.free()
 	if !<-woke {
 		t.Error("the scheduler did not act on its wake")
 	}

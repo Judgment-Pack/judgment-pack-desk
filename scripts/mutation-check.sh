@@ -5188,7 +5188,7 @@ func (b *cappedBuffer) exceeded() bool {'
     'if len(p.Policies) > stampingMaxPolicies+1 {'
   mutate go 'stamping: a policy twice is kept' "$STP" \
     'if !checkPolicy(policy) || slices.Contains(p.Policies[:i], policy) {' \
-    'if !checkPolicy(policy) {'
+    'if !checkPolicy(policy) || i < 0 {'
   mutate go 'stamping: a policy of no form is kept' "$STP" \
     'var policyForm = regexp.MustCompile(`^(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*))+$`)' \
     'var policyForm = regexp.MustCompile(`.`)'
@@ -5215,7 +5215,7 @@ func (b *cappedBuffer) exceeded() bool {'
     '}{purpose, "", s.cfg.deskID, s.projectDir, proposal, current})'
   mutate go 'stamping: the token is not checked' "$STP" \
     'if !hmac.Equal([]byte(s.stampingToken(stampingSetPurpose, nonce, plan.digest(), currentDigest(raw, found))), []byte(token)) {' \
-    'if false {'
+    'if !hmac.Equal([]byte(s.stampingToken(stampingSetPurpose, nonce, plan.digest(), currentDigest(raw, found))), []byte(token)) && false {'
   mutate go 'stamping: a used token is not refused' "$STP" \
     '	nonce := token[:stampingNonceLength]
 	if s.stampingNonces[nonce] {
@@ -5236,7 +5236,7 @@ func (b *cappedBuffer) exceeded() bool {'
 		return &lockFailure{'
   mutate go 'stamping: the removal token is not checked' "$STP" \
     '	case !hmac.Equal([]byte(s.stampingToken(stampingRemovePurpose, nonce, "", currentDigest(raw, true))), []byte(token)):' \
-    '	case false:'
+    '	case !hmac.Equal([]byte(s.stampingToken(stampingRemovePurpose, nonce, "", currentDigest(raw, true))), []byte(token)) && false:'
   mutate go 'stamping: a cross-site request changes stamping' "$STP" \
     '	if r.Header.Get("Sec-Fetch-Site") == "cross-site" {' \
     '	if false {'
@@ -5278,11 +5278,13 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'stamping: the policies are not passed' "$STP" \
     '		inputs.args = append(inputs.args, "--tsa-policy", policy)
 ' \
-    ''
+    '		_ = policy
+'
   mutate go 'stamping: the lists are not passed' "$STP" \
     '		inputs.args = append(inputs.args, "--tsa-crls", s.stampingPath(name))
 ' \
-    ''
+    '		_ = name
+'
   mutate go 'stamping: a path that names another file is passed' "$STP" \
     'if err := stampingNames(settings.found[name], s.stampingPath(name)); err != nil {' \
     'if err := stampingNames(settings.found[name], s.stampingPath(name)); err != nil && name == "" {'
@@ -5298,7 +5300,7 @@ func (b *cappedBuffer) exceeded() bool {'
     ''
   mutate go 'stamping: the scheduler stamps whatever the head' "$STP" \
     'if known != nil && known.Identity == head.Identity && head.Sequence <= known.Sequence {' \
-    'if false {'
+    'if known != nil && false {'
   mutate go 'stamping: a trail moved aside is not stamped' "$STP" \
     'if known != nil && known.Identity == head.Identity && head.Sequence <= known.Sequence {' \
     'if known != nil && head.Sequence <= known.Sequence {'
@@ -5317,7 +5319,7 @@ func (b *cappedBuffer) exceeded() bool {'
     ''
   mutate go 'stamping: the scheduler stamps without an authority' "$STP" \
     'due := err == nil && found && !st.closed &&' \
-    'due := err == nil && !st.closed &&'
+    'due := err == nil && (found || !found) && !st.closed &&'
   mutate go 'stamping: a wake runs beside a run in progress' "$STP" \
     '	if !due || !st.turn.TryLock() {
 		return
@@ -5373,13 +5375,13 @@ func (b *cappedBuffer) exceeded() bool {'
     '(got.Status == "error" || got.Status == "unsupported"):'
   mutate go 'stamping: a checkpoint of no shape is read' "$STP" \
     'if !ok || got.Status == stampStamped' \
-    'if got.Status == stampStamped'
+    'if !ok && false || got.Status == stampStamped'
   mutate go 'stamping: a stamp with no time is read' "$STP" \
     'got.Status == stampStamped && !stamped || ' \
     ''
   mutate go 'stamping: stamped already with a time is read' "$STP" \
     ' || got.Status == stampAlready && !none {' \
-    ' {'
+    ' || got.Status == stampAlready && !none && false {'
   mutate go 'stamping: a time of no form is read' "$STP" \
     'if _, err := time.Parse(time.RFC3339Nano, at); err != nil {' \
     'if _, err := time.Parse(time.RFC3339Nano, at); err != nil && at == "" {'
