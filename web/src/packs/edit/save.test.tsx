@@ -52,6 +52,20 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+/**
+ * Long enough for a save the page started to have reached the chassis.
+ *
+ * A save is in the fetch within a few microtasks of the chord; one
+ * `Promise.resolve()` is not that, so a case asserting that nothing was
+ * written waited for less than a write takes and passed whether or not one
+ * was on its way.
+ */
+async function pastAWrite() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 200))
+  })
+}
+
 async function editable(): Promise<HTMLTextAreaElement> {
   const area = (await screen.findByLabelText("The document's bytes", undefined, FIRST_DRAW)) as HTMLTextAreaElement
   await waitFor(() => expect(area.readOnly).toBe(false))
@@ -456,8 +470,27 @@ describe('the keyboard, and the guard', () => {
     })
     answered.preventDefault()
     raw.dispatchEvent(answered)
-    await Promise.resolve()
+    await pastAWrite()
     expect(log.writes).toHaveLength(0)
+  })
+
+  it('takes a key held down for nothing, even with nothing in flight', async () => {
+    // The case above holds the first write open, so the save's own latch
+    // refuses the repeat whatever the key handler does. Here nothing is in
+    // flight: a repeat is the operating system saying the key is still down,
+    // and the handler is all that stands between it and a second save.
+    const log = chassis({ content: PACK_TEXT, sha256: PACK_DIGEST })
+    drawPack(served(PACK_TEXT), { path: JSON_MODE })
+    const raw = await editable()
+    fireEvent.change(raw, { target: { value: `${PACK_TEXT}\n` } })
+    await waitFor(() => expect(screen.getByText('unsaved')).toBeTruthy())
+    fireEvent.keyDown(raw, { key: 's', ctrlKey: true, repeat: true })
+    await pastAWrite()
+    expect(log.writes).toHaveLength(0)
+    expect(screen.getByText('unsaved')).toBeTruthy()
+    // The same chord pressed, not held, is a save.
+    fireEvent.keyDown(raw, { key: 's', ctrlKey: true })
+    await waitFor(() => expect(log.writes).toHaveLength(1))
   })
 
   it('does not discard on Escape', async () => {
