@@ -11,11 +11,14 @@ const agent={provider:'openai',authMethod:'subscription',model:'model',tools:['g
 const endpoint={url:'https://api.example.invalid/v1',kind:'openai-compatible',model:'api-model',models:['api-model'],tools:['validate']}
 const digest='a'.repeat(64)
 afterEach(()=>{cleanup();vi.unstubAllGlobals()})
-function setup(options:{connected?:boolean;enabled?:boolean;modelError?:boolean;model?:string|null;slotOnly?:boolean;tools?:string[];runtimeMissing?:boolean;holdLogin?:boolean;failLoginOnce?:boolean;alreadyConnected?:boolean}={}) {
+function setup(options:{connected?:boolean;enabled?:boolean;modelError?:boolean;model?:string|null;slotOnly?:boolean;tools?:string[];runtimeMissing?:boolean;holdLogin?:boolean;failLoginOnce?:boolean;alreadyConnected?:boolean;holdStatusAfterLogin?:boolean}={}) {
   let connected=options.connected??true
   let pending=false
   let prepared=!options.runtimeMissing, loginFailed=false
   let releaseLogin:()=>void=()=>{}
+  // #243: the first status refresh after a login answers is held until the test releases it or the page abandons it.
+  let loginAnswered=false, heldStatus:'none'|'waiting'|'done'='none'
+  let releaseStatus:()=>void=()=>{}
   const calls:{path:string;method:string;body:unknown}[]=[]
   const client=testQueryClient()
   const config=effectiveConfig(undefined,undefined,undefined,{path:'/private/desk.json',present:true,sha256:digest,decoded:decodeDeskConfig(JSON.stringify({deskConfigVersion:1,assistant:{engine:'codex',endpoint,thinking:'off',agent:{...agent,tools:options.tools??agent.tools,model:options.model===undefined?'model':options.model}}}),'desk')})
@@ -24,13 +27,20 @@ function setup(options:{connected?:boolean;enabled?:boolean;modelError?:boolean;
     calls.push({path,method,body})
     let value:unknown={},status=200
     if(path==='/api/model-providers')value={providers:[{id:'openai',authMethod:'subscription',agent:'codex',configured:options.enabled!==false,enabled:options.enabled!==false,engineReady:options.enabled!==false,requiredVersion:'codex-cli 0.157.1',availability:options.enabled===false?'disabled':'available',loginMethods:['browser','device']}]}
-    else if(path.endsWith('/status'))value={provider:'openai',authMethod:'subscription',agent:'codex',runtime:prepared?'available':'not-installed',account:connected?'connected':pending?'login-pending':'signed-out',...(pending?{login:{id:'attempt',state:'pending',expiresAt:new Date(Date.now()+60_000).toISOString()}}:{})}
+    else if(path.endsWith('/status')){
+      if(options.holdStatusAfterLogin&&loginAnswered&&heldStatus==='none'){
+        heldStatus='waiting'
+        try{await new Promise<void>((resolve,reject)=>{releaseStatus=resolve;init.signal?.addEventListener('abort',()=>reject(new DOMException('Canceled','AbortError')),{once:true})})}
+        finally{heldStatus='done'}
+      }
+      value={provider:'openai',authMethod:'subscription',agent:'codex',runtime:prepared?'available':'not-installed',account:connected?'connected':pending?'login-pending':'signed-out',...(pending?{login:{id:'attempt',state:'pending',expiresAt:new Date(Date.now()+60_000).toISOString()}}:{})}
+    }
     else if(path.endsWith('/models')) {value=options.modelError?{error:'provider-unavailable'}:{models:[{id:'model',name:'Account model',efforts:['medium','high'],defaultEffort:'medium'}]};if(options.modelError)status=503}
     else if(path.endsWith('/login')){
       if(options.holdLogin)await new Promise<void>((resolve,reject)=>{releaseLogin=resolve;init.signal?.addEventListener('abort',()=>reject(new DOMException('Canceled','AbortError')),{once:true})})
       if(options.failLoginOnce&&!loginFailed){loginFailed=true;return new Response(JSON.stringify({error:'runtime-install-failed'}),{status:503})}
       if(options.alreadyConnected){prepared=true;connected=true;return new Response(JSON.stringify({error:'already-connected'}),{status:409})}
-      prepared=true;pending=true;value={id:'attempt',method:'browser',url:'https://auth.openai.com/oauth/authorize?state=TRANSIENT_CHALLENGE',expiresAt:new Date(Date.now()+60_000).toISOString()}}
+      prepared=true;pending=true;loginAnswered=true;value={id:'attempt',method:'browser',url:'https://auth.openai.com/oauth/authorize?state=TRANSIENT_CHALLENGE',expiresAt:new Date(Date.now()+60_000).toISOString()}}
     else if(path.endsWith('/cancel'))pending=false
     else if(path.endsWith('/logout')){connected=false;pending=false}
     else if(path==='/api/assistant/key')value={present:false,fingerprint:'',origin:'',kind:'',bound:false,configuredOrigin:'',configuredKind:''}
@@ -40,7 +50,7 @@ function setup(options:{connected?:boolean;enabled?:boolean;modelError?:boolean;
   })
   function Reading(){const slot=useAssistantSlot();return <output>{assistantReady(slot)?'ready':slot.unusable??'not ready'}</output>}
   const view=render(<QueryClientProvider client={client}><DeskConfigFixture value={config}>{options.slotOnly?<Reading/>:<AssistantSettings unavailable={false}/>}</DeskConfigFixture></QueryClientProvider>)
-  return {calls,client,view,finishPreparation:()=>releaseLogin(),connect:()=>{connected=true;pending=false}}
+  return {calls,client,view,finishPreparation:()=>releaseLogin(),connect:()=>{connected=true;pending=false},statusHeld:()=>heldStatus==='waiting',releaseStatus:()=>releaseStatus()}
 }
 async function pick(label:string,option:string){const trigger=screen.getByRole('combobox',{name:label}) as HTMLButtonElement;await waitFor(()=>expect(trigger.disabled).toBe(false));fireEvent.click(trigger);fireEvent.click(await screen.findByRole('option',{name:option}))}
 
@@ -71,8 +81,8 @@ it('keeps a login challenge out of the query cache and cancels the owning attemp
  expect(link.getAttribute('href')).toContain('TRANSIENT_CHALLENGE')
  expect(JSON.stringify(client.getQueryCache().getAll().map(q=>q.state.data))).not.toContain('TRANSIENT_CHALLENGE')
  expect(calls.find(c=>c.path.endsWith('/login'))?.body).toEqual({method:'browser'})
- // The link is drawn when the login answers; the sign-in's own Cancel replaces the connection's only once the status refresh after it answers.
- fireEvent.click(await screen.findByRole('button',{name:'Cancel sign-in'}))
+ // The link and the sign-in's own Cancel are drawn from the same answer (#243).
+ fireEvent.click(screen.getByRole('button',{name:'Cancel sign-in'}))
  await waitFor(()=>expect(screen.queryByRole('link',{name:'Continue sign-in in your browser'})).toBeNull())
  expect(calls.find(c=>c.path.endsWith('/cancel'))?.body).toEqual({id:'attempt'})
 })
@@ -130,9 +140,34 @@ it('prepares on Connect, shows progress, and continues to sign-in without restar
  expect(screen.getByRole('button',{name:'Cancel'})).toBeTruthy()
  await act(async()=>state.finishPreparation())
  await screen.findByRole('link',{name:'Continue sign-in in your browser'})
- // The link is drawn when the login answers; the preparation's progress ends only once the status refresh after it answers.
- await waitFor(()=>expect(screen.queryByText('Preparing ChatGPT…')).toBeNull())
+ // The preparation's progress ends with the answer that draws the link (#243).
+ expect(screen.queryByText('Preparing ChatGPT…')).toBeNull()
  expect(state.calls.filter(c=>c.path.endsWith('/login'))).toHaveLength(1)
+})
+// #243: while the status refresh after a login is still out, the page had drawn the link beside the
+// connection's "Cancel" and its progress line; that "Cancel" ended the local state, sent no cancel
+// for the attempt, and left the link. The refresh is held here, so every assertion is inside it.
+it.each([
+ {runtimeMissing:false,progress:'Connecting to ChatGPT…'},
+ {runtimeMissing:true,progress:'Preparing ChatGPT…'}
+])('draws Cancel sign-in with the link and cancels the attempt while the status refresh after the login is out (runtime missing: $runtimeMissing)',async({runtimeMissing,progress})=>{
+ const state=setup({connected:false,model:null,runtimeMissing,holdStatusAfterLogin:true})
+ const connect=await screen.findByRole('button',{name:'Connect ChatGPT'})
+ await waitFor(()=>expect((connect as HTMLButtonElement).disabled).toBe(false));fireEvent.click(connect)
+ await screen.findByRole('link',{name:'Continue sign-in in your browser'})
+ await waitFor(()=>expect(state.statusHeld()).toBe(true))
+ expect(screen.queryByText(progress)).toBeNull()
+ expect(screen.queryByRole('button',{name:'Cancel'})).toBeNull()
+ expect(screen.queryByText('Desk prepares the connection automatically the first time you connect.')).toBeNull()
+ expect(screen.getByText('Waiting for sign-in…')).toBeTruthy()
+ const cancel=screen.getByRole('button',{name:'Cancel sign-in'}) as HTMLButtonElement
+ expect(cancel.disabled).toBe(false)
+ fireEvent.click(cancel)
+ await waitFor(()=>expect(state.calls.find(c=>c.path.endsWith('/cancel'))?.body).toEqual({id:'attempt'}))
+ await waitFor(()=>expect(screen.queryByRole('link',{name:'Continue sign-in in your browser'})).toBeNull())
+ await screen.findByRole('button',{name:'Connect ChatGPT'})
+ expect(screen.queryByRole('alert')).toBeNull()
+ state.releaseStatus()
 })
 it('allows canceling preparation without leaving an error or a sign-in link',async()=>{
  const state=setup({connected:false,model:null,runtimeMissing:true,holdLogin:true})

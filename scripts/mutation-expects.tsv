@@ -563,6 +563,9 @@ web	rotation client: a rotation to another sequence is taken	src/audit/rotateSig
 web	rotation page: offered where the chassis offers none	src/audit/rotateSigningKey.test.tsx
 web	run chain: not offered on the Jobs page	src/jobs/JobsIndex.test.tsx
 web	runner key: a malformed public key read	src/jobs/runnerKey.test.tsx
+web	sign-in cancel: Cancel sign-in is held until the status refresh	src/assistant/AssistantSettings.test.tsx
+web	sign-in cancel: the first-connect hint shows beside the sign-in link	src/assistant/AssistantSettings.test.tsx
+web	sign-in cancel: the progress line outlasts the login answer	src/assistant/AssistantSettings.test.tsx
 web	signing key: config read drops the member	src/config/queries.test.tsx,src/routes/HelpAbout.test.tsx
 web	tested releases: page never reads the policy	src/jobs/JobsView.test.tsx,src/jobs/ReleaseReadiness.test.tsx
 web	the lock line states a verdict about the reviewed set	src/packs/edit/lockLine.test.tsx

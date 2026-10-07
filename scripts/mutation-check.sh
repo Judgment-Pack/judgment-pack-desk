@@ -7657,6 +7657,22 @@ function usePacks() { useExampleListing(); return readPacks() }'
         check.run()
         onStored?.()'
 
+  # **A sign-in's link, its "Cancel sign-in" and the end of the progress line
+  # come from the login's one answer** (issue #243). The status refresh after
+  # the login only confirms it: while it ran, the connection's "Cancel" was
+  # still drawn beside the link, and a click on it sent no cancel for the
+  # attempt. Each row is caught inside that window, held open by the test.
+  ASET=web/src/assistant/AssistantSettings.tsx
+  mutate web 'sign-in cancel: the progress line outlasts the login answer' "$ASET" \
+    'setChallenge(answer);setBusy(false);setConnecting(false)' \
+    'setChallenge(answer);setBusy(false)'
+  mutate web 'sign-in cancel: Cancel sign-in is held until the status refresh' "$ASET" \
+    'setChallenge(answer);setBusy(false);setConnecting(false)' \
+    'setChallenge(answer);setConnecting(false)'
+  mutate web 'sign-in cancel: the first-connect hint shows beside the sign-in link' "$ASET" \
+    '{needsRuntime&&!connecting&&!pending&&<p' \
+    '{needsRuntime&&!connecting&&<p'
+
   # **The page must not compute the binding**, and it did: with the browser's
   # `URL`, which drops an explicit `:443` where Go's `url.Parse` keeps it. A
   # key stored for a host and a configuration naming the same host with its
