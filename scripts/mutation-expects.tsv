@@ -586,14 +586,22 @@ go	runner key: the runtime's refusal is taken for a read	TestEachStateARunnerKey
 go	runner key: the startup desk's key not named by its state directory	TestEachDesksRunnerIsNamedAKeyOfItsOwn
 go	runner key: what Runner answered with is not recorded	TestARunnerThatRefusesItsKeyStartsWithout,TestDesksStartSweepsBeforeItsRunnerTakesTheLock,TestEachDesksRunnerIsNamedAKeyOfItsOwn,TestTheRunnerKeyRouteIsGuardedAndAnswersEachDesk,TestTwoStartsNeverRemoveANamedKey,TestWhatRunnerSignsIsReportedOnlyOnceRunnerAnswers
 go	search and files: a configuration that could not be read is taken to declare nothing	TestProjectFilesHoldRecordsWhenTheConfigurationCannotBeRead
+go	search and files: a file that is the record by another path is written	TestProjectFilesHoldTheRecordUnderAnyPathThatReachesIt
 go	search and files: a file's read-only mode is not held	TestWriteRefusesAReadOnlyFile
 go	search and files: a read-only file is written over	TestProjectFilesCannotCreateRuntimeLock,TestProjectFilesHoldRecordsWhenTheConfigurationCannotBeRead,TestProjectFilesReadOnlyOutputs,TestWriteRefusesAReadOnlyFile
+go	search and files: a record's name is compared by its case	TestProjectFilesRefuseTheLockAndRecordsUnderAnotherCase,TestReadOnlyNamesAreComparedWithoutCase
+go	search and files: a request's deadline is counted from after its body is read	TestTheRelaysDeadlineCountsTheBodysRead
 go	search and files: an outside gateway is given search's envelope	TestSearchRelayBudgetOnlyExtendsManagedSearch
 go	search and files: any source is given search's envelope	TestSearchRelayBudgetOnlyExtendsManagedSearch
 go	search and files: every source is given search's longer envelope	TestLocalPlanSearchAllowsLongerEnvelopeWithoutExtendingOtherSources
-go	search and files: records in the declared directory are editable	TestProjectFilesReadOnlyOutputs
+go	search and files: records in the declared directory are editable	TestProjectFilesRefuseTheLockAndRecordsUnderAnotherCase,TestReadOnlyNamesAreComparedWithoutCase
 go	search and files: search's envelope is past its bound	TestLocalPlanSearchAllowsLongerEnvelopeWithoutExtendingOtherSources
-go	search and files: the runtime's lock is editable	TestProjectFilesCannotCreateRuntimeLock,TestProjectFilesReadOnlyOutputs
+go	search and files: the declared directory is compared by its case	TestProjectFilesRefuseTheLockAndRecordsUnderAnotherCase,TestReadOnlyNamesAreComparedWithoutCase
+go	search and files: the declared directory's records are not compared by identity	TestProjectFilesHoldTheRecordUnderAnyPathThatReachesIt
+go	search and files: the default audit directories are compared by their case	TestProjectFilesRefuseTheLockAndRecordsUnderAnotherCase,TestReadOnlyNamesAreComparedWithoutCase
+go	search and files: the lock's name is compared by its case	TestProjectFilesRefuseTheLockAndRecordsUnderAnotherCase,TestReadOnlyNamesAreComparedWithoutCase
+go	search and files: the relay's search envelope is decided as if no gateway were managed	TestTheRelayGivesOnlyManagedSearchItsLongerEnvelope
+go	search and files: the runtime's lock is editable	TestProjectFilesCannotCreateRuntimeLock
 go	signed desk: a failed generation's refusal names a path	TestAKeyTheRuntimeFailsToGenerateMakesNoDeskAndLeavesNoKey,TestNoPartOfTheKeysPathIsPassedOn
 go	signed desk: a manifest that fails leaves the key	TestAManifestThatCannotBeWrittenLeavesNoKey
 go	signed desk: a path jpack.json cannot name is used	TestASigningFolderJpackJSONCannotNameIsNotUsed
@@ -1667,6 +1675,7 @@ web	runner key: the words Desk passed on not said	src/jobs/runnerKey.test.tsx,sr
 web	runner key: why its runs are unsigned not said	src/jobs/runnerKey.test.tsx,src/routes/HelpAbout.test.tsx
 web	runner key: words that are not text read	src/jobs/runnerKey.test.tsx
 web	samePath stops folding altogether	src/packs/packPath.test.ts
+web	search and files: Ctrl/⌘ S saves a read-only file	src/routes/AuthorView.test.tsx
 web	search and files: a connection's timeout is not held to the advertised bounds	src/search/connections.test.ts
 web	search and files: a failed search's reply carries the gateway's words	src/search/tools.test.ts
 web	search and files: a failure code Desk did not author is kept on the step	src/search/failures.test.ts
@@ -1675,10 +1684,13 @@ web	search and files: a read-only file opens in an editable editor	src/routes/Au
 web	search and files: a search row takes its provider from the model's call	src/chat/messageOwnership.test.ts
 web	search and files: a search step names a provider that is not an identifier	src/search/step.test.ts
 web	search and files: a search step's reference is for another query	src/search/step.test.ts
+web	search and files: a stored default timeout is saved as the default's value	src/search/WebSearchSettings.test.tsx
 web	search and files: a timeout past its bounds is sent	src/search/WebSearchSettings.test.tsx
+web	search and files: a value from outside has every line ending made the file's	src/files/CodeEditor.test.tsx
 web	search and files: a word Desk uses for its own failures is taken from the adapter	src/search/failures.test.ts
 web	search and files: formatted JSON is held to the bound in characters, not bytes	src/files/formatJson.test.ts
 web	search and files: formatting re-encodes a token	src/files/formatJson.test.ts,src/routes/AuthorView.test.tsx
+web	search and files: one connection's timeout refuses the whole status	src/search/connections.test.ts
 web	search and files: saved history names a cause Desk did not author	src/search/failures.test.ts
 web	search and files: settings that could not be read are reported as a failed save	src/search/WebSearchSettings.test.tsx
 web	search and files: settings that could not be read let the first turn run	src/chat/ChatProvider.search.test.tsx
