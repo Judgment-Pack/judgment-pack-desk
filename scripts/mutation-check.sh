@@ -5298,11 +5298,12 @@ func (b *cappedBuffer) exceeded() bool {'
     'if report != nil && view.Passed {' \
     'if report != nil {'
   mutate go 'stamping: a check with roots tells the scheduler nothing' "$STP" \
-    '			s.stamping.knowStamped(&checkpointHead{Identity: report.Trail, Sequence: stamped.Through})
+    '			s.stamping.knowStamped(&known)
 ' \
-    ''
+    '			_ = known
+'
   mutate go 'stamping: the scheduler stamps whatever the head' "$STP" \
-    'if known != nil && known.Identity == head.Identity && head.Sequence == known.Sequence && (known.Digest == "" || known.Digest == head.Digest) {' \
+    'if known != nil && known.Identity == head.Identity && head.Sequence == known.Sequence && known.Digest != "" && known.Digest == head.Digest {' \
     'if known != nil && false {'
   mutate go 'stamping: a trail moved aside is not stamped' "$STP" \
     'if known != nil && known.Identity == head.Identity && head.Sequence == known.Sequence' \
@@ -5653,12 +5654,16 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'audit fix: the page is not given the trail'"'"'s identity' "$AFR" \
     'Trail string `json:"trail,omitempty"`' \
     'Trail string `json:"-"`'
-  mutate go 'audit fix: a head below the checkpoint stamped is not stamped' "$AFS" \
-    'head.Sequence == known.Sequence && (known.Digest' \
-    'head.Sequence <= known.Sequence && (known.Digest'
   mutate go 'audit fix: another record at the sequence stamped is not stamped' "$AFS" \
-    ' && (known.Digest == "" || known.Digest == head.Digest) {' \
+    ' && known.Digest != "" && known.Digest == head.Digest {' \
     ' {'
+  mutate go 'audit fix: a checkpoint known with no digest is taken for the head' "$AFS" \
+    'known.Digest != "" && known.Digest == head.Digest {' \
+    '(known.Digest == "" || known.Digest == head.Digest) {'
+  mutate go 'audit fix: a check with roots keeps no digest of the head' "$AFS" \
+    '				known.Digest = report.head.digest
+' \
+    ''
   mutate go 'audit fix: a run keeps no record digest' "$AFS" \
     'Sequence: checkpoint.sequence, Digest: checkpoint.digest}' \
     'Sequence: checkpoint.sequence}'

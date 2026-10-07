@@ -120,9 +120,10 @@ go	any name passes as the web source	TestSharedFixturesDecodeAsTheVerdictSays
 go	any object takes any member at all	TestARefusedFileSendsNothing,TestConfiguredEndpointRefusals,TestDeskConfigWriteRefusesWhatTheDecoderWouldRefuse,TestResearchRelayRefusesWithoutAGatewayAndSendsNothing,TestSharedFixturesDecodeAsTheVerdictSays
 go	any world-writable ancestor is admitted	TestARefusedStoreTouchesTheFilesystemNotAtAll,TestAnUnusableStoreLeavesTheRestOfTheDeskAlone,TestCustodyRefusesALooseAncestor,TestDeskConfigWriteRefusesWhereNoKeyCanBeKept,TestEveryCodeHasAStatusAndAWitness,TestRelayRefusesWhereNoKeyCanBeKept
 go	audit fix: a check that finds no stamp leaves what the scheduler knows	TestACheckWithRootsReplacesWhatTheSchedulerKnows
+go	audit fix: a check with roots keeps no digest of the head	TestACheckKeepsTheDigestOfTheHeadItFindsStamped,TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved
+go	audit fix: a checkpoint known with no digest is taken for the head	TestACheckWithRootsReplacesWhatTheSchedulerKnows
 go	audit fix: a count since a hand-over is given for another trail	TestTheRecordsSinceAHandOverAreTheReports
 go	audit fix: a count since a hand-over is of another record	TestTheRecordsSinceAHandOverAreTheReports
-go	audit fix: a head below the checkpoint stamped is not stamped	TestACheckWithRootsReplacesWhatTheSchedulerKnows
 go	audit fix: a repaired trail's lines are counted as records	TestTheRecordsPendingAStampAfterARepairAreTheReports,TestTheRecordsSinceAHandOverAreTheReports,TestWhatFollowsARecordIsCountedFromTheReport
 go	audit fix: a run keeps no record digest	TestAStampAnswerIsReadAsDocumented,TestTheSchedulerStampsATrailRestoredToAnEarlierPointAgain,TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved
 go	audit fix: a trail's unchained lines are counted as records	TestWhatFollowsARecordIsCountedFromTheReport

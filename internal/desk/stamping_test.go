@@ -36,6 +36,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -937,9 +938,10 @@ func TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved(t *testing.T) {
 		t.Errorf("at the interval, with the head moved, a wake ran %q", calls)
 	}
 
-	// A check with roots that shows the trail stamped through record 6.
+	// A check with roots that shows the trail stamped through record 6, its
+	// head, whose record digest the report names.
 	r.chainIs(t, handoverTrail, 6)
-	r.answers(t, 0, strings.Replace(strings.Replace(stampsReport, `"stamped":{"status":"through","through":2}`, `"stamped":{"status":"through","through":6}`, 1), `"lines":3,`, `"lines":6,`, 1))
+	r.answers(t, 0, headAt(strings.Replace(strings.Replace(stampsReport, `"stamped":{"status":"through","through":2}`, `"stamped":{"status":"through","through":6}`, 1), `"lines":3,`, `"lines":6,`, 1), 6))
 	if got := stampingOf(t, r.ts, ""); got.Pending == nil || *got.Pending != 0 {
 		t.Errorf("the check says %+v", got)
 	}
@@ -983,6 +985,13 @@ func TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved(t *testing.T) {
 	if after := stampingOf(t, r.ts, "").Last; after == nil || after.At != before.At || !sameRun(*after, *before) {
 		t.Errorf("with no chained record the last run became %+v", after)
 	}
+}
+
+// headAt is report, stampsReport's shape, with its head the stand-in's
+// checkpoint at sequence: the record digest the report names for it.
+func headAt(report string, sequence int) string {
+	return strings.Replace(report, `"recordDigest":"sha256:607b98c9595baaa5154fc08e58f3b452084a6fdcf06fe71e49a00fa06556d3e3","sequence":3`,
+		`"recordDigest":"`+standInDigest(sequence)+`","sequence":`+strconv.Itoa(sequence), 1)
 }
 
 // rewrittenAt is the stand-in's checkpoints of records 1 to n of trail, the
@@ -1067,10 +1076,10 @@ func TestTheSchedulerStampsATrailRestoredToAnEarlierPointAgain(t *testing.T) {
 // ask the runtime again, which answers that the checkpoint is stamped
 // already: nothing is asked of the authority, and the wake after asks
 // nothing. A check that finds no stamp covering a record leaves nothing
-// known: the next wake asks again. A check whose stamps reach record 5,
-// which names no record digest, and then the trail restored to record 4:
-// below the checkpoint known stamped, and stamped. The decision record's
-// report names the trail's identity to the page.
+// known: the next wake asks again. A check whose stamps reach record 5, which
+// is not the report's head, knows no record digest for it: another record at
+// record 5 is stamped (second review of #294). The decision record's report
+// names the trail's identity to the page.
 func TestACheckWithRootsReplacesWhatTheSchedulerKnows(t *testing.T) {
 	w := fixStamping(t)
 	r := newStampRig(t)
@@ -1118,12 +1127,49 @@ func TestACheckWithRootsReplacesWhatTheSchedulerKnows(t *testing.T) {
 	if got := stampingOf(t, r.ts, ""); !got.Passed {
 		t.Fatalf("the check was not given the roots: %+v", got)
 	}
-	r.chainIs(t, handoverTrail, 4)
-	r.stampsWith(t, 0, stampedAnswer(handoverTrail, 4))
+	r.rewrittenAt(t, handoverTrail, 5)
+	r.stampsWith(t, 0, strings.Replace(stampedAnswer(handoverTrail, 5), standInDigest(5), rewrittenDigest(5), 1))
 	r.ran(t)
 	w.at(t, 5*time.Hour+time.Minute)
 	if calls := r.ran(t); !slices.Equal(calls, stamps) {
-		t.Errorf("with the head below the checkpoint a check found stamped a wake ran %q", calls)
+		t.Errorf("with another record at the sequence a check found stamped, with no digest known, a wake ran %q", calls)
+	}
+}
+
+// **A check keeps the record digest of the head it found stamped** (second
+// review of #294). The scheduler stamps record 5; a check with roots finds
+// the trail stamped through record 5, its head, and the report names that
+// record's digest: the next wake asks nothing more. The trail is then
+// restored to an earlier point and written since, so another record sits at
+// record 5: never stamped, and the next wake stamps it.
+func TestACheckKeepsTheDigestOfTheHeadItFindsStamped(t *testing.T) {
+	w := fixStamping(t)
+	r := newStampRig(t)
+	r.set(t, r.proposal(nil))
+	r.chainIs(t, handoverTrail, 5)
+	r.stampsWith(t, 0, stampedAnswer(handoverTrail, 5))
+	r.ran(t)
+	stamps := []string{schemaCall, stampHeadCall, stampCall}
+	w.at(t, time.Minute)
+	if calls := r.ran(t); !slices.Equal(calls, stamps) {
+		t.Fatalf("the first wake ran %q", calls)
+	}
+	lower := strings.Replace(strings.Replace(stampsReport, `"lines":3,`, `"lines":5,`, 1), `"chained":3,`, `"chained":5,`, 1)
+	r.answers(t, 0, headAt(strings.Replace(lower, `"stamped":{"status":"through","through":2}`, `"stamped":{"status":"through","through":5}`, 1), 5))
+	if got := stampingOf(t, r.ts, ""); !got.Passed {
+		t.Fatalf("the check was not given the roots: %+v", got)
+	}
+	r.ran(t)
+	w.at(t, time.Hour+time.Minute)
+	if calls := r.ran(t); !slices.Equal(calls, []string{schemaCall, stampHeadCall}) {
+		t.Errorf("with the head the record a check found stamped a wake ran %q", calls)
+	}
+	r.rewrittenAt(t, handoverTrail, 5)
+	r.stampsWith(t, 0, strings.Replace(stampedAnswer(handoverTrail, 5), standInDigest(5), rewrittenDigest(5), 1))
+	r.ran(t)
+	w.at(t, 2*time.Hour+time.Minute)
+	if calls := r.ran(t); !slices.Equal(calls, stamps) {
+		t.Errorf("with another record at the sequence a check found stamped a wake ran %q", calls)
 	}
 }
 

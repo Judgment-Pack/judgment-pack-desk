@@ -66,8 +66,8 @@ package desk
 // once a minute, and where an authority is set and the interval has passed
 // since the last attempt, it makes one attempt: it asks the runtime where the
 // trail ends (`audit checkpoint --format json`), and only where the head is
-// not the last checkpoint known stamped, by trail, sequence and, where known,
-// record digest, runs
+// not the last checkpoint known stamped, by trail, sequence and record digest,
+// runs
 //
 //	jpack audit stamp --config jpack.json --tsa <address> --timeout 15s --format json
 //
@@ -83,9 +83,13 @@ package desk
 // with roots, which says how far the stamps it accepts reach, or that none
 // does. A head below it, or at its sequence with another record, is a trail
 // restored to an earlier prefix and written or repaired since: it is stamped
-// again. The runtime asks the authority nothing for a checkpoint stamped
-// already, so a replacement that lowers what is known costs one `audit
-// stamp`, never a stamp.
+// again. A check knows the record digest of the checkpoint it found stamped
+// only where that checkpoint is the report's head (`head`); elsewhere it
+// knows a trail and a sequence, and no head is taken for that checkpoint
+// without its digest (second review of #294). The runtime asks the authority
+// nothing for a checkpoint stamped already, so a replacement that lowers what
+// is known, or one with no digest, costs at most one `audit stamp` answering
+// `already-stamped`, never a stamp.
 //
 // **Off the decision path.** Nothing a deciding run does waits for it; while
 // Desk is not running, nothing is stamped and records stay pending. **A stop
@@ -805,7 +809,8 @@ type stampScheduler struct {
 	lastAttempt time.Time
 	// stamped is the last checkpoint known stamped, nil where none is: a
 	// run's answer, by trail, sequence and digest, or a check with roots, by
-	// trail and sequence, whichever came last (knowStamped).
+	// trail and sequence, and by digest where the checkpoint is the report's
+	// head, whichever came last (knowStamped).
 	stamped *checkpointHead
 	last    *stampRun
 	// said is the last problem with the settings written to Desk's log.
@@ -948,7 +953,7 @@ func (st *stampScheduler) wake() {
 // and the stamp, recorded as the last run. A scheduled attempt stamps only
 // where the head is not the last checkpoint known stamped: of another trail,
 // at another sequence, below it as well as past it, or at its sequence with
-// another record digest, where one is known. One the owner asked for always
+// another record digest, or with none known. One the owner asked for always
 // asks the runtime, whose answer for a checkpoint stamped already costs
 // nothing.
 //
@@ -981,8 +986,9 @@ func (st *stampScheduler) attempt(dir heldDir, settings stampingSettings, reques
 		st.mu.Lock()
 		known := st.stamped
 		st.mu.Unlock()
-		if known != nil && known.Identity == head.Identity && head.Sequence == known.Sequence && (known.Digest == "" || known.Digest == head.Digest) {
-			// The head is the last checkpoint known stamped.
+		if known != nil && known.Identity == head.Identity && head.Sequence == known.Sequence && known.Digest != "" && known.Digest == head.Digest {
+			// The head is the last checkpoint known stamped, by its record:
+			// a checkpoint known without its digest is never taken for it.
 			return stampRun{}
 		}
 	}
@@ -1204,7 +1210,14 @@ func (s *Server) stampingAfterVerify(view auditStamping, report *auditReport) *a
 		switch stamped := report.Coverage.Stamped; stamped.Status {
 		case "through":
 			view.Pending, view.PendingLines = countedAs(chainedAfter(report, stamped.Through))
-			s.stamping.knowStamped(&checkpointHead{Identity: report.Trail, Sequence: stamped.Through})
+			// The record digest is known only where the checkpoint stamped
+			// through is the report's head; elsewhere none is kept, and the
+			// next wake asks the runtime (second review of #294).
+			known := checkpointHead{Identity: report.Trail, Sequence: stamped.Through}
+			if report.head.trail == report.Trail && report.head.sequence == stamped.Through {
+				known.Digest = report.head.digest
+			}
+			s.stamping.knowStamped(&known)
 		case "none":
 			view.Pending, view.PendingLines = countedAs(chainedAfter(report, 0))
 			s.stamping.knowStamped(nil)

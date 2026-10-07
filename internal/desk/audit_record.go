@@ -204,6 +204,11 @@ type auditReport struct {
 	// checkpoint a stamp run named of this trail from one of another
 	// (Stamping.tsx; line audit, finding 5).
 	Trail string `json:"trail,omitempty"`
+	// head is the report's last chained record as the runtime names it,
+	// trail, sequence and record digest, where its member is a checkpoint of
+	// the runtime's shape; it is kept for the stamping scheduler, and the page
+	// is not given it.
+	head checkpointLine
 }
 
 // chainedAfter is how many chained records of report's trail follow the
@@ -1031,6 +1036,7 @@ type auditVerification struct {
 	Signatures           *wireAuditSignatures     `json:"signatures"`
 	Stamps               *wireAuditStamps         `json:"stamps"`
 	Trail                *string                  `json:"trail"`
+	Head                 json.RawMessage          `json:"head"`
 	Establishes          []string                 `json:"establishes"`
 	DoesNotEstablish     []string                 `json:"doesNotEstablish"`
 }
@@ -1208,6 +1214,9 @@ func (got auditVerification) report() (*auditReport, bool) {
 	}
 	if got.Trail != nil {
 		report.Trail = *got.Trail
+	}
+	if head, ok := readCheckpointLine(got.Head); ok {
+		report.head = head
 	}
 	for _, segment := range got.Segments {
 		report.Segments = append(report.Segments, auditSegment{FirstLine: p.count(segment.FirstLine), LastLine: p.count(segment.LastLine)})
