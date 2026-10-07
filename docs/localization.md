@@ -1,6 +1,6 @@
 # Desk localization
 
-The English catalogue and all 11 translated catalogues cover the current Desk UI messages. Translations were authored and reviewed directly, without sending UI text or project data to an external translation API. English remains the fallback for an unsupported system language or a translation bundle that cannot load. `npm --prefix web run i18n:check` rejects missing messages, invalid placeholders, and untranslated UI literals.
+The English catalogue and all 11 translated catalogues cover the current Desk UI messages. Translations were authored and reviewed directly, without sending UI text or project data to an external translation API. English remains the fallback for an unsupported system language or a translation bundle that cannot load. `npm --prefix web run i18n:check` rejects invalid placeholders, keys that `en.json` lacks, and untranslated UI literals, and warns about a message missing from a translated catalogue (English is shown); `--strict` makes that a failure, for the release's translation pull request.
 
 ## Language choice
 

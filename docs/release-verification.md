@@ -79,3 +79,11 @@ Older Desk bundles built their own components. Records from those bundles, sourc
 builds or explicit Runtime overrides still require the original binary; the
 published Runtime at the same version may have another digest. Retain original
 executables and records. This packaging change does not migrate them.
+
+## Translations in a release
+
+Feature pull requests add their messages to `web/src/i18n/locales/en.json` only;
+a message missing from another catalogue falls back to English, and
+`npm --prefix web run i18n:check` prints it as a warning. A release's checklist
+includes the translation pull request for that release, with
+`npm --prefix web run i18n:check -- --strict` (or `I18N_STRICT=1`) green.

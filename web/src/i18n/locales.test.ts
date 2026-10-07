@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import { i18n } from './index'
 import { assistantLanguageInstructions } from './assistantLanguage'
 import { LANGUAGES, matchLanguage, systemLanguage } from './locales'
 
@@ -26,5 +27,18 @@ describe('language negotiation', () => {
     expect(instructions).toContain('unless the user explicitly requests another language')
     expect(instructions).toContain('Never translate tool names, JSON/schema keys')
     expect(instructions).toContain('Do not change decision semantics or test expectations')
+  })
+})
+
+describe('English fallback for a key missing from a translated catalogue', () => {
+  afterEach(async () => { i18n.removeResourceBundle('de', 'translation'); await i18n.changeLanguage('en') })
+  it('renders the English text, with its placeholders filled, and the translation where one exists', async () => {
+    i18n.addResource('en', 'translation', 'fallback.only-english', 'English only: {{name}}')
+    i18n.addResource('en', 'translation', 'fallback.translated', 'English translated')
+    i18n.addResourceBundle('de', 'translation', { 'fallback.translated': 'Deutsch' })
+    await i18n.changeLanguage('de')
+    expect(i18n.t('fallback.only-english', { name: 'x' })).toBe('English only: x')
+    expect(i18n.t('fallback.translated')).toBe('Deutsch')
+    expect(i18n.options.fallbackLng).toEqual(['en'])
   })
 })

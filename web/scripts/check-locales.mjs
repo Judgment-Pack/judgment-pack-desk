@@ -66,6 +66,10 @@ if (process.argv.includes('--extract')) {
   process.exit(0)
 }
 const issues = []
+const warnings = []
+// A key missing from a translated catalogue falls back to English at run time, so it is a
+// warning; the release's translation PR runs with --strict (or I18N_STRICT=1) to require it.
+const strict = process.argv.includes('--strict') || process.env.I18N_STRICT === '1'
 if (untranslated.length) issues.push(`Untranslated UI literals:\n${untranslated.join('\n')}`)
 const tokens = value => ((value ?? '').match(/\{\{\w+\}\}|<\d+\/>/g) ?? []).sort().join('|')
 const sourceKeys = [...messages.keys()]
@@ -86,7 +90,11 @@ for (const file of fs.readdirSync(localeRoot).filter(file => file.endsWith('.jso
     ...sourceKeys.filter(key => catalogue[key] && tokens(catalogue[key]) !== tokens(prior[key])),
     ...pluralKeys.filter(([key, base]) => catalogue[key] && tokens(catalogue[key]) !== tokens(base)).map(([key]) => key)
   ])]
+  const known = new Set([...Object.keys(prior), ...pluralKeys.map(([key]) => key)])
+  const unknown = Object.keys(catalogue).filter(key => !known.has(key))
   console.log(`${file}: ${sourceKeys.length - missing.length}/${sourceKeys.length} translated; ${invalid.length} placeholder errors`)
-  if (missing.length || invalid.length) issues.push(`${file}: ${missing.length} missing, ${invalid.length} invalid`)
+  if (missing.length) (strict ? issues : warnings).push(`${file}: ${missing.length} missing (English fallback): ${missing.join(' | ')}`)
+  if (invalid.length || unknown.length) issues.push(`${file}: ${invalid.length} invalid, ${unknown.length} not in en.json${unknown.length ? `: ${unknown.join(' | ')}` : ''}`)
 }
+if (warnings.length) console.warn(`warning: ${warnings.join('\nwarning: ')}`)
 if (issues.length) { console.error(issues.join('\n')); process.exitCode = 1 }
