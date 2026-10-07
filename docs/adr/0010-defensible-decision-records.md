@@ -795,7 +795,7 @@ their meaning. The status column is as of 2026-10-05.
 | 8b | The Jobs chain in hand-over: `audit checkpoint --trail <file> --since <cursor> --limit 300`, with a cursor of its own | 5 | built: PR #254 |
 | 11 | Runner signing key in Desk's custody, `secrets/signing/runner/<desk id>.seed` under the same custody checks, passed as the boot-line `signingKey` | 3; policy settled by question 7; Runner #36 closed by #37 in v0.5.0 | #229, in no release yet |
 | 12 | The Jobs record panel beside the Decision record: `audit verify --trail <copy>` with the Runner key and the held checkpoints | 5 and 11 | built: PR #254 |
-| 9 | The README and in-app help: what each part establishes and does not, and the agent setup with the key | each of the above | |
+| 9 | The README and in-app help: what each part establishes and does not, and the agent setup with the key | each of the above | built: PR #281 |
 | 10 | Hand-over to an HTTPS endpoint | a holder who runs one; question 4 | |
 
 Not in this line:
