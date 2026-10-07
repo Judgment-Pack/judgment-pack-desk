@@ -487,6 +487,11 @@ func (s *Server) planUpgrade(schema runtimeSchema, facts, sign bool) (*upgradePl
 		seed = plan.seed
 	}
 	config, changed := upgradedConfig(snap.config, members, plan.to, plan.choice, seed)
+	// **No file larger than Desk reads back** (`reviewTextLimit`): the review,
+	// the decision record and a start's sweep each read jpack.json within it.
+	if len(config) > reviewTextLimit {
+		return unavailable("%s as the upgrade would write it is larger than the %d bytes Desk reads, so Desk does not upgrade it.", runtimeConfigName, reviewTextLimit)
+	}
 	plan.upgraded, plan.changed = snap.withConfig(config), changed
 	if plan.gitignore, err = s.planGitignore(); err != nil {
 		return nil, err

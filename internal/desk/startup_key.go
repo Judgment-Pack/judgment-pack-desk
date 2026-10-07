@@ -157,7 +157,6 @@ func (s *Server) planSigning(schema runtimeSchema, audit string) (*upgradeSignin
 	}
 	seed, err := s.startupSeedPath()
 	if err != nil {
-		s.log.Printf("desk: no signing key is offered for this project: %v", err)
 		return notOffered(fmt.Sprintf(keyNotOfferedByCustody, strings.TrimRight(s.custodyWords(err.Error()), ".")))
 	}
 	return &upgradeSigning{State: signingOffered}, seed

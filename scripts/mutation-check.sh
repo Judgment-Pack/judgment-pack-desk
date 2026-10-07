@@ -3867,6 +3867,9 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "upgrade key: the offer's item is not given" "$UP" \
     'SigningKey: plan.signing, Sign: plan.sign}' \
     'SigningKey: nil, Sign: plan.sign}'
+  mutate go "upgrade key: a jpack.json larger than Desk reads is offered" "$UP" \
+    '	if len(config) > reviewTextLimit {' \
+    '	if false {'
   mutate go "upgrade key: the configuration names no key" "$UP" \
     '	if plan.sign {
 		seed = plan.seed

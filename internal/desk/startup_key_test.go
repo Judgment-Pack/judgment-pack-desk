@@ -1025,3 +1025,32 @@ func TestAnUpgradeNotPutBackLeavesTheKeyForTheNextStart(t *testing.T) {
 		t.Errorf("after the next start %q", got)
 	}
 }
+
+// **Bounds on both ends: the upgrade writes no jpack.json larger than Desk
+// reads back.** The review, the decision record and a start's sweep read the
+// configuration within reviewTextLimit; an upgrade whose jpack.json would be
+// one byte past it is not offered, and one exactly at it is.
+func TestTheUpgradeWritesNoFileLargerThanDeskReads(t *testing.T) {
+	u := newSigningUpgrade(t, nil)
+	config := func(n int) string {
+		return `{"configVersion":"3","packs":{},"x":"` + strings.Repeat("a", n) + `"}` + "\n"
+	}
+	size := func(n int) int {
+		members, err := configMembers([]byte(config(n)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		upgraded, _ := upgradedConfig([]byte(config(n)), members, "6", true, u.seed)
+		return len(upgraded)
+	}
+	n := reviewTextLimit - size(0)
+	writeProject(t, u.project, map[string]string{"jpack.json": config(n)})
+	if answer := u.offer(t, true); answer.State != "offer" || len(answer.ConfigAfter) != reviewTextLimit || answer.Token == "" {
+		t.Errorf("at the bound the offer answered %s, %d bytes", answer.State, len(answer.ConfigAfter))
+	}
+	writeProject(t, u.project, map[string]string{"jpack.json": config(n + 1)})
+	answer := u.offer(t, true)
+	if want := "jpack.json as the upgrade would write it is larger than the 1048576 bytes Desk reads, so Desk does not upgrade it."; answer.State != "unavailable" || answer.Reason != want || answer.Token != "" {
+		t.Errorf("past the bound the offer answered %s %q", answer.State, answer.Reason)
+	}
+}
