@@ -33,6 +33,7 @@ report() { :; }
 run_web() { echo ""; }
 run_go() { echo ""; }
 restore() { :; }
+selection_report() { :; }
 mutate() {
   local lang="$1" name="$2" file="$3" needle="$4" replacement="$5"
   if ! apply "$lang" "$file" "$needle"; then echo "  ↳ row: $name"; fi

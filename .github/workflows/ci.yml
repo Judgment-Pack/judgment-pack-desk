@@ -39,6 +39,7 @@ jobs:
           python3 scripts/assemble-release_test.py
           python3 scripts/build-bundle_test.py
           python3 scripts/needle-check_test.py
+          python3 scripts/mutation-check_test.py
           scripts/needle-check.sh .
 
       - name: Verify published component identities
