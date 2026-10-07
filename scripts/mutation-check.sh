@@ -5633,7 +5633,7 @@ func (b *cappedBuffer) exceeded() bool {'
     '	return p.auditDir != "" && dir == p.auditDir'
   mutate go "search and files: a file that is the record by another path is written" "$SFA" \
     '			if os.SameFile(info, held.info) {' \
-    '			if false {'
+    '			if os.SameFile(info, held.info) && false {'
   mutate go "search and files: the declared directory's records are not compared by identity" "$SFA" \
     '		dirs = append(dirs, declared)' \
     '		_ = declared'
@@ -13310,7 +13310,7 @@ export function assistantTransport(id: string): Transport {
     '    if (buffer === undefined || base === undefined) return'
   mutate web "search and files: one connection's timeout refuses the whole status" "$SCN" \
     '  return {...kept,timeoutRefused:true as const}' \
-    "  if(kept)throw new Error('Invalid search timeout');return {...kept,timeoutRefused:true as const}"
+    "  throw new Error('Invalid search timeout: '+kept.id)"
   mutate web "search and files: a stored default timeout is saved as the default's value" "$SWS" \
     'timeoutSeconds:original?.timeoutSeconds??0' \
     'timeoutSeconds:original?.timeoutSeconds||timeout.defaultSeconds'
