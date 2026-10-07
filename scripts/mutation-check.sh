@@ -4972,24 +4972,24 @@ func (b *cappedBuffer) exceeded() bool {'
     '		if finding.Name == incompleteLastLine {' \
     '		if finding.Name != "" {'
   mutate go 'repair: the decision record offers no repair' "$RPA" \
-    '	answer.Repair = s.repairOffer(answer.Report)
+    '	answer.Repair = s.repairOffer(ctx, answer.Report)
 ' \
     ''
   mutate go 'repair: the token is not the desk'"'"'s own' "$RPR" \
     '	mac := hmac.New(sha256.New, s.reviewKey[:])' \
     '	mac := hmac.New(sha256.New, []byte("one key for every desk"))'
   mutate go 'repair: the token binds no trail identity' "$RPR" \
-    '		Trail:   trail,' \
+    '		Trail:   report.Trail,' \
     '		Trail:   "",'
   mutate go 'repair: the token binds no line' "$RPR" \
     '		Line:    line,' \
     '		Line:    0,'
   mutate go 'repair: the token binds no size' "$RPR" \
-    '		Bytes:   size,' \
+    '		Bytes:   report.Bytes,' \
     '		Bytes:   0,'
   mutate go 'repair: the token is not checked' "$RPR" \
-    '	if offer == nil || !hmac.Equal([]byte(offer.Token), []byte(token)) {' \
-    '	if offer == nil {'
+    '	if !hmac.Equal([]byte(s.repairToken(nonce, now.Report, line, read)), []byte(token)) {' \
+    '	if false {'
   mutate go 'repair: a cross-site request repairs' "$RPR" \
     '	if r.Header.Get("Sec-Fetch-Site") == "cross-site" {' \
     '	if false {'
@@ -5000,8 +5000,8 @@ func (b *cappedBuffer) exceeded() bool {'
     '	repairConfirmLimit = 4 << 10' \
     '	repairConfirmLimit = 4 << 20'
   mutate go 'repair: a confirmation with a short token runs' "$RPR" \
-    'len(request.Token) != 64 {' \
-    'len(request.Token) > 64 {'
+    'len(request.Token) != repairTokenLength {' \
+    'len(request.Token) > repairTokenLength {'
   mutate go 'repair: a runtime that does not read 6 is asked' "$RPR" \
     '	if !slices.Contains(schema.supported, auditConfigVersion) {' \
     '	if false {'
@@ -5062,6 +5062,47 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'repair: a digest of another form is read' "$RPR" \
     '!recordForm.MatchString(read.Digest)' \
     'false'
+  mutate go 'repair: the token binds no nonce' "$RPR" \
+    '		Nonce:   nonce,' \
+    '		Nonce:   "",'
+  mutate go 'repair: the token binds no file' "$RPR" \
+    '		File:    read.file,' \
+    '		File:    "",'
+  mutate go 'repair: the token binds no content' "$RPR" \
+    '		Content: read.content(),' \
+    '		Content: "",'
+  mutate go 'repair: a used token runs again' "$RPR" \
+    '	s.repairNonces[nonce] = true' \
+    '	s.repairNonces[nonce] = false'
+  mutate go 'repair: a used token is not refused' "$RPR" \
+    '	if s.repairNonces[nonce] {' \
+    '	if false && s.repairNonces[nonce] {'
+  mutate go 'repair: offered on a trail that is not chained' "$RPR" \
+    '	case !chained:
+		return unavailable(repairUnchainedWords)' \
+    '	case false:
+		return unavailable(repairUnchainedWords)'
+  mutate go 'repair: a confirmation runs on a trail that is not chained' "$RPR" \
+    '	} else if !chained {' \
+    '	} else if !chained && false {'
+  mutate go 'repair: offered over a trail Desk could not read' "$RPR" \
+    '	offered, err := s.readTrail(ctx)
+' \
+    '	offered, _ := s.readTrail(ctx)
+	err = nil
+'
+  mutate go 'repair: the damaged bytes are read as the whole trail' "$RPR" \
+    '	start := whole.last + 1' \
+    '	start := int64(0)'
+  mutate go 'repair: a repair of another damaged line is said as the one confirmed' "$RPR" \
+    'repaired.DamagedLine != line || ' \
+    ''
+  mutate go 'repair: a repair of other damaged bytes is said as the one confirmed' "$RPR" \
+    'repaired.Bytes != read.tail || ' \
+    ''
+  mutate go 'repair: a repair with another digest is said as the one confirmed' "$RPR" \
+    'repaired.Digest != read.tailDigest {' \
+    'false {'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -12447,8 +12488,8 @@ export function assistantTransport(id: string): Transport {
 ' \
     ''
   mutate web 'repair client: an offer without a token is read' "$RAC" \
-    '  return object(value) && count(value.line) && value.line > 0 && hex(64)(value.token)' \
-    '  return object(value) && count(value.line) && value.line > 0'
+    '    case '"'"'available'"'"': return hex(96)(value.token) && value.reason === undefined' \
+    '    case '"'"'available'"'"': return value.reason === undefined'
   mutate web 'repair client: the decision record'"'"'s offer is not checked' "$RAC" \
     '    case '"'"'report'"'"': return isAuditReport(value.report) && optional(value.repair, isAuditRepair)' \
     '    case '"'"'report'"'"': return isAuditReport(value.report)'
@@ -12464,6 +12505,15 @@ export function assistantTransport(id: string): Transport {
   mutate web 'repair client: the runtime'"'"'s words are dropped from a refusal' "$RAC" \
     'list(body.diagnostics, isDiagnostic) ? body.diagnostics : []' \
     '[]'
+  mutate web 'repair page: an offer that is not available opens a confirmation' "$RTP" \
+    '{repair?.state === '"'"'available'"'"' && <>' \
+    '{repair && <>'
+  mutate web 'repair page: why no repair is offered is not said' "$RTP" \
+    '{repair?.state === '"'"'unavailable'"'"' && <p' \
+    '{false && <p'
+  mutate web 'repair client: an unavailable offer with a token is read' "$RAC" \
+    '    case '"'"'unavailable'"'"': return named(value.reason) && value.token === undefined' \
+    '    case '"'"'unavailable'"'"': return named(value.reason)'
 fi
 
 restore

@@ -3984,5 +3984,13 @@
   "Nothing was repaired: the runtime this Desk runs (jpack {{version}}) does not read configVersion 6 and has no audit repair. A runtime of {{floor}} or later has it.": "Nada foi reparado: o runtime que este Desk executa (jpack {{version}}) não lê configVersion 6 e não tem audit repair. Um runtime {{floor}} ou posterior tem.",
   "Nothing was repaired: {{reason}}.": "Nada foi reparado: {{reason}}.",
   "A cross-site request cannot repair this desk's trail.": "Uma solicitação entre sites não pode reparar a trilha desta área de trabalho.",
-  "Confirm the repair with the token the decision record gave.": "Confirme o reparo com o token que o registro de decisões forneceu."
+  "Confirm the repair with the token the decision record gave.": "Confirme o reparo com o token que o registro de decisões forneceu.",
+  "The runtime’s report names line {{line}}, the trail’s last, as incomplete.": "O relatório do runtime aponta a linha {{line}}, a última da trilha, como incompleta.",
+  "This project's jpack.json says audit.chain false, and the runtime repairs only a chained trail, so Desk offers no repair.": "O jpack.json deste projeto indica audit.chain false, e o runtime só repara uma trilha encadeada, então o Desk não oferece nenhum reparo.",
+  "Nothing was repaired: this project's jpack.json says audit.chain false, and the runtime repairs only a chained trail.": "Nada foi reparado: o jpack.json deste projeto indica audit.chain false, e o runtime só repara uma trilha encadeada.",
+  "Desk could not read this project's jpack.json to tell whether its trail is chained, so it offers no repair.": "O Desk não conseguiu ler o jpack.json deste projeto para saber se a trilha dele está encadeada, então não oferece nenhum reparo.",
+  "Desk binds a repair to the trail's bytes as it reads them, and offers none now: {{reason}}.": "O Desk vincula um reparo aos bytes da trilha tal como os lê, e agora não oferece nenhum: {{reason}}.",
+  "Nothing was repaired: Desk could not read the trail again: {{reason}}.": "Nada foi reparado: o Desk não conseguiu ler a trilha novamente: {{reason}}.",
+  "This confirmation was used already, so nothing was repaired. Check the decision record again: it offers a fresh one where a repair is still needed.": "Esta confirmação já foi usada, então nada foi reparado. Verifique o registro de decisões novamente: ele oferece uma nova onde um reparo ainda for necessário.",
+  "The runtime repaired a damaged last line other than the one the decision record showed, so this is not the repair you confirmed: check the decision record again.": "O runtime reparou uma última linha danificada diferente da que o registro de decisões mostrou, então este não é o reparo que você confirmou: verifique o registro de decisões novamente."
 }

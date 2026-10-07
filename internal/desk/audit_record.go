@@ -659,7 +659,7 @@ func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, err
 	answer.Keys = &keys
 	answer.Signing = &signing
 	answer.Rotation = &rotation
-	answer.Repair = s.repairOffer(answer.Report)
+	answer.Repair = s.repairOffer(ctx, answer.Report)
 	answer.Expected = expect.count
 	answer.ExpectUnread = expect.unread
 	answer.HandoverProblem = expect.problem

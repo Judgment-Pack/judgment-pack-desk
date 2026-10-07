@@ -3959,5 +3959,13 @@
   "Nothing was repaired: the runtime this Desk runs (jpack {{version}}) does not read configVersion 6 and has no audit repair. A runtime of {{floor}} or later has it.": "乜都冇修復：呢個 Desk 運行嘅運行環境（jpack {{version}}）唔讀 configVersion 6，亦冇 audit repair。{{floor}} 或之後嘅運行環境有。",
   "Nothing was repaired: {{reason}}.": "乜都冇修復：{{reason}}。",
   "A cross-site request cannot repair this desk's trail.": "跨網站請求唔可以修復呢個工作台嘅軌跡。",
-  "Confirm the repair with the token the decision record gave.": "請用決定記錄畀嘅權杖確認修復。"
+  "Confirm the repair with the token the decision record gave.": "請用決定記錄畀嘅權杖確認修復。",
+  "The runtime’s report names line {{line}}, the trail’s last, as incomplete.": "運行環境嘅報告指出第 {{line}} 行（軌跡最後一行）唔完整。",
+  "This project's jpack.json says audit.chain false, and the runtime repairs only a chained trail, so Desk offers no repair.": "呢個項目嘅 jpack.json 寫明 audit.chain false，而運行環境只會修復鏈式軌跡，所以 Desk 唔提供修復。",
+  "Nothing was repaired: this project's jpack.json says audit.chain false, and the runtime repairs only a chained trail.": "乜都冇修復：呢個項目嘅 jpack.json 寫明 audit.chain false，而運行環境只會修復鏈式軌跡。",
+  "Desk could not read this project's jpack.json to tell whether its trail is chained, so it offers no repair.": "Desk 讀唔到呢個項目嘅 jpack.json，判斷唔到佢嘅軌跡係唔係鏈式，所以唔提供修復。",
+  "Desk binds a repair to the trail's bytes as it reads them, and offers none now: {{reason}}.": "Desk 會將修復綁定喺佢讀到嘅軌跡位元組上，而家唔提供修復：{{reason}}。",
+  "Nothing was repaired: Desk could not read the trail again: {{reason}}.": "乜都冇修復：Desk 再讀唔到條軌跡：{{reason}}。",
+  "This confirmation was used already, so nothing was repaired. Check the decision record again: it offers a fresh one where a repair is still needed.": "呢個確認已經用咗，所以乜都冇修復。請再檢查一次決定記錄：如果仲需要修復，佢會提供一個新嘅確認。",
+  "The runtime repaired a damaged last line other than the one the decision record showed, so this is not the repair you confirmed: check the decision record again.": "運行環境修復咗一條同決定記錄顯示嗰條唔同嘅損壞最後一行，所以呢個唔係你確認嘅修復：請再檢查一次決定記錄。"
 }

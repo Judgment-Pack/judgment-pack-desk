@@ -19,9 +19,10 @@
  * it").
  *
  * Where the report names the finding `incomplete-last-line`, and only there,
- * the answer offers `jpack audit repair`, with the line it names and a token;
- * `POST /api/audit/repair` sends the token back, and the desk runs the repair
- * once, where the trail is still as the report read it, or runs nothing
+ * the answer says whether Desk offers `jpack audit repair`: on a chained
+ * trail it could read, with the line it names and a token; otherwise not, and
+ * why. `POST /api/audit/repair` sends the token back, and the desk runs the
+ * repair once, where the trail is still as Desk read it, or runs nothing
  * (ADR-0010, section 4, "Repair").
  *
  * The hand-over (ADR-0010, section 2): `GET /api/audit/holders` lists the
@@ -318,11 +319,12 @@ export async function rotateSigningKey(token: string): Promise<RotationResult> {
 /* The repair ---------------------------------------------------------------- */
 
 /**
- * The decision record's offer of `jpack audit repair`: the incomplete line the
- * runtime's report names, and the token that confirms the repair of the trail
- * as that report read it.
+ * The decision record's word on `jpack audit repair`, given only where the
+ * runtime's report names an incomplete last line: the line it names; with
+ * `available`, the token that confirms one repair of the trail as Desk read
+ * it; with `unavailable`, why Desk offers none, in its own words.
  */
-export type AuditRepair = { line: number; token: string }
+export type AuditRepair = { state: 'available'; line: number; token: string } | { state: 'unavailable'; line: number; reason: string }
 /** A repair made: the discontinuity record the runtime reports it wrote, by its own member names. */
 export type RepairResult = { state: 'repaired'; discontinuity: AuditDiscontinuity }
 /**
@@ -348,12 +350,24 @@ export const REPAIR_REASONS = [
   sourceMessage('Nothing was repaired: the runtime this Desk runs (jpack {{version}}) does not read configVersion 6 and has no audit repair. A runtime of {{floor}} or later has it.'),
   sourceMessage('Nothing was repaired: {{reason}}.'),
   sourceMessage('A cross-site request cannot repair this desk\'s trail.'),
-  sourceMessage('Confirm the repair with the token the decision record gave.')
+  sourceMessage('Confirm the repair with the token the decision record gave.'),
+  sourceMessage('This project\'s jpack.json says audit.chain false, and the runtime repairs only a chained trail, so Desk offers no repair.'),
+  sourceMessage('Nothing was repaired: this project\'s jpack.json says audit.chain false, and the runtime repairs only a chained trail.'),
+  sourceMessage('Desk could not read this project\'s jpack.json to tell whether its trail is chained, so it offers no repair.'),
+  sourceMessage('Desk binds a repair to the trail\'s bytes as it reads them, and offers none now: {{reason}}.'),
+  sourceMessage('Nothing was repaired: Desk could not read the trail again: {{reason}}.'),
+  sourceMessage('This confirmation was used already, so nothing was repaired. Check the decision record again: it offers a fresh one where a repair is still needed.'),
+  sourceMessage('The runtime repaired a damaged last line other than the one the decision record showed, so this is not the repair you confirmed: check the decision record again.')
 ]
 
-/** The offer: a line the report names, and a token of 64 hexadecimal characters. */
+/** The panel's word on a repair: a line the report names, and a token of 96 hexadecimal characters with `available`, or a sentence with `unavailable`. */
 export function isAuditRepair(value: unknown): value is AuditRepair {
-  return object(value) && count(value.line) && value.line > 0 && hex(64)(value.token)
+  if (!object(value) || !count(value.line) || value.line < 1) return false
+  switch (value.state) {
+    case 'available': return hex(96)(value.token) && value.reason === undefined
+    case 'unavailable': return named(value.reason) && value.token === undefined
+  }
+  return false
 }
 
 /**

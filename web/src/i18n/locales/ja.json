@@ -3959,5 +3959,13 @@
   "Nothing was repaired: the runtime this Desk runs (jpack {{version}}) does not read configVersion 6 and has no audit repair. A runtime of {{floor}} or later has it.": "何も修復されませんでした：この Desk が実行しているランタイム (jpack {{version}}) は configVersion 6 を読まず、audit repair がありません。{{floor}} 以降のランタイムにはあります。",
   "Nothing was repaired: {{reason}}.": "何も修復されませんでした：{{reason}}。",
   "A cross-site request cannot repair this desk's trail.": "クロスサイトのリクエストでは、このデスクの証跡を修復できません。",
-  "Confirm the repair with the token the decision record gave.": "判断の記録が示したトークンで修復を確認してください。"
+  "Confirm the repair with the token the decision record gave.": "判断の記録が示したトークンで修復を確認してください。",
+  "The runtime’s report names line {{line}}, the trail’s last, as incomplete.": "ランタイムの報告は、証跡の最後の行である {{line}} 行目を不完全としています。",
+  "This project's jpack.json says audit.chain false, and the runtime repairs only a chained trail, so Desk offers no repair.": "このプロジェクトの jpack.json は audit.chain false を指定しており、ランタイムが修復するのは連鎖した証跡だけなので、Desk は修復を提案しません。",
+  "Nothing was repaired: this project's jpack.json says audit.chain false, and the runtime repairs only a chained trail.": "何も修復されませんでした：このプロジェクトの jpack.json は audit.chain false を指定しており、ランタイムが修復するのは連鎖した証跡だけです。",
+  "Desk could not read this project's jpack.json to tell whether its trail is chained, so it offers no repair.": "Desk はこのプロジェクトの jpack.json を読み取れず、証跡が連鎖しているかどうかを判断できないため、修復を提案しません。",
+  "Desk binds a repair to the trail's bytes as it reads them, and offers none now: {{reason}}.": "Desk は修復を、読み取ったとおりの証跡のバイトに結び付けます。今は修復を提案しません：{{reason}}。",
+  "Nothing was repaired: Desk could not read the trail again: {{reason}}.": "何も修復されませんでした：Desk は証跡をもう一度読み取れませんでした：{{reason}}。",
+  "This confirmation was used already, so nothing was repaired. Check the decision record again: it offers a fresh one where a repair is still needed.": "この確認はすでに使われたため、何も修復されませんでした。判断の記録をもう一度確認してください：まだ修復が必要な場合は、新しい確認が提示されます。",
+  "The runtime repaired a damaged last line other than the one the decision record showed, so this is not the repair you confirmed: check the decision record again.": "ランタイムは、判断の記録が示したものとは別の破損した最後の行を修復したため、これはあなたが確認した修復ではありません：判断の記録をもう一度確認してください。"
 }

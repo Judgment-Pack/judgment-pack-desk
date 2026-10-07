@@ -3,12 +3,15 @@
  * "Repair"; the maintainer's answer to question 8).
  *
  * Shown in the decision record only where the runtime's report names the
- * finding `incomplete-last-line`, and the panel offers the repair with a
- * token. One button opens a confirmation that says, before anything runs,
- * what a repair does and does not do, as ADR-0010 words it: it starts a new
- * segment and keeps the damaged bytes; it never restores the lost line; and
- * until it is done, every deciding run is refused. Only the confirmation
- * sends the panel's token. Desk never repairs on its own.
+ * finding `incomplete-last-line`. Where the panel offers the repair, on a
+ * chained trail Desk could read, one button opens a confirmation that says,
+ * before anything runs, what a repair does and does not do, as ADR-0010 words
+ * it: it starts a new segment and keeps the damaged bytes; it never restores
+ * the lost line; and until it is done, every deciding run is refused. Only
+ * the confirmation sends the panel's token, which confirms one attempt. Where
+ * it offers none, as on a trail its audit member does not chain, where no
+ * deciding run is refused, it says why and promises nothing. Desk never
+ * repairs on its own.
  *
  * What a repair answered is kept by the panel, which checks the trail again
  * after it, so the answer outlives the check: after a repair, the report says
@@ -38,7 +41,7 @@ export function RepairTrail({ repair, outcome, onOutcome }: {
   const opener = useRef<HTMLButtonElement>(null)
   if (!repair && !outcome) return null
   const confirm = async () => {
-    if (!repair) return
+    if (repair?.state !== 'available') return
     setBusy(true)
     try {
       await repairTrail(repair.token)
@@ -58,7 +61,8 @@ export function RepairTrail({ repair, outcome, onOutcome }: {
         <p role="alert">{systemMessage(outcome.message)}</p>
         {outcome.diagnostics.length > 0 && <ul className={styles.list} aria-label={msg('What the runtime said of the repair')}>{outcome.diagnostics.map((item, index) => <li key={index} lang="en"><code>{item.code}</code> {item.message}</li>)}</ul>}
       </>}
-      {repair && <>
+      {repair?.state === 'unavailable' && <p className={styles.quiet}>{msg('The runtime’s report names line {{line}}, the trail’s last, as incomplete.', { line: repair.line })} {systemMessage(repair.reason)}</p>}
+      {repair?.state === 'available' && <>
         <p className={styles.quiet}>{msg('The runtime’s report names line {{line}}, the trail’s last, as incomplete. Desk repairs the trail only when you ask, never on its own.', { line: repair.line })}</p>
         <div className={styles.actions}><Button ref={opener} onClick={() => setOpen(true)}>{msg('Repair the trail')}</Button></div>
       </>}

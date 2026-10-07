@@ -480,6 +480,20 @@ audit repair`, with a confirmation. The confirmation says:
 After a repair, `audit verify` reports `segmented`, exit 0. Desk never repairs
 on its own (question 8).
 
+*Amended 2026-10-07, PR #263, review round 1:* the repair is offered only on
+a chained trail, one whose audit member does not say `"chain": false`: the
+runtime repairs no other, and on an unchained trail no deciding run is
+refused, so the confirmation's last sentence would not be true. The
+confirmation is bound to the trail as Desk read it, its identity, the
+incomplete line, the size the runtime reported, and the file's device,
+inode, size and SHA-256, and to one attempt by a nonce Desk spends before the
+runtime runs, whatever it answers. A window remains that Desk cannot close: a
+writer that appends between Desk's last reading and the runtime's own is not
+excluded, because `audit repair` takes no precondition. Desk compares the
+damaged line the runtime reports, its length and its digest, with what it
+read, and where they differ says so, never as the repair confirmed. Closing
+the window needs a precondition in the runtime's `audit repair`.
+
 **When it runs:** when the panel opens, and after a stamp, a hand-over or a
 repair. Never on a timer.
 
@@ -775,7 +789,7 @@ their meaning. The status column is as of 2026-10-05.
 | 3 | Key custody: generate per project; new desks at `"6"` with `audit.signingKey`; public keys shown; `packs validate`'s check shown; rotation | 2; questions 1–3 | 3a: #219, custody for the desks Desk makes, in no release yet; 3b, rotation, not built |
 | 4 | The upgrade offer learns `"6"` and the signing key, as its own item | ADR-0009 PR D merged; 3 | built: PR #261 |
 | 5 | Hand-over by download or copy: holders, the checkpoints route, cursors, Desk's record; verification against that record | 2; question 4 | built: PR #241 |
-| 6 | The repair offer | 2; question 8 | built: PR #263 |
+| 6 | The repair offer, only on a chained trail (an audit member that does not say `"chain": false`) | 2; question 8 | built: PR #263 |
 | 7 | Stamping: settings, scheduler, pending records; verification with roots | 2; question 5 | |
 | 8a | Export version 5 and labelling, `run-chain` pass-through | nothing: #200 pinned Runner v0.5.0; question 7 | merged: #220, on `main`, in no release yet |
 | 8b | The Jobs chain in hand-over: `audit checkpoint --trail <file> --since <cursor> --limit 300`, with a cursor of its own | 5 | built: PR #254 |

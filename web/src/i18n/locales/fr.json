@@ -3984,5 +3984,13 @@
   "Nothing was repaired: the runtime this Desk runs (jpack {{version}}) does not read configVersion 6 and has no audit repair. A runtime of {{floor}} or later has it.": "Rien n’a été réparé : le runtime qu’exécute ce Desk (jpack {{version}}) ne lit pas configVersion 6 et n’a pas audit repair. Un runtime {{floor}} ou ultérieur l’a.",
   "Nothing was repaired: {{reason}}.": "Rien n’a été réparé : {{reason}}.",
   "A cross-site request cannot repair this desk's trail.": "Une requête intersite ne peut pas réparer la piste de ce bureau.",
-  "Confirm the repair with the token the decision record gave.": "Confirmez la réparation avec le jeton que le registre des décisions a donné."
+  "Confirm the repair with the token the decision record gave.": "Confirmez la réparation avec le jeton que le registre des décisions a donné.",
+  "The runtime’s report names line {{line}}, the trail’s last, as incomplete.": "Le rapport du runtime désigne la ligne {{line}}, la dernière de la piste, comme incomplète.",
+  "This project's jpack.json says audit.chain false, and the runtime repairs only a chained trail, so Desk offers no repair.": "Le jpack.json de ce projet indique audit.chain false, et le runtime ne répare qu’une piste chaînée, donc Desk ne propose aucune réparation.",
+  "Nothing was repaired: this project's jpack.json says audit.chain false, and the runtime repairs only a chained trail.": "Rien n’a été réparé : le jpack.json de ce projet indique audit.chain false, et le runtime ne répare qu’une piste chaînée.",
+  "Desk could not read this project's jpack.json to tell whether its trail is chained, so it offers no repair.": "Desk n’a pas pu lire le jpack.json de ce projet pour savoir si sa piste est chaînée, donc il ne propose aucune réparation.",
+  "Desk binds a repair to the trail's bytes as it reads them, and offers none now: {{reason}}.": "Desk lie une réparation aux octets de la piste tels qu’il les lit, et n’en propose aucune maintenant : {{reason}}.",
+  "Nothing was repaired: Desk could not read the trail again: {{reason}}.": "Rien n’a été réparé : Desk n’a pas pu relire la piste : {{reason}}.",
+  "This confirmation was used already, so nothing was repaired. Check the decision record again: it offers a fresh one where a repair is still needed.": "Cette confirmation a déjà été utilisée, donc rien n’a été réparé. Vérifiez à nouveau le registre des décisions : il en propose une nouvelle là où une réparation est encore nécessaire.",
+  "The runtime repaired a damaged last line other than the one the decision record showed, so this is not the repair you confirmed: check the decision record again.": "Le runtime a réparé une dernière ligne endommagée autre que celle que le registre des décisions a montrée, donc ce n’est pas la réparation que vous avez confirmée : vérifiez à nouveau le registre des décisions."
 }

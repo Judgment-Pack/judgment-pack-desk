@@ -158,6 +158,9 @@ type Server struct {
 	// (audit_repair.go), so that two confirmations in this process run one
 	// repair.
 	repairMu sync.Mutex
+	// repairNonces holds the nonce of each repair token spent in this
+	// process, under repairMu: a token confirms one attempt.
+	repairNonces map[string]bool
 	// reviewKey is this desk's own key for review tokens (`reviewToken`):
 	// random per process, so a token names one desk and does not outlive it.
 	reviewKey [32]byte

@@ -593,25 +593,37 @@ runtime takes a different lock, which Desk does not take.
 
 **The repair, in the decision record** (ADR-0010, section 4, "Repair"). A
 write that did not complete leaves the trail's last line with no newline, and
-the runtime then refuses every deciding run, exit 4: "the audit trail's last
-line is incomplete". Where the runtime's report names the finding
-`incomplete-last-line`, and nowhere else, the decision record offers `jpack
-audit repair`: never on a timer, never on Desk's own initiative, and never on
-the Jobs record, whose chain of runs is Runner's. Its confirmation says,
-before anything runs, that repair starts a new segment and keeps the damaged
-bytes, that it never restores the lost line, and that until it is done every
-deciding run is refused. Confirming sends back the token the panel gave with
-the offer: a MAC, under the desk's own key, over what the report showed of the
-trail, its identity, the incomplete line and its size. Desk checks the trail
-again with `audit verify`, and runs `jpack audit repair --config jpack.json
---format json` once, in the desk's folder, only where that check gives the
-same token (`POST /api/audit/repair`); a token from another desk, one replayed
-after the repair it confirmed, and one for a trail that changed since are
-refused with a plain sentence, and nothing runs. The runtime takes the trail's
-own lock for the repair, and Desk takes none on the trail; one Desk process
-runs one repair of a desk at a time, and a page closed while it runs does not
-stop it. The runtime's refusal is passed on in its own words, with no path.
-The panel then checks the trail again and shows it as the runtime reports it:
+on a chained trail the runtime then refuses every deciding run, exit 4: "the
+audit trail's last line is incomplete". Where the runtime's report names the
+finding `incomplete-last-line`, and nowhere else, the decision record offers
+`jpack audit repair`: never on a timer, never on Desk's own initiative, and
+never on the Jobs record, whose chain of runs is Runner's. **It is offered
+only on a chained trail**, one whose `jpack.json` audit member does not say
+`"chain": false`: the runtime repairs no other, and on an unchained trail no
+deciding run is refused, so the panel says why it offers no repair and
+promises nothing. Its confirmation says, before anything runs, that repair
+starts a new segment and keeps the damaged bytes, that it never restores the
+lost line, and that until it is done every deciding run is refused.
+Confirming sends back the token the panel gave with the offer: a nonce, and
+a MAC, under the desk's own key, over the nonce and the trail as Desk read
+it: its identity, the incomplete line and the size the runtime reported, and
+the file itself, read as the download reads it, its device and inode, its
+size and the SHA-256 of its bytes. Desk checks the trail again with `audit
+verify` and reads it again, immediately before the repair, and runs `jpack
+audit repair --config jpack.json --format json` once, in the desk's folder,
+only where both give the same MAC (`POST /api/audit/repair`). A token from
+another desk, one for a trail changed since, by any byte or by its file, and
+one already used, are refused with a plain sentence, and nothing runs: a
+token confirms one attempt, whatever the runtime answers, and another needs a
+fresh offer. The runtime takes the trail's own lock for the repair, and Desk
+takes none for it; one Desk process runs one repair of a desk at a time, and
+a page closed while it runs does not stop it. The runtime's refusal is passed
+on in its own words, with no path. A writer that appends between Desk's last
+reading and the runtime's own is not excluded, since `audit repair` takes no
+precondition: Desk compares the damaged line the runtime reports, its length
+and its digest, with what it read, and where they differ says that this is
+not the repair you confirmed, never that the trail was repaired. The panel
+then checks the trail again and shows it as the runtime reports it:
 `segmented`, its segments, the discontinuity with the damaged line and its
 digest, and the runtime's sentences. Beside it Desk says only: "The trail now
 has a new segment after the damaged line; the lost line is not restored."

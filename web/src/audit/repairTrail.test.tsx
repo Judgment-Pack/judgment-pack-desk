@@ -21,7 +21,7 @@ import { DecisionRecord } from './DecisionRecord'
 
 vi.mock(import('../files/client'), async original => ({ ...(await original()), deskFetch: vi.fn() }))
 
-const token = 'cd'.repeat(32)
+const token = 'cd'.repeat(48)
 const digest = 'sha256:952cdc0f85ab10d18a1bdccfeb6c3991e59ab424dc2ce916544aac44f3d8b45e'
 const coverage: AuditReport['coverage'] = { legacyPrefix: 0, chained: 3, unchained: 0, uncovered: 0, damaged: 0, signed: { status: 'not-checked', detail: 'no public key was supplied' },
   signedRecords: 0, unsignedRecords: 0, checkpointed: { status: 'not-supplied' }, witnessed: 0, unwitnessed: 3, stamped: { status: 'not-checked', detail: 'no time-stamping roots were supplied' } }
@@ -38,7 +38,7 @@ const segmented: AuditReport = { ...torn, status: 'segmented', lines: 5, coverag
   establishes: ['The chained lines are consistent with one another: no line before the last was edited, inserted, deleted or moved without breaking a link, and the lines before the first chained line are the block its previous commits to.'],
   doesNotEstablish: [...torn.doesNotEstablish, NOT_INTACT] }
 type Reported = Extract<AuditRecord, { state: 'report' }>
-const offered: Reported = { state: 'report', runtime: '0.27.1', report: torn, keys: { state: 'startup' }, signing: { state: 'no-key' }, repair: { line: 4, token } }
+const offered: Reported = { state: 'report', runtime: '0.27.1', report: torn, keys: { state: 'startup' }, signing: { state: 'no-key' }, repair: { state: 'available', line: 4, token } }
 const repaired: Reported = { ...offered, report: segmented, repair: undefined }
 const answer = { state: 'repaired', discontinuity: { line: 5, reason: 'incomplete-last-line', damagedLine: 4, bytes: 8, digest } }
 
@@ -109,6 +109,17 @@ describe('repairing the trail', () => {
     }
   })
 
+  it('says why it offers no repair where the panel offers none, with no button and no promise', async () => {
+    const reason = 'This project\'s jpack.json says audit.chain false, and the runtime repairs only a chained trail, so Desk offers no repair.'
+    records = [{ ...offered, repair: { state: 'unavailable', line: 4, reason } }]
+    show()
+    expect((await screen.findByText(/^The runtime’s report names line 4/)).textContent).toBe(`The runtime’s report names line 4, the trail’s last, as incomplete. ${reason}`)
+    expect(screen.queryByRole('button', { name: 'Repair the trail' })).toBeNull()
+    expect(screen.queryByText(/every deciding run is refused/)).toBeNull()
+    expect(screen.queryByText(/only when you ask/)).toBeNull()
+    expect(posts).toEqual([])
+  })
+
   it('sends the panel’s token on confirmation, checks the trail again, and shows it segmented with Desk’s one sentence', async () => {
     show()
     await confirmRepair()
@@ -130,7 +141,7 @@ describe('repairing the trail', () => {
   it('shows a stale refusal in Desk’s words, and checks the trail again', async () => {
     const stale = 'The trail changed after the decision record showed it, so nothing was repaired. Check the decision record again.'
     repair = () => json(409, { error: stale, code: 'stale' })
-    records = [offered, { ...offered, repair: { line: 4, token: 'ef'.repeat(32) } }]
+    records = [offered, { ...offered, repair: { state: 'available', line: 4, token: 'ef'.repeat(48) } }]
     show()
     await confirmRepair()
     expect((await screen.findByText(stale)).getAttribute('role')).toBe('alert')
@@ -140,7 +151,7 @@ describe('repairing the trail', () => {
     // The fresh offer is the one shown.
     fireEvent.click(await screen.findByRole('button', { name: 'Repair the trail' }))
     fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Run the repair' }))
-    await waitFor(() => expect(posts.map(post => (post.body as { token: string }).token)).toEqual([token, 'ef'.repeat(32)]))
+    await waitFor(() => expect(posts.map(post => (post.body as { token: string }).token)).toEqual([token, 'ef'.repeat(48)]))
   })
 
   it('shows the runtime’s refusal in its own words, beside Desk’s, and checks the trail again', async () => {
@@ -193,14 +204,20 @@ describe('repairing the trail', () => {
 
 describe('the repair client', () => {
   it('reads the panel’s offer, and refuses what is not one', () => {
-    expect(isAuditRepair({ line: 4, token })).toBe(true)
+    const unavailable = { state: 'unavailable', line: 4, reason: 'Why not.' }
+    expect(isAuditRepair({ state: 'available', line: 4, token })).toBe(true)
+    expect(isAuditRepair(unavailable)).toBe(true)
     expect(isAuditRecord(offered)).toBe(true)
-    for (const value of [{ line: 4 }, { token }, { line: 0, token }, { line: 4, token: token.slice(1) }, { line: 4, token: token.toUpperCase() }, { line: '4', token }, 'repair']) {
+    expect(isAuditRecord({ ...offered, repair: unavailable })).toBe(true)
+    for (const value of [{ state: 'available', line: 4 }, { state: 'available', token }, { state: 'available', line: 0, token },
+      { state: 'available', line: 4, token: token.slice(2) }, { state: 'available', line: 4, token: 'cd'.repeat(32) }, { state: 'available', line: 4, token: token.toUpperCase() },
+      { state: 'available', line: '4', token }, { state: 'available', line: 4, token, reason: 'Why not.' }, { line: 4, token },
+      { ...unavailable, reason: '' }, { ...unavailable, token }, { state: 'unavailable', line: 4 }, { ...unavailable, state: 'offered' }, 'repair']) {
       expect(isAuditRepair(value), JSON.stringify(value)).toBe(false)
       expect(isAuditRecord({ ...offered, repair: value }), JSON.stringify(value)).toBe(false)
     }
     // A refusal to check carries no offer.
-    expect(isAuditRecord({ state: 'unverified', diagnostics: [{ code: 'JPS-AUDIT-TRAIL-READ', message: 'Why.' }], repair: { line: 4, token } })).toBe(false)
+    expect(isAuditRecord({ state: 'unverified', diagnostics: [{ code: 'JPS-AUDIT-TRAIL-READ', message: 'Why.' }], repair: { state: 'available', line: 4, token } })).toBe(false)
   })
 
   it('posts the token, reads a repair, and refuses an answer that is not one', async () => {
@@ -229,7 +246,7 @@ describe('the repair client', () => {
     // Each sentence's words between its placeholders, as the chassis's Go
     // source spells them.
     const source = readFileSync(join(import.meta.dirname, '../../../internal/desk/audit_repair.go'), 'utf8')
-    expect(REPAIR_REASONS).toHaveLength(10)
+    expect(REPAIR_REASONS).toHaveLength(17)
     for (const reason of REPAIR_REASONS) {
       for (const part of reason.split(/\{\{\w+\}\}/)) {
         expect(source.includes(part) ? part : `missing: ${part}`, reason).toBe(part)

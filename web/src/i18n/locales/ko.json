@@ -3959,5 +3959,13 @@
   "Nothing was repaired: the runtime this Desk runs (jpack {{version}}) does not read configVersion 6 and has no audit repair. A runtime of {{floor}} or later has it.": "아무것도 복구하지 않았습니다: 이 Desk가 실행하는 런타임(jpack {{version}})은 configVersion 6을 읽지 않으며 audit repair가 없습니다. {{floor}} 이상의 런타임에는 있습니다.",
   "Nothing was repaired: {{reason}}.": "아무것도 복구하지 않았습니다: {{reason}}.",
   "A cross-site request cannot repair this desk's trail.": "교차 사이트 요청으로는 이 데스크의 추적을 복구할 수 없습니다.",
-  "Confirm the repair with the token the decision record gave.": "판단 기록이 준 토큰으로 복구를 확인하세요."
+  "Confirm the repair with the token the decision record gave.": "판단 기록이 준 토큰으로 복구를 확인하세요.",
+  "The runtime’s report names line {{line}}, the trail’s last, as incomplete.": "런타임의 보고서는 추적의 마지막 줄인 {{line}}번째 줄을 불완전하다고 표시합니다.",
+  "This project's jpack.json says audit.chain false, and the runtime repairs only a chained trail, so Desk offers no repair.": "이 프로젝트의 jpack.json이 audit.chain false를 지정하고 있고 런타임은 체인으로 연결된 추적만 복구하므로, Desk는 복구를 제안하지 않습니다.",
+  "Nothing was repaired: this project's jpack.json says audit.chain false, and the runtime repairs only a chained trail.": "아무것도 복구하지 않았습니다: 이 프로젝트의 jpack.json이 audit.chain false를 지정하고 있고 런타임은 체인으로 연결된 추적만 복구합니다.",
+  "Desk could not read this project's jpack.json to tell whether its trail is chained, so it offers no repair.": "Desk가 이 프로젝트의 jpack.json을 읽지 못해 추적이 체인으로 연결되어 있는지 알 수 없으므로, 복구를 제안하지 않습니다.",
+  "Desk binds a repair to the trail's bytes as it reads them, and offers none now: {{reason}}.": "Desk는 복구를 읽은 그대로의 추적 바이트에 묶으며, 지금은 복구를 제안하지 않습니다: {{reason}}.",
+  "Nothing was repaired: Desk could not read the trail again: {{reason}}.": "아무것도 복구하지 않았습니다: Desk가 추적을 다시 읽지 못했습니다: {{reason}}.",
+  "This confirmation was used already, so nothing was repaired. Check the decision record again: it offers a fresh one where a repair is still needed.": "이 확인은 이미 사용되어 아무것도 복구하지 않았습니다. 판단 기록을 다시 확인하세요: 복구가 아직 필요하면 새 확인을 제공합니다.",
+  "The runtime repaired a damaged last line other than the one the decision record showed, so this is not the repair you confirmed: check the decision record again.": "런타임이 판단 기록이 보여 준 것과 다른 손상된 마지막 줄을 복구했으므로, 이것은 확인한 복구가 아닙니다: 판단 기록을 다시 확인하세요."
 }

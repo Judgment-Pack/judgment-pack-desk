@@ -42,6 +42,9 @@ const (
 	// tornDigest the SHA-256 of its bytes, as the runtime gives it.
 	tornBytes  = `{"torn":`
 	tornDigest = "sha256:952cdc0f85ab10d18a1bdccfeb6c3991e59ab424dc2ce916544aac44f3d8b45e"
+	// repairWriteFailed is 0.27.1's answer, exit 4, where it could not write
+	// to the trail, measured over a trail made read-only.
+	repairWriteFailed = `{"outputVersion":"2","tool":{"name":"jpack","version":"0.27.1"},"command":"audit repair","status":"error","diagnostics":[{"code":"JPS-AUDIT-WRITE","codeStability":"provisional","layer":"operation","severity":"error","instancePath":"","message":"Audit record could not be written."}]}`
 )
 
 // repairCall is the one repair a confirmation runs.
@@ -101,6 +104,24 @@ func (rig *auditRig) repairs(t *testing.T) int {
 	return strings.Count(string(data), "\n")
 }
 
+// tornTrail is a trail of three lines and a fourth cut after eight bytes, as
+// Desk reads it; the stand-in's reports and answers speak of the same.
+const tornTrail = "{\"line\":1}\n{\"line\":2}\n{\"line\":3}\n" + tornBytes
+
+// trailOf is the trail file in folder.
+func trailOf(folder string) string {
+	return filepath.Join(folder, ".desk-private", "audit", "evaluations.jsonl")
+}
+
+// writeTornTrail gives folder tornTrail, in place where it has a trail.
+func writeTornTrail(t *testing.T, folder string) {
+	t.Helper()
+	writeProject(t, folder, map[string]string{".desk-private/audit/evaluations.jsonl": tornTrail})
+}
+
+// otherToken is a token of the right form that no desk gave.
+var otherToken = strings.Repeat("ab", repairTokenLength/2)
+
 // repairRig is a startup desk over a project that keeps a trail, with the
 // stand-in behind it answering the torn trail's report, and repairing it as
 // the runtime does.
@@ -110,6 +131,8 @@ type repairRig struct {
 	rig     *auditRig
 	project string
 	logged  *bytes.Buffer
+	// after is the report the stand-in answers once it repaired.
+	after string
 }
 
 func newRepairRig(t *testing.T, versions string) *repairRig {
@@ -125,11 +148,12 @@ func newRepairRig(t *testing.T, versions string) *repairRig {
 	repairingAs(t, rig, repairsAsTheRuntime(rig, after, ""))
 	project := t.TempDir()
 	writeProject(t, project, map[string]string{"jpack.json": auditedConfig})
+	writeTornTrail(t, project)
 	logged := &bytes.Buffer{}
 	s, ts := startDesk(t, Config{ProjectDir: project, JpackBin: rig.bin, Token: testToken, Logger: log.New(logged, "", 0)})
 	t.Cleanup(func() { s.Close() })
 	t.Cleanup(ts.Close)
-	return &repairRig{s: s, ts: ts, rig: rig, project: project, logged: logged}
+	return &repairRig{s: s, ts: ts, rig: rig, project: project, logged: logged, after: after}
 }
 
 // offer is the panel's offer of a repair on desk, which the test requires it
@@ -138,7 +162,7 @@ func offerOn(t *testing.T, ts *httptest.Server, desk string) auditRepair {
 	t.Helper()
 	status, data := reviewCall(t, ts, "GET", "/api/audit/verify", desk, nil, bearer)
 	var answer auditAnswer
-	if status != http.StatusOK || json.Unmarshal(data, &answer) != nil || answer.Repair == nil {
+	if status != http.StatusOK || json.Unmarshal(data, &answer) != nil || answer.Repair == nil || answer.Repair.State != repairAvailable {
 		t.Fatalf("the panel offers no repair: %d %s", status, data)
 	}
 	return *answer.Repair
@@ -204,7 +228,7 @@ func lockFree(t *testing.T, s *Server) {
 func TestTheRepairIsOfferedOnlyWhereTheReportNamesTheFinding(t *testing.T) {
 	r := newRepairRig(t, withAuditVersions)
 	offer := r.offer(t)
-	if offer.Line != 4 || len(offer.Token) != 64 || strings.Trim(offer.Token, "0123456789abcdef") != "" {
+	if offer.Line != 4 || len(offer.Token) != repairTokenLength || strings.Trim(offer.Token, "0123456789abcdef") != "" || offer.Reason != "" {
 		t.Errorf("the panel offers %+v, want line 4 and a token", offer)
 	}
 	for _, tc := range []struct {
@@ -275,10 +299,10 @@ func TestARepairRunsOnceOnTheOwnersConfirmation(t *testing.T) {
 
 	r.rig.ran(t)
 	again := r.repair(t, offer.Token)
-	if again.status != http.StatusConflict || again.code != CodeStale || again.error != repairStaleWords {
+	if again.status != http.StatusConflict || again.code != CodeStale || again.error != repairUsedWords {
 		t.Errorf("the same token again answered %d %s", again.status, again.data)
 	}
-	if calls := r.rig.ran(t); !slices.Equal(calls, []string{schemaCall, verifyCall}) || r.rig.repairs(t) != 1 {
+	if calls := r.rig.ran(t); calls != nil || r.rig.repairs(t) != 1 {
 		t.Errorf("the same token again ran %q", calls)
 	}
 	lockFree(t, r.s)
@@ -327,7 +351,7 @@ func TestARepairTokenIsBoundToWhatWasShown(t *testing.T) {
 		r.rig.answers(t, 1, auditInvalidReport)
 		mac := hmac.New(sha256.New, r.s.reviewKey[:])
 		mac.Write([]byte(`{"purpose":"rotate-signing-key","trail":"9a5ef41d74e7d7e003c8a34cff056351","line":4,"bytes":2864}`))
-		refused(t, r.ts, "", hex.EncodeToString(mac.Sum(nil)), r.rig, r.s)
+		refused(t, r.ts, "", strings.Repeat("0", repairNonceLength)+hex.EncodeToString(mac.Sum(nil)), r.rig, r.s)
 	})
 	t.Run("another desk", func(t *testing.T) {
 		// Two desks of one Desk, over the same report: each one's token
@@ -340,6 +364,8 @@ func TestARepairTokenIsBoundToWhatWasShown(t *testing.T) {
 		}
 		repairingAs(t, rot.rig, repairsAsTheRuntime(rot.rig, after, ""))
 		writeProject(t, rot.s.cfg.ProjectDir, map[string]string{"jpack.json": auditedConfig})
+		writeTornTrail(t, rot.s.cfg.ProjectDir)
+		writeTornTrail(t, rot.desk)
 		rot.rig.answers(t, 1, auditInvalidReport)
 		made, startup := offerOn(t, rot.ts, rot.id), offerOn(t, rot.ts, "")
 		if made.Token == startup.Token {
@@ -348,6 +374,183 @@ func TestARepairTokenIsBoundToWhatWasShown(t *testing.T) {
 		refused(t, rot.ts, "", made.Token, rot.rig, rot.s)
 		refused(t, rot.ts, rot.id, startup.Token, rot.rig, rot.s.desks[rot.id])
 	})
+}
+
+// **The token is bound to the trail's bytes and its file** (review round 1).
+// Bytes changed to others of the same length, under the same identity, line
+// and size; and a trail with no chained line, so no identity, moved aside for
+// a copy of the same bytes: each is the trail changed since, nothing runs,
+// and the trail is as it was left.
+func TestARepairTokenIsBoundToTheTrailsBytesAndFile(t *testing.T) {
+	stale := func(t *testing.T, r *repairRig, token, want string) {
+		t.Helper()
+		r.rig.ran(t)
+		got := r.repair(t, token)
+		if got.status != http.StatusConflict || got.code != CodeStale || got.error != repairStaleWords {
+			t.Errorf("the repair answered %d %s, want the stale refusal", got.status, got.data)
+		}
+		if calls := r.rig.ran(t); slices.Contains(calls, repairCall) || r.rig.repairs(t) != 0 || readFile(t, trailOf(r.project)) != want {
+			t.Errorf("a token for other bytes ran %q", calls)
+		}
+		lockFree(t, r.s)
+	}
+	t.Run("bytes of the same length", func(t *testing.T) {
+		r := newRepairRig(t, withAuditVersions)
+		token := r.offer(t).Token
+		evil := strings.Replace(tornTrail, tornBytes, `{"evil":`, 1)
+		if err := os.WriteFile(trailOf(r.project), []byte(evil), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		stale(t, r, token, evil)
+	})
+	t.Run("a trail with no identity, moved aside for a copy", func(t *testing.T) {
+		r := newRepairRig(t, withAuditVersions)
+		r.rig.answers(t, 1, edited(t, auditInvalidReport, func(report map[string]any) { delete(report, "trail") }))
+		token := r.offer(t).Token
+		trail := trailOf(r.project)
+		if err := os.Rename(trail, trail+".moved"); err != nil {
+			t.Fatal(err)
+		}
+		writeTornTrail(t, r.project)
+		stale(t, r, token, tornTrail)
+	})
+}
+
+// **A token confirms one attempt** (review round 1). After the repair it
+// confirmed, with the report and the trail's bytes put back as they were;
+// and after the runtime's refusal, once the runtime would repair: the same
+// token runs nothing, because its nonce is spent. A token whose nonce is not
+// the one its MAC was made over is the trail changed since.
+func TestARepairTokenConfirmsOneAttempt(t *testing.T) {
+	used := func(t *testing.T, r *repairRig, token string, repairs int) {
+		t.Helper()
+		r.rig.ran(t)
+		got := r.repair(t, token)
+		if got.status != http.StatusConflict || got.code != CodeStale || got.error != repairUsedWords {
+			t.Errorf("the token again answered %d %s", got.status, got.data)
+		}
+		if calls := r.rig.ran(t); calls != nil || r.rig.repairs(t) != repairs {
+			t.Errorf("the token again ran %q", calls)
+		}
+		lockFree(t, r.s)
+	}
+	t.Run("after the repair, the trail put back", func(t *testing.T) {
+		r := newRepairRig(t, withAuditVersions)
+		token := r.offer(t).Token
+		if got := r.repair(t, token); got.status != http.StatusOK {
+			t.Fatalf("the repair answered %d %s", got.status, got.data)
+		}
+		lockFree(t, r.s)
+		r.rig.answers(t, 1, auditInvalidReport)
+		writeTornTrail(t, r.project)
+		used(t, r, token, 1)
+	})
+	t.Run("after the runtime's refusal", func(t *testing.T) {
+		r := newRepairRig(t, withAuditVersions)
+		token := r.offer(t).Token
+		repairingAs(t, r.rig, "  printf '%s\\n' "+shellQuote(repairWriteFailed)+"\n  exit 4")
+		if got := r.repair(t, token); got.status != http.StatusConflict || got.error != repairRefusedWords {
+			t.Fatalf("the refused repair answered %d %s", got.status, got.data)
+		}
+		lockFree(t, r.s)
+		repairingAs(t, r.rig, repairsAsTheRuntime(r.rig, r.after, ""))
+		used(t, r, token, 0)
+	})
+	t.Run("another nonce under the same MAC", func(t *testing.T) {
+		r := newRepairRig(t, withAuditVersions)
+		token := r.offer(t).Token
+		r.rig.ran(t)
+		got := r.repair(t, strings.Repeat("0", repairNonceLength)+token[repairNonceLength:])
+		if got.status != http.StatusConflict || got.code != CodeStale || got.error != repairStaleWords {
+			t.Errorf("another nonce answered %d %s", got.status, got.data)
+		}
+		if calls := r.rig.ran(t); !slices.Equal(calls, []string{schemaCall, verifyCall}) || r.rig.repairs(t) != 0 {
+			t.Errorf("another nonce ran %q", calls)
+		}
+		lockFree(t, r.s)
+	})
+}
+
+// **Offered only on a chained trail** (review round 1). Where jpack.json's
+// audit member says chain false, the runtime repairs nothing and refuses no
+// deciding run: the panel says why it offers no repair, with no token and no
+// promise, and a confirmation given while the trail was chained runs nothing
+// once it is not. An audit member that says chain true, or says nothing of
+// it, is chained, as the runtime reads it.
+func TestARepairIsOfferedOnlyOnAChainedTrail(t *testing.T) {
+	r := newRepairRig(t, withAuditVersions)
+	token := r.offer(t).Token
+	writeProject(t, r.project, map[string]string{"jpack.json": `{"configVersion":"6","audit":{"dir":".desk-private/audit","chain":false},"packs":{}}` + "\n"})
+	_, answer, _ := readAudit(t, r.ts, "")
+	if want := (auditRepair{State: repairUnavailable, Line: 4, Reason: repairUnchainedWords}); answer.Repair == nil || *answer.Repair != want {
+		t.Errorf("on a trail that is not chained the panel says %+v, want %+v", answer.Repair, want)
+	}
+	r.rig.ran(t)
+	got := r.repair(t, token)
+	if got.status != http.StatusConflict || got.error != repairNotChainedWords {
+		t.Errorf("the confirmation answered %d %s", got.status, got.data)
+	}
+	if calls := r.rig.ran(t); !slices.Equal(calls, []string{schemaCall}) || r.rig.repairs(t) != 0 {
+		t.Errorf("the confirmation ran %q", calls)
+	}
+	lockFree(t, r.s)
+	for _, config := range []string{`{"configVersion":"6","audit":{"dir":".desk-private/audit","chain":true},"packs":{}}` + "\n", auditedConfig} {
+		writeProject(t, r.project, map[string]string{"jpack.json": config})
+		if offer := r.offer(t); offer.Line != 4 {
+			t.Errorf("with %s the panel offers %+v", config, offer)
+		}
+	}
+}
+
+// **A repair the runtime reports of other damaged bytes is not the one
+// confirmed** (review round 1). Another writer can append between Desk's
+// reading and the runtime's: where the line the runtime kept as damaged, its
+// length or its digest is not what Desk read, Desk says so in one sentence,
+// and never that the trail was repaired.
+func TestARepairOfOtherBytesIsNotTheOneConfirmed(t *testing.T) {
+	r := newRepairRig(t, withAuditVersions)
+	for _, tc := range []struct {
+		name   string
+		change func(map[string]any)
+	}{
+		{"another line", func(d map[string]any) { d["damagedLine"], d["line"] = 5, 6 }},
+		{"another length", func(d map[string]any) { d["bytes"] = 9 }},
+		{"another digest", func(d map[string]any) { d["digest"] = "sha256:" + strings.Repeat("0", 64) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r.rig.answers(t, 1, auditInvalidReport)
+			answer := edited(t, repairedAnswer, func(a map[string]any) { tc.change(a["discontinuity"].(map[string]any)) })
+			repairingAs(t, r.rig, "  printf '%s\\n' "+shellQuote(answer))
+			got := r.repair(t, r.offer(t).Token)
+			if got.status != http.StatusConflict || got.code != CodeBadRequest || got.error != repairDiffersWords || strings.Contains(got.data, "repaired\"") {
+				t.Errorf("the repair answered %d %s", got.status, got.data)
+			}
+			lockFree(t, r.s)
+		})
+	}
+}
+
+// **No repair over a trail Desk cannot read** (review round 1). A repair is
+// bound to the bytes Desk reads; where it cannot read them, as where the
+// trail has a second name, a hard link, the panel says why and offers none,
+// and a confirmation given before runs nothing.
+func TestARepairIsNotOfferedOverATrailDeskCannotRead(t *testing.T) {
+	r := newRepairRig(t, withAuditVersions)
+	token := r.offer(t).Token
+	if err := os.Link(trailOf(r.project), filepath.Join(r.project, "copy.jsonl")); err != nil {
+		t.Fatal(err)
+	}
+	const problem = "evaluations.jsonl in this project's audit directory, or the trail it is read beside, has another name as well, a hard link, so Desk does not hand it over"
+	_, answer, _ := readAudit(t, r.ts, "")
+	if want := (auditRepair{State: repairUnavailable, Line: 4, Reason: "Desk binds a repair to the trail's bytes as it reads them, and offers none now: " + problem + "."}); answer.Repair == nil || *answer.Repair != want {
+		t.Errorf("the panel says %+v, want %+v", answer.Repair, want)
+	}
+	r.rig.ran(t)
+	got := r.repair(t, token)
+	if got.status != http.StatusConflict || got.error != "Nothing was repaired: Desk could not read the trail again: "+problem+"." || r.rig.repairs(t) != 0 {
+		t.Errorf("the confirmation answered %d %s", got.status, got.data)
+	}
+	lockFree(t, r.s)
 }
 
 // **The runtime's refusal is passed on in its own words, with no path.**
@@ -537,7 +740,7 @@ func TestARepairIsAskedForInOneWay(t *testing.T) {
 // project keeps no trail**, and Desk says which in one sentence, having run
 // nothing but `packs schema`.
 func TestARepairIsNotRunWithoutTheCommandOrATrail(t *testing.T) {
-	token := strings.Repeat("ab", 32)
+	token := otherToken
 	older := newRepairRig(t, `["1","2","3","4","5"]`)
 	got := older.repair(t, token)
 	if got.status != http.StatusConflict || got.error != "Nothing was repaired: the runtime this Desk runs (jpack 0.0.0-stand-in) does not read configVersion 6 and has no audit repair. A runtime of 0.26.0 or later has it." {
@@ -590,7 +793,7 @@ func TestARepairSaysNoPathOfItsOwn(t *testing.T) {
 	if err := os.WriteFile(r.rig.bin, script, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	got := r.repair(t, strings.Repeat("ab", 32))
+	got := r.repair(t, otherToken)
 	if got.status != http.StatusConflict || strings.Contains(got.data, "SECRET") || !strings.Contains(got.error, "(jpack 0.25.0 (…))") {
 		t.Errorf("the repair answered %d %s", got.status, got.data)
 	}
@@ -768,7 +971,26 @@ func TestTheRepairWithTheRuntime(t *testing.T) {
 		t.Errorf("a deciding run on the cut trail exited %d: %s", code, out)
 	}
 
-	trailPath := filepath.Join(row.Folder, ".desk-private", "audit", "evaluations.jsonl")
+	// Bytes of the same length in place of the cut ones: the token the panel
+	// gave is for the trail as it was, and nothing is repaired (review round 1).
+	trailPath := trailOf(row.Folder)
+	cut := readFile(t, trailPath)
+	evil := strings.TrimSuffix(cut, tornBytes) + `{"evil":`
+	if err := os.WriteFile(trailPath, []byte(evil), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := repairOn(t, ts, row.ID, answer.Repair.Token); got.status != http.StatusConflict || got.error != repairStaleWords || readFile(t, trailPath) != evil {
+		t.Errorf("a token for other bytes of the same length answered %d %s", got.status, got.data)
+	}
+	lockFree(t, s.desks[row.ID])
+	if err := os.WriteFile(trailPath, []byte(cut), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, answer, _ = readAudit(t, ts, row.ID)
+	if answer.Repair == nil || answer.Repair.State != repairAvailable {
+		t.Fatalf("with the cut bytes back the panel shows %+v", answer)
+	}
+
 	got := repairOn(t, ts, row.ID, answer.Repair.Token)
 	lockFree(t, s.desks[row.ID])
 	digest := sha256.Sum256([]byte(tornBytes))
@@ -792,10 +1014,19 @@ func TestTheRepairWithTheRuntime(t *testing.T) {
 		t.Errorf("the panel does not pass on the runtime's sentence on the discontinuity: %q", report.DoesNotEstablish)
 	}
 
+	// The same token again, even with the trail's bytes put back as they
+	// were before the repair, runs nothing: it confirmed one attempt (review
+	// round 1).
+	if err := os.WriteFile(trailPath, []byte(cut), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	again := repairOn(t, ts, row.ID, answer.Repair.Token)
 	lockFree(t, s.desks[row.ID])
-	if again.status != http.StatusConflict || again.error != repairStaleWords || readFile(t, trailPath) != repaired {
+	if again.status != http.StatusConflict || again.error != repairUsedWords || readFile(t, trailPath) != cut {
 		t.Errorf("the same token again answered %d %s", again.status, again.data)
+	}
+	if err := os.WriteFile(trailPath, []byte(repaired), 0o600); err != nil {
+		t.Fatal(err)
 	}
 
 	if code, out := decidingRun(t, bin, row.Folder); code != 0 {
@@ -850,15 +1081,27 @@ func TestTheRepairQuotesNoPathWithTheRuntime(t *testing.T) {
 	}
 	leaks(t, got.data)
 
+	// The runtime's refusal, in its words: a trail it cannot write to.
 	cutTrail(t, project)
-	writeProject(t, project, map[string]string{"jpack.json": strings.Replace(chained, `"dir":".desk-private/audit"`, `"dir":".desk-private/audit","chain":false`, 1)})
+	if err := os.Chmod(trailOf(project), 0o400); err != nil {
+		t.Fatal(err)
+	}
 	refused := repairOn(t, ts, "", offerOn(t, ts, "").Token)
 	lockFree(t, s)
-	want := []runtimeDiagnostic{{"JPS-AUDIT-REPAIR-UNCHAINED", "This project's audit member says chain false, and a repair starts a chained segment."}}
+	want := []runtimeDiagnostic{{"JPS-AUDIT-WRITE", "Audit record could not be written."}}
 	if refused.status != http.StatusConflict || refused.error != repairRefusedWords || !slices.Equal(refused.diagnostics, want) {
 		t.Errorf("the refusal answered %d %s", refused.status, refused.data)
 	}
 	leaks(t, refused.data)
+
+	// Chain false: no offer, and why (review round 1).
+	writeProject(t, project, map[string]string{"jpack.json": strings.Replace(chained, `"dir":".desk-private/audit"`, `"dir":".desk-private/audit","chain":false`, 1)})
+	status, data := reviewCall(t, ts, "GET", "/api/audit/verify", "", nil, bearer)
+	var answer auditAnswer
+	if status != http.StatusOK || json.Unmarshal(data, &answer) != nil || answer.Repair == nil || *answer.Repair != (auditRepair{State: repairUnavailable, Line: answer.Repair.Line, Reason: repairUnchainedWords}) {
+		t.Errorf("with chain false the panel answered %d %s", status, data)
+	}
+	leaks(t, string(data))
 }
 
 // mustSchema is the configuration versions the runtime at bin reads.

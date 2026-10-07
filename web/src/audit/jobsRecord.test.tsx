@@ -296,7 +296,7 @@ describe('the Jobs record', () => {
   it('offers no repair, though its report names an incomplete last line: the chain of runs is Runner’s', async () => {
     const torn = { ...witnessed, findings: [{ name: 'incomplete-last-line', line: 4, detail: 'the trail ends in 8 bytes with no newline: a write that did not complete' }] }
     // Even an answer that carried an offer is shown with none.
-    jobs = () => json(200, { ...report({ report: torn }), repair: { line: 4, token: 'ab'.repeat(32) } })
+    jobs = () => json(200, { ...report({ report: torn }), repair: { state: 'available', line: 4, token: 'ab'.repeat(48) } })
     show()
     await check()
     expect(await (await panel()).findByText('incomplete-last-line')).toBeTruthy()
