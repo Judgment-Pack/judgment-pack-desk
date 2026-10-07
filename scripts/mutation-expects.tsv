@@ -306,6 +306,7 @@ go	repair: a used token runs again	TestARepairRunsOnceOnTheOwnersConfirmation,Te
 go	repair: an answer of another command is read as a repair	TestAnAnswerTheRepairDoesNotDocumentIsNotARepair
 go	repair: an answer of another outputVersion is read	TestAnAnswerTheRepairDoesNotDocumentIsNotARepair
 go	repair: an answer of another status is read as a repair	TestAnAnswerTheRepairDoesNotDocumentIsNotARepair
+go	repair: offered on a trail that is not chained	TestARepairIsOfferedOnlyOnAChainedTrail
 go	repair: offered over a trail Desk could not read	TestARepairIsNotOfferedOverATrailDeskCannotRead
 go	repair: offered without the finding	TestTheRepairIsOfferedOnlyWhereTheReportNamesTheFinding
 go	repair: the damaged bytes are read as the whole trail	TestARepairAnswerNamesNoPath,TestARepairIsAskedForInOneWay,TestARepairRunsOnceOnTheOwnersConfirmation,TestARepairTokenConfirmsOneAttempt,TestTwoConfirmationsAtOnceRunOneRepair
@@ -320,6 +321,7 @@ go	repair: the token binds no nonce	TestARepairTokenConfirmsOneAttempt
 go	repair: the token binds no size	TestARepairTokenIsBoundToWhatWasShown
 go	repair: the token binds no trail identity	TestARepairTokenIsBoundToWhatWasShown
 go	repair: the token is not checked	TestARepairTokenIsBoundToWhatWasShown
+go	repair: the token is not the desk's own	TestARepairTokenIsBoundToWhatWasShown
 go	repair: two confirmations at once run two repairs	TestTwoConfirmationsAtOnceRunOneRepair
 go	review: a JPACK_CONFIG in another directory passes	TestTheReviewOnTheStartupDeskAndANamedDesk
 go	review: a JPACK_CONFIG of another name passes	TestTheReviewOnTheStartupDeskAndANamedDesk
