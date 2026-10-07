@@ -1,0 +1,21 @@
+.editor { flex: 1; min-height: 12rem; min-width: 0; overflow: hidden; border: 1px solid var(--border-strong); border-radius: var(--radius); }
+.editor:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.editor :global(.cm-editor) { min-height: 12rem; }
+.editor :global(.cm-search) { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); padding: var(--space-2); }
+.editor :global(.cm-textfield) { max-width: 100%; min-width: 0; }
+.editor :global(.cm-button) { height: auto; min-height: 24px; font-size: var(--text-xs); }
+
+.editor :global(.cm-foldGutter) .foldMarker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-4);
+  height: var(--space-4);
+  margin-block: calc((1.65em - var(--space-4)) / 2);
+  padding: 0;
+  color: var(--ink-soft);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.editor .foldMarker svg { width: var(--space-3); height: var(--space-3); }
+.editor .foldMarker:hover { color: var(--ink); background: var(--false-soft); }

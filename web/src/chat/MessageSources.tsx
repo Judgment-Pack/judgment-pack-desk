@@ -1,4 +1,6 @@
-import { SearchSources } from '../search/SearchSources'
+import { SourceRow } from '../ui/SourceRow'
+import { IconDetails, IconLink } from '../shell/icons'
+import { SearchSources, SearchReferenceIcon } from '../search/SearchSources'
 import type { SearchReference } from '../search/results'
 import type { ReactNode } from 'react'
 import type { ChatAttachment } from './store'
@@ -27,15 +29,16 @@ export function SourceList({chatId, documents, websites = [], searches = [], sou
 }) {
   useLocale()
   return <div className={styles.documentList}>
-    {documents.map(file => <Button variant="inline" key={attachmentKey(file)} onClick={event => onRead(<SourceReader name={file.name} reference={file.document!} link={file.link}/>, event.currentTarget)}>{file.name}</Button>)}
-    {sourceIds.map(id => <Button variant="inline" key={id} onClick={event => binding?.ledger && onRead(<SourceInspector selection={{kind:'source',id}} ledger={binding.ledger} state={binding.state}/>, event.currentTarget)}>{binding?.ledger?.byId(id)?.document?.title || id}</Button>)}
-    {searches.map(reference=><Button variant="inline" key={reference.id} onClick={event=>onRead(<SearchSources reference={reference}/>,event.currentTarget)}>{msg('Web search')} · {reference.request.query}</Button>)}
-    {websites.map(reference => <Button variant="inline" key={reference.id} onClick={event => onRead(<WebsiteSources chatId={chatId} reference={reference} documents={documents} onRead={onRead}/>, event.currentTarget)}>{msg('Website sources')} · {new URL(reference.seed).hostname}</Button>)}
+    {documents.map(file => <SourceRow icon={<IconDetails/>} title={file.name} key={attachmentKey(file)} onClick={event => onRead(<SourceReader name={file.name} reference={file.document!} link={file.link}/>, event.currentTarget)}/>)}
+    {sourceIds.map(id => <SourceRow icon={<IconDetails/>} title={binding?.ledger?.byId(id)?.document?.title || id} key={id} onClick={event => binding?.ledger && onRead(<SourceInspector selection={{kind:'source',id}} ledger={binding.ledger} state={binding.state}/>, event.currentTarget)}/>)}
+    {searches.map(reference=><SourceRow icon={<SearchReferenceIcon reference={reference}/>} title={reference.request.query} meta={msg('Web search')} key={reference.id} onClick={event=>onRead(<SearchSources reference={reference}/>,event.currentTarget)}/>)}
+    {websites.map(reference => <SourceRow icon={<IconLink/>} title={new URL(reference.seed).hostname} meta={msg('Website sources')} key={reference.id} onClick={event => onRead(<WebsiteSources chatId={chatId} reference={reference} documents={documents} onRead={onRead}/>, event.currentTarget)}/>)}
   </div>
 }
 export function MessageSources(props: Parameters<typeof SourceList>[0]) {
   useLocale()
-  const count = props.documents.length + (props.sourceIds?.length ?? 0) + (props.searches?.length ?? 0)
-  if (!count && !props.websites?.length) return null
-  return <Disclosure title={count ? `${msg('Sources')} · ${count}` : msg('Website sources')}><SourceList {...props}/></Disclosure>
+  const count = props.documents.length + (props.sourceIds?.length ?? 0)
+  const searches = props.searches ?? []
+  if (!count && !props.websites?.length && !searches.length) return null
+  return <>{(count>0||!!props.websites?.length)&&<Disclosure title={count ? `${msg('Sources')} · ${count}` : msg('Website sources')}><SourceList {...props} searches={[]}/></Disclosure>}{searches.length>0&&<Disclosure title={`${msg('Search results')} · ${searches.length}`}><SourceList {...props} documents={[]} sourceIds={[]} websites={[]}/></Disclosure>}</>
 }

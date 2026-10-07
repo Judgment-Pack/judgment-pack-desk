@@ -10,6 +10,7 @@ import { cleanup, render } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 import * as icons from './icons'
+import { glyphDOM } from './glyph'
 
 afterEach(cleanup)
 
@@ -75,4 +76,16 @@ describe('the desk icons', () => {
     expect(svg.querySelector('title')).toBeNull()
     expect(svg.getAttribute('role')).toBeNull()
   })
+})
+
+
+it.each([
+  ['down', icons.IconChevronDown], ['right', icons.IconChevronRight],
+  ['up', icons.IconChevronUp], ['close', icons.IconClose]
+] as const)('DOM-owned %s controls match the React glyph, including round caps and joins', (name, Icon) => {
+  const { container } = render(<Icon />)
+  const react = container.querySelector('svg')!, dom = glyphDOM(name)
+  const attributes = (node: Element) => Object.fromEntries(node.getAttributeNames().map(key => [key, node.getAttribute(key)]))
+  expect(attributes(dom)).toEqual(attributes(react))
+  expect(dom.querySelector('path')!.getAttribute('d')).toBe(react.querySelector('path')!.getAttribute('d'))
 })

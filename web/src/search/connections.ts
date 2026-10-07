@@ -5,9 +5,12 @@ import { useConnections } from '../connections/catalog'
 import { FileRequestError, readFile, writeFile } from '../files/client'
 import { useFileListing } from '../files/queries'
 
-export interface SearchConnection { id:string; revision:string; name:string; provider:string; project?:string; location?:string; model?:string; dailyLimit:number; requests?:number; day?:string }
+export interface SearchConnection { id:string; revision:string; name:string; provider:string; project?:string; location?:string; model?:string; dailyLimit:number; timeoutSeconds?:number; requests?:number; day?:string
+ /** Set by Desk, never by the gateway: the saved timeout was outside the bounds, so it is not shown or sent. */
+ timeoutRefused?:true }
 export interface SearchProvider { id:string; name:string; kind:'search-results'|'grounded-answer'; fields:string[]; docs:string }
-export interface SearchStatus { version:1; providers:SearchProvider[]; connections:SearchConnection[] }
+export interface SearchTimeout { defaultSeconds:number; minSeconds:number; maxSeconds:number }
+export interface SearchStatus { version:1; providers:SearchProvider[]; connections:SearchConnection[]; timeout?:SearchTimeout }
 export interface SearchPreference { version:1; connection:string|null; mode:'auto'|'provided' }
 export const SEARCH_CONNECTIONS_KEY=['web-search-connections'] as const
 export const SEARCH_PREFERENCE_FILE='jpack-search.json'
@@ -15,12 +18,20 @@ const identifier=(v:unknown):v is string=>typeof v==='string'&&/^[a-z][a-z0-9-]{
 export function decodeSearchStatus(raw:unknown):SearchStatus {
  const v=raw as SearchStatus
  if(!v||v.version!==1||!Array.isArray(v.providers)||v.providers.length>32||!Array.isArray(v.connections)||v.connections.length>32)throw new Error('Invalid search connection response')
+ if(v.timeout!==undefined){const t=v.timeout;if(!t||![t.defaultSeconds,t.minSeconds,t.maxSeconds].every(Number.isSafeInteger)||t.minSeconds<1||t.maxSeconds>120||t.minSeconds>t.defaultSeconds||t.defaultSeconds>t.maxSeconds)throw new Error('Invalid search timeout limits')}
  for(const p of v.providers){
   if(!identifier(p.id)||typeof p.name!=='string'||p.name.length>120||!['search-results','grounded-answer'].includes(p.kind)||!Array.isArray(p.fields)||!p.fields.every(f=>['api-key','project','location','model','service-account-json'].includes(f))||typeof p.docs!=='string'||!p.docs.startsWith('https://'))throw new Error('Unsupported search provider')
  }
- for(const c of v.connections){if(!identifier(c.id)||!/^[a-f0-9]{64}$/.test(c.revision)||typeof c.name!=='string'||c.name.length>80||!v.providers.some(p=>p.id===c.provider)||!Number.isSafeInteger(c.dailyLimit)||c.dailyLimit<1||c.dailyLimit>10000||Object.hasOwn(c,'credential'))throw new Error('Invalid search connection')}
+ for(const c of v.connections){if(!identifier(c.id)||!/^[a-f0-9]{64}$/.test(c.revision)||typeof c.name!=='string'||c.name.length>80||!v.providers.some(p=>p.id===c.provider)||!Number.isSafeInteger(c.dailyLimit)||c.dailyLimit<1||c.dailyLimit>10000||Object.hasOwn(c,'credential')||Object.hasOwn(c,'timeoutRefused'))throw new Error('Invalid search connection')}
  if(new Set(v.connections.map(c=>c.id)).size!==v.connections.length||new Set(v.providers.map(p=>p.id)).size!==v.providers.length)throw new Error('Invalid search connection response')
- return v
+ // A timeout outside the bounds is that connection's problem alone: the
+ // connection is kept, without the value, and marked; the others are as sent.
+ const connections=v.connections.map(c=>{
+  if(c.timeoutSeconds===undefined||c.timeoutSeconds===0||Number.isSafeInteger(c.timeoutSeconds)&&c.timeoutSeconds>=(v.timeout?.minSeconds??10)&&c.timeoutSeconds<=(v.timeout?.maxSeconds??120))return c
+  const {timeoutSeconds:_refused,...kept}=c
+  return {...kept,timeoutRefused:true as const}
+ })
+ return {...v,connections}
 }
 export const loadSearchStatus=async(signal?:AbortSignal)=>decodeSearchStatus(await connectionCall('status',{},signal,'web-search'))
 export function decodeSearchPreference(value:unknown):SearchPreference {

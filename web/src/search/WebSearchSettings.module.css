@@ -11,6 +11,5 @@
 .defaults { display: flex; flex-wrap: wrap; gap: var(--space-4); margin-top: var(--space-4); }
 .defaults > .field { flex: 1 1 220px; }
 .credential { min-height: 130px; resize: vertical; font: inherit; padding: var(--space-2); color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
-.attribution { width: 100%; height: 150px; border: none; background: var(--surface); }
 .chatOptions { display: grid; gap: var(--space-3); padding-bottom: var(--space-3); }
 .form h3, .form p { margin: 0; }

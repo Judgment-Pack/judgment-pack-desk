@@ -1,3 +1,4 @@
+import { GatewayError } from '../research/gatewayClient'
 import { describe, expect, it, vi } from 'vitest'
 import { linkReading, READ_LINK, EXPLORE_WEBSITE } from '../chat/linkTools'
 import type { ChatAttachment } from '../chat/store'
@@ -25,6 +26,8 @@ describe('automatic chat research tools',()=>{
   const h=harness(),tools=h.next(),search=tools.find(t=>t.name==='search_sources')!,read=tools.find(t=>t.name===READ_LINK)!,explore=tools.find(t=>t.name===EXPLORE_WEBSITE)!
   expect((await read.execute({url},signal)).isError).toBe(true);expect(h.ingest).not.toHaveBeenCalled()
   const answer=await search.execute({query:'policy'},signal)
+  expect(search.presentation).toEqual({provider:'tavily'})
+  expect(answer.structuredContent).toMatchObject({searchStep:{query:'policy',provider:'tavily',submitted:true,reference:h.refs[0]}})
   expect(answer.isError).toBeUndefined();expect(h.refs).toHaveLength(1);expect(h.records).toHaveLength(1)
   await read.execute({url},signal);expect(h.ingest).toHaveBeenCalledTimes(1)
   expect((await explore.execute({url},signal)).isError).toBeUndefined();expect(h.discover).toHaveBeenCalledWith(url,CONFIG,signal)
@@ -68,4 +71,20 @@ it('keeps a message budget across automatic repair turns and resets it for a new
  expect(h.acquire).toHaveBeenCalledTimes(3)
  await h.next('second').find(t=>t.name==='search_sources')!.execute({query:'another request'},signal)
  expect(h.acquire).toHaveBeenCalledTimes(4)
+})
+
+it('reports a recoverable provider failure and allows a bounded repair search',async()=>{
+ const h=harness(),tool=h.next('retry').find(t=>t.name==='search_sources')!
+ h.acquire.mockRejectedValueOnce(new GatewayError(400,'source failed: search-not-grounded'))
+ const failed=await tool.execute({query:'broad question'},signal)
+ expect(failed.structuredContent).toMatchObject({searchFailure:'search-not-grounded',searchStep:{query:'broad question',provider:'tavily',submitted:true}})
+ expect(failed.content?.[0]?.text).toContain('shorter, more specific query')
+ expect(failed.content?.[0]?.text).toContain('label it as unverified')
+ expect(failed.content?.[0]?.text).not.toContain('source failed')
+ expect(h.refs).toHaveLength(0)
+ expect((await tool.execute({query:'specific public source'},signal)).isError).toBeUndefined()
+ expect(h.refs).toHaveLength(1)
+ await tool.execute({query:'third query'},signal)
+ expect((await tool.execute({query:'fourth query'},signal)).isError).toBe(true)
+ expect(h.acquire).toHaveBeenCalledTimes(3)
 })

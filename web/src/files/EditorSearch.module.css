@@ -1,0 +1,11 @@
+.panel { display: grid; gap: var(--space-1); padding: var(--space-2); font-family: var(--sans); font-size: var(--text-control); }
+.findRow { display: flex; align-items: center; gap: var(--space-1); min-width: 0; }
+.findRow > input { flex: 1; min-width: 0; }
+.actions { display: flex; flex-shrink: 0; align-items: center; gap: var(--space-1); }
+.options { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1); }
+.option[aria-pressed='true'] { background: var(--accent-soft); color: var(--ink); }
+.wholeWord { text-decoration-line: underline; text-underline-offset: var(--space-1); }
+.replaceRow { display: flex; flex-wrap: wrap; gap: var(--space-1); padding-left: calc(var(--density-control) + var(--space-1)); }
+.replaceRow[hidden] { display: none; }
+.replaceRow > input { flex: 1 1 10rem; min-width: 0; }
+.error { color: var(--danger); font-size: var(--text-xs); overflow-wrap: anywhere; }

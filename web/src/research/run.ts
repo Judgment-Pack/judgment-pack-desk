@@ -1074,7 +1074,10 @@ export class AuthoringRun {
     await this.ports.turn({onTarget:target=>{this.currentAITarget=target}, prompt, hostTools: reviewer ? hostTools : [instructions, ...hostTools], reviewer, conversation: !reviewer && producedBy !== 'repair' }, signal, (incoming) => {
       if (signal.aborted || this.responseId !== responseId) return
       if (incoming.type === 'tool_call' || incoming.type === 'tool_result') observed.push(incoming)
-      const event = incoming.type === 'proposal' ? canonicalProposal(incoming) : incoming
+      // Pin the offered tool's provider before the first working row renders.
+      // Do not accept a provider from model arguments or current connection settings.
+      const event = incoming.type === 'proposal' ? canonicalProposal(incoming) : incoming.type === 'tool_call'
+        ? {...incoming, presentation: hostTools.find(tool=>tool.name===incoming.name)?.presentation} : incoming
       if (event.type === 'message' && event.text.trim()) spoke = true
       if (event.type === 'message_progress') { this.set({ streaming: event.text }); return }
       this.set({ events: [...this.state.events, event] })

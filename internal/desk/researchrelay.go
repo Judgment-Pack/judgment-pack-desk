@@ -58,14 +58,21 @@ const (
 )
 
 var (
-	// researchDeadline is the overall bound on one relayed request. A gateway
-	// gives its source thirty seconds and then canonicalizes and signs what
-	// came back; a reader service's answer to a long PDF is megabytes. Vars,
-	// not consts, so a test can show the bounds apply.
+	// researchDeadline is the overall bound on one relayed request, counted
+	// from its arrival, the body's read included. A gateway gives its source
+	// thirty seconds and then canonicalizes and signs what came back; a reader
+	// service's answer to a long PDF is megabytes. Vars, not consts, so a test
+	// can show the bounds apply.
 	researchDeadline = 90 * time.Second
 	// researchIdle is the bound between two bytes of the answer, and on the
 	// wait for its first one.
 	researchIdle = 60 * time.Second
+	// researchSearchDeadline and researchSearchIdle replace the two above for
+	// one request only: a managed local gateway's acquire from `web-search`,
+	// whose source may be given up to 130 seconds (local_gateway_plan.go).
+	// Counted from the same arrival.
+	researchSearchDeadline = 140 * time.Second
+	researchSearchIdle     = 135 * time.Second
 )
 
 // researchRoutes is the closed list: the suffix the page names, and the one
@@ -242,10 +249,10 @@ func (s *Server) handleResearchRelay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), researchDeadline)
-	defer cancel()
-	r = r.WithContext(ctx)
-	deadline := time.Now().Add(researchDeadline)
+	// The start is the request's arrival: the body's read counts against the
+	// bound, whichever bound the body then selects.
+	start := time.Now()
+	deadline := start.Add(researchDeadline)
 	controller := http.NewResponseController(w)
 
 	// The whole body first, bounded, so a request this desk refuses is one the
@@ -264,6 +271,11 @@ func (s *Server) handleResearchRelay(w http.ResponseWriter, r *http.Request) {
 			"the request body could not be read, and nothing was sent")
 		return
 	}
+	budget, idle := researchRequestTiming(gateway.managedLocal, suffix, body)
+	deadline = start.Add(budget)
+	ctx, cancel := context.WithDeadline(r.Context(), deadline)
+	defer cancel()
+	r = r.WithContext(ctx)
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	r.ContentLength = int64(len(body))
 	r.TransferEncoding = nil
@@ -282,7 +294,7 @@ func (s *Server) handleResearchRelay(w http.ResponseWriter, r *http.Request) {
 			}
 			out.Header = carried
 		},
-		Transport:     beforeTheFirstByte{inner: relayTransport, cancel: cancel, idle: researchIdle},
+		Transport:     beforeTheFirstByte{inner: relayTransport, cancel: cancel, idle: idle},
 		FlushInterval: -1,
 		ModifyResponse: func(response *http.Response) error {
 			status = response.StatusCode
@@ -299,7 +311,7 @@ func (s *Server) handleResearchRelay(w http.ResponseWriter, r *http.Request) {
 			}
 			response.Header = kept
 			response.Trailer = nil
-			response.Body = boundedByIdleFor(response.Body, cancel, researchIdle)
+			response.Body = boundedByIdleFor(response.Body, cancel, idle)
 			return nil
 		},
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
@@ -319,8 +331,22 @@ func (s *Server) handleResearchRelay(w http.ResponseWriter, r *http.Request) {
 		ResponseWriter: w,
 		controller:     controller,
 		until:          deadline,
-		idle:           researchIdle,
+		idle:           idle,
 	}, r)
 	withoutTrailers(w.Header())
 	s.log.Printf("desk: research relay %s %s answered %d", suffix, loggableOrigin(gateway.url), status)
+}
+
+// Managed search needs a longer envelope. The adapter still enforces the
+// connection's own deadline; this is headroom to return its result.
+func researchRequestTiming(local bool, suffix string, body []byte) (time.Duration, time.Duration) {
+	if local && suffix == "acquire" {
+		var request struct {
+			Source string `json:"source"`
+		}
+		if json.Unmarshal(body, &request) == nil && request.Source == "web-search" {
+			return researchSearchDeadline, researchSearchIdle
+		}
+	}
+	return researchDeadline, researchIdle
 }

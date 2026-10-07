@@ -47,3 +47,17 @@ func TestIndependentGatewayRequiresExactOperatorManifestApproval(t *testing.T) {
 		t.Fatal("empty approval accepted")
 	}
 }
+
+func TestLocalPlanSearchAllowsLongerEnvelopeWithoutExtendingOtherSources(t *testing.T) {
+	files := map[string]string{executableName("adapter-document"): strings.Repeat("a", 64), executableName("adapter-sources"): strings.Repeat("b", 64)}
+	search := strings.ReplaceAll(genericPlanFixture, "future-files", "web-search")
+	search = strings.Replace(search, `"timeout":60`, `"timeout":130`, 1)
+	if _, err := decodeLocalSourcePlan([]byte(search), files); err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range []string{strings.Replace(search, `"timeout":130`, `"timeout":131`, 1), strings.Replace(genericPlanFixture, `"timeout":60`, `"timeout":130`, 1)} {
+		if _, err := decodeLocalSourcePlan([]byte(raw), files); err == nil {
+			t.Fatal("unbounded or unrelated source accepted")
+		}
+	}
+}

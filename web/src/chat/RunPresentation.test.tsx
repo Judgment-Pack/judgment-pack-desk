@@ -43,3 +43,20 @@ it('marks only running status for motion, leaving actionable errors static', () 
  view.rerender(<TaskStatus state={{...INITIAL_STATE,status:'ready'}}/>)
  expect(screen.queryByRole('status')).toBeNull()
 })
+
+it('ties each failure reason to its search invocation without duplicating the notice',()=>{
+ const state={...INITIAL_STATE,events:[
+ {type:'tool_call' as const,callId:'slow',name:'search_sources',args:{}},
+ {type:'tool_call' as const,callId:'fast',name:'search_sources',args:{}},
+ {type:'tool_result' as const,callId:'fast',name:'search_sources',text:'ok',isError:false},
+ {type:'tool_result' as const,callId:'slow',name:'search_sources',text:'untrusted raw detail',isError:true,structured:{searchFailure:'search-timeout'}}
+ ]}
+ const rows=workItems(state.events,false)
+ expect(rows[0]?.failure).toBe('search-timeout')
+ expect(rows[1]?.failure).toBeUndefined()
+ const view=render(<WorkSummary state={state}/>)
+ expect(view.container.querySelector('[data-status="failed"]')?.textContent).toContain('took too long')
+ expect(view.container.querySelector('[data-status="complete"]')?.textContent).not.toContain('took too long')
+ expect(view.container.textContent).not.toContain('untrusted raw detail')
+ expect(screen.getAllByText(/took too long/)).toHaveLength(1)
+})

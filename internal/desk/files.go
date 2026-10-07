@@ -8,13 +8,10 @@ package desk
 // in the client, and the desk is the client. Writes go through here and never
 // through the relay.
 //
-// **This API is the user's hand, not a policy layer.** Any path inside the
-// project root is readable and writable, subject only to the exclusions below:
-// they are the user's own files, on the user's own machine, reached over
-// loopback with the session token. It does not consult jpack.json, it does not
-// care whether a path is a pack, and it forms no opinion about what the bytes
-// mean. The runtime remains the only judge of that, and it judges after the
-// bytes land.
+// This API edits the user's authored files without validating their content.
+// Generated runtime locks, audit records and files with no write permission are
+// readable but cannot be replaced here; their owning workflow manages updates.
+// Runtime validation still judges authored bytes after they land.
 //
 // # Containment
 //
@@ -473,6 +470,7 @@ func afterLockEntry(rel string) {
 
 // FileEntry is one file the project contains.
 type FileEntry struct {
+	ReadOnlyReason string `json:"readOnlyReason,omitempty"`
 	// Path is project-relative and slash-separated, on every platform.
 	Path   string `json:"path"`
 	Bytes  int64  `json:"bytes"`
@@ -483,10 +481,11 @@ type FileEntry struct {
 // this too, read back off the disk after the rename, so the client can verify
 // what actually landed rather than trust that what it sent is what is there.
 type FileContent struct {
-	Path    string `json:"path"`
-	Bytes   int    `json:"bytes"`
-	SHA256  string `json:"sha256"`
-	Content string `json:"content"`
+	ReadOnlyReason string `json:"readOnlyReason,omitempty"`
+	Path           string `json:"path"`
+	Bytes          int    `json:"bytes"`
+	SHA256         string `json:"sha256"`
+	Content        string `json:"content"`
 	// Created is true when the write brought the file into existence.
 	Created bool `json:"created,omitempty"`
 }
@@ -990,12 +989,13 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 	afterResolve(".")
 
 	files := []FileEntry{}
+	access := s.fileAccessPolicy()
 	unread := []string{}
 	problems := s.walkProject(func(rel string, info fs.FileInfo) {
 		if strings.HasPrefix(path.Base(rel), stagingPrefix) {
 			return
 		}
-		entry := FileEntry{Path: rel, Bytes: info.Size()}
+		entry := FileEntry{Path: rel, Bytes: info.Size(), ReadOnlyReason: access.readOnlyReason(rel, info)}
 		// The digest is what lets an editor open a file and later prove which
 		// bytes it opened, so it is read here rather than left to a second call.
 		data, status, derr := s.readThroughRoot(rel)
@@ -1022,8 +1022,8 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 		"excluded": excludedNames(),
 		"note": "Every regular file in the project tree, except the excluded directories " +
 			"and this desk's own staging files. This endpoint reads the filesystem and " +
-			"nothing else: it does not consult jpack.json and forms no opinion about what " +
-			"any file is. A file too large to read is listed with an empty digest.",
+			"nothing else. Read-only reasons identify generated outputs and filesystem " +
+			"permissions. A file too large to read is listed with an empty digest.",
 	}
 	// A thinned answer says it is thinned. A listing that dropped a subtree and
 	// still returned a bare 200 would be read as the project's contents, and a
@@ -1079,6 +1079,8 @@ func (s *Server) handleFileRead(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, status, err)
 		return
 	}
+	info, _ := s.root.Lstat(osPath(clean))
+	content.ReadOnlyReason = s.fileAccessPolicy().readOnlyReason(clean, info)
 	writeJSON(w, http.StatusOK, content)
 }
 
@@ -1142,6 +1144,11 @@ func (s *Server) commitWriteLocked(clean string, req WriteRequest) (int, any) {
 		return statusForRefusal(err), errorBody(err)
 	}
 	afterSymlinkWalk(clean)
+
+	info, _ := s.root.Lstat(osPath(clean))
+	if reason := s.fileAccessPolicy().readOnlyReason(clean, info); reason != "" {
+		return http.StatusForbidden, errorBody(withCode(CodeForbidden, errors.New(readOnlyFileMessage(reason))))
+	}
 
 	// What is there now, under the lock.
 	//

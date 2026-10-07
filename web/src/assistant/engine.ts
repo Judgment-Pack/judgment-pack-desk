@@ -110,6 +110,8 @@ export type CallTool = (name: string, args: Record<string, unknown>) => Promise<
  * so the narrowing notice a served schema can earn never fires for one.
  */
 export interface HostTool {
+  /** Host-owned presentation, frozen when this tool is offered; never model arguments. */
+  presentation?: { provider: string }
   name: string
   description: string
   inputSchema: unknown
@@ -223,7 +225,7 @@ export type AssistantEvent =
    */
   | { type: 'message'; text: string }
   | { type: 'message_progress'; text: string }
-  | { type: 'tool_call'; callId?: string; name: string; args: unknown }
+  | { type: 'tool_call'; callId?: string; name: string; args: unknown; presentation?: { provider: string } }
   | { type: 'tool_result'; callId?: string; name: string; isError: boolean; text: string; structured?: unknown }
   /**
    * `rewrote` and `refused` are the ToolGate's, on the wire. `narrowed` is the

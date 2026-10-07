@@ -1,10 +1,13 @@
+import { linkStepFromCall, linkStepFromResult, validLinkStep, type LinkStep } from './linkStep'
+import { validSearchStep, type SearchStep } from '../search/step'
+import { searchFailureMessage, type SearchFailureCode } from '../search/failures'
 import { validSearchReference, type SearchReference } from '../search/results'
 import type { AssistantEvent } from '../assistant/engine'
 import type { ChatAttachment } from './store'
 import { validWebURL } from '../documents/record'
 import { validWebsiteReference, type WebsiteReference } from '../documents/website'
 
-export interface WorkItem { id: string; name: string; status: 'working' | 'complete' | 'failed' | 'interrupted' }
+export interface WorkItem { id: string; name: string; status: 'working' | 'complete' | 'failed' | 'interrupted'; failure?: SearchFailureCode; search?: SearchStep; link?: LinkStep }
 /** Pair by invocation identity, never by a tool name (parallel calls may repeat). */
 export function workItems(events: readonly AssistantEvent[], running: boolean): WorkItem[] {
   const rows: WorkItem[] = []
@@ -12,12 +15,23 @@ export function workItems(events: readonly AssistantEvent[], running: boolean): 
   events.forEach((event, index) => {
     if (event.type === 'tool_call' && event.callId) {
       const row: WorkItem = { id: event.callId, name: event.name, status: running ? 'working' : 'interrupted' }
+      const query=(event.args as {query?:unknown}|undefined)?.query
+      if(event.name==='search_sources' && validSearchStep({query})) {
+       row.search={query:query as string}
+       if(validSearchStep({...row.search,provider:event.presentation?.provider}))row.search.provider=event.presentation?.provider
+      }
+      if(event.name==='read_link')row.link=linkStepFromCall(event.args)
       rows.push(row); pending.set(event.callId, row)
     } else if (event.type === 'tool_result') {
       const row = event.callId ? pending.get(event.callId) : undefined
       const status = event.isError ? 'failed' : 'complete'
-      if (row) { row.status = status; pending.delete(event.callId!) }
-      else rows.push({ id: `result-${index}`, name: event.name, status })
+      const code=event.name==='search_sources'&&event.isError?(event.structured as {searchFailure?:unknown}|undefined)?.searchFailure:undefined
+      const failure=searchFailureMessage(code)?code as SearchFailureCode:undefined
+      const detail=event.name==='search_sources'?(event.structured as {searchStep?:unknown}|undefined)?.searchStep:undefined
+      const search=validSearchStep(detail)?structuredClone(detail):undefined
+      const link=event.name==='read_link'&&!event.isError?linkStepFromResult(event.structured):undefined
+      if (row) { if(link && row.name==='read_link')row.link=link; row.status = status; if(failure)row.failure=failure; if(search && row.name==='search_sources')row.search=search; pending.delete(event.callId!) }
+      else rows.push({ id: `result-${index}`, name: event.name, status, ...(failure?{failure}:{}), ...(search?{search}:{}), ...(link?{link}:{}) })
     }
   })
   return rows
@@ -39,7 +53,9 @@ export interface ResponseHistory {
 export function summarizeWork(events: readonly AssistantEvent[], running: boolean): WorkRecord {
   return { items: workItems(events, running), notices: [...new Set(events.flatMap(event =>
     event.type === 'guardrail' && event.action !== 'narrowed' ? [event.detail]
-    : event.type === 'thinking_unavailable' ? [event.detail] : []))],
+    : event.type === 'thinking_unavailable' ? [event.detail]
+    : event.type === 'tool_result' && event.name === 'search_sources' && event.isError
+      ? [searchFailureMessage((event.structured as {searchFailure?:unknown}|undefined)?.searchFailure)].filter((text):text is string=>!!text) : []))],
     critique: [...events].reverse().find(event => event.type === 'critique')?.text }
 }
 export const attachmentKey = (file: ChatAttachment) => `${file.id}/${file.document?.digest ?? ''}`
@@ -76,7 +92,7 @@ export function readResponseHistory(value: unknown): ResponseHistory[] {
       || !Array.isArray(row.sourceIds) || row.sourceIds.some(s => typeof s !== 'string' || !/^src-\d+$/.test(s)) || !object(row.work)
       || !Array.isArray(row.work.items) || !Array.isArray(row.work.notices) || row.work.notices.some(n => typeof n !== 'string')
       || row.work.critique !== undefined && typeof row.work.critique !== 'string') return invalid()
-    for (const item of row.work.items) if (!object(item) || typeof item.id !== 'string' || typeof item.name !== 'string' || !['working','complete','failed','interrupted'].includes(String(item.status))) return invalid()
+    for (const item of row.work.items) if (!object(item) || typeof item.id !== 'string' || typeof item.name !== 'string' || !['working','complete','failed','interrupted'].includes(String(item.status)) || item.failure!==undefined&&(!searchFailureMessage(item.failure)||item.status!=='failed'||item.name!=='search_sources') || item.search!==undefined&&(item.name!=='search_sources'||!validSearchStep(item.search)) || item.link!==undefined&&(item.name!=='read_link'||!validLinkStep(item.link))) return invalid()
     return {id: row.id, messageId: readMessageId(row.messageId), afterTurnId: readMessageId(row.afterTurnId), documents: readAttachments(row.documents),
       ...(row.searches ? {searches:structuredClone(row.searches) as SearchReference[]} : {}), websites: structuredClone(row.websites), sourceIds: [...row.sourceIds], work: {items: structuredClone(row.work.items) as WorkItem[], notices: [...row.work.notices] as string[], ...(typeof row.work.critique === 'string' ? {critique: row.work.critique} : {})}}
   })

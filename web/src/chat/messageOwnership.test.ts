@@ -116,3 +116,17 @@ it('keeps the streamed message identity at completion and omits transient identi
  expect(run.getSnapshot().turns.at(-1)?.id).toBe(id)
  expect(run.getSnapshot().streaming).toBe('')
 })
+
+
+it('pins the offered search provider before execution and preserves it when interrupted',async()=>{
+ const p=ports(async(_request,signal,emit)=>{
+  emit({type:'tool_call',callId:'search',name:'search_sources',args:{query:'NASA',provider:'tavily'},presentation:{provider:'tavily'}})
+  await new Promise((_,reject)=>signal.addEventListener('abort',()=>reject(new DOMException('Stopped','AbortError'))))
+ })
+ p.researchTools=[{name:'search_sources',description:'Search',inputSchema:{},presentation:{provider:'google-grounding'},execute:vi.fn()}]
+ const run=new AuthoringRun(p);run.start('Find NASA',[])
+ expect(run.getSnapshot().responses?.[0]?.work.items[0]).toMatchObject({status:'working',search:{query:'NASA',provider:'google-grounding'}})
+ run.stop();await settled(run)
+ const restored=decodeCheckpoint(checkpoint(run.getSnapshot(),[]))
+ expect(restored.state.responses?.[0]?.work.items[0]).toMatchObject({status:'interrupted',search:{provider:'google-grounding'}})
+})
