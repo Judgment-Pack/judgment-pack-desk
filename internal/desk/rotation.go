@@ -15,8 +15,8 @@ package desk
 // `<config>/secrets/signing/<desk id>.seed`, so Desk makes the next key the
 // one named by renaming it over that name. `jpack.json` never changes, and no
 // lock is written. The project Desk was started on, where its upgrade made a
-// key, is rotated the same way, under its own name (`signingKeyName`, the
-// hex SHA-256 of its path), wherever this file says `<desk id>`.
+// key, is rotated the same way, under its own name (`signingKeyName`, its
+// identity, startup_identity.go), wherever this file says `<desk id>`.
 //
 // # The steps, under the desk's key lock and the signing folder's lock
 //

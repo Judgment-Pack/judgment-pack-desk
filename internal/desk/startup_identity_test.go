@@ -462,8 +462,9 @@ func TestTheUpgradeWritesTheIdentityBeforeTheKey(t *testing.T) {
 
 // **A key is made only under the name the project keeps.** The upgrade
 // writes the project's identity before its key; a key asked for with no
-// identity written, or under another name, is refused as stale, and nothing
-// is made.
+// identity written is refused as stale, and nothing is made: under the name
+// the offer showed, and under the path's hash, the name a project with no
+// identity is read by, which binds the key to no project.
 func TestAKeyIsMadeOnlyUnderTheProjectsIdentity(t *testing.T) {
 	u := newSigningUpgrade(t, nil)
 	u.offer(t, true)
@@ -471,13 +472,16 @@ func TestAKeyIsMadeOnlyUnderTheProjectsIdentity(t *testing.T) {
 	if refusal != "" {
 		t.Fatal(refusal)
 	}
-	key, failure := u.s.makeStartupKey(context.Background(), dir, u.seed)
-	if key != nil || failure == nil || failure.status != http.StatusConflict || failure.code != CodeStale {
-		t.Errorf("a key with no identity written answered %+v %+v", key, failure)
+	byPath := filepath.Join(filepath.Dir(u.seed), digestOf([]byte(u.s.projectDir))+".seed")
+	for _, seed := range []string{u.seed, byPath} {
+		key, failure := u.s.makeStartupKey(context.Background(), dir, seed)
+		if key != nil || failure == nil || failure.status != http.StatusConflict || failure.code != CodeStale || !strings.Contains(failure.message, "identity") {
+			t.Errorf("a key at %s with no identity written answered %+v %+v", filepath.Base(seed), key, failure)
+		}
+		key.close()
 	}
-	key.close()
-	if got := u.keyFiles(t); len(got) != 0 {
-		t.Errorf("a key with no identity written made %q", got)
+	if names := namesIn(t, filepath.Dir(u.seed)); len(names) != 0 {
+		t.Errorf("a key with no identity written made %q", names)
 	}
 }
 
