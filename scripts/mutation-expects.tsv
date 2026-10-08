@@ -119,6 +119,29 @@ go	any header at all is forwarded to the endpoint	TestRelayCarriesEachProtocolsM
 go	any name passes as the web source	TestSharedFixturesDecodeAsTheVerdictSays
 go	any object takes any member at all	TestARefusedFileSendsNothing,TestConfiguredEndpointRefusals,TestDeskConfigWriteRefusesWhatTheDecoderWouldRefuse,TestResearchRelayRefusesWithoutAGatewayAndSendsNothing,TestSharedFixturesDecodeAsTheVerdictSays
 go	any world-writable ancestor is admitted	TestARefusedStoreTouchesTheFilesystemNotAtAll,TestAnUnusableStoreLeavesTheRestOfTheDeskAlone,TestCustodyRefusesALooseAncestor,TestDeskConfigWriteRefusesWhereNoKeyCanBeKept,TestEveryCodeHasAStatusAndAWitness,TestRelayRefusesWhereNoKeyCanBeKept
+go	archive: Runner's unfinished key is removed	TestNeitherSweepTouchesTheOthersKey,TestNoPathRemovesAKeyOnItsOwn
+go	archive: a creation's stopped key is removed, not archived	TestNoCodeRemovesAKeyOutsideTheOwnersWord,TestNoPathRemovesAKeyOnItsOwn
+go	archive: a journal line past its bound is written	TestTheArchivesJournalIsBoundedWhenWritten
+go	archive: a key is removed where only a marker may be	TestRemoveMadeRefusesAKey
+go	archive: a move goes over a file archived under the same name	TestAnArchiveMoveNeverGoesOverAnother
+go	archive: a move takes a file other than the one inspected	TestTheRecoveryRemovesOnlyWhatItInspected,TestTheSweepRemovesOnlyWhatItInspected
+go	archive: a move writes no journal line	TestACreationIsSweptOnlyWhereItWasNeverPublished,TestNoPathRemovesAKeyOnItsOwn,TestTheDecisionRecordListsWhatDeskArchived
+go	archive: a move's line names a path	TestAnArchiveLineNamesNoPath
+go	archive: a promotion whose trail moved removes its marker	TestNoPathRemovesAKeyOnItsOwn,TestTheMomentAfterTheLastCheckKeepsBothKeys
+go	archive: a refusal carries no archive	TestTheArchiveComesWithEveryAnswer
+go	archive: a refused rotation removes its next key	TestARotationTheRuntimeRefusesChangesNothing,TestNoPathRemovesAKeyOnItsOwn
+go	archive: a stop between the moves of a promotion is not finished	TestAStoppedRotationIsFinishedOrUndoneAtTheNextStart,TestNoPathRemovesAKeyOnItsOwn
+go	archive: an orphaned rotation's journal is passed over in silence	TestALostIdentitysRotationIsArchivedAndSaid,TestNoPathRemovesAKeyOnItsOwn
+go	archive: an undone rotation removes its next key	TestAStoppedRotationIsFinishedOrUndoneAtTheNextStart,TestAnExactSidecarRollbackArchivesTheNextKey,TestNoPathRemovesAKeyOnItsOwn
+go	archive: the decision record lists no archive	TestARotationRunsItsStepsInOrder,TestTheArchiveComesWithEveryAnswer
+go	archive: the list is not bounded	TestTheArchivesListIsBounded
+go	archive: the list is written again, not appended to	TestARotationRunsItsStepsInOrder
+go	archive: the owner's Remove keeps the signing folder's lock	TestTheRemovalsAnswerIsWrittenWithTheLocksLetGo
+go	archive: the owner's Remove takes any token	TestTheOwnerRemovesAnArchivedFileOnTheirWord
+go	archive: the owner's Remove writes no journal line	TestTheOwnerRemovesAnArchivedFileOnTheirWord
+go	archive: the promotion renames the next key over the current one	TestARotationRunsItsStepsInOrder,TestNoCodeRemovesAKeyOutsideTheOwnersWord,TestNoPathRemovesAKeyOnItsOwn
+go	archive: the sweep removes what it would archive	TestAStoppedCreationLeavesNoKeyPastTheNextStart,TestNoCodeRemovesAKeyOutsideTheOwnersWord,TestNoPathRemovesAKeyOnItsOwn
+go	archive: the token binds no file	TestTheOwnerRemovesAnArchivedFileOnTheirWord
 go	audit fix: a check that finds no stamp leaves what the scheduler knows	TestACheckWithRootsReplacesWhatTheSchedulerKnows
 go	audit fix: a check with roots keeps no digest of the head	TestACheckKeepsTheDigestOfTheHeadItFindsStamped,TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved
 go	audit fix: a checkpoint known with no digest is taken for the head	TestACheckWithRootsReplacesWhatTheSchedulerKnows
@@ -137,8 +160,8 @@ go	audit fix: a key is made under a name the project does not keep	TestAKeyIsMad
 go	audit fix: a key is offered under an identity another folder holds	TestACopyOfAProjectRemovesNoKeyOfTheOriginal
 go	audit fix: a key is offered where the identity cannot be kept	TestAKeyIsNotOfferedWhereItsIdentityCannotBeKept
 go	audit fix: a key on a new trail may not count its sequence again	TestAListOfKeysHoldsItsTrailsToTheirRule,TestATrailBegunAfterARotationIsReadAsItsOwn
+go	audit fix: a key's archiving goes on past a file it could not move	TestAnUpgradePutBackLeavesNoKeyWithoutItsIdentity
 go	audit fix: a key's line records no trail	TestATrailBegunAfterARotationIsReadAsItsOwn
-go	audit fix: a key's removal goes on past a file it could not remove	TestAnUpgradePutBackLeavesNoKeyWithoutItsIdentity
 go	audit fix: a lock of another configuration is put back over	TestAFailedUpgradeLockPutsEveryFileBack,TestALockOfAnythingElseIsPutBack,TestARollbackPutsBackOnlyWhatItWrote
 go	audit fix: a made desk's copy is taken for its desk in the desks folder	TestACopyOfAMadeDeskOpenedDirectlyRecoversNothing
 go	audit fix: a made desk's copy opened directly is taken for the desk	TestACopyOfAMadeDeskOpenedDirectlyRecoversNothing
@@ -193,7 +216,7 @@ go	audit fix: the records after the held checkpoints are not the runtime's count
 go	audit fix: the records pending a stamp are one sequence taken from another	TestTheRecordsPendingAStampAfterARepairAreTheReports
 go	audit fix: the runtime is asked to rotate before the journal names the next key	TestARotationJournalsEachStep
 go	audit fix: the runtime's answer is not journalled	TestARotationJournalsEachStep
-go	audit fix: the sweep removes a key under a name no identity binds	TestAKeyFromBeforeTheIdentityIsKeptWhenItsProjectMoves
+go	audit fix: the sweep archives a key under a name no identity binds	TestAKeyFromBeforeTheIdentityIsKeptWhenItsProjectMoves
 go	audit fix: the unchained lines after the last chained one are counted	TestWhatFollowsARecordIsCountedFromTheReport
 go	audit fix: the upgrade makes the key with no identity written	TestAFailedSigningUpgradeLeavesNoKeyAndNoChange,TestAMovedProjectKeepsItsKeyAndItsPathTakesNothing,TestARotationOfTheStartupKeyFollowsWhatJpackJsonNames,TestAStoppedSigningUpgradeIsSweptAtTheNextStart,TestAnInheritedKeyHoldsTheStartupKeyStill,TestAnUpgradeNotPutBackLeavesTheKeyForTheNextStart,TestAnUpgradeWaitsForThisProjectsLockAndThenRefuses,TestChoosingTheSigningKeyWritesSixAndTheKeyTogether,TestNoPathOfTheStartupKeyReachesThePage,TestTheDecisionRecordReadsTheStartupKeyAfterTheUpgrade,TestTheSigningUpgradeWaitsForTheSigningFolder,TestTheStartFinishesARotationOfTheStartupKey,TestTheStartupKeyIsNamedByTheResolvedProject,TestTheUpgradeWritesTheIdentityBeforeTheKey
 go	audit fix: what the scheduler knows only advances	TestTheSchedulerStampsATrailRestoredToAnEarlierPointAgain
@@ -213,9 +236,8 @@ go	audit r2 fix: a key is offered under an unresolved identity	TestAnUnresolvedI
 go	audit r2 fix: a made desk's creation marker records nothing	TestACreationIsSweptOnlyWhereItWasNeverPublished
 go	audit r2 fix: a marker Desk cannot read decides a desk's creation	TestACreationIsSweptOnlyWhereItWasNeverPublished
 go	audit r2 fix: a new identity records no folder	TestTheIdentityMovesStampingSettingsAndAStopIsFinished
-go	audit r2 fix: a record the runtime could not be asked of is said rewritten	TestTheDecisionRecordHoldsTheLastRunToItsCheckpoint,TestTheSameCheckpointIsOneRule
 go	audit r2 fix: a refusal of the decision record gives no identity question	TestTheIdentityQuestionComesWithEveryAnswer
-go	audit r2 fix: a refused rotation removes its next key without the trail checked again	TestARefusedRotationKeepsItsNextKeyWhereTheTrailMoved
+go	audit r2 fix: a refused rotation archives its next key without the trail checked again	TestARefusedRotationKeepsItsNextKeyWhereTheTrailMoved
 go	audit r2 fix: a rotation answered at another sequence than its hand-over is finished	TestARotationAnsweredAtAnotherSequenceIsNotFinished
 go	audit r2 fix: a rotation the runtime answered is finished from its answer alone	TestARotationIsFinishedOnlyOnTheTrailItWasAnsweredFor
 go	audit r2 fix: a run does not count as a word on what is stamped	TestACheckReadBeforeAFailedRunDoesNotRestoreIt
@@ -228,15 +250,13 @@ go	audit r2 fix: a trail the runtime did not check is said given no roots	TestTh
 go	audit r2 fix: an answer is taken where the folder it was written in holds it again	TestAnAnswerIsBoundToWhatTheFormerFolderHolds
 go	audit r2 fix: an answer outlives what the folder it was written in holds	TestAnAnswerIsBoundToWhatTheFormerFolderHolds
 go	audit r2 fix: an answer's token outlives the file it was given for	TestAnUnresolvedIdentityWaitsForTheOwnersWord
-go	audit r2 fix: an earlier record is read from a trail that is not the report's	TestTheDecisionRecordHoldsTheLastRunToItsCheckpoint
 go	audit r2 fix: an earlier record is taken for the run's without asking the runtime	TestTheDecisionRecordHoldsTheLastRunToItsCheckpoint,TestTheSameCheckpointIsOneRule
-go	audit r2 fix: an earlier record's answer is kept past its head	TestTheEarlierRecordsAnswerIsKeptForItsHead
+go	audit r2 fix: an earlier record's confirmation is kept past its head	TestTheEarlierRecordsAnswerIsKeptForItsHead
 go	audit r2 fix: an identity file as long as Desk reads is refused	TestTheIdentityFileIsWrittenOnlyWithinWhatDeskReads
 go	audit r2 fix: an identity file longer than Desk reads is written	TestTheIdentityFileIsWrittenOnlyWithinWhatDeskReads
 go	audit r2 fix: an identity that waits for nothing is resolved	TestAnUnresolvedIdentityWaitsForTheOwnersWord
 go	audit r2 fix: an unresolved identity recovers and rotates	TestACopyStartedAfterItsOriginalMovedTakesNothing,TestAnUnresolvedIdentityWaitsForTheOwnersWord
 go	audit r2 fix: another file with the same bytes is the sidecar the rotation was begun beside	TestASidecarThatMerelyLacksTheRotationRemovesNoKey
-go	audit r2 fix: another folder at a desk's name is taken for the folder it was made in	TestACreationIsSweptOnlyWhereItWasNeverPublished
 go	audit r2 fix: another trail's stamps are taken for the run's	TestTheSameCheckpointIsOneRule
 go	audit r2 fix: no stamp is taken for one that reaches the run	TestTheSameCheckpointIsOneRule
 go	audit r2 fix: one answer's token confirms the other	TestAnUnresolvedIdentityWaitsForTheOwnersWord
@@ -256,6 +276,17 @@ go	audit r2 fix: the same checkpoint is taken at another sequence	TestTheSameChe
 go	audit r2 fix: the scheduler skips a head the stamps file does not hold	TestTheSchedulerSkipsOnlyWhereTheStampsFileHoldsTheHead
 go	audit r2 fix: the trail is bound without its lock	TestARecoveryActsOnlyOnTheTrailItDecidedOn
 go	audit r2 fix: the upgrade's identity records no folder	TestTheUpgradeWritesTheIdentityBeforeTheKey
+go	audit r3 fix: a failed verification keeps what was confirmed	TestTheEarlierRecordsAnswerIsKeptForItsHead
+go	audit r3 fix: a legacy identity at its recorded path is taken for this folder's	TestALegacyIdentityAtAReusedPathTakesNoCustody
+go	audit r3 fix: a main verification that failed keeps what was confirmed	TestTheEarlierRecordsAnswerIsKeptForItsHead
+go	audit r3 fix: an earlier Desk's empty marker is taken for one never published	TestACreationIsSweptOnlyWhereItWasNeverPublished
+go	audit r3 fix: an identity taken from jpack.json is bound to this folder	TestAKeyFromBeforeTheIdentityIsKeptWhenItsProjectMoves,TestAMissingIdentityTakesNoCustodyThroughACopiedConfiguration
+go	audit r3 fix: an older run is checked on a report that is not valid	TestTheDecisionRecordHoldsTheLastRunToItsCheckpoint
+go	audit r3 fix: an older run is checked with no checked stamp reaching it	TestTheDecisionRecordHoldsTheLastRunToItsCheckpoint
+go	audit r3 fix: an older run is checked with no held checkpoint reaching it	TestTheDecisionRecordHoldsTheLastRunToItsCheckpoint
+go	audit r3 fix: an older run the runtime did not check is said invalid	TestTheDecisionRecordHoldsTheLastRunToItsCheckpoint
+go	audit r3 fix: an older run under a report that is not valid is asked of the runtime	TestTheSameCheckpointIsOneRule
+go	audit r3 fix: an older run's verification is given another line than the run's	TestTheDecisionRecordHoldsTheLastRunToItsCheckpoint
 go	audit: a configuration Desk cannot read keeps no trail	TestAProjectThatKeepsNoTrailRunsNothing
 go	audit: a discontinuity's reason is passed on with its paths	TestThePanelQuotesNoPath
 go	audit: a failed packs schema reads as an older runtime	TestAFailedSchemaIsAnErrorAndNotAnOlderRuntime,TestTheDecisionRecordIsUnavailableWhereTheReviewIs
@@ -484,7 +515,7 @@ go	jobs standing: a removed file's lock entry is not named	TestTheReviewNamesWha
 go	jobs standing: the configuration's entry stands for a pack's	TestTheReviewNamesWhatTheLockPinsForEachId
 go	jobs standing: the file's own digest stands for the lock's entry	TestTheReviewNamesWhatTheLockPinsForEachId
 go	jobs standing: the lock's entry is not sent	TestTheReviewNamesWhatTheLockPinsForEachId
-go	key list: a failed creation leaves its marker	TestADeskMadeDuringShutdownLeavesNoKey,TestAKeyTheRuntimeFailsToGenerateMakesNoDeskAndLeavesNoKey,TestAManifestThatCannotBeWrittenLeavesNoKey,TestARunnerKeyTheRuntimeDoesNotMakeLeavesNothing,TestASwappedSigningFolderNeverMakesASignedDesk,TestNoPartOfTheKeysPathIsPassedOn
+go	key list: a failed creation leaves its marker	TestADeskMadeDuringShutdownLeavesNoKey,TestAKeyTheRuntimeFailsToGenerateMakesNoDeskAndLeavesNoKey,TestAManifestThatCannotBeWrittenLeavesNoKey,TestASwappedSigningFolderNeverMakesASignedDesk,TestNoPartOfTheKeysPathIsPassedOn
 go	key list: a failed run's seed is left	TestAKeyTheRuntimeFailsToGenerateMakesNoDeskAndLeavesNoKey
 go	key list: a first key after 0 is read	TestAListOfKeysDeskCannotReadPassesNoKey
 go	key list: a folder is taken without the path under it	TestARotationsAnswersNameNoPath,TestNoPartOfARunnerKeysPathIsSaid,TestNoPartOfTheKeysPathIsPassedOn,TestWhatRunnerSignsIsReportedOnlyOnceRunnerAnswers
@@ -595,8 +626,8 @@ go	origin matching ignores the scheme	TestOriginMatchIsStrict
 go	override is ignored	TestConcurrentWritesLeaveOneWholeDocument,TestStaleWriteProceedsWithOverride,TestWriteReleasesTheLockBeforeEncoding
 go	ownership is per copy rather than shared	TestACopyMadeBeforeTheHandOverCannotCloseTheServersDescriptors,TestAHandedRootCannotBeClosedOutFromUnderTheServer,TestTheServerReleasesThePinnedRootExactlyOnce
 go	parents are created before the stale-digest check	TestCreateParentsDoesNotCreateOnARefusedWrite,TestCreateParentsIsBoundedByTheWalk
-go	publication: a manifest that cannot be read counts as none	TestAKeyIsRemovedAtStartOnlyByItsMarker,TestAManifestNotReadNowKeepsItsKey
-go	publication: a read that failed counts as too large	TestAManifestNotReadNowKeepsItsKey
+go	publication: a manifest that cannot be read counts as none	TestAManifestNotReadNowIsNoLicenceForACopy
+go	publication: a read that failed counts as too large	TestAManifestNotReadNowIsNoLicenceForACopy
 go	publication: existence is taken for publication	TestAManifestNotReadNowKeepsItsKey,TestAManifestThatIsNotWholeIsNotAPublication
 go	publication: the manifest is written in place	TestAStoppedCreationLeavesNoKeyPastTheNextStart
 go	publication: the marker is removed before publication	TestAManifestNotReadNowKeepsItsKey,TestAManifestThatIsNotWholeIsNotAPublication,TestAStoppedCreationLeavesNoKeyPastTheNextStart
@@ -645,7 +676,7 @@ go	rotation list: the sidecar's count of rotations is not compared	TestTheListOf
 go	rotation recovery: a next key the sidecar names elsewhere is removed	TestARotationDeskCannotTellAboutChangesNothing
 go	rotation recovery: a rotation made by another key is finished	TestARotationFromElsewhereIsLeftAsItIs
 go	rotation recovery: a settled rotation leaves its marker	TestAStoppedRotationIsFinishedOrUndoneAtTheNextStart
-go	rotation recovery: an undone rotation leaves its next key	TestAStoppedRotationIsFinishedOrUndoneAtTheNextStart,TestTheRecoveryRemovesOnlyWhatItInspected
+go	rotation recovery: an undone rotation leaves its next key	TestAStoppedRotationIsFinishedOrUndoneAtTheNextStart
 go	rotation recovery: no next key and keys that disagree is nothing left	TestARotationFromElsewhereIsLeftAsItIs
 go	rotation recovery: the start does not look for rotations	TestARotationDeskCannotTellAboutChangesNothing,TestAStoppedRotationIsFinishedOrUndoneAtTheNextStart,TestTheLockIsHeldFromTheFirstLookToTheLastChange,TestTheRecoveryChangesNothingWhileTheLockIsHeld,TestTheRecoveryRemovesOnlyWhatItInspected,TestTheStartActsOnlyOnADesksOwnMarker,TestWithNoLockTheStartRemovesNothing
 go	rotation sidecar: a line a write left incomplete is read	TestTheListOfKeysIsHeldToTheSidecar
@@ -679,7 +710,7 @@ go	rotation: the key lock is held while the answer is written	TestAStalledAnswer
 go	rotation: the list is written over a list edited in place	TestWhatChangedWhileARotationFinishedIsNotWrittenOver
 go	rotation: the list is written over a list that changed	TestWhatChangedWhileARotationFinishedIsNotWrittenOver
 go	rotation: the marker is not where the start looks	TestAPanicInARotationLeavesTheDeskWorking,TestARefusalDeskCannotCheckLeavesTheNextKey,TestARotationDeskCannotTellAboutChangesNothing,TestARotationFromElsewhereIsLeftAsItIs,TestARotationRunsItsStepsInOrder,TestARotationTheRuntimeDidNotWriteSaysDeskKeptItsKey,TestARotationTheRuntimeRefusesChangesNothing,TestARotationThroughAReplacedSigningFolderMakesNothing,TestARotationsAnswersNameNoPath,TestAStartRenamesNoKeyAgainstAListPutBackSinceItsInspection,TestAStoppedRotationIsFinishedOrUndoneAtTheNextStart,TestAnAnswerThatIsNotTheRotationAskedForIsNotTakenForOne,TestTheLockIsHeldFromTheFirstLookToTheLastChange,TestTheRecoveryChangesNothingWhileTheLockIsHeld,TestTheRecoveryRemovesOnlyWhatItInspected,TestWhatChangedWhileARotationFinishedIsNotWrittenOver,TestWithNoLockTheStartRemovesNothing
-go	rotation: the marker stays after a rotation	TestARotationRunsItsStepsInOrder,TestARotationTheRuntimeRefusesChangesNothing,TestAStartRenamesNoKeyAgainstAListPutBackSinceItsInspection,TestAStoppedRotationIsFinishedOrUndoneAtTheNextStart,TestTheRecoveryChangesNothingWhileTheLockIsHeld,TestWhatChangedWhileARotationFinishedIsNotWrittenOver
+go	rotation: the marker stays after a rotation	TestARotationRunsItsStepsInOrder,TestARotationTheRuntimeRefusesChangesNothing,TestAStartRenamesNoKeyAgainstAListPutBackSinceItsInspection,TestAStoppedRotationIsFinishedOrUndoneAtTheNextStart,TestTheRecoveryChangesNothingWhileTheLockIsHeld
 go	rotation: the next key is renamed against a list replaced by the same bytes	TestWhatChangedWhileARotationFinishedIsNotWrittenOver
 go	rotation: the next key is renamed against a list rolled back in place	TestWhatChangedWhileARotationFinishedIsNotWrittenOver
 go	rotation: the next key is renamed against a list that changed since	TestAStartRenamesNoKeyAgainstAListPutBackSinceItsInspection,TestWhatChangedWhileARotationFinishedIsNotWrittenOver
@@ -710,7 +741,7 @@ go	runner key: Runner's standard error is not kept	TestARunnerThatRefusesItsKeyS
 go	runner key: a Runner that did not start is not said	TestWhatRunnerSignsIsReportedOnlyOnceRunnerAnswers
 go	runner key: a creation does not wait for the lock	TestAKeyCustodyLockHeldByAnotherProcess,TestTwoStartsNeverRemoveANamedKey
 go	runner key: a creation proceeds after its bounded wait	TestACreationWaitsForTheLockAndThenRefuses,TestAKeyCustodyLockHeldByAnotherProcess,TestARotationWaitsForTheLockAndThenRefuses
-go	runner key: a file replaced since its inspection is removed	TestARemovalLeavesAFileReplacedSinceItsInspection
+go	runner key: a file replaced since its inspection is removed	TestNoCodeRemovesAKeyOutsideTheOwnersWord
 go	runner key: a folder on the key's way said	TestARunnerKeyTheRuntimeDoesNotMakeLeavesNothing,TestEachStateARunnerKeyCanBeFoundIn,TestNoPartOfARunnerKeysPathIsSaid,TestWhatRunnerSignsIsReportedOnlyOnceRunnerAnswers
 go	runner key: a key whose marker stays is named	TestARunnerKeyWhoseMarkerStaysIsNotNamed
 go	runner key: a key without a marker is removed	TestARunnerKeyIsMadeOnceAndFoundAfter,TestEachStateARunnerKeyCanBeFoundIn,TestTwoStartsNeverRemoveANamedKey
@@ -730,7 +761,7 @@ go	runner key: a seed with no list is named	TestEachStateARunnerKeyCanBeFoundIn
 go	runner key: a sweep waits for the lock	TestAKeyCustodyLockHeldByAnotherProcess
 go	runner key: a sweep's lock taken on runner/, not on the signing folder	TestAKeyCustodyLockHeldByAnotherProcess,TestTheDesksSweepAndARunnerKeyExcludeEachOther,TestTwoStartsNeverRemoveANamedKey
 go	runner key: an inspection that failed is acted on	TestARunnerKeyNotInspectedNowIsLeftAndNotMade
-go	runner key: an unfinished creation is never removed	TestAKeyCustodyLockHeldByAnotherProcess,TestARemovalLeavesAFileReplacedSinceItsInspection,TestARunnerKeyNotInspectedNowIsLeftAndNotMade,TestARunnerKeyWhoseMarkerStaysIsNotNamed,TestAnInterruptedRemovalIsFinishedByTheNextStart,TestAnUnfinishedRunnerKeyIsRemovedUnderTheLock,TestNeitherSweepTouchesTheOthersKey,TestTheDesksSweepAndARunnerKeyExcludeEachOther
+go	runner key: an unfinished creation is never removed	TestAnInterruptedRemovalIsFinishedByTheNextStart
 go	runner key: decided without the lock	TestAKeyCustodyLockHeldByAnotherProcess,TestTheDesksSweepAndARunnerKeyExcludeEachOther,TestTwoStartsNeverRemoveANamedKey
 go	runner key: desk-config does not report it	TestARunnerThatRefusesItsKeyStartsWithout,TestEachDesksRunnerIsNamedAKeyOfItsOwn
 go	runner key: its folder not read now is taken for custody's refusal	TestARunnerKeyNotInspectedNowIsLeftAndNotMade
@@ -811,12 +842,12 @@ go	signing lock: a creation takes no lock	TestACreationWaitsForTheLockAndThenRef
 go	signing lock: a lock held elsewhere is read as no lock	TestACreationWaitsForTheLockAndThenRefuses,TestAKeyCustodyLockHeldByAnotherProcess,TestARotationWaitsForTheLockAndThenRefuses,TestLockSigningIsExclusiveAndSaysWhy,TestTheDesksSweepAndARunnerKeyExcludeEachOther,TestTheRecoveryChangesNothingWhileTheLockIsHeld,TestTheSigningUpgradeWaitsForTheSigningFolder,TestTheSweepRemovesNothingWhileTheLockIsHeld,TestTwoStartsNeverRemoveANamedKey
 go	signing lock: a rotation takes no lock	TestARotationWaitsForTheLockAndThenRefuses,TestTheLockIsHeldFromTheFirstLookToTheLastChange
 go	signing lock: a second descriptor is not excluded	TestACreationWaitsForTheLockAndThenRefuses,TestAKeyCustodyLockHeldByAnotherProcess,TestARotationWaitsForTheLockAndThenRefuses,TestDesksStartSweepsUnderTheLock,TestLockSigningIsExclusiveAndSaysWhy,TestTheDesksSweepAndARunnerKeyExcludeEachOther,TestTheLockIsHeldFromTheFirstLookToTheLastChange,TestTheRecoveryChangesNothingWhileTheLockIsHeld,TestTheSigningUpgradeWaitsForTheSigningFolder,TestTheSweepRemovesNothingWhileTheLockIsHeld,TestTwoStartsNeverRemoveANamedKey,TestWithNoLockTheStartRemovesNothing
+go	signing lock: the recovery archives by name, not what it inspected	TestTheRecoveryRemovesOnlyWhatItInspected
 go	signing lock: the recovery goes on without the lock	TestTheRecoveryChangesNothingWhileTheLockIsHeld,TestWithNoLockTheStartRemovesNothing
-go	signing lock: the recovery removes by name, not what it inspected	TestTheRecoveryRemovesOnlyWhatItInspected
 go	signing lock: the recovery takes no lock	TestTheLockIsHeldFromTheFirstLookToTheLastChange,TestTheRecoveryChangesNothingWhileTheLockIsHeld,TestWithNoLockTheStartRemovesNothing
+go	signing lock: the sweep archives by name, not what it inspected	TestTheSweepRemovesOnlyWhatItInspected
+go	signing lock: the sweep archives the marker first	TestTheSweepRemovesOnlyWhatItInspected
 go	signing lock: the sweep goes on without the lock	TestAKeyCustodyLockHeldByAnotherProcess,TestDesksStartSweepsUnderTheLock,TestTheDesksSweepAndARunnerKeyExcludeEachOther,TestTheSweepRemovesNothingWhileTheLockIsHeld,TestWithNoLockTheStartRemovesNothing
-go	signing lock: the sweep removes by name, not what it inspected	TestAStoppedCreationLeavesNoKeyPastTheNextStart,TestTheSweepRemovesNothingWhileTheLockIsHeld,TestTheSweepRemovesOnlyWhatItInspected
-go	signing lock: the sweep removes the marker first	TestTheSweepRemovesOnlyWhatItInspected
 go	signing lock: the sweep takes no lock	TestAKeyCustodyLockHeldByAnotherProcess,TestDesksStartSweepsUnderTheLock,TestTheDesksSweepAndARunnerKeyExcludeEachOther,TestTheLockIsHeldFromTheFirstLookToTheLastChange,TestTheSweepRemovesNothingWhileTheLockIsHeld,TestWithNoLockTheStartRemovesNothing
 go	spans: no cleaned spelling	TestPathSpansCoverEverySpelling
 go	spans: no resolved spelling	TestPathSpansCoverEverySpelling
@@ -915,8 +946,8 @@ go	startup desk: an inherited JPACK_CONFIG is dropped	TestANamedDeskRuntimeReads
 go	startup desk: the inherited JPACK_CONFIG is not said	TestANamedDeskRuntimeReadsOnlyItsOwnConfiguration
 go	sweep: a desk that cannot be inspected loses its key	TestAManifestNotReadNowKeepsItsKey
 go	sweep: a key without a marker is removed	TestAStoppedCreationLeavesNoKeyPastTheNextStart,TestTheDesksSweepAndARunnerKeyExcludeEachOther,TestTheLockIsHeldFromTheFirstLookToTheLastChange
-go	sweep: a published desk's key is removed	TestAStoppedCreationLeavesNoKeyPastTheNextStart
-go	sweep: an unpublished creation's key is left	TestAKeyCustodyLockHeldByAnotherProcess,TestAManifestThatIsNotWholeIsNotAPublication,TestAStoppedCreationLeavesNoKeyPastTheNextStart,TestDesksStartSweepsBeforeItsRunnerTakesTheLock,TestDesksStartSweepsUnderTheLock,TestNeitherSweepTouchesTheOthersKey,TestTheDesksSweepAndARunnerKeyExcludeEachOther,TestTheSweepRemovesNothingWhileTheLockIsHeld,TestTheSweepRemovesOnlyWhatItInspected
+go	sweep: a published desk's key is archived	TestAStoppedCreationLeavesNoKeyPastTheNextStart
+go	sweep: an unpublished creation's key is left	TestAKeyCustodyLockHeldByAnotherProcess,TestAStoppedCreationLeavesNoKeyPastTheNextStart,TestDesksStartSweepsBeforeItsRunnerTakesTheLock,TestDesksStartSweepsUnderTheLock,TestNeitherSweepTouchesTheOthersKey,TestTheDesksSweepAndARunnerKeyExcludeEachOther,TestTheSweepRemovesNothingWhileTheLockIsHeld,TestTheSweepRemovesOnlyWhatItInspected
 go	sweep: does not run at start	TestAManifestNotReadNowKeepsItsKey,TestAManifestThatIsNotWholeIsNotAPublication,TestAStoppedCreationLeavesNoKeyPastTheNextStart,TestDesksStartSweepsBeforeItsRunnerTakesTheLock,TestDesksStartSweepsUnderTheLock,TestTheLockIsHeldFromTheFirstLookToTheLastChange,TestTheSweepRemovesNothingWhileTheLockIsHeld,TestTheSweepRemovesOnlyWhatItInspected,TestWithNoLockTheStartRemovesNothing
 go	tested releases: =false still boots the Runner with the policy on	TestJobsPolicyFlagsReachTheBootLine,TestRunnerRequireTestedReleasesReachesBootLine
 go	tested releases: boot line reads the field without deriving the policy	TestJobsPolicyFlagsReachTheBootLine,TestJobsPolicyIsOnWithoutTheStartupFlags,TestRunnerRequireTestedReleasesReachesBootLine
@@ -1491,6 +1522,13 @@ web	any marked relay 401 ends the session	src/mcp/session.test.tsx
 web	any relay 401 ends the session	src/assistant/modelListing.test.ts,src/mcp/session.test.tsx
 web	applicability is read-only, whatever mode the page is in	src/packs/edit/forms.test.tsx
 web	applicability renders two elements at one pointer	src/packs/document/PackDocumentView.test.tsx
+web	archive page: Remove sends another token	src/audit/archivedKeys.test.tsx
+web	archive page: Remove sends without its confirmation	src/audit/archivedKeys.test.tsx
+web	archive page: a missing file offers Remove	src/audit/archivedKeys.test.tsx
+web	archive page: a refusal's archive is not read	src/audit/archivedKeys.test.tsx
+web	archive page: an entry with a token and no file is taken	src/audit/archivedKeys.test.tsx
+web	archive page: not beside a refusal	src/audit/archivedKeys.test.tsx
+web	archive page: not beside the report	src/audit/archivedKeys.test.tsx
 web	audit fix: a count after another record is this row's	src/audit/handover.test.tsx
 web	audit fix: a count of another trail is this row's	src/audit/handover.test.tsx
 web	audit fix: a count of records and of lines both is read	src/audit/handover.test.tsx
@@ -1612,6 +1650,7 @@ web	help: a path is not quoted for the shell	src/routes/HelpAbout.test.tsx
 web	help: the agent command names no configuration	src/routes/HelpAbout.test.tsx
 web	help: the tested-releases setting is not read	src/routes/HelpAbout.test.tsx
 web	identity may be configured in the shared project file	src/config/deskConfig.test.ts
+web	identity page: an unbound identity is asked as one written elsewhere	src/audit/resolveIdentity.test.tsx
 web	jobs activity (by): a trigger's run is said to be this installation	src/jobs/ActivityView.test.tsx,src/jobs/RunRecord.test.tsx,src/jobs/activity.test.ts
 web	jobs activity (by): an unrecorded requester is said to be this installation	src/jobs/ActivityView.test.tsx,src/jobs/RunRecord.test.tsx,src/jobs/activity.test.ts
 web	jobs activity (evidence): bytes are measured as their base64 text	src/jobs/ActivityView.test.tsx,src/jobs/RunRecord.test.tsx
@@ -1858,7 +1897,7 @@ web	rotation page: the confirmation omits a record that may be unsigned	src/audi
 web	rotation page: the confirmation omits that a lost key stays lost	src/audit/rotateSigningKey.test.tsx
 web	rotation page: the confirmation omits that nothing is revoked	src/audit/rotateSigningKey.test.tsx
 web	rotation page: the confirmation omits that the current key stops signing	src/audit/rotateSigningKey.test.tsx
-web	rotation page: the confirmation omits the old key's bytes	src/audit/rotateSigningKey.test.tsx
+web	rotation page: the confirmation omits where the old key is kept	src/audit/rotateSigningKey.test.tsx
 web	rotation page: the panel is not checked again after a rotation	src/audit/rotateSigningKey.test.tsx
 web	rotation page: the token sent is not the panel's	src/audit/rotateSigningKey.test.tsx
 web	routes read the Inspector slot's closed default	src/packs/collectionPreview.test.tsx,src/shell/AppShell.test.tsx,src/shell/inspectorSlot.test.tsx,src/shell/narrowShell.test.tsx

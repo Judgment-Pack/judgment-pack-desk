@@ -45,6 +45,18 @@ func archivingServer(t *testing.T) (*Server, *signingDir, string) {
 	return s, dir, file
 }
 
+// firstArchived is the one entry s's archive lists, which the test requires:
+// read through a nil listing, a mutant would end the suite in a panic that
+// names no test.
+func firstArchived(t *testing.T, s *Server) archivedKey {
+	t.Helper()
+	listing := s.archiveListing()
+	if listing == nil || len(listing.Entries) == 0 {
+		t.Fatalf("the archive lists %+v", listing)
+	}
+	return listing.Entries[0]
+}
+
 // removeOn posts the owner's Remove to s's route, and answers its answer.
 func removeOn(s *Server, body string, headers map[string]string) *httptest.ResponseRecorder {
 	request := httptest.NewRequest("POST", "http://localhost/api/audit/key/archive/remove", strings.NewReader(body))
@@ -164,7 +176,7 @@ func TestTheArchivesJournalIsBoundedWhenWritten(t *testing.T) {
 // are refused before anything is read.
 func TestTheOwnerRemovesAnArchivedFileOnTheirWord(t *testing.T) {
 	s, dir, file := archivingServer(t)
-	entry := s.archiveListing().Entries[0]
+	entry := firstArchived(t, s)
 	folder := filepath.Join(dir.path, archiveDirName, s.cfg.deskID)
 	for name, tc := range map[string]struct {
 		body    string
@@ -187,9 +199,13 @@ func TestTheOwnerRemovesAnArchivedFileOnTheirWord(t *testing.T) {
 	// Replaced since the list was read: another file under the name.
 	renamedOver(t, filepath.Join(folder, file), standInSeed+"\n")
 	if w := removeOn(s, removal(entry, entry.Token), nil); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "changed after the decision record showed it") {
-		t.Errorf("a replaced file answered %d %s", w.Code, w.Body)
+		t.Fatalf("a replaced file answered %d %s", w.Code, w.Body)
 	}
-	entry = s.archiveListing().Entries[0]
+	listing := s.archiveListing()
+	if listing == nil || len(listing.Entries) != 1 {
+		t.Fatalf("the archive lists %+v", listing)
+	}
+	entry = listing.Entries[0]
 	if w := removeOn(s, removal(entry, entry.Token), nil); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"state":"removed"`) {
 		t.Fatalf("the owner's Remove answered %d %s", w.Code, w.Body)
 	}
@@ -239,7 +255,7 @@ func (w *removeProbeWriter) Write(data []byte) (int, error) {
 func TestTheRemovalsAnswerIsWrittenWithTheLocksLetGo(t *testing.T) {
 	for _, taken := range []bool{true, false} {
 		s, dir, _ := archivingServer(t)
-		entry := s.archiveListing().Entries[0]
+		entry := firstArchived(t, s)
 		token := entry.Token
 		if !taken {
 			token = strings.Repeat("b", 64)

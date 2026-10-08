@@ -729,34 +729,3 @@ func TestTheMomentAfterTheLastCheckKeepsBothKeys(t *testing.T) {
 		t.Errorf("the log does not say the trail moved: %s", logs)
 	}
 }
-
-// **A start's recovery archives only the next key it inspected** (the archive
-// rule; the nightly's inconclusive row of #326). Between the recovery's
-// inspection and its move, the next key is replaced by another file, as
-// another process could: that file stays at its name, nothing is archived,
-// and the log says so.
-func TestARecoveryArchivesOnlyWhatItInspected(t *testing.T) {
-	r := newRotationRig(t, "a2d00000000000000000000000000006", "")
-	r.writeTrail(t, 1, recordLine(standInKeyID, 1))
-	r.abandonRotation(t, "rotation: next generated")
-	next := r.nextPath()
-	testHookKeyBetween = func(at string) {
-		if at == "rotation: inspected" {
-			if os.Rename(next, next+".aside") != nil || os.WriteFile(next, []byte("another\n"), 0o600) != nil {
-				t.Error("could not replace the next key")
-			}
-		}
-	}
-	t.Cleanup(func() { testHookKeyBetween = nil })
-	_, _, logged := r.restart(t)
-	testHookKeyBetween = nil
-	if got := readFile(t, next); got != "another\n" {
-		t.Errorf("the file put in the next key's place is %q", got)
-	}
-	if got := archivedIn(t, r.signing, r.id); len(got) != 0 {
-		t.Errorf("the recovery archived %q", got)
-	}
-	if !strings.Contains(logged.String(), "could not be archived") {
-		t.Errorf("the log does not say why: %s", logged)
-	}
-}

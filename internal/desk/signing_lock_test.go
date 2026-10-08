@@ -296,10 +296,12 @@ func TestTheSweepRemovesOnlyWhatItInspected(t *testing.T) {
 	}
 }
 
-// **The recovery removes only what it inspected, the marker last.** A
-// rotation stopped before the runtime wrote its line is undone at the next
-// start; between the recovery's look and its removals, the next seed is
-// replaced by another file. That file stays, and so does the marker.
+// **The recovery archives only what it inspected, the marker last.** A
+// rotation stopped before the runtime wrote its line is set aside at the
+// next start; between the recovery's look and its moves, the next seed is
+// replaced by another file. That file stays at its name, nothing is
+// archived, and so does the marker (the nightly's inconclusive row of #326,
+// its mutant made to compile again).
 func TestTheRecoveryRemovesOnlyWhatItInspected(t *testing.T) {
 	r := newRotationRig(t, "d7000000000000000000000000000001", "")
 	r.writeTrail(t, 1, recordLine(standInKeyID, 1))
@@ -318,6 +320,9 @@ func TestTheRecoveryRemovesOnlyWhatItInspected(t *testing.T) {
 	testHookKeyBetween = nil
 	if got := r.describe(t); got != ".keys.jsonl,.next.seed,.next.seed.aside,.rotating,.seed seed=1 next=3 keys=1 rotations=0" {
 		t.Errorf("the recovery left %s (%s)", got, logged)
+	}
+	if !strings.Contains(logged.String(), "could not be archived") {
+		t.Errorf("the log does not say why: %s", logged)
 	}
 }
 
