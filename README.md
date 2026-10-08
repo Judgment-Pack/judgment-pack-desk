@@ -570,11 +570,21 @@ runtime takes a different lock, which Desk does not take.
   (Runner's keys: `secrets/signing/runner/archive/…`), owner-only, under the
   custody the keys have. Before each move it appends one line to
   `archive.jsonl` beside it, saying which rule moved the file and, in its own
-  words, what Desk could not decide; the log says each move too. The
-  decision record lists every archived file, with its identity, the trail and
-  record its name records, when and why, and offers **Remove** on each,
-  confirmed with a token bound to that file and its journal line: the one
-  removal of a key in Desk, on your word, written to the journal first. An
+  words, what Desk could not decide, with the digest of the file's bytes; it
+  reads the bytes again after the move, and says where they changed. The log
+  says each move too. A move that cannot be made (another file system, an
+  archive folder that cannot be made, no free name) leaves the file at its
+  name, and says why. The decision record lists every archived file, with
+  its identity, the trail and record its name records, when and why, and
+  offers **Remove** on each, confirmed with a token bound to that file, its
+  journal line and its bytes; under the lock, Desk reads the bytes again and
+  removes the file only where they are the ones it archived. The removal's
+  own journal line spends the token, so a file put back since is asked about
+  again. That is the one removal of a key in Desk, on your word, written to
+  the journal first. A file whose bytes Desk cannot read now has no Remove.
+  The record also lists, with no Remove, a creation's or a rotation's marker
+  left under a project's name this desk or project does not hold, which no
+  start of this Desk's settles: it stays at its name. An
   archived seed is still a key: whoever reads it can sign as it.
 - **One lock for every change to keys in the signing folder** (issue #230).
   Two Desk processes can share one configuration folder: Desk started on two
@@ -587,9 +597,10 @@ runtime takes a different lock, which Desk does not take.
   nothing, say so in Desk's log, and leave everything for the next start.
   A creation or a rotation waits for it up to ten seconds, and then refuses:
   "another Desk process is changing keys in this configuration folder; try
-  again". On a build or a file system where no `flock` can be taken, a
-  creation and a rotation go on without it, as before, and the sweep and the
-  recovery change nothing at all: nothing is removed without the lock. The
+  again". On a build or a file system where no `flock` can be taken, Desk
+  changes no key: a desk is made unsigned and says why, the project's key and
+  a rotation are refused with nothing written, Runner starts without a key,
+  and the sweep and the recovery change nothing at all. The
   lock is advisory: it keeps out another Desk process, not another program
   that writes the signing folder.
 - Desk then writes the desk's `jpack.json` at configVersion `"6"`, with
@@ -609,10 +620,11 @@ runtime takes a different lock, which Desk does not take.
   derives it). `at` is the trail sequence the key took over from: it signs the
   records after it, and a desk's first key takes over from 0. The file is
   public material and never holds a seed. A creation writes it whole, through
-  a staging file linked into place, never over another. A rotation (below)
-  appends the next key's line to it, in place, at the sequence the runtime
-  gave, so each later key takes over from a later sequence than the one
-  before it; the list is never written again.
+  a staging file linked into place, never over another; a list it could not
+  link into place goes to Desk's archive of keys (below), never removed. A
+  rotation (below) appends the next key's line to it, in place, at the
+  sequence the runtime gave, so each later key takes over from a later
+  sequence than the one before it; the list is never written again.
 - Where the runtime does not read `"6"`, or Desk's custody cannot keep a key,
   the desk is made at configVersion `"5"` (or `"4"`, as before), unsigned, and
   says so and why: in the creation's answer, in a dialog before the desk
@@ -1068,7 +1080,13 @@ does not say how many records follow (after a repair, for one); wherever the sta
 checkpoint its last stamp run named in that same trail (without roots, with
 none holding, with one below it, or with the stamps of another trail),
 Desk labels that checkpoint as the authority's answer to Desk's request,
-not as a stamp checked. The scheduler stamps again wherever the trail's last
+not as a stamp checked. For a run older than the report's head, that is
+decided by one more `audit verify`, given the run's own checkpoint line, as
+the runtime printed it, as `--expect`: it counts as checked only where the
+runtime answers `valid` for the run's trail, with a held checkpoint and a
+checked stamp each reaching the run's record, and the head it verified is
+the one the report shows; any verification that does not pass forgets it.
+The scheduler stamps again wherever the trail's last
 checkpoint is not the one it last knew stamped, record for record, so a trail
 restored to an earlier point and written or repaired since is stamped again;
 where it knows a checkpoint stamped only by its trail and sequence, it asks

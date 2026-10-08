@@ -54,7 +54,7 @@ function runnerKeyReason(key: { reason: RunnerKeyReason; detail?: string }): str
   switch (key.reason) {
     case 'custody': return msg('Desk cannot keep a signing key for Runner here: {{detail}}.', { detail })
     case 'not-made': return msg('The runtime did not make Runner’s signing key: {{detail}}.', { detail })
-    case 'unfinished': return msg('Making Runner’s signing key did not finish. Desk removes what was left at its next start, and makes the key again.')
+    case 'unfinished': return msg('Making Runner’s signing key did not finish. At its next start Desk moves what was left to its archive of Runner’s keys, and makes the key again.')
     case 'lost': return msg('Desk keeps the public half of Runner’s signing key, but no longer the key itself, and does not make another in its place.')
     case 'not-read-now': return msg('Desk could not read Runner’s signing key just now, and left it as it is: {{detail}}.', { detail })
     case 'in-use': return msg('The folder Desk keeps signing keys in was in use when Runner started, so Desk changed nothing and named no key. It tries again the next time it starts Runner.')
