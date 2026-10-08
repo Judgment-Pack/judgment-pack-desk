@@ -1467,6 +1467,17 @@ web	dirty is a parse comparison rather than a byte one	src/packs/edit/useDocumen
 web	dirty means 'something was typed'	src/routes/AuthorView.test.tsx
 web	discard leaves the conflict standing	src/routes/AuthorView.test.tsx
 web	discard leaves the last save attempt’s verdict standing	src/packs/edit/useDocumentBuffer.test.ts
+web	document processing: OCR is offered while another gateway is in use	src/admin/DocumentProcessingSettings.test.tsx
+web	document processing: OCR provenance is taken on a static-text snapshot	src/documents/record.test.ts
+web	document processing: a blank credential is sent	src/processing/ProcessingSettings.test.tsx
+web	document processing: a credential is kept for a changed destination	src/processing/ProcessingSettings.test.tsx
+web	document processing: a save carries the status's own members	src/processing/ProcessingSettings.test.tsx
+web	document processing: a save that restarts the gateway is not said before it	src/processing/ProcessingSettings.test.tsx
+web	document processing: a test PDF past 4 MiB is sent	src/processing/ProcessingSettings.test.tsx
+web	document processing: a timeout outside 10 to 120 seconds is sent	src/processing/ProcessingSettings.test.tsx
+web	document processing: a typed credential stays on the page after a save	src/processing/ProcessingSettings.test.tsx
+web	document processing: the desk's configuration is not read again after a restart	src/processing/ProcessingSettings.test.tsx
+web	document processing: the running gateway's plan is not said	src/admin/DocumentProcessingSettings.test.tsx,src/processing/ProcessingSettings.test.tsx
 web	downloads: a button for a file not held	src/audit/trailDownloads.test.tsx
 web	downloads: a file name the download does not take is accepted	src/audit/trailDownloads.test.tsx
 web	downloads: a refusal is not said	src/audit/trailDownloads.test.tsx
