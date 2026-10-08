@@ -411,20 +411,24 @@ const (
 // sequence its name records, when it was archived, the rule and Desk's
 // sentence, whether it is kept under this desk's own name, and the token
 // that confirms its removal. Missing is a journal line whose file is not in
-// the archive; it has no token.
+// the archive; it has no token. Unresolved is not an archived file at all:
+// a marker of a creation or a rotation under a project's name that this desk
+// or project does not hold, left at its name, which no decision of this
+// Desk's settles (review round 1 of #327, finding 5); it has no token.
 type archivedKey struct {
-	Scope    string `json:"scope"`
-	Identity string `json:"identity"`
-	File     string `json:"file"`
-	Kind     string `json:"kind"`
-	Trail    string `json:"trail,omitempty"`
-	Sequence int64  `json:"sequence,omitempty"`
-	At       string `json:"at"`
-	Rule     string `json:"rule,omitempty"`
-	Why      string `json:"why"`
-	Own      bool   `json:"own,omitempty"`
-	Missing  bool   `json:"missing,omitempty"`
-	Token    string `json:"token,omitempty"`
+	Scope      string `json:"scope"`
+	Identity   string `json:"identity"`
+	File       string `json:"file"`
+	Kind       string `json:"kind"`
+	Trail      string `json:"trail,omitempty"`
+	Sequence   int64  `json:"sequence,omitempty"`
+	At         string `json:"at"`
+	Rule       string `json:"rule,omitempty"`
+	Why        string `json:"why"`
+	Own        bool   `json:"own,omitempty"`
+	Missing    bool   `json:"missing,omitempty"`
+	Unresolved bool   `json:"unresolved,omitempty"`
+	Token      string `json:"token,omitempty"`
 	// line is the journal line that archived it, object the file by its
 	// device and inode, and digest the SHA-256 of its bytes now (review
 	// round 1 of #327, finding 1): what the token binds. A file whose bytes
@@ -495,6 +499,9 @@ func (s *Server) archiveListing() *auditArchive {
 			problems = append(problems, s.custodyWords(err.Error()))
 		}
 		listing.Entries = append(listing.Entries, entries...)
+		if scope == archiveScopeDesk {
+			listing.Entries = append(listing.Entries, held.unresolvedIn(s.signingKeyName())...)
+		}
 	}
 	slices.SortStableFunc(listing.Entries, func(a, b archivedKey) int { return strings.Compare(b.At, a.At) })
 	if len(listing.Entries) > archiveListLimit {
@@ -502,7 +509,7 @@ func (s *Server) archiveListing() *auditArchive {
 		listing.Entries = listing.Entries[:archiveListLimit]
 	}
 	for i := range listing.Entries {
-		if !listing.Entries[i].Missing && listing.Entries[i].digest != "" {
+		if !listing.Entries[i].Missing && !listing.Entries[i].Unresolved && listing.Entries[i].digest != "" {
 			listing.Entries[i].Token = s.archiveToken(listing.Entries[i])
 		}
 	}
@@ -513,6 +520,55 @@ func (s *Server) archiveListing() *auditArchive {
 		return nil
 	}
 	return listing
+}
+
+// What the decision record says of a marker left at its name under a
+// project's name this desk or project does not hold (review round 1 of #327,
+// finding 5).
+const (
+	unresolvedRotationWords = "A rotation of the key kept under this name did not finish (its journal says %q, on trail %s), and this desk or project does not hold the name, so Desk could not match it to a trail it reads: it keeps the key, the next key and the journal at their names, and a start on the project that holds the name decides them."
+	unresolvedJournalWords  = "A rotation of the key kept under this name did not finish, its journal could not be read now, and this desk or project does not hold the name: Desk keeps the key, the next key and the journal at their names, and a start on the project that holds the name decides them."
+	unresolvedCreationWords = "A creation of a key under this name did not finish, and this desk or project does not hold the name: Desk keeps the key, its list and its marker at their names, and a start on the project that holds the name decides them."
+)
+
+// unresolvedForm is a marker under a project's name, directly in the signing
+// folder.
+var unresolvedForm = regexp.MustCompile(`^([0-9a-f]{64})\.(rotating|creating)$`)
+
+// unresolvedIn is every marker of a creation or a rotation directly in the
+// signing folder d holds, under a project's name other than own (review
+// round 1 of #327, finding 5): custody no start of this Desk's settles, a
+// project's whose identity was lost or that is not open here, said on the
+// decision record wherever it is found, and kept at its name.
+func (d *signingDir) unresolvedIn(own string) []archivedKey {
+	names, err := readDirNames(d.root, ".")
+	if err != nil {
+		return nil
+	}
+	var entries []archivedKey
+	for _, name := range names {
+		parts := unresolvedForm.FindStringSubmatch(name)
+		if parts == nil || parts[1] == own {
+			continue
+		}
+		info, err := d.root.Lstat(name)
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		entry := archivedKey{Scope: archiveScopeDesk, Identity: parts[1], File: name, Kind: parts[2], At: info.ModTime().UTC().Format(time.RFC3339), Unresolved: true, Why: unresolvedCreationWords}
+		if parts[2] == "rotating" {
+			journal, legacy, err := d.readJournal(name, info)
+			switch {
+			case err != nil || legacy:
+				entry.Why = unresolvedJournalWords
+			default:
+				entry.Trail = journal.Trail
+				entry.Why = fmt.Sprintf(unresolvedRotationWords, journal.Phase, journal.Trail)
+			}
+		}
+		entries = append(entries, entry)
+	}
+	return entries
 }
 
 // openRunnerDir holds `runner/` in the signing folder, for reading, where it

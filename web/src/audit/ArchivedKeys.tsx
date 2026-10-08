@@ -12,7 +12,9 @@
  * is there has a Remove button, which opens a confirmation that says what a
  * removal does; only the confirmation sends the token the decision record
  * gave for that file. A line whose file is not there is said, with no
- * button.
+ * button; so is a marker left at its name under a project's name this desk
+ * does not hold, which no start of this Desk's settles (review round 1 of
+ * #327, finding 5).
  *
  * What a removal answered is kept by the panel, which checks the trail again
  * after it, so the answer outlives the check.
@@ -79,7 +81,9 @@ export function ArchivedKeys({ archive, outcome, onOutcome }: {
             : msg('Trail {{trail}}', { trail: entry.trail })}</p>}
           <p className={styles.quiet}>{msg('Archived {{at}}', { at: entry.at })}</p>
           <p lang="en">{systemMessage(entry.why)}</p>
-          {entry.missing
+          {entry.unresolved
+            ? <p role="note">{msg('Kept at its name, not in the archive: no start of this Desk’s decides it.')}</p>
+            : entry.missing
             ? <p role="note">{msg('This file is not in the archive now.')}</p>
             : entry.token && <div className={styles.actions}><Button onClick={event => { opener.current = event.currentTarget; setAsked(entry) }}>{msg('Remove')}</Button></div>}
         </li>)}</ul>

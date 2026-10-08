@@ -430,7 +430,9 @@ export async function resolveIdentity(choice: IdentityChoice, token: string): Pr
  * is this desk's own, and the token that confirms its removal, bound to the
  * file's bytes. `missing` is a journal line whose file is not in the archive
  * now; it has no token, and neither has a file whose bytes Desk could not
- * read now.
+ * read now. `unresolved` is no archived file but a marker of a creation or a
+ * rotation under a project's name this desk does not hold, kept at its name,
+ * which no start of this Desk's settles; it has no token.
  */
 export type ArchivedKey = {
   scope: 'desk' | 'runner'
@@ -444,6 +446,7 @@ export type ArchivedKey = {
   why: string
   own?: boolean
   missing?: boolean
+  unresolved?: boolean
   token?: string
 }
 /** The archive as the decision record lists it: at most its newest entries, how many more, and why a part could not be read now. */
@@ -451,8 +454,15 @@ export type AuditArchive = { entries: ArchivedKey[]; more?: number; problem?: st
 
 const archiveFile = (value: unknown): value is string => text(value) && /^(none|[0-9a-f]{32})-(none|[1-9][0-9]{0,15})-[0-9]{8}T[0-9]{6}\.[0-9]{9}Z\.(seed|next\.seed|keys\.jsonl|creating|rotating)$/.test(value)
 
-/** One archived file, as the chassis lists it: each member of its form, and a token exactly where the file is there. */
+/** A marker left at its name under a project's name, as an unresolved entry names it. */
+const unresolvedFile = (value: unknown): value is string => text(value) && /^[0-9a-f]{64}\.(rotating|creating)$/.test(value)
+
+/** One archived file, as the chassis lists it: each member of its form, and a token only where the file is there; or a marker left unresolved, with none. */
 export function isArchivedKey(value: unknown): value is ArchivedKey {
+  if (object(value) && value.unresolved === true) {
+    return value.scope === 'desk' && hex(64)(value.identity) && unresolvedFile(value.file) && value.file === `${value.identity}.${value.kind}`
+      && optional(value.trail, hex(32)) && named(value.at) && named(value.why) && value.token === undefined && value.missing === undefined
+  }
   return object(value) && (value.scope === 'desk' || value.scope === 'runner') && (hex(32)(value.identity) || hex(64)(value.identity))
     && archiveFile(value.file) && ['seed', 'next.seed', 'keys.jsonl', 'creating', 'rotating'].includes(value.kind as string)
     && optional(value.trail, hex(32)) && optional(value.sequence, item => count(item) && item > 0) && named(value.at)
@@ -486,6 +496,8 @@ export async function removeArchivedKey(entry: ArchivedKey): Promise<void> {
 /** The chassis's own sentences about its archive of keys, as it says them, so that the page can show each in the owner's language. */
 export const ARCHIVE_SENTENCES = [
   sourceMessage("Desk's journal of its archive holds no line for this file, so Desk cannot say why it is here."),
+  sourceMessage("A rotation of the key kept under this name did not finish, its journal could not be read now, and this desk or project does not hold the name: Desk keeps the key, the next key and the journal at their names, and a start on the project that holds the name decides them."),
+  sourceMessage("A creation of a key under this name did not finish, and this desk or project does not hold the name: Desk keeps the key, its list and its marker at their names, and a start on the project that holds the name decides them."),
   sourceMessage("Desk could not read this file's bytes now, so it offers no Remove for it."),
   sourceMessage("Desk's journal says this file was removed on your word, and it is here: the removal did not finish, or the file was put back since."),
   sourceMessage('Desk could not read its archive of keys now: {{reason}}.'),

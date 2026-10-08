@@ -4913,6 +4913,12 @@ func (b *cappedBuffer) exceeded() bool {'
 	}
 	if err != nil {
 		dir.Close()'
+  mutate go 'archive: custody no start settles is not said' 'internal/desk/archive.go' \
+    '			listing.Entries = append(listing.Entries, held.unresolvedIn(s.signingKeyName())...)' \
+    '			_ = held'
+  mutate go 'archive: a project'"'"'s own marker is said as no start'"'"'s' 'internal/desk/archive.go' \
+    '		if parts == nil || parts[1] == own {' \
+    '		if parts == nil {'
   mutate go 'archive: the owner'"'"'s Remove writes no journal line' 'internal/desk/archive.go' \
     '	if err := held.appendArchiveLine(folder, removed); err != nil {' \
     '	if err := error(nil); err != nil || removed.File == "" {'
@@ -14313,9 +14319,9 @@ export function assistantTransport(id: string): Transport {
     'onClick={event => { opener.current = event.currentTarget; setAsked(entry) }}' \
     'onClick={() => { void removeArchivedKey(entry) }}'
   mutate web 'archive page: a missing file offers Remove' 'web/src/audit/ArchivedKeys.tsx' \
-    '          {entry.missing
+    '            : entry.missing
             ? <p role="note">' \
-    '          {false
+    '            : false
             ? <p role="note">'
   mutate web 'archive page: not beside the report' 'web/src/audit/DecisionRecord.tsx' \
     '                    {archiveSection(record.archive)}
@@ -14333,6 +14339,14 @@ export function assistantTransport(id: string): Transport {
   mutate web 'identity page: an unbound identity is asked as one written elsewhere' 'web/src/audit/ResolveIdentity.tsx' \
     '  const unbound = identity?.kind === '"'"'unbound'"'"'' \
     '  const unbound = false'
+  mutate web 'archive page: custody no start settles is not said' 'web/src/audit/ArchivedKeys.tsx' \
+    '          {entry.unresolved
+            ? <p role="note">' \
+    '          {false
+            ? <p role="note">'
+  mutate web 'archive page: an unresolved entry with a token is taken' 'web/src/audit/client.ts' \
+    '      && optional(value.trail, hex(32)) && named(value.at) && named(value.why) && value.token === undefined && value.missing === undefined' \
+    '      && optional(value.trail, hex(32)) && named(value.at) && named(value.why)'
   mutate web 'audit r2 fix: a question with one token for both answers is read' web/src/audit/client.ts \
     ' && hex(64)(value.copy) && value.moved !== value.copy' \
     ' && hex(64)(value.copy)'

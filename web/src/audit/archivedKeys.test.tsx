@@ -136,6 +136,22 @@ describe('the archive of keys', () => {
     expect(region().queryByRole('button', { name: 'Remove' })).toBeNull()
   })
 
+  // Review round 1 of #327, finding 5: a marker left at its name under a
+  // project's name this desk does not hold is said, with no Remove.
+  it('says custody no start of this Desk’s settles, and offers no Remove for it', async () => {
+    const left: ArchivedKey = { scope: 'desk', identity: 'f'.repeat(64), file: `${'f'.repeat(64)}.rotating`, kind: 'rotating', trail,
+      at: '2026-10-08T12:00:03Z', why: 'A rotation of the key kept under this name did not finish.', unresolved: true }
+    records = [{ ...listed, archive: { entries: [left] } }]
+    show()
+    expect(await screen.findByText('Kept at its name, not in the archive: no start of this Desk’s decides it.')).toBeTruthy()
+    expect(region().getByText(left.why)).toBeTruthy()
+    expect(region().queryByRole('button', { name: 'Remove' })).toBeNull()
+    expect(isAuditArchive({ entries: [left] })).toBe(true)
+    for (const other of [{ ...left, token: 'cd'.repeat(32) }, { ...left, file: `${'e'.repeat(64)}.rotating` }, { ...left, file: `${'f'.repeat(64)}.seed`, kind: 'seed' }, { ...left, identity: desk, file: `${desk}.rotating` }]) {
+      expect(isAuditArchive({ entries: [other] }), JSON.stringify(other)).toBe(false)
+    }
+  })
+
   it('takes the archive only as the chassis gives it', () => {
     expect(isAuditArchive(archive)).toBe(true)
     expect(isAuditArchive({ entries: [{ ...promoted, token: undefined }] })).toBe(true)
@@ -158,7 +174,7 @@ describe('the archive of keys', () => {
 
   it('names, as Desk’s own sentences, only sentences the chassis says', () => {
     const source = readFileSync(join(import.meta.dirname, '../../../internal/desk/archive.go'), 'utf8')
-    expect(ARCHIVE_SENTENCES).toHaveLength(8)
+    expect(ARCHIVE_SENTENCES).toHaveLength(10)
     for (const sentence of ARCHIVE_SENTENCES) {
       for (const part of sentence.split(/\{\{\w+\}\}/)) {
         expect(source.includes(part) ? part : `missing: ${part}`, sentence).toBe(part)

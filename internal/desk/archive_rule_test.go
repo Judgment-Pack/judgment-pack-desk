@@ -8,12 +8,14 @@ package desk
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/printer"
 	"go/token"
 	"io/fs"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -634,6 +636,13 @@ func TestALostIdentitysRotationIsArchivedAndSaid(t *testing.T) {
 			if !strings.Contains(logs.String(), tc.says) {
 				t.Errorf("the start did not say %q: %s", tc.says, logs)
 			}
+			// Left at its name, it is said on the decision record (review
+			// round 1 of #327, finding 5).
+			if tc.archived == nil {
+				if listing := s.archiveListing(); listing == nil || len(listing.Entries) != 1 || !listing.Entries[0].Unresolved {
+					t.Errorf("the decision record lists %+v", listing)
+				}
+			}
 		})
 	}
 }
@@ -783,5 +792,58 @@ func TestAListThatCouldNotBePublishedIsKept(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), "could not be put under its name") {
 		t.Errorf("the log does not say why: %s", logs)
+	}
+}
+
+// **Custody no start settles is said on the decision record** (review round
+// 1 of #327, finding 5, the reviewer's scenario). The project's identity file
+// is lost, and its trail moved aside, while custody holds its former
+// identity's seed, next seed and rotation journal: the start names the
+// project anew, and cannot match the journal to a trail it reads, so it keeps
+// all three at their names. The decision record, a refusal of it among its
+// answers, lists the journal as unresolved, with the sentence that says what
+// Desk could not match, and offers no Remove for it.
+func TestCustodyNoStartSettlesIsSaidOnTheDecisionRecord(t *testing.T) {
+	config := filepath.Join(t.TempDir(), "config")
+	s, logs := bareServer(t, filepath.Join(t.TempDir(), "project"), config, "")
+	s.cfg.Token, s.sessions = "probe", &sessionStore{}
+	id := strings.Repeat("f", 64)
+	s.setStartup(identityKept, id, "", "")
+	bareKeys(t, s)
+	signing := filepath.Join(config, "secrets", "signing")
+	writeBare(t, filepath.Join(signing, id+nextSeedSuffix), secondSeed+"\n")
+	writeBare(t, filepath.Join(signing, id+rotatingSuffix), string(rotationJournal{Version: "1", Phase: journalRotate, Trail: fixtureTrail, Next: secondPublicKey}.line()))
+	s.setStartup(identityNone, "", "", "")
+	s.resolveStartupIdentity()
+	audit := filepath.Join(s.projectDir, ".desk-private", "audit")
+	if err := os.Rename(audit, audit+".old"); err != nil {
+		t.Fatal(err)
+	}
+	s.recoverRotations()
+	if got := heldUnder(t, config, id); got != ".keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=1" {
+		t.Fatalf("the start left %s: %s", got, logs)
+	}
+	listing := s.archiveListing()
+	if listing == nil || len(listing.Entries) != 1 {
+		t.Fatalf("the decision record lists %+v", listing)
+	}
+	entry := listing.Entries[0]
+	if !entry.Unresolved || entry.Identity != id || entry.File != id+rotatingSuffix || entry.Kind != "rotating" || entry.Trail != fixtureTrail || entry.Token != "" ||
+		entry.Why != fmt.Sprintf(unresolvedRotationWords, journalRotate, fixtureTrail) {
+		t.Errorf("the decision record lists %+v", entry)
+	}
+	request := httptest.NewRequest("GET", "http://localhost/api/audit/verify", nil)
+	request.Header.Set("Authorization", "Bearer probe")
+	w := httptest.NewRecorder()
+	s.handleAuditVerify(w, request)
+	if !strings.Contains(w.Body.String(), `"unresolved":true`) || !strings.Contains(w.Body.String(), `"file":"`+id+rotatingSuffix+`"`) {
+		t.Errorf("the decision record answered %d %s", w.Code, w.Body)
+	}
+	if w := removeOn(s, `{"scope":"desk","identity":"`+id+`","file":"`+id+rotatingSuffix+`","token":"`+strings.Repeat("a", 64)+`"}`, nil); w.Code != http.StatusBadRequest {
+		t.Errorf("a Remove of unresolved custody answered %d %s", w.Code, w.Body)
+	}
+	// The project's own name is never listed so.
+	if own := (&signingDir{root: bareRoot(t, signing), path: signing}).unresolvedIn(id); len(own) != 0 {
+		t.Errorf("a project's own marker is listed as unresolved: %+v", own)
 	}
 }
