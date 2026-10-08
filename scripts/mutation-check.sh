@@ -4229,6 +4229,12 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'audit fix: an undo is made that the list contradicts' "$RO" \
     '		case slices.ContainsFunc(keys, func(key deskPublicKey) bool { return key.PublicKey == nextKey.PublicKey }):' \
     '		case false && slices.ContainsFunc(keys, func(key deskPublicKey) bool { return key.PublicKey == nextKey.PublicKey }):'
+  mutate go 'audit fix: a finished journal is undone over a sidecar from before the rotation' "$RO" \
+    '		case state.journal.Phase == journalFinish:' \
+    '		case state.journal.Phase == journalFinish && false:'
+  mutate go 'audit fix: a next key the journal does not name is taken for it' "$RO" \
+    '		if state.journal.Next != nextKey.PublicKey {' \
+    '		if state.journal.Next != nextKey.PublicKey && false {'
   mutate go 'audit fix: a rotation never given to the runtime is held to its trail' "$RO" \
     '	if !state.legacy && state.journal.Phase != journalGenerate {' \
     '	if !state.legacy {'

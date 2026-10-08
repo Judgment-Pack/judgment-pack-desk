@@ -707,3 +707,40 @@ func TestARotationsListIsHeldToItsJournal(t *testing.T) {
 		r.keptAsLeft(t, ts, logged, left, list, marker, rotationListNamesNext)
 	})
 }
+
+// **Two stops the journal contradicts keep everything** (review round 1 of
+// #302, finding 4). A journal at "finish" over the trail's sidecar put back
+// from before the rotation, on the same trail; and a next key the runtime
+// reads, that is not the key the journal names. The next start keeps both
+// seeds, the list and the marker, and says why.
+func TestAStartKeepsWhatItsJournalContradicts(t *testing.T) {
+	const id = "c9c00000000000000000000000000001"
+	t.Run("finish over a sidecar from before the rotation", func(t *testing.T) {
+		r := newRotationRig(t, id, "")
+		before := recordLine(standInKeyID, 1)
+		r.writeTrail(t, 1, before)
+		r.abandonRotation(t, "rotation: finish journalled")
+		r.writeTrail(t, 0, before)
+		left, list, marker := r.describe(t), readFile(t, filepath.Join(r.signing, id+keysSuffix)), r.marker(t)
+		if left != ".keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=1 rotations=0" || !strings.Contains(marker, `"phase":"finish"`) {
+			t.Fatalf("the stop left %s and %q", left, marker)
+		}
+		_, ts, logged := r.restart(t)
+		r.keptAsLeft(t, ts, logged, left, list, marker, "the rotation's journal says the runtime rotated to the next key on this trail, and the trail's signature sidecar does not hand over to it")
+	})
+
+	t.Run("a next key the journal does not name", func(t *testing.T) {
+		r := newRotationRig(t, id, "")
+		r.writeTrail(t, 1, recordLine(standInKeyID, 1))
+		r.abandonRotation(t, "rotation: line written")
+		if err := os.WriteFile(r.nextPath(), []byte(thirdSeed+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		left, list, marker := r.describe(t), readFile(t, filepath.Join(r.signing, id+keysSuffix)), r.marker(t)
+		if left != ".keys.jsonl,.next.seed,.rotating,.seed seed=1 next=3 keys=1 rotations=1" || !strings.Contains(marker, `"next":"`+secondPublicKey+`"`) {
+			t.Fatalf("the stop left %s and %q", left, marker)
+		}
+		_, ts, logged := r.restart(t)
+		r.keptAsLeft(t, ts, logged, left, list, marker, "the next key is not the key the rotation's journal names")
+	})
+}
