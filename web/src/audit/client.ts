@@ -427,8 +427,10 @@ export async function resolveIdentity(choice: IdentityChoice, token: string): Pr
  * (`desk`, or `runner` for Runner's keys), the identity it is kept under, its
  * name and kind, the trail and the record its name records, when it was
  * archived, the rule that archived it and Desk's sentence on why, whether it
- * is this desk's own, and the token that confirms its removal. `missing` is a
- * journal line whose file is not in the archive now; it has no token.
+ * is this desk's own, and the token that confirms its removal, bound to the
+ * file's bytes. `missing` is a journal line whose file is not in the archive
+ * now; it has no token, and neither has a file whose bytes Desk could not
+ * read now.
  */
 export type ArchivedKey = {
   scope: 'desk' | 'runner'
@@ -456,7 +458,7 @@ export function isArchivedKey(value: unknown): value is ArchivedKey {
     && optional(value.trail, hex(32)) && optional(value.sequence, item => count(item) && item > 0) && named(value.at)
     && optional(value.rule, text) && named(value.why) && optional(value.own, item => typeof item === 'boolean')
     && optional(value.missing, item => typeof item === 'boolean')
-    && (value.missing === true ? value.token === undefined : hex(64)(value.token))
+    && (value.missing === true ? value.token === undefined : optional(value.token, hex(64)))
 }
 
 export function isAuditArchive(value: unknown): value is AuditArchive {
@@ -484,6 +486,7 @@ export async function removeArchivedKey(entry: ArchivedKey): Promise<void> {
 /** The chassis's own sentences about its archive of keys, as it says them, so that the page can show each in the owner's language. */
 export const ARCHIVE_SENTENCES = [
   sourceMessage("Desk's journal of its archive holds no line for this file, so Desk cannot say why it is here."),
+  sourceMessage("Desk could not read this file's bytes now, so it offers no Remove for it."),
   sourceMessage('Desk could not read its archive of keys now: {{reason}}.'),
   sourceMessage('That archived file is not in Desk\'s archive now, so nothing was removed. Check the decision record again.'),
   sourceMessage('That archived file changed after the decision record showed it, so nothing was removed. Check the decision record again.'),

@@ -94,6 +94,10 @@ const (
 	archiveRemoveLimit = 4 << 10
 	// archiveTimeLayout is the UTC time in an archived file's name.
 	archiveTimeLayout = "20060102T150405.000000000Z"
+	// archiveContentLimit is the most of an archived file Desk reads to know
+	// its bytes by their digest: a seed is 65 bytes, a list at most
+	// keysFileLimit, a marker 512.
+	archiveContentLimit = 64 << 10
 )
 
 // The kinds of file Desk archives, by the suffix of the live name: a next
@@ -408,10 +412,13 @@ type archivedKey struct {
 	Own      bool   `json:"own,omitempty"`
 	Missing  bool   `json:"missing,omitempty"`
 	Token    string `json:"token,omitempty"`
-	// line is the journal line that archived it, and object the file by its
-	// device and inode: what the token binds.
+	// line is the journal line that archived it, object the file by its
+	// device and inode, and digest the SHA-256 of its bytes now (review
+	// round 1 of #327, finding 1): what the token binds. A file whose bytes
+	// could not be read now has no digest, and is offered no Remove.
 	line   []byte
 	object string
+	digest string
 }
 
 // auditArchive is the decision record's list of what Desk archived: given
@@ -430,6 +437,7 @@ const (
 	archiveNoLineWords  = "Desk's journal of its archive holds no line for this file, so Desk cannot say why it is here."
 	archiveMissingWords = "Desk's journal names this file, and it is not in the archive now: its move did not happen, or it was removed outside Desk."
 	archiveUnreadWords  = "Desk could not read its archive of keys now: %s."
+	archiveNoBytesWords = "Desk could not read this file's bytes now, so it offers no Remove for it."
 )
 
 // archiveListing is the decision record's list of every file Desk archived,
@@ -476,7 +484,7 @@ func (s *Server) archiveListing() *auditArchive {
 		listing.Entries = listing.Entries[:archiveListLimit]
 	}
 	for i := range listing.Entries {
-		if !listing.Entries[i].Missing {
+		if !listing.Entries[i].Missing && listing.Entries[i].digest != "" {
 			listing.Entries[i].Token = s.archiveToken(listing.Entries[i])
 		}
 	}
@@ -616,6 +624,11 @@ func (d *signingDir) archivedOf(scope, identity string) ([]archivedKey, error) {
 		} else {
 			entry.Why = archiveNoLineWords
 		}
+		if digest, err := d.contentDigest(filepath.Join(folder, name), file); err == nil {
+			entry.digest = digest
+		} else {
+			entry.Why += " " + archiveNoBytesWords
+		}
 		entries = append(entries, entry)
 	}
 	for _, name := range lines.order {
@@ -693,11 +706,34 @@ func (d *signingDir) readArchiveJournal(folder string) (archiveJournal, error) {
 	}
 }
 
+// contentDigest is the SHA-256 of the bytes of name, the file found as info
+// in the folder d holds, read whole within archiveContentLimit through a
+// descriptor that is that file (review round 1 of #327, finding 1). Desk
+// reads a seed's bytes here only to know them by their digest: the digest is
+// bound into a token and compared, and is never shown, logged or sent.
+func (d *signingDir) contentDigest(name string, info os.FileInfo) (string, error) {
+	file, err := d.root.OpenFile(name, os.O_RDONLY|openNoFollow|openNonBlocking, 0)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil || !opened.Mode().IsRegular() || info != nil && !os.SameFile(opened, info) {
+		return "", fmt.Errorf("%s is not the file Desk inspected", name)
+	}
+	data, err := readBounded(file, archiveContentLimit)
+	if err != nil {
+		return "", fmt.Errorf("%s could not be read whole within %d bytes", name, archiveContentLimit)
+	}
+	return sha256Digest(data), nil
+}
+
 // archiveToken binds the owner's Remove to one archived file as the decision
 // record listed it: its scope, identity and name, the digest of the journal
-// line that archived it, and the file by its device and inode. It is a MAC
-// under the desk's own review key, and names its purpose, so no other token
-// confirms it.
+// line that archived it, the file by its device and inode, and its bytes, by
+// their digest (review round 1 of #327, finding 1: a file written again in
+// place keeps its inode). It is a MAC under the desk's own review key, and
+// names its purpose, so no other token confirms it.
 func (s *Server) archiveToken(entry archivedKey) string {
 	payload, _ := json.Marshal(struct {
 		Purpose  string `json:"purpose"`
@@ -708,7 +744,8 @@ func (s *Server) archiveToken(entry archivedKey) string {
 		File     string `json:"file"`
 		Line     string `json:"line"`
 		Object   string `json:"object"`
-	}{"remove-archived-key", s.cfg.deskID, s.projectDir, entry.Scope, entry.Identity, entry.File, sha256Digest(entry.line), entry.object})
+		Content  string `json:"content"`
+	}{"remove-archived-key", s.cfg.deskID, s.projectDir, entry.Scope, entry.Identity, entry.File, sha256Digest(entry.line), entry.object, entry.digest})
 	mac := hmac.New(sha256.New, s.reviewKey[:])
 	mac.Write(payload)
 	return hex.EncodeToString(mac.Sum(nil))
@@ -794,13 +831,19 @@ func (s *Server) removeArchived(ctx context.Context, scope, identity, file, toke
 		return &lockFailure{http.StatusConflict, CodeStale, "That archived file is not in Desk's archive now, so nothing was removed. Check the decision record again."}
 	}
 	entry := entries[index]
-	if !hmac.Equal([]byte(s.archiveToken(entry)), []byte(token)) {
+	if entry.digest == "" || !hmac.Equal([]byte(s.archiveToken(entry)), []byte(token)) {
 		return &lockFailure{http.StatusConflict, CodeStale, "That archived file changed after the decision record showed it, so nothing was removed. Check the decision record again."}
 	}
 	folder := filepath.Join(archiveDirName, identity)
 	name := filepath.Join(folder, file)
+	keyBetween("archive: removal confirmed")
 	found, err := held.root.Lstat(name)
 	if err != nil || identityKey(found) != entry.object {
+		return &lockFailure{http.StatusConflict, CodeStale, "That archived file changed after the decision record showed it, so nothing was removed. Check the decision record again."}
+	}
+	// **Its bytes, again, immediately before the removal** (review round 1
+	// of #327, finding 1), under the signing folder's lock.
+	if now, err := held.contentDigest(name, found); err != nil || now != entry.digest {
 		return &lockFailure{http.StatusConflict, CodeStale, "That archived file changed after the decision record showed it, so nothing was removed. Check the decision record again."}
 	}
 	removed := archiveLine{Version: "1", Event: "removed", File: file, Rule: archiveOwnerRemoved, At: archiveClock().UTC().Format(time.RFC3339Nano)}

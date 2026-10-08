@@ -81,7 +81,7 @@ export function ArchivedKeys({ archive, outcome, onOutcome }: {
           <p lang="en">{systemMessage(entry.why)}</p>
           {entry.missing
             ? <p role="note">{msg('This file is not in the archive now.')}</p>
-            : <div className={styles.actions}><Button onClick={event => { opener.current = event.currentTarget; setAsked(entry) }}>{msg('Remove')}</Button></div>}
+            : entry.token && <div className={styles.actions}><Button onClick={event => { opener.current = event.currentTarget; setAsked(entry) }}>{msg('Remove')}</Button></div>}
         </li>)}</ul>
         {archive.more ? <p className={styles.quiet}>{msg('And {{count}} more, older, not listed.', { count: archive.more })}</p> : null}
       </>}

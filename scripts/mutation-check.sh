@@ -4863,11 +4863,17 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if len(listing.Entries) > archiveListLimit {' \
     '	if false {'
   mutate go 'archive: the owner'"'"'s Remove takes any token' 'internal/desk/archive.go' \
-    '	if !hmac.Equal([]byte(s.archiveToken(entry)), []byte(token)) {' \
-    '	if false {'
+    '	if entry.digest == "" || !hmac.Equal([]byte(s.archiveToken(entry)), []byte(token)) {' \
+    '	if entry.digest == "" {'
   mutate go 'archive: the token binds no file' 'internal/desk/archive.go' \
-    'sha256Digest(entry.line), entry.object})' \
-    'sha256Digest(entry.line), ""})'
+    'sha256Digest(entry.line), entry.object, entry.digest})' \
+    'sha256Digest(entry.line), "", entry.digest})'
+  mutate go 'archive: the token binds no bytes' 'internal/desk/archive.go' \
+    'sha256Digest(entry.line), entry.object, entry.digest})' \
+    'sha256Digest(entry.line), entry.object, ""})'
+  mutate go 'archive: the owner'"'"'s Remove does not read the bytes again' 'internal/desk/archive.go' \
+    '	if now, err := held.contentDigest(name, found); err != nil || now != entry.digest {' \
+    '	if now, err := held.contentDigest(name, found); err != nil || now == "" {'
   mutate go 'archive: the owner'"'"'s Remove writes no journal line' 'internal/desk/archive.go' \
     '	if err := held.appendArchiveLine(folder, removed); err != nil {' \
     '	if err := error(nil); err != nil || removed.File == "" {'
@@ -14283,7 +14289,7 @@ export function assistantTransport(id: string): Transport {
     '  if (isAuditArchive(body.archive)) Object.assign(error, { archive: body.archive })' \
     ''
   mutate web 'archive page: an entry with a token and no file is taken' 'web/src/audit/client.ts' \
-    '    && (value.missing === true ? value.token === undefined : hex(64)(value.token))' \
+    '    && (value.missing === true ? value.token === undefined : optional(value.token, hex(64)))' \
     ''
   mutate web 'identity page: an unbound identity is asked as one written elsewhere' 'web/src/audit/ResolveIdentity.tsx' \
     '  const unbound = identity?.kind === '"'"'unbound'"'"'' \

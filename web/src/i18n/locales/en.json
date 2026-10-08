@@ -4157,5 +4157,6 @@
   "Trail {{trail}}": "Trail {{trail}}",
   "Trail {{trail}}, record {{sequence}}": "Trail {{trail}}, record {{sequence}}",
   "What Desk archived": "What Desk archived",
-  "What a removal does": "What a removal does"
+  "What a removal does": "What a removal does",
+  "Desk could not read this file's bytes now, so it offers no Remove for it.": "Desk could not read this file's bytes now, so it offers no Remove for it."
 }

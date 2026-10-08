@@ -126,11 +126,22 @@ describe('the archive of keys', () => {
     }
   })
 
+  // Review round 1 of #327, finding 1: a file whose bytes Desk could not
+  // read now has no token, and is offered no Remove.
+  it('offers no Remove for a file whose bytes Desk could not read', async () => {
+    const unread: ArchivedKey = { ...promoted, token: undefined, why: "Desk could not read this file's bytes now, so it offers no Remove for it." }
+    records = [{ ...listed, archive: { entries: [unread] } }]
+    show()
+    expect(await screen.findByText(unread.why)).toBeTruthy()
+    expect(region().queryByRole('button', { name: 'Remove' })).toBeNull()
+  })
+
   it('takes the archive only as the chassis gives it', () => {
     expect(isAuditArchive(archive)).toBe(true)
+    expect(isAuditArchive({ entries: [{ ...promoted, token: undefined }] })).toBe(true)
     expect(isAuditArchive({ entries: [] })).toBe(true)
     for (const other of [
-      { entries: [{ ...promoted, token: undefined }] },
+      { entries: [{ ...promoted, token: 'x' }] },
       { entries: [{ ...gone, token: 'cd'.repeat(32) }] },
       { entries: [{ ...promoted, file: '../outside.seed' }] },
       { entries: [{ ...promoted, kind: 'other' }] },
@@ -147,7 +158,7 @@ describe('the archive of keys', () => {
 
   it('names, as Desk’s own sentences, only sentences the chassis says', () => {
     const source = readFileSync(join(import.meta.dirname, '../../../internal/desk/archive.go'), 'utf8')
-    expect(ARCHIVE_SENTENCES).toHaveLength(6)
+    expect(ARCHIVE_SENTENCES).toHaveLength(7)
     for (const sentence of ARCHIVE_SENTENCES) {
       for (const part of sentence.split(/\{\{\w+\}\}/)) {
         expect(source.includes(part) ? part : `missing: ${part}`, sentence).toBe(part)

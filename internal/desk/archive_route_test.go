@@ -409,3 +409,43 @@ func TestAManifestNotReadNowIsNoLicenceForACopy(t *testing.T) {
 		t.Errorf("a copy whose original's manifest could not be read now is taken as the desk: %v %q", shared, why)
 	}
 }
+
+// **An archived file written again in place is not removed by an older
+// token** (review round 1 of #327, finding 1, the reviewer's scenario). The
+// token binds the file's bytes by their digest, so a seed rewritten in place,
+// keeping its inode, is answered as changed and stays; and its bytes are
+// checked again, under the signing folder's lock, immediately before the
+// removal: rewritten in that moment, it stays too. A fresh token removes it.
+func TestAnArchivedFileWrittenAgainIsNotRemovedByAnOlderToken(t *testing.T) {
+	s, dir, file := archivingServer(t)
+	path := filepath.Join(dir.path, archiveDirName, s.cfg.deskID, file)
+	entry := firstArchived(t, s)
+	writeBare(t, path, secondSeed+"\n")
+	if now := firstArchived(t, s); now.Token == entry.Token {
+		t.Error("a seed written again in place keeps its token")
+	}
+	if w := removeOn(s, removal(entry, entry.Token), nil); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "changed after the decision record showed it") {
+		t.Errorf("an older token answered %d %s", w.Code, w.Body)
+	}
+	if got := readFile(t, path); got != secondSeed+"\n" {
+		t.Fatalf("the seed written again is %q", got)
+	}
+	entry = firstArchived(t, s)
+	testHookKeyBetween = func(at string) {
+		if at == "archive: removal confirmed" {
+			writeBare(t, path, thirdSeed+"\n")
+		}
+	}
+	t.Cleanup(func() { testHookKeyBetween = nil })
+	if w := removeOn(s, removal(entry, entry.Token), nil); w.Code != http.StatusConflict {
+		t.Errorf("a seed written again after its token was checked answered %d %s", w.Code, w.Body)
+	}
+	testHookKeyBetween = nil
+	if got := readFile(t, path); got != thirdSeed+"\n" {
+		t.Fatalf("the seed written again is %q", got)
+	}
+	entry = firstArchived(t, s)
+	if w := removeOn(s, removal(entry, entry.Token), nil); w.Code != http.StatusOK {
+		t.Errorf("a fresh token answered %d %s", w.Code, w.Body)
+	}
+}
