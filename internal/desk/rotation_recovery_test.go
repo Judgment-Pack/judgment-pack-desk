@@ -552,3 +552,62 @@ func TestARotationBegunBeforeAnySignatureNamesItsTrail(t *testing.T) {
 		}
 	})
 }
+
+// **A copy of a made desk, opened directly, recovers nothing and rotates
+// nothing** (review round 1 of #302, finding 2). The desk is copied before a
+// rotation, with its manifest's id and its trail's identity; the original's
+// rotation stops after the runtime wrote its line; the copy, whose sidecar
+// has no rotation, is opened directly in the same configuration. Its start
+// leaves the next seed, the list and the marker as they are, and the log and
+// the panel say why. The desk moved out of Desk's desks folder, opened
+// directly, is the desk's own, and its start finishes the rotation.
+func TestACopyOfAMadeDeskOpenedDirectlyRecoversNothing(t *testing.T) {
+	const id = "c9a00000000000000000000000000001"
+	t.Run("a copy", func(t *testing.T) {
+		r := newRotationRig(t, id, "")
+		r.writeTrail(t, 1, recordLine(standInKeyID, 1))
+		copied := filepath.Join(t.TempDir(), "copy")
+		copyProject(t, r.desk, copied)
+		r.abandonRotation(t, "rotation: line written")
+		left, list, marker := r.describe(t), readFile(t, filepath.Join(r.signing, id+keysSuffix)), r.marker(t)
+		if !strings.Contains(left, ".next.seed,.rotating,.seed seed=1 next=2") {
+			t.Fatalf("the stop left %s", left)
+		}
+		r.ts.Close()
+		again, ts, logged := startedAt(t, r.s, copied)
+		if again.cfg.deskID != id {
+			t.Fatalf("Desk was opened on %q", again.cfg.deskID)
+		}
+		if got := r.describe(t); got != left {
+			t.Errorf("after the copy's start the folder holds %s, want %s (%s)", got, left, logged)
+		}
+		if readFile(t, filepath.Join(r.signing, id+keysSuffix)) != list || r.marker(t) != marker {
+			t.Errorf("the copy's start changed the list or the marker (%s)", logged)
+		}
+		if !strings.Contains(logged.String(), "left as it is, because "+deskSharedWords) {
+			t.Errorf("the start did not say why: %s", logged)
+		}
+		if answer, _ := panelOn(t, ts, ""); answer.Rotation.State != rotationUnavailable || answer.Rotation.Reason != "Desk rotates no key here: "+deskSharedWords+"." {
+			t.Errorf("the copy's panel says %+v", answer.Rotation)
+		}
+	})
+
+	t.Run("moved", func(t *testing.T) {
+		r := newRotationRig(t, id, "")
+		r.writeTrail(t, 1, recordLine(standInKeyID, 1))
+		r.abandonRotation(t, "rotation: line written")
+		r.ts.Close()
+		moved := filepath.Join(t.TempDir(), "moved")
+		if err := os.Rename(r.desk, moved); err != nil {
+			t.Fatal(err)
+		}
+		r.desk = moved
+		again, _, logged := startedAt(t, r.s, moved)
+		if again.cfg.deskID != id {
+			t.Fatalf("Desk was opened on %q", again.cfg.deskID)
+		}
+		if got := r.describe(t); got != ".keys.jsonl,.seed seed=2 next=absent keys=2 rotations=1" {
+			t.Errorf("after the moved desk's start the folder holds %s (%s)", got, logged)
+		}
+	})
+}

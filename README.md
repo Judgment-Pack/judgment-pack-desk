@@ -784,7 +784,11 @@ was started.
   or any resumed desk's Runner is started, each `<desk id>.rotating` marker
   directly in the signing folder, of a desk the registry opened or of the
   server's own signing identity (the project Desk was started on, or the desk
-  it was opened on directly), is read the same way, under the signing
+  it was opened on directly, unless another folder holds that identity too:
+  a copy of the project, or a made desk opened from a folder other than its
+  desk in Desk's desks folder while that desk is there, or where Desk cannot
+  tell; then nothing is recovered or rotated there, and the log and the panel
+  say why), is read the same way, under the signing
   folder's lock, asked for once more, for at most ten seconds, where another
   Desk process holds it, from its journal first:
   - journalled before the next key was made: the runtime was never asked,

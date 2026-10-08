@@ -324,7 +324,9 @@ given the earlier trail's keys too, it reports the new trail invalid). A
 rotation recorded on this trail, or by an earlier Desk with no trail, must be
 in its sidecar, so a rotation missing is never taken for a new trail. The start's
 recovery resolves a marker by the server's own signing identity, so a desk
-opened directly recovers its own rotation; it waits once, bounded, for a
+opened directly recovers its own rotation, unless Desk's desks folder holds
+another folder with the desk's id, as it does for a copy opened directly,
+when nothing is recovered or rotated there (review round 1 of #302); it waits once, bounded, for a
 signing lock another process holds; and each resumed desk's Runner starts
 only after it.
 

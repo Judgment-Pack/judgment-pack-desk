@@ -1087,9 +1087,10 @@ func (s *Server) recoverRotations() {
 		// markers are its own, a made desk's opened directly among them.
 		if own != "" && id == own {
 			// **No recovery under an identity another folder holds**
-			// (review round 1 of #296): its trail may be a copy's.
-			if s.startupShared() {
-				s.log.Printf("desk: an unfinished rotation of this project's key was left as it is, because %s", sharedWords)
+			// (review round 1 of #296; a made desk's copy, review round 1
+			// of #302): its trail may be a copy's.
+			if shared, why := s.identityShared(); shared {
+				s.log.Printf("desk: an unfinished rotation of this project's key was left as it is, because %s", why)
 				continue
 			}
 			child = s
@@ -1180,8 +1181,8 @@ func (s *Server) rotationOffer(ctx context.Context, project heldDir, keys auditK
 	if s.inheritsSigningKey() {
 		return auditRotation{State: rotationUnavailable, Reason: "JPACK_SIGNING_KEY is set where Desk was started, and the runtime signs this project's records with the key it names, not with the key Desk keeps, so Desk rotates no key here."}
 	}
-	if s.startupShared() {
-		return auditRotation{State: rotationUnavailable, Reason: "Desk rotates no key here: " + sharedWords + "."}
+	if shared, why := s.identityShared(); shared {
+		return auditRotation{State: rotationUnavailable, Reason: "Desk rotates no key here: " + why + "."}
 	}
 	if keys.State == keysStartup {
 		return auditRotation{State: rotationUnavailable, Reason: "Desk keeps no signing key for the project it was started on, so it has none to rotate."}

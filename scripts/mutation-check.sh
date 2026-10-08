@@ -4164,14 +4164,14 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if (err != nil || holds) && false {
 		s.setShared()'
   mutate go 'audit fix: a rotation is recovered under an identity another folder holds' internal/desk/rotation.go \
-    '			if s.startupShared() {
+    '			if shared, why := s.identityShared(); shared {
 				s.log.Printf(' \
-    '			if false {
+    '			if shared, why := s.identityShared(); shared && false {
 				s.log.Printf('
   mutate go 'audit fix: a rotation is offered under an identity another folder holds' internal/desk/rotation.go \
-    '	if s.startupShared() {
+    '	if shared, why := s.identityShared(); shared {
 		return auditRotation{' \
-    '	if false {
+    '	if shared, why := s.identityShared(); shared && false {
 		return auditRotation{'
   mutate go 'audit fix: a key is offered under an identity another folder holds' "$SK" \
     '	if s.startupShared() {
@@ -4213,6 +4213,14 @@ func (b *cappedBuffer) exceeded() bool {'
 	if !ok {' \
     '	trail, ok := reading.sidecar.oneTrail()
 	if !ok && false {'
+  mutate go "audit fix: a made desk's copy opened directly is taken for the desk" "$SI" \
+    '	return s.madeDeskShared()
+}' \
+    '	return false, ""
+}'
+  mutate go "audit fix: a made desk's copy is taken for its desk in the desks folder" "$SI" \
+    '	} else if os.SameFile(info, held) {' \
+    '	} else if os.SameFile(info, info) || held == nil {'
   mutate go 'audit fix: a rotation never given to the runtime is held to its trail' "$RO" \
     '	if !state.legacy && state.journal.Phase != journalGenerate {' \
     '	if !state.legacy {'
