@@ -49,7 +49,7 @@ export function WebSourcePane({ request, target, onClose, onAttached, onBusy }: 
    <p id="web-source-hint" className={styles.linkHint}>{msg('Public HTTPS links only, up to 4 MiB. Sign-in pages and JavaScript content are not supported.')}</p>
    {invalid && <Alert>{msg('Enter a public HTTPS link without a sign-in or fragment.')}</Alert>}
    {!capacity && <Alert>{msg('Attach up to four files at a time.')}</Alert>}
-   {!available && !catalog.loading && <Alert>{msg('Local processing is unavailable. Check the details in Admin → Storage & data.')}</Alert>}
+   {!available && !catalog.loading && <Alert>{msg('Local processing is unavailable. Check the details in Admin → Document processing.')}</Alert>}
    {upload.error && <Alert>{systemMessage(upload.error)}</Alert>}
   </div>
   <div className={styles.footer}>

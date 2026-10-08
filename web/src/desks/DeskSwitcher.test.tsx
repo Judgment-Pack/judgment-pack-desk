@@ -21,7 +21,7 @@ function Dirty(){useRegisteredChanges(true,'Discard this job?',{name:'Unsaved jo
 function show(dirty=false){render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter><UnsavedChangesProvider>{dirty&&<Dirty/>}<DeskSwitcher/></UnsavedChangesProvider></MemoryRouter></QueryClientProvider>)}
 async function menu(){await screen.findByText('Operations');fireEvent.keyDown(screen.getByRole('button',{name:'Operations · Switch desk'}),{key:'Enter'})}
 it('shows the named desk, updates the title, and flushes chats before switching',async()=>{
- show();await menu();await waitFor(()=>expect(document.title).toBe('Operations · Unveil'))
+ show();await menu();await waitFor(()=>expect(document.title).toBe('Operations'))
  fireEvent.click(await screen.findByRole('menuitemradio',{name:'Review'}));await waitFor(()=>expect(openDesk).toHaveBeenCalledWith(next.id));expect(flush).toHaveBeenCalled()
 })
 it('creates a named desk through the server before opening it',async()=>{
@@ -32,7 +32,7 @@ it('creates a named desk through the server before opening it',async()=>{
  expect(deskFetch).toHaveBeenCalledWith('/api/desks',expect.objectContaining({method:'POST',body:'{"name":"Review"}'}))
 })
 it('preserves the asterisk and requires the item name before abandoning edits',async()=>{
- show(true);await menu();expect(document.title).toBe('* Operations · Unveil')
+ show(true);await menu();expect(document.title).toBe('* Operations')
  fireEvent.click(await screen.findByRole('menuitemradio',{name:'Review'}));await screen.findByRole('dialog',{name:'Unsaved changes'})
  expect(openDesk).not.toHaveBeenCalled()
  fireEvent.change(screen.getByLabelText('Type Unsaved job to confirm.'),{target:{value:'Yes'}})

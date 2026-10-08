@@ -1355,7 +1355,7 @@ web	an unchanged member is written again under Accept	src/assistant/AssistantPan
 web	an unchosen model is written as the empty string	src/assistant/endpointForm.test.tsx
 web	an unconfigured desk's drawer moves to the column's width	src/shell/narrowShell.test.tsx
 web	an unknown config key is accepted silently	src/assistant/enforcement.test.ts,src/config/deskConfig.test.ts,src/config/fixtures.test.ts,src/config/liveConfig.test.tsx,src/config/queries.test.tsx
-web	an unknown fragment opens no section	src/routes/AdminView.test.tsx
+web	an unknown fragment opens no section	src/routes/AdminView.test.tsx,src/shell/AppShell.test.tsx
 web	an unknown storage key is accepted	src/config/deskConfig.test.ts
 web	an unmount releases the run without finishing it	src/assistant/useAssistantRun.test.tsx
 web	an unreadable configuration is described as having no assistant	src/shell/DescribeIt.test.tsx
@@ -1828,6 +1828,7 @@ web	the Inspector says nothing about having no document	src/packs/edit/resilienc
 web	the Panes Save back (a write to /panes from Admin)	src/admin/projectFileCards.test.tsx,src/routes/AdminView.test.tsx
 web	the Project row's summary composed from something the decoder did not say	src/routes/AdminView.test.tsx
 web	the Project section drops the default-project control	src/routes/AdminView.test.tsx
+web	the Runtime card back	src/routes/AdminView.test.tsx,src/shell/LeftRail.test.tsx
 web	the SDK's Gemini signature is ledgered under the wrong provider	src/assistant/engines/vercel/engine.test.ts
 web	the SDK's absolute URL is handed to the capability whole	src/assistant/engines/vercel/engine.test.ts
 web	the SDK's reasoning parts are dropped	src/assistant/engines/vercel/engine.test.ts
@@ -2112,6 +2113,15 @@ web	two chords in one frame issue two writes against one base	src/packs/edit/nav
 web	two elements carry Create's help id	src/shell/CreatePackDialog.test.tsx
 web	two rows about one position share an identity	src/assistant/AssistantPane.test.tsx,src/assistant/proposalDiff.test.ts
 web	two spellings of one file are compared case-sensitively	src/packs/packPath.test.ts
+web	ui pass: Document processing's pane names the project file	src/routes/AdminView.test.tsx
+web	ui pass: Research says Saved before a save landed	src/search/WebSearchSettings.test.tsx
+web	ui pass: a settings card hides a status that is not read	src/assistant/slotAfterSave.test.tsx,src/routes/AdminView.test.tsx
+web	ui pass: the Jobs record asks for the Runner while hidden	src/routes/AdminView.test.tsx
+web	ui pass: the Jobs record is not on Decision safeguards	src/routes/AdminView.test.tsx
+web	ui pass: the desk name loads for ever when it could not be read	src/routes/AdminView.test.tsx
+web	ui pass: the history placeholder is not locked	src/routes/ChatWorkspace.loading.test.tsx
+web	ui pass: the search preference is saved before its write is read back	src/search/preference.test.tsx
+web	ui pass: the store is asked to open a chat before history has loaded	src/routes/ChatWorkspace.loading.test.tsx
 web	undo lies about how far back it can go	src/packs/edit/useDocumentBuffer.test.ts
 web	undo pushes one entry per keystroke	src/packs/edit/useDocumentBuffer.test.ts
 web	unknown members ignored again (ownership read off the version)	src/shell/appearanceState.test.ts

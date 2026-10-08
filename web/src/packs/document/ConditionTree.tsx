@@ -1,3 +1,4 @@
+import { Tooltip } from '../../ui/Tooltip'
 import { msg, useLocale } from '../../i18n'
 /**
  * A condition, rendered as an indented tree with shared operator labels.
@@ -113,11 +114,11 @@ function ConditionNode({
   if (kind === 'fact') {
     if (structured) return <Block pointer={at} as="div" className={reading.fact}>
       <div className={reading.field}>
-        <span title={String(node.path ?? '')}>{factLabel(String(node.path ?? ''))}</span>
+        <Tooltip content={String(node.path ?? '')}><span>{factLabel(String(node.path ?? ''))}</span></Tooltip>
 
       </div>
       <div className={reading.test}>
-        <Block pointer={`${at}/operator`} as="span" className={reading.comparison}>{node.operator === 'equals' ? <abbr title={valueLabel('operator', 'equals')} aria-label={valueLabel('operator', 'equals')}>=</abbr> : valueLabel('operator', String(node.operator ?? ''))}</Block>
+        <Block pointer={`${at}/operator`} as="span" className={reading.comparison}>{node.operator === 'equals' ? <Tooltip content={valueLabel('operator', 'equals')}><abbr aria-label={valueLabel('operator', 'equals')}>=</abbr></Tooltip> : valueLabel('operator', String(node.operator ?? ''))}</Block>
         <Block pointer={`${at}/value`} as="div" className={reading.operand}><Operand value={node.value} /></Block>
       </div>
     </Block>

@@ -50,7 +50,7 @@ export const MessageRenderer = memo(function MessageRenderer({ text, documents =
       pre: ({ children }) => {
         const code = Array.isArray(children) ? children[0] : children
         const language = isValidElement<{ className?: string }>(code) ? /^language-(\S+)$/.exec(code.props.className ?? '')?.[1] : undefined
-        return <CodeBlock text={textOf(children).replace(/\n$/, '')} label={language || msg('Code')} />
+        return <div className={styles.messageCode}><CodeBlock text={textOf(children).replace(/\n$/, '')} label={language || msg('Code')} /></div>
       },
       table: ({ children }) => <div className={styles.messageTable} role="region" aria-label={msg("Response table")} tabIndex={0}><table>{children}</table></div>
     }), [documents, locale, read])

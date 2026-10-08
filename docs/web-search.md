@@ -1,7 +1,7 @@
 # Web search in Chat
 
-Open **Admin → Storage & data → Web search**, add a named connection, save it,
-then select it as this desk's default. Existing connections can be opened in the
+Open **Admin → Connections → Web search**, add a named connection and save it,
+then select it as this desk's default in **Admin → Research**. Existing connections can be opened in the
 resizable detail pane to edit, test or remove them. Removal requires typing the
 connection name. Editing credentials uses the same dirty-state and navigation
 confirmation as other settings. Leaving a saved credential blank preserves it.

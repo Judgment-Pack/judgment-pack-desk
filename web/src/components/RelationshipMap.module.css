@@ -27,7 +27,6 @@
 .kind[data-kind='rule'] { color:var(--logic-rule); }
 .kind[data-kind='exception'] { color:var(--logic-exception); }
 .kind[data-kind='outcome'] { color:var(--logic-outcome); }
-.columnLabel { position:absolute; color:var(--ink-soft); font-size:var(--text-xs); white-space:nowrap; pointer-events:none; }
 .controls { flex-wrap:wrap; max-width:calc(100% - var(--space-6)); }
 .node { padding:var(--space-3); }
 

@@ -1,62 +1,52 @@
 import { respondToDiscardDialogs } from '../testing/discardDialogs'
 respondToDiscardDialogs()
 /**
- * Admin: a navigation column, one open section, and the file in the right pane.
+ * Admin: settings grouped by task, one open section, and the file in the right
+ * pane.
  *
- * **What changed shape here, and why each change is written down.** The page had
- * an overview — a landing state at `#all` that was a second page of the same
- * list, linked from every open section and returned to by Escape. It has none:
- * a fragment always names a section, and where it names none the first one
- * opens. So every case that rendered "the overview" now renders **Project**, the
- * first section, and the cases that were *about* the overview are rewritten
- * rather than retargeted:
+ * **What changed shape here, and why each change is written down.** The page
+ * was two groups by file (This project: Project, Organization, Storage & data;
+ * This desk: Assistant, Connections, Sign-in & access), each row carrying a
+ * summary of its setting. It is now two groups by task (Workspace: General,
+ * Assistant, Research, Storage & backups, Decision safeguards; Connections &
+ * access: Connections, Document processing, Sign-in & access), and a row is its
+ * title. So:
  *
- * - **the order case** asserted a group heading per file; the column has no
- *   headings, it has two group titles and five rows, and it is asserted at
- *   exactly six under exactly two — a count rather than a derivation, so a
- *   section added without a summary is caught here as well as there.
- * - **the head cases** — a file's Location and Status, and the default-project
- *   control under them — were the group header's, and the group header is gone.
- *   They are the **Project section's** now, and they moved with their claims
- *   word for word into `the Project section`.
- * - **the fragment case** said an unknown fragment shows the overview. It says
- *   the first section, and it names all four inputs that reach it: no fragment,
- *   an empty one, a fragment naming no section, and one that is not valid
- *   percent-encoding.
- * - **the Escape case** asserted the key leaves the section. Nothing listens for
- *   it, and the case asserts that the page is unchanged by it.
- * - **the All settings cases** — the back link's address and the round trip
- *   through it — are one case that no link by that name exists in any state,
- *   and one that a row opens its section while the one that was open closes.
- * - **the two-verdicts case** read the desk-level file's refusal off its group
- *   header. That header stated it on the overview and never beside an open
- *   section; the pane is where it is stated now, so the case renders the shell.
- * - **the controls case** is the whole list of what changes anything, per open
- *   section — five renders now rather than four and an overview.
+ * - **the order and count cases** assert eight rows under two group titles.
+ * - **the summary cases** are gone with the summaries: a row says its title.
+ * - **the Project section's cases** moved with what it carried. The project
+ *   file's Location and Status are in its Configuration file pane (Details ›
+ *   Configuration file, under General); the startup control is General's; the
+ *   gates, the decision record and the Jobs record are Decision safeguards'.
+ *   The startup control's line no longer names the desk-level file it writes:
+ *   that file is named in the pane of the sections it supplies.
+ * - **the runtime line** is in the right pane (Details › Runtime details), not
+ *   a popover.
+ * - **the stacked-shell cases** are gone: in the shell the list is always in
+ *   the settings sidebar, and the inline column is only for standalone renders.
+ * - **the storage kind** is a value ("Local folder"), not the decoder's sentence
+ *   about kinds it does not offer.
  *
- * The narration sweep is unchanged as a rule and wider in reach: every state of
- * the configuration, every state of the connection, each of the five open
- * sections, and the pane.
+ * The narration sweep, the control cases and the pane's safety cases are
+ * unchanged as rules and run over the new sections.
  */
 import { QueryClientProvider } from '@tanstack/react-query'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { RouterProvider, createMemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DeskConfigFixture, DeskConfigProvider } from '../config/DeskConfigProvider'
-import { STORAGE_KIND_SAYS, decodeDeskConfig, effectiveConfig } from '../config/deskConfig'
+import { decodeDeskConfig, effectiveConfig, type EffectiveConfig } from '../config/deskConfig'
 import { McpContext, type McpConnection } from '../mcp/McpProvider'
 import { AppShell } from '../shell/AppShell'
 import { ShellStateProvider } from '../shell/paneState'
-import { INSPECTOR_DRAWER_BELOW } from '../shell/useMediaQuery'
 import { connected, stubClient, testQueryClient } from '../testing/harness'
 import { narrationIn } from '../admin/narration'
 import { NO_BYTES_SAYS } from '../admin/ConfigPane'
-import { SECTION_SUMMARY } from '../admin/sectionSummary'
 import buttonStyles from '../ui/Button.module.css'
 import selectStyles from '../ui/Select.module.css'
 import { AdminView } from './AdminView'
 import { readAuditRecord } from '../audit/client'
-import { ADMIN_GROUPS, ADMIN_SECTIONS } from './adminSections'
+import { ADMIN_GROUPS, ADMIN_SECTIONS, adminSectionId, connectionTab } from './adminSections'
 
 // The decision-record panel asks the chassis to run the runtime's audit
 // verify; here it is told the project keeps no trail, and counted.
@@ -85,6 +75,17 @@ const CHASSIS_413 = {
 /** The chassis' project root this desk is open on. */
 const ROOT = '/home/someone/a-project'
 const DESK_PATH = '/home/someone/.config/jpack-desk/desk.json'
+
+const SECTION_TITLES = [
+  'General',
+  'Assistant',
+  'Research',
+  'Storage & backups',
+  'Decision safeguards',
+  'Connections',
+  'Document processing',
+  'Sign-in & access'
+]
 
 /**
  * `null` means "the chassis has not answered yet". Not `undefined`: a default
@@ -118,25 +119,26 @@ function renderAdmin(
     ],
     { initialEntries: [path] }
   )
-  return render(
+  const view = render(
     <QueryClientProvider client={testQueryClient()}>
       <RouterProvider router={router} />
     </QueryClientProvider>
   )
+  return { ...view, router }
 }
 
 /**
  * The same page inside the real shell, which is the only place the right pane
  * exists.
  *
- * `renderAdmin` above renders the route alone: `useInspectorSlot()` reads the
- * context's closed default there, so nothing is published and no pane is
- * asserted by accident. A case about the pane needs the frame that holds the
- * slot, and one about *leaving* needs a second route to leave to — so the
- * harness is a router whose element switches on the address and whose
- * `AppShell` does not remount when it does.
+ * `renderAdmin` above renders the route alone: nothing is published and no
+ * pane is asserted by accident. A case about the pane needs the frame that
+ * holds the slot, and one about *leaving* needs a second route to leave to —
+ * so the harness is a router whose element switches on the address and whose
+ * `AppShell` does not remount when it does. The pane is opened from the
+ * existing control, `details` below, never on the page's behalf.
  */
-function renderInShell(value = effectiveConfig(undefined), path = '/admin') {
+function renderInShell(value = effectiveConfig(undefined), path = '/admin', mcp: Partial<McpConnection> = {}) {
   vi.stubGlobal('fetch', async () => ({
     ok: false,
     status: 404,
@@ -154,7 +156,7 @@ function renderInShell(value = effectiveConfig(undefined), path = '/admin') {
       {
         path: '*',
         element: (
-          <McpContext.Provider value={connected({ client: QUIET.client })}>
+          <McpContext.Provider value={connected({ client: QUIET.client, ...mcp })}>
             <DeskConfigFixture value={value}>
               <Harness />
             </DeskConfigFixture>
@@ -169,12 +171,43 @@ function renderInShell(value = effectiveConfig(undefined), path = '/admin') {
       <RouterProvider router={router} />
     </QueryClientProvider>
   )
-  // **Opened from the existing control**, which is also the claim: Admin
-  // publishes into the slot whether or not the pane is showing, and a closed
-  // pane is `hidden`, so nothing inside it is in the accessibility tree for a
-  // role query to find. Nothing here reveals the pane on the page's behalf.
-  fireEvent.click(screen.getByRole('button', { name: 'Technical details' }))
   return { ...view, router }
+}
+
+/** Opens one item of the header's Details menu. */
+async function details(name: 'Configuration file' | 'Runtime details' = 'Configuration file') {
+  fireEvent.keyDown(screen.getByRole('button', { name: 'Details' }), { key: 'ArrowDown' })
+  fireEvent.click(await screen.findByRole('menuitem', { name }))
+}
+
+/** The items the Details menu offers here, by name. */
+async function detailsItems(): Promise<string[]> {
+  fireEvent.keyDown(screen.getByRole('button', { name: 'Details' }), { key: 'ArrowDown' })
+  const menu = await screen.findByRole('menu')
+  const items = within(menu).getAllByRole('menuitem').map((each) => each.textContent ?? '')
+  fireEvent.keyDown(menu, { key: 'Escape' })
+  return items
+}
+
+/** The right pane, which is the shell's and not the page's. */
+function inspector(): HTMLElement {
+  return document.querySelector<HTMLElement>('.desk-inspector')!
+}
+
+/** The pane's Location row, as it reads. */
+function paneLocation(): string | null {
+  const row = Array.from(inspector().querySelectorAll('dt')).find((each) => each.textContent === 'Location')
+  return row?.nextElementSibling?.textContent ?? null
+}
+
+/** Opens Details › Runtime details in the shell and returns its two rows. */
+async function runtimeLine(): Promise<HTMLElement> {
+  await details('Runtime details')
+  return await waitFor(() => {
+    const line = within(inspector()).getByRole('heading', { name: 'Runtime details' }).closest('section')!.querySelector('dl')
+    expect(line).not.toBeNull()
+    return line as HTMLElement
+  })
 }
 
 /** The desk's own page, which is the `<article>` and not the shell around it. */
@@ -204,15 +237,14 @@ function currentRows(container: HTMLElement): (string | null)[] {
     .map((row) => row.getAttribute('href'))
 }
 
-/** Every row's title, which is its first line and never its summary. */
+/** Every row's title. */
 function rowTitles(container: HTMLElement): (string | null)[] {
-  return rowsIn(container).map((row) => row.firstElementChild?.textContent ?? null)
+  return rowsIn(container).map((row) => row.textContent)
 }
 
-/** What one row says the setting currently is, or nothing where it says none. */
-function rowSays(container: HTMLElement, id: string): string | null {
-  const row = rowsIn(container).find((each) => each.getAttribute('href') === `/admin#${id}`)!
-  return row.children.length > 1 ? (row.children[1]!.textContent ?? null) : null
+/** Opens one section through its row. */
+function openRow(container: HTMLElement, id: string) {
+  fireEvent.click(rowsIn(container).find((row) => row.getAttribute('href') === `/admin#${id}`)!)
 }
 
 /**
@@ -304,10 +336,16 @@ function renderLiveAdmin(path = '/admin') {
   )
 }
 
-/** One section's or group's Status row, or nothing where it states none. */
+/**
+ * One card's Status row, or nothing where it states none.
+ *
+ * A card in Admin's settings form states its status only where it is not
+ * "read": writing, refused, holding a stale write, or a file that could not be
+ * read. The card is found by its title's id.
+ */
 function statusOf(id: string): string | null {
-  const card = document.getElementById(id)!.closest('section')!
-  const row = Array.from(card.querySelectorAll(':scope > dl > div')).find(
+  const card = document.getElementById(`${id}-title`)!.closest('section')!
+  const row = Array.from(card.querySelectorAll('dl > div')).find(
     (each) => each.querySelector('dt')?.textContent === 'Status'
   )
   return row?.querySelector('dd')?.textContent ?? null
@@ -315,10 +353,6 @@ function statusOf(id: string): string | null {
 
 /**
  * One sentence, as a pattern that matches it inside a longer hint.
- *
- * The Packs-go-to hint states what the file listing established **and** the
- * decoder's rule for the field, so an exact-text query would be asserting that
- * the second half is absent.
  */
 function escaped(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -377,7 +411,7 @@ const PROJECT_TEXT =
   '{\n  "deskConfigVersion": 1,\n  "organization": {"name": "Acme", "mark": null},\n' +
   '  "storage": {"packs": {"dir": "decisions", "idBase": "https://acme.example/d"}}\n}'
 
-/** Both files read, every section carrying something the overview can summarise. */
+/** Both files read, every section carrying something. */
 function everythingConfigured() {
   return effectiveConfig(
     decodeDeskConfig(PROJECT_TEXT, 'project'),
@@ -402,27 +436,33 @@ function everythingConfigured() {
   )
 }
 
-function runtimeLine() {
-  fireEvent.click(screen.getByRole('button', { name: 'Runtime details' }))
-  return screen.getByRole('dialog', { name: 'Runtime details' }).querySelector('dl')!
+/** A desk-level read that names a chassis and nothing else. */
+function chassisOnly(projectDir = '/this/launch', runtimeBin = 'jpack'): EffectiveConfig {
+  return effectiveConfig(undefined, undefined, undefined, {
+    path: DESK_PATH,
+    present: false,
+    sha256: '',
+    chassis: {
+      projectDir,
+      projectFile: `${projectDir}/jpack-desk.json`,
+      runtimeBin
+    }
+  })
 }
 
-describe('Admin, with no overview', () => {
+describe('Admin, grouped by task', () => {
   it('renders every group title and one row per section, in order, as links to their sections', () => {
     // **The order case, in the shape the column has.** It fails if a group or a
     // section is added without being declared, declared without being rendered,
     // or rendered out of order — and a row is a link to that section's own
-    // fragment, which is the address the rail and the user menu have been
-    // sending readers to since these were headings.
+    // fragment.
     const { container } = renderAdmin()
     expect(railTitles(container)).toEqual(ADMIN_GROUPS.map((group) => group.title))
-    expect(railTitles(container)).toEqual(['This project', 'This desk'])
+    expect(railTitles(container)).toEqual(['Workspace', 'Connections & access'])
     expect(rowTitles(container)).toEqual(ADMIN_SECTIONS.map((section) => section.title))
     expect(rowsIn(container).map((row) => row.getAttribute('href'))).toEqual(
       ADMIN_SECTIONS.map((section) => `/admin#${section.id}`)
     )
-    // Every row is under the title of the group whose file its section is a
-    // member of.
     for (const group of ADMIN_GROUPS) {
       const block = document.getElementById(`rail-${group.id}`)!.parentElement!
       expect(
@@ -432,16 +472,14 @@ describe('Admin, with no overview', () => {
         group.title
       ).toEqual(group.sections.map((each) => `/admin#${each.id}`))
     }
+    expect(within(rail(container)).getByRole('list', { name: 'Workspace' })).toBeTruthy()
+    expect(within(rail(container)).getByRole('list', { name: 'Connections & access' })).toBeTruthy()
   })
 
-  it('is exactly six rows under exactly two group titles, and states no file’s head', () => {
-    // **The column is a list of sections and nothing else.** The head it used to
-    // carry above the rows — where the file is, what reading it produced, and
-    // the control that writes it — is the Project section now: a path in a 13rem
-    // column is a line of prose, and the two places that fact belongs are the
-    // section that is about the file and the pane that quotes it. Asserted in
-    // four states, because a head that came back on a refusal would be invisible
-    // to a case that only ever rendered a desk with nothing configured.
+  it('is exactly eight rows under exactly two group titles, and states no file’s head', () => {
+    // **The column is a list of sections and nothing else**, asserted in four
+    // states, because a head that came back on a refusal would be invisible to
+    // a case that only ever rendered a desk with nothing configured.
     const states = [
       ['nothing read', () => effectiveConfig(undefined), '/admin'],
       ['both files read', everythingConfigured, '/admin#assistant'],
@@ -463,16 +501,9 @@ describe('Admin, with no overview', () => {
     ] as const
     for (const [where, build, path] of states) {
       const { container } = renderAdmin(build(), path)
-      expect(railTitles(container), where).toEqual(['This project', 'This desk'])
-      expect(rowsIn(container), where).toHaveLength(6)
-      expect(rowTitles(container), where).toEqual([
-        'Project',
-        'Organization',
-        'Storage & data',
-        'Assistant',
-        'Connections',
-        'Sign-in & access'
-      ])
+      expect(railTitles(container), where).toEqual(['Workspace', 'Connections & access'])
+      expect(rowsIn(container), where).toHaveLength(8)
+      expect(rowTitles(container), where).toEqual(SECTION_TITLES)
       expect(rail(container).querySelectorAll('dt'), where).toHaveLength(0)
       expect(rail(container).textContent, where).not.toContain('Location')
       expect(rail(container).textContent, where).not.toContain('Status')
@@ -483,15 +514,40 @@ describe('Admin, with no overview', () => {
     }
   })
 
-  it('offers no All settings link, and no address that is not a section', () => {
-    // **There is nothing to go back to.** The overview was a page; every state
-    // of this one is an open section, so a link out of a section would be a link
-    // to another section pretending to be an exit.
+  it.each([
+    ['', 'general'],
+    ['#project', 'general'],
+    ['#organization', 'general'],
+    ['#documents', 'gateway'],
+    ['#connections-ai', 'connections'],
+    ['#connections-files', 'connections'],
+    ['#connections-search', 'connections'],
+    ['#workspace', 'general'],
+    ['#not-real', 'general'],
+    ['#%', 'general']
+  ])('resolves the fragment %s to the %s section', (hash, id) => {
+    expect(adminSectionId(hash)).toBe(id)
+  })
+
+  it('opens a Connections tab only for its own fragment, and Files & apps otherwise', () => {
+    expect(connectionTab('#connections-ai')).toBe('ai')
+    expect(connectionTab('#connections-search')).toBe('search')
+    for (const hash of ['#connections', '#connections-files', '#connections-processing', '', '#connections-AI']) {
+      expect(connectionTab(hash), hash).toBe('files')
+    }
+  })
+
+  it('offers no All settings link, and no address that is not a section or one of its tabs', () => {
+    // An address inside a section — the desk's model preferences point at the
+    // shared AI settings, Research at the shared search connections — is a
+    // section's address too, or a tab of one.
+    const tabs = ['/admin#connections-ai', '/admin#connections-search']
     for (const path of [
       '/admin',
-      '/admin#project',
       '/admin#storage',
       '/admin#assistant',
+      '/admin#research',
+      '/admin#connections-search',
       '/admin#not-a-section'
     ]) {
       const { container } = renderAdmin(everythingConfigured(), path)
@@ -500,87 +556,35 @@ describe('Admin, with no overview', () => {
       const addresses = Array.from(page(container).querySelectorAll('a'))
         .map((each) => each.getAttribute('href') ?? '')
         .filter((href) => href.startsWith('/admin'))
-      // The rail names every section once, in order; and an address inside a
-      // section — the desk's model preferences point at the shared AI
-      // settings under Connections — is a section's address too.
       const sections = ADMIN_SECTIONS.map((section) => `/admin#${section.id}`)
       expect(addresses.slice(0, sections.length), path).toEqual(sections)
-      expect(addresses.filter((each) => !sections.includes(each)), path).toEqual([])
+      expect(addresses.filter((each) => !sections.includes(each) && !tabs.includes(each)), path).toEqual([])
       cleanup()
     }
   })
 
-  it('says what each setting currently is, from the decoded configuration', () => {
-    const { container } = renderAdmin(everythingConfigured())
-    expect(rowSays(container, 'project')).toBe('not the default project')
-    expect(rowSays(container, 'organization')).toBe('Acme')
-    expect(rowSays(container, 'storage')).toBe('filesystem · decisions')
-    expect(rowSays(container, 'assistant')).toBe('gemini · a-model · thinking ultra')
-    expect(rowSays(container, 'identity-provider')).toBe('https://issuer.example')
-  })
-
-  it('says the one word for nothing configured, and never a name of its own', () => {
-    // A summary that fell back to a name this page composed — the project's
-    // directory, the desk's own brand — would be a value nobody wrote, and a
-    // reader would have no way to tell it from one that is in the file.
-    const { container } = renderAdmin()
-    expect(rowSays(container, 'organization')).toBe('none')
-    expect(rowSays(container, 'assistant')).toBe('none')
-    expect(rowSays(container, 'identity-provider')).toBe('None')
-    // The two that always have a value have the built-in one, said as it is.
-    expect(rowSays(container, 'storage')).toBe('filesystem · packs')
-    // And the row that is about the file rather than a member of it says the
-    // desk has not answered, which is neither of the other two answers.
-    expect(rowSays(container, 'project')).toBe('the desk has not said')
-  })
-
-  it('has a summary for every section it declares', () => {
-    // Derived rather than listed: a section added to `adminSections.ts` without
-    // a summary is a row that says only its title, which is the menu this page
-    // stopped being.
-    for (const section of ADMIN_SECTIONS) {
-      expect(SECTION_SUMMARY[section.id], section.id).toBeDefined()
-    }
-  })
-
-  it('opens runtime details in a dismissible popover outside page flow', () => {
-    const { container } = renderAdmin(everythingConfigured())
-    expect(screen.queryByRole('dialog', { name: 'Runtime details' })).toBeNull()
-    const trigger = screen.getByRole('button', { name: 'Runtime details' })
-    fireEvent.click(trigger)
-    const dialog = screen.getByRole('dialog', { name: 'Runtime details' })
-    expect(page(container).contains(dialog)).toBe(false)
-    expect(dialog.querySelectorAll('dt')).toHaveLength(2)
-    fireEvent.keyDown(dialog, { key: 'Escape' })
-    expect(screen.queryByRole('dialog')).toBeNull()
+  it('opens runtime details in the right pane from the Details menu, outside the page', async () => {
+    const { container } = renderInShell(everythingConfigured())
+    const line = await runtimeLine()
+    expect(page(container).contains(line)).toBe(false)
+    expect(line.querySelectorAll('dt')).toHaveLength(2)
     expect(page(container).querySelector('pre')).toBeNull()
   })
 
-  it('states what this desk is running on a line, not as a card', async () => {
+  it('states what this desk is running on in two rows, and no Location or Status', async () => {
     // Two facts, neither of them a setting: the connection and the binary the
     // chassis was launched with, each one the connection's or the chassis' own
     // answer.
-    renderAdmin(
-      effectiveConfig(undefined, undefined, undefined, {
-        path: DESK_PATH,
-        present: false,
-        sha256: '',
-        chassis: {
-          projectDir: '/real/a-project',
-          projectFile: '/real/a-project/jpack-desk.json',
-          runtimeBin: '/usr/local/bin/jpack'
-        }
-      })
-    )
-    const line = runtimeLine()
+    renderInShell(chassisOnly('/real/a-project', '/usr/local/bin/jpack'))
+    const line = await runtimeLine()
     expect(Array.from(line.querySelectorAll('dt')).map((each) => each.textContent)).toEqual([
       'Runtime',
       'Binary'
     ])
     await waitFor(() => expect(line.textContent).toContain('connected — '))
     expect(line.textContent).toContain('/usr/local/bin/jpack')
-    // And it is not a card: no heading, no Location row, no Status row.
-    expect(line.closest('section')).toBeNull()
+    expect(line.textContent).not.toContain('Location')
+    expect(line.textContent).not.toContain('Status')
   })
 
   it('reads the connection off its status, not off the runtime it last met', async () => {
@@ -588,112 +592,63 @@ describe('Admin, with no overview', () => {
     // previous state — so a line that read "connected" off its presence said
     // so while the socket was down and the banner said the connection was
     // lost. The name is only said where the connection is actually up.
-    renderAdmin(effectiveConfig(undefined), '/admin', ROOT, {
+    renderInShell(effectiveConfig(undefined), '/admin', {
       status: 'reconnecting',
       client: null,
       attempt: 3
     })
-    const line = runtimeLine()
+    const line = await runtimeLine()
     await waitFor(() => expect(line.textContent).toContain('reconnecting'))
     expect(line.textContent).not.toContain('connected —')
     expect(line.textContent).not.toContain('jpack')
     cleanup()
 
-    renderAdmin(effectiveConfig(undefined), '/admin', ROOT, { status: 'failed', client: null })
-    expect(runtimeLine().textContent).toContain('not connected')
+    renderInShell(effectiveConfig(undefined), '/admin', { status: 'failed', client: null })
+    expect((await runtimeLine()).textContent).toContain('not connected')
   })
 
   it('names the runtime it is connected to where it actually is', async () => {
-    renderAdmin()
-    const line = runtimeLine()
+    renderInShell()
+    const line = await runtimeLine()
     await waitFor(() => expect(line.textContent).toContain('connected — jpack test'))
   })
 
-  it('names neither configuration file on the line, because the sections do', () => {
-    // One path, one statement. The section that is *about* a file is the one
-    // that earns it — Project for this project's, and the pane beside whichever
-    // section the desk-level file supplied.
-    const { container } = renderAdmin(
-      effectiveConfig(undefined, undefined, undefined, {
-        path: DESK_PATH,
-        present: false,
-        sha256: '',
-        chassis: {
-          projectDir: '/real/a-project',
-          projectFile: '/real/a-project/jpack-desk.json',
-          runtimeBin: '/usr/local/bin/jpack'
-        }
-      })
-    )
-    const line = runtimeLine()
+  it('names neither configuration file on the runtime line, because the file’s own pane does', async () => {
+    renderInShell(chassisOnly('/real/a-project', '/usr/local/bin/jpack'))
+    const line = await runtimeLine()
     expect(line.textContent).not.toContain('/real/a-project/jpack-desk.json')
     expect(line.textContent).not.toContain(DESK_PATH)
-    // The project's own file is stated once, and it is the open section's
-    // Location.
-    const project = document.getElementById('project')!.closest('section')!
-    expect(project.querySelector(':scope > dl')!.textContent).toContain(
-      '/real/a-project/jpack-desk.json'
-    )
-    // The desk-level path appears once, and it is not a location: the
-    // nomination's own line names the file that **control** writes, which is
-    // not the file the section it sits in is about.
-    const quoted = Array.from(container.querySelectorAll('code')).filter(
-      (each) => each.textContent === DESK_PATH
-    )
-    expect(quoted).toHaveLength(1)
-    const rule = quoted[0]!.closest('p')!
-    expect(rule.textContent).toContain('used on the next launch')
-    expect(rule.closest('section')!.querySelector('h2')!.id).toBe('project')
+    // The project's own file is stated in General's Configuration file.
+    await details()
+    await waitFor(() => expect(paneLocation()).toBe('/real/a-project/jpack-desk.json'))
   })
 
-  it('states a file’s Location in the section that is about it, and never in the column', () => {
-    const { container } = renderAdmin(
+  it('states a file’s Location in its pane, and never on the page or in the column', async () => {
+    const { container } = renderInShell(
       effectiveConfig(undefined, 'no configuration was read: no such file', undefined, {
         path: DESK_PATH,
         present: false,
         sha256: ''
       })
     )
-    // Inside the sections, so the status line's own pairs — which are not a
-    // Location and a Status — are not counted as either.
-    const labels = Array.from(container.querySelectorAll('section dt')).map(
+    // Nowhere on the page: a Location is the pane's, and the cards in the main
+    // column state a status only where it is not "read".
+    const labels = Array.from(page(container).querySelectorAll('section dt')).map(
       (each) => each.textContent
     )
-    // One Location and one Status on the whole page, and both are the open
-    // section's own head.
-    expect(labels).toEqual(['Location', 'Status'])
-    const project = document.getElementById('project')!.closest('section')!
-    expect(project.querySelectorAll('dt')).toHaveLength(2)
-    expect(rail(container).querySelectorAll('dt')).toHaveLength(0)
+    expect(labels).not.toContain('Location')
+    // In the shell the column is in the settings sidebar, not in the page.
+    expect(document.querySelector('nav[aria-label="Settings"]')!.querySelectorAll('dt')).toHaveLength(0)
     // And an absent file is absent, never "read".
     expect(screen.getAllByText('not present — defaults in use').length).toBeGreaterThan(0)
+    await details()
+    await waitFor(() => expect(paneLocation()).toBe('the desk has not said'))
   })
 
-  it('keeps a section’s own status on its row where it differs from its file’s', () => {
-    // Both files are absent, so every row says exactly what the file its group
-    // is about says, and none of them says it twice.
-    const { container } = renderAdmin(
-      effectiveConfig(undefined, 'no configuration was read: no such file', undefined, {
-        path: DESK_PATH,
-        present: false,
-        sha256: ''
-      })
-    )
-    const statuses = Array.from(container.querySelectorAll('section dt')).filter(
-      (each) => each.textContent === 'Status'
-    )
-    expect(statuses).toHaveLength(1)
-    for (const section of ADMIN_SECTIONS) {
-      const row = rowsIn(container).find(
-        (each) => each.getAttribute('href') === `/admin#${section.id}`
-      )!
-      expect(row.children.length, section.id).toBe(2)
-    }
-    cleanup()
-
-    // A member the *other* file supplied is not one this group's header speaks
-    // for: its row states its own status again.
-    const second = renderAdmin(
+  it('says which file supplied a member: shared on this computer, or this desk', () => {
+    // A member the desk-level file supplied is shared by every desk on this
+    // computer; one the project file supplied is this desk's.
+    renderAdmin(
       effectiveConfig(
         decodeDeskConfig(JSON.stringify({ deskConfigVersion: 1 }), 'project'),
         undefined,
@@ -703,20 +658,18 @@ describe('Admin, with no overview', () => {
           present: true,
           sha256: '',
           decoded: decodeDeskConfig(
-            JSON.stringify({
-              deskConfigVersion: 1,
-              storage: { packs: { dir: 'elsewhere' } }
-            }),
+            JSON.stringify({ deskConfigVersion: 1, storage: { packs: { dir: 'elsewhere' } } }),
             'desk'
           )
         }
-      )
+      ),
+      '/admin#storage'
     )
-    const storage = rowsIn(second.container).find(
-      (each) => each.getAttribute('href') === '/admin#storage'
-    )!
-    expect(storage.children).toHaveLength(3)
-    expect(storage.children[2]!.textContent).toBe('read')
+    const card = document.getElementById('pack-storage-title')!.closest('section')!
+    expect(card.querySelector('header p')!.textContent).toBe('Shared on this computer')
+    cleanup()
+    renderAdmin(everythingConfigured(), '/admin#storage')
+    expect(document.getElementById('pack-storage-title')!.closest('section')!.querySelector('header p')!.textContent).toBe('This desk')
   })
 
   it('names no user management, roles, invitations or assignment anywhere', () => {
@@ -729,45 +682,29 @@ describe('Admin, with no overview', () => {
 
   it('offers no appearance at all, because it is not this page’s to offer', () => {
     // Theme and density are a person's preference and not an organization's
-    // setting: this card wrote them into the project's own file, so one viewer
-    // choosing dark chose it for everyone who ever cloned it. They are in the
-    // user menu now — and what left with the card is its Save, which is the
-    // half a deleted form leaves behind.
+    // setting; they are in the user menu.
     const { container } = renderAdmin()
     expect(document.getElementById('appearance')).toBeNull()
     expect(screen.queryByLabelText('Theme')).toBeNull()
     expect(screen.queryByLabelText('Density')).toBeNull()
     expect(container.textContent).not.toContain('Appearance')
-    // The member itself is untouched: still in the schema, still decoded, and
-    // still the default for everyone who has not chosen.
     expect(effectiveConfig(undefined).config.appearance).toEqual({
       theme: 'system',
       density: 'comfortable'
     })
   })
 
-  it('takes every location from the chassis, and composes none of them', () => {
+  it('takes every location from the chassis, and composes none of them', async () => {
     // A page that joined the reported directory to a file name would be
     // asserting a path on a filesystem it cannot see, and would be wrong the
     // first time a project was reached through a symlink — which is exactly
     // what the chassis resolves before it reports.
-    renderAdmin(
-      effectiveConfig(undefined, undefined, undefined, {
-        path: DESK_PATH,
-        present: false,
-        sha256: '',
-        chassis: {
-          projectDir: '/real/a-project',
-          projectFile: '/real/a-project/jpack-desk.json',
-          runtimeBin: '/usr/local/bin/jpack'
-        }
-      })
-    )
-    expect(screen.getAllByText('/real/a-project/jpack-desk.json').length).toBeGreaterThan(0)
-    runtimeLine()
-    expect(screen.getAllByText('/usr/local/bin/jpack').length).toBeGreaterThan(0)
-    // And never the project-relative name once the chassis has answered.
-    expect(screen.queryByText('jpack-desk.json')).toBeNull()
+    const { container } = renderInShell(chassisOnly('/real/a-project', '/usr/local/bin/jpack'))
+    await details()
+    await waitFor(() => expect(paneLocation()).toBe('/real/a-project/jpack-desk.json'))
+    expect((await runtimeLine()).textContent).toContain('/usr/local/bin/jpack')
+    // And the page never offers the project-relative name it reads the file by.
+    expect(page(container).textContent).not.toContain('jpack-desk.json')
   })
 
   it('names a configuration that could not be read, and does not call it absent', () => {
@@ -778,9 +715,7 @@ describe('Admin, with no overview', () => {
 
   it('sources an unread reason to whoever actually said it', () => {
     // Three provenances, three sentences, and each one carried rather than
-    // inferred. "The reason is the chassis' own" was false for a browser
-    // error; "the request never got an answer" is false for a 200 whose body
-    // this desk cannot use, which is what inferring from a status produced.
+    // inferred.
     renderAdmin(effectiveConfig(undefined, undefined, CHASSIS_413))
     expect(screen.getAllByText(/and its own reason/).length).toBeGreaterThan(0)
     expect(screen.queryByText(/this page’s reason/)).toBeNull()
@@ -797,8 +732,6 @@ describe('Admin, with no overview', () => {
     expect(screen.queryByText(/the desk answered/)).toBeNull()
     cleanup()
 
-    // The case the inference got wrong: an answer arrived, and the sentence
-    // about it is this desk's rather than the chassis'.
     renderAdmin(
       effectiveConfig(undefined, undefined, {
         reason: 'the desk answered 200 with text that is not JSON',
@@ -831,11 +764,6 @@ describe('Admin, with no overview', () => {
   it('refuses the desk-level file on its own, without blaming the project one', async () => {
     // Two files, two verdicts. A bad key in one must not be reported as the
     // other's, and neither is repaired by the other being fine.
-    //
-    // **The desk-level verdict is the pane's**, and that is where the group
-    // header's status went: the two sections that file supplies state no status
-    // of their own where it is the file's, so the surface that says what reading
-    // that file produced is the one quoting it.
     const value = () =>
       effectiveConfig(
         decodeDeskConfig(JSON.stringify({ deskConfigVersion: 1 }), 'project'),
@@ -851,13 +779,15 @@ describe('Admin, with no overview', () => {
         }
       )
     renderAdmin(value())
-    // The project file's own section says what reading *it* produced, and
-    // nothing about the other file's refusal.
-    expect(statusOf('project')).toBe('read')
+    // The project file's own card says what reading *it* produced — this file
+    // carries no organization, so the defaults are in use — and nothing about
+    // the other file's refusal.
+    expect(statusOf('branding')).toBe('not present — defaults in use')
     expect(screen.queryByText(/a key is never stored/)).toBeNull()
     cleanup()
 
-    renderInShell(value(), '/admin#assistant')
+    renderInShell(value(), '/admin#connections-ai')
+    await details()
     // The refusal says the thing that is actually wrong, in the decoder's words.
     await waitFor(() =>
       expect(
@@ -867,99 +797,49 @@ describe('Admin, with no overview', () => {
   })
 })
 
-/**
- * The section that is about the file rather than about a member of it.
- *
- * **These cases were the group header's**, and they are here because the header
- * is. What it stated — where this project's file is, what reading it produced,
- * and whether this desk opens this project when it is launched with no
- * directory — had nowhere left to be said once the overview went, and a
- * navigation column is not where a path or a button whose line names a second
- * file belongs. It is a section, first under This project, and it is what
- * `/admin` opens on.
- */
-describe('the Project section', () => {
-  it('carries the file’s Location and Status, the control and its Save, and no other field', () => {
-    const { container } = renderAdmin(
-      effectiveConfig(undefined, undefined, undefined, {
-        path: DESK_PATH,
-        present: false,
-        sha256: '',
-        chassis: {
-          projectDir: '/this/launch',
-          projectFile: '/this/launch/jpack-desk.json',
-          runtimeBin: 'jpack'
-        }
-      })
-    )
-    const section = document.getElementById('project')!.closest('section')!
-    // The two rows the group header carried, in the order it carried them.
-    expect(
-      Array.from(section.querySelectorAll(':scope > dl dt')).map((each) => each.textContent)
-    ).toEqual(['Location', 'Status'])
-    expect(section.querySelector(':scope > dl dd')!.textContent).toBe(
-      '/this/launch/jpack-desk.json'
-    )
-    expect(statusOf('project')).toBe('read')
-    // The control, from the same hook and with the same Save.
-    const nomination = screen.getByRole('button', { name: 'Use this project as the default' })
-    expect(section.contains(nomination)).toBe(true)
-    expect(section.contains(screen.getByText('Default project'))).toBe(true)
-    // And no other field: every member of this file is a section of its own.
-    for (const elsewhere of ['Kind', 'Provider', 'Name', 'Packs go to', 'Assistant']) {
-      expect(section.textContent, elsewhere).not.toContain(elsewhere)
-    }
-    expect(page(container).querySelector('form')).toBeNull()
+/** General: the desk's name, the project file's branding, and the startup project. */
+describe('the General section', () => {
+  it('keeps branding and the startup control on General, distinguishes the desk name, and runs no audit on arrival', async () => {
+    const writes: string[] = []
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit = {}) => {
+      const path = new URL(url, 'http://localhost').pathname
+      if (init.method && init.method !== 'GET') writes.push(path)
+      const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+      if (path === '/api/desks') return json({ current: { id: '', name: 'Example desk', folder: '/work', managed: false }, desks: [], location: '/private' })
+      return json({ error: 'not available' }, 404)
+    })
+    const { container } = renderAdmin(chassisOnly())
+    expect(await screen.findByText('Example desk')).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 2, name: 'General' })).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: 'Organization name' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Open this project at startup' })).toBeTruthy()
+    // And nothing of another section: no pack folder, no decision record.
+    expect(screen.queryByRole('textbox', { name: 'Pack folder' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Decision record' })).toBeNull()
+    expect(readAuditRecord).not.toHaveBeenCalled()
+    expect(writes).toEqual([])
+    expect(currentRows(container)).toEqual(['/admin#general'])
   })
 
-  it('carries the decision record beside the gates, in the open section (ADR-0010)', () => {
-    renderAdmin()
-    const gates = screen.getByRole('heading', { name: 'Gates' })
-    const record = screen.getByRole('heading', { name: 'Decision record' })
-    expect(gates.compareDocumentPosition(record) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(record.closest('[hidden]')).toBeNull()
-    expect(document.getElementById('project')!.closest('[hidden]')).toBeNull()
-  })
-
-  it('runs the decision record each time Project is opened, and not while another section is', async () => {
-    const { container } = renderAdmin(everythingConfigured())
-    await screen.findByText(/This project keeps no trail/)
-    expect(readAuditRecord).toHaveBeenCalledTimes(1)
-    const open = (id: string) => fireEvent.click(rowsIn(container).find((row) => row.getAttribute('href') === `/admin#${id}`)!)
-    open('storage')
-    open('organization')
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)) })
-    expect(readAuditRecord).toHaveBeenCalledTimes(1)
-    open('project')
-    await waitFor(() => expect(readAuditRecord).toHaveBeenCalledTimes(2))
-    open('storage')
-    open('project')
-    await waitFor(() => expect(readAuditRecord).toHaveBeenCalledTimes(3))
+  it('says the desk name could not be read rather than loading for ever', async () => {
+    vi.stubGlobal('fetch', async () => answered({ error: 'not available' }, 503))
+    renderAdmin(chassisOnly())
+    expect(await screen.findByText('could not be read')).toBeTruthy()
   })
 
   it('carries exactly the state-changing controls it names, and no others', () => {
-    // The whole list rather than a count, so a control cannot be added without
-    // appearing here. This section offers one, and it is the nomination: it has
-    // no form, so it has no Save button either.
+    // This fixture is the state in which nothing asked for the desk-level file,
+    // so this page has never seen the bytes a write would replace — and the
+    // Save node under the control is the sentence that says so.
     const { container } = renderAdmin()
-    const interactive = page(container).querySelectorAll('section button, section input, section select, section textarea')
-    expect(Array.from(interactive).map((element) => element.textContent?.trim())).toEqual([
-      'Use this project as the default'
-    ])
-    expect(screen.queryByLabelText('Default project')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull()
-    // **One control is disabled here, and it is not a permanent one.** This
-    // fixture is the state in which nothing asked for the desk-level file, so
-    // this page has never seen the bytes a write would replace — and the Save
-    // node under the control is the sentence that says so.
     expect(
       Array.from(container.querySelectorAll('button[disabled]')).map(
         (element) => element.textContent
       )
-    ).toEqual(['Use this project as the default'])
+    ).toContain('Open this project at startup')
     expect(
-      screen.getByText(/has not read its own configuration file/).closest('section')!.querySelector('h2')!.id
-    ).toBe('project')
+      screen.getByText(/has not read its own configuration file/).closest('section')!.querySelector('h3')!.textContent
+    ).toBe('Startup')
   })
 
   it('will not offer the nomination where the chassis has not named this project', () => {
@@ -973,87 +853,48 @@ describe('the Project section', () => {
       })
     )
     const nominate = screen.getByRole('button', {
-      name: 'Use this project as the default'
+      name: 'Open this project at startup'
     }) as HTMLButtonElement
     expect(nominate.disabled).toBe(true)
     expect(screen.getByText(/has not said where its own configuration file is/)).toBeTruthy()
   })
 
-  it('names the file its control writes, which is not the one it shows', () => {
-    // The section's Location and Status are about the project's own file; its
-    // one control writes the desk-level one. The line under the control names
-    // that file, from the chassis' answer and never composed.
-    renderAdmin(
-      effectiveConfig(undefined, undefined, undefined, {
-        path: DESK_PATH,
-        present: false,
-        sha256: '',
-        chassis: {
-          projectDir: '/this/launch',
-          projectFile: '/this/launch/jpack-desk.json',
-          runtimeBin: 'jpack'
-        }
-      })
-    )
-    const project = document.getElementById('project')!.closest('section')!
-    // Location: the project's own file.
-    expect(project.querySelector('dd')!.textContent).toBe('/this/launch/jpack-desk.json')
-    // The control's own line: the desk-level file it writes, and this launch.
-    const rule = project.querySelector('p')!.textContent ?? ''
-    expect(rule).toContain(DESK_PATH)
-    expect(rule).toContain('used on the next launch without a directory')
-    expect(rule).toContain('/this/launch')
+  it('says what the startup control changes, and when', () => {
+    renderAdmin(chassisOnly())
+    const row = screen.getByText('Startup project').parentElement!
+    expect(row.textContent).toContain('Changes apply to the next launch without a project folder. The current desk stays open.')
   })
 
-  it('says the desk has not said, rather than offering the name it reads the file by', () => {
+  it('says the desk has not said where the file is, rather than offering the name it reads it by', async () => {
     // `jpack-desk.json` is the address this page reads the file at, not an
     // established location on a filesystem — and the row is about where the
-    // file **is**. Before `/api/desk-config` answers, and for ever where it
-    // carries no chassis facts, the row says so instead of standing in.
-    const { container } = renderAdmin()
-    const head = document
-      .getElementById('project')!
-      .closest('section')!
-      .querySelector(':scope > dl')!
-    expect(head.textContent).toContain('the desk has not said')
-    expect(container.textContent).not.toContain('jpack-desk.json')
+    // file **is**.
+    const { container } = renderInShell()
+    expect(page(container).textContent).not.toContain('jpack-desk.json')
+    await details()
+    await waitFor(() => expect(paneLocation()).toBe('the desk has not said'))
   })
 
-  it('names the file the chassis resolved the moment it answers', () => {
+  it('names the file the chassis resolved the moment it answers', async () => {
+    renderInShell(chassisOnly('/real/a-project'))
+    await details()
+    await waitFor(() => expect(paneLocation()).toBe('/real/a-project/jpack-desk.json'))
+    expect(inspector().textContent).not.toContain('the desk has not said')
+  })
+
+  it('offers the nomination in two states and clears it in the third, by the chassis’ path', () => {
+    // **The comparison is against the path the chassis resolved**, so before
+    // it has answered this page does not know which of the other two is true.
+    renderAdmin()
+    expect((screen.getByRole('button', { name: 'Open this project at startup' }) as HTMLButtonElement).disabled).toBe(true)
+    cleanup()
+
+    renderAdmin(effectiveConfig(undefined, undefined, undefined, deskRead({})))
+    expect(screen.getByRole('button', { name: 'Open this project at startup' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Clear startup project' })).toBeNull()
+    cleanup()
+
     renderAdmin(
-      effectiveConfig(undefined, undefined, undefined, {
-        path: DESK_PATH,
-        present: false,
-        sha256: '',
-        chassis: {
-          projectDir: '/real/a-project',
-          projectFile: '/real/a-project/jpack-desk.json',
-          runtimeBin: 'jpack'
-        }
-      })
-    )
-    const head = document
-      .getElementById('project')!
-      .closest('section')!
-      .querySelector(':scope > dl')!
-    expect(head.textContent).toContain('/real/a-project/jpack-desk.json')
-    expect(head.textContent).not.toContain('the desk has not said')
-  })
-
-  it('summarises itself in three states, and composes no fourth', () => {
-    // **The closed vocabulary, and the third answer is not a spelling of the
-    // second.** The comparison is against the path the chassis resolved, so
-    // before it has answered this page does not know which of the other two is
-    // true — and a row that picked one would be answering for the desk.
-    const { container } = renderAdmin()
-    expect(rowSays(container, 'project')).toBe('the desk has not said')
-    cleanup()
-
-    const other = renderAdmin(effectiveConfig(undefined, undefined, undefined, deskRead({})))
-    expect(rowSays(other.container, 'project')).toBe('not the default project')
-    cleanup()
-
-    const own = renderAdmin(
       effectiveConfig(
         undefined,
         undefined,
@@ -1061,59 +902,99 @@ describe('the Project section', () => {
         deskRead({ project: { file: '/this/launch/jpack-desk.json' } })
       )
     )
-    expect(rowSays(own.container, 'project')).toBe('the default project')
-    // The control below it makes the same comparison, and agrees.
-    expect(screen.getByRole('button', { name: 'Clear the default' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Clear startup project' })).toBeTruthy()
+  })
+})
+
+/** Decision safeguards: the gates, the decision record and the Jobs record. */
+describe('the Decision safeguards section', () => {
+  it('carries the decision record after the gates, and the Jobs record after it (ADR-0010)', async () => {
+    vi.stubGlobal('fetch', async (url: string) =>
+      String(url).includes('/api/runner-key')
+        ? answered({ runnerKey: { state: 'signed', keyId: 'a'.repeat(32), publicKey: 'b'.repeat(64) } })
+        : answered({ error: 'not available' }, 404))
+    renderAdmin(effectiveConfig(undefined), '/admin#safeguards')
+    const gates = screen.getByRole('heading', { level: 2, name: 'Decision safeguards' })
+    const record = screen.getByRole('heading', { name: 'Decision record' })
+    const jobs = await screen.findByRole('heading', { name: 'Jobs record' })
+    expect(gates.compareDocumentPosition(record) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(record.compareDocumentPosition(jobs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(record.closest('[hidden]')).toBeNull()
+    expect(jobs.closest('[hidden]')).toBeNull()
+  })
+
+  it('runs the decision record and asks for the Runner each time its section is opened, and not while another section is', async () => {
+    // The Jobs record asks whether this desk has a Runner each time it becomes
+    // visible, and only then.
+    let runnerAsked = 0
+    vi.stubGlobal('fetch', async (url: string) => {
+      if (String(url).includes('/api/runner-key')) runnerAsked += 1
+      return answered({ error: 'not available' }, 404)
+    })
+    const { container } = renderAdmin(everythingConfigured())
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)) })
+    expect(readAuditRecord).not.toHaveBeenCalled()
+    expect(runnerAsked).toBe(0)
+    openRow(container, 'safeguards')
+    await waitFor(() => expect(readAuditRecord).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(runnerAsked).toBe(1))
+    openRow(container, 'storage')
+    openRow(container, 'general')
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)) })
+    expect(readAuditRecord).toHaveBeenCalledTimes(1)
+    expect(runnerAsked).toBe(1)
+    openRow(container, 'safeguards')
+    await waitFor(() => expect(readAuditRecord).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(runnerAsked).toBe(2))
   })
 })
 
 describe('one section at a time', () => {
   it('lands on the first section when there is no fragment, with the list beside it', () => {
     const { container } = renderAdmin(everythingConfigured(), '/admin')
-    expect(screen.getByRole('heading', { level: 2, name: 'Project' })).toBeTruthy()
-    expect(currentRows(container)).toEqual(['/admin#project'])
-    expect(rowTitles(container)).toEqual(ADMIN_SECTIONS.map((section) => section.title))
-    // And nowhere to go back to, because there is nothing behind it.
+    expect(screen.getByRole('heading', { level: 2, name: 'General' })).toBeTruthy()
+    expect(currentRows(container)).toEqual(['/admin#general'])
+    expect(rowTitles(container)).toEqual(SECTION_TITLES)
     expect(screen.queryByRole('link', { name: 'All settings' })).toBeNull()
   })
 
   it('opens the section a fragment names, and marks its row current', () => {
-    const { container } = renderAdmin(everythingConfigured(), '/admin#organization')
-    expect(screen.getByRole('heading', { level: 2, name: 'Organization' })).toBeTruthy()
-    expect(currentRows(container)).toEqual(['/admin#organization'])
-    // The list is still whole beside it: every section is one click away.
-    expect(rowTitles(container)).toEqual(ADMIN_SECTIONS.map((section) => section.title))
+    const { container } = renderAdmin(everythingConfigured(), '/admin#storage')
+    expect(screen.getByRole('heading', { level: 2, name: 'Storage & backups' })).toBeTruthy()
+    expect(currentRows(container)).toEqual(['/admin#storage'])
+    expect(rowTitles(container)).toEqual(SECTION_TITLES)
     // And only that section's form is on the page.
+    expect(screen.getByDisplayValue('decisions')).toBeTruthy()
+    expect(screen.queryByLabelText('Organization name')).toBeNull()
+  })
+
+  it('opens what a section of the old layout held for its old fragment', () => {
+    const { container } = renderAdmin(everythingConfigured(), '/admin#organization')
+    expect(screen.getByRole('heading', { level: 2, name: 'General' })).toBeTruthy()
+    expect(currentRows(container)).toEqual(['/admin#general'])
     expect(screen.getByDisplayValue('Acme')).toBeTruthy()
-    expect(screen.queryByLabelText('Packs go to')).toBeNull()
   })
 
   it('a row opens its section, and the one that was open closes', () => {
     const { container } = renderAdmin(everythingConfigured())
-    expect(screen.getByRole('heading', { level: 2, name: 'Project' })).toBeTruthy()
-    expect(screen.queryByRole('heading', { level: 2, name: 'Storage & data' })).toBeNull()
-    fireEvent.click(
-      rowsIn(container).find((row) => row.getAttribute('href') === '/admin#storage')!
-    )
-    expect(screen.getByRole('heading', { level: 2, name: 'Storage & data' })).toBeTruthy()
-    expect(screen.getByLabelText('Packs go to')).toBeTruthy()
-    expect(screen.queryByRole('heading', { level: 2, name: 'Project' })).toBeNull()
+    expect(screen.getByRole('heading', { level: 2, name: 'General' })).toBeTruthy()
+    expect(screen.queryByRole('heading', { level: 2, name: 'Storage & backups' })).toBeNull()
+    openRow(container, 'storage')
+    expect(screen.getByRole('heading', { level: 2, name: 'Storage & backups' })).toBeTruthy()
+    expect(screen.getByLabelText('Pack folder')).toBeTruthy()
+    expect(screen.queryByRole('heading', { level: 2, name: 'General' })).toBeNull()
     expect(currentRows(container)).toEqual(['/admin#storage'])
 
-    // And back, through the column rather than through a link out of it: there
-    // is no state between two sections to pass through.
-    fireEvent.click(
-      rowsIn(container).find((row) => row.getAttribute('href') === '/admin#project')!
-    )
-    expect(screen.getByRole('heading', { level: 2, name: 'Project' })).toBeTruthy()
-    expect(screen.getByLabelText('Packs go to').closest('[hidden]')).not.toBeNull()
-    expect(currentRows(container)).toEqual(['/admin#project'])
+    openRow(container, 'general')
+    expect(screen.getByRole('heading', { level: 2, name: 'General' })).toBeTruthy()
+    expect(screen.getByLabelText('Pack folder').closest('[hidden]')).not.toBeNull()
+    expect(currentRows(container)).toEqual(['/admin#general'])
   })
 
   it('retains a section draft and guards leaving Admin while a hidden form is dirty', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
-    const { router } = renderInShell(everythingConfigured(), '/admin#organization')
-    const name = screen.getByLabelText('Name') as HTMLInputElement
+    const { router } = renderInShell(everythingConfigured(), '/admin#general')
+    const name = screen.getByLabelText('Organization name') as HTMLInputElement
     fireEvent.change(name, { target: { value: 'Unsaved organization' } })
     await act(() => router.navigate('/admin#storage'))
     expect(name.closest('[hidden]')).not.toBeNull()
@@ -1123,8 +1004,8 @@ describe('one section at a time', () => {
     await act(() => router.navigate('/packs'))
     expect(confirm).toHaveBeenCalledOnce()
     expect(router.state.location.pathname).toBe('/admin')
-    await act(() => router.navigate('/admin#organization'))
-    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Unsaved organization')
+    await act(() => router.navigate('/admin#general'))
+    expect((screen.getByLabelText('Organization name') as HTMLInputElement).value).toBe('Unsaved organization')
     expect(confirm).toHaveBeenCalledOnce()
     confirm.mockReturnValue(true)
     await act(() => router.navigate('/packs'))
@@ -1133,14 +1014,10 @@ describe('one section at a time', () => {
   })
 
   it('changes nothing on Escape, because there is nothing to leave', () => {
-    // The key used to return to the overview. There is no overview: a page whose
-    // every state is one open section has no state Escape could put a reader in,
-    // and a keystroke that navigated to the first section would be a shortcut
-    // for losing your place.
     const { container } = renderAdmin(everythingConfigured(), '/admin#storage')
     const before = page(container).innerHTML
     fireEvent.keyDown(document.body, { key: 'Escape' })
-    expect(screen.getByRole('heading', { level: 2, name: 'Storage & data' })).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 2, name: 'Storage & backups' })).toBeTruthy()
     expect(currentRows(container)).toEqual(['/admin#storage'])
     expect(page(container).innerHTML).toBe(before)
 
@@ -1149,60 +1026,54 @@ describe('one section at a time', () => {
     dialog.setAttribute('role', 'dialog')
     document.body.append(dialog)
     fireEvent.keyDown(dialog, { key: 'Escape' })
-    expect(screen.getByRole('heading', { level: 2, name: 'Storage & data' })).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 2, name: 'Storage & backups' })).toBeTruthy()
     dialog.remove()
   })
 
   it('opens the first section for every fragment that names none', () => {
-    // Four inputs and one answer. An error about a section that does not exist
-    // would be a worse answer than the page the reader asked for, and so would a
-    // landing state that is a second page of the list beside it.
     for (const path of [
       '/admin',
       '/admin#',
       '/admin#not-a-section',
       // A group is not a section.
-      '/admin#this-project',
+      '/admin#workspace',
+      '/admin#services',
       // And neither is a fragment that is not valid percent-encoding.
       '/admin#%zz',
       '/admin#storage%'
     ]) {
       const { container } = renderAdmin(everythingConfigured(), path)
-      expect(screen.getByRole('heading', { level: 2, name: 'Project' }), path).toBeTruthy()
-      expect(currentRows(container), path).toEqual(['/admin#project'])
-      expect(rowTitles(container), path).toEqual(ADMIN_SECTIONS.map((section) => section.title))
+      expect(screen.getByRole('heading', { level: 2, name: 'General' }), path).toBeTruthy()
+      expect(currentRows(container), path).toEqual(['/admin#general'])
+      expect(rowTitles(container), path).toEqual(SECTION_TITLES)
       cleanup()
     }
   })
 
-  it('stacks the list above the section below the Inspector’s breakpoint, and bares the other rows', () => {
-    // The shell is one column there and the Inspector is a drawer over the
-    // page: a 14rem rail beside a form leaves neither of them room, and a
-    // summary on every row is a second page of list above the thing the reader
-    // opened.
-    vi.stubGlobal('matchMedia', (query: string) => ({
-      media: query,
-      matches: query === INSPECTOR_DRAWER_BELOW,
-      onchange: null,
-      addListener() {},
-      removeListener() {},
-      addEventListener() {},
-      removeEventListener() {},
-      dispatchEvent: () => false
-    }))
-    const { container } = renderAdmin(everythingConfigured(), '/admin#assistant')
-    expect(rowTitles(container)).toEqual(ADMIN_SECTIONS.map((section) => section.title))
-    // The open row keeps what it says; the rest are their titles and nothing.
-    expect(rowSays(container, 'assistant')).toBe('gemini · a-model · thinking ultra')
-    expect(rowSays(container, 'organization')).toBeNull()
-    expect(rowSays(container, 'storage')).toBeNull()
-    expect(rowSays(container, 'identity-provider')).toBeNull()
-    // And the landing is a section like any other: the row that is open keeps
-    // what it says, and the four the reader is not in are their titles.
+  it('opens the requested Connections tab, and keeps one row current', async () => {
+    const { container } = renderAdmin(effectiveConfig(undefined), '/admin#connections-search')
+    expect(screen.getByRole('tab', { name: 'Web search' }).getAttribute('aria-selected')).toBe('true')
+    expect(currentRows(container)).toEqual(['/admin#connections'])
+    expect(screen.getByRole('button', { name: 'Add connection' })).toBeTruthy()
+    // This desk's default is Research's, not the shared connections'.
+    expect(screen.queryByRole('combobox', { name: 'Default search connection' })).toBeNull()
     cleanup()
-    const landing = renderAdmin(everythingConfigured())
-    expect(rowSays(landing.container, 'project')).toBe('not the default project')
-    expect(rowSays(landing.container, 'organization')).toBeNull()
+    renderAdmin(effectiveConfig(undefined), '/admin#connections')
+    expect(screen.getByRole('tab', { name: 'Files & apps' }).getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('keeps per-desk research apart from the shared search credentials', () => {
+    renderAdmin(effectiveConfig(undefined), '/admin#research')
+    expect(screen.getByRole('heading', { level: 2, name: 'Research' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Manage search connections' }).getAttribute('href')).toBe('/admin#connections-search')
+    expect(screen.queryByRole('button', { name: 'Add connection' })).toBeNull()
+    expect(screen.queryByLabelText('API key')).toBeNull()
+  })
+
+  it('does not mount the shared AI forms on the desk’s own Assistant section', () => {
+    renderAdmin(effectiveConfig(undefined), '/admin#assistant')
+    expect(screen.getByRole('link', { name: 'Manage shared AI settings' }).getAttribute('href')).toBe('/admin#connections-ai')
+    expect(screen.queryByRole('combobox', { name: 'Connection method' })).toBeNull()
   })
 
   it('names the storage kind, the location and the id prefix', () => {
@@ -1214,12 +1085,20 @@ describe('one section at a time', () => {
       'project'
     )
     renderAdmin(effectiveConfig(decoded), '/admin#storage')
-    // The one kind, as the value it is.
-    expect(screen.getByText('Kind').parentElement!.textContent).toContain('filesystem')
+    expect(screen.getByText('Storage').parentElement!.textContent).toContain('Local folder')
     expect(screen.getByDisplayValue('decisions')).toBeTruthy()
     // The prefix as it will actually be written — normalised at decode — so a
     // Save that does not touch it writes back what the file already means.
     expect(screen.getByDisplayValue('https://acme.example/d/')).toBeTruthy()
+  })
+
+  it('keeps pack storage and chat data apart from research and document processing', () => {
+    renderAdmin(effectiveConfig(undefined), '/admin#storage')
+    expect(screen.getByRole('textbox', { name: 'Pack folder' })).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: 'Pack ID prefix' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Chat data' })).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: 'Research' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Manage PDF processing' })).toBeNull()
   })
 
   it('shows the built-in location and prefix where the project configured none', () => {
@@ -1233,8 +1112,6 @@ describe('one section at a time', () => {
     // holds files and can never claim an empty one exists.
     servesListing({ files: [{ path: 'packs/a.pack.json', bytes: 1, sha256: 'aa' }] })
     renderAdmin(effectiveConfig(undefined), '/admin#storage')
-    // A substring: the hint states what the listing established and then the
-    // decoder's own rule for the field, and both are meant to be there.
     expect(await screen.findByText(/holds files/)).toBeTruthy()
   })
 
@@ -1247,9 +1124,6 @@ describe('one section at a time', () => {
   })
 
   it('tells the four states apart that used to share one sentence', async () => {
-    // Pending, failed, incomplete and obstructed all rendered as "no file
-    // under it yet — the first pack creates it". Three of those are not that,
-    // and the last one is a promise a rename is the only way to keep.
     const cases: [Parameters<typeof servesListing>[0], string][] = [
       [{ fail: true }, 'the file listing failed, so nothing is known about it'],
       [
@@ -1279,36 +1153,40 @@ describe('one section at a time', () => {
     expect(await screen.findByText(/the file listing has not answered yet/)).toBeTruthy()
   })
 
-  it('names the two future kinds in the decoder’s own words, and offers neither', () => {
-    // The sentence is the one the decoder refuses `"database"` with, exported
-    // and quoted rather than written again here: two answers about what is
-    // available would be free to disagree, and the mutation table could break
-    // one of them while the other went on saying it.
-    renderAdmin(effectiveConfig(undefined), '/admin#storage')
-    expect(screen.getByText(STORAGE_KIND_SAYS)).toBeTruthy()
-    expect(STORAGE_KIND_SAYS).toContain('database')
-    expect(STORAGE_KIND_SAYS).toContain('cloud storage')
-  })
-
   it('renders the one storage kind as a value, and not as a control with one option', () => {
-    // **A Select with one option is a control that cannot be operated.** It
-    // looks like a choice and offers none, and it appears in every enumeration
-    // of what on this page a reader can change. While the union has one member
-    // the section says what the file says.
-    const { container } = renderAdmin(effectiveConfig(undefined), '/admin#storage')
-    const storage = document.getElementById('storage')!.closest('section')!
+    // **A Select with one option is a control that cannot be operated.**
+    renderAdmin(effectiveConfig(undefined), '/admin#storage')
+    const storage = document.getElementById('pack-storage-title')!.closest('section')!
     expect(storage.querySelector('[role="combobox"]')).toBeNull()
     expect(storage.querySelector('select')).toBeNull()
-    expect(screen.getByText('Kind').parentElement!.textContent).toContain('filesystem')
-    // And nothing anywhere on the page offers the kind as an option.
-    expect(container.textContent).toContain(STORAGE_KIND_SAYS)
+    expect(screen.getByText('Storage').parentElement!.textContent).toContain('Local folder')
   })
 
-  it('keeps sign-in policy separate from the legacy display configuration', () => {
+  it('keeps sign-in policy separate, and offers no configuration file for it', async () => {
     renderAdmin(everythingConfigured(), '/admin#identity-provider')
     expect(screen.getByRole('heading', { name: 'Sign-in & access', level: 2 })).toBeTruthy()
+    expect(screen.getByText('Shared on this computer · Control who can open Desk.')).toBeTruthy()
     expect(screen.queryByText('This provider describes the identity displayed in the header. Sign-in is not available yet.')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Technical details' })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'Connection method' })).toBeNull()
+    expect(await detailsItems()).toEqual(['Runtime details', 'Project files'])
+  })
+
+  it('offers the configuration file where the open section is about one', async () => {
+    for (const [path, offered] of [
+      ['/admin', true],
+      ['/admin#storage', true],
+      ['/admin#gateway', true],
+      ['/admin#connections-ai', true],
+      ['/admin#connections', false],
+      ['/admin#connections-search', false],
+      ['/admin#assistant', false],
+      ['/admin#research', false],
+      ['/admin#safeguards', false]
+    ] as const) {
+      renderAdmin(everythingConfigured(), path)
+      expect((await detailsItems()).includes('Configuration file'), path).toBe(offered)
+      cleanup()
+    }
   })
 
   it('carries exactly the controls each open section names, and no others', () => {
@@ -1316,16 +1194,16 @@ describe('one section at a time', () => {
     // of what this page can change.
     const controls = (container: HTMLElement) =>
       Array.from(page(container).querySelectorAll('section button, section input, section select, section textarea'))
-        .filter((element) => element.getAttribute('role') !== 'combobox')
+        .filter((element) => element.getAttribute('role') !== 'combobox' && element.getAttribute('role') !== 'tab')
+        .filter((element) => element.closest('[hidden]') === null)
         .map((element) => element.textContent?.trim())
         .filter((label) => label !== '')
     for (const [fragment, expected] of [
-      ['project', ['Use this project as the default']],
-      ['organization', ['Upload file', 'Reset to default', 'Upload file', 'Use logo', 'Save']],
-      ['storage', ['Save', 'Set up', 'Manage', 'Add connection']],
+      ['general', ['Upload file', 'Reset to default', 'Upload file', 'Use logo', 'Save', 'Open this project at startup']],
+      ['storage', ['Save']],
       [
         // **This desk's model preferences**, and nothing that writes the
-        // shared connection: the endpoint, its key and its models moved to
+        // shared connection: the endpoint, its key and its models are under
         // Connections › AI (docs/ai-connections.md).
         'assistant',
         ['Save preferences', 'Reload from disk']
@@ -1334,11 +1212,10 @@ describe('one section at a time', () => {
     ] as const) {
       const view = renderAdmin(effectiveConfig(undefined), `/admin#${fragment}`)
       expect(controls(view.container), fragment).toEqual(expected)
-      // The nomination is the Project section's, and it is carried into none of
-      // the others.
-      if (fragment !== 'project') {
+      // The nomination is General's, and it is carried into none of the others.
+      if (fragment !== 'general') {
         expect(
-          screen.queryByRole('button', { name: 'Use this project as the default' }),
+          screen.queryByRole('button', { name: 'Open this project at startup' }),
           fragment
         ).toBeNull()
       }
@@ -1347,95 +1224,55 @@ describe('one section at a time', () => {
   })
 
   it('offers access, API provider and review settings without an engine implementation picker', () => {
-    // The shared AI settings, under Connections: with no AI connections read,
-    // the desk-level assistant slot as it was.
-    renderAdmin(effectiveConfig(undefined), '/admin#connections')
-    const container = screen.getByRole('region', { name: 'AI' })
+    // The shared AI settings, under Connections › AI: with no AI connections
+    // read, the desk-level assistant slot as it was.
+    renderAdmin(effectiveConfig(undefined), '/admin#connections-ai')
+    const container = screen.getByRole('tabpanel', { name: 'AI' })
     const triggers = Array.from(container.querySelectorAll('[role="combobox"]')).map(
       (element) => element.textContent
     )
-    // Access chooses the authentication path; implementation engine names stay
-    // out of the settings controls. Existing API settings remain available.
     expect(triggers).toEqual(['API key', 'OpenAI-compatible', 'off'])
     const offered = Array.from(container.querySelectorAll('select')).map(
       (element) => element.textContent
     )
-    // Radix adds native select mirrors only for the controls inside the API form.
     expect(offered).toEqual(['OpenAI-compatibleAnthropicGoogle Gemini', 'offstandarddeep'])
-    // The key field is on the form now, in the order a person setting this up
-    // reads: provider, key, endpoint.
     expect(container.querySelectorAll('input[type="password"]')).toHaveLength(1)
-    // And no model picker in this render: nothing is configured, so no endpoint
-    // has been asked what it has.
     expect(screen.queryByRole('combobox', { name: 'Model' })).toBeNull()
   })
 
   it('enables a Save once the file behind it has been read', () => {
     // A Save states the bytes it replaces, so a section this desk has never
     // read the file for offers a control it cannot use — and says which file.
-    renderAdmin(effectiveConfig(undefined), '/admin#organization')
-    expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true)
+    renderAdmin(effectiveConfig(undefined), '/admin#general')
+    const branding = document.getElementById('branding-title')!.closest('section')!
+    expect((within(branding).getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true)
     expect(screen.getByText(/has not read this project/)).toBeTruthy()
     cleanup()
 
-    renderAdmin(
-      effectiveConfig(undefined, undefined, undefined, {
-        path: DESK_PATH,
-        present: false,
-        sha256: '',
-        chassis: {
-          projectDir: '/this/launch',
-          projectFile: '/this/launch/jpack-desk.json',
-          runtimeBin: 'jpack'
-        }
-      }),
-      '/admin#assistant'
-    )
+    renderAdmin(chassisOnly(), '/admin#assistant')
     // The desk-level file has been read, so the assistant's Save says nothing
     // about not having read it.
     expect(screen.queryByText(/has not read its own configuration file/)).toBeNull()
   })
 
-  it('scrolls to the section only where the section is below the list', () => {
-    // **The fragment selects here rather than addresses.** On a wide shell the
-    // open section is *beside* the list, so there is nothing to scroll to —
-    // and scrolling its heading to the top of `.desk-main` took the page's own
-    // heading, its status line and the top of the list with it, because all
-    // three are in that one scroll container. Below the Inspector's breakpoint
-    // the section is under the list, and then the scroll is the whole point.
+  it('starts each section at the top of the page, not at the section', () => {
+    // A full load of a fragment is scrolled by the browser itself, and a click
+    // on a row while a tall section is scrolled would otherwise open the next
+    // one halfway down.
     const scrolled: string[] = []
     const original = Element.prototype.scrollIntoView
     Element.prototype.scrollIntoView = function scrollIntoView(this: Element) {
       scrolled.push(this.id === '' ? this.tagName.toLowerCase() : this.id)
     }
     try {
-      // The landing is a section like any other, so it is the page's own top
-      // there too — and not the section's heading.
       renderAdmin(effectiveConfig(undefined))
       expect(scrolled).toEqual(['article'])
       cleanup()
       scrolled.length = 0
-
-      renderAdmin(effectiveConfig(undefined), '/admin#storage')
-      // The page's own top, and never the section: a full load of a fragment is
-      // scrolled by the browser itself, and a click on a row while a tall
-      // section is scrolled would otherwise open the next one halfway down.
+      const { container } = renderAdmin(effectiveConfig(undefined), '/admin#storage')
       expect(scrolled).toEqual(['article'])
-      cleanup()
-      scrolled.length = 0
-
-      vi.stubGlobal('matchMedia', (query: string) => ({
-        media: query,
-        matches: query === INSPECTOR_DRAWER_BELOW,
-        onchange: null,
-        addListener() {},
-        removeListener() {},
-        addEventListener() {},
-        removeEventListener() {},
-        dispatchEvent: () => false
-      }))
-      renderAdmin(effectiveConfig(undefined), '/admin#storage')
-      expect(scrolled).toContain('storage')
+      openRow(container, 'research')
+      expect(scrolled).toEqual(['article', 'article'])
     } finally {
       Element.prototype.scrollIntoView = original
     }
@@ -1445,71 +1282,62 @@ describe('one section at a time', () => {
 describe('a section’s own write', () => {
   const FILE = `{\n  "deskConfigVersion": 1,\n  "organization": { "name": "Unveiled", "mark": null },\n  "storage": { "packs": { "dir": "packs", "idBase": "https://acme.example/d/" } }\n}\n`
 
-  it('says the write is in the air on the section that is doing it', async () => {
+  it('says the write is in the air on the card that is doing it', async () => {
     servesAdmin(FILE, 'pending')
-    renderLiveAdmin('/admin#organization')
+    renderLiveAdmin('/admin#general')
     // The read has to land first: a Save pressed before it is refused for
     // having no bytes to write over, which is a different state.
     await waitFor(() => expect(screen.getByDisplayValue('Unveiled')).toBeTruthy())
-    // While nothing is happening the section repeats nothing: the file was
-    // read, and that is the group's sentence rather than this one's.
-    expect(statusOf('organization')).toBeNull()
+    // While nothing is happening the card repeats nothing: the file was read.
+    expect(statusOf('branding')).toBeNull()
 
     fireEvent.change(screen.getByDisplayValue('Unveiled'), { target: { value: 'Renamed' } })
     fireEvent.click(
-      document.getElementById('organization')!.closest('section')!.querySelector('form button[type="submit"]')!
+      document.getElementById('branding-title')!.closest('section')!.querySelector('form button[type="submit"]')!
     )
-    await waitFor(() => expect(statusOf('organization')).toContain('writing'))
-    expect(statusOf('organization')).toBe('writing — nothing is written until the desk answers')
-    // And no card that did nothing says anything about a write: Admin carries
-    // no Appearance section at all any more.
+    await waitFor(() => expect(statusOf('branding')).toContain('writing'))
+    expect(statusOf('branding')).toBe('writing — nothing is written until the desk answers')
     expect(document.getElementById('appearance')).toBeNull()
   })
 
-  it('says what this page’s own decoder refused, on the section it refused it for', async () => {
+  it('says what this page’s own decoder refused, on the card it refused it for', async () => {
     servesAdmin(FILE, 'pending')
     renderLiveAdmin('/admin#storage')
-    // The read has to land first, and the id prefix is the field that shows
-    // it: `dir` is the built-in value in this file, so waiting on it would be
-    // waiting for nothing to change.
     await waitFor(() => expect(screen.getByDisplayValue('https://acme.example/d/')).toBeTruthy())
-    fireEvent.change(screen.getByLabelText('Packs go to'), { target: { value: '../escape' } })
+    fireEvent.change(screen.getByLabelText('Pack folder'), { target: { value: '../escape' } })
     fireEvent.click(
-      document.getElementById('storage')!.closest('section')!.querySelector('form button[type="submit"]')!
+      document.getElementById('pack-storage-title')!.closest('section')!.querySelector('form button[type="submit"]')!
     )
-    await waitFor(() => expect(statusOf('storage')).toContain('not written:'))
-    expect(statusOf('storage')).toContain('storage.packs.dir')
+    await waitFor(() => expect(statusOf('pack-storage')).toContain('not written:'))
+    expect(statusOf('pack-storage')).toContain('storage.packs.dir')
   })
 
-  it('says the file moved under a section, on the section the write was refused for', async () => {
+  it('says the file moved under a card, on the card the write was refused for', async () => {
     servesAdmin(FILE, 'stale')
-    renderLiveAdmin('/admin#organization')
+    renderLiveAdmin('/admin#general')
     await waitFor(() => expect(screen.getByDisplayValue('Unveiled')).toBeTruthy())
     fireEvent.change(screen.getByDisplayValue('Unveiled'), { target: { value: 'Renamed' } })
     fireEvent.click(
-      document.getElementById('organization')!.closest('section')!.querySelector('form button[type="submit"]')!
+      document.getElementById('branding-title')!.closest('section')!.querySelector('form button[type="submit"]')!
     )
     await waitFor(() =>
-      expect(statusOf('organization')).toBe('the file changed on disk — nothing was written')
+      expect(statusOf('branding')).toBe('the file changed on disk — nothing was written')
     )
   })
 
-  it('says on the Project section what the file is, and nothing about a write nobody made', async () => {
+  it('says nothing about a write nobody made, on any card or row', async () => {
     servesAdmin(FILE, 'pending')
     const { container } = renderLiveAdmin()
-    await waitFor(() => expect(statusOf('project')).toBe('read'))
-    for (const section of ADMIN_SECTIONS) {
-      const row = rowsIn(container).find(
-        (each) => each.getAttribute('href') === `/admin#${section.id}`
-      )!
-      expect(row.textContent, section.id).not.toContain('writing')
-    }
+    await waitFor(() => expect(screen.getByDisplayValue('Unveiled')).toBeTruthy())
+    expect(statusOf('branding')).toBeNull()
+    for (const row of rowsIn(container)) expect(row.textContent).not.toContain('writing')
   })
 })
 
 describe('what Admin puts in the right pane', () => {
-  it('shows the whole project file under Project, by the name it reads it at', async () => {
+  it('shows the whole project file under General, by the name it reads it at', async () => {
     const { container } = renderInShell(everythingConfigured())
+    await details()
     await waitFor(() =>
       expect(screen.getByRole('heading', { level: 2, name: 'jpack-desk.json' })).toBeTruthy()
     )
@@ -1523,10 +1351,9 @@ describe('what Admin puts in the right pane', () => {
 
   it('shows the member of the file the open section is about, as it is written', async () => {
     // The bytes, not a re-serialisation of the decode. `idBase` is normalised
-    // at decode — it gains the separator it was missing — so a pane that
-    // re-serialised would show a reader a member that is not the one in the
-    // file, beside a Location row saying where that file is.
+    // at decode — it gains the separator it was missing.
     renderInShell(everythingConfigured(), '/admin#storage')
+    await details()
     await waitFor(() =>
       expect(
         screen.getByRole('heading', { level: 2, name: 'jpack-desk.json › storage' })
@@ -1535,23 +1362,28 @@ describe('what Admin puts in the right pane', () => {
     expect(
       screen.getByText('{"packs": {"dir": "decisions", "idBase": "https://acme.example/d"}}')
     ).toBeTruthy()
-    // The decode is on the field beside it, and says something else.
     expect(screen.getByDisplayValue('https://acme.example/d/')).toBeTruthy()
   })
 
   it('names the desk-level file for a member only that file carries', async () => {
-    renderInShell(everythingConfigured(), '/admin#assistant')
+    renderInShell(everythingConfigured(), '/admin#connections-ai')
+    await details()
     await waitFor(() =>
       expect(screen.getByRole('heading', { level: 2, name: 'desk.json › assistant' })).toBeTruthy()
     )
-    expect(screen.getByText(DESK_PATH)).toBeTruthy()
+    expect(within(inspector()).getByText(DESK_PATH)).toBeTruthy()
     expect(screen.getByText(/^sha256 dddddddddddd…$/)).toBeTruthy()
+    cleanup()
+    renderInShell(everythingConfigured(), '/admin#gateway')
+    await details()
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { level: 2, name: 'desk.json › research' })).toBeTruthy()
+    )
   })
 
   it('renders no bytes of a file the decoder refused, in the pane either', async () => {
     // **The refusal is about a member, and rendering the file anyway puts that
-    // member on the surface that reported it.** One pane over is the same
-    // disclosure.
+    // member on the surface that reported it.**
     const refusedDesk = '{"deskConfigVersion":1,"identity":{"apiKey":"sk-live-secret"}}'
     renderInShell(
       effectiveConfig(undefined, undefined, undefined, {
@@ -1560,8 +1392,9 @@ describe('what Admin puts in the right pane', () => {
         text: refusedDesk,
         decoded: decodeDeskConfig(refusedDesk, 'desk')
       }),
-      '/admin#assistant'
+      '/admin#connections-ai'
     )
+    await details()
     await waitFor(() =>
       expect(screen.getByRole('heading', { level: 2, name: 'desk.json › assistant' })).toBeTruthy()
     )
@@ -1580,6 +1413,7 @@ describe('what Admin puts in the right pane', () => {
         refusedProject
       )
     )
+    await details()
     await waitFor(() =>
       expect(screen.getByRole('heading', { level: 2, name: 'jpack-desk.json' })).toBeTruthy()
     )
@@ -1588,32 +1422,31 @@ describe('what Admin puts in the right pane', () => {
   })
 
   it('renders no bytes of a file that could not be read at all', async () => {
-    // There are none to render, and a pane that offered the decoded defaults
-    // would be showing them as though they were the file.
-    renderInShell(effectiveConfig(undefined, undefined, CHASSIS_413))
+    renderInShell(effectiveConfig(undefined, undefined, CHASSIS_413, undefined, 'UNREAD_BYTES'))
+    await details()
     await waitFor(() =>
       expect(screen.getByRole('heading', { level: 2, name: 'jpack-desk.json' })).toBeTruthy()
     )
     expect(document.querySelector('.desk-inspector pre')).toBeNull()
+    expect(document.body.textContent).not.toContain('UNREAD_BYTES')
     expect(screen.getAllByText(/not read — the desk answered 413/).length).toBeGreaterThan(0)
     expect(screen.queryByText(NO_BYTES_SAYS)).toBeNull()
   })
 
   it('says the bytes could not be established rather than offering a decode', async () => {
-    // The file was read and does not carry the member: `memberBytes` answers
-    // nothing, and the pane says so instead of stringifying the value the
-    // decoder computed from the defaults.
     const text = '{"deskConfigVersion": 1}'
     renderInShell(
       effectiveConfig(decodeDeskConfig(text, 'project'), undefined, undefined, undefined, text),
       '/admin#storage'
     )
+    await details()
     await waitFor(() => expect(screen.getByText(NO_BYTES_SAYS)).toBeTruthy())
     expect(document.querySelector('.desk-inspector pre')).toBeNull()
   })
 
   it('releases the claim when the route leaves, so the pane is the next one’s', async () => {
     const { router } = renderInShell(everythingConfigured())
+    await details()
     await waitFor(() =>
       expect(screen.getByRole('heading', { level: 2, name: 'jpack-desk.json' })).toBeTruthy()
     )
@@ -1632,11 +1465,8 @@ describe('Admin carries no narration', () => {
   /**
    * **The narration guard, over every state this page has.**
    *
-   * 140 characters is a line; anything longer is a paragraph, and the page
-   * that stood here had thirty of them. Quoted material is exempt — see
-   * `narrationIn`. Parameterised because the first version rendered one
-   * default state, so the configured assistant's sentences, a refusal and a
-   * file that could not be read were never swept at all.
+   * 140 characters is a line; anything longer is a paragraph. Quoted material
+   * is exempt — see `narrationIn`.
    */
   it.each([
     ['nothing configured, nothing read', () => effectiveConfig(undefined)],
@@ -1686,7 +1516,7 @@ describe('Admin carries no narration', () => {
         )
     ],
     [
-      'this project already the default',
+      'this project already the startup project',
       () =>
         effectiveConfig(
           undefined,
@@ -1723,14 +1553,12 @@ describe('Admin carries no narration', () => {
     expect(long, long.map((each) => `${each.where}: ${each.says}`).join(' | ')).toEqual([])
   })
 
-  /**
-   * **And over each open section**, which the overview does not render at all.
-   *
-   * The sweep above walks the list. Every form on this page is now behind a
-   * fragment, so a sweep that only ever rendered `/admin` would have stopped
-   * looking at the sections the moment they stopped being stacked on it.
-   */
-  it.each(ADMIN_SECTIONS.map((section) => [section.id] as const))(
+  /** **And over each open section, and each Connections tab.** */
+  it.each([
+    ...ADMIN_SECTIONS.map((section) => [section.id] as const),
+    ['connections-ai'] as const,
+    ['connections-search'] as const
+  ])(
     'carries no paragraph with %s open',
     (id) => {
       const { container } = renderAdmin(everythingConfigured(), `/admin#${id}`)
@@ -1740,9 +1568,10 @@ describe('Admin carries no narration', () => {
   )
 
   it('carries no paragraph in the right pane, on either file', async () => {
-    for (const path of ['/admin', '/admin#storage', '/admin#assistant']) {
+    for (const path of ['/admin', '/admin#storage', '/admin#connections-ai']) {
       const { container } = renderInShell(everythingConfigured(), path)
-      await waitFor(() => expect(screen.getAllByRole('heading', { level: 2 }).length).toBeGreaterThan(0))
+      await details()
+      await waitFor(() => expect(within(inspector()).getAllByRole('heading', { level: 2 }).length).toBeGreaterThan(0))
       const pane = container.querySelector<HTMLElement>('.desk-inspector')!
       const long = narrationIn(pane)
       expect(long, `${path}: ${long.map((each) => each.says).join(' | ')}`).toEqual([])
@@ -1750,15 +1579,6 @@ describe('Admin carries no narration', () => {
     }
   })
 
-  /**
-   * **The states the configuration cannot express.**
-   *
-   * The sweep above builds an `EffectiveConfig` and renders it, so every state
-   * it can reach is a state of the two files. The connection is not one of
-   * those, and neither is anything a reader *does*: a save in the air, a file
-   * that moved under one, a refusal. Those sentences are written in the same
-   * components and were never swept.
-   */
   it.each([
     ['a connection that is still opening', { status: 'connecting' as const, client: null }],
     ['a connection being retried', { status: 'reconnecting' as const, client: null, attempt: 4 }],
@@ -1773,7 +1593,7 @@ describe('Admin carries no narration', () => {
     expect(long, long.map((each) => `${each.where}: ${each.says}`).join(' | ')).toEqual([])
   })
 
-  it('carries no paragraph while a section is writing, refused, or holding a stale write', async () => {
+  it('carries no paragraph while a card is writing, refused, or holding a stale write', async () => {
     const FILE = `{\n  "deskConfigVersion": 1,\n  "organization": { "name": "Unveiled", "mark": null },\n  "storage": { "packs": { "dir": "packs", "idBase": "https://acme.example/d/" } }\n}\n`
     const sweep = (container: HTMLElement, where: string) => {
       const long = narrationIn(container)
@@ -1784,39 +1604,38 @@ describe('Admin carries no narration', () => {
     servesAdmin(FILE, 'pending')
     const refused = renderLiveAdmin('/admin#storage')
     await waitFor(() => expect(screen.getByDisplayValue('https://acme.example/d/')).toBeTruthy())
-    fireEvent.change(screen.getByLabelText('Packs go to'), { target: { value: '../escape' } })
+    fireEvent.change(screen.getByLabelText('Pack folder'), { target: { value: '../escape' } })
     fireEvent.click(
-      document.getElementById('storage')!.closest('section')!.querySelector('form button[type="submit"]')!
+      document.getElementById('pack-storage-title')!.closest('section')!.querySelector('form button[type="submit"]')!
     )
-    await waitFor(() => expect(statusOf('storage')).toContain('not written:'))
+    await waitFor(() => expect(statusOf('pack-storage')).toContain('not written:'))
     sweep(refused.container, 'a refusal this page made')
     cleanup()
     vi.unstubAllGlobals()
 
     // A write in the air.
     servesAdmin(FILE, 'pending')
-    const pending = renderLiveAdmin('/admin#organization')
+    const pending = renderLiveAdmin('/admin#general')
     await waitFor(() => expect(screen.getByDisplayValue('Unveiled')).toBeTruthy())
     fireEvent.change(screen.getByDisplayValue('Unveiled'), { target: { value: 'Renamed' } })
     fireEvent.click(
-      document.getElementById('organization')!.closest('section')!.querySelector('form button[type="submit"]')!
+      document.getElementById('branding-title')!.closest('section')!.querySelector('form button[type="submit"]')!
     )
-    await waitFor(() => expect(statusOf('organization')).toContain('writing'))
+    await waitFor(() => expect(statusOf('branding')).toContain('writing'))
     sweep(pending.container, 'a write in the air')
     cleanup()
     vi.unstubAllGlobals()
 
     // The file moved underneath the write, with the digests disclosed.
     servesAdmin(FILE, 'stale')
-    const stale = renderLiveAdmin('/admin#organization')
+    const stale = renderLiveAdmin('/admin#general')
     await waitFor(() => expect(screen.getByDisplayValue('Unveiled')).toBeTruthy())
     fireEvent.change(screen.getByDisplayValue('Unveiled'), { target: { value: 'Renamed' } })
     fireEvent.click(
-      document.getElementById('organization')!.closest('section')!.querySelector('form button[type="submit"]')!
+      document.getElementById('branding-title')!.closest('section')!.querySelector('form button[type="submit"]')!
     )
-    await waitFor(() => expect(statusOf('organization')).toContain('changed on disk'))
+    await waitFor(() => expect(statusOf('branding')).toContain('changed on disk'))
     sweep(stale.container, 'a stale write')
-    // And with the digests open, which is a disclosure of quoted material.
     for (const summary of stale.container.querySelectorAll('details summary')) {
       fireEvent.click(summary)
     }
@@ -1824,9 +1643,6 @@ describe('Admin carries no narration', () => {
   })
 
   it('sweeps a paragraph split into short spans, which a node-length rule misses', () => {
-    // The guard's own instrument, checked against the exact defeat the review
-    // named: two eighty-character spans are a hundred and sixty characters of
-    // prose to a reader and two compliant text nodes to a node-length rule.
     const { container } = renderAdmin()
     const paragraph = document.createElement('p')
     for (const half of ['x'.repeat(80), 'y'.repeat(80)]) {
@@ -1853,31 +1669,18 @@ describe('Admin carries no narration', () => {
 })
 
 /**
- * The page's controls, as rendered rather than as written.
- *
- * `adminSheets.test.ts` reads the stylesheets, which is the only way to hold a
- * rule vitest never processes. These hold what no sheet can say: which elements
- * are actually on the page, and which class each of them came out carrying. A
- * `<button>` with no class renders as the browser's own control, and the sheet
- * that would have styled it is not the one that is missing — there is no sheet
- * at all.
+ * The page's controls, as rendered rather than as written: which elements are
+ * actually on the page, and which class each of them came out carrying.
  */
 describe('every control on Admin comes through the same component', () => {
-  /** Every button under one element. */
   const buttonsOf = (element: HTMLElement) => Array.from(element.querySelectorAll('button'))
 
   it('renders every button through Button, and every picker through Select', () => {
     // The shared AI settings, because they carry every shape: three pickers,
     // a probe, a listing and a Save.
-    renderAdmin(effectiveConfig(undefined), '/admin#connections')
-    // The AI region only: the file connections below it are their own page.
-    const buttons = buttonsOf(screen.getByRole('region', { name: 'AI' }))
-    // A count, so an exemption cannot quietly become the whole list.
+    renderAdmin(effectiveConfig(undefined), '/admin#connections-ai')
+    const buttons = buttonsOf(screen.getByRole('tabpanel', { name: 'AI' }))
     expect(buttons.length).toBeGreaterThan(4)
-    // The one shape that is a `<button>` and is not an action: a Radix Select
-    // trigger. It is named rather than skipped, so a bare button cannot hide
-    // behind the exemption — each of these has to carry the Select module's
-    // own class.
     const triggers = buttons.filter((each) => each.getAttribute('role') === 'combobox')
     expect(triggers.length).toBeGreaterThan(0)
     for (const trigger of triggers) {
@@ -1896,23 +1699,22 @@ describe('every control on Admin comes through the same component', () => {
   it('carries at most one primary button per section, and none in the column', () => {
     for (const path of [
       '/admin',
-      '/admin#project',
-      '/admin#organization',
+      '/admin#general',
       '/admin#storage',
-      '/admin#assistant'
+      '/admin#assistant',
+      '/admin#research',
+      '/admin#safeguards',
+      '/admin#connections',
+      '/admin#connections-ai',
+      '/admin#gateway'
     ]) {
       const { container } = renderAdmin(effectiveConfig(undefined), path)
       const sections = Array.from(page(container).querySelectorAll('section'))
       expect(sections.length, path).toBeGreaterThan(0)
       for (const section of sections) {
-        // The section a button belongs to is its *closest* one: a member's Save
-        // is the member's, not also its group's.
         const own = Array.from(section.querySelectorAll('button')).filter(
           (button) => button.closest('section') === section
         )
-        // A Reload in a stale panel is an alert's one action and keeps its
-        // primary, which is what makes "one per section" a rule about the page
-        // rather than about every element on it.
         const primaries = own.filter(
           (button) =>
             button.classList.contains(buttonStyles.primary) &&
@@ -1922,45 +1724,25 @@ describe('every control on Admin comes through the same component', () => {
         expect(primaries.length, `${path} ${title}: ${primaries.map((each) => each.textContent).join(', ')}`)
           .toBeLessThanOrEqual(1)
       }
-      // **And the navigation column carries none at all**, because a row is a
-      // link. The rule used to be stated about a group's head, which was the one
-      // place on this page a loud action could sit above the rows it was not
-      // about; there is no head, and what is left in its place is a column that
-      // is only addresses.
       expect(rail(container).querySelectorAll('button'), path).toHaveLength(0)
       cleanup()
     }
   })
 
   it('puts the nomination on its own row, beside the value it changes', () => {
-    // Not in the head's action strip below the rows: a control over a value is
-    // read where the value is.
-    const { container } = renderAdmin(
-      effectiveConfig(undefined, undefined, undefined, {
-        path: DESK_PATH,
-        present: false,
-        sha256: '',
-        chassis: {
-          projectDir: '/this/launch',
-          projectFile: '/this/launch/jpack-desk.json',
-          runtimeBin: 'jpack'
-        }
-      })
-    )
-    const nomination = screen.getByRole('button', { name: 'Use this project as the default' })
-    const row = screen.getByText('Default project').parentElement!
+    renderAdmin(chassisOnly())
+    const nomination = screen.getByRole('button', { name: 'Open this project at startup' })
+    const row = screen.getByText('Startup project').parentElement!
     expect(row.contains(nomination)).toBe(true)
     expect(row.textContent).toContain('None')
     expect(nomination.classList.contains(buttonStyles.secondary)).toBe(true)
     expect(nomination.classList.contains(buttonStyles.primary)).toBe(false)
-    // And the rule line naming the file it writes is still under it.
-    expect(row.textContent).toContain('used on the next launch without a directory')
-    expect(container.querySelector('article')).toBeTruthy()
   })
 })
 
 // Bookmarked links from before Documents was renamed still open its settings.
-it('opens storage and processing for the legacy Documents fragment', () => {
+it('opens Document processing for the legacy Documents fragment', () => {
   renderAdmin(effectiveConfig(undefined), '/admin#documents')
-  expect(screen.getByRole('heading', { name: 'Document processing' })).toBeTruthy()
+  expect(screen.getByRole('heading', { name: 'Document processing', level: 2 })).toBeTruthy()
+  expect(screen.queryByRole('textbox', { name: 'Pack folder' })).toBeNull()
 })

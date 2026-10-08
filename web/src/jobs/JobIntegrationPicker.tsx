@@ -45,7 +45,7 @@ export function JobIntegrationPicker({profiles,disabled,onPick,current,triggerTa
   if(available&&(catalog.loading||catalog.isError))return catalog.loading?msg('Loading…'):msg('Connections could not be loaded.')
   const entry=descriptorFor(p)
   if(entry && connectionState(entry)!=='connected')return msg('Connect this integration before using it in a job.')
-  if(p.profile.source==='drive'&&(!config.documents?.enabled||config.managedLocal!==true))return msg('Enable document processing in Admin → Storage & data before attaching Drive files.')
+  if(p.profile.source==='drive'&&(!config.documents?.enabled||config.managedLocal!==true))return msg('Enable document processing in Admin → Document processing before attaching Drive files.')
   return undefined
  }
  function choose(p?:ProfileEntry) {

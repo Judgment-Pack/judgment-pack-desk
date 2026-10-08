@@ -3,16 +3,19 @@ import { cleanup,fireEvent,render,screen,waitFor } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { testQueryClient } from '../testing/harness'
-import { WebSearchSettings } from './WebSearchSettings'
+import { SearchConnectionsSettings, WebSearchSettings } from './WebSearchSettings'
 const config=vi.hoisted(()=>({timeout:undefined as undefined|{defaultSeconds:number;minSeconds:number;maxSeconds:number},connections:[] as Record<string,unknown>[]}))
-const preference=vi.hoisted(()=>({data:{value:{version:1,connection:null,mode:'auto'}},save:vi.fn(async()=>{}),refetch:vi.fn(),saving:false,isError:false,saveError:null as Error|null}))
+const preference=vi.hoisted(()=>({data:{value:{version:1,connection:null,mode:'auto'}},save:vi.fn(async()=>{}),refetch:vi.fn(),saving:false,saved:false,isError:false,saveError:null as Error|null}))
 const call=vi.hoisted(()=>vi.fn(async()=>({saved:true})))
 vi.mock('../connections/client',async original=>({...await original<typeof import('../connections/client')>(),connectionCall:call}))
 vi.mock('../shell/InspectorPresentation',()=>({useInspectorPresentation:()=>{}}))
 vi.mock('../shell/InspectorSlot',()=>({useInspectorPortal:(node:unknown)=>node}))
 vi.mock('./connections',()=>({SEARCH_CONNECTIONS_KEY:['web-search-connections'],useSearchPreference:()=>preference,useSearchConnections:()=>({available:true,data:{version:1,providers:[{id:'tavily',name:'Tavily',fields:['api-key'],docs:'https://docs.tavily.com'},{id:'google-grounding',name:'Google Cloud',fields:['project','location','model','service-account-json'],docs:'https://cloud.google.com'}],connections:config.connections,timeout:config.timeout}})}))
-afterEach(()=>{cleanup();vi.clearAllMocks();config.timeout=undefined;config.connections=[];preference.saving=false;preference.isError=false;preference.saveError=null})
-const settings=()=> <MemoryRouter><QueryClientProvider client={testQueryClient()}><WebSearchSettings/></QueryClientProvider></MemoryRouter>
+afterEach(()=>{cleanup();vi.clearAllMocks();config.timeout=undefined;config.connections=[];preference.saving=false;preference.saved=false;preference.isError=false;preference.saveError=null})
+// The shared connections and their editor (Admin › Connections › Web search).
+const settings=()=> <MemoryRouter><QueryClientProvider client={testQueryClient()}><SearchConnectionsSettings/></QueryClientProvider></MemoryRouter>
+// This desk's research policy (Admin › Research).
+const research=()=> <MemoryRouter><QueryClientProvider client={testQueryClient()}><WebSearchSettings/></QueryClientProvider></MemoryRouter>
 it('saves a named provider through Gateway and clears its credential when the pane closes',async()=>{
  render(settings())
  fireEvent.click(screen.getByRole('button',{name:'Add connection'}))
@@ -60,13 +63,42 @@ it('sends a timeout at either advertised bound and refuses one past it before an
  }
 })
 
-it('distinguishes unread settings from an unsuccessful save and offers reload',()=>{
+it('research changes only the desk policy and links to the shared credential editor',async()=>{
+ render(research())
+ expect(screen.getByRole('link',{name:'Manage search connections'}).getAttribute('href')).toBe('/admin#connections-search')
+ expect(screen.queryByRole('button',{name:'Add connection'})).toBeNull()
+ expect(screen.getByText('Select a search connection to enable automatic web research.')).toBeTruthy()
+ fireEvent.click(screen.getByRole('combobox',{name:'Web research'}))
+ fireEvent.click(await screen.findByRole('option',{name:'Provided sources only'}))
+ await waitFor(()=>expect(preference.save).toHaveBeenCalledWith({version:1,connection:null,mode:'provided'}))
+ expect(call).not.toHaveBeenCalled()
+})
+
+it('research says Saved only once a save has landed, and blocks conflicting edits until it finishes',()=>{
+ // Before any save, nothing is said to be saved.
+ const before=render(research())
+ expect(screen.getByText('Changes save automatically.')).toBeTruthy()
+ expect(screen.queryByText('Saved')).toBeNull()
+ before.unmount()
+ preference.saving=true
+ const view=render(research())
+ expect(screen.getByText('Saving…')).toBeTruthy()
+ expect(screen.queryByText('Saved')).toBeNull()
+ expect(screen.getByRole('combobox',{name:'Web research'}).hasAttribute('disabled')).toBe(true)
+ preference.saving=false;preference.saved=true;view.rerender(research())
+ expect(screen.getByText('Saved')).toBeTruthy()
+ expect(screen.getByRole('combobox',{name:'Web research'}).hasAttribute('disabled')).toBe(false)
+})
+
+it('research distinguishes unread settings from an unsuccessful save and offers reload',()=>{
  preference.isError=true
- const view=render(settings())
+ const view=render(research())
  expect(screen.getByRole('alert').textContent).toContain('Search settings could not be read.')
+ expect(screen.getByRole('combobox',{name:'Web research'}).hasAttribute('disabled')).toBe(true)
  fireEvent.click(screen.getByRole('button',{name:'Reload'}));expect(preference.refetch).toHaveBeenCalledTimes(1)
- preference.isError=false;preference.saveError=new Error('conflict');view.rerender(settings())
+ preference.isError=false;preference.saveError=new Error('conflict');view.rerender(research())
  expect(screen.getByRole('alert').textContent).toContain('Search settings could not be saved.')
+ expect(screen.queryByText('Saved')).toBeNull()
 })
 
 // Review round 1, finding 5: a stored 0 means "use the gateway's default" and
@@ -77,7 +109,7 @@ it('keeps a stored default timeout as the default, and says when a saved one was
  const saved={id:'public',revision:'a'.repeat(64),name:'Public',provider:'tavily',dailyLimit:100}
  config.connections=[{...saved,timeoutSeconds:0},{...saved,id:'refused',name:'Refused',timeoutRefused:true}]
  const view=render(settings())
- fireEvent.click(screen.getByRole('button',{name:'Public'}))
+ fireEvent.click(screen.getByRole('button',{name:'Manage Public'}))
  fireEvent.click(screen.getByText('Advanced settings'))
  expect((screen.getByLabelText('Search timeout (seconds)') as HTMLInputElement).value).toBe('45')
  expect(screen.queryByText(/outside the range this gateway supports/)).toBeNull()
@@ -86,7 +118,7 @@ it('keeps a stored default timeout as the default, and says when a saved one was
  await waitFor(()=>expect(call).toHaveBeenCalledWith('configure',expect.objectContaining({name:'Public, renamed',timeoutSeconds:0}),undefined,'web-search'))
  view.unmount();call.mockClear()
  render(settings())
- fireEvent.click(screen.getByRole('button',{name:'Refused'}))
+ fireEvent.click(screen.getByRole('button',{name:'Manage Refused'}))
  fireEvent.click(screen.getByText('Advanced settings'))
  expect(screen.getByText('The saved timeout is outside the range this gateway supports. Saving sets the value shown.')).toBeTruthy()
  expect((screen.getByLabelText('Search timeout (seconds)') as HTMLInputElement).value).toBe('45')

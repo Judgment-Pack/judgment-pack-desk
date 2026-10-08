@@ -9,7 +9,7 @@
 
 .rows {
   display: grid;
-  gap: 0.25rem;
+  gap: var(--space-1);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -24,7 +24,7 @@
   display: grid;
   gap: 0.125rem;
   min-height: var(--density-control);
-  padding: 0.5rem 0.75rem;
+  padding: var(--space-2) var(--space-3);
   border-radius: var(--radius);
   color: var(--ink-soft);
   text-decoration: none;
@@ -93,10 +93,10 @@
 
 .railTitle {
   margin: 0 0 var(--density-gap);
-  padding-inline: 0.75rem;
-  font-size: var(--text-xs);
-  font-weight: 500;
-  color: var(--ink-faint);
+  padding-inline: var(--space-3);
+  font-size: var(--text-label);
+  font-weight: 600;
+  color: var(--ink);
 }
 
 .open {
@@ -106,27 +106,6 @@
   display: grid;
   min-width: 0;
   align-content: start;
-}
-
-.open > div > section {
-  padding: 0;
-  border-top-width: 0;
-}
-
-.open > div > section > h2 {
-  margin: 0 0 var(--density-section);
-  font-size: var(--text-heading);
-  font-weight: 600;
-  line-height: 1.35;
-  letter-spacing: -0.015em;
-}
-
-.open form :global(.actions) {
-  gap: var(--density-gap);
-  margin: var(--density-section) 0 0;
-  padding-top: var(--density-block);
-  border-top: 1px solid var(--border);
-  justify-content: flex-end;
 }
 
 @media (min-width: 1100px) {
@@ -172,12 +151,6 @@
   padding-left: 0;
 }
 
-.admin[data-navigation='sidebar'] .open > div > section > h2 {
-  font-size: var(--text-page);
-  font-weight: 500;
-  margin-bottom: var(--space-5);
-}
-
 .rail[data-sidebar] {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -187,8 +160,8 @@
 }
 
 .rail[data-sidebar] .row {
-  padding-block: 0.375rem;
-  min-height: 2rem;
+  padding-block: var(--density-field-gap);
+  min-height: var(--density-control);
   color: var(--sidebar-ink);
 }
 
@@ -203,33 +176,12 @@
 }
 
 .explanation {
-  margin: var(--density-block) 0 0;
+  margin: 0;
   color: var(--ink-soft);
   font-size: var(--text-sm);
 }
 
-/* Exceptional state occupies the same row; the selected section has details. */
-.rail[data-sidebar] .row { position: relative; padding-right: var(--space-5); }
-.rail[data-sidebar] .rowStatus {
-  position: absolute;
-  right: var(--space-2);
-  top: 50%;
-  transform: translateY(-50%);
-  width: var(--space-1);
-  height: var(--space-1);
-  overflow: hidden;
-  border-radius: var(--radius-sm);
-  background: currentColor;
-}
 
-.rail[data-sidebar] .statusText {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-.rail[data-sidebar] .rowStatus[data-state='read'] { display: none; }
-
-.subheading { margin: 0 0 var(--density-gap); font-size: var(--text-control); font-weight: 600; color: var(--ink); }
+.connectionSettings { display: grid; gap: var(--density-section); min-width: 0; }
+.connectionSettings > a { justify-self: start; }
+.open > div > p[role='status'] { margin-bottom: var(--density-block); }

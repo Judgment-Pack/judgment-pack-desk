@@ -432,7 +432,7 @@ describe('a project-file card’s form', () => {
       '"storage": { "packs": { "dir": "packs", "idBase": "https://acme.example/d/" } }',
       '"storage": { "packs": { "dir": "packs", "idBase": "https://acme.example/other/" } }',
       async () =>
-        fireEvent.change(await screen.findByLabelText('Packs go to'), {
+        fireEvent.change(await screen.findByLabelText('Pack folder'), {
           target: { value: 'decisions' }
         }),
       'storage',
@@ -495,7 +495,7 @@ describe('a project-file card’s form', () => {
         <StorageForm key="s" dirSays="holds files" />,
         '"storage": { "packs": { "dir": "packs", "idBase": "https://acme.example/d/" } }',
         async () =>
-          fireEvent.change(await screen.findByLabelText('Packs go to'), {
+          fireEvent.change(await screen.findByLabelText('Pack folder'), {
             target: { value: 'decisions' }
           })
       ]
@@ -547,10 +547,10 @@ describe('a project-file card’s form', () => {
     await waitFor(() => expect(screen.getByTestId('live').textContent).toBe('a'.repeat(64)))
 
     // Two values the decoder accepts and then normalises.
-    fireEvent.change(screen.getByLabelText('Id prefix'), {
+    fireEvent.change(screen.getByLabelText('Pack ID prefix'), {
       target: { value: 'https://acme.example/packs' }
     })
-    fireEvent.change(screen.getByLabelText('Packs go to'), { target: { value: 'decisions/' } })
+    fireEvent.change(screen.getByLabelText('Pack folder'), { target: { value: 'decisions/' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(desk.bodies).toHaveLength(1))
 
@@ -572,14 +572,14 @@ describe('a project-file card’s form', () => {
     renderForm(<StorageForm dirSays="holds files" />)
     await waitFor(() => expect(screen.getByTestId('live').textContent).toBe('a'.repeat(64)))
 
-    fireEvent.change(screen.getByLabelText('Packs go to'), {
+    fireEvent.change(screen.getByLabelText('Pack folder'), {
       target: { value: 'packs\u0000hidden' }
     })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     // The decoder's own sentence, on the field its key path names — read
     // through the field's own error element rather than by text, because the
     // hint states the same rule and both are meant to.
-    const field = screen.getByLabelText('Packs go to')
+    const field = screen.getByLabelText('Pack folder')
     await waitFor(() => expect(field.getAttribute('aria-invalid')).toBe('true'))
     const error = document.getElementById(`${field.id}-error`)
     expect(error?.textContent).toContain(NO_CONTROL_CHARACTERS)
@@ -634,7 +634,7 @@ describe('a project-file card’s form', () => {
       <OrganizationForm key="o" />,
       (name: string) =>
         `{\n  "deskConfigVersion": 1,\n  "organization": { "name": ${JSON.stringify(name)}, "mark": null }\n}\n`,
-      'Name',
+      'Organization name',
       'A',
       'B',
       'C'
@@ -644,7 +644,7 @@ describe('a project-file card’s form', () => {
       <StorageForm key="s" dirSays="holds files" />,
       (dir: string) =>
         `{\n  "deskConfigVersion": 1,\n  "storage": { "packs": { "dir": ${JSON.stringify(dir)} } }\n}\n`,
-      'Packs go to',
+      'Pack folder',
       'packs',
       'decisions',
       'archive'

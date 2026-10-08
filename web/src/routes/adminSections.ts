@@ -1,47 +1,43 @@
 import { msg } from '../i18n'
-/** Settings navigation. Storage & data combines project file settings with
- * explicitly personal chat storage; each section states its own scope. */
+/**
+ * Settings navigation. Groups follow tasks; each section states its own scope
+ * (this desk, or shared on this computer).
+ */
 export interface AdminSection {
   id: string
   title: string
 }
 
 export interface AdminGroup extends AdminSection {
-  /** The members of this group's file, in the order the page renders them. */
+  /** The members of this group, in the order the page renders them. */
   sections: readonly AdminSection[]
 }
 
 export const ADMIN_GROUPS: readonly AdminGroup[] = [
   {
-    id: 'this-project',
-    get title() { return msg("This project") },
+    id: 'workspace',
+    get title() { return msg('Workspace') },
     sections: [
-      // **First, and it is the file rather than a member of it.** Admin has no
-      // overview any more, so the two rows the group header used to carry —
-      // where this project's file is, and what reading it produced — have
-      // nowhere else to be said in the main column. They are a section, with
-      // the one control that is about the *project* rather than about a
-      // member: whether this desk opens it when it is launched with no
-      // directory.
-      { id: 'project', get title() { return msg("Project") } },
-      { id: 'organization', get title() { return msg("Organization") } },
-      // After Organization, because it is about where this project's packs live.
-      { id: 'storage', get title() { return msg("Storage & data") } }
+      { id: 'general', get title() { return msg('General') } },
+      { id: 'assistant', get title() { return msg('Assistant') } },
+      { id: 'research', get title() { return msg('Research') } },
+      { id: 'storage', get title() { return msg('Storage & backups') } },
+      { id: 'safeguards', get title() { return msg('Decision safeguards') } }
     ]
   },
   {
-    id: 'this-desk',
-    get title() { return msg("This desk") },
+    id: 'services',
+    get title() { return msg('Connections & access') },
     sections: [
-      { id: 'assistant', get title() { return msg("Assistant") } },
-      { id: 'connections', get title() { return msg("Connections") } },
+      { id: 'connections', get title() { return msg('Connections') } },
+      { id: 'gateway', get title() { return msg('Document processing') } },
       { id: 'identity-provider', get title() { return msg('Sign-in & access') } }
     ]
   }
 ]
 
 /**
- * Every card, in page order, flattened out of the groups above.
+ * Every section, in page order, flattened out of the groups above.
  *
  * Derived rather than declared a second time: the rail's section menu and this
  * page would otherwise be two lists free to disagree about what Admin has on
@@ -50,3 +46,41 @@ export const ADMIN_GROUPS: readonly AdminGroup[] = [
 export const ADMIN_SECTIONS: readonly AdminSection[] = ADMIN_GROUPS.flatMap(
   (group) => group.sections
 )
+
+/**
+ * The fragments this page answered to before its sections were grouped by
+ * task, and the Connections tabs, each resolved to the section that now holds
+ * what it opened.
+ */
+const ALIASES: Record<string, string> = {
+  project: 'general',
+  organization: 'general',
+  documents: 'gateway',
+  'connections-ai': 'connections',
+  'connections-files': 'connections',
+  'connections-search': 'connections'
+}
+
+/**
+ * The section a fragment names, and the **first** section for every fragment
+ * that names none: no fragment, a fragment naming no section — a group id, a
+ * section that was renamed, a link somebody typed — and one that is not valid
+ * percent-encoding. There is no state in which nothing is open.
+ */
+export function adminSectionId(hash: string): string {
+  const first = ADMIN_SECTIONS[0]!.id
+  let id: string
+  try {
+    id = decodeURIComponent(hash.replace(/^#/, ''))
+  } catch {
+    return first
+  }
+  return ALIASES[id] ?? (ADMIN_SECTIONS.some((section) => section.id === id) ? id : first)
+}
+
+/** The Connections tab a fragment opens: `#connections-ai`, `#connections-search`, or Files & apps. */
+export function connectionTab(hash: string): 'ai' | 'files' | 'search' {
+  if (hash === '#connections-ai') return 'ai'
+  if (hash === '#connections-search') return 'search'
+  return 'files'
+}

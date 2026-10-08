@@ -302,7 +302,7 @@ describe('the signing key, on the project Desk was started on', () => {
     expect(screen.queryByText('Sign this project’s decisions')).toBeNull()
   })
 
-  it('is offered alone where the gates are on, and stays available in Admin → Project', async () => {
+  it('is offered alone where the gates are on, and stays available in Admin → Decision safeguards', async () => {
     offers.with = [{ ...gatedOn, signingKey: { state: 'offered' } }]
     offers.signed = [{ ...gatedOn, state: 'offer', signingKey: { state: 'offered' }, sign: true, from: '5', to: '6', changes: ['configVersion', 'signingKey'], configAfter: signedAfter, token: signedToken, review }]
     show(<UpgradeView />)
@@ -353,7 +353,7 @@ describe('where the offer appears', () => {
     expect(await screen.findByRole('complementary', { name: 'Turn on this project’s gates' })).toBeTruthy()
   })
 
-  it('stays available in Admin → Project', async () => {
+  it('stays available in Admin → Decision safeguards', async () => {
     show(<ProjectGates />)
     expect((await screen.findByRole('link', { name: 'Review the upgrade' })).getAttribute('href')).toBe('/packs/_upgrade')
     cleanup()

@@ -23,7 +23,7 @@ function useSource(reference: DocumentReference, enabled: boolean, citation?: Ci
     if (!enabled) return
     const operation = new AbortController()
     setState({ key })
-    if (!pin) { setState({ key, error: msg('Configure the gateway in Admin → Storage & data to use attached PDFs.') }); return }
+    if (!pin) { setState({ key, error: msg('Configure the gateway in Admin → Document processing to use attached PDFs.') }); return }
     void loadDocument(reference, pin, operation.signal).then(value => {
       if (operation.signal.aborted) return
       const page = citation && usablePages(value.record).find(page => page.number === citation.page)

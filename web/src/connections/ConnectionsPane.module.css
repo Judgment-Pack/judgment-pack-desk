@@ -1,6 +1,6 @@
 .pane { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; font-size: var(--text-sm); line-height: 1.5; }
 .pane:focus { outline: none; }
-.body { position: relative; flex: 1 1 auto; min-height: 0; overflow: auto; scrollbar-gutter: stable; padding: var(--density-cell-x); }
+.body { position: relative; flex: 1 1 auto; min-height: 0; overflow: auto; scrollbar-gutter: stable; padding: var(--density-gutter); }
 .body > p { margin: 0 0 var(--space-4); }
 .description, .scope, .metadata { color: var(--ink-soft); font-size: var(--text-xs); }
 .scope { overflow-wrap: anywhere; margin-bottom: var(--space-4); }
@@ -10,7 +10,7 @@
 .row { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-3) var(--space-2); border-radius: var(--radius-sm); cursor: pointer; }
 .row:hover, .row:has(input:checked) { background: var(--accent-soft); }
 .row input { flex: 0 0 auto; margin-top: var(--space-1); }
-.footer { flex: 0 0 auto; border-top: 1px solid var(--border); padding: var(--density-cell-x); }
+.footer { flex: 0 0 auto; border-top: 1px solid var(--border); padding: var(--density-gutter); }
 .footer p { margin: 0 0 var(--space-3); overflow-wrap: anywhere; }
 .actions { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
 .actions > button { white-space: normal; }
@@ -18,7 +18,7 @@
 .linkLabel { display: block; margin-bottom: var(--space-2); }
 .body .linkHint { margin: var(--space-2) 0 var(--space-4); font-size: var(--text-xs); color: var(--ink-soft); }
 
-.setupField { display: grid; gap: var(--space-2); margin-bottom: var(--space-4); }
+.setupField { display: grid; gap: var(--density-field-gap); margin-bottom: var(--density-field); }
 
 .row:has(input:disabled) { cursor: default; }
 .row:has(input:disabled):hover { background: transparent; }

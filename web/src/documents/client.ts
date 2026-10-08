@@ -77,7 +77,7 @@ export async function verifyDocument(object: DocumentObject, pin: ResearchGatewa
 
 export async function ingestDocument(file: File, config: ResearchConfig, signal: AbortSignal, progress: (message: string) => void): Promise<{ reference: DocumentReference; document: VerifiedDocument }> {
   const documents = config.documents, gateway = config.gateway
-  if (!documents?.enabled || !gateway) throw new Error(sourceMessage('Enable PDF processing in Admin → Storage & data before attaching PDFs.'))
+  if (!documents?.enabled || !gateway) throw new Error(sourceMessage('Enable PDF processing in Admin → Document processing before attaching PDFs.'))
   if (!file.size || file.size > documents.maxFileBytes) throw new Error(sourceMessage('This file is empty or exceeds the configured upload limit.'))
   if (enc.encode(file.name).length > 255 || /[\x00-\x1f\x7f]/.test(file.name)) throw new Error(sourceMessage('The file name is too long or contains control characters.'))
   progress(sourceMessage('Saving the original…'))
@@ -137,7 +137,7 @@ async function ingestSelected(selection: DriveSelection | MailSelection | Source
  const resource = descriptor?.source?.record === 'resource-v1'
  if (resource && (descriptor.id !== source || descriptor.source!.id !== source)) throw fail()
  const gateway = config.gateway
- if (!gateway || !config.documents?.enabled) throw new Error(resource || source === 'web' || source === 'notion' || source === 'obsidian' ? sourceMessage('Enable document processing in Admin → Storage & data before attaching sources.') : source === 'gmail' ? sourceMessage('Enable document processing in Admin → Storage & data before attaching emails.') : sourceMessage('Enable document processing in Admin → Storage & data before attaching Drive files.'))
+ if (!gateway || !config.documents?.enabled) throw new Error(resource || source === 'web' || source === 'notion' || source === 'obsidian' ? sourceMessage('Enable document processing in Admin → Document processing before attaching sources.') : source === 'gmail' ? sourceMessage('Enable document processing in Admin → Document processing before attaching emails.') : sourceMessage('Enable document processing in Admin → Document processing before attaching Drive files.'))
  const session = newResearchSession(), id = crypto.randomUUID()
  // A selected file rides a grant that must stay at the managed local gateway, so its acquisition carries the relay's constraint; a public link carries no grant and may go to the gateway the desk-level file declares.
  const constraint = source === 'web' && config.managedLocal !== true ? undefined : 'local-documents'

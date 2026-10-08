@@ -25,10 +25,10 @@ export function PageHeader({ title, titleHref, context, leading, meta, actions, 
   return <header role="presentation" data-page-header className={variant === 'title' ? styles.documentHeader : styles.header}>
     <div className={variant === 'title' ? styles.documentHeading : styles.heading}>
     {leading}
-    <h1 className={styles.title}>{titleHref ? <Link className={styles.titleLink} to={titleHref}>{title}</Link> : title}{context && <>
+    <h1 className={styles.title}><span data-page-title>{titleHref ? <Link className={styles.titleLink} to={titleHref}>{title}</Link> : title}</span>{context && <>
       <span className={styles.separator} aria-hidden="true">/</span>
       <OverflowTooltip><span className={styles.context} data-page-context>{context}</span></OverflowTooltip>
-    </>}{meta !== undefined && <> <span className={styles.meta}>{meta}</span></>}</h1>
+    </>}{meta !== undefined && <> <span className={styles.meta} data-page-meta>{meta}</span></>}</h1>
     {actions && <div className={styles.actions} data-page-actions>{actions}</div>}
     {description && <div className={styles.description}>{description}</div>}
     </div>

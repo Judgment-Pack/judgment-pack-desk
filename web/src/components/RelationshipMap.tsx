@@ -5,7 +5,7 @@ import { msg, useLocale } from '../i18n'
 import { Tooltip } from '../ui/Tooltip'
 import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { IconRule, IconException, IconFocus, IconAutoArrange } from '../shell/icons'
-import { ReactFlow, applyNodeChanges, ViewportPortal, BaseEdge, EdgeLabelRenderer, getSmoothStepPath, type EdgeProps, type Edge, Handle, Position, MarkerType, type Node, type NodeProps, type Viewport, type NodeChange, type ReactFlowInstance } from '@xyflow/react'
+import { ReactFlow, applyNodeChanges, BaseEdge, EdgeLabelRenderer, getSmoothStepPath, type EdgeProps, type Edge, Handle, Position, MarkerType, type Node, type NodeProps, type Viewport, type NodeChange, type ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/base.css'
 import { Button } from '../ui/Button'
 import styles from './RelationshipMap.module.css'
@@ -97,7 +97,7 @@ export function RelationshipMap({ nodes, edges, unit, viewport, onViewportChange
     }
     return lanes
   }, [edges, nodeLookup])
-  const layoutTop = useMemo(() => (nodes.some(node => node.kind) ? 2 : 0) + (bypassLanes.size ? 2 + bypassLanes.size * 1.5 : 0), [nodes, bypassLanes])
+  const layoutTop = bypassLanes.size ? 2 + bypassLanes.size * 1.5 : 0
   const positions = useMemo(() => {
     const result = relationshipPositions(nodes, sizes, unit, columnGap, nodeWidth)
     if (layoutTop) for (const [id, position] of result) result.set(id, { ...position, y: position.y + layoutTop * unit })
@@ -223,14 +223,6 @@ export function RelationshipMap({ nodes, edges, unit, viewport, onViewportChange
   const onPaneClick = useCallback(() => handlers.current.onClearSelection?.(), [])
   const onEdgeClick = useCallback((_event: unknown, edge: Edge) => handlers.current.onEdgeInspect?.(edge.id), [])
   const ariaLabelConfig = useMemo(() => ({ 'node.a11yDescription.default': msg('Drag the card to move it. Press Enter or Space to open details.') }), [locale])
-  const columns = useMemo(() => {
-    const first = new Map<number, RelationshipNode>(), handoff = new Set<number>()
-    for (const node of nodes) {
-      if (node.kind && !first.has(node.column)) first.set(node.column, node)
-      if (node.kind === 'handoff') handoff.add(node.column)
-    }
-    return [...first.values()].map(node => <span key={node.column} className={styles.columnLabel} style={{ left: positions.get(node.id)?.x, top: 0 }}>{node.kind === 'rule' ? msg('Rules') : node.kind === 'exception' ? msg('Special cases') : node.kind === 'handoff' ? msg('Handoff') : handoff.has(node.column) ? msg('Outcomes and handoff') : msg('Outcomes')}</span>)
-  }, [nodes, positions, locale])
   return <div ref={root} className={styles.map} onKeyDownCapture={keyDown} aria-label={ariaLabel}>
     <ReactFlow nodes={flowNodes} edges={flowEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onInit={setInstance}
       proOptions={proOptions}
@@ -242,7 +234,6 @@ export function RelationshipMap({ nodes, edges, unit, viewport, onViewportChange
       deleteKeyCode={null} selectionKeyCode={null} panOnScroll zoomOnScroll={false}
       minZoom={0.5} maxZoom={2} preventScrolling
       ariaLabelConfig={ariaLabelConfig}>
-      <ViewportPortal>{columns}</ViewportPortal>
     </ReactFlow>
     <div className={styles.controls} aria-label={msg("Map zoom")}>
       <Button onClick={() => { void instance?.fitView({ padding: .16, minZoom: .5, maxZoom: 1 }) }}>{msg('Fit')}</Button>

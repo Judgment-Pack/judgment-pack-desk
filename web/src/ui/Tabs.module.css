@@ -63,3 +63,7 @@
 .root[data-variant='page'] > .heading > .list { position: relative; min-width: 0; max-width: 100%; overflow-x: auto; gap: var(--space-5); padding-inline: var(--density-gutter); }
 .root[data-variant='page'] .trigger { flex: 0 0 auto; padding: var(--space-2) 0; font-size: var(--text-control); white-space: nowrap; }
 .root[data-variant='page'] > .content { padding: 0; }
+
+.root[data-variant='settings'] > .heading > .list { padding-inline: 0; gap: var(--space-5); }
+.root[data-variant='settings'] .trigger { min-height: var(--density-control); padding: var(--density-field-gap) 0; font-size: var(--text-control); line-height: 1.5; }
+.root[data-variant='settings'] > .content { padding: var(--density-section) 0 0; }

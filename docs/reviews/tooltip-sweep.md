@@ -63,3 +63,39 @@ The mutation needle audit retains the baseline's eight stale needles and one
 ambiguous needle in unchanged behavior. The stale-write digest needle changed
 with the new disclosure, and its test now opens both full values. This sweep
 does not claim a clean global mutation harness.
+
+
+## October 6 follow-up: project editor and remaining native hints
+
+An AST sweep of the frontend found nine native hover-title source sites added
+since the original cleanup: fold markers, search actions, condition fields and
+operators, pack folders, storage rows/details and the right-pane context label.
+These now use shared hints, overflow-only hints, or omit a redundant title when
+the complete value is already visible. The generated CodeMirror folded-code
+placeholder also uses the shared hint. Heading props, iframe names and document
+titles retain their separate meanings. The native-title sweep is now empty.
+
+Editor-owned DOM uses `DOMTooltips` from `ui/Tooltip.tsx`, with the same Radix
+provider, timing, portal, typography, collision handling and dismissal behavior
+as React controls. Its existing event handlers and focus survive attachment and
+cleanup. Fold glyphs are 12px inside 16px hover targets, centered within the
+editor line; Comfortable and Compact geometry checks confirm containment.
+Escape dismisses a tooltip before a subsequent Escape closes Find.
+
+File switching previously unmounted the current editor immediately and then
+seeded the next buffer in an effect, producing an empty/loading render even for
+cached reads. Selection now waits for file bytes and the editor module, keeps
+the current editor visible and temporarily inert, and commits a keyed editor
+initialized from that file's cache. A small header spinner indicates a pending
+read. Failed reads retain the current buffer; request ordering discards late
+responses from earlier selections. Each editor still owns its file's base
+digest and buffer; no previous-file placeholder is reused for a new path.
+
+Validation, in the working copy this follow-up was ported from (the browser
+checks were not repeated when it was ported): shared tooltip/focus/lifecycle tests, file switching and retained
+buffer tests, folder/condition/storage regressions, design-token checks and the
+production build pass. Chromium checks cover hover containment, tooltip
+hover/focus/Escape, folding, Find/Replace/undo, read-only behavior, both themes
+and densities at 1440/390/320px. A frame-sampled sequence of delayed, failed and
+eight cached file switches showed no blank editor or loading-screen frames.
+Browser checks intercept file writes and do not invoke an assistant.

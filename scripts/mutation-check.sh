@@ -6356,14 +6356,13 @@ function usePacks() { useExampleListing(); return readPacks() }'
   #
   # A Select with one option looks like a choice, reads like one to every
   # enumeration of what a reader can change, and offers none.
+  # Follows its moved line: the kind is said as a value ("Local folder") since
+  # the settings pass (topic D of the ported working copy). The replacement is
+  # a native one-option select, which compiles here (the module imports no
+  # `Select`).
   mutate web "the kind rendered as a Select with one option" "$PFC" \
-    '      <code>{config.storage.packs.kind}</code>' \
-    '      <Select
-        id="storage-kind"
-        value={config.storage.packs.kind}
-        onValueChange={() => {}}
-        options={[{ value: '"'"'filesystem'"'"', label: '"'"'filesystem'"'"' }]}
-      />'
+    '      {config.storage.packs.kind === '"'"'filesystem'"'"' ? msg("Local folder") : config.storage.packs.kind}' \
+    '      <select id="storage-kind" value={config.storage.packs.kind} onChange={() => {}}><option value="filesystem">filesystem</option></select>'
   mutate web "an unknown storage key is accepted" "$D" \
     "          ? section(storage.packs, 'storage.packs', ['kind', 'dir', 'idBase'], problems)" \
     "          ? section(storage.packs, 'storage.packs', ['kind', 'dir', 'idBase', 'bucket'], problems)"
@@ -11036,9 +11035,11 @@ export function assistantTransport(id: string): Transport {
   # editable. The break is the declaration, which is what the page renders from
   # and what the rail's section menu links to — a section declared and not
   # rendered is a menu entry pointing at a heading that is not there.
+  # Follows its moved line: the first section is General since the Admin
+  # sections were grouped by task (topic D of the ported working copy).
   mutate web 'the Runtime card back' web/src/routes/adminSections.ts \
-    '      { id: '"'"'project'"'"', get title() { return msg("Project") } },' \
-    '      { id: '"'"'project'"'"', get title() { return msg("Project") } },
+    '      { id: '"'"'general'"'"', get title() { return msg('"'"'General'"'"') } },' \
+    '      { id: '"'"'general'"'"', get title() { return msg('"'"'General'"'"') } },
       { id: '"'"'runtime'"'"', title: '"'"'Runtime'"'"' },'
 
   # **A removed control's write path is removed with it.** The Panes card is
@@ -11664,7 +11665,6 @@ export function assistantTransport(id: string): Transport {
 
   ADMV=web/src/routes/AdminView.tsx
   CFP=web/src/admin/ConfigPane.tsx
-  SSUM=web/src/admin/sectionSummary.ts
   ISLOT=web/src/shell/InspectorSlot.tsx
 
   # **The disclosure back in the main column.** The whole of this chunk is that
@@ -11706,9 +11706,11 @@ export function assistantTransport(id: string): Transport {
   # setting currently is, and a row that fell back to a name this page composed
   # — the project it happens to be open on — is a value nobody wrote that a
   # reader cannot tell from one that is in the file.
-  mutate web "an Admin row composes a summary the decoder did not say" "$SSUM" \
-    "  organization: ({ config }) => config.organization.name ?? msg('none')," \
-    "  organization: ({ config }) => config.organization.name ?? 'this project',"
+  # **Retired, with its reason: the summaries no longer exist.** It was "an
+  # Admin row composes a summary the decoder did not say". Since the Admin
+  # sections were grouped by task (topic D of the ported working copy) a row
+  # says its title and nothing else, and `sectionSummary.ts` went with the
+  # summaries; a row whose code is deleted cannot discriminate.
 
   # **The claim outliving the route.** Admin publishes the file into the
   # Inspector for as long as it is mounted; a claim that is never released
@@ -11735,46 +11737,45 @@ export function assistantTransport(id: string): Transport {
   # is the overview this chunk removed, arrived at by mistake instead of by a
   # link. This drops the fallback, and the page has no state for the answer to
   # land in.
-  mutate web "an unknown fragment opens no section" "$ADVL" \
-    '  return SECTION[id] ?? first' \
-    '  return SECTION[id]!'
+  # Follows its moved line: the fragment is resolved in `adminSections.ts`
+  # since the sections were grouped by task (topic D of the ported working copy).
+  mutate web "an unknown fragment opens no section" web/src/routes/adminSections.ts \
+    '  return ALIASES[id] ?? (ADMIN_SECTIONS.some((section) => section.id === id) ? id : first)' \
+    '  return ALIASES[id] ?? id'
 
   # **The one control the Project section is for.** It is the section the group
   # header became: the file's Location and Status, and whether this desk opens
   # this project when it is launched without a directory. A section that showed
   # the two rows and dropped the control is a header with its write taken off
   # it, which is what the overview's removal would have done by accident.
+  # Follows its moved line: the control is General's Startup since the
+  # sections were grouped by task (topic D of the ported working copy).
   mutate web "the Project section drops the default-project control" "$ADVL" \
-    '                  fields={defaultProject.field}
-                  save={defaultProject.save}' \
-    '                  save={defaultProject.save}'
+    '                      {defaultProject.field}
+                      {defaultProject.save}' \
+    '                      {defaultProject.save}'
 
   # **A path in a 13rem column is a line of prose.** The head above the rows —
   # where the file is, what reading it produced — is the Project section's now
   # and the pane's; putting it back in the navigation column is the overview
   # returning one group at a time, beside the section it was meant to replace.
+  # Follows its moved line: the rail is rendered in `AdminView` itself since
+  # the sections were grouped by task (topic D of the ported working copy).
   mutate web "the rail renders the file's head again" "$ADVL" \
-    '      <p className={styles.railTitle} id={`rail-${group.id}`}>
-        {group.title}
-      </p>' \
-    '      <p className={styles.railTitle} id={`rail-${group.id}`}>
-        {group.title}
-      </p>
-      <dl>
-        <dt>Location</dt>
-        <dd>
-          {group.id === '\''this-project'\'' ? projectLocation(effective) : deskLocation(effective)}
-        </dd>
-      </dl>'
+    '                  <p className={styles.railTitle} id={`rail-${group.id}`}>{group.title}</p>' \
+    '                  <p className={styles.railTitle} id={`rail-${group.id}`}>{group.title}</p>
+                  <dl><dt>Location</dt><dd>{group.id === '\''workspace'\'' ? projectLocation(effective) : deskLocation(effective)}</dd></dl>'
 
   # **The row that is about the file says one of three things, and the third is
   # not a spelling of the second.** Whether the configured default is *this*
   # project is a comparison against the path the chassis resolved; before it has
   # answered, a row that picked one of the other two would be answering for the
   # desk. This makes it claim the default where nothing has said so.
-  mutate web "the Project row's summary composed from something the decoder did not say" "$SSUM" \
-    '    if (chassis === undefined) return msg(NOT_SAID)' \
-    '    if (chassis === undefined) return IS_DEFAULT'
+  # **Retired, with its reason: the summaries no longer exist.** It was "the
+  # Project row's summary composed from something the decoder did not say";
+  # `sectionSummary.ts` went with the summaries (topic D of the ported working
+  # copy). The same comparison is the startup control's, and is held by the
+  # General section's tests of its three states.
   mutate web "the Inspector claim is never released, so Admin's pane outlives it" "$ISLOT" \
     '    if (!publishing) return
     return claim()' \
@@ -12616,8 +12617,10 @@ export function assistantTransport(id: string): Transport {
   mutate web "record: it runs while hidden" "$DR" \
     "  useEffect(() => { if (visible) void refetch.current(" \
     "  useEffect(() => { if (visible || !visible) void refetch.current("
+  # Follows its moved line: the record is Decision safeguards' (topic D of the
+  # ported working copy).
   mutate web "record: Admin says it is always visible" web/src/routes/AdminView.tsx \
-    "<DecisionRecord visible={open.id === 'project'} />" \
+    "<DecisionRecord visible={id === 'safeguards'} />" \
     "<DecisionRecord visible />"
   mutate web "record: not marked to run only on request" "$DR" \
     "    meta: ON_REQUEST_ONLY," \
@@ -12715,9 +12718,11 @@ export function assistantTransport(id: string): Transport {
   mutate web "record: findings that disagree with the status are accepted" "$AC" \
     " && (value.status === 'invalid') === (value.findingsTotal > 0)" \
     ""
+  # Follows its moved line: the record is Decision safeguards' (topic D of the
+  # ported working copy).
   mutate web "record: not in Admin → Project" web/src/routes/AdminView.tsx \
-    "                <DecisionRecord visible={open.id === 'project'} />" \
-    "                {false && <DecisionRecord visible={open.id === 'project'} />}"
+    "                  <DecisionRecord visible={id === 'safeguards'} />" \
+    "                  {false && <DecisionRecord visible={id === 'safeguards'} />}"
 
   # **The desk's keys in the panel, and what a new desk was made without
   # (ADR-0010, sections 1 and 4).** The statement says which keys were
@@ -13598,6 +13603,53 @@ export function assistantTransport(id: string): Transport {
   mutate web 'audit fix: counts since a hand-over beside a refusal are read' "$AFC" \
     ' && value.repair === undefined && value.since === undefined' \
     ' && value.repair === undefined'
+
+  # ---- The UI pass, ported from a local working copy (topic D of four) ----
+  #
+  # Admin grouped by task; the composer shown while chat history loads, on a
+  # placeholder chat that is presentation only; Research's auto-save line.
+  UIV=web/src/routes/AdminView.tsx
+  UICW=web/src/routes/ChatWorkspace.tsx
+  # A card in Admin's settings form states its status only where it is not
+  # "read": a write in the air, a refusal, a stale write, a file that could not
+  # be read. Hiding it would say nothing where something went wrong.
+  mutate web "ui pass: a settings card hides a status that is not read" web/src/admin/SourceCard.tsx \
+    "      <Head status={says.state === 'read' ? undefined : says}/>" \
+    "      <Head status={undefined}/>"
+  # "Could not read now" is never "still loading".
+  mutate web "ui pass: the desk name loads for ever when it could not be read" "$UIV" \
+    "{directory.data?.current.name ?? (directory.isError ? msg('could not be read') : msg('Loading…'))}" \
+    "{directory.data?.current.name ?? msg('Loading…')}"
+  # Every panel the Project section carried is kept: the Jobs record is
+  # Decision safeguards', beside the decision record, and runs only while that
+  # section is open.
+  mutate web "ui pass: the Jobs record is not on Decision safeguards" "$UIV" \
+    "                  <JobsRecord visible={id === 'safeguards'} />" \
+    "                  {false && <JobsRecord visible={id === 'safeguards'} />}"
+  mutate web "ui pass: the Jobs record asks for the Runner while hidden" "$UIV" \
+    "<JobsRecord visible={id === 'safeguards'} />" \
+    "<JobsRecord visible />"
+  # Document processing's configuration file is the desk-level file's
+  # `research`, which a project file may not carry: naming the project file
+  # there would quote the wrong file's bytes under the wrong path.
+  mutate web "ui pass: Document processing's pane names the project file" "$UIV" \
+    "  const fromDesk = member === 'assistant' || member === 'research' || effective.sources[member] === 'desk file'" \
+    "  const fromDesk = member === 'assistant' || effective.sources[member] === 'desk file'"
+  # The placeholder chat shown while history loads is presentation only.
+  mutate web "ui pass: the history placeholder is not locked" "$UICW" \
+    "          historyLoading={loading} locked={loading} headerTarget={chatHeaderTarget}" \
+    "          historyLoading={loading} locked={false} headerTarget={chatHeaderTarget}"
+  mutate web "ui pass: the store is asked to open a chat before history has loaded" "$UICW" \
+    "    if (!store || !ready) return" \
+    "    if (!store) return"
+  # "Saved" is said of a save whose bytes were read back as written, and of
+  # nothing else.
+  mutate web "ui pass: Research says Saved before a save landed" web/src/search/WebSearchSettings.tsx \
+    "preferences.saved?msg('Saved')" \
+    "!preferences.saving?msg('Saved')"
+  mutate web "ui pass: the search preference is saved before its write is read back" web/src/search/connections.ts \
+    "saved:mutation.isSuccess" \
+    "saved:!mutation.isPending"
 fi
 
 restore

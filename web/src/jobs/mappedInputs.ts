@@ -59,7 +59,7 @@ export async function prepareMappedInputs(options: {
   if (!s.profile) continue
   const trusted = profiles.find(p => p.profile.id === s.profile && p.digest === s.profileDigest)?.profile
   if (!trusted || !config.gateway || trusted.authority !== config.gateway.authority || trusted.publicKey !== config.gateway.signer.public) throw Error(msg('The source profile does not match this Desk gateway.'))
-  if (s.provider === 'google-drive' && (!config.documents?.enabled || config.managedLocal !== true)) throw Error(msg('Enable document processing in Admin → Storage & data before attaching Drive files.'))
+  if (s.provider === 'google-drive' && (!config.documents?.enabled || config.managedLocal !== true)) throw Error(msg('Enable document processing in Admin → Document processing before attaching Drive files.'))
  }
  const session = newResearchSession()
  let calledGateway = false

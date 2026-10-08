@@ -35,7 +35,7 @@ describe('the configuration pane', () => {
       'jpack-desk.json › storage'
     )
     expect(screen.getByText('/a/project/jpack-desk.json')).toBeTruthy()
-    expect(screen.getByText('read')).toBeTruthy()
+    expect(screen.getByText('Configuration loaded')).toBeTruthy()
     expect(screen.getByText('{"packs": {"dir": "packs"}}')).toBeTruthy()
   })
 

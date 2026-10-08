@@ -85,7 +85,7 @@ function ConnectedDeskSettings({unavailable,onDirtyChange}:{unavailable:boolean;
    <Field label={msg('Default connection')}>{w=><Select {...w} value={selected??''} disabled={locked||!choices.length} onValueChange={defaultConnection=>edit({...draft,defaultConnection})} placeholder={msg('Choose a connection')} options={choices.map(c=>({value:c.id,label:c.name}))}/>}</Field>
    {choices.map(c=><ConnectionPreferences key={c.id} connection={c} value={draft.models?.[c.id]??{inherit:true}} disabled={locked} onChange={value=>edit({...draft,models:{...draft.models,[c.id]:value}})}/>)}
   </>}
-  <ButtonLink variant="quiet" to="/admin#connections">{msg('Manage AI connections')}</ButtonLink>
+  <ButtonLink variant="quiet" to="/admin#connections-ai">{msg('Manage AI connections')}</ButtonLink>
   {read?.problem&&<p role="alert">{read.problem}</p>}{save.error&&<p role="alert">{save.error.message}</p>}
   <div className={styles.toolbar}><span role="status" className={styles.meta}>{saved?msg('Assistant preferences saved.'):dirty?msg('Unsaved changes'):''}</span><div className={styles.actions}>{dirty&&<Button variant="quiet" onClick={()=>{setDirty(false);save.reset()}}>{msg('Cancel')}</Button>}<Button variant="primary" disabled={locked||!dirty||!valid} onClick={()=>save.mutate()}>{msg(save.isPending?'Saving…':'Save preferences')}</Button></div></div>
   <Disclosure title={msg('Advanced settings')}><div className={styles.actions}><Button variant="quiet" disabled={dirty||save.isPending} onClick={()=>void client.invalidateQueries({queryKey:DESK_CONFIG_QUERY_KEY})}>{msg('Reload from disk')}</Button>{read?.present&&<ButtonLink variant="inline" to="/author" onClick={()=>requestOpen(ASSISTANT_PROFILE_PATH)}>{ASSISTANT_PROFILE_PATH}</ButtonLink>}</div></Disclosure>

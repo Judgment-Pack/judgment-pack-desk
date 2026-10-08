@@ -1,5 +1,5 @@
 import { msg, useLocale } from '../i18n'
-import { Tooltip } from '../ui/Tooltip'
+import { Tooltip, OverflowTooltip } from '../ui/Tooltip'
 /**
  * The Inspector.
  *
@@ -134,7 +134,7 @@ export function RightPane({
       {resize && <PaneDivider label={title} controls="desk-inspector" {...resize} onCollapse={onReturn ?? onClose} />}
       <div className="desk-pane-head">
 
-        <div className="desk-pane-heading">{navigation}<span>{title}</span>{(expanded || fullWidth) && contextTitle && <span className="desk-pane-context" title={contextTitle}>{contextTitle}</span>}</div>
+        <div className="desk-pane-heading">{navigation}<span>{title}</span>{(expanded || fullWidth) && contextTitle && <OverflowTooltip><span className="desk-pane-context">{contextTitle}</span></OverflowTooltip>}</div>
         <div ref={publishHeaderTarget} className="desk-pane-head-slot" hidden={utility || tool !== 'route' || fullWidth} />
         <div ref={publishBriefHeaderTarget} className="desk-pane-head-slot desk-brief-head" hidden={utility || tool !== 'brief'} />
         <div className="desk-pane-actions">

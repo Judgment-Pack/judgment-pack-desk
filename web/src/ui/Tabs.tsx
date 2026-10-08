@@ -32,7 +32,8 @@ export function Tabs({
   keepMounted = false,
   tools,
   fillPanel,
-  variant = 'pane'
+  variant = 'pane',
+  activationMode = 'automatic'
 }: {
   /** The tab list's accessible name. */
   label: string
@@ -47,7 +48,9 @@ export function Tabs({
   tools?: ReactNode
   fillPanel?: string
   /** Document tabs share the page gutter; nested panes keep their compact inset. */
-  variant?: 'pane' | 'page'
+  variant?: 'pane' | 'page' | 'settings'
+  /** Manual activation keeps restored focus from repeating a blocked navigation. */
+  activationMode?: 'automatic' | 'manual'
 }) {
   const root = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
@@ -63,7 +66,7 @@ export function Tabs({
       data-variant={variant}
       value={value}
       onValueChange={onValueChange}
-      activationMode="automatic"
+      activationMode={activationMode}
     >
       <div className={styles.heading}><RadixTabs.List className={styles.list} aria-label={label}>
         {tabs.map((tab) => (

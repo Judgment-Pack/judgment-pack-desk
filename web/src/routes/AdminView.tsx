@@ -1,292 +1,242 @@
-import { WebSearchSettings } from '../search/WebSearchSettings'
-import { DESK_LEVEL_PATH_UNKNOWN } from '../config/queries'
-import { msg, useLocale } from '../i18n'
-import { OverflowTooltip } from '../ui/Tooltip'
 /**
- * Admin: dedicated settings navigation, one open section, and the file itself in the
- * right pane.
+ * Admin: settings navigation grouped by task, one open section, and the file
+ * itself in the right pane.
  *
- * **There is no overview, and its absence is this file's argument.** The page
- * was a stack of four sections, then a stack *and* an overview of it — a
- * landing state that was a second page of the same list, reachable at `#all`,
- * linked from every open section, and returned to by Escape. A settings page is
- * a navigation column and a section that is open: macOS System Settings has no
- * "all settings" pane, and neither does Linear's. What the overview carried
- * that the column cannot — where each file is, what reading it produced, and
- * the one control that is about the project rather than a member of it — is a
- * **section** now, first under This project, and the right pane says the rest.
+ * **Sections follow tasks, and each says its own scope.** Workspace holds what
+ * a person sets up for this desk — General (the desk's name, branding and the
+ * startup project), Assistant (this desk's model preferences), Research (this
+ * desk's web research policy), Storage & backups, and Decision safeguards (the
+ * gates, the decision record and the Jobs record). Connections & access holds
+ * what is shared on this computer: Connections, as tabs (AI, Files & apps, Web
+ * search), Document processing, and Sign-in & access. Each section states
+ * whether its changes apply to this desk or are shared on this computer.
  *
  * **A row is a link and the hash is the state.** `/admin#assistant` opens the
- * assistant section, and it did nothing but scroll before; the rail's menu and
- * the user menu have linked to these fragments since they were headings, so the
- * addresses are the ones already in circulation. **A fragment that names no
- * section opens the first one** — as does no fragment at all, and one that is
- * not valid percent-encoding. There is no state in which nothing is open, so
- * there is nothing an error page or a back link would be for.
+ * assistant section. A fragment that names no section opens the first one, as
+ * does no fragment and one that is not valid percent-encoding; the fragments
+ * of the sections this page had before (`#project`, `#organization`,
+ * `#documents`) and the Connections tabs (`#connections-ai`,
+ * `#connections-search`) resolve in `adminSectionId`.
  *
- * **The bytes went to the right pane.** They are context and not a setting:
- * nobody edits a file's text here, and the disclosure that held it was one more
- * thing stacked into a scroll that already had four sections in it. The page
- * claims the Details slot through `useDetailsPortal`; Technical details opens it,
- * a claim held for as long as the route is mounted and released when it leaves
- * — so the file is *beside* the form instead of underneath it. Nothing about
- * what may be shown changed: a refused file's bytes are still never rendered,
- * and the gate is the card's own `showsContent`, imported rather than spelled
- * again.
+ * **The bytes are in the right pane.** They are context and not a setting.
+ * Details › Configuration file opens the file the open section is about —
+ * the whole project file under General, one member of whichever file supplied
+ * it elsewhere — and Details › Runtime details what this desk is running on.
+ * Nothing about what may be shown changed: a refused file's bytes are still
+ * never rendered, and the gate is the card's own `showsContent`, applied by
+ * `ConfigPane`.
  *
- * **The forms stay in the main column**, and that is a measurement rather than
- * a preference: the pane is 360px, the label column alone is 7.5rem, and below
- * 1100px the pane is a drawer that covers the page it would be editing. A form
- * in a drawer over its own page is a worse answer than a form on the page.
+ * **A location is never composed here, and never stood in for.** The
+ * desk-level file's path, the project file's path and the runtime binary come
+ * from the chassis; where the chassis has not answered, the row says so.
  *
- * **A location is never composed here, and never stood in for.** The desk-level
- * file's path, the project file's path and the runtime binary come from the
- * chassis; a page that joined a directory to a file name would be asserting a
- * location on a filesystem it cannot see, and one that fell back to the
- * relative name it reads the file by would be offering a file-API address as
- * an established location. Where the chassis has not answered, the row says
- * so.
- *
- * The shell hosts the section links in its settings sidebar. The bounded
- * form starts at a fixed gutter in the page, and each section keeps its own Save action.
- * Standalone renders retain an inline navigation column.
+ * The shell hosts the section links in its settings sidebar; standalone
+ * renders keep an inline navigation column. Every section is a
+ * `RetainedPanel`, so a draft survives a visit to another section, and each
+ * section keeps its own Save.
  *
  * `runtime` and the project root are **not in the schema**, and that is the
  * design rather than a gap: `relay.go` runs the configured binary, so a
- * config-supplied path would be a local-code-execution surface. The status
- * line reports what the process was started with.
+ * config-supplied path would be a local-code-execution surface. The runtime
+ * details report what the process was started with.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Link, useLocation } from 'react-router-dom'
-import { SignInSettings } from '../auth/SignInSettings'
+import { useQuery } from '@tanstack/react-query'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { DropdownMenu } from 'radix-ui'
+import { msg, useLocale } from '../i18n'
+import { DESK_LEVEL_PATH_UNKNOWN } from '../config/queries'
+import { useEffectiveConfig } from '../config/DeskConfigProvider'
+import type { ConfigProblem, DeskConfig, EffectiveConfig, ValueSource } from '../config/deskConfig'
+import { useFileListing } from '../files/queries'
+import { desksAPI } from '../desks/DeskSwitcher'
 import { ConnectionSettings } from '../admin/ConnectionSettings'
 import { DocumentProcessingSettings } from '../admin/DocumentProcessingSettings'
 import { ChatDataSettings } from '../admin/ChatDataSettings'
 import { AssistantSection } from '../assistant/AssistantSection'
 import { SharedAssistantSettings } from '../assistant/AssistantSettings'
 import { AdminStatusLine } from '../admin/AdminStatusLine'
-import { PageHeader, PageBody } from '../ui/PageLayout'
-import { Popover } from '../ui/Popover'
-import { Button, ButtonLink } from '../ui/Button'
-import { SettingsSection } from '../ui/SettingsSection'
-import { RetainedPanel } from '../ui/RetainedPanel'
-import { DraftScope } from '../shell/DraftScope'
 import { ConfigPane } from '../admin/ConfigPane'
-import { SECTION_SUMMARY } from '../admin/sectionSummary'
-import { SourceCard, StatusLine, type SourceStatus } from '../admin/SourceCard'
+import { SourceCard, CardField, type SourceStatus } from '../admin/SourceCard'
 import { useDefaultProject } from '../admin/DefaultProject'
-import { ProjectGates } from '../packs/upgrade/UpgradeNote'
+import { OrganizationForm, StorageForm, StorageKind } from '../admin/projectFileCards'
+import { SignInSettings } from '../auth/SignInSettings'
 import { DecisionRecord } from '../audit/DecisionRecord'
 import { JobsRecord } from '../audit/JobsRecord'
-import { OrganizationForm, StorageForm, StorageKind } from '../admin/projectFileCards'
-import { useHashTarget } from '../shell/useHashTarget'
+import { ProjectGates } from '../packs/upgrade/UpgradeNote'
+import { SearchConnectionsSettings, WebSearchSettings } from '../search/WebSearchSettings'
+import { PageHeader, PageBody } from '../ui/PageLayout'
+import { Button, ButtonLink } from '../ui/Button'
+import { SettingsSection, SettingsStack } from '../ui/SettingsSection'
+import { Tabs } from '../ui/Tabs'
+import { RetainedPanel } from '../ui/RetainedPanel'
+import { DraftScope } from '../shell/DraftScope'
 import { useDetailsPortal, useDetailsSlot } from '../shell/DetailsSlot'
 import { useSettingsNavigation } from '../shell/SettingsNavigation'
-import { INSPECTOR_DRAWER_BELOW, useMediaQuery } from '../shell/useMediaQuery'
-import { useEffectiveConfig } from '../config/DeskConfigProvider'
-import {
-  type ConfigProblem,
-  type DeskConfig,
-  type EffectiveConfig,
-  type ValueSource
-} from '../config/deskConfig'
-import { useFileListing } from '../files/queries'
 import { connectionSays, useMcp } from '../mcp/McpProvider'
-import { ADMIN_GROUPS, ADMIN_SECTIONS, type AdminSection } from './adminSections'
+import { ADMIN_GROUPS, ADMIN_SECTIONS, adminSectionId, connectionTab } from './adminSections'
 import styles from './AdminView.module.css'
-
-/** The sections, by id, so a row names its own rather than an index. */
-const SECTION = Object.fromEntries(
-  ADMIN_SECTIONS.map((section) => [section.id, section])
-) as Record<string, AdminSection | undefined>
-
-/**
- * Which member of which file each section is about.
- *
- * The section id and the member are **not** the same string — `identity` is
- * written by a section called Identity provider — so the pane is told the
- * member rather than deriving one from a title.
- */
-const SECTION_MEMBER: Record<string, keyof DeskConfig> = {
-  organization: 'organization',
-  storage: 'storage',
-  assistant: 'assistant',
-  'identity-provider': 'identity'
-}
-
-/** The two sections that exist only in the desk-level file. */
-const DESK_ONLY = new Set(['assistant', 'identity-provider'])
-
-/**
- * The one section that is about the project's file itself rather than about a
- * member of it — so it is in `ADMIN_SECTIONS` and in neither map above.
- */
-const PROJECT_FILE_SECTION = 'project'
 
 export function AdminView() {
   useLocale()
   const navigation = useSettingsNavigation()
   const effective = useEffectiveConfig()
-  const { config } = effective
   const mcp = useMcp()
   const listing = useFileListing()
-  // The Project section's one field and its Save, sharing one draft across two
-  // of that section's slots.
+  const { hash } = useLocation()
+  const navigate = useNavigate()
+  const id = adminSectionId(hash)
+  const open = ADMIN_SECTIONS.find((section) => section.id === id)!
+  const tab = connectionTab(hash)
+  // General's Startup field and its Save, sharing one draft across two slots.
   const defaultProject = useDefaultProject()
+  const directory = useQuery({ queryKey: ['desks'], queryFn: () => desksAPI<{ current: { name: string } }>() })
   // **One unsaved draft at a time between the desk's model preferences and the
   // shared AI connections.** Each blocks the other while it holds an edit, so
   // a save on one never lands on a base the other has moved.
   const [profileDirty, setProfileDirty] = useState(false)
   const [sharedDirty, setSharedDirty] = useState(false)
-  const { hash } = useLocation()
-  // Below 1100px the Inspector is a drawer and the shell is one column: the
-  // list stacks above the open section, and the rows that are not open say
-  // their titles and nothing else, because a summary each is a second page of
-  // list above the thing the reader opened.
-  const stacked = useMediaQuery(INSPECTOR_DRAWER_BELOW)
-  // **And that is the one shell where the fragment scrolls.** The rail's and
-  // the user menu's section links carry a hash, and the router scrolls to
-  // none — but here the hash *opens* the section, and where the section is
-  // beside the list rather than below it there is nothing to scroll to.
-  // Scrolling anyway took the page's heading, its status line and the top of
-  // the list off the screen, because `.desk-main` is the one scroll container
-  // both columns are in.
-  useHashTarget(stacked && !navigation.inSidebar)
-  const open = sectionFromHash(hash)
-  const sectionId = (id: string) => navigation.inSidebar ? `settings-${id}` : id
-  const packDir = config.storage.packs.dir
-  const packLocation = packLocationState(packDir, listing)
-
-  // The shell's fragment target is the article, so the browser's delayed
-  // anchor scroll on a full load also keeps the header in view. Panels use
-  // distinct IDs; standalone renders retain their original section anchors.
-  // **And where it does not scroll, it starts at the top.** A full load of
+  const [inspection, setInspection] = useState<'config' | 'runtime'>('config')
+  const details = useDetailsSlot()
+  // **Each section starts at the top of the page.** A full load of
   // `/admin#assistant` is scrolled by the browser itself — the shell's scroll
-  // container is `.desk-main` and the browser scrolls the nearest one, which
-  // the hook's own comment used to say it would not — and a click on a row
-  // while a tall section is scrolled would otherwise open the next one halfway
-  // down. Stated on this page's own element rather than on the shell's, so a
-  // route is not selecting the frame it is rendered in.
-  const top = useRef<HTMLElement | null>(null)
+  // container is `.desk-main` and the browser scrolls the nearest one — and a
+  // click on a row while a tall section is scrolled would otherwise open the
+  // next one halfway down. Stated on this page's own element rather than on
+  // the shell's, so a route is not selecting the frame it is rendered in.
+  const top = useRef<HTMLElement>(null)
   useEffect(() => {
-    if (stacked && !navigation.inSidebar) return
     top.current?.scrollIntoView()
-  }, [open.id, stacked, navigation.inSidebar])
+    details.dismissInspection?.()
+  }, [id, details.dismissInspection])
 
-  // **Nothing listens for Escape here, because there is nothing to leave.**
-  // The key used to return to the overview; a page whose every state is one
-  // open section has no state Escape could put a reader in, and a keystroke
-  // that navigated to the first section would be a shortcut for "lose your
-  // place".
-
+  // **Which member of which file the pane is about**, where the open section
+  // is about one: General is the whole project file; Storage & backups, the
+  // project's `storage`; Document processing, the desk-level `research`; and
+  // Connections › AI, the desk-level `assistant`.
+  const member = id === 'storage' ? 'storage'
+    : id === 'gateway' ? 'research'
+    : id === 'connections' && tab === 'ai' ? 'assistant'
+    : undefined
+  const canInspect = id === 'general' || member !== undefined
+  const configPane = canInspect ? <ConfigPane {...paneFor(effective, member)} /> : null
   // **The pane, claimed for as long as this route is mounted.** The claim and
   // the portal are one call, so leaving Admin releases the slot and the next
   // route's own panel — or the pane's empty state — takes it back.
-  const details = useDetailsSlot()
-  useEffect(() => { details.dismissInspection?.() }, [open.id, details.dismissInspection])
-  const pane = useDetailsPortal(
-    ['connections', 'identity-provider'].includes(open.id) ? null : <ConfigPane {...paneFor(effective, open)} />
-  )
+  const pane = useDetailsPortal(inspection === 'runtime'
+    ? <SettingsSection title={msg('Runtime details')} variant="plain">
+      <AdminStatusLine runtime={runtimeSays(mcp)} binary={runtimeBinary(effective)}
+        copyText={effective.desk?.chassis === undefined ? undefined : `${runtimeSays(mcp)}\n${effective.desk.chassis.runtimeBin}`} />
+    </SettingsSection>
+    : configPane)
+  const inspect = (kind: 'config' | 'runtime') => {
+    setInspection(kind)
+    details.reveal()
+  }
+  const sectionId = (value: string) => navigation.inSidebar ? `settings-${value}` : value
 
   return (
-    <article className={`detail ${styles.admin}`} id={navigation.inSidebar ? open.id : undefined} data-measure="full" data-layout="page" data-navigation={navigation.inSidebar ? 'sidebar' : 'inline'} ref={top}>
+    <article ref={top} className={`detail ${styles.admin}`} id={navigation.inSidebar ? open.id : undefined} data-measure="full" data-layout="page" data-navigation={navigation.inSidebar ? 'sidebar' : 'inline'}>
       {pane}
-      <PageHeader title={msg("Admin")} context={open.title} actions={<>
-        {!['connections', 'identity-provider'].includes(open.id) && <Button variant="quiet" onClick={() => details.open ? details.dismissInspection?.() : details.reveal()}>{msg("Technical details")}</Button>}
-        <Popover title={msg("Runtime details")} trigger={<Button variant="quiet">{msg("Runtime details")}</Button>}>
-          <AdminStatusLine runtime={runtimeSays(mcp)} binary={runtimeBinary(effective)}
-            copyText={effective.desk?.chassis === undefined ? undefined : `${runtimeSays(mcp)}
-${effective.desk.chassis.runtimeBin}`} />
-        </Popover>
-      </>} />
+      <PageHeader title={msg('Admin')} context={open.title} actions={<DropdownMenu.Root>
+        <DropdownMenu.Trigger asChild><Button variant="quiet">{msg('Details')}</Button></DropdownMenu.Trigger>
+        <DropdownMenu.Portal><DropdownMenu.Content className="desk-menu" align="end" sideOffset={4}>
+          {canInspect && <DropdownMenu.Item className="desk-menu-item" onSelect={() => inspect('config')}>{msg('Configuration file')}</DropdownMenu.Item>}
+          <DropdownMenu.Item className="desk-menu-item" onSelect={() => inspect('runtime')}>{msg('Runtime details')}</DropdownMenu.Item>
+          <DropdownMenu.Item className="desk-menu-item" asChild><Link to="/author">{msg('Project files')}</Link></DropdownMenu.Item>
+        </DropdownMenu.Content></DropdownMenu.Portal>
+      </DropdownMenu.Root>} />
       <DraftScope>
         <PageBody width={navigation.inSidebar ? 'form' : 'wide'}>
           <div className={styles.split}>
-            {navigation.render(<nav className={styles.rail} data-sidebar={navigation.inSidebar || undefined} aria-label={msg("Settings")}>
+            {navigation.render(<nav className={styles.rail} data-sidebar={navigation.inSidebar || undefined} aria-label={msg('Settings')}>
               {ADMIN_GROUPS.map((group) => (
-                <GroupRows
-                  key={group.id}
-                  effective={effective}
-                  group={group}
-                  open={open}
-                  stacked={stacked && !navigation.inSidebar}
-                />
+                <div className={styles.railGroup} key={group.id}>
+                  <p className={styles.railTitle} id={`rail-${group.id}`}>{group.title}</p>
+                  <ul className={styles.rows} aria-labelledby={`rail-${group.id}`}>
+                    {group.sections.map((section) => (
+                      <li key={section.id} className={styles.rowItem}>
+                        <Link className={styles.row} to={`/admin#${section.id}`} aria-current={id === section.id ? 'page' : undefined}>
+                          <span className={styles.rowTitle}>{section.title}</span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               ))}
             </nav>)}
             <div className={styles.open}>
-              {/* The file itself, and the one control that is about the project
-                  rather than about a member of it. The two rows are the ones the
-                  group header carried while there was an overview to carry them
-                  on. */}
-              <RetainedPanel active={open.id === 'project'}>
-                <SourceCard
-                  id={sectionId(SECTION.project!.id)}
-                  title={SECTION.project!.title}
-                  level={2}
-                  location={projectLocation(effective)}
-                  status={projectStatus(effective)}
-                  fields={defaultProject.field}
-                  save={defaultProject.save}
-                />
-                {/* The upgrade offer stays available here (ADR-0009, section 4). */}
-                <ProjectGates />
-                {/* Beside the gates, what the runtime finds in the trail they
-                    keep (ADR-0010, section 4). */}
-                <DecisionRecord visible={open.id === 'project'} />
-                {/* Beside it, where this desk has a Runner, what the runtime
-                    finds in a copy of Runner's chain of runs (ADR-0010,
-                    section 4, "A Jobs record panel"). */}
-                <JobsRecord visible={open.id === 'project'} />
-              </RetainedPanel>
-              <RetainedPanel active={open.id === 'organization'}>
-                <SourceCard
-                  id={sectionId(SECTION.organization!.id)}
-                  title={SECTION.organization!.title}
-                  level={2}
-                  location={sectionLocation(effective, 'organization')}
-                  status={sectionStatus(effective, 'organization')}
-                  under={groupFor(effective, 'organization')}
-                  save={<OrganizationForm />}
-                />
-              </RetainedPanel>
-              <RetainedPanel active={open.id === 'storage'}>
-                <SourceCard
-                  id={sectionId(SECTION.storage!.id)}
-                  title={SECTION.storage!.title}
-                  level={2}
-                  location={sectionLocation(effective, 'storage')}
-                  status={sectionStatus(effective, 'storage')}
-                  under={groupFor(effective, 'storage')}
-                  fields={<><h3 className={styles.subheading}>{msg("Project files")}</h3><StorageKind /></>}
-                  save={<StorageForm dirSays={PACK_LOCATION_SAYS[packLocation]} />}
-                />
-                <ChatDataSettings />
-                <DocumentProcessingSettings />
-                <WebSearchSettings />
-              </RetainedPanel>
-              <RetainedPanel active={open.id === 'assistant'}>
-                {sharedDirty && <p role="status" className={styles.explanation}>{msg('Save or discard changes in Connections before editing desk preferences.')}</p>}
-                <AssistantSection
-                  id={sectionId(SECTION.assistant!.id)}
-                  title={SECTION.assistant!.title}
-                  level={2}
-                  under={deskStatus(effective)}
-                  blocked={sharedDirty}
-                  onDirtyChange={setProfileDirty}
-                />
-              </RetainedPanel>
-              {/* AI connections are shared on this computer (docs/ai-connections.md):
-                  kept mounted, like the Assistant section, so an unsaved edit
-                  survives a visit to another section. */}
-              <RetainedPanel active={open.id === 'connections'}>
-                <SettingsSection title={msg('AI')} level={2} variant="standalone" description={msg('Connections are shared on this computer. Each desk chooses which connections and models to use.')}>
-                  {profileDirty && <p role="status" className={styles.explanation}>{msg('Save or discard changes in Assistant before editing shared AI settings.')}</p>}
-                  <SharedAssistantSettings unavailable={profileDirty} onDirtyChange={setSharedDirty} />
-                  <ButtonLink variant="quiet" to="/admin#assistant">{msg('Model preferences for this desk')}</ButtonLink>
+              <RetainedPanel active={id === 'general'}>
+                <SettingsSection title={msg('General')} level={2} variant="standalone" description={msg('Desk identity, branding and startup preferences.')}>
+                  <SettingsStack>
+                    <CardField label={msg('Desk name')}>
+                      {directory.data?.current.name ?? (directory.isError ? msg('could not be read') : msg('Loading…'))}
+                    </CardField>
+                    <SourceCard id={sectionId('branding')} title={msg('Branding')} level={3} presentation="settings"
+                      location={sectionLocation(effective, 'organization')} status={sectionStatus(effective, 'organization')}
+                      description={effective.sources.organization === 'desk file' ? msg('Shared on this computer') : msg('This desk')}
+                      save={<OrganizationForm />} />
+                    <SettingsSection title={msg('Startup')} variant="plain" description={msg('Shared on this computer · Applies when Desk starts without a project folder.')}>
+                      {defaultProject.field}
+                      {defaultProject.save}
+                    </SettingsSection>
+                  </SettingsStack>
                 </SettingsSection>
               </RetainedPanel>
-              {open.id === 'connections' && <ConnectionSettings />}
-              {open.id === 'identity-provider' && <SignInSettings />}
+              <RetainedPanel active={id === 'assistant'}>
+                {sharedDirty && <p role="status" className={styles.explanation}>{msg('Save or discard changes in Connections before editing desk preferences.')}</p>}
+                <AssistantSection id={sectionId('assistant')} title={msg('Assistant')} level={2} under={deskStatus(effective)} blocked={sharedDirty} onDirtyChange={setProfileDirty} />
+              </RetainedPanel>
+              <RetainedPanel active={id === 'research'}><WebSearchSettings /></RetainedPanel>
+              <RetainedPanel active={id === 'storage'}>
+                <SettingsSection title={msg('Storage & backups')} level={2} variant="standalone" description={msg('Manage pack files, saved conversations and chat backups.')}>
+                  <SettingsStack>
+                    <SourceCard id={sectionId('pack-storage')} title={msg('Pack files')} level={3} presentation="settings"
+                      location={sectionLocation(effective, 'storage')} status={sectionStatus(effective, 'storage')}
+                      description={effective.sources.storage === 'desk file' ? msg('Shared on this computer') : msg('This desk')}
+                      fields={<StorageKind />}
+                      save={<StorageForm dirSays={PACK_LOCATION_SAYS[packLocationState(effective.config.storage.packs.dir, listing)]} />} />
+                    <ChatDataSettings />
+                  </SettingsStack>
+                </SettingsSection>
+              </RetainedPanel>
+              {/* The upgrade offer stays available here (ADR-0009, section 4);
+                  beside the gates, what the runtime finds in the trail they keep
+                  (ADR-0010, section 4), with the hand-over, repair and stamping
+                  it carries; and beside it, where this desk has a Runner, what
+                  the runtime finds in a copy of Runner's chain of runs (ADR-0010,
+                  section 4, "A Jobs record panel"). Each runs only while this
+                  section is open. */}
+              <RetainedPanel active={id === 'safeguards'}>
+                <SettingsStack>
+                  <ProjectGates />
+                  <DecisionRecord visible={id === 'safeguards'} />
+                  <JobsRecord visible={id === 'safeguards'} />
+                </SettingsStack>
+              </RetainedPanel>
+              <RetainedPanel active={id === 'connections'}>
+                <SettingsSection title={msg('Connections')} level={2} variant="standalone" description={msg('Shared on this computer · Connect AI, file sources and web search.')}>
+                  <Tabs variant="settings" activationMode="manual" label={msg('Connection types')} scrollable value={tab}
+                    onValueChange={(value) => navigate(`/admin#connections${value === 'files' ? '' : `-${value}`}`)} keepMounted tabs={[
+                      // AI connections are shared on this computer
+                      // (docs/ai-connections.md): kept mounted, like the
+                      // Assistant section, so an unsaved edit survives a visit
+                      // to another tab or section.
+                      { value: 'ai', label: msg('AI'), panel: <RetainedPanel active={id === 'connections' && tab === 'ai'}>
+                        <div className={styles.connectionSettings}>
+                          <p className={styles.explanation}>{msg('Connections are shared on this computer. Each desk chooses which connections and models to use.')}</p>
+                          {profileDirty && <p role="status" className={styles.explanation}>{msg('Save or discard changes in Assistant before editing shared AI settings.')}</p>}
+                          <SharedAssistantSettings unavailable={profileDirty} onDirtyChange={setSharedDirty} />
+                          <ButtonLink variant="quiet" to="/admin#assistant">{msg('Model preferences for this desk')}</ButtonLink>
+                        </div>
+                      </RetainedPanel> },
+                      { value: 'files', label: msg('Files & apps'), panel: id === 'connections' && tab === 'files' ? <ConnectionSettings embedded /> : null },
+                      { value: 'search', label: msg('Web search'), panel: id === 'connections' && tab === 'search' ? <SearchConnectionsSettings /> : null }
+                    ]} />
+                </SettingsSection>
+              </RetainedPanel>
+              <RetainedPanel active={id === 'gateway'}><DocumentProcessingSettings /></RetainedPanel>
+              {id === 'identity-provider' && <SignInSettings />}
             </div>
           </div>
         </PageBody>
@@ -296,130 +246,8 @@ ${effective.desk.chassis.runtimeBin}`} />
 }
 
 /**
- * One group of the navigation column: its title, and a row per section.
- *
- * **A title and rows, and never the file's own head.** The group header used to
- * state where its file is and what reading it produced, on an overview that no
- * longer exists; beside an open section a path is a line of prose in a 13rem
- * column, and the two places that fact belongs are the section that is about
- * that file and the pane that quotes it.
- */
-function GroupRows({
-  effective,
-  group,
-  open,
-  stacked
-}: {
-  effective: EffectiveConfig
-  group: (typeof ADMIN_GROUPS)[number]
-  open: AdminSection
-  stacked: boolean
-}) {
-  useLocale()
-  return (
-    <div className={styles.railGroup}>
-      <p className={styles.railTitle} id={`rail-${group.id}`}>
-        {group.title}
-      </p>
-      <ul className={styles.rows} aria-labelledby={`rail-${group.id}`}>
-        {group.sections.map((section) => (
-          <SectionRow
-            key={section.id}
-            effective={effective}
-            section={section}
-            current={open.id === section.id}
-            // "Collapse to their titles" is what the narrow shell does to the
-            // rows a reader is not in: the list is above the open section there,
-            // not beside it, and a summary each pushes the section off the
-            // screen it was opened on.
-            bare={stacked && open.id !== section.id}
-          />
-        ))}
-      </ul>
-    </div>
-  )
-}
-
-/**
- * One row: the title, what the setting currently is, and the section's own
- * status where it differs from the state of the file its group is about.
- *
- * The summary is `SECTION_SUMMARY`'s and is drawn from the decoded value — the
- * page composes no part of it. The status is the same comparison a card makes:
- * by what the two say rather than by which state each is, because two refusals
- * naming two keys are not one status.
- */
-function SectionRow({
-  effective,
-  section,
-  current,
-  bare
-}: {
-  effective: EffectiveConfig
-  section: AdminSection
-  current: boolean
-  bare: boolean
-}) {
-  useLocale()
-  const summarise = SECTION_SUMMARY[section.id]
-  const own = statusOfSection(effective, section.id)
-  const group = groupStatusFor(effective, section.id)
-  const differs = JSON.stringify(own) !== JSON.stringify(group)
-  return (
-    <li className={styles.rowItem}>
-      <OverflowTooltip selector="[data-overflow-text]"><Link
-        className={styles.row}
-        to={`/admin#${section.id}`}
-        aria-current={current ? 'true' : undefined}
-      >
-        <span className={styles.rowTitle}>
-          {section.title}
-        </span>
-        {!bare && summarise !== undefined && (
-          <span className={styles.rowSays} data-overflow-text>{summarise(effective)}</span>
-        )}
-        {!bare && differs && (
-          <span className={styles.rowStatus} data-state={own.state}>
-            <span className={styles.statusText}><StatusLine status={own} /></span>
-          </span>
-        )}
-      </Link></OverflowTooltip>
-    </li>
-  )
-}
-
-/**
- * The section a fragment names, and the **first** section for every fragment
- * that names none.
- *
- * Three inputs and one answer: no fragment, a fragment naming no section — a
- * group id, a section that was renamed, a link somebody typed — and one that is
- * not valid percent-encoding. There is no fourth state for any of them to land
- * in: an error about a section that does not exist would be a worse answer than
- * the page the reader asked for, and the page they asked for is a settings page,
- * which opens on its first pane.
- */
-function sectionFromHash(hash: string): AdminSection {
-  const first = ADMIN_SECTIONS[0]!
-  if (hash.length < 2) return first
-  let id: string
-  try {
-    id = decodeURIComponent(hash.slice(1))
-  } catch {
-    return first
-  }
-  if (id === 'documents') id = 'storage'
-  return SECTION[id] ?? first
-}
-
-/**
- * What the right pane is about: the whole project file under Project, and one
- * member of whichever file supplied it under every other section.
- *
- * **Project is the section that is about a file rather than a member of one**,
- * so its pane is the whole document — which is what the overview's pane was,
- * unchanged, safety rule included: a refused file shows its Status and no bytes
- * at all.
+ * What the right pane is about: the whole project file under General, and one
+ * member of whichever file supplied it under every other section that has one.
  *
  * The title names the file by the name this desk knows it by — the project's
  * own is the name it is read at, and the desk-level file's is the last segment
@@ -428,7 +256,7 @@ function sectionFromHash(hash: string): AdminSection {
  */
 function paneFor(
   effective: EffectiveConfig,
-  open: AdminSection
+  member?: 'storage' | 'research' | 'assistant'
 ): {
   title: string
   location: ReactNode
@@ -437,7 +265,7 @@ function paneFor(
   text?: string
   member?: string
 } {
-  if (open.id === PROJECT_FILE_SECTION) {
+  if (member === undefined) {
     return {
       title: effective.path,
       location: projectLocation(effective),
@@ -446,9 +274,8 @@ function paneFor(
       text: effective.text
     }
   }
-  const member = SECTION_MEMBER[open.id]!
-  const fromDesk =
-    DESK_ONLY.has(open.id) || effective.sources[member as LayeredSection] === 'desk file'
+  // `assistant` and `research` are only ever the desk-level file's.
+  const fromDesk = member === 'assistant' || member === 'research' || effective.sources[member] === 'desk file'
   const file = fromDesk ? fileName(effective.desk?.path) : effective.path
   return {
     title: file === undefined ? member : `${file} › ${member}`,
@@ -473,22 +300,6 @@ type LayeredSection = Exclude<
   keyof DeskConfig,
   'deskConfigVersion' | 'identity' | 'assistant' | 'project'
 >
-
-/** One section's own state, whichever of the two files it belongs to. */
-function statusOfSection(effective: EffectiveConfig, id: string): SourceStatus {
-  if (id === 'connections') return { state: 'read' } // Status is read from the gateway in this page, not a project file.
-  if (id === PROJECT_FILE_SECTION) return projectStatus(effective)
-  if (DESK_ONLY.has(id)) return deskStatus(effective)
-  return sectionStatus(effective, SECTION_MEMBER[id] as LayeredSection)
-}
-
-/** The state the file this section's group is about is in, for comparison. */
-function groupStatusFor(effective: EffectiveConfig, id: string): SourceStatus | undefined {
-  if (id === 'connections') return { state: 'read' }
-  if (id === PROJECT_FILE_SECTION) return projectStatus(effective)
-  if (DESK_ONLY.has(id)) return deskStatus(effective)
-  return groupFor(effective, SECTION_MEMBER[id] as LayeredSection)
-}
 
 /**
  * Where the project's own configuration file is, **as the chassis said it** —
@@ -573,22 +384,6 @@ function deskStatus(effective: EffectiveConfig): SourceStatus {
   if (desk.readFailure !== undefined) return { state: 'unread', failure: desk.readFailure }
   if (!desk.present) return { state: 'absent' }
   return { state: 'read' }
-}
-
-/**
- * The state of the file a layered section's group is about, where its own file
- * is that one — and **nothing** where it is not.
- *
- * A section that came from the desk-level file is not one This project speaks
- * for, and a row that dropped its status under that title would be attributing
- * a value to a file it did not come from. So that section is given no group at
- * all and states its own status, exactly as it did before there were groups.
- */
-function groupFor(
-  effective: EffectiveConfig,
-  section: LayeredSection
-): SourceStatus | undefined {
-  return effective.sources[section] === 'desk file' ? undefined : projectStatus(effective)
 }
 
 /**

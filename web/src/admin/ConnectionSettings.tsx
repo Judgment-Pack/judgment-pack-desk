@@ -12,19 +12,19 @@ import { ConnectionDirectory, connectionState } from '../connections/ConnectionD
 import { ButtonLink } from '../ui/Button'
 import { SettingsSection } from '../ui/SettingsSection'
 
-export function ConnectionSettings() {
+export function ConnectionSettings({embedded=false}:{embedded?:boolean}) {
   useLocale()
   const effective = useEffectiveConfig()
   const requestedReturn = useLocation().state?.returnTo
   const returnTo = typeof requestedReturn === 'string' && /^\/(?:$|(?:chats|packs)(?:\/|$))/.test(requestedReturn) && !requestedReturn.includes('\\') ? requestedReturn : undefined
   const available = effective.desk?.localGateway?.status === 'ready' && !effective.desk?.decoded?.values?.research?.gateway
   const context = JSON.stringify([available, effective.config.research.gateway])
-  return <SettingsSection title={msg('Connections')} level={2} variant="standalone"
-    description={msg('Personal · This computer')}>
+  const content=<>
     <ConnectionCatalog key={context} available={available} />
     {returnTo && <ButtonLink to={returnTo}>{msg('Return to chat')}</ButtonLink>}
-    {!available && <ButtonLink to="/admin#storage">{msg('Manage gateway')}</ButtonLink>}
-  </SettingsSection>
+    {!available && <ButtonLink to="/admin#gateway">{msg('Manage gateway')}</ButtonLink>}
+  </>
+  return embedded?content:<SettingsSection title={msg('Connections')} level={2} variant="standalone" description={msg('Shared on this computer')}>{content}</SettingsSection>
 }
 
 function ConnectionCatalog({ available }: { available: boolean }) {

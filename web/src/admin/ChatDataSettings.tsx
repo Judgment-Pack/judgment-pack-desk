@@ -52,7 +52,7 @@ export function ChatDataSettings() {
       void query.refetch()
     } finally { setMoving(false) }
   }
-  return <><SettingsSection title={msg("Chat data")} variant="plain" description={msg("Private history, drafts and retained source text for all projects on this Desk.")}>
+  return <><SettingsSection title={msg("Chat data")} variant="plain" description={status ? status.managed ? msg('This desk · Conversations, drafts and retained source files.') : msg('Shared project history on this computer. Each project keeps its own conversations.') : undefined}>
     {query.isPending && <p role="status" className={styles.caption}>{msg("Reading chat storage…")}</p>}
     {query.isError && <div role="alert"><p>{query.error.message}</p><Button onClick={() => void query.refetch()}>{msg("Retry")}</Button></div>}
     {status && <div className={styles.details}>

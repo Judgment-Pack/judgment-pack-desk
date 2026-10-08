@@ -70,6 +70,7 @@ font stack, density override or competing appearance page.
 | `--density-gutter` | 24px | 20px |
 | Narrow viewport gutter | 16px | 16px |
 | `--radius-sm`, `--radius`, `--radius-panel` | 4px, 8px, 12px | Same |
+| `--radius-pill` | 999px, circular indicators and slider ends | Same |
 | `--measure-form`, `--measure-wide` | 704px, 1152px | Same |
 
 Type uses rem values at the default 16px root. Body line height is 1.5; headings
@@ -280,6 +281,29 @@ menu height is capped to the available space and scrolls vertically when needed.
 The local account trigger shows the avatar, display name and chevron without a
 redundant local badge. Identity information remains available inside the menu.
 
+Admin sidebar group headings use 13px, weight 600, and `--ink` to distinguish
+them from the regular navigation links. Notes beneath settings rows start after
+`--density-block`; a row divider must not touch the explanatory copy.
+
+Admin groups pages by task. **Workspace** contains General, Assistant, Research,
+Storage & backups, and Decision safeguards. **Connections & access** contains
+Connections, Document processing, and Sign-in & access. Each section states
+whether changes apply to the current desk or are shared on this computer.
+Connections uses AI, Files & apps, and Web search tabs; shared credentials and
+provider defaults live there. Assistant and Research hold per-desk preferences.
+Technical configuration and runtime details open from the header's Details menu.
+Admin page titles come from `SettingsSection` in its standalone form (20px,
+weight 500); nested groups use 14px, weight 600. `SettingsStack` owns the gap and
+single separator between groups. `FieldGroup` owns field spacing, including
+composite logo/favicon fields. Section content starts 12px below group headers
+and 20px below page headers at Comfortable density; Compact uses the matching
+density tokens. Labels and controls stay 13px, and field hints stay 12px.
+All advanced settings use `Disclosure`. Settings tabs add no second horizontal
+inset. Save actions align to the right, with the primary save last.
+
+Connections tabs use manual keyboard activation so restoring focus after a
+canceled unsaved-changes prompt does not attempt the navigation again.
+
 Use `RetainedPanel` for settings sections: mount on first visit, hide inactive
 sections from layout and accessibility, and retain their drafts and stale-write
 revision guards. `DraftScope` aggregates only dirty flags and uses the existing
@@ -484,6 +508,14 @@ links, buttons or other interactive content inside a tooltip. Use `Popover`
 for selectable/copyable details. For a control automatically focused when a
 dialog opens, use `openOnFocus={false}` to avoid an unsolicited hint consuming
 Escape; its accessible name still identifies the control.
+
+For DOM controls owned by an embedded editor, use `DOMTooltips` from the same
+module and mark the existing element with `data-tooltip`. It binds the shared
+Radix trigger to that element, preserving its listeners, focus, accessible
+help and keyboard behavior. It follows added/removed controls and cleans up
+when the editor closes. Do not create a React root per gutter marker or add
+native `title` attributes. Editor shortcuts must respect `defaultPrevented`,
+so Escape dismisses an open hint before closing Find.
 
 `OverflowTooltip` measures actual rendered overflow, including descendant text
 when a row has multiple cells. Hidden text and text that fits produce no hint.
@@ -759,3 +791,53 @@ boxed buttons.
 
 See [the spacing review](reviews/desk-spacing-review-20260924.md) for scope,
 verification and the proposed next features.
+
+Project Files uses the shared JPS chevron geometry for folding. The editor search
+panel shares Button and Input styles, keeps navigation and close actions together,
+and reveals replacement controls separately. Search options remain keyboard
+operable and selected toggles use the neutral selection background. Read-only
+files retain search, folding and copy; mutation controls are absent, and a neutral
+badge and explanation identify the owner of the generated output. The file API
+reports read-only reasons and rejects replacing runtime lockfiles, known audit
+records in their configured or legacy locations, and files with no write bits.
+Authored config, pack and input files remain editable; job draft saves retain
+the existing Jobs workflow.
+
+
+## Project file location
+
+The editor uses one compact header: a quiet parent-folder path, a separator,
+the filename and save state, then file actions. Root-level files show only the
+filename. Folder context is static text: no pointer cursor, hover background,
+button role or extra tab stop. Long paths truncate with the shared overflow
+hint; the full selectable path and Copy path remain in File actions. Browse
+with the file tree or its existing Files/expand controls on narrow or collapsed
+layouts. Avoid an additional breadcrumb strip that repeats the sidebar and
+only refocuses an already-visible folder.
+
+This applies the hierarchy and reduced visual structure described in Linear's
+[2026 design refresh](https://linear.app/now/behind-the-latest-design-refresh)
+to this file editor; it is not a claim that Linear prescribes this exact layout.
+
+
+AI connections are named records under Connections > AI, with one Add connection
+button. Rows show connection name, provider and readiness; Manage is the
+primary row action. Rename, Set default and Disable/Enable use the shared overflow
+menu. Adding an API provider never replaces another connection or changes an
+existing shared default. Connection method is fixed after creation.
+
+Assistant is scoped to the current desk. “Use shared assistant defaults” inherits
+both connection selection and connection model defaults. A custom desk chooses
+its enabled connections and a default, then optionally its own model list and
+reasoning per connection. Connection model lists are defaults, not a hidden
+machine-wide restriction on desk-specific model lists. The effective desk list
+is checked at execution. Connection selection uses the shared searchable popover
+with Select all and Remove all; no second settings sidebar is introduced.
+
+The composer keeps one compact model/reasoning menu. Model choices are grouped by
+connection name and selected by connection ID plus model ID. The same model ID on
+two connections remains two choices. Failed/disabled/removed selections remain
+explicitly unavailable, and the menu stays available to choose another target.
+Older chats with no connection identity require a choice before their next send;
+old replies are never assigned today's provider. New reply details show the actual
+bound connection and model.

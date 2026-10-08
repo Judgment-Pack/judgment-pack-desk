@@ -6,14 +6,14 @@
   min-height: 0;
   min-width: 0;
   font-size: var(--text-sm);
-  line-height: 1.6;
+  line-height: var(--leading-body);
   overflow-wrap: anywhere;
 }
 .setup:focus { outline: none; }
-.body { position: relative; flex: 1 1 auto; min-height: 0; overflow: auto; padding: var(--density-section) var(--density-cell-x); }
+.body { position: relative; flex: 1 1 auto; min-height: 0; overflow: auto; padding: var(--density-gutter); }
 .body > p { margin: 0 0 var(--density-section); }
 .scope { color: var(--ink-soft); }
-.footer { flex: 0 0 auto; padding: var(--density-cell-x); border-top: 1px solid var(--border); }
+.footer { flex: 0 0 auto; padding: var(--density-block) var(--density-gutter); border-top: 1px solid var(--border); }
 .footer p { margin: 0 0 var(--space-3); }
 .actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .actions > button { white-space: normal; }

@@ -49,18 +49,18 @@ export function UpgradeNote() {
     setDismissed(keys => [...keys, key])
   }
   return <aside className={styles.note} aria-label={msg('Turn on this project’s gates')}>
-    <p><strong>{msg('This project’s gates are off.')}</strong> {msg('Desk can hold its deciding runs to a reviewed set of packs and record each one. Nothing changes until you confirm, and the offer stays in Admin → Project.')}</p>
+    <p><strong>{msg('This project’s gates are off.')}</strong> {msg('Desk can hold its deciding runs to a reviewed set of packs and record each one. Nothing changes until you confirm, and the offer stays in Admin → Decision safeguards.')}</p>
     <ButtonLink to="/packs/_upgrade">{msg('See what changes')}</ButtonLink>
     <Button variant="quiet" onClick={dismiss}>{msg('Dismiss')}</Button>
   </aside>
 }
 
-/** Admin → Project: where the offer stays available. */
+/** Admin → Decision safeguards: where the offer stays available. */
 export function ProjectGates() {
   useLocale()
   const offer = useOffer(true)
   const upgrade = offer.data
-  return <SettingsSection title={msg('Gates')} variant="plain" description={msg('Whether this project holds deciding runs to its reviewed set of packs, and records them.')}>
+  return <SettingsSection title={msg('Decision safeguards')} level={2} variant="standalone" description={msg('This desk · Require reviewed packs and record decisions.')}>
     <div className={styles.card}>
       {offer.isPending ? <p role="status" className={styles.quiet}>{msg('Asking the runtime…')}</p>
         : offer.error ? <div role="alert"><p>{systemMessage(offer.error.message)}</p><Button onClick={() => void offer.refetch()} disabled={offer.isFetching}>{msg('Retry')}</Button></div>

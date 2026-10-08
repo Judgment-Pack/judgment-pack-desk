@@ -1,15 +1,32 @@
-.toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-4); }
+.toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
 .table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
 .table th { color: var(--ink-faint); font-weight: 400; text-align: left; }
 .table th, .table td { padding: var(--space-3); border-bottom: 1px solid var(--border); }
 .row { cursor: pointer; }
 .row:hover { background: var(--surface-raised); }
-.caption { color: var(--ink-faint); font-size: var(--text-sm); }
-.form { position: relative; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; overflow: auto; }
-.field { display: flex; flex-direction: column; gap: var(--space-2); }
+.caption { margin: 0; color: var(--ink-faint); font-size: var(--text-sm); }
+.form { position: relative; padding: var(--density-gutter); display: flex; flex-direction: column; gap: var(--density-field); min-width: 0; overflow: auto; }
+.field { display: flex; flex-direction: column; gap: var(--density-field-gap); }
 .footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-3); }
-.defaults { display: flex; flex-wrap: wrap; gap: var(--space-4); margin-top: var(--space-4); }
+.defaults { display: flex; flex-wrap: wrap; gap: var(--density-field); }
 .defaults > .field { flex: 1 1 220px; }
 .credential { min-height: 130px; resize: vertical; font: inherit; padding: var(--space-2); color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
 .chatOptions { display: grid; gap: var(--space-3); padding-bottom: var(--space-3); }
 .form h3, .form p { margin: 0; }
+
+.connections { display: grid; }
+.connectionRow { display: flex; align-items: center; gap: var(--space-3); padding-block: var(--space-4); border-bottom: 1px solid var(--border); min-width: 0; }
+.connectionRow > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.connectionRow strong { font-size: var(--text-control); font-weight: 500; }
+.connectionRow p { margin: var(--space-1) 0 0; color: var(--ink-soft); font-size: var(--text-sm); }
+.toolbar { flex-wrap: wrap; }
+
+.settings { display: grid; gap: var(--density-block); min-width: 0; }
+.field > label, .field:where(label) { color: var(--ink-soft); font-size: var(--text-label); font-weight: 500; }
+.form h3 { font-size: var(--text-body); font-weight: 600; line-height: 1.35; }
+.form > a { font-size: var(--text-sm); }
+.credential { min-width: 0; width: 100%; font-size: var(--text-control); font-weight: 400; }
+.connectionRow p { font-size: var(--text-xs); }
+
+.field input { font-weight: 400; }
+.form > .caption { font-size: var(--text-xs); }

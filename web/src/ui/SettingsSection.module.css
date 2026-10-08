@@ -2,9 +2,10 @@
   min-width: 0;
   margin: 0 0 var(--density-section);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
   background: var(--surface);
 }
+
+.section[data-variant='card'] { border-radius: var(--radius); }
 
 .head {
   padding: var(--density-section) var(--density-section) 0;
@@ -16,7 +17,7 @@
   color: var(--ink);
   font-size: var(--text-body);
   font-weight: 600;
-  line-height: var(--leading-body);
+  line-height: 1.35;
 }
 
 .head p {
@@ -41,12 +42,25 @@
   background: var(--code-surface);
 }
 
-.section[data-variant='plain'] { border-style: none; background: transparent; }
-.section[data-variant='plain'] .head { padding: var(--density-section) 0 0; border-top: 1px solid var(--border); }
-.section[data-variant='plain'] .content { padding: var(--density-block) 0; }
-.section[data-variant='plain'] .footer { padding-inline: 0; background: transparent; }
-
-.section[data-variant='standalone'] { border-style: none; background: transparent; }
-.section[data-variant='standalone'] .head { padding: 0; }
-.section[data-variant='standalone'] .content { padding: var(--density-section) 0 0; }
-.section[data-variant='standalone'] .footer { padding-inline: 0; background: transparent; }
+.section[data-variant='plain'],
+.section[data-variant='standalone'] {
+  display: grid;
+  gap: var(--density-block);
+  margin: 0;
+  border-width: 0;
+  background: transparent;
+}
+.section[data-variant='plain'] > .head,
+.section[data-variant='standalone'] > .head,
+.section[data-variant='plain'] > .content,
+.section[data-variant='standalone'] > .content { padding: 0; }
+.section[data-variant='plain'] > .footer,
+.section[data-variant='standalone'] > .footer { padding-inline: 0; background: transparent; }
+.section[data-variant='standalone'] { gap: var(--density-section); }
+.section[data-variant='standalone'] > .head > h2 {
+  font-size: var(--text-page);
+  font-weight: 500;
+}
+.content > p:first-child { margin-top: 0; }
+.stack { display: grid; gap: var(--density-section); min-width: 0; }
+.stack > .section + .section { padding-top: var(--density-section); border-top: 1px solid var(--border); }
