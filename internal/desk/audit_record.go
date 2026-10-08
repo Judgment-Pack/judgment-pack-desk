@@ -774,6 +774,17 @@ func (s *Server) projectAuditDir() (string, bool, error) {
 // the public keys Desk keeps for the desk and the checkpoints it handed over,
 // and nothing else held.
 func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, error) {
+	// **Every verification that does not pass forgets** what an older run's
+	// own verification confirmed (issue #324; review round 1 of #327, finding
+	// 7): a runtime that failed, an answer that could not be read, a refusal,
+	// an older runtime and a report that is not "valid" alike, on every way
+	// out; only a valid report keeps it, for lastRunChecked to hold to it.
+	passed := false
+	defer func() {
+		if !passed {
+			s.stamping.forgetConfirmed()
+		}
+	}()
 	if _, declared, err := s.projectAuditDir(); err != nil {
 		return auditAnswer{}, err
 	} else if !declared {
@@ -830,9 +841,8 @@ func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, err
 		return older, nil
 	}
 	answer.Stamping = s.stampingAfterVerify(stamping.view, answer.Report, stamping.since)
-	if answer.Report == nil || answer.Report.Status != "valid" {
-		// **Every verification that fails forgets** what an older run's own
-		// verification confirmed (issue #324).
+	passed = answer.Report != nil && answer.Report.Status == "valid"
+	if !passed {
 		s.stamping.forgetConfirmed()
 	}
 	answer.Stamping.LastChecked = lastRunChecked(*answer.Stamping, answer.Report, func(run *stampRun, head checkpointHead) (bool, string) {

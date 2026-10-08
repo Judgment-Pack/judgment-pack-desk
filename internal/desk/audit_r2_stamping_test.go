@@ -809,3 +809,36 @@ func TestAnOlderRunsConfirmationIsKeptOnlyUnderTheHeadItVerified(t *testing.T) {
 		t.Errorf("under the rewritten history the run is checked %v: %s", checked, why)
 	}
 }
+
+// **A verification that does not pass forgets what was confirmed, however it
+// fails** (review round 1 of #327, finding 7, the reviewer's scenario). An
+// older run's checkpoint is confirmed under the panel's head; the runtime's
+// next verification exits 1 with an answer Desk cannot read, then refuses,
+// then answers "invalid": each forgets the confirmation, so nothing
+// confirmed before a failure is taken for checked after it.
+func TestAVerificationThatDoesNotPassForgetsWhatWasConfirmed(t *testing.T) {
+	fixStamping(t)
+	r := newStampRig(t)
+	r.set(t, r.proposal(nil))
+	r.chainIs(t, handoverTrail, 3)
+	named := checkpointHead{Identity: handoverTrail, Sequence: 2, Digest: standInDigest(2)}
+	head := checkpointHead{Identity: handoverTrail, Sequence: 3, Digest: standInDigest(3)}
+	for _, tc := range []struct {
+		name string
+		code int
+		body string
+	}{
+		{"an answer that cannot be read", 1, "not an answer"},
+		{"a refusal", 4, expectRefused},
+		{"a report that is not valid", 1, expectMismatch},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r.s.stamping.rememberConfirmed(named, head)
+			r.answers(t, tc.code, tc.body)
+			readAudit(t, r.ts, "")
+			if r.s.stamping.confirmedAt(named, head) {
+				t.Error("the confirmation outlived a verification that did not pass")
+			}
+		})
+	}
+}

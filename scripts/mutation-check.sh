@@ -4999,9 +4999,19 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if err != nil || answer.State != auditStateReport || answer.Report == nil {
 		return false, lastRunExpectInvalid'
   mutate go 'audit r3 fix: a main verification that failed keeps what was confirmed' 'internal/desk/audit_record.go' \
-    '		// verification confirmed (issue #324).
-		s.stamping.forgetConfirmed()' \
-    '		// verification confirmed (issue #324).'
+    '	passed = answer.Report != nil && answer.Report.Status == "valid"
+' \
+    '	passed = true
+'
+  mutate go 'audit r3 fix: a verification that could not be read keeps what was confirmed' 'internal/desk/audit_record.go' \
+    '		if !passed {
+			s.stamping.forgetConfirmed()
+		}
+	}()' \
+    '		if !passed && false {
+			s.stamping.forgetConfirmed()
+		}
+	}()'
   mutate go 'audit r3 fix: an older run is confirmed under a head it did not verify' 'internal/desk/stamping.go' \
     '	if confirmed && verified != head {' \
     '	if confirmed && false && verified != head {'
