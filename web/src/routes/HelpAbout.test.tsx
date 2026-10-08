@@ -237,7 +237,7 @@ describe('Help & About', () => {
   it.each([
     ['custody', 'the folder Desk keeps Runner’s keys in is writable by group or others (mode 0770)', 'Desk cannot keep a signing key for Runner here: the folder Desk keeps Runner’s keys in is writable by group or others (mode 0770).'],
     ['not-made', 'No seed was written to …', 'The runtime did not make Runner’s signing key: No seed was written to ….'],
-    ['unfinished', undefined, 'Making Runner’s signing key did not finish. Desk removes what was left at its next start, and makes the key again.'],
+    ['unfinished', undefined, 'Making Runner’s signing key did not finish. At its next start Desk moves what was left to its archive of Runner’s keys, and makes the key again.'],
     ['lost', undefined, 'Desk keeps the public half of Runner’s signing key, but no longer the key itself, and does not make another in its place.'],
     ['not-read-now', 'the key could not be inspected', 'Desk could not read Runner’s signing key just now, and left it as it is: the key could not be inspected.'],
     ['in-use', undefined, 'The folder Desk keeps signing keys in was in use when Runner started, so Desk changed nothing and named no key. It tries again the next time it starts Runner.'],

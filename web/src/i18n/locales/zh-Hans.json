@@ -3589,7 +3589,6 @@
   "<0/> Runner has not started on this desk yet, so Desk cannot say yet whether it signs this desk’s runs.": "<0/> Runner 尚未在此 Desk 上启动，因此 Desk 暂时无法说明它是否为此 Desk 的运行签名。",
   "Desk cannot keep a signing key for Runner here: {{detail}}.": "Desk 无法在此为 Runner 保管签名密钥：{{detail}}。",
   "The runtime did not make Runner’s signing key: {{detail}}.": "运行时未创建 Runner 的签名密钥：{{detail}}。",
-  "Making Runner’s signing key did not finish. Desk removes what was left at its next start, and makes the key again.": "Runner 签名密钥的创建未完成。Desk 会在下次启动时移除残留的内容，并重新创建密钥。",
   "Desk keeps the public half of Runner’s signing key, but no longer the key itself, and does not make another in its place.": "Desk 保管着 Runner 签名密钥的公开部分，但密钥本身已不在，也不会另建一个代替。",
   "Desk could not read Runner’s signing key just now, and left it as it is: {{detail}}.": "Desk 此刻无法读取 Runner 的签名密钥，已保持原样：{{detail}}。",
   "Desk does not name the signing key it keeps for Runner: {{detail}}.": "Desk 不会把它为 Runner 保管的签名密钥指定给 Runner：{{detail}}。",

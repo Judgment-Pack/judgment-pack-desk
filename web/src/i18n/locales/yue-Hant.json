@@ -3589,7 +3589,6 @@
   "<0/> Runner has not started on this desk yet, so Desk cannot say yet whether it signs this desk’s runs.": "<0/> Runner 喺呢個 Desk 仲未啟動，所以 Desk 暫時講唔到佢會唔會簽署呢個 Desk 嘅執行。",
   "Desk cannot keep a signing key for Runner here: {{detail}}.": "Desk 喺度保管唔到 Runner 嘅簽署金鑰：{{detail}}。",
   "The runtime did not make Runner’s signing key: {{detail}}.": "運行環境冇建立 Runner 嘅簽署金鑰：{{detail}}。",
-  "Making Runner’s signing key did not finish. Desk removes what was left at its next start, and makes the key again.": "建立 Runner 簽署金鑰未完成。Desk 下次啟動嗰陣會移除剩低嘅嘢，再重新建立金鑰。",
   "Desk keeps the public half of Runner’s signing key, but no longer the key itself, and does not make another in its place.": "Desk 保管住 Runner 簽署金鑰嘅公開部分，但金鑰本身已經冇咗，亦唔會建立另一條代替。",
   "Desk could not read Runner’s signing key just now, and left it as it is: {{detail}}.": "Desk 而家讀唔到 Runner 嘅簽署金鑰，所以保持原狀：{{detail}}。",
   "Desk does not name the signing key it keeps for Runner: {{detail}}.": "Desk 唔會將佢為 Runner 保管嘅簽署金鑰指定畀 Runner：{{detail}}。",

@@ -3613,7 +3613,6 @@
   "<0/> Runner has not started on this desk yet, so Desk cannot say yet whether it signs this desk’s runs.": "<0/> Runner n’a pas encore démarré sur ce bureau, donc Desk ne peut pas encore dire s’il signe les exécutions de ce bureau.",
   "Desk cannot keep a signing key for Runner here: {{detail}}.": "Desk ne peut pas conserver ici de clé de signature pour Runner : {{detail}}.",
   "The runtime did not make Runner’s signing key: {{detail}}.": "Le runtime n’a pas créé la clé de signature de Runner : {{detail}}.",
-  "Making Runner’s signing key did not finish. Desk removes what was left at its next start, and makes the key again.": "La création de la clé de signature de Runner ne s’est pas terminée. Desk supprime ce qui en reste à son prochain démarrage, puis recrée la clé.",
   "Desk keeps the public half of Runner’s signing key, but no longer the key itself, and does not make another in its place.": "Desk conserve la moitié publique de la clé de signature de Runner, mais plus la clé elle-même, et n’en crée pas d’autre à sa place.",
   "Desk could not read Runner’s signing key just now, and left it as it is: {{detail}}.": "Desk n’a pas pu lire la clé de signature de Runner à l’instant, et l’a laissée telle quelle : {{detail}}.",
   "Desk does not name the signing key it keeps for Runner: {{detail}}.": "Desk n’indique pas à Runner la clé de signature qu’il conserve pour lui : {{detail}}.",
