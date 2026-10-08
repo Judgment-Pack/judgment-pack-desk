@@ -6133,7 +6133,7 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'audit r2 fix: the last run'"'"'s checkpoint is taken by its trail and sequence alone' "$R2ST" \
     '	if !sameCheckpoint(named, now) {
 		return not(lastRunRewritten)' \
-    '	if false {
+    '	if !sameCheckpoint(named, now) && false {
 		return not(lastRunRewritten)'
   mutate go 'audit r2 fix: an earlier record is taken for the run'"'"'s without asking the runtime' "$R2ST" \
     '		if now, err = at(run.Trail, run.Sequence); errors.Is(err, errCheckpointsChanged) {' \
@@ -13798,7 +13798,7 @@ export function assistantTransport(id: string): Transport {
     'onClick={() => void remove()}>{msg('"'"'Remove the authority'"'"')}</Button>'
   mutate web 'stamping page: the sequence of the last run is not labelled' "$STG" \
     '      {named?.sequence !== undefined && !covered && <p>' \
-    '      {false && <p>'
+    '      {named?.sequence !== undefined && !covered && Number.isNaN(0) && <p>'
   mutate web 'stamping page: the runtime did not check the stamps is not said' "$STG" \
     '      {stamped?.status === '"'"'not-checked'"'"' && (named || stamping.state === '"'"'set'"'"') && <p>' \
     '      {false && <p>'
