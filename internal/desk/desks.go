@@ -432,16 +432,25 @@ func (s *Server) createDesk(w http.ResponseWriter, r *http.Request) {
 	}{record, gates.configVersion, gates.requireComparableFacts, gates.signed, gates.notice})
 }
 
-// dropKey is failure, after removing the key a creation that stopped had
-// made. Where that cannot be done, Desk's log says where, and the answer says
-// so in words with no path.
+// dropKey is failure, after moving the key a creation that stopped had made
+// to Desk's archive of keys, which the decision record lists: no key is
+// removed on Desk's own (archive.go). Where that cannot be done, Desk's log
+// says where, and the answer says so in words with no path.
 func (s *Server) dropKey(key *madeKey, failure *deskFailure) *deskFailure {
-	if err := key.unmake(); err != nil {
-		s.log.Printf("desk: a failed creation could not remove the signing key it made in %s: %v", key.dir.path, err)
-		failure.message += " The signing key made for it could not be removed, and was left in Desk's signing folder; no desk names it."
+	moved, err := key.archiveStopped(s.withoutPaths(failure.message))
+	switch {
+	case err != nil:
+		s.log.Printf("desk: a failed creation could not archive the signing key it made in %s: %v", key.dir.path, err)
+		failure.message += " The signing key made for it could not be moved to Desk's archive of keys, and was left in Desk's signing folder; no desk names it."
+	case len(moved) > 0:
+		failure.message += " " + keyArchivedWords
 	}
 	return failure
 }
+
+// keyArchivedWords is what a creation that stopped says of the key it had
+// made: kept, never removed.
+const keyArchivedWords = "The signing key made for it was moved to Desk's archive of keys, which the decision record lists; no desk names it, and you can remove it there."
 
 // makeDeskFolder makes a new desk's folder, through folder, the root this
 // request opened when it made the directory: the folders, the desk's signing

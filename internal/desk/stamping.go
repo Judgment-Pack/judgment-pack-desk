@@ -126,9 +126,16 @@ package desk
 // (`lastRunChecked`; line audit, finding 5; issue #312): no roots, no stamp,
 // one below it, another trail's, or the same trail and sequence holding
 // another record now. Where the run named the report's head, the head's
-// record digest must be the run's; where it named an earlier record, the
-// runtime's checkpoint of that record (`audit checkpoint --since`) must be
-// the run's, by the same rule. The page is told whether, and why not.
+// record digest must be the run's; where it named an earlier record, one
+// runtime verification decides it (issue #324, the third line audit's
+// finding 6): `audit verify --expect <the run's own checkpoint line>` with
+// the same roots, counted only where the runtime answers "valid", with the
+// held checkpoint and its stamps reaching the run's record
+// (`expectRunCheckpoint`). Never checkpoints read in batches: two batches can
+// come from two histories. Its answer is kept for the run's checkpoint and
+// the report's head together, which commits to every record before it, and
+// forgotten by every verification that does not confirm it. The page is told
+// whether, and why not.
 //
 // # What a stamp does not establish
 //
@@ -823,6 +830,10 @@ type stampRun struct {
 	Policy      string              `json:"policy,omitempty"`
 	Diagnostics []runtimeDiagnostic `json:"diagnostics,omitempty"`
 	Problem     string              `json:"problem,omitempty"`
+	// checkpoint is the checkpoint the runtime named, as it printed it:
+	// the line an older run's verification is given as `--expect` (issue
+	// #324). The page is not given it.
+	checkpoint []byte
 }
 
 // stampScheduler is one desk's stamping: its loop, one run at a time, and
@@ -847,12 +858,13 @@ type stampScheduler struct {
 	// and sets a record digest only where no run answered since
 	// (knowChecked; second review of #317).
 	generation uint64
-	// recorded is the last answer for an earlier record's checkpoint,
-	// atRecord, as read through the head it was read through (`recordAt`):
-	// the head's digest commits to that record, so while the report's head
-	// is the same, so is the answer (second review of #317).
-	recorded struct{ named, head, atRecord checkpointHead }
-	last     *stampRun
+	// confirmed is the last earlier record's checkpoint the runtime's one
+	// verification confirmed, with the report's head it was confirmed under
+	// (`confirmedAt`, issue #324): the head's digest commits to that record,
+	// so while the report's head is the same, so is the answer. Every
+	// verification that does not confirm it forgets it.
+	confirmed struct{ named, head checkpointHead }
+	last      *stampRun
 	// said is the last problem with the settings written to Desk's log.
 	said   string
 	closed bool
@@ -951,30 +963,36 @@ func (st *stampScheduler) knowStamped(checkpoint *checkpointHead) {
 	st.stamped = &known
 }
 
-// recordAt is the runtime's answer for the checkpoint of named's record, read
-// through head, where it was asked for the same named checkpoint and the
-// same head before (`rememberRecord`).
-func (st *stampScheduler) recordAt(named, head checkpointHead) (checkpointHead, bool) {
+// confirmedAt is whether the runtime's one verification confirmed named
+// under head before, the same named checkpoint and the same head, each with
+// its digest (`rememberConfirmed`, issue #324).
+func (st *stampScheduler) confirmedAt(named, head checkpointHead) bool {
 	if st == nil {
-		return checkpointHead{}, false
+		return false
 	}
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	if st.recorded.named != named || st.recorded.head != head || head.Digest == "" {
-		return checkpointHead{}, false
-	}
-	return st.recorded.atRecord, true
+	return named.Digest != "" && head.Digest != "" && st.confirmed.named == named && st.confirmed.head == head
 }
 
-// rememberRecord keeps the runtime's answer for named's record, read through
-// head, in place of the last one kept.
-func (st *stampScheduler) rememberRecord(named, head, atRecord checkpointHead) {
+// rememberConfirmed keeps that the runtime confirmed named under head, in
+// place of what was kept; forgetConfirmed forgets it.
+func (st *stampScheduler) rememberConfirmed(named, head checkpointHead) {
 	if st == nil {
 		return
 	}
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	st.recorded.named, st.recorded.head, st.recorded.atRecord = named, head, atRecord
+	st.confirmed.named, st.confirmed.head = named, head
+}
+
+func (st *stampScheduler) forgetConfirmed() {
+	if st == nil {
+		return
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.confirmed.named, st.confirmed.head = checkpointHead{}, checkpointHead{}
 }
 
 // generationNow is the count of runs' words so far, for a check to capture
@@ -1224,24 +1242,25 @@ const (
 	lastRunNoStamp    = "No stamp the runtime checked covers a record of this trail."
 	lastRunOtherTrail = "The stamps the runtime checked are of another trail than the one the run named."
 	lastRunBelow      = "The stamps the runtime checked reach record %d, before the checkpoint the run named."
-	lastRunGone       = "This trail holds no chained record at that sequence now."
 	lastRunUnasked    = "Desk could not ask the runtime for the checkpoint at that sequence now."
-	lastRunMoved      = "The trail changed while Desk asked the runtime about it."
 	lastRunRewritten  = "The record at that sequence now is not the one the run named, as where a trail was put back to an earlier point and written again since."
+	// What the runtime's one verification of an older run says where it did
+	// not confirm it (issue #324).
+	lastRunExpectUnchecked = "Given the checkpoint the run named, the runtime did not check the trail."
+	lastRunExpectInvalid   = "Given the checkpoint the run named, the runtime did not report every check it made passed."
+	lastRunExpectUncovered = "Given the checkpoint the run named, the runtime did not report that checkpoint held, with a checked stamp reaching it."
 )
 
 // lastRunChecked is whether a stamp the runtime checked reaches the very
 // checkpoint the last run named, view.Last, and where not, why (issue #312):
 // nil where the last run named none. The report's stamps must reach its
-// sequence in its trail; and the checkpoint of the record there now must be
-// the run's (`sameCheckpoint`): the report's head where the run named the
-// head, or, asked of the runtime (at), the checkpoint of the record at the
-// run's sequence where it named an earlier one, read in one answer through
-// the report's own head and held to it (`checkpointAt`, second review of
-// #317): the head's digest commits to every record before it, so the record
-// the runtime names there is the one the report's stamps reach. Anything Desk
-// cannot tell is not checked, and said.
-func lastRunChecked(view auditStamping, report *auditReport, at func(named, head checkpointHead) (*checkpointHead, error)) *stampChecked {
+// sequence in its trail; where the run named the report's head, the head's
+// record digest must be the run's (`sameCheckpoint`); where it named an
+// earlier record, the runtime's one verification of the trail with the run's
+// own checkpoint decides (expect, `expectRunCheckpoint`; issue #324): the
+// answer of one runtime run over one trail, never two answers joined.
+// Anything Desk cannot tell is not checked, and said.
+func lastRunChecked(view auditStamping, report *auditReport, expect func(run *stampRun, head checkpointHead) (bool, string)) *stampChecked {
 	run := view.Last
 	if run == nil || run.Status != stampStamped && run.Status != stampAlready || run.Sequence < 1 {
 		return nil
@@ -1270,18 +1289,18 @@ func lastRunChecked(view auditStamping, report *auditReport, at func(named, head
 	now := &checkpointHead{Identity: report.head.trail, Sequence: report.head.sequence, Digest: report.head.digest}
 	if now.Identity != run.Trail || now.Sequence != run.Sequence {
 		if now.Identity != run.Trail || now.Sequence < run.Sequence {
-			// No head of the report to read the record through.
+			// No head of the report the run's record is before.
 			return not(lastRunUnasked)
 		}
-		var err error
-		switch now, err = at(*named, *now); {
-		case errors.Is(err, errCheckpointsChanged):
-			return not(lastRunGone)
-		case errors.Is(err, errTrailMovedSince):
-			return not(lastRunMoved)
-		case err != nil:
-			return not(lastRunUnasked)
+		if report.Status != "valid" {
+			// Where the trail does not pass every check, neither does it
+			// with the run's checkpoint: nothing kept stands for it.
+			return not(lastRunExpectInvalid)
 		}
+		if checked, why := expect(run, *now); !checked {
+			return not(why)
+		}
+		return &stampChecked{Checked: true}
 	}
 	if !sameCheckpoint(named, now) {
 		return not(lastRunRewritten)
@@ -1289,35 +1308,84 @@ func lastRunChecked(view auditStamping, report *auditReport, at func(named, head
 	return &stampChecked{Checked: true}
 }
 
-// errTrailMovedSince is a trail whose checkpoints, read through the report's
-// head, do not end in that head: not the trail the report was of.
-var errTrailMovedSince = errors.New("the trail changed while Desk asked the runtime about it")
+// expectRunCheckpoint is the runtime's one verification of this desk's trail
+// with the run's own checkpoint (issue #324): `audit verify --config
+// jpack.json --format json --expect <file> ` and the stamping settings' args,
+// the file holding the run's checkpoint line exactly as the runtime printed
+// it, written owner-only in this desk's stamping folder and removed after.
+// Confirmed only where the runtime answers a report, "valid", of the run's
+// trail, with the held checkpoint and a checked stamp each reaching the
+// run's record; otherwise not, with why. The answer is remembered for the
+// run's checkpoint and head together, and forgotten by every verification
+// that does not confirm it. The caller holds the stamping settings for
+// reading, so args name the files read.
+func (s *Server) expectRunCheckpoint(ctx context.Context, dir heldDir, run *stampRun, head checkpointHead, args []string) (bool, string) {
+	named := checkpointHead{Identity: run.Trail, Sequence: run.Sequence, Digest: run.Digest}
+	if s.stamping.confirmedAt(named, head) {
+		return true, ""
+	}
+	confirmed, why := s.expectOnce(ctx, dir, run, args)
+	if confirmed {
+		s.stamping.rememberConfirmed(named, head)
+	} else {
+		s.stamping.forgetConfirmed()
+	}
+	return confirmed, why
+}
 
-// checkpointAt is the runtime's checkpoint of the record named.Sequence of
-// this desk's trail, read in one answer from it through head, the report's
-// own head (`audit checkpoint --since`, through readCheckpoints; second review
-// of #317): the answer's last line must be head, by `sameCheckpoint`, or the
-// trail is not the one the report was of (errTrailMovedSince); its first
-// must be the record at named.Sequence, or the trail holds no chained record
-// there (errCheckpointsChanged).
-func (s *Server) checkpointAt(ctx context.Context, dir heldDir, named, head checkpointHead) (*checkpointHead, error) {
-	got, err := s.readCheckpoints(ctx, dir, deskTrail, named.Identity, named.Sequence-1, head.Sequence)
-	if errors.Is(err, errCheckpointsChanged) {
-		return nil, errTrailMovedSince
+// expectOnce is expectRunCheckpoint's one run of the runtime.
+func (s *Server) expectOnce(ctx context.Context, dir heldDir, run *stampRun, args []string) (bool, string) {
+	line, ok := readCheckpointLine(run.checkpoint)
+	if !ok || line.trail != run.Trail || line.sequence != run.Sequence || line.digest != run.Digest || bytes.ContainsAny(run.checkpoint, "\r\n") {
+		return false, lastRunUnasked
+	}
+	folder, err := s.openStamping(false)
+	if err != nil {
+		s.log.Printf("desk: the checkpoint the last stamp run of desk %s named could not be written for the runtime: %v", s.signingKeyName(), err)
+		return false, lastRunUnasked
+	}
+	defer folder.Close()
+	name, err := randomStagingName(".expect-")
+	if err != nil {
+		return false, lastRunUnasked
+	}
+	file, err := folder.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL|openNoFollow, custodyFileMode)
+	if err != nil {
+		s.log.Printf("desk: the checkpoint the last stamp run of desk %s named could not be written for the runtime: %v", s.signingKeyName(), err)
+		return false, lastRunUnasked
+	}
+	defer folder.Remove(name)
+	_, err = file.Write(append(slices.Clone(run.checkpoint), '\n'))
+	written, statErr := file.Stat()
+	if closed := file.Close(); err == nil {
+		err = closed
+	}
+	if err == nil {
+		err = statErr
+	}
+	if err == nil {
+		err = stampingNames(written, s.stampingPath(name))
 	}
 	if err != nil {
-		return nil, err
+		s.log.Printf("desk: the checkpoint the last stamp run of desk %s named could not be written for the runtime: %v", s.signingKeyName(), err)
+		return false, lastRunUnasked
 	}
-	lines := bytes.Split(bytes.TrimSuffix(got.data, []byte("\n")), []byte("\n"))
-	first, firstRead := readCheckpointLine(lines[0])
-	last, lastRead := readCheckpointLine(lines[len(lines)-1])
+	out, runErr := runRuntime(ctx, s.cfg.JpackBin, dir, append([]string{"audit", "verify", "--config", runtimeConfigName, "--format", "json", "--expect", s.stampingPath(name)}, args...)...)
+	answer, err := readAuditVerification(out, runErr)
+	if err != nil || answer.State != auditStateReport || answer.Report == nil {
+		return false, lastRunExpectUnchecked
+	}
+	report := answer.Report
+	checkpointed, stamped := report.Coverage.Checkpointed, report.Coverage.Stamped
 	switch {
-	case got.more || !lastRead || !sameCheckpoint(&head, &checkpointHead{Identity: last.trail, Sequence: last.sequence, Digest: last.digest}):
-		return nil, errTrailMovedSince
-	case !firstRead || first.sequence != named.Sequence:
-		return nil, errCheckpointsChanged
+	case report.Status != "valid":
+		return false, lastRunExpectInvalid
+	case report.Trail != run.Trail:
+		return false, lastRunOtherTrail
+	case checkpointed.Status != "through" || checkpointed.Through < run.Sequence || stamped.Status != "through" || stamped.Through < run.Sequence:
+		return false, lastRunExpectUncovered
 	}
-	return &checkpointHead{Identity: first.trail, Sequence: first.sequence, Digest: first.digest}, nil
+	return true, ""
 }
 
 // record keeps run as the last, and says it in Desk's log, never with the
@@ -1396,7 +1464,7 @@ func readStamped(out []byte, runErr error) stampRun {
 		if !ok || got.Status == stampStamped && !stamped || got.Status == stampAlready && !none {
 			return undocumented
 		}
-		run := stampRun{Status: got.Status, Trail: checkpoint.trail, Sequence: checkpoint.sequence, Digest: checkpoint.digest}
+		run := stampRun{Status: got.Status, Trail: checkpoint.trail, Sequence: checkpoint.sequence, Digest: checkpoint.digest, checkpoint: slices.Clone(got.Checkpoint)}
 		if stamped {
 			for _, at := range []string{*got.StampedAt, *got.ExistedBy} {
 				if _, err := time.Parse(time.RFC3339Nano, at); err != nil {

@@ -212,12 +212,13 @@ func TestACreationIsRemovedOnlyWhereItsMarkerBindsIt(t *testing.T) {
 }
 
 // **An upgrade put back never leaves its key without its identity** (review
-// round 1 of #296, finding 2). The key goes once every file is put back, and
-// the identity only after it: where a folder cannot be removed after that,
-// for another runtime's record in it, nothing of the key is left; where the
-// key cannot be removed, the identity stays beside it and the next start
-// removes the key; and a stop between the files and the key leaves the
-// identity, and the next start removes the key.
+// round 1 of #296, finding 2). The key goes to Desk's archive of keys once
+// every file is put back, never removed, and the identity only after it:
+// where a folder cannot be removed after that, for another runtime's record
+// in it, nothing of the key is left at a live name; where the key cannot be
+// archived, the identity stays beside it and the next start archives the
+// key; and a stop between the files and the key leaves the identity, and the
+// next start archives the key.
 func TestAnUpgradePutBackLeavesNoKeyWithoutItsIdentity(t *testing.T) {
 	duringLock := func(t *testing.T, u *signingUpgrade, fragment string) {
 		t.Helper()
@@ -252,7 +253,7 @@ func TestAnUpgradePutBackLeavesNoKeyWithoutItsIdentity(t *testing.T) {
 		list := strings.TrimSuffix(u.seed, ".seed") + ".keys.jsonl"
 		duringLock(t, u, "  cp '"+list+"' '"+list+".x' && mv -f '"+list+".x' '"+list+"'")
 		status, data := u.confirm(t, answer.Token, true)
-		if status != http.StatusConflict || !strings.Contains(refusalOf(data), "could not be removed, and was left with its creation marker in Desk's signing folder, with the project's identity") {
+		if status != http.StatusConflict || !strings.Contains(refusalOf(data), "could not be moved to Desk's archive of keys, and was left with its creation marker in Desk's signing folder, with the project's identity") {
 			t.Errorf("the confirmation answered %d %s", status, data)
 		}
 		name := startupNameOf(t, u.s)
@@ -266,6 +267,9 @@ func TestAnUpgradePutBackLeavesNoKeyWithoutItsIdentity(t *testing.T) {
 		restartedServer(t, u.s)
 		if got := u.keyFiles(t); len(got) != 0 {
 			t.Errorf("the next start left %q", got)
+		}
+		if got := archivedIn(t, filepath.Dir(u.seed), name); len(got) == 0 || got[len(got)-1] != "creating "+archiveNeverPublished {
+			t.Errorf("the next start archived %q", got)
 		}
 	})
 

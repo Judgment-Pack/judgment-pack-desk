@@ -163,7 +163,10 @@ func keysUnder(t *testing.T, u *signingUpgrade, name string) []string {
 // put at its path: a start there, whether or not that project has a private
 // folder, removes nothing, since a name made from a path is not bound to one
 // project; a start on the moved project takes the name its jpack.json names
-// as its identity, and removes only the marker.
+// as its identity, and removes only the marker. That identity records no
+// folder, since a copy's jpack.json names the same key (issue #319): it is
+// unresolved, and asks the owner, until the owner says this folder is the
+// project the key was made for, which binds it to this folder.
 func TestAKeyFromBeforeTheIdentityIsKeptWhenItsProjectMoves(t *testing.T) {
 	for _, private := range []bool{false, true} {
 		t.Run(map[bool]string{false: "the project at the path has no private folder", true: "the project at the path has a private folder"}[private], func(t *testing.T) {
@@ -190,14 +193,24 @@ func TestAKeyFromBeforeTheIdentityIsKeptWhenItsProjectMoves(t *testing.T) {
 			if got := again.signingKeyName(); got != legacy {
 				t.Errorf("the moved project is named %s, want the name its jpack.json names, %s: %s", got, legacy, logged)
 			}
-			if got := readFile(t, filepath.Join(moved, ".desk-private", "project.json")); got != identityLine(legacy, again.projectDir, "") {
+			if got := readFile(t, filepath.Join(moved, ".desk-private", "project.json")); got != string(identityRecord{ID: legacy, Path: again.projectDir}.line()) {
 				t.Errorf("the moved project's identity is %q", got)
+			}
+			if !again.startupUnresolved() || !strings.Contains(logged.String(), "a copy's jpack.json names the same key") {
+				t.Errorf("an identity taken from jpack.json is not unresolved: %s", logged)
 			}
 			if got := keysUnder(t, u, legacy); !slices.Equal(got, all[1:]) {
 				t.Errorf("a start on the moved project left %q: %s", got, logged)
 			}
 			if _, panel, refusal := readAudit(t, ts, ""); panel.Keys == nil || panel.Keys.State != keysKept {
 				t.Errorf("the moved project's decision record shows %+v %q", panel.Keys, refusal)
+			}
+			offer := offerOf(t, again)
+			if offer == nil || offer.Kind != "unbound" {
+				t.Fatalf("the decision record asks %+v", offer)
+			}
+			if status, data := resolve(t, ts, identityMoved, offer.Moved); status != http.StatusOK || again.startupUnresolved() || readFile(t, filepath.Join(moved, ".desk-private", "project.json")) != identityLine(legacy, again.projectDir, "") {
+				t.Errorf("the owner's answer was answered %d %s", status, data)
 			}
 		})
 	}

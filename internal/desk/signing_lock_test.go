@@ -92,8 +92,11 @@ func TestTheSweepRemovesNothingWhileTheLockIsHeld(t *testing.T) {
 	}
 	release()
 	_, logged = restartedServer(t, again)
-	if names := namesIn(t, folder); len(names) != 0 {
+	if names := liveIn(t, folder); len(names) != 0 {
 		t.Errorf("with the lock free the start left %q (%s)", names, logged)
+	}
+	if got := archivedIn(t, folder, id); !slices.Equal(got, kindsArchived(archiveNeverPublished, "seed", "creating")) {
+		t.Errorf("with the lock free the start archived %q", got)
 	}
 }
 
@@ -117,7 +120,7 @@ func TestTheRecoveryChangesNothingWhileTheLockIsHeld(t *testing.T) {
 	}
 	release()
 	_, logged = restartedServer(t, again)
-	if got := r.describe(t); got != ".keys.jsonl,.seed seed=2 next=absent keys=2 rotations=1" {
+	if got := r.describe(t); got != ".keys.jsonl,.seed seed=2 next=absent keys=2 rotations=1 archived=seed rotation-promoted" {
 		t.Errorf("with the lock free the start left %s (%s)", got, logged)
 	}
 }
@@ -254,10 +257,11 @@ func TestWithNoLockTheStartRemovesNothing(t *testing.T) {
 	}
 }
 
-// **The sweep removes only what it inspected, the marker last.** Between the
-// sweep's look and its removals, the unpublished creation's seed is replaced
-// by another file, as another process could: the list goes, the file put in
-// the seed's place stays, and so does the marker, for the next start.
+// **The sweep archives only what it inspected, the marker last.** Between the
+// sweep's look and its moves, the unpublished creation's seed is replaced by
+// another file, as another process could: the list goes to the archive, the
+// file put in the seed's place stays, and so does the marker, for the next
+// start.
 func TestTheSweepRemovesOnlyWhatItInspected(t *testing.T) {
 	const id = "d6000000000000000000000000000001"
 	calls, s, ts, _ := signingStandIn(t)
@@ -281,8 +285,11 @@ func TestTheSweepRemovesOnlyWhatItInspected(t *testing.T) {
 	ts.Close()
 	_, logged := restartedServer(t, s)
 	testHookKeyBetween = nil
-	if names := namesIn(t, folder); !slices.Equal(names, []string{id + ".creating", id + ".seed", id + ".seed.aside"}) {
+	if names := liveIn(t, folder); !slices.Equal(names, []string{id + ".creating", id + ".seed", id + ".seed.aside"}) {
 		t.Errorf("the sweep left %q (%s)", names, logged)
+	}
+	if got := archivedIn(t, folder, id); !slices.Equal(got, kindsArchived(archiveNeverPublished, "keys.jsonl")) {
+		t.Errorf("the sweep archived %q", got)
 	}
 	if got := readFile(t, seed); got != "another\n" {
 		t.Errorf("the file put in the seed's place was changed: %q", got)

@@ -754,8 +754,10 @@ func (s *Server) upgradeConfirmed(ctx context.Context, dir heldDir, token string
 			return nil, &lockFailure{http.StatusInternalServerError, CodeInternal, message}
 		}
 		if undone.keyErr != nil {
-			s.log.Printf("desk: an upgrade that did not complete could not remove the signing key it made: %v", undone.keyErr)
-			failure.message += " The signing key made for this project could not be removed, and was left with its creation marker in Desk's signing folder, with the project's identity; jpack.json does not name it, and Desk removes it when it next starts."
+			s.log.Printf("desk: an upgrade that did not complete could not archive the signing key it made: %v", undone.keyErr)
+			failure.message += " The signing key made for this project could not be moved to Desk's archive of keys, and was left with its creation marker in Desk's signing folder, with the project's identity; jpack.json does not name it, and Desk moves it to its archive when it next starts."
+		} else if undone.keyArchived {
+			failure.message += " The signing key made for this project was moved to Desk's archive of keys, which the decision record lists; jpack.json does not name it, and you can remove it there."
 		}
 		return nil, failure
 	}
@@ -1126,20 +1128,23 @@ func (u *upgradeUndo) run() undoResult {
 	u.s.writes.Unlock()
 	var result undoResult
 	// **The key, and only then the identity it is kept under** (review
-	// round 1 of #296). The key goes where every file was put back; where
-	// anything was not, it is left with its marker, for the next start to
-	// decide by its marker and jpack.json. The identity goes only once
-	// nothing is kept under its name in Desk's signing folder: a key and a
-	// marker are never left without the identity their recovery is bound to,
-	// whatever fails, and wherever a stop comes.
+	// round 1 of #296). The key is moved to Desk's archive of keys where
+	// every file was put back, never removed (archive.go); where anything was
+	// not, it is left with its marker, for the next start to decide by its
+	// marker and jpack.json. The identity goes only once nothing is kept
+	// under its name at a live name in Desk's signing folder: a key and a
+	// marker are never left there without the identity their recovery is
+	// bound to, whatever fails, and wherever a stop comes.
 	if u.key != nil {
 		if len(problems) > 0 {
 			result.keyLeft = true
 		} else {
 			keyBetween("upgrade: files put back")
-			if err := u.key.unmake(); err != nil {
+			moved, err := u.key.archiveStopped("the upgrade that made it did not complete, and every file it wrote was put back")
+			if err != nil {
 				result.keyLeft, result.keyErr = true, err
 			}
+			result.keyArchived = len(moved) > 0
 		}
 	}
 	keptIdentity := false
@@ -1191,13 +1196,14 @@ func (u *upgradeUndo) run() undoResult {
 // undoResult is what taking an upgrade back did: each file, lock or folder
 // left, and why (problems); whether the signing key it made, or anything
 // kept under the project's name, is left in Desk's signing folder (keyLeft);
-// and why the key could not be removed, where every file was put back
-// (keyErr).
+// why the key could not be moved to Desk's archive of keys, where every file
+// was put back (keyErr); and whether it was (keyArchived).
 type undoResult struct {
-	problems error
-	keyLeft  bool
-	keyErr   error
+	problems    error
+	keyLeft     bool
+	keyErr      error
+	keyArchived bool
 }
 
 // keyLeftWords is what an upgrade that left its key says of it.
-const keyLeftWords = "The signing key Desk made for this project was left with its creation marker, and with the project's identity: when Desk next starts, it removes the marker alone where jpack.json names the key, the key with it where jpack.json is as it was before this upgrade, and otherwise leaves both and says so."
+const keyLeftWords = "The signing key Desk made for this project was left with its creation marker, and with the project's identity: when Desk next starts, it removes the marker alone where jpack.json names the key, moves the key with it to its archive of keys where jpack.json is as it was before this upgrade, and otherwise leaves both and says so."

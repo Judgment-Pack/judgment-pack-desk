@@ -137,14 +137,14 @@ func TestARotationJournalsEachStep(t *testing.T) {
 		}
 	}
 
-	t.Run("a stop before the runtime was asked goes, whatever the trail", func(t *testing.T) {
+	t.Run("a stop before the runtime was asked is archived, whatever the trail", func(t *testing.T) {
 		const id = "c9200000000000000000000000000002"
 		r := newRotationRig(t, id, "")
 		r.writeTrail(t, 1, recordLine(standInKeyID, 1))
 		r.abandonRotation(t, "rotation: next generated")
 		r.moveTrailAside(t, 0, "")
 		r.restart(t)
-		if got := r.describe(t); got != ".keys.jsonl,.seed seed=1 next=absent keys=1 rotations=0" {
+		if got := r.describe(t); got != ".keys.jsonl,.seed seed=1 next=absent keys=1 rotations=0 archived=next.seed rotation-stopped,rotating rotation-stopped" {
 			t.Errorf("after the next start the folder holds %s", got)
 		}
 	})
@@ -186,7 +186,7 @@ func TestAMarkerWithNoJournalIsFinishedOnlyWhereTheSidecarHandsOver(t *testing.T
 	for _, tc := range []struct {
 		name, sidecar, after string
 	}{
-		{"handed over", recordLine(standInKeyID, 1) + rotationLine(1, standInKeyID, secondPublicKey), ".keys.jsonl,.seed seed=2 next=absent keys=2 rotations=1"},
+		{"handed over", recordLine(standInKeyID, 1) + rotationLine(1, standInKeyID, secondPublicKey), ".keys.jsonl,.seed seed=2 next=absent keys=2 rotations=1 archived=seed rotation-promoted"},
 		{"not named", recordLine(standInKeyID, 1), ".keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=1 rotations=0"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -249,7 +249,7 @@ func TestATrailBegunAfterARotationIsReadAsItsOwn(t *testing.T) {
 	if status, data := r.rotate(t, answer.Rotation.Token); status != 200 {
 		t.Fatalf("the rotation on the new trail answered %d %s", status, data)
 	}
-	if got := r.describe(t); got != ".keys.jsonl,.seed seed=3 next=absent keys=3 rotations=1" {
+	if got := r.describe(t); got != ".keys.jsonl,.seed seed=3 next=absent keys=3 rotations=1 archived=seed rotation-promoted,seed rotation-promoted" {
 		t.Errorf("after the rotation on the new trail the folder holds %s", got)
 	}
 	// The second rotation took over at the new trail's first record, before
@@ -357,7 +357,7 @@ func TestADeskOpenedDirectlyFinishesItsRotation(t *testing.T) {
 	if again.cfg.deskID != id {
 		t.Fatalf("Desk was opened on %q", again.cfg.deskID)
 	}
-	if got := r.describe(t); got != ".keys.jsonl,.seed seed=2 next=absent keys=2 rotations=1" {
+	if got := r.describe(t); got != ".keys.jsonl,.seed seed=2 next=absent keys=2 rotations=1 archived=seed rotation-promoted" {
 		t.Errorf("after the start on the desk itself the folder holds %s (%s)", got, logged)
 	}
 }
@@ -391,7 +391,7 @@ func TestARecoveryWaitsOnceForTheSigningLock(t *testing.T) {
 				t.Errorf("the start did not say it waited: %s", logged)
 			}
 			if released {
-				if waited < 300*time.Millisecond || r.describe(t) != ".keys.jsonl,.seed seed=2 next=absent keys=2 rotations=1" {
+				if waited < 300*time.Millisecond || r.describe(t) != ".keys.jsonl,.seed seed=2 next=absent keys=2 rotations=1 archived=seed rotation-promoted" {
 					t.Errorf("after %v the folder holds %s (%s)", waited, r.describe(t), logged)
 				}
 				return
@@ -468,7 +468,7 @@ func TestAResumedDesksRunnerStartsAfterTheRecovery(t *testing.T) {
 	if runnerFirst.Load() {
 		t.Error("a resumed desk's Runner held the signing folder's lock before the start recovered the rotations")
 	}
-	if got := r.describe(t); got != ".keys.jsonl,.seed seed=2 next=absent keys=2 rotations=1" {
+	if got := r.describe(t); got != ".keys.jsonl,.seed seed=2 next=absent keys=2 rotations=1 archived=seed rotation-promoted" {
 		t.Errorf("after the start the folder holds %s", got)
 	}
 }
@@ -614,7 +614,7 @@ func TestACopyOfAMadeDeskOpenedDirectlyRecoversNothing(t *testing.T) {
 		if again.cfg.deskID != id {
 			t.Fatalf("Desk was opened on %q", again.cfg.deskID)
 		}
-		if got := r.describe(t); got != ".keys.jsonl,.seed seed=2 next=absent keys=2 rotations=1" {
+		if got := r.describe(t); got != ".keys.jsonl,.seed seed=2 next=absent keys=2 rotations=1 archived=seed rotation-promoted" {
 			t.Errorf("after the moved desk's start the folder holds %s (%s)", got, logged)
 		}
 	})
@@ -692,7 +692,7 @@ func TestARotationsListIsHeldToItsJournal(t *testing.T) {
 			t.Errorf("the marker is %q", r.marker(t))
 		}
 		_, _, logged := r.restart(t)
-		if got := r.describe(t); got != ".keys.jsonl,.seed seed=2 next=absent keys=2 rotations=1" {
+		if got := r.describe(t); got != ".keys.jsonl,.seed seed=2 next=absent keys=2 rotations=1 archived=seed rotation-promoted" {
 			t.Errorf("after the next start the folder holds %s (%s)", got, logged)
 		}
 	})

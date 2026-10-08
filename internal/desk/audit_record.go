@@ -298,6 +298,11 @@ type auditAnswer struct {
 	// whatever the trail's state (review round 1 of #315), and beside the
 	// route's refusals too.
 	Identity *identityOffer `json:"identity,omitempty"`
+	// Archive is what Desk keeps in its archive of keys rather than remove
+	// (archive.go): every archived file, why it is there, and the token that
+	// confirms its removal on the owner's word. Given with every answer, and
+	// beside the route's refusals too, as Identity is.
+	Archive *auditArchive `json:"archive,omitempty"`
 	// Expected is how many holders' files of checkpoints were passed as
 	// `--expect`, and ExpectUnread the labels of the holders whose file could
 	// not be read now, or is not ours, and was passed over (handover.go).
@@ -405,10 +410,18 @@ func (s *Server) handleAuditVerify(w http.ResponseWriter, r *http.Request) {
 	// route, a refusal and a project that keeps no trail among them, since
 	// the owner's word on it is needed whether or not a trail is checked.
 	identity := s.identityOfferNow()
+	// **And what Desk archived** (the maintainer's decision of 2026-10-08):
+	// every archived key is a sentence on the decision record, whatever the
+	// trail's state.
+	auditDir, _, _ := s.projectAuditDir()
+	archive := withoutPathsInArchive(s.archiveListing(), func(message string) string { return s.withoutPathsUnder(message, auditDir) })
 	refuse := func(status int, code, message string) {
 		body := map[string]any{"error": message, "code": code}
 		if identity != nil {
 			body["identity"] = identity
+		}
+		if archive != nil {
+			body["archive"] = archive
 		}
 		writeJSON(w, status, body)
 	}
@@ -424,6 +437,7 @@ func (s *Server) handleAuditVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	answer.Identity = identity
+	answer.Archive = archive
 	shown := s.withoutPathsIn(answer)
 	if before, after := mustJSON(answer), mustJSON(shown); before != after {
 		// The page is told no path; the owner's own log keeps them.
@@ -803,9 +817,11 @@ func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, err
 	// The stamping settings' roots, held for reading until the runtime has
 	// read them.
 	stamping := s.stampingForVerify()
+	// Held for reading until an older run's own verification has run with the
+	// same roots (issue #324), and released however this ends.
+	defer stamping.done()
 	args = append(args, stamping.args...)
 	out, runErr := runRuntime(ctx, s.cfg.JpackBin, dir, args...)
-	stamping.done()
 	answer, err := readAuditVerification(out, runErr)
 	if err != nil {
 		return auditAnswer{}, err
@@ -814,20 +830,13 @@ func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, err
 		return older, nil
 	}
 	answer.Stamping = s.stampingAfterVerify(stamping.view, answer.Report, stamping.since)
-	answer.Stamping.LastChecked = lastRunChecked(*answer.Stamping, answer.Report, func(named, head checkpointHead) (*checkpointHead, error) {
-		// The answer read through this same head before, where there is one:
-		// the head's digest commits to the record.
-		if kept, ok := s.stamping.recordAt(named, head); ok {
-			return &kept, nil
-		}
-		at, err := s.checkpointAt(ctx, dir, named, head)
-		if err != nil && !errors.Is(err, errCheckpointsChanged) && !errors.Is(err, errTrailMovedSince) {
-			s.log.Printf("desk: the checkpoint the last stamp run of desk %s named could not be asked of the runtime: %v", s.signingKeyName(), err)
-		}
-		if err == nil {
-			s.stamping.rememberRecord(named, head, *at)
-		}
-		return at, err
+	if answer.Report == nil || answer.Report.Status != "valid" {
+		// **Every verification that fails forgets** what an older run's own
+		// verification confirmed (issue #324).
+		s.stamping.forgetConfirmed()
+	}
+	answer.Stamping.LastChecked = lastRunChecked(*answer.Stamping, answer.Report, func(run *stampRun, head checkpointHead) (bool, string) {
+		return s.expectRunCheckpoint(ctx, dir, run, head, stamping.args)
 	})
 	answer.Runtime = schema.version
 	answer.Files = s.auditFilesPresent()

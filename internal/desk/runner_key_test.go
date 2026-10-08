@@ -566,24 +566,36 @@ func TestAnUnfinishedRunnerKeyIsRemovedUnderTheLock(t *testing.T) {
 	if n := strings.Count(readFile(t, calls), "audit key generate"); n != generated+1 {
 		t.Errorf("the runtime generated %d keys, want 1", n-generated)
 	}
-	if names := namesIn(t, folder); !slices.Equal(names, []string{name + ".keys.jsonl", name + ".seed"}) {
+	if names := liveIn(t, folder); !slices.Equal(names, []string{name + ".keys.jsonl", name + ".seed"}) {
 		t.Errorf("the folder holds %q", names)
+	}
+	// The unfinished key is in the archive of Runner's keys, never removed.
+	if got := archivedIn(t, folder, name); !slices.Equal(got, kindsArchived(archiveCreationStopped, "keys.jsonl", "seed", "creating")) {
+		t.Errorf("the archive of Runner's keys holds %q", got)
+	}
+	if got := readFile(t, archivedFile(t, folder, name, "seed")); got != "unfinished\n" {
+		t.Errorf("the archived seed is %q", got)
 	}
 }
 
-// **A removal that stops is finished by the next start.** It removes the
-// list, then the seed, then the marker, each only while it is the file
-// inspected: stopped before any of the three, the marker always stays, and
-// the next start removes what is left and makes and names another key.
+// **A move that stops is finished by the next start.** It archives the list,
+// then the seed, then the marker, each only while it is the file inspected:
+// stopped before any of the three, the marker always stays, and the next
+// start archives what is left and makes and names another key. Nothing is
+// removed.
 func TestAnInterruptedRemovalIsFinishedByTheNextStart(t *testing.T) {
 	const name = "c000000000000000000000000000000c"
+	all := kindsArchived(archiveCreationStopped, "keys.jsonl", "seed", "creating")
 	for _, c := range []struct {
-		stop string
-		left []string
+		stop            string
+		left            []string
+		archived, final []string
 	}{
-		{name + ".keys.jsonl", []string{name + ".creating", name + ".keys.jsonl", name + ".seed"}},
-		{name + ".seed", []string{name + ".creating", name + ".seed"}},
-		{name + ".creating", []string{name + ".creating"}},
+		{name + ".keys.jsonl", []string{name + ".creating", name + ".keys.jsonl", name + ".seed"}, nil, all},
+		{name + ".seed", []string{name + ".creating", name + ".seed"}, kindsArchived(archiveCreationStopped, "keys.jsonl"), all},
+		// The marker left alone, with nothing made beside it, is removed:
+		// it records nothing Desk could not decide.
+		{name + ".creating", []string{name + ".creating"}, kindsArchived(archiveCreationStopped, "keys.jsonl", "seed"), kindsArchived(archiveCreationStopped, "keys.jsonl", "seed")},
 	} {
 		t.Run("stopped before "+c.stop, func(t *testing.T) {
 			bin := filepath.Join(t.TempDir(), "jpack")
@@ -605,15 +617,21 @@ func TestAnInterruptedRemovalIsFinishedByTheNextStart(t *testing.T) {
 			if got := *k.report(); got.Reason != "not-read-now" {
 				t.Errorf("reported %+v", got)
 			}
-			if names := namesIn(t, folder); !slices.Equal(names, c.left) {
-				t.Fatalf("a removal stopped before %s left %q, want %q", c.stop, names, c.left)
+			if names := liveIn(t, folder); !slices.Equal(names, c.left) {
+				t.Fatalf("a move stopped before %s left %q, want %q", c.stop, names, c.left)
+			}
+			if got := archivedIn(t, folder, name); !slices.Equal(got, c.archived) {
+				t.Fatalf("a move stopped before %s archived %q, want %q", c.stop, got, c.archived)
 			}
 			testHookRunnerKeyIO = nil
 			if path := k.decide(); path != filepath.Join(folder, name+".seed") {
 				t.Fatalf("the next start reported %+v", *k.report())
 			}
-			if names := namesIn(t, folder); !slices.Equal(names, []string{name + ".keys.jsonl", name + ".seed"}) {
+			if names := liveIn(t, folder); !slices.Equal(names, []string{name + ".keys.jsonl", name + ".seed"}) {
 				t.Errorf("the folder holds %q", names)
+			}
+			if got := archivedIn(t, folder, name); !slices.Equal(got, c.final) {
+				t.Errorf("the archive holds %q, want %q", got, c.final)
 			}
 		})
 	}
@@ -661,9 +679,9 @@ func TestARemovalLeavesAFileReplacedSinceItsInspection(t *testing.T) {
 
 // **Neither sweep touches the other's files.** A desk's key and a Runner's
 // key under the same id, each with its creation marker: the desk sweep at
-// start (`sweepUnfinishedKeys`, no desk of that id published) removes
-// the desk's three files and none of the Runner's; the Runner key's start
-// removes the Runner's three, makes another key, and touches none of the
+// start (`sweepUnfinishedKeys`, no desk of that id published) archives the
+// desk's three files and none of the Runner's; the Runner key's start
+// archives the Runner's three, makes another key, and touches none of the
 // desk's.
 func TestNeitherSweepTouchesTheOthersKey(t *testing.T) {
 	const id = "c0000000000000000000000000000005"
@@ -690,8 +708,11 @@ func TestNeitherSweepTouchesTheOthersKey(t *testing.T) {
 	plant(runner)
 	runnerFiles := keptIn(t, runner)
 	s.sweepUnfinishedKeys()
-	if names := namesIn(t, signing); !slices.Equal(names, []string{"runner"}) {
+	if names := liveIn(t, signing); !slices.Equal(names, []string{"runner"}) {
 		t.Errorf("the desk sweep left %q in the signing folder", names)
+	}
+	if got := archivedIn(t, signing, id); !slices.Equal(got, kindsArchived(archiveNeverPublished, "keys.jsonl", "seed", "creating")) {
+		t.Errorf("the desk sweep archived %q", got)
 	}
 	assertKept(t, runner, runnerFiles)
 
@@ -700,8 +721,11 @@ func TestNeitherSweepTouchesTheOthersKey(t *testing.T) {
 	if path := s.newRunnerKey(id).decide(); path != filepath.Join(runner, id+".seed") {
 		t.Fatalf("the Runner key's start named %q", path)
 	}
-	if names := namesIn(t, runner); !slices.Equal(names, []string{id + ".keys.jsonl", id + ".seed"}) || readFile(t, filepath.Join(runner, id+".seed")) != standInSeed+"\n" {
+	if names := liveIn(t, runner); !slices.Equal(names, []string{id + ".keys.jsonl", id + ".seed"}) || readFile(t, filepath.Join(runner, id+".seed")) != standInSeed+"\n" {
 		t.Errorf("the Runner sweep left %q, not a key made again", names)
+	}
+	if got := archivedIn(t, runner, id); !slices.Equal(got, kindsArchived(archiveCreationStopped, "keys.jsonl", "seed", "creating")) {
+		t.Errorf("the Runner sweep archived %q", got)
 	}
 	assertKept(t, signing, deskFiles)
 }

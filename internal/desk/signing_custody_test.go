@@ -39,14 +39,17 @@ func swapSigningFolder(t *testing.T, folder string) string {
 // and is never answered as signed. Nothing is written into the folder swapped
 // in, and what the creation made is removed from the folder it holds.
 func TestASwappedSigningFolderNeverMakesASignedDesk(t *testing.T) {
-	for _, tc := range []struct{ at, why string }{
-		{"before generate", "Desk's signing folder was replaced before the runtime made the key, so no key was made"},
-		{"after generate", "Desk's signing folder was replaced while the runtime made the key, so the key is not where the desk would name it"},
-		{"before publish", "Desk's signing folder was replaced before the desk was published, so its key is not where the desk would name it"},
+	const id = "b1000000000000000000000000000001"
+	for _, tc := range []struct {
+		at, why  string
+		archived []string
+	}{
+		{"before generate", "Desk's signing folder was replaced before the runtime made the key, so no key was made", nil},
+		{"after generate", "Desk's signing folder was replaced while the runtime made the key, so the key is not where the desk would name it", kindsArchived(archiveCreationStopped, "seed", "creating")},
+		{"before publish", "Desk's signing folder was replaced before the desk was published, so its key is not where the desk would name it", kindsArchived(archiveCreationStopped, "keys.jsonl", "seed", "creating")},
 	} {
 		t.Run(tc.at, func(t *testing.T) {
 			calls, s, ts, _ := signingStandIn(t)
-			const id = "b1000000000000000000000000000001"
 			signsDesks(t, calls, s.configDir, id)
 			folder := signingFolderOf(s)
 			var aside string
@@ -68,8 +71,13 @@ func TestASwappedSigningFolderNeverMakesASignedDesk(t *testing.T) {
 			if aside == "" {
 				t.Fatal("the swap was never made")
 			}
-			if names := namesIn(t, aside); len(names) != 0 {
+			if names := liveIn(t, aside); len(names) != 0 {
 				t.Errorf("the folder Desk held keeps %q", names)
+			}
+			// What was made is in the archive of the folder Desk held, never
+			// removed (the archive rule).
+			if got := archivedIn(t, aside, id); !slices.Equal(got, tc.archived) {
+				t.Errorf("the folder Desk held archived %q, want %q", got, tc.archived)
 			}
 		})
 	}
@@ -87,24 +95,31 @@ func postAbandoned(t *testing.T, s *Server, url string) {
 	}
 }
 
-// **A creation stopped at any step leaves no key past the next start.** Its
-// marker is there from before the runtime runs until the manifest is written;
-// the next start removes a desk's seed, list and marker where it was never
-// published, and only the marker where it was.
+// **A creation stopped at any step leaves no key at a live name past the
+// next start, unless it may have been published.** Its marker is there from
+// before the runtime runs until the manifest is written; the next start
+// moves a desk's list, seed and marker to Desk's archive of keys where the
+// marker records that the manifest was never about to be written; keeps all
+// three where it records that it was, and none is there (issue #322: a copy
+// published elsewhere may name the key); and removes only the marker where
+// the desk was published. Nothing is removed.
 func TestAStoppedCreationLeavesNoKeyPastTheNextStart(t *testing.T) {
 	const id = "b2000000000000000000000000000001"
+	all := []string{id + ".creating", id + ".keys.jsonl", id + ".seed"}
 	for _, tc := range []struct {
 		at        string
 		left      []string
 		published bool
+		kept      []string
+		archived  []string
 	}{
-		{"before generate", []string{id + ".creating"}, false},
-		{"after generate", []string{id + ".creating", id + ".seed"}, false},
-		{"before publish", []string{id + ".creating", id + ".keys.jsonl", id + ".seed"}, false},
-		{"before staging", []string{id + ".creating", id + ".keys.jsonl", id + ".seed"}, false},
-		{"after staging", []string{id + ".creating", id + ".keys.jsonl", id + ".seed"}, false},
-		{"after rename", []string{id + ".creating", id + ".keys.jsonl", id + ".seed"}, true},
-		{"published", []string{id + ".creating", id + ".keys.jsonl", id + ".seed"}, true},
+		{"before generate", []string{id + ".creating"}, false, nil, kindsArchived(archiveNeverPublished, "creating")},
+		{"after generate", []string{id + ".creating", id + ".seed"}, false, nil, kindsArchived(archiveNeverPublished, "seed", "creating")},
+		{"before publish", all, false, nil, kindsArchived(archiveNeverPublished, "keys.jsonl", "seed", "creating")},
+		{"before staging", all, false, all, nil},
+		{"after staging", all, false, all, nil},
+		{"after rename", all, true, []string{id + ".keys.jsonl", id + ".seed"}, nil},
+		{"published", all, true, []string{id + ".keys.jsonl", id + ".seed"}, nil},
 	} {
 		t.Run(tc.at, func(t *testing.T) {
 			calls, s, ts, _ := signingStandIn(t)
@@ -129,9 +144,8 @@ func TestAStoppedCreationLeavesNoKeyPastTheNextStart(t *testing.T) {
 			}
 			ts.Close()
 			again, logged := restartedServer(t, s)
-			want := []string(nil)
+			want := tc.kept
 			if tc.published {
-				want = []string{id + ".keys.jsonl", id + ".seed"}
 				again.desksMu.Lock()
 				opened := again.desks[id] != nil
 				again.desksMu.Unlock()
@@ -139,8 +153,11 @@ func TestAStoppedCreationLeavesNoKeyPastTheNextStart(t *testing.T) {
 					t.Errorf("the published desk was not opened: %s", logged)
 				}
 			}
-			if names := namesIn(t, folder); !slices.Equal(names, want) {
+			if names := liveIn(t, folder); !slices.Equal(names, want) {
 				t.Errorf("after the next start the signing folder holds %q, want %q (%s)", names, want, logged)
+			}
+			if got := archivedIn(t, folder, id); !slices.Equal(got, tc.archived) {
+				t.Errorf("after the next start the archive holds %q, want %q", got, tc.archived)
 			}
 		})
 	}
@@ -254,8 +271,9 @@ func TestAListOfKeysSwappedWhileReadIsNotRead(t *testing.T) {
 	assertKeysUnread(t, ts, rig, row.ID, "Desk could not read the public keys it keeps for this desk: it changed between being inspected and being opened.")
 }
 
-// **A manifest that cannot be written leaves no key.** The key was made, the
-// desk was not published, and what was made of its key is removed.
+// **A manifest that cannot be written leaves no key at a live name.** The key
+// was made, the desk was not published, and what was made of its key is
+// moved to Desk's archive of keys, never removed.
 func TestAManifestThatCannotBeWrittenLeavesNoKey(t *testing.T) {
 	calls, s, ts, _ := signingStandIn(t)
 	const id = "b6000000000000000000000000000001"
@@ -274,8 +292,11 @@ func TestAManifestThatCannotBeWrittenLeavesNoKey(t *testing.T) {
 	if status == http.StatusCreated {
 		t.Fatalf("a desk whose manifest could not be written was made: %s", data)
 	}
-	if names := namesIn(t, signingFolderOf(s)); len(names) != 0 {
+	if names := liveIn(t, signingFolderOf(s)); len(names) != 0 {
 		t.Errorf("a creation whose manifest failed left %q", names)
+	}
+	if got := archivedIn(t, signingFolderOf(s), id); !slices.Equal(got, kindsArchived(archiveCreationStopped, "keys.jsonl", "seed", "creating")) {
+		t.Errorf("a creation whose manifest failed archived %q", got)
 	}
 }
 
