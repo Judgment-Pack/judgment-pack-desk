@@ -454,13 +454,13 @@ export type AuditArchive = { entries: ArchivedKey[]; more?: number; problem?: st
 
 const archiveFile = (value: unknown): value is string => text(value) && /^(none|[0-9a-f]{32})-(none|[1-9][0-9]{0,15})-[0-9]{8}T[0-9]{6}\.[0-9]{9}Z\.(seed|next\.seed|keys\.jsonl|creating|rotating)$/.test(value)
 
-/** A marker left at its name under a project's name, as an unresolved entry names it. */
-const unresolvedFile = (value: unknown): value is string => text(value) && /^[0-9a-f]{64}\.(rotating|creating)$/.test(value)
+/** A marker left at its name under a project's or a made desk's name (#331), as an unresolved entry names it. */
+const unresolvedFile = (value: unknown): value is string => text(value) && /^(?:[0-9a-f]{32}|[0-9a-f]{64})\.(rotating|creating)$/.test(value)
 
 /** One archived file, as the chassis lists it: each member of its form, and a token only where the file is there; or a marker left unresolved, with none. */
 export function isArchivedKey(value: unknown): value is ArchivedKey {
   if (object(value) && value.unresolved === true) {
-    return value.scope === 'desk' && hex(64)(value.identity) && unresolvedFile(value.file) && value.file === `${value.identity}.${value.kind}`
+    return value.scope === 'desk' && (hex(32)(value.identity) || hex(64)(value.identity)) && unresolvedFile(value.file) && value.file === `${value.identity}.${value.kind}`
       && optional(value.trail, hex(32)) && named(value.at) && named(value.why) && value.token === undefined && value.missing === undefined
   }
   return object(value) && (value.scope === 'desk' || value.scope === 'runner') && (hex(32)(value.identity) || hex(64)(value.identity))
@@ -508,7 +508,9 @@ export const ARCHIVE_SENTENCES = [
   sourceMessage('Confirm the removal with the token the decision record gave.'),
   sourceMessage("Desk's journal of this archive holds a line Desk cannot read, a write that did not finish or a change made outside Desk, so it offers no Remove here until the journal is whole."),
   sourceMessage("Nothing was removed: Desk's journal of this archive could not be read whole, so Desk removes nothing from it until it is."),
-  sourceMessage("Nothing was removed: Desk could not read its removal back from its archive's journal.")
+  sourceMessage("Nothing was removed: Desk could not read its removal back from its archive's journal."),
+  sourceMessage("A rotation of the key of a desk not open here did not finish, and its journal could not be read now: Desk keeps the key, the next key and the journal at their names, and a start with that desk open decides them."),
+  sourceMessage("A creation of a desk's key under this name did not finish, and its marker records that no manifest was about to be written: Desk's next start moves the key, its list and its marker to its archive of keys.")
 ]
 
 /* The repair ---------------------------------------------------------------- */

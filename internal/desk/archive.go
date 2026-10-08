@@ -534,7 +534,7 @@ func (s *Server) archiveListing() *auditArchive {
 		}
 		listing.Entries = append(listing.Entries, entries...)
 		if scope == archiveScopeDesk {
-			listing.Entries = append(listing.Entries, held.unresolvedIn(s.signingKeyName())...)
+			listing.Entries = append(listing.Entries, s.unresolvedIn(held)...)
 		}
 	}
 	slices.SortStableFunc(listing.Entries, func(a, b archivedKey) int { return strings.Compare(b.At, a.At) })
@@ -565,24 +565,46 @@ const (
 	unresolvedCreationWords = "A creation of a key under this name did not finish, and this desk or project does not hold the name: Desk keeps the key, its list and its marker at their names, and a start on the project that holds the name decides them."
 )
 
-// unresolvedForm is a marker under a project's name, directly in the signing
-// folder.
-var unresolvedForm = regexp.MustCompile(`^([0-9a-f]{64})\.(rotating|creating)$`)
+// What the decision record says of a made desk's marker left at its name
+// under another desk's name, one not open here (issue #331): the reason the
+// start's sweep or recovery keeps it, as Desk's log gives it.
+const (
+	unresolvedDeskRotationWords = "A rotation of the key of a desk not open here did not finish (its journal says %q, on trail %s): Desk keeps the key, the next key and the journal at their names, and a start with that desk open decides them."
+	unresolvedDeskJournalWords  = "A rotation of the key of a desk not open here did not finish, and its journal could not be read now: Desk keeps the key, the next key and the journal at their names, and a start with that desk open decides them."
+	unresolvedDeskCreationWords = "A creation of a desk's key under this name did not finish: %s."
+	unresolvedDeskNeverWords    = "A creation of a desk's key under this name did not finish, and its marker records that no manifest was about to be written: Desk's next start moves the key, its list and its marker to its archive of keys."
+	unresolvedDeskUnknownWords  = "A creation of a desk's key under this name did not finish, and whether that desk was published could not be told now (%s): Desk keeps the key, its list and its marker at their names."
+)
+
+// unresolvedForm is a marker under a project's or a made desk's name,
+// directly in the signing folder.
+var unresolvedForm = regexp.MustCompile(`^([0-9a-f]{32}(?:[0-9a-f]{32})?)\.(rotating|creating)$`)
 
 // unresolvedIn is every marker of a creation or a rotation directly in the
-// signing folder d holds, under a project's name other than own (review
-// round 1 of #327, finding 5): custody no start of this Desk's settles, a
-// project's whose identity was lost or that is not open here, said on the
-// decision record wherever it is found, and kept at its name.
-func (d *signingDir) unresolvedIn(own string) []archivedKey {
+// signing folder d holds, under a name other than this desk's or project's
+// own (review round 1 of #327, finding 5; issue #331): custody no start of
+// this Desk's settles, said on the decision record wherever it is found, and
+// kept at its name. A project's, whose identity was lost or that is not open
+// here; a made desk's, not open here (a desk open here decides its own), with
+// the reason its start keeps it: a creation that may have been published, an
+// earlier Desk's that records nothing, one whose desk cannot be told now, one
+// the next start archives, or a rotation of a desk not open. A made desk's
+// creation that was published leaves only its marker for the next start to
+// remove, and is not listed.
+func (s *Server) unresolvedIn(d *signingDir) []archivedKey {
 	names, err := readDirNames(d.root, ".")
 	if err != nil {
 		return nil
 	}
+	own := s.signingKeyName()
 	var entries []archivedKey
 	for _, name := range names {
 		parts := unresolvedForm.FindStringSubmatch(name)
 		if parts == nil || parts[1] == own {
+			continue
+		}
+		made := deskIDPattern.MatchString(parts[1])
+		if made && s.deskOpenHere(parts[1]) {
 			continue
 		}
 		info, err := d.root.Lstat(name)
@@ -590,19 +612,48 @@ func (d *signingDir) unresolvedIn(own string) []archivedKey {
 			continue
 		}
 		entry := archivedKey{Scope: archiveScopeDesk, Identity: parts[1], File: name, Kind: parts[2], At: info.ModTime().UTC().Format(time.RFC3339), Unresolved: true, Why: unresolvedCreationWords}
-		if parts[2] == "rotating" {
+		switch {
+		case parts[2] == "rotating":
 			journal, legacy, err := d.readJournal(name, info)
+			unread, phased := unresolvedJournalWords, unresolvedRotationWords
+			if made {
+				unread, phased = unresolvedDeskJournalWords, unresolvedDeskRotationWords
+			}
 			switch {
 			case err != nil || legacy:
-				entry.Why = unresolvedJournalWords
+				entry.Why = unread
 			default:
 				entry.Trail = journal.Trail
-				entry.Why = fmt.Sprintf(unresolvedRotationWords, journal.Phase, journal.Trail)
+				entry.Why = fmt.Sprintf(phased, journal.Phase, journal.Trail)
+			}
+		case made:
+			published, left, err := s.deskCreationLeft(d, parts[1], info)
+			switch {
+			case err != nil:
+				entry.Why = fmt.Sprintf(unresolvedDeskUnknownWords, strings.TrimRight(s.custodyWords(err.Error()), "."))
+			case published:
+				continue
+			case left != "":
+				entry.Why = fmt.Sprintf(unresolvedDeskCreationWords, left)
+			default:
+				entry.Why = unresolvedDeskNeverWords
 			}
 		}
 		entries = append(entries, entry)
 	}
 	return entries
+}
+
+// deskOpenHere is whether this Desk has made desk id open now, so that its
+// own start and decision record decide its custody.
+func (s *Server) deskOpenHere(id string) bool {
+	owner := s
+	if s.cfg.parent != nil {
+		owner = s.cfg.parent
+	}
+	owner.desksMu.Lock()
+	defer owner.desksMu.Unlock()
+	return owner.desks[id] != nil
 }
 
 // openRunnerDir holds `runner/` in the signing folder, for reading, where it

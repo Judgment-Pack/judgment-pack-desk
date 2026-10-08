@@ -4941,11 +4941,11 @@ func (b *cappedBuffer) exceeded() bool {'
 	if err != nil {
 		dir.Close()'
   mutate go 'archive: custody no start settles is not said' 'internal/desk/archive.go' \
-    '			listing.Entries = append(listing.Entries, held.unresolvedIn(s.signingKeyName())...)' \
+    '			listing.Entries = append(listing.Entries, s.unresolvedIn(held)...)' \
     '			_ = held'
   mutate go 'archive: a project'"'"'s own marker is said as no start'"'"'s' 'internal/desk/archive.go' \
     '		if parts == nil || parts[1] == own {' \
-    '		if parts == nil {'
+    '		if parts == nil || parts[1] == own+"-" {'
   mutate go 'archive: the owner'"'"'s Remove writes no journal line' 'internal/desk/archive.go' \
     '	if err := held.appendArchiveLine(folder, removed); err != nil {' \
     '	if err := error(nil); err != nil || removed.File == "" {'
@@ -5076,6 +5076,23 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'archive edges: a removal is not read back before the file goes' 'internal/desk/archive.go' \
     '	if after, err := held.readArchiveJournal(folder); err != nil || after.damaged > 0 || !after.removed[file] || after.events[file] != entry.generation+1 {' \
     '	if after, err := held.readArchiveJournal(folder); err != nil && after.damaged < 0 {'
+  # A made desk's custody no start settles is said on the decision record,
+  # with the reason its start keeps it, and no Remove; a desk open here
+  # decides its own (#331).
+  mutate go 'archive edges: a made desk'"'"'s custody is not said' 'internal/desk/archive.go' \
+    'var unresolvedForm = regexp.MustCompile(`^([0-9a-f]{32}(?:[0-9a-f]{32})?)\.(rotating|creating)$`)' \
+    'var unresolvedForm = regexp.MustCompile(`^([0-9a-f]{64})\.(rotating|creating)$`)'
+  mutate go 'archive edges: a made desk'"'"'s creation is said without its reason' 'internal/desk/archive.go' \
+    '				entry.Why = fmt.Sprintf(unresolvedDeskCreationWords, left)' \
+    '				entry.Why = unresolvedCreationWords'
+  mutate go 'archive edges: a made desk'"'"'s rotation is said as a project'"'"'s' 'internal/desk/archive.go' \
+    '			if made {
+				unread, phased = unresolvedDeskJournalWords, unresolvedDeskRotationWords' \
+    '			if false {
+				unread, phased = unresolvedDeskJournalWords, unresolvedDeskRotationWords'
+  mutate go 'archive edges: a desk open here is said as no start'"'"'s' 'internal/desk/archive.go' \
+    '		if made && s.deskOpenHere(parts[1]) {' \
+    '		if made && false && s.deskOpenHere(parts[1]) {'
   # **Runner's signing key (ADR-0010, section 5; runner_key.go).** A key of
   # Runner's own, never a project's or an inherited one, named on the boot
   # line only where, under the one key-custody lock on the signing folder, no
@@ -14421,6 +14438,9 @@ export function assistantTransport(id: string): Transport {
   mutate web 'archive page: an unresolved entry with a token is taken' 'web/src/audit/client.ts' \
     '      && optional(value.trail, hex(32)) && named(value.at) && named(value.why) && value.token === undefined && value.missing === undefined' \
     '      && optional(value.trail, hex(32)) && named(value.at) && named(value.why)'
+  mutate web 'archive edges page: a made desk'"'"'s unresolved entry is refused' 'web/src/audit/client.ts' \
+    "    return value.scope === 'desk' && (hex(32)(value.identity) || hex(64)(value.identity)) && unresolvedFile(value.file)" \
+    "    return value.scope === 'desk' && hex(64)(value.identity) && unresolvedFile(value.file)"
   mutate web 'audit r2 fix: a question with one token for both answers is read' web/src/audit/client.ts \
     ' && hex(64)(value.copy) && value.moved !== value.copy' \
     ' && hex(64)(value.copy)'

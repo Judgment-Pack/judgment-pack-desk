@@ -147,9 +147,21 @@ describe('the archive of keys', () => {
     expect(region().getByText(left.why)).toBeTruthy()
     expect(region().queryByRole('button', { name: 'Remove' })).toBeNull()
     expect(isAuditArchive({ entries: [left] })).toBe(true)
-    for (const other of [{ ...left, token: 'cd'.repeat(32) }, { ...left, file: `${'e'.repeat(64)}.rotating` }, { ...left, file: `${'f'.repeat(64)}.seed`, kind: 'seed' }, { ...left, identity: desk, file: `${desk}.rotating` }]) {
+    for (const other of [{ ...left, token: 'cd'.repeat(32) }, { ...left, file: `${'e'.repeat(64)}.rotating` }, { ...left, file: `${'f'.repeat(64)}.seed`, kind: 'seed' }, { ...left, identity: desk, file: `${'f'.repeat(64)}.rotating` }, { ...left, identity: 'f'.repeat(40), file: `${'f'.repeat(40)}.rotating` }]) {
       expect(isAuditArchive({ entries: [other] }), JSON.stringify(other)).toBe(false)
     }
+  })
+
+  // Issue #331: a made desk's marker, not open here, is said the same way.
+  it('says a made desk’s custody no start settles, and offers no Remove for it', async () => {
+    const left: ArchivedKey = { scope: 'desk', identity: desk, file: `${desk}.creating`, kind: 'creating',
+      at: '2026-10-08T12:00:03Z', why: 'A creation of a desk’s key under this name did not finish.', unresolved: true }
+    expect(isAuditArchive({ entries: [left] })).toBe(true)
+    records = [{ ...listed, archive: { entries: [left] } }]
+    show()
+    expect(await screen.findByText('Kept at its name, not in the archive: no start of this Desk’s decides it.')).toBeTruthy()
+    expect(region().getByText(left.why)).toBeTruthy()
+    expect(region().queryByRole('button', { name: 'Remove' })).toBeNull()
   })
 
   it('takes the archive only as the chassis gives it', () => {
@@ -174,7 +186,7 @@ describe('the archive of keys', () => {
 
   it('names, as Desk’s own sentences, only sentences the chassis says', () => {
     const source = readFileSync(join(import.meta.dirname, '../../../internal/desk/archive.go'), 'utf8')
-    expect(ARCHIVE_SENTENCES).toHaveLength(14)
+    expect(ARCHIVE_SENTENCES).toHaveLength(16)
     for (const sentence of ARCHIVE_SENTENCES) {
       for (const part of sentence.split(/\{\{\w+\}\}/)) {
         expect(source.includes(part) ? part : `missing: ${part}`, sentence).toBe(part)

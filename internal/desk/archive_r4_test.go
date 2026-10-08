@@ -6,6 +6,7 @@ package desk
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -249,5 +250,65 @@ func TestARemovalIsReadBackBeforeTheFileGoes(t *testing.T) {
 	}
 	if _, err := os.Lstat(path); err != nil {
 		t.Errorf("the archived seed went: %v", err)
+	}
+}
+
+// **Custody a made desk's start does not settle is said** (issue #331, the
+// auditor's scenario). A made desk's creation whose manifest is not where
+// Desk opens the desk, an earlier Desk's empty creation marker, and a
+// rotation of a desk not open here each keep their key at its name after a
+// start's sweep and recovery; the decision record lists each with the
+// reason, as it lists a project's, and offers no Remove. A creation the next
+// start archives says so; a desk open here decides its own, and is not
+// listed.
+func TestMadeDeskCustodyNoStartSettlesIsSaid(t *testing.T) {
+	for _, tc := range []struct {
+		name, id, suffix, body string
+		start, open            bool
+		why                    string
+	}{
+		{"a creation whose manifest may be published", desk2, creatingSuffix, string(deskCreation{ID: desk2, Folder: "1:1", Manifest: "sha256:" + strings.Repeat("0", 64)}.line()), true, false, fmt.Sprintf(unresolvedDeskCreationWords, deskMovedWords)},
+		{"an earlier Desk's creation", desk2, creatingSuffix, "", true, false, fmt.Sprintf(unresolvedDeskCreationWords, deskLegacyWords)},
+		{"a rotation of a desk not open", desk2, rotatingSuffix, string(rotationJournal{Version: "1", Phase: journalRotate, Trail: fixtureTrail, Next: secondPublicKey}.line()), true, false, fmt.Sprintf(unresolvedDeskRotationWords, journalRotate, fixtureTrail)},
+		{"a creation the next start archives", desk2, creatingSuffix, string(deskCreation{ID: desk2, Folder: "1:1"}.line()), false, false, unresolvedDeskNeverWords},
+		{"a project's creation", strings.Repeat("a", 64), creatingSuffix, "", true, false, unresolvedCreationWords},
+		{"a rotation of a desk open here", desk2, rotatingSuffix, string(rotationJournal{Version: "1", Phase: journalRotate, Trail: fixtureTrail, Next: secondPublicKey}.line()), false, true, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			base := t.TempDir()
+			s, _ := bareServer(t, filepath.Join(base, "project"), filepath.Join(base, "config"), "")
+			signing := filepath.Join(s.configDir, "secrets", "signing")
+			writeBare(t, filepath.Join(signing, tc.id+seedSuffix), standInSeed+"\n")
+			writeBare(t, filepath.Join(signing, tc.id+keysSuffix), string(key1.line()))
+			writeBare(t, filepath.Join(signing, tc.id+tc.suffix), tc.body)
+			if tc.suffix == rotatingSuffix {
+				writeBare(t, filepath.Join(signing, tc.id+nextSeedSuffix), secondSeed+"\n")
+			}
+			if tc.start {
+				s.sweepUnfinishedKeys()
+				s.recoverRotations()
+			}
+			if tc.open {
+				s.desks = map[string]*Server{tc.id: {}}
+			}
+			if _, err := os.Lstat(filepath.Join(signing, tc.id+seedSuffix)); err != nil {
+				t.Fatalf("the key is not at its name: %v", err)
+			}
+			listing := s.archiveListing()
+			var found []archivedKey
+			if listing != nil {
+				for _, entry := range listing.Entries {
+					if entry.Identity == tc.id {
+						found = append(found, entry)
+					}
+				}
+			}
+			switch {
+			case tc.why == "" && len(found) != 0:
+				t.Errorf("a desk open here is listed: %+v", found)
+			case tc.why != "" && (len(found) != 1 || !found[0].Unresolved || found[0].Why != tc.why || found[0].Token != "" || found[0].File != tc.id+tc.suffix):
+				t.Errorf("the decision record lists %+v", found)
+			}
+		})
 	}
 }

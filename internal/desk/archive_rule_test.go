@@ -728,6 +728,15 @@ func TestAPublishedDeskWhoseManifestIsGoneKeepsItsKey(t *testing.T) {
 	if archivedFiles(t, signing) != 0 || !strings.Contains(logs.String(), deskMovedWords) {
 		t.Errorf("an unrelated start archived the key, or did not say why: %s", logs)
 	}
+	// **And its decision record says so** (issue #331): the marker is listed
+	// as custody no start settles, with the reason the sweep keeps it, and
+	// no Remove.
+	listing := other.archiveListing()
+	if listing == nil || !slices.ContainsFunc(listing.Entries, func(entry archivedKey) bool {
+		return entry.Unresolved && entry.File == id+creatingSuffix && entry.Why == fmt.Sprintf(unresolvedDeskCreationWords, deskMovedWords) && entry.Token == ""
+	}) {
+		t.Errorf("the decision record does not say why the key is kept: %+v", listing)
+	}
 }
 
 // **The moment after the last check keeps both keys, and says so** (issue
@@ -865,7 +874,8 @@ func TestCustodyNoStartSettlesIsSaidOnTheDecisionRecord(t *testing.T) {
 		t.Errorf("a Remove of unresolved custody answered %d %s", w.Code, w.Body)
 	}
 	// The project's own name is never listed so.
-	if own := (&signingDir{root: bareRoot(t, signing), path: signing}).unresolvedIn(id); len(own) != 0 {
+	s.setStartup(identityKept, id, "", "")
+	if own := s.unresolvedIn(&signingDir{root: bareRoot(t, signing), path: signing}); len(own) != 0 {
 		t.Errorf("a project's own marker is listed as unresolved: %+v", own)
 	}
 }
