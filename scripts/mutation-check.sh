@@ -5111,6 +5111,11 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'archive edges: a stage with no identity is not said' 'internal/desk/signing.go' \
     '		if parts == nil && only == "" && stagedForm.MatchString(name) && !stagedMarkerForm.MatchString(name) {' \
     '		if parts == nil && only == "" && stagedForm.MatchString(name) && false {'
+  # Every check of the last stamp run that does not confirm it forgets what
+  # was confirmed, its preconditions included (#333).
+  mutate go 'archive edges: a check that stops at a precondition keeps the confirmation' 'internal/desk/audit_record.go' \
+    '	if checked := answer.Stamping.LastChecked; checked == nil || !checked.Checked {' \
+    '	if checked := answer.Stamping.LastChecked; checked == nil {'
   # **Runner's signing key (ADR-0010, section 5; runner_key.go).** A key of
   # Runner's own, never a project's or an inherited one, named on the boot
   # line only where, under the one key-custody lock on the signing folder, no

@@ -463,3 +463,63 @@ func TestRunnersStartArchivesAListAStopLeftStaged(t *testing.T) {
 		t.Errorf("Runner's archive holds %q", got)
 	}
 }
+
+// **Every check of an older run that does not confirm it forgets what was
+// confirmed** (issue #333, the auditor's scenario). An older run's
+// confirmation is kept for its checkpoint and the report's head. A
+// verification whose answer cannot be read, a refusal, an invalid report,
+// and a valid report whose stamps reach no record (a precondition the check
+// stops at before it asks the runtime again) each leave it forgotten.
+func TestEveryCheckThatDoesNotConfirmAnOlderRunForgetsIt(t *testing.T) {
+	s, _ := bareServer(t, filepath.Join(t.TempDir(), "project"), filepath.Join(t.TempDir(), "config"), desk2)
+	rig := newAuditRig(t, withAuditVersions)
+	s.cfg.JpackBin = rig.bin
+	s.stamping = &stampScheduler{s: s}
+	authority, err := newTestAuthority()
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, why := (stampingProposal{Authority: testAuthorityAddress, Roots: string(authority.rootPEM())}).plan()
+	if why != "" {
+		t.Fatal(why)
+	}
+	folder, err := s.openStamping(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer folder.Close()
+	data, _ := json.Marshal(plan.file(1))
+	if err := writePrivateData(folder, rootsFileName(sha256Digest(plan.roots)), plan.roots); err != nil {
+		t.Fatal(err)
+	}
+	if err := writePrivateData(folder, stampingSettingsName, append(data, '\n')); err != nil {
+		t.Fatal(err)
+	}
+	named := checkpointHead{Identity: handoverTrail, Sequence: 2, Digest: standInDigest(2)}
+	head := checkpointHead{Identity: handoverTrail, Sequence: 3, Digest: standInDigest(3)}
+	s.stamping.last = new(stampRun)
+	*s.stamping.last = standInRun(2, standInDigest(2))
+	project, _ := s.auditRuntime()
+	noStamps := headAt(strings.Replace(strings.Replace(stampsReport, `"stamped":{"status":"through","through":2}`, `"stamped":{"status":"none"}`, 1), `"coveredBy":"2026-10-07T13:29:22Z",`, ``, 1), 3)
+	for _, tc := range []struct {
+		name, body string
+		code       int
+	}{
+		{"an answer that cannot be read", "not json", 1},
+		{"the runtime's refusal", expectRefused, 4},
+		{"an invalid report", expectMismatch, 1},
+		{"a valid report with no stamp reaching the run", noStamps, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s.stamping.rememberConfirmed(named, head)
+			rig.answers(t, tc.code, tc.body)
+			answer, _ := s.auditVerify(context.Background(), project)
+			if answer.Stamping != nil && answer.Stamping.LastChecked != nil && answer.Stamping.LastChecked.Checked {
+				t.Errorf("the run is said checked: %+v", answer.Stamping.LastChecked)
+			}
+			if s.stamping.confirmedAt(named, head) {
+				t.Error("the confirmation is kept")
+			}
+		})
+	}
+}

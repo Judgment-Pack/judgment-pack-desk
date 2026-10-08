@@ -848,6 +848,12 @@ func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, err
 	answer.Stamping.LastChecked = lastRunChecked(*answer.Stamping, answer.Report, func(run *stampRun, head checkpointHead) (bool, string) {
 		return s.expectRunCheckpoint(ctx, dir, run, head, stamping.args)
 	})
+	// **Forgotten by every check of the last run that does not confirm it**
+	// (issue #333), its preconditions included: a valid report with no stamp
+	// reaching the run, no roots, another trail, a head before the run.
+	if checked := answer.Stamping.LastChecked; checked == nil || !checked.Checked {
+		s.stamping.forgetConfirmed()
+	}
 	answer.Runtime = schema.version
 	answer.Files = s.auditFilesPresent()
 	answer.Keys = &keys
