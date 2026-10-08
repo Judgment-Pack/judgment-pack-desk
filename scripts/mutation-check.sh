@@ -4403,14 +4403,14 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if false {
 		return notOffered('
   mutate go 'audit r2 fix: the owner'"'"'s answer is taken without its token' "$R2SI" \
-    '	if here == "" || !hmac.Equal([]byte(s.identityToken(request.Choice, record, info)), []byte(request.Token)) {' \
+    '	if here == "" || !hmac.Equal([]byte(s.identityToken(choice, record, info, former)), []byte(token)) {' \
     '	if here == "" {'
   mutate go 'audit r2 fix: one answer'"'"'s token confirms the other' "$R2SI" \
     '	}{"resolve-project-identity", choice, record.ID,' \
     '	}{"resolve-project-identity", identityMoved, record.ID,'
   mutate go 'audit r2 fix: an answer'"'"'s token outlives the file it was given for' "$R2SI" \
-    's.projectDir, s.folderKey(), identityKey(info), sha256Digest(record.line())})' \
-    's.projectDir, s.folderKey(), "", sha256Digest(record.line())})'
+    's.projectDir, s.folderKey(), identityKey(info), sha256Digest(record.line()), former})' \
+    's.projectDir, s.folderKey(), "", sha256Digest(record.line()), former})'
   mutate go 'audit r2 fix: an answer outlives what the folder it was written in holds' "$R2SI" \
     'sha256Digest(record.line()), former})' \
     'sha256Digest(record.line()), ""})'
@@ -4446,9 +4446,9 @@ func (b *cappedBuffer) exceeded() bool {'
 		}'
   mutate go 'audit r2 fix: an identity that waits for nothing is resolved' "$R2SI" \
     '	if !s.startupUnresolved() {
-		writeJSONCoded(' \
+		return &lockFailure{' \
     '	if false {
-		writeJSONCoded('
+		return &lockFailure{'
   mutate go 'audit r2 fix: a copy keeps the identity it was copied with' "$R2SI" \
     '		resolved = identityRecord{ID: randomStartupID(), Path: s.projectDir, Folder: here}' \
     '		resolved = identityRecord{ID: record.ID, Path: s.projectDir, Folder: here}'
@@ -13044,8 +13044,8 @@ export function assistantTransport(id: string): Transport {
     "  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); void query.refetch() }}" \
     "  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined) }}"
   mutate web "record: an older runtime's line claims signing" "$DR" \
-    "            : record?.state === 'older-runtime' ? <p>{msg(" \
-    "            : record?.state === 'older-runtime' ? <p>{msg('Signed through record {{sequence}}', { sequence: 0 })} {msg("
+    "            : record?.state === 'older-runtime' ? <><p>{msg(" \
+    "            : record?.state === 'older-runtime' ? <><p>{msg('Signed through record {{sequence}}', { sequence: 0 })} {msg("
   mutate web "record: an older runtime's line has a control beside it" "$DR" \
     "floor: record.floor })}</p>" \
     "floor: record.floor })}{again}</p>"
@@ -13086,8 +13086,8 @@ export function assistantTransport(id: string): Transport {
     "    {!report.snapshotBetweenWrites && <p" \
     "    {false && <p"
   mutate web "record: Desk's refusal reads as a failure" "$AC" \
-    "  return response.status === 409 ? new AuditUnavailable(message) : new Error(message)" \
-    "  return new Error(message)"
+    "  const error = response.status === 409 ? new AuditUnavailable(message) : new Error(message)" \
+    "  const error = new Error(message)"
   mutate web "record: an answer that is not one is shown" "$AC" \
     "  if (!isAuditRecord(value)) throw new Error(msg('The decision record could not be loaded. Please try again.'))
   return value" \
