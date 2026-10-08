@@ -1017,6 +1017,18 @@ func unresolvedCopy(t *testing.T) (*Server, string, string) {
 	return s, original, identity
 }
 
+// offerOf is the question s asks of its identity now, which the test
+// requires it to ask: read through a nil pointer, a mutant that answered
+// none ended the whole suite in a panic that named no test.
+func offerOf(t *testing.T, s *Server) *identityOffer {
+	t.Helper()
+	offer := s.identityOfferNow()
+	if offer == nil {
+		t.Fatal("nothing is asked of the identity")
+	}
+	return offer
+}
+
 // resolveOn posts the owner's answer to s's route, through w.
 func resolveOn(s *Server, w http.ResponseWriter, choice, token string) {
 	request := httptest.NewRequest("POST", "http://localhost/api/project/identity", strings.NewReader(`{"choice":"`+choice+`","token":"`+token+`"}`))
@@ -1035,10 +1047,7 @@ func resolveOn(s *Server, w http.ResponseWriter, choice, token string) {
 func TestAnAnswerIsBoundToWhatTheFormerFolderHolds(t *testing.T) {
 	t.Run("the original put back", func(t *testing.T) {
 		s, original, identity := unresolvedCopy(t)
-		offer := s.identityOfferNow()
-		if offer == nil {
-			t.Fatal("nothing is asked")
-		}
+		offer := offerOf(t, s)
 		if err := os.Rename(original+" away", original); err != nil {
 			t.Fatal(err)
 		}
@@ -1056,7 +1065,7 @@ func TestAnAnswerIsBoundToWhatTheFormerFolderHolds(t *testing.T) {
 	})
 	t.Run("another folder at that path since", func(t *testing.T) {
 		s, original, identity := unresolvedCopy(t)
-		offer := s.identityOfferNow()
+		offer := offerOf(t, s)
 		if err := os.Mkdir(original, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -1069,7 +1078,7 @@ func TestAnAnswerIsBoundToWhatTheFormerFolderHolds(t *testing.T) {
 			t.Errorf("the identity was written: %q", got)
 		}
 		w = httptest.NewRecorder()
-		resolveOn(s, w, identityMoved, s.identityOfferNow().Moved)
+		resolveOn(s, w, identityMoved, offerOf(t, s).Moved)
 		if w.Code != http.StatusOK || !s.startupBound() {
 			t.Errorf("a fresh answer answered %d %s", w.Code, w.Body)
 		}
@@ -1100,7 +1109,7 @@ func TestTheResolutionsAnswerIsWrittenWithTheLockLetGo(t *testing.T) {
 	for _, taken := range []bool{true, false} {
 		t.Run(map[bool]string{true: "taken", false: "refused"}[taken], func(t *testing.T) {
 			s, _, _ := unresolvedCopy(t)
-			token := s.identityOfferNow().Moved
+			token := offerOf(t, s).Moved
 			if !taken {
 				token = strings.Repeat("0", 64)
 			}
