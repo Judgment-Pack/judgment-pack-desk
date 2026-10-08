@@ -3139,7 +3139,12 @@ func (b *cappedBuffer) exceeded() bool {'
 			if inspected[i] == nil {' \
     '		for i := 2; i < len(names); i++ {
 			if inspected[i] == nil {'
-  mutate go "sweep: a desk that cannot be inspected loses its key" "$SG" \
+  # Nightly over 9075b7b (#326): the sweep no longer removes a key, so a read
+  # that failed taken for "not published" no longer loses one. It still
+  # archives the key of a desk published since its marker was put back from
+  # before, and says the wrong reason of one whose marker records the
+  # manifest; TestAManifestNotReadNowKeepsItsKey holds both.
+  mutate go "sweep: a desk that cannot be inspected has its key archived" "$SG" \
     '	return info, err == nil, err
 }' \
     '	return info, err == nil, nil
@@ -3927,13 +3932,16 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'upgrade key: a failed upgrade leaves the key it made' 'internal/desk/upgrade.go' \
     '			moved, err := u.key.archiveStopped("the upgrade that made it did not complete, and every file it wrote was put back")' \
     '			moved, err := []string(nil), error(nil)'
-  mutate go "upgrade key: a project not put back loses the key jpack.json may name" "$UP" \
+  # Nightly over 9075b7b (#326): unmake is gone with the archive rule, so the
+  # mutant archives the key a project not put back may name, as the branch
+  # beside it archives one whose project was put back.
+  mutate go "upgrade key: a project not put back has the key jpack.json may name archived" "$UP" \
     '		if len(problems) > 0 {
 			result.keyLeft = true
 		} else {' \
     '		if len(problems) > 0 {
 			result.keyLeft = true
-			_ = u.key.unmake()
+			_, _ = u.key.archiveStopped("the upgrade that made it did not complete")
 		} else {'
   mutate go "upgrade key: jpack.json is published naming a key whose folder was replaced" "$UP" \
     '		if name == runtimeConfigName && u.key.stillNamed() != nil {' \
@@ -4578,9 +4586,17 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "rotation: the list is written over a list that changed" "$RO" \
     '	if err != nil || !found || !os.SameFile(now.info, read.info) || !bytes.Equal(now.data, read.data) {' \
     '	if err != nil || !found || now.info == nil {'
-  mutate go "rotation: the seed is renamed over a seed that changed" "$RO" \
-    '	if found, err := d.root.Lstat(seedName); err != nil || !os.SameFile(found, seed) {' \
-    '	if found, err := d.root.Lstat(seedName); err != nil || found == nil {'
+  # Nightly over 9075b7b (#326): the promotion no longer renames over the
+  # seed; it archives it, and the archive move checks the file too, so the
+  # mutant drops both checks: the promotion takes whatever its name holds.
+  mutate go "rotation: the promotion takes a seed that changed" "$RO" \
+    '	if found, err := d.root.Lstat(seedName); err != nil || !os.SameFile(found, seed) {
+		return errors.New("the current key is not the file the rotation read")
+	}' \
+    '	if found, err := d.root.Lstat(seedName); err != nil || found == nil {
+		return errors.New("the current key is not the file the rotation read")
+	}
+	seed, _ = d.root.Lstat(seedName)'
   mutate go 'rotation: the seed is renamed before the list is written' 'internal/desk/rotation.go' \
     '	keyBetween("trail: before the list")
 	if state.finished != nil {' \

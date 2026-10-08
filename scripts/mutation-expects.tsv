@@ -755,8 +755,8 @@ go	rotation: the next key is said to sign before the rename	TestWhatChangedWhile
 go	rotation: the next key's path is not checked after generate	TestARotationThroughAReplacedSigningFolderMakesNothing
 go	rotation: the panel says the current key still signs	TestARotationTheRuntimeDidNotWriteSaysDeskKeptItsKey
 go	rotation: the panel's word on a rotation names a path	TestARotationsAnswersNameNoPath
+go	rotation: the promotion takes a seed that changed	TestWhatChangedWhileARotationFinishedIsNotWrittenOver
 go	rotation: the seed is renamed before the list is written	TestARotationRunsItsStepsInOrder,TestAStartRenamesNoKeyAgainstAListPutBackSinceItsInspection,TestAStoppedRotationIsFinishedOrUndoneAtTheNextStart,TestWhatChangedWhileARotationFinishedIsNotWrittenOver
-go	rotation: the seed is renamed over a seed that changed	TestWhatChangedWhileARotationFinishedIsNotWrittenOver
 go	rotation: the token binds the key alone	TestARotationIsMadeOnlyWhereItCanBe
 go	rotation: the token is not checked	TestARotationIsMadeOnlyWhereItCanBe,TestAStalledAnswerToARotationHoldsNoKeyLock
 go	rotation: what a failed generation left stays	TestARotationTheRuntimeRefusesChangesNothing
@@ -981,7 +981,7 @@ go	stamping: the token is not checked	TestAStampingTokenIsBoundToWhatWasShown
 go	stamping: the token is not the desk's own	TestAStampingTokenIsBoundToWhatWasShown
 go	startup desk: an inherited JPACK_CONFIG is dropped	TestANamedDeskRuntimeReadsOnlyItsOwnConfiguration
 go	startup desk: the inherited JPACK_CONFIG is not said	TestANamedDeskRuntimeReadsOnlyItsOwnConfiguration
-go	sweep: a desk that cannot be inspected loses its key	TestAManifestNotReadNowKeepsItsKey
+go	sweep: a desk that cannot be inspected has its key archived	TestAManifestNotReadNowKeepsItsKey
 go	sweep: a key without a marker is removed	TestAStoppedCreationLeavesNoKeyPastTheNextStart,TestTheDesksSweepAndARunnerKeyExcludeEachOther,TestTheLockIsHeldFromTheFirstLookToTheLastChange
 go	sweep: a published desk's key is archived	TestAStoppedCreationLeavesNoKeyPastTheNextStart
 go	sweep: an unpublished creation's key is left	TestAKeyCustodyLockHeldByAnotherProcess,TestAStoppedCreationLeavesNoKeyPastTheNextStart,TestDesksStartSweepsBeforeItsRunnerTakesTheLock,TestDesksStartSweepsUnderTheLock,TestNeitherSweepTouchesTheOthersKey,TestTheDesksSweepAndARunnerKeyExcludeEachOther,TestTheSweepRemovesNothingWhileTheLockIsHeld,TestTheSweepRemovesOnlyWhatItInspected
@@ -1108,7 +1108,7 @@ go	upgrade key: a failed upgrade leaves the key it made	TestAFailedSigningUpgrad
 go	upgrade key: a jpack.json larger than Desk reads is offered	TestTheUpgradeWritesNoFileLargerThanDeskReads
 go	upgrade key: a jpack.json that cannot be read now names no key	TestAStoppedSigningUpgradeIsSweptAtTheNextStart
 go	upgrade key: a project at 6 is written at a lower version	TestChoosingTheSigningKeyWritesSixAndTheKeyTogether
-go	upgrade key: a project not put back loses the key jpack.json may name	TestAnUpgradeNotPutBackLeavesTheKeyForTheNextStart
+go	upgrade key: a project not put back has the key jpack.json may name archived	TestAnUpgradeNotPutBackLeavesTheKeyForTheNextStart
 go	upgrade key: a refusal names a path	TestNoPathOfTheStartupKeyReachesThePage
 go	upgrade key: a replaced signing folder is said as a failed write	TestAFailedSigningUpgradeLeavesNoKeyAndNoChange
 go	upgrade key: a rotation is offered where jpack.json names another file	TestARotationOfTheStartupKeyFollowsWhatJpackJsonNames

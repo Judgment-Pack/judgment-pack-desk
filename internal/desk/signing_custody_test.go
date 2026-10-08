@@ -433,51 +433,79 @@ func TestAManifestThatIsNotWholeIsNotAPublication(t *testing.T) {
 // A desk stopped after its manifest was published, and before its marker was
 // removed, is a desk the registry opens. If the start's sweep cannot read
 // that manifest once, an I/O error that says nothing of the file, the sweep
-// cannot tell, and so keeps the seed, the list and the marker; the registry,
-// which then reads the manifest, opens the desk with its key. (Review round
-// 3: the sweep had read any failure to read as "too large", so "not a
-// desk's", and removed a published desk's key.)
+// cannot tell, and so keeps the seed, the list and the marker, and says it
+// could not tell; the registry, which then reads the manifest, opens the
+// desk with its key. (Review round 3: the sweep had read any failure to
+// read as "too large", so "not a desk's", and removed a published desk's
+// key.) The nightly over 9075b7b (#326): since the archive rule the sweep
+// removes no key, so the same holds with a marker put back from before the
+// manifest was about to be written, which a sweep that took the failed read
+// for "not published" would archive, the published desk's key with it.
 func TestAManifestNotReadNowKeepsItsKey(t *testing.T) {
-	const id = "b7000000000000000000000000000002"
-	calls, s, ts, _ := signingStandIn(t)
-	signsDesks(t, calls, s.configDir, id)
-	testHookKeyBetween = func(at string) {
-		if at == "published" {
-			panic(http.ErrAbortHandler)
-		}
-	}
-	t.Cleanup(func() { testHookKeyBetween = nil })
-	postAbandoned(t, s, ts.URL)
-	testHookKeyBetween = nil
-	if _, err := os.Stat(filepath.Join(s.configDir, "desks", id, deskManifest)); err != nil {
-		t.Fatal("the desk's manifest was not published:", err)
-	}
-	failed := 0
-	testHookPrivateRead = func(name string) error {
-		if name == deskManifest && failed == 0 {
-			failed++
-			return syscall.EIO
-		}
-		return nil
-	}
-	t.Cleanup(func() { testHookPrivateRead = nil })
-	ts.Close()
-	again, logged := restartedServer(t, s)
-	testHookPrivateRead = nil
-	if failed != 1 {
-		t.Fatal("no read of the manifest was failed")
-	}
-	names := namesIn(t, signingFolderOf(s))
-	for _, want := range []string{id + seedSuffix, id + keysSuffix} {
-		if !slices.Contains(names, want) {
-			t.Errorf("a published desk lost %s to a read that failed once: %q (%s)", want, names, logged)
-		}
-	}
-	again.desksMu.Lock()
-	opened := again.desks[id] != nil
-	again.desksMu.Unlock()
-	if !opened {
-		t.Errorf("the published desk was not opened (%s)", logged)
+	for _, tc := range []struct {
+		name    string
+		earlier bool
+	}{{"its marker as the creation left it", false}, {"its marker put back from before", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			const id = "b7000000000000000000000000000002"
+			calls, s, ts, _ := signingStandIn(t)
+			signsDesks(t, calls, s.configDir, id)
+			testHookKeyBetween = func(at string) {
+				if at == "published" {
+					panic(http.ErrAbortHandler)
+				}
+			}
+			t.Cleanup(func() { testHookKeyBetween = nil })
+			postAbandoned(t, s, ts.URL)
+			testHookKeyBetween = nil
+			if _, err := os.Stat(filepath.Join(s.configDir, "desks", id, deskManifest)); err != nil {
+				t.Fatal("the desk's manifest was not published:", err)
+			}
+			if tc.earlier {
+				marker := filepath.Join(signingFolderOf(s), id+creatingSuffix)
+				var creation deskCreation
+				if err := json.Unmarshal([]byte(readFile(t, marker)), &creation); err != nil || creation.Manifest == "" {
+					t.Fatalf("the marker is %q: %v", readFile(t, marker), err)
+				}
+				creation.Manifest = ""
+				if err := os.WriteFile(marker, creation.line(), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			failed := 0
+			testHookPrivateRead = func(name string) error {
+				if name == deskManifest && failed == 0 {
+					failed++
+					return syscall.EIO
+				}
+				return nil
+			}
+			t.Cleanup(func() { testHookPrivateRead = nil })
+			ts.Close()
+			again, logged := restartedServer(t, s)
+			testHookPrivateRead = nil
+			if failed != 1 {
+				t.Fatal("no read of the manifest was failed")
+			}
+			names := namesIn(t, signingFolderOf(s))
+			for _, want := range []string{id + seedSuffix, id + keysSuffix} {
+				if !slices.Contains(names, want) {
+					t.Errorf("a published desk lost %s to a read that failed once: %q (%s)", want, names, logged)
+				}
+			}
+			if archived := archivedFiles(t, signingFolderOf(s)); archived != 0 {
+				t.Errorf("a read that failed once moved %d files to the archive (%s)", archived, logged)
+			}
+			if !strings.Contains(logged.String(), "whether desk "+id+" was made could not be told") {
+				t.Errorf("Desk's log does not say it could not tell: %s", logged)
+			}
+			again.desksMu.Lock()
+			opened := again.desks[id] != nil
+			again.desksMu.Unlock()
+			if !opened {
+				t.Errorf("the published desk was not opened (%s)", logged)
+			}
+		})
 	}
 }
 
