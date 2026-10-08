@@ -137,6 +137,7 @@ package desk
 // no supplied list speaks for it; anything after the last checkpoint stamped.
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/hmac"
@@ -149,6 +150,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"mime"
 	"net/http"
@@ -1055,9 +1057,13 @@ func (st *stampScheduler) attempt(dir heldDir, settings stampingSettings, reques
 		st.mu.Lock()
 		known := st.stamped
 		st.mu.Unlock()
-		if sameCheckpoint(known, head) {
+		if sameCheckpoint(known, head) && s.stampsHold(st.ctx, head) {
 			// The head is the last checkpoint known stamped, by its record:
 			// a checkpoint known without its digest is never taken for it.
+			// **And the stamps file holds it still, by its content** (second
+			// review of #317, finding 3): a stamps file put back without it,
+			// or removed, with no run that failed and no check since, is
+			// asked of the runtime.
 			return stampRun{}
 		}
 	}
@@ -1087,6 +1093,86 @@ func (st *stampScheduler) attempt(dir heldDir, settings stampingSettings, reques
 		st.knowStamped(nil)
 	}
 	return st.record(run)
+}
+
+// stampsLineLimit is the longest stamps line the runtime reads whole
+// (runtime 0.27.1, `MaxStampLineBytes`); a longer one is no stamp.
+const stampsLineLimit = 2 << 20
+
+// stampsHold is whether the trail's stamps file holds, by its content, a line
+// for checkpoint: read under the stamps file's own lock, as the download
+// reads it, each whole line one JSON object of exactly the checkpoint, the
+// stamps version "1" and a token in strict base64, the checkpoint the same as
+// checkpoint (`sameCheckpoint`). Desk does not read the token itself: that it
+// is a stamp of the checkpoint is the runtime's to say (`audit stamp`, `audit
+// verify`). A file that is not there, or could not be read now, holds none,
+// and the runtime is asked: never a skip on what Desk cannot read.
+func (s *Server) stampsHold(ctx context.Context, checkpoint *checkpointHead) bool {
+	dir, declared, err := s.projectAuditDir()
+	if err != nil || !declared {
+		return false
+	}
+	parts, err := auditDirParts(dir)
+	if err != nil {
+		return false
+	}
+	root, err := s.openAuditDir(parts)
+	if err != nil {
+		return false
+	}
+	defer root.Close()
+	snapshot, err := snapshotAuditFile(ctx, root, "stamps")
+	if err != nil {
+		return false
+	}
+	defer snapshot.file.Close()
+	reader := bufio.NewReaderSize(io.NewSectionReader(snapshot.file, 0, snapshot.size), 64<<10)
+	for {
+		line, err := reader.ReadSlice('\n')
+		if errors.Is(err, bufio.ErrBufferFull) {
+			// Longer than the reader holds: read whole, up to the runtime's
+			// bound, as one line, and past it as no line.
+			whole := append([]byte(nil), line...)
+			for errors.Is(err, bufio.ErrBufferFull) && len(whole) <= stampsLineLimit {
+				line, err = reader.ReadSlice('\n')
+				whole = append(whole, line...)
+			}
+			for errors.Is(err, bufio.ErrBufferFull) {
+				_, err = reader.ReadSlice('\n')
+				whole = nil
+			}
+			line = whole
+		}
+		if err != nil {
+			// The end, a last line no newline ends, or a read that failed:
+			// no further line is a stamp.
+			return false
+		}
+		if stampLineNames(line[:len(line)-1], checkpoint) {
+			return true
+		}
+	}
+}
+
+// stampLineNames is whether one stamps line, without its newline, is of the
+// runtime's shape and names checkpoint.
+func stampLineNames(line []byte, checkpoint *checkpointHead) bool {
+	if len(line) == 0 || len(line) > stampsLineLimit || !json.Valid(line) {
+		return false
+	}
+	members, ok := exactMembers(line)
+	if !ok || len(members) != 3 {
+		return false
+	}
+	var version, token string
+	if !sidecarString(members["stampVersion"], &version) || version != "1" || !sidecarString(members["token"], &token) {
+		return false
+	}
+	if decoded, err := base64.StdEncoding.Strict().DecodeString(token); err != nil || len(decoded) == 0 {
+		return false
+	}
+	named, ok := readCheckpointLine(members["checkpoint"])
+	return ok && sameCheckpoint(checkpoint, &checkpointHead{Identity: named.trail, Sequence: named.sequence, Digest: named.digest})
 }
 
 // sameCheckpoint is whether known and other are one checkpoint: one trail,

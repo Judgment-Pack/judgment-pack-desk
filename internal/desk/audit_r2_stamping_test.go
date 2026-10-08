@@ -517,3 +517,55 @@ func TestACheckReadBeforeAFailedRunDoesNotRestoreIt(t *testing.T) {
 		t.Errorf("after the held check, the scheduled wake ran %q", calls)
 	}
 }
+
+// **The scheduler skips a head only where the stamps file holds it, by its
+// content** (second review of #317, finding 3). The scheduler stamps record
+// 5, and the next wake, the stamps file holding that stamp, asks nothing. The
+// stamps file is then removed, with no run that failed and no check: the
+// next wake asks the runtime, which stamps. A stamps file holding a line for
+// another record at that sequence, or one whose token is not base64, holds
+// no stamp of the head either.
+func TestTheSchedulerSkipsOnlyWhereTheStampsFileHoldsTheHead(t *testing.T) {
+	w := fixStamping(t)
+	r := newStampRig(t)
+	r.set(t, r.proposal(nil))
+	r.chainIs(t, handoverTrail, 5)
+	r.stampsWith(t, 0, stampedAnswer(handoverTrail, 5))
+	r.ran(t)
+	stamps := []string{schemaCall, stampHeadCall, stampCall}
+	asks := []string{schemaCall, stampHeadCall}
+	w.at(t, time.Minute)
+	if calls := r.ran(t); !slices.Equal(calls, stamps) {
+		t.Fatalf("the first wake ran %q", calls)
+	}
+	w.at(t, time.Hour+time.Minute)
+	if calls := r.ran(t); !slices.Equal(calls, asks) {
+		t.Fatalf("with the head stamped, and the stamps file holding it, a wake ran %q", calls)
+	}
+	file := filepath.Join(r.project, ".desk-private", "audit", "stamps.jsonl")
+	line := `{"stampVersion":"1","checkpoint":` + strings.TrimSuffix(checkpointOf(handoverTrail, 5), "\n") + `,"token":"AA=="}` + "\n"
+	for i, then := range []struct {
+		name  string
+		write func()
+	}{
+		{"removed", func() {
+			if err := os.Remove(file); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"holding another record at the sequence", func() {
+			writeBare(t, file, strings.Replace(line, standInDigest(5), rewrittenDigest(5), 1))
+		}},
+		{"holding a token that is not base64", func() { writeBare(t, file, strings.Replace(line, `"AA=="`, `"not base64"`, 1)) }},
+	} {
+		then.write()
+		w.at(t, time.Duration(2*i+2)*time.Hour+time.Minute)
+		if calls := r.ran(t); !slices.Equal(calls, stamps) {
+			t.Errorf("with the stamps file %s, a wake ran %q", then.name, calls)
+		}
+		w.at(t, time.Duration(2*i+3)*time.Hour+time.Minute)
+		if calls := r.ran(t); !slices.Equal(calls, asks) {
+			t.Errorf("after the stamp, the stamps file %s, a wake ran %q", then.name, calls)
+		}
+	}
+}

@@ -6133,6 +6133,15 @@ func (b *cappedBuffer) exceeded() bool {'
     '	st.generation++
 ' \
     ''
+  mutate go 'audit r2 fix: the scheduler skips a head the stamps file does not hold' "$R2ST" \
+    '		if sameCheckpoint(known, head) && s.stampsHold(st.ctx, head) {' \
+    '		if sameCheckpoint(known, head) && (s.stampsHold(st.ctx, head) || true) {'
+  mutate go 'audit r2 fix: a stamps line naming another record is taken for the head' "$R2ST" \
+    '	return ok && sameCheckpoint(checkpoint, &checkpointHead{Identity: named.trail, Sequence: named.sequence, Digest: named.digest})' \
+    '	return ok && named.sequence == checkpoint.Sequence'
+  mutate go 'audit r2 fix: a stamps line with a token of no form is taken for the head' "$R2ST" \
+    '	if decoded, err := base64.StdEncoding.Strict().DecodeString(token); err != nil || len(decoded) == 0 {' \
+    '	if decoded, err := base64.StdEncoding.Strict().DecodeString(token); (err != nil || len(decoded) == 0) && false {'
   mutate go 'audit r2 fix: a failed stamp run keeps the checkpoint known' "$R2ST" \
     '		st.knowStamped(nil)
 	}
