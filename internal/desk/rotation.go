@@ -1299,6 +1299,7 @@ func (s *Server) finishRotation(dir *signingDir, state rotationState) (renamed b
 	// The list the next key is renamed against: the one written here, or,
 	// where it was written already, the one inspected.
 	list := state.list
+	keyBetween("trail: before the list")
 	if state.finished != nil {
 		if err := still(); err != nil {
 			return false, err
@@ -1904,6 +1905,7 @@ func (s *Server) makeRotation(ctx context.Context, project heldDir, reading *key
 		// wrote the line is the sidecar's to say, not its answer's.
 		state = s.inspectRotationBound(ctx, project, dir, marker)
 		defer state.release()
+		keyBetween("trail: refusal decided")
 		s.log.Printf("desk: the runtime did not rotate desk %s's key as asked: %s", id, said)
 	}
 	switch state.outcome {
