@@ -4099,5 +4099,8 @@
   "This processor’s programs are not installed on this computer.": "This processor’s programs are not installed on this computer.",
   "This request is too large to send.": "This request is too large to send.",
   "When a page has no text": "When a page has no text",
-  "The gateway’s answer could not be shown. Reload the settings to see what was saved.": "The gateway’s answer could not be shown. Reload the settings to see what was saved."
+  "The gateway’s answer could not be shown. Reload the settings to see what was saved.": "The gateway’s answer could not be shown. Reload the settings to see what was saved.",
+  "Turn OCR on anyway": "Turn OCR on anyway",
+  "{{name}} is not available on this computer. With OCR on, every document read stops until its programs are installed: text PDFs and plain text too, from uploads, Drive, connected files and links.": "{{name}} is not available on this computer. With OCR on, every document read stops until its programs are installed: text PDFs and plain text too, from uploads, Drive, connected files and links.",
+  "{{name}} · not available on this computer": "{{name}} · not available on this computer"
 }

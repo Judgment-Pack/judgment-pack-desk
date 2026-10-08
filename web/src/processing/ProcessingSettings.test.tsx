@@ -184,3 +184,28 @@ it('warns in the processor dialog when its save restarts the gateway, and only t
   expect(within(screen.getByRole('dialog')).queryByRole('button', { name: 'Save and restart' })).toBeNull()
   expect(within(screen.getByRole('dialog')).getByRole('button', { name: 'Save' })).toBeTruthy()
 })
+
+it('turns OCR on with a processor that is not available only when the owner says to, having said every read stops', async () => {
+  const unready = { ...local, ready: false }
+  const { sent } = setup({ result: settings({ connections: [unready, azure] }), localGateway: running(true) },
+    (_url, body) => ({ result: { ...settings({ connections: [unready, azure] }), ...(body.config as object) }, localGateway: running(true) }))
+  fireEvent.click(screen.getByRole('combobox', { name: 'OCR mode' })); fireEvent.click(screen.getByRole('option', { name: 'When a page has no text' }))
+  fireEvent.click(screen.getByRole('combobox', { name: 'OCR processor' }))
+  expect(screen.getByRole('option', { name: 'Work scans' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('option', { name: 'On this computer · not available on this computer' }))
+  expect(screen.getByText('On this computer is not available on this computer. With OCR on, every document read stops until its programs are installed: text PDFs and plain text too, from uploads, Drive, connected files and links.')).toBeTruthy()
+  const saveButton = () => screen.getByRole('button', { name: 'Save changes' }) as HTMLButtonElement
+  expect(saveButton().disabled).toBe(true)
+  fireEvent.click(screen.getByLabelText('Turn OCR on anyway'))
+  expect(saveButton().disabled).toBe(false)
+  // Choosing again asks again.
+  fireEvent.click(screen.getByRole('combobox', { name: 'OCR processor' })); fireEvent.click(screen.getByRole('option', { name: 'Work scans' }))
+  fireEvent.click(screen.getByRole('combobox', { name: 'OCR processor' })); fireEvent.click(screen.getByRole('option', { name: 'On this computer · not available on this computer' }))
+  expect(saveButton().disabled).toBe(true)
+  fireEvent.click(screen.getByLabelText('Turn OCR on anyway'))
+  fireEvent.click(saveButton())
+  await waitFor(() => expect(configured(sent)).toHaveLength(1))
+  expect(configured(sent)[0]!.config).toMatchObject({ mode: 'auto', connection: 'ocr-local' })
+  // Saved so, it is still said.
+  await screen.findByText('On this computer is not available on this computer. With OCR on, every document read stops until its programs are installed: text PDFs and plain text too, from uploads, Drive, connected files and links.')
+})

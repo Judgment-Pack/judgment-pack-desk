@@ -67,7 +67,9 @@ type Preferences = { mode: 'off' | 'auto'; connection: string; timeoutSeconds: n
 
 function OCRPreferences({ read, onSaved }: { read: Settings; onSaved: (next: Settings) => void }) {
   const settings = read.result
-  const [draft, setDraft] = useState<(Preferences & { base: Settings }) | null>(null)
+  // `acknowledged`: the owner ticked "Turn OCR on anyway" for this draft's
+  // processor, which is not available on this computer.
+  const [draft, setDraft] = useState<(Preferences & { base: Settings; acknowledged: boolean }) | null>(null)
   const save = useMutation({
     mutationFn: async () => {
       if (!draft) throw new Error(sourceMessage('There is nothing to save.'))
@@ -81,7 +83,15 @@ function OCRPreferences({ read, onSaved }: { read: Settings; onSaved: (next: Set
   const [low, high] = PROCESSING_TIMEOUT_BOUNDS
   const timeoutValid = Number.isInteger(current.timeoutSeconds) && current.timeoutSeconds >= low && current.timeoutSeconds <= high
   const restart = !!draft && restartsGateway(current.mode, draft.base.localGateway)
-  const edit = (patch: Partial<Preferences>) => { setDraft(previous => ({ base: previous?.base ?? read, mode: current.mode, connection: current.connection, timeoutSeconds: current.timeoutSeconds, ...patch })); save.reset() }
+  // Gateway v0.10.0 applies the settings before an adapter reads anything, so
+  // OCR on with a processor whose programs are not there stops every document
+  // read, text included, not only scanned pages.
+  const unready = current.mode === 'auto' && !!selected && selected.ready !== true
+  const edit = (patch: Partial<Preferences>) => {
+    setDraft(previous => ({ base: previous?.base ?? read, mode: current.mode, connection: current.connection, timeoutSeconds: current.timeoutSeconds,
+      acknowledged: 'mode' in patch || 'connection' in patch ? false : previous?.acknowledged ?? false, ...patch }))
+    save.reset()
+  }
   return <div className={styles.stack}>
     <SettingRow title={msg('Scanned pages')} description={msg('Read pages that have no text with an OCR processor. The chat model is chosen separately.')}
       status={settings.mode === 'off' ? msg('OCR is off') : settings.connections.find(c => c.id === settings.connection)?.ready ? msg('OCR is on') : msg('OCR is on, and its processor is not available')} />
@@ -89,15 +99,17 @@ function OCRPreferences({ read, onSaved }: { read: Settings; onSaved: (next: Set
       <Field label={msg('OCR mode')}>{w => <Select {...w} value={current.mode} disabled={save.isPending} onValueChange={value => edit({ mode: value as Preferences['mode'] })}
         options={[{ value: 'off', label: msg('Off') }, { value: 'auto', label: msg('When a page has no text') }]} />}</Field>
       <Field label={msg('OCR processor')}>{w => <Select {...w} value={current.connection} disabled={save.isPending || !settings.connections.some(c => c.enabled)} placeholder={msg('Choose a processor')}
-        onValueChange={value => edit({ connection: value })} options={settings.connections.filter(c => c.enabled).map(c => ({ value: c.id, label: c.name }))} />}</Field>
+        onValueChange={value => edit({ connection: value })} options={settings.connections.filter(c => c.enabled).map(c => ({ value: c.id, label: c.ready ? c.name : msg('{{name}} · not available on this computer', { name: c.name }) }))} />}</Field>
       <Field label={msg('Processing timeout (seconds)')} hint={msg('10–120 seconds per document, text extraction and OCR together.')} error={timeoutValid ? undefined : msg('Enter a whole number from 10 to 120.')}>
         {w => <Input {...w} type="number" min={low} max={high} step={1} value={current.timeoutSeconds} disabled={save.isPending} onChange={event => edit({ timeoutSeconds: Number(event.target.value) })} />}</Field>
     </FieldGroup>
     <p className={styles.note}>{msg('Applies to new PDFs from uploads, Drive, connected files and links. Text already extracted stays as it is.')}</p>
+    {unready && <Alert>{msg('{{name}} is not available on this computer. With OCR on, every document read stops until its programs are installed: text PDFs and plain text too, from uploads, Drive, connected files and links.', { name: selected.name })}</Alert>}
+    {unready && draft && <label className={styles.label}><input type="checkbox" checked={draft.acknowledged} disabled={save.isPending} onChange={event => { const acknowledged = event.target.checked; setDraft(d => d && { ...d, acknowledged }) }} />{msg('Turn OCR on anyway')}</label>}
     {restart && <RestartWarning mode={current.mode} />}
     {draft && <div className={styles.actions}>
       <Button variant="quiet" disabled={save.isPending} onClick={() => { setDraft(null); save.reset() }}>{msg('Cancel')}</Button>
-      <Button variant="primary" disabled={save.isPending || !timeoutValid || current.mode === 'auto' && !selected?.enabled} onClick={() => save.mutate()}>{restart ? msg('Save and restart') : msg('Save changes')}</Button>
+      <Button variant="primary" disabled={save.isPending || !timeoutValid || current.mode === 'auto' && !selected?.enabled || unready && !draft.acknowledged} onClick={() => save.mutate()}>{restart ? msg('Save and restart') : msg('Save changes')}</Button>
     </div>}
     {save.error && <Alert>{save.error.message}</Alert>}
     {!draft && selected?.enabled && <TestPDF settings={settings} connection={selected} />}

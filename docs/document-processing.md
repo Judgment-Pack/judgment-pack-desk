@@ -31,10 +31,15 @@ The processors:
 
 Desk's bundle carries the two OCR workers the gateway runs, `ocr-tesseract` and
 `ocr-cloud`; Poppler and Tesseract are not bundled. A processor whose programs
-are not there says **Not available on this computer**, and a read under it stops
-with `processor-not-installed` rather than reading without OCR. Only pages that
-need OCR are sent to a cloud processor, and the provider may charge for each.
-No processor falls back to another.
+are not there says **Not available on this computer**, in the list and in the
+choice of processor. **With OCR on and such a processor chosen, every document
+read stops** with `processor-not-installed` until its programs are installed:
+text PDFs and plain text too, from uploads, Drive, connected files and links,
+because the gateway applies the settings before it reads anything. Document
+processing says so, and saves OCR on with such a processor only when the owner
+ticks **Turn OCR on anyway**. Only pages that need OCR are sent to a cloud
+processor, and the provider may charge for each. No processor falls back to
+another.
 
 The settings apply to new PDFs from uploads, Drive, connected files (S3
 included) and public links. Text already extracted stays as it is.
@@ -112,6 +117,6 @@ the page once sent.
   credentials on the build machine.
 - On macOS, Poppler and Tesseract are not in `/usr/bin`, so local OCR and the
   cloud processors say **Not available on this computer** unless the OCR tools
-  bundle is installed beside the gateway; a program in `/usr/bin` can still be
-  chosen.
+  bundle is installed beside the gateway, and turning OCR on with one of them
+  stops every document read; a program in `/usr/bin` can still be chosen.
 - Removing a processor is not offered: disable it instead.

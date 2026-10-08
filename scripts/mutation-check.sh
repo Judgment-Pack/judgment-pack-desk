@@ -13916,6 +13916,13 @@ export function assistantTransport(id: string): Transport {
   mutate web "document processing: the processor dialog does not say its save restarts the gateway" "$DPW" \
     'const restart = !!editor && restartsGateway(editor.base.result.mode, editor.base.localGateway)' \
     'const restart = !!editor && restartsGateway(editor.base.result.mode, editor.base.localGateway) && editor.value.id.length < 0'
+  # Review round 1, finding 1.
+  mutate web "document processing: OCR is turned on with a processor that is not available, unasked" "$DPW" \
+    ' || unready && !draft.acknowledged}' \
+    '}'
+  mutate web "document processing: a processor that is not available is not marked in the choice" "$DPW" \
+    "label: c.ready ? c.name : msg('{{name}} · not available on this computer', { name: c.name })" \
+    'label: c.name'
 fi
 
 restore
