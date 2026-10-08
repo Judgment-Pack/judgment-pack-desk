@@ -5564,11 +5564,11 @@ func (b *cappedBuffer) exceeded() bool {'
     '			_ = known
 '
   mutate go 'stamping: the scheduler stamps whatever the head' "$STP" \
-    'if known != nil && known.Identity == head.Identity && head.Sequence == known.Sequence && known.Digest != "" && known.Digest == head.Digest {' \
-    'if known != nil && false {'
+    '		if sameCheckpoint(known, head) {' \
+    '		if sameCheckpoint(known, head) && false {'
   mutate go 'stamping: a trail moved aside is not stamped' "$STP" \
-    'if known != nil && known.Identity == head.Identity && head.Sequence == known.Sequence' \
-    'if known != nil && head.Sequence == known.Sequence'
+    'known.Identity != "" && known.Identity == other.Identity &&' \
+    'known.Identity != "" &&'
   mutate go 'stamping: the scheduler stamps before the interval' "$STP" \
     '(st.lastAttempt.IsZero() || !now.Before(st.lastAttempt.Add(time.Duration(settings.file.IntervalMinutes)*time.Minute)))' \
     'true'
@@ -5919,15 +5919,64 @@ func (b *cappedBuffer) exceeded() bool {'
     'Trail string `json:"trail,omitempty"`' \
     'Trail string `json:"-"`'
   mutate go 'audit fix: another record at the sequence stamped is not stamped' "$AFS" \
-    ' && known.Digest != "" && known.Digest == head.Digest {' \
-    ' {'
+    ' && known.Digest != "" && known.Digest == other.Digest
+}' \
+    '
+}'
   mutate go 'audit fix: a checkpoint known with no digest is taken for the head' "$AFS" \
-    'known.Digest != "" && known.Digest == head.Digest {' \
-    '(known.Digest == "" || known.Digest == head.Digest) {'
+    'known.Digest != "" && known.Digest == other.Digest
+}' \
+    '(known.Digest == "" || known.Digest == other.Digest)
+}'
   mutate go 'audit fix: a check with roots keeps no digest of the head' "$AFS" \
     '				known.Digest = report.head.digest
 ' \
     ''
+  # **The second ADR-0010 line audit's stamping findings N4 and N5 (issues
+  # #312 and #313).** "The same checkpoint" is one rule, by trail, sequence
+  # and record digest, for the scheduler and for the decision record's word
+  # on the last run; that word holds the run's checkpoint to the head, or to
+  # the runtime's checkpoint of the record there now; and a run that did not
+  # stamp leaves nothing known. Every row's name says "audit r2 fix".
+  R2ST=internal/desk/stamping.go
+  mutate go 'audit r2 fix: the same checkpoint is taken at another sequence' "$R2ST" \
+    'known.Sequence >= 1 && known.Sequence == other.Sequence &&' \
+    'known.Sequence >= 1 &&'
+  mutate go 'audit r2 fix: a failed stamp run keeps the checkpoint known' "$R2ST" \
+    '		st.knowStamped(nil)
+	}
+	return st.record(run)' \
+    '	}
+	return st.record(run)'
+  mutate go 'audit r2 fix: the last run'"'"'s checkpoint is taken by its trail and sequence alone' "$R2ST" \
+    '	if !sameCheckpoint(named, now) {
+		return not(lastRunRewritten)' \
+    '	if false {
+		return not(lastRunRewritten)'
+  mutate go 'audit r2 fix: an earlier record is taken for the run'"'"'s without asking the runtime' "$R2ST" \
+    '		if now, err = at(run.Trail, run.Sequence); errors.Is(err, errCheckpointsChanged) {' \
+    '		if now, err = named, error(nil); errors.Is(err, errCheckpointsChanged) {'
+  mutate go 'audit r2 fix: a record the runtime could not be asked of is said rewritten' "$R2ST" \
+    '		} else if err != nil {
+			return not(lastRunUnasked)' \
+    '		} else if err != nil && false {
+			return not(lastRunUnasked)'
+  mutate go 'audit r2 fix: stamps that reach an earlier record are taken for the run'"'"'s' "$R2ST" \
+    '	case stamped.Through < run.Sequence:' \
+    '	case false:'
+  mutate go 'audit r2 fix: another trail'"'"'s stamps are taken for the run'"'"'s' "$R2ST" \
+    '	case report.Trail == "" || report.Trail != run.Trail:' \
+    '	case false:'
+  mutate go 'audit r2 fix: no stamp is taken for one that reaches the run' "$R2ST" \
+    '	case stamped.Status != "through":' \
+    '	case false:'
+  mutate go 'audit r2 fix: the last run is said checked with no roots passed' "$R2ST" \
+    '	if !view.Passed || report == nil {' \
+    '	if report == nil {'
+  mutate go 'audit r2 fix: the decision record says every last run checked' internal/desk/audit_record.go \
+    '	answer.Stamping.LastChecked = lastRunChecked(*answer.Stamping, answer.Report, func(trail string, sequence int64) (*checkpointHead, error) {' \
+    '	answer.Stamping.LastChecked = &stampChecked{Checked: true}
+	_ = lastRunChecked(*answer.Stamping, answer.Report, func(trail string, sequence int64) (*checkpointHead, error) {'
   mutate go 'audit fix: a run keeps no record digest' "$AFS" \
     'Sequence: checkpoint.sequence, Digest: checkpoint.digest}' \
     'Sequence: checkpoint.sequence}'
@@ -13634,9 +13683,6 @@ export function assistantTransport(id: string): Transport {
   mutate web 'stamping client: Stamp now’s answer is not checked' "$SAC" \
     'if (!object(value) || !isStampRun(value.run)) throw new Error(failed)' \
     'if (!object(value)) throw new Error(failed)'
-  mutate web 'stamping page: a run the checked stamps do not reach is not labelled' "$STG" \
-    '(stamped.through ?? 0) >= named.sequence' \
-    'true'
 
   # ---- AI connections, on the page side -------------------------------------
   #
@@ -13779,10 +13825,24 @@ export function assistantTransport(id: string): Transport {
     '  if (held) {
     return false'
   # Finding 5: the last run's checkpoint is taken as checked only by the
-  # stamps of its own trail.
-  mutate web 'audit fix: another trail'"'"'s stamps reach the last run'"'"'s checkpoint' "$AFT" \
-    'report?.trail !== undefined && named.trail === report.trail' \
-    'true'
+  # stamps of its own trail: the chassis's to say since the second line
+  # audit (issue #312; "audit r2 fix" rows on lastRunChecked).
+  # The second line audit's finding N4 (issue #312), on the page: the last
+  # run is a stamp the runtime checked only on the chassis's word, and its
+  # reason follows the label.
+  R2SG=web/src/audit/Stamping.tsx
+  mutate web 'audit r2 fix: the page takes the last run for checked with no word on it' "$R2SG" \
+    '  const covered = checked?.checked === true' \
+    '  const covered = checked?.checked !== false'
+  mutate web 'audit r2 fix: the label does not give the chassis'"'"'s reason' "$R2SG" \
+    '{checked?.checked === false && <> {systemMessage(checked.reason)}</>}' \
+    ''
+  mutate web 'audit r2 fix: a word that is checked and gives a reason is read' web/src/audit/client.ts \
+    'value.checked === true && value.reason === undefined ||' \
+    'value.checked === true ||'
+  mutate web 'audit r2 fix: a word that is not checked and gives no reason is read' web/src/audit/client.ts \
+    'value.checked === false && named(value.reason)' \
+    'value.checked === false'
   mutate web 'audit fix: a report'"'"'s trail of no form is read' "$AFC" \
     '    && optional(value.trail, hex(32))
 ' \
