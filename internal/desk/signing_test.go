@@ -237,7 +237,8 @@ func TestASigningFolderJpackJSONCannotNameIsNotUsed(t *testing.T) {
 // a failed run left is removed; a seed the runtime reported but did not
 // write, one others can read, and an answer whose keyId is not its key's, or
 // that is not `audit key generate`'s, are each refused; and a lock that
-// fails after the key was made takes the seed and the list of keys with it.
+// fails after the key was made moves the seed and the list of keys to Desk's
+// archive of keys, never removing them.
 func TestAKeyTheRuntimeFailsToGenerateMakesNoDeskAndLeavesNoKey(t *testing.T) {
 	const id = "d0000000000000000000000000000001"
 	generated := func(publicKey, keyID string) string {
@@ -288,8 +289,14 @@ func TestAKeyTheRuntimeFailsToGenerateMakesNoDeskAndLeavesNoKey(t *testing.T) {
 			if strings.Contains(string(data), s.configDir) {
 				t.Errorf("the refusal names a path: %s", data)
 			}
-			if names := namesIn(t, signingFolderOf(s)); len(names) != 0 {
+			if names := liveIn(t, signingFolderOf(s)); len(names) != 0 {
 				t.Errorf("a failed generation left %q in the signing folder", names)
+			}
+			// What the failed run made is in the archive, never removed.
+			for _, archived := range archivedIn(t, signingFolderOf(s), id) {
+				if !strings.HasSuffix(archived, " "+archiveCreationStopped) {
+					t.Errorf("a failed generation archived %q", archived)
+				}
 			}
 		})
 	}
@@ -328,7 +335,9 @@ func TestAKeyAlreadyKeptUnderTheIdIsNeverTouched(t *testing.T) {
 
 // **A list of public keys is never written over.** Linked into place, where
 // a rename would replace whatever the name held; what is kept is left as it
-// is, and nothing staged is left beside it.
+// is. The list written and not published is kept in Desk's archive of keys,
+// never removed (review round 1 of #327, finding 3), and nothing staged is
+// left beside it.
 func TestAListOfKeysIsNeverWrittenOver(t *testing.T) {
 	folder := t.TempDir()
 	root, err := os.OpenRoot(folder)
@@ -337,19 +346,23 @@ func TestAListOfKeysIsNeverWrittenOver(t *testing.T) {
 	}
 	defer root.Close()
 	dir := &signingDir{root: root, path: folder}
-	if err := os.WriteFile(filepath.Join(folder, "a.keys.jsonl"), []byte("kept\n"), 0o600); err != nil {
+	kept, written := strings.Repeat("a", 32)+keysSuffix, strings.Repeat("b", 32)+keysSuffix
+	if err := os.WriteFile(filepath.Join(folder, kept), []byte("kept\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := dir.writeNewKeys("a.keys.jsonl", []deskPublicKey{{standInPublicKey, standInKeyID, 0, ""}}); err == nil {
+	if _, err := dir.writeNewKeys(kept, []deskPublicKey{{standInPublicKey, standInKeyID, 0, ""}}); err == nil {
 		t.Error("a list was written over one already kept")
 	}
-	if got := readFile(t, filepath.Join(folder, "a.keys.jsonl")); got != "kept\n" {
+	if got := readFile(t, filepath.Join(folder, kept)); got != "kept\n" {
 		t.Errorf("what was kept became %q", got)
 	}
-	if _, err := dir.writeNewKeys("b.keys.jsonl", []deskPublicKey{{standInPublicKey, standInKeyID, 0, ""}}); err != nil {
+	if got := archivedIn(t, folder, strings.Repeat("a", 32)); !slices.Equal(got, kindsArchived(archiveCreationStopped, "keys.jsonl")) {
+		t.Errorf("the list written and not published: the archive holds %q", got)
+	}
+	if _, err := dir.writeNewKeys(written, []deskPublicKey{{standInPublicKey, standInKeyID, 0, ""}}); err != nil {
 		t.Fatal(err)
 	}
-	if names := namesIn(t, folder); !slices.Equal(names, []string{"a.keys.jsonl", "b.keys.jsonl"}) {
+	if names := namesIn(t, folder); !slices.Equal(names, []string{kept, archiveDirName, written}) {
 		t.Errorf("the folder holds %q", names)
 	}
 }
@@ -382,8 +395,9 @@ func TestASeedWithAnotherNameOrALinkIsRefused(t *testing.T) {
 	}
 }
 
-// **A desk made during shutdown leaves no key.** The key was generated, but
-// the desk is not published, so the seed and the list of keys go with it.
+// **A desk made during shutdown leaves no key at a live name.** The key was
+// generated, but the desk is not published, so the seed, the list of keys and
+// the marker go to Desk's archive of keys, never removed.
 func TestADeskMadeDuringShutdownLeavesNoKey(t *testing.T) {
 	p := newPause(t)
 	calls, s, ts, _ := signingStandIn(t)
@@ -397,8 +411,11 @@ func TestADeskMadeDuringShutdownLeavesNoKey(t *testing.T) {
 	if got.status != http.StatusConflict || !strings.Contains(string(got.body), "shutting down") {
 		t.Errorf("a creation finished during shutdown answered %d %s", got.status, got.body)
 	}
-	if names := namesIn(t, signingFolderOf(s)); len(names) != 0 {
+	if names := liveIn(t, signingFolderOf(s)); len(names) != 0 {
 		t.Errorf("a desk made during shutdown left %q in the signing folder", names)
+	}
+	if got := archivedIn(t, signingFolderOf(s), "e0000000000000000000000000000001"); !slices.Equal(got, kindsArchived(archiveCreationStopped, "keys.jsonl", "seed", "creating")) {
+		t.Errorf("a desk made during shutdown archived %q", got)
 	}
 }
 
@@ -934,7 +951,7 @@ func TestNoPartOfTheKeysPathIsPassedOn(t *testing.T) {
 				t.Errorf("the refusal is %q, want %q", refusalOf(data), "The desk was not created: "+tc.why)
 			}
 			leaks(t, "the refusal", string(data))
-			if names := namesIn(t, filepath.Join(config, "secrets", "signing")); len(names) != 0 {
+			if names := liveIn(t, filepath.Join(config, "secrets", "signing")); len(names) != 0 {
 				t.Errorf("a refused generation left %q", names)
 			}
 		})
@@ -955,13 +972,19 @@ func TestNoPartOfTheKeysPathIsPassedOn(t *testing.T) {
 		status, data := deskCall(t, ts, "POST", "/api/desks", "", `{"name":"Unlocked"}`, true)
 		why := "the runtime did not lock it: The key … is refused under …."
 		assertNoDesk(t, s, ts, status, data, why)
-		if refusalOf(data) != "The desk was not created: "+why {
+		if refusalOf(data) != "The desk was not created: "+why+" "+keyArchivedWords {
 			t.Errorf("the refusal is %q", refusalOf(data))
 		}
 		leaks(t, "the refusal", string(data))
-		if names := namesIn(t, filepath.Join(config, "secrets", "signing")); len(names) != 0 {
+		if names := liveIn(t, filepath.Join(config, "secrets", "signing")); len(names) != 0 {
 			t.Errorf("a refused lock left %q", names)
 		}
+		// Archived with a sentence that names no part of the path.
+		if got := archivedIn(t, filepath.Join(config, "secrets", "signing"), lockedID); !slices.Equal(got, kindsArchived(archiveCreationStopped, "keys.jsonl", "seed", "creating")) {
+			t.Errorf("a refused lock archived %q", got)
+		}
+		journal := readFile(t, filepath.Join(config, "secrets", "signing", archiveDirName, lockedID, archiveJournalName))
+		leaks(t, "the archive's journal", journal)
 	})
 
 	// A desk made unsigned, because the signing folder is a link: its
@@ -969,7 +992,8 @@ func TestNoPartOfTheKeysPathIsPassedOn(t *testing.T) {
 	t.Run("a creation that keeps no key", func(t *testing.T) {
 		_, s, ts := server(t)
 		signing := filepath.Join(config, "secrets", "signing")
-		if err := os.Remove(signing); err != nil && !os.IsNotExist(err) {
+		// The test's own folder, with what earlier cases archived in it.
+		if err := os.RemoveAll(signing); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.Symlink(t.TempDir(), signing); err != nil {

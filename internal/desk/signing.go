@@ -56,19 +56,21 @@ package desk
 //	{"id":"<32 hex>","folder":"<device>:<inode>"}
 //	{"id":"<32 hex>","folder":"<device>:<inode>","manifest":"sha256:<64 hex>"}
 //
-// A Desk stopped in between leaves the marker, and the next start removes
-// that id's seed, list and marker only where the desk was never published
-// (`sweepUnfinishedKeys`). A seed or a list with no marker is never removed,
-// whatever the desks folder says. The key the upgrade makes for the project
-// Desk was started on keeps a marker the same way, until jpack.json names it
-// and its lock is checked (startup_key.go).
+// A Desk stopped in between leaves the marker, and the next start moves that
+// id's list, seed and marker to Desk's archive of keys only where the marker
+// itself records that the manifest was never about to be written
+// (`sweepUnfinishedKeys`). A seed or a list with no marker is never touched,
+// whatever the desks folder says, and no key is ever removed: a creation that
+// stops archives what it made (archive.go). The key the upgrade makes for the
+// project Desk was started on keeps a marker the same way, until jpack.json
+// names it and its lock is checked (startup_key.go).
 //
 // # One lock
 //
 // A creation, from before its marker to the marker's removal, and the sweep,
 // from its first look to its last removal, each hold the signing folder's
 // lock (signing_lock.go), so that a second Desk process sharing the
-// configuration folder never sweeps away a key a creation is making (issue
+// configuration folder never sweeps aside a key a creation is making (issue
 // #230).
 //
 // # What this does not defend against
@@ -87,7 +89,7 @@ package desk
 // check and the runtime's own open, in a folder only this user can change
 // (ADR-0010, section 1): a swap made in that moment by a process of this same
 // user can have the runtime write the seed where the swapped-in folder is.
-// Desk removes only what it finds through the folder it holds, so such a
+// Desk archives only what it finds through the folder it holds, so such a
 // seed is left where it was written.
 
 import (
@@ -283,6 +285,9 @@ func parseDeskKeys(data []byte) ([]deskPublicKey, error) {
 type signingDir struct {
 	root *os.Root
 	path string
+	// logf is the server's log, where each archive move is said
+	// (archive.go).
+	logf func(format string, args ...any)
 }
 
 func (d *signingDir) Close() {
@@ -342,7 +347,7 @@ func (a *assistantStore) openSigning(create bool) (*signingDir, error) {
 		root.Close()
 		return nil, fmt.Errorf("%s changed between being checked and being opened, and was not used", path)
 	}
-	return &signingDir{root: root, path: path}, nil
+	return &signingDir{root: root, path: path, logf: a.logf}, nil
 }
 
 // namesHeld is whether the signing folder's pathname, not followed at its
@@ -372,7 +377,7 @@ func (d *signingDir) namesFile(name string, info os.FileInfo) error {
 
 // madeKey is a key a creation generated: the marker it wrote, the seed the
 // runtime wrote and the list of public keys Desk wrote beside it, each as it
-// was found once written, so that a creation that stops removes these files
+// was found once written, so that a creation that stops archives these files
 // and nothing it did not make.
 type madeKey struct {
 	dir                            *signingDir
@@ -445,10 +450,15 @@ func (k *madeKey) settle() error {
 }
 
 // removeMade removes name from the folder this holds, only while it is info.
-// What is not there is already gone.
+// What is not there is already gone. **Only a marker**: a seed, a next seed
+// or a list of public keys is never removed here, whatever asks (archive.go);
+// it is archived, and the owner removes it.
 func (d *signingDir) removeMade(name string, info os.FileInfo) error {
 	if info == nil {
 		return nil
+	}
+	if kind, _, _ := archiveKindOf(name); kind != "creating" && kind != "rotating" {
+		return fmt.Errorf("%s is a key or a list of keys, and Desk removes none on its own", name)
 	}
 	found, err := d.root.Lstat(name)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -460,25 +470,22 @@ func (d *signingDir) removeMade(name string, info os.FileInfo) error {
 	return d.root.Remove(name)
 }
 
-// unmake removes the list of public keys, the seed and the marker a creation
-// made, in that order, each only while its name still holds the file that
-// was made, and only through the folder this holds; it stops at the first
-// that cannot be removed, so the marker stays wherever anything else does,
-// for the next start's sweep (review round 1 of #296). A nil key made
-// nothing.
-func (k *madeKey) unmake() error {
+// archiveStopped moves what a creation that stopped made of its key, the
+// list of public keys, the seed and the marker, to Desk's archive of keys, in
+// that order, each only while its name still holds the file that was made,
+// and only through the folder this holds; it stops at the first that cannot
+// be moved, so the marker stays wherever anything else does, for the next
+// start's sweep (review round 1 of #296). why is why the creation stopped, in
+// words with no path. Nothing is removed: a marker alone, with nothing made
+// beside it, is removed, since it records nothing Desk could not decide. A
+// nil key made nothing.
+func (k *madeKey) archiveStopped(why string) ([]string, error) {
 	if k == nil {
-		return nil
+		return nil, nil
 	}
-	for _, made := range []struct {
-		name string
-		info os.FileInfo
-	}{{k.keysName, k.keys}, {k.seedName, k.seed}, {k.markerName, k.marker}} {
-		if err := k.dir.removeMade(made.name, made.info); err != nil {
-			return err
-		}
-	}
-	return nil
+	name, _ := strings.CutSuffix(k.seedName, seedSuffix)
+	return k.archiveMade(archived{identity: name, rule: archiveCreationStopped,
+		why: "A creation of this key stopped before anything named it: " + strings.TrimRight(why, ".") + ". Desk keeps what it made here, and makes another key only under a new creation."})
 }
 
 // generateDeskKey has the runtime write desk id's seed into dir, checks what
@@ -490,9 +497,10 @@ func (k *madeKey) unmake() error {
 // before the runtime runs. The marker is written first, through the folder
 // held. Immediately before the run, the folder's pathname must still name the
 // folder held. After a run that failed, whatever the seed's name holds in the
-// folder held was made by that run, and is removed with the marker; once the
-// seed is checked, a later failure removes it by identity (`unmake`). The
-// seed's pathname must then name the seed found through the folder held.
+// folder held was made by that run, and is archived with the marker; once the
+// seed is checked, a later failure archives it by identity
+// (`archiveStopped`). The seed's pathname must then name the seed found
+// through the folder held.
 func generateDeskKey(ctx context.Context, bin string, held heldDir, dir *signingDir, id string) (*madeKey, error) {
 	return generateKeyMarked(ctx, bin, held, dir, id, nil)
 }
@@ -528,12 +536,9 @@ func generateKeyMarked(ctx context.Context, bin string, held heldDir, dir *signi
 	}
 	decoded := out != nil && json.Unmarshal(out, &answer) == nil
 	if runErr != nil || !decoded || answer.Command != "audit key generate" || answer.Status != "generated" {
-		removed := dir.root.Remove(made.seedName)
-		failure := generationFailure(answer.Diagnostics, runErr)
-		if removed != nil && !errors.Is(removed, fs.ErrNotExist) {
-			failure = keyMadeLeft{fmt.Errorf("%w; what it left at %s could not be removed: %v", failure, made.seedName, removed)}
-		}
-		return nil, unmadeAfter(made, failure)
+		// Whatever the seed's name holds was made by that run: it was free
+		// before it, under the marker. It is archived, never removed.
+		return nil, unmadeAfter(made, generationFailure(answer.Diagnostics, runErr))
 	}
 	seed, err := dir.root.Lstat(made.seedName)
 	if err != nil {
@@ -579,11 +584,11 @@ func checkSeed(name string, info os.FileInfo) error {
 	return nil
 }
 
-// unmadeAfter is err, after removing what a creation made of its key so far;
-// a keyMadeLeft where any of it could not be removed.
+// unmadeAfter is err, after archiving what a creation made of its key so far
+// (`archiveStopped`); a keyMadeLeft where any of it could not be archived.
 func unmadeAfter(made *madeKey, err error) error {
-	if removed := made.unmake(); removed != nil {
-		return keyMadeLeft{fmt.Errorf("%w; and what was made of its key could not be removed: %v", err, removed)}
+	if _, failed := made.archiveStopped(err.Error()); failed != nil {
+		return keyMadeLeft{fmt.Errorf("%w; and what was made of its key could not be archived: %v", err, failed)}
 	}
 	return err
 }
@@ -731,6 +736,13 @@ func (d *signingDir) writeMarkerHolding(name string, data []byte) (os.FileInfo, 
 // anything: staged under a name of its own, made 0600 on its descriptor,
 // synced, and then linked into place. A link never replaces a name that
 // exists, where a rename would. It answers the file as written.
+//
+// **The staged list is never removed unpublished** (review round 1 of #327,
+// finding 3). Its staging name goes only once the list is linked to its own
+// name, and both names hold one file, so that nothing is lost by it; where
+// the list was not published, whatever was written of it is moved to Desk's
+// archive of keys, with the sentence that says why, and is otherwise left
+// where it was staged, and said.
 func (d *signingDir) writeNewKeys(name string, keys []deskPublicKey) (os.FileInfo, error) {
 	var data []byte
 	for _, key := range keys {
@@ -740,28 +752,36 @@ func (d *signingDir) writeNewKeys(name string, keys []deskPublicKey) (os.FileInf
 	if err != nil {
 		return nil, err
 	}
-	defer d.root.Remove(stagedName)
+	kept := func(failed error) (os.FileInfo, error) {
+		return nil, d.keepUnpublished(stagedName, name, failed)
+	}
 	if _, err := staged.Write(data); err != nil {
 		staged.Close()
-		return nil, err
+		return kept(err)
 	}
 	if err := staged.Chmod(custodyFileMode); err != nil {
 		staged.Close()
-		return nil, err
+		return kept(err)
 	}
 	if err := staged.Sync(); err != nil {
 		staged.Close()
-		return nil, err
+		return kept(err)
 	}
 	if err := staged.Close(); err != nil {
-		return nil, err
+		return kept(err)
 	}
+	keyBetween("list: staged")
 	if err := d.root.Link(stagedName, name); err != nil {
-		return nil, err
+		return kept(err)
 	}
 	info, err := d.root.Lstat(name)
 	if err != nil {
 		return nil, err
+	}
+	// Published: the staging name is a second name of the very file now at
+	// the list's name, and goes; any other file there is left.
+	if found, err := d.root.Lstat(stagedName); err == nil && os.SameFile(found, info) {
+		_ = d.root.Remove(stagedName)
 	}
 	if dir, err := d.root.Open("."); err == nil {
 		_ = dir.Sync()
@@ -769,6 +789,30 @@ func (d *signingDir) writeNewKeys(name string, keys []deskPublicKey) (os.FileInf
 	}
 	return info, nil
 }
+
+// keepUnpublished moves a list of public keys staged as stagedName, and not
+// published as name, to Desk's archive of keys under the identity name is
+// kept under, saying why, failed (review round 1 of #327, finding 3). It
+// answers failed, with what could not be done of that.
+func (d *signingDir) keepUnpublished(stagedName, name string, failed error) error {
+	info, err := d.root.Lstat(stagedName)
+	if errors.Is(err, fs.ErrNotExist) {
+		return failed
+	}
+	_, identity, ok := archiveKindOf(name)
+	if err != nil || !ok {
+		return fmt.Errorf("%w; the list written was left where it was staged", failed)
+	}
+	why := fmt.Sprintf(listUnpublishedWords, strings.TrimRight(failed.Error(), "."))
+	if _, err := d.archiveAs(stagedName, "keys.jsonl", identity, info, archived{identity: identity, rule: archiveCreationStopped, why: why}); err != nil {
+		return fmt.Errorf("%w; the list written could not be moved to Desk's archive of keys, and was left where it was staged: %v", failed, err)
+	}
+	return failed
+}
+
+// listUnpublishedWords is the archive line of a list of public keys a
+// creation wrote and could not put under its name.
+const listUnpublishedWords = "The list of public keys Desk wrote for this key could not be put under its name: %s. Desk keeps it here rather than removing it."
 
 // stage makes an exclusive, randomly named staging file in the signing
 // folder, as custody's own `stage` does beside the assistant's key.
@@ -1071,55 +1115,52 @@ func (s *Server) custodyWords(message string) string {
 	return s.withoutCustodyPaths(message, "")
 }
 
-// sweepUnfinishedKeys removes the keys of creations a stopped Desk left
-// unfinished. It runs once, at start, under the registry's lock, before any
-// desk is opened or any request served.
+// sweepUnfinishedKeys moves the keys of creations a stopped Desk left, and
+// never published, to Desk's archive of keys (archive.go). It runs once, at
+// start, under the registry's lock, before any desk is opened or any request
+// served. It removes no key: its one question is whether the creation was
+// never published (the maintainer's decision of 2026-10-08; issue #292).
 //
 // It acts only on markers (`<id>.creating`) directly in the signing folder,
 // never on a seed or a list without one, and never in a folder below it.
 //
-// **A made desk's creation is decided by what its marker records, and by
-// where Desk opens desks from, never by the desks folder alone** (issue #310,
-// the second line audit's finding N2). A desk published and then moved out
-// of the desks folder, and opened directly, is published still: absence from
-// the desks folder says nothing of it (`deskCreationLeft`).
+// **A made desk's creation** (`deskCreationLeft`), by what its marker records
+// and by where Desk opens desks from, never by the desks folder alone:
 //
 //   - where a desk of that id is published where Desk opens it from, the
 //     desks folder, or the folder this Desk was opened on directly, holding
 //     its manifest, the desk was published and only the marker was left: the
-//     marker alone is removed;
-//   - otherwise, where the marker records that the manifest was never about
-//     to be written, or where the desks folder holds the very folder the
-//     creation made, by device and inode, with no manifest (an empty marker,
-//     of an earlier Desk: a folder of that id with no manifest), the desk was
-//     never published: its list, its seed and its marker are removed, in that
-//     order, the marker last;
-//   - otherwise, the desk may have been published and moved: nothing is
-//     removed, and the log says so. A start on another project against the
-//     same configuration removes no key a published desk's creation left;
+//     marker alone is removed, and the key stays where it is;
+//   - where the marker itself records that the manifest was never about to be
+//     written, the desk was never published: its list, its seed and its
+//     marker are archived, in that order, the marker last, each with the
+//     sentence that says so;
+//   - otherwise, a marker that records the manifest was about to be written
+//     (issue #322: a manifest gone since says nothing of a copy published
+//     elsewhere), or an earlier Desk's marker, which records nothing: the
+//     desk may have been published, and nothing is moved; the log says so;
 //   - where anything cannot be told, because a name could not be inspected or
-//     read for any reason but its absence, nothing is removed, and the log
-//     says so. A manifest that cannot be read for a moment never costs a desk
-//     its key.
+//     read for any reason but its absence, nothing is moved, and the log says
+//     so. A manifest that cannot be read for a moment never costs a desk its
+//     key.
 //
 // **And on the marker of the project Desk was started on**, under its own
 // name (`signingKeyName`), on that project's start alone: "published" is
 // there whether its jpack.json names the seed (`startupKeyNamed`), which the
 // upgrade wrote only after the key was made, and a jpack.json that cannot be
-// read now never costs the project its key. A marker of another project's
-// name is left for a start on that project. **The key goes only under the
-// name the project's own identity file holds** (`startupBound`, issue #283):
-// under its path's hash, which a project moved away from that path left as
-// well, a jpack.json that names no key says nothing of the project the
-// creation was for, and only a marker whose seed jpack.json names is removed.
+// read now never costs the project its key. The key is archived only where
+// the marker binds the creation to this project's own identity, bound to this
+// folder (`startupBound`), and to the very jpack.json the upgrade set out to
+// replace (`creationBound`); anything else leaves it, and says so. A marker
+// of another project's name is left for a start on that project.
 //
 // **Under the signing folder's lock, taken once** (signing_lock.go). Where
 // another Desk process holds it, a creation may be under way there: the sweep
 // changes nothing, and leaves every marker for the next start. Where no lock
-// can be taken here, it removes nothing either. Under the lock it inspects
-// every name first, and removes each through the folder it holds only while
-// the name still holds the file it inspected (`removeMade`): a file put in
-// its place since is left, with the marker after it.
+// can be taken here, it moves nothing either. Under the lock it inspects
+// every name first, and archives each through the folder it holds only while
+// the name still holds the file it inspected (`archive`): a file put in its
+// place since is left, with the marker after it.
 func (s *Server) sweepUnfinishedKeys() {
 	dir, err := s.assistant.openSigning(false)
 	if errors.Is(err, errNoSigningDir) {
@@ -1152,7 +1193,7 @@ func (s *Server) sweepUnfinishedKeys() {
 		if !isMarker || !deskIDPattern.MatchString(id) && !s.startupKey(id) {
 			continue
 		}
-		// Every name first: what is removed is what was inspected here.
+		// Every name first: what is archived is what was inspected here.
 		names := []string{id + keysSuffix, id + seedSuffix, id + creatingSuffix}
 		inspected := make([]os.FileInfo, len(names))
 		for i, name := range names {
@@ -1182,51 +1223,67 @@ func (s *Server) sweepUnfinishedKeys() {
 			s.log.Printf("desk: the key of an unfinished creation of desk %s was left, with its list and its marker: %s", id, left)
 			continue
 		}
-		// **A key goes only with the transaction it was made in** (issue
-		// #283; review round 1 of #296): its marker must name this project's
-		// identity, held by no other folder, its folder, and the jpack.json it
-		// set out to replace, as found now. Anything else leaves the key, its
-		// list and its marker, and the panel says so.
-		if !published && s.startupKey(id) {
-			if why := s.creationBound(dir, id, inspected[2]); why != "" {
-				s.log.Printf("desk: the key of an unfinished creation under this project's name, %s, was left, with its list and its marker: %s", id, why)
+		if published {
+			keyBetween("sweep: inspected")
+			if err := dir.removeMade(names[2], inspected[2]); err != nil {
+				s.log.Printf("desk: %s, left by a creation that was published, was not removed: %v", names[2], err)
+			}
+			continue
+		}
+		// **A key is archived only with the transaction it was made in**
+		// (issue #283; review round 1 of #296): its marker must name this
+		// project's identity, bound to this folder, and the jpack.json it set
+		// out to replace, as found now. Anything else leaves the key, its list
+		// and its marker, and the panel says so.
+		why := deskNeverPublishedWords
+		if s.startupKey(id) {
+			if bound := s.creationBound(dir, id, inspected[2]); bound != "" {
+				s.log.Printf("desk: the key of an unfinished creation under this project's name, %s, was left, with its list and its marker: %s", id, bound)
 				continue
 			}
+			why = startupNeverPublishedWords
 		}
 		keyBetween("sweep: inspected")
-		remove := []int{0, 1, 2}
-		if published {
-			remove = []int{2}
-		}
-		for _, i := range remove {
-			if err := dir.removeMade(names[i], inspected[i]); err != nil {
-				s.log.Printf("desk: %s, left by an unfinished creation, was not removed: %v", names[i], err)
+		for i := range names {
+			if inspected[i] == nil {
+				continue
+			}
+			if _, err := dir.archive(names[i], inspected[i], archived{identity: id, rule: archiveNeverPublished, why: why}); err != nil {
+				s.log.Printf("desk: %s, left by an unfinished creation, was not archived: %v", names[i], err)
 				break
 			}
-		}
-		if !published {
-			s.log.Printf("desk: the key of an unfinished creation of desk %s was removed", id)
 		}
 	}
 }
 
+// What the sweep's archive line says of a creation it shows never published.
+const (
+	deskNeverPublishedWords    = "A creation of this desk stopped before its manifest was about to be written, as its marker records, so no desk was published with this key. Desk moved it here rather than removing it: a marker put back from before could say so of a desk published since."
+	startupNeverPublishedWords = "A creation of this project's key stopped before the upgrade named it: the project's jpack.json is the very file the upgrade set out to replace, as its marker records. Desk moved it here rather than removing it: a copy of the project made in between could name it."
+)
+
 // deskMovedWords is why a made desk's creation is left: it may have been
-// published, and moved out of the desks folder (issue #310).
-const deskMovedWords = "its marker records that its manifest was about to be written, and Desk's desks folder does not hold the folder it was made in with no manifest, as a desk published and then moved out of that folder, or opened from elsewhere, would not: Desk keeps that key, its list and its marker as they are"
+// published, and moved out of the desks folder, or copied (issues #310, #322).
+const deskMovedWords = "its marker records that its manifest was about to be written, and no manifest of that desk is where Desk opens it from, as a desk published and then moved, or copied, and its manifest removed, would not be: Desk keeps that key, its list and its marker as they are"
+
+// deskLegacyWords is why an earlier Desk's empty marker is left: it records
+// nothing of the creation.
+const deskLegacyWords = "its marker is an earlier Desk's, which records nothing of the creation, and no manifest of that desk is where Desk opens it from: Desk cannot tell a desk never published from one published and moved, so it keeps that key, its list and its marker as they are"
 
 // deskCreationLeft is what the creation of desk id left, its marker inspected
-// as marker (issue #310): published, where a desk of that id is published
-// where Desk opens desks from, the desks folder (`deskRegistered`) or the
-// folder this Desk was opened on directly, holding its manifest; otherwise
-// left, the words why its key stays, where it may have been published and
-// moved; otherwise, never published. An error where anything that decides it
-// could not be read now, or the marker is not the record Desk writes.
+// as marker (issues #310, #322): published, where a desk of that id is
+// published where Desk opens desks from, the desks folder (`deskRegistered`)
+// or the folder this Desk was opened on directly, holding its manifest;
+// otherwise never published only where the marker itself records that its
+// manifest was never about to be written; otherwise left, the words why its
+// key stays. An error where anything that decides it could not be read now,
+// or the marker is not the record Desk writes.
 func (s *Server) deskCreationLeft(dir *signingDir, id string, marker os.FileInfo) (published bool, left string, err error) {
 	creation, legacy, err := dir.readDeskCreation(id, marker)
 	if err != nil {
 		return false, "", fmt.Errorf("its marker could not be read as the record Desk writes: %w", err)
 	}
-	folder, published, err := s.deskRegistered(id)
+	_, published, err = s.deskRegistered(id)
 	if err != nil {
 		return false, "", err
 	}
@@ -1242,11 +1299,10 @@ func (s *Server) deskCreationLeft(dir *signingDir, id string, marker os.FileInfo
 	switch {
 	case published:
 		return true, "", nil
-	case !legacy && creation.Manifest == "":
+	case legacy:
+		return false, deskLegacyWords, nil
+	case creation.Manifest == "":
 		// Its manifest was never about to be written.
-		return false, "", nil
-	case folder != nil && (legacy || creation.Folder != "" && identityKey(folder) == creation.Folder):
-		// The folder it was made in is in the desks folder, with no manifest.
 		return false, "", nil
 	}
 	return false, deskMovedWords, nil

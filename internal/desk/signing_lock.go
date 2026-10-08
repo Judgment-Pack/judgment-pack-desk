@@ -29,9 +29,11 @@ package desk
 // it. Desk opens every file with close-on-exec, so no runtime it starts
 // inherits it.
 //
-// **Where no lock can be taken** (a build or a file system with no flock), a
-// creation and a rotation go on as before the lock, and the sweep and the
-// recovery change nothing: nothing is removed without the lock.
+// **Where no lock can be taken** (a build or a file system with no flock),
+// nothing in the signing folder is changed (review round 1 of #327, finding
+// 4): a desk's creation makes the desk unsigned, and says why; the upgrade
+// that makes the project's key, a rotation and the owner's removal refuse;
+// and the sweep and the recovery change nothing.
 //
 // Every process that changes keys there must take this same lock, on this
 // same folder: lockSigning and lockSigningWithin are the helpers for it.
@@ -56,6 +58,11 @@ var (
 // signingBusyWords is what a creation or a rotation that could not take the
 // lock in time says, in words with no path.
 const signingBusyWords = "another Desk process is changing keys in this configuration folder; try again."
+
+// noSigningLockWords is what a creation, a rotation or a removal says where no
+// lock can be taken on the signing folder at all (review round 1 of #327,
+// finding 4): Desk changes no key without it.
+const noSigningLockWords = "Desk changes keys only under the lock of its signing folder, and none can be taken here."
 
 // signingLockWait bounds how long a creation or a rotation waits for the
 // lock. A variable only so a test can see the wait end without waiting it out.

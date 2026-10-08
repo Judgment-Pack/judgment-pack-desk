@@ -299,9 +299,15 @@ func (r *rotationRig) describe(t *testing.T) string {
 			names = append(names, mine)
 		}
 	}
-	return fmt.Sprintf("%s seed=%s next=%s keys=%d rotations=%d", strings.Join(names, ","),
+	described := fmt.Sprintf("%s seed=%s next=%s keys=%d rotations=%d", strings.Join(names, ","),
 		seedIs(filepath.Join(r.signing, r.id+seedSuffix)), seedIs(filepath.Join(r.signing, r.id+nextSeedSuffix)),
 		bytes.Count(list, []byte("\n")), bytes.Count(sidecar, []byte(`"kind":"key-rotation"`)))
+	// What the archive holds of this desk's, where it holds anything: never
+	// removed (archive.go).
+	if archived := archivedIn(t, r.signing, r.id); len(archived) > 0 {
+		described += " archived=" + strings.Join(archived, ",")
+	}
+	return described
 }
 
 // snapshot is every name in the signing folder and the audit folder, with its
@@ -350,12 +356,14 @@ func (r *rotationRig) rotateCall() string {
 // **The steps, in order, each through Desk's signing folder** (ADR-0010,
 // section 1). The panel offers the rotation with a token; the confirmed
 // request reads the keys again, writes the marker, has the runtime generate
-// the next key beside the seed and rotate to it, writes the list with the
-// next key at the sequence the runtime gave, renames the next seed over the
-// current one, and removes the marker: each step seen at the moment after
+// the next key beside the seed and rotate to it, appends the next key's line
+// to the list at the sequence the runtime gave, moves the current seed to
+// Desk's archive of keys and renames the next seed into the name it left
+// (never over it), and removes the marker: each step seen at the moment after
 // it. Neither JPACK_CONFIG nor an inherited JPACK_SIGNING_KEY reaches a run.
-// The list and the seed end exactly as spelled out here, 0600, with nothing
-// else left; the panel then passes both keys, in order.
+// The list and the seed end exactly as spelled out here, 0600, with the
+// previous seed in the archive and nothing else left; the panel then passes
+// both keys, in order.
 func TestARotationRunsItsStepsInOrder(t *testing.T) {
 	t.Setenv("JPACK_SIGNING_KEY", filepath.Join(t.TempDir(), "owner.seed"))
 	r := newRotationRig(t, "c1000000000000000000000000000001", "")
@@ -387,7 +395,9 @@ func TestARotationRunsItsStepsInOrder(t *testing.T) {
 		"rotation: line written: .keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=1 rotations=1",
 		"rotation: finish journalled: .keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=1 rotations=1",
 		"rotation: list written: .keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=2 rotations=1",
-		"rotation: seed renamed: .keys.jsonl,.rotating,.seed seed=2 next=absent keys=2 rotations=1",
+		"rotation: after the last check: .keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=2 rotations=1",
+		"rotation: previous archived: .keys.jsonl,.next.seed,.rotating seed=absent next=2 keys=2 rotations=1 archived=seed rotation-promoted",
+		"rotation: seed renamed: .keys.jsonl,.rotating,.seed seed=2 next=absent keys=2 rotations=1 archived=seed rotation-promoted",
 	}
 	if !slices.Equal(seen, want) {
 		t.Errorf("the steps were\n%s\nwant\n%s", strings.Join(seen, "\n"), strings.Join(want, "\n"))
@@ -415,16 +425,26 @@ func TestARotationRunsItsStepsInOrder(t *testing.T) {
 			t.Errorf("%s is %v", filepath.Base(path), perm)
 		}
 	}
-	if names := namesIn(t, r.signing); !slices.Equal(names, []string{r.id + keysSuffix, r.id + seedSuffix}) {
+	if names := liveIn(t, r.signing); !slices.Equal(names, []string{r.id + keysSuffix, r.id + seedSuffix}) {
 		t.Errorf("the signing folder holds %q", names)
+	}
+	// **The previous seed is kept, never renamed over** (issue #323): in the
+	// archive, as the trail it was rotated on and the record it signed
+	// through name it.
+	if previous := archivedFile(t, r.signing, r.id, "seed"); previous == "" || seedIs(previous) != "1" || !strings.HasPrefix(filepath.Base(previous), fixtureTrail+"-1-") {
+		t.Errorf("the previous seed was not kept in the archive: %q", previous)
 	}
 	if got := readFile(t, filepath.Join(r.auditFolder(), "signatures.jsonl")); got != recordLine(standInKeyID, 1)+rotationLine(1, standInKeyID, secondPublicKey) {
 		t.Errorf("the sidecar is %q", got)
 	}
 
 	// The panel passes both keys, in order, and offers no second rotation
-	// until a record is signed with the next key.
-	panel, _ := r.panel(t)
+	// until a record is signed with the next key; and it lists the previous
+	// key, archived.
+	panel, panelData := r.panel(t)
+	if panel.Archive == nil || len(panel.Archive.Entries) != 1 || panel.Archive.Entries[0].Kind != "seed" || !panel.Archive.Entries[0].Own {
+		t.Errorf("the decision record lists %s", panelData)
+	}
 	if panel.Keys == nil || panel.Keys.State != keysKept || !slices.Equal(panel.Keys.Public, []deskPublicKey{key1, {secondPublicKey, secondKeyID, 1, ""}}) {
 		t.Errorf("the panel shows the keys %+v", panel.Keys)
 	}
@@ -457,12 +477,14 @@ func (r *rotationRig) assertUnchanged(t *testing.T) {
 // the trail has a chained record, the runtime's checkpoint names no trail to
 // rotate on, and nothing is made (review round 1 of #302). While its last
 // line is incomplete, and with a current key that is not in force, the
-// runtime refuses: the next key and the marker are removed, the list and the
-// seed are as they were, and the answer is the runtime's own sentence. A runtime that wrote its line and then
-// refused, as a write whose sync failed would, has rotated: the sidecar says
-// so, and the rotation is finished. A next key the runtime will not generate
-// leaves nothing either, not even what its failed run left under the next
-// key's name.
+// runtime refuses: the next key and the marker go to Desk's archive of keys,
+// never removed (the archive rule), the list and the seed are as they were,
+// and the answer is the runtime's own sentence and says where the next key
+// went. A runtime that wrote its line and then refused, as a write whose sync
+// failed would, has rotated: the sidecar says so, and the rotation is
+// finished, the previous key archived. A next key the runtime will not
+// generate leaves nothing at a live name either: what its failed run left
+// under the next key's name is archived with the marker.
 // **No rotation past the key list's bound.** A desk whose list already holds
 // as many keys as Desk keeps is offered no rotation, and a token the panel gave
 // before is refused before the runtime is asked anything: the runtime would
@@ -502,16 +524,20 @@ func TestARotationTheRuntimeRefusesChangesNothing(t *testing.T) {
 		rotate   func(calls string) string
 		generate string
 		why      string
+		archived []string
 	}{
 		{"no chained record yet", 0, "", rotateAsTheRuntime, "",
-			"Nothing was rotated: the trail has no chained record yet, so there is no trail to rotate the key of; the first record is signed with whichever key the project names."},
+			"Nothing was rotated: the trail has no chained record yet, so there is no trail to rotate the key of; the first record is signed with whichever key the project names.", nil},
 		{"an incomplete last line", 2, recordLine(standInKeyID, 1), func(string) string { return refusingWith(rotateIncomplete, 4) }, "",
-			"The runtime did not rotate the key, and nothing was changed: Desk kept the current key. It said: Audit record could not be written: the audit trail's last line is incomplete, and no record is chained after an incomplete line."},
+			"The runtime did not rotate the key, and nothing was changed: Desk kept the current key. It said: Audit record could not be written: the audit trail's last line is incomplete, and no record is chained after an incomplete line. " + nextArchivedWords,
+			kindsArchived(archiveRotationStopped, "next.seed", "rotating")},
 		{"a current key not in force", 2, recordLine(standInKeyID, 1), func(string) string { return refusingWith(rotateNotInForce, 1) }, "",
-			"The runtime did not rotate the key, and nothing was changed: Desk kept the current key. It said: The project's signing key is not the key in force in the signature sidecar, so it cannot hand signing over; only the key in force can."},
+			"The runtime did not rotate the key, and nothing was changed: Desk kept the current key. It said: The project's signing key is not the key in force in the signature sidecar, so it cannot hand signing over; only the key in force can. " + nextArchivedWords,
+			kindsArchived(archiveRotationStopped, "next.seed", "rotating")},
 		{"a next key the runtime will not generate", 1, recordLine(standInKeyID, 1), rotateAsTheRuntime,
 			"  printf 'part of a seed' > \"$4\"\n  printf '%s\\n' " + shellQuote(`{"outputVersion":"2","command":"audit key generate","status":"error","diagnostics":[{"code":"JPS-AUDIT-KEY-EXISTS","message":"Something is already there, and a key is never written over anything."}]}`) + "\n  exit 4",
-			"Nothing was rotated: the runtime did not generate its signing key: Something is already there, and a key is never written over anything."},
+			"Nothing was rotated: the runtime did not generate its signing key: Something is already there, and a key is never written over anything. " + nextArchivedWords,
+			kindsArchived(archiveRotationStopped, "next.seed", "rotating")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newRotationRig(t, id, "")
@@ -530,6 +556,9 @@ func TestARotationTheRuntimeRefusesChangesNothing(t *testing.T) {
 			if sidecarAfter, _ := os.ReadFile(filepath.Join(r.auditFolder(), "signatures.jsonl")); !bytes.Equal(sidecarBefore, sidecarAfter) {
 				t.Errorf("the sidecar changed: %q", sidecarAfter)
 			}
+			if got := archivedIn(t, r.signing, r.id); !slices.Equal(got, tc.archived) {
+				t.Errorf("the archive holds %q, want %q", got, tc.archived)
+			}
 		})
 	}
 
@@ -542,7 +571,7 @@ func TestARotationTheRuntimeRefusesChangesNothing(t *testing.T) {
 		if status != http.StatusOK || json.Unmarshal(data, &answer) != nil || answer.At != 1 || answer.Next != (deskPublicKey{secondPublicKey, secondKeyID, 1, ""}) {
 			t.Fatalf("the rotation answered %d %s, want it finished from the sidecar", status, data)
 		}
-		if got := r.describe(t); got != ".keys.jsonl,.seed seed=2 next=absent keys=2 rotations=1" {
+		if got := r.describe(t); got != ".keys.jsonl,.seed seed=2 next=absent keys=2 rotations=1 archived=seed rotation-promoted" {
 			t.Errorf("the signing folder holds %s", got)
 		}
 	})
@@ -550,8 +579,9 @@ func TestARotationTheRuntimeRefusesChangesNothing(t *testing.T) {
 
 // **A rotation the runtime did not write says Desk kept its key, and no
 // more** (issue #239). Another runtime rotated the trail after Desk read it,
-// so the runtime refuses: the desk's key is not the key in force. Desk removes
-// the next key and the marker and keeps the current seed, and says that; it
+// so the runtime refuses: the desk's key is not the key in force. Desk moves
+// the next key and the marker to its archive of keys, never removing them,
+// and keeps the current seed, and says that; it
 // never says that key still signs, which it did not check, and which the
 // runtime has just said it does not. The panel says the same of a rotation a
 // stop left before the runtime wrote its line.
@@ -562,11 +592,11 @@ func TestARotationTheRuntimeDidNotWriteSaysDeskKeptItsKey(t *testing.T) {
 		token := r.token(t)
 		rotatingAs(t, r.rig.calls, "  printf '%s' "+shellQuote(rotationLine(1, standInKeyID, thirdPublicKey))+" >> .desk-private/audit/signatures.jsonl\n"+refusingWith(rotateNotInForce, 1))
 		status, data := r.rotate(t, token)
-		want := "The runtime did not rotate the key, and nothing was changed: Desk kept the current key. It said: The project's signing key is not the key in force in the signature sidecar, so it cannot hand signing over; only the key in force can."
+		want := "The runtime did not rotate the key, and nothing was changed: Desk kept the current key. It said: The project's signing key is not the key in force in the signature sidecar, so it cannot hand signing over; only the key in force can. " + nextArchivedWords
 		if status != http.StatusConflict || refusalOf(data) != want {
 			t.Errorf("the rotation answered %d %q, want 409 %q", status, refusalOf(data), want)
 		}
-		if got := r.describe(t); got != ".keys.jsonl,.seed seed=1 next=absent keys=1 rotations=1" {
+		if got := r.describe(t); got != ".keys.jsonl,.seed seed=1 next=absent keys=1 rotations=1 archived=next.seed rotation-stopped,rotating rotation-stopped" {
 			t.Errorf("the signing folder holds %s, want the current key alone", got)
 		}
 	})
@@ -581,7 +611,7 @@ func TestARotationTheRuntimeDidNotWriteSaysDeskKeptItsKey(t *testing.T) {
 			t.Fatal("could not leave a rotation unfinished")
 		}
 		answer, _ := r.panel(t)
-		want := "The runtime did not write the rotation: Desk removes the next key when it next starts, and keeps the current key."
+		want := "The trail's signature sidecar does not record the rotation: Desk keeps the current key, and moves the next key to its archive of keys when it next starts."
 		if answer.Rotation.State != rotationUnfinished || answer.Rotation.Reason != want {
 			t.Errorf("the panel says %+v, want unfinished: %q", answer.Rotation, want)
 		}
@@ -811,7 +841,7 @@ func TestARotationsAnswersNameNoPath(t *testing.T) {
 		{"c4000000000000000000000000000001", "a refusal to generate", "  printf '%s\\n' " + shellQuote(`{"outputVersion":"2","command":"audit key generate","status":"error","diagnostics":[{"code":"JPS-AUDIT-KEY-REFUSED","message":`+jsonString(naming("c4000000000000000000000000000001"))+`}]}`) + "\n  exit 1", "",
 			"Nothing was rotated: the runtime did not generate its signing key: The next key at … is refused: the directory … is not the one held; also … and (…)."},
 		{"c4000000000000000000000000000002", "a refusal to rotate", "", refusingWith(`{"outputVersion":"2","command":"audit key rotate","status":"error","diagnostics":[{"code":"JPS-AUDIT-KEY-REFUSED","message":`+jsonString(naming("c4000000000000000000000000000002"))+`}]}`, 1),
-			"The runtime did not rotate the key, and nothing was changed: Desk kept the current key. It said: The next key at … is refused: the directory … is not the one held; also … and (…)."},
+			"The runtime did not rotate the key, and nothing was changed: Desk kept the current key. It said: The next key at … is refused: the directory … is not the one held; also … and (…). " + nextArchivedWords},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newRotationRig(t, tc.id, config)
@@ -980,25 +1010,30 @@ func (r *rotationRig) restart(t *testing.T) (*Server, *httptest.Server, *bytes.B
 	return again, ts, logged
 }
 
-// **A rotation stopped at any step is finished or undone at the next start.**
-// Stopped before the runtime wrote its line, the next key and the marker go,
-// and Desk keeps the first key; stopped after it, the list is written with
-// the next key at the sequence the line gives, the next seed is renamed over
-// the current one, and the marker goes. What each stop left is checked, and
-// what the start made of it; the panel then passes the keys the desk has.
+// **A rotation stopped at any step is finished or set aside at the next
+// start, and nothing is removed.** Stopped before the runtime wrote its line,
+// the next key and the marker go to Desk's archive of keys, and Desk keeps
+// the first key; stopped after it, the next key's line is appended to the
+// list at the sequence the line gives, the current seed is archived and the
+// next renamed into its name, and the marker goes. Stopped between those two
+// moves, with no seed at its name (issue #323), the start renames the next
+// key into it. What each stop left is checked, and what the start made of
+// it; the panel then passes the keys the desk has.
 func TestAStoppedRotationIsFinishedOrUndoneAtTheNextStart(t *testing.T) {
 	const id = "c6000000000000000000000000000001"
 	first := ".keys.jsonl,.seed seed=1 next=absent keys=1"
-	rotated := ".keys.jsonl,.seed seed=2 next=absent keys=2 rotations=1"
+	rotated := ".keys.jsonl,.seed seed=2 next=absent keys=2 rotations=1 archived=seed rotation-promoted"
 	for _, tc := range []struct {
 		at, left, after string
 	}{
 		{"rotation: marker written", ".keys.jsonl,.rotating,.seed seed=1 next=absent keys=1 rotations=0", first + " rotations=0"},
-		{"rotation: next generated", ".keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=1 rotations=0", first + " rotations=0"},
+		{"rotation: next generated", ".keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=1 rotations=0", first + " rotations=0 archived=next.seed rotation-stopped,rotating rotation-stopped"},
 		{"rotation: line written", ".keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=1 rotations=1", rotated},
 		{"rotation: finish journalled", ".keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=1 rotations=1", rotated},
 		{"rotation: list written", ".keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=2 rotations=1", rotated},
-		{"rotation: seed renamed", ".keys.jsonl,.rotating,.seed seed=2 next=absent keys=2 rotations=1", rotated},
+		{"rotation: after the last check", ".keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=2 rotations=1", rotated},
+		{"rotation: previous archived", ".keys.jsonl,.next.seed,.rotating seed=absent next=2 keys=2 rotations=1 archived=seed rotation-promoted", rotated},
+		{"rotation: seed renamed", ".keys.jsonl,.rotating,.seed seed=2 next=absent keys=2 rotations=1 archived=seed rotation-promoted", rotated},
 	} {
 		t.Run(tc.at, func(t *testing.T) {
 			r := newRotationRig(t, id, "")
@@ -1147,14 +1182,18 @@ func TestARotationFromElsewhereIsLeftAsItIs(t *testing.T) {
 }
 
 // **A replaced signing folder makes no key and rotates nothing.** Replaced
-// once the marker is written, the runtime is never asked for a key; replaced
-// while it makes one, the key is found not to be where the desk names it, and
-// is removed from the folder Desk holds, with the marker. Neither rotates, and
+// once the marker is written, the runtime is never asked for a key, and the
+// marker alone is removed; replaced while it makes one, the key is found not
+// to be where the desk names it, and is moved, with the marker, to the
+// archive of the folder Desk holds, never removed. Neither rotates, and
 // nothing is written into the folder swapped in.
 func TestARotationThroughAReplacedSigningFolderMakesNothing(t *testing.T) {
-	for _, tc := range []struct{ at, why string }{
-		{"rotation: marker written", "Nothing was rotated: Desk's signing folder was replaced before the runtime made the next key, so no key was made."},
-		{"rotation: next generated", "Nothing was rotated: Desk's signing folder was replaced while the runtime made the next key."},
+	for _, tc := range []struct {
+		at, why  string
+		archived []string
+	}{
+		{"rotation: marker written", "Nothing was rotated: Desk's signing folder was replaced before the runtime made the next key, so no key was made.", nil},
+		{"rotation: next generated", "Nothing was rotated: Desk's signing folder was replaced while the runtime made the next key. " + nextArchivedWords, kindsArchived(archiveRotationStopped, "next.seed", "rotating")},
 	} {
 		t.Run(tc.at, func(t *testing.T) {
 			r := newRotationRig(t, "c8000000000000000000000000000002", "")
@@ -1184,8 +1223,11 @@ func TestARotationThroughAReplacedSigningFolderMakesNothing(t *testing.T) {
 			if names := namesIn(t, r.signing); len(names) != 0 {
 				t.Errorf("the folder swapped in holds %q", names)
 			}
-			if names := namesIn(t, aside); !slices.Equal(names, []string{r.id + keysSuffix, r.id + seedSuffix}) {
+			if names := liveIn(t, aside); !slices.Equal(names, []string{r.id + keysSuffix, r.id + seedSuffix}) {
 				t.Errorf("the folder Desk held keeps %q", names)
+			}
+			if got := archivedIn(t, aside, r.id); !slices.Equal(got, tc.archived) {
+				t.Errorf("the folder Desk held archived %q, want %q", got, tc.archived)
 			}
 		})
 	}
@@ -1221,10 +1263,13 @@ func TestAnAnswerThatIsNotTheRotationAskedForIsNotTakenForOne(t *testing.T) {
 			r.writeTrail(t, 1, recordLine(standInKeyID, 1))
 			rotatingAs(t, r.rig.calls, refusingWith(answer(tc.change), 0))
 			status, data := r.rotate(t, r.token(t))
-			if status != http.StatusConflict || refusalOf(data) != "The runtime did not rotate the key, and nothing was changed: Desk kept the current key. It said: its audit key rotate did not answer as documented." {
+			if status != http.StatusConflict || refusalOf(data) != "The runtime did not rotate the key, and nothing was changed: Desk kept the current key. It said: its audit key rotate did not answer as documented. "+nextArchivedWords {
 				t.Errorf("the rotation answered %d %s", status, data)
 			}
 			r.assertUnchanged(t)
+			if got := archivedIn(t, r.signing, r.id); !slices.Equal(got, kindsArchived(archiveRotationStopped, "next.seed", "rotating")) {
+				t.Errorf("the archive holds %q", got)
+			}
 		})
 	}
 }
@@ -1268,7 +1313,7 @@ func TestWhatChangedWhileARotationFinishedIsNotWrittenOver(t *testing.T) {
 			"The runtime wrote the rotation, and Desk did not finish it: Desk finishes it when it next starts. Until then, records are written unsigned.", nil},
 		{"the marker, after the rename", "rotation: seed renamed", func(t *testing.T, r *rotationRig) {
 			replace(t, filepath.Join(r.signing, r.id+rotatingSuffix), "")
-		}, renamed, ".keys.jsonl,.rotating,.rotating.aside,.seed seed=2 next=absent keys=2 rotations=1",
+		}, renamed, ".keys.jsonl,.rotating,.rotating.aside,.seed seed=2 next=absent keys=2 rotations=1 archived=seed rotation-promoted",
 			"Nothing of it is left to do but remove its marker, which Desk does when it next starts.", []deskPublicKey{key1, {secondPublicKey, secondKeyID, 1, ""}}},
 		// Issue #239: the old list put back once the new one is written, the
 		// list edited in place, the same file with other bytes, and the next
@@ -1379,7 +1424,7 @@ func TestAStartRenamesNoKeyAgainstAListPutBackSinceItsInspection(t *testing.T) {
 	last, logged := restartedServer(t, again)
 	ts = httptest.NewServer(last)
 	t.Cleanup(ts.Close)
-	if got := r.describe(t); got != ".keys.jsonl,.keys.jsonl.aside,.seed seed=2 next=absent keys=2 rotations=1" {
+	if got := r.describe(t); got != ".keys.jsonl,.keys.jsonl.aside,.seed seed=2 next=absent keys=2 rotations=1 archived=seed rotation-promoted" {
 		t.Errorf("after the start after it the signing folder holds %s (%s)", got, logged)
 	}
 	answer, _ = panelOn(t, ts, r.id)
@@ -1551,11 +1596,14 @@ func requireRotationWithTheRuntime(t *testing.T, ts *httptest.Server, id string)
 // run, the desk's key is rotated; a second run is signed by the next key; the
 // panel passes both keys, in order, and reports both records signed and one
 // rotation; and the runtime's own `audit verify --public-key k1 --public-key
-// k2`, run apart from Desk, agrees. A second rotation stopped after the
-// runtime wrote its line is finished at the next start, and a third run is
-// then signed by the third key, which the runtime's own check confirms. With a
-// runtime that does not read "6", the desk is unsigned and no rotation is
-// offered.
+// k2`, run apart from Desk, agrees. The first key is not lost: it is in
+// Desk's archive of keys, and the runtime reads it there as the first key. A
+// second rotation stopped after the runtime wrote its line is finished at the
+// next start, the second key archived beside the first, and a third run is
+// then signed by the third key, which the runtime's own check confirms. The
+// decision record lists both archived keys, and the owner's Remove, with the
+// token it gave, removes the first. With a runtime that does not read "6",
+// the desk is unsigned and no rotation is offered.
 func TestRotatingADesksKeyWithTheRuntime(t *testing.T) {
 	bin := requireBinary(t)
 	t.Setenv("JPACK_CONFIG", "")
@@ -1591,6 +1639,27 @@ func TestRotatingADesksKeyWithTheRuntime(t *testing.T) {
 		return key
 	}
 	k1 := publicOf(t)
+	// What the runtime reads from each seed in Desk's archive of keys, in
+	// the order archived.
+	archivedPublic := func(t *testing.T) []deskPublicKey {
+		t.Helper()
+		var keys []deskPublicKey
+		folder := filepath.Join(signing, archiveDirName, row.ID)
+		names := namesIn(t, folder)
+		slices.SortFunc(names, func(a, b string) int {
+			return strings.Compare(archiveFileForm.ReplaceAllString(a, "$3"), archiveFileForm.ReplaceAllString(b, "$3"))
+		})
+		for _, name := range names {
+			if strings.HasSuffix(name, ".seed") && !strings.HasSuffix(name, ".next.seed") {
+				var key deskPublicKey
+				if err := json.Unmarshal(jpackIn(t, bin, row.Folder, "audit", "key", "public", filepath.Join(folder, name), "--format", "json"), &key); err != nil {
+					t.Fatal(err)
+				}
+				keys = append(keys, key)
+			}
+		}
+		return keys
+	}
 	rotate := func(t *testing.T, ts *httptest.Server) (int, []byte) {
 		t.Helper()
 		return reviewCall(t, ts, "POST", "/api/audit/key/rotate", row.ID, map[string]string{"token": requireRotationWithTheRuntime(t, ts, row.ID)}, bearer)
@@ -1638,8 +1707,11 @@ func TestRotatingADesksKeyWithTheRuntime(t *testing.T) {
 	if got := readFile(t, filepath.Join(signing, row.ID+keysSuffix)); got != wantKeyLine(k1.PublicKey, k1.KeyID, 0)+wantKeyLineOn(k2.PublicKey, k2.KeyID, 1, trail) {
 		t.Errorf("the list is %q", got)
 	}
-	if names := namesIn(t, signing); !slices.Equal(names, []string{row.ID + keysSuffix, row.ID + seedSuffix}) {
+	if names := liveIn(t, signing); !slices.Equal(names, []string{row.ID + keysSuffix, row.ID + seedSuffix}) {
 		t.Errorf("the rotation left %q", names)
+	}
+	if got := archivedPublic(t); !slices.Equal(got, []deskPublicKey{k1}) {
+		t.Errorf("the archive holds the keys %+v, want the first", got)
 	}
 	decide(t)
 
@@ -1702,15 +1774,18 @@ func TestRotatingADesksKeyWithTheRuntime(t *testing.T) {
 		response.Body.Close()
 	}
 	testHookKeyBetween = nil
-	if names := namesIn(t, signing); !slices.Equal(names, []string{row.ID + keysSuffix, row.ID + nextSeedSuffix, row.ID + rotatingSuffix, row.ID + seedSuffix}) {
+	if names := liveIn(t, signing); !slices.Equal(names, []string{row.ID + keysSuffix, row.ID + nextSeedSuffix, row.ID + rotatingSuffix, row.ID + seedSuffix}) {
 		t.Fatalf("the stop left %q", names)
 	}
 	ts.Close()
 	again, logged := restartedServer(t, s)
 	ts2 := httptest.NewServer(again)
 	t.Cleanup(ts2.Close)
-	if names := namesIn(t, signing); !slices.Equal(names, []string{row.ID + keysSuffix, row.ID + seedSuffix}) {
+	if names := liveIn(t, signing); !slices.Equal(names, []string{row.ID + keysSuffix, row.ID + seedSuffix}) {
 		t.Fatalf("after the next start the signing folder holds %q (%s)", names, logged)
+	}
+	if got := archivedPublic(t); !slices.Equal(got, []deskPublicKey{k1, k2}) {
+		t.Errorf("after the next start the archive holds the keys %+v, want the first and the second", got)
 	}
 	k3 := publicOf(t)
 	if got := readFile(t, filepath.Join(signing, row.ID+keysSuffix)); got != wantKeyLine(k1.PublicKey, k1.KeyID, 0)+wantKeyLineOn(k2.PublicKey, k2.KeyID, 1, trail)+wantKeyLineOn(k3.PublicKey, k3.KeyID, 2, trail) {
@@ -1748,5 +1823,31 @@ func TestRotatingADesksKeyWithTheRuntime(t *testing.T) {
 	}
 	if strings.Contains(panelData, s.configDir) {
 		t.Errorf("the panel names a path: %s", panelData)
+	}
+
+	// **The owner removes an archived key, on their word.** The decision
+	// record lists both archived seeds, the first key's at record 1 of the
+	// first trail, each with the token that confirms its removal.
+	if panel.Archive == nil {
+		t.Fatalf("the decision record lists no archive: %s", panelData)
+	}
+	var first *archivedKey
+	for i, entry := range panel.Archive.Entries {
+		if entry.Kind == "seed" && entry.Identity == row.ID && entry.Sequence == 1 && entry.Trail == trail {
+			first = &panel.Archive.Entries[i]
+		}
+	}
+	if first == nil || first.Rule != archivePromoted || !first.Own || len(first.Token) != 64 {
+		t.Fatalf("the decision record lists %+v", panel.Archive.Entries)
+	}
+	status, data = reviewCall(t, ts2, "POST", "/api/audit/key/archive/remove", row.ID, map[string]string{"scope": first.Scope, "identity": first.Identity, "file": first.File, "token": first.Token}, bearer)
+	if status != http.StatusOK || !strings.Contains(string(data), `"state":"removed"`) {
+		t.Fatalf("the removal answered %d %s", status, data)
+	}
+	if got := archivedPublic(t); !slices.Equal(got, []deskPublicKey{k2}) {
+		t.Errorf("after the removal the archive holds the keys %+v, want the second alone", got)
+	}
+	if !strings.Contains(readFile(t, filepath.Join(signing, archiveDirName, row.ID, archiveJournalName)), `"event":"removed","file":"`+first.File+`"`) {
+		t.Error("the journal does not say the owner removed it")
 	}
 }

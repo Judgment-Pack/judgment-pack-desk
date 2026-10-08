@@ -66,7 +66,7 @@ const CONFIRMATION = [
   'The current key stops signing. Records written after the rotation are signed with the new key.',
   'A record written while the rotation is in progress may be unsigned.',
   'A rotation revokes nothing: whoever holds the old key can still sign as it. Give each holder the new public key, and tell them about the old one if you no longer trust it: only a holder’s own jpack audit verify --revoked refuses what it signs.',
-  'The old key’s file loses its name, but its bytes may remain on the disk.',
+  'Desk keeps the old key in its archive of keys, which this record lists, until you remove it there; while it is kept, whoever reads it can still sign as it.',
   'A lost key cannot be rotated away from: a rotation needs the key in force.'
 ]
 
@@ -212,7 +212,7 @@ describe('the rotation client', () => {
     // Each sentence's words between its placeholders, as the chassis's Go
     // source spells them.
     const source = readFileSync(join(import.meta.dirname, '../../../internal/desk/rotation.go'), 'utf8')
-    expect(ROTATION_REASONS).toHaveLength(13)
+    expect(ROTATION_REASONS).toHaveLength(14)
     for (const reason of ROTATION_REASONS) {
       for (const part of reason.split(/\{\{\w+\}\}/)) {
         expect(source.includes(part) ? part : `missing: ${part}`, reason).toBe(part)

@@ -14,7 +14,9 @@
  * each labelled by its place and the record it signs after; `packs
  * validate`'s word on whether the key named signs this project's records, in
  * the runtime's own sentence; and rotating the key, on the owner's word
- * (ADR-0010, section 1; `RotateSigningKey`); and the hand-over of
+ * (ADR-0010, section 1; `RotateSigningKey`); Desk's archive of keys, which
+ * holds every key Desk would once have removed, each with why and a Remove on
+ * the owner's word (`ArchivedKeys`); and the hand-over of
  * checkpoints to holders, with Desk's own record of it (ADR-0010, section 2;
  * `Handover`). Where the report names the finding `incomplete-last-line`,
  * and only there, the repair, on the owner's word (ADR-0010, section 4;
@@ -39,7 +41,8 @@ import { msg, systemMessage, useLocale } from '../i18n'
 import { Button } from '../ui/Button'
 import { CodeBlock } from '../ui/CodeBlock'
 import { SettingsSection } from '../ui/SettingsSection'
-import { AUDIT_KEY, AuditUnavailable, identityOf, readAuditRecord, type AuditCoverageState, type AuditIdentity, type AuditKeys, type AuditRecord, type AuditRepair, type AuditReport, type AuditRotation, type AuditSigning, type AuditStamping, type HandedSince } from './client'
+import { ArchivedKeys, type ArchiveOutcome } from './ArchivedKeys'
+import { archiveOf, AUDIT_KEY, AuditUnavailable, identityOf, readAuditRecord, type AuditArchive, type AuditCoverageState, type AuditIdentity, type AuditKeys, type AuditRecord, type AuditRepair, type AuditReport, type AuditRotation, type AuditSigning, type AuditStamping, type HandedSince } from './client'
 import styles from './DecisionRecord.module.css'
 import { Handover, NO_HANDOVER, type HandoverState } from './Handover'
 import { RepairTrail, type RepairOutcome } from './RepairTrail'
@@ -110,16 +113,23 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
   useEffect(() => { if (visible) setResolved(undefined) }, [visible])
   const identitySection = (identity?: AuditIdentity) => <ResolveIdentity identity={identity} outcome={resolved}
     onOutcome={outcome => { setResolved(outcome); void query.refetch() }} />
+  // What the owner's Remove of an archived key answered, kept across the check
+  // run after it, as a rotation's is, and dropped when the owner checks again
+  // or opens the panel again.
+  const [archived, setArchived] = useState<ArchiveOutcome>()
+  useEffect(() => { if (visible) setArchived(undefined) }, [visible])
+  const archiveSection = (archive?: AuditArchive) => <ArchivedKeys archive={archive} outcome={archived}
+    onOutcome={outcome => { setArchived(outcome); void query.refetch() }} />
   const rotation = (keys?: AuditKeys, rotation?: AuditRotation) => <RotateSigningKey rotation={rotation} keyCount={keys?.state === 'kept' ? keys.public.length : 0}
     outcome={rotated} onOutcome={outcome => { setRotated(outcome); void query.refetch() }} />
-  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); void query.refetch() }}>{msg('Check again')}</Button></div>
+  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); setArchived(undefined); void query.refetch() }}>{msg('Check again')}</Button></div>
   return <SettingsSection title={msg('Decision record')} description={msg('Jobs runs are recorded by the runner, not in this trail.')} variant="plain">
     <div className={styles.card} data-testid="decision-record">
       {query.isPending || query.isFetching ? <p role="status" className={styles.quiet}>{msg('Asking the runtime…')}</p>
-        : query.error instanceof AuditUnavailable ? <><p role="alert">{msg('Desk does not check the decision record here.')} {systemMessage(query.error.message)}</p>{identitySection(identityOf(query.error))}</>
-          : query.error ? <><div role="alert" className={styles.card}><p>{systemMessage(query.error.message)}</p><div><Button onClick={() => void query.refetch()} disabled={query.isFetching}>{msg('Retry')}</Button></div></div>{identitySection(identityOf(query.error))}</>
-            : record?.state === 'older-runtime' ? <><p>{msg('This runtime (jpack {{version}}) writes an unchained trail and has no audit commands. Chaining, checkpoints, signing and stamping need jpack {{floor}} or later.', { version: record.runtime ?? '?', floor: record.floor })}</p>{identitySection(record.identity)}</>
-              : record?.state === 'no-trail' ? <><p>{msg('This project keeps no trail: its jpack.json declares no audit directory, so the runtime records none of its deciding runs.')}</p>{identitySection(record.identity)}</>
+        : query.error instanceof AuditUnavailable ? <><p role="alert">{msg('Desk does not check the decision record here.')} {systemMessage(query.error.message)}</p>{identitySection(identityOf(query.error))}{archiveSection(archiveOf(query.error))}</>
+          : query.error ? <><div role="alert" className={styles.card}><p>{systemMessage(query.error.message)}</p><div><Button onClick={() => void query.refetch()} disabled={query.isFetching}>{msg('Retry')}</Button></div></div>{identitySection(identityOf(query.error))}{archiveSection(archiveOf(query.error))}</>
+            : record?.state === 'older-runtime' ? <><p>{msg('This runtime (jpack {{version}}) writes an unchained trail and has no audit commands. Chaining, checkpoints, signing and stamping need jpack {{floor}} or later.', { version: record.runtime ?? '?', floor: record.floor })}</p>{identitySection(record.identity)}{archiveSection(record.archive)}</>
+              : record?.state === 'no-trail' ? <><p>{msg('This project keeps no trail: its jpack.json declares no audit directory, so the runtime records none of its deciding runs.')}</p>{identitySection(record.identity)}{archiveSection(record.archive)}</>
                 : record?.state === 'unverified' ? <>
                   <p>{msg('The runtime did not check the trail.')}</p>
                   <ul className={styles.list} aria-label={msg('What the runtime said')}>{record.diagnostics.map((item, index) => <li key={index} lang="en"><code>{item.code}</code> {item.message}</li>)}</ul>
@@ -128,6 +138,7 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
                   {identitySection(record.identity)}
                   <SigningKey keys={record.keys} signing={record.signing} />
                   {rotation(record.keys, record.rotation)}
+                  {archiveSection(record.archive)}
                   {handoverSection()}
                   {stampingSection(record.stamping)}
                   <TrailDownloads files={record.files ?? []} />
@@ -142,6 +153,7 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
                     {identitySection(record.identity)}
                     <SigningKey keys={record.keys} signing={record.signing} />
                     {rotation(record.keys, record.rotation)}
+                    {archiveSection(record.archive)}
                     {handoverSection(record.since)}
                     {stampingSection(record.stamping, record.report)}
                     <TrailDownloads files={record.files ?? []} />

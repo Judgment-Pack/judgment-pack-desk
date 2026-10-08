@@ -92,8 +92,11 @@ func TestTheSweepRemovesNothingWhileTheLockIsHeld(t *testing.T) {
 	}
 	release()
 	_, logged = restartedServer(t, again)
-	if names := namesIn(t, folder); len(names) != 0 {
+	if names := liveIn(t, folder); len(names) != 0 {
 		t.Errorf("with the lock free the start left %q (%s)", names, logged)
+	}
+	if got := archivedIn(t, folder, id); !slices.Equal(got, kindsArchived(archiveNeverPublished, "seed", "creating")) {
+		t.Errorf("with the lock free the start archived %q", got)
 	}
 }
 
@@ -117,7 +120,7 @@ func TestTheRecoveryChangesNothingWhileTheLockIsHeld(t *testing.T) {
 	}
 	release()
 	_, logged = restartedServer(t, again)
-	if got := r.describe(t); got != ".keys.jsonl,.seed seed=2 next=absent keys=2 rotations=1" {
+	if got := r.describe(t); got != ".keys.jsonl,.seed seed=2 next=absent keys=2 rotations=1 archived=seed rotation-promoted" {
 		t.Errorf("with the lock free the start left %s (%s)", got, logged)
 	}
 }
@@ -204,60 +207,98 @@ func TestARotationWaitsForTheLockAndThenRefuses(t *testing.T) {
 	}
 }
 
-// **Where no lock can be taken, nothing is removed without one.** On a file
-// system with no flock, a creation and a rotation go on as they would with
-// the lock, and the start's sweep and recovery leave everything, and say why.
-func TestWithNoLockTheStartRemovesNothing(t *testing.T) {
-	noSigningLock(t)
+// **Where no lock can be taken, no key is changed** (review round 1 of #327,
+// finding 4, the reviewer's scenario among them). On a file system with no
+// flock: a desk's creation makes the desk unsigned, and says why, with no key
+// in the signing folder; the upgrade that would make the project's key
+// refuses, and writes nothing; a rotation the owner confirms refuses, and
+// archives nothing; and the start's sweep and recovery leave everything, and
+// say why.
+func TestWithNoLockNoKeyIsChanged(t *testing.T) {
 	const id = "d5000000000000000000000000000001"
-	calls, s, ts, _ := signingStandIn(t)
-	signsDesks(t, calls, s.configDir, id)
-	testHookKeyBetween = func(at string) {
-		if at == "after generate" {
-			panic(http.ErrAbortHandler)
+	t.Run("a desk's creation", func(t *testing.T) {
+		noSigningLock(t)
+		_, s, ts, _ := signingStandIn(t)
+		fixDeskIDs(t, id)
+		status, data := deskCall(t, ts, "POST", "/api/desks", "", `{"name":"Lockless"}`, true)
+		if status != http.StatusCreated || strings.Contains(string(data), `"signed":true`) || !strings.Contains(string(data), "none can be taken here") {
+			t.Errorf("the creation answered %d %s", status, data)
 		}
-	}
-	t.Cleanup(func() { testHookKeyBetween = nil })
-	postAbandoned(t, s, ts.URL)
-	testHookKeyBetween = nil
-	folder := signingFolderOf(s)
-	left := namesIn(t, folder)
-	if !slices.Equal(left, []string{id + ".creating", id + ".seed"}) {
-		t.Fatalf("the creation, without the lock, did not run as before: it left %q", left)
-	}
-	ts.Close()
-	_, logged := restartedServer(t, s)
-	if names := namesIn(t, folder); !slices.Equal(names, left) {
-		t.Errorf("without the lock the start left %q, want %q", names, left)
-	}
-	if !strings.Contains(logged.String(), "the signing folder's lock was not taken: no lock can be taken on Desk's signing folder here") {
-		t.Errorf("Desk's log does not say why: %s", logged)
-	}
+		if names := namesIn(t, signingFolderOf(s)); len(names) != 0 {
+			t.Errorf("the creation left %q in the signing folder", names)
+		}
+	})
 
-	r := newRotationRig(t, "d5000000000000000000000000000002", "")
-	r.writeTrail(t, 1, recordLine(standInKeyID, 1))
-	r.abandonRotation(t, "rotation: line written")
-	before := r.snapshot(t)
-	r.ts.Close()
-	_, logged = restartedServer(t, r.s)
-	if after := r.snapshot(t); after != before {
-		t.Errorf("without the lock the start changed\n%s\ninto\n%s", before, after)
-	}
-	if !strings.Contains(logged.String(), "unfinished rotations were left for the next start") {
-		t.Errorf("Desk's log does not say why: %s", logged)
-	}
+	t.Run("the upgrade that makes the project's key", func(t *testing.T) {
+		u := newSigningUpgrade(t, nil)
+		answer := u.offer(t, true)
+		u.rig.locks(t, upgradeLock(t, u.project, u.signed(), bothPacks))
+		before := treeOf(t, u.project)
+		noSigningLock(t)
+		status, data := u.confirm(t, answer.Token, true)
+		if status != http.StatusConflict || refusalOf(data) != "Nothing was written: "+noSigningLockWords {
+			t.Errorf("the upgrade answered %d %s", status, data)
+		}
+		sameProject(t, before, treeOf(t, u.project), "an upgrade with no lock")
+		if got := u.keyFiles(t); len(got) != 0 {
+			t.Errorf("the upgrade left %q", got)
+		}
+	})
 
-	other := newRotationRig(t, "d5000000000000000000000000000003", "")
-	other.writeTrail(t, 1, recordLine(standInKeyID, 1))
-	if status, data := other.rotate(t, other.token(t)); status != http.StatusOK {
-		t.Errorf("without the lock a rotation answered %d %s, want it made as before", status, data)
-	}
+	t.Run("a stopped creation, at the next start", func(t *testing.T) {
+		_, s, ts, _ := signingStandIn(t)
+		ts.Close()
+		folder := signingFolderOf(s)
+		for name, data := range map[string]string{id + ".creating": string(deskCreation{ID: id, Folder: "1:1"}.line()), id + ".seed": "kept\n"} {
+			writeBare(t, filepath.Join(folder, name), data)
+		}
+		left := namesIn(t, folder)
+		noSigningLock(t)
+		_, logged := restartedServer(t, s)
+		if names := namesIn(t, folder); !slices.Equal(names, left) {
+			t.Errorf("without the lock the start left %q, want %q", names, left)
+		}
+		if !strings.Contains(logged.String(), "the signing folder's lock was not taken: no lock can be taken on Desk's signing folder here") {
+			t.Errorf("Desk's log does not say why: %s", logged)
+		}
+	})
+
+	t.Run("a stopped rotation, at the next start", func(t *testing.T) {
+		r := newRotationRig(t, "d5000000000000000000000000000002", "")
+		r.writeTrail(t, 1, recordLine(standInKeyID, 1))
+		r.abandonRotation(t, "rotation: line written")
+		before := r.snapshot(t)
+		r.ts.Close()
+		noSigningLock(t)
+		_, logged := restartedServer(t, r.s)
+		if after := r.snapshot(t); after != before {
+			t.Errorf("without the lock the start changed\n%s\ninto\n%s", before, after)
+		}
+		if !strings.Contains(logged.String(), "unfinished rotations were left for the next start") {
+			t.Errorf("Desk's log does not say why: %s", logged)
+		}
+	})
+
+	t.Run("a rotation the owner confirms", func(t *testing.T) {
+		r := newRotationRig(t, "d5000000000000000000000000000003", "")
+		r.writeTrail(t, 1, recordLine(standInKeyID, 1))
+		token := r.token(t)
+		noSigningLock(t)
+		if status, data := r.rotate(t, token); status != http.StatusConflict || refusalOf(data) != "Nothing was rotated: "+noSigningLockWords {
+			t.Errorf("without the lock a rotation answered %d %s", status, data)
+		}
+		r.assertUnchanged(t)
+		if got := archivedIn(t, r.signing, r.id); len(got) != 0 {
+			t.Errorf("without the lock a rotation archived %q", got)
+		}
+	})
 }
 
-// **The sweep removes only what it inspected, the marker last.** Between the
-// sweep's look and its removals, the unpublished creation's seed is replaced
-// by another file, as another process could: the list goes, the file put in
-// the seed's place stays, and so does the marker, for the next start.
+// **The sweep archives only what it inspected, the marker last.** Between the
+// sweep's look and its moves, the unpublished creation's seed is replaced by
+// another file, as another process could: the list goes to the archive, the
+// file put in the seed's place stays, and so does the marker, for the next
+// start.
 func TestTheSweepRemovesOnlyWhatItInspected(t *testing.T) {
 	const id = "d6000000000000000000000000000001"
 	calls, s, ts, _ := signingStandIn(t)
@@ -281,18 +322,23 @@ func TestTheSweepRemovesOnlyWhatItInspected(t *testing.T) {
 	ts.Close()
 	_, logged := restartedServer(t, s)
 	testHookKeyBetween = nil
-	if names := namesIn(t, folder); !slices.Equal(names, []string{id + ".creating", id + ".seed", id + ".seed.aside"}) {
+	if names := liveIn(t, folder); !slices.Equal(names, []string{id + ".creating", id + ".seed", id + ".seed.aside"}) {
 		t.Errorf("the sweep left %q (%s)", names, logged)
+	}
+	if got := archivedIn(t, folder, id); !slices.Equal(got, kindsArchived(archiveNeverPublished, "keys.jsonl")) {
+		t.Errorf("the sweep archived %q", got)
 	}
 	if got := readFile(t, seed); got != "another\n" {
 		t.Errorf("the file put in the seed's place was changed: %q", got)
 	}
 }
 
-// **The recovery removes only what it inspected, the marker last.** A
-// rotation stopped before the runtime wrote its line is undone at the next
-// start; between the recovery's look and its removals, the next seed is
-// replaced by another file. That file stays, and so does the marker.
+// **The recovery archives only what it inspected, the marker last.** A
+// rotation stopped before the runtime wrote its line is set aside at the
+// next start; between the recovery's look and its moves, the next seed is
+// replaced by another file. That file stays at its name, nothing is
+// archived, and so does the marker (the nightly's inconclusive row of #326,
+// its mutant made to compile again).
 func TestTheRecoveryRemovesOnlyWhatItInspected(t *testing.T) {
 	r := newRotationRig(t, "d7000000000000000000000000000001", "")
 	r.writeTrail(t, 1, recordLine(standInKeyID, 1))
@@ -311,6 +357,9 @@ func TestTheRecoveryRemovesOnlyWhatItInspected(t *testing.T) {
 	testHookKeyBetween = nil
 	if got := r.describe(t); got != ".keys.jsonl,.next.seed,.next.seed.aside,.rotating,.seed seed=1 next=3 keys=1 rotations=0" {
 		t.Errorf("the recovery left %s (%s)", got, logged)
+	}
+	if !strings.Contains(logged.String(), "could not be archived") {
+		t.Errorf("the log does not say why: %s", logged)
 	}
 }
 

@@ -380,6 +380,7 @@ func New(cfg Config) (*Server, error) {
 	// itself be retargeted between requests, which is the same argument the
 	// project root is pinned for.
 	s.assistant = openAssistantStore(s.configDir)
+	s.assistant.logf = s.log.Printf
 	if !s.assistant.usable() {
 		// Reported, and not fatal. A desk that refused to start because
 		// somebody's ~/.config is group-writable would be a desk nobody could
@@ -475,6 +476,7 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("GET /api/audit/trail", s.handleAuditTrail)
 	s.mux.HandleFunc("POST /api/audit/key/rotate", s.handleRotateKey)
 	s.mux.HandleFunc("POST /api/project/identity", s.handleResolveIdentity)
+	s.mux.HandleFunc("POST /api/audit/key/archive/remove", s.handleRemoveArchived)
 	s.mux.HandleFunc("POST /api/audit/repair", s.handleAuditRepair)
 	s.mux.HandleFunc("GET /api/audit/holders", s.handleHolders)
 	s.mux.HandleFunc("POST /api/audit/holders", s.handleAddHolder)

@@ -7,8 +7,8 @@
  * in the runtime's terms: the current key stops signing and the new one signs
  * the records after the rotation; a record written meanwhile may be unsigned;
  * nothing is revoked, so a holder must be given the new public key and told
- * about the old one; the old key's file loses its name, not its bytes; and a
- * lost key cannot be rotated away from. Only the confirmation sends the
+ * about the old one; Desk keeps the old key in its archive of keys until the
+ * owner removes it there; and a lost key cannot be rotated away from. Only the confirmation sends the
  * panel's token. Where no rotation is offered, it says why; where one did not
  * finish, it says so, and what Desk does with it or why it cannot tell.
  *
@@ -72,7 +72,7 @@ export function RotateSigningKey({ rotation, keyCount, outcome, onOutcome }: {
         <li>{msg('The current key stops signing. Records written after the rotation are signed with the new key.')}</li>
         <li>{msg('A record written while the rotation is in progress may be unsigned.')}</li>
         <li>{msg('A rotation revokes nothing: whoever holds the old key can still sign as it. Give each holder the new public key, and tell them about the old one if you no longer trust it: only a holder’s own jpack audit verify --revoked refuses what it signs.')}</li>
-        <li>{msg('The old key’s file loses its name, but its bytes may remain on the disk.')}</li>
+        <li>{msg('Desk keeps the old key in its archive of keys, which this record lists, until you remove it there; while it is kept, whoever reads it can still sign as it.')}</li>
         <li>{msg('A lost key cannot be rotated away from: a rotation needs the key in force.')}</li>
       </ul>
     </Dialog>

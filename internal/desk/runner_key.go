@@ -64,11 +64,12 @@ package desk
 // marker is removed, so a marker seen under the lock is never a creation in
 // progress: it is one that was stopped, or whose marker could not be
 // removed, and either way that key was never named, and never signed
-// anything. So it is removed at whatever start finds it (`removeUnfinished`):
-// every name inspected first, then removed through the folder held, each
-// only while it is the file inspected, the marker last, so that a removal
-// that stops leaves the marker for the next start to finish. Another key is
-// then made. Nothing else ever removes a Runner key.
+// anything. So it is moved to the archive of Runner's keys at whatever start
+// finds it (`removeUnfinished`, archive.go): every name inspected first, then
+// archived through the folder held, each only while it is the file
+// inspected, the marker last, so that a move that stops leaves the marker for
+// the next start to finish. Another key is then made. Nothing removes a
+// Runner key but the owner's word on the decision record.
 //
 // # What is never done
 //
@@ -424,12 +425,15 @@ func inspectRunnerKey(dir *signingDir, names runnerKeyNames) (runnerKeyFound, er
 	return found, nil
 }
 
-// removeUnfinished removes what a creation that did not finish left under
-// this name, under the lock: the list, the seed and then the marker, each
-// through the folder held and only while it is the file just inspected
-// (`removeMade`). The marker goes last, so a removal that stops at any point
-// leaves it, and the next start, under the lock, finishes the job.
+// removeUnfinished moves what a creation that did not finish left under
+// this name to the archive of Runner's keys, under the lock: the list, the
+// seed and then the marker, each through the folder held and only while it is
+// the file just inspected (`archive`). The marker goes last, so a move that
+// stops at any point leaves it, and the next start, under the lock, finishes
+// the job. Nothing is removed (archive.go): a marker alone, with nothing made
+// beside it, records nothing Desk could not decide, and is removed.
 func (k *runnerKey) removeUnfinished(dir *signingDir, names runnerKeyNames, found runnerKeyFound) error {
+	alone := found.keys == nil && found.seed == nil
 	for _, each := range []struct {
 		name string
 		info os.FileInfo
@@ -438,15 +442,29 @@ func (k *runnerKey) removeUnfinished(dir *signingDir, names runnerKeyNames, foun
 			continue
 		}
 		if err := runnerKeyIO("remove " + each.name); err != nil {
-			return fmt.Errorf("what an unfinished creation of its key left could not all be removed: %w", err)
+			return fmt.Errorf("what an unfinished creation of its key left could not all be archived: %w", err)
 		}
-		if err := dir.removeMade(each.name, each.info); err != nil {
-			return fmt.Errorf("what an unfinished creation of its key left could not all be removed: %w", err)
+		if alone {
+			if err := dir.removeMade(each.name, each.info); err != nil {
+				return fmt.Errorf("what an unfinished creation of its key left could not all be archived: %w", err)
+			}
+			continue
+		}
+		if _, err := dir.archive(each.name, each.info, archived{identity: k.name, rule: archiveCreationStopped, why: runnerUnfinishedWords}); err != nil {
+			return fmt.Errorf("what an unfinished creation of its key left could not all be archived: %w", err)
 		}
 	}
-	k.s.log.Print("desk: the signing key of an unfinished creation for this desk's Runner was removed; another is made now")
+	if alone {
+		k.s.log.Print("desk: the marker of an unfinished creation for this desk's Runner, with nothing made beside it, was removed; a key is made now")
+	} else {
+		k.s.log.Print("desk: the signing key of an unfinished creation for this desk's Runner was moved to Desk's archive of keys; another is made now")
+	}
 	return nil
 }
+
+// runnerUnfinishedWords is the archive line of a Runner key whose creation
+// did not finish: a key that was never named to Runner.
+const runnerUnfinishedWords = "A creation of this Runner key did not finish, so the key was never named to Runner and signed nothing Runner ran. Desk moved it here rather than removing it, and made another."
 
 // make has the runtime make the key in dir, through generateDeskKey, and
 // removes its creation marker, all under the lock; or says why there is no
@@ -461,7 +479,7 @@ func (k *runnerKey) make(ctx context.Context, project heldDir, dir *signingDir) 
 	// **Named only once its marker is gone.** A marker that stays marks a key
 	// that was never named, which the next start removes.
 	if err := made.settle(); err != nil {
-		s.log.Printf("desk: Runner's new signing key keeps its creation marker, so it is not named to Runner; the next start removes it: %s", s.runnerKeyWords(err.Error(), k.name, true))
+		s.log.Printf("desk: Runner's new signing key keeps its creation marker, so it is not named to Runner; the next start moves it to Desk's archive of keys: %s", s.runnerKeyWords(err.Error(), k.name, true))
 		return unsignedRunner(runnerKeyUnfinished, ""), false
 	}
 	return RunnerKeyStatus{}, true
@@ -561,7 +579,7 @@ func (a *assistantStore) openRunnerSigning() (*signingDir, *signingDir, error) {
 		root.Close()
 		return failed(fmt.Errorf("%s changed between being checked and being opened, and was not used", path))
 	}
-	return signing, &signingDir{root: root, path: path}, nil
+	return signing, &signingDir{root: root, path: path, logf: a.logf}, nil
 }
 
 // testHookRunnerKeyIO runs before each step of a Runner key's that a failure

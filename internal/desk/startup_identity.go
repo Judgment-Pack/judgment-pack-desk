@@ -57,6 +57,16 @@ package desk
 // folder; a copy is given a new name of its own, and what Desk keeps under
 // the old one is left as it is.
 //
+// **Nor is a pathname, or a copied configuration** (issue #319, the third
+// line audit's finding 1). A file that records no folder, as an earlier Desk
+// wrote, or as a start writes where it takes the name of the seed the
+// project's jpack.json names, binds the identity to nothing a copy does not
+// carry: a copy put at the original's pathname holds the same file, and a
+// copy's jpack.json names the same seed. Such an identity is unresolved too,
+// whatever pathname it records, until the owner says whether this folder is
+// the project it was made for ("moved") or a copy, and the answer writes this
+// folder's device and inode into it.
+//
 // It is not kept in `jpack-desk.json`: that file is the project's
 // shared configuration, committed and the same in every clone, and its
 // decoders, here and in the page, refuse the whole file for a member they do
@@ -100,17 +110,20 @@ package desk
 // either no name, which the next start chooses again, or a name with `from`,
 // which the next start finishes. Nothing is removed on a failure.
 //
-// # What recovery may remove
+// # What the identity decides
 //
-// A start's sweep removes an unfinished creation's key only under this
-// project's own name, read from its identity file and held by no other
-// folder (`startupBound`), and only where the creation's marker binds it to
-// this project and this transaction (`creationBound`, startup_key.go): the
-// identity, the project's resolved path and the digest of the jpack.json the
-// upgrade set out to replace, all three as found. A creation marker under the
-// path's hash, left by a Desk before this one, is not bound to any project:
-// where jpack.json names its seed, only the marker goes; otherwise nothing
-// does.
+// Nothing is removed under any identity (archive.go): the resolver says only
+// whether this project's identity is resolved, bound to this folder, for
+// making, rotating and recovering a key, or unresolved, until the owner
+// answers. A start's sweep archives an unfinished creation's key only under
+// this project's own name, read from its identity file, bound to this folder
+// and held by no other (`startupBound`), and only where the creation's marker
+// binds it to this project and this transaction (`creationBound`,
+// startup_key.go): the identity, the project's resolved path and the digest
+// of the jpack.json the upgrade set out to replace, all three as found. A
+// creation marker under the path's hash, left by a Desk before this one, is
+// not bound to any project: where jpack.json names its seed, only the marker
+// goes; otherwise nothing does.
 
 import (
 	"bytes"
@@ -557,16 +570,23 @@ func (s *Server) resolveStartupIdentity() {
 			if record, info = s.copiedOrMoved(private, record, info); s.startupShared() || s.startupUnresolved() {
 				return
 			}
-		} else if here := s.folderKey(); record.Folder != "" && record.Folder != here {
+		} else if here := s.folderKey(); record.Folder == "" || here == "" || record.Folder != here {
 			// **The pathname alone is not the folder** (review round 1 of
-			// #315, finding 1): a copy put at the pathname the identity was
-			// written at, after the folder it was written in moved away,
-			// holds the file of another folder. That folder's device and
-			// inode, which the file records, against this folder's, are
-			// evidence against it, and the identity is unresolved until the
-			// owner says which this folder is.
+			// #315, finding 1; issue #319): a copy put at the pathname the
+			// identity was written at, after the folder it was written in
+			// moved away, holds the file of another folder. That folder's
+			// device and inode, which the file records, against this
+			// folder's, are evidence against it; and a file that records no
+			// folder, or a folder this system cannot name, binds the
+			// identity to nothing a copy does not carry. Either way the
+			// identity is unresolved until the owner says which this folder
+			// is.
 			s.setUnresolved()
-			s.log.Printf("desk: this project's identity was written in another folder at this same path, by its device and inode, so Desk makes and rotates no key under it, and recovers nothing under it, until the owner says on the decision record whether this folder was moved here or is a copy")
+			if record.Folder == "" {
+				s.log.Printf("desk: this project's identity records no folder, as an earlier Desk wrote it or as a start took it from the key jpack.json names, so Desk makes and rotates no key under it, and recovers nothing under it, until the owner says on the decision record whether this folder is the project it was made for or a copy")
+			} else {
+				s.log.Printf("desk: this project's identity was written in another folder at this same path, by its device and inode, so Desk makes and rotates no key under it, and recovers nothing under it, until the owner says on the decision record whether this folder was moved here or is a copy")
+			}
 			return
 		}
 		if record.From == "" {
@@ -691,7 +711,15 @@ func (s *Server) migrateStartupIdentity(private *os.Root, record identityRecord,
 			return
 		}
 		s.setStartup(identityKept, record.ID, record.From, "")
-		s.log.Printf("desk: this project is named %s from now on, wherever it is moved", record.ID)
+		if record.Folder == "" {
+			// **Taken from a copyable configuration, so bound to nothing**
+			// (issue #319): the owner says whether this is the project the
+			// key was made for.
+			s.setUnresolved()
+			s.log.Printf("desk: this project is named %s, the name of the key its jpack.json names; a copy's jpack.json names the same key, so Desk makes and rotates no key under it, and recovers nothing under it, until the owner says on the decision record whether this folder is the project that key was made for or a copy", record.ID)
+		} else {
+			s.log.Printf("desk: this project is named %s from now on, wherever it is moved", record.ID)
+		}
 	}
 	if record.From != "" {
 		s.finishStartupMove(private, record, info)
@@ -700,7 +728,9 @@ func (s *Server) migrateStartupIdentity(private *os.Root, record identityRecord,
 
 // chooseStartupIdentity is the name a project with no identity takes: the
 // seed's name, where its jpack.json names a seed Desk keeps in its signing
-// folder, dir (nil where there is none); otherwise a new one, with the
+// folder, dir (nil where there is none), recorded with no folder, so that it
+// is unresolved until the owner answers (issue #319: a copy's jpack.json names
+// the same seed); otherwise a new one, bound to this folder, with the
 // stamping settings kept under the path's hash to move to it where no key,
 // list or marker is kept under that hash. Anything that decides it and could
 // not be read now is an error: nothing is chosen.
@@ -711,7 +741,7 @@ func (s *Server) chooseStartupIdentity(dir *signingDir) (identityRecord, error) 
 			return identityRecord{}, err
 		}
 		if named != "" {
-			return identityRecord{ID: named, Path: s.projectDir, Folder: s.folderKey()}, nil
+			return identityRecord{ID: named, Path: s.projectDir}, nil
 		}
 	}
 	record := identityRecord{ID: randomStartupID(), Path: s.projectDir, Folder: s.folderKey()}
@@ -847,10 +877,13 @@ const (
 )
 
 // identityOffer is the decision record's word on an unresolved identity: the
-// two answers the owner may give, each with the token that confirms it. It
-// carries no words of Desk's: the page says them.
+// two answers the owner may give, each with the token that confirms it, and
+// which question it is (Kind): "elsewhere", an identity written in a folder
+// that no longer holds it, or "unbound", one that records no folder (issue
+// #319). It carries no words of Desk's: the page says them.
 type identityOffer struct {
 	State string `json:"state"`
+	Kind  string `json:"kind"`
 	Moved string `json:"moved"`
 	Copy  string `json:"copy"`
 }
@@ -876,7 +909,11 @@ func (s *Server) identityOfferNow() *identityOffer {
 		// beside it, and nothing waits for the owner's word.
 		return nil
 	}
-	return &identityOffer{State: "unresolved", Moved: s.identityToken(identityMoved, record, info, former), Copy: s.identityToken(identityCopy, record, info, former)}
+	kind := "elsewhere"
+	if record.Folder == "" {
+		kind = "unbound"
+	}
+	return &identityOffer{State: "unresolved", Kind: kind, Moved: s.identityToken(identityMoved, record, info, former), Copy: s.identityToken(identityCopy, record, info, former)}
 }
 
 // What the folder an identity was written in holds now, as the owner's answer

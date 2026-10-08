@@ -2986,9 +2986,9 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "key list: anything already kept is generated over" "$SG" \
     '		if _, err := dir.root.Lstat(name); !errors.Is(err, fs.ErrNotExist) {' \
     '		if _, err := dir.root.Lstat(name); false && !errors.Is(err, fs.ErrNotExist) {'
-  mutate go "key list: a failed run's seed is left" "$SG" \
-    '		removed := dir.root.Remove(made.seedName)' \
-    '		removed := error(nil)'
+  mutate go 'key list: a failed run'"'"'s seed is left' 'internal/desk/archive.go' \
+    '		if info == nil && made.name == k.seedName {' \
+    '		if info == nil && false {'
   mutate go "key list: an answer from another command is taken" "$SG" \
     'answer.Command != "audit key generate" || ' \
     ''
@@ -3022,8 +3022,9 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if err := staged.Chmod(custodyFileMode); err != nil {' \
     '	if err := staged.Chmod(0o644); err != nil {'
   mutate go "key list: a staging file is left" "$SG" \
-    '	defer d.root.Remove(stagedName)' \
-    '	defer func() {}()'
+    '		_ = d.root.Remove(stagedName)
+' \
+    ''
   mutate go "key list: the first key takes over from a later record" "$SG" \
     'KeyID: answer.KeyID, At: 0}' \
     'KeyID: answer.KeyID, At: 1}'
@@ -3112,7 +3113,7 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "key list: no marker is written" "$SG" \
     '	marker, err := dir.writeMarkerHolding(made.markerName, record)' \
     '	marker, err := os.FileInfo(nil), error(nil)'
-  mutate go "key list: a failed creation leaves its marker" "$SG" \
+  mutate go 'key list: a failed creation leaves its marker' 'internal/desk/archive.go' \
     '}{{k.keysName, k.keys}, {k.seedName, k.seed}, {k.markerName, k.marker}} {' \
     '}{{k.keysName, k.keys}, {k.seedName, k.seed}} {'
   mutate go "signed desk: the marker is left after publishing" "$NDG" \
@@ -3128,14 +3129,16 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "sweep: a key without a marker is removed" "$SG" \
     '		id, isMarker := strings.CutSuffix(entry.Name(), creatingSuffix)' \
     '		id, isMarker := strings.CutSuffix(entry.Name(), seedSuffix)'
-  mutate go "sweep: a published desk's key is removed" "$SG" \
+  mutate go 'sweep: a published desk'"'"'s key is archived' 'internal/desk/signing.go' \
     '		if published {
-			remove = []int{2}' \
-    '		if false {
-			remove = []int{2}'
-  mutate go "sweep: an unpublished creation's key is left" "$SG" \
-    '		remove := []int{0, 1, 2}' \
-    '		remove := []int{2}'
+			keyBetween("sweep: inspected")' \
+    '		if published && false {
+			keyBetween("sweep: inspected")'
+  mutate go 'sweep: an unpublished creation'"'"'s key is left' 'internal/desk/signing.go' \
+    '		for i := range names {
+			if inspected[i] == nil {' \
+    '		for i := 2; i < len(names); i++ {
+			if inspected[i] == nil {'
   mutate go "sweep: a desk that cannot be inspected loses its key" "$SG" \
     '	return info, err == nil, err
 }' \
@@ -3921,9 +3924,9 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "upgrade key: jpack.json names a key that was not made" "$UP" \
     '		if key, failure, undo.creationLeft = s.makeStartupKey(ctx, dir, plan.seed, plan.snap.config); failure != nil {' \
     '		if key, failure, undo.creationLeft = nil, nil, false; failure != nil {'
-  mutate go "upgrade key: a failed upgrade leaves the key it made" "$UP" \
-    '			if err := u.key.unmake(); err != nil {' \
-    '			if err := error(nil); err != nil {'
+  mutate go 'upgrade key: a failed upgrade leaves the key it made' 'internal/desk/upgrade.go' \
+    '			moved, err := u.key.archiveStopped("the upgrade that made it did not complete, and every file it wrote was put back")' \
+    '			moved, err := []string(nil), error(nil)'
   mutate go "upgrade key: a project not put back loses the key jpack.json may name" "$UP" \
     '		if len(problems) > 0 {
 			result.keyLeft = true
@@ -4037,9 +4040,9 @@ func (b *cappedBuffer) exceeded() bool {'
 		return auditRotation{' \
     '	if false {
 		return auditRotation{'
-  mutate go "upgrade key: the start leaves the startup desk's rotation" internal/desk/rotation.go \
-    '(deskIDPattern.MatchString(id) || s.startupKey(id))' \
-    'deskIDPattern.MatchString(id)'
+  mutate go 'upgrade key: the start leaves the startup desk'"'"'s rotation' 'internal/desk/rotation.go' \
+    '		case deskIDPattern.MatchString(id) || s.startupKey(id):' \
+    '		case deskIDPattern.MatchString(id):'
   mutate go "upgrade key: the startup desk's rotation is recovered as no desk's" internal/desk/rotation.go \
     '			child = s
 		}
@@ -4070,9 +4073,9 @@ func (b *cappedBuffer) exceeded() bool {'
     '		return digestOf([]byte(s.projectDir))
 	case identityUnread:
 		return ""'
-  mutate go 'audit fix: the sweep removes a key under a name no identity binds' "$SG" \
-    '			if why := s.creationBound(dir, id, inspected[2]); why != "" {' \
-    '			if why := ""; why != "" {'
+  mutate go 'audit fix: the sweep archives a key under a name no identity binds' 'internal/desk/signing.go' \
+    '			if bound := s.creationBound(dir, id, inspected[2]); bound != "" {' \
+    '			if bound := ""; bound != "" {'
   mutate go "audit fix: a project with no identity takes its path's hash as one" "$SI" \
     '	record := identityRecord{ID: randomStartupID(), Path: s.projectDir, Folder: s.folderKey()}' \
     '	record := identityRecord{ID: digestOf([]byte(s.projectDir)), Path: s.projectDir, Folder: s.folderKey()}'
@@ -4183,11 +4186,13 @@ func (b *cappedBuffer) exceeded() bool {'
 			result.keyLeft = true' \
     '		if true {
 			result.keyLeft = true'
-  mutate go "audit fix: a key's removal goes on past a file it could not remove" "$SG" \
-    '		if err := k.dir.removeMade(made.name, made.info); err != nil {
-			return err
+  mutate go 'audit fix: a key'"'"'s archiving goes on past a file it could not move' 'internal/desk/archive.go' \
+    '		file, err := k.dir.archive(made.name, info, record)
+		if err != nil {
+			return moved, err
 		}' \
-    '		if err := k.dir.removeMade(made.name, made.info); err != nil {
+    '		file, err := k.dir.archive(made.name, info, record)
+		if err != nil {
 			continue
 		}'
   mutate go 'audit fix: an upgrade goes on where no project lock can be taken' internal/desk/project_lock.go \
@@ -4350,11 +4355,11 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if err := s.trailStill(state.bound); err != nil && false {
 		return err
 	}'
-  mutate go 'audit r2 fix: a refused rotation removes its next key without the trail checked again' "$R2RO" \
+  mutate go 'audit r2 fix: a refused rotation archives its next key without the trail checked again' 'internal/desk/rotation.go' \
     '		if err := s.trailStill(state.bound); err != nil {
-			s.log.Printf(' \
+			s.log.Printf("desk: a rotation of desk %s'"'"'s key that the runtime did not write kept its next key: %v", id, err)' \
     '		if err := s.trailStill(state.bound); err != nil && false {
-			s.log.Printf('
+			s.log.Printf("desk: a rotation of desk %s'"'"'s key that the runtime did not write kept its next key: %v", id, err)'
   mutate go 'audit r2 fix: the trail is bound without its lock' "$R2RO" \
     '	unlock, err := lockAuditShared(ctx, trail, auditLockWait)' \
     '	unlock, err := func() {}, error(nil)'
@@ -4387,9 +4392,9 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'audit r2 fix: a folder other than the one the identity was written in is taken for it moved' "$R2SI" \
     '	if record.Folder == "" || here == "" || record.Folder != here {' \
     '	if record.Folder == "" || here == "" {'
-  mutate go 'audit r2 fix: a copy at the recorded path is taken for its folder' "$R2SI" \
-    '		} else if here := s.folderKey(); record.Folder != "" && record.Folder != here {' \
-    '		} else if here := s.folderKey(); false && record.Folder != here {'
+  mutate go 'audit r2 fix: a copy at the recorded path is taken for its folder' 'internal/desk/startup_identity.go' \
+    '		} else if here := s.folderKey(); record.Folder == "" || here == "" || record.Folder != here {' \
+    '		} else if here := s.folderKey(); record.Folder == "" || here == "" {'
   mutate go 'audit r2 fix: an unresolved identity recovers and rotates' "$R2SI" \
     '	if s.startupUnresolved() {
 		return true, unresolvedWords
@@ -4430,13 +4435,13 @@ func (b *cappedBuffer) exceeded() bool {'
 	}
 	_ = unlock
 	if !s.startupUnresolved() {'
-  mutate go 'audit r2 fix: the identity question is given only beside a checked trail' internal/desk/audit_record.go \
+  mutate go 'audit r2 fix: the identity question is given only beside a checked trail' 'internal/desk/audit_record.go' \
     '	answer.Identity = identity
-	shown := s.withoutPathsIn(answer)' \
+	answer.Archive = archive' \
     '	if answer.State != auditStateNoTrail {
 		answer.Identity = identity
 	}
-	shown := s.withoutPathsIn(answer)'
+	answer.Archive = archive'
   mutate go 'audit r2 fix: a refusal of the decision record gives no identity question' internal/desk/audit_record.go \
     '		if identity != nil {
 			body["identity"] = identity
@@ -4467,12 +4472,12 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'audit r2 fix: a desk moved out of the desks folder is taken for one never published' "$R2SG" \
     '	return false, deskMovedWords, nil' \
     '	return false, "", nil'
-  mutate go 'audit r2 fix: a creation whose manifest was about to be written is taken for one never published' "$R2SG" \
-    '	case !legacy && creation.Manifest == "":' \
-    '	case !legacy:'
-  mutate go 'audit r2 fix: another folder at a desk'"'"'s name is taken for the folder it was made in' "$R2SG" \
-    '	case folder != nil && (legacy || creation.Folder != "" && identityKey(folder) == creation.Folder):' \
-    '	case folder != nil:'
+  mutate go 'audit r2 fix: a creation whose manifest was about to be written is taken for one never published' 'internal/desk/signing.go' \
+    '	case creation.Manifest == "":
+		// Its manifest was never about to be written.' \
+    '	case creation.Manifest == "" || true:
+		// Its manifest was never about to be written.'
+  # Retired with the archive rule (2026-10-08): audit r2 fix: another folder at a desk's name is taken for the folder it was made in. The sweep reads no registry folder's device and inode any more (issue #322): a marker that records the manifest was about to be written keeps its key wherever the folder is, held by 'audit r2 fix: a creation whose manifest was about to be written is taken for one never published'.
   mutate go 'audit r2 fix: a desk opened directly is not found published' "$R2SG" \
     '	if !published && s.cfg.deskID == id && s.cfg.parent == nil {' \
     '	if false {'
@@ -4533,9 +4538,12 @@ func (b *cappedBuffer) exceeded() bool {'
 		return undo(next, ' \
     '	if false {
 		return undo(next, '
-  mutate go "rotation: what a failed generation left stays" "$RO" \
-    '		removed := dir.root.Remove(nextName)' \
-    '		removed := error(nil)'
+  mutate go 'rotation: what a failed generation left stays' 'internal/desk/rotation.go' \
+    '		return undo(left, failure)
+	}' \
+    '		_ = left
+		return undo(nil, failure)
+	}'
   mutate go "rotation: an answer of another command is taken" "$RO" \
     'answer.Command == "audit key rotate" && ' \
     ''
@@ -4557,9 +4565,11 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "rotation: a refusal is taken as proof that nothing was written" "$RO" \
     '		state = s.inspectRotationBound(ctx, project, dir, marker)' \
     '		state = rotationState{outcome: rotationUnwritten, marker: marker, next: next}'
-  mutate go "rotation: a refused rotation leaves its next key" "$RO" \
-    '			if err := dir.removeMade(nextName, next); err != nil {' \
-    '			if err := error(nil); err != nil {'
+  mutate go 'rotation: a refused rotation leaves its next key' 'internal/desk/rotation.go' \
+    '			if _, err := dir.archive(nextName, next, record); err != nil {
+				s.log.Printf("desk: a rotation of desk %s'"'"'s key that changed nothing could not archive its next key: %v", id, err)' \
+    '			if err := error(nil); err != nil {
+				s.log.Printf("desk: a rotation of desk %s'"'"'s key that changed nothing could not archive its next key: %v", id, err)'
   mutate go "rotation: a refused rotation leaves its marker" "$RO" \
     '		if err := dir.removeMade(markerName, marker); err != nil {
 			s.log.Printf' \
@@ -4571,40 +4581,19 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "rotation: the seed is renamed over a seed that changed" "$RO" \
     '	if found, err := d.root.Lstat(seedName); err != nil || !os.SameFile(found, seed) {' \
     '	if found, err := d.root.Lstat(seedName); err != nil || found == nil {'
-  mutate go "rotation: the seed is renamed before the list is written" "$RO" \
-    '	if state.finished != nil {
-		if err := still(); err != nil {
-			return false, err
-		}
-		written, err := dir.replaceKeys(keysName, state.list, state.finished)
-		if err != nil {
-			return false, fmt.Errorf("the list of public keys could not be written with the next key: %w", err)
-		}
-		list = written
-	}
-	keyBetween("rotation: list written")
-	if err := dir.promoteNext(nextName, seedName, keysName, list, state.next, state.seed, still); err != nil {
-		return false, err
-	}' \
-    '	if err := dir.promoteNext(nextName, seedName, keysName, list, state.next, state.seed, still); err != nil {
+  mutate go 'rotation: the seed is renamed before the list is written' 'internal/desk/rotation.go' \
+    '	keyBetween("trail: before the list")
+	if state.finished != nil {' \
+    '	keyBetween("trail: before the list")
+	if err := dir.promoteNext(nextName, seedName, keysName, list, state.next, state.seed, still, archived{identity: name, trail: trail, sequence: state.at, rule: archivePromoted, why: "early"}); err != nil {
 		return false, err
 	}
-	if state.finished != nil {
-		if err := still(); err != nil {
-			return false, err
-		}
-		written, err := dir.replaceKeys(keysName, state.list, state.finished)
-		if err != nil {
-			return false, fmt.Errorf("the list of public keys could not be written with the next key: %w", err)
-		}
-		list = written
-	}
-	keyBetween("rotation: list written")'
-  mutate go "rotation: the marker stays after a rotation" "$RO" \
+	if state.finished != nil {'
+  mutate go 'rotation: the marker stays after a rotation' 'internal/desk/rotation.go' \
     '	if err := dir.removeMade(markerName, state.marker); err != nil {
-		return true, fmt.Errorf("its marker could not be removed: %w", err)' \
+		return fmt.Errorf("its marker could not be removed: %w", err)' \
     '	if err := dir.removeMade(markerName+".none", state.marker); err != nil {
-		return true, fmt.Errorf("its marker could not be removed: %w", err)'
+		return fmt.Errorf("its marker could not be removed: %w", err)'
   # No status before its effect: a rotation the runtime wrote and Desk could
   # not finish is never answered as rotated, and says the next key signs only
   # once the desk names it.
@@ -4618,9 +4607,9 @@ func (b *cappedBuffer) exceeded() bool {'
 		return fmt.Sprintf(' \
     '	if true {
 		return fmt.Sprintf('
-  mutate go "rotation: a rename made is said as not made" "$RO" \
-    '		return true, fmt.Errorf("its marker could not be removed: %w", err)' \
-    '		return false, fmt.Errorf("its marker could not be removed: %w", err)'
+  mutate go 'rotation: a rename made is said as not made' 'internal/desk/rotation.go' \
+    '	return true, s.settleRotation(dir, state, trail)' \
+    '	return false, s.settleRotation(dir, state, trail)'
   mutate go "rotation: a refusal names a path" "$RO" \
     '		message := s.withoutPaths(failure.message)' \
     '		message := failure.message'
@@ -4686,11 +4675,11 @@ func (b *cappedBuffer) exceeded() bool {'
 			return unknown("there is no next key' \
     '		if err := error(nil); err != nil {
 			return unknown("there is no next key'
-  mutate go "rotation recovery: an undone rotation leaves its next key" "$RO" \
-    '	if err := dir.removeMade(nextName, next); err != nil {
-		return fmt.Errorf("the next key could not be removed: %w", err)' \
-    '	if err := dir.removeMade(nextName+".none", next); err != nil {
-		return fmt.Errorf("the next key could not be removed: %w", err)'
+  mutate go 'rotation recovery: an undone rotation leaves its next key' 'internal/desk/rotation.go' \
+    '	if _, err := dir.archive(nextName, next, record); err != nil {
+		return fmt.Errorf("the next key could not be moved to Desk'"'"'s archive of keys: %w", err)' \
+    '	if _, err := dir.archive(nextName+".none", next, record); err != nil {
+		return fmt.Errorf("the next key could not be moved to Desk'"'"'s archive of keys: %w", err)'
   mutate go "rotation recovery: a settled rotation leaves its marker" "$RO" \
     '		if err := dir.removeMade(markerName, state.marker); err != nil {
 			s.log.Printf("desk: the marker of a finished' \
@@ -4708,9 +4697,9 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "rotation: a refusal says the current key still signs" "$RO" \
     'nothing was changed: Desk kept the current key. It said: ' \
     'nothing was changed: the current key still signs. It said: '
-  mutate go "rotation: the panel says the current key still signs" "$RO" \
-    'Desk removes the next key when it next starts, and keeps the current key.",' \
-    'Desk removes the next key when it next starts. The current key still signs.",'
+  mutate go 'rotation: the panel says the current key still signs' 'internal/desk/rotation.go' \
+    'Desk keeps the current key, and moves the next key to its archive of keys when it next starts.",' \
+    'the current key still signs, and Desk moves the next key to its archive of keys when it next starts.",'
   mutate go "rotation: a panic leaves the desk's key lock held" "$RO" \
     '	answer, failure := func() (*rotationAnswer, *lockFailure) {
 		s.keyMu.Lock()
@@ -4740,9 +4729,15 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "rotation: the list is written over a list edited in place" "$RO" \
     '	if err != nil || !found || !os.SameFile(now.info, read.info) || !bytes.Equal(now.data, read.data) {' \
     '	if err != nil || !found || !os.SameFile(now.info, read.info) {'
-  mutate go "rotation: a next key replaced before the rename is renamed" "$RO" \
-    '	if found, err := d.root.Lstat(nextName); err != nil || !os.SameFile(found, next) {' \
-    '	if found, err := d.root.Lstat(nextName); err != nil || found == nil {'
+  mutate go 'rotation: a next key replaced before the rename is renamed' 'internal/desk/rotation.go' \
+    '	if found, err := d.root.Lstat(nextName); err != nil || !os.SameFile(found, next) {
+		return errors.New("the next key is not the file the rotation made")
+	}
+	if found, err := d.root.Lstat(seedName); err != nil || !os.SameFile(found, seed) {' \
+    '	if found, err := d.root.Lstat(nextName); err != nil || found == nil {
+		return errors.New("the next key is not the file the rotation made")
+	}
+	if found, err := d.root.Lstat(seedName); err != nil || !os.SameFile(found, seed) {'
 
   # **One lock for every change to keys in the signing folder (issue #230).**
   # A creation, the start's sweep, a rotation and the start's recovery each
@@ -4754,8 +4749,8 @@ func (b *cappedBuffer) exceeded() bool {'
   # lock"` runs exactly these.
   SL=internal/desk/signing_lock.go
   mutate go "signing lock: a creation takes no lock" internal/desk/desks.go \
-    '			unlock, err := lockSigningWithin(ctx, dir, signingLockWait)' \
-    '			unlock, err := func() {}, error(nil)'
+    '			unlock, err = lockSigningWithin(ctx, dir, signingLockWait)' \
+    '			unlock, err = func() {}, error(nil)'
   mutate go "signing lock: a creation lets the lock go before its marker goes" internal/desk/desks.go \
     '			key.unlock, handedOver = unlock, true' \
     '			key.unlock, handedOver = nil, false'
@@ -4795,17 +4790,258 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "signing lock: a second descriptor is not excluded" "$SL" \
     '	if err := lockSigningFile(file); err != nil {' \
     '	if err := error(nil); err != nil {'
-  mutate go "signing lock: the sweep removes by name, not what it inspected" "$SG" \
-    '			if err := dir.removeMade(names[i], inspected[i]); err != nil {' \
-    '			if err := dir.root.Remove(names[i]); err != nil {'
-  mutate go "signing lock: the sweep removes the marker first" "$SG" \
-    '		remove := []int{0, 1, 2}' \
-    '		remove := []int{2, 0, 1}'
-  mutate go "signing lock: the recovery removes by name, not what it inspected" "$RO" \
-    '	if err := dir.removeMade(nextName, next); err != nil {
-		return fmt.Errorf("the next key could not be removed: %w", err)' \
-    '	if err := dir.root.Remove(nextName); err != nil {
-		return fmt.Errorf("the next key could not be removed: %w", err)'
+  mutate go 'signing lock: the sweep archives by name, not what it inspected' 'internal/desk/signing.go' \
+    '			if _, err := dir.archive(names[i], inspected[i], archived{identity: id, rule: archiveNeverPublished, why: why}); err != nil {' \
+    '			if _, err := dir.archive(names[i], func() os.FileInfo { info, _ := dir.root.Lstat(names[i]); return info }(), archived{identity: id, rule: archiveNeverPublished, why: why}); err != nil {'
+  mutate go 'signing lock: the sweep archives the marker first' 'internal/desk/signing.go' \
+    '		for i := range names {
+			if inspected[i] == nil {' \
+    '		for _, i := range []int{2, 0, 1} {
+			if inspected[i] == nil {'
+  mutate go 'signing lock: the recovery archives by name, not what it inspected' 'internal/desk/rotation.go' \
+    '	if _, err := dir.archive(nextName, next, record); err != nil {
+		return fmt.Errorf("the next key could not be moved to Desk'"'"'s archive of keys: %w", err)' \
+    '	if _, err := dir.archive(nextName, func() os.FileInfo { info, _ := dir.root.Lstat(nextName); _ = next; return info }(), record); err != nil {
+		return fmt.Errorf("the next key could not be moved to Desk'"'"'s archive of keys: %w", err)'
+  # **The archive rule (the maintainer's decision of 2026-10-08, after the
+  # third ADR-0010 line audit, issues #319 to #325).** No path of Desk's
+  # removes a seed, a next seed or a list of public keys: each moves it to
+  # Desk's archive of keys with a journal line, and the owner removes it, on
+  # their word, with a token bound to the entry. A promotion archives the
+  # previous key and names the next in the name it left; the list is appended
+  # to. An older stamp run is checked by one runtime verification (#324).
+  mutate go 'archive: a creation'"'"'s stopped key is removed, not archived' 'internal/desk/archive.go' \
+    '		file, err := k.dir.archive(made.name, info, record)' \
+    '		file, err := made.name, k.dir.root.Remove(made.name)'
+  mutate go 'archive: the sweep removes what it would archive' 'internal/desk/signing.go' \
+    '			if _, err := dir.archive(names[i], inspected[i], archived{identity: id, rule: archiveNeverPublished, why: why}); err != nil {' \
+    '			if err := dir.root.Remove(names[i]); err != nil && why != "" {'
+  mutate go 'archive: the promotion renames the next key over the current one' 'internal/desk/rotation.go' \
+    '	if _, err := d.archive(seedName, seed, previous); err != nil {' \
+    '	if err := d.root.Rename(nextName, seedName); err != nil || previous.rule != "" {
+		return err
+	}
+	if _, err := d.archive(seedName, seed, previous); err != nil {'
+  mutate go 'archive: an undone rotation removes its next key' 'internal/desk/rotation.go' \
+    '	if _, err := dir.archive(nextName, next, record); err != nil {
+		return fmt.Errorf("the next key could not be moved to Desk'"'"'s archive of keys: %w", err)' \
+    '	if err := dir.root.Remove(nextName); err != nil || next == nil {
+		return fmt.Errorf("the next key could not be moved to Desk'"'"'s archive of keys: %w", err)'
+  mutate go 'archive: a refused rotation removes its next key' 'internal/desk/rotation.go' \
+    '			if _, err := dir.archive(nextName, next, record); err != nil {
+				s.log.Printf("desk: a rotation of desk %s'"'"'s key that changed nothing could not archive its next key: %v", id, err)' \
+    '			if err := dir.root.Remove(nextName); err != nil {
+				s.log.Printf("desk: a rotation of desk %s'"'"'s key that changed nothing could not archive its next key: %v", id, err)'
+  mutate go 'archive: Runner'"'"'s unfinished key is removed' 'internal/desk/runner_key.go' \
+    '		if _, err := dir.archive(each.name, each.info, archived{identity: k.name, rule: archiveCreationStopped, why: runnerUnfinishedWords}); err != nil {' \
+    '		if err := dir.root.Remove(each.name); err != nil {'
+  mutate go 'archive: an orphaned rotation'"'"'s journal is passed over in silence' 'internal/desk/rotation.go' \
+    '	s.archiveOrphaned(dir, others)
+}' \
+    '	_ = others
+}'
+  mutate go 'archive: a key is removed where only a marker may be' 'internal/desk/signing.go' \
+    '	if kind, _, _ := archiveKindOf(name); kind != "creating" && kind != "rotating" {' \
+    '	if kind, _, _ := archiveKindOf(name); false && kind != "rotating" {'
+  mutate go 'archive: a move writes no journal line' 'internal/desk/archive.go' \
+    '	if err := d.appendArchiveLine(folder, line); err != nil {' \
+    '	if err := error(nil); err != nil || line.File == "" {'
+  mutate go 'archive: a move goes over a file archived under the same name' 'internal/desk/archive.go' \
+    '		if _, err := d.root.Lstat(filepath.Join(folder, file)); errors.Is(err, fs.ErrNotExist) {' \
+    '		if _, err := d.root.Lstat(filepath.Join(folder, file)); errors.Is(err, fs.ErrNotExist) || true {'
+  # Both checks that the file at the name is the one inspected: the name's
+  # Lstat, and the descriptor the digest of its bytes is read through (review
+  # round 1 of #327). Either alone refuses, so the mutant drops both.
+  mutate go 'archive: a move takes a file other than the one inspected' 'internal/desk/archive.go' \
+    '	if err != nil || !os.SameFile(found, info) {
+		return "", fmt.Errorf("%s was not archived: it is not the file Desk inspected", name)
+	}
+	// **Its bytes, by their digest, before and after the move** (review
+	// round 1 of #327): a file whose bytes cannot be read now is not moved;
+	// one written while it is moved is said.
+	before, err := d.contentDigest(name, info)' \
+    '	if err != nil || found == nil {
+		return "", fmt.Errorf("%s was not archived: it is not the file Desk inspected", name)
+	}
+	// **Its bytes, by their digest, before and after the move** (review
+	// round 1 of #327): a file whose bytes cannot be read now is not moved;
+	// one written while it is moved is said.
+	before, err := d.contentDigest(name, nil)'
+  mutate go 'archive: a move'"'"'s line names a path' 'internal/desk/archive.go' \
+    'Why: d.words(record.why),' \
+    'Why: record.why,'
+  mutate go 'archive: a journal line past its bound is written' 'internal/desk/archive.go' \
+    '	if info.Size()+int64(len(data)) > archiveJournalLimit {' \
+    '	if false {'
+  mutate go 'archive: the list is not bounded' 'internal/desk/archive.go' \
+    '	if len(listing.Entries) > archiveListLimit {' \
+    '	if false {'
+  mutate go 'archive: a file written while it is archived goes unsaid' 'internal/desk/archive.go' \
+    '	if after, err := d.contentDigest(filepath.Join(folder, file), info); err != nil || after != before {' \
+    '	if after, err := d.contentDigest(filepath.Join(folder, file), info); err != nil && after != before {'
+  mutate go 'archive: a move that failed is answered as made' 'internal/desk/archive.go' \
+    '	if err := archiveRename(d.root, name, filepath.Join(folder, file)); err != nil {
+		return "", fmt.Errorf("%s was not archived: %w", name, err)' \
+    '	if err := archiveRename(d.root, name, filepath.Join(folder, file)); err != nil && false {
+		return "", fmt.Errorf("%s was not archived: %w", name, err)'
+  mutate go 'archive: the free names are not bounded' 'internal/desk/archive.go' \
+    '		} else if err != nil || attempt >= 64 {' \
+    '		} else if err != nil || attempt >= 1<<20 {'
+  mutate go 'archive: a file archived since is not said changed' 'internal/desk/archive.go' \
+    '			if found, ok := lines.archived[name]; ok && found.record.Digest != "" && found.record.Digest != digest {' \
+    '			if found, ok := lines.archived[name]; ok && false && found.record.Digest != digest {'
+  mutate go 'archive: the owner'"'"'s Remove takes any token' 'internal/desk/archive.go' \
+    '	if entry.digest == "" || !hmac.Equal([]byte(s.archiveToken(entry)), []byte(token)) {' \
+    '	if entry.digest == "" {'
+  mutate go 'archive: the token binds no file' 'internal/desk/archive.go' \
+    'sha256Digest(entry.line), entry.object, entry.digest, entry.generation})' \
+    'sha256Digest(entry.line), "", entry.digest, entry.generation})'
+  mutate go 'archive: the token binds no bytes' 'internal/desk/archive.go' \
+    'sha256Digest(entry.line), entry.object, entry.digest, entry.generation})' \
+    'sha256Digest(entry.line), entry.object, "", entry.generation})'
+  mutate go 'archive: the owner'"'"'s Remove does not read the bytes again' 'internal/desk/archive.go' \
+    '	if now, err := held.contentDigest(name, found); err != nil || now != entry.digest {' \
+    '	if now, err := held.contentDigest(name, found); err != nil || now == "" {'
+  mutate go 'archive: a spent token confirms again' 'internal/desk/archive.go' \
+    'entry.object, entry.digest, entry.generation})' \
+    'entry.object, entry.digest, 0})'
+  mutate go 'archive: a file put back after its removal is listed as never removed' 'internal/desk/archive.go' \
+    '		if lines.removed[name] {
+			entry.Why = archiveBackWords + " " + entry.Why' \
+    '		if false {
+			entry.Why = archiveBackWords + " " + entry.Why'
+  mutate go 'archive: a list whose link failed is removed' 'internal/desk/signing.go' \
+    '	if _, err := d.archiveAs(stagedName, "keys.jsonl", identity, info, archived{identity: identity, rule: archiveCreationStopped, why: why}); err != nil {' \
+    '	if err := d.root.Remove(stagedName); err != nil || info == nil || identity == "" || why == "" {'
+  mutate go 'archive: a list whose link failed is left staged and unsaid' 'internal/desk/signing.go' \
+    '	if err := d.root.Link(stagedName, name); err != nil {
+		return kept(err)' \
+    '	if err := d.root.Link(stagedName, name); err != nil {
+		return nil, err'
+  mutate go 'archive: a rotation goes on where no lock can be taken' 'internal/desk/rotation.go' \
+    '			return nil, &lockFailure{http.StatusConflict, CodeBadRequest, "Nothing was rotated: " + noSigningLockWords}' \
+    '			_ = noSigningLockWords'
+  mutate go 'archive: a desk'"'"'s key is made where no lock can be taken' 'internal/desk/desks.go' \
+    '			if err != nil {
+				// **No key without the lock** (review round 1 of #327,
+				// finding 4): the desk is made unsigned, and says why.
+				dir.Close()' \
+    '			if err != nil {
+				err, unlock = nil, func() {}
+			}
+			if err != nil {
+				dir.Close()'
+  mutate go 'archive: the project'"'"'s key is made where no lock can be taken' 'internal/desk/startup_key.go' \
+    '	if err != nil {
+		// **No key without the lock** (review round 1 of #327, finding 4).
+		dir.Close()' \
+    '	if err != nil {
+		unlock, err = func() {}, nil
+	}
+	if err != nil {
+		dir.Close()'
+  mutate go 'archive: custody no start settles is not said' 'internal/desk/archive.go' \
+    '			listing.Entries = append(listing.Entries, held.unresolvedIn(s.signingKeyName())...)' \
+    '			_ = held'
+  mutate go 'archive: a project'"'"'s own marker is said as no start'"'"'s' 'internal/desk/archive.go' \
+    '		if parts == nil || parts[1] == own {' \
+    '		if parts == nil {'
+  mutate go 'archive: the owner'"'"'s Remove writes no journal line' 'internal/desk/archive.go' \
+    '	if err := held.appendArchiveLine(folder, removed); err != nil {' \
+    '	if err := error(nil); err != nil || removed.File == "" {'
+  mutate go 'archive: the owner'"'"'s Remove keeps the signing folder'"'"'s lock' 'internal/desk/archive.go' \
+    '	defer unlock()
+	held := dir' \
+    '	_ = unlock
+	held := dir'
+  mutate go 'archive: the decision record lists no archive' 'internal/desk/audit_record.go' \
+    '	answer.Archive = archive
+' \
+    '	answer.Archive = nil
+'
+  mutate go 'archive: a refusal carries no archive' 'internal/desk/audit_record.go' \
+    '		if archive != nil {
+			body["archive"] = archive
+		}
+' \
+    ''
+  mutate go 'archive: a stop between the moves of a promotion is not finished' 'internal/desk/rotation.go' \
+    '	case errors.Is(err, fs.ErrNotExist) && !legacy && journal.Phase == journalFinish:' \
+    '	case false:'
+  mutate go 'archive: a promotion whose trail moved removes its marker' 'internal/desk/rotation.go' \
+    '	if moved := s.trailStill(state.bound); moved != nil {' \
+    '	if moved := s.trailStill(state.bound); moved != nil && false {'
+  mutate go 'archive: the list is written again, not appended to' 'internal/desk/rotation.go' \
+    '	if opened, err := file.Stat(); err != nil || !os.SameFile(opened, read.info) || opened.Size() != int64(len(read.data)) {
+		return keysFile{}, errKeysChanged
+	}
+	if _, err := file.Write(key.line()); err != nil {' \
+    '	if opened, err := file.Stat(); err != nil || !os.SameFile(opened, read.info) || opened.Size() != int64(len(read.data)) {
+		return keysFile{}, errKeysChanged
+	}
+	if err := file.Truncate(0); err != nil {
+		return keysFile{}, err
+	}
+	if _, err := file.Write(key.line()); err != nil {'
+  mutate go 'audit r3 fix: a legacy identity at its recorded path is taken for this folder'"'"'s' 'internal/desk/startup_identity.go' \
+    '		} else if here := s.folderKey(); record.Folder == "" || here == "" || record.Folder != here {' \
+    '		} else if here := s.folderKey(); record.Folder != "" && record.Folder != here {'
+  mutate go 'audit r3 fix: an identity taken from jpack.json is bound to this folder' 'internal/desk/startup_identity.go' \
+    '			return identityRecord{ID: named, Path: s.projectDir}, nil' \
+    '			return identityRecord{ID: named, Path: s.projectDir, Folder: s.folderKey()}, nil'
+  mutate go 'audit r3 fix: an earlier Desk'"'"'s empty marker is taken for one never published' 'internal/desk/signing.go' \
+    '	case legacy:
+		return false, deskLegacyWords, nil' \
+    '	case legacy:
+		return false, "", nil'
+  mutate go 'audit r3 fix: an older run is checked on a report that is not valid' 'internal/desk/stamping.go' \
+    '	case report.Status != "valid":
+		return false, lastRunExpectInvalid' \
+    '	case false:
+		return false, lastRunExpectInvalid'
+  mutate go 'audit r3 fix: an older run is checked with no held checkpoint reaching it' 'internal/desk/stamping.go' \
+    'checkpointed.Status != "through" || checkpointed.Through < run.Sequence || ' \
+    'checkpointed.Status == "" && false || '
+  mutate go 'audit r3 fix: an older run is checked with no checked stamp reaching it' 'internal/desk/stamping.go' \
+    ' || stamped.Status != "through" || stamped.Through < run.Sequence:' \
+    ' || stamped.Status == "" && false:'
+  mutate go 'audit r3 fix: an older run'"'"'s verification is given another line than the run'"'"'s' 'internal/desk/stamping.go' \
+    ' || line.digest != run.Digest ||' \
+    ' ||'
+  mutate go 'audit r3 fix: a failed verification keeps what was confirmed' 'internal/desk/stamping.go' \
+    '	} else {
+		s.stamping.forgetConfirmed()
+	}
+	return confirmed, why' \
+    '	}
+	return confirmed, why'
+  mutate go 'audit r3 fix: an older run under a report that is not valid is asked of the runtime' 'internal/desk/stamping.go' \
+    '		if report.Status != "valid" {
+			// Where the trail does not pass every check, neither does it' \
+    '		if false {
+			// Where the trail does not pass every check, neither does it'
+  mutate go 'audit r3 fix: an older run the runtime did not check is said invalid' 'internal/desk/stamping.go' \
+    '	if err != nil || answer.State != auditStateReport || answer.Report == nil {
+		return false, lastRunExpectUnchecked' \
+    '	if err != nil || answer.State != auditStateReport || answer.Report == nil {
+		return false, lastRunExpectInvalid'
+  mutate go 'audit r3 fix: a main verification that failed keeps what was confirmed' 'internal/desk/audit_record.go' \
+    '	passed = answer.Report != nil && answer.Report.Status == "valid"
+' \
+    '	passed = true
+'
+  mutate go 'audit r3 fix: a verification that could not be read keeps what was confirmed' 'internal/desk/audit_record.go' \
+    '		if !passed {
+			s.stamping.forgetConfirmed()
+		}
+	}()' \
+    '		if !passed && false {
+			s.stamping.forgetConfirmed()
+		}
+	}()'
+  mutate go 'audit r3 fix: an older run is confirmed under a head it did not verify' 'internal/desk/stamping.go' \
+    '	if confirmed && verified != head {' \
+    '	if confirmed && false && verified != head {'
   # **Runner's signing key (ADR-0010, section 5; runner_key.go).** A key of
   # Runner's own, never a project's or an inherited one, named on the boot
   # line only where, under the one key-custody lock on the signing folder, no
@@ -6143,9 +6379,9 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'audit r2 fix: a stamps line with a token of no form is taken for the head' "$R2ST" \
     '	if decoded, err := base64.StdEncoding.Strict().DecodeString(token); err != nil || len(decoded) == 0 {' \
     '	if decoded, err := base64.StdEncoding.Strict().DecodeString(token); (err != nil || len(decoded) == 0) && false {'
-  mutate go 'audit r2 fix: an earlier record'"'"'s answer is kept past its head' "$R2ST" \
-    '	if st.recorded.named != named || st.recorded.head != head || head.Digest == "" {' \
-    '	if st.recorded.named != named || head.Digest == "" {'
+  mutate go 'audit r2 fix: an earlier record'"'"'s confirmation is kept past its head' 'internal/desk/stamping.go' \
+    '&& st.confirmed.named == named && st.confirmed.head == head' \
+    '&& st.confirmed.named == named'
   mutate go 'audit r2 fix: a failed stamp run keeps the checkpoint known' "$R2ST" \
     '		st.knowStamped(nil)
 	}
@@ -6157,17 +6393,11 @@ func (b *cappedBuffer) exceeded() bool {'
 		return not(lastRunRewritten)' \
     '	if !sameCheckpoint(named, now) && false {
 		return not(lastRunRewritten)'
-  mutate go 'audit r2 fix: an earlier record is taken for the run'"'"'s without asking the runtime' "$R2ST" \
-    '		switch now, err = at(*named, *now); {' \
-    '		switch now, err = named, error(nil); {'
-  mutate go 'audit r2 fix: an earlier record is read from a trail that is not the report'"'"'s' "$R2ST" \
-    '	case got.more || !lastRead || !sameCheckpoint(&head, &checkpointHead{Identity: last.trail, Sequence: last.sequence, Digest: last.digest}):' \
-    '	case got.more || !lastRead || !sameCheckpoint(&head, &checkpointHead{Identity: last.trail, Sequence: last.sequence, Digest: last.digest}) && false:'
-  mutate go 'audit r2 fix: a record the runtime could not be asked of is said rewritten' "$R2ST" \
-    '		case err != nil:
-			return not(lastRunUnasked)' \
-    '		case false:
-			return not(lastRunUnasked)'
+  mutate go 'audit r2 fix: an earlier record is taken for the run'"'"'s without asking the runtime' 'internal/desk/stamping.go' \
+    '		if checked, why := expect(run, *now); !checked {' \
+    '		if checked, why := true, ""; !checked {'
+  # Retired with the archive rule (2026-10-08): audit r2 fix: an earlier record is read from a trail that is not the report's. No checkpoint is read in batches any more (issue #324): an older run's checkpoint is held by one runtime verification, its rows 'audit r3 fix: ...'.
+  # Retired with the archive rule (2026-10-08): audit r2 fix: a record the runtime could not be asked of is said rewritten. The batched read it guarded is gone (issue #324); a verification the runtime did not make is held by 'audit r3 fix: an older run the runtime did not check is said invalid'.
   mutate go 'audit r2 fix: stamps that reach an earlier record are taken for the run'"'"'s' "$R2ST" \
     '	case stamped.Through < run.Sequence:' \
     '	case false:'
@@ -6185,13 +6415,13 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'audit r2 fix: a trail the runtime did not check is said given no roots' "$R2ST" \
     '		return not(lastRunNoTrail)' \
     '		return not(lastRunNoRoots)'
-  mutate go 'audit r2 fix: the decision record says every last run checked' internal/desk/audit_record.go \
-    '	answer.Stamping.LastChecked = lastRunChecked(*answer.Stamping, answer.Report, func(named, head checkpointHead) (*checkpointHead, error) {' \
+  mutate go 'audit r2 fix: the decision record says every last run checked' 'internal/desk/audit_record.go' \
+    '	answer.Stamping.LastChecked = lastRunChecked(*answer.Stamping, answer.Report, func(run *stampRun, head checkpointHead) (bool, string) {' \
     '	answer.Stamping.LastChecked = &stampChecked{Checked: true}
-	_ = lastRunChecked(*answer.Stamping, answer.Report, func(named, head checkpointHead) (*checkpointHead, error) {'
-  mutate go 'audit fix: a run keeps no record digest' "$AFS" \
-    'Sequence: checkpoint.sequence, Digest: checkpoint.digest}' \
-    'Sequence: checkpoint.sequence}'
+	_ = lastRunChecked(*answer.Stamping, answer.Report, func(run *stampRun, head checkpointHead) (bool, string) {'
+  mutate go 'audit fix: a run keeps no record digest' 'internal/desk/stamping.go' \
+    'Sequence: checkpoint.sequence, Digest: checkpoint.digest, checkpoint:' \
+    'Sequence: checkpoint.sequence, checkpoint:'
   mutate go 'audit fix: the head keeps no record digest' "$AFH" \
     'Sequence: line.sequence, Digest: line.digest}' \
     'Sequence: line.sequence}'
@@ -13119,9 +13349,9 @@ export function assistantTransport(id: string): Transport {
   mutate web "record: a reconnect invalidates it" "$MP" \
     "if (reconnecting) await queryClient.invalidateQueries({ predicate: followsTheProject })" \
     "if (reconnecting) await queryClient.invalidateQueries()"
-  mutate web "record: asking again runs nothing" "$DR" \
-    "  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); void query.refetch() }}" \
-    "  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined) }}"
+  mutate web 'record: asking again runs nothing' 'web/src/audit/DecisionRecord.tsx' \
+    '  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); setArchived(undefined); void query.refetch() }}' \
+    '  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); setArchived(undefined) }}'
   mutate web "record: an older runtime's line claims signing" "$DR" \
     "            : record?.state === 'older-runtime' ? <><p>{msg(" \
     "            : record?.state === 'older-runtime' ? <><p>{msg('Signed through record {{sequence}}', { sequence: 0 })} {msg("
@@ -13400,9 +13630,9 @@ export function assistantTransport(id: string): Transport {
   mutate web "rotation page: the confirmation omits that nothing is revoked" "$RK" \
     "        <li>{msg('A rotation revokes nothing: whoever holds the old key can still sign as it." \
     "        <li hidden>{msg('A rotation revokes nothing: whoever holds the old key can still sign as it."
-  mutate web "rotation page: the confirmation omits the old key's bytes" "$RK" \
-    "        <li>{msg('The old key’s file loses its name, but its bytes may remain on the disk.')}</li>" \
-    ""
+  mutate web 'rotation page: the confirmation omits where the old key is kept' 'web/src/audit/RotateSigningKey.tsx' \
+    '        <li>{msg('"'"'Desk keeps the old key in its archive of keys, which this record lists, until you remove it there; while it is kept, whoever reads it can still sign as it.'"'"')}</li>' \
+    ''
   mutate web "rotation page: the confirmation omits that a lost key stays lost" "$RK" \
     "        <li>{msg('A lost key cannot be rotated away from: a rotation needs the key in force.')}</li>" \
     ""
@@ -13412,9 +13642,9 @@ export function assistantTransport(id: string): Transport {
   mutate web "rotation page: the panel is not checked again after a rotation" "$DR" \
     "onOutcome={outcome => { setRotated(outcome); void query.refetch() }}" \
     "onOutcome={outcome => { setRotated(outcome) }}"
-  mutate web "rotation page: an outcome outlives a later check" "$DR" \
-    "onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); void query.refetch() }}" \
-    "onClick={() => { setRepaired(undefined); setStamped(undefined); setResolved(undefined); void query.refetch() }}"
+  mutate web 'rotation page: an outcome outlives a later check' 'web/src/audit/DecisionRecord.tsx' \
+    'onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); setArchived(undefined); void query.refetch() }}' \
+    'onClick={() => { setRepaired(undefined); setStamped(undefined); setResolved(undefined); setArchived(undefined); void query.refetch() }}'
   mutate web "rotation page: an outcome outlives opening the panel again" "$DR" \
     "  useEffect(() => { if (visible) setRotated(undefined) }, [visible])" \
     "  useEffect(() => { if (visible) void 0 }, [visible])"
@@ -13564,14 +13794,14 @@ export function assistantTransport(id: string): Transport {
   mutate web "hand-over page: a holder's file passed over is not named" "$DR" \
     "{record.expectUnread && <p role=\"alert\">" \
     "{record.expectUnread && record.expectUnread.length < 0 && <p role=\"alert\">"
-  mutate web "hand-over page: not beside the report" "$DR" \
-    "                    {rotation(record.keys, record.rotation)}
-                    {handoverSection(record.since)}" \
-    "                    {rotation(record.keys, record.rotation)}"
-  mutate web "hand-over page: not beside the runtime's refusal" "$DR" \
-    "                  {rotation(record.keys, record.rotation)}
-                  {handoverSection()}" \
-    "                  {rotation(record.keys, record.rotation)}"
+  mutate web 'hand-over page: not beside the report' 'web/src/audit/DecisionRecord.tsx' \
+    '                    {archiveSection(record.archive)}
+                    {handoverSection(record.since)}' \
+    '                    {archiveSection(record.archive)}'
+  mutate web 'hand-over page: not beside the runtime'"'"'s refusal' 'web/src/audit/DecisionRecord.tsx' \
+    '                  {archiveSection(record.archive)}
+                  {handoverSection()}' \
+    '                  {archiveSection(record.archive)}'
   mutate web "hand-over page: the holders are not read again with the decision record" "$HP" \
     "  useEffect(() => { void refetch.current({ cancelRefetch: false }) }, [checkedAt])" \
     "  useEffect(() => { void refetch.current({ cancelRefetch: false }) }, [checkedAt > 0])"
@@ -13749,9 +13979,9 @@ export function assistantTransport(id: string): Transport {
   mutate web 'repair page: the decision record is not checked again after a repair' "$RDR" \
     'onOutcome={outcome => { setRepaired(outcome); void query.refetch() }} />' \
     'onOutcome={outcome => { setRepaired(outcome) }} />'
-  mutate web 'repair page: an outcome outlives a later check' "$RDR" \
-    '{ setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); void query.refetch() }' \
-    '{ setRotated(undefined); setStamped(undefined); setResolved(undefined); void query.refetch() }'
+  mutate web 'repair page: an outcome outlives a later check' 'web/src/audit/DecisionRecord.tsx' \
+    '{ setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); setArchived(undefined); void query.refetch() }' \
+    '{ setRotated(undefined); setStamped(undefined); setResolved(undefined); setArchived(undefined); void query.refetch() }'
   mutate web 'repair page: an outcome outlives opening the panel again' "$RDR" \
     '  useEffect(() => { if (visible) setRepaired(undefined) }, [visible])' \
     '  useEffect(() => { if (visible && false) setRepaired(undefined) }, [visible])'
@@ -13850,9 +14080,9 @@ export function assistantTransport(id: string): Transport {
   mutate web 'stamping page: the decision record is not checked again after an action' "$SDR" \
     '    onOutcome={outcome => { setStamped(outcome); void query.refetch() }} />' \
     '    onOutcome={outcome => { setStamped(outcome) }} />'
-  mutate web 'stamping page: an outcome outlives a later check' "$SDR" \
-    '{ setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); void query.refetch() }' \
-    '{ setRotated(undefined); setRepaired(undefined); setResolved(undefined); void query.refetch() }'
+  mutate web 'stamping page: an outcome outlives a later check' 'web/src/audit/DecisionRecord.tsx' \
+    '{ setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); setArchived(undefined); void query.refetch() }' \
+    '{ setRotated(undefined); setRepaired(undefined); setResolved(undefined); setArchived(undefined); void query.refetch() }'
   mutate web 'stamping page: the statement says no stamp was checked with roots given' "$SDR" \
     '  const roots = record.stamping?.passed === true' \
     '  const roots = false'
@@ -14110,15 +14340,53 @@ export function assistantTransport(id: string): Transport {
     '                    {repairSection(record.repair)}
                     {identitySection(record.identity)}' \
     '                    {repairSection(record.repair)}'
-  mutate web 'audit r2 fix: the identity question is not asked where no trail is kept' web/src/audit/DecisionRecord.tsx \
-    "deciding runs.')}</p>{identitySection(record.identity)}</>" \
-    "deciding runs.')}</p></>"
-  mutate web 'audit r2 fix: the identity question is not asked beside a refusal' web/src/audit/DecisionRecord.tsx \
-    '{systemMessage(query.error.message)}</p>{identitySection(identityOf(query.error))}</>' \
-    '{systemMessage(query.error.message)}</p></>'
-  mutate web 'audit r2 fix: a refusal'"'"'s identity question is not read' web/src/audit/client.ts \
-    '  return isAuditIdentity(body.identity) ? Object.assign(error, { identity: body.identity }) : error' \
-    '  return error'
+  mutate web 'audit r2 fix: the identity question is not asked where no trail is kept' 'web/src/audit/DecisionRecord.tsx' \
+    'deciding runs.'"'"')}</p>{identitySection(record.identity)}{archiveSection(record.archive)}</>' \
+    'deciding runs.'"'"')}</p>{archiveSection(record.archive)}</>'
+  mutate web 'audit r2 fix: the identity question is not asked beside a refusal' 'web/src/audit/DecisionRecord.tsx' \
+    '{systemMessage(query.error.message)}</p>{identitySection(identityOf(query.error))}{archiveSection(archiveOf(query.error))}</>' \
+    '{systemMessage(query.error.message)}</p>{archiveSection(archiveOf(query.error))}</>'
+  mutate web 'audit r2 fix: a refusal'"'"'s identity question is not read' 'web/src/audit/client.ts' \
+    '  if (isAuditIdentity(body.identity)) Object.assign(error, { identity: body.identity })' \
+    ''
+  # **The archive rule, on the page.** Every archived file is listed beside
+  # every answer, with why; Remove sends the entry's own token, only from its
+  # confirmation; an identity that records no folder is asked in its own words.
+  mutate web 'archive page: Remove sends another token' 'web/src/audit/client.ts' \
+    'body: JSON.stringify({ scope: entry.scope, identity: entry.identity, file: entry.file, token: entry.token })' \
+    'body: JSON.stringify({ scope: entry.scope, identity: entry.identity, file: entry.file, token: '"'"'x'"'"' })'
+  mutate web 'archive page: Remove sends without its confirmation' 'web/src/audit/ArchivedKeys.tsx' \
+    'onClick={event => { opener.current = event.currentTarget; setAsked(entry) }}' \
+    'onClick={() => { void removeArchivedKey(entry) }}'
+  mutate web 'archive page: a missing file offers Remove' 'web/src/audit/ArchivedKeys.tsx' \
+    '            : entry.missing
+            ? <p role="note">' \
+    '            : false
+            ? <p role="note">'
+  mutate web 'archive page: not beside the report' 'web/src/audit/DecisionRecord.tsx' \
+    '                    {archiveSection(record.archive)}
+                    {handoverSection(record.since)}' \
+    '                    {handoverSection(record.since)}'
+  mutate web 'archive page: not beside a refusal' 'web/src/audit/DecisionRecord.tsx' \
+    '</p>{identitySection(identityOf(query.error))}{archiveSection(archiveOf(query.error))}</>' \
+    '</p>{identitySection(identityOf(query.error))}</>'
+  mutate web 'archive page: a refusal'"'"'s archive is not read' 'web/src/audit/client.ts' \
+    '  if (isAuditArchive(body.archive)) Object.assign(error, { archive: body.archive })' \
+    ''
+  mutate web 'archive page: an entry with a token and no file is taken' 'web/src/audit/client.ts' \
+    '    && (value.missing === true ? value.token === undefined : optional(value.token, hex(64)))' \
+    ''
+  mutate web 'identity page: an unbound identity is asked as one written elsewhere' 'web/src/audit/ResolveIdentity.tsx' \
+    '  const unbound = identity?.kind === '"'"'unbound'"'"'' \
+    '  const unbound = false'
+  mutate web 'archive page: custody no start settles is not said' 'web/src/audit/ArchivedKeys.tsx' \
+    '          {entry.unresolved
+            ? <p role="note">' \
+    '          {false
+            ? <p role="note">'
+  mutate web 'archive page: an unresolved entry with a token is taken' 'web/src/audit/client.ts' \
+    '      && optional(value.trail, hex(32)) && named(value.at) && named(value.why) && value.token === undefined && value.missing === undefined' \
+    '      && optional(value.trail, hex(32)) && named(value.at) && named(value.why)'
   mutate web 'audit r2 fix: a question with one token for both answers is read' web/src/audit/client.ts \
     ' && hex(64)(value.copy) && value.moved !== value.copy' \
     ' && hex(64)(value.copy)'

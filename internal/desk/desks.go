@@ -432,16 +432,25 @@ func (s *Server) createDesk(w http.ResponseWriter, r *http.Request) {
 	}{record, gates.configVersion, gates.requireComparableFacts, gates.signed, gates.notice})
 }
 
-// dropKey is failure, after removing the key a creation that stopped had
-// made. Where that cannot be done, Desk's log says where, and the answer says
-// so in words with no path.
+// dropKey is failure, after moving the key a creation that stopped had made
+// to Desk's archive of keys, which the decision record lists: no key is
+// removed on Desk's own (archive.go). Where that cannot be done, Desk's log
+// says where, and the answer says so in words with no path.
 func (s *Server) dropKey(key *madeKey, failure *deskFailure) *deskFailure {
-	if err := key.unmake(); err != nil {
-		s.log.Printf("desk: a failed creation could not remove the signing key it made in %s: %v", key.dir.path, err)
-		failure.message += " The signing key made for it could not be removed, and was left in Desk's signing folder; no desk names it."
+	moved, err := key.archiveStopped(s.withoutPaths(failure.message))
+	switch {
+	case err != nil:
+		s.log.Printf("desk: a failed creation could not archive the signing key it made in %s: %v", key.dir.path, err)
+		failure.message += " The signing key made for it could not be moved to Desk's archive of keys, and was left in Desk's signing folder; no desk names it."
+	case len(moved) > 0:
+		failure.message += " " + keyArchivedWords
 	}
 	return failure
 }
+
+// keyArchivedWords is what a creation that stopped says of the key it had
+// made: kept, never removed.
+const keyArchivedWords = "The signing key made for it was moved to Desk's archive of keys, which the decision record lists; no desk names it, and you can remove it there."
 
 // makeDeskFolder makes a new desk's folder, through folder, the root this
 // request opened when it made the directory: the folders, the desk's signing
@@ -481,22 +490,28 @@ func (s *Server) makeDeskFolder(ctx context.Context, folder *os.Root, entry, id 
 			dir.Close()
 			err = errors.New("the path of Desk's signing folder is not valid UTF-8, which jpack.json cannot name")
 		}
-		if err != nil {
-			s.log.Printf("desk: no signing key is kept for the new desk %s: %v", id, err)
-			gates.unsigned(fmt.Sprintf(unsignedByCustody, strings.TrimRight(s.custodyWords(err.Error()), ".")))
-		} else {
-			// The signing folder's lock, from before the marker until the
-			// marker is removed (`madeKey.close`), so that no other Desk
-			// process's sweep removes the key meanwhile (issue #230).
-			unlock, err := lockSigningWithin(ctx, dir, signingLockWait)
+		// The signing folder's lock, from before the marker until the
+		// marker is removed (`madeKey.close`), so that no other Desk
+		// process's sweep archives the key meanwhile (issue #230).
+		unlock := func() {}
+		if err == nil {
+			unlock, err = lockSigningWithin(ctx, dir, signingLockWait)
 			if errors.Is(err, errSigningBusy) {
 				dir.Close()
 				return deskGates{}, &deskFailure{http.StatusConflict, CodeBadRequest, "The desk was not created: " + signingBusyWords}
 			}
 			if err != nil {
-				s.log.Printf("desk: the new desk %s's key is made without the signing folder's lock: %v", id, err)
-				unlock = func() {}
+				// **No key without the lock** (review round 1 of #327,
+				// finding 4): the desk is made unsigned, and says why.
+				dir.Close()
+				s.log.Printf("desk: the signing folder's lock was not taken for the new desk %s: %v", id, err)
+				err = errors.New(strings.TrimRight(noSigningLockWords, "."))
 			}
+		}
+		if err != nil {
+			s.log.Printf("desk: no signing key is kept for the new desk %s: %v", id, err)
+			gates.unsigned(fmt.Sprintf(unsignedByCustody, strings.TrimRight(s.custodyWords(err.Error()), ".")))
+		} else {
 			// Released however the creation ends before its key holds the
 			// lock, a panic included, as a stopped process releases it.
 			handedOver := false

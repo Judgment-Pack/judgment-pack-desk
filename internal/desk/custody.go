@@ -88,6 +88,9 @@ type assistantStore struct {
 	secrets *os.Root
 	// problem is why there is no store, where there is none.
 	problem error
+	// logf is the server's log, which every archive move of a key is said in
+	// (archive.go); nil, Go's default log.
+	logf func(format string, args ...any)
 }
 
 // errNoConfigDir is the absence of any directory to validate.

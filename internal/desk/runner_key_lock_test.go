@@ -159,8 +159,12 @@ func TestAKeyCustodyLockHeldByAnotherProcess(t *testing.T) {
 		}
 	}
 	s.sweepUnfinishedKeys()
-	if names := namesIn(t, signing); !slices.Equal(names, []string{"runner"}) {
+	if names := liveIn(t, signing); !slices.Equal(names, []string{"runner"}) {
 		t.Errorf("after the lock was released, the desks' sweep left %q", names)
+	}
+	// Moved to Desk's archive of keys, never removed (the archive rule).
+	if got := archivedIn(t, signing, desk); !slices.Equal(got, kindsArchived(archiveNeverPublished, "keys.jsonl", "seed", "creating")) {
+		t.Errorf("after the lock was released, the desks' sweep archived %q", got)
 	}
 }
 
@@ -505,7 +509,8 @@ func TestRunnersStandardErrorIsKeptToItsBound(t *testing.T) {
 
 // **The desks' sweep at Desk's start takes the lock**, and does not wait for
 // it: a Desk started while another process holds it leaves an unfinished
-// desk key as it is; the next start, once the lock is free, removes it.
+// desk key as it is; the next start, once the lock is free, moves it to
+// Desk's archive of keys.
 func TestDesksStartSweepsUnderTheLock(t *testing.T) {
 	const orphan = "c0000000000000000000000000000018"
 	bin := filepath.Join(t.TempDir(), "jpack")
@@ -536,8 +541,11 @@ func TestDesksStartSweepsUnderTheLock(t *testing.T) {
 	free, freeServer := startDesk(t, Config{ProjectDir: t.TempDir(), JpackBin: bin, DeskConfigDir: first.configDir, Token: testToken})
 	freeServer.Close()
 	free.Close()
-	if names := namesIn(t, folder); len(names) != 0 {
+	if names := liveIn(t, folder); len(names) != 0 {
 		t.Errorf("Desk's start, the lock free, left %q", names)
+	}
+	if got := archivedIn(t, folder, orphan); !slices.Equal(got, kindsArchived(archiveNeverPublished, "keys.jsonl", "seed", "creating")) {
+		t.Errorf("Desk's start, the lock free, archived %q", got)
 	}
 }
 

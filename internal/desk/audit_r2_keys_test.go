@@ -107,6 +107,8 @@ func bareServer(t *testing.T, project, config, id string) (*Server, *bytes.Buffe
 		t.Fatal(err)
 	}
 	s.cfg.JpackBin = bin
+	// Every archive move is said in the server's log (archive.go).
+	s.assistant.logf = s.log.Printf
 	return s, logged
 }
 
@@ -488,11 +490,11 @@ func TestARecoveryActsOnlyOnTheTrailItDecidedOn(t *testing.T) {
 	})
 }
 
-// **A refused rotation removes its next key only on the trail it decided
+// **A refused rotation archives its next key only on the trail it decided
 // on** (issue #311). The runtime refuses and writes nothing; Desk decides
 // that the rotation was not written, and the trail is then replaced before
-// the next key is removed: the next key and the marker stay, and the answer
-// says so.
+// the next key is archived: the next key and the marker stay at their names,
+// and the answer says so.
 func TestARefusedRotationKeepsItsNextKeyWhereTheTrailMoved(t *testing.T) {
 	r := newRotationRig(t, "e3110000000000000000000000000003", "")
 	r.writeTrail(t, 1, recordLine(standInKeyID, 1))
@@ -506,7 +508,7 @@ func TestARefusedRotationKeepsItsNextKeyWhereTheTrailMoved(t *testing.T) {
 	t.Cleanup(func() { testHookKeyBetween = nil })
 	status, data := r.rotate(t, token)
 	testHookKeyBetween = nil
-	want := "The runtime did not rotate the key. It said: The project's signing key is not the key in force in the signature sidecar, so it cannot hand signing over; only the key in force can. Desk did not remove the next key it made, because " + strings.TrimRight(errTrailMoved.Error(), ".") + ". The decision record says a rotation did not finish."
+	want := "The runtime did not rotate the key. It said: The project's signing key is not the key in force in the signature sidecar, so it cannot hand signing over; only the key in force can. Desk did not move the next key it made to its archive of keys, because " + strings.TrimRight(errTrailMoved.Error(), ".") + ". The decision record says a rotation did not finish."
 	if status != http.StatusConflict || refusalOf(data) != want {
 		t.Errorf("the rotation answered %d %q, want 409 %q", status, refusalOf(data), want)
 	}
@@ -622,14 +624,16 @@ func TestAPublishedDeskMovedOutOfTheDesksFolderKeepsItsKey(t *testing.T) {
 	}
 }
 
-// **A stopped creation's key goes only where the desk was never published**
-// (issue #310). Stopped before its manifest was about to be written, its key
-// goes, wherever its folder is; stopped once it was about to be written, its
-// key goes only where the desks folder still holds the very folder it was
-// made in, with no manifest, and stays where that folder was moved out or
-// another folder holds its name. An earlier Desk's empty marker goes with its
-// key only where a folder of its id with no manifest is there; and a marker
-// in no form Desk writes keeps everything.
+// **A stopped creation's key is archived only where its marker shows the
+// desk was never published** (issues #310, #322; the archive rule). Stopped
+// before its manifest was about to be written, its key, list and marker go
+// to Desk's archive of keys, wherever its folder is, each with its line.
+// Stopped once it was about to be written, everything stays at its name,
+// even where the desks folder still holds the very folder it was made in
+// with no manifest: a copy published elsewhere may name the key (the third
+// line audit's finding 4). An earlier Desk's empty marker records nothing,
+// and keeps everything too; so does a marker in no form Desk writes. Nothing
+// is removed in any row.
 func TestACreationIsSweptOnlyWhereItWasNeverPublished(t *testing.T) {
 	const id = "e3100000000000000000000000000002"
 	all := []string{id + ".creating", id + ".keys.jsonl", id + ".seed"}
@@ -638,27 +642,30 @@ func TestACreationIsSweptOnlyWhereItWasNeverPublished(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	never := kindsArchived(archiveNeverPublished, "keys.jsonl", "seed", "creating")
 	for _, tc := range []struct {
 		name, at string
 		then     func(t *testing.T, registry, marker string)
 		left     []string
+		archived []string
 		says     string
 	}{
-		{"before its manifest was about to be written, its folder moved out", "before publish", func(t *testing.T, registry, _ string) { moveOut(t, registry) }, nil, ""},
-		{"as its manifest was about to be written, its folder there", "publishing recorded", func(*testing.T, string, string) {}, nil, ""},
-		{"as its manifest was about to be written, its folder moved out", "publishing recorded", func(t *testing.T, registry, _ string) { moveOut(t, registry) }, all, deskMovedWords},
+		{"before its manifest was about to be written, its folder moved out", "before publish", func(t *testing.T, registry, _ string) { moveOut(t, registry) }, nil, never, "was moved to Desk's archive of keys"},
+		{"before its manifest was about to be written, its folder there", "before publish", func(*testing.T, string, string) {}, nil, never, "was moved to Desk's archive of keys"},
+		{"as its manifest was about to be written, its folder there", "publishing recorded", func(*testing.T, string, string) {}, all, nil, deskMovedWords},
+		{"as its manifest was about to be written, its folder moved out", "publishing recorded", func(t *testing.T, registry, _ string) { moveOut(t, registry) }, all, nil, deskMovedWords},
 		{"as its manifest was about to be written, another folder at its name", "publishing recorded", func(t *testing.T, registry, _ string) {
 			moveOut(t, registry)
 			if err := os.Mkdir(registry, 0o700); err != nil {
 				t.Fatal(err)
 			}
-		}, all, deskMovedWords},
-		{"an earlier Desk's marker, its folder there", "before publish", func(t *testing.T, _, marker string) { writeBare(t, marker, "") }, nil, ""},
+		}, all, nil, deskMovedWords},
+		{"an earlier Desk's marker, its folder there", "before publish", func(t *testing.T, _, marker string) { writeBare(t, marker, "") }, all, nil, deskLegacyWords},
 		{"an earlier Desk's marker, its folder moved out", "before publish", func(t *testing.T, registry, marker string) {
 			writeBare(t, marker, "")
 			moveOut(t, registry)
-		}, all, deskMovedWords},
-		{"a marker in no form Desk writes", "before publish", func(t *testing.T, _, marker string) { writeBare(t, marker, "planted\n") }, all, "could not be read as the record Desk writes"},
+		}, all, nil, deskLegacyWords},
+		{"a marker in no form Desk writes", "before publish", func(t *testing.T, _, marker string) { writeBare(t, marker, "planted\n") }, all, nil, "could not be read as the record Desk writes"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			calls, s, ts, _ := signingStandIn(t)
@@ -666,8 +673,11 @@ func TestACreationIsSweptOnlyWhereItWasNeverPublished(t *testing.T) {
 			marker := filepath.Join(signingFolderOf(s), id+creatingSuffix)
 			tc.then(t, registry, marker)
 			_, logged := restartedServer(t, s)
-			if names := namesIn(t, signingFolderOf(s)); !slices.Equal(names, tc.left) {
+			if names := liveIn(t, signingFolderOf(s)); !slices.Equal(names, tc.left) {
 				t.Errorf("the next start left %q, want %q: %s", names, tc.left, logged)
+			}
+			if got := archivedIn(t, signingFolderOf(s), id); !slices.Equal(got, tc.archived) {
+				t.Errorf("the next start archived %q, want %q", got, tc.archived)
 			}
 			if tc.says != "" && !strings.Contains(logged.String(), tc.says) {
 				t.Errorf("the next start did not say %q: %s", tc.says, logged)

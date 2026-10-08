@@ -255,8 +255,10 @@ func (s *Server) makeStartupKey(ctx context.Context, project heldDir, seed strin
 		return nil, &lockFailure{http.StatusConflict, CodeBadRequest, "Nothing was written: " + signingBusyWords}, false
 	}
 	if err != nil {
-		s.log.Printf("desk: this project's key is made without the signing folder's lock: %v", err)
-		unlock = func() {}
+		// **No key without the lock** (review round 1 of #327, finding 4).
+		dir.Close()
+		s.log.Printf("desk: no signing key was made for this project, because the signing folder's lock was not taken: %v", err)
+		return nil, &lockFailure{http.StatusConflict, CodeBadRequest, "Nothing was written: " + noSigningLockWords}, false
 	}
 	// Released however the creation ends before the key holds the lock, a
 	// panic included, as a stopped process releases it.

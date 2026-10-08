@@ -108,10 +108,14 @@ func newAuditRigSaying(t *testing.T, schema string) *auditRig {
 		t.Fatal(err)
 	}
 	// Each `--public-key` file's line is appended to `<calls>.keys`, in the
-	// order given, as the run reads it: `keysSeen`.
+	// order given, as the run reads it: `keysSeen`. An `--expect` file Desk
+	// writes for an older stamp run's own verification (issue #324) is
+	// appended whole to `<calls>.expected`, and that run answers with
+	// `<answer>.expect` where a test prepared one (`answersExpect`).
 	verify := "'audit verify')\n" +
-		"  prev=; for arg do if [ \"$prev\" = --public-key ]; then IFS= read -r key < \"$arg\"; printf '%s\\n' \"$key\" >> '" + rig.calls + ".keys'; fi; prev=$arg; done\n" +
+		"  prev=; expect=; for arg do if [ \"$prev\" = --public-key ]; then IFS= read -r key < \"$arg\"; printf '%s\\n' \"$key\" >> '" + rig.calls + ".keys'; fi; if [ \"$prev\" = --expect ]; then case \"$arg\" in */.expect-*) expect=$arg;; esac; fi; prev=$arg; done\n" +
 		"  answer='" + rig.answer + "'\n  if [ -e ./" + deskAnswerName + " ]; then answer=./" + deskAnswerName + "; fi\n" +
+		"  if [ -n \"$expect\" ]; then cat \"$expect\" >> '" + rig.calls + ".expected'; if [ -e '" + rig.answer + ".expect' ]; then answer='" + rig.answer + ".expect'; fi; fi\n" +
 		"  while IFS= read -r line || [ -n \"$line\" ]; do printf '%s\\n' \"$line\"; done < \"$answer\"\n" +
 		"  IFS= read -r code < \"$answer.exit\"\n  exit \"$code\"\n  ;;\n"
 	script = bytes.Replace(script, []byte("'packs lock')\n"), []byte(verify+"'packs lock')\n"), 1)
@@ -125,6 +129,13 @@ func newAuditRigSaying(t *testing.T, schema string) *auditRig {
 func (rig *auditRig) answers(t *testing.T, code int, body string) {
 	t.Helper()
 	answerAt(t, rig.answer, code, body)
+}
+
+// answersExpect sets what the stand-in's `audit verify` prints, and its
+// exit, where it is given an older stamp run's own checkpoint (issue #324).
+func (rig *auditRig) answersExpect(t *testing.T, code int, body string) {
+	t.Helper()
+	answerAt(t, rig.answer+".expect", code, body)
 }
 
 // answerAt writes an answer for the stand-in at path, and its exit.

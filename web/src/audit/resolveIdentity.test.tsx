@@ -101,9 +101,27 @@ describe('the question on this project’s identity', () => {
     expect(screen.queryByText('This folder has an identity of its own from now on.')).toBeNull()
   })
 
+  // Issue #319: an identity that records no folder, as an earlier Desk wrote
+  // it or as Desk took it from the key jpack.json names, is asked in its own
+  // words, and its first answer is "this is that project".
+  it('asks of an identity that records no folder in its own words', async () => {
+    records = [{ ...asked, identity: { state: 'unresolved', kind: 'unbound', moved, copy } }, { ...asked, identity: undefined }]
+    show()
+    expect((await screen.findByText('This project’s identity records no folder: an earlier Desk wrote it so, or Desk took it from the signing key this project’s jpack.json names, which a copy of the project names too. Desk cannot tell whether this folder is the project that identity was made for or a copy of it, so it makes, rotates and recovers no signing key under that identity until you say which.')).getAttribute('role')).toBe('alert')
+    expect(screen.queryByText(QUESTION)).toBeNull()
+    fireEvent.click(region().getByRole('button', { name: 'This is that project' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Is this the project that identity was made for?' })
+    expect(within(dialog).getByText('Desk binds the project’s identity to this folder from now on, and decides what a stopped key creation or rotation left under it when it next starts. Answer this only if this is the project that identity was made for, and no copy of it is in use.')).toBeTruthy()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'This is that project' }))
+    expect(await screen.findByText('This folder keeps the project’s identity from now on. Desk decides what a stopped key creation or rotation left under it when it next starts.')).toBeTruthy()
+    expect(posts).toEqual([{ choice: 'moved', token: moved }])
+  })
+
   it('takes the question only as the chassis gives it', () => {
     expect(isAuditIdentity({ state: 'unresolved', moved, copy })).toBe(true)
-    for (const other of [{ state: 'unresolved', moved, copy: moved }, { state: 'unresolved', moved }, { state: 'resolved', moved, copy }, { state: 'unresolved', moved: 'x', copy }]) {
+    expect(isAuditIdentity({ state: 'unresolved', kind: 'unbound', moved, copy })).toBe(true)
+    expect(isAuditIdentity({ state: 'unresolved', kind: 'elsewhere', moved, copy })).toBe(true)
+    for (const other of [{ state: 'unresolved', moved, copy: moved }, { state: 'unresolved', moved }, { state: 'resolved', moved, copy }, { state: 'unresolved', moved: 'x', copy }, { state: 'unresolved', kind: 'other', moved, copy }]) {
       expect(isAuditIdentity(other)).toBe(false)
     }
     expect(isAuditRecord(asked)).toBe(true)
