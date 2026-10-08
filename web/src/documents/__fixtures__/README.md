@@ -9,3 +9,9 @@ and independently verifies signed acquisitions before using their text.
 It contains only fixture HTML and reported test-process identity; no user uploads,
 provider credentials, or personal sources. Signed tests separately bind the
 selected URL, snapshot bytes, receipt, seal, and current signer pin.
+
+`complete-web-ocr.json` is actual `adapter-web` output from the gateway test
+`TestWebPDFUsesSelectedOCRAndKeepsOriginalSource` at gateway v0.10.0
+(2b58c04bcfacc0434e2a0474fa1588e829288133), the record that gateway's CI holds to
+the published attachment schema: a public PDF kept as its original, one page read
+by a stand-in OCR program (`program:ocr-fixture`) and one left `needs-ocr`.

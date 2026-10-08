@@ -62,12 +62,25 @@ func (c *connectionCompanion) call(ctx context.Context, bundle, dir, method stri
 	if c.cmd == nil && existingOnly {
 		return json.RawMessage(`{"state":"canceled"}`), nil
 	}
+	// The request's line, whole, before anything is started or written: a
+	// line past what the companion reads for this method is refused here,
+	// and the companion is sent none of it.
+	id, err := randomStagingName("rpc-")
+	if err != nil {
+		return nil, err
+	}
+	line, err := json.Marshal(map[string]any{"id": id, "method": method, "params": params})
+	if err != nil {
+		return nil, err
+	}
+	if bound := companionRequestBound(provider, method); bound > 0 && len(line) > bound {
+		return nil, errCompanionRequestTooLarge
+	}
 	if c.cmd == nil {
 		if err := verifyGatewayBundle(bundle); err != nil {
 			return nil, err
 		}
 		c.cmd = exec.Command(filepath.Join(bundle, executableName("gateway-connections")), "--state-dir", dir, "--principal", "desk-local", "--provider", provider)
-		var err error
 		c.input, err = c.cmd.StdinPipe()
 		if err != nil {
 			c.stop()
@@ -87,11 +100,7 @@ func (c *connectionCompanion) call(ctx context.Context, bundle, dir, method stri
 		c.done = make(chan struct{})
 		go func(cmd *exec.Cmd, done chan struct{}) { _ = cmd.Wait(); close(done) }(c.cmd, c.done)
 	}
-	id, err := randomStagingName("rpc-")
-	if err != nil {
-		return nil, err
-	}
-	if err = json.NewEncoder(c.input).Encode(map[string]any{"id": id, "method": method, "params": params}); err != nil {
+	if _, err = c.input.Write(append(line, '\n')); err != nil {
 		c.stop()
 		return nil, errors.New("gateway connection service unavailable")
 	}
@@ -158,6 +167,14 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	}
 	if !catalogIdentifier.MatchString(provider) {
 		writeJSONCoded(w, 400, CodeBadRequest, "unknown connection provider")
+		return
+	}
+	// Document processing has its own route, which rebuilds the companion's
+	// answers without credentials and holds them to what was sent; this
+	// relay passes answers through as they are. It is refused by name, not
+	// left to the catalogs' not listing it.
+	if provider == "document-processing" {
+		writeJSONCoded(w, 400, CodeBadRequest, "document processing has its own route; nothing was sent")
 		return
 	}
 
@@ -293,6 +310,26 @@ func (s *Server) connectionCompanion(provider string, create bool) *connectionCo
 		s.providerConnections[provider] = c
 	}
 	return c
+}
+
+// errCompanionRequestTooLarge is a request whose line the companion would
+// refuse for its length; nothing of it was sent.
+var errCompanionRequestTooLarge = errors.New("connection request too large; nothing was sent")
+
+// companionRequestBound is the most a request's line may hold, its ending
+// left out, where Desk holds the line to the companion's own bound (gateway
+// v0.10.0: 6 MiB for a request that carries a document, 64 KiB for every
+// other), or 0 where the companion alone holds it. The document-processing
+// companion's lines are held here: one of them carries a credential, and a
+// test carries a PDF.
+func companionRequestBound(provider, method string) int {
+	if provider != "document-processing" {
+		return 0
+	}
+	if method == "test" {
+		return 6 << 20
+	}
+	return 64 << 10
 }
 
 // Read a bounded line without allocating the file-response limit for ordinary RPCs.

@@ -264,6 +264,36 @@ go	component versions: source worker read beside Runtime	TestSourceWorkerIdentit
 go	createParents is not bounded by what the listing can walk	TestCreateParentsIsBoundedByTheWalk,TestDepthBoundHoldsForExistingParentsToo,TestEveryCodeHasAStatusAndAWitness
 go	createParents is not opt-in (every write creates its parents)	TestEveryCodeHasAStatusAndAWitness,TestRefusalsCarryAStableCode,TestWriteIntoAMissingDirectorySaysSoRatherThanRefusingContainment,TestWriteWithoutCreateParentsStillRefusesAMissingDirectory
 go	createParents resolves a pathname instead of the pinned root	TestRetargetedProjectRootIsNotAdopted
+go	document processing: a credential the companion answers reaches the page	TestDocumentProcessingAnswersCarryNoCredential
+go	document processing: a desk file naming another gateway is not read	TestDocumentProcessingIsNeverSentWhileAnotherGatewayIsInUse
+go	document processing: a document read is given the processing envelope under the ordinary plan	TestTheRelayCarriesAnOCRReadOnlyWhileTheGatewayRunsTheProcessingPlan,TestTheRelayGivesADocumentReadTheProcessingEnvelopeOnlyUnderThatPlan
+go	document processing: a document source is given 150 s without its flag	TestLocalPlanRefusesProcessingBeyondWhatTheGatewayGives
+go	document processing: a flag given twice is taken	TestLocalPlanRefusesProcessingBeyondWhatTheGatewayGives
+go	document processing: a preview page past 400 characters is shown	TestDocumentProcessingTestPreviewIsHeldToItsBounds
+go	document processing: a refusal is relayed in the companion's own words	TestDocumentProcessingAnswersCarryNoCredential
+go	document processing: a request line past the companion's bound is written	TestDocumentProcessingRequestLinesAreHeldToTheCompanionsBound
+go	document processing: a request with a query is carried	TestDocumentProcessingRefusesWithoutASessionAnUnknownOperationOrAQuery
+go	document processing: a save that leaves OCR as it is restarts the gateway	TestDocumentProcessingRestartsTheLocalGatewayWhenProcessingTurnsOnOrOff
+go	document processing: a save that turns OCR on or off leaves the gateway running	TestDocumentProcessingRestartsTheLocalGatewayWhenProcessingTurnsOnOrOff
+go	document processing: a settings line bound is past the companion's	TestDocumentProcessingRequestLinesAreHeldToTheCompanionsBound
+go	document processing: a test's answer reaches the page as the companion wrote it	TestDocumentProcessingTestPreviewIsHeldToItsBounds
+go	document processing: a test's line bound is past the companion's	TestDocumentProcessingRequestLinesAreHeldToTheCompanionsBound
+go	document processing: an answer holding the save's credential is shown	TestDocumentProcessingAnswersCarryNoCredential
+go	document processing: an echo of one secret member is shown	TestDocumentProcessingRefusesAnEchoOfAServiceAccountOrAKeyPair
+go	document processing: an escaped echo of a credential is shown	TestDocumentProcessingRefusesAnEchoOfAServiceAccountOrAKeyPair
+go	document processing: any source is given the processing envelope	TestTheRelayCarriesAnOCRReadOnlyWhileTheGatewayRunsTheProcessingPlan,TestTheRelayGivesADocumentReadTheProcessingEnvelopeOnlyUnderThatPlan
+go	document processing: the connections relay reaches the document-processing companion	TestTheConnectionsRelayRefusesDocumentProcessingByName
+go	document processing: the desk's status says the other plan	TestDocumentProcessingRestartsTheLocalGatewayWhenProcessingTurnsOnOrOff
+go	document processing: the plan is asked for without this desk's connections directory	TestLocalPlanIsAskedWithThisDesksConnectionsDirectory
+go	document processing: the processing envelope is past 150 s	TestLocalPlanRefusesProcessingBeyondWhatTheGatewayGives
+go	document processing: the processing flag is taken on any source	TestLocalPlanRefusesProcessingBeyondWhatTheGatewayGives
+go	document processing: the processing flag is taken on some document sources only	TestLocalPlanRefusesProcessingBeyondWhatTheGatewayGives
+go	document processing: the processing flag is taken without the connections directory	TestLocalPlanRefusesProcessingBeyondWhatTheGatewayGives
+go	document processing: the relay decides as if the running plan had no processing	TestTheRelayCarriesAnOCRReadOnlyWhileTheGatewayRunsTheProcessingPlan
+go	document processing: the relay is not told the running plan	TestTheRelayCarriesAnOCRReadOnlyWhileTheGatewayRunsTheProcessingPlan
+go	document processing: the search flag is taken on another source	TestLocalPlanRefusesProcessingBeyondWhatTheGatewayGives
+go	document processing: the worker's word on its plan is dropped	TestDocumentProcessingRestartsTheLocalGatewayWhenProcessingTurnsOnOrOff
+go	document processing: web-search is given 130 s without its flag	TestLocalPlanSearchAllowsLongerEnvelopeWithoutExtendingOtherSources
 go	excluded directories are not endpoint exclusions	TestEveryCodeHasAStatusAndAWitness,TestExcludedDirectoriesAreEndpointExclusions,TestExcludedNamesMatchWholeComponentsCaseInsensitively,TestNamedDesksKeepFilesAndArtifactsSeparate,TestTheFileAPIRefusesTheHandOver
 go	excluded names match case-sensitively	TestExcludedNamesMatchWholeComponentsCaseInsensitively,TestTheFileAPIRefusesTheHandOver
 go	hand-over: a checkpoint of another trail is served	TestALineThatIsNotTheNextCheckpointServesNothing
@@ -1440,6 +1470,20 @@ web	dirty is a parse comparison rather than a byte one	src/packs/edit/useDocumen
 web	dirty means 'something was typed'	src/routes/AuthorView.test.tsx
 web	discard leaves the conflict standing	src/routes/AuthorView.test.tsx
 web	discard leaves the last save attempt’s verdict standing	src/packs/edit/useDocumentBuffer.test.ts
+web	document processing: OCR is offered while another gateway is in use	src/admin/DocumentProcessingSettings.test.tsx
+web	document processing: OCR is turned on with a processor that is not available, unasked	src/processing/ProcessingSettings.test.tsx
+web	document processing: OCR provenance is taken on a static-text snapshot	src/documents/record.test.ts
+web	document processing: a blank credential is sent	src/processing/ProcessingSettings.test.tsx
+web	document processing: a credential is kept for a changed destination	src/processing/ProcessingSettings.test.tsx
+web	document processing: a processor that is not available is not marked in the choice	src/processing/ProcessingSettings.test.tsx
+web	document processing: a save carries the status's own members	src/processing/ProcessingSettings.test.tsx
+web	document processing: a save that restarts the gateway is not said before it	src/processing/ProcessingSettings.test.tsx
+web	document processing: a test PDF past 4 MiB is sent	src/processing/ProcessingSettings.test.tsx
+web	document processing: a timeout outside 10 to 120 seconds is sent	src/processing/ProcessingSettings.test.tsx
+web	document processing: a typed credential stays on the page after a save	src/processing/ProcessingSettings.test.tsx
+web	document processing: the desk's configuration is not read again after a restart	src/processing/ProcessingSettings.test.tsx
+web	document processing: the processor dialog does not say its save restarts the gateway	src/processing/ProcessingSettings.test.tsx
+web	document processing: the running gateway's plan is not said	src/admin/DocumentProcessingSettings.test.tsx,src/processing/ProcessingSettings.test.tsx
 web	downloads: a button for a file not held	src/audit/trailDownloads.test.tsx
 web	downloads: a file name the download does not take is accepted	src/audit/trailDownloads.test.tsx
 web	downloads: a refusal is not said	src/audit/trailDownloads.test.tsx

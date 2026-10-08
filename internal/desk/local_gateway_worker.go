@@ -52,7 +52,7 @@ func RunLocalGatewayWorker(input io.Reader, output io.Writer) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() { _, _ = io.Copy(io.Discard, reader); cancel() }()
-	sourceArgs, err := localGatewaySourceArgs(ctx, options.Bundle)
+	plan, err := localGatewaySourceArgs(ctx, options.Bundle, options.ConnectionsDir)
 	if err != nil {
 		return err
 	}
@@ -68,7 +68,7 @@ func RunLocalGatewayWorker(input io.Reader, output io.Writer) error {
 		listener.Close()
 		url := "http://127.0.0.1:" + strconv.Itoa(port)
 		args := []string{"serve", filepath.Join(options.Dir, "store"), options.Seed, localAuthority, filepath.Join(options.Dir, "registry.jsonl"), "--port", strconv.Itoa(port), "--receipt-version", "3", "--max-request", "33554432", "--source-max-output", "16777216"}
-		args = append(args, sourceArgs...)
+		args = append(args, plan.args...)
 		cmd := exec.Command(filepath.Join(options.Bundle, executableName("gateway")), args...)
 
 		cmd.Dir = options.Dir
@@ -118,7 +118,10 @@ func RunLocalGatewayWorker(input io.Reader, output io.Writer) error {
 			err = errors.New("gateway did not bind its requested port")
 		}
 		if err == nil {
-			err = json.NewEncoder(output).Encode(localGatewayPin{URL: url, Authority: localAuthority, Signer: localSigner{Algorithm: "ed25519", Public: options.Public}})
+			err = json.NewEncoder(output).Encode(localWorkerAnnouncement{
+				localGatewayPin:    localGatewayPin{URL: url, Authority: localAuthority, Signer: localSigner{Algorithm: "ed25519", Public: options.Public}},
+				DocumentProcessing: plan.documentProcessing,
+			})
 		}
 		if err == nil {
 			select {

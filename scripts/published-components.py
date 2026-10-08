@@ -16,7 +16,8 @@ PROGRAMS = {
     'runtime': ('jpack',),
     'runner': ('jpack-runner', 'jpack-source-worker'),
     'gateway': ('gateway', 'adapter-document', 'gateway-connections', 'adapter-drive',
-                'adapter-gmail', 'adapter-sources', 'adapter-web', 'adapter-render'),
+                'adapter-gmail', 'adapter-sources', 'adapter-web', 'adapter-render',
+                'ocr-tesseract', 'ocr-cloud'),
 }
 NOTICES = {'runtime': ('LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES'),
            'runner': ('LICENSE', 'THIRD_PARTY_NOTICES'),
