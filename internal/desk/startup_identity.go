@@ -46,7 +46,10 @@ package desk
 // sidecar, a rotation the original's trail committed to. So where the file's
 // folder no longer holds the name, the project is taken as moved only where
 // this folder is the folder the file was written in, by its device and inode
-// (`folder`); otherwise its identity is unresolved (`startupUnresolved`): no
+// (`folder`); and where the file names this folder's own path, but records
+// another folder's device and inode, as a copy put at that path does, it is
+// not taken as this folder's either (review round 1 of #315). Otherwise its
+// identity is unresolved (`startupUnresolved`): no
 // key is made, rotated or recovered under it, and the decision record asks
 // the owner which it is, "this folder was moved here" or "this is a copy",
 // confirmed with a token bound to that choice and to the file as read
@@ -554,6 +557,17 @@ func (s *Server) resolveStartupIdentity() {
 			if record, info = s.copiedOrMoved(private, record, info); s.startupShared() || s.startupUnresolved() {
 				return
 			}
+		} else if here := s.folderKey(); record.Folder != "" && record.Folder != here {
+			// **The pathname alone is not the folder** (review round 1 of
+			// #315, finding 1): a copy put at the pathname the identity was
+			// written at, after the folder it was written in moved away,
+			// holds the file of another folder. That folder's device and
+			// inode, which the file records, against this folder's, are
+			// evidence against it, and the identity is unresolved until the
+			// owner says which this folder is.
+			s.setUnresolved()
+			s.log.Printf("desk: this project's identity was written in another folder at this same path, by its device and inode, so Desk makes and rotates no key under it, and recovers nothing under it, until the owner says on the decision record whether this folder was moved here or is a copy")
+			return
 		}
 		if record.From == "" {
 			return

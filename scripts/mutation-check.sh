@@ -4384,6 +4384,9 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'audit r2 fix: a folder other than the one the identity was written in is taken for it moved' "$R2SI" \
     '	if record.Folder == "" || here == "" || record.Folder != here {' \
     '	if record.Folder == "" || here == "" {'
+  mutate go 'audit r2 fix: a copy at the recorded path is taken for its folder' "$R2SI" \
+    '		} else if here := s.folderKey(); record.Folder != "" && record.Folder != here {' \
+    '		} else if here := s.folderKey(); false && record.Folder != here {'
   mutate go 'audit r2 fix: an unresolved identity recovers and rotates' "$R2SI" \
     '	if s.startupUnresolved() {
 		return true, unresolvedWords

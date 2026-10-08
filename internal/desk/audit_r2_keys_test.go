@@ -914,3 +914,50 @@ func TestARotationAnsweredOnAReplacedTrailWithTheRuntime(t *testing.T) {
 		t.Errorf("the next start left the key %+v: %s", got, logged)
 	}
 }
+
+// **A copy put at the path the identity was written at takes nothing**
+// (review round 1 of #315, finding 1, the reviewer's scenario). A project is
+// copied before its signing upgrade publishes jpack.json; the upgrade stops
+// before its creation marker goes; the project is moved away and the copy put
+// at its old path. The copy's identity file names that path, and the folder
+// it records is the original's: the copy is unresolved, not bound, and the
+// start's sweep leaves the seed the moved original still names, its list and
+// its marker, and says why.
+func TestACopyAtTheRecordedPathTakesNothing(t *testing.T) {
+	t.Setenv("JPACK_CONFIG", "")
+	t.Setenv("JPACK_SIGNING_KEY", "")
+	base := t.TempDir()
+	config, original, copied, moved := filepath.Join(base, "config"), filepath.Join(base, "original"), filepath.Join(base, "copy"), filepath.Join(base, "moved")
+	id := strings.Repeat("a", 64)
+	s, _ := bareServer(t, original, config, "")
+	s.setStartup(identityKept, id, "", "")
+	bareKeys(t, s)
+	identity := string(identityRecord{ID: id, Path: original, Folder: folderOf(t, original)}.line())
+	writeBare(t, filepath.Join(original, ".desk-private", "project.json"), identity)
+	unsigned := readFile(t, filepath.Join(original, "jpack.json"))
+	copyPrivateTree(t, original, copied)
+	signing := filepath.Join(config, "secrets", "signing")
+	writeBare(t, filepath.Join(signing, id+creatingSuffix), string(startupCreation{ID: id, Project: original, Config: sha256Digest([]byte(unsigned))}.line()))
+	writeBare(t, filepath.Join(original, "jpack.json"), `{"configVersion":"6","packs":{},"audit":{"dir":".desk-private/audit","signingKey":`+jsonString(filepath.Join(signing, id+seedSuffix))+`}}`)
+	if err := os.Rename(original, moved); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(copied, original); err != nil {
+		t.Fatal(err)
+	}
+	copy, logged := bareServer(t, original, config, "")
+	copy.resolveStartupIdentity()
+	copy.sweepUnfinishedKeys()
+	if !copy.startupUnresolved() || copy.startupBound() {
+		t.Errorf("the copy at the recorded path is unresolved=%v bound=%v: %s", copy.startupUnresolved(), copy.startupBound(), logged)
+	}
+	if names := namesIn(t, signing); !slices.Equal(names, []string{id + creatingSuffix, id + keysSuffix, id + seedSuffix}) {
+		t.Errorf("a start on the copy left %q: %s", names, logged)
+	}
+	if got := readFile(t, filepath.Join(original, ".desk-private", "project.json")); got != identity {
+		t.Errorf("the copy's identity was written again: %q", got)
+	}
+	if !strings.Contains(logged.String(), "written in another folder at this same path") {
+		t.Errorf("the start did not say why: %s", logged)
+	}
+}
