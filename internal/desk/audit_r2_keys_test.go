@@ -777,7 +777,7 @@ func TestAnUnresolvedIdentityWaitsForTheOwnersWord(t *testing.T) {
 func TestTheIdentityFileIsWrittenOnlyWithinWhatDeskReads(t *testing.T) {
 	private := bareRoot(t, t.TempDir())
 	record := identityRecord{ID: strings.Repeat("e", 64), Folder: "2049:131"}
-	record.Path = "/" + strings.Repeat("p", startupIdentityLimit-len(identityRecord{ID: record.ID, Path: "/", Folder: record.Folder}.line())+1)
+	record.Path = "/" + strings.Repeat("p", startupIdentityLimit-len(identityRecord{ID: record.ID, Path: "/", Folder: record.Folder}.line()))
 	if n := len(record.line()); n != startupIdentityLimit {
 		t.Fatalf("the record is %d bytes", n)
 	}
