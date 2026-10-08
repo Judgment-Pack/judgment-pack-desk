@@ -2251,7 +2251,7 @@ web	the save read-back installs over a newer read	src/routes/AuthorView.test.tsx
 web	the scanner assigns member names into a plain object	src/packs/documentText.test.ts
 web	the scroll listener stays on the element that was replaced	src/packs/useWindowedRows.test.tsx
 web	the seal goes up after the engine's chunk is loaded	src/assistant/conformance/conformance.test.ts
-web	the section links go nowhere	src/routes/AdminView.test.tsx
+web	the section links go nowhere	src/shell/useHashTarget.test.tsx
 web	the select reports back a value nobody offered	src/shell/CreatePackDialog.test.tsx,src/ui/ui.test.tsx
 web	the settled table is read through its prototype	src/assistant/refutation.test.ts
 web	the shell flips the Inspector where a route asked it to open	src/packs/collectionPreview.test.tsx,src/shell/inspectorSlot.test.tsx
