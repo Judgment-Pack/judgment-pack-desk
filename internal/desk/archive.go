@@ -397,8 +397,15 @@ func (d *signingDir) appendArchiveLine(folder string, line archiveLine) error {
 	if _, err := file.Write(data); err != nil {
 		return err
 	}
-	return file.Sync()
+	// **Synced before it counts** (review round 1 of #335, finding 3): a
+	// removal's line is on the disk before its file goes, and a sync that
+	// fails is a line not written.
+	return archiveJournalSync(file)
 }
+
+// archiveJournalSync flushes a journal's line to the disk: the file's own
+// Sync, a variable only so that a test can watch it, or fail it.
+var archiveJournalSync = (*os.File).Sync
 
 // archiveMade archives what a creation made of its key, the list, the seed
 // and the marker, in that order, each only while its name still holds the

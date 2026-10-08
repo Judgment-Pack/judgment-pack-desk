@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 )
 
@@ -651,4 +652,46 @@ func TestAJournalLineDeskDoesNotWriteIsDamage(t *testing.T) {
 			}
 		})
 	}
+}
+
+// **A removal's line is synced before its file goes** (review round 1 of
+// #335, finding 3). The journal's sync is watched: by the moment the
+// removal's line is read back, it has been synced once, and the file goes
+// after. And a sync that fails is a line not written: the removal is
+// refused, and the file stays.
+func TestARemovalsLineIsSyncedBeforeItsFileGoes(t *testing.T) {
+	t.Run("synced", func(t *testing.T) {
+		s, dir, file := archivingServer(t)
+		entry := firstArchived(t, s)
+		synced := 0
+		was := archiveJournalSync
+		archiveJournalSync = func(f *os.File) error { synced++; return was(f) }
+		t.Cleanup(func() { archiveJournalSync = was })
+		testHookKeyBetween = func(at string) {
+			if at == "archive: removal written" && synced != 1 {
+				t.Errorf("the removal's line was synced %d times before it was read back", synced)
+			}
+		}
+		t.Cleanup(func() { testHookKeyBetween = nil })
+		if w := removeOn(s, removal(entry, entry.Token), nil); w.Code != http.StatusOK {
+			t.Fatalf("the removal answered %d %s", w.Code, w.Body)
+		}
+		if _, err := os.Lstat(filepath.Join(dir.path, archiveDirName, s.cfg.deskID, file)); !os.IsNotExist(err) {
+			t.Errorf("the archived seed is still there: %v", err)
+		}
+	})
+	t.Run("a sync that fails", func(t *testing.T) {
+		s, dir, file := archivingServer(t)
+		entry := firstArchived(t, s)
+		was := archiveJournalSync
+		archiveJournalSync = func(*os.File) error { return syscall.EIO }
+		t.Cleanup(func() { archiveJournalSync = was })
+		w := removeOn(s, removal(entry, entry.Token), nil)
+		if w.Code != http.StatusInternalServerError || !strings.Contains(w.Body.String(), "could not record the removal") {
+			t.Errorf("the removal answered %d %s", w.Code, w.Body)
+		}
+		if _, err := os.Lstat(filepath.Join(dir.path, archiveDirName, s.cfg.deskID, file)); err != nil {
+			t.Errorf("the archived seed went: %v", err)
+		}
+	})
 }

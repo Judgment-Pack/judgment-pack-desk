@@ -5122,6 +5122,11 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'archive edges: a move by a rule Desk has not is read' 'internal/desk/archive.go' \
     '&& slices.Contains(archiveRules, l.Rule) && l.Generation == 0' \
     '&& l.Generation == 0'
+  # A journal's line is synced before it counts, the sync alone mutated
+  # (review round 1 of #335, finding 3).
+  mutate go 'archive edges: a journal line is not synced' 'internal/desk/archive.go' \
+    '	return archiveJournalSync(file)' \
+    '	return nil'
   # A made desk's custody no start settles is said on the decision record,
   # with the reason its start keeps it, and no Remove; a desk open here
   # decides its own (#331).
