@@ -165,7 +165,8 @@ export const ROTATION_REASONS = [
   sourceMessage('Desk reads the trail\'s signature sidecar to tell whether a rotation was written, and it could not be read: {{reason}}. So Desk does not rotate the key now.'),
   sourceMessage('Nothing of it is left to do but remove its marker, which Desk does when it next starts.'),
   sourceMessage('The runtime wrote the rotation, and Desk did not finish it: Desk finishes it when it next starts. Until then, records are written unsigned.'),
-  sourceMessage('The runtime did not write the rotation: Desk removes the next key when it next starts, and keeps the current key.'),
+  sourceMessage("The trail's signature sidecar does not record the rotation: Desk keeps the current key, and moves the next key to its archive of keys when it next starts."),
+  sourceMessage('The runtime wrote the rotation, and Desk moved the previous key to its archive of keys and did not yet name the next one: Desk names it when it next starts. Until then, records are written unsigned.'),
   sourceMessage('Its marker was removed while Desk looked.'),
   sourceMessage('Desk cannot tell whether the runtime wrote the rotation, so it changes nothing: {{reason}}.'),
   sourceMessage('Desk keeps no signing key for the project it was started on, so it has none to rotate.'),
@@ -193,10 +194,10 @@ type HeldInputs = { expected?: number; expectUnread?: string[]; handoverProblem?
  */
 export type HandedSince = { holder: string; trail: string; through: number; records?: number; lines?: number }
 export type AuditRecord =
-  | ({ state: 'report'; runtime?: string; report: AuditReport; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation; identity?: AuditIdentity; repair?: AuditRepair; stamping?: AuditStamping; since?: HandedSince[] } & HeldInputs)
-  | ({ state: 'unverified'; runtime?: string; diagnostics: AuditDiagnostic[]; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation; identity?: AuditIdentity; stamping?: AuditStamping } & HeldInputs)
-  | { state: 'older-runtime'; runtime?: string; floor: string; identity?: AuditIdentity }
-  | { state: 'no-trail'; identity?: AuditIdentity }
+  | ({ state: 'report'; runtime?: string; report: AuditReport; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation; identity?: AuditIdentity; archive?: AuditArchive; repair?: AuditRepair; stamping?: AuditStamping; since?: HandedSince[] } & HeldInputs)
+  | ({ state: 'unverified'; runtime?: string; diagnostics: AuditDiagnostic[]; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation; identity?: AuditIdentity; archive?: AuditArchive; stamping?: AuditStamping } & HeldInputs)
+  | { state: 'older-runtime'; runtime?: string; floor: string; identity?: AuditIdentity; archive?: AuditArchive }
+  | { state: 'no-trail'; identity?: AuditIdentity; archive?: AuditArchive }
 
 export const AUDIT_KEY = ['desk-audit-record'] as const
 
@@ -210,6 +211,11 @@ export class AuditUnavailable extends Error {}
  */
 export function identityOf(error: unknown): AuditIdentity | undefined {
   return error instanceof Error && 'identity' in error && isAuditIdentity(error.identity) ? error.identity : undefined
+}
+
+/** What Desk archived, given beside a refusal as with every answer, carried by the error the refusal is read as. */
+export function archiveOf(error: unknown): AuditArchive | undefined {
+  return error instanceof Error && 'archive' in error && isAuditArchive(error.archive) ? error.archive : undefined
 }
 
 const text = (value: unknown): value is string => typeof value === 'string'
@@ -292,6 +298,7 @@ export function isAuditReport(value: unknown): value is AuditReport {
 export function isAuditRecord(value: unknown): value is AuditRecord {
   if (!object(value) || !optional(value.runtime, text) || !optional(value.files, item => list(item, isTrailFile))
     || !optional(value.keys, isAuditKeys) || !optional(value.signing, isAuditSigning) || !optional(value.rotation, isAuditRotation) || !optional(value.identity, isAuditIdentity)
+    || !optional(value.archive, isAuditArchive)
     || !optional(value.expected, count) || !optional(value.expectUnread, item => list(item, named)) || !optional(value.handoverProblem, named)) return false
   if (!optional(value.stamping, isAuditStamping)) return false
   switch (value.state) {
@@ -310,11 +317,13 @@ function isHandedSince(value: unknown): value is HandedSince {
 }
 
 async function refusal(response: Response): Promise<Error> {
-  let body: { error?: unknown; identity?: unknown } = {}
+  let body: { error?: unknown; identity?: unknown; archive?: unknown } = {}
   try { body = await response.json() as typeof body } catch { /* The status is still an answer. */ }
   const message = text(body.error) ? body.error : msg('The decision record could not be loaded. Please try again.')
   const error = response.status === 409 ? new AuditUnavailable(message) : new Error(message)
-  return isAuditIdentity(body.identity) ? Object.assign(error, { identity: body.identity }) : error
+  if (isAuditIdentity(body.identity)) Object.assign(error, { identity: body.identity })
+  if (isAuditArchive(body.archive)) Object.assign(error, { archive: body.archive })
+  return error
 }
 
 /**
@@ -379,16 +388,19 @@ export async function rotateSigningKey(token: string): Promise<RotationResult> {
 /**
  * Where this project's identity was written in another folder, which no
  * longer holds it, and Desk cannot tell whether this folder is that one,
- * moved here, or a copy of it (issue #309): the two answers the owner may
- * give, each with the token that confirms it. Desk makes, rotates and
- * recovers no signing key under that identity until the owner answers.
+ * moved here, or a copy of it (issue #309), or where it records no folder at
+ * all, as an earlier Desk wrote it or as Desk took it from the key jpack.json
+ * names (`unbound`, issue #319): the two answers the owner may give, each
+ * with the token that confirms it. Desk makes, rotates and recovers no
+ * signing key under that identity until the owner answers.
  */
-export type AuditIdentity = { state: 'unresolved'; moved: string; copy: string }
+export type AuditIdentity = { state: 'unresolved'; kind?: 'elsewhere' | 'unbound'; moved: string; copy: string }
 /** The owner's answer: this folder was moved here, or it is a copy. */
 export type IdentityChoice = 'moved' | 'copy'
 
 export function isAuditIdentity(value: unknown): value is AuditIdentity {
-  return object(value) && value.state === 'unresolved' && hex(64)(value.moved) && hex(64)(value.copy) && value.moved !== value.copy
+  return object(value) && value.state === 'unresolved' && optional(value.kind, kind => kind === 'elsewhere' || kind === 'unbound')
+    && hex(64)(value.moved) && hex(64)(value.copy) && value.moved !== value.copy
 }
 
 /**
@@ -406,6 +418,78 @@ export async function resolveIdentity(choice: IdentityChoice, token: string): Pr
   if (!object(value) || value.state !== choice) throw new Error(msg('This project’s identity could not be changed. Check the decision record again.'))
   return choice
 }
+
+/* The archive of keys ------------------------------------------------------- */
+
+/**
+ * One file in Desk's archive of keys (the maintainer's decision of 2026-10-08:
+ * Desk never removes a signing key on its own): the folder it is kept in
+ * (`desk`, or `runner` for Runner's keys), the identity it is kept under, its
+ * name and kind, the trail and the record its name records, when it was
+ * archived, the rule that archived it and Desk's sentence on why, whether it
+ * is this desk's own, and the token that confirms its removal. `missing` is a
+ * journal line whose file is not in the archive now; it has no token.
+ */
+export type ArchivedKey = {
+  scope: 'desk' | 'runner'
+  identity: string
+  file: string
+  kind: 'seed' | 'next.seed' | 'keys.jsonl' | 'creating' | 'rotating'
+  trail?: string
+  sequence?: number
+  at: string
+  rule?: string
+  why: string
+  own?: boolean
+  missing?: boolean
+  token?: string
+}
+/** The archive as the decision record lists it: at most its newest entries, how many more, and why a part could not be read now. */
+export type AuditArchive = { entries: ArchivedKey[]; more?: number; problem?: string }
+
+const archiveFile = (value: unknown): value is string => text(value) && /^(none|[0-9a-f]{32})-(none|[1-9][0-9]{0,15})-[0-9]{8}T[0-9]{6}\.[0-9]{9}Z\.(seed|next\.seed|keys\.jsonl|creating|rotating)$/.test(value)
+
+/** One archived file, as the chassis lists it: each member of its form, and a token exactly where the file is there. */
+export function isArchivedKey(value: unknown): value is ArchivedKey {
+  return object(value) && (value.scope === 'desk' || value.scope === 'runner') && (hex(32)(value.identity) || hex(64)(value.identity))
+    && archiveFile(value.file) && ['seed', 'next.seed', 'keys.jsonl', 'creating', 'rotating'].includes(value.kind as string)
+    && optional(value.trail, hex(32)) && optional(value.sequence, item => count(item) && item > 0) && named(value.at)
+    && optional(value.rule, text) && named(value.why) && optional(value.own, item => typeof item === 'boolean')
+    && optional(value.missing, item => typeof item === 'boolean')
+    && (value.missing === true ? value.token === undefined : hex(64)(value.token))
+}
+
+export function isAuditArchive(value: unknown): value is AuditArchive {
+  return object(value) && list(value.entries, isArchivedKey) && optional(value.more, count) && optional(value.problem, named)
+}
+
+/**
+ * Remove one archived file, on the owner's word, with the token the decision
+ * record gave for it. A refusal says why in Desk's words.
+ */
+export async function removeArchivedKey(entry: ArchivedKey): Promise<void> {
+  const response = await deskFetch('/api/audit/key/archive/remove', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scope: entry.scope, identity: entry.identity, file: entry.file, token: entry.token })
+  })
+  if (!response.ok) {
+    let body: { error?: unknown } = {}
+    try { body = await response.json() as typeof body } catch { /* The status is still an answer. */ }
+    throw new Error(text(body.error) ? body.error : msg('The archived file could not be removed. Check the decision record again.'))
+  }
+  const value: unknown = await response.json()
+  if (!object(value) || value.state !== 'removed') throw new Error(msg('The archived file could not be removed. Check the decision record again.'))
+}
+
+/** The chassis's own sentences about its archive of keys, as it says them, so that the page can show each in the owner's language. */
+export const ARCHIVE_SENTENCES = [
+  sourceMessage("Desk's journal of its archive holds no line for this file, so Desk cannot say why it is here."),
+  sourceMessage('Desk could not read its archive of keys now: {{reason}}.'),
+  sourceMessage('That archived file is not in Desk\'s archive now, so nothing was removed. Check the decision record again.'),
+  sourceMessage('That archived file changed after the decision record showed it, so nothing was removed. Check the decision record again.'),
+  sourceMessage('A cross-site request cannot remove an archived key.'),
+  sourceMessage('Confirm the removal with the token the decision record gave.')
+]
 
 /* The repair ---------------------------------------------------------------- */
 
@@ -819,10 +903,11 @@ export const STAMPING_REASONS = [
   sourceMessage("No stamp the runtime checked covers a record of this trail."),
   sourceMessage("The stamps the runtime checked are of another trail than the one the run named."),
   sourceMessage("The stamps the runtime checked reach record {{record}}, before the checkpoint the run named."),
-  sourceMessage("This trail holds no chained record at that sequence now."),
   sourceMessage("Desk could not ask the runtime for the checkpoint at that sequence now."),
-  sourceMessage("The trail changed while Desk asked the runtime about it."),
-  sourceMessage("The record at that sequence now is not the one the run named, as where a trail was put back to an earlier point and written again since.")
+  sourceMessage("The record at that sequence now is not the one the run named, as where a trail was put back to an earlier point and written again since."),
+  sourceMessage("Given the checkpoint the run named, the runtime did not check the trail."),
+  sourceMessage("Given the checkpoint the run named, the runtime did not report every check it made passed."),
+  sourceMessage("Given the checkpoint the run named, the runtime did not report that checkpoint held, with a checked stamp reaching it.")
 ]
 
 const sha256Form = (value: unknown): value is string => text(value) && /^sha256:[0-9a-f]{64}$/.test(value)
