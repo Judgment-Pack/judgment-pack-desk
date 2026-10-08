@@ -455,3 +455,65 @@ func TestAnEarlierRecordIsReadThroughTheReportsHeadWithTheRuntime(t *testing.T) 
 		t.Errorf("with the trail changed since the check, the decision record says %+v", answer.Stamping)
 	}
 }
+
+// **A check read before a failed run does not put back what the run cleared**
+// (second review of #317, finding 2, the reviewer's held check). A check with
+// roots finds the head stamped and knows its digest. A second check is held
+// after the runtime has answered it; meanwhile a stamp asked for fails, which
+// leaves nothing known. The held check then completes: it does not put its
+// digest back, and the next scheduled wake asks the runtime.
+func TestACheckReadBeforeAFailedRunDoesNotRestoreIt(t *testing.T) {
+	w := fixStamping(t)
+	r := newStampRig(t)
+	r.set(t, r.proposal(nil))
+	r.chainIs(t, handoverTrail, 3)
+	r.answers(t, 0, headAt(strings.Replace(stampsReport, `"stamped":{"status":"through","through":2}`, `"stamped":{"status":"through","through":3}`, 1), 3))
+	// The stand-in, wrapped: armed, its audit verify answers, says so, and
+	// holds its answer until let go.
+	scratch := t.TempDir()
+	armed, answered, letGo := filepath.Join(scratch, "armed"), filepath.Join(scratch, "answered"), filepath.Join(scratch, "go")
+	if err := os.Rename(r.bin, r.bin+".stand-in"); err != nil {
+		t.Fatal(err)
+	}
+	writeBare(t, r.bin, "#!/bin/sh\nif [ \"$1 $2\" = 'audit verify' ] && [ -e "+shellQuote(armed)+" ]; then rm "+shellQuote(armed)+"; out=$("+shellQuote(r.bin+".stand-in")+" \"$@\"); code=$?; : > "+shellQuote(answered)+"; while [ ! -e "+shellQuote(letGo)+" ]; do sleep 0.05; done; printf '%s\\n' \"$out\"; exit $code; fi\nexec "+shellQuote(r.bin+".stand-in")+" \"$@\"\n")
+	if err := os.Chmod(r.bin, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	stampingOf(t, r.ts, "")
+	if known := r.s.stamping.stamped; known == nil || known.Digest != standInDigest(3) {
+		t.Fatalf("the first check knows %+v", known)
+	}
+	writeBare(t, armed, "")
+	held := make(chan struct{})
+	go func() {
+		defer close(held)
+		reviewCall(t, r.ts, "GET", "/api/audit/verify", "", nil, bearer)
+	}()
+	for i := 0; ; i++ {
+		if _, err := os.Stat(answered); err == nil {
+			break
+		}
+		if i > 400 {
+			t.Fatal("the held check never ran")
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	r.stampsWith(t, 4, stampUnreachable)
+	if got := stampingCall(t, r.ts, "/api/audit/stamping/stamp", "", map[string]any{}); got.status != http.StatusOK || !strings.Contains(got.data, `"status":"refused"`) {
+		t.Fatalf("Stamp now answered %d %s", got.status, got.data)
+	}
+	writeBare(t, letGo, "")
+	<-held
+	r.s.stamping.mu.Lock()
+	known := r.s.stamping.stamped
+	r.s.stamping.mu.Unlock()
+	if known != nil && known.Digest != "" {
+		t.Errorf("the held check put back %+v after the failed run", known)
+	}
+	r.stampsWith(t, 0, stampedAnswer(handoverTrail, 3))
+	r.ran(t)
+	w.at(t, time.Hour)
+	if calls := r.ran(t); !slices.Equal(calls, []string{schemaCall, stampHeadCall, stampCall}) {
+		t.Errorf("after the held check, the scheduled wake ran %q", calls)
+	}
+}

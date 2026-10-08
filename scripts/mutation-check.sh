@@ -6124,6 +6124,15 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'audit r2 fix: the same checkpoint is taken at another sequence' "$R2ST" \
     'known.Sequence >= 1 && known.Sequence == other.Sequence &&' \
     'known.Sequence >= 1 &&'
+  mutate go 'audit r2 fix: a check read before a run sets the digest after it' "$R2ST" \
+    '	case st.generation == since:
+		known := *checkpoint' \
+    '	case st.generation >= 0:
+		known := *checkpoint'
+  mutate go 'audit r2 fix: a run does not count as a word on what is stamped' "$R2ST" \
+    '	st.generation++
+' \
+    ''
   mutate go 'audit r2 fix: a failed stamp run keeps the checkpoint known' "$R2ST" \
     '		st.knowStamped(nil)
 	}

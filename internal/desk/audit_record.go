@@ -813,7 +813,7 @@ func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, err
 	if answer.State == auditStateOlder {
 		return older, nil
 	}
-	answer.Stamping = s.stampingAfterVerify(stamping.view, answer.Report)
+	answer.Stamping = s.stampingAfterVerify(stamping.view, answer.Report, stamping.since)
 	answer.Stamping.LastChecked = lastRunChecked(*answer.Stamping, answer.Report, func(named, head checkpointHead) (*checkpointHead, error) {
 		at, err := s.checkpointAt(ctx, dir, named, head)
 		if err != nil && !errors.Is(err, errCheckpointsChanged) && !errors.Is(err, errTrailMovedSince) {

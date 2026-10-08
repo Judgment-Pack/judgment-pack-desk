@@ -840,7 +840,12 @@ type stampScheduler struct {
 	// trail and sequence, and by digest where the checkpoint is the report's
 	// head, whichever came last (knowStamped).
 	stamped *checkpointHead
-	last    *stampRun
+	// generation counts the runs that set what is known stamped
+	// (knowStamped): a check captures it before the runtime reads the stamps,
+	// and sets a record digest only where no run answered since
+	// (knowChecked; second review of #317).
+	generation uint64
+	last       *stampRun
 	// said is the last problem with the settings written to Desk's log.
 	said   string
 	closed bool
@@ -920,21 +925,57 @@ func (st *stampScheduler) settingsChanged() {
 	st.lastAttempt = time.Time{}
 }
 
-// knowStamped replaces the last checkpoint known stamped with checkpoint, the
-// latest word on it, whether it is past what was known or not; nil, or one
-// with no trail or sequence, is that none is known (line audit, finding 5).
+// knowStamped is a run's word on the last checkpoint known stamped: it
+// replaces what was known, whether past it or not; nil, or one with no trail
+// or sequence, is that none is known (line audit, finding 5). It counts as a
+// run's (generation).
 func (st *stampScheduler) knowStamped(checkpoint *checkpointHead) {
 	if st == nil {
 		return
 	}
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	st.generation++
 	if checkpoint == nil || checkpoint.Identity == "" || checkpoint.Sequence < 1 {
 		st.stamped = nil
 		return
 	}
 	known := *checkpoint
 	st.stamped = &known
+}
+
+// generationNow is the count of runs' words so far, for a check to capture
+// before the runtime reads the stamps.
+func (st *stampScheduler) generationNow() uint64 {
+	if st == nil {
+		return 0
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.generation
+}
+
+// knowChecked is a check's word on the last checkpoint known stamped, read
+// when the runs' count was since (second review of #317): it clears what is
+// known where checkpoint is nil, and replaces it where no run answered since
+// the check read the stamps; otherwise it only lowers it, keeping no record
+// digest, since a run that answered meanwhile, a failed one among them, is
+// later than what the check read (last writer wins no more).
+func (st *stampScheduler) knowChecked(checkpoint *checkpointHead, since uint64) {
+	if st == nil {
+		return
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	switch {
+	case checkpoint == nil || checkpoint.Identity == "" || checkpoint.Sequence < 1:
+		st.stamped = nil
+	case st.generation == since:
+		known := *checkpoint
+		st.stamped = &known
+	case st.stamped != nil && st.stamped.Identity == checkpoint.Identity && st.stamped.Sequence > checkpoint.Sequence:
+		st.stamped = &checkpointHead{Identity: checkpoint.Identity, Sequence: checkpoint.Sequence}
+	}
 }
 
 // wake is one wake of the loop: where an authority is set and its interval
@@ -1266,6 +1307,9 @@ type stampingInputs struct {
 	args []string
 	view auditStamping
 	done func()
+	// since is the runs' count when the settings were read, before the
+	// runtime reads the stamps (`knowChecked`).
+	since uint64
 }
 
 // stampingForVerify reads this desk's settings, held to their record, and
@@ -1276,7 +1320,7 @@ type stampingInputs struct {
 // done.
 func (s *Server) stampingForVerify() stampingInputs {
 	s.stampingMu.RLock()
-	inputs := stampingInputs{done: s.stampingMu.RUnlock}
+	inputs := stampingInputs{done: s.stampingMu.RUnlock, since: s.stamping.generationNow()}
 	if !s.assistant.usable() {
 		inputs.view = auditStamping{State: stampingStateUnavailable, Problem: fmt.Sprintf(stampingCustodyWords, strings.TrimRight(s.custodyWords(s.assistant.problem.Error()), "."))}
 		return inputs
@@ -1349,8 +1393,9 @@ func stampingNames(read os.FileInfo, path string) error {
 // checked the stamps, or the lines where it does not say how many records;
 // what the scheduler last did; and, from a check with roots, the last
 // checkpoint known stamped, in place of the one known before, or none where
-// no stamp covers a record.
-func (s *Server) stampingAfterVerify(view auditStamping, report *auditReport) *auditStamping {
+// no stamp covers a record, as of since, the runs' count when the check read
+// the stamps (`knowChecked`).
+func (s *Server) stampingAfterVerify(view auditStamping, report *auditReport, since uint64) *auditStamping {
 	if report != nil && view.Passed {
 		switch stamped := report.Coverage.Stamped; stamped.Status {
 		case "through":
@@ -1362,10 +1407,10 @@ func (s *Server) stampingAfterVerify(view auditStamping, report *auditReport) *a
 			if report.head.trail == report.Trail && report.head.sequence == stamped.Through {
 				known.Digest = report.head.digest
 			}
-			s.stamping.knowStamped(&known)
+			s.stamping.knowChecked(&known, since)
 		case "none":
 			view.Pending, view.PendingLines = countedAs(chainedAfter(report, 0))
-			s.stamping.knowStamped(nil)
+			s.stamping.knowChecked(nil, since)
 		}
 	}
 	view.Last, view.Running = s.stamping.report()
