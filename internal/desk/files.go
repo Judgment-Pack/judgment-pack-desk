@@ -1410,9 +1410,16 @@ func (s *Server) syncDir(dir string) {
 // is not a document, nothing reads it, and leaving it to accumulate would mean
 // a project slowly filling with the debris of interrupted saves.
 func (s *Server) removeStaleStaging() {
+	custody := s.signingCustody()
 	problems := s.walkProject(func(rel string, _ fs.FileInfo) {
 		base := path.Base(rel)
 		if !strings.HasPrefix(base, stagingPrefix) || !strings.HasSuffix(base, ".tmp") {
+			return
+		}
+		// **Nothing in Desk's own custody** (issue #329): a file there is
+		// Desk's to keep, whatever its name.
+		if custody.holds(s.root, rel) {
+			s.log.Printf("desk: startup cleanup left %s, which is in the folder Desk keeps its signing keys in", rel)
 			return
 		}
 		if rerr := s.root.Remove(osPath(rel)); rerr != nil {

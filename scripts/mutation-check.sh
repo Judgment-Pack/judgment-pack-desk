@@ -5042,6 +5042,25 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'audit r3 fix: an older run is confirmed under a head it did not verify' 'internal/desk/stamping.go' \
     '	if confirmed && verified != head {' \
     '	if confirmed && false && verified != head {'
+  # **The archive rule's edges (the fourth ADR-0010 line audit, issues
+  # #329 to #334).** Project Files writes, replaces and cleans up nothing in
+  # Desk's custody (#329), found by its path under the project, without case,
+  # and by the identity of `secrets/` on the way or above the project.
+  mutate go 'archive edges: Project Files writes in Desk'"'"'s custody' 'internal/desk/file_access.go' \
+    '	if p.inCustody != nil && p.inCustody(name) {' \
+    '	if p.inCustody != nil && p.inCustody(name) && false {'
+  mutate go 'archive edges: the startup cleanup removes in Desk'"'"'s custody' 'internal/desk/files.go' \
+    '		if custody.holds(s.root, rel) {' \
+    '		if custody.holds(s.root, rel) && false {'
+  mutate go 'archive edges: the custody is not found by its path' 'internal/desk/file_access.go' \
+    '	if c.rel != "" {' \
+    '	if false && c.rel != "" {'
+  mutate go 'archive edges: the custody is not found by identity' 'internal/desk/file_access.go' \
+    '		if os.SameFile(info, c.info) {' \
+    '		if os.SameFile(info, c.info) && false {'
+  mutate go 'archive edges: a project in Desk'"'"'s custody is not' 'internal/desk/file_access.go' \
+    '		if info, err := os.Lstat(dir); err == nil && os.SameFile(info, custody.info) {' \
+    '		if info, err := os.Lstat(dir); err == nil && os.SameFile(info, custody.info) && false {'
   # **Runner's signing key (ADR-0010, section 5; runner_key.go).** A key of
   # Runner's own, never a project's or an inherited one, named on the boot
   # line only where, under the one key-custody lock on the signing folder, no

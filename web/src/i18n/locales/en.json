@@ -4164,5 +4164,6 @@
   "Kept at its name, not in the archive: no start of this Desk’s decides it.": "Kept at its name, not in the archive: no start of this Desk’s decides it.",
   "Given the checkpoint the run named, the runtime read another history than the one the decision record shows.": "Given the checkpoint the run named, the runtime read another history than the one the decision record shows.",
   "Its bytes are not the ones Desk archived: it was written since, or while Desk moved it.": "Its bytes are not the ones Desk archived: it was written since, or while Desk moved it.",
-  "Making Runner’s signing key did not finish. At its next start Desk moves what was left to its archive of Runner’s keys, and makes the key again.": "Making Runner’s signing key did not finish. At its next start Desk moves what was left to its archive of Runner’s keys, and makes the key again."
+  "Making Runner’s signing key did not finish. At its next start Desk moves what was left to its archive of Runner’s keys, and makes the key again.": "Making Runner’s signing key did not finish. At its next start Desk moves what was left to its archive of Runner’s keys, and makes the key again.",
+  "Desk keeps its signing keys and credentials in this folder, and they cannot be edited in Project files. An archived key is removed on the decision record.": "Desk keeps its signing keys and credentials in this folder, and they cannot be edited in Project files. An archived key is removed on the decision record."
 }
