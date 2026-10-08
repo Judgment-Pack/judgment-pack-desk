@@ -119,6 +119,26 @@ go	any header at all is forwarded to the endpoint	TestRelayCarriesEachProtocolsM
 go	any name passes as the web source	TestSharedFixturesDecodeAsTheVerdictSays
 go	any object takes any member at all	TestARefusedFileSendsNothing,TestConfiguredEndpointRefusals,TestDeskConfigWriteRefusesWhatTheDecoderWouldRefuse,TestResearchRelayRefusesWithoutAGatewayAndSendsNothing,TestSharedFixturesDecodeAsTheVerdictSays
 go	any world-writable ancestor is admitted	TestARefusedStoreTouchesTheFilesystemNotAtAll,TestAnUnusableStoreLeavesTheRestOfTheDeskAlone,TestCustodyRefusesALooseAncestor,TestDeskConfigWriteRefusesWhereNoKeyCanBeKept,TestEveryCodeHasAStatusAndAWitness,TestRelayRefusesWhereNoKeyCanBeKept
+go	archive edges: Project Files writes in Desk's custody	TestAProjectInDesksCustodyIsAllOfItInCustody,TestProjectFilesWriteNothingInDesksCustody
+go	archive edges: Runner's start leaves a staged list	TestRunnersStartArchivesAListAStopLeftStaged
+go	archive edges: a Remove goes on over a damaged journal	TestARemovalIsNeverMadeOverADamagedJournal
+go	archive edges: a check that stops at a precondition keeps the confirmation	TestEveryCheckThatDoesNotConfirmAnOlderRunForgetsIt
+go	archive edges: a damaged journal offers Remove	TestARemovalIsNeverMadeOverADamagedJournal
+go	archive edges: a desk open here is said as no start's	TestMadeDeskCustodyNoStartSettlesIsSaid
+go	archive edges: a journal line is joined to a torn one	TestAnArchiveMoveAfterATornWriteKeepsItsLine
+go	archive edges: a made desk's creation is said without its reason	TestAPublishedDeskWhoseManifestIsGoneKeepsItsKey,TestMadeDeskCustodyNoStartSettlesIsSaid
+go	archive edges: a made desk's custody is not said	TestAPublishedDeskWhoseManifestIsGoneKeepsItsKey,TestMadeDeskCustodyNoStartSettlesIsSaid
+go	archive edges: a made desk's rotation is said as a project's	TestMadeDeskCustodyNoStartSettlesIsSaid
+go	archive edges: a project in Desk's custody is not	TestAProjectInDesksCustodyIsAllOfItInCustody
+go	archive edges: a removal is not read back before the file goes	TestARemovalIsReadBackBeforeTheFileGoes
+go	archive edges: a stage records no name	TestAListAStopLeftStagedIsArchivedByTheNextStart,TestAListNeitherPublishedNorArchivedIsSaid
+go	archive edges: a stage with no identity is not said	TestAStageWithNoIdentityIsSaid
+go	archive edges: a staged list is not said	TestAListNeitherPublishedNorArchivedIsSaid,TestAStageWithNoIdentityIsSaid
+go	archive edges: the custody is not found by identity	TestDesksCustodyIsFoundByIdentity
+go	archive edges: the custody is not found by its path	TestProjectFilesWriteNothingInDesksCustody
+go	archive edges: the owner's Remove goes on where no lock can be taken	TestWithNoLockNoKeyIsChanged
+go	archive edges: the start leaves a staged list	TestAListAStopLeftStagedIsArchivedByTheNextStart,TestAListNeitherPublishedNorArchivedIsSaid,TestAStageWithNoIdentityIsSaid
+go	archive edges: the startup cleanup removes in Desk's custody	TestTheStartupCleanupRemovesNothingInDesksCustody
 go	archive: Runner's unfinished key is removed	TestNeitherSweepTouchesTheOthersKey,TestNoPathRemovesAKeyOnItsOwn
 go	archive: a creation's stopped key is removed, not archived	TestNoCodeRemovesAKeyOutsideTheOwnersWord,TestNoPathRemovesAKeyOnItsOwn
 go	archive: a desk's key is made where no lock can be taken	TestWithNoLockNoKeyIsChanged
@@ -1539,6 +1559,8 @@ web	any marked relay 401 ends the session	src/mcp/session.test.tsx
 web	any relay 401 ends the session	src/assistant/modelListing.test.ts,src/mcp/session.test.tsx
 web	applicability is read-only, whatever mode the page is in	src/packs/edit/forms.test.tsx
 web	applicability renders two elements at one pointer	src/packs/document/PackDocumentView.test.tsx
+web	archive edges page: a made desk's unresolved entry is refused	src/audit/archivedKeys.test.tsx
+web	archive edges page: a staged list is refused	src/audit/archivedKeys.test.tsx
 web	archive page: Remove sends another token	src/audit/archivedKeys.test.tsx
 web	archive page: Remove sends without its confirmation	src/audit/archivedKeys.test.tsx
 web	archive page: a missing file offers Remove	src/audit/archivedKeys.test.tsx
