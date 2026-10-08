@@ -67,7 +67,7 @@ export function UpgradeView() {
       {outcome?.kind === 'done' && <p role="status" className={styles.done}>
         {msg('The gates are on. jpack.json is at configVersion {{version}}, and these {{count}} files are this project’s reviewed set.', { version: outcome.done.configVersion, count: outcome.done.files })}
         {outcome.done.copies === 'not-stored' && <> {msg('Desk could not keep copies of them, so the next review cannot show what changed.')} {systemMessage(outcome.done.copiesProblem ?? '')}</>}
-        {outcome.done.signingKey && <> {msg('Desk keeps a signing key for this project now, keyId {{keyId}}, and jpack.json names it: every runtime that reads jpack.json signs each record it adds to the chained trail, if it accepts the key. Its public key is in the decision record, in Admin → Project.', { keyId: outcome.done.signingKey.keyId })}</>}
+        {outcome.done.signingKey && <> {msg('Desk keeps a signing key for this project now, keyId {{keyId}}, and jpack.json names it: every runtime that reads jpack.json signs each record it adds to the chained trail, if it accepts the key. Its public key is in the decision record, in Admin → Decision safeguards.', { keyId: outcome.done.signingKey.keyId })}</>}
       </p>}
       {outcome?.kind === 'stale' && <Alert>{msg('The project changed after you reviewed the upgrade, so nothing was written. Review it again.')}</Alert>}
       {outcome?.kind === 'error' && <Alert reason={systemMessage(outcome.message)}>{msg('The gates were not turned on.')}</Alert>}
@@ -166,7 +166,7 @@ function Facts({ upgrade, facts, setFacts, busy }: { upgrade: Upgrade; facts: bo
   if (upgrade.comparableFacts === 'unavailable') return <p>{msg('requireComparableFacts needs runtime 0.25.0 or later. The runtime this Desk runs (jpack {{version}}) does not read configuration version 5, so it is not offered.', { version: upgrade.runtime ?? '' })}</p>
   return <>
     <label className="checkbox"><input type="checkbox" checked={facts} disabled={busy} onChange={event => setFacts(event.target.checked)} />{msg('Also refuse a fact of a type no comparison can match')}</label>
-    <p className={styles.quiet}>{msg('It refuses an evaluation, rehearsals included, in which a fact has a JSON type that a comparison in the pack can never match: "true" or 1 where the pack compares with true, for example. The refusal names the fact and what the comparison can match. Saved tests and Jobs are not refused. Untick it to take the rest without it; it stays on offer in Admin → Project.')}</p>
+    <p className={styles.quiet}>{msg('It refuses an evaluation, rehearsals included, in which a fact has a JSON type that a comparison in the pack can never match: "true" or 1 where the pack compares with true, for example. The refusal names the fact and what the comparison can match. Saved tests and Jobs are not refused. Untick it to take the rest without it; it stays on offer in Admin → Decision safeguards.')}</p>
   </>
 }
 
