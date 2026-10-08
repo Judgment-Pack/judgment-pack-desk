@@ -37,6 +37,7 @@ function kindWords(kind: ArchivedKey['kind']): string {
     case 'keys.jsonl': return msg('A list of public keys')
     case 'creating': return msg('A key creation’s marker')
     case 'rotating': return msg('A rotation’s journal')
+    case 'staged': return msg('A file Desk staged')
   }
 }
 
@@ -73,16 +74,18 @@ export function ArchivedKeys({ archive, outcome, onOutcome }: {
         <p className={styles.quiet}>{msg('Desk never removes a signing key on its own. A key, or a list of keys, it would once have removed is kept here, in its own configuration folder, with why; a key kept here can still sign, and stays until you remove it.')}</p>
         <ul className={styles.list} aria-label={msg('What Desk archived')}>{archive.entries.map(entry => <li key={entry.scope + '/' + entry.identity + '/' + entry.file}>
           <p><strong>{kindWords(entry.kind)}</strong></p>
-          <p className={styles.quiet}>{entry.scope === 'runner'
+          {entry.identity && <p className={styles.quiet}>{entry.scope === 'runner'
             ? msg('Kept for Runner under {{identity}}', { identity: entry.identity })
-            : entry.own ? msg('Kept under {{identity}}, this desk’s name', { identity: entry.identity }) : msg('Kept under {{identity}}', { identity: entry.identity })}</p>
+            : entry.own ? msg('Kept under {{identity}}, this desk’s name', { identity: entry.identity }) : msg('Kept under {{identity}}', { identity: entry.identity })}</p>}
           {entry.trail && <p className={styles.quiet}>{entry.sequence
             ? msg('Trail {{trail}}, record {{sequence}}', { trail: entry.trail, sequence: entry.sequence })
             : msg('Trail {{trail}}', { trail: entry.trail })}</p>}
           <p className={styles.quiet}>{msg('Archived {{at}}', { at: entry.at })}</p>
           <p lang="en">{systemMessage(entry.why)}</p>
           {entry.unresolved
-            ? <p role="note">{msg('Kept at its name, not in the archive: no start of this Desk’s decides it.')}</p>
+            ? <p role="note">{entry.kind === 'keys.jsonl' || entry.kind === 'staged'
+              ? msg('Kept where it was staged, not in the archive.')
+              : msg('Kept at its name, not in the archive: no start of this Desk’s decides it.')}</p>
             : entry.missing
             ? <p role="note">{msg('This file is not in the archive now.')}</p>
             : entry.token && <div className={styles.actions}><Button onClick={event => { opener.current = event.currentTarget; setAsked(entry) }}>{msg('Remove')}</Button></div>}

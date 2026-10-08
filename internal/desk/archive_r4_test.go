@@ -5,12 +5,14 @@ package desk
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -310,5 +312,154 @@ func TestMadeDeskCustodyNoStartSettlesIsSaid(t *testing.T) {
 				t.Errorf("the decision record lists %+v", found)
 			}
 		})
+	}
+}
+
+// stagedOf is the one stage of a list of public keys in the folder at path,
+// or "" where there is none.
+func stagedOf(t *testing.T, path string) string {
+	t.Helper()
+	staged := ""
+	for _, name := range namesIn(t, path) {
+		if strings.HasPrefix(name, keysStagingPrefix) {
+			if staged != "" {
+				t.Fatalf("two stages: %s and %s", staged, name)
+			}
+			staged = name
+		}
+	}
+	return staged
+}
+
+// **A list a stop left staged is archived by the next start** (issue #332,
+// the auditor's scenario). A creation stops after its list of public keys is
+// staged and before it is linked into place. The stage's name records the
+// identity and the purpose it was made for, before a byte of it was written,
+// so the next start's sweep moves it to that identity's archive with the
+// sentence that says what it is, and the log says so; nothing is left
+// unlisted.
+func TestAListAStopLeftStagedIsArchivedByTheNextStart(t *testing.T) {
+	s, logs := bareServer(t, filepath.Join(t.TempDir(), "project"), filepath.Join(t.TempDir(), "config"), desk2)
+	dir, err := s.assistant.openSigning(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dir.Close()
+	project, _ := s.auditRuntime()
+	func() {
+		unlock, err := lockSigning(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer unlock()
+		testHookKeyBetween = func(at string) {
+			if at == "list: staged" {
+				panic("stopped")
+			}
+		}
+		defer func() {
+			testHookKeyBetween = nil
+			if recover() == nil {
+				t.Error("the stop was not reached")
+			}
+		}()
+		_, _ = generateKeyMarked(context.Background(), s.cfg.JpackBin, project, dir, desk2, deskCreation{ID: desk2, Folder: "1:1"}.line())
+	}()
+	staged := stagedOf(t, dir.path)
+	if !stagedListForm.MatchString(staged) || !strings.HasPrefix(staged, keysStagingPrefix+desk2+keysSuffix+"-") {
+		t.Fatalf("the stage is named %q", staged)
+	}
+	s.sweepUnfinishedKeys()
+	if left := stagedOf(t, dir.path); left != "" {
+		t.Errorf("the start left %s staged", left)
+	}
+	listing := s.archiveListing()
+	if listing == nil || !slices.ContainsFunc(listing.Entries, func(entry archivedKey) bool {
+		return entry.Kind == "keys.jsonl" && entry.Identity == desk2 && entry.Why == stagedListWords && !entry.Unresolved
+	}) {
+		t.Errorf("the decision record lists %+v", listing)
+	}
+	if !strings.Contains(logs.String(), "was moved to Desk's archive of keys") {
+		t.Errorf("the log does not say the move: %s", logs)
+	}
+}
+
+// **A list neither published nor archived is said, and archived once it can
+// be** (issue #332, the auditor's scenario). A list's publication fails, its
+// name being taken, and so does its archival, the archive's name being a
+// file. The list stays where it was staged, and the decision record lists
+// it with the sentence that says so and no Remove. Once the obstruction is
+// gone, the next start archives it.
+func TestAListNeitherPublishedNorArchivedIsSaid(t *testing.T) {
+	s, _ := bareServer(t, filepath.Join(t.TempDir(), "project"), filepath.Join(t.TempDir(), "config"), desk2)
+	bareKeys(t, s)
+	dir, err := s.assistant.openSigning(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dir.Close()
+	writeBare(t, filepath.Join(dir.path, archiveDirName), "blocked")
+	unlock, err := lockSigning(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, failure := dir.writeNewKeys(desk2+keysSuffix, []deskPublicKey{key1})
+	unlock()
+	staged := stagedOf(t, dir.path)
+	if failure == nil || staged == "" {
+		t.Fatalf("the write answered %v, and left %q", failure, staged)
+	}
+	listing := s.archiveListing()
+	if listing == nil || !slices.ContainsFunc(listing.Entries, func(entry archivedKey) bool {
+		return entry.Unresolved && entry.File == staged && entry.Identity == desk2 && entry.Kind == "keys.jsonl" && entry.Why == unresolvedStagedListWords && entry.Token == ""
+	}) {
+		t.Errorf("the decision record lists %+v", listing)
+	}
+	if err := os.Remove(filepath.Join(dir.path, archiveDirName)); err != nil {
+		t.Fatal(err)
+	}
+	s.sweepUnfinishedKeys()
+	if left := stagedOf(t, dir.path); left != "" {
+		t.Errorf("the start left %s staged", left)
+	}
+	if got := archivedIn(t, dir.path, desk2); !slices.Equal(got, kindsArchived(archiveCreationStopped, "keys.jsonl")) {
+		t.Errorf("the archive holds %q", got)
+	}
+}
+
+// **A stage whose name records no identity is said** (issue #332): an
+// earlier Desk's stage, `.keys-<random>.tmp`, cannot be archived under any
+// identity; the start leaves it and says so, and the decision record lists
+// it with no identity and no Remove.
+func TestAStageWithNoIdentityIsSaid(t *testing.T) {
+	s, logs := bareServer(t, filepath.Join(t.TempDir(), "project"), filepath.Join(t.TempDir(), "config"), desk2)
+	const staged = keysStagingPrefix + "0123456789abcdef01234567.tmp"
+	writeBare(t, filepath.Join(s.configDir, "secrets", "signing", staged), string(key1.line()))
+	s.sweepUnfinishedKeys()
+	if !strings.Contains(logs.String(), staged+", a file an earlier Desk staged, was left where it is") {
+		t.Errorf("the log does not say what was left: %s", logs)
+	}
+	listing := s.archiveListing()
+	if listing == nil || !slices.ContainsFunc(listing.Entries, func(entry archivedKey) bool {
+		return entry.Unresolved && entry.File == staged && entry.Identity == "" && entry.Kind == "staged" && entry.Why == unresolvedStagedWords
+	}) {
+		t.Errorf("the decision record lists %+v", listing)
+	}
+}
+
+// **Runner's start archives a list a stop left staged** (issue #332): in
+// Runner's own folder, under its lock, before it decides its key.
+func TestRunnersStartArchivesAListAStopLeftStaged(t *testing.T) {
+	s, _ := bareServer(t, filepath.Join(t.TempDir(), "project"), filepath.Join(t.TempDir(), "config"), desk2)
+	runner := filepath.Join(s.configDir, "secrets", "signing", runnerSigningDirName)
+	bareRoot(t, runner)
+	staged := keysStagingPrefix + desk2 + keysSuffix + "-0123456789abcdef01234567.tmp"
+	writeBare(t, filepath.Join(runner, staged), string(key1.line()))
+	s.newRunnerKey(desk2).examine(context.Background())
+	if _, err := os.Lstat(filepath.Join(runner, staged)); !os.IsNotExist(err) {
+		t.Errorf("Runner's start left the stage: %v", err)
+	}
+	if got := archivedIn(t, runner, desk2); !slices.Contains(got, "keys.jsonl "+archiveCreationStopped) {
+		t.Errorf("Runner's archive holds %q", got)
 	}
 }

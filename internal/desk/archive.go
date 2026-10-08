@@ -533,6 +533,7 @@ func (s *Server) archiveListing() *auditArchive {
 			problems = append(problems, s.custodyWords(err.Error()))
 		}
 		listing.Entries = append(listing.Entries, entries...)
+		listing.Entries = append(listing.Entries, held.stagedIn(scope)...)
 		if scope == archiveScopeDesk {
 			listing.Entries = append(listing.Entries, s.unresolvedIn(held)...)
 		}
@@ -638,6 +639,46 @@ func (s *Server) unresolvedIn(d *signingDir) []archivedKey {
 			default:
 				entry.Why = unresolvedDeskNeverWords
 			}
+		}
+		entries = append(entries, entry)
+	}
+	return entries
+}
+
+// What the decision record says of a stage left in a signing folder (issue
+// #332).
+const (
+	unresolvedStagedListWords = "A list of public keys Desk wrote for this key was staged and never put under its name: Desk keeps it where it was staged until a start moves it to its archive of keys."
+	unresolvedStagedWords     = "A file Desk staged while it wrote a list of public keys, a creation's marker or a rotation's journal, and never put in place: its name records no identity Desk keeps keys under, so Desk keeps it where it was staged."
+)
+
+// stagedMarkerForm is a creation's marker or a rotation's journal staged and
+// not yet put in place, as `stage` names it: a copy of a marker, no key.
+var stagedMarkerForm = regexp.MustCompile(`^\.keys-[0-9a-f]{32}(?:[0-9a-f]{32})?\.(creating|rotating)-[0-9a-f]{24}\.tmp$`)
+
+// stagedIn is every stage directly in the signing folder d holds that holds,
+// or may hold, a list of public keys, listed under scope (issue #332): a
+// list staged for an identity, which a start moves to its archive, and a
+// stage whose name records no identity (an earlier Desk's), which no start
+// can; each kept where it is, with no Remove. A stage of a marker is no key,
+// and is not listed.
+func (d *signingDir) stagedIn(scope string) []archivedKey {
+	names, err := readDirNames(d.root, ".")
+	if err != nil {
+		return nil
+	}
+	var entries []archivedKey
+	for _, name := range names {
+		if !stagedForm.MatchString(name) || stagedMarkerForm.MatchString(name) {
+			continue
+		}
+		info, err := d.root.Lstat(name)
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		entry := archivedKey{Scope: scope, File: name, Kind: "staged", At: info.ModTime().UTC().Format(time.RFC3339), Unresolved: true, Why: unresolvedStagedWords}
+		if parts := stagedListForm.FindStringSubmatch(name); parts != nil {
+			entry.Identity, entry.Kind, entry.Why = parts[1], "keys.jsonl", unresolvedStagedListWords
 		}
 		entries = append(entries, entry)
 	}

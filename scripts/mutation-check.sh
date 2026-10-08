@@ -5093,6 +5093,24 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'archive edges: a desk open here is said as no start'"'"'s' 'internal/desk/archive.go' \
     '		if made && s.deskOpenHere(parts[1]) {' \
     '		if made && false && s.deskOpenHere(parts[1]) {'
+  # A stage's name records the identity and the purpose it is for before a
+  # byte is written; a start, Desk's and Runner's, archives a list a stop
+  # left staged, and the decision record says one it could not (#332).
+  mutate go 'archive edges: a stage records no name' 'internal/desk/signing.go' \
+    '		name, err := randomStagingName(keysStagingPrefix + target + "-")' \
+    '		name, err := randomStagingName(keysStagingPrefix)'
+  mutate go 'archive edges: the start leaves a staged list' 'internal/desk/signing.go' \
+    '	dir.archiveStagedLists("")' \
+    '	_ = dir.archiveStagedLists'
+  mutate go 'archive edges: Runner'"'"'s start leaves a staged list' 'internal/desk/runner_key.go' \
+    '	dir.archiveStagedLists(k.name)' \
+    '	_ = dir.archiveStagedLists'
+  mutate go 'archive edges: a staged list is not said' 'internal/desk/archive.go' \
+    '		listing.Entries = append(listing.Entries, held.stagedIn(scope)...)' \
+    '		_ = held.stagedIn'
+  mutate go 'archive edges: a stage with no identity is not said' 'internal/desk/signing.go' \
+    '		if parts == nil && only == "" && stagedForm.MatchString(name) && !stagedMarkerForm.MatchString(name) {' \
+    '		if parts == nil && only == "" && stagedForm.MatchString(name) && false {'
   # **Runner's signing key (ADR-0010, section 5; runner_key.go).** A key of
   # Runner's own, never a project's or an inherited one, named on the boot
   # line only where, under the one key-custody lock on the signing folder, no
@@ -14441,6 +14459,9 @@ export function assistantTransport(id: string): Transport {
   mutate web 'archive edges page: a made desk'"'"'s unresolved entry is refused' 'web/src/audit/client.ts' \
     "    return value.scope === 'desk' && (hex(32)(value.identity) || hex(64)(value.identity)) && unresolvedFile(value.file)" \
     "    return value.scope === 'desk' && hex(64)(value.identity) && unresolvedFile(value.file)"
+  mutate web 'archive edges page: a staged list is refused' 'web/src/audit/client.ts' \
+    'const stagedListFile = (value: unknown): value is string => text(value) && /^\.keys-(?:[0-9a-f]{32}|[0-9a-f]{64})\.keys\.jsonl-[0-9a-f]{24}\.tmp$/.test(value)' \
+    'const stagedListFile = (value: unknown): value is string => text(value) && /^\.keys-(?:[0-9a-f]{32}|[0-9a-f]{64})\.keys\.json-[0-9a-f]{24}\.tmp$/.test(value)'
   mutate web 'audit r2 fix: a question with one token for both answers is read' web/src/audit/client.ts \
     ' && hex(64)(value.copy) && value.moved !== value.copy' \
     ' && hex(64)(value.copy)'

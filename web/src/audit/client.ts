@@ -432,13 +432,16 @@ export async function resolveIdentity(choice: IdentityChoice, token: string): Pr
  * now; it has no token, and neither has a file whose bytes Desk could not
  * read now. `unresolved` is no archived file but a marker of a creation or a
  * rotation under a project's name this desk does not hold, kept at its name,
- * which no start of this Desk's settles; it has no token.
+ * which no start of this Desk's settles; it has no token. An unresolved
+ * `keys.jsonl` is a list staged for its identity and never put in place,
+ * kept where it was staged until a start archives it; an unresolved `staged`
+ * is a stage whose name records no identity, with none (#332).
  */
 export type ArchivedKey = {
   scope: 'desk' | 'runner'
   identity: string
   file: string
-  kind: 'seed' | 'next.seed' | 'keys.jsonl' | 'creating' | 'rotating'
+  kind: 'seed' | 'next.seed' | 'keys.jsonl' | 'creating' | 'rotating' | 'staged'
   trail?: string
   sequence?: number
   at: string
@@ -457,8 +460,19 @@ const archiveFile = (value: unknown): value is string => text(value) && /^(none|
 /** A marker left at its name under a project's or a made desk's name (#331), as an unresolved entry names it. */
 const unresolvedFile = (value: unknown): value is string => text(value) && /^(?:[0-9a-f]{32}|[0-9a-f]{64})\.(rotating|creating)$/.test(value)
 
-/** One archived file, as the chassis lists it: each member of its form, and a token only where the file is there; or a marker left unresolved, with none. */
+/** A list staged for its identity and never put in place, as the chassis names it (#332). */
+const stagedListFile = (value: unknown): value is string => text(value) && /^\.keys-(?:[0-9a-f]{32}|[0-9a-f]{64})\.keys\.jsonl-[0-9a-f]{24}\.tmp$/.test(value)
+/** Any stage of the signing folder's: one name, no folder. */
+const stagedFile = (value: unknown): value is string => text(value) && /^\.keys-[^/\\]*\.tmp$/.test(value)
+
+/** One archived file, as the chassis lists it: each member of its form, and a token only where the file is there; or a marker or a stage left unresolved, with none. */
 export function isArchivedKey(value: unknown): value is ArchivedKey {
+  if (object(value) && value.unresolved === true && (value.kind === 'keys.jsonl' || value.kind === 'staged')) {
+    return (value.scope === 'desk' || value.scope === 'runner') && (value.kind === 'keys.jsonl'
+      ? (hex(32)(value.identity) || hex(64)(value.identity)) && stagedListFile(value.file) && value.file.startsWith(`.keys-${value.identity}.keys.jsonl-`)
+      : value.identity === '' && stagedFile(value.file))
+      && value.trail === undefined && named(value.at) && named(value.why) && value.token === undefined && value.missing === undefined
+  }
   if (object(value) && value.unresolved === true) {
     return value.scope === 'desk' && (hex(32)(value.identity) || hex(64)(value.identity)) && unresolvedFile(value.file) && value.file === `${value.identity}.${value.kind}`
       && optional(value.trail, hex(32)) && named(value.at) && named(value.why) && value.token === undefined && value.missing === undefined
@@ -510,7 +524,9 @@ export const ARCHIVE_SENTENCES = [
   sourceMessage("Nothing was removed: Desk's journal of this archive could not be read whole, so Desk removes nothing from it until it is."),
   sourceMessage("Nothing was removed: Desk could not read its removal back from its archive's journal."),
   sourceMessage("A rotation of the key of a desk not open here did not finish, and its journal could not be read now: Desk keeps the key, the next key and the journal at their names, and a start with that desk open decides them."),
-  sourceMessage("A creation of a desk's key under this name did not finish, and its marker records that no manifest was about to be written: Desk's next start moves the key, its list and its marker to its archive of keys.")
+  sourceMessage("A creation of a desk's key under this name did not finish, and its marker records that no manifest was about to be written: Desk's next start moves the key, its list and its marker to its archive of keys."),
+  sourceMessage("A list of public keys Desk wrote for this key was staged and never put under its name: Desk keeps it where it was staged until a start moves it to its archive of keys."),
+  sourceMessage("A file Desk staged while it wrote a list of public keys, a creation's marker or a rotation's journal, and never put in place: its name records no identity Desk keeps keys under, so Desk keeps it where it was staged.")
 ]
 
 /* The repair ---------------------------------------------------------------- */

@@ -152,6 +152,26 @@ describe('the archive of keys', () => {
     }
   })
 
+  // Issue #332: a list staged and never put in place, and an earlier Desk's
+  // stage whose name records no identity, are said, with no Remove.
+  it('says a list staged and never put in place, and offers no Remove for it', async () => {
+    const staged: ArchivedKey = { scope: 'desk', identity: desk, file: `.keys-${desk}.keys.jsonl-${'0'.repeat(24)}.tmp`, kind: 'keys.jsonl',
+      at: '2026-10-08T12:00:03Z', why: 'A list of public keys Desk wrote for this key was staged and never put under its name.', unresolved: true }
+    const earlier: ArchivedKey = { scope: 'runner', identity: '', file: `.keys-${'0'.repeat(24)}.tmp`, kind: 'staged',
+      at: '2026-10-08T12:00:04Z', why: 'A file Desk staged, and never put in place.', unresolved: true }
+    expect(isAuditArchive({ entries: [staged, earlier] })).toBe(true)
+    for (const other of [{ ...staged, file: `.keys-${'f'.repeat(32)}.keys.jsonl-${'0'.repeat(24)}.tmp` }, { ...staged, token: 'cd'.repeat(32) }, { ...staged, trail },
+      { ...earlier, identity: desk }, { ...earlier, file: '.keys-../outside.tmp' }]) {
+      expect(isAuditArchive({ entries: [other] }), JSON.stringify(other)).toBe(false)
+    }
+    records = [{ ...listed, archive: { entries: [staged, earlier] } }]
+    show()
+    expect(await screen.findByText(staged.why)).toBeTruthy()
+    expect(region().getByText(earlier.why)).toBeTruthy()
+    expect(region().getAllByText('Kept where it was staged, not in the archive.')).toHaveLength(2)
+    expect(region().queryByRole('button', { name: 'Remove' })).toBeNull()
+  })
+
   // Issue #331: a made desk's marker, not open here, is said the same way.
   it('says a made desk’s custody no start settles, and offers no Remove for it', async () => {
     const left: ArchivedKey = { scope: 'desk', identity: desk, file: `${desk}.creating`, kind: 'creating',
@@ -186,7 +206,7 @@ describe('the archive of keys', () => {
 
   it('names, as Desk’s own sentences, only sentences the chassis says', () => {
     const source = readFileSync(join(import.meta.dirname, '../../../internal/desk/archive.go'), 'utf8')
-    expect(ARCHIVE_SENTENCES).toHaveLength(16)
+    expect(ARCHIVE_SENTENCES).toHaveLength(18)
     for (const sentence of ARCHIVE_SENTENCES) {
       for (const part of sentence.split(/\{\{\w+\}\}/)) {
         expect(source.includes(part) ? part : `missing: ${part}`, sentence).toBe(part)

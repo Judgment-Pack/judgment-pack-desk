@@ -121,8 +121,10 @@ const (
 	// creatingSuffix follows a desk's id in the name of the marker a creation
 	// keeps beside its key until the desk is published.
 	creatingSuffix = ".creating"
-	// keysStagingPrefix names a list of public keys while it is being
-	// written, before it is linked into place.
+	// keysStagingPrefix names a list of public keys, a creation's marker or
+	// a rotation's journal while it is being written, before it is put in
+	// place: `.keys-<the name it is for>-<random>.tmp` (issue #332), so a
+	// stage a stop leaves says whose it is, and what.
 	keysStagingPrefix = ".keys-"
 	// verifyKeysPrefix names a folder of public-key files written for one
 	// `audit verify`, and removed after it.
@@ -665,7 +667,7 @@ func (d *signingDir) readDeskCreation(id string, marker os.FileInfo) (creation d
 // while its name still holds held; the folder is synced after. It answers
 // the marker as written.
 func (d *signingDir) rewriteMarker(name string, held os.FileInfo, data []byte) (os.FileInfo, error) {
-	staged, stage, err := d.stage()
+	staged, stage, err := d.stage(name)
 	if err != nil {
 		return nil, err
 	}
@@ -748,7 +750,7 @@ func (d *signingDir) writeNewKeys(name string, keys []deskPublicKey) (os.FileInf
 	for _, key := range keys {
 		data = append(data, key.line()...)
 	}
-	staged, stagedName, err := d.stage()
+	staged, stagedName, err := d.stage(name)
 	if err != nil {
 		return nil, err
 	}
@@ -815,10 +817,12 @@ func (d *signingDir) keepUnpublished(stagedName, name string, failed error) erro
 const listUnpublishedWords = "The list of public keys Desk wrote for this key could not be put under its name: %s. Desk keeps it here rather than removing it."
 
 // stage makes an exclusive, randomly named staging file in the signing
-// folder, as custody's own `stage` does beside the assistant's key.
-func (d *signingDir) stage() (*os.File, string, error) {
+// folder, as custody's own `stage` does beside the assistant's key, for the
+// file named target: its name records target before a byte is written
+// (issue #332), so that a stage a stop leaves is one a start can tell.
+func (d *signingDir) stage(target string) (*os.File, string, error) {
 	for attempt := 0; attempt < 10; attempt++ {
-		name, err := randomStagingName(keysStagingPrefix)
+		name, err := randomStagingName(keysStagingPrefix + target + "-")
 		if err != nil {
 			return nil, "", err
 		}
@@ -1179,6 +1183,7 @@ func (s *Server) sweepUnfinishedKeys() {
 		return
 	}
 	defer unlock()
+	dir.archiveStagedLists("")
 	listing, err := dir.root.Open(".")
 	if err != nil {
 		return
@@ -1252,6 +1257,49 @@ func (s *Server) sweepUnfinishedKeys() {
 				s.log.Printf("desk: %s, left by an unfinished creation, was not archived: %v", names[i], err)
 				break
 			}
+		}
+	}
+}
+
+// stagedListForm is the name of a list of public keys staged and not yet put
+// in place, as `stage` names it (issue #332): the identity it is for, and
+// its random part. stagedForm is any stage of the signing folder's.
+var (
+	stagedListForm = regexp.MustCompile(`^\.keys-([0-9a-f]{32}(?:[0-9a-f]{32})?)\.keys\.jsonl-[0-9a-f]{24}\.tmp$`)
+	stagedForm     = regexp.MustCompile(`^\.keys-.*\.tmp$`)
+)
+
+// stagedListWords is the archive line of a list of public keys a start
+// found staged and never put under its name (issue #332).
+const stagedListWords = "A list of public keys Desk wrote for this key was staged and never put under its name: the write stopped before it, or the name was taken. Desk keeps it here rather than removing it."
+
+// archiveStagedLists moves every list of public keys staged in the folder d
+// holds and never put in place, of identity only where only is not empty,
+// to the archive of the identity its name records, each only while its name
+// still holds the file inspected (issue #332), and says each that could not
+// be moved. The caller holds the folder's lock, under which no list is
+// being staged: one found was left by a stop, or by a creation whose list
+// could be neither published nor archived.
+func (d *signingDir) archiveStagedLists(only string) {
+	names, err := readDirNames(d.root, ".")
+	if err != nil {
+		d.say("desk: lists of public keys staged in %s could not be looked for: %v", d.path, err)
+		return
+	}
+	for _, name := range names {
+		parts := stagedListForm.FindStringSubmatch(name)
+		if parts == nil && only == "" && stagedForm.MatchString(name) && !stagedMarkerForm.MatchString(name) {
+			d.say("desk: %s, a file an earlier Desk staged, was left where it is: its name records no identity Desk keeps keys under", name)
+		}
+		if parts == nil || only != "" && parts[1] != only {
+			continue
+		}
+		info, err := d.root.Lstat(name)
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		if _, err := d.archiveAs(name, "keys.jsonl", parts[1], info, archived{identity: parts[1], rule: archiveCreationStopped, why: stagedListWords}); err != nil {
+			d.say("desk: a list of public keys staged for %s was left where it was staged: %v", parts[1], err)
 		}
 	}
 }
