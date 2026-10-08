@@ -48,13 +48,20 @@ package desk
 // # A creation marker
 //
 // Before the runtime is asked for a key, Desk writes `<desk id>.creating`,
-// empty and 0600, beside where the seed will be, and removes it only once the
-// desk's manifest is written. A Desk stopped in between leaves the marker, and
-// the next start removes that id's seed, list and marker where no desk of that
-// id was published (`sweepUnfinishedKeys`). A seed or a list with no marker
-// is never removed, whatever the desks folder says. The key the upgrade makes
-// for the project Desk was started on keeps a marker the same way, until
-// jpack.json names it and its lock is checked (startup_key.go).
+// 0600, beside where the seed will be, and removes it only once the desk's
+// manifest is written. It records the creation (issue #310, `deskCreation`):
+// the desk's id and its folder, by device and inode, and, written again
+// immediately before the manifest is, the manifest's digest:
+//
+//	{"id":"<32 hex>","folder":"<device>:<inode>"}
+//	{"id":"<32 hex>","folder":"<device>:<inode>","manifest":"sha256:<64 hex>"}
+//
+// A Desk stopped in between leaves the marker, and the next start removes
+// that id's seed, list and marker only where the desk was never published
+// (`sweepUnfinishedKeys`). A seed or a list with no marker is never removed,
+// whatever the desks folder says. The key the upgrade makes for the project
+// Desk was started on keeps a marker the same way, until jpack.json names it
+// and its lock is checked (startup_key.go).
 //
 // # One lock
 //
@@ -84,6 +91,7 @@ package desk
 // seed is left where it was written.
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -390,6 +398,29 @@ func (k *madeKey) close() {
 	}
 }
 
+// publishing records in the creation's marker the digest of the manifest
+// about to be written (issue #310): from here on, a start that finds the
+// marker cannot take the desk for one never published unless the desk's own
+// folder, in the desks folder, shows it holds no manifest. The marker is
+// written again whole, over the marker this creation wrote, and only while
+// its name still holds it. A nil key made none.
+func (k *madeKey) publishing(id string, folder *os.Root, manifest []byte) error {
+	if k == nil {
+		return nil
+	}
+	held, err := folder.Stat(".")
+	if err != nil {
+		return err
+	}
+	record := deskCreation{ID: id, Folder: identityKey(held), Manifest: sha256Digest(manifest)}
+	written, err := k.dir.rewriteMarker(k.markerName, k.marker, record.line())
+	if err != nil {
+		return err
+	}
+	k.marker = written
+	return nil
+}
+
 // stillNamed is whether the key is still where the desk's configuration names
 // it: the seed's pathname names the seed found through the folder this holds.
 // It is asked immediately before the desk is published.
@@ -468,7 +499,8 @@ func generateDeskKey(ctx context.Context, bin string, held heldDir, dir *signing
 
 // generateKeyMarked is generateDeskKey with a marker that holds record, one
 // line binding the creation to what it was made for, where record is not nil
-// (the startup project's key, `startupCreation`); a desk's marker is empty.
+// (the startup project's key, `startupCreation`; a made desk's,
+// `deskCreation`); the Runner key's marker is empty.
 func generateKeyMarked(ctx context.Context, bin string, held heldDir, dir *signingDir, id string, record []byte) (*madeKey, error) {
 	made := &madeKey{dir: dir, seedName: id + seedSuffix, keysName: id + keysSuffix, markerName: id + creatingSuffix}
 	for _, name := range []string{made.seedName, made.keysName, made.markerName} {
@@ -579,6 +611,85 @@ func generationFailure(diagnostics []runtimeDiagnostic, runErr error) error {
 		return fmt.Errorf("the runtime did not generate its signing key: %w", runErr)
 	}
 	return errors.New("the runtime did not generate its signing key: its audit key generate did not answer as documented")
+}
+
+// deskCreation is the marker of a made desk's key while the desk is made
+// (issue #310): one line naming the desk's id and its folder, by device and
+// inode, and, from immediately before its manifest is written, the
+// manifest's digest. An empty marker is one an earlier Desk left.
+type deskCreation struct {
+	ID       string `json:"id"`
+	Folder   string `json:"folder"`
+	Manifest string `json:"manifest,omitempty"`
+}
+
+// line is the marker's one spelling.
+func (c deskCreation) line() []byte {
+	data, _ := json.Marshal(c)
+	return append(data, '\n')
+}
+
+// deskCreationLimit is the most of a made desk's creation marker Desk reads:
+// the longest is 180 bytes.
+const deskCreationLimit = 512
+
+// readDeskCreation reads desk id's creation marker, inspected as marker,
+// whole, under the rule Desk keeps a private file by, and holds it to its
+// record: its one spelling, this id, a folder in its form, and a manifest
+// digest in its form where it names one. legacy is an empty marker.
+func (d *signingDir) readDeskCreation(id string, marker os.FileInfo) (creation deskCreation, legacy bool, err error) {
+	data, opened, err := readPrivateFile(d.root, id+creatingSuffix, deskCreationLimit)
+	if err != nil {
+		return deskCreation{}, false, err
+	}
+	if !os.SameFile(opened, marker) {
+		return deskCreation{}, false, errors.New("its marker changed while it was read")
+	}
+	if len(data) == 0 {
+		return deskCreation{}, true, nil
+	}
+	if json.Unmarshal(data, &creation) != nil || !bytes.Equal(creation.line(), data) || creation.ID != id ||
+		creation.Folder != "" && !fileIdentityForm.MatchString(creation.Folder) || creation.Manifest != "" && !recordForm.MatchString(creation.Manifest) {
+		return deskCreation{}, false, errors.New("its marker is not the record of a creation Desk writes")
+	}
+	return creation, false, nil
+}
+
+// rewriteMarker puts data in the place of the marker found as held: staged
+// under a name of its own, 0600, synced, and renamed over the marker only
+// while its name still holds held; the folder is synced after. It answers
+// the marker as written.
+func (d *signingDir) rewriteMarker(name string, held os.FileInfo, data []byte) (os.FileInfo, error) {
+	staged, stagedName, err := d.stage()
+	if err != nil {
+		return nil, err
+	}
+	defer d.root.Remove(stagedName)
+	_, err = staged.Write(data)
+	if err == nil {
+		err = staged.Chmod(custodyFileMode)
+	}
+	if err == nil {
+		err = staged.Sync()
+	}
+	written, statErr := staged.Stat()
+	if closed := staged.Close(); err == nil {
+		err = closed
+	}
+	if err == nil {
+		err = statErr
+	}
+	if err != nil {
+		return nil, err
+	}
+	if found, err := d.root.Lstat(name); err != nil || !os.SameFile(found, held) {
+		return nil, errors.New("the creation's marker is not the file the creation wrote")
+	}
+	if err := d.root.Rename(stagedName, name); err != nil {
+		return nil, err
+	}
+	_ = syncPrivateDirectory(d.root)
+	return written, nil
 }
 
 // writeMarker writes a creation's marker, empty and 0600, never over
@@ -965,16 +1076,31 @@ func (s *Server) custodyWords(message string) string {
 // desk is opened or any request served.
 //
 // It acts only on markers (`<id>.creating`) directly in the signing folder,
-// never on a seed or a list without one, and never in a folder below it:
+// never on a seed or a list without one, and never in a folder below it.
 //
-//   - where the desks folder holds no folder of that id, or one with no
-//     manifest, the desk was never published: its list, its seed and its
-//     marker are removed, in that order, the marker last;
-//   - where that folder holds a manifest, the desk was published and only
-//     the marker was left: the marker alone is removed;
-//   - where either cannot be told, because a name could not be inspected for
-//     any reason but its absence, nothing is removed, and the log says so.
-//     A manifest that cannot be read for a moment never costs a desk its key.
+// **A made desk's creation is decided by what its marker records, and by
+// where Desk opens desks from, never by the desks folder alone** (issue #310,
+// the second line audit's finding N2). A desk published and then moved out
+// of the desks folder, and opened directly, is published still: absence from
+// the desks folder says nothing of it (`deskCreationLeft`).
+//
+//   - where a desk of that id is published where Desk opens it from, the
+//     desks folder, or the folder this Desk was opened on directly, holding
+//     its manifest, the desk was published and only the marker was left: the
+//     marker alone is removed;
+//   - otherwise, where the marker records that the manifest was never about
+//     to be written, or where the desks folder holds the very folder the
+//     creation made, by device and inode, with no manifest (an empty marker,
+//     of an earlier Desk: a folder of that id with no manifest), the desk was
+//     never published: its list, its seed and its marker are removed, in that
+//     order, the marker last;
+//   - otherwise, the desk may have been published and moved: nothing is
+//     removed, and the log says so. A start on another project against the
+//     same configuration removes no key a published desk's creation left;
+//   - where anything cannot be told, because a name could not be inspected or
+//     read for any reason but its absence, nothing is removed, and the log
+//     says so. A manifest that cannot be read for a moment never costs a desk
+//     its key.
 //
 // **And on the marker of the project Desk was started on**, under its own
 // name (`signingKeyName`), on that project's start alone: "published" is
@@ -1042,13 +1168,18 @@ func (s *Server) sweepUnfinishedKeys() {
 			continue
 		}
 		var published bool
+		var left string
 		if s.startupKey(id) {
 			published, err = s.startupKeyNamed(filepath.Join(dir.path, id+seedSuffix))
 		} else {
-			published, err = s.deskPublished(id)
+			published, left, err = s.deskCreationLeft(dir, id, inspected[2])
 		}
 		if err != nil {
 			s.log.Printf("desk: an unfinished creation's key was left, because whether desk %s was made could not be told: %v", id, err)
+			continue
+		}
+		if left != "" {
+			s.log.Printf("desk: the key of an unfinished creation of desk %s was left, with its list and its marker: %s", id, left)
 			continue
 		}
 		// **A key goes only with the transaction it was made in** (issue
@@ -1079,42 +1210,86 @@ func (s *Server) sweepUnfinishedKeys() {
 	}
 }
 
-// deskPublished is whether the registry would open desk id: its folder is one
+// deskMovedWords is why a made desk's creation is left: it may have been
+// published, and moved out of the desks folder (issue #310).
+const deskMovedWords = "its marker records that its manifest was about to be written, and Desk's desks folder does not hold the folder it was made in with no manifest, as a desk published and then moved out of that folder, or opened from elsewhere, would not: Desk keeps that key, its list and its marker as they are"
+
+// deskCreationLeft is what the creation of desk id left, its marker inspected
+// as marker (issue #310): published, where a desk of that id is published
+// where Desk opens desks from, the desks folder (`deskRegistered`) or the
+// folder this Desk was opened on directly, holding its manifest; otherwise
+// left, the words why its key stays, where it may have been published and
+// moved; otherwise, never published. An error where anything that decides it
+// could not be read now, or the marker is not the record Desk writes.
+func (s *Server) deskCreationLeft(dir *signingDir, id string, marker os.FileInfo) (published bool, left string, err error) {
+	creation, legacy, err := dir.readDeskCreation(id, marker)
+	if err != nil {
+		return false, "", fmt.Errorf("its marker could not be read as the record Desk writes: %w", err)
+	}
+	folder, published, err := s.deskRegistered(id)
+	if err != nil {
+		return false, "", err
+	}
+	if !published && s.cfg.deskID == id && s.cfg.parent == nil {
+		// The desk this Desk was opened on directly, which the desks folder
+		// does not hold.
+		if _, err := readDeskManifest(s.root, id); err == nil {
+			published = true
+		} else if !errors.Is(err, errNotPublished) {
+			return false, "", err
+		}
+	}
+	switch {
+	case published:
+		return true, "", nil
+	case !legacy && creation.Manifest == "":
+		// Its manifest was never about to be written.
+		return false, "", nil
+	case folder != nil && (legacy || creation.Folder != "" && identityKey(folder) == creation.Folder):
+		// The folder it was made in is in the desks folder, with no manifest.
+		return false, "", nil
+	}
+	return false, deskMovedWords, nil
+}
+
+// deskRegistered is whether the registry would open desk id: its folder is one
 // the registry accepts (`deskFolderAccepted`), and its manifest is one the
-// registry reads (`readDeskManifest`, the same reader). It is false where the
-// desks folder holds no folder of that id, a folder the registry refuses, or
-// one whose manifest is absent, empty, cut short or not a desk's; an error
-// where the folder or its manifest could not be inspected or read now.
-func (s *Server) deskPublished(id string) (bool, error) {
+// registry reads (`readDeskManifest`, the same reader); and folder, that
+// folder as inspected, where the desks folder holds one the registry accepts.
+// published is false where the desks folder holds no folder of that id, a
+// folder the registry refuses, or one whose manifest is absent, empty, cut
+// short or not a desk's; an error where the folder or its manifest could not
+// be inspected or read now.
+func (s *Server) deskRegistered(id string) (folder os.FileInfo, published bool, err error) {
 	desks, err := s.assistant.root.OpenRoot("desks")
 	if errors.Is(err, fs.ErrNotExist) {
-		return false, nil
+		return nil, false, nil
 	}
 	if err != nil {
-		return false, err
+		return nil, false, err
 	}
 	defer desks.Close()
 	info, err := desks.Lstat(id)
 	if errors.Is(err, fs.ErrNotExist) {
-		return false, nil
+		return nil, false, nil
 	}
 	if err != nil {
-		return false, err
+		return nil, false, err
 	}
 	if !deskFolderAccepted(info) {
-		return false, nil
+		return nil, false, nil
 	}
-	folder, err := desks.OpenRoot(id)
+	opened, err := desks.OpenRoot(id)
 	if err != nil {
-		return false, err
+		return nil, false, err
 	}
-	defer folder.Close()
-	if opened, err := folder.Stat("."); err != nil || !os.SameFile(info, opened) {
-		return false, errors.New("its folder changed while it was being opened")
+	defer opened.Close()
+	if held, err := opened.Stat("."); err != nil || !os.SameFile(info, held) {
+		return nil, false, errors.New("its folder changed while it was being opened")
 	}
-	_, err = readDeskManifest(folder, id)
+	_, err = readDeskManifest(opened, id)
 	if errors.Is(err, errNotPublished) {
-		return false, nil
+		return info, false, nil
 	}
-	return err == nil, err
+	return info, err == nil, err
 }

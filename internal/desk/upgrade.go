@@ -1075,7 +1075,7 @@ func (u *upgradeUndo) establishIdentity() error {
 	default:
 		defer signing.Close()
 	}
-	record := identityRecord{ID: name, Path: s.projectDir}
+	record := identityRecord{ID: name, Path: s.projectDir, Folder: s.folderKey()}
 	if record.From, err = s.legacyStampingToMove(signing); err != nil {
 		return err
 	}

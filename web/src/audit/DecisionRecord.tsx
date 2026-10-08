@@ -39,10 +39,11 @@ import { msg, systemMessage, useLocale } from '../i18n'
 import { Button } from '../ui/Button'
 import { CodeBlock } from '../ui/CodeBlock'
 import { SettingsSection } from '../ui/SettingsSection'
-import { AUDIT_KEY, AuditUnavailable, readAuditRecord, type AuditCoverageState, type AuditKeys, type AuditRecord, type AuditRepair, type AuditReport, type AuditRotation, type AuditSigning, type AuditStamping, type HandedSince } from './client'
+import { AUDIT_KEY, AuditUnavailable, readAuditRecord, type AuditCoverageState, type AuditIdentity, type AuditKeys, type AuditRecord, type AuditRepair, type AuditReport, type AuditRotation, type AuditSigning, type AuditStamping, type HandedSince } from './client'
 import styles from './DecisionRecord.module.css'
 import { Handover, NO_HANDOVER, type HandoverState } from './Handover'
 import { RepairTrail, type RepairOutcome } from './RepairTrail'
+import { ResolveIdentity, type IdentityOutcome } from './ResolveIdentity'
 import { RotateSigningKey, type RotationOutcome } from './RotateSigningKey'
 import { Stamping, type StampingOutcome } from './Stamping'
 import { TrailDownloads } from './TrailDownloads'
@@ -102,9 +103,16 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
   const stampingSection = (stamping?: AuditStamping, report?: AuditReport) => <Stamping stamping={stamping} report={report} outcome={stamped}
     onOutcome={outcome => { setStamped(outcome); void query.refetch() }} />
   const handoverSection = (since?: HandedSince[]) => <Handover checkedAt={query.dataUpdatedAt} since={since} state={handover} onState={setHandover} onConfirmed={() => void query.refetch()} />
+  // What the owner's answer on this project's identity did, kept across the
+  // check run after it, as a rotation's is, and dropped when the owner checks
+  // again or opens the panel again (issue #309).
+  const [resolved, setResolved] = useState<IdentityOutcome>()
+  useEffect(() => { if (visible) setResolved(undefined) }, [visible])
+  const identitySection = (identity?: AuditIdentity) => <ResolveIdentity identity={identity} outcome={resolved}
+    onOutcome={outcome => { setResolved(outcome); void query.refetch() }} />
   const rotation = (keys?: AuditKeys, rotation?: AuditRotation) => <RotateSigningKey rotation={rotation} keyCount={keys?.state === 'kept' ? keys.public.length : 0}
     outcome={rotated} onOutcome={outcome => { setRotated(outcome); void query.refetch() }} />
-  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); void query.refetch() }}>{msg('Check again')}</Button></div>
+  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); void query.refetch() }}>{msg('Check again')}</Button></div>
   return <SettingsSection title={msg('Decision record')} description={msg('Jobs runs are recorded by the runner, not in this trail.')} variant="plain">
     <div className={styles.card} data-testid="decision-record">
       {query.isPending || query.isFetching ? <p role="status" className={styles.quiet}>{msg('Asking the runtime…')}</p>
@@ -117,6 +125,7 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
                   <ul className={styles.list} aria-label={msg('What the runtime said')}>{record.diagnostics.map((item, index) => <li key={index} lang="en"><code>{item.code}</code> {item.message}</li>)}</ul>
                   {record.handoverProblem && <p role="alert">{systemMessage(record.handoverProblem)}</p>}
                   {repairSection()}
+                  {identitySection(record.identity)}
                   <SigningKey keys={record.keys} signing={record.signing} />
                   {rotation(record.keys, record.rotation)}
                   {handoverSection()}
@@ -130,6 +139,7 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
                     {record.expectUnread && <p role="alert">{msg('Desk could not read the checkpoints it keeps as handed over to {{holders}}, so the check ran without them.', { holders: record.expectUnread.join(', ') })}</p>}
                     <Report report={record.report} />
                     {repairSection(record.repair)}
+                    {identitySection(record.identity)}
                     <SigningKey keys={record.keys} signing={record.signing} />
                     {rotation(record.keys, record.rotation)}
                     {handoverSection(record.since)}
