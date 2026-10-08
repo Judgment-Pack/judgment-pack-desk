@@ -5741,13 +5741,13 @@ func (b *cappedBuffer) exceeded() bool {'
     'if report != nil && view.Passed {' \
     'if report != nil {'
   mutate go 'stamping: a check with roots tells the scheduler nothing' "$STP" \
-    '			s.stamping.knowStamped(&known)
+    '			s.stamping.knowChecked(&known, since)
 ' \
     '			_ = known
 '
   mutate go 'stamping: the scheduler stamps whatever the head' "$STP" \
-    '		if sameCheckpoint(known, head) {' \
-    '		if sameCheckpoint(known, head) && false {'
+    '		if sameCheckpoint(known, head) && s.stampsHold(st.ctx, head) {' \
+    '		if sameCheckpoint(known, head) && s.stampsHold(st.ctx, head) && false {'
   mutate go 'stamping: a trail moved aside is not stamped' "$STP" \
     'known.Identity != "" && known.Identity == other.Identity &&' \
     'known.Identity != "" &&'
@@ -5852,9 +5852,10 @@ func (b *cappedBuffer) exceeded() bool {'
 ' \
     ''
   mutate go 'stamping: the decision record says nothing of stamping' "$STA" \
-    '	answer.Stamping = s.stampingAfterVerify(stamping.view, answer.Report)
+    '	answer.Stamping = s.stampingAfterVerify(stamping.view, answer.Report, stamping.since)
 ' \
-    ''
+    '	answer.Stamping = &auditStamping{}
+'
   mutate go 'stamping: a run'"'"'s refusal is shown with its path' "$STA" \
     '			last.Problem = clean(last.Problem)
 			if last.Diagnostics != nil {
@@ -6161,7 +6162,7 @@ func (b *cappedBuffer) exceeded() bool {'
     '		switch now, err = named, error(nil); {'
   mutate go 'audit r2 fix: an earlier record is read from a trail that is not the report'"'"'s' "$R2ST" \
     '	case got.more || !lastRead || !sameCheckpoint(&head, &checkpointHead{Identity: last.trail, Sequence: last.sequence, Digest: last.digest}):' \
-    '	case got.more || !lastRead:'
+    '	case got.more || !lastRead || !sameCheckpoint(&head, &checkpointHead{Identity: last.trail, Sequence: last.sequence, Digest: last.digest}) && false:'
   mutate go 'audit r2 fix: a record the runtime could not be asked of is said rewritten' "$R2ST" \
     '		case err != nil:
 			return not(lastRunUnasked)' \
@@ -6185,9 +6186,9 @@ func (b *cappedBuffer) exceeded() bool {'
     '		return not(lastRunNoTrail)' \
     '		return not(lastRunNoRoots)'
   mutate go 'audit r2 fix: the decision record says every last run checked' internal/desk/audit_record.go \
-    '	answer.Stamping.LastChecked = lastRunChecked(*answer.Stamping, answer.Report, func(trail string, sequence int64) (*checkpointHead, error) {' \
+    '	answer.Stamping.LastChecked = lastRunChecked(*answer.Stamping, answer.Report, func(named, head checkpointHead) (*checkpointHead, error) {' \
     '	answer.Stamping.LastChecked = &stampChecked{Checked: true}
-	_ = lastRunChecked(*answer.Stamping, answer.Report, func(trail string, sequence int64) (*checkpointHead, error) {'
+	_ = lastRunChecked(*answer.Stamping, answer.Report, func(named, head checkpointHead) (*checkpointHead, error) {'
   mutate go 'audit fix: a run keeps no record digest' "$AFS" \
     'Sequence: checkpoint.sequence, Digest: checkpoint.digest}' \
     'Sequence: checkpoint.sequence}'
@@ -6203,7 +6204,7 @@ func (b *cappedBuffer) exceeded() bool {'
 	known := *checkpoint
 	st.stamped = &known'
   mutate go 'audit fix: a check that finds no stamp leaves what the scheduler knows' "$AFS" \
-    '			s.stamping.knowStamped(nil)
+    '			s.stamping.knowChecked(nil, since)
 ' \
     ''
   # Finding 7: what follows a record is counted from the report's chained
