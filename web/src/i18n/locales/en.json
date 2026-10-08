@@ -4102,5 +4102,13 @@
   "The gateway’s answer could not be shown. Reload the settings to see what was saved.": "The gateway’s answer could not be shown. Reload the settings to see what was saved.",
   "Turn OCR on anyway": "Turn OCR on anyway",
   "{{name}} is not available on this computer. With OCR on, every document read stops until its programs are installed: text PDFs and plain text too, from uploads, Drive, connected files and links.": "{{name}} is not available on this computer. With OCR on, every document read stops until its programs are installed: text PDFs and plain text too, from uploads, Drive, connected files and links.",
-  "{{name}} · not available on this computer": "{{name}} · not available on this computer"
+  "{{name}} · not available on this computer": "{{name}} · not available on this computer",
+  "the runtime was given no roots to check the stamps with": "the runtime was given no roots to check the stamps with",
+  "the runtime did not check the stamps": "the runtime did not check the stamps",
+  "no stamp the runtime checked covers a record of this trail": "no stamp the runtime checked covers a record of this trail",
+  "the stamps the runtime checked are of another trail than the one the run named": "the stamps the runtime checked are of another trail than the one the run named",
+  "the stamps the runtime checked reach record {{record}}, before the checkpoint the run named": "the stamps the runtime checked reach record {{record}}, before the checkpoint the run named",
+  "this trail holds no chained record at that sequence now": "this trail holds no chained record at that sequence now",
+  "Desk could not ask the runtime for the checkpoint at that sequence now": "Desk could not ask the runtime for the checkpoint at that sequence now",
+  "the record at that sequence now is not the record the run named, as a trail put back to an earlier point and written since would not be": "the record at that sequence now is not the record the run named, as a trail put back to an earlier point and written since would not be"
 }

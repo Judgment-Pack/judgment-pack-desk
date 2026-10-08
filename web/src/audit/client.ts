@@ -725,7 +725,16 @@ export type AuditStamping = {
   state: 'none' | 'set' | 'unread' | 'unavailable'
   settings?: StampingSettings; problem?: string; removeToken?: string
   passed?: boolean; passProblem?: string; pending?: number; pendingLines?: number; last?: StampRun; running?: boolean
+  /**
+   * Whether a stamp the runtime checked reaches the very checkpoint the last
+   * run named, its trail, sequence and record (issue #312), as the chassis
+   * decides it; where not, why, in Desk's words. Given where the last run
+   * named a checkpoint.
+   */
+  lastChecked?: LastRunChecked
 }
+/** The chassis's word on the last run's checkpoint: checked, or why not. */
+export type LastRunChecked = { checked: true } | { checked: false; reason: string }
 /** What the owner proposes: the roots as PEM text, each revocation list's bytes in base64. */
 export type StampingProposal = { authority: string; intervalMinutes?: number; roots: string; policies: string[]; crls: string[] }
 /** What a check answers: what Desk would keep, and the token that confirms it. */
@@ -760,7 +769,15 @@ export const STAMPING_REASONS = [
   sourceMessage('This runtime (jpack {{version}}) has no audit stamp. Stamping needs jpack {{floor}} or later.'),
   sourceMessage('Desk could not hand the runtime the roots it keeps for this desk, so no stamp was checked: {{reason}}.'),
   sourceMessage("A cross-site request cannot change this desk's stamping."),
-  sourceMessage('The stamping settings changed while the stamp run made its checks, so it asked for no stamp. The next run uses the settings as they are now.')
+  sourceMessage('The stamping settings changed while the stamp run made its checks, so it asked for no stamp. The next run uses the settings as they are now.'),
+  sourceMessage("the runtime was given no roots to check the stamps with"),
+  sourceMessage("the runtime did not check the stamps"),
+  sourceMessage("no stamp the runtime checked covers a record of this trail"),
+  sourceMessage("the stamps the runtime checked are of another trail than the one the run named"),
+  sourceMessage("the stamps the runtime checked reach record {{record}}, before the checkpoint the run named"),
+  sourceMessage("this trail holds no chained record at that sequence now"),
+  sourceMessage("Desk could not ask the runtime for the checkpoint at that sequence now"),
+  sourceMessage("the record at that sequence now is not the record the run named, as a trail put back to an earlier point and written since would not be")
 ]
 
 const sha256Form = (value: unknown): value is string => text(value) && /^sha256:[0-9a-f]{64}$/.test(value)
@@ -789,10 +806,15 @@ export function isStampRun(value: unknown): value is StampRun {
 }
 
 /** The decision record's word on stamping: each state with what it carries, a removal token of 96 hexadecimal characters, and a count pending, of records or of lines. */
+/** The last run's word as the chassis gives it: checked with no reason, or not with one. */
+export function isLastRunChecked(value: unknown): value is LastRunChecked {
+  return object(value) && (value.checked === true && value.reason === undefined || value.checked === false && named(value.reason))
+}
+
 export function isAuditStamping(value: unknown): value is AuditStamping {
   if (!object(value) || !optional(value.removeToken, hex(96)) || !optional(value.passed, item => typeof item === 'boolean') || !optional(value.passProblem, named)
     || !optional(value.pending, count) || !optional(value.pendingLines, count) || value.pending !== undefined && value.pendingLines !== undefined
-    || !optional(value.last, isStampRun) || !optional(value.running, item => typeof item === 'boolean')) return false
+    || !optional(value.last, isStampRun) || !optional(value.running, item => typeof item === 'boolean') || !optional(value.lastChecked, isLastRunChecked)) return false
   switch (value.state) {
     case 'none': return value.settings === undefined && value.removeToken === undefined && !value.passed && value.problem === undefined
     case 'set': return isStampingSettings(value.settings) && value.problem === undefined && typeof value.removeToken === 'string'

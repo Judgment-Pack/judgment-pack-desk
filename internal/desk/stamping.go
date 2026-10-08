@@ -91,6 +91,18 @@ package desk
 // is known, or one with no digest, costs at most one `audit stamp` answering
 // `already-stamped`, never a stamp.
 //
+// **A run that did not stamp knows nothing stamped** (issue #313, the second
+// line audit's finding N5): a refusal, or an answer Desk cannot read, leaves
+// no checkpoint known, so the next wake asks the runtime whatever the head
+// is. Otherwise a trail put back without its stamps, and a stamp asked for
+// that failed, kept the old checkpoint known, and every scheduled turn found
+// the same head and asked nothing, until a check of the page cleared it.
+//
+// **"The same checkpoint" is one rule** (issue #312): one trail, one
+// sequence, one record digest, each known (`sameCheckpoint`). The scheduler
+// skips a head by it, and the decision record says the last run's checkpoint
+// is one a stamp the runtime checked reaches only by it (`lastRunChecked`).
+//
 // **Off the decision path.** Nothing a deciding run does waits for it; while
 // Desk is not running, nothing is stamped and records stay pending. **A stop
 // never kills a stamp mid-write**: the stamp runs without the server's
@@ -109,9 +121,14 @@ package desk
 // finding 7). Where the report does not say, the count is of lines, and is
 // said as one. Without roots the runtime says the stamps were not checked.
 // The page shows the checkpoint the last stamp run named as the authority's
-// answer to Desk's request, not as a stamp checked, wherever the report's
-// stamps do not reach it in the same trail: no roots, no stamp, one below it,
-// or another trail's (line audit, finding 5).
+// answer to Desk's request, not as a stamp checked, wherever Desk cannot say
+// that the stamps the report accepts reach that very checkpoint
+// (`lastRunChecked`; line audit, finding 5; issue #312): no roots, no stamp,
+// one below it, another trail's, or the same trail and sequence holding
+// another record now. Where the run named the report's head, the head's
+// record digest must be the run's; where it named an earlier record, the
+// runtime's checkpoint of that record (`audit checkpoint --since`) must be
+// the run's, by the same rule. The page is told whether, and why not.
 //
 // # What a stamp does not establish
 //
@@ -720,6 +737,17 @@ type auditStamping struct {
 	PendingLines *int64    `json:"pendingLines,omitempty"`
 	Last         *stampRun `json:"last,omitempty"`
 	Running      bool      `json:"running,omitempty"`
+	// LastChecked is whether a stamp the runtime checked reaches the very
+	// checkpoint the last run named, and where not, why, in Desk's words
+	// (`lastRunChecked`, issue #312). It is given where the last run named a
+	// checkpoint.
+	LastChecked *stampChecked `json:"lastChecked,omitempty"`
+}
+
+// stampChecked is the decision record's word on the last run's checkpoint.
+type stampChecked struct {
+	Checked bool   `json:"checked"`
+	Reason  string `json:"reason,omitempty"`
 }
 
 /* The tokens ------------------------------------------------------------------ */
@@ -986,7 +1014,7 @@ func (st *stampScheduler) attempt(dir heldDir, settings stampingSettings, reques
 		st.mu.Lock()
 		known := st.stamped
 		st.mu.Unlock()
-		if known != nil && known.Identity == head.Identity && head.Sequence == known.Sequence && known.Digest != "" && known.Digest == head.Digest {
+		if sameCheckpoint(known, head) {
 			// The head is the last checkpoint known stamped, by its record:
 			// a checkpoint known without its digest is never taken for it.
 			return stampRun{}
@@ -1013,8 +1041,93 @@ func (st *stampScheduler) attempt(dir heldDir, settings stampingSettings, reques
 	run.At, run.Requested = at, requested
 	if run.Status == stampStamped || run.Status == stampAlready {
 		st.knowStamped(&checkpointHead{Identity: run.Trail, Sequence: run.Sequence, Digest: run.Digest})
+	} else {
+		// **A run that did not stamp knows nothing stamped** (issue #313).
+		st.knowStamped(nil)
 	}
 	return st.record(run)
+}
+
+// sameCheckpoint is whether known and other are one checkpoint: one trail,
+// one sequence and one record digest, each known (issue #312). A checkpoint
+// known without its record digest is never another's. The scheduler skips a
+// head by it, and the decision record holds the last run's checkpoint to it.
+func sameCheckpoint(known, other *checkpointHead) bool {
+	return known != nil && other != nil && known.Identity != "" && known.Identity == other.Identity &&
+		known.Sequence >= 1 && known.Sequence == other.Sequence && known.Digest != "" && known.Digest == other.Digest
+}
+
+// What the decision record says where the last run's checkpoint is not one a
+// stamp the runtime checked reaches (issue #312), in Desk's words.
+const (
+	lastRunNoRoots    = "the runtime was given no roots to check the stamps with"
+	lastRunNotChecked = "the runtime did not check the stamps"
+	lastRunNoStamp    = "no stamp the runtime checked covers a record of this trail"
+	lastRunOtherTrail = "the stamps the runtime checked are of another trail than the one the run named"
+	lastRunBelow      = "the stamps the runtime checked reach record %d, before the checkpoint the run named"
+	lastRunGone       = "this trail holds no chained record at that sequence now"
+	lastRunUnasked    = "Desk could not ask the runtime for the checkpoint at that sequence now"
+	lastRunRewritten  = "the record at that sequence now is not the record the run named, as a trail put back to an earlier point and written since would not be"
+)
+
+// lastRunChecked is whether a stamp the runtime checked reaches the very
+// checkpoint the last run named, view.Last, and where not, why (issue #312):
+// nil where the last run named none. The report's stamps must reach its
+// sequence in its trail; and the checkpoint of the record there now must be
+// the run's (`sameCheckpoint`): the report's head where the run named the
+// head, or, asked of the runtime (at), the checkpoint of the record at the
+// run's sequence where it named an earlier one. Anything Desk cannot tell is
+// not checked, and said.
+func lastRunChecked(view auditStamping, report *auditReport, at func(trail string, sequence int64) (*checkpointHead, error)) *stampChecked {
+	run := view.Last
+	if run == nil || run.Status != stampStamped && run.Status != stampAlready || run.Sequence < 1 {
+		return nil
+	}
+	not := func(why string) *stampChecked { return &stampChecked{Reason: why} }
+	if !view.Passed || report == nil {
+		return not(lastRunNoRoots)
+	}
+	stamped := report.Coverage.Stamped
+	switch {
+	case stamped.Status == "not-checked":
+		return not(lastRunNotChecked)
+	case stamped.Status != "through":
+		return not(lastRunNoStamp)
+	case report.Trail == "" || report.Trail != run.Trail:
+		return not(lastRunOtherTrail)
+	case stamped.Through < run.Sequence:
+		return not(fmt.Sprintf(lastRunBelow, stamped.Through))
+	}
+	named := &checkpointHead{Identity: run.Trail, Sequence: run.Sequence, Digest: run.Digest}
+	now := &checkpointHead{Identity: report.head.trail, Sequence: report.head.sequence, Digest: report.head.digest}
+	if now.Identity != run.Trail || now.Sequence != run.Sequence {
+		var err error
+		if now, err = at(run.Trail, run.Sequence); errors.Is(err, errCheckpointsChanged) {
+			return not(lastRunGone)
+		} else if err != nil {
+			return not(lastRunUnasked)
+		}
+	}
+	if !sameCheckpoint(named, now) {
+		return not(lastRunRewritten)
+	}
+	return &stampChecked{Checked: true}
+}
+
+// checkpointAt is the runtime's checkpoint of the record at sequence of this
+// desk's trail, trail (`audit checkpoint --since`, through readCheckpoints):
+// errCheckpointsChanged where the trail holds no chained record there now.
+func (s *Server) checkpointAt(ctx context.Context, dir heldDir, trail string, sequence int64) (*checkpointHead, error) {
+	got, err := s.readCheckpoints(ctx, dir, deskTrail, trail, sequence-1, sequence)
+	if err != nil {
+		return nil, err
+	}
+	lines := bytes.Split(bytes.TrimSuffix(got.data, []byte("\n")), []byte("\n"))
+	line, ok := readCheckpointLine(lines[len(lines)-1])
+	if !ok || got.through != sequence || line.sequence != sequence {
+		return nil, errCheckpointsChanged
+	}
+	return &checkpointHead{Identity: line.trail, Sequence: line.sequence, Digest: line.digest}, nil
 }
 
 // record keeps run as the last, and says it in Desk's log, never with the

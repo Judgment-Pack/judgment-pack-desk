@@ -24,13 +24,15 @@
  * accepted and the lag it measured, in its own numbers; and the last stamp
  * run since Desk started, by Desk's clock, in the runtime's words where it
  * refused. Where the runtime did not check the stamps, the page says so; and
- * wherever no stamp the runtime checked reaches the checkpoint the last run
- * named in the same trail (no roots, none holding, one below it, or the
- * stamps of another trail, which the report names by its identity), that
- * checkpoint is labelled as the authority's answer to Desk's request, not as
- * a stamp the runtime checked (review round 1; line audit, finding 5). "Stamp
- * now" runs one stamp on request, in the desk's one turn, and the decision
- * record is checked again after it.
+ * wherever the chassis does not say that a stamp the runtime checked reaches
+ * the very checkpoint the last run named, its trail, sequence and record
+ * (`lastChecked`: no roots, none holding, one below it, another trail's, or
+ * another record at that sequence now), that checkpoint is labelled as the
+ * authority's answer to Desk's request, not as a stamp the runtime checked,
+ * with the chassis's reason (review round 1; line audit, finding 5; second
+ * line audit, issue #312). The page decides none of it itself. "Stamp now"
+ * runs one stamp on request, in the desk's one turn, and the decision record
+ * is checked again after it.
  */
 import { useRef, useState } from 'react'
 import { formatDate, msg, systemMessage, useLocale } from '../i18n'
@@ -74,12 +76,12 @@ export function Stamping({ stamping, report, outcome, onOutcome }: {
   const { settings } = stamping
   const stamped = report?.coverage.stamped
   const named = stamping.last && (stamping.last.status === 'stamped' || stamping.last.status === 'already-stamped') ? stamping.last : undefined
-  // Whether a stamp the runtime checked reaches the checkpoint the last run
-  // named, in the trail the run named: only then is that checkpoint not
-  // labelled as the authority's answer. Another trail's stamps reach no
-  // checkpoint of this one, whatever their sequence.
-  const covered = named?.sequence !== undefined && report?.trail !== undefined && named.trail === report.trail
-    && stamped?.status === 'through' && (stamped.through ?? 0) >= named.sequence
+  // Whether a stamp the runtime checked reaches the very checkpoint the last
+  // run named, as the chassis decides it by trail, sequence and record
+  // (issue #312): only then is that checkpoint not labelled as the
+  // authority's answer.
+  const checked = named ? stamping.lastChecked : undefined
+  const covered = checked?.checked === true
   async function run() {
     setBusy(true)
     try {
@@ -132,7 +134,7 @@ export function Stamping({ stamping, report, outcome, onOutcome }: {
       </dl>}
       {report?.stamps && <Stamps report={report} />}
       {stamped?.status === 'not-checked' && (named || stamping.state === 'set') && <p>{msg('The runtime did not check the stamps.')}{stamped.detail && <> <span lang="en">{stamped.detail}</span></>}</p>}
-      {named?.sequence !== undefined && !covered && <p>{msg('The last stamp run named the checkpoint at record {{sequence}}: that is the authority’s answer to Desk’s request, not a stamp the runtime checked.', { sequence: named.sequence })}</p>}
+      {named?.sequence !== undefined && !covered && <p>{msg('The last stamp run named the checkpoint at record {{sequence}}: that is the authority’s answer to Desk’s request, not a stamp the runtime checked.', { sequence: named.sequence })}{checked?.checked === false && <> {systemMessage(checked.reason)}</>}</p>}
       {stamping.last ? <LastRun run={stamping.last} /> : stamping.state === 'set' && <p className={styles.quiet}>{msg('No stamp run since Desk started.')}</p>}
       {editing && <AuthorityForm settings={settings} onCancel={() => setEditing(false)} onSet={() => { setEditing(false); onOutcome({ kind: 'set' }) }} />}
     </div>
