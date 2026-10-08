@@ -532,27 +532,50 @@ runtime takes a different lock, which Desk does not take.
   `signing` folder's path must name the folder Desk holds; after the run, and
   again immediately before the desk is published, the seed's path must name
   the seed Desk found there. Otherwise the creation is refused, says at which
-  of those moments, and is never answered as signed. Desk removes only what
+  of those moments, and is never answered as signed. Desk archives only what
   it finds through the folder it holds. What is left is the moment between
   the first check and the runtime's own open, in a folder only your user can
   change: a swap a process of your user makes in that moment can have the
   runtime write the seed into the folder swapped in, and Desk leaves that
   file where it was written.
-- Before the runtime runs, Desk writes an empty marker,
-  `secrets/signing/<desk id>.creating`, and removes it once the desk's
-  manifest is written. The manifest is written as one event: staged beside
-  its name, synced, and renamed into place, so a crash leaves no manifest or
-  a whole one, never part of one. A Desk stopped in between leaves the
-  marker. At the next start, before any desk opens, a marker whose desk was
-  never published is removed with that id's seed and list, and a marker whose
-  desk was published is removed alone. "Published" is decided by the same
-  reader the registry opens a desk with: a folder of that id that the
-  registry accepts, with a manifest it reads (present, whole, Desk's own and
-  naming that desk); an empty or cut-short manifest is not one. A seed
-  or list with no marker is never removed, and neither is anything whose
-  desk cannot be inspected. The sweep inspects each name first, and removes
-  each only while its name still holds the file it inspected, the marker
-  last, so that a file put in its place since is left, with the marker.
+- Before the runtime runs, Desk writes a marker,
+  `secrets/signing/<desk id>.creating`, recording the desk's id and its
+  folder, and, immediately before the manifest is written, the manifest's
+  digest; it removes the marker once the desk's manifest is written. The
+  manifest is written as one event: staged beside its name, synced, and
+  renamed into place, so a crash leaves no manifest or a whole one, never
+  part of one. A Desk stopped in between leaves the marker. At the next
+  start, before any desk opens, a marker whose desk was published is removed
+  alone; a marker that itself records that the manifest was never about to
+  be written goes to Desk's archive of keys with that id's seed and list
+  (below); and every other marker, one that records the manifest was about to
+  be written while no manifest is where Desk opens the desk from (a copy
+  published elsewhere may name the key), or an earlier Desk's empty marker,
+  which records nothing, keeps its seed, list and marker, and the log says
+  why. "Published" is decided by the same reader the registry opens a desk
+  with: a folder of that id that the registry accepts, with a manifest it
+  reads (present, whole, Desk's own and naming that desk); an empty or
+  cut-short manifest decides nothing. A seed or list with no marker is never
+  touched, and neither is anything whose desk cannot be inspected. The sweep
+  inspects each name first, and archives each only while its name still
+  holds the file it inspected, the marker last, so that a file put in its
+  place since is left, with the marker.
+- **Desk never removes a signing key on its own** (the maintainer's decision
+  of 2026-10-08, after three passes of the ADR-0010 line audit). Wherever it
+  once removed a seed, a next seed or a list of public keys (a creation that
+  stopped, the start's sweep, a rotation's undo or its promotion, an upgrade
+  taken back, a Runner key's unfinished creation), it moves the file, under
+  the signing folder's lock, to its archive of keys:
+  `secrets/signing/archive/<identity>/<trail or none>-<record or none>-<UTC time>.<kind>`
+  (Runner's keys: `secrets/signing/runner/archive/…`), owner-only, under the
+  custody the keys have. Before each move it appends one line to
+  `archive.jsonl` beside it, saying which rule moved the file and, in its own
+  words, what Desk could not decide; the log says each move too. The
+  decision record lists every archived file, with its identity, the trail and
+  record its name records, when and why, and offers **Remove** on each,
+  confirmed with a token bound to that file and its journal line: the one
+  removal of a key in Desk, on your word, written to the journal first. An
+  archived seed is still a key: whoever reads it can sign as it.
 - **One lock for every change to keys in the signing folder** (issue #230).
   Two Desk processes can share one configuration folder: Desk started on two
   projects shares `~/.config/jpack-desk`. So a desk's key creation (from
@@ -587,9 +610,9 @@ runtime takes a different lock, which Desk does not take.
   records after it, and a desk's first key takes over from 0. The file is
   public material and never holds a seed. A creation writes it whole, through
   a staging file linked into place, never over another. A rotation (below)
-  writes it whole again with the next key appended, at the sequence the
-  runtime gave, so each later key takes over from a later sequence than the
-  one before it.
+  appends the next key's line to it, in place, at the sequence the runtime
+  gave, so each later key takes over from a later sequence than the one
+  before it; the list is never written again.
 - Where the runtime does not read `"6"`, or Desk's custody cannot keep a key,
   the desk is made at configVersion `"5"` (or `"4"`, as before), unsigned, and
   says so and why: in the creation's answer, in a dialog before the desk
@@ -598,8 +621,9 @@ runtime takes a different lock, which Desk does not take.
   runtime's is passed on with the seed, its list and every folder on the way
   to them replaced by “…”, as the panel does. Desk never writes `"6"` for a runtime that cannot
   read it. If the runtime fails to generate the key, or the lock fails after
-  it, no desk is made, and the seed and list of keys it made are removed;
-  where one cannot be, the answer and Desk's log say so. A build that
+  it, no desk is made, and the seed and list of keys it made are moved to
+  Desk's archive of keys, which the answer says; where one cannot be, the
+  answer and Desk's log say so. A build that
   cannot establish who owns a directory keeps no key; on such a build Desk
   makes no desk at all, since its desks folder is held to the same custody.
 - Repair and stamping: in the decision record (below).
@@ -630,13 +654,18 @@ key, its list and its stamping settings, and a project put at its old path
 takes none of them. A copy carries the identity too: a start whose identity
 was written in another folder that still holds it takes it as shared, and
 then recovers nothing under it, makes and rotates no key for it, and says so;
-where that folder no longer holds it, the project was moved, and its
-identity is written again with its new folder. (A project
+where that folder no longer holds it, the project was moved only where this
+folder is that folder, by its device and inode, and its identity is written
+again with its new path; otherwise, and wherever the identity records no
+folder, it is unresolved, and the decision record asks you whether this
+folder is that project or a copy. (A project
 that has no identity is named by the hex SHA-256 of its resolved path, for
 what Desk kept under that name before; a start on a project whose
 `.desk-private/` is there writes it its identity: the name of the seed its
-`jpack.json` names, where Desk keeps one, or a new one, and moves stamping
-settings kept under the path's hash to it where no key is kept there. A seed is
+`jpack.json` names, where Desk keeps one, recorded with no folder and so
+unresolved until you answer, since a copy's `jpack.json` names the same
+seed; or a new one, and moves stamping settings kept under the path's hash
+to it where no key is kept there. A seed is
 never renamed, since `jpack.json` names it by its path. Runner's state stays
 named by the path: Runner scopes its store to the project's path itself.)
 Desk then writes `jpack.json` at `"6"` with `audit.signingKey`
@@ -644,22 +673,24 @@ naming the seed, every other byte its own, through the upgrade's own write,
 and locks it; and removes the marker only once the lock is checked. The
 seed's path must name the seed made at the last moment before `jpack.json` is
 published, its bytes staged, and again before the marker goes. A failure
-at any step puts every file back and removes the key; a stopped upgrade's
-marker is cleared at the next start on that project, wherever it is then,
-which keeps the key where `jpack.json` names it. It removes the key only where
-the marker binds the creation to this project and this upgrade: the marker
+at any step puts every file back and moves the key to Desk's archive of
+keys; a stopped upgrade's marker is cleared at the next start on that
+project, wherever it is then, which keeps the key where `jpack.json` names
+it. It archives the key only where the marker binds the creation to this
+project and this upgrade: the marker
 records the identity, the project's folder and the digest of the `jpack.json`
 the upgrade set out to replace, and all three must be as found, under an
 identity no other folder holds. Anything else leaves the key, its list and
 its marker, and the log, the offer and the decision record say so; a marker
 under a path's hash loses only itself, where `jpack.json` names its seed. An
-upgrade that does not complete takes its key away before the identity, and
-keeps the identity wherever the key, or what its creation made, is left. The decision record then reads the project as a
+upgrade that does not complete archives its key before it takes the
+identity away, and keeps the identity wherever the key, or what its
+creation made, is left at its name. The decision record then reads the project as a
 desk with a key: it passes its public keys to `audit verify`, shows them, and
 offers rotation, except while `JPACK_SIGNING_KEY` is inherited, which the
 runtime takes over the configuration's key, and except where `jpack.json`
 names another file than Desk's seed, even a copy of the same key: a rotation
-renames the next key over Desk's seed, so it is offered, confirmed (the
+names the next key by Desk's seed's name, so it is offered, confirmed (the
 confirmation is bound to that seed file) and reported made only while
 `jpack.json` names that very file.
 
@@ -703,10 +734,10 @@ was started.
   nothing.
 - A creation that did not finish leaves its marker. A creation holds the
   lock while its marker stands, so a marker found under the lock marks a key
-  that was never named and never signed anything. The next start removes
-  it: the list, the seed and then the marker, each only while it is the file
-  just looked at, so a removal that stops leaves the marker for the start
-  after; then it makes another key.
+  that was never named and never signed anything. The next start moves it
+  to the archive of Runner's keys: the list, the seed and then the marker,
+  each only while it is the file just looked at, so a move that stops leaves
+  the marker for the start after; then it makes another key.
 - Gates asks Desk again every few seconds while it is open
   (`GET /api/runner-key`), so it says what Runner signs with now: starting,
   signed with the key shown, not signed and why, or not running and why. It
@@ -738,9 +769,10 @@ was started.
   revokes nothing, so whoever holds the old key can still sign as it, and each
   holder must be given the new public key, and told about the old one if you
   no longer trust it (only a holder's own `jpack audit verify --revoked`
-  refuses what it signs); the old key's file loses its name, but its bytes may
-  remain on the disk; and a lost key cannot be rotated away from, because a
-  rotation needs the key in force.
+  refuses what it signs); Desk keeps the old key in its archive of keys,
+  which the decision record lists, until you remove it there, and while it is
+  kept whoever reads it can still sign as it; and a lost key cannot be
+  rotated away from, because a rotation needs the key in force.
 - Confirming sends the token the panel gave: a MAC, under the desk's own key
   for this process, over the list of public keys and the key the runtime read
   from the seed. A rotation is made only where a fresh reading gives the same
@@ -764,13 +796,19 @@ was started.
   3. `jpack audit key rotate --next <that seed> --config jpack.json --format
      json`, in the desk's folder, whose answer gives the sequence the next key
      takes over after, on the trail the journal names;
-  4. the list of public keys written whole with the next key appended at that
-     sequence, recording the trail the rotation was made on: staged, synced,
-     and renamed over the list, after a check that the list is still the file
-     and the bytes read;
-  5. the next seed renamed over the current seed's name, in the same folder,
-     and the seed's path checked to name the file renamed;
-  6. the marker removed.
+  4. the next key's line appended to the list of public keys, in place, at
+     that sequence, recording the trail the rotation was made on, after a
+     check that the list is still the file and the bytes read: the list is
+     never written again;
+  5. the current seed moved to Desk's archive of keys, with its journal line,
+     and the next seed renamed into the name it left, in the same folder,
+     never over anything, and the seed's path checked to name the file
+     renamed;
+  6. the trail checked again, and the marker removed; or, where the trail was
+     moved aside or replaced in the moment after the last check, which no
+     check can close (issue #323), the marker archived beside the previous
+     key with the sentence that says so, and the answer is that the trail
+     moved, never that the key was rotated.
 
   `jpack.json` never changes, so there is no new lock and no drift. The panel
   then passes both keys, in order.
@@ -779,9 +817,10 @@ was started.
   too. After any answer but a rotation as asked, Desk reads the trail's
   signature sidecar, under the trail's lock as the download does, and asks
   the runtime for the next seed's public key. Where no line of the sidecar
-  names the next key, the next seed and the marker are removed, nothing else
-  has changed, and the answer gives the runtime's own words, with no path in
-  them. That is what happens when the trail has no chained record yet, when
+  names the next key, the next seed and the marker are moved to Desk's
+  archive of keys, nothing else has changed, and the answer gives the
+  runtime's own words, with no path in them, and says where the next key
+  went. That is what happens when the trail has no chained record yet, when
   its last line is incomplete, and when the current key is not in force.
   Where the sidecar's last key rotation hands over to the next key from the
   current one, the rotation is finished (steps 4 to 6). Where Desk cannot tell,
@@ -797,15 +836,25 @@ was started.
   say why), is read the same way, under the signing
   folder's lock, asked for once more, for at most ten seconds, where another
   Desk process holds it, from its journal first:
-  - journalled before the next key was made: the runtime was never asked,
-    and the next seed and the marker are removed;
+  - journalled before the runtime was asked to rotate: the next seed and the
+    marker are moved to Desk's archive of keys;
   - otherwise only the sidecar of the trail the journal names decides; a
     trail moved aside or replaced since has no say, and the current key, the
     next key and the list are kept as they are, and the panel says so;
   - the runtime wrote the line: the rotation is finished;
-  - no line names the next key: the next seed and the marker are removed,
-    unless the list already names it, when everything is kept and the panel
-    says why;
+  - no line names the next key: the next seed and the marker are moved to
+    Desk's archive of keys, with the sentence that Desk cannot rule out a
+    sidecar put back to its earlier bytes (issue #321), unless the list
+    already names it, when everything is kept and the panel says why;
+  - the current seed's name holds nothing, the journal says the runtime
+    rotated, the list ends in the next key and the sidecar hands over to it:
+    a stop between the two moves of step 5; the next seed is renamed into
+    the name, and the marker removed;
+  - a marker under a project's name that no project or desk open here holds,
+    whose journal names this project's trail (a lost identity file, a new
+    identity made, issue #320): its next seed and marker are moved to Desk's
+    archive of keys, with the sentence that says so; any other such marker is
+    said in the log, and left for a start on its project;
   - a marker an earlier Desk left empty, which names no trail, is finished
     where the sidecar hands over to its next key, and otherwise left;
   - there is no next seed, and the list, the current seed and the sidecar
@@ -817,9 +866,10 @@ was started.
     that a rotation did not finish, and why. It also says, for a marker Desk
     could act on, what it does at its next start.
 
-  The current seed is never removed. A seed is never removed because a read
-  failed, and never while the sidecar names it. What is removed is removed
-  only while its name still holds the file inspected, the marker last.
+  No seed is ever removed: the current one is archived when the next takes
+  its name, and a next one the runtime did not take is archived too.
+  Nothing is moved because a read failed. What is moved is moved only while
+  its name still holds the file inspected, the marker last.
   Nothing in a folder below the signing folder, and no marker of a desk that
   is not open, is touched. A
   rotation that did not finish blocks another until it is resolved; where the
@@ -827,7 +877,8 @@ was started.
   unsigned until the next start finishes it.
 - **What rotation does not do.** It revokes nothing, and the panel passes no
   `--revoked`: that is a holder's own trust configuration. It does not hand the
-  new public key to anyone. It does not erase the old seed's bytes. It cannot
+  new public key to anyone. It does not erase the old seed: Desk keeps it in
+  its archive of keys until you remove it there. It cannot
   move away from a lost key: Desk shows the runtime's refusal, and does not
   move a trail aside (ADR-0010, question 9).
 
