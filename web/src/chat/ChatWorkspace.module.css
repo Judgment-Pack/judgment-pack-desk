@@ -10,7 +10,7 @@
 .historySearch > input { width: 100%; }
 .transcript { position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
 .thread { position: relative; flex: 1 1 auto; min-height: 0; overflow: auto; overflow-anchor: none; scrollbar-gutter: stable both-edges; overscroll-behavior: contain; padding: var(--space-4); }
-.threadContent { width: min(100%, var(--measure-form)); margin-inline: auto; display: flex; flex-direction: column; gap: var(--space-5); }
+.threadContent { width: min(100%, var(--measure-wide)); margin-inline: auto; display: flex; flex-direction: column; gap: var(--space-5); }
 .threadContent > * { flex: 0 0 auto; min-width: 0; }
 .welcome { max-width: var(--measure-form); margin: auto; text-align: center; padding: var(--space-5) var(--space-2); }
 .welcome h1 { font-size: var(--text-page); font-weight: 500; margin: 0 0 var(--space-3); }
@@ -21,6 +21,11 @@
 .chat[data-landing] .composerArea { margin-bottom: auto; }
 .message { width: min(100%, var(--measure-form)); margin-inline: auto; font-size: var(--text-body); line-height: 1.65; overflow-wrap: anywhere; }
 .message > div { white-space: normal; }
+.message[data-role="assistant"] { width: 100%; }
+.message[data-role="assistant"] > :not(.markdown):not(button) { width: min(100%, var(--measure-form)); margin-inline: auto; }
+.message[data-role="assistant"] > button { margin-inline-start: max(0px, calc((100% - var(--measure-form)) / 2)); }
+.markdown > :not(.messageTable):not(.messageCode) { width: min(100%, var(--measure-form)); margin-inline: auto; }
+.messageCode { min-width: 0; max-width: 100%; }
 .message .userText { white-space: pre-wrap; }
 .message[data-role="user"] { border-radius: var(--radius); padding: var(--space-3); background: var(--accent-soft); }
 .caption { font-size: var(--text-xs); color: var(--ink-soft); }
@@ -42,7 +47,7 @@
 .pick button { max-width: 100%; min-width: 0; }
 .grow { flex: 1; }
 .footnote { min-height: 1.6em; line-height: 1.6; color: var(--ink-faint); font-size: var(--text-xs); text-align: center; margin: var(--space-2) 0 0; }
-.setup, .notice { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; font-size: var(--text-xs); color: var(--ink-soft); margin-bottom: var(--space-3); }
+.notice { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; font-size: var(--text-xs); color: var(--ink-soft); margin-bottom: var(--space-3); }
 .notice p { margin: 0; }
 .history { position: relative; list-style: none; padding: 0 var(--space-2) var(--space-2); margin: 0; display: flex; flex-direction: column; gap: var(--space-1); overflow: auto; overscroll-behavior: contain; min-height: 0; }
 .history li { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; min-width: 0; border-radius: var(--radius-sm); }
@@ -92,9 +97,11 @@
 .markdown blockquote { border-inline-start: 2px solid var(--border-strong); padding-inline-start: var(--space-3); margin-inline: 0; color: var(--ink-soft); }
 .markdown a { color: var(--ink); text-decoration: underline var(--ink); text-underline-offset: 3px; }
 .markdown code { font-size: var(--text-xs); overflow-wrap: anywhere; }
-.messageTable { position: relative; max-width: 100%; overflow: auto; }
+.messageTable { position: relative; width: 100%; max-width: 100%; overflow: auto; overscroll-behavior-inline: contain; overflow-wrap: normal; word-break: normal; }
 .messageTable table { border-collapse: collapse; font-size: var(--text-sm); width: 100%; }
-.messageTable td, .messageTable th { text-align: left; padding: var(--space-2); border-bottom: 1px solid var(--border); }
+.messageTable td, .messageTable th { min-width: 10rem; text-align: left; vertical-align: top; padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border); }
+.messageTable td { overflow-wrap: break-word; }
+.messageTable:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .messageActions { display: flex; align-items: center; gap: var(--space-2); color: var(--ink-soft); font-size: var(--text-xs); margin-top: var(--space-2); }
 .messageActions > button { font-size: var(--text-xs); }
 .work li { display: flex; justify-content: space-between; gap: var(--space-3); }
@@ -156,3 +163,13 @@
 .workRow:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .workRow .workIcon { padding: 0; }
 .workRow > svg { flex: none; color: var(--ink-faint); }
+
+.composerReadiness { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; margin: 0; padding: 0 var(--space-3) var(--space-2); font-size: var(--text-xs); color: var(--ink-soft); overflow-wrap: anywhere; }
+
+.historySpinner { display: block; width: 16px; height: 16px; box-sizing: border-box; border-width: 1.75px; border-style: solid; border-color: currentColor; border-right-color: transparent; border-radius: var(--radius-pill); animation: historySpin .8s linear infinite; }
+@keyframes historySpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .historySpinner { animation: none; } }
+.chatToolbar button[aria-busy='true'] { opacity: 1; cursor: progress; }
+
+.composerReadiness > span { flex: 1 1 16rem; }
+.composerReadiness > button { flex: none; }

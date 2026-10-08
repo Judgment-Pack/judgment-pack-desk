@@ -33,12 +33,12 @@ describe('the source card', () => {
     const keys = Array.from(container.querySelectorAll('dt')).map((each) => each.textContent)
     expect(keys).toEqual(['Location', 'Status'])
     expect(screen.getByText('/somewhere/desk.json')).toBeTruthy()
-    expect(screen.getByText('read')).toBeTruthy()
+    expect(screen.getByText('Configuration loaded')).toBeTruthy()
   })
 
   it('says which of the file states it is in, and never rounds one to another', () => {
     const cases: [SourceStatus, string][] = [
-      [{ state: 'read' }, 'read'],
+      [{ state: 'read' }, 'Configuration loaded'],
       [{ state: 'absent' }, 'not present — defaults in use'],
       [{ state: 'pending' }, 'not read yet'],
       [{ state: 'said', says: 'connected' }, 'connected']
@@ -165,7 +165,7 @@ describe('the source card', () => {
     )
     expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('S')
     expect(screen.getByText('/a/file.json')).toBeTruthy()
-    expect(screen.getByText('read')).toBeTruthy()
+    expect(screen.getByText('Configuration loaded')).toBeTruthy()
   })
 
   it('repeats neither the location nor a status its group already gave', () => {

@@ -5,7 +5,7 @@ import { DraftActions } from '../packs/drafts/DraftActions'
 import { systemMessage } from '../i18n'
 import { sourceMessage } from '../i18n/source'
 import { msg, useLocale } from '../i18n'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ChatPanel } from '../chat/ChatPanel'
 import { useChats } from '../chat/ChatProvider'
@@ -40,6 +40,10 @@ export function draftReady(chat: Chat, state: typeof INITIAL_STATE, basis: strin
   return canCreateDraft(state, chat.mode, basis)
 }
 
+// Presentation only: never activated, updated or persisted in ChatStore.
+const LOADING_CHAT: Chat = { id: 'loading-history', title: 'New chat', pinned: false,
+  archived: false, updatedAt: '', composer: '', model: '', mode: 'draft', view: 'chat' }
+
 export function ChatWorkspace() {
   useLocale()
   const { chatId: linkedChatId } = useParams()
@@ -53,7 +57,7 @@ export function ChatWorkspace() {
   const { store, chats, drafts, ready, error } = useChats()
   const navigate = useNavigate()
   const created = useRef<string | null>(null)
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!store || !ready) return
     if (!chatId || (home && ![...chats, ...drafts].some(chat => chat.id === chatId))) {
       if (!store.canCreate) return
@@ -64,11 +68,25 @@ export function ChatWorkspace() {
       navigate('/', { replace: true, state: { homeChatId: created.current } })
     } else { created.current = null; store.activate(chatId) }
   }, [store, ready, chatId, navigate, initialMode, home, chats, drafts, targetFolderId])
-  const chat = chats.find(chat => chat.id === chatId) ?? drafts.find(chat => chat.id === chatId)
+  const selectedChat = chats.find(chat => chat.id === chatId) ?? drafts.find(chat => chat.id === chatId)
+  // The logo clears route state. Reuse the home draft during that render,
+  // before navigation installs its id again, so the panel does not unmount.
+  const chat = selectedChat ?? (home && ready && store?.canCreate
+    ? drafts.find(chat => !chat.pack && !chat.draftId && (!initialMode || chat.mode === initialMode)) : undefined)
+  const loading = !error && (!ready || !chat && (!chatId || home) && !!store?.canCreate)
+  const loadingChat = useMemo(() => ({ ...LOADING_CHAT, mode: initialMode ?? 'draft' } as Chat), [initialMode])
   const [chatHeaderTarget, setChatHeaderTarget] = useState<HTMLDivElement | null>(null)
   return <div data-measure="wide" data-layout="page">
-    {!ready || !chat ? <div className={styles.blank} role="status">{error || (ready && chatId && !home ? msg("This chat is no longer in history.") : ready && !store?.canCreate ? msg("Chat history is full. Export and delete an older chat from Chat history.") : msg("Loading chat history…"))}{error && <Button onClick={() => void store?.load()}>{msg("Retry")}</Button>}{ready && chatId && !home && <Button onClick={() => navigate('/')}>{msg("New chat")}</Button>}</div>
-      : <><header role="presentation" data-page-header className={styles.workspaceHeader}><div className={styles.headerControls} ref={setChatHeaderTarget} /></header><ChatPanel key={chat.id} chat={chat} landing headerTarget={chatHeaderTarget} onOpenDraft={chat.draftId ? () => navigate(draftHref(chat.draftId!)) : undefined} /></>}
+    <header role="presentation" data-page-header className={styles.workspaceHeader}><div className={styles.headerControls} ref={setChatHeaderTarget} /></header>
+    {loading || ready && chat
+      ? <ChatPanel key={chat?.id ?? loadingChat.id} chat={chat ?? loadingChat} landing={!!chat || home}
+          historyLoading={loading} locked={loading} headerTarget={chatHeaderTarget}
+          onOpenDraft={chat?.draftId ? () => navigate(draftHref(chat.draftId!)) : undefined} />
+      : <div className={styles.blank} role={error ? 'alert' : 'status'}>{error ? systemMessage(error) : ready && chatId && !home
+          ? msg("This chat is no longer in history.") : msg("Chat history is full. Export and delete an older chat from Chat history.")}
+          {error && <Button onClick={() => void store?.load()}>{msg("Retry")}</Button>}
+          {ready && chatId && !home && <Button onClick={() => navigate('/')}>{msg("New chat")}</Button>}
+        </div>}
   </div>
 }
 

@@ -1,4 +1,4 @@
-import { msg, useLocale, systemMessage } from '../i18n'
+import { msg, useLocale } from '../i18n'
 /**
  * The fields on the cards that write the project's own configuration file, and
  * nothing else about them.
@@ -32,12 +32,6 @@ import { msg, useLocale, systemMessage } from '../i18n'
  * who has not chosen — and, like `panes`, its write path left with its form.
  */
 import { useEffectiveConfig } from '../config/DeskConfigProvider'
-import {
-  ID_BASE_NORMALISES,
-  ID_BASE_SAYS,
-  NO_CONTROL_CHARACTERS,
-  STORAGE_KIND_SAYS
-} from '../config/deskConfig'
 import { Field } from '../ui/Field'
 import { Input } from '../ui/Input'
 import { LogoField } from './LogoField'
@@ -82,7 +76,7 @@ export function OrganizationForm() {
   return (
     <ProjectFileForm state={state} placed={['organization.name', 'organization.mark', 'organization.favicon']}>
       <Field
-        label={msg("Name")}
+        label={msg("Organization name")}
         hint={msg("Used for organization branding. The header shows the desk name.")}
         error={problemAt(save, 'organization.name')}
       >
@@ -119,8 +113,8 @@ export function StorageKind() {
   useLocale()
   const { config } = useEffectiveConfig()
   return (
-    <CardField label={msg("Kind")} rule={systemMessage(STORAGE_KIND_SAYS)}>
-      <code>{config.storage.packs.kind}</code>
+    <CardField label={msg("Storage")}>
+      {config.storage.packs.kind === 'filesystem' ? msg("Local folder") : config.storage.packs.kind}
     </CardField>
   )
 }
@@ -155,8 +149,8 @@ export function StorageForm({ dirSays }: { dirSays: string }) {
           for this member are several and specific, and each names itself when
           it is the one that is broken. */}
       <Field
-        label={msg("Packs go to")}
-        hint={`${dirSays} — ${systemMessage(NO_CONTROL_CHARACTERS)}`}
+        label={msg("Pack folder")}
+        hint={dirSays}
         error={problemAt(save, 'storage.packs.dir')}
       >
         {(wiring) => (
@@ -169,8 +163,8 @@ export function StorageForm({ dirSays }: { dirSays: string }) {
         )}
       </Field>
       <Field
-        label={msg("Id prefix")}
-        hint={`${systemMessage(ID_BASE_SAYS)} — ${systemMessage(NO_CONTROL_CHARACTERS)}. ${systemMessage(ID_BASE_NORMALISES)}`}
+        label={msg("Pack ID prefix")}
+        hint={msg("Used to generate IDs for new packs. Existing pack IDs stay the same.")}
         error={problemAt(save, 'storage.packs.idBase')}
       >
         {(wiring) => (

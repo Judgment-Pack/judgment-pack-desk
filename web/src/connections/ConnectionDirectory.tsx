@@ -128,6 +128,6 @@ export function ConnectionDirectory({ entries, unsupported = [], available, load
     </li>
    })}
   </ul>
-  {!ready ? <p role="status">{msg('Loading…')}</p> : !available ? <p>{msg('Local processing is unavailable. Check the details in Admin → Storage & data.')}</p> : isError ? <><Alert>{msg('Connections could not be loaded.')}</Alert><Button onClick={retry}>{msg('Retry')}</Button></> : !rows.length && <div role="status"><p>{msg('No connections found.')}</p>{(view.query || view.filter !== 'all' || view.view !== 'all') && <Button variant="quiet" onClick={() => { change(initial); search.current?.focus() }}>{msg('Clear filters')}</Button>}</div>}
+  {!ready ? <p role="status">{msg('Loading…')}</p> : !available ? <p>{msg('Local processing is unavailable. Check the details in Admin → Document processing.')}</p> : isError ? <><Alert>{msg('Connections could not be loaded.')}</Alert><Button onClick={retry}>{msg('Retry')}</Button></> : !rows.length && <div role="status"><p>{msg('No connections found.')}</p>{(view.query || view.filter !== 'all' || view.view !== 'all') && <Button variant="quiet" onClick={() => { change(initial); search.current?.focus() }}>{msg('Clear filters')}</Button>}</div>}
  </div>
 }

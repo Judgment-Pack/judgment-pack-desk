@@ -104,8 +104,8 @@ function renderCard(value: EffectiveConfig = read(), client = testQueryClient())
   }
 }
 
-const nominate = () => screen.getByRole('button', { name: 'Use this project as the default' })
-const clear = () => screen.getByRole('button', { name: 'Clear the default' })
+const nominate = () => screen.getByRole('button', { name: 'Open this project at startup' })
+const clear = () => screen.getByRole('button', { name: 'Clear startup project' })
 
 describe('the default project', () => {
   it('offers a nomination and no path field at all', () => {
@@ -149,16 +149,12 @@ describe('the default project', () => {
     renderCard(read({ file: '/somewhere/else/jpack-desk.json' }))
     expect(screen.getByText('/somewhere/else/jpack-desk.json')).toBeTruthy()
     expect(nominate()).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Clear the default' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Clear startup project' })).toBeNull()
   })
 
-  it('names the file it writes, what the value is for, and this launch', () => {
-    // The card's Location is the project's own file; this control writes the
-    // desk-level one, and the line says so from the chassis' answer.
+  it('explains that startup changes apply on the next launch without switching the open desk', () => {
     renderCard()
-    const rule = screen.getByText(/used on the next launch without a directory/)
-    expect(rule.textContent).toContain(DESK_PATH)
-    expect(rule.textContent).toContain('/this/launch')
+    expect(screen.getByText('Changes apply to the next launch without a project folder. The current desk stays open.')).toBeTruthy()
   })
 
   it('writes nothing at all where this page never learned the digest', () => {

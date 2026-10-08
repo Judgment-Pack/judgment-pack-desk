@@ -200,7 +200,7 @@ function readLinkTool(deps: LinkReadingDeps, context: DraftToolContext, held: Ma
         let loaded = held.get(heldKey(reference, config))
         if (loaded === undefined) {
           if (config.gateway === null) {
-            return text('the page is in this chat but no gateway is configured to verify it; configure one in Admin › Storage & data', undefined, true)
+            return text('the page is in this chat but no gateway is configured to verify it; configure one in Admin › Document processing', undefined, true)
           }
           try {
             loaded = await (deps.load ?? loadDefault)(reference, config.gateway, signal)

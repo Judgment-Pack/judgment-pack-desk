@@ -47,6 +47,7 @@ export function AssistantSection({
   return (
     <SourceCard
       id={id}
+      presentation="settings"
       title={title}
       under={under}
       level={level}

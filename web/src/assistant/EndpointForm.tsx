@@ -68,6 +68,7 @@ import {
 import { checkLine, identityOf, useEndpointCheck, type CheckAnswer } from './endpointCheck'
 import { KeyField } from './KeyField'
 import { keyBinding, type KeyBinding } from './keyBinding'
+import { Disclosure } from '../ui/Disclosure'
 import { SettingsSection } from '../ui/SettingsSection'
 import styles from './EndpointForm.module.css'
 import { useUnsavedChanges } from '../shell/DraftScope'
@@ -359,7 +360,7 @@ export function EndpointForm({
             : dirty ? msg("Save your model and assistant settings.")
             : msg("Assistant settings saved.")}
         </p>
-        <SettingsSection
+        <SettingsSection variant="plain"
           title={msg("Connection")}
           description={msg("Choose a provider and securely save its API key.")}
           footer={
@@ -431,12 +432,11 @@ export function EndpointForm({
             removeProblem={removeProblem}
           />
 
-          <details
+          <Disclosure title={msg("Advanced settings")}
             className={styles.advanced}
             open={advancedOpen || urlProblem !== undefined || problemFor('assistant.endpoint.url') !== undefined}
             onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
           >
-            <summary>{msg("Advanced settings")}</summary>
             <Field
               label={msg("Endpoint URL")}
               hint={msg("Leave the default unless you use a proxy or your own server.")}
@@ -453,10 +453,10 @@ export function EndpointForm({
             </Field>
 
             <Button variant="quiet" onClick={() => edit({ ...draft, url: PREFILLED_URL[draft.kind] })}>{msg("Reset to default")}</Button>
-          </details>
+          </Disclosure>
         </SettingsSection>
 
-        <SettingsSection title={msg("Models")}>
+        <SettingsSection variant="plain" title={msg("Models")}>
           <ModelChoice
             draft={draft}
             // **The rows of the last press, and nothing before one.** Until
@@ -470,7 +470,7 @@ export function EndpointForm({
           />
         </SettingsSection>
 
-        <SettingsSection title={msg("Behavior")} description={msg("Choose the tools and reasoning available to the assistant.")}>
+        <SettingsSection variant="plain" title={msg("Behavior")} description={msg("Choose the tools and reasoning available to the assistant.")}>
           <ToolChoice draft={draft} onChange={edit} problem={problemFor('assistant.endpoint.tools')} />
 
           <Field

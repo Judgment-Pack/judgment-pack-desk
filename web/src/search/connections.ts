@@ -53,7 +53,7 @@ export function useSearchPreference(){
   if(saved.content!==content)throw new Error('Search settings could not be verified.')
   return {value,digest:saved.sha256}
  },onMutate:()=>client.cancelQueries({queryKey:key}),onSuccess:data=>{client.setQueryData(key,data);void client.invalidateQueries({queryKey:['desk-files']});void client.invalidateQueries({queryKey:['desk-file',SEARCH_PREFERENCE_FILE]})}})
- return {...query,save:mutation.mutateAsync,saving:mutation.isPending,saveError:mutation.error}
+ return {...query,save:mutation.mutateAsync,saving:mutation.isPending,saved:mutation.isSuccess,saveError:mutation.error}
 }
 export function useSearchConnections(){
  const effective=useEffectiveConfig()

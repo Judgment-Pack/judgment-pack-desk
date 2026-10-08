@@ -4,6 +4,7 @@ import { msg, systemMessage, useLocale } from '../i18n'
 import { BrandMark } from '../ui/BrandMark'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
+import { Disclosure } from '../ui/Disclosure'
 import { TextArea } from '../ui/TextArea'
 import styles from './LogoField.module.css'
 
@@ -39,22 +40,21 @@ export function LogoField({ value, onChange, error, kind = 'logo', fallbackMark 
     next.onerror = () => { setReading(false); setUploadError(favicon ? msg('Could not read the favicon. Try another image.') : msg('Could not read the logo. Try another image.')) }
     next.readAsDataURL(file)
   }
-  return <>
+  return <div className={styles.field}>
     <Field label={favicon ? msg('Favicon') : msg('Logo')} hint={favicon ? msg('Uses the logo automatically. Upload an SVG, PNG or ICO image to override it.') : msg('Upload an SVG, PNG, JPEG or WebP image. Leave blank to use the JPS logo.')} error={uploadError || error}>
       {wiring => <div className={styles.controls}>
-        <BrandMark mark={value.trim() ? value : fallbackMark} className={favicon ? styles.faviconPreview : styles.preview} />
+        <span className={styles.previewFrame}><BrandMark mark={value.trim() ? value : fallbackMark} className={favicon ? styles.faviconPreview : styles.preview} /></span>
         <input {...wiring} ref={input} type="file" hidden accept={types.join(',')}
           onChange={event => { upload(event.target.files?.[0]); event.target.value = '' }} />
         <Button disabled={reading} onClick={() => input.current?.click()}>{reading ? msg('Loading…') : msg('Upload file')}</Button>
         <Button variant="quiet" disabled={reading || !value.trim()} onClick={() => { setUploadError(''); onChange('') }}>{favicon ? msg('Use logo') : msg('Reset to default')}</Button>
       </div>}
     </Field>
-    <details className={styles.advanced}>
-      <summary>{msg('Advanced settings')}</summary>
+    <Disclosure title={msg('Advanced settings')}>
       <Field label={favicon ? msg('Favicon image data') : msg('Mark')} hint={systemMessage(ORGANIZATION_MARK_SAYS)}>
         {wiring => <TextArea {...wiring} value={value} rows={3} spellCheck={false} disabled={reading}
           onChange={event => { setUploadError(''); onChange(event.target.value) }} />}
       </Field>
-    </details>
-  </>
+    </Disclosure>
+  </div>
 }

@@ -56,6 +56,7 @@ import {
 } from 'react'
 import type { ConfigNotice, ConfigProblem, ReadFailure } from '../config/deskConfig'
 import styles from './SourceCard.module.css'
+import { SettingsSection } from '../ui/SettingsSection'
 
 /**
  * What a card may say about the file behind it, and the whole of it.
@@ -135,10 +136,14 @@ export function SourceCard({
   fields,
   save,
   under,
-  level
+  level,
+  presentation,
+  description
 }: {
   id: string
   title: string
+  presentation?: 'settings'
+  description?: ReactNode
   /** The path, from the chassis. A card with nowhere to point says so. */
   location: ReactNode
   status: SourceStatus
@@ -173,6 +178,13 @@ export function SourceCard({
   // what the group said — the group's status is the file's read state — so a
   // card writing, refused, or holding a stale write always shows its own row.
   const says = write ?? status
+  if (presentation === 'settings') return <SettingsSection id={id} title={title} description={description} level={level ?? 2} variant={level === 3 ? 'plain' : 'standalone'}>
+    <div className={styles.settingsContent}>
+      <Head status={says.state === 'read' ? undefined : says}/>
+      {fields !== undefined && <div className={styles.settingsFields}>{fields}</div>}
+      {save !== undefined && <WriteStatusSink.Provider value={publish}>{save}</WriteStatusSink.Provider>}
+    </div>
+  </SettingsSection>
   return (
     <section className={grouped ? styles.member : styles.card} aria-labelledby={`${id}-title`}>
       <Title
@@ -321,7 +333,7 @@ export function showsContent(status: SourceStatus): boolean {
  */
 export function StatusLine({ status }: { status: SourceStatus }) {
   useLocale()
-  if (status.state === 'read') return <>{msg("read")}</>
+  if (status.state === 'read') return <>{msg("Configuration loaded")}</>
   if (status.state === 'absent') return <>{msg("not present — defaults in use")}</>
   if (status.state === 'pending') return <>{msg("not read yet")}</>
   if (status.state === 'said') return <>{systemMessage(status.says)}</>

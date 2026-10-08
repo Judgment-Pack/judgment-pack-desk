@@ -31,6 +31,8 @@ import { useState, type ReactNode } from 'react'
 import { AlertPanel } from '../ui/AlertPanel'
 import { Alert } from '../ui/Alert'
 import { Button } from '../ui/Button'
+import { FieldGroup } from '../ui/Field'
+import styles from './ProjectFileForm.module.css'
 import { useUnsavedChanges } from '../shell/DraftScope'
 import { usePublishedWriteStatus, type SourceStatus } from './SourceCard'
 import {
@@ -186,7 +188,7 @@ export function ProjectFileForm<D>({
   // showed nothing on the card at all. See `usePublishedWriteStatus`.
   usePublishedWriteStatus(writeStatus(save))
   return (
-    <form
+    <form className={styles.form}
       // **The decoder is the one thing that refuses a value here.** A number
       // field carries the decoder's own bounds as `min` and `max`, which is
       // what makes the spinner stop where the file does — and those attributes
@@ -205,8 +207,8 @@ export function ProjectFileForm<D>({
       }}
     >
       <fieldset disabled={save.pending || !save.ready}>
-        {children}
-        <p className="actions">
+        <FieldGroup>{children}</FieldGroup>
+        <p className={styles.actions}>
           {save.pending && <span className="quiet">{msg("writing…")}</span>}
           {save.reloading && <span className="quiet">{msg("reading…")}</span>}
           {save.said !== undefined && !save.pending && (

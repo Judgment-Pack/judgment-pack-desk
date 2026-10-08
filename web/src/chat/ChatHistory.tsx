@@ -2,7 +2,7 @@ import { Message } from '../i18n/Message'
 import { msg, useLocale, systemMessage, formatDate } from '../i18n'
 import { Fragment, useState, type RefObject, type ReactNode } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { DropdownMenu } from 'radix-ui'
+import { DropdownMenu, VisuallyHidden } from 'radix-ui'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { OverflowTooltip, Tooltip } from '../ui/Tooltip'
@@ -16,8 +16,8 @@ export { chatHref } from './navigation'
 import styles from './ChatWorkspace.module.css'
 
 /** The same compact controls are portalled into main or the Assistant title bar. */
-export function ChatToolbar({ chat, history, onHistory, onBack, onNew, historyRef, sources }: {
-  sources?: ReactNode
+export function ChatToolbar({ chat, history, onHistory, onBack, onNew, historyRef, sources, loading = false }: {
+  sources?: ReactNode; loading?: boolean
   chat: Chat; history: boolean; onHistory: () => void; onBack: () => void; onNew: () => void
   historyRef: RefObject<HTMLButtonElement | null>
 }) {
@@ -27,12 +27,13 @@ export function ChatToolbar({ chat, history, onHistory, onBack, onNew, historyRe
   const empty = !chat.composer.trim() && !chat.attachments?.length && !state?.turns.length
   return <div className={styles.chatToolbar} role="group" aria-label={msg("Chat actions")}>
     {sources}
-    <Tooltip content={msg("New chat")}><button type="button" className="desk-icon-button" aria-label={msg("New chat")} disabled={!store?.canCreate || empty} onClick={onNew}><IconPlus /></button></Tooltip>
+    <Tooltip content={msg("New chat")}><button type="button" className="desk-icon-button" aria-label={msg("New chat")} disabled={loading || !store?.canCreate || empty} onClick={onNew}><IconPlus /></button></Tooltip>
     <Popover title={msg("Chat history")} variant="list" triggerTooltip={msg("Chat history")} open={history} onOpenChange={open => open ? onHistory() : onBack()}
       onEscapeKeyDown={event => event.stopPropagation()}
-      trigger={<button ref={historyRef} type="button" className="desk-icon-button" aria-label={msg("Chat history")} aria-pressed={history}><IconHistory /></button>}>
+      trigger={<button ref={historyRef} type="button" className="desk-icon-button" aria-label={msg("Chat history")} aria-pressed={history} aria-busy={loading || undefined} disabled={loading}>{loading ? <span className={styles.historySpinner} aria-hidden="true" /> : <IconHistory />}</button>}>
       <ChatHistoryList packId={chat.pack?.id ?? chat.draftId} activeId={chat.id} onNavigate={onBack} compact />
     </Popover>
+    {loading && <VisuallyHidden.Root role="status">{msg("Loading chat history…")}</VisuallyHidden.Root>}
   </div>
 }
 export function historyGroup(chat: Chat, now = new Date()): string {

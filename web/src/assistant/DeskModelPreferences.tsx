@@ -61,7 +61,7 @@ export function DeskModelPreferences({unavailable,onDirtyChange}:{unavailable:bo
     onValueChange={value=>{if(!draft.inherit){const {effort:_,...rest}=draft;edit({...rest,...(value==='__default__'?{}:{effort:value as typeof draft.effort})})}}} options={[{value:'__default__',label:msg('Model default')},...(chosen?.efforts??[]).map(value=>({value,label:value}))]}/>}</Field>}
   {!codex&&<Field label={msg('Reasoning effort')}>{wiring=><Select {...wiring} value={current.thinking??machine.thinking} disabled={locked||draft.inherit} onValueChange={value=>{if(!draft.inherit)edit({...draft,thinking:value as typeof machine.thinking})}} options={[{value:'off',label:msg('off')},{value:'on',label:msg('standard')},{value:'ultra',label:msg('deep')}]}/>}</Field>}
   </>}
-  <ButtonLink variant="quiet" to="/admin#connections">{msg('Manage shared AI settings')}</ButtonLink>
+  <ButtonLink variant="quiet" to="/admin#connections-ai">{msg('Manage shared AI settings')}</ButtonLink>
   {catalog.error&&codex&&<p role="alert">{msg(catalog.error.message)}</p>}
   {read?.problem&&<p role="alert">{msg(read.problem)}</p>}
   {write.error&&<p role="alert">{write.error.message}</p>}

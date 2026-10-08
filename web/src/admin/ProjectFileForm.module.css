@@ -1,0 +1,3 @@
+.form { min-width: 0; }
+.actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--density-gap); margin: var(--density-section) 0 0; }
+.actions > span { font-size: var(--text-sm); }

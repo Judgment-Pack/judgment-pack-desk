@@ -1,3 +1,4 @@
+import { OverflowTooltip } from '../ui/Tooltip'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useParams } from 'react-router-dom'
 import { msg, systemMessage, useLocale } from '../i18n'
@@ -103,7 +104,7 @@ export function StorageFiles({provider}: {provider:string}) {
     <div className={styles.fileScroll}>
      {!ready&&<p className="note">{catalog.loading?msg('Loading…'):msg('Connect a supported storage integration in Admin → Connections.')}</p>}
      {reconnect && <div className="note"><p>{msg('Reconnect Google Drive to continue.')}</p><Button disabled={busy} onClick={()=>void connectAgain()}>{msg('Reconnect')}</Button></div>}
-     {ready&&page&&<><ul className={styles.fileList}>{page.items.map(file=><li key={file.id}><button className={styles.fileEntry} disabled={busy} aria-current={selected?.id===file.id?true:undefined} onClick={()=>void choose(file)}>{file.kind==='folder'?<IconFolder/>:<IconDetails/>}<span className={styles.fileText}><span title={file.name}>{file.name}</span><small title={file.id}>{submitted.query?file.id:file.kind==='file'?formatStorageBytes(file.sizeBytes):msg('Folder')}</small></span></button></li>)}</ul>
+     {ready&&page&&<><ul className={styles.fileList}>{page.items.map(file=><li key={file.id}><OverflowTooltip selector="[data-storage-label]"><button className={styles.fileEntry} disabled={busy} aria-current={selected?.id===file.id?true:undefined} onClick={()=>void choose(file)}>{file.kind==='folder'?<IconFolder/>:<IconDetails/>}<span className={styles.fileText}><span data-storage-label>{file.name}</span><small data-storage-label>{submitted.query?file.id:file.kind==='file'?formatStorageBytes(file.sizeBytes):msg('Folder')}</small></span></button></OverflowTooltip></li>)}</ul>
       {page.items.length===0&&<p className="note">{msg('No files on this page.')}</p>}
       {page.truncated&&<p className="note note-warn">{msg('Results are incomplete. Narrow the folder or search.')}</p>}
       {page.nextPageToken&&<Button variant="quiet" disabled={busy} onClick={()=>void run(()=>list(submitted,page.nextPageToken))}>{msg('Next page')}</Button>}
@@ -123,7 +124,7 @@ export function StorageFiles({provider}: {provider:string}) {
      {plan&&!review&&<Button onClick={()=>setReview(true)}>{msg('Review change')}</Button>}
      {creating&&<p className="meta">{title} · {createFolder || msg('Root folder')}</p>}
      {creating&&<label>{msg('File name')}<Input value={name} disabled={blocked} onChange={e=>setName(e.target.value)}/></label>}
-     {selected&&<div className={styles.fileMeta}><code title={selected.id}>{selected.id}</code><span>{formatStorageBytes(selected.sizeBytes)}</span></div>}
+     {selected&&<div className={styles.fileMeta}><code>{selected.id}</code><span>{formatStorageBytes(selected.sizeBytes)}</span></div>}
      {buffer!==undefined&&<><label className={styles.editorLabel} htmlFor="storage-buffer">{msg('File contents')}</label><textarea id="storage-buffer" className={`code-editor ${styles.buffer}`} spellCheck={false} value={buffer} disabled={blocked||!creating&&!selected?.editable} onChange={e=>setBuffer(e.target.value)}/></>}
      {!editor&&<div className={styles.empty}><IconDetails/><p>{msg('Choose a file to edit.')}</p></div>}
      {editor&&<div className={styles.editorActions}>

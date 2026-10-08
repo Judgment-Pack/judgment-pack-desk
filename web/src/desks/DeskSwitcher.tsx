@@ -51,7 +51,7 @@ export function DeskSwitcher() {
   const directory = useQuery({queryKey:['desks'],queryFn:()=>desksAPI<Directory>()})
   const fallback = listing.data?.root.split(/[/\\]/).filter(Boolean).at(-1) ?? msg('Desk')
   const label = directory.data?.current.name ?? fallback
-  useDeskTitle(`${label} · ${config.organization.name ?? 'Unveil'}`)
+  useDeskTitle(label)
   const registeredDirty = useHasUnsavedChanges(), authorDirty = useAuthorDirty()
   const dirty = registeredDirty || authorDirty
   const opener = useRef<HTMLButtonElement>(null)

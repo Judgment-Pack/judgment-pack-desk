@@ -47,8 +47,9 @@ import { useChats } from './ChatProvider'
 import { retainSentDocuments, type Chat } from './store'
 import styles from './ChatWorkspace.module.css'
 
-export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = false, context, proposalActions, locked = false, placement = 'main', headerTarget }: {
+export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = false, context, proposalActions, locked = false, placement = 'main', headerTarget, historyLoading = false }: {
   placement?: 'main' | 'pane'; headerTarget?: HTMLElement | null
+  historyLoading?: boolean
   chat: Chat; landing?: boolean; onOpenDraft?: () => void; draftVisible?: boolean
   context?: { text: string; beforeSend?: () => void }
   proposalActions?: ReactNode; locked?: boolean
@@ -108,6 +109,14 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
   const savedCandidate = Boolean(chat.pack && chat.createdCandidateDigest && chat.createdCandidateDigest === state.candidates.at(-1)?.digest && (state.status === 'ready' || state.restored))
   const needsConfig = !assistantReady(slot) || !selected?.models.length
   const blocked = binding?.blocked ?? msg('Loading chat…')
+  // All readiness belongs to the input it blocks. Run and history notices
+  // retain their separate placement above the composer.
+  const setupMessage = slot.unusable ? systemMessage(slot.unusable)
+    : slot.engine !== 'codex' && slot.keyStatus === 'error' ? msg('The saved API key could not be checked.')
+    : slot.engine !== 'codex' && slot.keyStatus === 'pending' ? msg('Checking your Assistant configuration…')
+    : msg('Configure Assistant to begin. Your message will stay here.')
+  const composerReadiness = !historyLoading && !running ? needsConfig ? setupMessage : systemMessage(blocked) : ''
+  const readinessAction = composerReadiness && needsConfig ? slot.recovery ?? (assistantReady(slot) ? 'configure' : undefined) : undefined
   const attachments = chat.attachments ?? []
   const hasMessage = Boolean(chat.composer.trim() || attachments.length)
   const send = async () => {
@@ -187,15 +196,15 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
   const unassignedSearches=(chat.searches??[]).filter(s=>!responses.some(r=>r.searches?.some(ref=>ref.id===s.id)))
   const conversationSources = unassignedSearches.length + unassigned.documents.length + unassigned.websites.length + unassignedResearch.length > 0
     ? <Button variant="quiet" onClick={event => read(<section><h3>{msg('Conversation sources')}</h3><SourceList chatId={chat.id} documents={unassigned.documents} websites={unassigned.websites} searches={unassignedSearches} sourceIds={unassignedResearch} binding={binding} onRead={read}/></section>, event.currentTarget)}>{msg('Sources')}</Button> : null
-  const toolbar = <ChatToolbar sources={<>{conversationSources}{draftAvailable && orphanCandidates.length > 0 && (draftVisible ? <span className={styles.caption}>{msg('Open')}</span> : onOpenDraft && <Button variant="quiet" onClick={onOpenDraft}>{msg('Open draft')}</Button>)}</>} chat={chat} history={history} historyRef={historyButton} onHistory={() => setHistory(true)} onBack={backToChat}
+  const toolbar = <ChatToolbar loading={historyLoading} sources={<>{conversationSources}{draftAvailable && orphanCandidates.length > 0 && (draftVisible ? <span className={styles.caption}>{msg('Open')}</span> : onOpenDraft && <Button variant="quiet" onClick={onOpenDraft}>{msg('Open draft')}</Button>)}</>} chat={chat} history={history} historyRef={historyButton} onHistory={() => setHistory(true)} onBack={backToChat}
     onNew={() => { if (!store?.canCreate) return; const next = store.startChat(chat.pack, chat.mode, true, chat.draftId); setHistory(false); openNewChat(navigate, next, location) }} />
-  return <section className={styles.chat} data-chat-id={chat.id} data-landing={landing && empty || undefined} aria-label={msg("Assistant chat")}>
+  return <section className={styles.chat} data-chat-id={chat.id} data-history-loading={historyLoading || undefined} data-landing={landing && empty || undefined} aria-label={msg("Assistant chat")}>
     {toolbarTarget ? createPortal(toolbar, toolbarTarget) : placement === 'main' && headerTarget === undefined ? <header className={styles.chatHeader}>{toolbar}</header> : null}
     <div className={styles.conversation}>
     <div className={styles.transcript}>
     <div className={styles.thread} ref={thread} onScroll={() => { const node = thread.current; if (node && node.getClientRects().length) { following.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80; setAwayFromLatest(!following.current) } }}>
       <div className={styles.threadContent} ref={threadContent}>
-      {empty && <div className={styles.welcome}><h1>{chat.pack ? msg("What would you like to change?") : msg("What would you like to work on?")}</h1><p>{chat.pack ? msg("Ask about {{value0}}, test an idea, or propose a change.", { value0: chat.pack.id }) : msg("Ask a question, explore an idea, or create and improve a pack.")}</p></div>}
+      {empty && (!historyLoading || landing) && <div className={styles.welcome}><h1>{chat.pack ? msg("What would you like to change?") : msg("What would you like to work on?")}</h1><p>{chat.pack ? msg("Ask about {{value0}}, test an idea, or propose a change.", { value0: chat.pack.id }) : msg("Ask a question, explore an idea, or create and improve a pack.")}</p></div>}
       {shownTurns.map((turn,index) => <Fragment key={turn.id ?? `${turn.at}-${index}`}>{days[index] && <div className={styles.day}>{days[index]}</div>}<article className={styles.message} data-role={turn.role} data-kind={turn.kind} data-message-id={turn.id} aria-label={turn === liveTurn ? msg("Response in progress") : undefined}>
         {turn.kind !== 'unknowns' && <MessageTime pending={turn === liveTurn} turn={turn} formatted={times[index]} onOpen={opener => read(<MessageDetails turn={turn} text={turn.kind === 'note' ? systemMessage(turn.text) : turn.text} input={turn.input} />, opener)} />}
         {turn.kind === 'unknowns' ? <OpenQuestions text={turn.text} documents={chat.documents} onRead={read}><MessageTime turn={turn} formatted={times[index]} onOpen={opener => read(<MessageDetails turn={turn} text={turn.text}/>, opener)}/></OpenQuestions>
@@ -217,8 +226,6 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
     <div className={styles.composerArea} onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault() }} onDrop={event => { if (event.dataTransfer.files.length) { event.preventDefault(); void upload.attach([...event.dataTransfer.files]) } }}>
       {error && <div className={styles.notice} role="alert"><p>{systemMessage(error)}</p>{store?.canCreate ? <Button variant="quiet" onClick={() => store?.retrySave()}>{msg("Retry saving")}</Button> : <Button variant="quiet" onClick={() => navigate("/chats")}>{msg("Manage chat history")}</Button>}</div>}
       {otherRun && <div className={styles.notice} role="status"><Message text={"Another chat is working. You can keep writing here.<0/>"} slots={[<Button variant="quiet" onClick={() => { const other = store?.getSnapshot().chats.find(item => item.id === otherRun); if (other) navigate(chatHref(other, location)) }}>{msg("Open working chat")}</Button>]} /></div>}
-      {blocked && !needsConfig && <p className={styles.caption} role="status">{systemMessage(blocked)}</p>}
-      {needsConfig && <div className={styles.setup}><span>{slot.engine === 'codex' ? msg(slot.unusable ?? 'Configure Assistant to begin. Your message will stay here.') : slot.keyStatus === 'error' ? msg("The saved API key could not be checked.") : slot.keyStatus === 'pending' ? msg("Checking your Assistant configuration…") : msg("Configure Assistant to begin. Your message will stay here.")}</span><Button onClick={event => { configureButton.current = event.currentTarget; setConfigure(true) }}>{msg("Configure Assistant")}</Button></div>}
       {context && <Button variant="inline" onClick={event => read(<PackContextDetails text={context.text} />, event.currentTarget)}><Message text={"Context: <0/>"} slots={[chat.pack?.id ?? msg("Current draft")]} /></Button>}
       <div className={styles.composerStatus}>
         {!empty && !savedCandidate && <TaskStatus state={state}/>}
@@ -233,9 +240,16 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
         <AttachmentList files={attachments} disabled={locked || running || upload.reading} onChange={file => store?.update(chat.id, { attachments: attachments.map(item => item.id === file.id ? file : item) })} onRemove={id => store?.update(chat.id, { attachments: attachments.filter(item => item.id !== id) })} />
         {upload.reading && <div className={styles.attachmentProgress}><span role="status">{systemMessage(upload.progress) || msg("Reading files…")}</span><Button variant="quiet" onClick={upload.cancel}>{msg("Cancel")}</Button></div>}
         <VisuallyHidden.Root asChild><label htmlFor={`${id}-message`}>{msg("Message the assistant")}</label></VisuallyHidden.Root>
-        <TextArea ref={messageInput} id={`${id}-message`} rows={empty ? 3 : 2} value={chat.composer} placeholder={chat.pack ? msg("Ask about this pack…") : msg("Ask a question or describe a task…")} disabled={locked || upload.reading}
+        <TextArea ref={messageInput} id={`${id}-message`} rows={empty ? 3 : 2} value={chat.composer} placeholder={(!readinessAction && composerReadiness) || (chat.pack ? msg("Ask about this pack…") : msg("Ask a question or describe a task…"))} aria-describedby={composerReadiness ? `${id}-readiness` : undefined} disabled={locked || upload.reading}
           className={styles.messageInput} onChange={event => store?.update(chat.id, { composer: event.target.value })}
           onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (!otherRun && !running && (!blocked || needsConfig)) send() } }} />
+        {composerReadiness && (chat.composer || readinessAction
+          ? <div className={styles.composerReadiness}>
+            <span id={`${id}-readiness`} role="status">{composerReadiness}</span>
+            {readinessAction === 'retry' && <Button variant="inline" disabled={slot.retrying} onClick={slot.retryKey}>{msg('Check again')}</Button>}
+            {readinessAction === 'configure' && <Button variant="inline" onClick={event => { configureButton.current = event.currentTarget; setConfigure(true) }}>{msg('Assistant settings')}</Button>}
+          </div>
+          : <VisuallyHidden.Root id={`${id}-readiness`} role="status">{composerReadiness}</VisuallyHidden.Root>)}
         <div className={styles.composerTools}>
           <input ref={fileInput} hidden type="file" tabIndex={-1} accept={TEXT_ATTACHMENT_ACCEPT} multiple onChange={event => { void upload.attach([...(event.target.files ?? [])]); event.target.value = '' }} />
           <AttachmentMenu triggerRef={attachmentButton} disabled={running || locked || upload.reading || connectionBusy} onUpload={() => fileInput.current?.click()} onLink={webSourceOffered(research, { local: localDrive, catalogWeb: connectionCatalog.web }) ? () => requestAnimationFrame(() => connections.open({ source: 'web', chatId: chat.id, opener: attachmentButton.current })) : undefined}
@@ -249,7 +263,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
         </div>
       </div>
       {upload.error && <p className={styles.caption} role="alert">{systemMessage(upload.error)}</p>}
-      <p className={styles.footnote}>{running ? msg("Working in this window. You can switch chats; keep this window open.") : unsubmitted ? msg("Send a message to start a chat.") : null}</p>
+      <p className={styles.footnote}>{running ? msg("Working in this window. You can switch chats; keep this window open.") : unsubmitted || historyLoading ? msg("Send a message to start a chat.") : null}</p>
     </div>
     </div>
     <ConfigureAssistant open={configure} onOpenChange={setConfigure} openerRef={configureButton} />

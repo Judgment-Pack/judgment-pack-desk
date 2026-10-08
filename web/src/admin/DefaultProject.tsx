@@ -1,4 +1,3 @@
-import { DESK_LEVEL_PATH_UNKNOWN } from '../config/queries'
 import { sourceMessage } from '../i18n/source'
 import { Message } from '../i18n/Message'
 import { msg, useLocale, systemMessage } from '../i18n'
@@ -23,21 +22,8 @@ import { msg, useLocale, systemMessage } from '../i18n'
  * a default**, which takes authority away. A different default is an
  * operator's to write, in the desk-level file, with a shell.
  *
- * # What the line under it says
- *
- * Three facts, because the card's Location, Status and Content are about the
- * *project* file while this control writes the *desk-level* one. The line
- * names the write target — from the chassis' own answer, never composed — what
- * the value is for, and which directory this launch is actually on, because
- * the root is pinned per process and a save moves the next launch and not this
- * one.
- *
- * # Why the button sits on the row and is not primary
- *
- * It applies immediately to this one value, so it is a secondary row action.
- * The label and value align with the rows above; a separate action column
- * places the button at the right edge. The explanation names the desk-level
- * file it writes and stays below the value. Narrow containers stack the row.
+ * The row explains that changes affect the next startup, not the current
+ * desk. Its immediate action aligns with the value and stacks on narrow views.
  */
 import { Digest } from '../ui/Digest'
 import { useQueryClient } from '@tanstack/react-query'
@@ -95,27 +81,17 @@ export function useDefaultProject(): { field: ReactNode; save: ReactNode } {
   return {
     field: (
       <CardField
-        label={msg("Default project")}
+        label={msg("Startup project")}
         action={isThisProject ? (
-          <Button variant="secondary" disabled={blocked} onClick={() => commit(null, CLEARED)}>{msg("Clear the default")}</Button>
+          <Button variant="secondary" disabled={blocked} onClick={() => commit(null, CLEARED)}>{msg("Clear startup project")}</Button>
         ) : (
           <Button
             variant="secondary"
             disabled={blocked}
             onClick={() => commit(chassis?.projectFile ?? null, SET)}
-          >{msg("Use this project as the default")}</Button>
+          >{msg("Open this project at startup")}</Button>
         )}
-        rule={
-          <><Message text={"Written to<0/><1/>, used on the next launch without a directory. This launch:<2/><3/>"} slots={[' ', desk === undefined ? (
-              <span className="quiet">{msg("a file this desk has not named")}</span>
-            ) : (
-              <code>{desk.path === DESK_LEVEL_PATH_UNKNOWN ? msg("the chassis did not say where") : desk.path}</code>
-            ), ' ', chassis === undefined ? (
-              <span className="quiet">{msg("the desk has not said")}</span>
-            ) : (
-              <code>{chassis.projectDir}</code>
-            )]} /></>
-        }
+        rule={msg('Changes apply to the next launch without a project folder. The current desk stays open.')}
       >
         {configured === null ? (
           msg("None")
@@ -124,7 +100,7 @@ export function useDefaultProject(): { field: ReactNode; save: ReactNode } {
         ) : (
           <code>{configured}</code>
         )}{' '}
-        {write.isPending && <span className="quiet">{msg("writing…")}</span>}
+        {write.isPending && <span className="quiet">{msg("Saving…")}</span>}
         {said !== undefined && !write.isPending && <span className="quiet">{msg(said)}</span>}
       </CardField>
     ),

@@ -121,8 +121,8 @@ it('refuses a web client without exposing its contents or contacting configure',
 it('does not offer unavailable setup or a foreign return destination', async () => {
   setup(false, '//external.invalid')
   expect(screen.queryByRole('button', { name: /Gmail registration$/ })).toBeNull()
-  expect(screen.getByText('Local processing is unavailable. Check the details in Admin → Storage & data.')).toBeTruthy()
-  expect(screen.getByRole('link', { name: 'Manage gateway' }).getAttribute('href')).toBe('/admin#storage')
+  expect(screen.getByText('Local processing is unavailable. Check the details in Admin → Document processing.')).toBeTruthy()
+  expect(screen.getByRole('link', { name: 'Manage gateway' }).getAttribute('href')).toBe('/admin#gateway')
   expect(screen.queryByRole('link', { name: 'Return to chat' })).toBeNull()
   expect(fetch).not.toHaveBeenCalled()
 })

@@ -37,7 +37,7 @@ export function SourceInputFields({ doc, provider, fixed, disabled, onChange, on
       let chosen: SourceInput['snapshot']
       if (provider === 'local-file') { if (!file) return; chosen = await localSnapshot(file) }
       else {
-        if (!config.gateway || !config.documents?.enabled) throw Error(msg('Enable document processing in Admin → Storage & data before attaching Drive files.'))
+        if (!config.gateway || !config.documents?.enabled) throw Error(msg('Enable document processing in Admin → Document processing before attaching Drive files.'))
         const selected = selections ?? []
         active.signal.throwIfAborted()
         if (selected.length !== 1) throw Error(msg('Choose one JSON file up to 200 KB.'))

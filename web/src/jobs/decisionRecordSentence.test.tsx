@@ -1,5 +1,5 @@
 /**
- * Admin → Project → Decision record says, in every state, that Jobs runs are
+ * Admin → Decision safeguards → Decision record says, in every state, that Jobs runs are
  * not in the trail it reads (#213): a reader of that panel could otherwise
  * take it for the jobs' record. Jobs keeps its runs in the runner.
  */
