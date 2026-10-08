@@ -139,3 +139,19 @@ it('offers an existing gateway when local components are unavailable without fal
   expect((screen.getByRole('button', { name: 'Save changes' }) as HTMLButtonElement).disabled).toBe(true)
   expect(errors).not.toHaveBeenCalled()
 })
+
+// Scanned pages are the local gateway's to read: its OCR settings are offered
+// while it runs, and never asked for while another gateway is in use.
+it('offers OCR on a ready local gateway only, and says which plan it runs', async () => {
+  mocks.fetch.mockImplementation(async (url: string) => url === '/api/document-processing/status'
+    ? Response.json({ result: { version: 1, mode: 'off', connection: '', connections: [], sha256: 'sha256:' + 'a'.repeat(64), state: 'ready' }, localGateway: { status: 'ready', documentProcessing: true } })
+    : response())
+  setup({ gateway: null }, { status: 'ready', documentProcessing: true, gateway: { ...gateway, signer: { ...gateway.signer, algorithm: 'ed25519' } } })
+  expect(screen.getByText('Extracts PDF text on this computer, and reads scanned pages with OCR.')).toBeTruthy()
+  await screen.findByText('The running local gateway reads scanned pages with OCR.')
+  expect(screen.getByRole('button', { name: 'Add processor' })).toBeTruthy()
+  cleanup(); mocks.fetch.mockClear()
+  setup()
+  expect(screen.queryByRole('button', { name: 'Add processor' })).toBeNull()
+  expect(mocks.fetch.mock.calls.some(call => String(call[0]).startsWith('/api/document-processing/'))).toBe(false)
+})

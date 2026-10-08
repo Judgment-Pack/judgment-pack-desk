@@ -42,13 +42,30 @@ type LocalGatewayStatus struct {
 	Status  string           `json:"status"`
 	Gateway *localGatewayPin `json:"gateway,omitempty"`
 	Problem string           `json:"problem,omitempty"`
+	// DocumentProcessing says, while the local gateway runs, whether the plan
+	// it was started with gave the document sources the document-processing
+	// envelope: whether its reads apply the OCR settings. A change of the
+	// settings reaches a gateway only when it is started again.
+	DocumentProcessing *bool `json:"documentProcessing,omitempty"`
 }
 type localGatewayPin struct {
 	// Captured at launch; later bundle replacements cannot relabel this process.
-	build     *gatewayBuild
-	URL       string      `json:"url"`
-	Authority string      `json:"authority"`
-	Signer    localSigner `json:"signer"`
+	build *gatewayBuild
+	// Captured at launch too: whether the plan this gateway was started with
+	// gave the document sources the processing envelope.
+	documentProcessing bool
+	URL                string      `json:"url"`
+	Authority          string      `json:"authority"`
+	Signer             localSigner `json:"signer"`
+}
+
+// localWorkerAnnouncement is the line the worker answers its parent with once
+// its gateway is ready: the pin, and whether the plan it read gave the
+// document sources the processing envelope. The pin alone is what the page
+// is given as the gateway.
+type localWorkerAnnouncement struct {
+	localGatewayPin
+	DocumentProcessing bool `json:"documentProcessing"`
 }
 type localSigner struct {
 	Algorithm string `json:"algorithm"`
@@ -205,6 +222,15 @@ func localIdentity(store *assistantStore) (string, error) {
 	return public, nil
 }
 
+// restart stops the running local gateway, if one runs, so that the next use
+// starts one that asks for its plan again. The reads it is carrying are cut.
+func (g *localGateway) restart() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.stop()
+	g.retryAfter = time.Time{}
+}
+
 func (g *localGateway) ensure(store *assistantStore) (*localGatewayPin, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -288,8 +314,10 @@ func (g *localGateway) start(store *assistantStore) (*localGatewayPin, error) {
 	}
 	ready := make(chan result, 1)
 	go func() {
-		var pin localGatewayPin
-		err := json.NewDecoder(io.LimitReader(output, 4096)).Decode(&pin)
+		var announced localWorkerAnnouncement
+		err := json.NewDecoder(io.LimitReader(output, 4096)).Decode(&announced)
+		pin := announced.localGatewayPin
+		pin.documentProcessing = announced.DocumentProcessing
 		ready <- result{&pin, err}
 	}()
 	select {
@@ -347,7 +375,8 @@ func (s *Server) localGatewayStatus(data []byte) *LocalGatewayStatus {
 	if err != nil {
 		return &LocalGatewayStatus{Status: "unavailable", Problem: err.Error()}
 	}
-	return &LocalGatewayStatus{Status: "ready", Gateway: pin, Build: pin.build}
+	processing := pin.documentProcessing
+	return &LocalGatewayStatus{Status: "ready", Gateway: pin, Build: pin.build, DocumentProcessing: &processing}
 }
 func (s *Server) localResearch(documents *documentSourceConfig) (researchGateway, error) {
 	if s.localGateway == nil {
@@ -357,7 +386,7 @@ func (s *Server) localResearch(documents *documentSourceConfig) (researchGateway
 	if err != nil {
 		return researchGateway{}, withCode(CodeResearchUnconfigured, err)
 	}
-	gateway := researchGateway{managedLocal: true, url: pin.URL, authority: pin.Authority, signerPublic: pin.Signer.Public, maxRequestBytes: maxResearchBody}
+	gateway := researchGateway{managedLocal: true, documentProcessing: pin.documentProcessing, url: pin.URL, authority: pin.Authority, signerPublic: pin.Signer.Public, maxRequestBytes: maxResearchBody}
 	if documents == nil {
 		gateway.maxRequestBytes = 32 << 20
 		gateway.maxFileBytes = 16 << 20

@@ -21,7 +21,7 @@ func TestSearchRelayBudgetOnlyExtendsManagedSearch(t *testing.T) {
 		{true, "acquire", `{"source":"gmail"}`, false},
 		{true, "acquire", `broken`, false},
 	} {
-		total, idle := researchRequestTiming(tt.local, tt.route, []byte(tt.body))
+		total, idle := researchRequestTiming(tt.local, false, tt.route, []byte(tt.body))
 		if tt.extended {
 			if total != 140*time.Second || idle != 135*time.Second {
 				t.Fatal("search envelope cuts off configured timeout")
@@ -109,5 +109,71 @@ func TestTheRelaysDeadlineCountsTheBodysRead(t *testing.T) {
 	})
 	if resp.StatusCode != http.StatusBadGateway {
 		t.Fatalf("an answer past the bound counted from arrival was carried: %d %s after %v", resp.StatusCode, body, time.Since(started))
+	}
+}
+
+// The relay's envelope for a document read follows the plan the running local
+// gateway was started with: the plan's 150 s and the margin only while that
+// plan gives the document sources the processing envelope, and only for an
+// acquire from one of them; search keeps its own branch.
+func TestTheRelayGivesADocumentReadTheProcessingEnvelopeOnlyUnderThatPlan(t *testing.T) {
+	for _, tt := range []struct {
+		local, processing bool
+		route, body       string
+		total, idle       time.Duration
+	}{
+		{true, true, "acquire", `{"source":"documents"}`, 160 * time.Second, 155 * time.Second},
+		{true, true, "acquire", `{"source":"drive"}`, 160 * time.Second, 155 * time.Second},
+		{true, true, "acquire", `{"source":"web"}`, 160 * time.Second, 155 * time.Second},
+		{true, true, "acquire", `{"source":"aws-s3"}`, 160 * time.Second, 155 * time.Second},
+		{true, false, "acquire", `{"source":"documents"}`, researchDeadline, researchIdle},
+		{false, true, "acquire", `{"source":"drive"}`, researchDeadline, researchIdle},
+		{true, true, "seal", `{"source":"documents"}`, researchDeadline, researchIdle},
+		{true, true, "acquire", `{"source":"gmail"}`, researchDeadline, researchIdle},
+		{true, true, "acquire", `{"source":"notion"}`, researchDeadline, researchIdle},
+		{true, true, "acquire", `broken`, researchDeadline, researchIdle},
+		{true, true, "acquire", `{"source":"web-search"}`, researchSearchDeadline, researchSearchIdle},
+	} {
+		total, idle := researchRequestTiming(tt.local, tt.processing, tt.route, []byte(tt.body))
+		if total != tt.total || idle != tt.idle {
+			t.Fatalf("%+v: given %v and %v", tt, total, idle)
+		}
+	}
+}
+
+// Through the handler: a managed local gateway started with the processing
+// plan carries a document read past the ordinary bounds; one started without
+// it does not.
+func TestTheRelayCarriesAnOCRReadOnlyWhileTheGatewayRunsTheProcessingPlan(t *testing.T) {
+	shortResearchBounds(t, 400*time.Millisecond, 200*time.Millisecond, 10*time.Second, 8*time.Second)
+	saved := [2]time.Duration{researchProcessingDeadline, researchProcessingIdle}
+	researchProcessingDeadline, researchProcessingIdle = 10*time.Second, 8*time.Second
+	t.Cleanup(func() { researchProcessingDeadline, researchProcessingIdle = saved[0], saved[1] })
+	u := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(700 * time.Millisecond):
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	})
+	for _, processing := range []bool{true, false} {
+		s, ts, _ := assistantServer(t)
+		done := make(chan struct{})
+		t.Cleanup(func() { close(done) })
+		s.localGateway = &localGateway{bundle: t.TempDir(), done: done, pin: &localGatewayPin{documentProcessing: processing,
+			URL: u.server.URL, Authority: "gateway:test", Signer: localSigner{Algorithm: "ed25519", Public: testSignerPublic}}}
+		acquire := func(source string) int {
+			resp, _ := researchDo(t, ts, http.MethodPost, "acquire", strings.NewReader(`{"source":"`+source+`"}`),
+				func(r *http.Request) { r.Header.Set("Content-Type", "application/json") })
+			return resp.StatusCode
+		}
+		if got, want := acquire("drive"), map[bool]int{true: http.StatusOK, false: http.StatusBadGateway}[processing]; got != want {
+			t.Fatalf("a Drive read under processing=%v answered %d", processing, got)
+		}
+		if got := acquire("gmail"); got != http.StatusBadGateway {
+			t.Fatalf("a Gmail read under processing=%v was given the processing envelope: %d", processing, got)
+		}
 	}
 }

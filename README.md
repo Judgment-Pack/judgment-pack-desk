@@ -104,9 +104,13 @@ for permissions, scope and uncertain-outcome recovery. These controls are manual
 they are not exposed as autonomous assistant or scheduled-job write tools.
 
 Here, **local** means the bundled gateway extracts the PDF's embedded text on
-your computer. It does not use an LLM, render page images, or include an OCR
-engine. Scanned pages without readable text are marked **Needs OCR**. A separately
-configured gateway can supply OCR. When you send a chat message, selected page
+your computer. It does not use an LLM. Scanned pages without readable text are
+marked **Needs OCR** unless you choose an OCR processor under **Scanned pages** in
+Document processing: local Tesseract, a program on this computer, or Google
+Document AI, Azure Document Intelligence or Amazon Textract, whose credential is
+entered once and never shown again. Turning OCR on or off restarts the local
+gateway. A separately configured gateway supplies its own OCR. See
+[document processing](docs/document-processing.md). When you send a chat message, selected page
 text is included in the request to your configured AI model; local extraction
 does not imply that the AI conversation runs locally.
 
@@ -168,7 +172,7 @@ Chat and job inputs use Desk search-and-select. An empty query shows recently
 changed files; refine the query when more results exist. Search metadata stays
 out of model context until the person selects files. Jobs select one file; chat
 accepts up to four. Storage browsing uses separate bounded, paginated listings.
-Web research credentials and OCR are not installed. See
+Web research credentials are not installed, and no OCR processor is chosen. See
 [managed local processing](docs/adr/0005-managed-local-gateway.md) for identity
 preservation, receipt storage and platform boundaries.
 
