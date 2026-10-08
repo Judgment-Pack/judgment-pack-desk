@@ -847,7 +847,12 @@ type stampScheduler struct {
 	// and sets a record digest only where no run answered since
 	// (knowChecked; second review of #317).
 	generation uint64
-	last       *stampRun
+	// recorded is the last answer for an earlier record's checkpoint,
+	// atRecord, as read through the head it was read through (`recordAt`):
+	// the head's digest commits to that record, so while the report's head
+	// is the same, so is the answer (second review of #317).
+	recorded struct{ named, head, atRecord checkpointHead }
+	last     *stampRun
 	// said is the last problem with the settings written to Desk's log.
 	said   string
 	closed bool
@@ -944,6 +949,32 @@ func (st *stampScheduler) knowStamped(checkpoint *checkpointHead) {
 	}
 	known := *checkpoint
 	st.stamped = &known
+}
+
+// recordAt is the runtime's answer for the checkpoint of named's record, read
+// through head, where it was asked for the same named checkpoint and the
+// same head before (`rememberRecord`).
+func (st *stampScheduler) recordAt(named, head checkpointHead) (checkpointHead, bool) {
+	if st == nil {
+		return checkpointHead{}, false
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if st.recorded.named != named || st.recorded.head != head || head.Digest == "" {
+		return checkpointHead{}, false
+	}
+	return st.recorded.atRecord, true
+}
+
+// rememberRecord keeps the runtime's answer for named's record, read through
+// head, in place of the last one kept.
+func (st *stampScheduler) rememberRecord(named, head, atRecord checkpointHead) {
+	if st == nil {
+		return
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.recorded.named, st.recorded.head, st.recorded.atRecord = named, head, atRecord
 }
 
 // generationNow is the count of runs' words so far, for a check to capture

@@ -153,6 +153,9 @@ func TestTheDecisionRecordHoldsTheLastRunToItsCheckpoint(t *testing.T) {
 			if err := os.WriteFile(r.calls+".lines", []byte(tc.lines), 0o600); err != nil {
 				t.Fatal(err)
 			}
+			// Each case is another trail behind one stand-in report, whose
+			// head stays: what was kept for that head is let go.
+			r.s.stamping.rememberRecord(checkpointHead{}, checkpointHead{}, checkpointHead{})
 			r.s.stamping.record(stampRun{At: handoverNow, Status: stampStamped, Trail: handoverTrail, Sequence: tc.sequence, Digest: tc.digest})
 			r.ran(t)
 			status, answer, data := readAudit(t, r.ts, "")
@@ -172,6 +175,7 @@ func TestTheDecisionRecordHoldsTheLastRunToItsCheckpoint(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { os.Remove(r.calls + ".since") })
+		r.s.stamping.rememberRecord(checkpointHead{}, checkpointHead{}, checkpointHead{})
 		r.s.stamping.record(stampRun{At: handoverNow, Status: stampStamped, Trail: handoverTrail, Sequence: 2, Digest: standInDigest(2)})
 		if got := stampingOf(t, r.ts, ""); got.LastChecked == nil || *got.LastChecked != (stampChecked{Reason: lastRunUnasked}) {
 			t.Errorf("the decision record says %+v", got.LastChecked)
@@ -327,6 +331,18 @@ func TestTheLastRunsCheckpointWithTheRuntime(t *testing.T) {
 	}
 	if got := lastChecked(t); got != (stampChecked{Checked: true}) {
 		t.Errorf("with the run's checkpoint an earlier record, the decision record says %+v", got)
+	}
+	// Records 3 and 4 written again, stamped from outside Desk at record 4:
+	// the run named an earlier record, another one now.
+	againFour, againCheckpoint4 := chainedTrail(trail, "first", "second", "third again", "fourth again")
+	if err := os.WriteFile(evaluations, []byte(againFour), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(project, ".desk-private", "audit", "stamps.jsonl"), []byte(stampLine(t, authority, againCheckpoint4)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := lastChecked(t); got != (stampChecked{Reason: lastRunRewritten}) {
+		t.Errorf("with the run's earlier record written again, the decision record says %+v", got)
 	}
 
 	// Put back to an earlier point, written since, and stamped from outside.
@@ -567,5 +583,52 @@ func TestTheSchedulerSkipsOnlyWhereTheStampsFileHoldsTheHead(t *testing.T) {
 		if calls := r.ran(t); !slices.Equal(calls, asks) {
 			t.Errorf("after the stamp, the stamps file %s, a wake ran %q", then.name, calls)
 		}
+	}
+}
+
+// **The answer for an earlier record is kept for the head it was read
+// through** (second review of #317, finding 6). The last run named record 2
+// of three: a second load with the same head asks the runtime nothing more,
+// and says the same; with records 2 and 3 written again, and so another
+// head, the runtime is asked again, and the run's record is another now.
+func TestTheEarlierRecordsAnswerIsKeptForItsHead(t *testing.T) {
+	fixStamping(t)
+	r := newStampRig(t)
+	r.set(t, r.proposal(nil))
+	r.chainIs(t, handoverTrail, 3)
+	report := headAt(strings.Replace(stampsReport, `"stamped":{"status":"through","through":2}`, `"stamped":{"status":"through","through":3}`, 1), 3)
+	r.answers(t, 0, report)
+	r.s.stamping.record(stampRun{At: handoverNow, Status: stampStamped, Trail: handoverTrail, Sequence: 2, Digest: standInDigest(2)})
+	since := "audit checkpoint --config jpack.json --since 1 --limit 300 [JPACK_CONFIG=unset]"
+	asked := func(t *testing.T) int {
+		t.Helper()
+		n := 0
+		for _, call := range r.ran(t) {
+			if call == since {
+				n++
+			}
+		}
+		return n
+	}
+	r.ran(t)
+	for load := range 2 {
+		if got := stampingOf(t, r.ts, ""); got.LastChecked == nil || *got.LastChecked != (stampChecked{Checked: true}) {
+			t.Errorf("load %d says %+v", load+1, got.LastChecked)
+		}
+	}
+	if n := asked(t); n != 1 {
+		t.Errorf("two loads with one head asked the runtime %d times", n)
+	}
+	rewritten := chainOf(handoverTrail, 1) + strings.Replace(checkpointOf(handoverTrail, 2), standInDigest(2), rewrittenDigest(2), 1) +
+		strings.Replace(checkpointOf(handoverTrail, 3), standInDigest(3), rewrittenDigest(3), 1)
+	if err := os.WriteFile(r.calls+".lines", []byte(rewritten), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r.answers(t, 0, strings.Replace(report, standInDigest(3), rewrittenDigest(3), 1))
+	if got := stampingOf(t, r.ts, ""); got.LastChecked == nil || *got.LastChecked != (stampChecked{Reason: lastRunRewritten}) {
+		t.Errorf("with another head, the decision record says %+v", got.LastChecked)
+	}
+	if n := asked(t); n != 1 {
+		t.Errorf("with another head the runtime was asked %d times", n)
 	}
 }

@@ -698,7 +698,7 @@ None of them evaluates. So none consults the lock, and none is refused by
 | `audit key generate <seed> --format json` | a new seed, 0600, never over a file | no | key creation; the next key of a rotation | 1 |
 | `audit key public <seed> --format json` | nothing | no | to show a key's public half again | 1 |
 | `audit key rotate --next <seed> --format json` | a `key-rotation` line in `signatures.jsonl`, under the trail's lock | no | rotation, owner-initiated | 1 |
-| `audit checkpoint --since N --limit 300` (human form) | nothing | no | hand-over: its standard output is the bytes handed over | 2 |
+| `audit checkpoint --since N --limit 300` (human form) | nothing | no | hand-over: its standard output is the bytes handed over; the stamping panel: the checkpoint of the record the last stamp run named, read through the report's head | 2, 3 |
 | `audit checkpoint --trail <file> --since N --limit 300` | nothing | no | the Jobs chain's checkpoints, from a private copy | 5 |
 | `audit verify --trail <copy> --format json [--public-key …] [--expect …]` | nothing | no | the Jobs record panel, over a private copy of Runner's chain; exit 1 on any failed check, read whatever the exit | 4, 5 |
 | `audit verify --format json [--public-key …] [--expect …] [--tsa-roots …]` | nothing | no | the panel; exit 1 on any failed check, read whatever the exit | 4 |
@@ -709,8 +709,14 @@ None of them evaluates. So none consults the lock, and none is refused by
 (section 5), and the Jobs record panel's `audit verify --trail` (section 4;
 issue #216).
 
+*Amended 2026-10-08:* `audit checkpoint --since` for the stamping panel too
+(section 3; issue #312), and the scheduler's read of `stamps.jsonl` before
+it skips a head (section 3; issue #313).
+
 Desk's Go also reads, never writes, the runtime's files: `evaluations.jsonl`,
-`signatures.jsonl` and `stamps.jsonl`, for download (section 2).
+`signatures.jsonl` and `stamps.jsonl`, for download (section 2); and
+`stamps.jsonl`, for a line naming the head before the scheduler skips it
+(section 3).
 
 ## Consequences
 

@@ -6142,6 +6142,9 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'audit r2 fix: a stamps line with a token of no form is taken for the head' "$R2ST" \
     '	if decoded, err := base64.StdEncoding.Strict().DecodeString(token); err != nil || len(decoded) == 0 {' \
     '	if decoded, err := base64.StdEncoding.Strict().DecodeString(token); (err != nil || len(decoded) == 0) && false {'
+  mutate go 'audit r2 fix: an earlier record'"'"'s answer is kept past its head' "$R2ST" \
+    '	if st.recorded.named != named || st.recorded.head != head || head.Digest == "" {' \
+    '	if st.recorded.named != named || head.Digest == "" {'
   mutate go 'audit r2 fix: a failed stamp run keeps the checkpoint known' "$R2ST" \
     '		st.knowStamped(nil)
 	}
