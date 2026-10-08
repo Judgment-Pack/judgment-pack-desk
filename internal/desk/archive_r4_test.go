@@ -167,3 +167,87 @@ func TestTheStartupCleanupRemovesNothingInDesksCustody(t *testing.T) {
 		t.Errorf("the log does not say what was left: %s", logs)
 	}
 }
+
+// **A removal is never made over a damaged journal** (issue #330, the
+// auditor's scenario). The decision record gave a token; then a write to the
+// archive's journal stopped part way, leaving a last line no newline ends.
+// Desk offers no Remove now, says why, and refuses the token it gave before:
+// the generation that token binds cannot be told from a journal with a line
+// it does not read, and the seed stays.
+func TestARemovalIsNeverMadeOverADamagedJournal(t *testing.T) {
+	s, dir, file := archivingServer(t)
+	path := filepath.Join(dir.path, archiveDirName, s.cfg.deskID, file)
+	entry := firstArchived(t, s)
+	journal := filepath.Join(dir.path, archiveDirName, s.cfg.deskID, archiveJournalName)
+	appendBare(t, journal, `{"version":"1","event":"removed"`)
+	now := firstArchived(t, s)
+	if now.Token != "" || !strings.Contains(now.Why, archiveDamagedWords) {
+		t.Errorf("over a damaged journal the record offers %q and says %q", now.Token, now.Why)
+	}
+	w := removeOn(s, removal(entry, entry.Token), nil)
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), archiveJournalDamagedWords) {
+		t.Errorf("the token given before answered %d %s", w.Code, w.Body)
+	}
+	if _, err := os.Lstat(path); err != nil {
+		t.Errorf("the archived seed went: %v", err)
+	}
+}
+
+// **A line is never joined to a write that did not finish** (issue #330): a
+// move to the archive after a torn journal line ends that line first, so its
+// own line is read, and the file is listed with the rule that moved it.
+func TestAnArchiveMoveAfterATornWriteKeepsItsLine(t *testing.T) {
+	s, dir, _ := archivingServer(t)
+	journal := filepath.Join(dir.path, archiveDirName, s.cfg.deskID, archiveJournalName)
+	appendBare(t, journal, `{"version":"1","event":"archived"`)
+	writeBare(t, filepath.Join(dir.path, s.cfg.deskID+nextSeedSuffix), secondSeed+"\n")
+	next, err := dir.root.Lstat(s.cfg.deskID + nextSeedSuffix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved, err := dir.archive(s.cfg.deskID+nextSeedSuffix, next, archived{identity: s.cfg.deskID, rule: archiveRotationStopped, why: "after a torn line"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listing := s.archiveListing()
+	index := -1
+	for i, entry := range listing.Entries {
+		if entry.File == moved {
+			index = i
+		}
+	}
+	if index < 0 || listing.Entries[index].Rule != archiveRotationStopped || !strings.HasPrefix(listing.Entries[index].Why, "after a torn line") {
+		t.Errorf("the move after a torn line is listed as %+v", listing.Entries)
+	}
+}
+
+// **A removal is read back before the file goes** (issue #330): the
+// removal's line is written, and then, before Desk reads it back, its last
+// byte is lost, as a write that did not reach the disk whole. The reader does
+// not count it, so the file stays, and the answer says the removal could not
+// be read back.
+func TestARemovalIsReadBackBeforeTheFileGoes(t *testing.T) {
+	s, dir, file := archivingServer(t)
+	path := filepath.Join(dir.path, archiveDirName, s.cfg.deskID, file)
+	journal := filepath.Join(dir.path, archiveDirName, s.cfg.deskID, archiveJournalName)
+	entry := firstArchived(t, s)
+	testHookKeyBetween = func(at string) {
+		if at == "archive: removal written" {
+			data, err := os.ReadFile(journal)
+			if err == nil {
+				err = os.WriteFile(journal, data[:len(data)-1], 0o600)
+			}
+			if err != nil {
+				t.Error(err)
+			}
+		}
+	}
+	t.Cleanup(func() { testHookKeyBetween = nil })
+	w := removeOn(s, removal(entry, entry.Token), nil)
+	if w.Code != http.StatusInternalServerError || !strings.Contains(w.Body.String(), "could not read its removal back") {
+		t.Errorf("the removal answered %d %s", w.Code, w.Body)
+	}
+	if _, err := os.Lstat(path); err != nil {
+		t.Errorf("the archived seed went: %v", err)
+	}
+}

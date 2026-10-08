@@ -5061,6 +5061,21 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'archive edges: a project in Desk'"'"'s custody is not' 'internal/desk/file_access.go' \
     '		if info, err := os.Lstat(dir); err == nil && os.SameFile(info, custody.info) {' \
     '		if info, err := os.Lstat(dir); err == nil && os.SameFile(info, custody.info) && false {'
+  # A Remove is never made over a journal Desk cannot read whole, its own
+  # line is read back before the file goes, and a line is never joined to a
+  # write that did not finish (#330).
+  mutate go 'archive edges: a Remove goes on over a damaged journal' 'internal/desk/archive.go' \
+    '	if err != nil || entry.damaged {' \
+    '	if err != nil {'
+  mutate go 'archive edges: a damaged journal offers Remove' 'internal/desk/archive.go' \
+    ' && listing.Entries[i].digest != "" && !listing.Entries[i].damaged {' \
+    ' && listing.Entries[i].digest != "" {'
+  mutate go 'archive edges: a journal line is joined to a torn one' 'internal/desk/archive.go' \
+    '		if last[0] != '"'"'\n'"'"' {' \
+    '		if last[0] != '"'"'\n'"'"' && false {'
+  mutate go 'archive edges: a removal is not read back before the file goes' 'internal/desk/archive.go' \
+    '	if after, err := held.readArchiveJournal(folder); err != nil || after.damaged > 0 || !after.removed[file] || after.events[file] != entry.generation+1 {' \
+    '	if after, err := held.readArchiveJournal(folder); err != nil && after.damaged < 0 {'
   # **Runner's signing key (ADR-0010, section 5; runner_key.go).** A key of
   # Runner's own, never a project's or an inherited one, named on the boot
   # line only where, under the one key-custody lock on the signing folder, no

@@ -505,7 +505,10 @@ export const ARCHIVE_SENTENCES = [
   sourceMessage('That archived file is not in Desk\'s archive now, so nothing was removed. Check the decision record again.'),
   sourceMessage('That archived file changed after the decision record showed it, so nothing was removed. Check the decision record again.'),
   sourceMessage('A cross-site request cannot remove an archived key.'),
-  sourceMessage('Confirm the removal with the token the decision record gave.')
+  sourceMessage('Confirm the removal with the token the decision record gave.'),
+  sourceMessage("Desk's journal of this archive holds a line Desk cannot read, a write that did not finish or a change made outside Desk, so it offers no Remove here until the journal is whole."),
+  sourceMessage("Nothing was removed: Desk's journal of this archive could not be read whole, so Desk removes nothing from it until it is."),
+  sourceMessage("Nothing was removed: Desk could not read its removal back from its archive's journal.")
 ]
 
 /* The repair ---------------------------------------------------------------- */

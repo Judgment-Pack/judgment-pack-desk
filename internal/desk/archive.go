@@ -329,14 +329,16 @@ func (d *signingDir) say(format string, args ...any) {
 // appendArchiveLine appends line to the journal of the archive folder, whole,
 // in one write, synced: a regular file, the user's, open to nobody else, made
 // 0600 where it is not there yet. A line longer than Desk reads back is never
-// written.
+// written. A journal whose last line no newline ends, a write that did not
+// finish, is ended first, in the same write (issue #330): the line is never
+// joined to unfinished bytes, which would leave it unread.
 func (d *signingDir) appendArchiveLine(folder string, line archiveLine) error {
 	data := line.line()
 	if len(data) > archiveLineLimit {
 		return errors.New("the line is longer than Desk reads back")
 	}
 	name := filepath.Join(folder, archiveJournalName)
-	file, err := d.root.OpenFile(name, os.O_WRONLY|os.O_APPEND|os.O_CREATE|openNoFollow, custodyFileMode)
+	file, err := d.root.OpenFile(name, os.O_RDWR|os.O_APPEND|os.O_CREATE|openNoFollow, custodyFileMode)
 	if err != nil {
 		return err
 	}
@@ -353,6 +355,15 @@ func (d *signingDir) appendArchiveLine(folder string, line archiveLine) error {
 	}
 	if err := ownedByUs(name, info); err != nil {
 		return err
+	}
+	if info.Size() > 0 {
+		last := make([]byte, 1)
+		if _, err := file.ReadAt(last, info.Size()-1); err != nil {
+			return err
+		}
+		if last[0] != '\n' {
+			data = append([]byte{'\n'}, data...)
+		}
 	}
 	if info.Size()+int64(len(data)) > archiveJournalLimit {
 		return errors.New("the journal holds as much as Desk reads")
@@ -457,6 +468,10 @@ type archivedKey struct {
 	object     string
 	digest     string
 	generation int
+	// damaged is a file whose journal could not be read whole, or holds a
+	// line Desk does not read (issue #330): its generation cannot be told,
+	// so it is offered no Remove.
+	damaged bool
 }
 
 // auditArchive is the decision record's list of what Desk archived: given
@@ -478,6 +493,7 @@ const (
 	archiveNoBytesWords = "Desk could not read this file's bytes now, so it offers no Remove for it."
 	archiveBackWords    = "Desk's journal says this file was removed on your word, and it is here: the removal did not finish, or the file was put back since."
 	archiveChangedWords = "Its bytes are not the ones Desk archived: it was written since, or while Desk moved it."
+	archiveDamagedWords = "Desk's journal of this archive holds a line Desk cannot read, a write that did not finish or a change made outside Desk, so it offers no Remove here until the journal is whole."
 )
 
 // archiveListing is the decision record's list of every file Desk archived,
@@ -527,7 +543,7 @@ func (s *Server) archiveListing() *auditArchive {
 		listing.Entries = listing.Entries[:archiveListLimit]
 	}
 	for i := range listing.Entries {
-		if !listing.Entries[i].Missing && !listing.Entries[i].Unresolved && listing.Entries[i].digest != "" {
+		if !listing.Entries[i].Missing && !listing.Entries[i].Unresolved && listing.Entries[i].digest != "" && !listing.Entries[i].damaged {
 			listing.Entries[i].Token = s.archiveToken(listing.Entries[i])
 		}
 	}
@@ -728,6 +744,14 @@ func (d *signingDir) archivedOf(scope, identity string) ([]archivedKey, error) {
 		} else {
 			entry.Why += " " + archiveNoBytesWords
 		}
+		// **No generation from a damaged journal** (issue #330): a line it
+		// skips may be the removal that spent a token.
+		if journalErr != nil || lines.damaged > 0 {
+			entry.damaged = true
+			if lines.damaged > 0 {
+				entry.Why += " " + archiveDamagedWords
+			}
+		}
 		entries = append(entries, entry)
 	}
 	for _, name := range lines.order {
@@ -756,6 +780,10 @@ type archiveJournal struct {
 	removed  map[string]bool
 	events   map[string]int
 	order    []string
+	// damaged counts the lines not read (issue #330): one longer than Desk
+	// reads, one not in its one spelling, or a last one no newline ends. A
+	// generation is never told from a journal with any.
+	damaged int
 }
 
 // archivedLine is one line that archived a file: its record and its bytes.
@@ -781,16 +809,21 @@ func (d *signingDir) readArchiveJournal(folder string) (archiveJournal, error) {
 	for {
 		raw, err := reader.ReadSlice('\n')
 		if errors.Is(err, bufio.ErrBufferFull) {
+			journal.damaged++
 			for errors.Is(err, bufio.ErrBufferFull) {
 				_, err = reader.ReadSlice('\n')
 			}
 			continue
 		}
 		if err != nil {
+			if len(raw) > 0 {
+				journal.damaged++
+			}
 			return journal, nil
 		}
 		var line archiveLine
 		if json.Unmarshal(raw, &line) != nil || !bytes.Equal(line.line(), raw) || line.Version != "1" || !archiveFileForm.MatchString(line.File) {
+			journal.damaged++
 			continue
 		}
 		journal.events[line.File]++
@@ -927,14 +960,21 @@ func (s *Server) removeArchived(ctx context.Context, scope, identity, file, toke
 		defer runner.Close()
 		held = runner
 	}
-	entries, _ := held.archivedIn(scope, s.signingKeyName())
+	entries, err := held.archivedOf(scope, identity)
 	index := slices.IndexFunc(entries, func(entry archivedKey) bool {
-		return entry.Identity == identity && entry.File == file && !entry.Missing
+		return entry.File == file && !entry.Missing
 	})
 	if index < 0 {
 		return &lockFailure{http.StatusConflict, CodeStale, "That archived file is not in Desk's archive now, so nothing was removed. Check the decision record again."}
 	}
 	entry := entries[index]
+	// **Never over a journal Desk cannot read whole** (issue #330): the
+	// generation a token binds is told from every line, and a line skipped
+	// may be the removal that spent it.
+	if err != nil || entry.damaged {
+		s.log.Printf("desk: the archived file %s of %s was not removed, because the archive's journal could not be read whole: %v", file, identity, err)
+		return &lockFailure{http.StatusConflict, CodeBadRequest, archiveJournalDamagedWords}
+	}
 	if entry.digest == "" || !hmac.Equal([]byte(s.archiveToken(entry)), []byte(token)) {
 		return &lockFailure{http.StatusConflict, CodeStale, "That archived file changed after the decision record showed it, so nothing was removed. Check the decision record again."}
 	}
@@ -959,6 +999,14 @@ func (s *Server) removeArchived(ctx context.Context, scope, identity, file, toke
 		s.log.Printf("desk: the archived file %s of %s was not removed, because its journal line could not be written: %v", file, identity, err)
 		return &lockFailure{http.StatusInternalServerError, CodeInternal, "Nothing was removed: Desk could not record the removal in its archive's journal."}
 	}
+	keyBetween("archive: removal written")
+	// **Read back before the file goes** (issue #330): the removal is
+	// spent only by a whole line the journal's reader counts, one more than
+	// the token bound.
+	if after, err := held.readArchiveJournal(folder); err != nil || after.damaged > 0 || !after.removed[file] || after.events[file] != entry.generation+1 {
+		s.log.Printf("desk: the archived file %s of %s was not removed, because its removal could not be read back whole from the archive's journal: %v", file, identity, err)
+		return &lockFailure{http.StatusInternalServerError, CodeInternal, "Nothing was removed: Desk could not read its removal back from its archive's journal."}
+	}
 	if err := held.removeArchivedFile(name, found); err != nil {
 		s.log.Printf("desk: the archived file %s of %s could not be removed: %v", file, identity, err)
 		return &lockFailure{http.StatusInternalServerError, CodeInternal, "The archived file could not be removed now. Check the decision record again."}
@@ -978,6 +1026,10 @@ func (d *signingDir) removeArchivedFile(name string, info os.FileInfo) error {
 	}
 	return d.root.Remove(name)
 }
+
+// archiveJournalDamagedWords is a removal refused over a journal Desk cannot
+// read whole (issue #330).
+const archiveJournalDamagedWords = "Nothing was removed: Desk's journal of this archive could not be read whole, so Desk removes nothing from it until it is."
 
 // withoutPathsInArchive is the archive's list, its sentences passed through
 // clean.
