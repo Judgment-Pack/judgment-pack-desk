@@ -1141,3 +1141,54 @@ func TestTheIdentityQuestionComesWithEveryAnswer(t *testing.T) {
 		t.Errorf("with no runtime the decision record answered %d %s", status, data)
 	}
 }
+
+// **A rotation the runtime answered at another sequence than its sidecar's
+// hand-over is not finished** (review round 1 of #315, finding 6). The
+// runtime writes the key-rotation line after record 1, otherwise as asked,
+// and answers that it rotated after record 2: Desk answers the conflict,
+// keeps the current key, the next key and the journal, and lets go of the
+// key lock, the signing folder's lock and the trail's.
+func TestARotationAnsweredAtAnotherSequenceIsNotFinished(t *testing.T) {
+	r := newRotationRig(t, "e3110000000000000000000000000004", "")
+	r.writeTrail(t, 1, recordLine(standInKeyID, 1))
+	token := r.token(t)
+	answering := strings.Replace(rotateAsTheRuntime(r.rig.calls), `' "$at" "$trail" "$from"`, `' "$((at+1))" "$trail" "$from"`, 1)
+	if answering == rotateAsTheRuntime(r.rig.calls) {
+		t.Fatal("the stand-in's answer was not changed")
+	}
+	rotatingAs(t, r.rig.calls, answering)
+	status, data := r.rotate(t, token)
+	why := "the trail's signature sidecar hands over to the next key after record 1, and the runtime answered 2: Desk keeps the current key, the next key and the list of public keys as they are"
+	if want := fmt.Sprintf(rotationConflictWords, why); status != http.StatusConflict || refusalOf(data) != want {
+		t.Errorf("the rotation answered %d %q, want 409 %q", status, refusalOf(data), want)
+	}
+	if got := r.describe(t); got != ".keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=1 rotations=1" {
+		t.Errorf("the rotation left %s", got)
+	}
+	if marker := r.marker(t); !strings.Contains(marker, `"phase":"finish"`) || !strings.Contains(marker, `"at":2`) {
+		t.Errorf("the journal is %q", marker)
+	}
+	// Every lock let go: the key lock (the panel reads the keys under it),
+	// the signing folder's, and the trail's.
+	if answer, _ := r.panel(t); answer.Rotation.State != rotationUnfinished {
+		t.Errorf("the panel says %+v", answer.Rotation)
+	}
+	dir, err := r.s.assistant.openSigning(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dir.Close()
+	unlock, err := lockSigning(dir)
+	if err != nil {
+		t.Fatalf("the signing folder's lock is held: %v", err)
+	}
+	unlock()
+	trail, err := os.Open(filepath.Join(r.auditFolder(), "evaluations.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer trail.Close()
+	if err := syscall.Flock(int(trail.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		t.Fatalf("the trail's lock is held: %v", err)
+	}
+}

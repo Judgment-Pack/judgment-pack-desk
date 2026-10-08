@@ -4326,6 +4326,9 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'audit r2 fix: a rotation the runtime answered is finished from its answer alone' "$R2RO" \
     '		state = decideRotation(state, reading.keys, bound.reading, bound.grown)' \
     '		state.outcome, state.at, state.finished = rotationWritten, at, append(slices.Clone(reading.keys), deskPublicKey{PublicKey: nextKey.PublicKey, KeyID: nextKey.KeyID, At: at, Trail: rotatedOn})'
+  mutate go 'audit r2 fix: a rotation answered at another sequence than its hand-over is finished' "$R2RO" \
+    '		if state.outcome != rotationWritten || state.at != at {' \
+    '		if state.outcome != rotationWritten {'
   mutate go 'audit r2 fix: the list is written without the trail checked again' "$R2RO" \
     '		if err := still(); err != nil {
 			return false, err
