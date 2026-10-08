@@ -22,6 +22,32 @@ Jobs record needs:
 
 Each amended passage says "Amended 2026-10-05".
 
+**Amended 2026-10-08** (the archive rule; issues #319 to #325, PR #327). One
+decision changed, the maintainer's of 2026-10-08:
+
+> Desk never removes a signing key on its own. A key it cannot prove
+> superseded is archived under its custody and named on the decision record;
+> the owner removes it on their word.
+
+The ADR-0010 line audit (#292) checked the parts against one another in three
+passes: nine findings in the first (#283 to #291), five in the second (#309
+to #313) and seven in the third (#319 to #325). Each pass found more cases in
+the tables that decided when a start's recovery, its sweep or a live rotation
+may remove a seed (#283; #309 to #311; #319 to #323), and the third found a
+window no further check can close (#323): a trail moved aside in the moment
+after a live rotation's last check. The rule replaces those tables. PR #327
+builds it. Passages amended:
+- section 1: the identity, "Creating it" and a paragraph after it, "The
+  archive of keys", "Rotating it", and the 2026-10-07 recovery amendment;
+- section 3 and section 8: one verification for an older stamp run (issue
+  #324);
+- section 4: the archive of keys on the decision record;
+- section 5: Runner's unfinished key;
+- section 7, "Consequences", the delivery table and "More information".
+
+Each passage this amendment changes says "Amended 2026-10-08 (the archive
+rule)" or "Amended 2026-10-08 (issue #324)".
+
 Issue #186. Runtime ADR-0047 (accepted 2026-10-01) makes a decision record
 defensible to someone who does not trust its operator. It names Desk's part:
 key custody, checkpoint hand-over and stamping settings. This record decides
@@ -186,6 +212,16 @@ bytes, wherever a record travels").
   path's hash for what Desk kept under it. A start removes an unfinished
   creation's key only under the identity's name. Runner's Jobs store stays
   named by the path, which Runner scopes it to.
+  *Amended 2026-10-08 (the archive rule):* a start archives an unfinished
+  creation's key, never removes it. Where the project's `jpack.json` names
+  the seed, the marker alone goes. Where the marker binds the creation to
+  this identity, this folder and the very `jpack.json` the upgrade set out to
+  replace, the seed, its list and the marker are archived. Otherwise all three
+  are kept at their names, and the log says why. An identity that records no
+  folder (an earlier Desk's, or one taken from the seed the project's
+  `jpack.json` names, which a copy names too) is unresolved: Desk makes,
+  rotates and recovers no key under it until the owner says whether this
+  folder is that project or a copy of it (#319).
 - **The seed** is 0600, and stays the only name of its file.
 
 One key per project, not one per installation:
@@ -241,6 +277,39 @@ Not measured:
   list of keys a verifier needs, and Desk shows it for the owner to hand over
   (section 2).
 
+*Amended 2026-10-08 (the archive rule):* **The archive of keys.** Wherever
+Desk once removed a seed, a next seed or a list of public keys (a creation
+that stopped, a start's sweep, a rotation's undo or its promotion, an upgrade
+taken back, Runner's unfinished key), it moves the file to:
+
+```
+<Desk configuration directory>/secrets/signing/archive/<project>/<trail>-<record>-<UTC time>.<kind>
+```
+
+with `none` where Desk does not know the trail or the record; Runner's keys
+go to `secrets/signing/runner/archive/`. A creation's or a rotation's marker
+goes there too, beside the key it explains. The archive is held to the keys'
+custody: owner-only, every component a real directory. Each move:
+- is made under the signing folder's lock, and only while the name holds the
+  file Desk inspected;
+- is first written as one line of `archive.jsonl`, beside the file: the rule
+  that moved it, Desk's sentence on what it could not decide, and the digest
+  of the file's bytes. A journal past 1 MiB takes no line, and the file stays
+  where it is;
+- is a rename within the signing folder, never over anything. A move that
+  cannot be made (another file system, a folder that cannot be made, no free
+  name) leaves the file at its name;
+- reads the bytes again after the move, and says where they changed.
+
+A list of public keys a creation could not link into place is archived the
+same way. Where no lock can be taken on the signing folder at all, Desk
+changes no key: a desk is made unsigned and says why, the project's key and a
+rotation are refused with nothing written, Runner starts without a key, and a
+start's sweep and recovery change nothing. An archived seed is still a key:
+whoever reads it can sign as it. Measured with runtime 0.27.1: `audit key
+public` reads both archived seeds of a real rotation, as its first and second
+keys.
+
 **Telling the runtime to use it.**
 
 - **A desk Desk made: `audit.signingKey` in its `jpack.json`, at configVersion
@@ -291,6 +360,15 @@ Not measured:
 2. runs `audit key rotate --next <next> --config jpack.json`;
 3. renames the next seed over the current one's name, in the same directory.
 
+*Amended 2026-10-08 (the archive rule):* step 3 renames over nothing. Desk
+appends the next key's line to the list in place, moves the current seed to
+the archive of keys with its journal line, and renames the next seed into the
+name that leaves free, which must hold nothing. It then checks the trail
+again. Where the trail was moved aside or replaced in the moment after the
+last check (#323), both keys are kept, one in force and one archived; the
+rotation's marker is archived beside the previous key with the sentence that
+says so, and Desk never answers that the key was rotated.
+
 Measured:
 - `jpack.json` never changes, so there is no `config-drift` and no new lock.
 - Between steps 2 and 3, the old key is not in force: `packs validate` says so,
@@ -301,6 +379,8 @@ Measured:
 
 The rename removes the old seed's name. It does not erase its bytes from the
 disk. Desk records the next public key after the previous one.
+*Amended 2026-10-08 (the archive rule):* superseded: the old seed is kept in
+the archive of keys until the owner removes it there.
 
 A lost key cannot be rotated away from. The trail and its sidecar must then be
 moved aside together, and the next record starts a new trail (the guide,
@@ -332,6 +412,19 @@ another folder with the desk's id, as it does for a copy opened directly,
 when nothing is recovered or rotated there (review round 1 of #302); it waits once, bounded, for a
 signing lock another process holds; and each resumed desk's Runner starts
 only after it.
+
+*Amended 2026-10-08 (the archive rule):* where that amendment says a start
+keeps or removes a rotation's files, it keeps them or moves them to the
+archive of keys; it removes none. A rotation the runtime did not write has
+its next seed and its marker archived, with the sentence that Desk cannot
+rule out a sidecar put back to exactly its earlier bytes (#321). A marker
+under a project's name no project open here holds, whose journal names this
+project's trail, is archived with its next seed and said (#320); any other is
+left for its project, and the decision record lists it (section 4). A stop
+between the promotion's two moves is finished at the next start, only where
+the journal says `finish`, the next key is the journal's, the list ends in it
+and the trail's sidecar hands over to it. Nothing is moved on a read that
+failed.
 
 **Whom the key binds.** Following ADR-0009 section 6, and runtime ADR-0047
 §2b:
@@ -482,6 +575,15 @@ sends each checkpoint's digest to that party (runtime ADR-0047, "Privacy").
   sentence and the sequence its last stamp run reported, labelled as the
   authority's answer to Desk's request, not as a trusted stamp.
 
+*Amended 2026-10-08 (issue #324):* for a stamp run older than the report's
+head, whether its checkpoint is a stamp checked is decided by one more `audit
+verify`, given the run's own checkpoint line, exactly as the runtime printed
+it, as `--expect`, with the roots. It counts only where the runtime answers
+`valid` for the run's trail, with a held checkpoint and a checked stamp each
+reaching the run's record, and the head it verified is the one the panel
+shows. Every verification that does not pass forgets it. Desk never joins
+checkpoints read in batches, which can come from two histories.
+
 ### 4. Verification in Desk
 
 **A decision-record panel** for each desk runs `jpack audit verify --config
@@ -535,6 +637,20 @@ the window needs a precondition in the runtime's `audit repair`.
 
 **When it runs:** when the panel opens, and after a stamp, a hand-over or a
 repair. Never on a timer.
+
+*Amended 2026-10-08 (the archive rule):* **The archive of keys on the
+decision record.** Beside every answer of the panel, a refusal among them,
+Desk lists each file in its archive of keys (section 1): the identity it is
+kept under, the trail and record its name records, when, and Desk's sentence
+on why. Each has **Remove**, sent only from its confirmation, with a token
+bound to that file, its journal line, its bytes by their digest and the
+number of journal lines that name it, so the removal's own line spends the
+token. Under the signing folder's lock, Desk reads the bytes again, writes
+the removal to the journal, and only then removes the file. It is the one
+removal of a key in Desk. A file whose bytes Desk cannot read now has no
+Remove. A creation's or a rotation's marker under a project's name this desk
+or project does not hold, which no start of this Desk's settles, is listed
+too, kept at its name, with no Remove.
 
 Measured: a report with the runtime's cap of 100 findings was 11.5 KB, within
 `runRuntime`'s bound. A larger one is refused by that bound rather than
@@ -634,6 +750,11 @@ key, and a start's sweep of the desks' keys, is taken under one exclusive lock
 on the signing folder Desk holds (review round 1 of #229): a sweep never waits
 for it, and any other start waits up to 10 seconds and then starts Runner
 without a key, changing nothing.
+*Amended 2026-10-08 (the archive rule):* a Runner key's unfinished creation
+is moved to the archive of Runner's keys, the list, the seed and then the
+marker, each only while it is the file just inspected; then a key is made
+again. Where no lock can be taken, Runner starts without a key, and nothing
+changes.
 
 ### 6. The version floor
 
@@ -679,6 +800,9 @@ shows these counts.
 | The local gateway's receipts | that the operator's gateway saw those bytes | anything against the operator: it is the operator's, and no witness |
 | Desk's record of hand-overs | — | anything to a holder: it is the operator's, and the operator can change it |
 | Desk's verification | what the operator's own copies show | anything to someone who does not trust the operator |
+| The archive of keys | a key Desk once held is still there, with the rule that moved it and Desk's sentence on why, unless the owner removed it | that the key is not in use elsewhere, which is why it is kept; anything against a process of the owner's user, which can read, move or delete it; an archived seed still signs for whoever reads it |
+
+*Amended 2026-10-08 (the archive rule):* the row for the archive of keys.
 
 ### 8. Every new runtime command Desk would run
 
@@ -698,10 +822,10 @@ None of them evaluates. So none consults the lock, and none is refused by
 | `audit key generate <seed> --format json` | a new seed, 0600, never over a file | no | key creation; the next key of a rotation | 1 |
 | `audit key public <seed> --format json` | nothing | no | to show a key's public half again | 1 |
 | `audit key rotate --next <seed> --format json` | a `key-rotation` line in `signatures.jsonl`, under the trail's lock | no | rotation, owner-initiated | 1 |
-| `audit checkpoint --since N --limit 300` (human form) | nothing | no | hand-over: its standard output is the bytes handed over; the stamping panel: the checkpoint of the record the last stamp run named, read through the report's head | 2, 3 |
+| `audit checkpoint --since N --limit 300` (human form) | nothing | no | hand-over: its standard output is the bytes handed over | 2 |
 | `audit checkpoint --trail <file> --since N --limit 300` | nothing | no | the Jobs chain's checkpoints, from a private copy | 5 |
 | `audit verify --trail <copy> --format json [--public-key …] [--expect …]` | nothing | no | the Jobs record panel, over a private copy of Runner's chain; exit 1 on any failed check, read whatever the exit | 4, 5 |
-| `audit verify --format json [--public-key …] [--expect …] [--tsa-roots …]` | nothing | no | the panel; exit 1 on any failed check, read whatever the exit | 4 |
+| `audit verify --format json [--public-key …] [--expect …] [--tsa-roots …]` | nothing | no | the panel; exit 1 on any failed check, read whatever the exit. Once more for a stamp run older than the report's head, with that run's checkpoint as `--expect` | 3, 4 |
 | `audit stamp --tsa <address> --timeout 15s --format json` | a line in `stamps.jsonl`, under its own lock | yes: the checkpoint's digest and a nonce, to the authority | the scheduler | 3 |
 | `audit repair --format json` | a `discontinuity` record (signed where a key is in force); the damaged bytes kept as a line | no | after the owner confirms | 4 |
 
@@ -712,6 +836,11 @@ issue #216).
 *Amended 2026-10-08:* `audit checkpoint --since` for the stamping panel too
 (section 3; issue #312), and the scheduler's read of `stamps.jsonl` before
 it skips a head (section 3; issue #313).
+
+*Amended 2026-10-08 (issue #324):* the stamping panel reads no `audit
+checkpoint --since`. An older stamp run is checked by one more `audit
+verify`, given that run's checkpoint line as `--expect` (section 3). The
+amendment above is superseded for the panel.
 
 Desk's Go also reads, never writes, the runtime's files: `evaluations.jsonl`,
 `signatures.jsonl` and `stamps.jsonl`, for download (section 2); and
@@ -735,6 +864,12 @@ Desk's Go also reads, never writes, the runtime's files: `evaluations.jsonl`,
 - Bad: a desk at configVersion `"6"` is unreadable to runtime 0.25.0 and older.
 - Bad: Desk's Go depends on the output of six more runtime commands, all under
   `outputVersion` `"2"`.
+- Bad: *Amended 2026-10-08 (the archive rule):* Desk keeps every key it
+  cannot prove superseded, so its archive of keys grows until the owner
+  removes from it, and each archived seed can still sign for whoever reads
+  it.
+- Good: *Amended 2026-10-08 (the archive rule):* no path of Desk's removes a
+  key on its own; each removal is the owner's, on the decision record.
 - Neutral: chaining arrives with the runtime pin alone, and needs nothing from
   Desk.
 
@@ -843,6 +978,10 @@ their meaning. The status column was as of 2026-10-05, and is as of 2026-10-08.
 | 9 | The README and in-app help: what each part establishes and does not, and the agent setup with the key | each of the above | merged: PR #281, in no release yet |
 | 10 | Hand-over to an HTTPS endpoint | a holder who runs one; question 4 | not built: waits for a holder who runs an endpoint |
 
+*Amended 2026-10-08 (the archive rule):* #327 archives every key that rows
+3, 4 and 11 removed, and changes how row 7's panel checks an older stamp run
+(issue #324). It is merged, in no release yet.
+
 Not in this line:
 - the gateway's `requireSignedRecord`, since Desk sends no writes through
   `/act`;
@@ -870,3 +1009,6 @@ Not in this line:
   - [ADR-0009](0009-gates-on-by-default.md) (the gates, `.desk-private/audit`,
     the review step and the upgrade offer);
   - issues #182 and #186.
+  - *Amended 2026-10-08 (the archive rule):* the ADR-0010 line audit, #292:
+    its first pass, #283 to #291; its second, #309 to #313; its third, #319
+    to #325; and the archive rule, PR #327.
