@@ -842,3 +842,67 @@ func TestAVerificationThatDoesNotPassForgetsWhatWasConfirmed(t *testing.T) {
 		})
 	}
 }
+
+// **The nightly's conditions: no published runtime** (nightly issue #326). The
+// two rows that hold issue #333's clearing were selected to a test that
+// cannot see them, since each clearing sits twice on the way out. These two
+// tests use the stand-in, and each reaches a clearing the other way out does
+// not.
+//
+// An older run's own check is asked about a head other than the one kept, and
+// does not confirm it, by a refusal, a mismatch and an answer that cannot be
+// read: what was kept is forgotten by the check itself, called alone.
+func TestAnOlderRunsCheckThatDoesNotConfirmForgetsWhatWasKept(t *testing.T) {
+	fixStamping(t)
+	r := newStampRig(t)
+	r.set(t, r.proposal(nil))
+	r.chainIs(t, handoverTrail, 3)
+	run := standInRun(2, standInDigest(2))
+	named := checkpointHead{Identity: handoverTrail, Sequence: 2, Digest: standInDigest(2)}
+	head := checkpointHead{Identity: handoverTrail, Sequence: 3, Digest: standInDigest(3)}
+	kept := checkpointHead{Identity: handoverTrail, Sequence: 3, Digest: rewrittenDigest(3)}
+	project, why := r.s.auditRuntime()
+	if why != "" {
+		t.Fatal(why)
+	}
+	for _, tc := range []struct {
+		name string
+		code int
+		body string
+	}{
+		{"an answer that cannot be read", 1, "not an answer"},
+		{"a refusal", 4, expectRefused},
+		{"a report that is not valid", 1, expectMismatch},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r.s.stamping.rememberConfirmed(named, kept)
+			r.answersExpect(t, tc.code, tc.body)
+			if checked, _ := r.s.expectRunCheckpoint(context.Background(), project, &run, head, nil); checked {
+				t.Error("the run is said checked")
+			}
+			if r.s.stamping.confirmedAt(named, kept) {
+				t.Error("what was kept outlived a check that did not confirm it")
+			}
+		})
+	}
+}
+
+// A report that is not valid forgets what was confirmed even where the last
+// run named the report's own head, which needs no question to the runtime and
+// so reaches no other clearing: the confirmation of that checkpoint under that
+// head does not outlive the verification.
+func TestAnInvalidReportAtTheLastRunsHeadForgetsWhatWasConfirmed(t *testing.T) {
+	fixStamping(t)
+	r := newStampRig(t)
+	r.set(t, r.proposal(nil))
+	r.chainIs(t, handoverTrail, 3)
+	run := standInRun(3, standInDigest(3))
+	r.s.stamping.record(run)
+	named := checkpointHead{Identity: handoverTrail, Sequence: 3, Digest: standInDigest(3)}
+	r.s.stamping.rememberConfirmed(named, named)
+	r.answers(t, 1, expectMismatch)
+	stampingOf(t, r.ts, "")
+	if r.s.stamping.confirmedAt(named, named) {
+		t.Error("the confirmation outlived a verification whose report is not valid")
+	}
+}

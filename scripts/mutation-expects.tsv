@@ -317,9 +317,9 @@ go	audit r2 fix: the same checkpoint is taken at another sequence	TestTheSameChe
 go	audit r2 fix: the scheduler skips a head the stamps file does not hold	TestTheSchedulerSkipsOnlyWhereTheStampsFileHoldsTheHead
 go	audit r2 fix: the trail is bound without its lock	TestARecoveryActsOnlyOnTheTrailItDecidedOn
 go	audit r2 fix: the upgrade's identity records no folder	TestTheUpgradeWritesTheIdentityBeforeTheKey
-go	audit r3 fix: a failed verification keeps what was confirmed	TestTheEarlierRecordsAnswerIsKeptForItsHead
+go	audit r3 fix: a failed verification keeps what was confirmed	TestAnOlderRunsCheckThatDoesNotConfirmForgetsWhatWasKept
 go	audit r3 fix: a legacy identity at its recorded path is taken for this folder's	TestALegacyIdentityAtAReusedPathTakesNoCustody
-go	audit r3 fix: a main verification that failed keeps what was confirmed	TestTheEarlierRecordsAnswerIsKeptForItsHead
+go	audit r3 fix: a main verification that failed keeps what was confirmed	TestAnInvalidReportAtTheLastRunsHeadForgetsWhatWasConfirmed
 go	audit r3 fix: a verification that could not be read keeps what was confirmed	TestAVerificationThatDoesNotPassForgetsWhatWasConfirmed
 go	audit r3 fix: an earlier Desk's empty marker is taken for one never published	TestACreationIsSweptOnlyWhereItWasNeverPublished
 go	audit r3 fix: an identity taken from jpack.json is bound to this folder	TestAKeyFromBeforeTheIdentityIsKeptWhenItsProjectMoves,TestAMissingIdentityTakesNoCustodyThroughACopiedConfiguration
