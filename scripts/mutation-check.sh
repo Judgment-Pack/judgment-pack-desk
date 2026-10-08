@@ -5069,14 +5069,28 @@ func (b *cappedBuffer) exceeded() bool {'
     '		if custody.holds(s.root, rel) {' \
     '		if custody.holds(s.root, rel) && false {'
   mutate go 'archive edges: the custody is not found by its path' 'internal/desk/file_access.go' \
-    '	if c.rel != "" {' \
-    '	if false && c.rel != "" {'
+    '	for _, rel := range c.rels {' \
+    '	for _, rel := range c.rels[:0] {'
   mutate go 'archive edges: the custody is not found by identity' 'internal/desk/file_access.go' \
-    '		if os.SameFile(info, c.info) {' \
-    '		if os.SameFile(info, c.info) && false {'
+    '			if held.info != nil && os.SameFile(info, held.info) {' \
+    '			if held.info != nil && os.SameFile(info, held.info) && false {'
   mutate go 'archive edges: a project in Desk'"'"'s custody is not' 'internal/desk/file_access.go' \
-    '		if info, err := os.Lstat(dir); err == nil && os.SameFile(info, custody.info) {' \
-    '		if info, err := os.Lstat(dir); err == nil && os.SameFile(info, custody.info) && false {'
+    '			if info, err := os.Lstat(dir); err == nil && os.SameFile(info, root.info) {' \
+    '			if info, err := os.Lstat(dir); err == nil && os.SameFile(info, root.info) && false {'
+  # Each custody folder resolved on its own, so one moved into the project
+  # with a link left at its name is found where it is (review round 1 of
+  # #335, finding 1).
+  mutate go 'archive edges: the custody folders are not resolved' 'internal/desk/file_access.go' \
+    '	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		if info, err := os.Stat(resolved); err == nil && info.IsDir() {
+			return custodyRoot{path: resolved, info: info}
+		}
+	}
+	return custodyRoot{path: path}' \
+    '	if info, err := os.Lstat(path); err == nil {
+		return custodyRoot{path: path, info: info}
+	}
+	return custodyRoot{path: path}'
   # A Remove is never made over a journal Desk cannot read whole, its own
   # line is read back before the file goes, and a line is never joined to a
   # write that did not finish (#330).

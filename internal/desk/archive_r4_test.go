@@ -106,8 +106,9 @@ func TestProjectFilesWriteNothingInDesksCustody(t *testing.T) {
 
 // **A project inside Desk's custody is all of it in custody** (issue #329):
 // a project opened on the signing folder, or on the configuration folder's
-// `secrets/`, saves nothing; one opened on the configuration folder saves
-// beside `secrets/` and nothing in it.
+// `secrets/`, saves nothing, and its startup cleanup removes nothing; one
+// opened on the configuration folder saves beside `secrets/` and nothing in
+// it.
 func TestAProjectInDesksCustodyIsAllOfItInCustody(t *testing.T) {
 	for _, tc := range []struct {
 		name, project, rel string
@@ -125,6 +126,15 @@ func TestAProjectInDesksCustodyIsAllOfItInCustody(t *testing.T) {
 			if (w.Code == http.StatusOK) != tc.saved {
 				t.Errorf("the save answered %d %s", w.Code, w.Body)
 			}
+			// The startup cleanup, wherever the project is all custody.
+			if tc.project != "." {
+				staged := filepath.Join(s.projectDir, stagingPrefix+"0123456789abcdef01234567.tmp")
+				writeBare(t, staged, "staged\n")
+				s.removeStaleStaging()
+				if _, err := os.Lstat(staged); err != nil {
+					t.Errorf("the cleanup removed a file in the custody: %v", err)
+				}
+			}
 		})
 	}
 }
@@ -140,7 +150,7 @@ func TestDesksCustodyIsFoundByIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	custody := signingCustody{info: info}
+	custody := signingCustody{roots: []custodyRoot{{info: info}}}
 	if !custody.holds(s.root, "config/secrets/signing/"+desk2+seedSuffix) {
 		t.Error("a path through secrets/ is not in custody")
 	}
@@ -519,6 +529,80 @@ func TestEveryCheckThatDoesNotConfirmAnOlderRunForgetsIt(t *testing.T) {
 			}
 			if s.stamping.confirmedAt(named, head) {
 				t.Error("the confirmation is kept")
+			}
+		})
+	}
+}
+
+// **A custody folder moved into the project is still custody** (review
+// round 1 of #335, finding 1, the reviewer's scenario). `secrets/`, or the
+// signing folder's archive, is moved into the project that holds the
+// configuration folder, and a link left at its own name. A save of the seed,
+// or of the archived seed, through the folder's real path is refused with
+// the custody's words, and the file is the file it was, with its bytes; the
+// startup cleanup leaves a file with Project Files' staging name there.
+func TestACustodyFolderMovedIntoTheProjectIsStillCustody(t *testing.T) {
+	for _, moved := range []string{"secrets", "the archive"} {
+		t.Run(moved, func(t *testing.T) {
+			base := t.TempDir()
+			s, logs := bareServer(t, base, filepath.Join(base, "config"), desk2)
+			bareKeys(t, s)
+			secrets := filepath.Join(s.configDir, "secrets")
+			seed := filepath.Join(secrets, "signing", desk2+seedSuffix)
+			var rel, kept string
+			switch moved {
+			case "secrets":
+				kept = filepath.Join(base, "kept-secrets")
+				if err := os.Rename(secrets, kept); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink("../kept-secrets", secrets); err != nil {
+					t.Fatal(err)
+				}
+				rel = "kept-secrets/signing/" + desk2 + seedSuffix
+				seed = filepath.Join(kept, "signing", desk2+seedSuffix)
+			default:
+				dir, err := s.assistant.openSigning(false)
+				if err != nil {
+					t.Fatal(err)
+				}
+				info, err := dir.root.Lstat(desk2 + seedSuffix)
+				if err != nil {
+					t.Fatal(err)
+				}
+				file, err := dir.archive(desk2+seedSuffix, info, archived{identity: desk2, rule: archivePromoted, why: "the test's"})
+				dir.Close()
+				if err != nil {
+					t.Fatal(err)
+				}
+				archive := filepath.Join(secrets, "signing", archiveDirName)
+				kept = filepath.Join(base, "kept-archive")
+				if err := os.Rename(archive, kept); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink("../../../kept-archive", archive); err != nil {
+					t.Fatal(err)
+				}
+				rel = "kept-archive/" + desk2 + "/" + file
+				seed = filepath.Join(kept, desk2, file)
+			}
+			before, err := os.Stat(seed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			old := readFile(t, seed)
+			w := fileWrite(t, s, rel, "replaced\n", digestOf([]byte(old)), false)
+			if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), signingCustodyWords) {
+				t.Errorf("the save answered %d %s", w.Code, w.Body)
+			}
+			if after, err := os.Stat(seed); err != nil || !os.SameFile(before, after) || readFile(t, seed) != old {
+				t.Errorf("the file is not the file it was: %v", err)
+			}
+			staged := filepath.Join(kept, stagingPrefix+"0123456789abcdef01234567.tmp")
+			writeBare(t, staged, standInSeed+"\n")
+			s.removeStaleStaging()
+			if _, err := os.Lstat(staged); err != nil {
+				t.Errorf("the cleanup removed a file in the moved folder: %v (%s)", err, logs)
 			}
 		})
 	}

@@ -70,17 +70,49 @@ func (s *Server) fileAccessPolicy() fileAccessPolicy {
 // that holds Desk's configuration folder, or that is held in it, reaches
 // those files by an ordinary path, and Project Files writes, replaces and
 // removes none of them: a key leaves Desk's custody only by the owner's
-// Remove, under the signing folder's lock. Found by resolved path, and,
-// where `secrets/` is there, by its identity, which holds whatever spelling
-// reaches it (a case-insensitive volume's, a bind mount's).
+// Remove, under the signing folder's lock.
+//
+// **Each custody folder resolved on its own** (review round 1 of #335,
+// finding 1): `secrets/`, the signing folder, its archive, Runner's folder
+// and Runner's archive, each through every symbolic link on its way, so
+// that one moved into the project, with a link left at its own name, is
+// found where it is. A path is in custody by its spelling under the
+// project, compared without case, and by the identity of any folder on its
+// way, which holds whatever spelling reaches it (a case-insensitive
+// volume's, a bind mount's).
 type signingCustody struct {
-	// rel is `secrets/`'s path in the project, slash-separated, where the
-	// project holds it; empty where it does not.
-	rel string
+	// roots are the custody's folders, each resolved.
+	roots []custodyRoot
+	// rels are the roots' paths in the project, slash-separated, where the
+	// project holds them.
+	rels []string
 	// whole is a project in Desk's custody: every path of it is.
 	whole bool
-	// info is `secrets/` as found now; nil where it is not there.
+}
+
+// custodyRoot is one folder of Desk's custody: its path, with every symbolic
+// link on its way resolved, and the folder found there; info is nil where
+// it is not there.
+type custodyRoot struct {
+	path string
 	info fs.FileInfo
+}
+
+// custodyRootAt is the custody folder named path, resolved through every
+// symbolic link on its way; where it is not there, its path as named.
+func custodyRootAt(path string) custodyRoot {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		if info, err := os.Stat(resolved); err == nil && info.IsDir() {
+			return custodyRoot{path: resolved, info: info}
+		}
+	}
+	return custodyRoot{path: path}
+}
+
+// withinPath is whether rel, a filepath.Rel answer, stays at or under its
+// base.
+func withinPath(rel string) bool {
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // signingCustody is Desk's custody as this server's project sees it now.
@@ -90,42 +122,50 @@ func (s *Server) signingCustody() signingCustody {
 		return custody
 	}
 	secrets := filepath.Join(s.configDir, secretsDirName)
-	if info, err := os.Lstat(secrets); err == nil {
-		custody.info = info
-	}
-	if resolved, err := filepath.EvalSymlinks(s.configDir); err == nil {
-		secrets = filepath.Join(resolved, secretsDirName)
-	}
-	// Under the project, by its path: found even before `secrets/` is made.
-	if rel, err := filepath.Rel(s.projectDir, secrets); err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		custody.rel = filepath.ToSlash(rel)
-	}
-	// The project in it: the project's own folder, or one above it, is
-	// `secrets/` itself. A project inside it means it is there to compare.
-	for dir := s.projectDir; custody.info != nil && !custody.whole; {
-		if info, err := os.Lstat(dir); err == nil && os.SameFile(info, custody.info) {
-			custody.whole = true
+	signing := filepath.Join(secrets, signingDirName)
+	runner := filepath.Join(signing, runnerSigningDirName)
+	for _, path := range []string{secrets, signing, filepath.Join(signing, archiveDirName), runner, filepath.Join(runner, archiveDirName)} {
+		root := custodyRootAt(path)
+		if root.info == nil {
+			if path != secrets {
+				continue
+			}
+			// Not there yet: found by the path it would take.
+			if resolved, err := filepath.EvalSymlinks(s.configDir); err == nil {
+				root.path = filepath.Join(resolved, secretsDirName)
+			}
 		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
+		custody.roots = append(custody.roots, root)
+		if rel, err := filepath.Rel(s.projectDir, root.path); err == nil && rel != "." && withinPath(rel) {
+			custody.rels = append(custody.rels, filepath.ToSlash(rel))
 		}
-		dir = parent
+		// The project in it: the project's own folder, or one above it, is
+		// the folder itself.
+		for dir := s.projectDir; root.info != nil && !custody.whole; {
+			if info, err := os.Lstat(dir); err == nil && os.SameFile(info, root.info) {
+				custody.whole = true
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
 	}
 	return custody
 }
 
 // holds is whether clean, a project path, is in Desk's custody: the project
-// is, or the path is `secrets/` or under it, by its spelling, compared
-// without case, or by the identity of any folder on its way, as root finds
-// it.
+// is, or the path is a custody folder or under one, by its spelling,
+// compared without case, or by the identity of any folder on its way, as
+// root finds it.
 func (c signingCustody) holds(root *os.Root, clean string) bool {
 	if c.whole {
 		return true
 	}
 	parts := strings.Split(clean, "/")
-	if c.rel != "" {
-		custody := strings.Split(c.rel, "/")
+	for _, rel := range c.rels {
+		custody := strings.Split(rel, "/")
 		if len(parts) >= len(custody) {
 			same := true
 			for i := range custody {
@@ -140,9 +180,9 @@ func (c signingCustody) holds(root *os.Root, clean string) bool {
 }
 
 // byIdentity is whether any folder on the way to the project path parts,
-// as root finds it, is `secrets/` itself.
+// as root finds it, is a custody folder itself.
 func (c signingCustody) byIdentity(root *os.Root, parts []string) bool {
-	if c.info == nil || root == nil {
+	if root == nil {
 		return false
 	}
 	for i := range parts {
@@ -150,8 +190,10 @@ func (c signingCustody) byIdentity(root *os.Root, parts []string) bool {
 		if err != nil {
 			return false
 		}
-		if os.SameFile(info, c.info) {
-			return true
+		for _, held := range c.roots {
+			if held.info != nil && os.SameFile(info, held.info) {
+				return true
+			}
 		}
 	}
 	return false
