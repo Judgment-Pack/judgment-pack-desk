@@ -54,6 +54,11 @@ func watchKeys(t *testing.T, dir string, then func(at string)) *keyWatch {
 // isKeyFile is whether name is a seed, a next seed or a list of public keys,
 // at a live name or archived.
 func isKeyFile(name string) bool {
+	if strings.HasPrefix(name, keysStagingPrefix) {
+		// A list of public keys while it is staged (review round 1 of #327,
+		// finding 3).
+		return true
+	}
 	if parts := archiveFileForm.FindStringSubmatch(name); parts != nil {
 		return parts[4] == "seed" || parts[4] == "next.seed" || parts[4] == "keys.jsonl"
 	}
@@ -259,6 +264,20 @@ func TestNoPathRemovesAKeyOnItsOwn(t *testing.T) {
 			}
 			return w, outcome{r.signing, func() string { return before + logged.String() }}
 		}},
+		{"a list of public keys that could not be published", true, func(t *testing.T) (*keyWatch, outcome) {
+			s, logged := bareServer(t, filepath.Join(t.TempDir(), "project"), filepath.Join(t.TempDir(), "config"), desk)
+			bareKeys(t, s)
+			dir, err := s.assistant.openSigning(false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(dir.Close)
+			w := watchKeys(t, dir.path, nil)
+			if _, err := dir.writeNewKeys(desk+keysSuffix, []deskPublicKey{key1}); err == nil {
+				t.Fatal("a list was written over another")
+			}
+			return w, outcome{dir.path, logged.String}
+		}},
 		{"a rotation's journal no project open here holds", true, func(t *testing.T) (*keyWatch, outcome) {
 			s, logged := bareServer(t, filepath.Join(t.TempDir(), "project"), filepath.Join(t.TempDir(), "config"), "")
 			orphan := strings.Repeat("f", 64)
@@ -297,7 +316,7 @@ var custodyFiles = []string{"archive.go", "custody.go", "desks.go", "rotation.go
 // removalsAllowed is every Remove and Rename in those files, by file,
 // function and call, and why it is not a key removed on Desk's own.
 var removalsAllowed = map[string]string{
-	"archive.go (*signingDir).archive Rename":                "the archive move itself, never over anything",
+	"archive.go (*signingDir).archiveAs Rename":              "the archive move itself, never over anything",
 	"archive.go (*signingDir).removeArchivedFile Remove":     "the owner's Remove, confirmed with a token bound to the entry's digest",
 	"rotation.go (*signingDir).placeNext Rename":             "the next seed into the current seed's name, which must hold nothing",
 	"rotation.go (*signingDir).writeJournal Remove":          "a rotation's journal it could not write whole",
@@ -307,7 +326,7 @@ var removalsAllowed = map[string]string{
 	"signing.go (*signingDir).rewriteMarker Remove":          "a staging file",
 	"signing.go (*signingDir).rewriteMarker Rename":          "a staged creation marker over the marker it replaces",
 	"signing.go (*signingDir).writeMarkerHolding Remove":     "a creation marker it could not write whole",
-	"signing.go (*signingDir).writeNewKeys Remove":           "a staging file, linked to the list's name first",
+	"signing.go (*signingDir).writeNewKeys Remove":           "the staging name of a list, only once the list is linked to its own name and both name one file; unpublished, it is archived",
 	"signing.go (*signingDir).publicKeyFiles Remove":         "the public-key files written for one audit verify",
 	"custody.go (*assistantStore).writeConfigNamed Remove":   "desk.json's staging file",
 	"custody.go (*assistantStore).writeConfigNamed Rename":   "desk.json, staged",
@@ -727,5 +746,42 @@ func TestTheMomentAfterTheLastCheckKeepsBothKeys(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), "was moved aside or replaced while Desk named the next key") {
 		t.Errorf("the log does not say the trail moved: %s", logs)
+	}
+}
+
+// **A list of public keys that could not be published is kept** (review
+// round 1 of #327, finding 3, the reviewer's scenario). The list is staged
+// whole, and its link into place fails, here because its name holds a list
+// already: the staged list is not removed but moved to Desk's archive of
+// keys, with the bytes written and the sentence that says why; the list at
+// its name is untouched, and no staging file is left.
+func TestAListThatCouldNotBePublishedIsKept(t *testing.T) {
+	s, logs := bareServer(t, filepath.Join(t.TempDir(), "project"), filepath.Join(t.TempDir(), "config"), desk2)
+	bareKeys(t, s)
+	dir, err := s.assistant.openSigning(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dir.Close()
+	before := readFile(t, filepath.Join(dir.path, desk2+keysSuffix))
+	if _, err := dir.writeNewKeys(desk2+keysSuffix, []deskPublicKey{key1, {secondPublicKey, secondKeyID, 1, fixtureTrail}}); err == nil {
+		t.Fatal("a list was written over another")
+	}
+	if got := readFile(t, filepath.Join(dir.path, desk2+keysSuffix)); got != before {
+		t.Errorf("the list at its name is %q", got)
+	}
+	for _, name := range namesIn(t, dir.path) {
+		if strings.HasPrefix(name, keysStagingPrefix) {
+			t.Errorf("a staging file was left: %s", name)
+		}
+	}
+	if got := archivedIn(t, dir.path, desk2); !slices.Equal(got, kindsArchived(archiveCreationStopped, "keys.jsonl")) {
+		t.Fatalf("the archive holds %q", got)
+	}
+	if got := readFile(t, archivedFile(t, dir.path, desk2, "keys.jsonl")); got != string(key1.line())+wantKeyLineOn(secondPublicKey, secondKeyID, 1, fixtureTrail) {
+		t.Errorf("the archived list is %q", got)
+	}
+	if !strings.Contains(logs.String(), "could not be put under its name") {
+		t.Errorf("the log does not say why: %s", logs)
 	}
 }

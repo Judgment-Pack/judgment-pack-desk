@@ -3022,8 +3022,9 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if err := staged.Chmod(custodyFileMode); err != nil {' \
     '	if err := staged.Chmod(0o644); err != nil {'
   mutate go "key list: a staging file is left" "$SG" \
-    '	defer d.root.Remove(stagedName)' \
-    '	defer func() {}()'
+    '		_ = d.root.Remove(stagedName)
+' \
+    ''
   mutate go "key list: the first key takes over from a later record" "$SG" \
     'KeyID: answer.KeyID, At: 0}' \
     'KeyID: answer.KeyID, At: 1}'
@@ -4882,6 +4883,14 @@ func (b *cappedBuffer) exceeded() bool {'
 			entry.Why = archiveBackWords + " " + entry.Why' \
     '		if false {
 			entry.Why = archiveBackWords + " " + entry.Why'
+  mutate go 'archive: a list whose link failed is removed' 'internal/desk/signing.go' \
+    '	if _, err := d.archiveAs(stagedName, "keys.jsonl", identity, info, archived{identity: identity, rule: archiveCreationStopped, why: why}); err != nil {' \
+    '	if err := d.root.Remove(stagedName); err != nil || info == nil || identity == "" || why == "" {'
+  mutate go 'archive: a list whose link failed is left staged and unsaid' 'internal/desk/signing.go' \
+    '	if err := d.root.Link(stagedName, name); err != nil {
+		return kept(err)' \
+    '	if err := d.root.Link(stagedName, name); err != nil {
+		return nil, err'
   mutate go 'archive: the owner'"'"'s Remove writes no journal line' 'internal/desk/archive.go' \
     '	if err := held.appendArchiveLine(folder, removed); err != nil {' \
     '	if err := error(nil); err != nil || removed.File == "" {'

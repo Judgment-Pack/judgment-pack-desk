@@ -736,6 +736,13 @@ func (d *signingDir) writeMarkerHolding(name string, data []byte) (os.FileInfo, 
 // anything: staged under a name of its own, made 0600 on its descriptor,
 // synced, and then linked into place. A link never replaces a name that
 // exists, where a rename would. It answers the file as written.
+//
+// **The staged list is never removed unpublished** (review round 1 of #327,
+// finding 3). Its staging name goes only once the list is linked to its own
+// name, and both names hold one file, so that nothing is lost by it; where
+// the list was not published, whatever was written of it is moved to Desk's
+// archive of keys, with the sentence that says why, and is otherwise left
+// where it was staged, and said.
 func (d *signingDir) writeNewKeys(name string, keys []deskPublicKey) (os.FileInfo, error) {
 	var data []byte
 	for _, key := range keys {
@@ -745,28 +752,36 @@ func (d *signingDir) writeNewKeys(name string, keys []deskPublicKey) (os.FileInf
 	if err != nil {
 		return nil, err
 	}
-	defer d.root.Remove(stagedName)
+	kept := func(failed error) (os.FileInfo, error) {
+		return nil, d.keepUnpublished(stagedName, name, failed)
+	}
 	if _, err := staged.Write(data); err != nil {
 		staged.Close()
-		return nil, err
+		return kept(err)
 	}
 	if err := staged.Chmod(custodyFileMode); err != nil {
 		staged.Close()
-		return nil, err
+		return kept(err)
 	}
 	if err := staged.Sync(); err != nil {
 		staged.Close()
-		return nil, err
+		return kept(err)
 	}
 	if err := staged.Close(); err != nil {
-		return nil, err
+		return kept(err)
 	}
+	keyBetween("list: staged")
 	if err := d.root.Link(stagedName, name); err != nil {
-		return nil, err
+		return kept(err)
 	}
 	info, err := d.root.Lstat(name)
 	if err != nil {
 		return nil, err
+	}
+	// Published: the staging name is a second name of the very file now at
+	// the list's name, and goes; any other file there is left.
+	if found, err := d.root.Lstat(stagedName); err == nil && os.SameFile(found, info) {
+		_ = d.root.Remove(stagedName)
 	}
 	if dir, err := d.root.Open("."); err == nil {
 		_ = dir.Sync()
@@ -774,6 +789,30 @@ func (d *signingDir) writeNewKeys(name string, keys []deskPublicKey) (os.FileInf
 	}
 	return info, nil
 }
+
+// keepUnpublished moves a list of public keys staged as stagedName, and not
+// published as name, to Desk's archive of keys under the identity name is
+// kept under, saying why, failed (review round 1 of #327, finding 3). It
+// answers failed, with what could not be done of that.
+func (d *signingDir) keepUnpublished(stagedName, name string, failed error) error {
+	info, err := d.root.Lstat(stagedName)
+	if errors.Is(err, fs.ErrNotExist) {
+		return failed
+	}
+	_, identity, ok := archiveKindOf(name)
+	if err != nil || !ok {
+		return fmt.Errorf("%w; the list written was left where it was staged", failed)
+	}
+	why := fmt.Sprintf(listUnpublishedWords, strings.TrimRight(failed.Error(), "."))
+	if _, err := d.archiveAs(stagedName, "keys.jsonl", identity, info, archived{identity: identity, rule: archiveCreationStopped, why: why}); err != nil {
+		return fmt.Errorf("%w; the list written could not be moved to Desk's archive of keys, and was left where it was staged: %v", failed, err)
+	}
+	return failed
+}
+
+// listUnpublishedWords is the archive line of a list of public keys a
+// creation wrote and could not put under its name.
+const listUnpublishedWords = "The list of public keys Desk wrote for this key could not be put under its name: %s. Desk keeps it here rather than removing it."
 
 // stage makes an exclusive, randomly named staging file in the signing
 // folder, as custody's own `stage` does beside the assistant's key.

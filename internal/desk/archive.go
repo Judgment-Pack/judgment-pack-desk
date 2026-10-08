@@ -243,6 +243,16 @@ func (d *signingDir) archive(name string, info os.FileInfo, record archived) (st
 	if record.identity != "" && record.identity != identity {
 		return "", fmt.Errorf("%s was not archived: it is not kept under the identity named", name)
 	}
+	return d.archiveAs(name, kind, identity, info, record)
+}
+
+// archiveAs is archive for a file whose name does not say what it is, a
+// list of public keys staged under a name of its own: kind and identity are
+// given.
+func (d *signingDir) archiveAs(name, kind, identity string, info os.FileInfo, record archived) (string, error) {
+	if info == nil {
+		return "", fmt.Errorf("%s was not archived: %w", name, errNotArchivable)
+	}
 	folder, err := d.archiveFolder(identity)
 	if err != nil {
 		return "", fmt.Errorf("%s was not archived: its archive folder: %w", name, err)

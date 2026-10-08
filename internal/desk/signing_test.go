@@ -335,7 +335,9 @@ func TestAKeyAlreadyKeptUnderTheIdIsNeverTouched(t *testing.T) {
 
 // **A list of public keys is never written over.** Linked into place, where
 // a rename would replace whatever the name held; what is kept is left as it
-// is, and nothing staged is left beside it.
+// is. The list written and not published is kept in Desk's archive of keys,
+// never removed (review round 1 of #327, finding 3), and nothing staged is
+// left beside it.
 func TestAListOfKeysIsNeverWrittenOver(t *testing.T) {
 	folder := t.TempDir()
 	root, err := os.OpenRoot(folder)
@@ -344,19 +346,23 @@ func TestAListOfKeysIsNeverWrittenOver(t *testing.T) {
 	}
 	defer root.Close()
 	dir := &signingDir{root: root, path: folder}
-	if err := os.WriteFile(filepath.Join(folder, "a.keys.jsonl"), []byte("kept\n"), 0o600); err != nil {
+	kept, written := strings.Repeat("a", 32)+keysSuffix, strings.Repeat("b", 32)+keysSuffix
+	if err := os.WriteFile(filepath.Join(folder, kept), []byte("kept\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := dir.writeNewKeys("a.keys.jsonl", []deskPublicKey{{standInPublicKey, standInKeyID, 0, ""}}); err == nil {
+	if _, err := dir.writeNewKeys(kept, []deskPublicKey{{standInPublicKey, standInKeyID, 0, ""}}); err == nil {
 		t.Error("a list was written over one already kept")
 	}
-	if got := readFile(t, filepath.Join(folder, "a.keys.jsonl")); got != "kept\n" {
+	if got := readFile(t, filepath.Join(folder, kept)); got != "kept\n" {
 		t.Errorf("what was kept became %q", got)
 	}
-	if _, err := dir.writeNewKeys("b.keys.jsonl", []deskPublicKey{{standInPublicKey, standInKeyID, 0, ""}}); err != nil {
+	if got := archivedIn(t, folder, strings.Repeat("a", 32)); !slices.Equal(got, kindsArchived(archiveCreationStopped, "keys.jsonl")) {
+		t.Errorf("the list written and not published: the archive holds %q", got)
+	}
+	if _, err := dir.writeNewKeys(written, []deskPublicKey{{standInPublicKey, standInKeyID, 0, ""}}); err != nil {
 		t.Fatal(err)
 	}
-	if names := namesIn(t, folder); !slices.Equal(names, []string{"a.keys.jsonl", "b.keys.jsonl"}) {
+	if names := namesIn(t, folder); !slices.Equal(names, []string{kept, archiveDirName, written}) {
 		t.Errorf("the folder holds %q", names)
 	}
 }
