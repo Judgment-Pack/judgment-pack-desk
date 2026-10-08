@@ -169,6 +169,9 @@ func (s *Server) planSigning(schema runtimeSchema, audit string) (*upgradeSignin
 	if s.startupShared() {
 		return notOffered("This project is not offered a signing key: " + sharedWords + ".")
 	}
+	if s.startupUnresolved() {
+		return notOffered("This project is not offered a signing key: " + unresolvedWords + ".")
+	}
 	seed, err := s.startupSeedPath()
 	if err != nil {
 		return notOffered(fmt.Sprintf(keyNotOfferedByCustody, strings.TrimRight(s.custodyWords(err.Error()), ".")))
@@ -363,6 +366,9 @@ func (s *Server) creationBound(dir *signingDir, id string, marker os.FileInfo) s
 	if !s.startupBound() {
 		if s.startupShared() {
 			return sharedWords
+		}
+		if s.startupUnresolved() {
+			return unresolvedWords
 		}
 		return "a name made from a path, or one Desk cannot read now, is not bound to one project, so the key may be one a project moved away from here still names"
 	}

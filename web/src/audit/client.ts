@@ -193,15 +193,24 @@ type HeldInputs = { expected?: number; expectUnread?: string[]; handoverProblem?
  */
 export type HandedSince = { holder: string; trail: string; through: number; records?: number; lines?: number }
 export type AuditRecord =
-  | ({ state: 'report'; runtime?: string; report: AuditReport; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation; repair?: AuditRepair; stamping?: AuditStamping; since?: HandedSince[] } & HeldInputs)
-  | ({ state: 'unverified'; runtime?: string; diagnostics: AuditDiagnostic[]; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation; stamping?: AuditStamping } & HeldInputs)
-  | { state: 'older-runtime'; runtime?: string; floor: string }
-  | { state: 'no-trail' }
+  | ({ state: 'report'; runtime?: string; report: AuditReport; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation; identity?: AuditIdentity; repair?: AuditRepair; stamping?: AuditStamping; since?: HandedSince[] } & HeldInputs)
+  | ({ state: 'unverified'; runtime?: string; diagnostics: AuditDiagnostic[]; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation; identity?: AuditIdentity; stamping?: AuditStamping } & HeldInputs)
+  | { state: 'older-runtime'; runtime?: string; floor: string; identity?: AuditIdentity }
+  | { state: 'no-trail'; identity?: AuditIdentity }
 
 export const AUDIT_KEY = ['desk-audit-record'] as const
 
 /** Desk does not check this desk's record here, and says why. */
 export class AuditUnavailable extends Error {}
+
+/**
+ * The chassis's question on this project's identity, given beside its
+ * refusal to check the decision record as with every answer (review round 1
+ * of #315), carried by the error the refusal is read as.
+ */
+export function identityOf(error: unknown): AuditIdentity | undefined {
+  return error instanceof Error && 'identity' in error && isAuditIdentity(error.identity) ? error.identity : undefined
+}
 
 const text = (value: unknown): value is string => typeof value === 'string'
 const count = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0
@@ -282,7 +291,7 @@ export function isAuditReport(value: unknown): value is AuditReport {
 
 export function isAuditRecord(value: unknown): value is AuditRecord {
   if (!object(value) || !optional(value.runtime, text) || !optional(value.files, item => list(item, isTrailFile))
-    || !optional(value.keys, isAuditKeys) || !optional(value.signing, isAuditSigning) || !optional(value.rotation, isAuditRotation)
+    || !optional(value.keys, isAuditKeys) || !optional(value.signing, isAuditSigning) || !optional(value.rotation, isAuditRotation) || !optional(value.identity, isAuditIdentity)
     || !optional(value.expected, count) || !optional(value.expectUnread, item => list(item, named)) || !optional(value.handoverProblem, named)) return false
   if (!optional(value.stamping, isAuditStamping)) return false
   switch (value.state) {
@@ -301,10 +310,11 @@ function isHandedSince(value: unknown): value is HandedSince {
 }
 
 async function refusal(response: Response): Promise<Error> {
-  let body: { error?: unknown } = {}
+  let body: { error?: unknown; identity?: unknown } = {}
   try { body = await response.json() as typeof body } catch { /* The status is still an answer. */ }
   const message = text(body.error) ? body.error : msg('The decision record could not be loaded. Please try again.')
-  return response.status === 409 ? new AuditUnavailable(message) : new Error(message)
+  const error = response.status === 409 ? new AuditUnavailable(message) : new Error(message)
+  return isAuditIdentity(body.identity) ? Object.assign(error, { identity: body.identity }) : error
 }
 
 /**
@@ -362,6 +372,39 @@ export async function rotateSigningKey(token: string): Promise<RotationResult> {
     throw new Error(msg('The key could not be rotated. Check the decision record again.'))
   }
   return value as RotationResult
+}
+
+/* The project's identity ---------------------------------------------------- */
+
+/**
+ * Where this project's identity was written in another folder, which no
+ * longer holds it, and Desk cannot tell whether this folder is that one,
+ * moved here, or a copy of it (issue #309): the two answers the owner may
+ * give, each with the token that confirms it. Desk makes, rotates and
+ * recovers no signing key under that identity until the owner answers.
+ */
+export type AuditIdentity = { state: 'unresolved'; moved: string; copy: string }
+/** The owner's answer: this folder was moved here, or it is a copy. */
+export type IdentityChoice = 'moved' | 'copy'
+
+export function isAuditIdentity(value: unknown): value is AuditIdentity {
+  return object(value) && value.state === 'unresolved' && hex(64)(value.moved) && hex(64)(value.copy) && value.moved !== value.copy
+}
+
+/**
+ * Answer which this folder is, with the token the decision record gave for
+ * that answer. A refusal says why in Desk's words.
+ */
+export async function resolveIdentity(choice: IdentityChoice, token: string): Promise<IdentityChoice> {
+  const response = await deskFetch('/api/project/identity', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ choice, token }) })
+  if (!response.ok) {
+    let body: { error?: unknown } = {}
+    try { body = await response.json() as typeof body } catch { /* The status is still an answer. */ }
+    throw new Error(text(body.error) ? body.error : msg('This project’s identity could not be changed. Check the decision record again.'))
+  }
+  const value: unknown = await response.json()
+  if (!object(value) || value.state !== choice) throw new Error(msg('This project’s identity could not be changed. Check the decision record again.'))
+  return choice
 }
 
 /* The repair ---------------------------------------------------------------- */

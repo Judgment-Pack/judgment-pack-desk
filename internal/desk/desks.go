@@ -390,6 +390,16 @@ func (s *Server) createDesk(w http.ResponseWriter, r *http.Request) {
 		ID   string `json:"id"`
 		Name string `json:"name"`
 	}{id, request.Name})
+	// **The manifest's digest, in the key's marker, before the manifest**
+	// (issue #310): a stop from here leaves a marker no start takes for a
+	// creation never published, wherever the desk is moved after.
+	if err = gates.key.publishing(id, folder, manifest); err != nil {
+		s.log.Printf("desk: the new desk %s was not published: its key's marker could not record the manifest: %v", id, err)
+		unrecorded := storageRefusal(err)
+		s.abandonDesk(w, folder, entry, s.dropKey(gates.key, unrecorded))
+		return
+	}
+	keyBetween("publishing recorded")
 	if err = publishDeskManifest(folder, manifest); err != nil {
 		s.abandonDesk(w, folder, entry, s.dropKey(gates.key, storageRefusal(err)))
 		return
@@ -495,7 +505,9 @@ func (s *Server) makeDeskFolder(ctx context.Context, folder *os.Root, entry, id 
 					unlock()
 				}
 			}()
-			key, err := generateDeskKey(ctx, bin, held, dir, id)
+			// Its marker records the creation (issue #310): the desk's id and
+			// its folder, by device and inode.
+			key, err := generateKeyMarked(ctx, bin, held, dir, id, deskCreation{ID: id, Folder: identityKey(held.info)}.line())
 			if err != nil {
 				dir.Close()
 				s.log.Printf("desk: the new desk %s's signing key was not generated: %v", id, err)

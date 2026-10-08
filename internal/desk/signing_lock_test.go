@@ -424,7 +424,7 @@ func TestTheLockIsHeldFromTheFirstLookToTheLastChange(t *testing.T) {
 	other := newRotationRig(t, "d8000000000000000000000000000003", "")
 	other.writeTrail(t, 1, recordLine(standInKeyID, 1))
 	other.abandonRotation(t, "rotation: next generated")
-	if err := os.WriteFile(filepath.Join(other.signing, "d8000000000000000000000000000009.creating"), nil, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(other.signing, "d8000000000000000000000000000009.creating"), plantedAs("d8000000000000000000000000000009.creating"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	folder = other.signing

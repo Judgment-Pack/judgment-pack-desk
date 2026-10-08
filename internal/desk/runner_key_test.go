@@ -681,7 +681,7 @@ func TestNeitherSweepTouchesTheOthersKey(t *testing.T) {
 			if _, err := os.Lstat(filepath.Join(folder, file)); err == nil {
 				continue
 			}
-			if err := os.WriteFile(filepath.Join(folder, file), []byte("planted\n"), 0o600); err != nil {
+			if err := os.WriteFile(filepath.Join(folder, file), plantedAs(file), 0o600); err != nil {
 				t.Fatal(err)
 			}
 		}

@@ -19,9 +19,12 @@ package desk
 // Desk's private folder, as `.desk-private/project.json`, with the resolved
 // path of the folder it was written in:
 //
-//	{"id":"<64 hex>","path":"<the project's resolved path>"}
+//	{"id":"<64 hex>","path":"<the project's resolved path>","folder":"<device>:<inode>"}
 //
-// It moves with the project. A new name is random.
+// It moves with the project. A new name is random. `folder` is the project
+// folder's own device and inode when the file was written (issue #309), which
+// a move within one file system keeps and a copy does not; a file an earlier
+// Desk wrote has none.
 //
 // # A copy holds it too
 //
@@ -32,7 +35,29 @@ package desk
 // that name, makes and rotates no key for it here, and says so
 // (`startupShared`). Where the other folder is gone, or holds another name,
 // the project was moved, and the file is written again with this folder's
-// path. Where it cannot be told now, the identity is taken as shared. It is not kept in `jpack-desk.json`: that file is the project's
+// path. Where it cannot be told now, the identity is taken as shared.
+//
+// # Absence alone is not a move
+//
+// A folder that is gone, or holds another name, says nothing of whether this
+// one is it, moved, or a copy made before it went (issue #309, the second
+// line audit's finding N1): a copy started after the original moved away
+// would otherwise take the original's custody, and recover, under its older
+// sidecar, a rotation the original's trail committed to. So where the file's
+// folder no longer holds the name, the project is taken as moved only where
+// this folder is the folder the file was written in, by its device and inode
+// (`folder`); and where the file names this folder's own path, but records
+// another folder's device and inode, as a copy put at that path does, it is
+// not taken as this folder's either (review round 1 of #315). Otherwise its
+// identity is unresolved (`startupUnresolved`): no
+// key is made, rotated or recovered under it, and the decision record asks
+// the owner which it is, "this folder was moved here" or "this is a copy",
+// confirmed with a token bound to that choice and to the file as read
+// (`handleResolveIdentity`). Moved, the file is written again with this
+// folder; a copy is given a new name of its own, and what Desk keeps under
+// the old one is left as it is.
+//
+// It is not kept in `jpack-desk.json`: that file is the project's
 // shared configuration, committed and the same in every clone, and its
 // decoders, here and in the page, refuse the whole file for a member they do
 // not know. `.desk-private/` is never committed: the upgrade adds it to
@@ -90,12 +115,16 @@ package desk
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
+	"mime"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -105,8 +134,9 @@ import (
 
 const (
 	// startupIdentityDir and startupIdentityName are where the project's
-	// name is kept, and startupIdentityLimit the most of it Desk reads: the
-	// file is 146 bytes with `from`.
+	// name is kept, and startupIdentityLimit the most of it Desk reads, and
+	// writes (`writeIdentity`): the file is 233 bytes with `folder` and
+	// `from`, and the project's path.
 	startupIdentityDir   = ".desk-private"
 	startupIdentityName  = "project.json"
 	startupIdentityLimit = 512
@@ -148,6 +178,10 @@ type startupIdentity struct {
 	problem string
 	// shared is set where another folder holds this identity too.
 	shared bool
+	// unresolved is set where the folder the identity was written in no
+	// longer holds it, and this folder is not shown to be that folder moved
+	// (issue #309): the owner says which.
+	unresolved bool
 	// candidate is the name the offer shows a first key under, where the
 	// project has none yet: random, the same for this server's life.
 	candidate string
@@ -156,6 +190,9 @@ type startupIdentity struct {
 // errIdentityChanged is an identity file that is not the one Desk wrote or
 // read, or a name already taken where Desk would write one.
 var errIdentityChanged = errors.New("this project's identity changed while Desk was writing it")
+
+// errIdentityTooLong is an identity file longer than Desk reads back.
+var errIdentityTooLong = errors.New("this project's path is too long for the file Desk keeps its identity in")
 
 // testHookIdentityStep runs before each step of a migration that a stop can
 // cut short ("written", "moved"), and is nil outside tests. An error it
@@ -199,7 +236,7 @@ func (s *Server) startupKept() bool {
 func (s *Server) startupBound() bool {
 	s.startup.mu.RLock()
 	defer s.startup.mu.RUnlock()
-	return s.cfg.deskID == "" && s.startup.state == identityKept && !s.startup.shared
+	return s.cfg.deskID == "" && s.startup.state == identityKept && !s.startup.shared && !s.startup.unresolved
 }
 
 // startupShared is whether another folder holds this project's identity
@@ -210,9 +247,22 @@ func (s *Server) startupShared() bool {
 	return s.cfg.deskID == "" && s.startup.state == identityKept && s.startup.shared
 }
 
+// startupUnresolved is whether the folder this project's identity was
+// written in no longer holds it, and this folder was not shown to be that
+// folder moved here (issue #309).
+func (s *Server) startupUnresolved() bool {
+	s.startup.mu.RLock()
+	defer s.startup.mu.RUnlock()
+	return s.cfg.deskID == "" && s.startup.state == identityKept && s.startup.unresolved
+}
+
 // sharedWords is what the panel says of a project whose identity another
 // folder holds too.
 const sharedWords = "this project's identity is also held by another folder, as a copy of the project holds it, so Desk makes and rotates no key for it here, and recovers nothing under it"
+
+// unresolvedWords is what the panel says of a project whose identity is
+// unresolved (issue #309).
+const unresolvedWords = "this project's identity was written in another folder, which no longer holds it, and Desk cannot tell whether this folder is that one, moved here, or a copy of it, so it makes and rotates no key for it here, and recovers nothing under it, until you say which on the decision record"
 
 // **A made desk's copy, opened directly, is held to the same rule** (review
 // round 1 of #302). A copy of a made desk keeps its manifest's id and its
@@ -235,6 +285,9 @@ const (
 func (s *Server) identityShared() (bool, string) {
 	if s.startupShared() {
 		return true, sharedWords
+	}
+	if s.startupUnresolved() {
+		return true, unresolvedWords
 	}
 	return s.madeDeskShared()
 }
@@ -303,7 +356,7 @@ func (s *Server) newStartupKeyName() (string, error) {
 func (s *Server) setStartup(state identityState, id, from, problem string) {
 	s.startup.mu.Lock()
 	defer s.startup.mu.Unlock()
-	s.startup.state, s.startup.id, s.startup.from, s.startup.problem, s.startup.shared = state, id, from, problem, false
+	s.startup.state, s.startup.id, s.startup.from, s.startup.problem, s.startup.shared, s.startup.unresolved = state, id, from, problem, false, false
 }
 
 // setShared records that another folder holds this identity too.
@@ -311,6 +364,24 @@ func (s *Server) setShared() {
 	s.startup.mu.Lock()
 	defer s.startup.mu.Unlock()
 	s.startup.shared = true
+}
+
+// setUnresolved records that this identity waits for the owner's word on
+// whether this folder is the one it was written in, moved, or a copy.
+func (s *Server) setUnresolved() {
+	s.startup.mu.Lock()
+	defer s.startup.mu.Unlock()
+	s.startup.unresolved = true
+}
+
+// folderKey is this project's folder, by its device and inode, as the
+// identity file records it; "" where this system cannot say.
+func (s *Server) folderKey() string {
+	info, err := s.root.Stat(".")
+	if err != nil {
+		return ""
+	}
+	return identityKey(info)
 }
 
 // randomStartupID is a new project name. crypto/rand never fails, and never
@@ -323,9 +394,10 @@ func randomStartupID() string {
 
 // identityRecord is the identity file, as Desk writes it.
 type identityRecord struct {
-	ID   string `json:"id"`
-	Path string `json:"path"`
-	From string `json:"from,omitempty"`
+	ID     string `json:"id"`
+	Path   string `json:"path"`
+	Folder string `json:"folder,omitempty"`
+	From   string `json:"from,omitempty"`
 }
 
 // line is the file's one spelling.
@@ -340,6 +412,7 @@ func (r identityRecord) line() []byte {
 func parseIdentity(data []byte) (identityRecord, error) {
 	var record identityRecord
 	if json.Unmarshal(data, &record) != nil || !startupIDForm.MatchString(record.ID) || !filepath.IsAbs(record.Path) ||
+		record.Folder != "" && !fileIdentityForm.MatchString(record.Folder) ||
 		record.From != "" && (!startupIDForm.MatchString(record.From) || record.From == record.ID) ||
 		!bytes.Equal(record.line(), data) {
 		return identityRecord{}, errors.New("its identity file is not one Desk writes")
@@ -394,6 +467,12 @@ func readIdentity(private *os.Root) (record identityRecord, info os.FileInfo, fo
 // read, info, where over is true. The folder is synced after. It answers
 // the file as written.
 func writeIdentity(private *os.Root, record identityRecord, over os.FileInfo) (os.FileInfo, error) {
+	// **No file Desk would not read back** (bounds on both ends): a project
+	// whose path is too long for the file is refused before anything is
+	// written.
+	if len(record.line()) > startupIdentityLimit {
+		return nil, errIdentityTooLong
+	}
 	stage, err := randomStagingName(identityStagingPrefix)
 	if err != nil {
 		return nil, err
@@ -475,9 +554,20 @@ func (s *Server) resolveStartupIdentity() {
 	case found:
 		s.setStartup(identityKept, record.ID, record.From, "")
 		if record.Path != s.projectDir {
-			if record, info = s.copiedOrMoved(private, record, info); s.startupShared() {
+			if record, info = s.copiedOrMoved(private, record, info); s.startupShared() || s.startupUnresolved() {
 				return
 			}
+		} else if here := s.folderKey(); record.Folder != "" && record.Folder != here {
+			// **The pathname alone is not the folder** (review round 1 of
+			// #315, finding 1): a copy put at the pathname the identity was
+			// written at, after the folder it was written in moved away,
+			// holds the file of another folder. That folder's device and
+			// inode, which the file records, against this folder's, are
+			// evidence against it, and the identity is unresolved until the
+			// owner says which this folder is.
+			s.setUnresolved()
+			s.log.Printf("desk: this project's identity was written in another folder at this same path, by its device and inode, so Desk makes and rotates no key under it, and recovers nothing under it, until the owner says on the decision record whether this folder was moved here or is a copy")
+			return
 		}
 		if record.From == "" {
 			return
@@ -488,15 +578,25 @@ func (s *Server) resolveStartupIdentity() {
 
 // copiedOrMoved tells, for an identity file written in another folder,
 // whether that folder holds the same identity still: a copy, which makes the
-// identity shared (`startupShared`); or not, a move, after which the file is
-// written again with this folder's path, under this project's lock taken
-// once. Where it cannot be told now, the identity is taken as shared. It
-// answers the record and the file as they are then.
+// identity shared (`startupShared`); or not, and this folder is the folder
+// the file was written in, by its device and inode: a move, after which the
+// file is written again with this folder's path, under this project's lock
+// taken once. **A folder that no longer holds the identity is not enough**
+// (issue #309): where this folder is not shown to be the one the file was
+// written in, the identity is unresolved (`startupUnresolved`) until the
+// owner says which. Where it cannot be told now, the identity is taken as
+// shared. It answers the record and the file as they are then.
 func (s *Server) copiedOrMoved(private *os.Root, record identityRecord, info os.FileInfo) (identityRecord, os.FileInfo) {
 	holds, err := s.folderHoldsIdentity(record.Path, record.ID)
 	if err != nil || holds {
 		s.setShared()
 		s.log.Printf("desk: this project's identity is also held by %s, or that could not be told now (%v), so Desk makes and rotates no key under it here, and recovers nothing under it", record.Path, err)
+		return record, info
+	}
+	here := s.folderKey()
+	if record.Folder == "" || here == "" || record.Folder != here {
+		s.setUnresolved()
+		s.log.Printf("desk: this project's identity was written in %s, which no longer holds it, and this folder is not shown to be that one moved here, so Desk makes and rotates no key under it, and recovers nothing under it, until the owner says on the decision record whether this folder was moved here or is a copy", record.Path)
 		return record, info
 	}
 	unlock, err := s.lockProject(context.Background(), 0)
@@ -505,7 +605,7 @@ func (s *Server) copiedOrMoved(private *os.Root, record identityRecord, info os.
 		return record, info
 	}
 	defer unlock()
-	moved := identityRecord{ID: record.ID, Path: s.projectDir, From: record.From}
+	moved := identityRecord{ID: record.ID, Path: s.projectDir, Folder: here, From: record.From}
 	written, err := writeIdentity(private, moved, info)
 	if err != nil {
 		s.log.Printf("desk: this project was moved from %s, and its identity could not be written again with its folder: %v", record.Path, err)
@@ -611,10 +711,10 @@ func (s *Server) chooseStartupIdentity(dir *signingDir) (identityRecord, error) 
 			return identityRecord{}, err
 		}
 		if named != "" {
-			return identityRecord{ID: named, Path: s.projectDir}, nil
+			return identityRecord{ID: named, Path: s.projectDir, Folder: s.folderKey()}, nil
 		}
 	}
-	record := identityRecord{ID: randomStartupID(), Path: s.projectDir}
+	record := identityRecord{ID: randomStartupID(), Path: s.projectDir, Folder: s.folderKey()}
 	from, err := s.legacyStampingToMove(dir)
 	if err != nil {
 		return identityRecord{}, err
@@ -725,9 +825,232 @@ func (s *Server) finishStartupMove(private *os.Root, record identityRecord, info
 		}
 		s.log.Printf("desk: the stamping settings kept under this project's former name, %s, are kept under its name from now on", record.From)
 	}
-	if _, err := writeIdentity(private, identityRecord{ID: record.ID, Path: record.Path}, info); err != nil {
+	if _, err := writeIdentity(private, identityRecord{ID: record.ID, Path: record.Path, Folder: record.Folder}, info); err != nil {
 		s.log.Printf("desk: this project's identity still names its former name, for the next start: %v", err)
 		return
 	}
 	s.setStartup(identityKept, record.ID, "", "")
+}
+
+/* The owner's word on an unresolved identity (issue #309) ------------------ */
+
+// What the owner may say of an unresolved identity.
+const (
+	// identityMoved: this folder is the one the identity was written in,
+	// moved here; the file is written again with this folder.
+	identityMoved = "moved"
+	// identityCopy: this folder is a copy; it is given a name of its own.
+	identityCopy = "copy"
+	// identityResolveLimit bounds the confirmation's body: a choice and a
+	// token.
+	identityResolveLimit = 1 << 10
+)
+
+// identityOffer is the decision record's word on an unresolved identity: the
+// two answers the owner may give, each with the token that confirms it. It
+// carries no words of Desk's: the page says them.
+type identityOffer struct {
+	State string `json:"state"`
+	Moved string `json:"moved"`
+	Copy  string `json:"copy"`
+}
+
+// identityOfferNow is the offer, where this project's identity is unresolved
+// and its file can be read now; nil otherwise.
+func (s *Server) identityOfferNow() *identityOffer {
+	if !s.startupUnresolved() {
+		return nil
+	}
+	private, err := s.openIdentityFolder()
+	if err != nil {
+		return nil
+	}
+	defer private.Close()
+	record, info, found, err := readIdentity(private)
+	if err != nil || !found {
+		return nil
+	}
+	former := s.formerFolder(record)
+	if strings.HasPrefix(former, formerHolds) {
+		// The folder it was written in holds it again: this one is a copy
+		// beside it, and nothing waits for the owner's word.
+		return nil
+	}
+	return &identityOffer{State: "unresolved", Moved: s.identityToken(identityMoved, record, info, former), Copy: s.identityToken(identityCopy, record, info, former)}
+}
+
+// What the folder an identity was written in holds now, as the owner's answer
+// is bound to it (`formerFolder`).
+const (
+	formerAbsent     = "absent"
+	formerHere       = "here"
+	formerHolds      = "holds "
+	formerOther      = "other "
+	formerUnreadable = "unreadable"
+)
+
+// formerFolder is what the folder at record.Path, where the identity was
+// written, holds now (review round 1 of #315, finding 3): nothing there; this
+// very folder; a folder, by its device and inode, holding this identity, or
+// another or none; or that it could not be told now. The owner's answer is
+// bound to it, and refused where it changed.
+func (s *Server) formerFolder(record identityRecord) string {
+	other, err := os.OpenRoot(record.Path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return formerAbsent
+	}
+	if err != nil {
+		return formerUnreadable
+	}
+	defer other.Close()
+	there, err := other.Stat(".")
+	if err != nil {
+		return formerUnreadable
+	}
+	if here, err := s.root.Stat("."); err == nil && os.SameFile(here, there) {
+		return formerHere
+	}
+	key := identityKey(there)
+	private, _, err := openOwnFolder(other, []string{startupIdentityDir}, false, startupIdentityKept)
+	if errors.Is(err, fs.ErrNotExist) {
+		return formerOther + key
+	}
+	if err != nil {
+		return formerUnreadable
+	}
+	defer private.Close()
+	held, _, ok, err := readIdentity(private)
+	switch {
+	case err != nil:
+		return formerUnreadable
+	case ok && held.ID == record.ID:
+		return formerHolds + key
+	}
+	return formerOther + key
+}
+
+// identityToken binds the owner's answer to the identity file as the panel
+// read it: the answer, the name, the folder it names and the folder it was
+// written in, this folder by its path and its device and inode, the file
+// itself by its device and inode and its bytes, and what the folder it was
+// written in holds now, former (`formerFolder`, review round 1 of #315). It
+// is a MAC under the desk's own review key, and names its purpose, so no
+// other token confirms it.
+func (s *Server) identityToken(choice string, record identityRecord, info os.FileInfo, former string) string {
+	payload, _ := json.Marshal(struct {
+		Purpose string `json:"purpose"`
+		Choice  string `json:"choice"`
+		ID      string `json:"id"`
+		Path    string `json:"path"`
+		Folder  string `json:"folder"`
+		Project string `json:"project"`
+		Here    string `json:"here"`
+		File    string `json:"file"`
+		Line    string `json:"line"`
+		Former  string `json:"former"`
+	}{"resolve-project-identity", choice, record.ID, record.Path, record.Folder, s.projectDir, s.folderKey(), identityKey(info), sha256Digest(record.line()), former})
+	mac := hmac.New(sha256.New, s.reviewKey[:])
+	mac.Write(payload)
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// handleResolveIdentity answers `POST /api/project/identity`: the owner's
+// word that this folder was moved here, or is a copy, confirmed with the
+// token the decision record gave for that word, or nothing changed.
+//
+// Under this project's lock (project_lock.go), and only while the identity
+// is unresolved and its file is the one the token names: moved, the file is
+// written again with this folder's path and its device and inode, over the
+// file read, and the identity is this project's own from then on; what a
+// stopped rotation or creation left under it is decided when Desk next
+// starts. A copy is given a new name of its own, written over the file read:
+// what Desk keeps under the old name is left as it is, for the folder it was
+// written in. Either way, nothing in Desk's signing folder is changed here.
+func (s *Server) handleResolveIdentity(w http.ResponseWriter, r *http.Request) {
+	if !s.guard(w, r) {
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	if r.Header.Get("Sec-Fetch-Site") == "cross-site" {
+		writeJSONCoded(w, http.StatusForbidden, CodeForbidden, "A cross-site request cannot change this project's identity.")
+		return
+	}
+	media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || media != "application/json" {
+		writeJSONCoded(w, http.StatusUnsupportedMediaType, CodeBadRequest, "Send the answer as JSON.")
+		return
+	}
+	var request struct {
+		Choice string `json:"choice"`
+		Token  string `json:"token"`
+	}
+	data, err := readBounded(r.Body, identityResolveLimit)
+	if err != nil || decodeDataJSON(data, &request) != nil || request.Choice != identityMoved && request.Choice != identityCopy || len(request.Token) != 64 {
+		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, "Answer with the choice and the token the decision record gave.")
+		return
+	}
+	if failure := s.resolveIdentity(r.Context(), request.Choice, request.Token); failure != nil {
+		writeJSONCoded(w, failure.status, failure.code, failure.message)
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		State string `json:"state"`
+	}{request.Choice})
+}
+
+// resolveIdentity is the owner's answer, the transaction itself: under this
+// project's lock, released by a deferred call when it returns, and never
+// held while an answer is written (review round 1 of #315, finding 4: a
+// client that stopped reading the answer held the lock, and every project
+// transaction waited for it). It answers why nothing was changed, or nil.
+func (s *Server) resolveIdentity(ctx context.Context, choice, token string) *lockFailure {
+	unlock, failure := s.lockProjectFor(ctx, "a resolution of this project's identity", "changed")
+	if failure != nil {
+		return failure
+	}
+	defer unlock()
+	if !s.startupUnresolved() {
+		return &lockFailure{http.StatusConflict, CodeStale, "This project's identity does not wait for your word now, so nothing was changed. Check the decision record again."}
+	}
+	private, err := s.openIdentityFolder()
+	if err != nil {
+		s.log.Printf("desk: this project's identity could not be read to resolve it: %v", err)
+		return &lockFailure{http.StatusConflict, CodeBadRequest, "This project's identity could not be read now, so nothing was changed."}
+	}
+	defer private.Close()
+	record, info, found, err := readIdentity(private)
+	if err != nil || !found {
+		s.log.Printf("desk: this project's identity could not be read to resolve it: %v", err)
+		return &lockFailure{http.StatusConflict, CodeBadRequest, "This project's identity could not be read now, so nothing was changed."}
+	}
+	// **The folder it was written in, looked at again, under the lock**
+	// (review round 1 of #315, finding 3): where it holds this identity again,
+	// this folder is a copy beside it, and its identity is shared; where it
+	// holds anything else than it did when the answer was shown, the answer
+	// is stale.
+	former := s.formerFolder(record)
+	if strings.HasPrefix(former, formerHolds) {
+		s.setShared()
+		s.log.Printf("desk: the folder this project's identity was written in, %s, holds it again, so the owner's answer was not taken", record.Path)
+		return &lockFailure{http.StatusConflict, CodeStale, "The folder this project's identity was written in holds it again, so this folder is a copy beside it, and nothing was changed. Check the decision record again."}
+	}
+	here := s.folderKey()
+	if here == "" || !hmac.Equal([]byte(s.identityToken(choice, record, info, former)), []byte(token)) {
+		return &lockFailure{http.StatusConflict, CodeStale, "This project's identity changed after the decision record showed it, so nothing was changed. Check the decision record again."}
+	}
+	resolved := identityRecord{ID: record.ID, Path: s.projectDir, Folder: here, From: record.From}
+	if choice == identityCopy {
+		resolved = identityRecord{ID: randomStartupID(), Path: s.projectDir, Folder: here}
+	}
+	if _, err := writeIdentity(private, resolved, info); err != nil {
+		s.log.Printf("desk: this project's identity could not be written as resolved: %v", err)
+		return &lockFailure{http.StatusConflict, CodeBadRequest, "This project's identity could not be written now, so nothing was changed."}
+	}
+	s.setStartup(identityKept, resolved.ID, resolved.From, "")
+	if choice == identityCopy {
+		s.log.Printf("desk: this project was said to be a copy, and is named %s from now on; what Desk keeps under %s is left as it is", resolved.ID, record.ID)
+	} else {
+		s.log.Printf("desk: this project was said to be the folder its identity was written in, moved here, and keeps its identity")
+	}
+	return nil
 }

@@ -4102,5 +4102,16 @@
   "The gateway’s answer could not be shown. Reload the settings to see what was saved.": "The gateway’s answer could not be shown. Reload the settings to see what was saved.",
   "Turn OCR on anyway": "Turn OCR on anyway",
   "{{name}} is not available on this computer. With OCR on, every document read stops until its programs are installed: text PDFs and plain text too, from uploads, Drive, connected files and links.": "{{name}} is not available on this computer. With OCR on, every document read stops until its programs are installed: text PDFs and plain text too, from uploads, Drive, connected files and links.",
-  "{{name}} · not available on this computer": "{{name}} · not available on this computer"
+  "{{name}} · not available on this computer": "{{name}} · not available on this computer",
+  "This project’s identity": "This project’s identity",
+  "This project’s identity was written in another folder, which no longer holds it. Desk cannot tell whether this folder is that one, moved here, or a copy of it, so it makes, rotates and recovers no signing key under that identity until you say which.": "This project’s identity was written in another folder, which no longer holds it. Desk cannot tell whether this folder is that one, moved here, or a copy of it, so it makes, rotates and recovers no signing key under that identity until you say which.",
+  "This folder was moved here": "This folder was moved here",
+  "This is a copy": "This is a copy",
+  "Was this folder moved here?": "Was this folder moved here?",
+  "Desk names this folder by the project’s identity from now on, and decides what a stopped key creation or rotation left under it when it next starts. Answer this only if this is the folder the identity was written in, and no copy of it is in use.": "Desk names this folder by the project’s identity from now on, and decides what a stopped key creation or rotation left under it when it next starts. Answer this only if this is the folder the identity was written in, and no copy of it is in use.",
+  "Is this folder a copy?": "Is this folder a copy?",
+  "Desk gives this folder an identity of its own. What Desk keeps under the identity it was copied with, its signing key and stamping settings, stays as it is for the folder that identity was written in. This folder’s jpack.json still names that signing key until you change it.": "Desk gives this folder an identity of its own. What Desk keeps under the identity it was copied with, its signing key and stamping settings, stays as it is for the folder that identity was written in. This folder’s jpack.json still names that signing key until you change it.",
+  "This folder keeps the project’s identity from now on. Desk decides what a stopped key creation or rotation left under it when it next starts.": "This folder keeps the project’s identity from now on. Desk decides what a stopped key creation or rotation left under it when it next starts.",
+  "This folder has an identity of its own from now on.": "This folder has an identity of its own from now on.",
+  "This project’s identity could not be changed. Check the decision record again.": "This project’s identity could not be changed. Check the decision record again."
 }

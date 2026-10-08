@@ -106,6 +106,11 @@ func TestARotationJournalsEachStep(t *testing.T) {
 	r := newRotationRig(t, id, "")
 	r.writeTrail(t, 1, recordLine(standInKeyID, 1))
 	token := r.token(t)
+	// The sidecar the rotation is begun beside, as "rotate" records it
+	// (issue #309): its file, its size and its digest, before the runtime's
+	// line.
+	beside := seenOf(t, filepath.Join(r.auditFolder(), "signatures.jsonl"))
+	recorded := `,"sidecar":{"file":"` + beside.File + `","size":` + fmt.Sprint(beside.Size) + `,"digest":"` + beside.Digest + `"}`
 	seen := map[string]string{}
 	testHookKeyBetween = func(at string) {
 		switch at {
@@ -123,9 +128,9 @@ func TestARotationJournalsEachStep(t *testing.T) {
 	testHookKeyBetween = nil
 	for at, want := range map[string]string{
 		"rotation: marker written":    `{"version":"1","phase":"generate","trail":"` + fixtureTrail + `","next":"","at":0}` + "\n",
-		"rotation: rotate journalled": `{"version":"1","phase":"rotate","trail":"` + fixtureTrail + `","next":"` + secondPublicKey + `","at":0}` + "\n",
-		"rotation: finish journalled": `{"version":"1","phase":"finish","trail":"` + fixtureTrail + `","next":"` + secondPublicKey + `","at":1}` + "\n",
-		"rotation: list written":      `{"version":"1","phase":"finish","trail":"` + fixtureTrail + `","next":"` + secondPublicKey + `","at":1}` + "\n",
+		"rotation: rotate journalled": `{"version":"1","phase":"rotate","trail":"` + fixtureTrail + `","next":"` + secondPublicKey + `","at":0` + recorded + `}` + "\n",
+		"rotation: finish journalled": `{"version":"1","phase":"finish","trail":"` + fixtureTrail + `","next":"` + secondPublicKey + `","at":1` + recorded + `}` + "\n",
+		"rotation: list written":      `{"version":"1","phase":"finish","trail":"` + fixtureTrail + `","next":"` + secondPublicKey + `","at":1` + recorded + `}` + "\n",
 	} {
 		if seen[at] != want {
 			t.Errorf("at %s the marker was %q, want %q", at, seen[at], want)

@@ -474,6 +474,7 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("GET /api/audit/verify", s.handleAuditVerify)
 	s.mux.HandleFunc("GET /api/audit/trail", s.handleAuditTrail)
 	s.mux.HandleFunc("POST /api/audit/key/rotate", s.handleRotateKey)
+	s.mux.HandleFunc("POST /api/project/identity", s.handleResolveIdentity)
 	s.mux.HandleFunc("POST /api/audit/repair", s.handleAuditRepair)
 	s.mux.HandleFunc("GET /api/audit/holders", s.handleHolders)
 	s.mux.HandleFunc("POST /api/audit/holders", s.handleAddHolder)

@@ -2935,9 +2935,9 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if slices.Contains(schema.supported, signedFromVersion) {' \
     '	if true {'
   mutate go "signed desk: the configuration is written before the key" "$NDG" \
-    '			key, err := generateDeskKey(ctx, bin, held, dir, id)' \
+    '			key, err := generateKeyMarked(ctx, bin, held, dir, id, deskCreation{ID: id, Folder: identityKey(held.info)}.line())' \
     '			_ = folder.WriteFile(runtimeConfigName, []byte(gatedDeskConfig), 0600)
-			key, err := generateDeskKey(ctx, bin, held, dir, id)'
+			key, err := generateKeyMarked(ctx, bin, held, dir, id, deskCreation{ID: id, Folder: identityKey(held.info)}.line())'
   mutate go "signed desk: locked before the configuration is written" "$NDG" \
     '			gates = deskGates{config: signedDeskConfig(key.seedPath()), configVersion: signedFromVersion, requireComparableFacts: true, signed: true, key: key}' \
     '			gates = deskGates{config: signedDeskConfig(key.seedPath()), configVersion: signedFromVersion, requireComparableFacts: true, signed: true, key: key}
@@ -3137,9 +3137,9 @@ func (b *cappedBuffer) exceeded() bool {'
     '		remove := []int{0, 1, 2}' \
     '		remove := []int{2}'
   mutate go "sweep: a desk that cannot be inspected loses its key" "$SG" \
-    '	return err == nil, err
+    '	return info, err == nil, err
 }' \
-    '	return err == nil, nil
+    '	return info, err == nil, nil
 }'
   mutate go "key list: the folder made by another creation is refused" "$SG" \
     'err != nil && !errors.Is(err, fs.ErrExist) {
@@ -3186,8 +3186,8 @@ func (b *cappedBuffer) exceeded() bool {'
   # comes from one generator, over each spelling of a path and every folder
   # on its way.
   mutate go "publication: existence is taken for publication" "$SG" \
-    '	_, err = readDeskManifest(folder, id)' \
-    '	_, err = folder.Lstat(deskManifest)'
+    '	_, err = readDeskManifest(opened, id)' \
+    '	_, err = opened.Lstat(deskManifest)'
   mutate go "publication: a manifest that cannot be read counts as none" "$NDG" \
     '	case err != nil && !errors.Is(err, errPrivateDataChanged) && (codeOf(err) == CodeForbidden || codeOf(err) == CodeTooLarge):' \
     '	case err != nil:'
@@ -4074,8 +4074,8 @@ func (b *cappedBuffer) exceeded() bool {'
     '			if why := s.creationBound(dir, id, inspected[2]); why != "" {' \
     '			if why := ""; why != "" {'
   mutate go "audit fix: a project with no identity takes its path's hash as one" "$SI" \
-    '	record := identityRecord{ID: randomStartupID(), Path: s.projectDir}' \
-    '	record := identityRecord{ID: digestOf([]byte(s.projectDir)), Path: s.projectDir}'
+    '	record := identityRecord{ID: randomStartupID(), Path: s.projectDir, Folder: s.folderKey()}' \
+    '	record := identityRecord{ID: digestOf([]byte(s.projectDir)), Path: s.projectDir, Folder: s.folderKey()}'
   mutate go 'audit fix: a moved project does not take the key its jpack.json names' "$SI" \
     '		if named != "" {' \
     '		if false {'
@@ -4288,9 +4288,6 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "audit fix: a key's line records no trail" "$SG" \
     '	data, _ := json.Marshal(listedKey(k))' \
     '	data, _ := json.Marshal(listedKey{k.PublicKey, k.KeyID, k.At, ""})'
-  mutate go 'audit fix: a rotation records no trail in the list' "$RO" \
-    'At: at, Trail: rotatedOn}' \
-    'At: at}'
   mutate go 'audit fix: a rotation finished by a start records no trail' "$RO" \
     'At: last.At, Trail: onTrail}' \
     'At: last.At, Trail: onTrail[:0]}'
@@ -4312,6 +4309,185 @@ func (b *cappedBuffer) exceeded() bool {'
 		}' \
     '		for range s.heldGates {
 		}'
+
+  # **The second ADR-0010 line audit's key findings N1-N3 (issues #309,
+  # #310 and #311).** A copy started after its original moved away takes no
+  # custody: an identity whose folder no longer holds it is adopted only by
+  # this folder's device and inode, else unresolved until the owner answers,
+  # with a token bound to the answer and the file. A sidecar that merely lacks
+  # a rotation removes no next key: the journal records the sidecar it was
+  # begun beside. A made desk's creation is swept only where it was shown never
+  # published. A rotation the runtime answered, a start's finish and an undo
+  # all decide on the trail held under its lock, checked again before each
+  # destructive step. Every row's name says "audit r2 fix".
+  R2RO=internal/desk/rotation.go
+  R2SI=internal/desk/startup_identity.go
+  R2SG=internal/desk/signing.go
+  mutate go 'audit r2 fix: a rotation the runtime answered is finished from its answer alone' "$R2RO" \
+    '		state = decideRotation(state, reading.keys, bound.reading, bound.grown)' \
+    '		state.outcome, state.at, state.finished = rotationWritten, at, append(slices.Clone(reading.keys), deskPublicKey{PublicKey: nextKey.PublicKey, KeyID: nextKey.KeyID, At: at, Trail: rotatedOn})'
+  mutate go 'audit r2 fix: a rotation answered at another sequence than its hand-over is finished' "$R2RO" \
+    '		if state.outcome != rotationWritten || state.at != at {' \
+    '		if state.outcome != rotationWritten {'
+  mutate go 'audit r2 fix: the list is written without the trail checked again' "$R2RO" \
+    '		if err := still(); err != nil {
+			return false, err
+		}' \
+    '		if err := still(); err != nil && false {
+			return false, err
+		}'
+  mutate go 'audit r2 fix: the next key is renamed without the trail checked again' "$R2RO" \
+    '	if err := still(); err != nil {
+		return err
+	}' \
+    '	if err := still(); err != nil && false {
+		return err
+	}'
+  mutate go 'audit r2 fix: a start removes a next key without the trail checked again' "$R2RO" \
+    '	if err := s.trailStill(state.bound); err != nil {
+		return err
+	}' \
+    '	if err := s.trailStill(state.bound); err != nil && false {
+		return err
+	}'
+  mutate go 'audit r2 fix: a refused rotation removes its next key without the trail checked again' "$R2RO" \
+    '		if err := s.trailStill(state.bound); err != nil {
+			s.log.Printf(' \
+    '		if err := s.trailStill(state.bound); err != nil && false {
+			s.log.Printf('
+  mutate go 'audit r2 fix: the trail is bound without its lock' "$R2RO" \
+    '	unlock, err := lockAuditShared(ctx, trail, auditLockWait)' \
+    '	unlock, err := func() {}, error(nil)'
+  mutate go 'audit r2 fix: a trail renamed between its open and its lock is bound' "$R2RO" \
+    '		if err != nil || statErr != nil || !os.SameFile(named, opened) {
+			return failed(errAuditUnchecked)' \
+    '		if (err != nil || statErr != nil || !os.SameFile(named, opened)) && false {
+			return failed(errAuditUnchecked)'
+  mutate go 'audit r2 fix: a sidecar that merely lacks the rotation removes the next key' "$R2RO" \
+    '		case state.journal.Phase == journalRotate && !grown:' \
+    '		case state.journal.Phase == journalRotate && false:'
+  mutate go 'audit r2 fix: another file with the same bytes is the sidecar the rotation was begun beside' "$R2RO" \
+    '	if since != nil && bound.seen != nil && bound.seen.File == since.File && size >= since.Size {' \
+    '	if since != nil && bound.seen != nil && size >= since.Size {'
+  mutate go 'audit r2 fix: other bytes are the bytes the rotation was begun beside' "$R2RO" \
+    '		bound.grown = "sha256:"+hex.EncodeToString(prefix.Sum(nil)) == since.Digest' \
+    '		bound.grown = "sha256:"+hex.EncodeToString(prefix.Sum(nil)) != ""'
+  mutate go 'audit r2 fix: the rotation records no sidecar before the runtime is asked' "$R2RO" \
+    '	journal.Sidecar = beside.seen' \
+    '	journal.Sidecar = nil'
+  mutate go 'audit r2 fix: a journal records its sidecar in another form' "$R2RO" \
+    '	if journal.Sidecar != nil && (journal.Phase == journalGenerate || !journal.Sidecar.check()) {' \
+    '	if journal.Sidecar != nil && journal.Phase == journalGenerate {'
+  mutate go 'audit r2 fix: a journal records a sidecar before the runtime is asked' "$R2RO" \
+    '	if journal.Sidecar != nil && (journal.Phase == journalGenerate || !journal.Sidecar.check()) {' \
+    '	if journal.Sidecar != nil && !journal.Sidecar.check() {'
+  mutate go 'audit r2 fix: a copy is taken for its original moved, by the original'"'"'s absence alone' "$R2SI" \
+    '	if record.Folder == "" || here == "" || record.Folder != here {' \
+    '	if false {'
+  mutate go 'audit r2 fix: a folder other than the one the identity was written in is taken for it moved' "$R2SI" \
+    '	if record.Folder == "" || here == "" || record.Folder != here {' \
+    '	if record.Folder == "" || here == "" {'
+  mutate go 'audit r2 fix: a copy at the recorded path is taken for its folder' "$R2SI" \
+    '		} else if here := s.folderKey(); record.Folder != "" && record.Folder != here {' \
+    '		} else if here := s.folderKey(); false && record.Folder != here {'
+  mutate go 'audit r2 fix: an unresolved identity recovers and rotates' "$R2SI" \
+    '	if s.startupUnresolved() {
+		return true, unresolvedWords
+	}' \
+    '	if false {
+		return true, unresolvedWords
+	}'
+  mutate go 'audit r2 fix: a key is offered under an unresolved identity' "$SK" \
+    '	if s.startupUnresolved() {
+		return notOffered(' \
+    '	if false {
+		return notOffered('
+  mutate go 'audit r2 fix: the owner'"'"'s answer is taken without its token' "$R2SI" \
+    '	if here == "" || !hmac.Equal([]byte(s.identityToken(choice, record, info, former)), []byte(token)) {' \
+    '	if here == "" {'
+  mutate go 'audit r2 fix: one answer'"'"'s token confirms the other' "$R2SI" \
+    '	}{"resolve-project-identity", choice, record.ID,' \
+    '	}{"resolve-project-identity", identityMoved, record.ID,'
+  mutate go 'audit r2 fix: an answer'"'"'s token outlives the file it was given for' "$R2SI" \
+    's.projectDir, s.folderKey(), identityKey(info), sha256Digest(record.line()), former})' \
+    's.projectDir, s.folderKey(), "", sha256Digest(record.line()), former})'
+  mutate go 'audit r2 fix: an answer outlives what the folder it was written in holds' "$R2SI" \
+    'sha256Digest(record.line()), former})' \
+    'sha256Digest(record.line()), ""})'
+  mutate go 'audit r2 fix: an answer is taken where the folder it was written in holds it again' "$R2SI" \
+    '	former := s.formerFolder(record)
+	if strings.HasPrefix(former, formerHolds) {
+		s.setShared()' \
+    '	former := s.formerFolder(record)
+	if strings.HasPrefix(former, formerHolds) && false {
+		s.setShared()'
+  mutate go 'audit r2 fix: the resolution holds the lock past its answer' "$R2SI" \
+    '		return failure
+	}
+	defer unlock()
+	if !s.startupUnresolved() {' \
+    '		return failure
+	}
+	_ = unlock
+	if !s.startupUnresolved() {'
+  mutate go 'audit r2 fix: the identity question is given only beside a checked trail' internal/desk/audit_record.go \
+    '	answer.Identity = identity
+	shown := s.withoutPathsIn(answer)' \
+    '	if answer.State != auditStateNoTrail {
+		answer.Identity = identity
+	}
+	shown := s.withoutPathsIn(answer)'
+  mutate go 'audit r2 fix: a refusal of the decision record gives no identity question' internal/desk/audit_record.go \
+    '		if identity != nil {
+			body["identity"] = identity
+		}' \
+    '		if identity != nil && false {
+			body["identity"] = identity
+		}'
+  mutate go 'audit r2 fix: an identity that waits for nothing is resolved' "$R2SI" \
+    '	if !s.startupUnresolved() {
+		return &lockFailure{' \
+    '	if false {
+		return &lockFailure{'
+  mutate go 'audit r2 fix: a copy keeps the identity it was copied with' "$R2SI" \
+    '		resolved = identityRecord{ID: randomStartupID(), Path: s.projectDir, Folder: here}' \
+    '		resolved = identityRecord{ID: record.ID, Path: s.projectDir, Folder: here}'
+  mutate go 'audit r2 fix: an identity file longer than Desk reads is written' "$R2SI" \
+    '	if len(record.line()) > startupIdentityLimit {' \
+    '	if false {'
+  mutate go 'audit r2 fix: an identity file as long as Desk reads is refused' "$R2SI" \
+    '	if len(record.line()) > startupIdentityLimit {' \
+    '	if len(record.line()) >= startupIdentityLimit {'
+  mutate go 'audit r2 fix: a new identity records no folder' "$R2SI" \
+    '	record := identityRecord{ID: randomStartupID(), Path: s.projectDir, Folder: s.folderKey()}' \
+    '	record := identityRecord{ID: randomStartupID(), Path: s.projectDir}'
+  mutate go 'audit r2 fix: the upgrade'"'"'s identity records no folder' "$UP" \
+    '	record := identityRecord{ID: name, Path: s.projectDir, Folder: s.folderKey()}' \
+    '	record := identityRecord{ID: name, Path: s.projectDir}'
+  mutate go 'audit r2 fix: a desk moved out of the desks folder is taken for one never published' "$R2SG" \
+    '	return false, deskMovedWords, nil' \
+    '	return false, "", nil'
+  mutate go 'audit r2 fix: a creation whose manifest was about to be written is taken for one never published' "$R2SG" \
+    '	case !legacy && creation.Manifest == "":' \
+    '	case !legacy:'
+  mutate go 'audit r2 fix: another folder at a desk'"'"'s name is taken for the folder it was made in' "$R2SG" \
+    '	case folder != nil && (legacy || creation.Folder != "" && identityKey(folder) == creation.Folder):' \
+    '	case folder != nil:'
+  mutate go 'audit r2 fix: a desk opened directly is not found published' "$R2SG" \
+    '	if !published && s.cfg.deskID == id && s.cfg.parent == nil {' \
+    '	if false {'
+  mutate go 'audit r2 fix: a damaged manifest is taken for none' "$R2SG" \
+    '		return info, false, fmt.Errorf("its folder in the desks folder holds a manifest that is not one Desk reads: %w", err)' \
+    '		return info, false, nil'
+  mutate go 'audit r2 fix: a marker Desk cannot read decides a desk'"'"'s creation' "$R2SG" \
+    '		return false, "", fmt.Errorf("its marker could not be read as the record Desk writes: %w", err)' \
+    '		return false, "", nil'
+  mutate go 'audit r2 fix: the manifest is written before its marker records it' internal/desk/desks.go \
+    '	if err = gates.key.publishing(id, folder, manifest); err != nil {' \
+    '	if err = error(nil); err != nil {'
+  mutate go 'audit r2 fix: a made desk'"'"'s creation marker records nothing' internal/desk/desks.go \
+    'key, err := generateKeyMarked(ctx, bin, held, dir, id, deskCreation{ID: id, Folder: identityKey(held.info)}.line())' \
+    'key, err := generateKeyMarked(ctx, bin, held, dir, id, nil)'
 
   # **Rotating a desk's signing key (ADR-0010 PR 3b).** Only the owner's
   # confirmed request rotates, and only where a rotation can be made; the
@@ -4379,7 +4555,7 @@ func (b *cappedBuffer) exceeded() bool {'
     'answer.At >= 1 && ' \
     ''
   mutate go "rotation: a refusal is taken as proof that nothing was written" "$RO" \
-    '		state = s.inspectRotation(ctx, project, dir, marker)' \
+    '		state = s.inspectRotationBound(ctx, project, dir, marker)' \
     '		state = rotationState{outcome: rotationUnwritten, marker: marker, next: next}'
   mutate go "rotation: a refused rotation leaves its next key" "$RO" \
     '			if err := dir.removeMade(nextName, next); err != nil {' \
@@ -4397,6 +4573,9 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if found, err := d.root.Lstat(seedName); err != nil || found == nil {'
   mutate go "rotation: the seed is renamed before the list is written" "$RO" \
     '	if state.finished != nil {
+		if err := still(); err != nil {
+			return false, err
+		}
 		written, err := dir.replaceKeys(keysName, state.list, state.finished)
 		if err != nil {
 			return false, fmt.Errorf("the list of public keys could not be written with the next key: %w", err)
@@ -4404,13 +4583,16 @@ func (b *cappedBuffer) exceeded() bool {'
 		list = written
 	}
 	keyBetween("rotation: list written")
-	if err := dir.promoteNext(nextName, seedName, keysName, list, state.next, state.seed); err != nil {
+	if err := dir.promoteNext(nextName, seedName, keysName, list, state.next, state.seed, still); err != nil {
 		return false, err
 	}' \
-    '	if err := dir.promoteNext(nextName, seedName, keysName, list, state.next, state.seed); err != nil {
+    '	if err := dir.promoteNext(nextName, seedName, keysName, list, state.next, state.seed, still); err != nil {
 		return false, err
 	}
 	if state.finished != nil {
+		if err := still(); err != nil {
+			return false, err
+		}
 		written, err := dir.replaceKeys(keysName, state.list, state.finished)
 		if err != nil {
 			return false, fmt.Errorf("the list of public keys could not be written with the next key: %w", err)
@@ -12859,11 +13041,11 @@ export function assistantTransport(id: string): Transport {
     "if (reconnecting) await queryClient.invalidateQueries({ predicate: followsTheProject })" \
     "if (reconnecting) await queryClient.invalidateQueries()"
   mutate web "record: asking again runs nothing" "$DR" \
-    "  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); void query.refetch() }}" \
-    "  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined) }}"
+    "  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); void query.refetch() }}" \
+    "  const again = <div><Button onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined) }}"
   mutate web "record: an older runtime's line claims signing" "$DR" \
-    "            : record?.state === 'older-runtime' ? <p>{msg(" \
-    "            : record?.state === 'older-runtime' ? <p>{msg('Signed through record {{sequence}}', { sequence: 0 })} {msg("
+    "            : record?.state === 'older-runtime' ? <><p>{msg(" \
+    "            : record?.state === 'older-runtime' ? <><p>{msg('Signed through record {{sequence}}', { sequence: 0 })} {msg("
   mutate web "record: an older runtime's line has a control beside it" "$DR" \
     "floor: record.floor })}</p>" \
     "floor: record.floor })}{again}</p>"
@@ -12904,8 +13086,8 @@ export function assistantTransport(id: string): Transport {
     "    {!report.snapshotBetweenWrites && <p" \
     "    {false && <p"
   mutate web "record: Desk's refusal reads as a failure" "$AC" \
-    "  return response.status === 409 ? new AuditUnavailable(message) : new Error(message)" \
-    "  return new Error(message)"
+    "  const error = response.status === 409 ? new AuditUnavailable(message) : new Error(message)" \
+    "  const error = new Error(message)"
   mutate web "record: an answer that is not one is shown" "$AC" \
     "  if (!isAuditRecord(value)) throw new Error(msg('The decision record could not be loaded. Please try again.'))
   return value" \
@@ -13152,8 +13334,8 @@ export function assistantTransport(id: string): Transport {
     "onOutcome={outcome => { setRotated(outcome); void query.refetch() }}" \
     "onOutcome={outcome => { setRotated(outcome) }}"
   mutate web "rotation page: an outcome outlives a later check" "$DR" \
-    "onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); void query.refetch() }}" \
-    "onClick={() => { setRepaired(undefined); setStamped(undefined); void query.refetch() }}"
+    "onClick={() => { setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); void query.refetch() }}" \
+    "onClick={() => { setRepaired(undefined); setStamped(undefined); setResolved(undefined); void query.refetch() }}"
   mutate web "rotation page: an outcome outlives opening the panel again" "$DR" \
     "  useEffect(() => { if (visible) setRotated(undefined) }, [visible])" \
     "  useEffect(() => { if (visible) void 0 }, [visible])"
@@ -13489,8 +13671,8 @@ export function assistantTransport(id: string): Transport {
     'onOutcome={outcome => { setRepaired(outcome); void query.refetch() }} />' \
     'onOutcome={outcome => { setRepaired(outcome) }} />'
   mutate web 'repair page: an outcome outlives a later check' "$RDR" \
-    '{ setRotated(undefined); setRepaired(undefined); setStamped(undefined); void query.refetch() }' \
-    '{ setRotated(undefined); setStamped(undefined); void query.refetch() }'
+    '{ setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); void query.refetch() }' \
+    '{ setRotated(undefined); setStamped(undefined); setResolved(undefined); void query.refetch() }'
   mutate web 'repair page: an outcome outlives opening the panel again' "$RDR" \
     '  useEffect(() => { if (visible) setRepaired(undefined) }, [visible])' \
     '  useEffect(() => { if (visible && false) setRepaired(undefined) }, [visible])'
@@ -13590,8 +13772,8 @@ export function assistantTransport(id: string): Transport {
     '    onOutcome={outcome => { setStamped(outcome); void query.refetch() }} />' \
     '    onOutcome={outcome => { setStamped(outcome) }} />'
   mutate web 'stamping page: an outcome outlives a later check' "$SDR" \
-    '{ setRotated(undefined); setRepaired(undefined); setStamped(undefined); void query.refetch() }' \
-    '{ setRotated(undefined); setRepaired(undefined); void query.refetch() }'
+    '{ setRotated(undefined); setRepaired(undefined); setStamped(undefined); setResolved(undefined); void query.refetch() }' \
+    '{ setRotated(undefined); setRepaired(undefined); setResolved(undefined); void query.refetch() }'
   mutate web 'stamping page: the statement says no stamp was checked with roots given' "$SDR" \
     '  const roots = record.stamping?.passed === true' \
     '  const roots = false'
@@ -13827,6 +14009,29 @@ export function assistantTransport(id: string): Transport {
 
   # ---- The UI pass, ported from a local working copy (topic D of four) ----
   #
+  # The second line audit's finding N1 (issue #309), on the page: the
+  # decision record asks which this folder is, and each answer is sent with
+  # its own token.
+  R2RI=web/src/audit/ResolveIdentity.tsx
+  mutate web 'audit r2 fix: an answer is sent with the other answer'"'"'s token' "$R2RI" \
+    "resolveIdentity(asked, asked === 'moved' ? identity.moved : identity.copy)" \
+    "resolveIdentity(asked, asked === 'moved' ? identity.copy : identity.moved)"
+  mutate web 'audit r2 fix: the question on the identity is not asked beside a report' web/src/audit/DecisionRecord.tsx \
+    '                    {repairSection(record.repair)}
+                    {identitySection(record.identity)}' \
+    '                    {repairSection(record.repair)}'
+  mutate web 'audit r2 fix: the identity question is not asked where no trail is kept' web/src/audit/DecisionRecord.tsx \
+    "deciding runs.')}</p>{identitySection(record.identity)}</>" \
+    "deciding runs.')}</p></>"
+  mutate web 'audit r2 fix: the identity question is not asked beside a refusal' web/src/audit/DecisionRecord.tsx \
+    '{systemMessage(query.error.message)}</p>{identitySection(identityOf(query.error))}</>' \
+    '{systemMessage(query.error.message)}</p></>'
+  mutate web 'audit r2 fix: a refusal'"'"'s identity question is not read' web/src/audit/client.ts \
+    '  return isAuditIdentity(body.identity) ? Object.assign(error, { identity: body.identity }) : error' \
+    '  return error'
+  mutate web 'audit r2 fix: a question with one token for both answers is read' web/src/audit/client.ts \
+    ' && hex(64)(value.copy) && value.moved !== value.copy' \
+    ' && hex(64)(value.copy)'
   # Admin grouped by task; the composer shown while chat history loads, on a
   # placeholder chat that is presentation only; Research's auto-save line.
   UIV=web/src/routes/AdminView.tsx
