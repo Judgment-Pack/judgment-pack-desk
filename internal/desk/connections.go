@@ -169,6 +169,14 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, 400, CodeBadRequest, "unknown connection provider")
 		return
 	}
+	// Document processing has its own route, which rebuilds the companion's
+	// answers without credentials and holds them to what was sent; this
+	// relay passes answers through as they are. It is refused by name, not
+	// left to the catalogs' not listing it.
+	if provider == "document-processing" {
+		writeJSONCoded(w, 400, CodeBadRequest, "document processing has its own route; nothing was sent")
+		return
+	}
 
 	switch method {
 	case "catalog", "status", "configure", "connect", "poll", "cancel", "disconnect", "search", "select", "files-list", "files-read", "files-prepare", "files-commit", "files-status", "test":

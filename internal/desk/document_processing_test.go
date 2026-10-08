@@ -349,3 +349,23 @@ func TestDocumentProcessingTestPreviewIsHeldToItsBounds(t *testing.T) {
 		t.Fatalf("a page past 400 characters: %d", code)
 	}
 }
+
+// The connections relay passes a companion's answers through as they are, so
+// document processing is refused there by name, whatever the catalogs list:
+// the companion is reached only through its own route.
+func TestTheConnectionsRelayRefusesDocumentProcessingByName(t *testing.T) {
+	rig := newProcessingRig(t)
+	if code, _ := rig.post(t, "/api/document-processing/status", []byte(`{}`)); code != http.StatusOK {
+		t.Fatalf("the companion was not started: %d", code)
+	}
+	before := rig.sent()
+	for _, method := range []string{"status", "configure", "cancel", "test"} {
+		code, raw := rig.post(t, "/api/connections/document-processing/"+method, processingConfigure("auto", processingKey))
+		if code != http.StatusBadRequest || bytes.Contains(raw, []byte(processingKey)) {
+			t.Fatalf("%s: %d %s", method, code, raw)
+		}
+	}
+	if rig.sent() != before {
+		t.Fatalf("the relay reached the companion: %q", strings.TrimPrefix(rig.sent(), before))
+	}
+}

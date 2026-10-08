@@ -6076,6 +6076,10 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "document processing: the relay decides as if the running plan had no processing" "$DPR" \
     'researchRequestTiming(gateway.managedLocal, gateway.documentProcessing, suffix, body)' \
     'researchRequestTiming(gateway.managedLocal, false, suffix, body)'
+  # Review round 1, finding 5 (the PR's finding 4).
+  mutate go "document processing: the connections relay reaches the document-processing companion" "$DPC" \
+    '	if provider == "document-processing" {' \
+    '	if false {'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
