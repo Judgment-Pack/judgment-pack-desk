@@ -11,6 +11,7 @@ package desk
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -1073,4 +1074,46 @@ func TestAnAnswerIsBoundToWhatTheFormerFolderHolds(t *testing.T) {
 			t.Errorf("a fresh answer answered %d %s", w.Code, w.Body)
 		}
 	})
+}
+
+// lockProbeWriter is an answer's writer that tries the project's lock as the
+// answer is written (the reviewer's probe, review round 1 of #315).
+type lockProbeWriter struct {
+	*httptest.ResponseRecorder
+	s    *Server
+	busy bool
+}
+
+func (w *lockProbeWriter) Write(data []byte) (int, error) {
+	unlock, err := w.s.lockProject(context.Background(), 0)
+	w.busy = w.busy || err != nil
+	if err == nil {
+		unlock()
+	}
+	return w.ResponseRecorder.Write(data)
+}
+
+// **The answer to the owner's word is written after the project's lock is
+// let go** (review round 1 of #315, finding 4). A taken answer and a refused
+// one alike: the lock is free while the answer is written, and after.
+func TestTheResolutionsAnswerIsWrittenWithTheLockLetGo(t *testing.T) {
+	for _, taken := range []bool{true, false} {
+		t.Run(map[bool]string{true: "taken", false: "refused"}[taken], func(t *testing.T) {
+			s, _, _ := unresolvedCopy(t)
+			token := s.identityOfferNow().Moved
+			if !taken {
+				token = strings.Repeat("0", 64)
+			}
+			w := &lockProbeWriter{ResponseRecorder: httptest.NewRecorder(), s: s}
+			resolveOn(s, w, identityMoved, token)
+			if want := map[bool]int{true: http.StatusOK, false: http.StatusConflict}[taken]; w.Code != want || w.busy {
+				t.Errorf("the answer was %d, written with the lock held: %v (%s)", w.Code, w.busy, w.Body)
+			}
+			unlock, err := s.lockProject(context.Background(), 0)
+			if err != nil {
+				t.Fatalf("the lock is held after the answer: %v", err)
+			}
+			unlock()
+		})
+	}
 }

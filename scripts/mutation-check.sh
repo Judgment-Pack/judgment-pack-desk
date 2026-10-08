@@ -4418,6 +4418,15 @@ func (b *cappedBuffer) exceeded() bool {'
     '	former := s.formerFolder(record)
 	if strings.HasPrefix(former, formerHolds) && false {
 		s.setShared()'
+  mutate go 'audit r2 fix: the resolution holds the lock past its answer' "$R2SI" \
+    '		return failure
+	}
+	defer unlock()
+	if !s.startupUnresolved() {' \
+    '		return failure
+	}
+	_ = unlock
+	if !s.startupUnresolved() {'
   mutate go 'audit r2 fix: an identity that waits for nothing is resolved' "$R2SI" \
     '	if !s.startupUnresolved() {
 		writeJSONCoded(' \

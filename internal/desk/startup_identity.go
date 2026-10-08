@@ -989,28 +989,39 @@ func (s *Server) handleResolveIdentity(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, "Answer with the choice and the token the decision record gave.")
 		return
 	}
-	unlock, failure := s.lockProjectFor(r.Context(), "a resolution of this project's identity", "changed")
-	if failure != nil {
+	if failure := s.resolveIdentity(r.Context(), request.Choice, request.Token); failure != nil {
 		writeJSONCoded(w, failure.status, failure.code, failure.message)
 		return
 	}
+	writeJSON(w, http.StatusOK, struct {
+		State string `json:"state"`
+	}{request.Choice})
+}
+
+// resolveIdentity is the owner's answer, the transaction itself: under this
+// project's lock, released by a deferred call when it returns, and never
+// held while an answer is written (review round 1 of #315, finding 4: a
+// client that stopped reading the answer held the lock, and every project
+// transaction waited for it). It answers why nothing was changed, or nil.
+func (s *Server) resolveIdentity(ctx context.Context, choice, token string) *lockFailure {
+	unlock, failure := s.lockProjectFor(ctx, "a resolution of this project's identity", "changed")
+	if failure != nil {
+		return failure
+	}
 	defer unlock()
 	if !s.startupUnresolved() {
-		writeJSONCoded(w, http.StatusConflict, CodeStale, "This project's identity does not wait for your word now, so nothing was changed. Check the decision record again.")
-		return
+		return &lockFailure{http.StatusConflict, CodeStale, "This project's identity does not wait for your word now, so nothing was changed. Check the decision record again."}
 	}
 	private, err := s.openIdentityFolder()
 	if err != nil {
 		s.log.Printf("desk: this project's identity could not be read to resolve it: %v", err)
-		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, "This project's identity could not be read now, so nothing was changed.")
-		return
+		return &lockFailure{http.StatusConflict, CodeBadRequest, "This project's identity could not be read now, so nothing was changed."}
 	}
 	defer private.Close()
 	record, info, found, err := readIdentity(private)
 	if err != nil || !found {
 		s.log.Printf("desk: this project's identity could not be read to resolve it: %v", err)
-		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, "This project's identity could not be read now, so nothing was changed.")
-		return
+		return &lockFailure{http.StatusConflict, CodeBadRequest, "This project's identity could not be read now, so nothing was changed."}
 	}
 	// **The folder it was written in, looked at again, under the lock**
 	// (review round 1 of #315, finding 3): where it holds this identity again,
@@ -1021,30 +1032,25 @@ func (s *Server) handleResolveIdentity(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(former, formerHolds) {
 		s.setShared()
 		s.log.Printf("desk: the folder this project's identity was written in, %s, holds it again, so the owner's answer was not taken", record.Path)
-		writeJSONCoded(w, http.StatusConflict, CodeStale, "The folder this project's identity was written in holds it again, so this folder is a copy beside it, and nothing was changed. Check the decision record again.")
-		return
+		return &lockFailure{http.StatusConflict, CodeStale, "The folder this project's identity was written in holds it again, so this folder is a copy beside it, and nothing was changed. Check the decision record again."}
 	}
 	here := s.folderKey()
-	if here == "" || !hmac.Equal([]byte(s.identityToken(request.Choice, record, info, former)), []byte(request.Token)) {
-		writeJSONCoded(w, http.StatusConflict, CodeStale, "This project's identity changed after the decision record showed it, so nothing was changed. Check the decision record again.")
-		return
+	if here == "" || !hmac.Equal([]byte(s.identityToken(choice, record, info, former)), []byte(token)) {
+		return &lockFailure{http.StatusConflict, CodeStale, "This project's identity changed after the decision record showed it, so nothing was changed. Check the decision record again."}
 	}
 	resolved := identityRecord{ID: record.ID, Path: s.projectDir, Folder: here, From: record.From}
-	if request.Choice == identityCopy {
+	if choice == identityCopy {
 		resolved = identityRecord{ID: randomStartupID(), Path: s.projectDir, Folder: here}
 	}
 	if _, err := writeIdentity(private, resolved, info); err != nil {
 		s.log.Printf("desk: this project's identity could not be written as resolved: %v", err)
-		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, "This project's identity could not be written now, so nothing was changed.")
-		return
+		return &lockFailure{http.StatusConflict, CodeBadRequest, "This project's identity could not be written now, so nothing was changed."}
 	}
 	s.setStartup(identityKept, resolved.ID, resolved.From, "")
-	if request.Choice == identityCopy {
+	if choice == identityCopy {
 		s.log.Printf("desk: this project was said to be a copy, and is named %s from now on; what Desk keeps under %s is left as it is", resolved.ID, record.ID)
 	} else {
 		s.log.Printf("desk: this project was said to be the folder its identity was written in, moved here, and keeps its identity")
 	}
-	writeJSON(w, http.StatusOK, struct {
-		State string `json:"state"`
-	}{request.Choice})
+	return nil
 }
