@@ -13912,6 +13912,10 @@ export function assistantTransport(id: string): Transport {
   mutate web "document processing: OCR provenance is taken on a static-text snapshot" "$DPT" \
     "(source.format === 'static-text-v1' ? v.ocr === null && source.mediaType === 'text/html'" \
     "(source.format === 'static-text-v1' ? source.mediaType === 'text/html'"
+  # Review round 1, finding 3.
+  mutate web "document processing: the processor dialog does not say its save restarts the gateway" "$DPW" \
+    'const restart = !!editor && restartsGateway(editor.base.result.mode, editor.base.localGateway)' \
+    'const restart = !!editor && restartsGateway(editor.base.result.mode, editor.base.localGateway) && editor.value.id.length < 0'
 fi
 
 restore
