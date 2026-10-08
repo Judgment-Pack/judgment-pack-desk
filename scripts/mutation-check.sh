@@ -6356,14 +6356,13 @@ function usePacks() { useExampleListing(); return readPacks() }'
   #
   # A Select with one option looks like a choice, reads like one to every
   # enumeration of what a reader can change, and offers none.
+  # Follows its moved line: the kind is said as a value ("Local folder") since
+  # the settings pass (topic D of the ported working copy). The replacement is
+  # a native one-option select, which compiles here (the module imports no
+  # `Select`).
   mutate web "the kind rendered as a Select with one option" "$PFC" \
-    '      <code>{config.storage.packs.kind}</code>' \
-    '      <Select
-        id="storage-kind"
-        value={config.storage.packs.kind}
-        onValueChange={() => {}}
-        options={[{ value: '"'"'filesystem'"'"', label: '"'"'filesystem'"'"' }]}
-      />'
+    '      {config.storage.packs.kind === '"'"'filesystem'"'"' ? msg("Local folder") : config.storage.packs.kind}' \
+    '      <select id="storage-kind" value={config.storage.packs.kind} onChange={() => {}}><option value="filesystem">filesystem</option></select>'
   mutate web "an unknown storage key is accepted" "$D" \
     "          ? section(storage.packs, 'storage.packs', ['kind', 'dir', 'idBase'], problems)" \
     "          ? section(storage.packs, 'storage.packs', ['kind', 'dir', 'idBase', 'bucket'], problems)"
