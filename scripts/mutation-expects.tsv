@@ -135,7 +135,7 @@ go	audit fix: a journal in another spelling is read	TestARotationJournalsEachSte
 go	audit fix: a key is made under a name the project does not keep	TestAKeyIsMadeOnlyUnderTheProjectsIdentity
 go	audit fix: a key is offered under an identity another folder holds	TestACopyOfAProjectRemovesNoKeyOfTheOriginal
 go	audit fix: a key is offered where the identity cannot be kept	TestAKeyIsNotOfferedWhereItsIdentityCannotBeKept
-go	audit fix: a key on a new trail may not count its sequence again	TestATrailBegunAfterARotationIsReadAsItsOwn,TestAListOfKeysHoldsItsTrailsToTheirRule
+go	audit fix: a key on a new trail may not count its sequence again	TestAListOfKeysHoldsItsTrailsToTheirRule,TestATrailBegunAfterARotationIsReadAsItsOwn
 go	audit fix: a key's line records no trail	TestATrailBegunAfterARotationIsReadAsItsOwn
 go	audit fix: a key's removal goes on past a file it could not remove	TestAnUpgradePutBackLeavesNoKeyWithoutItsIdentity
 go	audit fix: a lock of another configuration is put back over	TestAFailedUpgradeLockPutsEveryFileBack,TestALockOfAnythingElseIsPutBack,TestARollbackPutsBackOnlyWhatItWrote
@@ -185,7 +185,7 @@ go	audit fix: the longest list with trails is past what Desk reads	TestAListOfKe
 go	audit fix: the page is not given the trail's identity	TestACheckWithRootsReplacesWhatTheSchedulerKnows
 go	audit fix: the records after the held checkpoints are not the runtime's count	TestTheRecordsPendingAStampAfterARepairAreTheReports,TestTheRecordsSinceAHandOverAreTheReports,TestWhatFollowsARecordIsCountedFromTheReport
 go	audit fix: the records pending a stamp are one sequence taken from another	TestTheRecordsPendingAStampAfterARepairAreTheReports
-go	audit fix: the runtime is asked to rotate before the journal names the next key	TestAStoppedRotationIsFinishedOrUndoneAtTheNextStart,TestARotationJournalsEachStep
+go	audit fix: the runtime is asked to rotate before the journal names the next key	TestARotationJournalsEachStep
 go	audit fix: the runtime's answer is not journalled	TestARotationJournalsEachStep
 go	audit fix: the sweep removes a key under a name no identity binds	TestAKeyFromBeforeTheIdentityIsKeptWhenItsProjectMoves
 go	audit fix: the unchained lines after the last chained one are counted	TestWhatFollowsARecordIsCountedFromTheReport
@@ -416,7 +416,7 @@ go	key list: an unended list is read	TestAListOfKeysDeskCannotReadPassesNoKey
 go	key list: anything already kept is generated over	TestAKeyAlreadyKeptUnderTheIdIsNeverTouched
 go	key list: custody's words name its folders by path	TestADeskCustodyCannotKeepAKeyForIsMadeUnsignedAndSaysWhy,TestAGroupWritableFolderOnTheKeysPathIsRefused,TestAListOfKeysDeskCannotReadPassesNoKey,TestNoPartOfARunnerKeysPathIsSaid,TestNoPartOfTheKeysPathIsPassedOn,TestTheSigningFolderIsHeldToCustody
 go	key list: keys are passed out of order	TestARotationRunsItsStepsInOrder,TestPublicKeyFilesKeepTheKeysOrder,TestTheListOfKeysIsHeldToTheSidecar
-go	key list: keys out of order are read	TestAListOfKeysDeskCannotReadPassesNoKey
+go	key list: keys out of order are read	TestAListOfKeysHoldsItsTrailsToTheirRule
 go	key list: more keys than the bound are read	TestAListOfKeysDeskCannotReadPassesNoKey
 go	key list: no folder on the key's way is a span	TestNoPartOfTheKeysPathIsPassedOn,TestPathSpansCoverEverySpelling,TestThePanelNeverSaysAFolderOnAnInheritedKeysPath
 go	key list: no marker is written	TestAKeyCustodyLockHeldByAnotherProcess,TestAManifestNotReadNowKeepsItsKey,TestAManifestThatIsNotWholeIsNotAPublication,TestARemovalLeavesAFileReplacedSinceItsInspection,TestARunnerKeyNotInspectedNowIsLeftAndNotMade,TestARunnerKeyWhoseMarkerStaysIsNotNamed,TestAStoppedCreationLeavesNoKeyPastTheNextStart,TestAnInterruptedRemovalIsFinishedByTheNextStart,TestTheDesksSweepAndARunnerKeyExcludeEachOther,TestTheSweepRemovesNothingWhileTheLockIsHeld,TestTheSweepRemovesOnlyWhatItInspected,TestWithNoLockTheStartRemovesNothing
