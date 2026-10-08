@@ -1140,6 +1140,12 @@ func (s *Server) handleFileWrite(w http.ResponseWriter, r *http.Request) {
 func (s *Server) commitWriteLocked(clean string, req WriteRequest) (int, any) {
 	afterLockEntry(clean)
 
+	// **A link into Desk's custody is refused as custody** (review round 1
+	// of #335, finding 4), in the custody's words, which name no path; any
+	// other link is refused as a link, below.
+	if s.signingCustody().reaches(s.projectDir, clean) {
+		return http.StatusForbidden, errorBody(withCode(CodeForbidden, errors.New(signingCustodyWords)))
+	}
 	if err := s.refuseSymlinkedPath(clean); err != nil {
 		return statusForRefusal(err), errorBody(err)
 	}
@@ -1410,9 +1416,16 @@ func (s *Server) syncDir(dir string) {
 // is not a document, nothing reads it, and leaving it to accumulate would mean
 // a project slowly filling with the debris of interrupted saves.
 func (s *Server) removeStaleStaging() {
+	custody := s.signingCustody()
 	problems := s.walkProject(func(rel string, _ fs.FileInfo) {
 		base := path.Base(rel)
 		if !strings.HasPrefix(base, stagingPrefix) || !strings.HasSuffix(base, ".tmp") {
+			return
+		}
+		// **Nothing in Desk's own custody** (issue #329): a file there is
+		// Desk's to keep, whatever its name.
+		if custody.holds(s.root, rel) {
+			s.log.Printf("desk: startup cleanup left %s, which is in the folder Desk keeps its signing keys in", rel)
 			return
 		}
 		if rerr := s.root.Remove(osPath(rel)); rerr != nil {

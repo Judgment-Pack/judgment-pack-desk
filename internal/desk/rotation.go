@@ -1003,7 +1003,7 @@ func (d *signingDir) writeJournal(name string, journal rotationJournal) (os.File
 // only while its name still holds held; the folder is synced after. It
 // answers the marker as written.
 func (d *signingDir) rewriteJournal(name string, held os.FileInfo, journal rotationJournal) (os.FileInfo, error) {
-	staged, stagedName, err := d.stage()
+	staged, stagedName, err := d.stage(name)
 	if err != nil {
 		return nil, err
 	}

@@ -342,6 +342,9 @@ func (k *runnerKey) examine(ctx context.Context) (RunnerKeyStatus, string) {
 		return unsignedRunner(runnerKeyNotNow, s.runnerKeyWords("the folder Desk keeps signing keys in could not be locked: "+err.Error(), k.name, true)), ""
 	}
 	defer unlock()
+	// A list staged for this key and never put in place, by a stop, goes to
+	// the archive of Runner's keys first (issue #332).
+	dir.archiveStagedLists(k.name)
 	// **Every name inspected before anything is decided.** Anything but
 	// "not there" for any of the three is "could not be read now": nothing is
 	// removed, made or named.

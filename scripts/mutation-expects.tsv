@@ -119,6 +119,32 @@ go	any header at all is forwarded to the endpoint	TestRelayCarriesEachProtocolsM
 go	any name passes as the web source	TestSharedFixturesDecodeAsTheVerdictSays
 go	any object takes any member at all	TestARefusedFileSendsNothing,TestConfiguredEndpointRefusals,TestDeskConfigWriteRefusesWhatTheDecoderWouldRefuse,TestResearchRelayRefusesWithoutAGatewayAndSendsNothing,TestSharedFixturesDecodeAsTheVerdictSays
 go	any world-writable ancestor is admitted	TestARefusedStoreTouchesTheFilesystemNotAtAll,TestAnUnusableStoreLeavesTheRestOfTheDeskAlone,TestCustodyRefusesALooseAncestor,TestDeskConfigWriteRefusesWhereNoKeyCanBeKept,TestEveryCodeHasAStatusAndAWitness,TestRelayRefusesWhereNoKeyCanBeKept
+go	archive edges: Project Files writes in Desk's custody	TestProjectFilesWriteNothingInDesksCustody
+go	archive edges: Runner's start leaves a staged list	TestRunnersStartArchivesAListAStopLeftStaged
+go	archive edges: a Remove goes on over a damaged journal	TestARemovalIsNeverMadeOverADamagedJournal
+go	archive edges: a check that stops at a precondition keeps the confirmation	TestEveryCheckThatDoesNotConfirmAnOlderRunForgetsIt
+go	archive edges: a damaged journal offers Remove	TestARemovalIsNeverMadeOverADamagedJournal
+go	archive edges: a desk open here is said as no start's	TestMadeDeskCustodyNoStartSettlesIsSaid
+go	archive edges: a journal line is joined to a torn one	TestAnArchiveMoveAfterATornWriteKeepsItsLine
+go	archive edges: a journal line is not synced	TestARemovalsLineIsSyncedBeforeItsFileGoes
+go	archive edges: a line of an event Desk does not know is read	TestAJournalLineDeskDoesNotWriteIsDamage
+go	archive edges: a link into Desk's custody is refused as a link	TestALinkIntoDesksCustodyIsRefusedAsCustody
+go	archive edges: a made desk's creation is said without its reason	TestAPublishedDeskWhoseManifestIsGoneKeepsItsKey,TestMadeDeskCustodyNoStartSettlesIsSaid
+go	archive edges: a made desk's custody is not said	TestAPublishedDeskWhoseManifestIsGoneKeepsItsKey,TestMadeDeskCustodyNoStartSettlesIsSaid
+go	archive edges: a made desk's rotation is said as a project's	TestMadeDeskCustodyNoStartSettlesIsSaid
+go	archive edges: a move by a rule Desk has not is read	TestAJournalLineDeskDoesNotWriteIsDamage
+go	archive edges: a project in Desk's custody is not	TestAProjectInDesksCustodyIsAllOfItInCustody
+go	archive edges: a removal by no owner is read	TestAJournalLineDeskDoesNotWriteIsDamage
+go	archive edges: a removal is not read back before the file goes	TestARemovalIsReadBackBeforeTheFileGoes
+go	archive edges: a stage records no name	TestAListAStopLeftStagedIsArchivedByTheNextStart,TestAListNeitherPublishedNorArchivedIsSaid
+go	archive edges: a stage with no identity is not said	TestAStageWithNoIdentityIsSaid
+go	archive edges: a staged list is not said	TestAListNeitherPublishedNorArchivedIsSaid,TestAStageWithNoIdentityIsSaid
+go	archive edges: the custody folders are not resolved	TestACustodyFolderMovedIntoTheProjectIsStillCustody
+go	archive edges: the custody is not found by identity	TestDesksCustodyIsFoundByIdentity
+go	archive edges: the custody is not found by its path	TestProjectFilesWriteNothingInDesksCustody
+go	archive edges: the owner's Remove goes on where no lock can be taken	TestWithNoLockNoKeyIsChanged
+go	archive edges: the start leaves a staged list	TestAListAStopLeftStagedIsArchivedByTheNextStart,TestAListNeitherPublishedNorArchivedIsSaid,TestAStageWithNoIdentityIsSaid
+go	archive edges: the startup cleanup removes in Desk's custody	TestTheStartupCleanupRemovesNothingInDesksCustody
 go	archive: Runner's unfinished key is removed	TestNeitherSweepTouchesTheOthersKey,TestNoPathRemovesAKeyOnItsOwn
 go	archive: a creation's stopped key is removed, not archived	TestNoCodeRemovesAKeyOutsideTheOwnersWord,TestNoPathRemovesAKeyOnItsOwn
 go	archive: a desk's key is made where no lock can be taken	TestWithNoLockNoKeyIsChanged
@@ -735,8 +761,8 @@ go	rotation: the next key is said to sign before the rename	TestWhatChangedWhile
 go	rotation: the next key's path is not checked after generate	TestARotationThroughAReplacedSigningFolderMakesNothing
 go	rotation: the panel says the current key still signs	TestARotationTheRuntimeDidNotWriteSaysDeskKeptItsKey
 go	rotation: the panel's word on a rotation names a path	TestARotationsAnswersNameNoPath
+go	rotation: the promotion takes a seed that changed	TestWhatChangedWhileARotationFinishedIsNotWrittenOver
 go	rotation: the seed is renamed before the list is written	TestARotationRunsItsStepsInOrder,TestAStartRenamesNoKeyAgainstAListPutBackSinceItsInspection,TestAStoppedRotationIsFinishedOrUndoneAtTheNextStart,TestWhatChangedWhileARotationFinishedIsNotWrittenOver
-go	rotation: the seed is renamed over a seed that changed	TestWhatChangedWhileARotationFinishedIsNotWrittenOver
 go	rotation: the token binds the key alone	TestARotationIsMadeOnlyWhereItCanBe
 go	rotation: the token is not checked	TestARotationIsMadeOnlyWhereItCanBe,TestAStalledAnswerToARotationHoldsNoKeyLock
 go	rotation: what a failed generation left stays	TestARotationTheRuntimeRefusesChangesNothing
@@ -961,7 +987,7 @@ go	stamping: the token is not checked	TestAStampingTokenIsBoundToWhatWasShown
 go	stamping: the token is not the desk's own	TestAStampingTokenIsBoundToWhatWasShown
 go	startup desk: an inherited JPACK_CONFIG is dropped	TestANamedDeskRuntimeReadsOnlyItsOwnConfiguration
 go	startup desk: the inherited JPACK_CONFIG is not said	TestANamedDeskRuntimeReadsOnlyItsOwnConfiguration
-go	sweep: a desk that cannot be inspected loses its key	TestAManifestNotReadNowKeepsItsKey
+go	sweep: a desk that cannot be inspected has its key archived	TestAManifestNotReadNowKeepsItsKey
 go	sweep: a key without a marker is removed	TestAStoppedCreationLeavesNoKeyPastTheNextStart,TestTheDesksSweepAndARunnerKeyExcludeEachOther,TestTheLockIsHeldFromTheFirstLookToTheLastChange
 go	sweep: a published desk's key is archived	TestAStoppedCreationLeavesNoKeyPastTheNextStart
 go	sweep: an unpublished creation's key is left	TestAKeyCustodyLockHeldByAnotherProcess,TestAStoppedCreationLeavesNoKeyPastTheNextStart,TestDesksStartSweepsBeforeItsRunnerTakesTheLock,TestDesksStartSweepsUnderTheLock,TestNeitherSweepTouchesTheOthersKey,TestTheDesksSweepAndARunnerKeyExcludeEachOther,TestTheSweepRemovesNothingWhileTheLockIsHeld,TestTheSweepRemovesOnlyWhatItInspected
@@ -1088,7 +1114,7 @@ go	upgrade key: a failed upgrade leaves the key it made	TestAFailedSigningUpgrad
 go	upgrade key: a jpack.json larger than Desk reads is offered	TestTheUpgradeWritesNoFileLargerThanDeskReads
 go	upgrade key: a jpack.json that cannot be read now names no key	TestAStoppedSigningUpgradeIsSweptAtTheNextStart
 go	upgrade key: a project at 6 is written at a lower version	TestChoosingTheSigningKeyWritesSixAndTheKeyTogether
-go	upgrade key: a project not put back loses the key jpack.json may name	TestAnUpgradeNotPutBackLeavesTheKeyForTheNextStart
+go	upgrade key: a project not put back has the key jpack.json may name archived	TestAnUpgradeNotPutBackLeavesTheKeyForTheNextStart
 go	upgrade key: a refusal names a path	TestNoPathOfTheStartupKeyReachesThePage
 go	upgrade key: a replaced signing folder is said as a failed write	TestAFailedSigningUpgradeLeavesNoKeyAndNoChange
 go	upgrade key: a rotation is offered where jpack.json names another file	TestARotationOfTheStartupKeyFollowsWhatJpackJsonNames
@@ -1539,6 +1565,8 @@ web	any marked relay 401 ends the session	src/mcp/session.test.tsx
 web	any relay 401 ends the session	src/assistant/modelListing.test.ts,src/mcp/session.test.tsx
 web	applicability is read-only, whatever mode the page is in	src/packs/edit/forms.test.tsx
 web	applicability renders two elements at one pointer	src/packs/document/PackDocumentView.test.tsx
+web	archive edges page: a made desk's unresolved entry is refused	src/audit/archivedKeys.test.tsx
+web	archive edges page: a staged list is refused	src/audit/archivedKeys.test.tsx
 web	archive page: Remove sends another token	src/audit/archivedKeys.test.tsx
 web	archive page: Remove sends without its confirmation	src/audit/archivedKeys.test.tsx
 web	archive page: a missing file offers Remove	src/audit/archivedKeys.test.tsx

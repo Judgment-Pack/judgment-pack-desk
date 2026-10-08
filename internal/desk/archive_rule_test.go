@@ -313,7 +313,9 @@ func TestNoPathRemovesAKeyOnItsOwn(t *testing.T) {
 
 // custodyFiles are the files that keep keys, where every removal and every
 // rename is held to removalsAllowed.
-var custodyFiles = []string{"archive.go", "custody.go", "desks.go", "rotation.go", "runner_key.go", "signing.go", "signing_lock.go", "startup_identity.go", "startup_key.go", "upgrade.go"}
+// Project Files (files.go) is among them (issue #329): its arguments name a
+// project path, never a key, so no name tells what they may reach.
+var custodyFiles = []string{"archive.go", "custody.go", "desks.go", "files.go", "rotation.go", "runner_key.go", "signing.go", "signing_lock.go", "startup_identity.go", "startup_key.go", "upgrade.go"}
 
 // removalsAllowed is every Remove and Rename in those files, by file,
 // function and call, and why it is not a key removed on Desk's own.
@@ -335,6 +337,9 @@ var removalsAllowed = map[string]string{
 	"custody.go (*assistantStore).storeKeyNamed Remove":      "the assistant credential's staging file, not a signing key",
 	"custody.go (*assistantStore).storeKeyNamed Rename":      "the assistant credential, staged, not a signing key",
 	"custody.go (*assistantStore).removeKeyNamed Remove":     "the assistant credential, on the owner's word, not a signing key",
+	"files.go (*Server).atomicWriteChecked Remove":           "a Project Files staging file, made only where a save is let in: never in Desk's custody (signingCustody, issue #329)",
+	"files.go (*Server).atomicWriteChecked Rename":           "a Project Files save, refused anywhere in Desk's custody (signingCustody, issue #329)",
+	"files.go (*Server).removeStaleStaging Remove":           "a Project Files staging file a crash left, never in Desk's custody (signingCustody, issue #329)",
 	"desks.go publishDeskManifest Remove":                    "the manifest's staging file",
 	"desks.go publishDeskManifest Rename":                    "the manifest, staged",
 	"desks.go unmakeDeskFolder Remove":                       "what a failed creation made in the desk's own folder, never in the signing folder",
@@ -723,6 +728,15 @@ func TestAPublishedDeskWhoseManifestIsGoneKeepsItsKey(t *testing.T) {
 	if archivedFiles(t, signing) != 0 || !strings.Contains(logs.String(), deskMovedWords) {
 		t.Errorf("an unrelated start archived the key, or did not say why: %s", logs)
 	}
+	// **And its decision record says so** (issue #331): the marker is listed
+	// as custody no start settles, with the reason the sweep keeps it, and
+	// no Remove.
+	listing := other.archiveListing()
+	if listing == nil || !slices.ContainsFunc(listing.Entries, func(entry archivedKey) bool {
+		return entry.Unresolved && entry.File == id+creatingSuffix && entry.Why == fmt.Sprintf(unresolvedDeskCreationWords, deskMovedWords) && entry.Token == ""
+	}) {
+		t.Errorf("the decision record does not say why the key is kept: %+v", listing)
+	}
 }
 
 // **The moment after the last check keeps both keys, and says so** (issue
@@ -860,7 +874,8 @@ func TestCustodyNoStartSettlesIsSaidOnTheDecisionRecord(t *testing.T) {
 		t.Errorf("a Remove of unresolved custody answered %d %s", w.Code, w.Body)
 	}
 	// The project's own name is never listed so.
-	if own := (&signingDir{root: bareRoot(t, signing), path: signing}).unresolvedIn(id); len(own) != 0 {
+	s.setStartup(identityKept, id, "", "")
+	if own := s.unresolvedIn(&signingDir{root: bareRoot(t, signing), path: signing}); len(own) != 0 {
 		t.Errorf("a project's own marker is listed as unresolved: %+v", own)
 	}
 }

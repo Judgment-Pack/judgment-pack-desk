@@ -3139,7 +3139,12 @@ func (b *cappedBuffer) exceeded() bool {'
 			if inspected[i] == nil {' \
     '		for i := 2; i < len(names); i++ {
 			if inspected[i] == nil {'
-  mutate go "sweep: a desk that cannot be inspected loses its key" "$SG" \
+  # Nightly over 9075b7b (#326): the sweep no longer removes a key, so a read
+  # that failed taken for "not published" no longer loses one. It still
+  # archives the key of a desk published since its marker was put back from
+  # before, and says the wrong reason of one whose marker records the
+  # manifest; TestAManifestNotReadNowKeepsItsKey holds both.
+  mutate go "sweep: a desk that cannot be inspected has its key archived" "$SG" \
     '	return info, err == nil, err
 }' \
     '	return info, err == nil, nil
@@ -3927,13 +3932,16 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'upgrade key: a failed upgrade leaves the key it made' 'internal/desk/upgrade.go' \
     '			moved, err := u.key.archiveStopped("the upgrade that made it did not complete, and every file it wrote was put back")' \
     '			moved, err := []string(nil), error(nil)'
-  mutate go "upgrade key: a project not put back loses the key jpack.json may name" "$UP" \
+  # Nightly over 9075b7b (#326): unmake is gone with the archive rule, so the
+  # mutant archives the key a project not put back may name, as the branch
+  # beside it archives one whose project was put back.
+  mutate go "upgrade key: a project not put back has the key jpack.json may name archived" "$UP" \
     '		if len(problems) > 0 {
 			result.keyLeft = true
 		} else {' \
     '		if len(problems) > 0 {
 			result.keyLeft = true
-			_ = u.key.unmake()
+			_, _ = u.key.archiveStopped("the upgrade that made it did not complete")
 		} else {'
   mutate go "upgrade key: jpack.json is published naming a key whose folder was replaced" "$UP" \
     '		if name == runtimeConfigName && u.key.stillNamed() != nil {' \
@@ -4578,9 +4586,17 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "rotation: the list is written over a list that changed" "$RO" \
     '	if err != nil || !found || !os.SameFile(now.info, read.info) || !bytes.Equal(now.data, read.data) {' \
     '	if err != nil || !found || now.info == nil {'
-  mutate go "rotation: the seed is renamed over a seed that changed" "$RO" \
-    '	if found, err := d.root.Lstat(seedName); err != nil || !os.SameFile(found, seed) {' \
-    '	if found, err := d.root.Lstat(seedName); err != nil || found == nil {'
+  # Nightly over 9075b7b (#326): the promotion no longer renames over the
+  # seed; it archives it, and the archive move checks the file too, so the
+  # mutant drops both checks: the promotion takes whatever its name holds.
+  mutate go "rotation: the promotion takes a seed that changed" "$RO" \
+    '	if found, err := d.root.Lstat(seedName); err != nil || !os.SameFile(found, seed) {
+		return errors.New("the current key is not the file the rotation read")
+	}' \
+    '	if found, err := d.root.Lstat(seedName); err != nil || found == nil {
+		return errors.New("the current key is not the file the rotation read")
+	}
+	seed, _ = d.root.Lstat(seedName)'
   mutate go 'rotation: the seed is renamed before the list is written' 'internal/desk/rotation.go' \
     '	keyBetween("trail: before the list")
 	if state.finished != nil {' \
@@ -4941,11 +4957,11 @@ func (b *cappedBuffer) exceeded() bool {'
 	if err != nil {
 		dir.Close()'
   mutate go 'archive: custody no start settles is not said' 'internal/desk/archive.go' \
-    '			listing.Entries = append(listing.Entries, held.unresolvedIn(s.signingKeyName())...)' \
+    '			listing.Entries = append(listing.Entries, s.unresolvedIn(held)...)' \
     '			_ = held'
   mutate go 'archive: a project'"'"'s own marker is said as no start'"'"'s' 'internal/desk/archive.go' \
     '		if parts == nil || parts[1] == own {' \
-    '		if parts == nil {'
+    '		if parts == nil || parts[1] == own+"-" {'
   mutate go 'archive: the owner'"'"'s Remove writes no journal line' 'internal/desk/archive.go' \
     '	if err := held.appendArchiveLine(folder, removed); err != nil {' \
     '	if err := error(nil); err != nil || removed.File == "" {'
@@ -5042,6 +5058,133 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'audit r3 fix: an older run is confirmed under a head it did not verify' 'internal/desk/stamping.go' \
     '	if confirmed && verified != head {' \
     '	if confirmed && false && verified != head {'
+  # **The archive rule's edges (the fourth ADR-0010 line audit, issues
+  # #329 to #334).** Project Files writes, replaces and cleans up nothing in
+  # Desk's custody (#329), found by its path under the project, without case,
+  # and by the identity of `secrets/` on the way or above the project.
+  mutate go 'archive edges: Project Files writes in Desk'"'"'s custody' 'internal/desk/file_access.go' \
+    '	if p.inCustody != nil && p.inCustody(name) {' \
+    '	if p.inCustody != nil && p.inCustody(name) && false {'
+  mutate go 'archive edges: the startup cleanup removes in Desk'"'"'s custody' 'internal/desk/files.go' \
+    '		if custody.holds(s.root, rel) {' \
+    '		if custody.holds(s.root, rel) && false {'
+  mutate go 'archive edges: the custody is not found by its path' 'internal/desk/file_access.go' \
+    '	for _, rel := range c.rels {' \
+    '	for _, rel := range c.rels[:0] {'
+  mutate go 'archive edges: the custody is not found by identity' 'internal/desk/file_access.go' \
+    '			if held.info != nil && os.SameFile(info, held.info) {' \
+    '			if held.info != nil && os.SameFile(info, held.info) && false {'
+  mutate go 'archive edges: a project in Desk'"'"'s custody is not' 'internal/desk/file_access.go' \
+    '			if info, err := os.Lstat(dir); err == nil && os.SameFile(info, root.info) {' \
+    '			if info, err := os.Lstat(dir); err == nil && os.SameFile(info, root.info) && false {'
+  # Each custody folder resolved on its own, so one moved into the project
+  # with a link left at its name is found where it is (review round 1 of
+  # #335, finding 1).
+  mutate go 'archive edges: the custody folders are not resolved' 'internal/desk/file_access.go' \
+    '	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		if info, err := os.Stat(resolved); err == nil && info.IsDir() {
+			return custodyRoot{path: resolved, info: info}
+		}
+	}
+	return custodyRoot{path: path}' \
+    '	if info, err := os.Lstat(path); err == nil {
+		return custodyRoot{path: path, info: info}
+	}
+	return custodyRoot{path: path}'
+  # A link into Desk's custody is refused in the custody's words, which name
+  # no path (review round 1 of #335, finding 4).
+  mutate go 'archive edges: a link into Desk'"'"'s custody is refused as a link' 'internal/desk/files.go' \
+    '	if s.signingCustody().reaches(s.projectDir, clean) {' \
+    '	if false && s.signingCustody().reaches(s.projectDir, clean) {'
+  # A Remove is never made over a journal Desk cannot read whole, its own
+  # line is read back before the file goes, and a line is never joined to a
+  # write that did not finish (#330).
+  mutate go 'archive edges: a Remove goes on over a damaged journal' 'internal/desk/archive.go' \
+    '	if err != nil || entry.damaged {' \
+    '	if err != nil {'
+  mutate go 'archive edges: a damaged journal offers Remove' 'internal/desk/archive.go' \
+    ' && listing.Entries[i].digest != "" && !listing.Entries[i].damaged {' \
+    ' && listing.Entries[i].digest != "" {'
+  mutate go 'archive edges: a journal line is joined to a torn one' 'internal/desk/archive.go' \
+    '		if last[0] != '"'"'\n'"'"' {' \
+    '		if last[0] != '"'"'\n'"'"' && false {'
+  mutate go 'archive edges: a removal is not read back before the file goes' 'internal/desk/archive.go' \
+    '	if after, err := held.readArchiveJournal(folder); err != nil || after.damaged > 0 || !after.removed[file] || after.events[file] != entry.generation+1 {' \
+    '	if after, err := held.readArchiveJournal(folder); err != nil && after.damaged < 0 {'
+  # A line Desk does not write is damage: an event it does not know, or one
+  # without the members its event carries (review round 1 of #335, finding
+  # 2).
+  mutate go 'archive edges: a line of an event Desk does not know is read' 'internal/desk/archive.go' \
+    '		return l.From == "" && l.Why == "" && l.Rule == archiveOwnerRemoved && l.Generation >= 1
+	}
+	return false' \
+    '		return l.From == "" && l.Why == "" && l.Rule == archiveOwnerRemoved && l.Generation >= 1
+	}
+	return true'
+  mutate go 'archive edges: a removal by no owner is read' 'internal/desk/archive.go' \
+    '		return l.From == "" && l.Why == "" && l.Rule == archiveOwnerRemoved && l.Generation >= 1' \
+    '		return l.From == "" && l.Why == "" && l.Generation >= 1'
+  mutate go 'archive edges: a move by a rule Desk has not is read' 'internal/desk/archive.go' \
+    '&& slices.Contains(archiveRules, l.Rule) && l.Generation == 0' \
+    '&& l.Generation == 0'
+  # A journal's line is synced before it counts, the sync alone mutated
+  # (review round 1 of #335, finding 3).
+  mutate go 'archive edges: a journal line is not synced' 'internal/desk/archive.go' \
+    '	return archiveJournalSync(file)' \
+    '	return nil'
+  # A made desk's custody no start settles is said on the decision record,
+  # with the reason its start keeps it, and no Remove; a desk open here
+  # decides its own (#331).
+  mutate go 'archive edges: a made desk'"'"'s custody is not said' 'internal/desk/archive.go' \
+    'var unresolvedForm = regexp.MustCompile(`^([0-9a-f]{32}(?:[0-9a-f]{32})?)\.(rotating|creating)$`)' \
+    'var unresolvedForm = regexp.MustCompile(`^([0-9a-f]{64})\.(rotating|creating)$`)'
+  mutate go 'archive edges: a made desk'"'"'s creation is said without its reason' 'internal/desk/archive.go' \
+    '				entry.Why = fmt.Sprintf(unresolvedDeskCreationWords, left)' \
+    '				entry.Why = unresolvedCreationWords'
+  mutate go 'archive edges: a made desk'"'"'s rotation is said as a project'"'"'s' 'internal/desk/archive.go' \
+    '			if made {
+				unread, phased = unresolvedDeskJournalWords, unresolvedDeskRotationWords' \
+    '			if false {
+				unread, phased = unresolvedDeskJournalWords, unresolvedDeskRotationWords'
+  mutate go 'archive edges: a desk open here is said as no start'"'"'s' 'internal/desk/archive.go' \
+    '		if made && s.deskOpenHere(parts[1]) {' \
+    '		if made && false && s.deskOpenHere(parts[1]) {'
+  # A stage's name records the identity and the purpose it is for before a
+  # byte is written; a start, Desk's and Runner's, archives a list a stop
+  # left staged, and the decision record says one it could not (#332).
+  mutate go 'archive edges: a stage records no name' 'internal/desk/signing.go' \
+    '		name, err := randomStagingName(keysStagingPrefix + target + "-")' \
+    '		name, err := randomStagingName(keysStagingPrefix)'
+  mutate go 'archive edges: the start leaves a staged list' 'internal/desk/signing.go' \
+    '	dir.archiveStagedLists("")' \
+    '	_ = dir.archiveStagedLists'
+  mutate go 'archive edges: Runner'"'"'s start leaves a staged list' 'internal/desk/runner_key.go' \
+    '	dir.archiveStagedLists(k.name)' \
+    '	_ = dir.archiveStagedLists'
+  mutate go 'archive edges: a staged list is not said' 'internal/desk/archive.go' \
+    '		listing.Entries = append(listing.Entries, held.stagedIn(scope)...)' \
+    '		_ = held.stagedIn'
+  mutate go 'archive edges: a stage with no identity is not said' 'internal/desk/signing.go' \
+    '		if parts == nil && only == "" && stagedForm.MatchString(name) && !stagedMarkerForm.MatchString(name) {' \
+    '		if parts == nil && only == "" && stagedForm.MatchString(name) && false {'
+  # Every check of the last stamp run that does not confirm it forgets what
+  # was confirmed, its preconditions included (#333).
+  mutate go 'archive edges: a check that stops at a precondition keeps the confirmation' 'internal/desk/audit_record.go' \
+    '	if checked := answer.Stamping.LastChecked; checked == nil || !checked.Checked {' \
+    '	if checked := answer.Stamping.LastChecked; checked == nil {'
+  # The owner's Remove, where no lock can be taken, removes nothing (#334).
+  mutate go 'archive edges: the owner'"'"'s Remove goes on where no lock can be taken' 'internal/desk/archive.go' \
+    '		return &lockFailure{http.StatusConflict, CodeBadRequest, "Nothing was removed: Desk removes an archived key only under the lock of its signing folder, and none can be taken here."}
+	}
+	defer unlock()
+	held := dir' \
+    '		_ = err
+	}
+	if unlock == nil {
+		unlock = func() {}
+	}
+	defer unlock()
+	held := dir'
   # **Runner's signing key (ADR-0010, section 5; runner_key.go).** A key of
   # Runner's own, never a project's or an inherited one, named on the boot
   # line only where, under the one key-custody lock on the signing folder, no
@@ -14387,6 +14530,12 @@ export function assistantTransport(id: string): Transport {
   mutate web 'archive page: an unresolved entry with a token is taken' 'web/src/audit/client.ts' \
     '      && optional(value.trail, hex(32)) && named(value.at) && named(value.why) && value.token === undefined && value.missing === undefined' \
     '      && optional(value.trail, hex(32)) && named(value.at) && named(value.why)'
+  mutate web 'archive edges page: a made desk'"'"'s unresolved entry is refused' 'web/src/audit/client.ts' \
+    "    return value.scope === 'desk' && (hex(32)(value.identity) || hex(64)(value.identity)) && unresolvedFile(value.file)" \
+    "    return value.scope === 'desk' && hex(64)(value.identity) && unresolvedFile(value.file)"
+  mutate web 'archive edges page: a staged list is refused' 'web/src/audit/client.ts' \
+    'const stagedListFile = (value: unknown): value is string => text(value) && /^\.keys-(?:[0-9a-f]{32}|[0-9a-f]{64})\.keys\.jsonl-[0-9a-f]{24}\.tmp$/.test(value)' \
+    'const stagedListFile = (value: unknown): value is string => text(value) && /^\.keys-(?:[0-9a-f]{32}|[0-9a-f]{64})\.keys\.json-[0-9a-f]{24}\.tmp$/.test(value)'
   mutate web 'audit r2 fix: a question with one token for both answers is read' web/src/audit/client.ts \
     ' && hex(64)(value.copy) && value.moved !== value.copy' \
     ' && hex(64)(value.copy)'

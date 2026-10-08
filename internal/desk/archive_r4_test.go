@@ -1,0 +1,740 @@
+package desk
+
+// The fourth pass of the ADR-0010 line audit (issues #329 to #334): the
+// archive rule's edges, each with the auditor's scenario.
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"sync"
+	"syscall"
+	"testing"
+)
+
+// fileWrite is a Project Files save of content at rel, stating base as the
+// bytes the editor loaded, on s's route; parents asks for missing folders.
+func fileWrite(t *testing.T, s *Server, rel, content, base string, parents bool) *httptest.ResponseRecorder {
+	t.Helper()
+	s.cfg.Token, s.sessions = "probe", &sessionStore{}
+	if s.writes == nil {
+		s.writes = &sync.Mutex{}
+	}
+	body, err := json.Marshal(WriteRequest{Path: rel, Content: content, BaseSHA256: base, CreateParents: parents})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest("PUT", "http://localhost/api/file", bytes.NewReader(body))
+	request.Header.Set("Authorization", "Bearer probe")
+	request.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.handleFileWrite(w, request)
+	return w
+}
+
+// **Project Files writes nothing in Desk's custody** (issue #329, the
+// auditor's scenario). A project that holds Desk's configuration folder
+// reaches the seed, the next seed, the list of public keys and the archive
+// by ordinary paths. A save of each, with the right base and no signing lock
+// to be had, is refused with the words the custody gives, and the file is the
+// file it was, with its bytes; a save that would make a file there, its
+// folders included, makes nothing; and the custody's name in another case is
+// refused as well.
+func TestProjectFilesWriteNothingInDesksCustody(t *testing.T) {
+	base := t.TempDir()
+	s, _ := bareServer(t, base, filepath.Join(base, "config"), desk2)
+	bareKeys(t, s)
+	signing := filepath.Join(s.configDir, "secrets", "signing")
+	writeBare(t, filepath.Join(signing, desk2+nextSeedSuffix), secondSeed+"\n")
+	dir, err := s.assistant.openSigning(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dir.Close()
+	seed, err := dir.root.Lstat(desk2 + seedSuffix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archivedName, err := dir.archive(desk2+seedSuffix, seed, archived{identity: desk2, rule: archivePromoted, why: "the test's"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeBare(t, filepath.Join(signing, desk2+seedSuffix), standInSeed+"\n")
+	noSigningLock(t)
+	for _, name := range []string{desk2 + seedSuffix, desk2 + nextSeedSuffix, desk2 + keysSuffix, filepath.Join(archiveDirName, desk2, archivedName), filepath.Join(archiveDirName, desk2, archiveJournalName)} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(signing, name)
+			before, err := os.Lstat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			old := readFile(t, path)
+			rel, _ := filepath.Rel(base, path)
+			w := fileWrite(t, s, filepath.ToSlash(rel), "replaced\n", digestOf([]byte(old)), false)
+			if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), signingCustodyWords) {
+				t.Errorf("the save answered %d %s", w.Code, w.Body)
+			}
+			after, err := os.Lstat(path)
+			if err != nil || !os.SameFile(before, after) || readFile(t, path) != old {
+				t.Errorf("the file is not the file it was: %v", err)
+			}
+		})
+	}
+	for _, rel := range []string{"config/secrets/signing/" + desk2 + ".new.seed", "config/secrets/signing/archive/" + desk2 + "/made/x.seed", "Config/SECRETS/signing/" + desk2 + seedSuffix} {
+		w := fileWrite(t, s, rel, "made\n", "", true)
+		if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), signingCustodyWords) {
+			t.Errorf("a save of %s answered %d %s", rel, w.Code, w.Body)
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(signing, desk2+".new.seed")); !os.IsNotExist(err) {
+		t.Errorf("a file was made in the custody: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(signing, archiveDirName, desk2, "made")); !os.IsNotExist(err) {
+		t.Errorf("a folder was made in the custody: %v", err)
+	}
+	// Elsewhere in the project, a save is a save.
+	if w := fileWrite(t, s, "notes.md", "notes\n", "", false); w.Code != http.StatusOK {
+		t.Errorf("an ordinary save answered %d %s", w.Code, w.Body)
+	}
+}
+
+// **A project inside Desk's custody is all of it in custody** (issue #329):
+// a project opened on the signing folder, or on the configuration folder's
+// `secrets/`, saves nothing, and its startup cleanup removes nothing; one
+// opened on the configuration folder saves beside `secrets/` and nothing in
+// it.
+func TestAProjectInDesksCustodyIsAllOfItInCustody(t *testing.T) {
+	for _, tc := range []struct {
+		name, project, rel string
+		saved              bool
+	}{
+		{"the signing folder", "secrets/signing", "notes.md", false},
+		{"secrets", "secrets", "notes.md", false},
+		{"the configuration folder, beside secrets", ".", "notes.md", true},
+		{"the configuration folder, in secrets", ".", "secrets/notes.md", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			config := filepath.Join(t.TempDir(), "config")
+			s, _ := bareServer(t, filepath.Join(config, tc.project), config, desk2)
+			w := fileWrite(t, s, tc.rel, "notes\n", "", false)
+			if (w.Code == http.StatusOK) != tc.saved {
+				t.Errorf("the save answered %d %s", w.Code, w.Body)
+			}
+			// The startup cleanup, wherever the project is all custody.
+			if tc.project != "." {
+				staged := filepath.Join(s.projectDir, stagingPrefix+"0123456789abcdef01234567.tmp")
+				writeBare(t, staged, "staged\n")
+				s.removeStaleStaging()
+				if _, err := os.Lstat(staged); err != nil {
+					t.Errorf("the cleanup removed a file in the custody: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// **The custody is found by identity too** (issue #329): where the path's
+// spelling does not name `secrets/` (a case-insensitive volume's other
+// case, a bind mount), a folder on the way that is `secrets/` itself is in
+// custody.
+func TestDesksCustodyIsFoundByIdentity(t *testing.T) {
+	base := t.TempDir()
+	s, _ := bareServer(t, base, filepath.Join(base, "config"), desk2)
+	info, err := os.Lstat(filepath.Join(s.configDir, "secrets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	custody := signingCustody{roots: []custodyRoot{{info: info}}}
+	if !custody.holds(s.root, "config/secrets/signing/"+desk2+seedSuffix) {
+		t.Error("a path through secrets/ is not in custody")
+	}
+	if custody.holds(s.root, "config/other.json") {
+		t.Error("a path beside secrets/ is in custody")
+	}
+}
+
+// **The startup cleanup removes nothing in Desk's custody** (issue #329): a
+// file with Project Files' staging name in the signing folder is left, and
+// said; one elsewhere in the project is removed, as it was.
+func TestTheStartupCleanupRemovesNothingInDesksCustody(t *testing.T) {
+	base := t.TempDir()
+	s, logs := bareServer(t, base, filepath.Join(base, "config"), desk2)
+	inCustody := filepath.Join(s.configDir, "secrets", "signing", stagingPrefix+"0123456789abcdef01234567.tmp")
+	elsewhere := filepath.Join(base, stagingPrefix+"0123456789abcdef01234567.tmp")
+	writeBare(t, inCustody, standInSeed+"\n")
+	writeBare(t, elsewhere, "debris\n")
+	s.removeStaleStaging()
+	if _, err := os.Lstat(inCustody); err != nil {
+		t.Errorf("the cleanup removed a file in the custody: %v", err)
+	}
+	if _, err := os.Lstat(elsewhere); !os.IsNotExist(err) {
+		t.Errorf("the cleanup left its own debris: %v", err)
+	}
+	if !strings.Contains(logs.String(), "in the folder Desk keeps its signing keys in") {
+		t.Errorf("the log does not say what was left: %s", logs)
+	}
+}
+
+// **A removal is never made over a damaged journal** (issue #330, the
+// auditor's scenario). The decision record gave a token; then a write to the
+// archive's journal stopped part way, leaving a last line no newline ends.
+// Desk offers no Remove now, says why, and refuses the token it gave before:
+// the generation that token binds cannot be told from a journal with a line
+// it does not read, and the seed stays.
+func TestARemovalIsNeverMadeOverADamagedJournal(t *testing.T) {
+	s, dir, file := archivingServer(t)
+	path := filepath.Join(dir.path, archiveDirName, s.cfg.deskID, file)
+	entry := firstArchived(t, s)
+	journal := filepath.Join(dir.path, archiveDirName, s.cfg.deskID, archiveJournalName)
+	appendBare(t, journal, `{"version":"1","event":"removed"`)
+	now := firstArchived(t, s)
+	if now.Token != "" || !strings.Contains(now.Why, archiveDamagedWords) {
+		t.Errorf("over a damaged journal the record offers %q and says %q", now.Token, now.Why)
+	}
+	w := removeOn(s, removal(entry, entry.Token), nil)
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), archiveJournalDamagedWords) {
+		t.Errorf("the token given before answered %d %s", w.Code, w.Body)
+	}
+	if _, err := os.Lstat(path); err != nil {
+		t.Errorf("the archived seed went: %v", err)
+	}
+}
+
+// **A line is never joined to a write that did not finish** (issue #330): a
+// move to the archive after a torn journal line ends that line first, so its
+// own line is read, and the file is listed with the rule that moved it.
+func TestAnArchiveMoveAfterATornWriteKeepsItsLine(t *testing.T) {
+	s, dir, _ := archivingServer(t)
+	journal := filepath.Join(dir.path, archiveDirName, s.cfg.deskID, archiveJournalName)
+	appendBare(t, journal, `{"version":"1","event":"archived"`)
+	writeBare(t, filepath.Join(dir.path, s.cfg.deskID+nextSeedSuffix), secondSeed+"\n")
+	next, err := dir.root.Lstat(s.cfg.deskID + nextSeedSuffix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved, err := dir.archive(s.cfg.deskID+nextSeedSuffix, next, archived{identity: s.cfg.deskID, rule: archiveRotationStopped, why: "after a torn line"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listing := s.archiveListing()
+	index := -1
+	for i, entry := range listing.Entries {
+		if entry.File == moved {
+			index = i
+		}
+	}
+	if index < 0 || listing.Entries[index].Rule != archiveRotationStopped || !strings.HasPrefix(listing.Entries[index].Why, "after a torn line") {
+		t.Errorf("the move after a torn line is listed as %+v", listing.Entries)
+	}
+}
+
+// **A removal is read back before the file goes** (issue #330): the
+// removal's line is written, and then, before Desk reads it back, its last
+// byte is lost, as a write that did not reach the disk whole. The reader does
+// not count it, so the file stays, and the answer says the removal could not
+// be read back.
+func TestARemovalIsReadBackBeforeTheFileGoes(t *testing.T) {
+	s, dir, file := archivingServer(t)
+	path := filepath.Join(dir.path, archiveDirName, s.cfg.deskID, file)
+	journal := filepath.Join(dir.path, archiveDirName, s.cfg.deskID, archiveJournalName)
+	entry := firstArchived(t, s)
+	testHookKeyBetween = func(at string) {
+		if at == "archive: removal written" {
+			data, err := os.ReadFile(journal)
+			if err == nil {
+				err = os.WriteFile(journal, data[:len(data)-1], 0o600)
+			}
+			if err != nil {
+				t.Error(err)
+			}
+		}
+	}
+	t.Cleanup(func() { testHookKeyBetween = nil })
+	w := removeOn(s, removal(entry, entry.Token), nil)
+	if w.Code != http.StatusInternalServerError || !strings.Contains(w.Body.String(), "could not read its removal back") {
+		t.Errorf("the removal answered %d %s", w.Code, w.Body)
+	}
+	if _, err := os.Lstat(path); err != nil {
+		t.Errorf("the archived seed went: %v", err)
+	}
+}
+
+// **Custody a made desk's start does not settle is said** (issue #331, the
+// auditor's scenario). A made desk's creation whose manifest is not where
+// Desk opens the desk, an earlier Desk's empty creation marker, and a
+// rotation of a desk not open here each keep their key at its name after a
+// start's sweep and recovery; the decision record lists each with the
+// reason, as it lists a project's, and offers no Remove. A creation the next
+// start archives says so; a desk open here decides its own, and is not
+// listed.
+func TestMadeDeskCustodyNoStartSettlesIsSaid(t *testing.T) {
+	for _, tc := range []struct {
+		name, id, suffix, body string
+		start, open            bool
+		why                    string
+	}{
+		{"a creation whose manifest may be published", desk2, creatingSuffix, string(deskCreation{ID: desk2, Folder: "1:1", Manifest: "sha256:" + strings.Repeat("0", 64)}.line()), true, false, fmt.Sprintf(unresolvedDeskCreationWords, deskMovedWords)},
+		{"an earlier Desk's creation", desk2, creatingSuffix, "", true, false, fmt.Sprintf(unresolvedDeskCreationWords, deskLegacyWords)},
+		{"a rotation of a desk not open", desk2, rotatingSuffix, string(rotationJournal{Version: "1", Phase: journalRotate, Trail: fixtureTrail, Next: secondPublicKey}.line()), true, false, fmt.Sprintf(unresolvedDeskRotationWords, journalRotate, fixtureTrail)},
+		{"a creation the next start archives", desk2, creatingSuffix, string(deskCreation{ID: desk2, Folder: "1:1"}.line()), false, false, unresolvedDeskNeverWords},
+		{"a project's creation", strings.Repeat("a", 64), creatingSuffix, "", true, false, unresolvedCreationWords},
+		{"a rotation of a desk open here", desk2, rotatingSuffix, string(rotationJournal{Version: "1", Phase: journalRotate, Trail: fixtureTrail, Next: secondPublicKey}.line()), false, true, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			base := t.TempDir()
+			s, _ := bareServer(t, filepath.Join(base, "project"), filepath.Join(base, "config"), "")
+			signing := filepath.Join(s.configDir, "secrets", "signing")
+			writeBare(t, filepath.Join(signing, tc.id+seedSuffix), standInSeed+"\n")
+			writeBare(t, filepath.Join(signing, tc.id+keysSuffix), string(key1.line()))
+			writeBare(t, filepath.Join(signing, tc.id+tc.suffix), tc.body)
+			if tc.suffix == rotatingSuffix {
+				writeBare(t, filepath.Join(signing, tc.id+nextSeedSuffix), secondSeed+"\n")
+			}
+			if tc.start {
+				s.sweepUnfinishedKeys()
+				s.recoverRotations()
+			}
+			if tc.open {
+				s.desks = map[string]*Server{tc.id: {}}
+			}
+			if _, err := os.Lstat(filepath.Join(signing, tc.id+seedSuffix)); err != nil {
+				t.Fatalf("the key is not at its name: %v", err)
+			}
+			listing := s.archiveListing()
+			var found []archivedKey
+			if listing != nil {
+				for _, entry := range listing.Entries {
+					if entry.Identity == tc.id {
+						found = append(found, entry)
+					}
+				}
+			}
+			switch {
+			case tc.why == "" && len(found) != 0:
+				t.Errorf("a desk open here is listed: %+v", found)
+			case tc.why != "" && (len(found) != 1 || !found[0].Unresolved || found[0].Why != tc.why || found[0].Token != "" || found[0].File != tc.id+tc.suffix):
+				t.Errorf("the decision record lists %+v", found)
+			}
+		})
+	}
+}
+
+// stagedOf is the one stage of a list of public keys in the folder at path,
+// or "" where there is none.
+func stagedOf(t *testing.T, path string) string {
+	t.Helper()
+	staged := ""
+	for _, name := range namesIn(t, path) {
+		if strings.HasPrefix(name, keysStagingPrefix) {
+			if staged != "" {
+				t.Fatalf("two stages: %s and %s", staged, name)
+			}
+			staged = name
+		}
+	}
+	return staged
+}
+
+// **A list a stop left staged is archived by the next start** (issue #332,
+// the auditor's scenario). A creation stops after its list of public keys is
+// staged and before it is linked into place. The stage's name records the
+// identity and the purpose it was made for, before a byte of it was written,
+// so the next start's sweep moves it to that identity's archive with the
+// sentence that says what it is, and the log says so; nothing is left
+// unlisted.
+func TestAListAStopLeftStagedIsArchivedByTheNextStart(t *testing.T) {
+	s, logs := bareServer(t, filepath.Join(t.TempDir(), "project"), filepath.Join(t.TempDir(), "config"), desk2)
+	dir, err := s.assistant.openSigning(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dir.Close()
+	project, _ := s.auditRuntime()
+	func() {
+		unlock, err := lockSigning(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer unlock()
+		testHookKeyBetween = func(at string) {
+			if at == "list: staged" {
+				panic("stopped")
+			}
+		}
+		defer func() {
+			testHookKeyBetween = nil
+			if recover() == nil {
+				t.Error("the stop was not reached")
+			}
+		}()
+		_, _ = generateKeyMarked(context.Background(), s.cfg.JpackBin, project, dir, desk2, deskCreation{ID: desk2, Folder: "1:1"}.line())
+	}()
+	staged := stagedOf(t, dir.path)
+	if !stagedListForm.MatchString(staged) || !strings.HasPrefix(staged, keysStagingPrefix+desk2+keysSuffix+"-") {
+		t.Fatalf("the stage is named %q", staged)
+	}
+	s.sweepUnfinishedKeys()
+	if left := stagedOf(t, dir.path); left != "" {
+		t.Errorf("the start left %s staged", left)
+	}
+	listing := s.archiveListing()
+	if listing == nil || !slices.ContainsFunc(listing.Entries, func(entry archivedKey) bool {
+		return entry.Kind == "keys.jsonl" && entry.Identity == desk2 && entry.Why == stagedListWords && !entry.Unresolved
+	}) {
+		t.Errorf("the decision record lists %+v", listing)
+	}
+	if !strings.Contains(logs.String(), "was moved to Desk's archive of keys") {
+		t.Errorf("the log does not say the move: %s", logs)
+	}
+}
+
+// **A list neither published nor archived is said, and archived once it can
+// be** (issue #332, the auditor's scenario). A list's publication fails, its
+// name being taken, and so does its archival, the archive's name being a
+// file. The list stays where it was staged, and the decision record lists
+// it with the sentence that says so and no Remove. Once the obstruction is
+// gone, the next start archives it.
+func TestAListNeitherPublishedNorArchivedIsSaid(t *testing.T) {
+	s, _ := bareServer(t, filepath.Join(t.TempDir(), "project"), filepath.Join(t.TempDir(), "config"), desk2)
+	bareKeys(t, s)
+	dir, err := s.assistant.openSigning(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dir.Close()
+	writeBare(t, filepath.Join(dir.path, archiveDirName), "blocked")
+	unlock, err := lockSigning(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, failure := dir.writeNewKeys(desk2+keysSuffix, []deskPublicKey{key1})
+	unlock()
+	staged := stagedOf(t, dir.path)
+	if failure == nil || staged == "" {
+		t.Fatalf("the write answered %v, and left %q", failure, staged)
+	}
+	listing := s.archiveListing()
+	if listing == nil || !slices.ContainsFunc(listing.Entries, func(entry archivedKey) bool {
+		return entry.Unresolved && entry.File == staged && entry.Identity == desk2 && entry.Kind == "keys.jsonl" && entry.Why == unresolvedStagedListWords && entry.Token == ""
+	}) {
+		t.Errorf("the decision record lists %+v", listing)
+	}
+	if err := os.Remove(filepath.Join(dir.path, archiveDirName)); err != nil {
+		t.Fatal(err)
+	}
+	s.sweepUnfinishedKeys()
+	if left := stagedOf(t, dir.path); left != "" {
+		t.Errorf("the start left %s staged", left)
+	}
+	if got := archivedIn(t, dir.path, desk2); !slices.Equal(got, kindsArchived(archiveCreationStopped, "keys.jsonl")) {
+		t.Errorf("the archive holds %q", got)
+	}
+}
+
+// **A stage whose name records no identity is said** (issue #332): an
+// earlier Desk's stage, `.keys-<random>.tmp`, cannot be archived under any
+// identity; the start leaves it and says so, and the decision record lists
+// it with no identity and no Remove.
+func TestAStageWithNoIdentityIsSaid(t *testing.T) {
+	s, logs := bareServer(t, filepath.Join(t.TempDir(), "project"), filepath.Join(t.TempDir(), "config"), desk2)
+	const staged = keysStagingPrefix + "0123456789abcdef01234567.tmp"
+	writeBare(t, filepath.Join(s.configDir, "secrets", "signing", staged), string(key1.line()))
+	s.sweepUnfinishedKeys()
+	if !strings.Contains(logs.String(), staged+", a file an earlier Desk staged, was left where it is") {
+		t.Errorf("the log does not say what was left: %s", logs)
+	}
+	listing := s.archiveListing()
+	if listing == nil || !slices.ContainsFunc(listing.Entries, func(entry archivedKey) bool {
+		return entry.Unresolved && entry.File == staged && entry.Identity == "" && entry.Kind == "staged" && entry.Why == unresolvedStagedWords
+	}) {
+		t.Errorf("the decision record lists %+v", listing)
+	}
+}
+
+// **Runner's start archives a list a stop left staged** (issue #332): in
+// Runner's own folder, under its lock, before it decides its key.
+func TestRunnersStartArchivesAListAStopLeftStaged(t *testing.T) {
+	s, _ := bareServer(t, filepath.Join(t.TempDir(), "project"), filepath.Join(t.TempDir(), "config"), desk2)
+	runner := filepath.Join(s.configDir, "secrets", "signing", runnerSigningDirName)
+	bareRoot(t, runner)
+	staged := keysStagingPrefix + desk2 + keysSuffix + "-0123456789abcdef01234567.tmp"
+	writeBare(t, filepath.Join(runner, staged), string(key1.line()))
+	s.newRunnerKey(desk2).examine(context.Background())
+	if _, err := os.Lstat(filepath.Join(runner, staged)); !os.IsNotExist(err) {
+		t.Errorf("Runner's start left the stage: %v", err)
+	}
+	if got := archivedIn(t, runner, desk2); !slices.Contains(got, "keys.jsonl "+archiveCreationStopped) {
+		t.Errorf("Runner's archive holds %q", got)
+	}
+}
+
+// **Every check of an older run that does not confirm it forgets what was
+// confirmed** (issue #333, the auditor's scenario). An older run's
+// confirmation is kept for its checkpoint and the report's head. A
+// verification whose answer cannot be read, a refusal, an invalid report,
+// and a valid report whose stamps reach no record (a precondition the check
+// stops at before it asks the runtime again) each leave it forgotten.
+func TestEveryCheckThatDoesNotConfirmAnOlderRunForgetsIt(t *testing.T) {
+	s, _ := bareServer(t, filepath.Join(t.TempDir(), "project"), filepath.Join(t.TempDir(), "config"), desk2)
+	rig := newAuditRig(t, withAuditVersions)
+	s.cfg.JpackBin = rig.bin
+	s.stamping = &stampScheduler{s: s}
+	authority, err := newTestAuthority()
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, why := (stampingProposal{Authority: testAuthorityAddress, Roots: string(authority.rootPEM())}).plan()
+	if why != "" {
+		t.Fatal(why)
+	}
+	folder, err := s.openStamping(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer folder.Close()
+	data, _ := json.Marshal(plan.file(1))
+	if err := writePrivateData(folder, rootsFileName(sha256Digest(plan.roots)), plan.roots); err != nil {
+		t.Fatal(err)
+	}
+	if err := writePrivateData(folder, stampingSettingsName, append(data, '\n')); err != nil {
+		t.Fatal(err)
+	}
+	named := checkpointHead{Identity: handoverTrail, Sequence: 2, Digest: standInDigest(2)}
+	head := checkpointHead{Identity: handoverTrail, Sequence: 3, Digest: standInDigest(3)}
+	s.stamping.last = new(stampRun)
+	*s.stamping.last = standInRun(2, standInDigest(2))
+	project, _ := s.auditRuntime()
+	noStamps := headAt(strings.Replace(strings.Replace(stampsReport, `"stamped":{"status":"through","through":2}`, `"stamped":{"status":"none"}`, 1), `"coveredBy":"2026-10-07T13:29:22Z",`, ``, 1), 3)
+	for _, tc := range []struct {
+		name, body string
+		code       int
+	}{
+		{"an answer that cannot be read", "not json", 1},
+		{"the runtime's refusal", expectRefused, 4},
+		{"an invalid report", expectMismatch, 1},
+		{"a valid report with no stamp reaching the run", noStamps, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s.stamping.rememberConfirmed(named, head)
+			rig.answers(t, tc.code, tc.body)
+			answer, _ := s.auditVerify(context.Background(), project)
+			if answer.Stamping != nil && answer.Stamping.LastChecked != nil && answer.Stamping.LastChecked.Checked {
+				t.Errorf("the run is said checked: %+v", answer.Stamping.LastChecked)
+			}
+			if s.stamping.confirmedAt(named, head) {
+				t.Error("the confirmation is kept")
+			}
+		})
+	}
+}
+
+// **A custody folder moved into the project is still custody** (review
+// round 1 of #335, finding 1, the reviewer's scenario). `secrets/`, or the
+// signing folder's archive, is moved into the project that holds the
+// configuration folder, and a link left at its own name. A save of the seed,
+// or of the archived seed, through the folder's real path is refused with
+// the custody's words, and the file is the file it was, with its bytes; the
+// startup cleanup leaves a file with Project Files' staging name there.
+func TestACustodyFolderMovedIntoTheProjectIsStillCustody(t *testing.T) {
+	for _, moved := range []string{"secrets", "the archive"} {
+		t.Run(moved, func(t *testing.T) {
+			base := t.TempDir()
+			s, logs := bareServer(t, base, filepath.Join(base, "config"), desk2)
+			bareKeys(t, s)
+			secrets := filepath.Join(s.configDir, "secrets")
+			seed := filepath.Join(secrets, "signing", desk2+seedSuffix)
+			var rel, kept string
+			switch moved {
+			case "secrets":
+				kept = filepath.Join(base, "kept-secrets")
+				if err := os.Rename(secrets, kept); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink("../kept-secrets", secrets); err != nil {
+					t.Fatal(err)
+				}
+				rel = "kept-secrets/signing/" + desk2 + seedSuffix
+				seed = filepath.Join(kept, "signing", desk2+seedSuffix)
+			default:
+				dir, err := s.assistant.openSigning(false)
+				if err != nil {
+					t.Fatal(err)
+				}
+				info, err := dir.root.Lstat(desk2 + seedSuffix)
+				if err != nil {
+					t.Fatal(err)
+				}
+				file, err := dir.archive(desk2+seedSuffix, info, archived{identity: desk2, rule: archivePromoted, why: "the test's"})
+				dir.Close()
+				if err != nil {
+					t.Fatal(err)
+				}
+				archive := filepath.Join(secrets, "signing", archiveDirName)
+				kept = filepath.Join(base, "kept-archive")
+				if err := os.Rename(archive, kept); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink("../../../kept-archive", archive); err != nil {
+					t.Fatal(err)
+				}
+				rel = "kept-archive/" + desk2 + "/" + file
+				seed = filepath.Join(kept, desk2, file)
+			}
+			before, err := os.Stat(seed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			old := readFile(t, seed)
+			w := fileWrite(t, s, rel, "replaced\n", digestOf([]byte(old)), false)
+			if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), signingCustodyWords) {
+				t.Errorf("the save answered %d %s", w.Code, w.Body)
+			}
+			if after, err := os.Stat(seed); err != nil || !os.SameFile(before, after) || readFile(t, seed) != old {
+				t.Errorf("the file is not the file it was: %v", err)
+			}
+			staged := filepath.Join(kept, stagingPrefix+"0123456789abcdef01234567.tmp")
+			writeBare(t, staged, standInSeed+"\n")
+			s.removeStaleStaging()
+			if _, err := os.Lstat(staged); err != nil {
+				t.Errorf("the cleanup removed a file in the moved folder: %v (%s)", err, logs)
+			}
+		})
+	}
+}
+
+// **A journal line Desk does not write is damage** (review round 1 of #335,
+// finding 2, the reviewer's scenario). A line in its one spelling, ended by
+// a newline, whose event Desk does not know ("removex"), is counted as
+// damage: the record offers no Remove and says why, and a Remove with the
+// token given before is refused, the file kept. So is a line of a known
+// event without the members it carries: a removal by no owner, an archive
+// move by no rule Desk has.
+func TestAJournalLineDeskDoesNotWriteIsDamage(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		line func(file string) archiveLine
+	}{
+		{"an unknown event", func(file string) archiveLine {
+			return archiveLine{Version: "1", Event: "removex", File: file, Rule: archiveOwnerRemoved, Generation: 1, Digest: sha256Digest(nil), At: "2026-10-08T12:00:03Z"}
+		}},
+		{"a removal by no owner", func(file string) archiveLine {
+			return archiveLine{Version: "1", Event: "removed", File: file, Rule: archivePromoted, Generation: 1, Digest: sha256Digest(nil), At: "2026-10-08T12:00:03Z"}
+		}},
+		{"a move by a rule Desk has not", func(file string) archiveLine {
+			return archiveLine{Version: "1", Event: "archived", File: file, From: "x.seed", Rule: "elsewhere", Digest: sha256Digest(nil), At: "2026-10-08T12:00:03Z"}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, dir, file := archivingServer(t)
+			folder := filepath.Join(archiveDirName, s.cfg.deskID)
+			entry := firstArchived(t, s)
+			appendBare(t, filepath.Join(dir.path, folder, archiveJournalName), string(tc.line(file).line()))
+			read, err := dir.readArchiveJournal(folder)
+			if err != nil || read.damaged != 1 {
+				t.Errorf("the journal reads %d lines of damage: %v", read.damaged, err)
+			}
+			now := firstArchived(t, s)
+			if now.Token != "" || !strings.Contains(now.Why, archiveDamagedWords) {
+				t.Errorf("the record offers %q and says %q", now.Token, now.Why)
+			}
+			if w := removeOn(s, removal(entry, entry.Token), nil); w.Code != http.StatusConflict {
+				t.Errorf("a Remove answered %d %s", w.Code, w.Body)
+			}
+			if _, err := os.Lstat(filepath.Join(dir.path, folder, file)); err != nil {
+				t.Errorf("the archived seed went: %v", err)
+			}
+		})
+	}
+}
+
+// **A removal's line is synced before its file goes** (review round 1 of
+// #335, finding 3). The journal's sync is watched: by the moment the
+// removal's line is read back, it has been synced once, and the file goes
+// after. And a sync that fails is a line not written: the removal is
+// refused, and the file stays.
+func TestARemovalsLineIsSyncedBeforeItsFileGoes(t *testing.T) {
+	t.Run("synced", func(t *testing.T) {
+		s, dir, file := archivingServer(t)
+		entry := firstArchived(t, s)
+		synced := 0
+		was := archiveJournalSync
+		archiveJournalSync = func(f *os.File) error { synced++; return was(f) }
+		t.Cleanup(func() { archiveJournalSync = was })
+		testHookKeyBetween = func(at string) {
+			if at == "archive: removal written" && synced != 1 {
+				t.Errorf("the removal's line was synced %d times before it was read back", synced)
+			}
+		}
+		t.Cleanup(func() { testHookKeyBetween = nil })
+		if w := removeOn(s, removal(entry, entry.Token), nil); w.Code != http.StatusOK {
+			t.Fatalf("the removal answered %d %s", w.Code, w.Body)
+		}
+		if _, err := os.Lstat(filepath.Join(dir.path, archiveDirName, s.cfg.deskID, file)); !os.IsNotExist(err) {
+			t.Errorf("the archived seed is still there: %v", err)
+		}
+	})
+	t.Run("a sync that fails", func(t *testing.T) {
+		s, dir, file := archivingServer(t)
+		entry := firstArchived(t, s)
+		was := archiveJournalSync
+		archiveJournalSync = func(*os.File) error { return syscall.EIO }
+		t.Cleanup(func() { archiveJournalSync = was })
+		w := removeOn(s, removal(entry, entry.Token), nil)
+		if w.Code != http.StatusInternalServerError || !strings.Contains(w.Body.String(), "could not record the removal") {
+			t.Errorf("the removal answered %d %s", w.Code, w.Body)
+		}
+		if _, err := os.Lstat(filepath.Join(dir.path, archiveDirName, s.cfg.deskID, file)); err != nil {
+			t.Errorf("the archived seed went: %v", err)
+		}
+	})
+}
+
+// **A link into Desk's custody is refused as custody** (review round 1 of
+// #335, finding 4, the reviewer's scenario). A save through a link to
+// `secrets/`, to the signing folder, or to the seed itself is refused in the
+// custody's words, which name no path, and the seed is the file it was; a
+// save through a link elsewhere in the project is still refused as a link.
+func TestALinkIntoDesksCustodyIsRefusedAsCustody(t *testing.T) {
+	for _, tc := range []struct{ name, target, rel string }{
+		{"secrets", "config/secrets", "alias/signing/" + desk2 + seedSuffix},
+		{"the signing folder", "config/secrets/signing", "alias/" + desk2 + seedSuffix},
+		{"the seed", "config/secrets/signing/" + desk2 + seedSuffix, "alias"},
+		{"a folder of the project", "notes", "alias/notes.md"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			base := t.TempDir()
+			s, _ := bareServer(t, base, filepath.Join(base, "config"), desk2)
+			bareKeys(t, s)
+			writeBare(t, filepath.Join(base, "notes", "notes.md"), "notes\n")
+			seed := filepath.Join(s.configDir, "secrets", "signing", desk2+seedSuffix)
+			before, err := os.Stat(seed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			old := readFile(t, seed)
+			if err := os.Symlink(tc.target, filepath.Join(base, "alias")); err != nil {
+				t.Fatal(err)
+			}
+			w := fileWrite(t, s, tc.rel, "replaced\n", digestOf([]byte(old)), false)
+			if tc.target == "notes" {
+				if w.Code == http.StatusOK || strings.Contains(w.Body.String(), signingCustodyWords) || !strings.Contains(w.Body.String(), "symbolic link") {
+					t.Errorf("a save through a link elsewhere answered %d %s", w.Code, w.Body)
+				}
+				return
+			}
+			if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), signingCustodyWords) || strings.Contains(w.Body.String(), "alias") {
+				t.Errorf("the save answered %d %s", w.Code, w.Body)
+			}
+			if after, err := os.Stat(seed); err != nil || !os.SameFile(before, after) || readFile(t, seed) != old {
+				t.Errorf("the seed is not the file it was: %v", err)
+			}
+		})
+	}
+}
