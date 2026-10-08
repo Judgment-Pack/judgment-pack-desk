@@ -138,6 +138,11 @@ type Server struct {
 	desksMu     sync.Mutex
 	desks       map[string]*Server
 	desksClosed bool
+	// resuming is set, under desksMu, while the start resumes the desks and
+	// recovers their rotations; heldGates is each resumed desk's Runner
+	// start gate, released once recovery has run (`resumeDesks`).
+	resuming  bool
+	heldGates []chan struct{}
 	// deskCreations is how many desks are being made, which count toward
 	// the registry's bound while the lock is released (`createDesk`).
 	deskCreations int
@@ -549,9 +554,16 @@ func New(cfg Config) (*Server, error) {
 		s.resumeDesks()
 	}
 	// Runner's first start only now, after the start's sweep of the desks'
-	// keys (jobs.go, `started`).
+	// keys (jobs.go, `started`); and a desk the start resumes, only once the
+	// start's recovery of rotations has run (issue #286), which releases it
+	// (`resumeDesks`): its Runner's key decision would otherwise hold the
+	// signing folder's lock that recovery takes.
 	if s.jobs != nil {
-		close(s.jobs.started)
+		if parent := cfg.parent; parent != nil && parent.resuming {
+			parent.heldGates = append(parent.heldGates, s.jobs.started)
+		} else {
+			close(s.jobs.started)
+		}
 	}
 	return s, nil
 }

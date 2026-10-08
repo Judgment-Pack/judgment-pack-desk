@@ -3028,14 +3028,14 @@ func (b *cappedBuffer) exceeded() bool {'
     'KeyID: answer.KeyID, At: 0}' \
     'KeyID: answer.KeyID, At: 1}'
   mutate go "key list: a list in another spelling is read" "$SG" \
-    '		if json.Unmarshal([]byte(line), &key) != nil || string(key.line()) != line+"\n" {' \
-    '		if json.Unmarshal([]byte(line), &key) != nil {'
+    '		if string(key.line()) != line+"\n" {' \
+    '		if false {'
   mutate go "key list: a first key after 0 is read" "$SG" \
-    '		if i == 0 && key.At != 0 || i > 0 && key.At <= keys[i-1].At {' \
-    '		if i > 0 && key.At <= keys[i-1].At {'
+    '		if i == 0 && (key.At != 0 || key.Trail != "") || i > 0 && (key.At < 1 || key.Trail == keys[i-1].Trail && key.At <= keys[i-1].At) {' \
+    '		if i == 0 && key.Trail != "" || i > 0 && (key.At < 1 || key.Trail == keys[i-1].Trail && key.At <= keys[i-1].At) {'
   mutate go "key list: keys out of order are read" "$SG" \
-    '		if i == 0 && key.At != 0 || i > 0 && key.At <= keys[i-1].At {' \
-    '		if i == 0 && key.At != 0 {'
+    '		if i == 0 && (key.At != 0 || key.Trail != "") || i > 0 && (key.At < 1 || key.Trail == keys[i-1].Trail && key.At <= keys[i-1].At) {' \
+    '		if i == 0 && (key.At != 0 || key.Trail != "") || i > 0 && key.At < 1 {'
   mutate go "key list: a key twice is read" "$SG" \
     '		if seen[key.PublicKey] {' \
     '		if false {'
@@ -4164,14 +4164,14 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if (err != nil || holds) && false {
 		s.setShared()'
   mutate go 'audit fix: a rotation is recovered under an identity another folder holds' internal/desk/rotation.go \
-    '			if s.startupShared() {
+    '			if shared, why := s.identityShared(); shared {
 				s.log.Printf(' \
-    '			if false {
+    '			if shared, why := s.identityShared(); shared && false {
 				s.log.Printf('
   mutate go 'audit fix: a rotation is offered under an identity another folder holds' internal/desk/rotation.go \
-    '	if s.startupShared() {
+    '	if shared, why := s.identityShared(); shared {
 		return auditRotation{' \
-    '	if false {
+    '	if shared, why := s.identityShared(); shared && false {
 		return auditRotation{'
   mutate go 'audit fix: a key is offered under an identity another folder holds' "$SK" \
     '	if s.startupShared() {
@@ -4196,6 +4196,122 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'audit fix: a lock of another configuration is put back over' internal/desk/project_lock.go \
     '		if pinned, _, err := lockedSet(now.data); err == nil && recordForm.MatchString(pinned.Config) && pinned.Config != config {' \
     '		if pinned, _, err := lockedSet(now.data); err == nil && false && pinned.Config != config {'
+
+  # **The ADR-0010 line audit's key-safety findings 3 and 4 (issues #285
+  # and #286).** A rotation journals each step and the trail it is made on,
+  # and a start decides from the journal and that trail's sidecar alone; a
+  # trail begun after a rotation is read from the key Desk kept; a desk
+  # opened directly recovers its own rotation; recovery waits once for the
+  # lock, and every resumed desk's Runner starts after it. Every row's name
+  # says "audit fix".
+  RO=internal/desk/rotation.go
+  mutate go 'audit fix: a rotation is recovered from whichever trail is there' "$RO" \
+    '		if trail, ok := sidecar.oneTrail(); !ok || trail != state.journal.Trail {' \
+    '		if trail, ok := sidecar.oneTrail(); (!ok || trail != state.journal.Trail) && false {'
+  mutate go 'audit fix: a rotation begun before any signature journals no trail' "$RO" \
+    '	trail, ok := reading.sidecar.oneTrail()
+	if !ok {' \
+    '	trail, ok := reading.sidecar.oneTrail()
+	if !ok && false {'
+  mutate go "audit fix: a made desk's copy opened directly is taken for the desk" "$SI" \
+    '	return s.madeDeskShared()
+}' \
+    '	return false, ""
+}'
+  mutate go "audit fix: a made desk's copy is taken for its desk in the desks folder" "$SI" \
+    '	} else if os.SameFile(info, held) {' \
+    '	} else if os.SameFile(info, info) || held == nil {'
+  mutate go 'audit fix: the list is published although the answer was not journalled' "$RO" \
+    '		journalled, err := dir.rewriteJournal(markerName, marker, journal)
+		if err != nil {' \
+    '		journalled, err := dir.rewriteJournal(markerName, marker, journal)
+		if err != nil && false {'
+  mutate go 'audit fix: an undo is made that the list contradicts' "$RO" \
+    '		case slices.ContainsFunc(keys, func(key deskPublicKey) bool { return key.PublicKey == nextKey.PublicKey }):' \
+    '		case false && slices.ContainsFunc(keys, func(key deskPublicKey) bool { return key.PublicKey == nextKey.PublicKey }):'
+  mutate go 'audit fix: a finished journal is undone over a sidecar from before the rotation' "$RO" \
+    '		case state.journal.Phase == journalFinish:' \
+    '		case state.journal.Phase == journalFinish && false:'
+  mutate go 'audit fix: a next key the journal does not name is taken for it' "$RO" \
+    '		if state.journal.Next != nextKey.PublicKey {' \
+    '		if state.journal.Next != nextKey.PublicKey && false {'
+  mutate go 'audit fix: a rotation never given to the runtime is held to its trail' "$RO" \
+    '	if !state.legacy && state.journal.Phase != journalGenerate {' \
+    '	if !state.legacy {'
+  mutate go 'audit fix: a marker with no journal is undone where the sidecar names no next key' "$RO" \
+    '		case state.legacy:
+			return unknown(rotationLegacy)' \
+    '		case false:
+			return unknown(rotationLegacy)'
+  mutate go 'audit fix: a journal in another spelling is read' "$RO" \
+    '!bytes.Equal(journal.line(), data)' \
+    '!bytes.Equal(journal.line(), journal.line())'
+  mutate go 'audit fix: the runtime is asked to rotate before the journal names the next key' "$RO" \
+    '	rewritten, err := dir.rewriteJournal(markerName, marker, journal)' \
+    '	rewritten, err := marker, error(nil)'
+  mutate go "audit fix: the runtime's answer is not journalled" "$RO" \
+    '		journalled, err := dir.rewriteJournal(markerName, marker, journal)' \
+    '		journalled, err := marker, error(nil)'
+  mutate go 'audit fix: an answer on another trail is taken for the rotation' "$RO" \
+    '		answer.Trail == trail {' \
+    '		keyIDForm.MatchString(answer.Trail) {'
+  mutate go 'audit fix: a trail begun after a rotation is refused' "$RO" \
+    '		if keys[i].Trail != "" && keys[i].Trail != trail {' \
+    '		if keys[i].Trail != "" && keys[i].Trail != trail && false {'
+  mutate go 'audit fix: a rotation missing from its own trail is taken for a new trail' "$RO" \
+    '		if keys[i].Trail != "" && keys[i].Trail != trail {' \
+    '		if keys[i].Trail != "" && trail != "-" {'
+  mutate go "audit fix: an earlier trail's keys are given to audit verify" "$AR" \
+    '		public = keysOfTrail(public, &reading.sidecar)' \
+    '		public = keysOfTrail(public, nil)'
+  mutate go "audit fix: a new trail's first key is shown taking over where it did in the last" "$RO" \
+    '	trail[0].At = 0
+' \
+    ''
+  mutate go 'audit fix: a sidecar of two trails is read as one' "$RO" \
+    '	if sidecar.mixed {
+		return errors.New("the trail'"'"'s signature sidecar names more than one trail")' \
+    '	if false {
+		return errors.New("the trail'"'"'s signature sidecar names more than one trail")'
+  mutate go 'audit fix: a desk opened directly does not recover its own rotation' "$RO" \
+    '		if own != "" && id == own {' \
+    '		if own != "" && id == own && false {'
+  mutate go 'audit fix: a recovery that finds the lock held does not wait for it once' "$RO" \
+    '		unlock, err = lockSigningWithin(context.Background(), dir, signingLockWait)' \
+    '		unlock, err = nil, errSigningBusy'
+  mutate go "audit fix: a resumed desk's Runner starts before the recovery" internal/desk/server.go \
+    '		if parent := cfg.parent; parent != nil && parent.resuming {' \
+    '		if parent := cfg.parent; parent != nil && false {'
+  mutate go 'audit fix: a trail begun before its first record is refused' "$RO" \
+    '		if !sidecar.mixed && keys[len(keys)-1].Trail != "" {' \
+    '		if false {'
+  mutate go "audit fix: a key's line records no trail" "$SG" \
+    '	data, _ := json.Marshal(listedKey(k))' \
+    '	data, _ := json.Marshal(listedKey{k.PublicKey, k.KeyID, k.At, ""})'
+  mutate go 'audit fix: a rotation records no trail in the list' "$RO" \
+    'At: at, Trail: rotatedOn}' \
+    'At: at}'
+  mutate go 'audit fix: a rotation finished by a start records no trail' "$RO" \
+    'At: last.At, Trail: onTrail}' \
+    'At: last.At, Trail: onTrail[:0]}'
+  mutate go 'audit fix: a key on a new trail may not count its sequence again' "$SG" \
+    'key.Trail == keys[i-1].Trail && key.At <= keys[i-1].At' \
+    'key.At <= keys[i-1].At'
+  mutate go 'audit fix: a trail of another form is read' "$SG" \
+    '	case k.Trail != "" && !keyIDForm.MatchString(k.Trail):' \
+    '	case false:'
+  mutate go 'audit fix: a first key with a trail is read' "$SG" \
+    '		if i == 0 && (key.At != 0 || key.Trail != "")' \
+    '		if i == 0 && key.At != 0'
+  mutate go 'audit fix: the longest list with trails is past what Desk reads' "$SG" \
+    '	keysFileLimit = maxDeskKeys * 192' \
+    '	keysFileLimit = maxDeskKeys * 160'
+  mutate go "audit fix: a resumed desk's Runner start gate is never released" internal/desk/desks.go \
+    '		for _, gate := range s.heldGates {
+			close(gate)
+		}' \
+    '		for range s.heldGates {
+		}'
 
   # **Rotating a desk's signing key (ADR-0010 PR 3b).** Only the owner's
   # confirmed request rotates, and only where a rotation can be made; the
@@ -4229,8 +4345,8 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if !slices.Contains(schema.supported, signedFromVersion) {' \
     '	if false {'
   mutate go "rotation: the marker is not where the start looks" "$RO" \
-    '	marker, err := dir.writeMarker(markerName)' \
-    '	marker, err := dir.writeMarker(markerName + ".tmp")'
+    '	marker, err := dir.writeJournal(markerName, journal)' \
+    '	marker, err := dir.writeJournal(markerName+".tmp", journal)'
   mutate go "rotation: the folder is not checked before generate" "$RO" \
     '	if dir.namesHeld() != nil {
 		return undo(nil, ' \
@@ -4257,8 +4373,8 @@ func (b *cappedBuffer) exceeded() bool {'
     ' && answer.Next == next.KeyID' \
     ''
   mutate go "rotation: an answer to another key is taken" "$RO" \
-    ' && answer.NextPublicKey == next.PublicKey {' \
-    ' {'
+    'answer.NextPublicKey == next.PublicKey &&' \
+    ''
   mutate go "rotation: an answer at no record is taken" "$RO" \
     'answer.At >= 1 && ' \
     ''
@@ -4338,8 +4454,8 @@ func (b *cappedBuffer) exceeded() bool {'
   # is no answer. A list with more later keys than rotations is the case that
   # needs the count.
   mutate go "rotation list: the sidecar's count of rotations is not compared" "$RO" \
-    '	if len(sidecar.rotations) != len(keys)-1 {' \
-    '	if len(sidecar.rotations) > len(keys)-1 {'
+    '	if len(sidecar.rotations) != len(keys)-1-first {' \
+    '	if len(sidecar.rotations) > len(keys)-1-first {'
   mutate go "rotation list: a later key is not the one a rotation hands over to" "$RO" \
     '		case rotation.Next != key.PublicKey:' \
     '		case rotation.Next != key.PublicKey && false:'
@@ -4378,8 +4494,8 @@ func (b *cappedBuffer) exceeded() bool {'
     '	defer s.recoverRotations()' \
     ''
   mutate go "rotation recovery: a next key the sidecar names elsewhere is removed" "$RO" \
-    '		if sidecar.names(nextKey) {' \
-    '		if false {'
+    '		case sidecar.names(nextKey):' \
+    '		case false:'
   mutate go "rotation recovery: a rotation made by another key is finished" "$RO" \
     '	if last.KeyID != current.KeyID {' \
     '	if false {'
@@ -4479,11 +4595,11 @@ func (b *cappedBuffer) exceeded() bool {'
     '		unlock, err := func() {}, error(nil)'
   mutate go "signing lock: the recovery takes no lock" "$RO" \
     '	unlock, err := lockSigning(dir)
-	if err != nil {
-		s.log.Printf("desk: unfinished rotations' \
+	if errors.Is(err, errSigningBusy) {
+		// **One bounded retry' \
     '	unlock, err := func() {}, error(nil)
-	if err != nil {
-		s.log.Printf("desk: unfinished rotations'
+	if errors.Is(err, errSigningBusy) {
+		// **One bounded retry'
   mutate go "signing lock: the recovery goes on without the lock" "$RO" \
     '		s.log.Printf("desk: unfinished rotations were left for the next start, because the signing folder'"'"'s lock was not taken: %v", err)
 		return' \

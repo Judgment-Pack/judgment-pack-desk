@@ -39,6 +39,12 @@ func wantKeyLine(publicKey, keyID string, at int) string {
 	return `{"publicKey":"` + publicKey + `","keyId":"` + keyID + `","at":` + strconv.Itoa(at) + "}\n"
 }
 
+// wantKeyLineOn is wantKeyLine for a key a rotation on trail added: its line
+// records that trail (issue #285).
+func wantKeyLineOn(publicKey, keyID string, at int, trail string) string {
+	return `{"publicKey":"` + publicKey + `","keyId":"` + keyID + `","at":` + strconv.Itoa(at) + `,"trail":"` + trail + `"}` + "\n"
+}
+
 // signingFolderOf is Desk's signing folder on s, by its path.
 func signingFolderOf(s *Server) string { return filepath.Join(s.configDir, "secrets", "signing") }
 
@@ -334,13 +340,13 @@ func TestAListOfKeysIsNeverWrittenOver(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(folder, "a.keys.jsonl"), []byte("kept\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := dir.writeNewKeys("a.keys.jsonl", []deskPublicKey{{standInPublicKey, standInKeyID, 0}}); err == nil {
+	if _, err := dir.writeNewKeys("a.keys.jsonl", []deskPublicKey{{standInPublicKey, standInKeyID, 0, ""}}); err == nil {
 		t.Error("a list was written over one already kept")
 	}
 	if got := readFile(t, filepath.Join(folder, "a.keys.jsonl")); got != "kept\n" {
 		t.Errorf("what was kept became %q", got)
 	}
-	if _, err := dir.writeNewKeys("b.keys.jsonl", []deskPublicKey{{standInPublicKey, standInKeyID, 0}}); err != nil {
+	if _, err := dir.writeNewKeys("b.keys.jsonl", []deskPublicKey{{standInPublicKey, standInKeyID, 0, ""}}); err != nil {
 		t.Fatal(err)
 	}
 	if names := namesIn(t, folder); !slices.Equal(names, []string{"a.keys.jsonl", "b.keys.jsonl"}) {
@@ -461,7 +467,7 @@ func TestThePanelPassesTheKeyDeskKeepsWithTheSeedsOwn(t *testing.T) {
 	if calls := rig.ran(t); !slices.Equal(calls, []string{schemaCall, validateCall, publicCall, verifyWithKeyCall}) {
 		t.Errorf("the panel ran %q", calls)
 	}
-	if answer.Keys == nil || answer.Keys.State != keysKept || !slices.Equal(answer.Keys.Public, []deskPublicKey{{standInPublicKey, standInKeyID, 0}}) || answer.Keys.Problem != "" {
+	if answer.Keys == nil || answer.Keys.State != keysKept || !slices.Equal(answer.Keys.Public, []deskPublicKey{{standInPublicKey, standInKeyID, 0, ""}}) || answer.Keys.Problem != "" {
 		t.Errorf("the panel shows the keys %+v", answer.Keys)
 	}
 	if names := namesIn(t, signingFolderOf(s)); !slices.Equal(names, []string{id + ".keys.jsonl", id + ".seed"}) {
@@ -480,7 +486,7 @@ func TestPublicKeyFilesKeepTheKeysOrder(t *testing.T) {
 	}
 	defer root.Close()
 	dir := &signingDir{root: root, path: folder}
-	paths, remove, err := dir.publicKeyFiles([]deskPublicKey{{standInPublicKey, standInKeyID, 0}, {secondPublicKey, secondKeyID, 7}})
+	paths, remove, err := dir.publicKeyFiles([]deskPublicKey{{standInPublicKey, standInKeyID, 0, ""}, {secondPublicKey, secondKeyID, 7, ""}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -616,7 +622,7 @@ func TestAListOfKeysDeskCannotReadPassesNoKey(t *testing.T) {
 		{"a second key at the first's sequence", first + wantKeyLine(secondPublicKey, secondKeyID, 0), 0o600, "line 2 does not take over after the key before it"},
 		{"a key twice", first + wantKeyLine(standInPublicKey, standInKeyID, 4), 0o600, "line 2 lists a key a second time"},
 		{"too many keys", strings.Repeat(second, 65), 0o600, "it lists more than 64 keys"},
-		{"too long", strings.Repeat("x", 10241), 0o600, "it could not be read whole within 10240 bytes"},
+		{"too long", strings.Repeat("x", keysFileLimit+1), 0o600, fmt.Sprintf("it could not be read whole within %d bytes", keysFileLimit)},
 		{"writable by its group", first, 0o620, "its group or other users can write it"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1212,7 +1218,7 @@ func TestASignedDeskWithTheRuntime(t *testing.T) {
 		report.Signatures == nil || report.Signatures.KeyInForce != public.KeyID || report.Signatures.FirstKey != public.KeyID || report.Signatures.KeysSupplied != 1 {
 		t.Errorf("the panel reports %+v, signatures %+v; want the record signed by key %s", report, report.Signatures, public.KeyID)
 	}
-	if answer.Keys == nil || answer.Keys.State != keysKept || !slices.Equal(answer.Keys.Public, []deskPublicKey{{public.PublicKey, public.KeyID, 0}}) {
+	if answer.Keys == nil || answer.Keys.State != keysKept || !slices.Equal(answer.Keys.Public, []deskPublicKey{{public.PublicKey, public.KeyID, 0, ""}}) {
 		t.Errorf("the panel shows the keys %+v", answer.Keys)
 	}
 	wantCheck := auditSigning{State: signingChecked, Status: "passed", Detail: "Chained records are signed with key " + public.KeyID + ", named by the audit member's signingKey."}

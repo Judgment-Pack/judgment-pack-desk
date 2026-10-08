@@ -124,8 +124,8 @@ const (
 	// `--public-key` arguments one verification is given.
 	maxDeskKeys = 64
 	// keysFileLimit is the most of a list of public keys Desk reads: a line
-	// is 133 bytes.
-	keysFileLimit = maxDeskKeys * 160
+	// is at most 190 bytes, with a trail and a sequence of 16 digits.
+	keysFileLimit = maxDeskKeys * 192
 )
 
 var (
@@ -166,10 +166,25 @@ func keyBetween(at string) {
 // deskPublicKey is one line of `<desk id>.keys.jsonl`, and one key the
 // decision-record panel shows and passes. The order of the members is the
 // order of the line.
+//
+// Trail is, for a key a rotation added, the trail identity the rotation was
+// made on (issue #285), as the trail's signature sidecar names it: what tells
+// a trail begun after a rotation from the same trail with a rotation missing
+// (`trailFirst`). The first key, and a key a Desk before it added, has none.
+// It is in the list's line, and never in what the page is told.
 type deskPublicKey struct {
 	PublicKey string `json:"publicKey"`
 	KeyID     string `json:"keyId"`
 	At        int64  `json:"at"`
+	Trail     string `json:"-"`
+}
+
+// listedKey is a key's line in the list, Trail included where it has one.
+type listedKey struct {
+	PublicKey string `json:"publicKey"`
+	KeyID     string `json:"keyId"`
+	At        int64  `json:"at"`
+	Trail     string `json:"trail,omitempty"`
 }
 
 // keyIDOf is the runtime's name for a public key: the first 32 hexadecimal
@@ -195,21 +210,32 @@ func (k deskPublicKey) check() error {
 		return errors.New("a keyId is not the one its public key has")
 	case k.At < 0:
 		return errors.New("a key takes over from a sequence before the trail's first")
+	case k.Trail != "" && !keyIDForm.MatchString(k.Trail):
+		return errors.New("a trail identity is not 32 lowercase hexadecimal characters")
 	}
 	return nil
 }
 
 // line is the key's line in `<desk id>.keys.jsonl`, exactly as Desk writes
-// it.
+// it: with its trail, where it has one.
 func (k deskPublicKey) line() []byte {
-	data, _ := json.Marshal(k)
+	data, _ := json.Marshal(listedKey(k))
 	return append(data, '\n')
+}
+
+// sameKey is whether a and b are one key taking over from one sequence,
+// whether or not either line records its trail.
+func sameKey(a, b deskPublicKey) bool {
+	return a.PublicKey == b.PublicKey && a.KeyID == b.KeyID && a.At == b.At
 }
 
 // parseDeskKeys reads a list of public keys in the one spelling Desk writes:
 // at least one line, at most maxDeskKeys, each its key's own line, the first
-// taking over from 0 and each later one from a later sequence, and no key
-// twice. Its errors name no path.
+// taking over from 0 on no named trail, each later one from a sequence from 1
+// on, a later one than the key before it where both took over on the same
+// trail (issue #285: a key that took over on another trail than the key
+// before it counts its sequence on that trail), and no key twice. Its errors
+// name no path.
 func parseDeskKeys(data []byte) ([]deskPublicKey, error) {
 	if len(data) == 0 || data[len(data)-1] != '\n' {
 		return nil, errors.New("it is empty, or its last line does not end")
@@ -221,14 +247,18 @@ func parseDeskKeys(data []byte) ([]deskPublicKey, error) {
 	keys := make([]deskPublicKey, 0, len(lines))
 	seen := map[string]bool{}
 	for i, line := range lines {
-		var key deskPublicKey
-		if json.Unmarshal([]byte(line), &key) != nil || string(key.line()) != line+"\n" {
+		var listed listedKey
+		if json.Unmarshal([]byte(line), &listed) != nil {
+			return nil, fmt.Errorf("line %d is not in the form Desk writes", i+1)
+		}
+		key := deskPublicKey(listed)
+		if string(key.line()) != line+"\n" {
 			return nil, fmt.Errorf("line %d is not in the form Desk writes", i+1)
 		}
 		if err := key.check(); err != nil {
 			return nil, fmt.Errorf("line %d: %w", i+1, err)
 		}
-		if i == 0 && key.At != 0 || i > 0 && key.At <= keys[i-1].At {
+		if i == 0 && (key.At != 0 || key.Trail != "") || i > 0 && (key.At < 1 || key.Trail == keys[i-1].Trail && key.At <= keys[i-1].At) {
 			return nil, fmt.Errorf("line %d does not take over after the key before it", i+1)
 		}
 		if seen[key.PublicKey] {

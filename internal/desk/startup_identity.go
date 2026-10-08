@@ -214,6 +214,73 @@ func (s *Server) startupShared() bool {
 // folder holds too.
 const sharedWords = "this project's identity is also held by another folder, as a copy of the project holds it, so Desk makes and rotates no key for it here, and recovers nothing under it"
 
+// **A made desk's copy, opened directly, is held to the same rule** (review
+// round 1 of #302). A copy of a made desk keeps its manifest's id and its
+// trail's identity, so its sidecar may be the original's, older: a recovery
+// under that id there could remove the next key the original's trail handed
+// signing to. A made desk opened directly, from a folder that is not the
+// desk of its id in Desk's desks folder, while that desk is there too, shares
+// its identity, and so does one where Desk cannot tell now. One whose desk
+// in the desks folder is gone was moved, and is the desk's own.
+const (
+	deskSharedWords  = "this desk's identity is also held by the desk of the same id in Desk's desks folder, as a copy of the desk holds it, so Desk rotates no key for it here, and recovers nothing under it"
+	deskUnknownWords = "Desk could not tell whether the desk of the same id in Desk's desks folder is another folder that holds this desk's identity too, as a copy of the desk would, so it rotates no key for it here, and recovers nothing under it"
+)
+
+// identityShared is whether another folder holds the identity Desk keeps
+// keys under here too, and, where it does or Desk cannot tell, why, in the
+// panel's words: the project Desk was started on (`startupShared`), or a made
+// desk opened directly (`madeDeskShared`). No key is made, rotated or removed
+// under a shared identity.
+func (s *Server) identityShared() (bool, string) {
+	if s.startupShared() {
+		return true, sharedWords
+	}
+	return s.madeDeskShared()
+}
+
+// madeDeskShared is identityShared for a made desk opened directly: Desk's
+// desks folder holds a desk of its id in another folder, with a manifest of
+// that id; or Desk cannot tell. A desk the registry opened (its parent is
+// set) is the desks folder's own.
+func (s *Server) madeDeskShared() (bool, string) {
+	if s.cfg.deskID == "" || s.cfg.parent != nil {
+		return false, ""
+	}
+	if s.assistant == nil || s.assistant.root == nil {
+		return true, deskUnknownWords
+	}
+	desks, err := s.assistant.root.OpenRoot("desks")
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, ""
+	} else if err != nil {
+		return true, deskUnknownWords
+	}
+	defer desks.Close()
+	info, err := desks.Lstat(s.cfg.deskID)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, ""
+	} else if err != nil || !deskFolderAccepted(info) {
+		return true, deskUnknownWords
+	}
+	if held, err := s.root.Stat("."); err != nil {
+		return true, deskUnknownWords
+	} else if os.SameFile(info, held) {
+		return false, ""
+	}
+	folder, err := desks.OpenRoot(s.cfg.deskID)
+	if err != nil {
+		return true, deskUnknownWords
+	}
+	defer folder.Close()
+	if _, err := readDeskManifest(folder, s.cfg.deskID); errors.Is(err, errNotPublished) {
+		return false, ""
+	} else if err != nil {
+		return true, deskUnknownWords
+	}
+	return true, deskSharedWords
+}
+
 // newStartupKeyName is the name a first key of this project is made under:
 // its identity, or the candidate the offer shows until one is written; an
 // error, in words with no path, where its identity could not be read now.
