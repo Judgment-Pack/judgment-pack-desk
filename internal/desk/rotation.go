@@ -29,15 +29,19 @@ package desk
 // a bounded time for it, and then refuses. Each step goes through the signing
 // folder Desk holds:
 //
-//  1. `<desk id>.rotating`, an empty marker, 0600, written never over
-//     anything;
+//  1. `<desk id>.rotating`, a marker, 0600, written never over anything,
+//     journalling the step about to be made and the trail the rotation is
+//     made on (`rotationJournal`, issue #285): "generate" here, "rotate" with
+//     the next key before step 3, "finish" with the runtime's sequence after
+//     it, each written whole and synced before the step;
 //  2. `audit key generate <signing>/<desk id>.next.seed --format json`, with
 //     the folder's pathname checked to name the folder held before the run,
 //     and the seed's after it;
 //  3. `audit key rotate --next <that seed> --config jpack.json --format
 //     json`, in the desk's folder; its `at` is read;
 //  4. the list of public keys written whole with the next key appended, `at`
-//     its sequence: staged, synced and renamed over the old list, after a
+//     its sequence and the trail it was rotated on recorded in its line
+//     (issue #285): staged, synced and renamed over the old list, after a
 //     check that the old list is still the file and the bytes read;
 //  5. the next seed renamed over the current seed's name, in the same folder,
 //     after a check that the list is still the file and the bytes written,
@@ -49,9 +53,15 @@ package desk
 // A runtime's refusal is not taken alone as proof that nothing was written: a
 // write that failed after its line was whole would be refused too. Wherever
 // Desk must know whether step 3 wrote the line, after a failed step 3 and at
-// every start for each marker left, it reads the trail's signature sidecar,
-// under the trail's lock, as the trail's download does (`readSidecar`), and
-// asks the runtime for the next seed's public key (`audit key public`):
+// every start for each marker left, it reads the marker's journal first: a
+// rotation journalled at "generate" never reached the runtime, and its next
+// seed goes whatever any sidecar says. Otherwise it reads the trail's
+// signature sidecar, under the trail's lock, as the trail's download does
+// (`readSidecar`), only where it is the trail the journal names, by the
+// trail identity its lines name; a trail moved aside or replaced since has
+// no say, and both keys and the list are kept, and said. It asks the
+// runtime for the next seed's public key (`audit key public`), which must be
+// the one the journal names:
 //
 //   - **Written**, where the sidecar's last key-rotation line hands over to
 //     the next key from the current one: steps 4 to 6 are made.
@@ -68,9 +78,25 @@ package desk
 //     runtime will not read; or the list. Nothing is changed, the marker
 //     stays, and the panel says that a rotation did not finish, and why.
 //
-// At start the recovery takes the signing folder's lock once; where another
-// Desk process holds it, or none can be taken here, it changes nothing, and
-// leaves every marker for the next start.
+// A marker an earlier Desk left empty names no trail: it is finished where
+// the sidecar's last rotation hands over to its next key, which no other
+// trail's can, and otherwise left as it is.
+//
+// At start the recovery takes the signing folder's lock, asking again once,
+// a bounded time, where another Desk process holds it (issue #286); where it
+// is still held, or none can be taken here, it changes nothing, and leaves
+// every marker for the next start.
+//
+// # A trail begun after a rotation
+//
+// The list Desk keeps names every key the desk has had, each key a rotation
+// added with the trail identity the rotation was made on (step 4). A trail
+// moved aside and begun again is signed from its first record by the key
+// Desk kept, which is that trail's first key: the list is held to the new
+// trail's sidecar from the last key whose rotation recorded another trail
+// (`trailFirst`, `checkKeysAgainst`), and only the new trail's keys are given
+// to `audit verify` and shown for a holder (`keysOfTrail`). A rotation that
+// recorded this trail, or none, must be in this sidecar.
 //
 // The current seed is never removed. A seed is never removed because a read
 // failed, and never while the sidecar names it. What is removed is removed
@@ -154,6 +180,27 @@ type sidecarReading struct {
 	// signedSinceRotation is whether a record's signature follows the last
 	// key-rotation line, which is whether a record was written after it.
 	signedSinceRotation bool
+	// trail is the trail identity every line it reads names, the runtime's
+	// 32 hexadecimal characters; "" where no line names one, or where two
+	// lines name two (mixed): no one trail (issue #285).
+	trail string
+	mixed bool
+}
+
+// noteTrail takes the trail identity one line names.
+func (r *sidecarReading) noteTrail(trail string) {
+	switch {
+	case r.mixed:
+	case r.trail == "":
+		r.trail = trail
+	case r.trail != trail:
+		r.trail, r.mixed = "", true
+	}
+}
+
+// oneTrail is the trail identity the sidecar names, where it names one.
+func (r sidecarReading) oneTrail() (string, bool) {
+	return r.trail, r.trail != "" && !r.mixed
 }
 
 // last is the sidecar's last key-rotation line, where it has one.
@@ -235,6 +282,7 @@ func (r *sidecarReading) read(line []byte) {
 		}
 		r.signers[keyID] = true
 		r.signedSinceRotation = true
+		r.noteTrail(trail)
 	case "key-rotation":
 		var at int64
 		var next string
@@ -243,6 +291,7 @@ func (r *sidecarReading) read(line []byte) {
 		}
 		r.rotations = append(r.rotations, sidecarRotation{At: at, KeyID: keyID, Next: next})
 		r.signedSinceRotation = false
+		r.noteTrail(trail)
 	}
 }
 
@@ -364,13 +413,21 @@ func sidecarProblem(err error) string {
 /* The list of keys, against the seed and the sidecar ------------------------- */
 
 // checkKeysAgainst is the rule a list of public keys is held to before Desk
-// passes it or rotates from it, beside parseDeskKeys's own (the first key
-// takes over from 0, and each later one from a later sequence): its last key
-// is current, the key the runtime reads from the seed Desk keeps, with that
-// keyId; and each later key is the one the sidecar's key rotations hand over
-// to, in order, each made by the key before it, at the sequence the list
-// gives. The sidecar is consulted only where it was read. Its error is a
-// plain reason, with no path.
+// passes it or rotates from it, beside parseDeskKeys's own: its last key is
+// current, the key the runtime reads from the seed Desk keeps, with that
+// keyId; and each key of the trail the sidecar is, after that trail's first
+// (`trailFirst`), is the one the sidecar's key rotations hand over to, in
+// order, each made by the key before it, at the sequence the list gives, and
+// the sidecar records no other rotation. The sidecar is consulted only where
+// it was read. Its error is a plain reason, with no path.
+//
+// **A trail begun after a rotation** (issue #285; ADR-0010 section 1, "moved
+// aside"): a rotation records in the list the trail it was made on, so the
+// rotations of an earlier trail are told from this trail's by what they
+// recorded, never inferred from what this sidecar lacks. A rotation Desk
+// recorded on this trail, or recorded nothing for, as a Desk before this one,
+// must be in this sidecar: one missing is the same trail with a rotation
+// missing, and is refused.
 func checkKeysAgainst(keys []deskPublicKey, current deskPublicKey, sidecar *sidecarReading) error {
 	if len(keys) == 0 {
 		return errors.New("it lists no key")
@@ -381,21 +438,70 @@ func checkKeysAgainst(keys []deskPublicKey, current deskPublicKey, sidecar *side
 	if sidecar == nil {
 		return nil
 	}
-	if len(sidecar.rotations) != len(keys)-1 {
-		return fmt.Errorf("the trail's signature sidecar records %d key rotations, and the list names %d keys after the first", len(sidecar.rotations), len(keys)-1)
+	if sidecar.mixed {
+		return errors.New("the trail's signature sidecar names more than one trail")
+	}
+	first := trailFirst(keys, sidecar)
+	if len(sidecar.rotations) != len(keys)-1-first {
+		return fmt.Errorf("the trail's signature sidecar records %d key rotations, and the list names %d keys after this trail's first", len(sidecar.rotations), len(keys)-1-first)
 	}
 	for i, rotation := range sidecar.rotations {
-		key, before := keys[i+1], keys[i]
+		key, before := keys[first+i+1], keys[first+i]
 		switch {
 		case rotation.Next != key.PublicKey:
-			return fmt.Errorf("key %d of the list is not the key the sidecar's key rotation %d hands over to", i+2, i+1)
+			return fmt.Errorf("key %d of the list is not the key the sidecar's key rotation %d hands over to", first+i+2, i+1)
 		case rotation.KeyID != before.KeyID:
-			return fmt.Errorf("the sidecar's key rotation %d was made by a key other than key %d of the list", i+1, i+1)
+			return fmt.Errorf("the sidecar's key rotation %d was made by a key other than key %d of the list", i+1, first+i+1)
 		case rotation.At != key.At:
-			return fmt.Errorf("key %d of the list takes over from sequence %d, and the sidecar's key rotation to it from %d", i+2, key.At, rotation.At)
+			return fmt.Errorf("key %d of the list takes over from sequence %d, and the sidecar's key rotation to it from %d", first+i+2, key.At, rotation.At)
 		}
 	}
 	return nil
+}
+
+// keysOfTrail is the keys of the trail sidecar is, as `audit verify` is
+// given them and the decision record shows them for a holder: keys from
+// trailFirst on, the first taking over from 0 where it began a trail after
+// an earlier one's keys ("the retained current key as the first key of the
+// new trail", issue #285). The list Desk keeps is not changed.
+func keysOfTrail(keys []deskPublicKey, sidecar *sidecarReading) []deskPublicKey {
+	first := trailFirst(keys, sidecar)
+	if first == 0 {
+		return keys
+	}
+	trail := slices.Clone(keys[first:])
+	trail[0].At = 0
+	return trail
+}
+
+// trailFirst is the index in keys of the first key of the trail sidecar is:
+// the last key whose rotation recorded another trail than the one this
+// sidecar names, which was in force when this trail began; 0 where there is
+// none. A sidecar with no line names no trail: it is a trail begun with the
+// current key where the list's last rotation recorded its trail (that
+// trail's sidecar holds the line), and otherwise the list's whole. The keys
+// from it on are the ones `audit verify` is given for this trail: given an
+// earlier trail's keys too, the runtime takes the first for the key the new
+// trail began with, and reports the trail invalid (runtime 0.27.1,
+// measured).
+func trailFirst(keys []deskPublicKey, sidecar *sidecarReading) int {
+	if sidecar == nil || len(keys) < 2 {
+		return 0
+	}
+	trail, ok := sidecar.oneTrail()
+	if !ok {
+		if !sidecar.mixed && keys[len(keys)-1].Trail != "" {
+			return len(keys) - 1
+		}
+		return 0
+	}
+	first := 0
+	for i := 1; i < len(keys); i++ {
+		if keys[i].Trail != "" && keys[i].Trail != trail {
+			first = i
+		}
+	}
+	return first
 }
 
 // errNotSeedsKey is a list whose last key is not the seed's.
@@ -500,6 +606,158 @@ func (d *signingDir) promoteNext(nextName, seedName, keysName string, list keysF
 	return nil
 }
 
+/* The rotation's journal ---------------------------------------------------- */
+
+// What a rotation's marker journals: the step the rotation is about to make
+// (issue #285). It is written before each step, synced, and read back by a
+// start's recovery, which decides from it and from the sidecar of the trail
+// it names, never from whichever sidecar is there now alone.
+const (
+	// journalGenerate: the next key is about to be made. The runtime has not
+	// been asked to rotate.
+	journalGenerate = "generate"
+	// journalRotate: the next key, Next, is made, and the runtime is about to
+	// be asked to rotate to it, on Trail.
+	journalRotate = "rotate"
+	// journalFinish: the runtime answered that it rotated to Next, on Trail,
+	// at At: the list and the rename are left.
+	journalFinish = "finish"
+	// rotationJournalLimit bounds the marker Desk reads: a journal is under
+	// 200 bytes.
+	rotationJournalLimit = 512
+)
+
+// rotationJournal is a rotation's marker, as Desk writes it: one line, in
+// the spelling json.Marshal gives it, then a newline.
+//
+//	{"version":"1","phase":"rotate","trail":"<32 hex>","next":"<64 hex>","at":0}
+//
+// Trail is the trail identity the sidecar named when the rotation began
+// (`sidecarReading.oneTrail`), "" where it named none: no record of the trail
+// was signed yet; Next the next key's public key, from "rotate" on; At the
+// sequence the runtime answered, at "finish".
+type rotationJournal struct {
+	Version string `json:"version"`
+	Phase   string `json:"phase"`
+	Trail   string `json:"trail"`
+	Next    string `json:"next"`
+	At      int64  `json:"at"`
+}
+
+// line is the journal's one spelling.
+func (j rotationJournal) line() []byte {
+	data, _ := json.Marshal(j)
+	return append(data, '\n')
+}
+
+// errJournal is a marker that is not one Desk writes.
+var errJournal = errors.New("its marker is not a journal Desk writes")
+
+// parseJournal holds a marker's bytes to the journal's record. An empty
+// marker is one a Desk before the journal left (legacy): it names no step
+// and no trail.
+func parseJournal(data []byte) (journal rotationJournal, legacy bool, err error) {
+	if len(data) == 0 {
+		return rotationJournal{}, true, nil
+	}
+	if json.Unmarshal(data, &journal) != nil || !bytes.Equal(journal.line(), data) || journal.Version != "1" || journal.Trail != "" && !keyIDForm.MatchString(journal.Trail) {
+		return rotationJournal{}, false, errJournal
+	}
+	switch journal.Phase {
+	case journalGenerate:
+		if journal.Next == "" && journal.At == 0 {
+			return journal, false, nil
+		}
+	case journalRotate:
+		if publicKeyForm.MatchString(journal.Next) && journal.At == 0 {
+			return journal, false, nil
+		}
+	case journalFinish:
+		if publicKeyForm.MatchString(journal.Next) && journal.At >= 1 && journal.At < sidecarIntegerLimit {
+			return journal, false, nil
+		}
+	}
+	return rotationJournal{}, false, errJournal
+}
+
+// writeJournal writes a rotation's marker holding journal, 0600, never over
+// anything, through the folder this holds, synced with its folder, and
+// answers it as written.
+func (d *signingDir) writeJournal(name string, journal rotationJournal) (os.FileInfo, error) {
+	file, err := d.root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL|openNoFollow, custodyFileMode)
+	if err != nil {
+		return nil, err
+	}
+	_, err = file.Write(journal.line())
+	if err == nil {
+		err = file.Sync()
+	}
+	info, statErr := file.Stat()
+	if closed := file.Close(); err == nil {
+		err = closed
+	}
+	if err == nil {
+		err = statErr
+	}
+	if err != nil {
+		_ = d.root.Remove(name)
+		return nil, err
+	}
+	_ = syncPrivateDirectory(d.root)
+	return info, nil
+}
+
+// rewriteJournal puts journal in the place of the marker found as held:
+// staged under a name of its own, 0600, synced, and renamed over the marker
+// only while its name still holds held; the folder is synced after. It
+// answers the marker as written.
+func (d *signingDir) rewriteJournal(name string, held os.FileInfo, journal rotationJournal) (os.FileInfo, error) {
+	staged, stagedName, err := d.stage()
+	if err != nil {
+		return nil, err
+	}
+	defer d.root.Remove(stagedName)
+	_, err = staged.Write(journal.line())
+	if err == nil {
+		err = staged.Chmod(custodyFileMode)
+	}
+	if err == nil {
+		err = staged.Sync()
+	}
+	written, statErr := staged.Stat()
+	if closed := staged.Close(); err == nil {
+		err = closed
+	}
+	if err == nil {
+		err = statErr
+	}
+	if err != nil {
+		return nil, err
+	}
+	if found, err := d.root.Lstat(name); err != nil || !os.SameFile(found, held) {
+		return nil, errors.New("the rotation's marker is not the file the rotation wrote")
+	}
+	if err := d.root.Rename(stagedName, name); err != nil {
+		return nil, err
+	}
+	_ = syncPrivateDirectory(d.root)
+	return written, nil
+}
+
+// readJournal reads the marker found as held, through the folder this
+// holds, under the rule Desk keeps a private file by (`readPrivateFile`),
+// and holds it to the journal's record.
+func (d *signingDir) readJournal(name string, held os.FileInfo) (rotationJournal, bool, error) {
+	data, opened, err := readPrivateFile(d.root, name, rotationJournalLimit)
+	if err != nil {
+		return rotationJournal{}, false, err
+	}
+	if !os.SameFile(opened, held) {
+		return rotationJournal{}, false, errors.New("the rotation's marker changed while it was read")
+	}
+	return parseJournal(data)
+}
+
 /* What a stopped rotation left ----------------------------------------------- */
 
 // rotationOutcome is what a rotation's marker says is left to do.
@@ -537,7 +795,21 @@ type rotationState struct {
 	finished []deskPublicKey
 	// at is, for rotationWritten, the sequence the next key takes over from.
 	at int64
+	// journal is what the marker journals; legacy is set where the marker is
+	// empty, as a Desk before the journal left it (issue #285).
+	journal rotationJournal
+	legacy  bool
 }
+
+// What a start says of a rotation the journal or the sidecar cannot decide
+// (issue #285), and keeps everything for.
+const (
+	// rotationTrailGone: the sidecar of the trail the rotation was made on is
+	// gone, or is another trail's.
+	rotationTrailGone = "the trail it was made on was moved aside or replaced since, so no signature sidecar Desk can read says whether the runtime wrote it: Desk keeps the current key, the next key and the list of public keys as they are"
+	// rotationLegacy: an empty marker, of a Desk before the journal.
+	rotationLegacy = "it was begun by an earlier Desk, which did not record the trail it was made on, and the trail's signature sidecar now does not name the next key, as a trail moved aside since would not: Desk keeps the current key, the next key and the list of public keys as they are"
+)
 
 // rotationNames are the names a rotation of desk id keeps in the signing
 // folder.
@@ -570,6 +842,11 @@ func (s *Server) inspectRotation(ctx context.Context, project heldDir, dir *sign
 		}
 		state.marker = found
 	}
+	journal, legacy, err := dir.readJournal(markerName, state.marker)
+	if err != nil {
+		return unknown("its marker could not be read as the journal Desk writes")
+	}
+	state.journal, state.legacy = journal, legacy
 	seed, err := dir.root.Lstat(seedName)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
@@ -631,10 +908,36 @@ func (s *Server) inspectRotation(ctx context.Context, project heldDir, dir *sign
 		return unknown("the runtime's audit key public did not answer as documented for the next key")
 	}
 	state.nextKey = nextKey
+	// **The sidecar of the trail the journal names, and no other** (issue
+	// #285): a trail moved aside, or replaced, since the rotation began has
+	// no say in whether the runtime wrote it there. A rotation journalled
+	// before its next key was made never reached the runtime, on any trail:
+	// whichever sidecar is there decides it, by whether a line names the next
+	// key, as before the journal.
 	last, rotated := sidecar.last()
-	if !rotated || last.Next != nextKey.PublicKey {
-		if sidecar.names(nextKey) {
+	handsOver := rotated && last.Next == nextKey.PublicKey
+	if !state.legacy && state.journal.Phase != journalGenerate {
+		if state.journal.Next != nextKey.PublicKey {
+			return unknown("the next key is not the key the rotation's journal names")
+		}
+		// The trail the journal names. A journal that names none began on a
+		// sidecar with no line: it is the trail a sidecar that names none
+		// still is, or one whose last rotation hands over to this next key,
+		// which no other trail's can.
+		trail, ok := sidecar.oneTrail()
+		same := ok && trail == state.journal.Trail || state.journal.Trail == "" && (!ok || handsOver)
+		if sidecar.mixed || !same {
+			return unknown(rotationTrailGone)
+		}
+	}
+	if !handsOver {
+		switch {
+		case sidecar.names(nextKey):
 			return unknown("the trail's signature sidecar names the next key, and its last key rotation does not hand over to it")
+		case state.legacy:
+			return unknown(rotationLegacy)
+		case state.journal.Phase == journalFinish:
+			return unknown("the rotation's journal says the runtime rotated to the next key on this trail, and the trail's signature sidecar does not hand over to it")
 		}
 		state.outcome = rotationUnwritten
 		return state
@@ -642,10 +945,13 @@ func (s *Server) inspectRotation(ctx context.Context, project heldDir, dir *sign
 	if last.KeyID != current.KeyID {
 		return unknown("the sidecar's last key rotation hands over to the next key from a key other than the current one")
 	}
-	took := deskPublicKey{PublicKey: nextKey.PublicKey, KeyID: nextKey.KeyID, At: last.At}
+	// The next key's line records the trail its rotation was made on: the
+	// one this sidecar names, which handed over to it (issue #285).
+	onTrail, _ := sidecar.oneTrail()
+	took := deskPublicKey{PublicKey: nextKey.PublicKey, KeyID: nextKey.KeyID, At: last.At, Trail: onTrail}
 	state.at = last.At
 	switch n := len(keys); {
-	case keys[n-1] == took && n >= 2 && keys[n-2].PublicKey == current.PublicKey:
+	case sameKey(keys[n-1], took) && n >= 2 && keys[n-2].PublicKey == current.PublicKey:
 		// The list was written already (step 4); the rename is left.
 		if err := checkKeysAgainst(keys, took, &sidecar); err != nil {
 			return unknown("the list of this desk's public keys does not agree with the sidecar: " + err.Error())
@@ -725,13 +1031,17 @@ func (s *Server) undoRotation(dir *signingDir, next, marker os.FileInfo) error {
 // say. It runs once, at start, under the registry's lock, after the desks are
 // opened and before any request is served.
 //
-// **Under the signing folder's lock, taken once** (signing_lock.go): where
-// another Desk process holds it, a rotation may be under way there, and where
-// none can be taken here, nothing may be removed; either way it changes
-// nothing, and leaves every marker for the next start. It acts only on
-// markers named `<desk id>.rotating` directly in the signing folder, of a
-// desk the registry opened, or under the name of the project Desk was started
-// on, and on nothing in a folder below it.
+// **Under the signing folder's lock** (signing_lock.go). Where another Desk
+// process holds it, a key creation or a rotation is under way there: the
+// recovery asks again once, waiting for it a bounded time
+// (`signingLockWait`), and acts once it is let go; where it is still held
+// then, or none can be taken here, nothing may be removed, and it changes
+// nothing and leaves every marker for the next start (issue #286). It acts
+// only on markers named `<desk id>.rotating` directly in the signing folder,
+// of a desk the registry opened or of this server's own signing identity
+// (`signingKeyName`): the project Desk was started on, or the desk Desk made
+// that it was opened on directly, which the registry leaves out; and on
+// nothing in a folder below it.
 func (s *Server) recoverRotations() {
 	dir, err := s.assistant.openSigning(false)
 	if errors.Is(err, errNoSigningDir) {
@@ -761,15 +1071,26 @@ func (s *Server) recoverRotations() {
 	if len(markers) == 0 {
 		return
 	}
+	keyBetween("rotations: before the lock")
 	unlock, err := lockSigning(dir)
+	if errors.Is(err, errSigningBusy) {
+		// **One bounded retry, not a loop**: a live creation or rotation in
+		// another process ends, and the recovery goes on after it.
+		s.log.Printf("desk: the signing folder's lock is held, so unfinished rotations wait for it, at most %v", signingLockWait)
+		unlock, err = lockSigningWithin(context.Background(), dir, signingLockWait)
+	}
 	if err != nil {
 		s.log.Printf("desk: unfinished rotations were left for the next start, because the signing folder's lock was not taken: %v", err)
 		return
 	}
 	defer unlock()
+	keyBetween("rotations: locked")
+	own := s.signingKeyName()
 	for _, id := range markers {
 		child := s.desks[id]
-		if s.startupKey(id) {
+		// **By the signing identity** (issue #286): this server's own
+		// markers are its own, a made desk's opened directly among them.
+		if own != "" && id == own {
 			// **No recovery under an identity another folder holds**
 			// (review round 1 of #296): its trail may be a copy's.
 			if s.startupShared() {
@@ -1101,9 +1422,13 @@ func (s *Server) makeRotation(ctx context.Context, project heldDir, reading *key
 	dir, id := reading.dir, s.signingKeyName()
 	markerName, nextName, _, _ := rotationNames(id)
 	nextPath := filepath.Join(dir.path, nextName)
+	// The trail the rotation is made on, as the sidecar the panel read names
+	// it: a rotation is offered only where it names one (`rotationOffer`).
+	trail, _ := reading.sidecar.oneTrail()
+	journal := rotationJournal{Version: "1", Phase: journalGenerate, Trail: trail}
 
-	// 1. The marker, before anything else.
-	marker, err := dir.writeMarker(markerName)
+	// 1. The marker, journalling the first step, before anything else.
+	marker, err := dir.writeJournal(markerName, journal)
 	if err != nil {
 		s.log.Printf("desk: the rotation of desk %s's key could not write its marker: %v", id, err)
 		return nil, &lockFailure{http.StatusInternalServerError, CodeInternal, "Nothing was rotated: Desk could not write the rotation's marker in its signing folder."}
@@ -1170,16 +1495,36 @@ func (s *Server) makeRotation(ctx context.Context, project heldDir, reading *key
 		return undo(next, &lockFailure{http.StatusInternalServerError, CodeInternal, "Nothing was rotated: the runtime made a next key that is the current key."})
 	}
 
-	// 3. The rotation.
+	// 3. The rotation: journalled first, with the next key, on the trail.
+	journal.Phase, journal.Next = journalRotate, nextKey.PublicKey
+	rewritten, err := dir.rewriteJournal(markerName, marker, journal)
+	if err != nil {
+		s.log.Printf("desk: the rotation of desk %s's key could not journal its next step: %v", id, err)
+		return undo(next, &lockFailure{http.StatusInternalServerError, CodeInternal, "Nothing was rotated: Desk could not record the rotation's next step in its marker."})
+	}
+	marker = rewritten
+	keyBetween("rotation: rotate journalled")
 	if dir.namesHeld() != nil || dir.namesFile(nextName, next) != nil {
 		return undo(next, &lockFailure{http.StatusConflict, CodeStale, "Nothing was rotated: Desk's signing folder, or the next key in it, was replaced before the runtime rotated to it."})
 	}
 	out, runErr = runRuntime(ctx, s.cfg.JpackBin, project, "audit", "key", "rotate", "--next", nextPath, "--config", runtimeConfigName, "--format", "json")
 	keyBetween("rotation: line written")
-	at, said, rotated := readRotated(out, runErr, reading.current, nextKey)
+	at, rotatedOn, said, rotated := readRotated(out, runErr, reading.current, nextKey, trail)
+	if rotated {
+		// The runtime's answer, journalled: a stop from here finishes the
+		// rotation on this trail, and on no other. A journal that cannot be
+		// written now leaves "rotate", which a start decides from the same
+		// trail's sidecar.
+		journal.Phase, journal.Trail, journal.At = journalFinish, rotatedOn, at
+		if rewritten, err := dir.rewriteJournal(markerName, marker, journal); err != nil {
+			s.log.Printf("desk: the rotation of desk %s's key was written, and its marker could not record it: %v", id, err)
+		} else {
+			marker = rewritten
+		}
+	}
 	state := rotationState{marker: marker, next: next, seed: reading.seed, current: reading.current, nextKey: nextKey, list: reading.list}
 	if rotated {
-		took := deskPublicKey{PublicKey: nextKey.PublicKey, KeyID: nextKey.KeyID, At: at}
+		took := deskPublicKey{PublicKey: nextKey.PublicKey, KeyID: nextKey.KeyID, At: at, Trail: rotatedOn}
 		state.outcome, state.at, state.finished = rotationWritten, at, append(slices.Clone(reading.keys), took)
 	} else {
 		// The runtime refused, or did not answer as documented. Whether it
@@ -1245,13 +1590,16 @@ func readGenerated(out []byte, runErr error) (deskPublicKey, error) {
 }
 
 // readRotated reads what `audit key rotate --format json` printed: the
-// sequence the next key takes over from, where it rotated from current to
-// next as asked, exit 0 and "rotated"; and otherwise what it said, in its own
-// words where it gave any.
-func readRotated(out []byte, runErr error, current, next deskPublicKey) (int64, string, bool) {
+// sequence the next key takes over from, and the trail identity it rotated
+// on, where it rotated from current to next as asked, exit 0 and "rotated",
+// on the trail the rotation's journal names (on a trail of the runtime's
+// form, where the journal names none: the sidecar had no line yet); and
+// otherwise what it said, in its own words where it gave any.
+func readRotated(out []byte, runErr error, current, next deskPublicKey, trail string) (int64, string, string, bool) {
 	var answer struct {
 		Command       string              `json:"command"`
 		Status        string              `json:"status"`
+		Trail         string              `json:"trail"`
 		At            int64               `json:"at"`
 		From          string              `json:"from"`
 		Next          string              `json:"next"`
@@ -1260,8 +1608,9 @@ func readRotated(out []byte, runErr error, current, next deskPublicKey) (int64, 
 	}
 	decoded := out != nil && json.Unmarshal(out, &answer) == nil
 	if runErr == nil && decoded && answer.Command == "audit key rotate" && answer.Status == "rotated" &&
-		answer.At >= 1 && answer.At < sidecarIntegerLimit && answer.From == current.KeyID && answer.Next == next.KeyID && answer.NextPublicKey == next.PublicKey {
-		return answer.At, "", true
+		answer.At >= 1 && answer.At < sidecarIntegerLimit && answer.From == current.KeyID && answer.Next == next.KeyID && answer.NextPublicKey == next.PublicKey &&
+		keyIDForm.MatchString(answer.Trail) && (trail == "" || answer.Trail == trail) {
+		return answer.At, answer.Trail, "", true
 	}
 	var said []string
 	for _, diagnostic := range answer.Diagnostics {
@@ -1271,15 +1620,15 @@ func readRotated(out []byte, runErr error, current, next deskPublicKey) (int64, 
 	}
 	switch {
 	case len(said) > 0:
-		return 0, strings.Join(said, " "), false
+		return 0, "", strings.Join(said, " "), false
 	case runErr != nil:
 		var exit *exec.ExitError
 		if errors.As(runErr, &exit) {
-			return 0, fmt.Sprintf("its audit key rotate exited %d and gave no reason", exit.ExitCode()), false
+			return 0, "", fmt.Sprintf("its audit key rotate exited %d and gave no reason", exit.ExitCode()), false
 		}
-		return 0, runErr.Error(), false
+		return 0, "", runErr.Error(), false
 	}
-	return 0, "its audit key rotate did not answer as documented", false
+	return 0, "", "its audit key rotate did not answer as documented", false
 }
 
 // publicKeyOf is the public key the runtime reads from the seed kept as name

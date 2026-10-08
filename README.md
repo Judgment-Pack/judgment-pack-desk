@@ -407,7 +407,17 @@ only a desk with neither shows that Desk keeps no key. Where the trail's
 signature sidecar can be read, under the trail's lock, the list must also
 agree with the key rotations it records: each later key is the one a rotation
 hands over to, in order, made by the key before it, at the sequence the list
-gives. A list that does not passes no key, and the panel says where they
+gives. Each key a rotation adds records, in its line of the list, the trail
+identity the rotation was made on. A trail moved aside after a rotation and
+begun again is signed from its first record by the key Desk kept: the list is
+held to the new trail's sidecar from the last key whose rotation recorded
+another trail, and only the new trail's keys are passed and shown, the first
+taking over from 0 (the published runtime finds a new trail invalid given an
+earlier trail's keys too). A rotation recorded on the trail the sidecar names,
+or recorded by an earlier Desk with no trail, must be in that sidecar: one
+missing is the same trail with a rotation missing, and passes no key. A key's
+sequence is later than the key before it's where both took over on the same
+trail, and counts from 1 on a new one. A list that does not agree passes no key, and the panel says where they
 differ. A sidecar Desk cannot read now is noted in Desk's log, and the list is
 passed on the other checks, since `audit verify` reads the sidecar itself. It
 passes
@@ -734,17 +744,22 @@ was started.
   changed. From that reading to the last step, under the desk's key lock and
   the signing folder's lock (above), each step through the signing folder
   Desk holds:
-  1. `secrets/signing/<desk id>.rotating`, an empty marker, 0600, written
-     never over anything;
+  1. `secrets/signing/<desk id>.rotating`, a marker, 0600, written never
+     over anything, that journals the step about to be made and the trail
+     the rotation is made on, by the trail identity its sidecar names:
+     `generate` here, `rotate` with the next key before step 3, `finish`
+     with the runtime's sequence after it, each written whole and synced
+     before its step;
   2. `jpack audit key generate <signing>/<desk id>.next.seed --format json`,
      with the folder's path checked to name the folder held before the run,
      and the seed's path to name the seed found there after it;
   3. `jpack audit key rotate --next <that seed> --config jpack.json --format
      json`, in the desk's folder, whose answer gives the sequence the next key
-     takes over after;
+     takes over after, on the trail the journal names;
   4. the list of public keys written whole with the next key appended at that
-     sequence: staged, synced, and renamed over the list, after a check that
-     the list is still the file and the bytes read;
+     sequence, recording the trail the rotation was made on: staged, synced,
+     and renamed over the list, after a check that the list is still the file
+     and the bytes read;
   5. the next seed renamed over the current seed's name, in the same folder,
      and the seed's path checked to name the file renamed;
   6. the marker removed.
@@ -763,13 +778,22 @@ was started.
   Where the sidecar's last key rotation hands over to the next key from the
   current one, the rotation is finished (steps 4 to 6). Where Desk cannot tell,
   it changes nothing, and the marker stays.
-- **At start**, after the desks are opened and before any request is served,
-  each `<desk id>.rotating` marker directly in the signing folder, of a desk
-  the registry opened or of the project Desk was started on, under its name,
-  is read the same way, under the signing folder's lock,
-  taken once (above):
+- **At start**, after the desks are opened and before any request is served
+  or any resumed desk's Runner is started, each `<desk id>.rotating` marker
+  directly in the signing folder, of a desk the registry opened or of the
+  server's own signing identity (the project Desk was started on, or the desk
+  it was opened on directly), is read the same way, under the signing
+  folder's lock, asked for once more, for at most ten seconds, where another
+  Desk process holds it, from its journal first:
+  - journalled before the next key was made: the runtime was never asked,
+    and the next seed and the marker are removed;
+  - otherwise only the sidecar of the trail the journal names decides; a
+    trail moved aside or replaced since has no say, and the current key, the
+    next key and the list are kept as they are, and the panel says so;
   - the runtime wrote the line: the rotation is finished;
   - no line names the next key: the next seed and the marker are removed;
+  - a marker an earlier Desk left empty, which names no trail, is finished
+    where the sidecar hands over to its next key, and otherwise left;
   - there is no next seed, and the list, the current seed and the sidecar
     agree as the panel requires: a stop before the next key was made, or
     after it was renamed; the marker alone is removed;

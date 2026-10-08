@@ -923,6 +923,9 @@ func (s *Server) keysIn(ctx context.Context, project heldDir, dir *signingDir, o
 		s.log.Printf("desk: the signature sidecar of desk %s could not be read to check its list of keys: %v", name, reading.sidecarErr)
 	} else if err := checkKeysAgainst(public, current, &reading.sidecar); err != nil {
 		return unread("Desk's list of this desk's public keys does not agree with the key rotations in the trail's signature sidecar, so it passed no key: " + err.Error() + ".")
+	} else {
+		// This trail's keys, where it began after an earlier one's (issue #285).
+		public = keysOfTrail(public, &reading.sidecar)
 	}
 	return auditKeys{State: keysKept, Public: public}, reading
 }

@@ -50,7 +50,7 @@ const fixtureTrail = "322f164eb0705594cf781190d417112e"
 var (
 	fixtureSignature = strings.Repeat("5a", 64)
 	fixtureRecord    = "sha256:" + strings.Repeat("7c", 32)
-	key1             = deskPublicKey{standInPublicKey, standInKeyID, 0}
+	key1             = deskPublicKey{standInPublicKey, standInKeyID, 0, ""}
 )
 
 // recordLine is a record's signature line in the sidecar, as runtime 0.27.1
@@ -123,14 +123,17 @@ func writingTheLine(calls string) string {
 		"  n=0; while IFS= read -r _; do n=$((n+1)); done < \"${5%.next.seed}.keys.jsonl\"; printf 'rotate with %d keys listed\\n' \"$n\" >> '" + calls + ".order'\n" +
 		"  at=0; if [ -e .desk-private/audit/evaluations.jsonl ]; then while IFS= read -r _; do at=$((at+1)); done < .desk-private/audit/evaluations.jsonl; fi\n" +
 		"  if [ \"$at\" = 0 ]; then printf '%s\\n' " + shellQuote(rotateNoTrail) + "; exit 1; fi\n" +
-		"  printf '{\"at\":%d,\"keyId\":\"%s\",\"kind\":\"key-rotation\",\"next\":\"%s\",\"sidecarVersion\":\"1\",\"signature\":\"" + fixtureSignature + "\",\"trail\":\"" + fixtureTrail + "\"}\\n' \"$at\" \"$from\" \"$next\" >> .desk-private/audit/signatures.jsonl\n"
+		// The trail the sidecar's first line names, as the runtime rotates
+		// on the trail it holds; the fixture's where it names none.
+		"  trail=" + fixtureTrail + "; if [ -e .desk-private/audit/signatures.jsonl ]; then IFS= read -r first < .desk-private/audit/signatures.jsonl; case \"$first\" in *'\"trail\":\"'*) trail=${first#*'\"trail\":\"'}; trail=${trail%%'\"'*};; esac; fi\n" +
+		"  printf '{\"at\":%d,\"keyId\":\"%s\",\"kind\":\"key-rotation\",\"next\":\"%s\",\"sidecarVersion\":\"1\",\"signature\":\"" + fixtureSignature + "\",\"trail\":\"%s\"}\\n' \"$at\" \"$from\" \"$next\" \"$trail\" >> .desk-private/audit/signatures.jsonl\n"
 }
 
 // rotateAsTheRuntime is the stand-in's `audit key rotate`: writingTheLine,
 // and the runtime's answer.
 func rotateAsTheRuntime(calls string) string {
 	return writingTheLine(calls) +
-		"  printf '{\"outputVersion\":\"2\",\"tool\":{\"name\":\"jpack\",\"version\":\"0.27.1\"},\"command\":\"audit key rotate\",\"status\":\"rotated\",\"trailPath\":\"/project/.desk-private/audit/evaluations.jsonl\",\"at\":%d,\"trail\":\"" + fixtureTrail + "\",\"from\":\"%s\",\"next\":\"%s\",\"nextPublicKey\":\"%s\"}\\n' \"$at\" \"$from\" \"$nextid\" \"$next\""
+		"  printf '{\"outputVersion\":\"2\",\"tool\":{\"name\":\"jpack\",\"version\":\"0.27.1\"},\"command\":\"audit key rotate\",\"status\":\"rotated\",\"trailPath\":\"/project/.desk-private/audit/evaluations.jsonl\",\"at\":%d,\"trail\":\"%s\",\"from\":\"%s\",\"next\":\"%s\",\"nextPublicKey\":\"%s\"}\\n' \"$at\" \"$trail\" \"$from\" \"$nextid\" \"$next\""
 }
 
 // refusingWith is a stand-in `audit key rotate` that writes nothing, prints
@@ -320,6 +323,19 @@ func (r *rotationRig) snapshot(t *testing.T) string {
 	return out.String()
 }
 
+// sidecarTrail is the trail identity the first line of the sidecar at path names.
+func sidecarTrail(t *testing.T, path string) string {
+	t.Helper()
+	first, _, _ := strings.Cut(readFile(t, path), "\n")
+	var line struct {
+		Trail string `json:"trail"`
+	}
+	if err := json.Unmarshal([]byte(first), &line); err != nil || !keyIDForm.MatchString(line.Trail) {
+		t.Fatalf("the sidecar's first line names no trail: %q", first)
+	}
+	return line.Trail
+}
+
 // The next key's path, and the runs a rotation makes after reading the keys.
 func (r *rotationRig) nextPath() string { return filepath.Join(r.signing, r.id+nextSeedSuffix) }
 
@@ -361,12 +377,13 @@ func TestARotationRunsItsStepsInOrder(t *testing.T) {
 	if status != http.StatusOK || json.Unmarshal(data, &answer) != nil {
 		t.Fatalf("the rotation answered %d %s", status, data)
 	}
-	if want := (rotationAnswer{State: "rotated", At: 1, From: key1, Next: deskPublicKey{secondPublicKey, secondKeyID, 1}}); answer != want {
+	if want := (rotationAnswer{State: "rotated", At: 1, From: key1, Next: deskPublicKey{secondPublicKey, secondKeyID, 1, ""}}); answer != want {
 		t.Errorf("the rotation answered %+v, want %+v", answer, want)
 	}
 	want := []string{
 		"rotation: marker written: .keys.jsonl,.rotating,.seed seed=1 next=absent keys=1 rotations=0",
 		"rotation: next generated: .keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=1 rotations=0",
+		"rotation: rotate journalled: .keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=1 rotations=0",
 		"rotation: line written: .keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=1 rotations=1",
 		"rotation: list written: .keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=2 rotations=1",
 		"rotation: seed renamed: .keys.jsonl,.rotating,.seed seed=2 next=absent keys=2 rotations=1",
@@ -386,7 +403,7 @@ func TestARotationRunsItsStepsInOrder(t *testing.T) {
 		t.Errorf("the runtime saw %q", got)
 	}
 	list := filepath.Join(r.signing, r.id+keysSuffix)
-	if got := readFile(t, list); got != wantKeyLine(standInPublicKey, standInKeyID, 0)+wantKeyLine(secondPublicKey, secondKeyID, 1) {
+	if got := readFile(t, list); got != wantKeyLine(standInPublicKey, standInKeyID, 0)+wantKeyLineOn(secondPublicKey, secondKeyID, 1, fixtureTrail) {
 		t.Errorf("the list of public keys is %q", got)
 	}
 	if got := readFile(t, filepath.Join(r.signing, r.id+seedSuffix)); got != secondSeed+"\n" {
@@ -407,7 +424,7 @@ func TestARotationRunsItsStepsInOrder(t *testing.T) {
 	// The panel passes both keys, in order, and offers no second rotation
 	// until a record is signed with the next key.
 	panel, _ := r.panel(t)
-	if panel.Keys == nil || panel.Keys.State != keysKept || !slices.Equal(panel.Keys.Public, []deskPublicKey{key1, {secondPublicKey, secondKeyID, 1}}) {
+	if panel.Keys == nil || panel.Keys.State != keysKept || !slices.Equal(panel.Keys.Public, []deskPublicKey{key1, {secondPublicKey, secondKeyID, 1, ""}}) {
 		t.Errorf("the panel shows the keys %+v", panel.Keys)
 	}
 	if seen := r.rig.keysSeen(t); !slices.Equal(seen, []string{standInPublicKey, secondPublicKey}) {
@@ -519,7 +536,7 @@ func TestARotationTheRuntimeRefusesChangesNothing(t *testing.T) {
 		rotatingAs(t, r.rig.calls, writingTheLine(r.rig.calls)+"  printf '%s\\n' "+shellQuote(`{"outputVersion":"2","command":"audit key rotate","status":"error","diagnostics":[{"code":"JPS-AUDIT-WRITE","message":"Audit record could not be written."}]}`)+"\n  exit 4")
 		status, data := r.rotate(t, r.token(t))
 		var answer rotationAnswer
-		if status != http.StatusOK || json.Unmarshal(data, &answer) != nil || answer.At != 1 || answer.Next != (deskPublicKey{secondPublicKey, secondKeyID, 1}) {
+		if status != http.StatusOK || json.Unmarshal(data, &answer) != nil || answer.At != 1 || answer.Next != (deskPublicKey{secondPublicKey, secondKeyID, 1, ""}) {
 			t.Fatalf("the rotation answered %d %s, want it finished from the sidecar", status, data)
 		}
 		if got := r.describe(t); got != ".keys.jsonl,.seed seed=2 next=absent keys=2 rotations=1" {
@@ -554,7 +571,9 @@ func TestARotationTheRuntimeDidNotWriteSaysDeskKeptItsKey(t *testing.T) {
 	t.Run("the panel, on a rotation the runtime did not write", func(t *testing.T) {
 		r := newRotationRig(t, "c2000000000000000000000000000003", "")
 		r.writeTrail(t, 1, recordLine(standInKeyID, 1))
-		if os.WriteFile(filepath.Join(r.signing, r.id+rotatingSuffix), nil, 0o600) != nil || os.WriteFile(r.nextPath(), []byte(secondSeed+"\n"), 0o600) != nil {
+		// A rotation journalled as about to rotate on this trail (issue #285).
+		journal := rotationJournal{Version: "1", Phase: journalRotate, Trail: fixtureTrail, Next: secondPublicKey}.line()
+		if os.WriteFile(filepath.Join(r.signing, r.id+rotatingSuffix), journal, 0o600) != nil || os.WriteFile(r.nextPath(), []byte(secondSeed+"\n"), 0o600) != nil {
 			t.Fatal("could not leave a rotation unfinished")
 		}
 		answer, _ := r.panel(t)
@@ -837,7 +856,7 @@ func TestARotationsAnswersNameNoPath(t *testing.T) {
 // sidecar Desk cannot read is not a disagreement: the keys are passed on the
 // other checks.
 func TestTheListOfKeysIsHeldToTheSidecar(t *testing.T) {
-	key2 := deskPublicKey{secondPublicKey, secondKeyID, 3}
+	key2 := deskPublicKey{secondPublicKey, secondKeyID, 3, ""}
 	two := wantKeyLine(standInPublicKey, standInKeyID, 0) + wantKeyLine(secondPublicKey, secondKeyID, 3)
 	before := recordLine(standInKeyID, 1) + recordLine(standInKeyID, 2) + recordLine(standInKeyID, 3)
 	reordered := `{"next":"` + secondPublicKey + `","at":3,"kind":"key-rotation","keyId":"` + standInKeyID + `","trail":"` + fixtureTrail + `","signature":"` + fixtureSignature + `","sidecarVersion":"1"}` + "\n"
@@ -850,11 +869,11 @@ func TestTheListOfKeysIsHeldToTheSidecar(t *testing.T) {
 		{"two keys the sidecar names", two, before + rotationLine(3, standInKeyID, secondPublicKey) + recordLine(secondKeyID, 4), secondSeed, ""},
 		{"a rotation line in another member order, as the runtime reads it", two, before + reordered, secondSeed, ""},
 		{"two keys and no rotation", two, before, secondSeed,
-			disagree + "the trail's signature sidecar records 0 key rotations, and the list names 1 keys after the first."},
+			disagree + "the trail's signature sidecar records 0 key rotations, and the list names 1 keys after this trail's first."},
 		{"two keys and no sidecar", two, "", secondSeed,
-			disagree + "the trail's signature sidecar records 0 key rotations, and the list names 1 keys after the first."},
+			disagree + "the trail's signature sidecar records 0 key rotations, and the list names 1 keys after this trail's first."},
 		{"a rotation the list does not name", wantKeyLine(secondPublicKey, secondKeyID, 0), before + rotationLine(3, standInKeyID, secondPublicKey), secondSeed,
-			disagree + "the trail's signature sidecar records 1 key rotations, and the list names 0 keys after the first."},
+			disagree + "the trail's signature sidecar records 1 key rotations, and the list names 0 keys after this trail's first."},
 		{"another sequence", wantKeyLine(standInPublicKey, standInKeyID, 0) + wantKeyLine(secondPublicKey, secondKeyID, 4), before + rotationLine(3, standInKeyID, secondPublicKey), secondSeed,
 			disagree + "key 2 of the list takes over from sequence 4, and the sidecar's key rotation to it from 3."},
 		{"a rotation to another key", two, before + rotationLine(3, standInKeyID, thirdPublicKey), secondSeed,
@@ -862,15 +881,15 @@ func TestTheListOfKeysIsHeldToTheSidecar(t *testing.T) {
 		{"a rotation made by another key", two, before + rotationLine(3, thirdKeyID, secondPublicKey), secondSeed,
 			disagree + "the sidecar's key rotation 1 was made by a key other than key 1 of the list."},
 		{"a rotation line a write left incomplete", two, before + strings.TrimSuffix(rotationLine(3, standInKeyID, secondPublicKey), "\n"), secondSeed,
-			disagree + "the trail's signature sidecar records 0 key rotations, and the list names 1 keys after the first."},
+			disagree + "the trail's signature sidecar records 0 key rotations, and the list names 1 keys after this trail's first."},
 		{"a rotation line with a member more", two, before + strings.Replace(rotationLine(3, standInKeyID, secondPublicKey), `{"at"`, `{"note":"x","at"`, 1), secondSeed,
-			disagree + "the trail's signature sidecar records 0 key rotations, and the list names 1 keys after the first."},
+			disagree + "the trail's signature sidecar records 0 key rotations, and the list names 1 keys after this trail's first."},
 		{"a rotation line with a member twice", two, before + strings.Replace(rotationLine(3, standInKeyID, secondPublicKey), `{"at":3`, `{"at":3,"at":3`, 1), secondSeed,
-			disagree + "the trail's signature sidecar records 0 key rotations, and the list names 1 keys after the first."},
+			disagree + "the trail's signature sidecar records 0 key rotations, and the list names 1 keys after this trail's first."},
 		{"a rotation line at 03", two, before + strings.Replace(rotationLine(3, standInKeyID, secondPublicKey), `{"at":3`, `{"at":03`, 1), secondSeed,
-			disagree + "the trail's signature sidecar records 0 key rotations, and the list names 1 keys after the first."},
+			disagree + "the trail's signature sidecar records 0 key rotations, and the list names 1 keys after this trail's first."},
 		{"a rotation line longer than any line", two, before + strings.Replace(rotationLine(3, standInKeyID, secondPublicKey), `"sidecarVersion":"1"`, `"sidecarVersion":"1"`+strings.Repeat(" ", 4096), 1), secondSeed,
-			disagree + "the trail's signature sidecar records 0 key rotations, and the list names 1 keys after the first."},
+			disagree + "the trail's signature sidecar records 0 key rotations, and the list names 1 keys after this trail's first."},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newRotationRig(t, "c5000000000000000000000000000001", "")
@@ -990,8 +1009,8 @@ func TestAStoppedRotationIsFinishedOrUndoneAtTheNextStart(t *testing.T) {
 			answer, _ := panelOn(t, ts, id)
 			want := []deskPublicKey{key1}
 			if tc.after == rotated {
-				want = append(want, deskPublicKey{secondPublicKey, secondKeyID, 1})
-				if got := readFile(t, filepath.Join(r.signing, id+keysSuffix)); got != wantKeyLine(standInPublicKey, standInKeyID, 0)+wantKeyLine(secondPublicKey, secondKeyID, 1) {
+				want = append(want, deskPublicKey{secondPublicKey, secondKeyID, 1, ""})
+				if got := readFile(t, filepath.Join(r.signing, id+keysSuffix)); got != wantKeyLine(standInPublicKey, standInKeyID, 0)+wantKeyLineOn(secondPublicKey, secondKeyID, 1, fixtureTrail) {
 					t.Errorf("the list is %q", got)
 				}
 			}
@@ -1099,7 +1118,7 @@ func TestARotationFromElsewhereIsLeftAsItIs(t *testing.T) {
 		{"rotation: next generated", rotationLine(1, thirdKeyID, secondPublicKey),
 			cannot + "the sidecar's last key rotation hands over to the next key from a key other than the current one."},
 		{"rotation: marker written", rotationLine(1, standInKeyID, secondPublicKey),
-			cannot + "there is no next key, and the list of this desk's public keys does not agree with its current key and the sidecar: the trail's signature sidecar records 1 key rotations, and the list names 0 keys after the first."},
+			cannot + "there is no next key, and the list of this desk's public keys does not agree with its current key and the sidecar: the trail's signature sidecar records 1 key rotations, and the list names 0 keys after this trail's first."},
 	} {
 		t.Run(tc.stop, func(t *testing.T) {
 			r := newRotationRig(t, id, "")
@@ -1189,6 +1208,8 @@ func TestAnAnswerThatIsNotTheRotationAskedForIsNotTakenForOne(t *testing.T) {
 		{"to another key", func(v map[string]any) { v["nextPublicKey"] = thirdPublicKey }},
 		{"to another keyId", func(v map[string]any) { v["next"] = thirdKeyID }},
 		{"at no record", func(v map[string]any) { v["at"] = 0 }},
+		// On another trail than the one the rotation journals (issue #285).
+		{"on another trail", func(v map[string]any) { v["trail"] = otherTrail }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newRotationRig(t, "c8000000000000000000000000000003", "")
@@ -1243,7 +1264,7 @@ func TestWhatChangedWhileARotationFinishedIsNotWrittenOver(t *testing.T) {
 		{"the marker, after the rename", "rotation: seed renamed", func(t *testing.T, r *rotationRig) {
 			replace(t, filepath.Join(r.signing, r.id+rotatingSuffix), "")
 		}, renamed, ".keys.jsonl,.rotating,.rotating.aside,.seed seed=2 next=absent keys=2 rotations=1",
-			"Nothing of it is left to do but remove its marker, which Desk does when it next starts.", []deskPublicKey{key1, {secondPublicKey, secondKeyID, 1}}},
+			"Nothing of it is left to do but remove its marker, which Desk does when it next starts.", []deskPublicKey{key1, {secondPublicKey, secondKeyID, 1, ""}}},
 		// Issue #239: the old list put back once the new one is written, the
 		// list edited in place, the same file with other bytes, and the next
 		// key replaced just before the rename. None is renamed against, and
@@ -1357,7 +1378,7 @@ func TestAStartRenamesNoKeyAgainstAListPutBackSinceItsInspection(t *testing.T) {
 		t.Errorf("after the start after it the signing folder holds %s (%s)", got, logged)
 	}
 	answer, _ = panelOn(t, ts, r.id)
-	if keys := keysOf(t, answer); keys.State != keysKept || !slices.Equal(keys.Public, []deskPublicKey{key1, {secondPublicKey, secondKeyID, 1}}) || answer.Rotation.State == rotationUnfinished {
+	if keys := keysOf(t, answer); keys.State != keysKept || !slices.Equal(keys.Public, []deskPublicKey{key1, {secondPublicKey, secondKeyID, 1, ""}}) || answer.Rotation.State == rotationUnfinished {
 		t.Errorf("after the start after it the panel shows %+v and %+v", keys, answer.Rotation)
 	}
 }
@@ -1605,10 +1626,11 @@ func TestRotatingADesksKeyWithTheRuntime(t *testing.T) {
 		t.Fatalf("the rotation answered %d %s", status, data)
 	}
 	k2 := publicOf(t)
-	if k2 == k1 || answer.Next != (deskPublicKey{k2.PublicKey, k2.KeyID, 1}) {
+	if k2 == k1 || answer.Next != (deskPublicKey{k2.PublicKey, k2.KeyID, 1, ""}) {
 		t.Errorf("the rotation answered %+v; the seed now holds %+v", answer, k2)
 	}
-	if got := readFile(t, filepath.Join(signing, row.ID+keysSuffix)); got != wantKeyLine(k1.PublicKey, k1.KeyID, 0)+wantKeyLine(k2.PublicKey, k2.KeyID, 1) {
+	trail := sidecarTrail(t, filepath.Join(row.Folder, ".desk-private", "audit", "signatures.jsonl"))
+	if got := readFile(t, filepath.Join(signing, row.ID+keysSuffix)); got != wantKeyLine(k1.PublicKey, k1.KeyID, 0)+wantKeyLineOn(k2.PublicKey, k2.KeyID, 1, trail) {
 		t.Errorf("the list is %q", got)
 	}
 	if names := namesIn(t, signing); !slices.Equal(names, []string{row.ID + keysSuffix, row.ID + seedSuffix}) {
@@ -1650,7 +1672,7 @@ func TestRotatingADesksKeyWithTheRuntime(t *testing.T) {
 		report.Signatures == nil || report.Signatures.Rotations != 1 || report.Signatures.KeysSupplied != 2 || report.Signatures.FirstKey != k1.KeyID || report.Signatures.KeyInForce != k2.KeyID {
 		t.Errorf("the panel reports %s", panelData)
 	}
-	if panel.Keys == nil || panel.Keys.State != keysKept || !slices.Equal(panel.Keys.Public, []deskPublicKey{{k1.PublicKey, k1.KeyID, 0}, {k2.PublicKey, k2.KeyID, 1}}) {
+	if panel.Keys == nil || panel.Keys.State != keysKept || !slices.Equal(panel.Keys.Public, []deskPublicKey{{k1.PublicKey, k1.KeyID, 0, ""}, {k2.PublicKey, k2.KeyID, 1, ""}}) {
 		t.Errorf("the panel shows the keys %+v", panel.Keys)
 	}
 	if strings.Contains(panelData, s.configDir) {
@@ -1686,7 +1708,7 @@ func TestRotatingADesksKeyWithTheRuntime(t *testing.T) {
 		t.Fatalf("after the next start the signing folder holds %q (%s)", names, logged)
 	}
 	k3 := publicOf(t)
-	if got := readFile(t, filepath.Join(signing, row.ID+keysSuffix)); got != wantKeyLine(k1.PublicKey, k1.KeyID, 0)+wantKeyLine(k2.PublicKey, k2.KeyID, 1)+wantKeyLine(k3.PublicKey, k3.KeyID, 2) {
+	if got := readFile(t, filepath.Join(signing, row.ID+keysSuffix)); got != wantKeyLine(k1.PublicKey, k1.KeyID, 0)+wantKeyLineOn(k2.PublicKey, k2.KeyID, 1, trail)+wantKeyLineOn(k3.PublicKey, k3.KeyID, 2, trail) {
 		t.Errorf("after the next start the list is %q", got)
 	}
 	decide(t)
@@ -1694,5 +1716,32 @@ func TestRotatingADesksKeyWithTheRuntime(t *testing.T) {
 	panel, panelData = panelOn(t, ts2, row.ID)
 	if panel.Keys == nil || panel.Keys.State != keysKept || len(panel.Keys.Public) != 3 || panel.Report == nil || panel.Report.Coverage.SignedRecords != 3 {
 		t.Errorf("after the next start the panel answered %s", panelData)
+	}
+
+	// **The trail moved aside, and a new one begun** (issue #285): the next
+	// record is signed by the key Desk kept, and the runtime finds the new
+	// trail valid with that key alone. The panel passes it alone, shows it as
+	// the new trail's first key, reports the trail valid, and offers the next
+	// rotation; the list Desk keeps is unchanged.
+	audit := filepath.Join(row.Folder, ".desk-private", "audit")
+	if err := os.Rename(audit, audit+".aside"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(audit, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	decide(t)
+	verifyAs(t, []deskPublicKey{k3}, 1)
+	panel, panelData = panelOn(t, ts2, row.ID)
+	if panel.Keys == nil || panel.Keys.State != keysKept || !slices.Equal(panel.Keys.Public, []deskPublicKey{{k3.PublicKey, k3.KeyID, 0, ""}}) ||
+		panel.Report == nil || panel.Report.Status != "valid" || panel.Report.Signatures == nil || panel.Report.Signatures.KeysSupplied != 1 ||
+		panel.Report.Coverage.SignedRecords != 1 || panel.Rotation.State != rotationAvailable {
+		t.Errorf("on the new trail the panel answered %s", panelData)
+	}
+	if got := readFile(t, filepath.Join(signing, row.ID+keysSuffix)); got != wantKeyLine(k1.PublicKey, k1.KeyID, 0)+wantKeyLineOn(k2.PublicKey, k2.KeyID, 1, trail)+wantKeyLineOn(k3.PublicKey, k3.KeyID, 2, trail) {
+		t.Errorf("on the new trail the list is %q", got)
+	}
+	if strings.Contains(panelData, s.configDir) {
+		t.Errorf("the panel names a path: %s", panelData)
 	}
 }

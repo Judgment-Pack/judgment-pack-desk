@@ -712,12 +712,25 @@ func (s *Server) resumeDesks() {
 	}
 	s.desksMu.Lock()
 	defer s.desksMu.Unlock()
+	// Each resumed desk's Runner starts only once the rotations are
+	// recovered (issue #286): its gate is held until then, and released
+	// whatever happens to the start, after recovery (deferred calls run last
+	// first).
+	s.resuming = true
+	defer func() {
+		s.resuming = false
+		for _, gate := range s.heldGates {
+			close(gate)
+		}
+		s.heldGates = nil
+	}()
 	// Before any desk is opened, the keys of creations a stopped Desk left
 	// unfinished.
 	s.sweepUnfinishedKeys()
 	// Once the desks are open, and still before any request is served, the
 	// rotations of their keys a stopped Desk left unfinished, and of the key
-	// of the project Desk was started on: also where no desk is opened.
+	// of the project Desk was started on, or of the desk it was opened on:
+	// also where no desk is opened.
 	defer s.recoverRotations()
 	// Read-only on startup: starting an existing Desk creates no registry.
 	root, err := s.assistant.root.OpenRoot("desks")

@@ -307,6 +307,25 @@ moved aside together, and the next record starts a new trail (the guide,
 "Rotation"). Desk shows the runtime's refusal and that way out. It does not
 move a trail itself (question 9).
 
+*Amended 2026-10-07 (issues #285 and #286):* a rotation's marker journals the
+step about to be made and the trail it is made on, by the trail identity the
+sidecar names; a start decides from the journal and from that trail's
+sidecar alone, and where the trail was moved aside or replaced since, keeps
+both seeds and the list, and says so. Each key a rotation adds records in
+the list the trail identity it was made on; its sequence is later than the
+previous key's where both took over on the same trail, and counts from 1 on a
+new one. A trail begun after a rotation is signed from its first record by
+the key Desk kept, which is its first key: the list is held to the new trail
+from the last key whose rotation recorded another trail, and only the new
+trail's keys are passed to `audit verify` (measured with runtime 0.27.1:
+given the earlier trail's keys too, it reports the new trail invalid). A
+rotation recorded on this trail, or by an earlier Desk with no trail, must be
+in its sidecar, so a rotation missing is never taken for a new trail. The start's
+recovery resolves a marker by the server's own signing identity, so a desk
+opened directly recovers its own rotation; it waits once, bounded, for a
+signing lock another process holds; and each resumed desk's Runner starts
+only after it.
+
 **Whom the key binds.** Following ADR-0009 section 6, and runtime ADR-0047
 §2b:
 

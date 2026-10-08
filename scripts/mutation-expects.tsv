@@ -127,25 +127,46 @@ go	audit fix: a count since a hand-over is given for another trail	TestTheRecord
 go	audit fix: a count since a hand-over is of another record	TestTheRecordsSinceAHandOverAreTheReports
 go	audit fix: a creation is removed after jpack.json changed	TestACreationIsRemovedOnlyWhereItsMarkerBindsIt
 go	audit fix: a creation is removed whose marker names another folder	TestACreationIsRemovedOnlyWhereItsMarkerBindsIt
+go	audit fix: a desk opened directly does not recover its own rotation	TestADeskOpenedDirectlyFinishesItsRotation
 go	audit fix: a file is compared before its old bytes are staged, not before they are published	TestAReviewLockWaitsForThisProjectsLockAndPutsBackOnlyItsOwn,TestARollbackPutsBackOnlyWhatItWrote
 go	audit fix: a file is put back over what another writer wrote	TestARollbackPutsBackOnlyWhatItWrote
+go	audit fix: a first key with a trail is read	TestAListOfKeysHoldsItsTrailsToTheirRule
+go	audit fix: a journal in another spelling is read	TestARotationJournalsEachStep
 go	audit fix: a key is made under a name the project does not keep	TestAKeyIsMadeOnlyUnderTheProjectsIdentity
 go	audit fix: a key is offered under an identity another folder holds	TestACopyOfAProjectRemovesNoKeyOfTheOriginal
 go	audit fix: a key is offered where the identity cannot be kept	TestAKeyIsNotOfferedWhereItsIdentityCannotBeKept
+go	audit fix: a key on a new trail may not count its sequence again	TestATrailBegunAfterARotationIsReadAsItsOwn,TestAListOfKeysHoldsItsTrailsToTheirRule
+go	audit fix: a key's line records no trail	TestATrailBegunAfterARotationIsReadAsItsOwn
 go	audit fix: a key's removal goes on past a file it could not remove	TestAnUpgradePutBackLeavesNoKeyWithoutItsIdentity
 go	audit fix: a lock of another configuration is put back over	TestAFailedUpgradeLockPutsEveryFileBack,TestALockOfAnythingElseIsPutBack,TestARollbackPutsBackOnlyWhatItWrote
+go	audit fix: a marker with no journal is undone where the sidecar names no next key	TestAMarkerWithNoJournalIsFinishedOnlyWhereTheSidecarHandsOver
 go	audit fix: a moved project does not take the key its jpack.json names	TestAKeyFromBeforeTheIdentityIsKeptWhenItsProjectMoves
+go	audit fix: a new trail's first key is shown taking over where it did in the last	TestATrailBegunAfterARotationIsReadAsItsOwn
 go	audit fix: a project with no identity takes its path's hash as one	TestAKeyFromBeforeTheIdentityIsKeptWhenItsProjectMoves,TestTheIdentityMovesStampingSettingsAndAStopIsFinished
 go	audit fix: a project's key is named by its path, not its identity	TestAFailedSigningUpgradeLeavesNoKeyAndNoChange,TestAKeyFromBeforeTheIdentityIsKeptWhenItsProjectMoves,TestAMovedProjectKeepsItsKeyAndItsPathTakesNothing,TestARotationOfTheStartupKeyFollowsWhatJpackJsonNames,TestAStoppedSigningUpgradeIsSweptAtTheNextStart,TestAnInheritedKeyHoldsTheStartupKeyStill,TestAnUpgradeNotPutBackLeavesTheKeyForTheNextStart,TestAnUpgradeWaitsForThisProjectsLockAndThenRefuses,TestChoosingTheSigningKeyWritesSixAndTheKeyTogether,TestNoPathOfTheStartupKeyReachesThePage,TestTheDecisionRecordReadsTheStartupKeyAfterTheUpgrade,TestTheIdentityIsWrittenOnlyUnderBothLocks,TestTheIdentityMovesStampingSettingsAndAStopIsFinished,TestTheSigningUpgradeWaitsForTheSigningFolder,TestTheStartFinishesARotationOfTheStartupKey,TestTheStartupKeyIsNamedByTheResolvedProject,TestTheUpgradeWritesTheIdentityBeforeTheKey
+go	audit fix: a recovery that finds the lock held does not wait for it once	TestARecoveryWaitsOnceForTheSigningLock
 go	audit fix: a repaired trail's lines are counted as records	TestTheRecordsPendingAStampAfterARepairAreTheReports,TestTheRecordsSinceAHandOverAreTheReports,TestWhatFollowsARecordIsCountedFromTheReport
+go	audit fix: a resumed desk's Runner start gate is never released	TestAResumedDesksRunnerStartsAfterTheRecovery
+go	audit fix: a resumed desk's Runner starts before the recovery	TestAResumedDesksRunnerStartsAfterTheRecovery
 go	audit fix: a review's lock runs without this project's lock	TestAReviewLockWaitsForThisProjectsLockAndPutsBackOnlyItsOwn
 go	audit fix: a rollback that put every file back leaves the key it made	TestAFailedSigningUpgradeLeavesNoKeyAndNoChange,TestAnUpgradePutBackLeavesNoKeyWithoutItsIdentity
+go	audit fix: a rotation finished by a start records no trail	TestATrailBegunAfterARotationIsReadAsItsOwn
 go	audit fix: a rotation is offered under an identity another folder holds	TestARotationUnderASharedIdentityIsLeft
+go	audit fix: a rotation is recovered from whichever trail is there	TestARotationWhoseTrailWasMovedAsideKeepsBothKeys
 go	audit fix: a rotation is recovered under an identity another folder holds	TestARotationUnderASharedIdentityIsLeft
+go	audit fix: a rotation missing from its own trail is taken for a new trail	TestATrailBegunAfterARotationIsReadAsItsOwn
+go	audit fix: a rotation never given to the runtime is held to its trail	TestARotationJournalsEachStep
+go	audit fix: a rotation records no trail in the list	TestATrailBegunAfterARotationIsReadAsItsOwn
 go	audit fix: a run keeps no record digest	TestAStampAnswerIsReadAsDocumented,TestTheSchedulerStampsATrailRestoredToAnEarlierPointAgain,TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved
+go	audit fix: a sidecar of two trails is read as one	TestNoRotationOverASidecarOfTwoTrails
 go	audit fix: a stopped migration is not finished at the next start	TestTheIdentityMovesStampingSettingsAndAStopIsFinished
+go	audit fix: a trail begun after a rotation is refused	TestATrailBegunAfterARotationIsReadAsItsOwn
+go	audit fix: a trail begun before its first record is refused	TestATrailBegunAfterARotationIsReadAsItsOwn
+go	audit fix: a trail of another form is read	TestAListOfKeysHoldsItsTrailsToTheirRule
 go	audit fix: a trail's unchained lines are counted as records	TestWhatFollowsARecordIsCountedFromTheReport
 go	audit fix: after no record, every line is pending	TestWhatFollowsARecordIsCountedFromTheReport
+go	audit fix: an answer on another trail is taken for the rotation	TestAnAnswerThatIsNotTheRotationAskedForIsNotTakenForOne
+go	audit fix: an earlier trail's keys are given to audit verify	TestATrailBegunAfterARotationIsReadAsItsOwn
 go	audit fix: an identity in another spelling is read	TestAnIdentityThatCannotBeReadNamesNothing
 go	audit fix: an identity that cannot be read is taken for none	TestAnIdentityThatCannotBeReadNamesNothing
 go	audit fix: an unread identity is said to keep no key	TestAnIdentityThatCannotBeReadNamesNothing
@@ -160,9 +181,12 @@ go	audit fix: stamping settings leave a key kept under the path's hash	TestAKeyF
 go	audit fix: the head keeps no record digest	TestACheckWithRootsReplacesWhatTheSchedulerKnows,TestTheSchedulerStampsATrailRestoredToAnEarlierPointAgain,TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved
 go	audit fix: the identity is written without the signing folder's lock	TestTheIdentityIsWrittenOnlyUnderBothLocks
 go	audit fix: the identity is written without this project's lock	TestTheIdentityIsWrittenOnlyUnderBothLocks
+go	audit fix: the longest list with trails is past what Desk reads	TestAListOfKeysHoldsItsTrailsToTheirRule
 go	audit fix: the page is not given the trail's identity	TestACheckWithRootsReplacesWhatTheSchedulerKnows
 go	audit fix: the records after the held checkpoints are not the runtime's count	TestTheRecordsPendingAStampAfterARepairAreTheReports,TestTheRecordsSinceAHandOverAreTheReports,TestWhatFollowsARecordIsCountedFromTheReport
 go	audit fix: the records pending a stamp are one sequence taken from another	TestTheRecordsPendingAStampAfterARepairAreTheReports
+go	audit fix: the runtime is asked to rotate before the journal names the next key	TestAStoppedRotationIsFinishedOrUndoneAtTheNextStart,TestARotationJournalsEachStep
+go	audit fix: the runtime's answer is not journalled	TestARotationJournalsEachStep
 go	audit fix: the sweep removes a key under a name no identity binds	TestAKeyFromBeforeTheIdentityIsKeptWhenItsProjectMoves
 go	audit fix: the unchained lines after the last chained one are counted	TestWhatFollowsARecordIsCountedFromTheReport
 go	audit fix: the upgrade makes the key with no identity written	TestAFailedSigningUpgradeLeavesNoKeyAndNoChange,TestAMovedProjectKeepsItsKeyAndItsPathTakesNothing,TestARotationOfTheStartupKeyFollowsWhatJpackJsonNames,TestAStoppedSigningUpgradeIsSweptAtTheNextStart,TestAnInheritedKeyHoldsTheStartupKeyStill,TestAnUpgradeNotPutBackLeavesTheKeyForTheNextStart,TestAnUpgradeWaitsForThisProjectsLockAndThenRefuses,TestChoosingTheSigningKeyWritesSixAndTheKeyTogether,TestNoPathOfTheStartupKeyReachesThePage,TestTheDecisionRecordReadsTheStartupKeyAfterTheUpgrade,TestTheSigningUpgradeWaitsForTheSigningFolder,TestTheStartFinishesARotationOfTheStartupKey,TestTheStartupKeyIsNamedByTheResolvedProject,TestTheUpgradeWritesTheIdentityBeforeTheKey

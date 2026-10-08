@@ -769,7 +769,7 @@ func TestTheDecisionRecordReadsTheStartupKeyAfterTheUpgrade(t *testing.T) {
 		t.Fatalf("the rotation answered %d %s", status, data)
 	}
 	list := readFile(t, strings.TrimSuffix(u.seed, ".seed")+".keys.jsonl")
-	if list != wantKeyLine(standInPublicKey, standInKeyID, 0)+wantKeyLine(secondPublicKey, secondKeyID, 1) || seedIs(u.seed) != "2" {
+	if list != wantKeyLine(standInPublicKey, standInKeyID, 0)+wantKeyLineOn(secondPublicKey, secondKeyID, 1, fixtureTrail) || seedIs(u.seed) != "2" {
 		t.Errorf("after the rotation the list is %q and the seed %s", list, seedIs(u.seed))
 	}
 }
@@ -1003,7 +1003,7 @@ func TestSigningTheStartupProjectWithTheRuntime(t *testing.T) {
 		report.Signatures == nil || report.Signatures.KeyInForce != public.KeyID || report.Signatures.KeysSupplied != 1 {
 		t.Errorf("the panel reports %+v, signatures %+v; want the record signed by key %s", report, report.Signatures, public.KeyID)
 	}
-	if record.Keys == nil || record.Keys.State != keysKept || !slices.Equal(record.Keys.Public, []deskPublicKey{{public.PublicKey, public.KeyID, 0}}) {
+	if record.Keys == nil || record.Keys.State != keysKept || !slices.Equal(record.Keys.Public, []deskPublicKey{{public.PublicKey, public.KeyID, 0, ""}}) {
 		t.Errorf("the panel shows the keys %+v", record.Keys)
 	}
 	if record.Signing == nil || record.Signing.Status != "passed" {
@@ -1052,7 +1052,7 @@ func TestSigningTheStartupProjectWithTheRuntime(t *testing.T) {
 	if report := record.Report; report.Status != "valid" || report.Coverage.SignedRecords != 2 || report.Signatures == nil || report.Signatures.KeyInForce != public.KeyID {
 		t.Errorf("after the move the panel reports %+v, signatures %+v; want both records signed by key %s", report, report.Signatures, public.KeyID)
 	}
-	if record.Keys == nil || record.Keys.State != keysKept || !slices.Equal(record.Keys.Public, []deskPublicKey{{public.PublicKey, public.KeyID, 0}}) {
+	if record.Keys == nil || record.Keys.State != keysKept || !slices.Equal(record.Keys.Public, []deskPublicKey{{public.PublicKey, public.KeyID, 0, ""}}) {
 		t.Errorf("after the move the panel shows the keys %+v", record.Keys)
 	}
 	if record.Signing == nil || record.Signing.Status != "passed" {
