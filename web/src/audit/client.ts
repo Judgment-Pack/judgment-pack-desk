@@ -813,15 +813,15 @@ export const STAMPING_REASONS = [
   sourceMessage('Desk could not hand the runtime the roots it keeps for this desk, so no stamp was checked: {{reason}}.'),
   sourceMessage("A cross-site request cannot change this desk's stamping."),
   sourceMessage('The stamping settings changed while the stamp run made its checks, so it asked for no stamp. The next run uses the settings as they are now.'),
-  sourceMessage("the runtime was given no roots to check the stamps with"),
-  sourceMessage("the runtime did not check the trail"),
-  sourceMessage("the runtime did not check the stamps"),
-  sourceMessage("no stamp the runtime checked covers a record of this trail"),
-  sourceMessage("the stamps the runtime checked are of another trail than the one the run named"),
-  sourceMessage("the stamps the runtime checked reach record {{record}}, before the checkpoint the run named"),
-  sourceMessage("this trail holds no chained record at that sequence now"),
-  sourceMessage("Desk could not ask the runtime for the checkpoint at that sequence now"),
-  sourceMessage("the record at that sequence now is not the record the run named, as a trail put back to an earlier point and written since would not be")
+  sourceMessage("The runtime was given no roots to check the stamps with."),
+  sourceMessage("The runtime did not check the trail."),
+  sourceMessage("The runtime did not check the stamps."),
+  sourceMessage("No stamp the runtime checked covers a record of this trail."),
+  sourceMessage("The stamps the runtime checked are of another trail than the one the run named."),
+  sourceMessage("The stamps the runtime checked reach record {{record}}, before the checkpoint the run named."),
+  sourceMessage("This trail holds no chained record at that sequence now."),
+  sourceMessage("Desk could not ask the runtime for the checkpoint at that sequence now."),
+  sourceMessage("The record at that sequence now is not the one the run named, as where a trail was put back to an earlier point and written again since.")
 ]
 
 const sha256Form = (value: unknown): value is string => text(value) && /^sha256:[0-9a-f]{64}$/.test(value)

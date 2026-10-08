@@ -49,8 +49,8 @@ const none: Reported = { state: 'report', runtime: '0.27.1', report: unchecked, 
 const set: Reported = { ...none, report: checked, stamping: { state: 'set', settings, removeToken, passed: true, pending: 1, last: stamped, lastChecked: { checked: true } } }
 const LABEL = 'The last stamp run named the checkpoint at record 2: that is the authority’s answer to Desk’s request, not a stamp the runtime checked.'
 // What the chassis says where it does not (stamping.go, `lastRunChecked`).
-const REWRITTEN = 'the record at that sequence now is not the record the run named, as a trail put back to an earlier point and written since would not be'
-const OTHER_TRAIL = 'the stamps the runtime checked are of another trail than the one the run named'
+const REWRITTEN = 'The record at that sequence now is not the one the run named, as where a trail was put back to an earlier point and written again since.'
+const OTHER_TRAIL = 'The stamps the runtime checked are of another trail than the one the run named.'
 
 const ESTABLISHES = 'the checkpoint, and every line before it, existed by the authority’s stated time, as far as that authority is independent of the operator'
 const DOES_NOT = 'when any record was made: a stamp is an upper bound on existence; anything against an authority that colludes; revocation, where no supplied list speaks for it; anything after the last checkpoint stamped'
@@ -244,7 +244,7 @@ describe('stamping', () => {
   })
 
   it('labels the record the last run named wherever the chassis says no stamp the runtime checked reaches it, with its reason', async () => {
-    for (const [stampedState, reason] of [[{ status: 'none' }, 'no stamp the runtime checked covers a record of this trail'], [{ status: 'through', through: 1 }, 'the stamps the runtime checked reach record 1, before the checkpoint the run named']] as const) {
+    for (const [stampedState, reason] of [[{ status: 'none' }, 'No stamp the runtime checked covers a record of this trail.'], [{ status: 'through', through: 1 }, 'The stamps the runtime checked reach record 1, before the checkpoint the run named.']] as const) {
       records = [{ ...set, report: { ...checked, coverage: { ...checked.coverage, stamped: stampedState } }, stamping: { ...set.stamping!, lastChecked: { checked: false, reason } } }]
       show()
       expect(await screen.findByText(`${LABEL} ${reason}`), JSON.stringify(stampedState)).toBeTruthy()

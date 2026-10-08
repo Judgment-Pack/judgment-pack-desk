@@ -1060,15 +1060,15 @@ func sameCheckpoint(known, other *checkpointHead) bool {
 // What the decision record says where the last run's checkpoint is not one a
 // stamp the runtime checked reaches (issue #312), in Desk's words.
 const (
-	lastRunNoRoots    = "the runtime was given no roots to check the stamps with"
-	lastRunNoTrail    = "the runtime did not check the trail"
-	lastRunNotChecked = "the runtime did not check the stamps"
-	lastRunNoStamp    = "no stamp the runtime checked covers a record of this trail"
-	lastRunOtherTrail = "the stamps the runtime checked are of another trail than the one the run named"
-	lastRunBelow      = "the stamps the runtime checked reach record %d, before the checkpoint the run named"
-	lastRunGone       = "this trail holds no chained record at that sequence now"
-	lastRunUnasked    = "Desk could not ask the runtime for the checkpoint at that sequence now"
-	lastRunRewritten  = "the record at that sequence now is not the record the run named, as a trail put back to an earlier point and written since would not be"
+	lastRunNoRoots    = "The runtime was given no roots to check the stamps with."
+	lastRunNoTrail    = "The runtime did not check the trail."
+	lastRunNotChecked = "The runtime did not check the stamps."
+	lastRunNoStamp    = "No stamp the runtime checked covers a record of this trail."
+	lastRunOtherTrail = "The stamps the runtime checked are of another trail than the one the run named."
+	lastRunBelow      = "The stamps the runtime checked reach record %d, before the checkpoint the run named."
+	lastRunGone       = "This trail holds no chained record at that sequence now."
+	lastRunUnasked    = "Desk could not ask the runtime for the checkpoint at that sequence now."
+	lastRunRewritten  = "The record at that sequence now is not the one the run named, as where a trail was put back to an earlier point and written again since."
 )
 
 // lastRunChecked is whether a stamp the runtime checked reaches the very
