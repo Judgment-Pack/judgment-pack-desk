@@ -4866,14 +4866,22 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if entry.digest == "" || !hmac.Equal([]byte(s.archiveToken(entry)), []byte(token)) {' \
     '	if entry.digest == "" {'
   mutate go 'archive: the token binds no file' 'internal/desk/archive.go' \
-    'sha256Digest(entry.line), entry.object, entry.digest})' \
-    'sha256Digest(entry.line), "", entry.digest})'
+    'sha256Digest(entry.line), entry.object, entry.digest, entry.generation})' \
+    'sha256Digest(entry.line), "", entry.digest, entry.generation})'
   mutate go 'archive: the token binds no bytes' 'internal/desk/archive.go' \
-    'sha256Digest(entry.line), entry.object, entry.digest})' \
-    'sha256Digest(entry.line), entry.object, ""})'
+    'sha256Digest(entry.line), entry.object, entry.digest, entry.generation})' \
+    'sha256Digest(entry.line), entry.object, "", entry.generation})'
   mutate go 'archive: the owner'"'"'s Remove does not read the bytes again' 'internal/desk/archive.go' \
     '	if now, err := held.contentDigest(name, found); err != nil || now != entry.digest {' \
     '	if now, err := held.contentDigest(name, found); err != nil || now == "" {'
+  mutate go 'archive: a spent token confirms again' 'internal/desk/archive.go' \
+    'entry.object, entry.digest, entry.generation})' \
+    'entry.object, entry.digest, 0})'
+  mutate go 'archive: a file put back after its removal is listed as never removed' 'internal/desk/archive.go' \
+    '		if lines.removed[name] {
+			entry.Why = archiveBackWords + " " + entry.Why' \
+    '		if false {
+			entry.Why = archiveBackWords + " " + entry.Why'
   mutate go 'archive: the owner'"'"'s Remove writes no journal line' 'internal/desk/archive.go' \
     '	if err := held.appendArchiveLine(folder, removed); err != nil {' \
     '	if err := error(nil); err != nil || removed.File == "" {'

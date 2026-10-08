@@ -487,6 +487,7 @@ export async function removeArchivedKey(entry: ArchivedKey): Promise<void> {
 export const ARCHIVE_SENTENCES = [
   sourceMessage("Desk's journal of its archive holds no line for this file, so Desk cannot say why it is here."),
   sourceMessage("Desk could not read this file's bytes now, so it offers no Remove for it."),
+  sourceMessage("Desk's journal says this file was removed on your word, and it is here: the removal did not finish, or the file was put back since."),
   sourceMessage('Desk could not read its archive of keys now: {{reason}}.'),
   sourceMessage('That archived file is not in Desk\'s archive now, so nothing was removed. Check the decision record again.'),
   sourceMessage('That archived file changed after the decision record showed it, so nothing was removed. Check the decision record again.'),

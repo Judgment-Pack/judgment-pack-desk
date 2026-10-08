@@ -449,3 +449,42 @@ func TestAnArchivedFileWrittenAgainIsNotRemovedByAnOlderToken(t *testing.T) {
 		t.Errorf("a fresh token answered %d %s", w.Code, w.Body)
 	}
 }
+
+// **A Remove's token is spent once it is used** (review round 1 of #327,
+// finding 2, the reviewer's scenario). The owner removes an archived seed
+// while a second name of the same file is kept elsewhere; that file is put
+// back at its archived name, the same inode with the same bytes; the token
+// used once is refused, and the file stays. The decision record lists it
+// again, saying the journal says it was removed, with a new token, which
+// removes it on a new confirmation.
+func TestARemovalsTokenIsSpentOnceUsed(t *testing.T) {
+	s, dir, file := archivingServer(t)
+	path := filepath.Join(dir.path, archiveDirName, s.cfg.deskID, file)
+	saved := filepath.Join(t.TempDir(), "saved.seed")
+	if err := os.Link(path, saved); err != nil {
+		t.Fatal(err)
+	}
+	entry := firstArchived(t, s)
+	if w := removeOn(s, removal(entry, entry.Token), nil); w.Code != http.StatusOK {
+		t.Fatalf("the owner's Remove answered %d %s", w.Code, w.Body)
+	}
+	if err := os.Link(saved, path); err != nil {
+		t.Fatal(err)
+	}
+	if w := removeOn(s, removal(entry, entry.Token), nil); w.Code != http.StatusConflict {
+		t.Errorf("the spent token answered %d %s", w.Code, w.Body)
+	}
+	if _, err := os.Lstat(path); err != nil {
+		t.Fatalf("the file put back was removed by a spent token: %v", err)
+	}
+	back := firstArchived(t, s)
+	if back.Token == entry.Token || !strings.HasPrefix(back.Why, archiveBackWords) {
+		t.Errorf("the file put back is listed %+v", back)
+	}
+	if !strings.Contains(readFile(t, filepath.Join(dir.path, archiveDirName, s.cfg.deskID, archiveJournalName)), `"event":"removed","file":"`+file+`","rule":"owner","generation":1,`) {
+		t.Error("the journal does not say which generation the removal spent")
+	}
+	if w := removeOn(s, removal(back, back.Token), nil); w.Code != http.StatusOK {
+		t.Errorf("a new confirmation answered %d %s", w.Code, w.Body)
+	}
+}

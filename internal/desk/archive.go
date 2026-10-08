@@ -147,17 +147,20 @@ const (
 
 // archiveLine is one line of an identity's journal of its archive: an event,
 // "archived" or "removed", the archived file's name in the folder, the live
-// name it was archived from, the rule, Desk's sentence, and the time, UTC.
-// The members are in that order, as json.Marshal writes them, and a line in
-// any other spelling is read as no line.
+// name it was archived from, the rule, Desk's sentence, for a removal the
+// generation of the file's entry it consumed (review round 1 of #327,
+// finding 2), and the time, UTC. The members are in that order, as
+// json.Marshal writes them, and a line in any other spelling is read as no
+// line.
 type archiveLine struct {
-	Version string `json:"version"`
-	Event   string `json:"event"`
-	File    string `json:"file"`
-	From    string `json:"from,omitempty"`
-	Rule    string `json:"rule"`
-	Why     string `json:"why,omitempty"`
-	At      string `json:"at"`
+	Version    string `json:"version"`
+	Event      string `json:"event"`
+	File       string `json:"file"`
+	From       string `json:"from,omitempty"`
+	Rule       string `json:"rule"`
+	Why        string `json:"why,omitempty"`
+	Generation int    `json:"generation,omitempty"`
+	At         string `json:"at"`
 }
 
 // line is the journal line's one spelling.
@@ -416,9 +419,13 @@ type archivedKey struct {
 	// device and inode, and digest the SHA-256 of its bytes now (review
 	// round 1 of #327, finding 1): what the token binds. A file whose bytes
 	// could not be read now has no digest, and is offered no Remove.
-	line   []byte
-	object string
-	digest string
+	// generation is how many lines of the journal name the file (finding 2):
+	// a removal adds one, so a token is spent once it is used, and a file put
+	// back after it asks for a new confirmation.
+	line       []byte
+	object     string
+	digest     string
+	generation int
 }
 
 // auditArchive is the decision record's list of what Desk archived: given
@@ -438,6 +445,7 @@ const (
 	archiveMissingWords = "Desk's journal names this file, and it is not in the archive now: its move did not happen, or it was removed outside Desk."
 	archiveUnreadWords  = "Desk could not read its archive of keys now: %s."
 	archiveNoBytesWords = "Desk could not read this file's bytes now, so it offers no Remove for it."
+	archiveBackWords    = "Desk's journal says this file was removed on your word, and it is here: the removal did not finish, or the file was put back since."
 )
 
 // archiveListing is the decision record's list of every file Desk archived,
@@ -624,6 +632,10 @@ func (d *signingDir) archivedOf(scope, identity string) ([]archivedKey, error) {
 		} else {
 			entry.Why = archiveNoLineWords
 		}
+		entry.generation = lines.events[name]
+		if lines.removed[name] {
+			entry.Why = archiveBackWords + " " + entry.Why
+		}
 		if digest, err := d.contentDigest(filepath.Join(folder, name), file); err == nil {
 			entry.digest = digest
 		} else {
@@ -650,11 +662,12 @@ func (d *signingDir) archivedOf(scope, identity string) ([]archivedKey, error) {
 }
 
 // archiveJournal is a journal as read: for each archived file, its last line
-// that archived it; whether a later line removed it; and the files in the
-// order their first line names them.
+// that archived it; whether a later line removed it; how many lines name it;
+// and the files in the order their first line names them.
 type archiveJournal struct {
 	archived map[string]archivedLine
 	removed  map[string]bool
+	events   map[string]int
 	order    []string
 }
 
@@ -669,7 +682,7 @@ type archivedLine struct {
 // not, or that no newline ends, does not. A journal that is not there has no
 // line.
 func (d *signingDir) readArchiveJournal(folder string) (archiveJournal, error) {
-	journal := archiveJournal{archived: map[string]archivedLine{}, removed: map[string]bool{}}
+	journal := archiveJournal{archived: map[string]archivedLine{}, removed: map[string]bool{}, events: map[string]int{}}
 	data, _, err := readPrivateFile(d.root, filepath.Join(folder, archiveJournalName), archiveJournalLimit)
 	if errors.Is(err, fs.ErrNotExist) {
 		return journal, nil
@@ -693,6 +706,7 @@ func (d *signingDir) readArchiveJournal(folder string) (archiveJournal, error) {
 		if json.Unmarshal(raw, &line) != nil || !bytes.Equal(line.line(), raw) || line.Version != "1" || !archiveFileForm.MatchString(line.File) {
 			continue
 		}
+		journal.events[line.File]++
 		switch line.Event {
 		case "archived":
 			if _, seen := journal.archived[line.File]; !seen {
@@ -732,20 +746,23 @@ func (d *signingDir) contentDigest(name string, info os.FileInfo) (string, error
 // record listed it: its scope, identity and name, the digest of the journal
 // line that archived it, the file by its device and inode, and its bytes, by
 // their digest (review round 1 of #327, finding 1: a file written again in
-// place keeps its inode). It is a MAC under the desk's own review key, and
-// names its purpose, so no other token confirms it.
+// place keeps its inode), and the generation of its entry (finding 2: a
+// removal adds a line, so a token is spent once used). It is a MAC under the
+// desk's own review key, and names its purpose, so no other token confirms
+// it.
 func (s *Server) archiveToken(entry archivedKey) string {
 	payload, _ := json.Marshal(struct {
-		Purpose  string `json:"purpose"`
-		Desk     string `json:"desk"`
-		Project  string `json:"project"`
-		Scope    string `json:"scope"`
-		Identity string `json:"identity"`
-		File     string `json:"file"`
-		Line     string `json:"line"`
-		Object   string `json:"object"`
-		Content  string `json:"content"`
-	}{"remove-archived-key", s.cfg.deskID, s.projectDir, entry.Scope, entry.Identity, entry.File, sha256Digest(entry.line), entry.object, entry.digest})
+		Purpose    string `json:"purpose"`
+		Desk       string `json:"desk"`
+		Project    string `json:"project"`
+		Scope      string `json:"scope"`
+		Identity   string `json:"identity"`
+		File       string `json:"file"`
+		Line       string `json:"line"`
+		Object     string `json:"object"`
+		Content    string `json:"content"`
+		Generation int    `json:"generation"`
+	}{"remove-archived-key", s.cfg.deskID, s.projectDir, entry.Scope, entry.Identity, entry.File, sha256Digest(entry.line), entry.object, entry.digest, entry.generation})
 	mac := hmac.New(sha256.New, s.reviewKey[:])
 	mac.Write(payload)
 	return hex.EncodeToString(mac.Sum(nil))
@@ -846,7 +863,11 @@ func (s *Server) removeArchived(ctx context.Context, scope, identity, file, toke
 	if now, err := held.contentDigest(name, found); err != nil || now != entry.digest {
 		return &lockFailure{http.StatusConflict, CodeStale, "That archived file changed after the decision record showed it, so nothing was removed. Check the decision record again."}
 	}
-	removed := archiveLine{Version: "1", Event: "removed", File: file, Rule: archiveOwnerRemoved, At: archiveClock().UTC().Format(time.RFC3339Nano)}
+	// **The confirmation is spent here, under the lock** (review round 1 of
+	// #327, finding 2): the line names the generation it consumed, and adds
+	// one, so the same token never confirms another removal, of this file
+	// put back or of any other.
+	removed := archiveLine{Version: "1", Event: "removed", File: file, Rule: archiveOwnerRemoved, Generation: entry.generation, At: archiveClock().UTC().Format(time.RFC3339Nano)}
 	if err := held.appendArchiveLine(folder, removed); err != nil {
 		s.log.Printf("desk: the archived file %s of %s was not removed, because its journal line could not be written: %v", file, identity, err)
 		return &lockFailure{http.StatusInternalServerError, CodeInternal, "Nothing was removed: Desk could not record the removal in its archive's journal."}
