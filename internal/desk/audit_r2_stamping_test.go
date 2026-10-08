@@ -8,6 +8,7 @@ package desk
 // runtime skips without one.
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -132,11 +133,11 @@ func standInRun(sequence int64, digest string) stampRun {
 // stamp reaching it (valid); the record there another now (invalid,
 // checkpoint-record-mismatch); and a refusal (exit 4).
 var (
-	expectConfirmed = strings.NewReplacer(`"stamped":{"status":"through","through":2}`, `"stamped":{"status":"through","through":3}`,
-		`"checkpointed":{"status":"not-supplied"},"witnessed":0,"unwitnessed":3`, `"checkpointed":{"status":"through","through":2},"witnessed":2,"unwitnessed":1`).Replace(stampsReport)
+	expectConfirmed = headAt(strings.NewReplacer(`"stamped":{"status":"through","through":2}`, `"stamped":{"status":"through","through":3}`,
+		`"checkpointed":{"status":"not-supplied"},"witnessed":0,"unwitnessed":3`, `"checkpointed":{"status":"through","through":2},"witnessed":2,"unwitnessed":1`).Replace(stampsReport), 3)
 	expectMismatch = strings.NewReplacer(`"status":"valid"`, `"status":"invalid"`, `"stamped":{"status":"through","through":2}`, `"stamped":{"status":"through","through":3}`,
 		`"checkpointed":{"status":"not-supplied"}`, `"checkpointed":{"status":"failed"}`,
-		`"findings":[],"findingsTotal":0`, `"findings":[{"name":"checkpoint-record-mismatch","line":2,"detail":"the record at sequence 2 is not the one the checkpoint names"}],"findingsTotal":1`).Replace(stampsReport)
+		`"findings":[],"findingsTotal":0`, `"findings":[{"name":"checkpoint-record-mismatch","line":2,"detail":"the record at sequence 2 is not the one the checkpoint names"}],"findingsTotal":1`).Replace(headAt(stampsReport, 3))
 	expectRefused = `{"outputVersion":"2","tool":{"name":"jpack","version":"0.27.1"},"command":"audit verify","status":"error","diagnostics":[{"code":"JPS-AUDIT-TRAIL-READ","codeStability":"provisional","layer":"operation","severity":"error","instancePath":"","message":"The project's trail could not be read."}]}`
 )
 
@@ -185,6 +186,10 @@ func TestTheDecisionRecordHoldsTheLastRunToItsCheckpoint(t *testing.T) {
 		{"an earlier record the runtime does not check", 2, standInDigest(2), 4, expectRefused, stampChecked{Reason: lastRunExpectUnchecked}, true},
 		{"an earlier record with no checked stamp reaching it", 2, standInDigest(2), 0, strings.Replace(expectConfirmed, `"stamped":{"status":"through","through":3}`, `"stamped":{"status":"through","through":1}`, 1), stampChecked{Reason: lastRunExpectUncovered}, true},
 		{"an earlier record the held checkpoint does not reach", 2, standInDigest(2), 0, strings.Replace(expectConfirmed, `"checkpointed":{"status":"through","through":2}`, `"checkpointed":{"status":"through","through":1}`, 1), stampChecked{Reason: lastRunExpectUncovered}, true},
+		// Review round 1 of #327, finding 6: the runtime confirms the run's
+		// checkpoint in a history whose head is not the one the panel shows,
+		// as where the trail was put back between the two questions.
+		{"an earlier record confirmed in another history", 2, standInDigest(2), 0, strings.Replace(expectConfirmed, standInDigest(3), rewrittenDigest(3), 1), stampChecked{Reason: lastRunExpectMoved}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r.answersExpect(t, tc.code, tc.expect)
@@ -738,5 +743,69 @@ func TestTheEarlierRecordsAnswerIsKeptForItsHead(t *testing.T) {
 	stampingOf(t, r.ts, "")
 	if n := asked(t); n != 1 {
 		t.Errorf("after a verification that failed, the runtime was asked %d times, want once: a failure forgets what was kept", n)
+	}
+	// **A confirmation in another history is kept for no head** (review
+	// round 1 of #327, finding 6): asked again on the next load.
+	r.answersExpect(t, 0, strings.Replace(expectConfirmed, standInDigest(3), rewrittenDigest(3), 1))
+	r.s.stamping.forgetConfirmed()
+	for load := range 2 {
+		if got := stampingOf(t, r.ts, ""); got.LastChecked == nil || *got.LastChecked != (stampChecked{Reason: lastRunExpectMoved}) {
+			t.Errorf("load %d under another history says %+v", load+1, got.LastChecked)
+		}
+	}
+	if n := asked(t); n != 2 {
+		t.Errorf("two loads under another history asked the runtime %d times, want twice", n)
+	}
+}
+
+// **An older run's confirmation is kept only under the head it verified**
+// (review round 1 of #327, finding 6, the reviewer's scenario, with the
+// published runtime; skipped without one). The panel's report shows a
+// rewritten history; the runtime, asked about the run's checkpoint, reads the
+// original one, which holds it with a stamp reaching it. That answer is of
+// another history than the panel shows: not checked, and kept for no head.
+// With the rewritten history in place, the runtime refuses the checkpoint.
+func TestAnOlderRunsConfirmationIsKeptOnlyUnderTheHeadItVerified(t *testing.T) {
+	bin := requireBinary(t)
+	t.Setenv("JPACK_CONFIG", "")
+	t.Setenv("JPACK_SIGNING_KEY", "")
+	s, _ := bareServer(t, filepath.Join(t.TempDir(), "project"), filepath.Join(t.TempDir(), "config"), "")
+	s.cfg.JpackBin, s.stamping = bin, &stampScheduler{}
+	authority, err := newTestAuthority()
+	if err != nil {
+		t.Fatal(err)
+	}
+	folder, err := s.openStamping(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	folder.Close()
+	project, why := s.auditRuntime()
+	if why != "" {
+		t.Fatal(why)
+	}
+	original, originalHead := chainedTrail(fixtureTrail, "original first", "second", "third")
+	_, runCheckpoint := chainedTrail(fixtureTrail, "original first")
+	rewritten, rewrittenHead := chainedTrail(fixtureTrail, "rewritten first", "second", "third")
+	panelHead, _ := readCheckpointLine([]byte(rewrittenHead))
+	named, _ := readCheckpointLine([]byte(runCheckpoint))
+	run := &stampRun{Status: stampStamped, Trail: named.trail, Sequence: named.sequence, Digest: named.digest, checkpoint: []byte(runCheckpoint)}
+	head := checkpointHead{Identity: panelHead.trail, Sequence: panelHead.sequence, Digest: panelHead.digest}
+	roots := filepath.Join(t.TempDir(), "roots.pem")
+	writeBare(t, roots, string(authority.rootPEM()))
+	args := []string{"--tsa-roots", roots}
+	audit := filepath.Join(s.projectDir, ".desk-private", "audit")
+	writeBare(t, filepath.Join(audit, "evaluations.jsonl"), original)
+	writeBare(t, filepath.Join(audit, "stamps.jsonl"), stampLine(t, authority, originalHead))
+	if checked, why := s.expectRunCheckpoint(context.Background(), project, run, head, args); checked || why != lastRunExpectMoved {
+		t.Errorf("under another history the run is checked %v: %s", checked, why)
+	}
+	if s.stamping.confirmedAt(checkpointHead{Identity: run.Trail, Sequence: run.Sequence, Digest: run.Digest}, head) {
+		t.Error("a confirmation in another history was kept for the panel's head")
+	}
+	writeBare(t, filepath.Join(audit, "evaluations.jsonl"), rewritten)
+	writeBare(t, filepath.Join(audit, "stamps.jsonl"), stampLine(t, authority, rewrittenHead))
+	if checked, why := s.expectRunCheckpoint(context.Background(), project, run, head, args); checked || why != lastRunExpectInvalid {
+		t.Errorf("under the rewritten history the run is checked %v: %s", checked, why)
 	}
 }

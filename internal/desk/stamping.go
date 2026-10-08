@@ -1249,6 +1249,7 @@ const (
 	lastRunExpectUnchecked = "Given the checkpoint the run named, the runtime did not check the trail."
 	lastRunExpectInvalid   = "Given the checkpoint the run named, the runtime did not report every check it made passed."
 	lastRunExpectUncovered = "Given the checkpoint the run named, the runtime did not report that checkpoint held, with a checked stamp reaching it."
+	lastRunExpectMoved     = "Given the checkpoint the run named, the runtime read another history than the one the decision record shows."
 )
 
 // lastRunChecked is whether a stamp the runtime checked reaches the very
@@ -1324,7 +1325,14 @@ func (s *Server) expectRunCheckpoint(ctx context.Context, dir heldDir, run *stam
 	if s.stamping.confirmedAt(named, head) {
 		return true, ""
 	}
-	confirmed, why := s.expectOnce(ctx, dir, run, args)
+	confirmed, why, verified := s.expectOnce(ctx, dir, run, args)
+	if confirmed && verified != head {
+		// **Only under the head it verified** (review round 1 of #327,
+		// finding 6): a history put in the trail's place between the panel's
+		// verification and this one is not the one the panel shows, and its
+		// answer is kept for no head.
+		confirmed, why = false, lastRunExpectMoved
+	}
 	if confirmed {
 		s.stamping.rememberConfirmed(named, head)
 	} else {
@@ -1333,26 +1341,28 @@ func (s *Server) expectRunCheckpoint(ctx context.Context, dir heldDir, run *stam
 	return confirmed, why
 }
 
-// expectOnce is expectRunCheckpoint's one run of the runtime.
-func (s *Server) expectOnce(ctx context.Context, dir heldDir, run *stampRun, args []string) (bool, string) {
+// expectOnce is expectRunCheckpoint's one run of the runtime: whether it
+// confirmed the run's checkpoint, why not, and the head of the trail it
+// verified, as its report names it.
+func (s *Server) expectOnce(ctx context.Context, dir heldDir, run *stampRun, args []string) (bool, string, checkpointHead) {
 	line, ok := readCheckpointLine(run.checkpoint)
 	if !ok || line.trail != run.Trail || line.sequence != run.Sequence || line.digest != run.Digest || bytes.ContainsAny(run.checkpoint, "\r\n") {
-		return false, lastRunUnasked
+		return false, lastRunUnasked, checkpointHead{}
 	}
 	folder, err := s.openStamping(false)
 	if err != nil {
 		s.log.Printf("desk: the checkpoint the last stamp run of desk %s named could not be written for the runtime: %v", s.signingKeyName(), err)
-		return false, lastRunUnasked
+		return false, lastRunUnasked, checkpointHead{}
 	}
 	defer folder.Close()
 	name, err := randomStagingName(".expect-")
 	if err != nil {
-		return false, lastRunUnasked
+		return false, lastRunUnasked, checkpointHead{}
 	}
 	file, err := folder.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL|openNoFollow, custodyFileMode)
 	if err != nil {
 		s.log.Printf("desk: the checkpoint the last stamp run of desk %s named could not be written for the runtime: %v", s.signingKeyName(), err)
-		return false, lastRunUnasked
+		return false, lastRunUnasked, checkpointHead{}
 	}
 	defer folder.Remove(name)
 	_, err = file.Write(append(slices.Clone(run.checkpoint), '\n'))
@@ -1368,24 +1378,25 @@ func (s *Server) expectOnce(ctx context.Context, dir heldDir, run *stampRun, arg
 	}
 	if err != nil {
 		s.log.Printf("desk: the checkpoint the last stamp run of desk %s named could not be written for the runtime: %v", s.signingKeyName(), err)
-		return false, lastRunUnasked
+		return false, lastRunUnasked, checkpointHead{}
 	}
 	out, runErr := runRuntime(ctx, s.cfg.JpackBin, dir, append([]string{"audit", "verify", "--config", runtimeConfigName, "--format", "json", "--expect", s.stampingPath(name)}, args...)...)
 	answer, err := readAuditVerification(out, runErr)
 	if err != nil || answer.State != auditStateReport || answer.Report == nil {
-		return false, lastRunExpectUnchecked
+		return false, lastRunExpectUnchecked, checkpointHead{}
 	}
 	report := answer.Report
+	verified := checkpointHead{Identity: report.head.trail, Sequence: report.head.sequence, Digest: report.head.digest}
 	checkpointed, stamped := report.Coverage.Checkpointed, report.Coverage.Stamped
 	switch {
 	case report.Status != "valid":
-		return false, lastRunExpectInvalid
+		return false, lastRunExpectInvalid, verified
 	case report.Trail != run.Trail:
-		return false, lastRunOtherTrail
+		return false, lastRunOtherTrail, verified
 	case checkpointed.Status != "through" || checkpointed.Through < run.Sequence || stamped.Status != "through" || stamped.Through < run.Sequence:
-		return false, lastRunExpectUncovered
+		return false, lastRunExpectUncovered, verified
 	}
-	return true, ""
+	return true, "", verified
 }
 
 // record keeps run as the last, and says it in Desk's log, never with the

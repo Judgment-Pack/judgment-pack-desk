@@ -5002,6 +5002,9 @@ func (b *cappedBuffer) exceeded() bool {'
     '		// verification confirmed (issue #324).
 		s.stamping.forgetConfirmed()' \
     '		// verification confirmed (issue #324).'
+  mutate go 'audit r3 fix: an older run is confirmed under a head it did not verify' 'internal/desk/stamping.go' \
+    '	if confirmed && verified != head {' \
+    '	if confirmed && false && verified != head {'
   # **Runner's signing key (ADR-0010, section 5; runner_key.go).** A key of
   # Runner's own, never a project's or an inherited one, named on the boot
   # line only where, under the one key-custody lock on the signing folder, no

@@ -923,7 +923,8 @@ export const STAMPING_REASONS = [
   sourceMessage("The record at that sequence now is not the one the run named, as where a trail was put back to an earlier point and written again since."),
   sourceMessage("Given the checkpoint the run named, the runtime did not check the trail."),
   sourceMessage("Given the checkpoint the run named, the runtime did not report every check it made passed."),
-  sourceMessage("Given the checkpoint the run named, the runtime did not report that checkpoint held, with a checked stamp reaching it.")
+  sourceMessage("Given the checkpoint the run named, the runtime did not report that checkpoint held, with a checked stamp reaching it."),
+  sourceMessage("Given the checkpoint the run named, the runtime read another history than the one the decision record shows.")
 ]
 
 const sha256Form = (value: unknown): value is string => text(value) && /^sha256:[0-9a-f]{64}$/.test(value)
