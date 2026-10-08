@@ -149,7 +149,8 @@ const (
 // "archived" or "removed", the archived file's name in the folder, the live
 // name it was archived from, the rule, Desk's sentence, for a removal the
 // generation of the file's entry it consumed (review round 1 of #327,
-// finding 2), and the time, UTC. The members are in that order, as
+// finding 2), the SHA-256 of the file's bytes as Desk archived or removed
+// them, and the time, UTC. The members are in that order, as
 // json.Marshal writes them, and a line in any other spelling is read as no
 // line.
 type archiveLine struct {
@@ -160,6 +161,7 @@ type archiveLine struct {
 	Rule       string `json:"rule"`
 	Why        string `json:"why,omitempty"`
 	Generation int    `json:"generation,omitempty"`
+	Digest     string `json:"digest,omitempty"`
 	At         string `json:"at"`
 }
 
@@ -261,6 +263,13 @@ func (d *signingDir) archiveAs(name, kind, identity string, info os.FileInfo, re
 	if err != nil || !os.SameFile(found, info) {
 		return "", fmt.Errorf("%s was not archived: it is not the file Desk inspected", name)
 	}
+	// **Its bytes, by their digest, before and after the move** (review
+	// round 1 of #327): a file whose bytes cannot be read now is not moved;
+	// one written while it is moved is said.
+	before, err := d.contentDigest(name, info)
+	if err != nil {
+		return "", fmt.Errorf("%s was not archived: %w", name, err)
+	}
 	at := archiveClock()
 	var file string
 	for attempt := 0; ; attempt++ {
@@ -271,13 +280,16 @@ func (d *signingDir) archiveAs(name, kind, identity string, info os.FileInfo, re
 			return "", fmt.Errorf("%s was not archived: no free name in its archive folder", name)
 		}
 	}
-	line := archiveLine{Version: "1", Event: "archived", File: file, From: name, Rule: record.rule, Why: d.words(record.why), At: at.UTC().Format(time.RFC3339Nano)}
+	line := archiveLine{Version: "1", Event: "archived", File: file, From: name, Rule: record.rule, Why: d.words(record.why), Digest: before, At: at.UTC().Format(time.RFC3339Nano)}
 	if err := d.appendArchiveLine(folder, line); err != nil {
 		return "", fmt.Errorf("%s was not archived: its journal line could not be written: %w", name, err)
 	}
 	keyBetween("archive: line written")
-	if err := d.root.Rename(name, filepath.Join(folder, file)); err != nil {
+	if err := archiveRename(d.root, name, filepath.Join(folder, file)); err != nil {
 		return "", fmt.Errorf("%s was not archived: %w", name, err)
+	}
+	if after, err := d.contentDigest(filepath.Join(folder, file), info); err != nil || after != before {
+		d.say("desk: %s was moved to Desk's archive of keys as %s of %s, and its bytes changed while it was moved: the archive holds what was there after", name, file, identity)
 	}
 	_ = syncPrivateDirectory(d.root)
 	if held, err := d.root.OpenRoot(folder); err == nil {
@@ -298,6 +310,11 @@ func (d *signingDir) words(message string) string {
 	message = strings.ReplaceAll(message, held, "")
 	return strings.ReplaceAll(withoutAbsolutePaths(replaceSpans(message, pathSpans(d.path, true, held))), held, "…")
 }
+
+// archiveRename is the archive move itself: one rename within the signing
+// folder's tree. A variable only so that a test can stand in a file system
+// that refuses it, as one across devices does (EXDEV).
+var archiveRename = func(root *os.Root, from, to string) error { return root.Rename(from, to) }
 
 // say writes one line to the server's log, or to Go's where the folder was
 // held without one: every archive move is said.
@@ -460,6 +477,7 @@ const (
 	archiveUnreadWords  = "Desk could not read its archive of keys now: %s."
 	archiveNoBytesWords = "Desk could not read this file's bytes now, so it offers no Remove for it."
 	archiveBackWords    = "Desk's journal says this file was removed on your word, and it is here: the removal did not finish, or the file was put back since."
+	archiveChangedWords = "Its bytes are not the ones Desk archived: it was written since, or while Desk moved it."
 )
 
 // archiveListing is the decision record's list of every file Desk archived,
@@ -704,6 +722,9 @@ func (d *signingDir) archivedOf(scope, identity string) ([]archivedKey, error) {
 		}
 		if digest, err := d.contentDigest(filepath.Join(folder, name), file); err == nil {
 			entry.digest = digest
+			if found, ok := lines.archived[name]; ok && found.record.Digest != "" && found.record.Digest != digest {
+				entry.Why += " " + archiveChangedWords
+			}
 		} else {
 			entry.Why += " " + archiveNoBytesWords
 		}
@@ -933,7 +954,7 @@ func (s *Server) removeArchived(ctx context.Context, scope, identity, file, toke
 	// #327, finding 2): the line names the generation it consumed, and adds
 	// one, so the same token never confirms another removal, of this file
 	// put back or of any other.
-	removed := archiveLine{Version: "1", Event: "removed", File: file, Rule: archiveOwnerRemoved, Generation: entry.generation, At: archiveClock().UTC().Format(time.RFC3339Nano)}
+	removed := archiveLine{Version: "1", Event: "removed", File: file, Rule: archiveOwnerRemoved, Generation: entry.generation, Digest: entry.digest, At: archiveClock().UTC().Format(time.RFC3339Nano)}
 	if err := held.appendArchiveLine(folder, removed); err != nil {
 		s.log.Printf("desk: the archived file %s of %s was not removed, because its journal line could not be written: %v", file, identity, err)
 		return &lockFailure{http.StatusInternalServerError, CodeInternal, "Nothing was removed: Desk could not record the removal in its archive's journal."}

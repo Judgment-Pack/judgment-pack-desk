@@ -174,7 +174,7 @@ describe('the archive of keys', () => {
 
   it('names, as Desk’s own sentences, only sentences the chassis says', () => {
     const source = readFileSync(join(import.meta.dirname, '../../../internal/desk/archive.go'), 'utf8')
-    expect(ARCHIVE_SENTENCES).toHaveLength(10)
+    expect(ARCHIVE_SENTENCES).toHaveLength(11)
     for (const sentence of ARCHIVE_SENTENCES) {
       for (const part of sentence.split(/\{\{\w+\}\}/)) {
         expect(source.includes(part) ? part : `missing: ${part}`, sentence).toBe(part)

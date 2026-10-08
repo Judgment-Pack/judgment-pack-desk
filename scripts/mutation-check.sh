@@ -4863,6 +4863,20 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'archive: the list is not bounded' 'internal/desk/archive.go' \
     '	if len(listing.Entries) > archiveListLimit {' \
     '	if false {'
+  mutate go 'archive: a file written while it is archived goes unsaid' 'internal/desk/archive.go' \
+    '	if after, err := d.contentDigest(filepath.Join(folder, file), info); err != nil || after != before {' \
+    '	if after, err := d.contentDigest(filepath.Join(folder, file), info); err != nil && after != before {'
+  mutate go 'archive: a move that failed is answered as made' 'internal/desk/archive.go' \
+    '	if err := archiveRename(d.root, name, filepath.Join(folder, file)); err != nil {
+		return "", fmt.Errorf("%s was not archived: %w", name, err)' \
+    '	if err := archiveRename(d.root, name, filepath.Join(folder, file)); err != nil && false {
+		return "", fmt.Errorf("%s was not archived: %w", name, err)'
+  mutate go 'archive: the free names are not bounded' 'internal/desk/archive.go' \
+    '		} else if err != nil || attempt >= 64 {' \
+    '		} else if err != nil || attempt >= 1<<20 {'
+  mutate go 'archive: a file archived since is not said changed' 'internal/desk/archive.go' \
+    '			if found, ok := lines.archived[name]; ok && found.record.Digest != "" && found.record.Digest != digest {' \
+    '			if found, ok := lines.archived[name]; ok && false && found.record.Digest != digest {'
   mutate go 'archive: the owner'"'"'s Remove takes any token' 'internal/desk/archive.go' \
     '	if entry.digest == "" || !hmac.Equal([]byte(s.archiveToken(entry)), []byte(token)) {' \
     '	if entry.digest == "" {'

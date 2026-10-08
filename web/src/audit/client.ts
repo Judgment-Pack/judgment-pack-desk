@@ -499,6 +499,7 @@ export const ARCHIVE_SENTENCES = [
   sourceMessage("A rotation of the key kept under this name did not finish, its journal could not be read now, and this desk or project does not hold the name: Desk keeps the key, the next key and the journal at their names, and a start on the project that holds the name decides them."),
   sourceMessage("A creation of a key under this name did not finish, and this desk or project does not hold the name: Desk keeps the key, its list and its marker at their names, and a start on the project that holds the name decides them."),
   sourceMessage("Desk could not read this file's bytes now, so it offers no Remove for it."),
+  sourceMessage("Its bytes are not the ones Desk archived: it was written since, or while Desk moved it."),
   sourceMessage("Desk's journal says this file was removed on your word, and it is here: the removal did not finish, or the file was put back since."),
   sourceMessage('Desk could not read its archive of keys now: {{reason}}.'),
   sourceMessage('That archived file is not in Desk\'s archive now, so nothing was removed. Check the decision record again.'),

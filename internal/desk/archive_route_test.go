@@ -144,7 +144,7 @@ func TestTheArchivesJournalIsBoundedWhenWritten(t *testing.T) {
 	journal := filepath.Join(folder, archiveJournalName)
 	at := time.Date(2026, 10, 8, 13, 0, 0, 0, time.UTC)
 	archiveClock = func() time.Time { return at }
-	next := archiveLine{Version: "1", Event: "archived", File: archiveName("", 0, at, "keys.jsonl"), From: name, Rule: archiveCreationStopped, Why: "bounded", At: at.Format(time.RFC3339Nano)}
+	next := archiveLine{Version: "1", Event: "archived", File: archiveName("", 0, at, "keys.jsonl"), From: name, Rule: archiveCreationStopped, Why: "bounded", Digest: sha256Digest([]byte("{}\n")), At: at.Format(time.RFC3339Nano)}
 	size := int64(len(next.line()))
 	for _, tc := range []struct {
 		pad   int64
@@ -486,5 +486,92 @@ func TestARemovalsTokenIsSpentOnceUsed(t *testing.T) {
 	}
 	if w := removeOn(s, removal(back, back.Token), nil); w.Code != http.StatusOK {
 		t.Errorf("a new confirmation answered %d %s", w.Code, w.Body)
+	}
+}
+
+// **An archive move that fails leaves the file at its name** (review round 1
+// of #327): a rename refused across devices (EXDEV), an archive folder that
+// cannot be made, and an archive whose next 65 names in one instant are all
+// taken each answer an error, and the seed stays at its name with its bytes.
+func TestAnArchiveMoveThatFailsLeavesTheFile(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		prepare func(t *testing.T, dir *signingDir, id string)
+	}{
+		{"a rename across devices", func(t *testing.T, dir *signingDir, id string) {
+			was := archiveRename
+			archiveRename = func(*os.Root, string, string) error { return &os.LinkError{Op: "rename", Err: syscall.EXDEV} }
+			t.Cleanup(func() { archiveRename = was })
+		}},
+		{"an archive folder that cannot be made", func(t *testing.T, dir *signingDir, id string) {
+			writeBare(t, filepath.Join(dir.path, archiveDirName), "not a folder\n")
+		}},
+		{"every free name taken", func(t *testing.T, dir *signingDir, id string) {
+			at := time.Date(2026, 10, 8, 15, 0, 0, 0, time.UTC)
+			archiveClock = func() time.Time { return at }
+			for attempt := 0; attempt <= 64; attempt++ {
+				writeBare(t, filepath.Join(dir.path, archiveDirName, id, archiveName("", 0, at.Add(time.Duration(attempt)), "seed")), "taken\n")
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const id = "a2d00000000000000000000000000007"
+			s, _ := bareServer(t, filepath.Join(t.TempDir(), "project"), filepath.Join(t.TempDir(), "config"), id)
+			bareKeys(t, s)
+			was := archiveClock
+			t.Cleanup(func() { archiveClock = was })
+			dir, err := s.assistant.openSigning(false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer dir.Close()
+			tc.prepare(t, dir, id)
+			info, err := dir.root.Lstat(id + seedSuffix)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := dir.archive(id+seedSuffix, info, archived{identity: id, rule: archivePromoted, why: "a test's"}); err == nil {
+				t.Fatal("the move was answered as made")
+			}
+			if got := readFile(t, filepath.Join(dir.path, id+seedSuffix)); got != standInSeed+"\n" {
+				t.Errorf("the seed at its name is %q", got)
+			}
+		})
+	}
+}
+
+// **A file written while it is archived is said** (review round 1 of #327):
+// the move compares the file's bytes, by their digest, before and after, not
+// its inode alone. The seed is written again, in place, between the journal
+// line and the rename: the log says its bytes changed while it was moved,
+// and the decision record that they are not the ones Desk archived.
+func TestAFileWrittenWhileItIsArchivedIsSaid(t *testing.T) {
+	const id = "a2d00000000000000000000000000008"
+	s, logs := bareServer(t, filepath.Join(t.TempDir(), "project"), filepath.Join(t.TempDir(), "config"), id)
+	bareKeys(t, s)
+	dir, err := s.assistant.openSigning(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dir.Close()
+	info, err := dir.root.Lstat(id + seedSuffix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	testHookKeyBetween = func(at string) {
+		if at == "archive: line written" {
+			writeBare(t, filepath.Join(dir.path, id+seedSuffix), secondSeed+"\n")
+		}
+	}
+	t.Cleanup(func() { testHookKeyBetween = nil })
+	if _, err := dir.archive(id+seedSuffix, info, archived{identity: id, rule: archivePromoted, why: "a test's"}); err != nil {
+		t.Fatal(err)
+	}
+	testHookKeyBetween = nil
+	if !strings.Contains(logs.String(), "its bytes changed while it was moved") {
+		t.Errorf("the log does not say the bytes changed: %s", logs)
+	}
+	if entry := firstArchived(t, s); !strings.HasSuffix(entry.Why, archiveChangedWords) {
+		t.Errorf("the decision record lists %+v", entry)
 	}
 }

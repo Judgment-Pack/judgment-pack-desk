@@ -318,7 +318,7 @@ var custodyFiles = []string{"archive.go", "custody.go", "desks.go", "rotation.go
 // removalsAllowed is every Remove and Rename in those files, by file,
 // function and call, and why it is not a key removed on Desk's own.
 var removalsAllowed = map[string]string{
-	"archive.go (*signingDir).archiveAs Rename":              "the archive move itself, never over anything",
+	"archive.go archiveRename Rename":                        "the archive move itself, never over anything",
 	"archive.go (*signingDir).removeArchivedFile Remove":     "the owner's Remove, confirmed with a token bound to the entry's digest",
 	"rotation.go (*signingDir).placeNext Rename":             "the next seed into the current seed's name, which must hold nothing",
 	"rotation.go (*signingDir).writeJournal Remove":          "a rotation's journal it could not write whole",
@@ -369,17 +369,34 @@ func TestNoCodeRemovesAKeyOutsideTheOwnersWord(t *testing.T) {
 			t.Fatal(err)
 		}
 		custody := slices.Contains(custodyFiles, source)
+		// Each function, and each function a package variable holds (a seam
+		// a test may stand in for), by its name.
+		bodies := map[string]ast.Node{}
 		for _, decl := range file.Decls {
-			fn, ok := decl.(*ast.FuncDecl)
-			if !ok {
-				continue
+			switch decl := decl.(type) {
+			case *ast.FuncDecl:
+				name := decl.Name.Name
+				if decl.Recv != nil {
+					var recv bytes.Buffer
+					printer.Fprint(&recv, fset, decl.Recv.List[0].Type)
+					name = "(" + recv.String() + ")." + name
+				}
+				bodies[name] = decl
+			case *ast.GenDecl:
+				for _, spec := range decl.Specs {
+					value, ok := spec.(*ast.ValueSpec)
+					if !ok {
+						continue
+					}
+					for i, held := range value.Values {
+						if _, ok := held.(*ast.FuncLit); ok && i < len(value.Names) {
+							bodies[value.Names[i].Name] = held
+						}
+					}
+				}
 			}
-			name := fn.Name.Name
-			if fn.Recv != nil {
-				var recv bytes.Buffer
-				printer.Fprint(&recv, fset, fn.Recv.List[0].Type)
-				name = "(" + recv.String() + ")." + name
-			}
+		}
+		for name, fn := range bodies {
 			ast.Inspect(fn, func(n ast.Node) bool {
 				call, ok := n.(*ast.CallExpr)
 				if !ok {
