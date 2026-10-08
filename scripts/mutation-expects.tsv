@@ -279,6 +279,8 @@ go	document processing: a settings line bound is past the companion's	TestDocume
 go	document processing: a test's answer reaches the page as the companion wrote it	TestDocumentProcessingTestPreviewIsHeldToItsBounds
 go	document processing: a test's line bound is past the companion's	TestDocumentProcessingRequestLinesAreHeldToTheCompanionsBound
 go	document processing: an answer holding the save's credential is shown	TestDocumentProcessingAnswersCarryNoCredential
+go	document processing: an echo of one secret member is shown	TestDocumentProcessingRefusesAnEchoOfAServiceAccountOrAKeyPair
+go	document processing: an escaped echo of a credential is shown	TestDocumentProcessingRefusesAnEchoOfAServiceAccountOrAKeyPair
 go	document processing: any source is given the processing envelope	TestTheRelayCarriesAnOCRReadOnlyWhileTheGatewayRunsTheProcessingPlan,TestTheRelayGivesADocumentReadTheProcessingEnvelopeOnlyUnderThatPlan
 go	document processing: the connections relay reaches the document-processing companion	TestTheConnectionsRelayRefusesDocumentProcessingByName
 go	document processing: the desk's status says the other plan	TestDocumentProcessingRestartsTheLocalGatewayWhenProcessingTurnsOnOrOff

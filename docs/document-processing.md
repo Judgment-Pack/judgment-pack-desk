@@ -52,7 +52,11 @@ from Desk to this desk's own connections companion, and to nothing else:
 - No answer carries it. The companion says only that a credential is held, and
   Desk rebuilds each answer from the members it names, none of which is a
   credential; an answer that holds a credential the save carried is refused
-  whole, and the page says the settings may have been saved.
+  whole, and the page says the settings may have been saved. Desk compares
+  exact bytes: the whole credential and, of an AWS key pair or a Google
+  service account, each secret member, as typed and as an answer escapes them.
+  An echo that is split, re-cased or interrupted is not caught by Desk; the
+  gateway's own check, which normalises the text, is the one that holds those.
 - A blank credential keeps the saved one only while the processor's destination
   (its endpoint, project, location, processor, region or program) is unchanged.
   Change the destination and the credential is entered again.

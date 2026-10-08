@@ -6080,6 +6080,13 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "document processing: the connections relay reaches the document-processing companion" "$DPC" \
     '	if provider == "document-processing" {' \
     '	if false {'
+  # Review round 1, finding 2.
+  mutate go "document processing: an escaped echo of a credential is shown" "$DPH" \
+    '			secrets = append(secrets, encoded[1:len(encoded)-1])' \
+    '			_ = encoded'
+  mutate go "document processing: an echo of one secret member is shown" "$DPH" \
+    '		for _, name := range []string{"accessKeyId", "secretAccessKey", "sessionToken", "private_key", "private_key_id"} {' \
+    '		for _, name := range []string{} {'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx

@@ -369,3 +369,28 @@ func TestTheConnectionsRelayRefusesDocumentProcessingByName(t *testing.T) {
 		t.Fatalf("the relay reached the companion: %q", strings.TrimPrefix(rig.sent(), before))
 	}
 }
+
+// A Google service account and an AWS key pair hold characters an answer
+// escapes, and their secret members can be echoed alone: an answer holding
+// the private key alone (escaped, with its newlines), the secret access key
+// alone, or the whole service account (escaped, with its quotes) is refused.
+func TestDocumentProcessingRefusesAnEchoOfAServiceAccountOrAKeyPair(t *testing.T) {
+	privateKey := "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7\n-----END PRIVATE KEY-----\n"
+	google, _ := json.Marshal(map[string]string{"type": "service_account", "project_id": "work-project", "private_key_id": "9f8e7d6c5b4a39281706f5e4d3c2b1a0fedcba98",
+		"private_key": privateKey, "client_email": "ocr@work-project.iam.gserviceaccount.com", "token_uri": "https://oauth2.googleapis.com/token"})
+	secretKey := "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+	aws, _ := json.Marshal(map[string]string{"accessKeyId": "AKIAIOSFODNN7EXAMPLE", "secretAccessKey": secretKey})
+	save, _ := json.Marshal(map[string]any{"ifMatch": processingRigDigest, "config": map[string]any{"version": 1, "mode": "off", "connection": "", "timeoutSeconds": 60,
+		"connections": []map[string]any{
+			{"id": "ocr-google", "name": "Google", "kind": "google-document-ai", "enabled": true, "project": "work-project", "location": "eu", "processor": "p1", "credential": string(google)},
+			{"id": "ocr-aws", "name": "AWS", "kind": "aws-textract", "enabled": true, "region": "eu-west-1", "credential": string(aws)}}}})
+	rig := newProcessingRig(t)
+	for name, echoed := range map[string]string{"the private key alone": privateKey, "the secret access key alone": secretKey, "the whole service account": string(google)} {
+		value, _ := json.Marshal(echoed)
+		rig.answer(t, "configure", `"result":`+strings.Replace(processingSettings("off", ""), `"name":"Work scans"`, `"name":`+string(value), 1))
+		code, raw := rig.post(t, "/api/document-processing/configure", save)
+		if code != http.StatusBadGateway || bytes.Contains(raw, []byte(echoed)) || bytes.Contains(raw, value[1:len(value)-1]) {
+			t.Fatalf("%s: %d %s", name, code, raw)
+		}
+	}
+}
