@@ -161,7 +161,6 @@ go	audit fix: a rotation is recovered from whichever trail is there	TestARotatio
 go	audit fix: a rotation is recovered under an identity another folder holds	TestARotationUnderASharedIdentityIsLeft
 go	audit fix: a rotation missing from its own trail is taken for a new trail	TestATrailBegunAfterARotationIsReadAsItsOwn
 go	audit fix: a rotation never given to the runtime is held to its trail	TestARotationJournalsEachStep
-go	audit fix: a rotation records no trail in the list	TestATrailBegunAfterARotationIsReadAsItsOwn
 go	audit fix: a run keeps no record digest	TestAStampAnswerIsReadAsDocumented,TestTheSchedulerStampsATrailRestoredToAnEarlierPointAgain,TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved
 go	audit fix: a sidecar of two trails is read as one	TestNoRotationOverASidecarOfTwoTrails
 go	audit fix: a stopped migration is not finished at the next start	TestTheIdentityMovesStampingSettingsAndAStopIsFinished
@@ -198,6 +197,39 @@ go	audit fix: the sweep removes a key under a name no identity binds	TestAKeyFro
 go	audit fix: the unchained lines after the last chained one are counted	TestWhatFollowsARecordIsCountedFromTheReport
 go	audit fix: the upgrade makes the key with no identity written	TestAFailedSigningUpgradeLeavesNoKeyAndNoChange,TestAMovedProjectKeepsItsKeyAndItsPathTakesNothing,TestARotationOfTheStartupKeyFollowsWhatJpackJsonNames,TestAStoppedSigningUpgradeIsSweptAtTheNextStart,TestAnInheritedKeyHoldsTheStartupKeyStill,TestAnUpgradeNotPutBackLeavesTheKeyForTheNextStart,TestAnUpgradeWaitsForThisProjectsLockAndThenRefuses,TestChoosingTheSigningKeyWritesSixAndTheKeyTogether,TestNoPathOfTheStartupKeyReachesThePage,TestTheDecisionRecordReadsTheStartupKeyAfterTheUpgrade,TestTheSigningUpgradeWaitsForTheSigningFolder,TestTheStartFinishesARotationOfTheStartupKey,TestTheStartupKeyIsNamedByTheResolvedProject,TestTheUpgradeWritesTheIdentityBeforeTheKey
 go	audit fix: what the scheduler knows only advances	TestACheckWithRootsReplacesWhatTheSchedulerKnows,TestTheSchedulerStampsATrailRestoredToAnEarlierPointAgain
+go	audit r2 fix: a copy is taken for its original moved, by the original's absence alone	TestACopyStartedAfterItsOriginalMovedTakesNothing
+go	audit r2 fix: a copy keeps the identity it was copied with	TestAnUnresolvedIdentityWaitsForTheOwnersWord
+go	audit r2 fix: a creation whose manifest was about to be written is taken for one never published	TestACreationIsSweptOnlyWhereItWasNeverPublished
+go	audit r2 fix: a desk moved out of the desks folder is taken for one never published	TestACreationIsSweptOnlyWhereItWasNeverPublished,TestAPublishedDeskMovedOutOfTheDesksFolderKeepsItsKey
+go	audit r2 fix: a desk opened directly is not found published	TestAPublishedDeskMovedOutOfTheDesksFolderKeepsItsKey
+go	audit r2 fix: a folder other than the one the identity was written in is taken for it moved	TestACopyStartedAfterItsOriginalMovedTakesNothing
+go	audit r2 fix: a journal records a sidecar before the runtime is asked	TestARotationsRecordOfItsSidecarIsHeldToItsForm
+go	audit r2 fix: a journal records its sidecar in another form	TestARotationsRecordOfItsSidecarIsHeldToItsForm
+go	audit r2 fix: a key is offered under an unresolved identity	TestAnUnresolvedIdentityWaitsForTheOwnersWord
+go	audit r2 fix: a made desk's creation marker records nothing	TestACreationIsSweptOnlyWhereItWasNeverPublished
+go	audit r2 fix: a marker Desk cannot read decides a desk's creation	TestACreationIsSweptOnlyWhereItWasNeverPublished
+go	audit r2 fix: a new identity records no folder	TestTheIdentityMovesStampingSettingsAndAStopIsFinished
+go	audit r2 fix: a refused rotation removes its next key without the trail checked again	TestARefusedRotationKeepsItsNextKeyWhereTheTrailMoved
+go	audit r2 fix: a rotation the runtime answered is finished from its answer alone	TestARotationIsFinishedOnlyOnTheTrailItWasAnsweredFor
+go	audit r2 fix: a sidecar that merely lacks the rotation removes the next key	TestASidecarThatMerelyLacksTheRotationRemovesNoKey
+go	audit r2 fix: a start removes a next key without the trail checked again	TestARecoveryActsOnlyOnTheTrailItDecidedOn
+go	audit r2 fix: a trail renamed between its open and its lock is bound	TestARecoveryActsOnlyOnTheTrailItDecidedOn
+go	audit r2 fix: an answer's token outlives the file it was given for	TestAnUnresolvedIdentityWaitsForTheOwnersWord
+go	audit r2 fix: an identity file as long as Desk reads is refused	TestTheIdentityFileIsWrittenOnlyWithinWhatDeskReads
+go	audit r2 fix: an identity file longer than Desk reads is written	TestTheIdentityFileIsWrittenOnlyWithinWhatDeskReads
+go	audit r2 fix: an identity that waits for nothing is resolved	TestAnUnresolvedIdentityWaitsForTheOwnersWord
+go	audit r2 fix: an unresolved identity recovers and rotates	TestACopyStartedAfterItsOriginalMovedTakesNothing,TestAnUnresolvedIdentityWaitsForTheOwnersWord
+go	audit r2 fix: another file with the same bytes is the sidecar the rotation was begun beside	TestASidecarThatMerelyLacksTheRotationRemovesNoKey
+go	audit r2 fix: another folder at a desk's name is taken for the folder it was made in	TestACreationIsSweptOnlyWhereItWasNeverPublished
+go	audit r2 fix: one answer's token confirms the other	TestAnUnresolvedIdentityWaitsForTheOwnersWord
+go	audit r2 fix: other bytes are the bytes the rotation was begun beside	TestASidecarThatMerelyLacksTheRotationRemovesNoKey
+go	audit r2 fix: the list is written without the trail checked again	TestARecoveryActsOnlyOnTheTrailItDecidedOn,TestARotationIsFinishedOnlyOnTheTrailItWasAnsweredFor
+go	audit r2 fix: the manifest is written before its marker records it	TestAPublishedDeskMovedOutOfTheDesksFolderKeepsItsKey
+go	audit r2 fix: the next key is renamed without the trail checked again	TestARotationIsFinishedOnlyOnTheTrailItWasAnsweredFor
+go	audit r2 fix: the owner's answer is taken without its token	TestAnUnresolvedIdentityWaitsForTheOwnersWord
+go	audit r2 fix: the rotation records no sidecar before the runtime is asked	TestARotationJournalsEachStep
+go	audit r2 fix: the trail is bound without its lock	TestARecoveryActsOnlyOnTheTrailItDecidedOn
+go	audit r2 fix: the upgrade's identity records no folder	TestTheUpgradeWritesTheIdentityBeforeTheKey
 go	audit: a configuration Desk cannot read keeps no trail	TestAProjectThatKeepsNoTrailRunsNothing
 go	audit: a discontinuity's reason is passed on with its paths	TestThePanelQuotesNoPath
 go	audit: a failed packs schema reads as an older runtime	TestAFailedSchemaIsAnErrorAndNotAnOlderRuntime,TestTheDecisionRecordIsUnavailableWhereTheReviewIs
@@ -539,7 +571,7 @@ go	ownership is per copy rather than shared	TestACopyMadeBeforeTheHandOverCannot
 go	parents are created before the stale-digest check	TestCreateParentsDoesNotCreateOnARefusedWrite,TestCreateParentsIsBoundedByTheWalk
 go	publication: a manifest that cannot be read counts as none	TestAKeyIsRemovedAtStartOnlyByItsMarker,TestAManifestNotReadNowKeepsItsKey
 go	publication: a read that failed counts as too large	TestAManifestNotReadNowKeepsItsKey
-go	publication: existence is taken for publication	TestAManifestNotReadNowKeepsItsKey,TestAManifestThatIsNotWholeIsNotAPublication,TestAStoppedCreationLeavesNoKeyPastTheNextStart,TestTheDesksSweepAndARunnerKeyExcludeEachOther,TestTheSweepRemovesNothingWhileTheLockIsHeld,TestTheSweepRemovesOnlyWhatItInspected
+go	publication: existence is taken for publication	TestAManifestNotReadNowKeepsItsKey,TestAManifestThatIsNotWholeIsNotAPublication,TestAStoppedCreationLeavesNoKeyPastTheNextStart,TestTheSweepRemovesNothingWhileTheLockIsHeld,TestTheSweepRemovesOnlyWhatItInspected
 go	publication: the manifest is written in place	TestAStoppedCreationLeavesNoKeyPastTheNextStart
 go	publication: the marker is removed before publication	TestAManifestNotReadNowKeepsItsKey,TestAManifestThatIsNotWholeIsNotAPublication,TestAStoppedCreationLeavesNoKeyPastTheNextStart
 go	read does not require a regular file	TestReadRefusesWhatIsNotARegularFile
@@ -855,7 +887,7 @@ go	stamping: the token is not checked	TestAStampingTokenIsBoundToWhatWasShown
 go	stamping: the token is not the desk's own	TestAStampingTokenIsBoundToWhatWasShown
 go	startup desk: an inherited JPACK_CONFIG is dropped	TestANamedDeskRuntimeReadsOnlyItsOwnConfiguration
 go	startup desk: the inherited JPACK_CONFIG is not said	TestANamedDeskRuntimeReadsOnlyItsOwnConfiguration
-go	sweep: a desk that cannot be inspected loses its key	TestAKeyIsRemovedAtStartOnlyByItsMarker,TestAManifestNotReadNowKeepsItsKey
+go	sweep: a desk that cannot be inspected loses its key	TestAManifestNotReadNowKeepsItsKey
 go	sweep: a key without a marker is removed	TestAStoppedCreationLeavesNoKeyPastTheNextStart,TestTheDesksSweepAndARunnerKeyExcludeEachOther,TestTheLockIsHeldFromTheFirstLookToTheLastChange
 go	sweep: a published desk's key is removed	TestAStoppedCreationLeavesNoKeyPastTheNextStart
 go	sweep: an unpublished creation's key is left	TestAKeyCustodyLockHeldByAnotherProcess,TestAManifestThatIsNotWholeIsNotAPublication,TestAStoppedCreationLeavesNoKeyPastTheNextStart,TestDesksStartSweepsBeforeItsRunnerTakesTheLock,TestDesksStartSweepsUnderTheLock,TestNeitherSweepTouchesTheOthersKey,TestTheDesksSweepAndARunnerKeyExcludeEachOther,TestTheSweepRemovesNothingWhileTheLockIsHeld,TestTheSweepRemovesOnlyWhatItInspected
@@ -1448,6 +1480,9 @@ web	audit fix: the lines pending a stamp are said as records	src/audit/stamping.
 web	audit fix: the lines since a hand-over are said as records	src/audit/handover.test.tsx,src/audit/jobsRecord.test.tsx
 web	audit fix: the report's count since a hand-over is not used	src/audit/handover.test.tsx
 web	audit fix: the report's lines since a hand-over are said as records	src/audit/handover.test.tsx
+web	audit r2 fix: a question with one token for both answers is read	src/audit/resolveIdentity.test.tsx
+web	audit r2 fix: an answer is sent with the other answer's token	src/audit/resolveIdentity.test.tsx
+web	audit r2 fix: the question on the identity is not asked beside a report	src/audit/resolveIdentity.test.tsx
 web	blanking a nonEmptyString writes an empty string	src/packs/edit/writes.test.ts
 web	bytes that are not a document are handed to the readers	src/packs/edit/resilience.test.tsx
 web	case establishment runs again over a blocked expectation	src/research/run.test.ts
