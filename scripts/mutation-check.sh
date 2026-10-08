@@ -5752,12 +5752,14 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "search and files: a file's read-only mode is not held" "$SFA" \
     '		if info.Mode().Perm()&0o222 == 0 {' \
     '		if false {'
+  # Topic B moved both needles: a source's envelope is now set by the flag
+  # the plan launches it with; each claim is unchanged.
   mutate go "search and files: every source is given search's longer envelope" "$SLP" \
-    '		if source.ID == "web-search" {' \
-    '		if true {'
+    '		maximum := localSourceSeconds' \
+    '		maximum := localSearchSeconds'
   mutate go "search and files: search's envelope is past its bound" "$SLP" \
-    '			maximum = 130' \
-    '			maximum = 131'
+    '	localSearchSeconds     = 130' \
+    '	localSearchSeconds     = 131'
   mutate go "search and files: an outside gateway is given search's envelope" "$SRR" \
     '	if local && suffix == "acquire" {' \
     '	if suffix == "acquire" {'
@@ -5783,9 +5785,10 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "search and files: the declared directory's records are not compared by identity" "$SFA" \
     '		dirs = append(dirs, declared)' \
     '		_ = declared'
+  # Topic B added the running plan to the call; the claim is unchanged.
   mutate go "search and files: the relay's search envelope is decided as if no gateway were managed" "$SRR" \
-    'researchRequestTiming(gateway.managedLocal, suffix, body)' \
-    'researchRequestTiming(false, suffix, body)'
+    'researchRequestTiming(gateway.managedLocal, gateway.documentProcessing, suffix, body)' \
+    'researchRequestTiming(false, gateway.documentProcessing, suffix, body)'
   mutate go "search and files: a request's deadline is counted from after its body is read" "$SRR" \
     '	deadline = start.Add(budget)' \
     '	deadline = time.Now().Add(budget)'
@@ -5866,6 +5869,97 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'audit fix: a count since a hand-over is of another record' "$AFH" \
     '			held.handed = append(held.handed, heldThrough{holder: holder.ID, through: entry.Through})' \
     '			held.handed = append(held.handed, heldThrough{holder: holder.ID, through: entry.From})'
+  # Document processing (topic B): the OCR settings go only to this desk's
+  # own companion and come back without a credential; the request line is
+  # held to the companion's bound; a save that turns OCR on or off restarts
+  # the local gateway; the plan's longer envelopes are taken only as the
+  # gateway gives them, and the relay's follows the running plan.
+  DPH=internal/desk/document_processing.go
+  DPC=internal/desk/connections.go
+  DPL=internal/desk/local_gateway.go
+  DPP=internal/desk/local_gateway_plan.go
+  DPR=internal/desk/researchrelay.go
+  mutate go "document processing: a credential the companion answers reaches the page" "$DPH" \
+    '		result = settings' \
+    '		result = json.RawMessage(out)'
+  mutate go "document processing: a test's answer reaches the page as the companion wrote it" "$DPH" \
+    '		result = test' \
+    '		result = json.RawMessage(out)'
+  mutate go "document processing: an answer holding the save's credential is shown" "$DPH" \
+    '		if bytes.Contains(shown, secret) {' \
+    '		if false && bytes.Contains(shown, secret) {'
+  mutate go "document processing: a refusal is relayed in the companion's own words" "$DPH" \
+    '		if !processingErrors[word] {' \
+    '		if false {'
+  mutate go "document processing: a request with a query is carried" "$DPH" \
+    '	if r.URL.RawQuery != "" {' \
+    '	if false {'
+  mutate go "document processing: a desk file naming another gateway is not read" "$DPH" \
+    '	status := s.localGatewayStatus(raw)' \
+    '	status := s.localGatewayStatus(nil)'
+  mutate go "document processing: a preview page past 400 characters is shown" "$DPH" \
+    'utf8.RuneCountInString(page.Text) > 400' \
+    'utf8.RuneCountInString(page.Text) > 401'
+  mutate go "document processing: a save that turns OCR on or off leaves the gateway running" "$DPH" \
+    '			s.localGateway.restart()' \
+    '			_ = s.localGateway'
+  mutate go "document processing: a save that leaves OCR as it is restarts the gateway" "$DPH" \
+    '		if wanted := settings.Mode == "auto"; wanted != running {' \
+    '		if wanted := settings.Mode == "auto"; wanted != running || true {'
+  mutate go "document processing: a request line past the companion's bound is written" "$DPC" \
+    '	if bound := companionRequestBound(provider, method); bound > 0 && len(line) > bound {' \
+    '	if bound := companionRequestBound(provider, method); false && bound > 0 && len(line) > bound {'
+  mutate go "document processing: a test's line bound is past the companion's" "$DPC" \
+    '		return 6 << 20' \
+    '		return 6<<20 + 1'
+  mutate go "document processing: a settings line bound is past the companion's" "$DPC" \
+    '	return 64 << 10' \
+    '	return 64<<10 + 1'
+  mutate go "document processing: the worker's word on its plan is dropped" "$DPL" \
+    '		pin.documentProcessing = announced.DocumentProcessing' \
+    '		pin.documentProcessing = false'
+  mutate go "document processing: the desk's status says the other plan" "$DPL" \
+    '	processing := pin.documentProcessing' \
+    '	processing := !pin.documentProcessing'
+  mutate go "document processing: the relay is not told the running plan" "$DPL" \
+    'managedLocal: true, documentProcessing: pin.documentProcessing,' \
+    'managedLocal: true,'
+  mutate go "document processing: the plan is asked for without this desk's connections directory" "$DPP" \
+    '	cmd.Env = append(os.Environ(), "JPACK_CONNECTIONS_DIR="+connectionsDir)' \
+    '	cmd.Env = os.Environ()'
+  mutate go "document processing: a document source is given 150 s without its flag" "$DPP" \
+    '		maximum := localSourceSeconds' \
+    '		maximum := localProcessingSeconds'
+  mutate go "document processing: the processing envelope is past 150 s" "$DPP" \
+    '	localProcessingSeconds = 150' \
+    '	localProcessingSeconds = 151'
+  mutate go "document processing: the processing flag is taken on any source" "$DPP" \
+    '			if !documentProcessingSource(source.ID) || !source.Connections {' \
+    '			if !source.Connections {'
+  mutate go "document processing: the processing flag is taken without the connections directory" "$DPP" \
+    '			if !documentProcessingSource(source.ID) || !source.Connections {' \
+    '			if !documentProcessingSource(source.ID) {'
+  mutate go "document processing: the processing flag is taken on some document sources only" "$DPP" \
+    '	if !seen["documents"] || processing != 0 && processing != documentSources {' \
+    '	if !seen["documents"] || processing != 0 && documentSources < 0 {'
+  mutate go "document processing: a flag given twice is taken" "$DPP" \
+    '		if longSearch > 1 || documentProcessing > 1 {' \
+    '		if false {'
+  mutate go "document processing: the search flag is taken on another source" "$DPP" \
+    '			if source.ID != "web-search" {' \
+    '			if false {'
+  mutate go "document processing: web-search is given 130 s without its flag" "$DPP" \
+    '		if longSearch == 1 {' \
+    '		if longSearch == 1 || source.ID == "web-search" {'
+  mutate go "document processing: a document read is given the processing envelope under the ordinary plan" "$DPR" \
+    '		if decoded && processing && documentProcessingSource(request.Source) {' \
+    '		if decoded && documentProcessingSource(request.Source) {'
+  mutate go "document processing: any source is given the processing envelope" "$DPR" \
+    '		if decoded && processing && documentProcessingSource(request.Source) {' \
+    '		if decoded && processing {'
+  mutate go "document processing: the relay decides as if the running plan had no processing" "$DPR" \
+    'researchRequestTiming(gateway.managedLocal, gateway.documentProcessing, suffix, body)' \
+    'researchRequestTiming(gateway.managedLocal, false, suffix, body)'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -13598,6 +13692,47 @@ export function assistantTransport(id: string): Transport {
   mutate web 'audit fix: counts since a hand-over beside a refusal are read' "$AFC" \
     ' && value.repair === undefined && value.since === undefined' \
     ' && value.repair === undefined'
+  # Document processing (topic B): a credential is sent only when typed and
+  # only for its destination; status-only members are not sent; a save that
+  # restarts the gateway says so first; the running plan is said; the bounds
+  # are held before sending; OCR is offered only on the local gateway.
+  DPQ=web/src/processing/processing.ts
+  DPW=web/src/processing/ProcessingSettings.tsx
+  DPS=web/src/admin/DocumentProcessingSettings.tsx
+  DPT=web/src/documents/record.ts
+  mutate web "document processing: a blank credential is sent" "$DPQ" \
+    'credential ? { ...connection, credential } : connection' \
+    '({ ...connection, credential })'
+  mutate web "document processing: a save carries the status's own members" "$DPQ" \
+    '({ ready: _ready, credentialConfigured: _configured, credential, ...connection })' \
+    '({ credential, ...connection })'
+  mutate web "document processing: a save that restarts the gateway is not said before it" "$DPQ" \
+    "return running?.status === 'ready' && (mode === 'auto') !== (running.documentProcessing === true)" \
+    "return running?.status === 'ready' && false"
+  mutate web "document processing: a credential is kept for a changed destination" "$DPW" \
+    'const held = !!saved?.credentialConfigured && sameDestination(c, saved)' \
+    'const held = !!saved?.credentialConfigured && (sameDestination(c, saved) || true)'
+  mutate web "document processing: a typed credential stays on the page after a save" "$DPW" \
+    'onSuccess: next => { onSaved(next); setEditor(null) }' \
+    'onSuccess: next => { onSaved(next) }'
+  mutate web "document processing: the running gateway's plan is not said" "$DPW" \
+    'const on = gateway.documentProcessing === true' \
+    'const on = false'
+  mutate web "document processing: a timeout outside 10 to 120 seconds is sent" "$DPW" \
+    'const timeoutValid = Number.isInteger(current.timeoutSeconds) && current.timeoutSeconds >= low && current.timeoutSeconds <= high' \
+    'const timeoutValid = Number.isInteger(current.timeoutSeconds) || low <= high'
+  mutate web "document processing: a test PDF past 4 MiB is sent" "$DPW" \
+    'file.size > TEST_PDF_BYTES)' \
+    'file.size > TEST_PDF_BYTES + 1)'
+  mutate web "document processing: the desk's configuration is not read again after a restart" "$DPW" \
+    'void client.invalidateQueries({ queryKey: DESK_CONFIG_QUERY_KEY })' \
+    'void DESK_CONFIG_QUERY_KEY'
+  mutate web "document processing: OCR is offered while another gateway is in use" "$DPS" \
+    "{managed && local?.status === 'ready' && writable && <div className={styles.ocr}><OCRSettings /></div>}" \
+    '{writable && <div className={styles.ocr}><OCRSettings /></div>}'
+  mutate web "document processing: OCR provenance is taken on a static-text snapshot" "$DPT" \
+    "(source.format === 'static-text-v1' ? v.ocr === null && source.mediaType === 'text/html'" \
+    "(source.format === 'static-text-v1' ? source.mediaType === 'text/html'"
 fi
 
 restore

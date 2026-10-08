@@ -73,6 +73,13 @@ var (
 	// Counted from the same arrival.
 	researchSearchDeadline = 140 * time.Second
 	researchSearchIdle     = 135 * time.Second
+	// researchProcessingDeadline and researchProcessingIdle replace them for
+	// a managed local gateway's acquire from a document source, while that
+	// gateway runs a plan that gives its document sources the processing
+	// envelope of 150 seconds (local_gateway_plan.go): the plan's bound and
+	// the same margin as search's. Counted from the same arrival.
+	researchProcessingDeadline = 160 * time.Second
+	researchProcessingIdle     = 155 * time.Second
 )
 
 // researchRoutes is the closed list: the suffix the page names, and the one
@@ -271,7 +278,7 @@ func (s *Server) handleResearchRelay(w http.ResponseWriter, r *http.Request) {
 			"the request body could not be read, and nothing was sent")
 		return
 	}
-	budget, idle := researchRequestTiming(gateway.managedLocal, suffix, body)
+	budget, idle := researchRequestTiming(gateway.managedLocal, gateway.documentProcessing, suffix, body)
 	deadline = start.Add(budget)
 	ctx, cancel := context.WithDeadline(r.Context(), deadline)
 	defer cancel()
@@ -338,14 +345,22 @@ func (s *Server) handleResearchRelay(w http.ResponseWriter, r *http.Request) {
 }
 
 // Managed search needs a longer envelope. The adapter still enforces the
-// connection's own deadline; this is headroom to return its result.
-func researchRequestTiming(local bool, suffix string, body []byte) (time.Duration, time.Duration) {
+// connection's own deadline; this is headroom to return its result. So does
+// a managed document read while the running gateway's plan gives the document
+// sources the processing envelope (processing): an OCR read may take the
+// plan's 150 seconds. Without that plan its adapters keep their ordinary
+// deadlines, and so does the relay.
+func researchRequestTiming(local, processing bool, suffix string, body []byte) (time.Duration, time.Duration) {
 	if local && suffix == "acquire" {
 		var request struct {
 			Source string `json:"source"`
 		}
-		if json.Unmarshal(body, &request) == nil && request.Source == "web-search" {
+		decoded := json.Unmarshal(body, &request) == nil
+		if decoded && request.Source == "web-search" {
 			return researchSearchDeadline, researchSearchIdle
+		}
+		if decoded && processing && documentProcessingSource(request.Source) {
+			return researchProcessingDeadline, researchProcessingIdle
 		}
 	}
 	return researchDeadline, researchIdle

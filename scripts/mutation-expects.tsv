@@ -233,6 +233,33 @@ go	component versions: source worker read beside Runtime	TestSourceWorkerIdentit
 go	createParents is not bounded by what the listing can walk	TestCreateParentsIsBoundedByTheWalk,TestDepthBoundHoldsForExistingParentsToo,TestEveryCodeHasAStatusAndAWitness
 go	createParents is not opt-in (every write creates its parents)	TestEveryCodeHasAStatusAndAWitness,TestRefusalsCarryAStableCode,TestWriteIntoAMissingDirectorySaysSoRatherThanRefusingContainment,TestWriteWithoutCreateParentsStillRefusesAMissingDirectory
 go	createParents resolves a pathname instead of the pinned root	TestRetargetedProjectRootIsNotAdopted
+go	document processing: a credential the companion answers reaches the page	TestDocumentProcessingAnswersCarryNoCredential
+go	document processing: a desk file naming another gateway is not read	TestDocumentProcessingIsNeverSentWhileAnotherGatewayIsInUse
+go	document processing: a document read is given the processing envelope under the ordinary plan	TestTheRelayCarriesAnOCRReadOnlyWhileTheGatewayRunsTheProcessingPlan,TestTheRelayGivesADocumentReadTheProcessingEnvelopeOnlyUnderThatPlan
+go	document processing: a document source is given 150 s without its flag	TestLocalPlanRefusesProcessingBeyondWhatTheGatewayGives
+go	document processing: a flag given twice is taken	TestLocalPlanRefusesProcessingBeyondWhatTheGatewayGives
+go	document processing: a preview page past 400 characters is shown	TestDocumentProcessingTestPreviewIsHeldToItsBounds
+go	document processing: a refusal is relayed in the companion's own words	TestDocumentProcessingAnswersCarryNoCredential
+go	document processing: a request line past the companion's bound is written	TestDocumentProcessingRequestLinesAreHeldToTheCompanionsBound
+go	document processing: a request with a query is carried	TestDocumentProcessingRefusesWithoutASessionAnUnknownOperationOrAQuery
+go	document processing: a save that leaves OCR as it is restarts the gateway	TestDocumentProcessingRestartsTheLocalGatewayWhenProcessingTurnsOnOrOff
+go	document processing: a save that turns OCR on or off leaves the gateway running	TestDocumentProcessingRestartsTheLocalGatewayWhenProcessingTurnsOnOrOff
+go	document processing: a settings line bound is past the companion's	TestDocumentProcessingRequestLinesAreHeldToTheCompanionsBound
+go	document processing: a test's answer reaches the page as the companion wrote it	TestDocumentProcessingTestPreviewIsHeldToItsBounds
+go	document processing: a test's line bound is past the companion's	TestDocumentProcessingRequestLinesAreHeldToTheCompanionsBound
+go	document processing: an answer holding the save's credential is shown	TestDocumentProcessingAnswersCarryNoCredential
+go	document processing: any source is given the processing envelope	TestTheRelayCarriesAnOCRReadOnlyWhileTheGatewayRunsTheProcessingPlan,TestTheRelayGivesADocumentReadTheProcessingEnvelopeOnlyUnderThatPlan
+go	document processing: the desk's status says the other plan	TestDocumentProcessingRestartsTheLocalGatewayWhenProcessingTurnsOnOrOff
+go	document processing: the plan is asked for without this desk's connections directory	TestLocalPlanIsAskedWithThisDesksConnectionsDirectory
+go	document processing: the processing envelope is past 150 s	TestLocalPlanRefusesProcessingBeyondWhatTheGatewayGives
+go	document processing: the processing flag is taken on any source	TestLocalPlanRefusesProcessingBeyondWhatTheGatewayGives
+go	document processing: the processing flag is taken on some document sources only	TestLocalPlanRefusesProcessingBeyondWhatTheGatewayGives
+go	document processing: the processing flag is taken without the connections directory	TestLocalPlanRefusesProcessingBeyondWhatTheGatewayGives
+go	document processing: the relay decides as if the running plan had no processing	TestTheRelayCarriesAnOCRReadOnlyWhileTheGatewayRunsTheProcessingPlan
+go	document processing: the relay is not told the running plan	TestTheRelayCarriesAnOCRReadOnlyWhileTheGatewayRunsTheProcessingPlan
+go	document processing: the search flag is taken on another source	TestLocalPlanRefusesProcessingBeyondWhatTheGatewayGives
+go	document processing: the worker's word on its plan is dropped	TestDocumentProcessingRestartsTheLocalGatewayWhenProcessingTurnsOnOrOff
+go	document processing: web-search is given 130 s without its flag	TestLocalPlanSearchAllowsLongerEnvelopeWithoutExtendingOtherSources
 go	excluded directories are not endpoint exclusions	TestEveryCodeHasAStatusAndAWitness,TestExcludedDirectoriesAreEndpointExclusions,TestExcludedNamesMatchWholeComponentsCaseInsensitively,TestNamedDesksKeepFilesAndArtifactsSeparate,TestTheFileAPIRefusesTheHandOver
 go	excluded names match case-sensitively	TestExcludedNamesMatchWholeComponentsCaseInsensitively,TestTheFileAPIRefusesTheHandOver
 go	hand-over: a checkpoint of another trail is served	TestALineThatIsNotTheNextCheckpointServesNothing

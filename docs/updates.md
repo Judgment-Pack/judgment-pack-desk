@@ -54,8 +54,12 @@ can hand checkpoints to holders by download (PR 5), repair a trail whose last li
 incomplete (PR 6) and set a time-stamping authority for Desk to stamp with (PR 7). The README
 section "A defensible decision record" says what each part establishes and does not.
 
-Gateway is pinned to `v0.9.1` and includes `adapter-render`, required by its
-local source plan. It refuses to start where another user could replace an adapter it
+Gateway is pinned to `v0.10.0` and includes `adapter-render`, required by its
+local source plan, and the two OCR workers `ocr-tesseract` and `ocr-cloud`, which
+the document processors run beside the companion
+([document processing](document-processing.md)). Desk now asks for the plan with
+its connections directory, so the plan follows the processor and search timeouts
+set there; with neither set it is `v0.9.1`'s, byte for byte. It refuses to start where another user could replace an adapter it
 launches, or a link to its seed or credentials; the bundle's adapters, owned by the
 user who runs Desk, pass. Its Drive connection uses whole-Drive consent and Desk
 search-and-select. Upgrade the catalog, selection UI and relay together with

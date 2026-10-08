@@ -180,6 +180,57 @@ def main():
             assert result['receipt']['acquisition']['shape'] == 'command'
             assert 'Local PDF processing works.' in json.dumps(result['result'])
             request(desk + '/api/research/gateway/seal', {'session': session})
+            # Document processing (gateway v0.10.0): the settings are the local
+            # companion's, a credential entered once never comes back, and a save
+            # that turns processing on or off restarts the local gateway, whose
+            # plan then gives the document sources the processing envelope.
+            key = 'azure-isolated-test-key-5f1d0c7e9b2a4c68'
+            status = request(desk + '/api/document-processing/status', {})
+            assert status['result']['mode'] == 'off' and status['result']['connections'] == [], status
+            assert status['localGateway'] == {'status': 'ready', 'documentProcessing': False}, status
+            def configure(base, mode, connections, connection=''):
+                return request(desk + '/api/document-processing/configure', {'ifMatch': base['result']['sha256'], 'config': {
+                    'version': 1, 'mode': mode, 'connection': connection, 'connections': connections, 'timeoutSeconds': 60}})
+            azure = {'id': 'ocr-azure', 'name': 'Work scans', 'kind': 'azure-document-intelligence', 'enabled': True,
+                     'endpoint': 'https://isolated-test.cognitiveservices.azure.com'}
+            saved = configure(status, 'off', [{**azure, 'credential': key}])
+            assert key not in json.dumps(saved) and 'credential' not in saved['result']['connections'][0], saved
+            assert saved['result']['connections'][0]['credentialConfigured'] is True, saved
+            assert saved['localGateway'] == {'status': 'ready', 'documentProcessing': False}, 'a save that left processing off restarted the gateway'
+            assert request(desk + '/api/desk-config')['localGateway']['gateway']['url'] == gateway['url']
+            program = {'id': 'ocr-program', 'name': 'System program', 'kind': 'program', 'program': '/usr/bin/true', 'enabled': True}
+            on = configure(saved, 'auto', [azure, program], 'ocr-program')
+            assert on['localGateway'] == {'status': 'ready', 'documentProcessing': True, 'restarted': True}, on
+            assert on['result']['connections'][0]['credentialConfigured'] is True, 'the key was not kept for the same destination'
+            wait_for(lambda: closed(gateway['url']))
+            restarted = request(desk + '/api/desk-config')['localGateway']
+            assert restarted['documentProcessing'] is True and restarted['gateway']['signer'] == gateway['signer'], restarted
+            assert 'documentProcessing' not in restarted['gateway'], 'the plan reached the gateway the page saves'
+            connections_dir = str(config / 'jpack-desk/gateway-connections')
+            plan = json.loads(subprocess.check_output([str(bundle / 'gateway-connections'), '--local-plan'], env={**env, 'JPACK_CONNECTIONS_DIR': connections_dir}, text=True, timeout=15))
+            for source in plan['sources']:
+                if source['id'] in ('documents', 'drive', 'web', 'aws-s3'):
+                    assert '--document-processing' in source['args'] and source['timeout'] == 150, source
+                    assert source['executable'] in installed['files'], source['id']
+            assert 'ocr-tesseract' in installed['files'] and 'ocr-cloud' in installed['files'], 'the OCR workers are not bundled'
+            session = str(uuid.uuid4())
+            result = request(desk + '/api/research/gateway/acquire', {'session': session, 'source': 'documents', 'arguments': {'document': original, 'options': {'ocr': 'auto'}}})
+            assert 'Local PDF processing works.' in json.dumps(result['result']), 'a text PDF was not read under the processing plan'
+            request(desk + '/api/research/gateway/seal', {'session': session})
+            tested = request(desk + '/api/document-processing/test', {'connection': 'ocr-program', 'revision': on['result']['sha256'],
+                             'document': {'name': 'requirements.pdf', 'mediaType': 'application/pdf', 'bytes': original['bytes']}})
+            assert tested['result']['extraction'] == 'text-layer' and 'Local PDF processing works.' in tested['result']['pages'][0]['text'], tested
+            off = configure(on, 'off', [azure, program], 'ocr-program')
+            assert off['localGateway'] == {'status': 'ready', 'documentProcessing': False, 'restarted': True}, off
+            gateway = request(desk + '/api/desk-config')['localGateway']['gateway']
+            assert gateway['url'] != restarted['gateway']['url'], 'turning processing off did not restart the gateway'
+            # The key is in the gateway's own store, private, and nowhere else.
+            for folder in (config, data, project):
+                for path in folder.rglob('*'):
+                    if path.is_file() and key.encode() in path.read_bytes():
+                        assert folder == config and path.relative_to(config).parts[:3] == ('jpack-desk', 'gateway-connections', 'document-processing'), path
+                        assert path.stat().st_mode & 0o777 == 0o600, path
+            assert key.encode() not in (root / 'backend-0.log').read_bytes(), 'the key reached the backend log'
             # Managed defaults allow originals; explicit null and false disable them.
             def save_config(documents):
                 current = request(desk + '/api/desk-config')
@@ -227,7 +278,7 @@ def main():
             # Invalid configuration must not get a managed fallback.
             config_path.write_text('{broken')
             assert 'localGateway' not in request(desk + '/api/desk-config')
-            print('PASS: Drive/Gmail isolated status, fixed OAuth, cancel, grant refusal, private modes; automatic setup, two instances, signed extraction, disable/null, graceful shutdown, crash cleanup, stable identity, external preservation, invalid config refusal')
+            print('PASS: Drive/Gmail isolated status, fixed OAuth, cancel, grant refusal, private modes; automatic setup, two instances, signed extraction, document processing settings, credential custody and restart, disable/null, graceful shutdown, crash cleanup, stable identity, external preservation, invalid config refusal')
         finally:
             for proc in processes:
                 if proc.poll() is None: proc.terminate()

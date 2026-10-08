@@ -1,0 +1,86 @@
+{
+  "attachmentVersion": "1",
+  "document": {
+    "id": "sha256:db5a22e5405f1623ecb3a5956607a1f9f771453d09cf3198a160be9ae9d2df07",
+    "name": "scan.pdf",
+    "mediaType": "application/pdf",
+    "detectedMediaType": "application/pdf",
+    "size": 1056,
+    "version": "sha256:db5a22e5405f1623ecb3a5956607a1f9f771453d09cf3198a160be9ae9d2df07",
+    "encryption": null
+  },
+  "original": {
+    "retention": "inline",
+    "encoding": "base64",
+    "bytes": "JVBERi0xLjcKJeLjz9MKMSAwIG9iago8PCAvVHlwZSAvWE9iamVjdCAvU3VidHlwZSAvSW1hZ2UgL1dpZHRoIDIgL0hlaWdodCAyIC9Db2xvclNwYWNlIC9EZXZpY2VHcmF5IC9CaXRzUGVyQ29tcG9uZW50IDggIC9MZW5ndGggNCA+PgpzdHJlYW0KAP//AAplbmRzdHJlYW0KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFs0IDAgUiA2IDAgUl0gL0NvdW50IDIgPj4KZW5kb2JqCjMgMCBvYmoKPDwgIC9MZW5ndGggMzkgL0ZpbHRlciAvRmxhdGVEZWNvZGUgPj4Kc3RyZWFtCnicKlQwMzRSMFAwUDC3hNDJuQr6nrmGCi75CoFcgAAAAP//ZoAGoQplbmRzdHJlYW0KZW5kb2JqCjQgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSAvUmVzb3VyY2VzIDw8IC9YT2JqZWN0IDw8IC9JbTEgMSAwIFIgPj4gPj4gL0NvbnRlbnRzIDMgMCBSID4+CmVuZG9iago1IDAgb2JqCjw8ICAvTGVuZ3RoIDM5IC9GaWx0ZXIgL0ZsYXRlRGVjb2RlID4+CnN0cmVhbQp4nCpUMDM0UjBQMFAwt4TQybkK+p65hgou+QqBXIAAAAD//2aABqEKZW5kc3RyZWFtCmVuZG9iago2IDAgb2JqCjw8IC9UeXBlIC9QYWdlIC9QYXJlbnQgMiAwIFIgL01lZGlhQm94IFswIDAgNjEyIDc5Ml0gL1Jlc291cmNlcyA8PCAvWE9iamVjdCA8PCAvSW0xIDEgMCBSID4+ID4+IC9Db250ZW50cyA1IDAgUiA+PgplbmRvYmoKNyAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCnhyZWYKMCA4CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAxNSAwMDAwMCBuIAowMDAwMDAwMTYzIDAwMDAwIG4gCjAwMDAwMDAyMjYgMDAwMDAgbiAKMDAwMDAwMDMzNyAwMDAwMCBuIAowMDAwMDAwNDY3IDAwMDAwIG4gCjAwMDAwMDA1NzggMDAwMDAgbiAKMDAwMDAwMDcwOCAwMDAwMCBuIAp0cmFpbGVyCjw8IC9TaXplIDggL1Jvb3QgNyAwIFIgL0lEIFs8MTEyMjMzNDQ1NTY2Nzc4ODk5YWFiYmNjZGRlZWZmMDA+IDwxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmYwMD5dID4+CnN0YXJ0eHJlZgo3NTcKJSVFT0YK"
+  },
+  "content": {
+    "kind": "text",
+    "extraction": "ocr",
+    "pageCount": 2,
+    "truncated": false,
+    "chars": 19,
+    "pages": [
+      {
+        "number": 1,
+        "status": "ok",
+        "extraction": "ocr",
+        "text": "Scanned source text",
+        "chars": 19,
+        "unmapped": 0
+      },
+      {
+        "number": 2,
+        "status": "needs-ocr",
+        "extraction": "none",
+        "text": "",
+        "chars": 0,
+        "unmapped": 0
+      }
+    ]
+  },
+  "processing": {
+    "status": "partial",
+    "errors": [
+      {
+        "code": "ocr-incomplete",
+        "message": "the OCR program was asked for 2 pages and answered 1; 1 stay needs-ocr",
+        "page": null
+      }
+    ],
+    "bounds": {
+      "maxBytes": 4194304,
+      "maxPages": 500,
+      "maxTextBytes": 4194304,
+      "maxInflateBytes": 67108864,
+      "maxOcrOutputBytes": 33554432,
+      "timeoutMs": 120000
+    },
+    "durationMs": 12
+  },
+  "provenance": {
+    "adapter": {
+      "name": "adapter-web",
+      "version": "0",
+      "digest": "sha256:329e3a9ae92b73e10ccc806f7bc65481f8a6379c469b0871f5cec184449cba7a"
+    },
+    "source": {
+      "requestedUrl": "https://example.com/scan.pdf",
+      "responseDigest": "sha256:db5a22e5405f1623ecb3a5956607a1f9f771453d09cf3198a160be9ae9d2df07",
+      "kind": "web",
+      "url": "https://example.com/scan.pdf",
+      "format": "original-v1",
+      "version": "sha256:db5a22e5405f1623ecb3a5956607a1f9f771453d09cf3198a160be9ae9d2df07",
+      "mediaType": "application/pdf"
+    },
+    "observedAt": "2026-10-08T01:25:58Z",
+    "processor": "adapter-document/pdf/1",
+    "ocr": {
+      "program": "program:ocr-fixture",
+      "digest": "sha256:03144f999b8fb4f40a670c6f3a76efd5a99a184336cdcf11787a875dacf02dde",
+      "pages": [
+        1
+      ]
+    }
+  }
+}

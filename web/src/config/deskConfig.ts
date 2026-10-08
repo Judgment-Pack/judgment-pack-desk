@@ -2221,6 +2221,8 @@ export interface LocalGatewayStatus {
   status: 'ready' | 'unavailable' | 'external'
   gateway?: ResearchGatewayConfig
   problem?: string
+  /** While it runs: whether the plan the local gateway was started with reads scanned pages with OCR. */
+  documentProcessing?: boolean
 }
 
 /** Layer process-owned local settings without ever serializing its temporary URL. */

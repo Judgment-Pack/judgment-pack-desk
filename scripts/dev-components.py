@@ -29,7 +29,8 @@ spec.loader.exec_module(release)
 MANIFEST = 'dev-components.json'
 EXECUTABLES = {'jpack', 'jpack-runner', 'jpack-source-worker', 'gateway',
                'gateway-connections', 'adapter-document', 'adapter-drive',
-               'adapter-gmail', 'adapter-sources', 'adapter-web', 'adapter-render'}
+               'adapter-gmail', 'adapter-sources', 'adapter-web', 'adapter-render',
+               'ocr-tesseract', 'ocr-cloud'}
 # Executables whose Go build stamp must name their component's locked commit.
 STAMPED = {'jpack': 'runtime', 'jpack-runner': 'runner', 'jpack-source-worker': 'runner'}
 

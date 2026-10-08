@@ -18,6 +18,7 @@ import { SettingsSection } from '../ui/SettingsSection'
 import { TypedConfirmation, useConfirmDiscard } from '../shell/UnsavedChanges'
 import { useUnsavedChanges } from '../shell/DraftScope'
 import { formatStorageBytes } from './chatStorage'
+import { OCRSettings } from '../processing/ProcessingSettings'
 import styles from './DocumentProcessingSettings.module.css'
 
 type Editor = 'gateway' | 'pdf'
@@ -111,12 +112,15 @@ export function DocumentProcessingSettings() {
   return <>
     <SettingsSection title={msg('Document processing')} level={2} variant="standalone" description={msg('Extract text from uploaded PDFs.')}>
       <p className={styles.scope}>{msg('Personal · This computer')}</p>
-      <SettingRow title={managed ? msg('Local processing') : msg('Gateway')} description={managed ? msg('Extracts embedded PDF text on this computer. OCR is not included.') : msg('Shared by research and PDF processing.')}
+      <SettingRow title={managed ? msg('Local processing') : msg('Gateway')} description={!managed ? msg('Shared by research and PDF processing.') : local?.documentProcessing ? msg('Extracts PDF text on this computer, and reads scanned pages with OCR.') : msg('Extracts embedded PDF text on this computer. OCR is not included.')}
         status={managed ? local?.status === 'ready' ? msg('Ready') : msg('Unavailable') : gateway ? msg('Configured · Availability checked when used') : msg('Not configured')}
         action={<Button ref={gatewayOpener} disabled={!writable} aria-label={gateway ? msg('Manage gateway') : msg('Set up gateway')} onClick={() => open('gateway')}>{gateway || managed ? msg('Manage') : msg('Set up')}</Button>} />
       <SettingRow title={msg('PDF processing')} description={msg('Extract text from uploaded PDFs.')}
         status={!gateway ? msg('Requires a gateway') : documents?.enabled ? msg('Enabled · Up to {{size}} per file', { size: formatStorageBytes(documents.maxFileBytes) }) : msg('Disabled')}
         action={<Button ref={pdfOpener} disabled={!writable || !gateway} aria-label={msg('Manage PDF processing')} onClick={() => open('pdf')}>{msg('Manage')}</Button>} />
+      {/* Scanned pages are the local gateway's to read (gateway v0.10.0): an
+          external gateway's operator sets its own processor. */}
+      {managed && local?.status === 'ready' && writable && <div className={styles.ocr}><OCRSettings /></div>}
       {managed && local?.status === 'unavailable' && <div><Alert>{msg('Local processing is unavailable. Check the details below or use an existing gateway.')}</Alert><Disclosure title={msg('Technical details')}><p>{systemMessage(local.problem ?? '')}</p></Disclosure></div>}
       {!writable && <Alert>{msg('Settings could not be read. Reload the page before making changes.')}</Alert>}
       <p className={styles.note}>{msg('Text files can be attached without a gateway.')}</p>
@@ -149,7 +153,7 @@ export function DocumentProcessingSettings() {
             {(['maxRequestBytes', 'maxResponseBytes'] as const).map(key => <Field key={key} label={key === 'maxRequestBytes' ? msg('Gateway request limit (MiB)') : msg('Extraction response limit (MiB)')} error={fieldError(`research.documents.${key}`)}>{w => <Input {...w} type="number" step="any" min={DOCUMENT_LIMIT_BOUNDS[key][0] / MIB} max={DOCUMENT_LIMIT_BOUNDS[key][1] / MIB} value={draft.documents[key] / MIB} disabled={busy || managed} onChange={event => change({ documents: { ...draft.documents, [key]: Number(event.target.value) * MIB } })} />}</Field>)}
             <p className={styles.note}>{msg('Match limits to the gateway and document adapter. Canceling in Desk does not stop gateway work already in progress.')}</p>
           </FieldGroup></Disclosure>}
-          <p className={styles.note}>{msg('Scanned PDFs need OCR configured on the gateway.')}</p>
+          <p className={styles.note}>{managed ? msg('Scanned pages are read with the OCR processor chosen under Scanned pages.') : msg('Scanned PDFs need OCR configured on the gateway.')}</p>
         </>}
         {error && <div><Alert>{systemMessage(error)}</Alert>{problems.length === 0 && <Button variant="quiet" disabled={busy} onClick={() => void reload()}>{msg('Reload and discard changes')}</Button>}</div>}
       </FieldGroup></form>}

@@ -134,12 +134,15 @@ type documentSourceConfig struct {
 }
 
 type researchGateway struct {
-	managedLocal    bool
-	url             string
-	authority       string
-	signerPublic    string
-	maxRequestBytes int64
-	maxFileBytes    int64
+	managedLocal bool
+	// documentProcessing: the managed local gateway was started with a plan
+	// that gives its document sources the document-processing envelope.
+	documentProcessing bool
+	url                string
+	authority          string
+	signerPublic       string
+	maxRequestBytes    int64
+	maxFileBytes       int64
 }
 
 type researchSource struct {

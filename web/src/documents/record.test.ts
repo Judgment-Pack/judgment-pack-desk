@@ -59,3 +59,13 @@ it.each(['counted-pages', 'extra-error', 'unrelated-error', 'undeclared-encrypti
   }
   expect(() => readDocumentRecord(record)).toThrow()
 })
+
+// Gateway v0.10.0 (#218) admits OCR provenance on a web PDF kept as its
+// original; a static-text snapshot of a page never carries it.
+it('admits OCR on a web PDF kept as its original, never on a static-text snapshot', () => {
+  expect(readDocumentRecord(fixture('complete-web-ocr')).provenance.ocr?.program).toBe('program:ocr-fixture')
+  const snapshot = fixture('web-snapshot')
+  expect(readDocumentRecord(snapshot).provenance.ocr).toBeNull()
+  snapshot.provenance.ocr = { program: 'program:ocr-fixture', digest: 'sha256:' + '0'.repeat(64), pages: [] }
+  expect(() => readDocumentRecord(snapshot)).toThrow()
+})
