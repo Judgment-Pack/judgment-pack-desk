@@ -4408,6 +4408,16 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'audit r2 fix: an answer'"'"'s token outlives the file it was given for' "$R2SI" \
     's.projectDir, s.folderKey(), identityKey(info), sha256Digest(record.line())})' \
     's.projectDir, s.folderKey(), "", sha256Digest(record.line())})'
+  mutate go 'audit r2 fix: an answer outlives what the folder it was written in holds' "$R2SI" \
+    'sha256Digest(record.line()), former})' \
+    'sha256Digest(record.line()), ""})'
+  mutate go 'audit r2 fix: an answer is taken where the folder it was written in holds it again' "$R2SI" \
+    '	former := s.formerFolder(record)
+	if strings.HasPrefix(former, formerHolds) {
+		s.setShared()' \
+    '	former := s.formerFolder(record)
+	if strings.HasPrefix(former, formerHolds) && false {
+		s.setShared()'
   mutate go 'audit r2 fix: an identity that waits for nothing is resolved' "$R2SI" \
     '	if !s.startupUnresolved() {
 		writeJSONCoded(' \

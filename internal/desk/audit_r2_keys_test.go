@@ -991,3 +991,86 @@ func TestADamagedManifestKeepsItsKey(t *testing.T) {
 		t.Errorf("the start did not say why: %s", logged)
 	}
 }
+
+// unresolvedCopy is a bare server over a copy whose identity was written in
+// another folder, the original, now moved away: an unresolved identity, its
+// route callable directly (the reviewer's rig, review round 1 of #315). It
+// answers the server, the original's path, and the identity file.
+func unresolvedCopy(t *testing.T) (*Server, string, string) {
+	t.Helper()
+	t.Setenv("JPACK_CONFIG", "")
+	base := t.TempDir()
+	original, copied := filepath.Join(base, "original"), filepath.Join(base, "copy")
+	s, _ := bareServer(t, copied, filepath.Join(base, "config"), "")
+	identity := string(identityRecord{ID: strings.Repeat("b", 64), Path: original, Folder: "1:1"}.line())
+	writeBare(t, filepath.Join(original, ".desk-private", "project.json"), identity)
+	writeBare(t, filepath.Join(copied, ".desk-private", "project.json"), identity)
+	if err := os.Rename(original, original+" away"); err != nil {
+		t.Fatal(err)
+	}
+	s.resolveStartupIdentity()
+	if !s.startupUnresolved() {
+		t.Fatal("the copy's identity is not unresolved")
+	}
+	s.cfg.Token, s.sessions = "probe", &sessionStore{}
+	return s, original, identity
+}
+
+// resolveOn posts the owner's answer to s's route, through w.
+func resolveOn(s *Server, w http.ResponseWriter, choice, token string) {
+	request := httptest.NewRequest("POST", "http://localhost/api/project/identity", strings.NewReader(`{"choice":"`+choice+`","token":"`+token+`"}`))
+	request.Header.Set("Authorization", "Bearer probe")
+	request.Header.Set("Content-Type", "application/json")
+	s.handleResolveIdentity(w, request)
+}
+
+// **The owner's answer is bound to what the folder the identity was written
+// in holds** (review round 1 of #315, finding 3, the reviewer's scenario).
+// The answer "moved here" is shown while the original is away; the original
+// is then put back at its path: the answer is refused, the identity file is
+// not written, the copy is a copy beside it again, and nothing is asked any
+// more. A folder put at that path since, holding no identity, makes the
+// answer stale; a fresh one is taken.
+func TestAnAnswerIsBoundToWhatTheFormerFolderHolds(t *testing.T) {
+	t.Run("the original put back", func(t *testing.T) {
+		s, original, identity := unresolvedCopy(t)
+		offer := s.identityOfferNow()
+		if offer == nil {
+			t.Fatal("nothing is asked")
+		}
+		if err := os.Rename(original+" away", original); err != nil {
+			t.Fatal(err)
+		}
+		w := httptest.NewRecorder()
+		resolveOn(s, w, identityMoved, offer.Moved)
+		if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "holds it again") {
+			t.Errorf("the answer was taken: %d %s", w.Code, w.Body)
+		}
+		if got := readFile(t, filepath.Join(s.projectDir, ".desk-private", "project.json")); got != identity || s.startupBound() || !s.startupShared() {
+			t.Errorf("the identity is %q bound=%v shared=%v", got, s.startupBound(), s.startupShared())
+		}
+		if s.identityOfferNow() != nil {
+			t.Error("the copy beside its original is still asked")
+		}
+	})
+	t.Run("another folder at that path since", func(t *testing.T) {
+		s, original, identity := unresolvedCopy(t)
+		offer := s.identityOfferNow()
+		if err := os.Mkdir(original, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		w := httptest.NewRecorder()
+		resolveOn(s, w, identityMoved, offer.Moved)
+		if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "changed after the decision record showed it") {
+			t.Errorf("a stale answer was taken: %d %s", w.Code, w.Body)
+		}
+		if got := readFile(t, filepath.Join(s.projectDir, ".desk-private", "project.json")); got != identity {
+			t.Errorf("the identity was written: %q", got)
+		}
+		w = httptest.NewRecorder()
+		resolveOn(s, w, identityMoved, s.identityOfferNow().Moved)
+		if w.Code != http.StatusOK || !s.startupBound() {
+			t.Errorf("a fresh answer answered %d %s", w.Code, w.Body)
+		}
+	})
+}

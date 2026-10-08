@@ -870,15 +870,73 @@ func (s *Server) identityOfferNow() *identityOffer {
 	if err != nil || !found {
 		return nil
 	}
-	return &identityOffer{State: "unresolved", Moved: s.identityToken(identityMoved, record, info), Copy: s.identityToken(identityCopy, record, info)}
+	former := s.formerFolder(record)
+	if strings.HasPrefix(former, formerHolds) {
+		// The folder it was written in holds it again: this one is a copy
+		// beside it, and nothing waits for the owner's word.
+		return nil
+	}
+	return &identityOffer{State: "unresolved", Moved: s.identityToken(identityMoved, record, info, former), Copy: s.identityToken(identityCopy, record, info, former)}
+}
+
+// What the folder an identity was written in holds now, as the owner's answer
+// is bound to it (`formerFolder`).
+const (
+	formerAbsent     = "absent"
+	formerHere       = "here"
+	formerHolds      = "holds "
+	formerOther      = "other "
+	formerUnreadable = "unreadable"
+)
+
+// formerFolder is what the folder at record.Path, where the identity was
+// written, holds now (review round 1 of #315, finding 3): nothing there; this
+// very folder; a folder, by its device and inode, holding this identity, or
+// another or none; or that it could not be told now. The owner's answer is
+// bound to it, and refused where it changed.
+func (s *Server) formerFolder(record identityRecord) string {
+	other, err := os.OpenRoot(record.Path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return formerAbsent
+	}
+	if err != nil {
+		return formerUnreadable
+	}
+	defer other.Close()
+	there, err := other.Stat(".")
+	if err != nil {
+		return formerUnreadable
+	}
+	if here, err := s.root.Stat("."); err == nil && os.SameFile(here, there) {
+		return formerHere
+	}
+	key := identityKey(there)
+	private, _, err := openOwnFolder(other, []string{startupIdentityDir}, false, startupIdentityKept)
+	if errors.Is(err, fs.ErrNotExist) {
+		return formerOther + key
+	}
+	if err != nil {
+		return formerUnreadable
+	}
+	defer private.Close()
+	held, _, ok, err := readIdentity(private)
+	switch {
+	case err != nil:
+		return formerUnreadable
+	case ok && held.ID == record.ID:
+		return formerHolds + key
+	}
+	return formerOther + key
 }
 
 // identityToken binds the owner's answer to the identity file as the panel
 // read it: the answer, the name, the folder it names and the folder it was
-// written in, this folder by its path and its device and inode, and the file
-// itself by its device and inode and its bytes. It is a MAC under the desk's
-// own review key, and names its purpose, so no other token confirms it.
-func (s *Server) identityToken(choice string, record identityRecord, info os.FileInfo) string {
+// written in, this folder by its path and its device and inode, the file
+// itself by its device and inode and its bytes, and what the folder it was
+// written in holds now, former (`formerFolder`, review round 1 of #315). It
+// is a MAC under the desk's own review key, and names its purpose, so no
+// other token confirms it.
+func (s *Server) identityToken(choice string, record identityRecord, info os.FileInfo, former string) string {
 	payload, _ := json.Marshal(struct {
 		Purpose string `json:"purpose"`
 		Choice  string `json:"choice"`
@@ -889,7 +947,8 @@ func (s *Server) identityToken(choice string, record identityRecord, info os.Fil
 		Here    string `json:"here"`
 		File    string `json:"file"`
 		Line    string `json:"line"`
-	}{"resolve-project-identity", choice, record.ID, record.Path, record.Folder, s.projectDir, s.folderKey(), identityKey(info), sha256Digest(record.line())})
+		Former  string `json:"former"`
+	}{"resolve-project-identity", choice, record.ID, record.Path, record.Folder, s.projectDir, s.folderKey(), identityKey(info), sha256Digest(record.line()), former})
 	mac := hmac.New(sha256.New, s.reviewKey[:])
 	mac.Write(payload)
 	return hex.EncodeToString(mac.Sum(nil))
@@ -953,8 +1012,20 @@ func (s *Server) handleResolveIdentity(w http.ResponseWriter, r *http.Request) {
 		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, "This project's identity could not be read now, so nothing was changed.")
 		return
 	}
+	// **The folder it was written in, looked at again, under the lock**
+	// (review round 1 of #315, finding 3): where it holds this identity again,
+	// this folder is a copy beside it, and its identity is shared; where it
+	// holds anything else than it did when the answer was shown, the answer
+	// is stale.
+	former := s.formerFolder(record)
+	if strings.HasPrefix(former, formerHolds) {
+		s.setShared()
+		s.log.Printf("desk: the folder this project's identity was written in, %s, holds it again, so the owner's answer was not taken", record.Path)
+		writeJSONCoded(w, http.StatusConflict, CodeStale, "The folder this project's identity was written in holds it again, so this folder is a copy beside it, and nothing was changed. Check the decision record again.")
+		return
+	}
 	here := s.folderKey()
-	if here == "" || !hmac.Equal([]byte(s.identityToken(request.Choice, record, info)), []byte(request.Token)) {
+	if here == "" || !hmac.Equal([]byte(s.identityToken(request.Choice, record, info, former)), []byte(request.Token)) {
 		writeJSONCoded(w, http.StatusConflict, CodeStale, "This project's identity changed after the decision record showed it, so nothing was changed. Check the decision record again.")
 		return
 	}
