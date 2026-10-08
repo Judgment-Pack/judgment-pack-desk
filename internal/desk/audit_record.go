@@ -647,6 +647,11 @@ func (s *Server) withoutPathsIn(answer auditAnswer) auditAnswer {
 			}
 			stamping.Last = &last
 		}
+		if stamping.LastChecked != nil {
+			checked := *stamping.LastChecked
+			checked.Reason = clean(checked.Reason)
+			stamping.LastChecked = &checked
+		}
 		answer.Stamping = &stamping
 	}
 	if answer.Diagnostics != nil {
@@ -809,6 +814,13 @@ func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, err
 		return older, nil
 	}
 	answer.Stamping = s.stampingAfterVerify(stamping.view, answer.Report)
+	answer.Stamping.LastChecked = lastRunChecked(*answer.Stamping, answer.Report, func(trail string, sequence int64) (*checkpointHead, error) {
+		at, err := s.checkpointAt(ctx, dir, trail, sequence)
+		if err != nil && !errors.Is(err, errCheckpointsChanged) {
+			s.log.Printf("desk: the checkpoint the last stamp run of desk %s named could not be asked of the runtime: %v", s.signingKeyName(), err)
+		}
+		return at, err
+	})
 	answer.Runtime = schema.version
 	answer.Files = s.auditFilesPresent()
 	answer.Keys = &keys

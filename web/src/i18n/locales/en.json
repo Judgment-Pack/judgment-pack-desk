@@ -4113,5 +4113,13 @@
   "Desk gives this folder an identity of its own. What Desk keeps under the identity it was copied with, its signing key and stamping settings, stays as it is for the folder that identity was written in. This folder’s jpack.json still names that signing key until you change it.": "Desk gives this folder an identity of its own. What Desk keeps under the identity it was copied with, its signing key and stamping settings, stays as it is for the folder that identity was written in. This folder’s jpack.json still names that signing key until you change it.",
   "This folder keeps the project’s identity from now on. Desk decides what a stopped key creation or rotation left under it when it next starts.": "This folder keeps the project’s identity from now on. Desk decides what a stopped key creation or rotation left under it when it next starts.",
   "This folder has an identity of its own from now on.": "This folder has an identity of its own from now on.",
-  "This project’s identity could not be changed. Check the decision record again.": "This project’s identity could not be changed. Check the decision record again."
+  "This project’s identity could not be changed. Check the decision record again.": "This project’s identity could not be changed. Check the decision record again.",
+  "the runtime was given no roots to check the stamps with": "the runtime was given no roots to check the stamps with",
+  "the runtime did not check the stamps": "the runtime did not check the stamps",
+  "no stamp the runtime checked covers a record of this trail": "no stamp the runtime checked covers a record of this trail",
+  "the stamps the runtime checked are of another trail than the one the run named": "the stamps the runtime checked are of another trail than the one the run named",
+  "the stamps the runtime checked reach record {{record}}, before the checkpoint the run named": "the stamps the runtime checked reach record {{record}}, before the checkpoint the run named",
+  "this trail holds no chained record at that sequence now": "this trail holds no chained record at that sequence now",
+  "Desk could not ask the runtime for the checkpoint at that sequence now": "Desk could not ask the runtime for the checkpoint at that sequence now",
+  "the record at that sequence now is not the record the run named, as a trail put back to an earlier point and written since would not be": "the record at that sequence now is not the record the run named, as a trail put back to an earlier point and written since would not be"
 }
