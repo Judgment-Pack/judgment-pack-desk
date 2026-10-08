@@ -143,8 +143,13 @@ type Server struct {
 	deskCreations int
 	// reviewMu serializes this desk's lock confirmations (`handleReviewLock`)
 	// and upgrades (`handleUpgradeConfirm`), from the fresh reading to the
-	// last restore.
+	// last restore; this project's lock (project_lock.go) serializes them
+	// with every other Desk process's.
 	reviewMu sync.Mutex
+	// startup is the identity of the project Desk was started on, which
+	// names what Desk keeps for it (startup_identity.go); unused on a desk
+	// Desk made.
+	startup startupIdentity
 	// keyMu serializes what this desk does with its signing key: the
 	// decision record's reading of its keys, a rotation from the token to the
 	// marker's removal, and the finish or undo of one a stop cut short
@@ -532,6 +537,9 @@ func New(cfg Config) (*Server, error) {
 	} else {
 		s.watcher = w
 	}
+	// The identity of the project Desk was started on, before anything is
+	// kept, stamped or recovered under its name (startup_identity.go).
+	s.resolveStartupIdentity()
 	s.initJobs()
 	s.initModelProviders()
 	// This desk's stamping, off the decision path: a loop that stamps where

@@ -282,7 +282,16 @@ that they cover the pack. See "Local operational Jobs pilot" below.
   signing key of the project Desk was started on" under "A defensible decision
   record", below). Nothing is written
   before you confirm, and the configuration and the first lock are written
-  together, or every file is put back. A project that already keeps a lock, for
+  together, or every file is put back. One upgrade, or one Review and lock, runs
+  on a project at a time, whichever Desk process started it: each holds a
+  `flock` on the project's folder from its fresh reading to its last write, and
+  waits up to 10 seconds for another's, then refuses with nothing written;
+  where no such lock can be taken at all, it refuses too. A file is put back
+  only where it still holds what Desk wrote there, and the lock only where it
+  pins the configuration this upgrade or lock wrote or locked (or is no lock
+  at all), never because it was read right after the runtime ran; a file or
+  lock another writer changed since is left as it is, and the answer names
+  it. A project that already keeps a lock, for
   example one a CI step checks, is told that the new `jpack.json` is
   `config-drift` to it: commit `jpack.json` and `jpack.lock.json` together.
   Desk offers no configuration version the runtime it runs cannot read: `"4"`
@@ -598,16 +607,40 @@ runtimes before the floor (0.26.0) refusing the project, which is written at
 `"6"`. Chosen, the confirmation, under the offer's token and the signing
 folder's lock, first has the runtime make the key as a desk's is made (the
 same marker, checks and list of public keys), at
-`secrets/signing/<name>.seed`, where `<name>` is the hex SHA-256 of the
-project's resolved path, the name its Runner's state folder and Runner key
-already have; then writes `jpack.json` at `"6"` with `audit.signingKey`
+`secrets/signing/<name>.seed`, where `<name>` is the project's identity: 64
+hexadecimal characters Desk writes once, before the key, in
+`.desk-private/project.json`, the private folder the upgrade keeps out of Git,
+made open only to you where it is missing, with the folder it was written
+in. The identity moves with the project, so a project that is moved keeps its
+key, its list and its stamping settings, and a project put at its old path
+takes none of them. A copy carries the identity too: a start whose identity
+was written in another folder that still holds it takes it as shared, and
+then recovers nothing under it, makes and rotates no key for it, and says so;
+where that folder no longer holds it, the project was moved, and its
+identity is written again with its new folder. (A project
+that has no identity is named by the hex SHA-256 of its resolved path, for
+what Desk kept under that name before; a start on a project whose
+`.desk-private/` is there writes it its identity: the name of the seed its
+`jpack.json` names, where Desk keeps one, or a new one, and moves stamping
+settings kept under the path's hash to it where no key is kept there. A seed is
+never renamed, since `jpack.json` names it by its path. Runner's state stays
+named by the path: Runner scopes its store to the project's path itself.)
+Desk then writes `jpack.json` at `"6"` with `audit.signingKey`
 naming the seed, every other byte its own, through the upgrade's own write,
 and locks it; and removes the marker only once the lock is checked. The
 seed's path must name the seed made at the last moment before `jpack.json` is
 published, its bytes staged, and again before the marker goes. A failure
 at any step puts every file back and removes the key; a stopped upgrade's
-marker is cleared at the next start on that project, which keeps the key only
-where `jpack.json` names it. The decision record then reads the project as a
+marker is cleared at the next start on that project, wherever it is then,
+which keeps the key where `jpack.json` names it. It removes the key only where
+the marker binds the creation to this project and this upgrade: the marker
+records the identity, the project's folder and the digest of the `jpack.json`
+the upgrade set out to replace, and all three must be as found, under an
+identity no other folder holds. Anything else leaves the key, its list and
+its marker, and the log, the offer and the decision record say so; a marker
+under a path's hash loses only itself, where `jpack.json` names its seed. An
+upgrade that does not complete takes its key away before the identity, and
+keeps the identity wherever the key, or what its creation made, is left. The decision record then reads the project as a
 desk with a key: it passes its public keys to `audit verify`, shows them, and
 offers rotation, except while `JPACK_SIGNING_KEY` is inherited, which the
 runtime takes over the configuration's key, and except where `jpack.json`
@@ -921,7 +954,7 @@ on the decision path waits for a stamp, and it confirms that proposal, on
 this desk, against the settings as Desk read them, once. Desk keeps the
 settings outside the project, in its own configuration folder under
 `stamping/` and the desk's name (its id, or, for the project Desk was started
-on, the SHA-256 of its path), in owner-only files read back whole and held to
+on, its identity, as its key is named), in owner-only files read back whole and held to
 their record before any of it is used; settings it cannot read are said, and
 none of them is used. It never writes `audit.timestampAuthority` into
 `jpack.json`: it passes the address as `--tsa`. Desk, the resident process,

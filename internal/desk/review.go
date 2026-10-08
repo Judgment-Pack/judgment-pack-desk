@@ -843,8 +843,14 @@ func (s *Server) handleReviewLock(w http.ResponseWriter, r *http.Request) {
 }
 
 // lockConfirmed locks what the review the token names showed, or puts the
-// previous lock back.
+// previous lock back, under this project's lock (project_lock.go) from the
+// fresh reading to the lock put back (issue #284).
 func (s *Server) lockConfirmed(ctx context.Context, dir heldDir, token string) (any, *lockFailure) {
+	unlock, failure := s.lockProjectFor(ctx, "a review's lock", "locked")
+	if failure != nil {
+		return nil, failure
+	}
+	defer unlock()
 	snap, err := s.readSnapshot()
 	if err != nil || !hmac.Equal([]byte(s.reviewToken(snap)), []byte(token)) {
 		return nil, &lockFailure{http.StatusConflict, CodeStale, "The project changed after you reviewed it, so nothing was locked. Review it again."}
@@ -852,14 +858,16 @@ func (s *Server) lockConfirmed(ctx context.Context, dir heldDir, token string) (
 	lockErr := lockRuntimeProjectAt(ctx, s.cfg.JpackBin, dir)
 	locked := false
 	if lockErr == nil {
-		if after, err := s.readReviewFile(runtimeLockName); err == nil {
-			if pinned, _, err := lockedSet(after); err == nil && pinned.equal(snap.set) {
+		if after := s.readProjectFile(runtimeLockName); after.err == nil && after.present {
+			if pinned, _, err := lockedSet(after.data); err == nil && pinned.equal(snap.set) {
 				locked = true
 			}
 		}
 	}
 	if !locked {
-		restoreErr := s.restoreLock(snap.lock, snap.hasLock)
+		s.writes.Lock()
+		restoreErr := s.restoreLock(snap.lock, snap.hasLock, snap.set.Config)
+		s.writes.Unlock()
 		message := "A file changed while it was being locked, so the previous lock was put back and nothing else was written. Review it again."
 		status, code := http.StatusConflict, CodeStale
 		if lockErr != nil {
@@ -885,18 +893,21 @@ func (s *Server) lockConfirmed(ctx context.Context, dir heldDir, token string) (
 }
 
 // restoreLock puts the previous lock's bytes back, or removes the lock where
-// there was none, under the file API's rules for the path.
-func (s *Server) restoreLock(previous []byte, hadLock bool) error {
+// there was none, under the file API's rules for the path, only over a lock
+// that pins config, the digest of the configuration the transaction wrote or
+// locked (`putBack`, `pinsConfig`; issue #284, review round 1 of #296): a
+// lock of another configuration is another writer's, and is left as it is,
+// however soon after the transaction's runtime it was read. Where the lock
+// is as it was before, there is nothing to put back.
+func (s *Server) restoreLock(previous []byte, hadLock bool, config string) error {
+	before := projectFile{data: previous, present: hadLock}
 	if err := s.refuseSymlinkedPath(runtimeLockName); err != nil {
 		return err
 	}
-	if hadLock {
-		return s.atomicWrite(runtimeLockName, previous)
+	if now := s.readProjectFile(runtimeLockName); now.err == nil && now.holds(before) {
+		return nil
 	}
-	if err := s.root.Remove(runtimeLockName); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	return nil
+	return s.putBack(runtimeLockName, pinsConfig(config), before)
 }
 
 // lockRuntimeProjectAt runs `packs lock` over the project's configuration,

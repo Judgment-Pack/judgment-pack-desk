@@ -470,7 +470,10 @@ func TestAFailedUpgradeLockPutsEveryFileBack(t *testing.T) {
 		{"the runtime refuses, where there was no lock", refuse, nil, false, 500, "The stand-in refuses"},
 		{"the runtime refuses, over a lock", refuse, map[string]string{"jpack.lock.json": priorLock}, false, 500, "The stand-in refuses"},
 		{"the runtime refuses, where there was no .gitignore", refuse, map[string]string{".gitignore": ""}, false, 500, "The stand-in refuses"},
-		{"the lock pins another configuration", "", map[string]string{"jpack.lock.json": priorLock}, true, 409, "A file changed while the project was being locked"},
+		// Review round 1 of #296: a lock of another configuration than the
+		// one the upgrade wrote is not the upgrade's, whenever it was read,
+		// and is left, and said; every other file is put back.
+		{"the lock pins another configuration", "", map[string]string{"jpack.lock.json": priorLock}, true, 500, "jpack.lock.json: " + errLockNotOurs.Error()},
 		{"a pack changes while the runtime locks", "  printf 'changed' > packs/b.json", nil, false, 409, "A file changed while the project was being locked"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -489,10 +492,16 @@ func TestAFailedUpgradeLockPutsEveryFileBack(t *testing.T) {
 			}
 			rig.locks(t, upgradeLock(t, pinnedFrom, pinned, bothPacks))
 			status, data := confirmUpgrade(t, ts, "", answer.Token, true)
-			if status != tc.status || !bytes.Contains(data, []byte(tc.says)) || !bytes.Contains(data, []byte("every file was put back")) {
+			if status != tc.status || !bytes.Contains(data, []byte(tc.says)) || !tc.pinsOld && !bytes.Contains(data, []byte("every file was put back")) {
 				t.Fatalf("the confirmation answered %d %s", status, data)
 			}
 			after := treeOf(t, project)
+			if tc.pinsOld {
+				if got := after["jpack.lock.json"].data; got != string(upgradeLock(t, pinnedFrom, pinned, bothPacks)) {
+					t.Errorf("the lock of another configuration was not left: %q", got)
+				}
+				before["jpack.lock.json"] = after["jpack.lock.json"]
+			}
 			if tc.name == "a pack changes while the runtime locks" {
 				before["packs/b.json"] = after["packs/b.json"]
 			}

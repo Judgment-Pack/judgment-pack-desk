@@ -742,6 +742,15 @@ func TestALockOfAnythingElseIsPutBack(t *testing.T) {
 				}
 				return
 			}
+			// **A lock of another configuration is another writer's** (review
+			// round 1 of #296): it is left, and said, however soon after the
+			// runtime ran it was read.
+			if tc.name == "another configuration" {
+				if status != http.StatusInternalServerError || !bytes.Contains(data, []byte(errLockNotOurs.Error())) || readFile(t, filepath.Join(project, "jpack.lock.json")) != string(want) {
+					t.Errorf("a lock of another configuration answered %d %s", status, data)
+				}
+				return
+			}
 			if status != http.StatusConflict || !bytes.Contains(data, []byte("previous lock was put back")) {
 				t.Errorf("a lock of %s answered %d %s", tc.name, status, data)
 			}
