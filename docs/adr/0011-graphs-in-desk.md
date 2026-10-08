@@ -117,7 +117,9 @@ every other member through, in value and order, and never moves
 
 **The guarded writer.** Project Files writes through one transaction
 (`commitWriteLocked`, `internal/desk/files.go`):
-- under a per-path write lock, it reads what is there and compares its digest
+- under Desk's one write mutex (`s.writes`; one mutex for every write, not one
+  per path, because a path is a spelling), it reads what is there and compares
+  its digest
   with the digest the writer started from: a stale base is refused with both
   digests, and a create that finds a file is refused as `exists`;
 - the read-only decision refuses the runtime's lock, the audit records, and
@@ -167,7 +169,7 @@ execution, shared-user permissions and AI agent loops are not implemented."
   verify` and the `audit` commands (ADR-0009, ADR-0010).
 - The proposal stays the assistant's only sink (ADR-0001). Every write is the
   owner's, through the guarded writer.
-- Exact bytes from the runtime to the page, and no path on the page.
+- Exact bytes from the runtime to the page, and no absolute path on the page.
 - With a runtime that cannot do a thing, Desk hides or disables it and says
   so, and never pretends.
 
@@ -196,17 +198,17 @@ for that request, and passes the `path` the listing reports for that id. An id
 the listing does not have is refused. A path from the page is never passed to
 the runtime.
 
-Desk's Go runs each command through `runRuntime`, as ADR-0010, section 8, sets
-out:
-- in the directory Desk holds, with `--config jpack.json`;
-- without `JPACK_CONFIG`, and, for a desk Desk made, without
-  `JPACK_SIGNING_KEY`;
-- for at most 20 seconds and 64 KiB of answer. An answer over the bound is
-  refused, never truncated.
+Desk's Go runs each command through `runRuntime`:
+- in the directory Desk holds, with `--config jpack.json`, and without
+  `JPACK_CONFIG`, and, for a desk Desk made, without `JPACK_SIGNING_KEY`, as
+  ADR-0010, section 8, sets out;
+- for at most 20 seconds and 64 KiB of answer (`runtimeCommandTimeout` and
+  `runtimeAnswerLimit`, `internal/desk/runtime.go`). An answer over the bound
+  is refused, never truncated.
 
 Desk's Go hands the page each answer as the runtime printed it, never decoded
-and re-encoded on the way, with one exception: a message that names a path
-from the root of a file system is redacted (section 2).
+and re-encoded on the way, with one exception: an absolute path is redacted,
+in a message and in a path-bearing member alike (section 2).
 
 Where Desk was started under a `JPACK_CONFIG` that names another project, the
 commands are unavailable, as in ADR-0009's review step.
@@ -218,8 +220,9 @@ commands are unavailable, as in ADR-0009's review step.
   every diagnostic's message. They are the runtime's English, marked
   `lang="en"`, as the decision record shows the runtime's sentences.
 - **`conformanceClaimReference`** is shown as what it is, a locator for the
-  file that states the runtime's claim, in the words the pack evaluation view
-  already uses (`web/src/components/EvaluationView.tsx`).
+  file that states the runtime's claim, in the same terms the pack evaluation
+  view uses (`web/src/components/EvaluationView.tsx`), naming the graph's
+  packs where that view names "this pack".
 - **Desk's own label** on every graph page and result is the one word
   "Experimental", beside the runtime's members. Where a payload carries no
   sentence (`list`, `explain`, `validate`), its `kind` is that payload's own
@@ -228,12 +231,17 @@ commands are unavailable, as in ADR-0009's review step.
   "Evidence" appears only as the runtime's name for an evidence requirement and
   its availability. A `valid` or `passed` status is shown as the runtime's
   status, never as Desk's verdict.
-- **No path reaches the page.** Every runtime message passes the existing
-  redaction (`withoutPathsUnder`, `displayedPath`). The measured payloads name
-  the project's files by relative path (`onboarding.graph.json`, and in a
-  message "The file \"vendor-onboarding-0.1.0.pack.json\" could not be read
-  [...]"). A message that names a path from the root of a file system is
-  redacted as every other runtime message is.
+- **No absolute path reaches the page.** Every runtime message passes the
+  existing redaction (`withoutPathsUnder`, `displayedPath`). The payloads'
+  path-bearing members do too: `path`, `rowsPath`, `graphPath`, `configPath`
+  and `steps[].path`. A relative one is shown as given; an absolute one is
+  redacted. The lab's payloads named its files by relative path
+  (`onboarding.graph.json`, and in a message "The file
+  \"vendor-onboarding-0.1.0.pack.json\" could not be read [...]"), but a
+  `jpack.json` that declares a graph by an absolute path gets that path back
+  verbatim in `list`'s and `validate`'s `path` (measured in review). The views
+  Desk has today show `path` and `rowsPath` from the inventory; row 1 brings
+  them under the same rule.
 
 ### 3. Row 1: the inventory and the plan, read-only
 
@@ -309,8 +317,9 @@ Where the prompt's text names a tool or a terminal command the assistant does
 not have in Desk, the host tools stand in for `validate` and `explain`. The
 prompt's step 6, rows for the graph, is shown to the owner as text, and Desk
 writes no rows file in this line. The declaration carries no `rows` member: one
-that names a file that is not there is a failed check, as `jpackConfig.ts` says
-of a pack's `matrix`.
+that names a file that is not there passes `graph validate` (`valid`, exit 0,
+measured in review), and the `graph test` walk then reports that graph as a
+`mismatch`.
 
 **What the owner sees before anything is written:**
 - the graph document's bytes, at a path the owner confirms;
@@ -319,13 +328,20 @@ of a pack's `matrix`.
   The new file is made as Create pack makes it: one `graphs` entry added, every
   other member carried through in value and order (`jpackConfig.ts`).
 
-**The writes, on one confirmation:**
-- They take the project's folder lock, as the upgrade and Review and lock do,
-  because they write `jpack.json`.
-- The graph document is written first, through the guarded writer, as a
-  create. It is refused as `exists` if anything is at that path.
-- `jpack.json` is written next, through the guarded writer, with the digest of
-  the bytes the owner saw. It is refused as `stale` if the file changed since.
+**The writes, on one confirmation,** through a new Go route row 3 adds,
+`POST /api/graphs/write`. The Project Files route takes no folder lock, so
+the graph writes do not go through it:
+- The route takes the project's folder lock (`project_lock.go`), as the
+  upgrade and Review and lock do, because it writes `jpack.json`. It holds the
+  lock from its first read to its last write, and releases it on every path.
+- Under that lock it runs both commits through `commitWriteLocked`, the
+  transaction Project Files uses, each under Desk's one write mutex, and never
+  with `override`, as `useProjectFileSave` holds for Project Files' own saves.
+- The graph document is written first, as a create. It is refused as `exists`
+  if anything is at that path.
+- `jpack.json` is written next, with the digest of the `jpack.json` Desk read,
+  against which the difference was shown. It is refused as `stale` if the file
+  changed since.
 - Each is an atomic write, under the read-only decision.
 - Desk writes exactly the graph bytes whose `graphSha256` the findings shown
   reported, or nothing.
@@ -336,25 +352,36 @@ of a pack's `matrix`.
 **Never written by row 3:**
 - `configVersion`. At `"1"` Desk writes no declaration. It says that `graphs`
   needs `"2"` or later (runtime ADR-0017), and that the upgrade offer
-  (ADR-0009, section 4) is where the version moves.
+  (ADR-0009, section 4) is where the version moves. That offer moves it to
+  `"5"`, and with it turns on `requireReviewed` and the audit trail and makes
+  the first Review and lock, each listed before anything is written; the
+  sentence says so.
 - The lock, the audit records, a pack, or any file the read-only decision
   holds.
 
 A change to a graph already declared is the same session against that
-document's bytes. It is one write with the digest the owner saw, and
-`jpack.json` is left as it is.
+document's bytes. It is one write through the same route, with the digest of
+the document Desk read, and `jpack.json` is left as it is.
 
 **The reviewed set.** A written declaration changes `jpack.json`, and a
-written graph changes a declared file. Where the project sets
-`requireReviewed`, the runtime then refuses, until the next Review and lock,
-every deciding run by decision id after a change to `jpack.json`
-(`config-drift`), and every deciding run of a graph whose document changed
-(runtime ADR-0041 names the graph document among what a deciding graph run
-consults). Desk shows the lock line, and, where `requireReviewed` is set, the
-sentence it already has: "A change to jpack.json holds every pack: until the
-next lock, the runtime refuses every deciding run by decision id. Rehearsals
-and tests are not affected." It says nothing of its own about whether the graph
-is in the set. Review and lock covers it.
+written graph changes a declared file. Where the project keeps a lock
+(`jpack.lock.json`), whether or not it sets `requireReviewed`, the runtime then
+refuses deciding runs until the next Review and lock (measured in review at
+configVersion `"3"` with a lock and no `requireReviewed`):
+- after a change to `jpack.json`, every deciding run by decision id,
+  `JPS-LOCK-VERIFY` `config-drift`. Desk shows the lock line and the sentence
+  it already has: "A change to jpack.json holds every pack: until the next
+  lock, the runtime refuses every deciding run by decision id. Rehearsals and
+  tests are not affected."
+- after a change to a declared graph alone, `jpack.json` is unchanged, so that
+  sentence does not fit: the runtime refuses a deciding run of that graph as
+  `document-drift` (runtime ADR-0041 names the graph document among what a
+  deciding graph run consults). Desk shows the lock line, and says that
+  deciding runs of this graph are refused as `document-drift` until the next
+  Review and lock.
+
+Desk says nothing of its own about whether the graph is in the set. Review and
+lock covers it.
 
 **Whom `requireReviewed` binds** (runtime ADR-0044, point 5). The assistant
 still cannot edit the configuration or its lock: every write is the owner's
@@ -392,20 +419,23 @@ as a result. A refusal is shown in the runtime's words, the node it names
 included.
 
 **Which revision.** The composite carries `graphId` and `graphVersion` and no
-digest (measured). Runtime ADR-0030, point 4, leaves the member off the
-evaluate envelope because the audit record carries the graph's digest, and a
-rehearsal writes no record. So Desk says which configured graph it ran, not
-which bytes.
+digest of the graph document (measured). Its one digest,
+`artifact.bundleDigest`, is the digest of the runtime's own bundled artifacts,
+not of the graph, and Desk never shows it as the graph's. Runtime ADR-0030,
+point 4, leaves a graph digest off the evaluate envelope because the audit
+record carries it, and a rehearsal writes no record. So Desk says which
+configured graph it ran, not which bytes.
 
 **What it writes:** nothing. Measured: a rehearsal makes no audit directory
 and appends no line. It consults no reviewed set, so a graph whose files
 drifted can be rehearsed. Desk keeps neither the inputs nor the result: they
 live on the page until it is left.
 
-**The trail stays silent, and says so.** Nothing in the trail speaks of a
-rehearsal. The decision record shows the runtime's sentence about that silence
-verbatim (above). Desk adds no record and no count of its own, as runtime
-ADR-0048's answer 3 settled for Desk's Tests workspace.
+**The trail stays silent, and `audit verify` says so.** Nothing in the trail
+speaks of a rehearsal. `audit verify`'s report says the trail is silent about
+rehearsals, and the decision record shows that sentence verbatim (above). Desk
+adds no record of its own, and no count: runtime ADR-0048's answer 3 found
+that a rehearsal counter would be "noise and not evidence".
 
 ### 7. Numbers
 
@@ -435,9 +465,11 @@ ADR-0048's answer 3 settled for Desk's Tests workspace.
   nothing, executes nothing, and fetches nothing" (`CONFORMANCE.md`), and its
   graph tools hold no credential and open no connection (runtime ADR-0029).
 - **Row 3 sends to the model provider the owner configured** the prompt, the
-  owner's statement, the chosen packs' text and the host tools' answers, as any
-  assistant session sends its prompt (ADR-0001, the model relay). Nothing else
-  leaves Desk.
+  owner's statement, the chosen packs' text, the host tools' answers, and the
+  answers of the five ToolGate tools the model calls (`get_schema`,
+  `list_examples`, `get_example`, `validate` and `experimental_evaluate`, the
+  last of which can evaluate any declared pack by its id), as in any assistant
+  session (ADR-0001, the model relay). Nothing else leaves Desk.
 - **The assistant's writes are the owner's,** on the owner's confirmation,
   through the guarded writer.
 
@@ -453,15 +485,15 @@ what the runtime's non-normative payload states.
 | The plan (`explain`) | the order and the feeds the runtime would apply to the document it read | that the graph runs; which bytes it read, since it carries no digest; anything about a decision |
 | The findings (`validate`) | the runtime's checks over the bytes whose digest it reports | that any pack is valid, since `validate` validates no pack; that an edge means what the policy says |
 | A matrix run | what the project's own rows did, over the bytes whose digest it reports | that the rows are right; that coverage is complete; an authorization |
-| A rehearsal | the runtime's experimental answer for the facts the owner typed | a decision; a record in the trail; a reviewed set consulted; which bytes, since it carries no digest; that the facts are true |
+| A rehearsal | the runtime's experimental answer for the facts the owner typed | a decision; a record in the trail; a reviewed set consulted; which bytes, since it carries no digest of the graph document (`artifact.bundleDigest` is the runtime's bundle's); that the facts are true |
 | The assistant's proposal | what the model proposed, and the runtime's findings and plan over it | that the composition is faithful to the policy; the prompt calls it "a PROPOSAL for a human to review" |
 | Desk's label "Experimental" | — | anything: it repeats the runtime's own marker |
 
 **What this record does not establish:**
-- **No conformance claim.** No JPS version defines a graph, a composition or a
-  composite result. The runtime's claim is stated, in full and only, in its
-  `CONFORMANCE.md`. Desk states no part of it, and shows the payload's
-  reference to that file as a locator.
+- **Desk makes no conformance claim.** No JPS version defines a graph, a
+  composition or a composite result. The runtime's claim is stated, in full
+  and only, in its `CONFORMANCE.md`. Desk states no part of it, and shows the
+  payload's reference to that file as a locator.
 - **No record in the trail.** Every graph evaluation in Desk is a rehearsal,
   and every other graph command writes nothing.
 - **No execution of a graph by Jobs.** A job over a graph is a Runner decision,
@@ -500,8 +532,8 @@ Row 3 adds `prompts/get` for `author_graph`.
 - Bad: a declaration written moves `jpack.json` off the reviewed set until the
   next Review and lock, and the project's other callers are refused
   meanwhile.
-- Bad: the plan and a rehearsal carry no digest, so Desk cannot say which bytes
-  either was about.
+- Bad: the plan and a rehearsal carry no digest of the graph document, so Desk
+  cannot say which bytes either was about.
 - Bad: Desk's Go depends on the JSON of four more runtime commands, all under
   `outputVersion` `"2"`.
 - Neutral: rows 1 and 2 add no write, and row 4 writes nothing.
@@ -527,10 +559,10 @@ the runtime Desk pins, `v0.27.1`.
 
 | Row | What | Needs | Review | Status, 2026-10-08 |
 |---|---|---|---|---|
-| 1 | Inventory and plan, read-only: `validate`'s findings, the Plan view from `explain`, the inventory's and the document's `kind` and `experimental` | nothing | none | not started |
+| 1 | Inventory and plan, read-only: `validate`'s findings, the Plan view from `explain`, the inventory's and the document's `kind` and `experimental` | nothing | a second-reviewer round on the Go route: the id resolution, the redaction of messages and path members, the bounds | not started |
 | 2 | Matrix rows and coverage, held to this record: `kind`, `experimental` and `conformanceClaimReference` beside the `label`; Desk's own sentences checked | nothing | a second-reviewer round on the claims shown | not started; the view it holds shipped in #1, #4, #5 and #6 |
-| 3 | Authoring through the assistant: `author_graph`, two host tools over the proposal, and the graph document and its declaration written through the guarded writer on the owner's confirmation | 1 | a second-reviewer round on the file writes | not started |
-| 4 | Rehearsal evaluation: `graph evaluate --rehearsal` with the owner's inputs, shown with the runtime's labels, written nowhere | 1 | a second-reviewer round on the claims | not started |
+| 3 | Authoring through the assistant: `author_graph`, two host tools over the proposal, and the graph document and its declaration written on the owner's confirmation by a new route, `POST /api/graphs/write`, under the project's folder lock, through `commitWriteLocked`, never with `override` | 1 | a second-reviewer round on the file writes | not started |
+| 4 | Rehearsal evaluation: `graph evaluate --rehearsal` with the owner's inputs, shown with the runtime's labels, written nowhere | 1; standard input for `runRuntime` from 3, or row 4 adds it | a second-reviewer round on the claims | not started |
 
 Not in this line:
 - a job over a graph (question 1);
