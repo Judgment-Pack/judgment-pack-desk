@@ -1935,8 +1935,9 @@ func (s *Server) handleRotateKey(w http.ResponseWriter, r *http.Request) {
 // phases: checkRotation reads, and changes nothing; makeRotation acts on what
 // it read. The caller holds the desk's key lock across both, and this holds
 // the signing folder's lock across both (signing_lock.go): it waits for it a
-// bounded time, and then refuses in plain words. Where no lock can be taken
-// here, it rotates as it would with one.
+// bounded time, and then refuses in plain words. **Where no lock can be
+// taken here, it rotates nothing** (review round 1 of #327, finding 4): the
+// archive's look-then-move holds only under the lock.
 func (s *Server) rotateKey(ctx context.Context, project heldDir, token string) (*rotationAnswer, *lockFailure) {
 	dir, openErr := s.assistant.openSigning(false)
 	if openErr == nil {
@@ -1946,7 +1947,8 @@ func (s *Server) rotateKey(ctx context.Context, project heldDir, token string) (
 		case errors.Is(err, errSigningBusy):
 			return nil, &lockFailure{http.StatusConflict, CodeBadRequest, "Nothing was rotated: " + signingBusyWords}
 		case err != nil:
-			s.log.Printf("desk: desk %s's key is rotated without the signing folder's lock: %v", s.signingKeyName(), err)
+			s.log.Printf("desk: desk %s's key was not rotated, because the signing folder's lock was not taken: %v", s.signingKeyName(), err)
+			return nil, &lockFailure{http.StatusConflict, CodeBadRequest, "Nothing was rotated: " + noSigningLockWords}
 		default:
 			defer unlock()
 		}

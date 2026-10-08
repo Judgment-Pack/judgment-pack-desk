@@ -4749,8 +4749,8 @@ func (b *cappedBuffer) exceeded() bool {'
   # lock"` runs exactly these.
   SL=internal/desk/signing_lock.go
   mutate go "signing lock: a creation takes no lock" internal/desk/desks.go \
-    '			unlock, err := lockSigningWithin(ctx, dir, signingLockWait)' \
-    '			unlock, err := func() {}, error(nil)'
+    '			unlock, err = lockSigningWithin(ctx, dir, signingLockWait)' \
+    '			unlock, err = func() {}, error(nil)'
   mutate go "signing lock: a creation lets the lock go before its marker goes" internal/desk/desks.go \
     '			key.unlock, handedOver = unlock, true' \
     '			key.unlock, handedOver = nil, false'
@@ -4891,6 +4891,28 @@ func (b *cappedBuffer) exceeded() bool {'
 		return kept(err)' \
     '	if err := d.root.Link(stagedName, name); err != nil {
 		return nil, err'
+  mutate go 'archive: a rotation goes on where no lock can be taken' 'internal/desk/rotation.go' \
+    '			return nil, &lockFailure{http.StatusConflict, CodeBadRequest, "Nothing was rotated: " + noSigningLockWords}' \
+    '			_ = noSigningLockWords'
+  mutate go 'archive: a desk'"'"'s key is made where no lock can be taken' 'internal/desk/desks.go' \
+    '			if err != nil {
+				// **No key without the lock** (review round 1 of #327,
+				// finding 4): the desk is made unsigned, and says why.
+				dir.Close()' \
+    '			if err != nil {
+				err, unlock = nil, func() {}
+			}
+			if err != nil {
+				dir.Close()'
+  mutate go 'archive: the project'"'"'s key is made where no lock can be taken' 'internal/desk/startup_key.go' \
+    '	if err != nil {
+		// **No key without the lock** (review round 1 of #327, finding 4).
+		dir.Close()' \
+    '	if err != nil {
+		unlock, err = func() {}, nil
+	}
+	if err != nil {
+		dir.Close()'
   mutate go 'archive: the owner'"'"'s Remove writes no journal line' 'internal/desk/archive.go' \
     '	if err := held.appendArchiveLine(folder, removed); err != nil {' \
     '	if err := error(nil); err != nil || removed.File == "" {'

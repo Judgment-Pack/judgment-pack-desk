@@ -490,22 +490,28 @@ func (s *Server) makeDeskFolder(ctx context.Context, folder *os.Root, entry, id 
 			dir.Close()
 			err = errors.New("the path of Desk's signing folder is not valid UTF-8, which jpack.json cannot name")
 		}
-		if err != nil {
-			s.log.Printf("desk: no signing key is kept for the new desk %s: %v", id, err)
-			gates.unsigned(fmt.Sprintf(unsignedByCustody, strings.TrimRight(s.custodyWords(err.Error()), ".")))
-		} else {
-			// The signing folder's lock, from before the marker until the
-			// marker is removed (`madeKey.close`), so that no other Desk
-			// process's sweep removes the key meanwhile (issue #230).
-			unlock, err := lockSigningWithin(ctx, dir, signingLockWait)
+		// The signing folder's lock, from before the marker until the
+		// marker is removed (`madeKey.close`), so that no other Desk
+		// process's sweep archives the key meanwhile (issue #230).
+		unlock := func() {}
+		if err == nil {
+			unlock, err = lockSigningWithin(ctx, dir, signingLockWait)
 			if errors.Is(err, errSigningBusy) {
 				dir.Close()
 				return deskGates{}, &deskFailure{http.StatusConflict, CodeBadRequest, "The desk was not created: " + signingBusyWords}
 			}
 			if err != nil {
-				s.log.Printf("desk: the new desk %s's key is made without the signing folder's lock: %v", id, err)
-				unlock = func() {}
+				// **No key without the lock** (review round 1 of #327,
+				// finding 4): the desk is made unsigned, and says why.
+				dir.Close()
+				s.log.Printf("desk: the signing folder's lock was not taken for the new desk %s: %v", id, err)
+				err = errors.New(strings.TrimRight(noSigningLockWords, "."))
 			}
+		}
+		if err != nil {
+			s.log.Printf("desk: no signing key is kept for the new desk %s: %v", id, err)
+			gates.unsigned(fmt.Sprintf(unsignedByCustody, strings.TrimRight(s.custodyWords(err.Error()), ".")))
+		} else {
 			// Released however the creation ends before its key holds the
 			// lock, a panic included, as a stopped process releases it.
 			handedOver := false
