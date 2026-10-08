@@ -607,3 +607,48 @@ func TestACustodyFolderMovedIntoTheProjectIsStillCustody(t *testing.T) {
 		})
 	}
 }
+
+// **A journal line Desk does not write is damage** (review round 1 of #335,
+// finding 2, the reviewer's scenario). A line in its one spelling, ended by
+// a newline, whose event Desk does not know ("removex"), is counted as
+// damage: the record offers no Remove and says why, and a Remove with the
+// token given before is refused, the file kept. So is a line of a known
+// event without the members it carries: a removal by no owner, an archive
+// move by no rule Desk has.
+func TestAJournalLineDeskDoesNotWriteIsDamage(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		line func(file string) archiveLine
+	}{
+		{"an unknown event", func(file string) archiveLine {
+			return archiveLine{Version: "1", Event: "removex", File: file, Rule: archiveOwnerRemoved, Generation: 1, Digest: sha256Digest(nil), At: "2026-10-08T12:00:03Z"}
+		}},
+		{"a removal by no owner", func(file string) archiveLine {
+			return archiveLine{Version: "1", Event: "removed", File: file, Rule: archivePromoted, Generation: 1, Digest: sha256Digest(nil), At: "2026-10-08T12:00:03Z"}
+		}},
+		{"a move by a rule Desk has not", func(file string) archiveLine {
+			return archiveLine{Version: "1", Event: "archived", File: file, From: "x.seed", Rule: "elsewhere", Digest: sha256Digest(nil), At: "2026-10-08T12:00:03Z"}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, dir, file := archivingServer(t)
+			folder := filepath.Join(archiveDirName, s.cfg.deskID)
+			entry := firstArchived(t, s)
+			appendBare(t, filepath.Join(dir.path, folder, archiveJournalName), string(tc.line(file).line()))
+			read, err := dir.readArchiveJournal(folder)
+			if err != nil || read.damaged != 1 {
+				t.Errorf("the journal reads %d lines of damage: %v", read.damaged, err)
+			}
+			now := firstArchived(t, s)
+			if now.Token != "" || !strings.Contains(now.Why, archiveDamagedWords) {
+				t.Errorf("the record offers %q and says %q", now.Token, now.Why)
+			}
+			if w := removeOn(s, removal(entry, entry.Token), nil); w.Code != http.StatusConflict {
+				t.Errorf("a Remove answered %d %s", w.Code, w.Body)
+			}
+			if _, err := os.Lstat(filepath.Join(dir.path, folder, file)); err != nil {
+				t.Errorf("the archived seed went: %v", err)
+			}
+		})
+	}
+}

@@ -165,6 +165,32 @@ type archiveLine struct {
 	At         string `json:"at"`
 }
 
+// archiveRules are the rules a line that archived a file names.
+var archiveRules = []string{archiveCreationStopped, archiveNeverPublished, archiveRotationStopped, archiveRotationNotWritten, archivePromoted, archiveRotationConflict, archiveRotationOrphaned}
+
+// archiveDigestForm is a file's digest as a line names it.
+var archiveDigestForm = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+
+// recognised is whether l is a line Desk writes (review round 1 of #335,
+// finding 2): an event Desk knows, with the members that event carries and
+// none it does not. Any other line is damage, however it is spelled: an
+// event Desk does not know may be a removal it cannot read.
+func (l archiveLine) recognised() bool {
+	if l.Version != "1" || !archiveFileForm.MatchString(l.File) || !archiveDigestForm.MatchString(l.Digest) {
+		return false
+	}
+	if at, err := time.Parse(time.RFC3339Nano, l.At); err != nil || at.IsZero() {
+		return false
+	}
+	switch l.Event {
+	case "archived":
+		return l.From != "" && !strings.ContainsAny(l.From, "/\\") && slices.Contains(archiveRules, l.Rule) && l.Generation == 0
+	case "removed":
+		return l.From == "" && l.Why == "" && l.Rule == archiveOwnerRemoved && l.Generation >= 1
+	}
+	return false
+}
+
 // line is the journal line's one spelling.
 func (l archiveLine) line() []byte {
 	data, _ := json.Marshal(l)
@@ -914,7 +940,7 @@ func (d *signingDir) readArchiveJournal(folder string) (archiveJournal, error) {
 			return journal, nil
 		}
 		var line archiveLine
-		if json.Unmarshal(raw, &line) != nil || !bytes.Equal(line.line(), raw) || line.Version != "1" || !archiveFileForm.MatchString(line.File) {
+		if json.Unmarshal(raw, &line) != nil || !bytes.Equal(line.line(), raw) || !line.recognised() {
 			journal.damaged++
 			continue
 		}

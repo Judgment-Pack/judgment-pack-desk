@@ -5106,6 +5106,22 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'archive edges: a removal is not read back before the file goes' 'internal/desk/archive.go' \
     '	if after, err := held.readArchiveJournal(folder); err != nil || after.damaged > 0 || !after.removed[file] || after.events[file] != entry.generation+1 {' \
     '	if after, err := held.readArchiveJournal(folder); err != nil && after.damaged < 0 {'
+  # A line Desk does not write is damage: an event it does not know, or one
+  # without the members its event carries (review round 1 of #335, finding
+  # 2).
+  mutate go 'archive edges: a line of an event Desk does not know is read' 'internal/desk/archive.go' \
+    '		return l.From == "" && l.Why == "" && l.Rule == archiveOwnerRemoved && l.Generation >= 1
+	}
+	return false' \
+    '		return l.From == "" && l.Why == "" && l.Rule == archiveOwnerRemoved && l.Generation >= 1
+	}
+	return true'
+  mutate go 'archive edges: a removal by no owner is read' 'internal/desk/archive.go' \
+    '		return l.From == "" && l.Why == "" && l.Rule == archiveOwnerRemoved && l.Generation >= 1' \
+    '		return l.From == "" && l.Why == "" && l.Generation >= 1'
+  mutate go 'archive edges: a move by a rule Desk has not is read' 'internal/desk/archive.go' \
+    '&& slices.Contains(archiveRules, l.Rule) && l.Generation == 0' \
+    '&& l.Generation == 0'
   # A made desk's custody no start settles is said on the decision record,
   # with the reason its start keeps it, and no Remove; a desk open here
   # decides its own (#331).
