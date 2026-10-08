@@ -574,8 +574,9 @@ func TestARotationTheRuntimeDidNotWriteSaysDeskKeptItsKey(t *testing.T) {
 	t.Run("the panel, on a rotation the runtime did not write", func(t *testing.T) {
 		r := newRotationRig(t, "c2000000000000000000000000000003", "")
 		r.writeTrail(t, 1, recordLine(standInKeyID, 1))
-		// A rotation journalled as about to rotate on this trail (issue #285).
-		journal := rotationJournal{Version: "1", Phase: journalRotate, Trail: fixtureTrail, Next: secondPublicKey}.line()
+		// A rotation journalled as about to rotate on this trail (issue #285),
+		// beside this very sidecar (issue #309).
+		journal := rotationJournal{Version: "1", Phase: journalRotate, Trail: fixtureTrail, Next: secondPublicKey, Sidecar: seenOf(t, filepath.Join(r.auditFolder(), "signatures.jsonl"))}.line()
 		if os.WriteFile(filepath.Join(r.signing, r.id+rotatingSuffix), journal, 0o600) != nil || os.WriteFile(r.nextPath(), []byte(secondSeed+"\n"), 0o600) != nil {
 			t.Fatal("could not leave a rotation unfinished")
 		}

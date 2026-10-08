@@ -111,7 +111,7 @@ func TestAKeyCustodyLockHeldByAnotherProcess(t *testing.T) {
 	leaveUnfinished(t, s, unfinished)
 	signing, runner := signingFolderOf(s), runnerFolderOf(s)
 	for _, file := range []string{desk + ".seed", desk + ".keys.jsonl", desk + ".creating"} {
-		if err := os.WriteFile(filepath.Join(signing, file), []byte("planted\n"), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(signing, file), plantedAs(file), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -315,7 +315,7 @@ func TestTheDesksSweepAndARunnerKeyExcludeEachOther(t *testing.T) {
 	}
 
 	for _, file := range []string{orphan + ".seed", orphan + ".keys.jsonl", orphan + ".creating"} {
-		if err := os.WriteFile(filepath.Join(signing, file), []byte("planted\n"), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(signing, file), plantedAs(file), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -518,7 +518,7 @@ func TestDesksStartSweepsUnderTheLock(t *testing.T) {
 	signing.Close()
 	folder := signingFolderOf(first)
 	for _, file := range []string{orphan + ".seed", orphan + ".keys.jsonl", orphan + ".creating"} {
-		if err := os.WriteFile(filepath.Join(folder, file), []byte("planted\n"), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(folder, file), plantedAs(file), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -603,7 +603,7 @@ func TestDesksStartSweepsBeforeItsRunnerTakesTheLock(t *testing.T) {
 	signing.Close()
 	folder := signingFolderOf(first)
 	for _, file := range []string{orphan + ".seed", orphan + ".keys.jsonl", orphan + ".creating"} {
-		if err := os.WriteFile(filepath.Join(folder, file), []byte("planted\n"), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(folder, file), plantedAs(file), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}

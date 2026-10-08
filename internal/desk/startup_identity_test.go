@@ -22,9 +22,14 @@ import (
 )
 
 // identityLine is the identity file Desk writes for id in the folder dir,
-// with the stamping settings' move from from, where it is not empty.
+// recording that folder by device and inode (issue #309), with the stamping
+// settings' move from from, where it is not empty.
 func identityLine(id, dir, from string) string {
-	return string(identityRecord{ID: id, Path: dir, From: from}.line())
+	folder := ""
+	if info, err := os.Stat(dir); err == nil {
+		folder = identityKey(info)
+	}
+	return string(identityRecord{ID: id, Path: dir, Folder: folder, From: from}.line())
 }
 
 // startedAt closes s and starts Desk on dir with s's folders and runtime,

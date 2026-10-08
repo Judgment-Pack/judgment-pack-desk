@@ -293,6 +293,10 @@ type auditAnswer struct {
 	// with the token that confirms it, or why not (rotation.go). It is given
 	// with a report and with the runtime's refusal, and with nothing else.
 	Rotation *auditRotation `json:"rotation,omitempty"`
+	// Identity is the owner's choice on this project's identity, where it is
+	// unresolved (issue #309, startup_identity.go): given with a report and
+	// with the runtime's refusal, and with nothing else.
+	Identity *identityOffer `json:"identity,omitempty"`
 	// Expected is how many holders' files of checkpoints were passed as
 	// `--expect`, and ExpectUnread the labels of the holders whose file could
 	// not be read now, or is not ours, and was passed over (handover.go).
@@ -796,6 +800,7 @@ func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, err
 	answer.Keys = &keys
 	answer.Signing = &signing
 	answer.Rotation = &rotation
+	answer.Identity = s.identityOfferNow()
 	answer.Repair = s.repairOffer(ctx, answer.Report)
 	answer.Expected = expect.count
 	answer.ExpectUnread = expect.unread
