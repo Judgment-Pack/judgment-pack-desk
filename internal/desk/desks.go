@@ -395,7 +395,8 @@ func (s *Server) createDesk(w http.ResponseWriter, r *http.Request) {
 	// creation never published, wherever the desk is moved after.
 	if err = gates.key.publishing(id, folder, manifest); err != nil {
 		s.log.Printf("desk: the new desk %s was not published: its key's marker could not record the manifest: %v", id, err)
-		s.abandonDesk(w, folder, entry, s.dropKey(gates.key, storageRefusal(err)))
+		unrecorded := storageRefusal(err)
+		s.abandonDesk(w, folder, entry, s.dropKey(gates.key, unrecorded))
 		return
 	}
 	keyBetween("publishing recorded")

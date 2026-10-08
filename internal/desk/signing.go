@@ -660,11 +660,11 @@ func (d *signingDir) readDeskCreation(id string, marker os.FileInfo) (creation d
 // while its name still holds held; the folder is synced after. It answers
 // the marker as written.
 func (d *signingDir) rewriteMarker(name string, held os.FileInfo, data []byte) (os.FileInfo, error) {
-	staged, stagedName, err := d.stage()
+	staged, stage, err := d.stage()
 	if err != nil {
 		return nil, err
 	}
-	defer d.root.Remove(stagedName)
+	defer d.root.Remove(stage)
 	_, err = staged.Write(data)
 	if err == nil {
 		err = staged.Chmod(custodyFileMode)
@@ -685,7 +685,7 @@ func (d *signingDir) rewriteMarker(name string, held os.FileInfo, data []byte) (
 	if found, err := d.root.Lstat(name); err != nil || !os.SameFile(found, held) {
 		return nil, errors.New("the creation's marker is not the file the creation wrote")
 	}
-	if err := d.root.Rename(stagedName, name); err != nil {
+	if err := d.root.Rename(stage, name); err != nil {
 		return nil, err
 	}
 	_ = syncPrivateDirectory(d.root)
