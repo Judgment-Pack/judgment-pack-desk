@@ -96,7 +96,9 @@ export async function processingCall<T>(method: 'status' | 'configure' | 'test',
     if (signal?.aborted) throw cause
     throw new ProcessingError(cause instanceof FileRequestError && cause.status === 413
       ? sourceMessage('This request is too large to send.')
-      : sourceMessage('Document processing could not be reached. Check the local gateway, then try again.'))
+      : cause instanceof FileRequestError && cause.status === 502
+        ? sourceMessage('The gateway’s answer could not be shown. Reload the settings to see what was saved.')
+        : sourceMessage('Document processing could not be reached. Check the local gateway, then try again.'))
   }
   const localGateway = answered.localGateway ?? { status: 'unavailable' }
   if (typeof answered.error === 'string') throw new ProcessingError(refusal(answered.error), answered.error, localGateway)

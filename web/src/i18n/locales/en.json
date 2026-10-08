@@ -4098,5 +4098,6 @@
   "This processor is not available. Choose an enabled processor.": "This processor is not available. Choose an enabled processor.",
   "This processor’s programs are not installed on this computer.": "This processor’s programs are not installed on this computer.",
   "This request is too large to send.": "This request is too large to send.",
-  "When a page has no text": "When a page has no text"
+  "When a page has no text": "When a page has no text",
+  "The gateway’s answer could not be shown. Reload the settings to see what was saved.": "The gateway’s answer could not be shown. Reload the settings to see what was saved."
 }

@@ -161,3 +161,12 @@ it('leaves status-only members and a blank credential out of a save', () => {
     { id: 'ocr-azure', name: 'Work scans', kind: 'azure-document-intelligence', enabled: true, endpoint: 'https://work.cognitiveservices.azure.com' },
     { id: 'ocr-local', name: 'On this computer', kind: 'tesseract', enabled: true, credential: KEY }] } })
 })
+
+it('says a save whose answer Desk refused to show may have been saved', async () => {
+  setup({ result: settings(), localGateway: running(false) })
+  mocks.fetch.mockImplementation(async () => Response.json({ error: 'the gateway’s answer could not be shown', code: 'bad-request' }, { status: 502 }))
+  fireEvent.click(screen.getByRole('button', { name: 'Manage Work scans' }))
+  fireEvent.change(within(screen.getByRole('dialog')).getByLabelText('API key'), { target: { value: KEY } })
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Save' }))
+  await within(screen.getByRole('dialog')).findByText('The gateway’s answer could not be shown. Reload the settings to see what was saved.')
+})

@@ -144,6 +144,15 @@ func TestLocalPlanRefusesProcessingBeyondWhatTheGatewayGives(t *testing.T) {
 			`"args":["--document-processing"],"shape":"http","timeout":150,"connections":true`, `"args":[],"shape":"http","timeout":60,"connections":false`, 1),
 		"the search flag on a document source": strings.Replace(ordinary, `"args":[],"shape":"http","timeout":60`, `"args":["--long-search"],"shape":"http","timeout":60`, 1),
 		"the search flag twice":                strings.Replace(gatewayPlan(t, "long-search"), `"--long-search"]`, `"--long-search","--long-search"]`, 1),
+		// Each refused for its flag alone, the envelope and the count of
+		// flagged document sources being what the gateway gives.
+		"the flag moved from a document source to another source": strings.Replace(strings.Replace(processing,
+			`{"id":"gmail","executable":"adapter-gmail","args":["--principal","desk-local"],"shape":"http","timeout":60,"connections":true}`,
+			`{"id":"gmail","executable":"adapter-gmail","args":["--principal","desk-local","--document-processing"],"shape":"http","timeout":60,"connections":true}`, 1),
+			`{"id":"web","executable":"adapter-web","args":["--document-processing"],"shape":"http","timeout":150,"connections":true}`,
+			`{"id":"web","executable":"adapter-web","args":[],"shape":"http","timeout":60,"connections":false}`, 1),
+		"the search flag twice within 60 s": strings.Replace(ordinary, `"--provider","web-search","--principal","desk-local"],"shape":"http","timeout":60`,
+			`"--provider","web-search","--principal","desk-local","--long-search","--long-search"],"shape":"http","timeout":60`, 1),
 	} {
 		if raw == processing || raw == ordinary {
 			t.Fatalf("%s: the fixture did not change", name)
