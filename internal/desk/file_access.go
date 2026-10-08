@@ -179,6 +179,32 @@ func (c signingCustody) holds(root *os.Root, clean string) bool {
 	return c.byIdentity(root, parts)
 }
 
+// reaches is whether the project path clean, followed through every
+// symbolic link on its way from the project folder, lands in a custody
+// folder (review round 1 of #335, finding 4). It decides only which words a
+// refusal takes: a path through a link is refused either way, and one into
+// Desk's custody is refused as custody, with no path in its words.
+func (c signingCustody) reaches(project, clean string) bool {
+	path, rest := filepath.Join(project, filepath.FromSlash(clean)), ""
+	for {
+		if resolved, err := filepath.EvalSymlinks(path); err == nil {
+			target := filepath.Join(resolved, rest)
+			for _, root := range c.roots {
+				if rel, err := filepath.Rel(root.path, target); err == nil && withinPath(rel) {
+					return true
+				}
+			}
+			return false
+		}
+		parent := filepath.Dir(path)
+		if parent == path {
+			return false
+		}
+		rest = filepath.Join(filepath.Base(path), rest)
+		path = parent
+	}
+}
+
 // byIdentity is whether any folder on the way to the project path parts,
 // as root finds it, is a custody folder itself.
 func (c signingCustody) byIdentity(root *os.Root, parts []string) bool {

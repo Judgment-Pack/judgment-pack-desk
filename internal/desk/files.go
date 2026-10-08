@@ -1140,6 +1140,12 @@ func (s *Server) handleFileWrite(w http.ResponseWriter, r *http.Request) {
 func (s *Server) commitWriteLocked(clean string, req WriteRequest) (int, any) {
 	afterLockEntry(clean)
 
+	// **A link into Desk's custody is refused as custody** (review round 1
+	// of #335, finding 4), in the custody's words, which name no path; any
+	// other link is refused as a link, below.
+	if s.signingCustody().reaches(s.projectDir, clean) {
+		return http.StatusForbidden, errorBody(withCode(CodeForbidden, errors.New(signingCustodyWords)))
+	}
 	if err := s.refuseSymlinkedPath(clean); err != nil {
 		return statusForRefusal(err), errorBody(err)
 	}

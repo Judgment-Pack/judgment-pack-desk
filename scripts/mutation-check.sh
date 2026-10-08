@@ -5091,6 +5091,11 @@ func (b *cappedBuffer) exceeded() bool {'
 		return custodyRoot{path: path, info: info}
 	}
 	return custodyRoot{path: path}'
+  # A link into Desk's custody is refused in the custody's words, which name
+  # no path (review round 1 of #335, finding 4).
+  mutate go 'archive edges: a link into Desk'"'"'s custody is refused as a link' 'internal/desk/files.go' \
+    '	if s.signingCustody().reaches(s.projectDir, clean) {' \
+    '	if false && s.signingCustody().reaches(s.projectDir, clean) {'
   # A Remove is never made over a journal Desk cannot read whole, its own
   # line is read back before the file goes, and a line is never joined to a
   # write that did not finish (#330).

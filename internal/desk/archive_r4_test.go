@@ -695,3 +695,46 @@ func TestARemovalsLineIsSyncedBeforeItsFileGoes(t *testing.T) {
 		}
 	})
 }
+
+// **A link into Desk's custody is refused as custody** (review round 1 of
+// #335, finding 4, the reviewer's scenario). A save through a link to
+// `secrets/`, to the signing folder, or to the seed itself is refused in the
+// custody's words, which name no path, and the seed is the file it was; a
+// save through a link elsewhere in the project is still refused as a link.
+func TestALinkIntoDesksCustodyIsRefusedAsCustody(t *testing.T) {
+	for _, tc := range []struct{ name, target, rel string }{
+		{"secrets", "config/secrets", "alias/signing/" + desk2 + seedSuffix},
+		{"the signing folder", "config/secrets/signing", "alias/" + desk2 + seedSuffix},
+		{"the seed", "config/secrets/signing/" + desk2 + seedSuffix, "alias"},
+		{"a folder of the project", "notes", "alias/notes.md"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			base := t.TempDir()
+			s, _ := bareServer(t, base, filepath.Join(base, "config"), desk2)
+			bareKeys(t, s)
+			writeBare(t, filepath.Join(base, "notes", "notes.md"), "notes\n")
+			seed := filepath.Join(s.configDir, "secrets", "signing", desk2+seedSuffix)
+			before, err := os.Stat(seed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			old := readFile(t, seed)
+			if err := os.Symlink(tc.target, filepath.Join(base, "alias")); err != nil {
+				t.Fatal(err)
+			}
+			w := fileWrite(t, s, tc.rel, "replaced\n", digestOf([]byte(old)), false)
+			if tc.target == "notes" {
+				if w.Code == http.StatusOK || strings.Contains(w.Body.String(), signingCustodyWords) || !strings.Contains(w.Body.String(), "symbolic link") {
+					t.Errorf("a save through a link elsewhere answered %d %s", w.Code, w.Body)
+				}
+				return
+			}
+			if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), signingCustodyWords) || strings.Contains(w.Body.String(), "alias") {
+				t.Errorf("the save answered %d %s", w.Code, w.Body)
+			}
+			if after, err := os.Stat(seed); err != nil || !os.SameFile(before, after) || readFile(t, seed) != old {
+				t.Errorf("the seed is not the file it was: %v", err)
+			}
+		})
+	}
+}
