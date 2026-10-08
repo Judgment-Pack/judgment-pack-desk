@@ -4849,11 +4849,24 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'archive: a move goes over a file archived under the same name' 'internal/desk/archive.go' \
     '		if _, err := d.root.Lstat(filepath.Join(folder, file)); errors.Is(err, fs.ErrNotExist) {' \
     '		if _, err := d.root.Lstat(filepath.Join(folder, file)); errors.Is(err, fs.ErrNotExist) || true {'
+  # Both checks that the file at the name is the one inspected: the name's
+  # Lstat, and the descriptor the digest of its bytes is read through (review
+  # round 1 of #327). Either alone refuses, so the mutant drops both.
   mutate go 'archive: a move takes a file other than the one inspected' 'internal/desk/archive.go' \
     '	if err != nil || !os.SameFile(found, info) {
-		return "", fmt.Errorf("%s was not archived: it is not the file Desk inspected", name)' \
+		return "", fmt.Errorf("%s was not archived: it is not the file Desk inspected", name)
+	}
+	// **Its bytes, by their digest, before and after the move** (review
+	// round 1 of #327): a file whose bytes cannot be read now is not moved;
+	// one written while it is moved is said.
+	before, err := d.contentDigest(name, info)' \
     '	if err != nil || found == nil {
-		return "", fmt.Errorf("%s was not archived: it is not the file Desk inspected", name)'
+		return "", fmt.Errorf("%s was not archived: it is not the file Desk inspected", name)
+	}
+	// **Its bytes, by their digest, before and after the move** (review
+	// round 1 of #327): a file whose bytes cannot be read now is not moved;
+	// one written while it is moved is said.
+	before, err := d.contentDigest(name, nil)'
   mutate go 'archive: a move'"'"'s line names a path' 'internal/desk/archive.go' \
     'Why: d.words(record.why),' \
     'Why: record.why,'
