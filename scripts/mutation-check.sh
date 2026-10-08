@@ -4427,6 +4427,20 @@ func (b *cappedBuffer) exceeded() bool {'
 	}
 	_ = unlock
 	if !s.startupUnresolved() {'
+  mutate go 'audit r2 fix: the identity question is given only beside a checked trail' internal/desk/audit_record.go \
+    '	answer.Identity = identity
+	shown := s.withoutPathsIn(answer)' \
+    '	if answer.State != auditStateNoTrail {
+		answer.Identity = identity
+	}
+	shown := s.withoutPathsIn(answer)'
+  mutate go 'audit r2 fix: a refusal of the decision record gives no identity question' internal/desk/audit_record.go \
+    '		if identity != nil {
+			body["identity"] = identity
+		}' \
+    '		if identity != nil && false {
+			body["identity"] = identity
+		}'
   mutate go 'audit r2 fix: an identity that waits for nothing is resolved' "$R2SI" \
     '	if !s.startupUnresolved() {
 		writeJSONCoded(' \
@@ -14003,6 +14017,15 @@ export function assistantTransport(id: string): Transport {
     '                    {repairSection(record.repair)}
                     {identitySection(record.identity)}' \
     '                    {repairSection(record.repair)}'
+  mutate web 'audit r2 fix: the identity question is not asked where no trail is kept' web/src/audit/DecisionRecord.tsx \
+    "deciding runs.')}</p>{identitySection(record.identity)}</>" \
+    "deciding runs.')}</p></>"
+  mutate web 'audit r2 fix: the identity question is not asked beside a refusal' web/src/audit/DecisionRecord.tsx \
+    '{systemMessage(query.error.message)}</p>{identitySection(identityOf(query.error))}</>' \
+    '{systemMessage(query.error.message)}</p></>'
+  mutate web 'audit r2 fix: a refusal'"'"'s identity question is not read' web/src/audit/client.ts \
+    '  return isAuditIdentity(body.identity) ? Object.assign(error, { identity: body.identity }) : error' \
+    '  return error'
   mutate web 'audit r2 fix: a question with one token for both answers is read' web/src/audit/client.ts \
     ' && hex(64)(value.copy) && value.moved !== value.copy' \
     ' && hex(64)(value.copy)'

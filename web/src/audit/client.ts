@@ -195,13 +195,22 @@ export type HandedSince = { holder: string; trail: string; through: number; reco
 export type AuditRecord =
   | ({ state: 'report'; runtime?: string; report: AuditReport; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation; identity?: AuditIdentity; repair?: AuditRepair; stamping?: AuditStamping; since?: HandedSince[] } & HeldInputs)
   | ({ state: 'unverified'; runtime?: string; diagnostics: AuditDiagnostic[]; files?: TrailFile[]; keys?: AuditKeys; signing?: AuditSigning; rotation?: AuditRotation; identity?: AuditIdentity; stamping?: AuditStamping } & HeldInputs)
-  | { state: 'older-runtime'; runtime?: string; floor: string }
-  | { state: 'no-trail' }
+  | { state: 'older-runtime'; runtime?: string; floor: string; identity?: AuditIdentity }
+  | { state: 'no-trail'; identity?: AuditIdentity }
 
 export const AUDIT_KEY = ['desk-audit-record'] as const
 
 /** Desk does not check this desk's record here, and says why. */
 export class AuditUnavailable extends Error {}
+
+/**
+ * The chassis's question on this project's identity, given beside its
+ * refusal to check the decision record as with every answer (review round 1
+ * of #315), carried by the error the refusal is read as.
+ */
+export function identityOf(error: unknown): AuditIdentity | undefined {
+  return error instanceof Error && 'identity' in error && isAuditIdentity(error.identity) ? error.identity : undefined
+}
 
 const text = (value: unknown): value is string => typeof value === 'string'
 const count = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0
@@ -301,10 +310,11 @@ function isHandedSince(value: unknown): value is HandedSince {
 }
 
 async function refusal(response: Response): Promise<Error> {
-  let body: { error?: unknown } = {}
+  let body: { error?: unknown; identity?: unknown } = {}
   try { body = await response.json() as typeof body } catch { /* The status is still an answer. */ }
   const message = text(body.error) ? body.error : msg('The decision record could not be loaded. Please try again.')
-  return response.status === 409 ? new AuditUnavailable(message) : new Error(message)
+  const error = response.status === 409 ? new AuditUnavailable(message) : new Error(message)
+  return isAuditIdentity(body.identity) ? Object.assign(error, { identity: body.identity }) : error
 }
 
 /**

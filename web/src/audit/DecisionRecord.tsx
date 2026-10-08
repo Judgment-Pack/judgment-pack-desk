@@ -39,7 +39,7 @@ import { msg, systemMessage, useLocale } from '../i18n'
 import { Button } from '../ui/Button'
 import { CodeBlock } from '../ui/CodeBlock'
 import { SettingsSection } from '../ui/SettingsSection'
-import { AUDIT_KEY, AuditUnavailable, readAuditRecord, type AuditCoverageState, type AuditIdentity, type AuditKeys, type AuditRecord, type AuditRepair, type AuditReport, type AuditRotation, type AuditSigning, type AuditStamping, type HandedSince } from './client'
+import { AUDIT_KEY, AuditUnavailable, identityOf, readAuditRecord, type AuditCoverageState, type AuditIdentity, type AuditKeys, type AuditRecord, type AuditRepair, type AuditReport, type AuditRotation, type AuditSigning, type AuditStamping, type HandedSince } from './client'
 import styles from './DecisionRecord.module.css'
 import { Handover, NO_HANDOVER, type HandoverState } from './Handover'
 import { RepairTrail, type RepairOutcome } from './RepairTrail'
@@ -116,10 +116,10 @@ export function DecisionRecord({ visible = true }: { visible?: boolean }) {
   return <SettingsSection title={msg('Decision record')} description={msg('Jobs runs are recorded by the runner, not in this trail.')} variant="plain">
     <div className={styles.card} data-testid="decision-record">
       {query.isPending || query.isFetching ? <p role="status" className={styles.quiet}>{msg('Asking the runtime…')}</p>
-        : query.error instanceof AuditUnavailable ? <p role="alert">{msg('Desk does not check the decision record here.')} {systemMessage(query.error.message)}</p>
-          : query.error ? <div role="alert" className={styles.card}><p>{systemMessage(query.error.message)}</p><div><Button onClick={() => void query.refetch()} disabled={query.isFetching}>{msg('Retry')}</Button></div></div>
-            : record?.state === 'older-runtime' ? <p>{msg('This runtime (jpack {{version}}) writes an unchained trail and has no audit commands. Chaining, checkpoints, signing and stamping need jpack {{floor}} or later.', { version: record.runtime ?? '?', floor: record.floor })}</p>
-              : record?.state === 'no-trail' ? <p>{msg('This project keeps no trail: its jpack.json declares no audit directory, so the runtime records none of its deciding runs.')}</p>
+        : query.error instanceof AuditUnavailable ? <><p role="alert">{msg('Desk does not check the decision record here.')} {systemMessage(query.error.message)}</p>{identitySection(identityOf(query.error))}</>
+          : query.error ? <><div role="alert" className={styles.card}><p>{systemMessage(query.error.message)}</p><div><Button onClick={() => void query.refetch()} disabled={query.isFetching}>{msg('Retry')}</Button></div></div>{identitySection(identityOf(query.error))}</>
+            : record?.state === 'older-runtime' ? <><p>{msg('This runtime (jpack {{version}}) writes an unchained trail and has no audit commands. Chaining, checkpoints, signing and stamping need jpack {{floor}} or later.', { version: record.runtime ?? '?', floor: record.floor })}</p>{identitySection(record.identity)}</>
+              : record?.state === 'no-trail' ? <><p>{msg('This project keeps no trail: its jpack.json declares no audit directory, so the runtime records none of its deciding runs.')}</p>{identitySection(record.identity)}</>
                 : record?.state === 'unverified' ? <>
                   <p>{msg('The runtime did not check the trail.')}</p>
                   <ul className={styles.list} aria-label={msg('What the runtime said')}>{record.diagnostics.map((item, index) => <li key={index} lang="en"><code>{item.code}</code> {item.message}</li>)}</ul>

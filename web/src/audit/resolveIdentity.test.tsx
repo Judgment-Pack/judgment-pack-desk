@@ -110,3 +110,25 @@ describe('the question on this project’s identity', () => {
     expect(isAuditRecord({ ...asked, identity: { state: 'unresolved', moved } })).toBe(false)
   })
 })
+
+// Review round 1 of #315, finding 5: the question comes with every answer of
+// the decision record, a project that keeps no trail and a refusal among them.
+describe('the question beside any answer', () => {
+  it('is asked where the project keeps no trail', async () => {
+    records = [{ state: 'no-trail', identity: { state: 'unresolved', moved, copy } }]
+    show()
+    expect(await screen.findByText(QUESTION)).toBeTruthy()
+    expect(region().getByRole('button', { name: 'This folder was moved here' })).toBeTruthy()
+  })
+
+  it('is asked beside a refusal to check, and beside a check that failed', async () => {
+    for (const status of [409, 500]) {
+      vi.mocked(deskFetch).mockImplementation(async url => String(url) === '/api/audit/verify'
+        ? json(status, { error: 'Desk could not check it.', code: 'internal', identity: { state: 'unresolved', moved, copy } })
+        : json(404, { error: 'not here' }))
+      show()
+      expect(await screen.findByText(QUESTION), String(status)).toBeTruthy()
+      cleanup()
+    }
+  })
+})

@@ -1117,3 +1117,27 @@ func TestTheResolutionsAnswerIsWrittenWithTheLockLetGo(t *testing.T) {
 		})
 	}
 }
+
+// **The owner's question on the identity comes with every answer of the
+// decision record** (review round 1 of #315, finding 5, the reviewer's
+// scenario). An unresolved project whose jpack.json declares no audit
+// directory is answered "no trail", with the question; and where the runtime
+// cannot be run, the refusal carries the question beside its words.
+func TestTheIdentityQuestionComesWithEveryAnswer(t *testing.T) {
+	_, s, ts, _ := unresolvedProject(t)
+	writeBare(t, filepath.Join(s.projectDir, "jpack.json"), `{"configVersion":"5","packs":{}}`+"\n")
+	status, answer, refusal := readAudit(t, ts, "")
+	if status != http.StatusOK || answer.State != auditStateNoTrail || answer.Identity == nil || answer.Identity.State != "unresolved" {
+		t.Errorf("with no trail the decision record answered %d %s %+v %q", status, answer.State, answer.Identity, refusal)
+	}
+	s.cfg.JpackBin = filepath.Join(t.TempDir(), "no runtime here")
+	writeBare(t, filepath.Join(s.projectDir, "jpack.json"), auditedConfig)
+	status, data := reviewCall(t, ts, "GET", "/api/audit/verify", "", nil, bearer)
+	var body struct {
+		Error    string         `json:"error"`
+		Identity *identityOffer `json:"identity"`
+	}
+	if status != http.StatusInternalServerError || json.Unmarshal(data, &body) != nil || body.Error == "" || body.Identity == nil || body.Identity.Moved == "" {
+		t.Errorf("with no runtime the decision record answered %d %s", status, data)
+	}
+}

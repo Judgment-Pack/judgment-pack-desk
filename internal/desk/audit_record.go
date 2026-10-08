@@ -294,8 +294,9 @@ type auditAnswer struct {
 	// with a report and with the runtime's refusal, and with nothing else.
 	Rotation *auditRotation `json:"rotation,omitempty"`
 	// Identity is the owner's choice on this project's identity, where it is
-	// unresolved (issue #309, startup_identity.go): given with a report and
-	// with the runtime's refusal, and with nothing else.
+	// unresolved (issue #309, startup_identity.go): given with every answer,
+	// whatever the trail's state (review round 1 of #315), and beside the
+	// route's refusals too.
 	Identity *identityOffer `json:"identity,omitempty"`
 	// Expected is how many holders' files of checkpoints were passed as
 	// `--expect`, and ExpectUnread the labels of the holders whose file could
@@ -399,17 +400,30 @@ func (s *Server) handleAuditVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
+	// **The owner's question on this project's identity is its own member**
+	// (review round 1 of #315, finding 5): given with every answer of this
+	// route, a refusal and a project that keeps no trail among them, since
+	// the owner's word on it is needed whether or not a trail is checked.
+	identity := s.identityOfferNow()
+	refuse := func(status int, code, message string) {
+		body := map[string]any{"error": message, "code": code}
+		if identity != nil {
+			body["identity"] = identity
+		}
+		writeJSON(w, status, body)
+	}
 	dir, refusal := s.auditRuntime()
 	if refusal != "" {
-		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, refusal)
+		refuse(http.StatusConflict, CodeBadRequest, refusal)
 		return
 	}
 	answer, err := s.auditVerify(r.Context(), dir)
 	if err != nil {
 		s.log.Printf("desk: the decision record could not be checked: %v", err)
-		writeJSONCoded(w, http.StatusInternalServerError, CodeInternal, "The decision record could not be checked: "+strings.TrimRight(s.withoutPaths(err.Error()), ".")+".")
+		refuse(http.StatusInternalServerError, CodeInternal, "The decision record could not be checked: "+strings.TrimRight(s.withoutPaths(err.Error()), ".")+".")
 		return
 	}
+	answer.Identity = identity
 	shown := s.withoutPathsIn(answer)
 	if before, after := mustJSON(answer), mustJSON(shown); before != after {
 		// The page is told no path; the owner's own log keeps them.
@@ -800,7 +814,6 @@ func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, err
 	answer.Keys = &keys
 	answer.Signing = &signing
 	answer.Rotation = &rotation
-	answer.Identity = s.identityOfferNow()
 	answer.Repair = s.repairOffer(ctx, answer.Report)
 	answer.Expected = expect.count
 	answer.ExpectUnread = expect.unread
