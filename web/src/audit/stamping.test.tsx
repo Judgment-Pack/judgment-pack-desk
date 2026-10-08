@@ -44,7 +44,13 @@ const settings = { authority: 'https://tsa.example/stamp', intervalMinutes: 60, 
 const stamped: StampRun = { at: 1791205200, status: 'stamped', trail, sequence: 2, stampedAt: '2026-10-07T13:29:07Z', existedBy: '2026-10-07T13:29:07Z', policy: '1.3.6.1.4.1.99999.1' }
 type Reported = Extract<AuditRecord, { state: 'report' }>
 const none: Reported = { state: 'report', runtime: '0.27.1', report: unchecked, keys: { state: 'startup' }, signing: { state: 'no-key' }, stamping: { state: 'none' } }
-const set: Reported = { ...none, report: checked, stamping: { state: 'set', settings, removeToken, passed: true, pending: 1, last: stamped } }
+// The chassis's word on the last run's checkpoint (issue #312): the stamps
+// the runtime checked reach the very checkpoint the run named.
+const set: Reported = { ...none, report: checked, stamping: { state: 'set', settings, removeToken, passed: true, pending: 1, last: stamped, lastChecked: { checked: true } } }
+const LABEL = 'The last stamp run named the checkpoint at record 2: that is the authority’s answer to Desk’s request, not a stamp the runtime checked.'
+// What the chassis says where it does not (stamping.go, `lastRunChecked`).
+const REWRITTEN = 'The record at that sequence now is not the one the run named, as where a trail was put back to an earlier point and written again since.'
+const OTHER_TRAIL = 'The stamps the runtime checked are of another trail than the one the run named.'
 
 const ESTABLISHES = 'the checkpoint, and every line before it, existed by the authority’s stated time, as far as that authority is independent of the operator'
 const DOES_NOT = 'when any record was made: a stamp is an upper bound on existence; anything against an authority that colludes; revocation, where no supplied list speaks for it; anything after the last checkpoint stamped'
@@ -237,33 +243,50 @@ describe('stamping', () => {
     expect(screen.getByText('The last stamp run named the checkpoint at record 2: that is the authority’s answer to Desk’s request, not a stamp the runtime checked.')).toBeTruthy()
   })
 
-  it('labels the record the last run named wherever no stamp the runtime checked reaches it, with roots given or not', async () => {
-    const label = 'The last stamp run named the checkpoint at record 2: that is the authority’s answer to Desk’s request, not a stamp the runtime checked.'
-    for (const stampedState of [{ status: 'none' }, { status: 'through', through: 1 }]) {
-      records = [{ ...set, report: { ...checked, coverage: { ...checked.coverage, stamped: stampedState } } }]
+  it('labels the record the last run named wherever the chassis says no stamp the runtime checked reaches it, with its reason', async () => {
+    for (const [stampedState, reason] of [[{ status: 'none' }, 'No stamp the runtime checked covers a record of this trail.'], [{ status: 'through', through: 1 }, 'The stamps the runtime checked reach record 1, before the checkpoint the run named.']] as const) {
+      records = [{ ...set, report: { ...checked, coverage: { ...checked.coverage, stamped: stampedState } }, stamping: { ...set.stamping!, lastChecked: { checked: false, reason } } }]
       show()
-      expect(await screen.findByText(label), JSON.stringify(stampedState)).toBeTruthy()
+      expect(await screen.findByText(`${LABEL} ${reason}`), JSON.stringify(stampedState)).toBeTruthy()
       expect(screen.queryByText('The runtime did not check the stamps.')).toBeNull()
       cleanup()
     }
   })
 
-  // Line audit, finding 5: the stamps of another trail, whatever the record
-  // they reach, are not a check of the checkpoint the last run named; nor
-  // are stamps of a report that names no trail.
-  it('labels the checkpoint the last run named where the stamps the runtime checked are another trail’s, whatever their sequence', async () => {
-    const label = 'The last stamp run named the checkpoint at record 2: that is the authority’s answer to Desk’s request, not a stamp the runtime checked.'
+  // Line audit, finding 5, and the second line audit's finding N4 (issue
+  // #312): the page decides nothing of it itself. Wherever the chassis does
+  // not say the stamps the runtime checked reach the very checkpoint the run
+  // named, by trail, sequence and record, the label stays, with the chassis's
+  // reason: another trail's stamps, whatever their sequence; and the same
+  // trail and sequence holding another record now, stamped from outside Desk,
+  // where the report's coverage alone would read as reaching it.
+  it('labels the checkpoint the last run named wherever the chassis does not say a stamp the runtime checked reaches it', async () => {
     const moved = 'c962ef5fa560f62c67bd4c1c29e011e3'
-    for (const report of [{ ...checked, trail: moved }, { ...checked, trail: moved, coverage: { ...checked.coverage, stamped: { status: 'through', through: 9 } } }, { ...checked, trail: undefined }]) {
-      records = [{ ...set, report }]
+    for (const [report, reason] of [[{ ...checked, trail: moved }, OTHER_TRAIL], [{ ...checked, trail: moved, coverage: { ...checked.coverage, stamped: { status: 'through', through: 9 } } }, OTHER_TRAIL],
+      [{ ...checked, coverage: { ...checked.coverage, stamped: { status: 'through', through: 2 } } }, REWRITTEN]] as const) {
+      records = [{ ...set, report, stamping: { ...set.stamping!, lastChecked: { checked: false, reason } } }]
       show()
-      expect(await screen.findByText(label), JSON.stringify(report.trail)).toBeTruthy()
+      expect(await screen.findByText(`${LABEL} ${reason}`), reason).toBeTruthy()
       cleanup()
     }
+    // Where the chassis gives no word on it, the label stays.
+    records = [{ ...set, stamping: { ...set.stamping!, lastChecked: undefined } }]
+    show()
+    expect(await screen.findByText(LABEL)).toBeTruthy()
+    cleanup()
     records = [{ ...set, report: { ...checked, coverage: { ...checked.coverage, stamped: { status: 'through', through: 9 } } } }]
     show()
     await screen.findByRole('button', { name: 'Stamp now' })
-    expect(screen.queryByText(label)).toBeNull()
+    expect(screen.queryByText(LABEL)).toBeNull()
+  })
+
+  it('takes the chassis’s word on the last run only as it gives it', () => {
+    for (const lastChecked of [{ checked: true }, { checked: false, reason: REWRITTEN }]) {
+      expect(isAuditStamping({ ...set.stamping, lastChecked }), JSON.stringify(lastChecked)).toBe(true)
+    }
+    for (const lastChecked of [{ checked: true, reason: REWRITTEN }, { checked: false }, { checked: false, reason: '' }, { checked: 'yes' }, true]) {
+      expect(isAuditStamping({ ...set.stamping, lastChecked }), JSON.stringify(lastChecked)).toBe(false)
+    }
   })
 
   it('says settings Desk could not read, passes nothing of them, and offers their removal', async () => {
@@ -350,7 +373,7 @@ describe('the stamping client', () => {
 
   it('names, as Desk’s own sentences, only sentences the chassis says', () => {
     const source = readFileSync(join(import.meta.dirname, '../../../internal/desk/stamping.go'), 'utf8')
-    expect(STAMPING_REASONS).toHaveLength(24)
+    expect(STAMPING_REASONS).toHaveLength(34)
     for (const reason of STAMPING_REASONS) {
       for (const part of reason.split(/\{\{\w+\}\}/)) {
         expect(source.includes(part) ? part : `missing: ${part}`, reason).toBe(part)

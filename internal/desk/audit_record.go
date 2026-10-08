@@ -647,6 +647,11 @@ func (s *Server) withoutPathsIn(answer auditAnswer) auditAnswer {
 			}
 			stamping.Last = &last
 		}
+		if stamping.LastChecked != nil {
+			checked := *stamping.LastChecked
+			checked.Reason = clean(checked.Reason)
+			stamping.LastChecked = &checked
+		}
 		answer.Stamping = &stamping
 	}
 	if answer.Diagnostics != nil {
@@ -808,7 +813,22 @@ func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, err
 	if answer.State == auditStateOlder {
 		return older, nil
 	}
-	answer.Stamping = s.stampingAfterVerify(stamping.view, answer.Report)
+	answer.Stamping = s.stampingAfterVerify(stamping.view, answer.Report, stamping.since)
+	answer.Stamping.LastChecked = lastRunChecked(*answer.Stamping, answer.Report, func(named, head checkpointHead) (*checkpointHead, error) {
+		// The answer read through this same head before, where there is one:
+		// the head's digest commits to the record.
+		if kept, ok := s.stamping.recordAt(named, head); ok {
+			return &kept, nil
+		}
+		at, err := s.checkpointAt(ctx, dir, named, head)
+		if err != nil && !errors.Is(err, errCheckpointsChanged) && !errors.Is(err, errTrailMovedSince) {
+			s.log.Printf("desk: the checkpoint the last stamp run of desk %s named could not be asked of the runtime: %v", s.signingKeyName(), err)
+		}
+		if err == nil {
+			s.stamping.rememberRecord(named, head, *at)
+		}
+		return at, err
+	})
 	answer.Runtime = schema.version
 	answer.Files = s.auditFilesPresent()
 	answer.Keys = &keys

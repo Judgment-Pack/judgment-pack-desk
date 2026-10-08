@@ -93,13 +93,37 @@ func withStamp(t *testing.T, rig *auditRig) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A stamp, or a checkpoint stamped already, leaves a line in the stamps
+	// file naming its checkpoint, as the runtime's does: the scheduler skips
+	// a head only where the stamps file holds one (second review of #317).
 	stamp := "'audit stamp')\n" +
 		"  if [ -e '" + rig.calls + ".stamp' ]; then\n" +
 		"    while IFS= read -r line || [ -n \"$line\" ]; do printf '%s\\n' \"$line\"; done < '" + rig.calls + ".stamp'\n" +
-		"    IFS= read -r code < '" + rig.calls + ".stamp.exit'; exit \"$code\"\n" +
+		"    IFS= read -r code < '" + rig.calls + ".stamp.exit'\n" +
+		"    cp=$(sed -n 's/.*\"checkpoint\":\\({[^}]*}\\).*/\\1/p' < '" + rig.calls + ".stamp')\n" +
+		"    if [ \"$code\" = 0 ] && [ -n \"$cp\" ]; then mkdir -p .desk-private/audit; printf '{\"stampVersion\":\"1\",\"checkpoint\":%s,\"token\":\"AA==\"}\\n' \"$cp\" >> .desk-private/audit/stamps.jsonl; fi\n" +
+		"    exit \"$code\"\n" +
 		"  fi\n  exit 64\n  ;;\n"
 	script = bytes.Replace(script, []byte("'packs lock')\n"), []byte(stamp+"'packs lock')\n"), 1)
 	if err := os.WriteFile(rig.bin, script, 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// stampsFileHolds appends to the project's stamps file a line naming the
+// stand-in's checkpoint at sequence in trail, as a stamp of it leaves.
+func (r *stampRig) stampsFileHolds(t *testing.T, trail string, sequence int) {
+	t.Helper()
+	path := filepath.Join(r.project, ".desk-private", "audit", "stamps.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if _, err := file.WriteString(`{"stampVersion":"1","checkpoint":` + strings.TrimSuffix(checkpointOf(trail, sequence), "\n") + `,"token":"AA=="}` + "\n"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -939,8 +963,10 @@ func TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved(t *testing.T) {
 	}
 
 	// A check with roots that shows the trail stamped through record 6, its
-	// head, whose record digest the report names.
+	// head, whose record digest the report names; the stamps file holds that
+	// stamp, as the report says.
 	r.chainIs(t, handoverTrail, 6)
+	r.stampsFileHolds(t, handoverTrail, 6)
 	r.answers(t, 0, headAt(strings.Replace(strings.Replace(stampsReport, `"stamped":{"status":"through","through":2}`, `"stamped":{"status":"through","through":6}`, 1), `"lines":3,`, `"lines":6,`, 1), 6))
 	if got := stampingOf(t, r.ts, ""); got.Pending == nil || *got.Pending != 0 {
 		t.Errorf("the check says %+v", got)

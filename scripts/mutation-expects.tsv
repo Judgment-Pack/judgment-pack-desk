@@ -196,7 +196,8 @@ go	audit fix: the runtime's answer is not journalled	TestARotationJournalsEachSt
 go	audit fix: the sweep removes a key under a name no identity binds	TestAKeyFromBeforeTheIdentityIsKeptWhenItsProjectMoves
 go	audit fix: the unchained lines after the last chained one are counted	TestWhatFollowsARecordIsCountedFromTheReport
 go	audit fix: the upgrade makes the key with no identity written	TestAFailedSigningUpgradeLeavesNoKeyAndNoChange,TestAMovedProjectKeepsItsKeyAndItsPathTakesNothing,TestARotationOfTheStartupKeyFollowsWhatJpackJsonNames,TestAStoppedSigningUpgradeIsSweptAtTheNextStart,TestAnInheritedKeyHoldsTheStartupKeyStill,TestAnUpgradeNotPutBackLeavesTheKeyForTheNextStart,TestAnUpgradeWaitsForThisProjectsLockAndThenRefuses,TestChoosingTheSigningKeyWritesSixAndTheKeyTogether,TestNoPathOfTheStartupKeyReachesThePage,TestTheDecisionRecordReadsTheStartupKeyAfterTheUpgrade,TestTheSigningUpgradeWaitsForTheSigningFolder,TestTheStartFinishesARotationOfTheStartupKey,TestTheStartupKeyIsNamedByTheResolvedProject,TestTheUpgradeWritesTheIdentityBeforeTheKey
-go	audit fix: what the scheduler knows only advances	TestACheckWithRootsReplacesWhatTheSchedulerKnows,TestTheSchedulerStampsATrailRestoredToAnEarlierPointAgain
+go	audit fix: what the scheduler knows only advances	TestTheSchedulerStampsATrailRestoredToAnEarlierPointAgain
+go	audit r2 fix: a check read before a run sets the digest after it	TestACheckReadBeforeAFailedRunDoesNotRestoreIt
 go	audit r2 fix: a copy at the recorded path is taken for its folder	TestACopyAtTheRecordedPathTakesNothing
 go	audit r2 fix: a copy is taken for its original moved, by the original's absence alone	TestACopyStartedAfterItsOriginalMovedTakesNothing
 go	audit r2 fix: a copy keeps the identity it was copied with	TestAnUnresolvedIdentityWaitsForTheOwnersWord
@@ -204,6 +205,7 @@ go	audit r2 fix: a creation whose manifest was about to be written is taken for 
 go	audit r2 fix: a damaged manifest is taken for none	TestADamagedManifestKeepsItsKey,TestAManifestThatIsNotWholeIsNotAPublication
 go	audit r2 fix: a desk moved out of the desks folder is taken for one never published	TestACreationIsSweptOnlyWhereItWasNeverPublished,TestAPublishedDeskMovedOutOfTheDesksFolderKeepsItsKey
 go	audit r2 fix: a desk opened directly is not found published	TestAPublishedDeskMovedOutOfTheDesksFolderKeepsItsKey
+go	audit r2 fix: a failed stamp run keeps the checkpoint known	TestAFailedStampRunLeavesNoCheckpointKnown
 go	audit r2 fix: a folder other than the one the identity was written in is taken for it moved	TestACopyStartedAfterItsOriginalMovedTakesNothing
 go	audit r2 fix: a journal records a sidecar before the runtime is asked	TestARotationsRecordOfItsSidecarIsHeldToItsForm
 go	audit r2 fix: a journal records its sidecar in another form	TestARotationsRecordOfItsSidecarIsHeldToItsForm
@@ -211,31 +213,47 @@ go	audit r2 fix: a key is offered under an unresolved identity	TestAnUnresolvedI
 go	audit r2 fix: a made desk's creation marker records nothing	TestACreationIsSweptOnlyWhereItWasNeverPublished
 go	audit r2 fix: a marker Desk cannot read decides a desk's creation	TestACreationIsSweptOnlyWhereItWasNeverPublished
 go	audit r2 fix: a new identity records no folder	TestTheIdentityMovesStampingSettingsAndAStopIsFinished
+go	audit r2 fix: a record the runtime could not be asked of is said rewritten	TestTheDecisionRecordHoldsTheLastRunToItsCheckpoint,TestTheSameCheckpointIsOneRule
 go	audit r2 fix: a refusal of the decision record gives no identity question	TestTheIdentityQuestionComesWithEveryAnswer
 go	audit r2 fix: a refused rotation removes its next key without the trail checked again	TestARefusedRotationKeepsItsNextKeyWhereTheTrailMoved
 go	audit r2 fix: a rotation answered at another sequence than its hand-over is finished	TestARotationAnsweredAtAnotherSequenceIsNotFinished
 go	audit r2 fix: a rotation the runtime answered is finished from its answer alone	TestARotationIsFinishedOnlyOnTheTrailItWasAnsweredFor
+go	audit r2 fix: a run does not count as a word on what is stamped	TestACheckReadBeforeAFailedRunDoesNotRestoreIt
 go	audit r2 fix: a sidecar that merely lacks the rotation removes the next key	TestASidecarThatMerelyLacksTheRotationRemovesNoKey
+go	audit r2 fix: a stamps line naming another record is taken for the head	TestTheSchedulerSkipsOnlyWhereTheStampsFileHoldsTheHead
+go	audit r2 fix: a stamps line with a token of no form is taken for the head	TestTheSchedulerSkipsOnlyWhereTheStampsFileHoldsTheHead
 go	audit r2 fix: a start removes a next key without the trail checked again	TestARecoveryActsOnlyOnTheTrailItDecidedOn
 go	audit r2 fix: a trail renamed between its open and its lock is bound	TestARecoveryActsOnlyOnTheTrailItDecidedOn
+go	audit r2 fix: a trail the runtime did not check is said given no roots	TestTheSameCheckpointIsOneRule
 go	audit r2 fix: an answer is taken where the folder it was written in holds it again	TestAnAnswerIsBoundToWhatTheFormerFolderHolds
 go	audit r2 fix: an answer outlives what the folder it was written in holds	TestAnAnswerIsBoundToWhatTheFormerFolderHolds
 go	audit r2 fix: an answer's token outlives the file it was given for	TestAnUnresolvedIdentityWaitsForTheOwnersWord
+go	audit r2 fix: an earlier record is read from a trail that is not the report's	TestTheDecisionRecordHoldsTheLastRunToItsCheckpoint
+go	audit r2 fix: an earlier record is taken for the run's without asking the runtime	TestTheDecisionRecordHoldsTheLastRunToItsCheckpoint,TestTheSameCheckpointIsOneRule
+go	audit r2 fix: an earlier record's answer is kept past its head	TestTheEarlierRecordsAnswerIsKeptForItsHead
 go	audit r2 fix: an identity file as long as Desk reads is refused	TestTheIdentityFileIsWrittenOnlyWithinWhatDeskReads
 go	audit r2 fix: an identity file longer than Desk reads is written	TestTheIdentityFileIsWrittenOnlyWithinWhatDeskReads
 go	audit r2 fix: an identity that waits for nothing is resolved	TestAnUnresolvedIdentityWaitsForTheOwnersWord
 go	audit r2 fix: an unresolved identity recovers and rotates	TestACopyStartedAfterItsOriginalMovedTakesNothing,TestAnUnresolvedIdentityWaitsForTheOwnersWord
 go	audit r2 fix: another file with the same bytes is the sidecar the rotation was begun beside	TestASidecarThatMerelyLacksTheRotationRemovesNoKey
 go	audit r2 fix: another folder at a desk's name is taken for the folder it was made in	TestACreationIsSweptOnlyWhereItWasNeverPublished
+go	audit r2 fix: another trail's stamps are taken for the run's	TestTheSameCheckpointIsOneRule
+go	audit r2 fix: no stamp is taken for one that reaches the run	TestTheSameCheckpointIsOneRule
 go	audit r2 fix: one answer's token confirms the other	TestAnUnresolvedIdentityWaitsForTheOwnersWord
 go	audit r2 fix: other bytes are the bytes the rotation was begun beside	TestASidecarThatMerelyLacksTheRotationRemovesNoKey
+go	audit r2 fix: stamps that reach an earlier record are taken for the run's	TestTheSameCheckpointIsOneRule
+go	audit r2 fix: the decision record says every last run checked	TestTheDecisionRecordHoldsTheLastRunToItsCheckpoint
 go	audit r2 fix: the identity question is given only beside a checked trail	TestTheIdentityQuestionComesWithEveryAnswer
+go	audit r2 fix: the last run is said checked with no roots passed	TestTheSameCheckpointIsOneRule
+go	audit r2 fix: the last run's checkpoint is taken by its trail and sequence alone	TestTheDecisionRecordHoldsTheLastRunToItsCheckpoint,TestTheSameCheckpointIsOneRule
 go	audit r2 fix: the list is written without the trail checked again	TestARecoveryActsOnlyOnTheTrailItDecidedOn,TestARotationIsFinishedOnlyOnTheTrailItWasAnsweredFor
 go	audit r2 fix: the manifest is written before its marker records it	TestAPublishedDeskMovedOutOfTheDesksFolderKeepsItsKey
 go	audit r2 fix: the next key is renamed without the trail checked again	TestARotationIsFinishedOnlyOnTheTrailItWasAnsweredFor
 go	audit r2 fix: the owner's answer is taken without its token	TestAnUnresolvedIdentityWaitsForTheOwnersWord
 go	audit r2 fix: the resolution holds the lock past its answer	TestTheResolutionsAnswerIsWrittenWithTheLockLetGo
 go	audit r2 fix: the rotation records no sidecar before the runtime is asked	TestARotationJournalsEachStep
+go	audit r2 fix: the same checkpoint is taken at another sequence	TestTheSameCheckpointIsOneRule
+go	audit r2 fix: the scheduler skips a head the stamps file does not hold	TestTheSchedulerSkipsOnlyWhereTheStampsFileHoldsTheHead
 go	audit r2 fix: the trail is bound without its lock	TestARecoveryActsOnlyOnTheTrailItDecidedOn
 go	audit r2 fix: the upgrade's identity records no folder	TestTheUpgradeWritesTheIdentityBeforeTheKey
 go	audit: a configuration Desk cannot read keeps no trail	TestAProjectThatKeepsNoTrailRunsNothing
@@ -1490,9 +1508,13 @@ web	audit fix: the report's count since a hand-over is not used	src/audit/handov
 web	audit fix: the report's lines since a hand-over are said as records	src/audit/handover.test.tsx
 web	audit r2 fix: a question with one token for both answers is read	src/audit/resolveIdentity.test.tsx
 web	audit r2 fix: a refusal's identity question is not read	src/audit/resolveIdentity.test.tsx
+web	audit r2 fix: a word that is checked and gives a reason is read	src/audit/stamping.test.tsx
+web	audit r2 fix: a word that is not checked and gives no reason is read	src/audit/stamping.test.tsx
 web	audit r2 fix: an answer is sent with the other answer's token	src/audit/resolveIdentity.test.tsx
 web	audit r2 fix: the identity question is not asked beside a refusal	src/audit/resolveIdentity.test.tsx
 web	audit r2 fix: the identity question is not asked where no trail is kept	src/audit/resolveIdentity.test.tsx
+web	audit r2 fix: the label does not give the chassis's reason	src/audit/stamping.test.tsx
+web	audit r2 fix: the page takes the last run for checked with no word on it	src/audit/stamping.test.tsx
 web	audit r2 fix: the question on the identity is not asked beside a report	src/audit/resolveIdentity.test.tsx
 web	blanking a nonEmptyString writes an empty string	src/packs/edit/writes.test.ts
 web	bytes that are not a document are handed to the readers	src/packs/edit/resilience.test.tsx
