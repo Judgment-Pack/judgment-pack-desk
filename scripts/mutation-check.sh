@@ -4221,6 +4221,14 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "audit fix: a made desk's copy is taken for its desk in the desks folder" "$SI" \
     '	} else if os.SameFile(info, held) {' \
     '	} else if os.SameFile(info, info) || held == nil {'
+  mutate go 'audit fix: the list is published although the answer was not journalled' "$RO" \
+    '		journalled, err := dir.rewriteJournal(markerName, marker, journal)
+		if err != nil {' \
+    '		journalled, err := dir.rewriteJournal(markerName, marker, journal)
+		if err != nil && false {'
+  mutate go 'audit fix: an undo is made that the list contradicts' "$RO" \
+    '		case slices.ContainsFunc(keys, func(key deskPublicKey) bool { return key.PublicKey == nextKey.PublicKey }):' \
+    '		case false && slices.ContainsFunc(keys, func(key deskPublicKey) bool { return key.PublicKey == nextKey.PublicKey }):'
   mutate go 'audit fix: a rotation never given to the runtime is held to its trail' "$RO" \
     '	if !state.legacy && state.journal.Phase != journalGenerate {' \
     '	if !state.legacy {'
@@ -4236,8 +4244,8 @@ func (b *cappedBuffer) exceeded() bool {'
     '	rewritten, err := dir.rewriteJournal(markerName, marker, journal)' \
     '	rewritten, err := marker, error(nil)'
   mutate go "audit fix: the runtime's answer is not journalled" "$RO" \
-    '		if rewritten, err := dir.rewriteJournal(markerName, marker, journal); err != nil {' \
-    '		if rewritten, err := marker, error(nil); err != nil {'
+    '		journalled, err := dir.rewriteJournal(markerName, marker, journal)' \
+    '		journalled, err := marker, error(nil)'
   mutate go 'audit fix: an answer on another trail is taken for the rotation' "$RO" \
     '		answer.Trail == trail {' \
     '		keyIDForm.MatchString(answer.Trail) {'

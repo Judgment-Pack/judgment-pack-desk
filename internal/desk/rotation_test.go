@@ -385,6 +385,7 @@ func TestARotationRunsItsStepsInOrder(t *testing.T) {
 		"rotation: next generated: .keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=1 rotations=0",
 		"rotation: rotate journalled: .keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=1 rotations=0",
 		"rotation: line written: .keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=1 rotations=1",
+		"rotation: finish journalled: .keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=1 rotations=1",
 		"rotation: list written: .keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=2 rotations=1",
 		"rotation: seed renamed: .keys.jsonl,.rotating,.seed seed=2 next=absent keys=2 rotations=1",
 	}
@@ -994,6 +995,7 @@ func TestAStoppedRotationIsFinishedOrUndoneAtTheNextStart(t *testing.T) {
 		{"rotation: marker written", ".keys.jsonl,.rotating,.seed seed=1 next=absent keys=1 rotations=0", first + " rotations=0"},
 		{"rotation: next generated", ".keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=1 rotations=0", first + " rotations=0"},
 		{"rotation: line written", ".keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=1 rotations=1", rotated},
+		{"rotation: finish journalled", ".keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=1 rotations=1", rotated},
 		{"rotation: list written", ".keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=2 rotations=1", rotated},
 		{"rotation: seed renamed", ".keys.jsonl,.rotating,.seed seed=2 next=absent keys=2 rotations=1", rotated},
 	} {

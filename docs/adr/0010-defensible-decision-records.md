@@ -313,7 +313,10 @@ sidecar names, or, before the trail's first signature, the runtime's
 checkpoint names (a journal never names no trail: review round 1 of #302);
 a start decides from the journal and from that trail's
 sidecar alone, and where the trail was moved aside or replaced since, keeps
-both seeds and the list, and says so. Each key a rotation adds records in
+both seeds and the list, and says so; it does the same where the list
+already names a next key the sidecar does not hand over to, and a rotation
+whose `finish` cannot be journalled stops before the list names its next
+key (review round 1 of #302). Each key a rotation adds records in
 the list the trail identity it was made on; its sequence is later than the
 previous key's where both took over on the same trail, and counts from 1 on a
 new one. A trail begun after a rotation is signed from its first record by

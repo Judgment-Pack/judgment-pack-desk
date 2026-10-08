@@ -749,9 +749,11 @@ was started.
      the rotation is made on, by the trail identity its sidecar names, or,
      before the trail's first signature, the one `jpack audit checkpoint`
      names (a trail with no chained record has nothing to rotate on, and
-     nothing is made): `generate` here, `rotate` with the next key before step 3, `finish`
-     with the runtime's sequence after it, each written whole and synced
-     before its step;
+     nothing is made): `generate` here, `rotate` with the next key before
+     step 3, `finish` with the runtime's sequence after it, each written
+     whole and synced before its step (where `finish` cannot be written,
+     the rotation stops there, before the list names the next key, and says
+     it did not finish: the next start finishes it);
   2. `jpack audit key generate <signing>/<desk id>.next.seed --format json`,
      with the folder's path checked to name the folder held before the run,
      and the seed's path to name the seed found there after it;
@@ -797,7 +799,9 @@ was started.
     trail moved aside or replaced since has no say, and the current key, the
     next key and the list are kept as they are, and the panel says so;
   - the runtime wrote the line: the rotation is finished;
-  - no line names the next key: the next seed and the marker are removed;
+  - no line names the next key: the next seed and the marker are removed,
+    unless the list already names it, when everything is kept and the panel
+    says why;
   - a marker an earlier Desk left empty, which names no trail, is finished
     where the sidecar hands over to its next key, and otherwise left;
   - there is no next seed, and the list, the current seed and the sidecar

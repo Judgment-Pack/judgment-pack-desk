@@ -7,10 +7,12 @@ package desk
 // published runtime and skips without one.
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -107,7 +109,7 @@ func TestARotationJournalsEachStep(t *testing.T) {
 	seen := map[string]string{}
 	testHookKeyBetween = func(at string) {
 		switch at {
-		case "rotation: marker written", "rotation: rotate journalled", "rotation: list written":
+		case "rotation: marker written", "rotation: rotate journalled", "rotation: finish journalled", "rotation: list written":
 			seen[at] = r.marker(t)
 			if mode := permOf(t, filepath.Join(r.signing, id+rotatingSuffix)); mode != 0o600 {
 				t.Errorf("at %s the marker is %v", at, mode)
@@ -122,6 +124,7 @@ func TestARotationJournalsEachStep(t *testing.T) {
 	for at, want := range map[string]string{
 		"rotation: marker written":    `{"version":"1","phase":"generate","trail":"` + fixtureTrail + `","next":"","at":0}` + "\n",
 		"rotation: rotate journalled": `{"version":"1","phase":"rotate","trail":"` + fixtureTrail + `","next":"` + secondPublicKey + `","at":0}` + "\n",
+		"rotation: finish journalled": `{"version":"1","phase":"finish","trail":"` + fixtureTrail + `","next":"` + secondPublicKey + `","at":1}` + "\n",
 		"rotation: list written":      `{"version":"1","phase":"finish","trail":"` + fixtureTrail + `","next":"` + secondPublicKey + `","at":1}` + "\n",
 	} {
 		if seen[at] != want {
@@ -609,5 +612,98 @@ func TestACopyOfAMadeDeskOpenedDirectlyRecoversNothing(t *testing.T) {
 		if got := r.describe(t); got != ".keys.jsonl,.seed seed=2 next=absent keys=2 rotations=1" {
 			t.Errorf("after the moved desk's start the folder holds %s (%s)", got, logged)
 		}
+	})
+}
+
+// swapMarker puts data in the place of the rotation's marker, in another
+// file: a journal of the rotation's can then no longer be rewritten in its
+// place, as one whose write failed.
+func (r *rotationRig) swapMarker(t *testing.T, data string) {
+	t.Helper()
+	path := filepath.Join(r.signing, r.id+rotatingSuffix)
+	if err := os.WriteFile(path+".swap", []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(path+".swap", path); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// keptAsLeft checks that the next start, ts, left the signing folder as
+// left, with the list and the marker as they were, and that its log and the
+// panel say why, in words that hold why.
+func (r *rotationRig) keptAsLeft(t *testing.T, ts *httptest.Server, logged *bytes.Buffer, left, list, marker, why string) {
+	t.Helper()
+	if got := r.describe(t); got != left {
+		t.Errorf("after the next start the folder holds %s, want %s (%s)", got, left, logged)
+	}
+	if got := readFile(t, filepath.Join(r.signing, r.id+keysSuffix)); got != list {
+		t.Errorf("the list was changed to %q", got)
+	}
+	if got := r.marker(t); got != marker {
+		t.Errorf("the marker was changed to %q", got)
+	}
+	if !strings.Contains(logged.String(), "was left as it is: "+why) {
+		t.Errorf("the start did not say why: %s", logged)
+	}
+	answer, _ := panelOn(t, ts, r.id)
+	if answer.Rotation.State != rotationUnfinished || answer.Rotation.Reason != "Desk cannot tell whether the runtime wrote the rotation, so it changes nothing: "+why+"." {
+		t.Errorf("the panel says %+v", answer.Rotation)
+	}
+}
+
+// **No list the journal does not stand behind, and no undo the list
+// contradicts** (review round 1 of #302, finding 3). The runtime wrote the
+// rotation, and its answer could not be journalled: the rotation stops
+// there, before the list names the next key, says it did not finish, and the
+// next start finishes it from the sidecar. And a list written with the next
+// key over a marker left at "rotate", as the answer's failed journal left it
+// before, with the trail's sidecar put back from before the rotation: the
+// start keeps both seeds, the list and the marker, and says why.
+func TestARotationsListIsHeldToItsJournal(t *testing.T) {
+	const id = "c9b00000000000000000000000000001"
+	t.Run("the answer not journalled", func(t *testing.T) {
+		r := newRotationRig(t, id, "")
+		r.writeTrail(t, 1, recordLine(standInKeyID, 1))
+		token := r.token(t)
+		testHookKeyBetween = func(at string) {
+			if at == "rotation: line written" {
+				r.swapMarker(t, r.marker(t))
+			}
+		}
+		t.Cleanup(func() { testHookKeyBetween = nil })
+		status, data := r.rotate(t, token)
+		testHookKeyBetween = nil
+		if status != http.StatusInternalServerError || !strings.HasPrefix(refusalOf(data), "The rotation of this desk's key did not finish: the runtime wrote it, and Desk could not finish it: its marker could not record the runtime's answer: ") {
+			t.Errorf("the rotation answered %d %s", status, data)
+		}
+		if got := r.describe(t); got != ".keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=1 rotations=1" {
+			t.Errorf("the stop left %s", got)
+		}
+		if got := readFile(t, filepath.Join(r.signing, id+keysSuffix)); got != wantKeyLine(standInPublicKey, standInKeyID, 0) {
+			t.Errorf("the list was written: %q", got)
+		}
+		if !strings.Contains(r.marker(t), `"phase":"rotate"`) {
+			t.Errorf("the marker is %q", r.marker(t))
+		}
+		_, _, logged := r.restart(t)
+		if got := r.describe(t); got != ".keys.jsonl,.seed seed=2 next=absent keys=2 rotations=1" {
+			t.Errorf("after the next start the folder holds %s (%s)", got, logged)
+		}
+	})
+
+	t.Run("a sidecar put back under a list that names the next key", func(t *testing.T) {
+		r := newRotationRig(t, id, "")
+		before := recordLine(standInKeyID, 1)
+		r.writeTrail(t, 1, before)
+		r.abandonRotation(t, "rotation: list written")
+		r.swapMarker(t, string(rotationJournal{Version: "1", Phase: journalRotate, Trail: fixtureTrail, Next: secondPublicKey}.line()))
+		r.writeTrail(t, 0, before)
+		left, list, marker := r.describe(t), readFile(t, filepath.Join(r.signing, id+keysSuffix)), r.marker(t)
+		if left != ".keys.jsonl,.next.seed,.rotating,.seed seed=1 next=2 keys=2 rotations=0" {
+			t.Fatalf("the stop left %s", left)
+		}
+		_, ts, logged := r.restart(t)
+		r.keptAsLeft(t, ts, logged, left, list, marker, rotationListNamesNext)
 	})
 }

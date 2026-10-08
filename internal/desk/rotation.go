@@ -809,6 +809,9 @@ const (
 	rotationTrailGone = "the trail it was made on was moved aside or replaced since, so no signature sidecar Desk can read says whether the runtime wrote it: Desk keeps the current key, the next key and the list of public keys as they are"
 	// rotationLegacy: an empty marker, of a Desk before the journal.
 	rotationLegacy = "it was begun by an earlier Desk, which did not record the trail it was made on, and the trail's signature sidecar now does not name the next key, as a trail moved aside since would not: Desk keeps the current key, the next key and the list of public keys as they are"
+	// rotationListNamesNext: a list written with the next key, over a
+	// sidecar that does not hand over to it (review round 1 of #302).
+	rotationListNamesNext = "the list of this desk's public keys already names the next key, and the trail's signature sidecar does not hand over to it, as a sidecar put back from before the rotation would not: Desk keeps the current key, the next key and the list of public keys as they are"
 )
 
 // rotationNames are the names a rotation of desk id keeps in the signing
@@ -933,6 +936,12 @@ func (s *Server) inspectRotation(ctx context.Context, project heldDir, dir *sign
 			return unknown(rotationLegacy)
 		case state.journal.Phase == journalFinish:
 			return unknown("the rotation's journal says the runtime rotated to the next key on this trail, and the trail's signature sidecar does not hand over to it")
+		// **No undo the list contradicts** (review round 1 of #302): a list
+		// that names the next key was written after the runtime answered
+		// that it rotated to it; a sidecar that does not hand over to it now
+		// is not the one it was written on, whatever trail it names.
+		case slices.ContainsFunc(keys, func(key deskPublicKey) bool { return key.PublicKey == nextKey.PublicKey }):
+			return unknown(rotationListNamesNext)
 		}
 		state.outcome = rotationUnwritten
 		return state
@@ -1519,15 +1528,19 @@ func (s *Server) makeRotation(ctx context.Context, project heldDir, reading *key
 	at, rotatedOn, said, rotated := readRotated(out, runErr, reading.current, nextKey, trail)
 	if rotated {
 		// The runtime's answer, journalled: a stop from here finishes the
-		// rotation on this trail, and on no other. A journal that cannot be
-		// written now leaves "rotate", which a start decides from the same
-		// trail's sidecar.
+		// rotation on this trail, and on no other. **Nothing is published
+		// that the journal does not stand behind** (review round 1 of #302):
+		// where it cannot be written, the rotation stops here, before the
+		// list names the next key, leaving "rotate", the next key and the
+		// marker for the next start to decide from the same trail's sidecar.
 		journal.Phase, journal.Trail, journal.At = journalFinish, rotatedOn, at
-		if rewritten, err := dir.rewriteJournal(markerName, marker, journal); err != nil {
-			s.log.Printf("desk: the rotation of desk %s's key was written, and its marker could not record it: %v", id, err)
-		} else {
-			marker = rewritten
+		journalled, err := dir.rewriteJournal(markerName, marker, journal)
+		if err != nil {
+			s.log.Printf("desk: the rotation of desk %s's key was written, and its marker could not record it, so Desk did not finish it: %v", id, err)
+			return nil, &lockFailure{http.StatusInternalServerError, CodeInternal, unfinishedWords(false, at, fmt.Errorf("its marker could not record the runtime's answer: %w", err))}
 		}
+		marker = journalled
+		keyBetween("rotation: finish journalled")
 	}
 	state := rotationState{marker: marker, next: next, seed: reading.seed, current: reading.current, nextKey: nextKey, list: reading.list}
 	if rotated {
