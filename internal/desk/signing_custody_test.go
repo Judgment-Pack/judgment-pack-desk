@@ -364,10 +364,12 @@ func TestAnInheritedKeysFolderWithTheRuntime(t *testing.T) {
 	leaksOf(t, "the panel", string(data), root)
 }
 
-// **A manifest that is not whole is not a publication.** A desk folder whose
-// manifest is empty, or cut short, at its published name is one the registry
-// will not open; the next start counts it as never published, by the same
-// reader, and removes the key its marker names.
+// **A manifest that is not whole is not a publication, and not its absence
+// either** (review round 1 of #315, finding 2). A desk stopped after its
+// manifest was published, whose manifest is then emptied or cut short: the
+// registry does not open it, and the start's sweep cannot tell whether it
+// was published, so it keeps the seed, the list and the marker, and says
+// why.
 func TestAManifestThatIsNotWholeIsNotAPublication(t *testing.T) {
 	const id = "b7000000000000000000000000000001"
 	for _, tc := range []struct{ name, manifest string }{
@@ -390,8 +392,11 @@ func TestAManifestThatIsNotWholeIsNotAPublication(t *testing.T) {
 			}
 			ts.Close()
 			again, logged := restartedServer(t, s)
-			if names := namesIn(t, signingFolderOf(s)); len(names) != 0 {
-				t.Errorf("a desk whose manifest is %s kept %q (%s)", tc.name, names, logged)
+			if names := namesIn(t, signingFolderOf(s)); !slices.Equal(names, []string{id + creatingSuffix, id + keysSuffix, id + seedSuffix}) {
+				t.Errorf("a desk whose manifest is %s left %q (%s)", tc.name, names, logged)
+			}
+			if !strings.Contains(logged.String(), "holds a manifest that is not one Desk reads") {
+				t.Errorf("the start did not say why it kept the key: %s", logged)
 			}
 			again.desksMu.Lock()
 			opened := again.desks[id] != nil

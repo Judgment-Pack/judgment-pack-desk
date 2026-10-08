@@ -961,3 +961,33 @@ func TestACopyAtTheRecordedPathTakesNothing(t *testing.T) {
 		t.Errorf("the start did not say why: %s", logged)
 	}
 }
+
+// **A damaged manifest keeps a published desk's key through another
+// project's start** (review round 1 of #315, finding 2, the reviewer's
+// scenario). A desk's creation marker records that its manifest was about to
+// be written, its folder in the desks folder holds the manifest, and the
+// manifest is then cut short. A start on an unrelated project against the
+// same configuration removes nothing, and says why.
+func TestADamagedManifestKeepsItsKey(t *testing.T) {
+	t.Setenv("JPACK_CONFIG", "")
+	t.Setenv("JPACK_SIGNING_KEY", "")
+	base := t.TempDir()
+	config := filepath.Join(base, "config")
+	const id = "e3100000000000000000000000000009"
+	folder := filepath.Join(config, "desks", id)
+	s, _ := bareServer(t, folder, config, id)
+	bareKeys(t, s)
+	manifest := `{"id":"` + id + `","name":"live"}`
+	writeBare(t, filepath.Join(folder, deskManifest), manifest)
+	signing := filepath.Join(config, "secrets", "signing")
+	writeBare(t, filepath.Join(signing, id+creatingSuffix), string(deskCreation{ID: id, Folder: folderOf(t, folder), Manifest: sha256Digest([]byte(manifest))}.line()))
+	writeBare(t, filepath.Join(folder, deskManifest), "{")
+	unrelated, logged := bareServer(t, filepath.Join(base, "unrelated"), config, "")
+	unrelated.sweepUnfinishedKeys()
+	if names := namesIn(t, signing); !slices.Equal(names, []string{id + creatingSuffix, id + keysSuffix, id + seedSuffix}) {
+		t.Errorf("an unrelated start left %q: %s", names, logged)
+	}
+	if !strings.Contains(logged.String(), "holds a manifest that is not one Desk reads") {
+		t.Errorf("the start did not say why: %s", logged)
+	}
+}

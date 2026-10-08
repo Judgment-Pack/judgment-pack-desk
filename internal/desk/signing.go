@@ -1257,9 +1257,10 @@ func (s *Server) deskCreationLeft(dir *signingDir, id string, marker os.FileInfo
 // registry reads (`readDeskManifest`, the same reader); and folder, that
 // folder as inspected, where the desks folder holds one the registry accepts.
 // published is false where the desks folder holds no folder of that id, a
-// folder the registry refuses, or one whose manifest is absent, empty, cut
-// short or not a desk's; an error where the folder or its manifest could not
-// be inspected or read now.
+// folder the registry refuses, or one with no manifest; an error where the
+// folder or its manifest could not be inspected or read now, and where its
+// manifest is there and empty, cut short or not a desk's, which says nothing
+// of whether the desk was published (review round 1 of #315).
 func (s *Server) deskRegistered(id string) (folder os.FileInfo, published bool, err error) {
 	desks, err := s.assistant.root.OpenRoot("desks")
 	if errors.Is(err, fs.ErrNotExist) {
@@ -1287,9 +1288,18 @@ func (s *Server) deskRegistered(id string) (folder os.FileInfo, published bool, 
 	if held, err := opened.Stat("."); err != nil || !os.SameFile(info, held) {
 		return nil, false, errors.New("its folder changed while it was being opened")
 	}
+	if _, err := opened.Lstat(deskManifest); errors.Is(err, fs.ErrNotExist) {
+		// No manifest at all: the one state its folder says "not published"
+		// by.
+		return info, false, nil
+	}
 	_, err = readDeskManifest(opened, id)
 	if errors.Is(err, errNotPublished) {
-		return info, false, nil
+		// **A manifest there, and not one the registry reads, is not "none"**
+		// (review round 1 of #315, finding 2): a manifest published and then
+		// cut short, or written over, says nothing of whether the desk was
+		// published. It cannot be told, and nothing is removed.
+		return info, false, fmt.Errorf("its folder in the desks folder holds a manifest that is not one Desk reads: %w", err)
 	}
 	return info, err == nil, err
 }

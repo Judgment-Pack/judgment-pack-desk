@@ -4440,6 +4440,9 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'audit r2 fix: a desk opened directly is not found published' "$R2SG" \
     '	if !published && s.cfg.deskID == id && s.cfg.parent == nil {' \
     '	if false {'
+  mutate go 'audit r2 fix: a damaged manifest is taken for none' "$R2SG" \
+    '		return info, false, fmt.Errorf("its folder in the desks folder holds a manifest that is not one Desk reads: %w", err)' \
+    '		return info, false, nil'
   mutate go 'audit r2 fix: a marker Desk cannot read decides a desk'"'"'s creation' "$R2SG" \
     '		return false, "", fmt.Errorf("its marker could not be read as the record Desk writes: %w", err)' \
     '		return false, "", nil'
