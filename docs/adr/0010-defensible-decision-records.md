@@ -309,7 +309,9 @@ move a trail itself (question 9).
 
 *Amended 2026-10-07 (issues #285 and #286):* a rotation's marker journals the
 step about to be made and the trail it is made on, by the trail identity the
-sidecar names; a start decides from the journal and from that trail's
+sidecar names, or, before the trail's first signature, the runtime's
+checkpoint names (a journal never names no trail: review round 1 of #302);
+a start decides from the journal and from that trail's
 sidecar alone, and where the trail was moved aside or replaced since, keeps
 both seeds and the list, and says so. Each key a rotation adds records in
 the list the trail identity it was made on; its sequence is later than the

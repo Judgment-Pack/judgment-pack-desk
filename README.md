@@ -746,8 +746,10 @@ was started.
   Desk holds:
   1. `secrets/signing/<desk id>.rotating`, a marker, 0600, written never
      over anything, that journals the step about to be made and the trail
-     the rotation is made on, by the trail identity its sidecar names:
-     `generate` here, `rotate` with the next key before step 3, `finish`
+     the rotation is made on, by the trail identity its sidecar names, or,
+     before the trail's first signature, the one `jpack audit checkpoint`
+     names (a trail with no chained record has nothing to rotate on, and
+     nothing is made): `generate` here, `rotate` with the next key before step 3, `finish`
      with the runtime's sequence after it, each written whole and synced
      before its step;
   2. `jpack audit key generate <signing>/<desk id>.next.seed --format json`,

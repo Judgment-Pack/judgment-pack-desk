@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -475,4 +476,79 @@ func TestNoRotationOverASidecarOfTwoTrails(t *testing.T) {
 	if keys := keysOf(t, answer); answer.Rotation.State != rotationUnavailable || keys.State != keysUnread || !strings.Contains(keys.Problem, "names more than one trail") {
 		t.Errorf("the panel offers %s", data)
 	}
+}
+
+// **A rotation begun before any signature names its trail first** (review
+// round 1 of #302, finding 1). The trail has a chained record and its sidecar
+// no line yet: the rotation takes the trail's identity from the runtime's
+// checkpoint and journals it before anything is made. A record is signed
+// before the runtime rotates; the rotation completes, or stops after the
+// runtime wrote its line and the trail is moved aside, when the next start
+// keeps both seeds, the list and the marker, and says why. (Where the trail
+// has no chained record, nothing is made: TestARotationTheRuntimeRefusesChangesNothing.)
+func TestARotationBegunBeforeAnySignatureNamesItsTrail(t *testing.T) {
+	const id = "c9900000000000000000000000000001"
+	begin := func(t *testing.T) *rotationRig {
+		t.Helper()
+		r := newRotationRig(t, id, "")
+		withCheckpoints(t, r.rig.bin, r.rig.calls)
+		if err := os.WriteFile(r.rig.calls+".lines", []byte(chainOf(fixtureTrail, 1)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		r.writeTrail(t, 1, "")
+		return r
+	}
+	// signedMeanwhile signs a record into the sidecar once the rotation has
+	// journalled its next step, before the runtime is asked, and stops the
+	// rotation at stop, where it is not empty.
+	signedMeanwhile := func(t *testing.T, r *rotationRig, stop string) {
+		t.Helper()
+		testHookKeyBetween = func(at string) {
+			switch at {
+			case "rotation: rotate journalled":
+				if !strings.Contains(r.marker(t), `"trail":"`+fixtureTrail+`"`) {
+					t.Errorf("the rotation journalled %q, not the checkpoint's trail", r.marker(t))
+				}
+				r.writeTrail(t, 0, recordLine(standInKeyID, 1))
+			case stop:
+				panic(http.ErrAbortHandler)
+			}
+		}
+		t.Cleanup(func() { testHookKeyBetween = nil })
+	}
+
+	t.Run("stopped after the line, the trail moved aside", func(t *testing.T) {
+		r := begin(t)
+		token := r.token(t)
+		signedMeanwhile(t, r, "rotation: line written")
+		request, _ := http.NewRequest("POST", r.ts.URL+"/api/audit/key/rotate", strings.NewReader(`{"token":"`+token+`"}`))
+		request.Header.Set("Authorization", "Bearer "+testToken)
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("X-Jpack-Desk", r.id)
+		if response, err := http.DefaultClient.Do(request); err == nil {
+			response.Body.Close()
+		}
+		testHookKeyBetween = nil
+		left := r.describe(t)
+		r.moveTrailAside(t, 0, "")
+		_, ts, logged := r.restart(t)
+		if got, want := r.describe(t), strings.Replace(left, "rotations=1", "rotations=0", 1); got != want || !strings.Contains(got, ".next.seed,.rotating,") {
+			t.Errorf("after the next start the folder holds %s, want %s (%s)", got, want, logged)
+		}
+		if answer, _ := panelOn(t, ts, id); answer.Rotation.State != rotationUnfinished || !strings.Contains(answer.Rotation.Reason, "moved aside or replaced") {
+			t.Errorf("the panel says %+v", answer.Rotation)
+		}
+	})
+
+	t.Run("completed", func(t *testing.T) {
+		r := begin(t)
+		token := r.token(t)
+		signedMeanwhile(t, r, "")
+		if status, data := r.rotate(t, token); status != 200 {
+			t.Fatalf("the rotation answered %d %s", status, data)
+		}
+		if got := readFile(t, filepath.Join(r.signing, id+keysSuffix)); got != wantKeyLine(standInPublicKey, standInKeyID, 0)+wantKeyLineOn(secondPublicKey, secondKeyID, 1, fixtureTrail) {
+			t.Errorf("the list is %q", got)
+		}
+	})
 }

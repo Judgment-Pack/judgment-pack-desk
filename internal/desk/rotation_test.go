@@ -453,10 +453,11 @@ func (r *rotationRig) assertUnchanged(t *testing.T) {
 
 // **A refusal at step 3 changes nothing, and is said in the runtime's
 // words; a line the runtime wrote is finished, whatever it answered.** Before
-// the trail has a chained record, while its last line is incomplete, and with
-// a current key that is not in force, the runtime refuses: the next key and
-// the marker are removed, the list and the seed are as they were, and the
-// answer is the runtime's own sentence. A runtime that wrote its line and then
+// the trail has a chained record, the runtime's checkpoint names no trail to
+// rotate on, and nothing is made (review round 1 of #302). While its last
+// line is incomplete, and with a current key that is not in force, the
+// runtime refuses: the next key and the marker are removed, the list and the
+// seed are as they were, and the answer is the runtime's own sentence. A runtime that wrote its line and then
 // refused, as a write whose sync failed would, has rotated: the sidecar says
 // so, and the rotation is finished. A next key the runtime will not generate
 // leaves nothing either, not even what its failed run left under the next
@@ -502,7 +503,7 @@ func TestARotationTheRuntimeRefusesChangesNothing(t *testing.T) {
 		why      string
 	}{
 		{"no chained record yet", 0, "", rotateAsTheRuntime, "",
-			"The runtime did not rotate the key, and nothing was changed: Desk kept the current key. It said: The trail has no chained record yet, so there is no trail to rotate the key of; the first record is signed with whichever key the project names."},
+			"Nothing was rotated: the trail has no chained record yet, so there is no trail to rotate the key of; the first record is signed with whichever key the project names."},
 		{"an incomplete last line", 2, recordLine(standInKeyID, 1), func(string) string { return refusingWith(rotateIncomplete, 4) }, "",
 			"The runtime did not rotate the key, and nothing was changed: Desk kept the current key. It said: Audit record could not be written: the audit trail's last line is incomplete, and no record is chained after an incomplete line."},
 		{"a current key not in force", 2, recordLine(standInKeyID, 1), func(string) string { return refusingWith(rotateNotInForce, 1) }, "",
@@ -513,6 +514,7 @@ func TestARotationTheRuntimeRefusesChangesNothing(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newRotationRig(t, id, "")
+			withCheckpoints(t, r.rig.bin, r.rig.calls)
 			r.writeTrail(t, tc.records, tc.sidecar)
 			rotatingAs(t, r.rig.calls, tc.rotate(r.rig.calls))
 			if tc.generate != "" {
@@ -1542,7 +1544,7 @@ func requireRotationWithTheRuntime(t *testing.T, ts *httptest.Server, id string)
 
 // **With the runtime: a rotation, the records after it signed by the next
 // key, and the runtime's own check agreeing.** A rotation before any record is
-// refused in the runtime's words and leaves nothing. After a signed deciding
+// refused, as the runtime's checkpoint names no trail, and leaves nothing. After a signed deciding
 // run, the desk's key is rotated; a second run is signed by the next key; the
 // panel passes both keys, in order, and reports both records signed and one
 // rotation; and the runtime's own `audit verify --public-key k1 --public-key
@@ -1593,7 +1595,7 @@ func TestRotatingADesksKeyWithTheRuntime(t *testing.T) {
 
 	// Before any record: the runtime's refusal, and nothing left.
 	status, data := rotate(t, ts)
-	if status != http.StatusConflict || refusalOf(data) != "The runtime did not rotate the key, and nothing was changed: Desk kept the current key. It said: The trail has no chained record yet, so there is no trail to rotate the key of; the first record is signed with whichever key the project names." {
+	if status != http.StatusConflict || refusalOf(data) != "Nothing was rotated: the trail has no chained record yet, so there is no trail to rotate the key of; the first record is signed with whichever key the project names." {
 		t.Errorf("a rotation before any record answered %d %s", status, data)
 	}
 	if names := namesIn(t, signing); !slices.Equal(names, []string{row.ID + keysSuffix, row.ID + seedSuffix}) {

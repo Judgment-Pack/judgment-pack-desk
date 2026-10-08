@@ -4206,8 +4206,13 @@ func (b *cappedBuffer) exceeded() bool {'
   # says "audit fix".
   RO=internal/desk/rotation.go
   mutate go 'audit fix: a rotation is recovered from whichever trail is there' "$RO" \
-    '		if sidecar.mixed || !same {' \
-    '		if sidecar.mixed || !same && false {'
+    '		if trail, ok := sidecar.oneTrail(); !ok || trail != state.journal.Trail {' \
+    '		if trail, ok := sidecar.oneTrail(); (!ok || trail != state.journal.Trail) && false {'
+  mutate go 'audit fix: a rotation begun before any signature journals no trail' "$RO" \
+    '	trail, ok := reading.sidecar.oneTrail()
+	if !ok {' \
+    '	trail, ok := reading.sidecar.oneTrail()
+	if !ok && false {'
   mutate go 'audit fix: a rotation never given to the runtime is held to its trail' "$RO" \
     '	if !state.legacy && state.journal.Phase != journalGenerate {' \
     '	if !state.legacy {'
@@ -4226,8 +4231,8 @@ func (b *cappedBuffer) exceeded() bool {'
     '		if rewritten, err := dir.rewriteJournal(markerName, marker, journal); err != nil {' \
     '		if rewritten, err := marker, error(nil); err != nil {'
   mutate go 'audit fix: an answer on another trail is taken for the rotation' "$RO" \
-    'keyIDForm.MatchString(answer.Trail) && (trail == "" || answer.Trail == trail) {' \
-    'keyIDForm.MatchString(answer.Trail) {'
+    '		answer.Trail == trail {' \
+    '		keyIDForm.MatchString(answer.Trail) {'
   mutate go 'audit fix: a trail begun after a rotation is refused' "$RO" \
     '		if keys[i].Trail != "" && keys[i].Trail != trail {' \
     '		if keys[i].Trail != "" && keys[i].Trail != trail && false {'

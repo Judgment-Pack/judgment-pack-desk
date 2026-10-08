@@ -632,10 +632,10 @@ const (
 //
 //	{"version":"1","phase":"rotate","trail":"<32 hex>","next":"<64 hex>","at":0}
 //
-// Trail is the trail identity the sidecar named when the rotation began
-// (`sidecarReading.oneTrail`), "" where it named none: no record of the trail
-// was signed yet; Next the next key's public key, from "rotate" on; At the
-// sequence the runtime answered, at "finish".
+// Trail is the trail identity the rotation is made on, named before anything
+// is made (`sidecarReading.oneTrail`, or the runtime's checkpoint where the
+// sidecar has no line yet); Next the next key's public key, from "rotate" on;
+// At the sequence the runtime answered, at "finish".
 type rotationJournal struct {
 	Version string `json:"version"`
 	Phase   string `json:"phase"`
@@ -660,7 +660,7 @@ func parseJournal(data []byte) (journal rotationJournal, legacy bool, err error)
 	if len(data) == 0 {
 		return rotationJournal{}, true, nil
 	}
-	if json.Unmarshal(data, &journal) != nil || !bytes.Equal(journal.line(), data) || journal.Version != "1" || journal.Trail != "" && !keyIDForm.MatchString(journal.Trail) {
+	if json.Unmarshal(data, &journal) != nil || !bytes.Equal(journal.line(), data) || journal.Version != "1" || !keyIDForm.MatchString(journal.Trail) {
 		return rotationJournal{}, false, errJournal
 	}
 	switch journal.Phase {
@@ -920,13 +920,8 @@ func (s *Server) inspectRotation(ctx context.Context, project heldDir, dir *sign
 		if state.journal.Next != nextKey.PublicKey {
 			return unknown("the next key is not the key the rotation's journal names")
 		}
-		// The trail the journal names. A journal that names none began on a
-		// sidecar with no line: it is the trail a sidecar that names none
-		// still is, or one whose last rotation hands over to this next key,
-		// which no other trail's can.
-		trail, ok := sidecar.oneTrail()
-		same := ok && trail == state.journal.Trail || state.journal.Trail == "" && (!ok || handsOver)
-		if sidecar.mixed || !same {
+		// The trail the journal names, which every journal names.
+		if trail, ok := sidecar.oneTrail(); !ok || trail != state.journal.Trail {
 			return unknown(rotationTrailGone)
 		}
 	}
@@ -1422,9 +1417,20 @@ func (s *Server) makeRotation(ctx context.Context, project heldDir, reading *key
 	dir, id := reading.dir, s.signingKeyName()
 	markerName, nextName, _, _ := rotationNames(id)
 	nextPath := filepath.Join(dir.path, nextName)
-	// The trail the rotation is made on, as the sidecar the panel read names
-	// it: a rotation is offered only where it names one (`rotationOffer`).
-	trail, _ := reading.sidecar.oneTrail()
+	// **The trail the rotation is made on, named before anything is made**
+	// (review round 1 of #302): as the sidecar the panel read names it, or,
+	// where it names none yet, as the runtime names the trail's last chained
+	// record (`audit checkpoint`). A trail with no chained record has nothing
+	// to rotate on, and nothing is made; a journal never names no trail,
+	// which no start could tell a trail moved aside from.
+	trail, ok := reading.sidecar.oneTrail()
+	if !ok {
+		named, refusal := s.rotationTrail(ctx, project)
+		if refusal != nil {
+			return nil, refusal
+		}
+		trail = named
+	}
 	journal := rotationJournal{Version: "1", Phase: journalGenerate, Trail: trail}
 
 	// 1. The marker, journalling the first step, before anything else.
@@ -1589,12 +1595,38 @@ func readGenerated(out []byte, runErr error) (deskPublicKey, error) {
 	return key, nil
 }
 
+// rotationTrail is the identity of the trail a rotation would be made on,
+// where its sidecar has no line yet: the trail of its last chained record, as
+// the runtime's `audit checkpoint` names it. Where the trail has no chained
+// record, there is nothing to rotate on; that, a refusal in the runtime's
+// words, or an answer Desk cannot read is the refusal, with nothing made.
+func (s *Server) rotationTrail(ctx context.Context, project heldDir) (string, *lockFailure) {
+	head, said, err := s.readCheckpointHead(ctx, project, handoverChain{})
+	switch {
+	case err != nil:
+		s.log.Printf("desk: the trail of desk %s could not be named for a rotation: %v", s.signingKeyName(), err)
+		return "", &lockFailure{http.StatusInternalServerError, CodeInternal, "Nothing was rotated: Desk could not learn which trail the rotation would be made on: " + strings.TrimRight(err.Error(), ".") + "."}
+	case len(said) > 0:
+		var words []string
+		for _, diagnostic := range said {
+			if message := strings.TrimSpace(diagnostic.Message); message != "" {
+				words = append(words, message)
+			}
+		}
+		return "", &lockFailure{http.StatusConflict, CodeBadRequest, "Nothing was rotated: " + strings.TrimRight(strings.Join(words, " "), ".") + "."}
+	case head == nil:
+		return "", &lockFailure{http.StatusConflict, CodeBadRequest, "Nothing was rotated: the trail has no chained record yet, so there is no trail to rotate the key of; the first record is signed with whichever key the project names."}
+	case !keyIDForm.MatchString(head.Identity):
+		return "", &lockFailure{http.StatusInternalServerError, CodeInternal, "Nothing was rotated: the runtime named the trail in a form Desk does not read."}
+	}
+	return head.Identity, nil
+}
+
 // readRotated reads what `audit key rotate --format json` printed: the
 // sequence the next key takes over from, and the trail identity it rotated
 // on, where it rotated from current to next as asked, exit 0 and "rotated",
-// on the trail the rotation's journal names (on a trail of the runtime's
-// form, where the journal names none: the sidecar had no line yet); and
-// otherwise what it said, in its own words where it gave any.
+// on the trail the rotation's journal names; and otherwise what it said, in
+// its own words where it gave any.
 func readRotated(out []byte, runErr error, current, next deskPublicKey, trail string) (int64, string, string, bool) {
 	var answer struct {
 		Command       string              `json:"command"`
@@ -1609,7 +1641,7 @@ func readRotated(out []byte, runErr error, current, next deskPublicKey, trail st
 	decoded := out != nil && json.Unmarshal(out, &answer) == nil
 	if runErr == nil && decoded && answer.Command == "audit key rotate" && answer.Status == "rotated" &&
 		answer.At >= 1 && answer.At < sidecarIntegerLimit && answer.From == current.KeyID && answer.Next == next.KeyID && answer.NextPublicKey == next.PublicKey &&
-		keyIDForm.MatchString(answer.Trail) && (trail == "" || answer.Trail == trail) {
+		answer.Trail == trail {
 		return answer.At, answer.Trail, "", true
 	}
 	var said []string
