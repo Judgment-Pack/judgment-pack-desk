@@ -1061,6 +1061,7 @@ func sameCheckpoint(known, other *checkpointHead) bool {
 // stamp the runtime checked reaches (issue #312), in Desk's words.
 const (
 	lastRunNoRoots    = "the runtime was given no roots to check the stamps with"
+	lastRunNoTrail    = "the runtime did not check the trail"
 	lastRunNotChecked = "the runtime did not check the stamps"
 	lastRunNoStamp    = "no stamp the runtime checked covers a record of this trail"
 	lastRunOtherTrail = "the stamps the runtime checked are of another trail than the one the run named"
@@ -1084,7 +1085,12 @@ func lastRunChecked(view auditStamping, report *auditReport, at func(trail strin
 		return nil
 	}
 	not := func(why string) *stampChecked { return &stampChecked{Reason: why} }
-	if !view.Passed || report == nil {
+	switch {
+	case report == nil:
+		// Roots passed or not: the runtime refused the check, and said why
+		// beside it (review round 1 of #317).
+		return not(lastRunNoTrail)
+	case !view.Passed:
 		return not(lastRunNoRoots)
 	}
 	stamped := report.Coverage.Stamped

@@ -6153,8 +6153,13 @@ func (b *cappedBuffer) exceeded() bool {'
     '	case stamped.Status != "through":' \
     '	case false:'
   mutate go 'audit r2 fix: the last run is said checked with no roots passed' "$R2ST" \
-    '	if !view.Passed || report == nil {' \
-    '	if report == nil {'
+    '	case !view.Passed:
+		return not(lastRunNoRoots)' \
+    '	case false:
+		return not(lastRunNoRoots)'
+  mutate go 'audit r2 fix: a trail the runtime did not check is said given no roots' "$R2ST" \
+    '		return not(lastRunNoTrail)' \
+    '		return not(lastRunNoRoots)'
   mutate go 'audit r2 fix: the decision record says every last run checked' internal/desk/audit_record.go \
     '	answer.Stamping.LastChecked = lastRunChecked(*answer.Stamping, answer.Report, func(trail string, sequence int64) (*checkpointHead, error) {' \
     '	answer.Stamping.LastChecked = &stampChecked{Checked: true}

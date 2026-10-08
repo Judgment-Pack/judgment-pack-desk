@@ -89,7 +89,8 @@ func TestTheSameCheckpointIsOneRule(t *testing.T) {
 		{"no stamp", run(3, standInDigest(3)), &auditReport{Trail: handoverTrail, Coverage: auditCoverage{Stamped: auditCoverageState{Status: "none"}}}, nil, nil, &stampChecked{Reason: lastRunNoStamp}, false},
 		{"stamps not checked", run(3, standInDigest(3)), &auditReport{Trail: handoverTrail, Coverage: auditCoverage{Stamped: auditCoverageState{Status: "not-checked"}}}, nil, nil, &stampChecked{Reason: lastRunNotChecked}, false},
 		{"no roots passed", auditStamping{Last: run(3, standInDigest(3)).Last}, report(3, head3), nil, nil, &stampChecked{Reason: lastRunNoRoots}, false},
-		{"no report", run(3, standInDigest(3)), nil, nil, nil, &stampChecked{Reason: lastRunNoRoots}, false},
+		{"no report, roots passed", run(3, standInDigest(3)), nil, nil, nil, &stampChecked{Reason: lastRunNoTrail}, false},
+		{"no report, no roots", auditStamping{Last: run(3, standInDigest(3)).Last}, nil, nil, nil, &stampChecked{Reason: lastRunNoTrail}, false},
 		{"a run that named no checkpoint", auditStamping{Passed: true, Last: &stampRun{Status: stampRefused}}, report(3, head3), nil, nil, nil, false},
 		{"no run", auditStamping{Passed: true}, report(3, head3), nil, nil, nil, false},
 	} {

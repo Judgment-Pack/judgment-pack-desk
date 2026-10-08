@@ -814,6 +814,7 @@ export const STAMPING_REASONS = [
   sourceMessage("A cross-site request cannot change this desk's stamping."),
   sourceMessage('The stamping settings changed while the stamp run made its checks, so it asked for no stamp. The next run uses the settings as they are now.'),
   sourceMessage("the runtime was given no roots to check the stamps with"),
+  sourceMessage("the runtime did not check the trail"),
   sourceMessage("the runtime did not check the stamps"),
   sourceMessage("no stamp the runtime checked covers a record of this trail"),
   sourceMessage("the stamps the runtime checked are of another trail than the one the run named"),

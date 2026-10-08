@@ -4121,5 +4121,6 @@
   "the stamps the runtime checked reach record {{record}}, before the checkpoint the run named": "the stamps the runtime checked reach record {{record}}, before the checkpoint the run named",
   "this trail holds no chained record at that sequence now": "this trail holds no chained record at that sequence now",
   "Desk could not ask the runtime for the checkpoint at that sequence now": "Desk could not ask the runtime for the checkpoint at that sequence now",
-  "the record at that sequence now is not the record the run named, as a trail put back to an earlier point and written since would not be": "the record at that sequence now is not the record the run named, as a trail put back to an earlier point and written since would not be"
+  "the record at that sequence now is not the record the run named, as a trail put back to an earlier point and written since would not be": "the record at that sequence now is not the record the run named, as a trail put back to an earlier point and written since would not be",
+  "the runtime did not check the trail": "the runtime did not check the trail"
 }
