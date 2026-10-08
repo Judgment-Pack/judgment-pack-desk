@@ -212,7 +212,8 @@ func TestARotationWaitsForTheLockAndThenRefuses(t *testing.T) {
 // flock: a desk's creation makes the desk unsigned, and says why, with no key
 // in the signing folder; the upgrade that would make the project's key
 // refuses, and writes nothing; a rotation the owner confirms refuses, and
-// archives nothing; and the start's sweep and recovery leave everything, and
+// archives nothing; the owner's Remove refuses, and the archived key stays
+// (issue #334); and the start's sweep and recovery leave everything, and
 // say why.
 func TestWithNoLockNoKeyIsChanged(t *testing.T) {
 	const id = "d5000000000000000000000000000001"
@@ -290,6 +291,19 @@ func TestWithNoLockNoKeyIsChanged(t *testing.T) {
 		r.assertUnchanged(t)
 		if got := archivedIn(t, r.signing, r.id); len(got) != 0 {
 			t.Errorf("without the lock a rotation archived %q", got)
+		}
+	})
+
+	t.Run("the owner's Remove", func(t *testing.T) {
+		s, dir, file := archivingServer(t)
+		entry := firstArchived(t, s)
+		noSigningLock(t)
+		w := removeOn(s, removal(entry, entry.Token), nil)
+		if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "Desk removes an archived key only under the lock of its signing folder, and none can be taken here.") {
+			t.Errorf("without the lock a Remove answered %d %s", w.Code, w.Body)
+		}
+		if _, err := dir.root.Lstat(filepath.Join(archiveDirName, s.cfg.deskID, file)); err != nil {
+			t.Errorf("without the lock the archived key went: %v", err)
 		}
 	})
 }

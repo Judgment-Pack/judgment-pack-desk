@@ -5116,6 +5116,19 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'archive edges: a check that stops at a precondition keeps the confirmation' 'internal/desk/audit_record.go' \
     '	if checked := answer.Stamping.LastChecked; checked == nil || !checked.Checked {' \
     '	if checked := answer.Stamping.LastChecked; checked == nil {'
+  # The owner's Remove, where no lock can be taken, removes nothing (#334).
+  mutate go 'archive edges: the owner'"'"'s Remove goes on where no lock can be taken' 'internal/desk/archive.go' \
+    '		return &lockFailure{http.StatusConflict, CodeBadRequest, "Nothing was removed: Desk removes an archived key only under the lock of its signing folder, and none can be taken here."}
+	}
+	defer unlock()
+	held := dir' \
+    '		_ = err
+	}
+	if unlock == nil {
+		unlock = func() {}
+	}
+	defer unlock()
+	held := dir'
   # **Runner's signing key (ADR-0010, section 5; runner_key.go).** A key of
   # Runner's own, never a project's or an inherited one, named on the boot
   # line only where, under the one key-custody lock on the signing folder, no
