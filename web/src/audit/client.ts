@@ -821,6 +821,7 @@ export const STAMPING_REASONS = [
   sourceMessage("The stamps the runtime checked reach record {{record}}, before the checkpoint the run named."),
   sourceMessage("This trail holds no chained record at that sequence now."),
   sourceMessage("Desk could not ask the runtime for the checkpoint at that sequence now."),
+  sourceMessage("The trail changed while Desk asked the runtime about it."),
   sourceMessage("The record at that sequence now is not the one the run named, as where a trail was put back to an earlier point and written again since.")
 ]
 

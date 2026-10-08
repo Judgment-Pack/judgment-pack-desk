@@ -814,9 +814,9 @@ func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, err
 		return older, nil
 	}
 	answer.Stamping = s.stampingAfterVerify(stamping.view, answer.Report)
-	answer.Stamping.LastChecked = lastRunChecked(*answer.Stamping, answer.Report, func(trail string, sequence int64) (*checkpointHead, error) {
-		at, err := s.checkpointAt(ctx, dir, trail, sequence)
-		if err != nil && !errors.Is(err, errCheckpointsChanged) {
+	answer.Stamping.LastChecked = lastRunChecked(*answer.Stamping, answer.Report, func(named, head checkpointHead) (*checkpointHead, error) {
+		at, err := s.checkpointAt(ctx, dir, named, head)
+		if err != nil && !errors.Is(err, errCheckpointsChanged) && !errors.Is(err, errTrailMovedSince) {
 			s.log.Printf("desk: the checkpoint the last stamp run of desk %s named could not be asked of the runtime: %v", s.signingKeyName(), err)
 		}
 		return at, err

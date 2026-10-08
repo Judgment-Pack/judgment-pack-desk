@@ -83,6 +83,8 @@ func TestTheSameCheckpointIsOneRule(t *testing.T) {
 		{"an earlier record, rewritten since", run(2, rewrittenDigest(2)), report(3, head3), at2, nil, &stampChecked{Reason: lastRunRewritten}, true},
 		{"an earlier record no longer chained", run(2, standInDigest(2)), report(3, head3), nil, errCheckpointsChanged, &stampChecked{Reason: lastRunGone}, true},
 		{"an earlier record the runtime could not be asked of", run(2, standInDigest(2)), report(3, head3), nil, errors.New("exit status 4"), &stampChecked{Reason: lastRunUnasked}, true},
+		{"an earlier record, the trail changed since the report", run(2, standInDigest(2)), report(3, head3), nil, errTrailMovedSince, &stampChecked{Reason: lastRunMoved}, true},
+		{"an earlier record, a report with no head", run(2, standInDigest(2)), report(3, nil), nil, nil, &stampChecked{Reason: lastRunUnasked}, false},
 		{"stamps that reach an earlier record", run(3, standInDigest(3)), report(2, head3), nil, nil, &stampChecked{Reason: fmt.Sprintf(lastRunBelow, 2)}, false},
 		{"another trail's stamps", run(3, standInDigest(3)), &auditReport{Trail: movedTrail, Coverage: auditCoverage{Stamped: auditCoverageState{Status: "through", Through: 9}}}, nil, nil, &stampChecked{Reason: lastRunOtherTrail}, false},
 		{"a report naming no trail", run(3, standInDigest(3)), &auditReport{Coverage: auditCoverage{Stamped: auditCoverageState{Status: "through", Through: 9}}}, nil, nil, &stampChecked{Reason: lastRunOtherTrail}, false},
@@ -96,10 +98,10 @@ func TestTheSameCheckpointIsOneRule(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			asked := false
-			got := lastRunChecked(tc.view, tc.report, func(trail string, sequence int64) (*checkpointHead, error) {
+			got := lastRunChecked(tc.view, tc.report, func(named, head checkpointHead) (*checkpointHead, error) {
 				asked = true
-				if trail != handoverTrail || sequence != tc.view.Last.Sequence {
-					t.Errorf("the runtime was asked for record %d of %s", sequence, trail)
+				if named.Identity != handoverTrail || named.Sequence != tc.view.Last.Sequence || head != *head3 {
+					t.Errorf("the runtime was asked for record %d of %s through %+v", named.Sequence, named.Identity, head)
 				}
 				return tc.at, tc.atErr
 			})
@@ -142,6 +144,10 @@ func TestTheDecisionRecordHoldsTheLastRunToItsCheckpoint(t *testing.T) {
 		{"an earlier record, another record now", 2, standInDigest(2),
 			chainOf(handoverTrail, 1) + strings.Replace(checkpointOf(handoverTrail, 2), standInDigest(2), rewrittenDigest(2), 1) + chainOf(handoverTrail, 3), stampChecked{Reason: lastRunRewritten}, true},
 		{"an earlier record no longer chained", 2, standInDigest(2), chainOf(handoverTrail, 1, 3), stampChecked{Reason: lastRunGone}, true},
+		// The reviewer's race, as the runtime answers after it: the report saw
+		// one record 3, and the checkpoints read since end in another.
+		{"an earlier record, the trail changed since the report", 2, standInDigest(2),
+			chainOf(handoverTrail, 1, 2) + strings.Replace(checkpointOf(handoverTrail, 3), standInDigest(3), rewrittenDigest(3), 1), stampChecked{Reason: lastRunMoved}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := os.WriteFile(r.calls+".lines", []byte(tc.lines), 0o600); err != nil {
@@ -388,5 +394,64 @@ func TestTheLastRunsCheckpointWithTheRuntime(t *testing.T) {
 	}
 	if lines := strings.Count(readFile(t, stamps), "\n"); lines != 1 {
 		t.Errorf("the stamps file holds %d lines", lines)
+	}
+}
+
+// **An earlier record's checkpoint is read through the report's own head**
+// (second review of #317, finding 1, the reviewer's swap). The decision
+// record's check sees record 3 rewritten, with a stamp made outside Desk at
+// record 4; a wrapper around the published runtime puts the original trail
+// back immediately before Desk asks for record 3's checkpoint. The answer
+// does not end in the head the check saw: the run's checkpoint is not
+// checked, and the reason says the trail changed. Skipped without a runtime.
+func TestAnEarlierRecordIsReadThroughTheReportsHeadWithTheRuntime(t *testing.T) {
+	bin := requireBinary(t)
+	t.Setenv("JPACK_CONFIG", "")
+	t.Setenv("JPACK_SIGNING_KEY", "")
+	fixStamping(t)
+	authority, err := newTestAuthority()
+	if err != nil {
+		t.Fatal(err)
+	}
+	trail := strings.Repeat("c", 32)
+	original, _ := chainedTrail(trail, "first", "second", "third", "fourth")
+	_, checkpoint3 := chainedTrail(trail, "first", "second", "third")
+	rewritten, rewrittenCheckpoint4 := chainedTrail(trail, "first", "second", "third again", "fourth again")
+	run3, _ := readCheckpointLine([]byte(checkpoint3))
+	project := filepath.Join(t.TempDir(), "project")
+	writeProject(t, project, map[string]string{"jpack.json": auditedConfig, ".desk-private/audit/evaluations.jsonl": rewritten,
+		".desk-private/audit/stamps.jsonl": stampLine(t, authority, rewrittenCheckpoint4)})
+	if err := os.Chmod(filepath.Join(project, ".desk-private"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	evaluations := filepath.Join(project, ".desk-private", "audit", "evaluations.jsonl")
+	scratch := t.TempDir()
+	armed, putBack, wrapper := filepath.Join(scratch, "armed"), filepath.Join(scratch, "original.jsonl"), filepath.Join(scratch, "jpack")
+	writeBare(t, putBack, original)
+	writeBare(t, wrapper, "#!/bin/sh\ncase \"$1 $2 $5\" in\n'audit checkpoint --since') if [ -e "+shellQuote(armed)+" ]; then cp "+shellQuote(putBack)+" "+shellQuote(evaluations)+"; rm "+shellQuote(armed)+"; fi;;\nesac\nexec "+shellQuote(bin)+" \"$@\"\n")
+	if err := os.Chmod(wrapper, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	s, ts := startDesk(t, Config{ProjectDir: project, JpackBin: wrapper, Token: testToken, DeskConfigDir: filepath.Join(t.TempDir(), "config"), Logger: log.New(io.Discard, "", 0)})
+	t.Cleanup(func() { s.Close() })
+	t.Cleanup(ts.Close)
+	if !slices.Contains(mustSchema(t, bin, project), "6") {
+		t.Skip("this runtime has no audit commands")
+	}
+	proposal := map[string]any{"authority": "http://127.0.0.1:9/", "roots": string(authority.rootPEM())}
+	if got := setOn(t, ts, "", proposal, checkOn(t, ts, "", proposal).Token); got.status != http.StatusOK {
+		t.Fatalf("the settings were not kept: %d %s", got.status, got.data)
+	}
+	s.stamping.record(stampRun{At: handoverNow, Status: stampStamped, Trail: trail, Sequence: 3, Digest: run3.digest})
+	writeBare(t, armed, "")
+	status, answer, data := readAudit(t, ts, "")
+	if status != http.StatusOK || answer.Report == nil || answer.Report.Coverage.Stamped != (auditCoverageState{Status: "through", Through: 4}) {
+		t.Fatalf("the check did not see the stamp at record 4: %d %s", status, data)
+	}
+	if _, err := os.Stat(armed); !os.IsNotExist(err) {
+		t.Fatal("the trail was not put back before the question")
+	}
+	if answer.Stamping == nil || answer.Stamping.LastChecked == nil || *answer.Stamping.LastChecked != (stampChecked{Reason: lastRunMoved}) {
+		t.Errorf("with the trail changed since the check, the decision record says %+v", answer.Stamping)
 	}
 }

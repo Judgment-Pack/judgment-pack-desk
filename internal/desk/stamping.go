@@ -1068,6 +1068,7 @@ const (
 	lastRunBelow      = "The stamps the runtime checked reach record %d, before the checkpoint the run named."
 	lastRunGone       = "This trail holds no chained record at that sequence now."
 	lastRunUnasked    = "Desk could not ask the runtime for the checkpoint at that sequence now."
+	lastRunMoved      = "The trail changed while Desk asked the runtime about it."
 	lastRunRewritten  = "The record at that sequence now is not the one the run named, as where a trail was put back to an earlier point and written again since."
 )
 
@@ -1077,9 +1078,12 @@ const (
 // sequence in its trail; and the checkpoint of the record there now must be
 // the run's (`sameCheckpoint`): the report's head where the run named the
 // head, or, asked of the runtime (at), the checkpoint of the record at the
-// run's sequence where it named an earlier one. Anything Desk cannot tell is
-// not checked, and said.
-func lastRunChecked(view auditStamping, report *auditReport, at func(trail string, sequence int64) (*checkpointHead, error)) *stampChecked {
+// run's sequence where it named an earlier one, read in one answer through
+// the report's own head and held to it (`checkpointAt`, second review of
+// #317): the head's digest commits to every record before it, so the record
+// the runtime names there is the one the report's stamps reach. Anything Desk
+// cannot tell is not checked, and said.
+func lastRunChecked(view auditStamping, report *auditReport, at func(named, head checkpointHead) (*checkpointHead, error)) *stampChecked {
 	run := view.Last
 	if run == nil || run.Status != stampStamped && run.Status != stampAlready || run.Sequence < 1 {
 		return nil
@@ -1107,10 +1111,17 @@ func lastRunChecked(view auditStamping, report *auditReport, at func(trail strin
 	named := &checkpointHead{Identity: run.Trail, Sequence: run.Sequence, Digest: run.Digest}
 	now := &checkpointHead{Identity: report.head.trail, Sequence: report.head.sequence, Digest: report.head.digest}
 	if now.Identity != run.Trail || now.Sequence != run.Sequence {
+		if now.Identity != run.Trail || now.Sequence < run.Sequence {
+			// No head of the report to read the record through.
+			return not(lastRunUnasked)
+		}
 		var err error
-		if now, err = at(run.Trail, run.Sequence); errors.Is(err, errCheckpointsChanged) {
+		switch now, err = at(*named, *now); {
+		case errors.Is(err, errCheckpointsChanged):
 			return not(lastRunGone)
-		} else if err != nil {
+		case errors.Is(err, errTrailMovedSince):
+			return not(lastRunMoved)
+		case err != nil:
 			return not(lastRunUnasked)
 		}
 	}
@@ -1120,20 +1131,35 @@ func lastRunChecked(view auditStamping, report *auditReport, at func(trail strin
 	return &stampChecked{Checked: true}
 }
 
-// checkpointAt is the runtime's checkpoint of the record at sequence of this
-// desk's trail, trail (`audit checkpoint --since`, through readCheckpoints):
-// errCheckpointsChanged where the trail holds no chained record there now.
-func (s *Server) checkpointAt(ctx context.Context, dir heldDir, trail string, sequence int64) (*checkpointHead, error) {
-	got, err := s.readCheckpoints(ctx, dir, deskTrail, trail, sequence-1, sequence)
+// errTrailMovedSince is a trail whose checkpoints, read through the report's
+// head, do not end in that head: not the trail the report was of.
+var errTrailMovedSince = errors.New("the trail changed while Desk asked the runtime about it")
+
+// checkpointAt is the runtime's checkpoint of the record named.Sequence of
+// this desk's trail, read in one answer from it through head, the report's
+// own head (`audit checkpoint --since`, through readCheckpoints; second review
+// of #317): the answer's last line must be head, by `sameCheckpoint`, or the
+// trail is not the one the report was of (errTrailMovedSince); its first
+// must be the record at named.Sequence, or the trail holds no chained record
+// there (errCheckpointsChanged).
+func (s *Server) checkpointAt(ctx context.Context, dir heldDir, named, head checkpointHead) (*checkpointHead, error) {
+	got, err := s.readCheckpoints(ctx, dir, deskTrail, named.Identity, named.Sequence-1, head.Sequence)
+	if errors.Is(err, errCheckpointsChanged) {
+		return nil, errTrailMovedSince
+	}
 	if err != nil {
 		return nil, err
 	}
 	lines := bytes.Split(bytes.TrimSuffix(got.data, []byte("\n")), []byte("\n"))
-	line, ok := readCheckpointLine(lines[len(lines)-1])
-	if !ok || got.through != sequence || line.sequence != sequence {
+	first, firstRead := readCheckpointLine(lines[0])
+	last, lastRead := readCheckpointLine(lines[len(lines)-1])
+	switch {
+	case got.more || !lastRead || !sameCheckpoint(&head, &checkpointHead{Identity: last.trail, Sequence: last.sequence, Digest: last.digest}):
+		return nil, errTrailMovedSince
+	case !firstRead || first.sequence != named.Sequence:
 		return nil, errCheckpointsChanged
 	}
-	return &checkpointHead{Identity: line.trail, Sequence: line.sequence, Digest: line.digest}, nil
+	return &checkpointHead{Identity: first.trail, Sequence: first.sequence, Digest: first.digest}, nil
 }
 
 // record keeps run as the last, and says it in Desk's log, never with the

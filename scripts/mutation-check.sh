@@ -6136,12 +6136,15 @@ func (b *cappedBuffer) exceeded() bool {'
     '	if !sameCheckpoint(named, now) && false {
 		return not(lastRunRewritten)'
   mutate go 'audit r2 fix: an earlier record is taken for the run'"'"'s without asking the runtime' "$R2ST" \
-    '		if now, err = at(run.Trail, run.Sequence); errors.Is(err, errCheckpointsChanged) {' \
-    '		if now, err = named, error(nil); errors.Is(err, errCheckpointsChanged) {'
+    '		switch now, err = at(*named, *now); {' \
+    '		switch now, err = named, error(nil); {'
+  mutate go 'audit r2 fix: an earlier record is read from a trail that is not the report'"'"'s' "$R2ST" \
+    '	case got.more || !lastRead || !sameCheckpoint(&head, &checkpointHead{Identity: last.trail, Sequence: last.sequence, Digest: last.digest}):' \
+    '	case got.more || !lastRead:'
   mutate go 'audit r2 fix: a record the runtime could not be asked of is said rewritten' "$R2ST" \
-    '		} else if err != nil {
+    '		case err != nil:
 			return not(lastRunUnasked)' \
-    '		} else if err != nil && false {
+    '		case false:
 			return not(lastRunUnasked)'
   mutate go 'audit r2 fix: stamps that reach an earlier record are taken for the run'"'"'s' "$R2ST" \
     '	case stamped.Through < run.Sequence:' \
