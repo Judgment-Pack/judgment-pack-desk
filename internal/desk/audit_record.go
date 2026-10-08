@@ -199,9 +199,74 @@ type auditReport struct {
 	Establishes      []string `json:"establishes"`
 	DoesNotEstablish []string `json:"doesNotEstablish"`
 	// Trail is the trail's identity as the runtime read it, where it read
-	// one: a trail with no chained line has none. The page is not given it;
-	// the repair's token binds it (audit_repair.go).
-	Trail string `json:"-"`
+	// one: a trail with no chained line has none. The repair's token binds
+	// it (audit_repair.go), and the page is given it, so that it tells the
+	// checkpoint a stamp run named of this trail from one of another
+	// (Stamping.tsx; line audit, finding 5).
+	Trail string `json:"trail,omitempty"`
+	// head is the report's last chained record as the runtime names it,
+	// trail, sequence and record digest, where its member is a checkpoint of
+	// the runtime's shape; it is kept for the stamping scheduler, and the page
+	// is not given it.
+	head checkpointLine
+}
+
+// chainedAfter is how many chained records of report's trail follow the
+// record at through, where the report says it, and records true; or, where it
+// does not, how many lines follow it through the trail's last chained line,
+// and records false. A line a repair names as damaged, and an unchained line
+// a later chained one commits to, are lines and not records (line audit,
+// finding 7), so a count is never one sequence taken from another, except
+// where the report says no line of either kind is there:
+//
+//   - after no record, every chained record (`coverage.chained`);
+//   - after the record the held checkpoints reach (`checkpointed.through`),
+//     the records none of them witnesses (`coverage.unwitnessed`), the
+//     runtime's own count;
+//   - where the trail holds no damaged and no unchained line, every line
+//     after it through the last chained one, which is the trail's lines less
+//     the unchained ones after the last chained line (`coverage.uncovered`).
+func chainedAfter(report *auditReport, through int64) (count int64, records bool) {
+	c := report.Coverage
+	last := report.Lines - c.Uncovered
+	switch {
+	case through == 0:
+		return c.Chained, true
+	case c.Checkpointed.Status == "through" && c.Checkpointed.Through == through:
+		return c.Unwitnessed, true
+	case c.Damaged == 0 && c.Unchained == 0:
+		return max(last-through, 0), true
+	}
+	return max(last-through, 0), false
+}
+
+// handedSince is one holder's count after the last record handed over to it
+// (`chainedAfter`), of the trail the report is of: Records where the report
+// says how many chained records follow it, and Lines, in its place, where it
+// does not.
+type handedSince struct {
+	Holder  string `json:"holder"`
+	Trail   string `json:"trail"`
+	Through int64  `json:"through"`
+	Records *int64 `json:"records,omitempty"`
+	Lines   *int64 `json:"lines,omitempty"`
+}
+
+// sinceHandedOver is, for each holder whose checkpoints were passed, what
+// follows the last record handed over to it, as report says it: nothing where
+// there is no report, or the report is of another trail than the one whose
+// checkpoints were passed.
+func sinceHandedOver(expect heldExpectations, report *auditReport) []handedSince {
+	if report == nil || report.Trail == "" || report.Trail != expect.trail {
+		return nil
+	}
+	var since []handedSince
+	for _, held := range expect.handed {
+		entry := handedSince{Holder: held.holder, Trail: expect.trail, Through: held.through}
+		entry.Records, entry.Lines = countedAs(chainedAfter(report, held.through))
+		since = append(since, entry)
+	}
+	return since
 }
 
 // auditAnswer is what `GET /api/audit/verify` answers.
@@ -235,6 +300,11 @@ type auditAnswer struct {
 	// is not zero or empty.
 	Expected     int      `json:"expected,omitempty"`
 	ExpectUnread []string `json:"expectUnread,omitempty"`
+	// Since is, for each holder whose checkpoints were passed, the chained
+	// records after the last one handed over to it, or the lines where the
+	// report does not say (`sinceHandedOver`). It is given with a report,
+	// and on the decision record alone.
+	Since []handedSince `json:"since,omitempty"`
 	// HandoverProblem is why Desk passed none of the checkpoints it handed
 	// over, where it could not read its record of hand-overs, or tell which
 	// trail is current: never the same as keeping none.
@@ -730,6 +800,7 @@ func (s *Server) auditVerify(ctx context.Context, dir heldDir) (auditAnswer, err
 	answer.Expected = expect.count
 	answer.ExpectUnread = expect.unread
 	answer.HandoverProblem = expect.problem
+	answer.Since = sinceHandedOver(expect, answer.Report)
 	return answer, nil
 }
 
@@ -965,6 +1036,7 @@ type auditVerification struct {
 	Signatures           *wireAuditSignatures     `json:"signatures"`
 	Stamps               *wireAuditStamps         `json:"stamps"`
 	Trail                *string                  `json:"trail"`
+	Head                 json.RawMessage          `json:"head"`
 	Establishes          []string                 `json:"establishes"`
 	DoesNotEstablish     []string                 `json:"doesNotEstablish"`
 }
@@ -1142,6 +1214,9 @@ func (got auditVerification) report() (*auditReport, bool) {
 	}
 	if got.Trail != nil {
 		report.Trail = *got.Trail
+	}
+	if head, ok := readCheckpointLine(got.Head); ok {
+		report.head = head
 	}
 	for _, segment := range got.Segments {
 		report.Segments = append(report.Segments, auditSegment{FirstLine: p.count(segment.FirstLine), LastLine: p.count(segment.LastLine)})

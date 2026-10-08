@@ -119,6 +119,24 @@ go	any header at all is forwarded to the endpoint	TestRelayCarriesEachProtocolsM
 go	any name passes as the web source	TestSharedFixturesDecodeAsTheVerdictSays
 go	any object takes any member at all	TestARefusedFileSendsNothing,TestConfiguredEndpointRefusals,TestDeskConfigWriteRefusesWhatTheDecoderWouldRefuse,TestResearchRelayRefusesWithoutAGatewayAndSendsNothing,TestSharedFixturesDecodeAsTheVerdictSays
 go	any world-writable ancestor is admitted	TestARefusedStoreTouchesTheFilesystemNotAtAll,TestAnUnusableStoreLeavesTheRestOfTheDeskAlone,TestCustodyRefusesALooseAncestor,TestDeskConfigWriteRefusesWhereNoKeyCanBeKept,TestEveryCodeHasAStatusAndAWitness,TestRelayRefusesWhereNoKeyCanBeKept
+go	audit fix: a check that finds no stamp leaves what the scheduler knows	TestACheckWithRootsReplacesWhatTheSchedulerKnows
+go	audit fix: a check with roots keeps no digest of the head	TestACheckKeepsTheDigestOfTheHeadItFindsStamped,TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved
+go	audit fix: a checkpoint known with no digest is taken for the head	TestACheckWithRootsReplacesWhatTheSchedulerKnows
+go	audit fix: a count since a hand-over is given for another trail	TestTheRecordsSinceAHandOverAreTheReports
+go	audit fix: a count since a hand-over is of another record	TestTheRecordsSinceAHandOverAreTheReports
+go	audit fix: a repaired trail's lines are counted as records	TestTheRecordsPendingAStampAfterARepairAreTheReports,TestTheRecordsSinceAHandOverAreTheReports,TestWhatFollowsARecordIsCountedFromTheReport
+go	audit fix: a run keeps no record digest	TestAStampAnswerIsReadAsDocumented,TestTheSchedulerStampsATrailRestoredToAnEarlierPointAgain,TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved
+go	audit fix: a trail's unchained lines are counted as records	TestWhatFollowsARecordIsCountedFromTheReport
+go	audit fix: after no record, every line is pending	TestWhatFollowsARecordIsCountedFromTheReport
+go	audit fix: another record at the sequence stamped is not stamped	TestTheSchedulerStampsATrailRestoredToAnEarlierPointAgain
+go	audit fix: lines are given as records	TestTheRecordsPendingAStampAfterARepairAreTheReports,TestTheRecordsSinceAHandOverAreTheReports
+go	audit fix: no count since a hand-over is given	TestRelayReportsAnUnreachableEndpointFromTheClosedVocabulary,TestTheRecordsSinceAHandOverAreTheReports
+go	audit fix: the head keeps no record digest	TestACheckWithRootsReplacesWhatTheSchedulerKnows,TestTheSchedulerStampsATrailRestoredToAnEarlierPointAgain,TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved
+go	audit fix: the page is not given the trail's identity	TestACheckWithRootsReplacesWhatTheSchedulerKnows
+go	audit fix: the records after the held checkpoints are not the runtime's count	TestTheRecordsPendingAStampAfterARepairAreTheReports,TestTheRecordsSinceAHandOverAreTheReports,TestWhatFollowsARecordIsCountedFromTheReport
+go	audit fix: the records pending a stamp are one sequence taken from another	TestTheRecordsPendingAStampAfterARepairAreTheReports
+go	audit fix: the unchained lines after the last chained one are counted	TestWhatFollowsARecordIsCountedFromTheReport
+go	audit fix: what the scheduler knows only advances	TestACheckWithRootsReplacesWhatTheSchedulerKnows,TestTheSchedulerStampsATrailRestoredToAnEarlierPointAgain
 go	audit: a configuration Desk cannot read keeps no trail	TestAProjectThatKeepsNoTrailRunsNothing
 go	audit: a discontinuity's reason is passed on with its paths	TestThePanelQuotesNoPath
 go	audit: a failed packs schema reads as an older runtime	TestAFailedSchemaIsAnErrorAndNotAnOlderRuntime,TestTheDecisionRecordIsUnavailableWhereTheReviewIs
@@ -693,7 +711,7 @@ go	stamping: a stop kills the stamp	TestTheSchedulerStopsWithTheServer
 go	stamping: a time of no form is read	TestAStampAnswerIsReadAsDocumented
 go	stamping: a time stamped through of no form is read	TestTheStampsAndThePendingRecordsAreTheRuntimes
 go	stamping: a token of another length is read	TestAStampingTokenIsBoundToWhatWasShown
-go	stamping: a trail moved aside is not stamped	TestTheSchedulerStampsAtTheIntervalOnlyWhereTheHeadMoved
+go	stamping: a trail moved aside is not stamped	TestTheSchedulerStampsATrailRestoredToAnEarlierPointAgain
 go	stamping: a used removal token is not refused	TestRemovingTheAuthorityKeepsTheStamps
 go	stamping: a used token is not refused	TestAStampingTokenIsBoundToWhatWasShown
 go	stamping: a wake runs beside a run in progress	TestOneStampRunAtATimePerDesk
@@ -1324,6 +1342,21 @@ web	any marked relay 401 ends the session	src/mcp/session.test.tsx
 web	any relay 401 ends the session	src/assistant/modelListing.test.ts,src/mcp/session.test.tsx
 web	applicability is read-only, whatever mode the page is in	src/packs/edit/forms.test.tsx
 web	applicability renders two elements at one pointer	src/packs/document/PackDocumentView.test.tsx
+web	audit fix: a count after another record is this row's	src/audit/handover.test.tsx
+web	audit fix: a count of another trail is this row's	src/audit/handover.test.tsx
+web	audit fix: a count of records and of lines both is read	src/audit/handover.test.tsx
+web	audit fix: a report's trail of no form is read	src/audit/stamping.test.tsx
+web	audit fix: a run's digest of no form is read	src/audit/stamping.test.tsx
+web	audit fix: a stamping with records and lines pending both is read	src/audit/stamping.test.tsx
+web	audit fix: another trail's stamps reach the last run's checkpoint	src/audit/stamping.test.tsx
+web	audit fix: checkpoints and roots with no key leave the roots out	src/audit/decisionRecord.test.tsx
+web	audit fix: checkpoints with no key say keys were used	src/audit/decisionRecord.test.tsx,src/audit/handover.test.tsx
+web	audit fix: counts since a hand-over beside a refusal are read	src/audit/handover.test.tsx
+web	audit fix: keys Desk could not read are taken for keys passed	src/audit/decisionRecord.test.tsx
+web	audit fix: the lines pending a stamp are said as records	src/audit/stamping.test.tsx
+web	audit fix: the lines since a hand-over are said as records	src/audit/handover.test.tsx,src/audit/jobsRecord.test.tsx
+web	audit fix: the report's count since a hand-over is not used	src/audit/handover.test.tsx
+web	audit fix: the report's lines since a hand-over are said as records	src/audit/handover.test.tsx
 web	blanking a nonEmptyString writes an empty string	src/packs/edit/writes.test.ts
 web	bytes that are not a document are handed to the readers	src/packs/edit/resilience.test.tsx
 web	case establishment runs again over a blocked expectation	src/research/run.test.ts
@@ -1398,7 +1431,7 @@ web	hand-over page: records since are shown with no current trail	src/audit/hand
 web	hand-over page: saved under another name	src/audit/handover.test.tsx
 web	hand-over page: the SHA-256 handed over is not shown	src/audit/handover.test.tsx,src/audit/jobsRecord.test.tsx
 web	hand-over page: the decision record is not checked again after a confirmation	src/audit/handover.test.tsx,src/audit/jobsRecord.test.tsx
-web	hand-over page: the held statement is not said	src/audit/handover.test.tsx
+web	hand-over page: the held statement is not said	src/audit/decisionRecord.test.tsx,src/audit/handover.test.tsx
 web	hand-over page: the holders are not read again with the decision record	src/audit/handover.test.tsx
 web	hand-over page: the holders follow every change to the project	src/audit/handover.test.tsx
 web	hand-over page: the stale sentence is not said	src/audit/handover.test.tsx
@@ -1549,8 +1582,8 @@ web	key panel: the key in force is not shown	src/audit/decisionRecord.test.tsx
 web	key panel: the public keys are not shown	src/audit/decisionRecord.test.tsx,src/audit/rotateSigningKey.test.tsx,src/packs/upgrade/upgrade.test.tsx
 web	key panel: the public keys are shown out of order	src/audit/decisionRecord.test.tsx,src/audit/rotateSigningKey.test.tsx
 web	key panel: the runtime's diagnostics on the key are not shown	src/audit/decisionRecord.test.tsx
-web	key panel: the statement claims keys it did not pass	src/audit/decisionRecord.test.tsx
-web	key panel: the statement says no keys where it passed some	src/audit/decisionRecord.test.tsx
+web	key panel: the statement claims keys it did not pass	src/audit/decisionRecord.test.tsx,src/audit/handover.test.tsx,src/audit/stamping.test.tsx
+web	key panel: the statement says no keys where it passed some	src/audit/decisionRecord.test.tsx,src/audit/handover.test.tsx
 web	members render in canonical order rather than the document's	src/packs/document/PackDocumentView.test.tsx
 web	new bytes are written with this module's line ending	src/packs/edit/conditionOps.test.ts
 web	new desk notice: a notice that is not words is accepted	src/desks/DeskSwitcher.test.tsx
@@ -1621,6 +1654,8 @@ web	removal is offered where there is nothing to remove	src/assistant/AssistantS
 web	removing a member leaves its comma	src/packs/documentText.test.ts,src/packs/edit/conditionOps.test.ts
 web	removing the endpoint discards the tier	src/assistant/endpointForm.test.tsx
 web	removing the endpoint writes an endpoint object anyway	src/assistant/endpointForm.test.tsx
+web	repair client: a refusal to check carries an offer	src/audit/repairTrail.test.tsx
+web	repair client: the decision record's offer is not checked	src/audit/repairTrail.test.tsx
 web	repair page: an outcome outlives a later check	src/audit/repairTrail.test.tsx
 web	review: a diff is drawn without the locked bytes	src/packs/review/review.test.tsx
 web	review: a file is left out of the review	src/packs/review/review.test.tsx
@@ -1733,7 +1768,7 @@ web	stamping page: the records pending are not shown	src/audit/stamping.test.tsx
 web	stamping page: the removal runs before it is confirmed	src/audit/stamping.test.tsx
 web	stamping page: the runtime did not check the stamps is not said	src/audit/stamping.test.tsx
 web	stamping page: the sequence of the last run is not labelled	src/audit/stamping.test.tsx
-web	stamping page: the statement says no stamp was checked with roots given	src/audit/stamping.test.tsx
+web	stamping page: the statement says no stamp was checked with roots given	src/audit/decisionRecord.test.tsx,src/audit/stamping.test.tsx
 web	stamping page: the trust sentence is left out	src/audit/stamping.test.tsx
 web	stamping page: what a stamp does not establish is not said	src/audit/stamping.test.tsx
 web	stamping page: what a stamp establishes is not said	src/audit/stamping.test.tsx

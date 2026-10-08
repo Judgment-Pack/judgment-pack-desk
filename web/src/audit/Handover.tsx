@@ -5,9 +5,13 @@
  * The holders the owner added, each by a label and a channel of their own
  * words, and what Desk recorded as handed over to each for the trail as the
  * runtime gives it now: through which record, when by Desk's clock, the
- * SHA-256 of what was handed over, and how many records since. Beside the
- * list, the ADR's sentence: this is Desk's own record, and proves nothing to
- * anyone; only the holder's own copy counts.
+ * SHA-256 of what was handed over, and what follows it. That is the chained
+ * records since, as the decision record's report counts them, where the
+ * holder's checkpoints were passed to it and the report says how many; and
+ * otherwise the lines since, said as lines: a line a repair names as damaged
+ * is not a record (line audit, finding 7). Beside the list, the ADR's
+ * sentence: this is Desk's own record, and proves nothing to anyone; only the
+ * holder's own copy counts.
  *
  * "Download checkpoints" saves the checkpoints after the holder's cursor as
  * the bytes Desk served, kept as a Blob from the response to the saved file,
@@ -39,7 +43,7 @@ import { Button } from '../ui/Button'
 import { CodeBlock } from '../ui/CodeBlock'
 import { Field } from '../ui/Field'
 import { Input } from '../ui/Input'
-import { addHolder, checkJobsRecordAgain, confirmHandover, downloadCheckpoints, HOLDERS_KEY, readHolders, StaleHandover, type Checkpoints, type HandoverChain, type Holder, type HolderTrail, type HandoverTrail, type JobsChain } from './client'
+import { addHolder, checkJobsRecordAgain, confirmHandover, downloadCheckpoints, HOLDERS_KEY, readHolders, StaleHandover, type Checkpoints, type HandedSince, type HandoverChain, type Holder, type HolderTrail, type HandoverTrail, type JobsChain } from './client'
 import styles from './DecisionRecord.module.css'
 
 /** A download waiting for the owner's word that it went to the holder. */
@@ -96,9 +100,11 @@ function save(blob: Blob, name: string) {
 const when = (seconds: number) => formatDate(seconds * 1000, { dateStyle: 'medium', timeStyle: 'short' })
 const messageOf = (cause: unknown) => cause instanceof Error ? cause.message : String(cause)
 
-export function Handover({ checkedAt, state, onState, onConfirmed }: {
+export function Handover({ checkedAt, since, state, onState, onConfirmed }: {
   /** When the decision record beside this was last read: the holders are read again with it. */
   checkedAt: number
+  /** What the decision record's report says follows the last record handed over to each holder whose checkpoints it was given. */
+  since?: HandedSince[]
   state: HandoverState
   onState: (update: (state: HandoverState) => HandoverState) => void
   /** Run the decision record's check again: it runs with what was handed over. */
@@ -165,7 +171,7 @@ export function Handover({ checkedAt, state, onState, onConfirmed }: {
             {data.jobs?.state === 'no-runner' && <p className={styles.quiet}>{msg('This desk has no Runner, so it has no chain of runs to hand over.')}</p>}
             {data.holders.length === 0 ? <p>{msg('No holder yet.')}</p>
               : <ul className={styles.list} aria-label={msg('Holders')}>{data.holders.map(holder => <HolderItem key={holder.id} holder={holder}
-                trail={data.trail} jobs={data.jobs?.state === 'no-runner' ? undefined : data.jobs} state={state} busy={busy !== undefined}
+                trail={data.trail} since={since} jobs={data.jobs?.state === 'no-runner' ? undefined : data.jobs} state={state} busy={busy !== undefined}
                 onDownload={chain => void download(holder, chain)} onConfirm={pending => void confirm(holder, pending)} />)}</ul>}
           </>}
       <AddHolder onAdded={() => void query.refetch()} />
@@ -179,10 +185,25 @@ function shownRecord(entries: Record<string, HolderTrail>, trail: HandoverTrail 
   return Object.values(entries).sort((a, b) => b.confirmedAt - a.confirmedAt)[0]
 }
 
+/** What follows the last record handed over to a holder: chained records, as a report counts them, or lines. */
+type Since = { records: number } | { lines: number }
+
+/**
+ * What the row says follows the record handed over: what the decision
+ * record's report says for this holder, this trail and this very record,
+ * where it says it; and otherwise the lines Desk's record of hand-overs gives.
+ */
+function sinceOf(record: HolderTrail | undefined, counted: HandedSince | undefined): Since | undefined {
+  if (counted?.records !== undefined) return { records: counted.records }
+  if (counted?.lines !== undefined) return { lines: counted.lines }
+  return record?.linesSince !== undefined ? { lines: record.linesSince } : undefined
+}
+
 /** A holder: the decision record's row, and, where this desk has a Runner, the chain of runs' row beside it. */
-function HolderItem({ holder, trail, jobs, state, busy, onDownload, onConfirm }: {
+function HolderItem({ holder, trail, since, jobs, state, busy, onDownload, onConfirm }: {
   holder: Holder
   trail: HandoverTrail | null
+  since?: HandedSince[]
   /** Runner's chain of runs as it is now; undefined where this desk has no Runner. */
   jobs?: JobsChain
   state: HandoverState
@@ -191,14 +212,17 @@ function HolderItem({ holder, trail, jobs, state, busy, onDownload, onConfirm }:
   onConfirm: (pending: PendingHandover) => void
 }) {
   const head = jobs?.state === 'chain' ? jobs.chain : null
+  const record = shownRecord(holder.trails, trail)
+  const counted = record && trail ? since?.find(item => item.holder === holder.id && item.trail === trail.identity && item.through === record.through) : undefined
+  const jobsRecord = shownRecord(holder.jobs ?? {}, head)
   return <li aria-label={holder.label}>
     <div className={styles.card}>
       <p><strong>{holder.label}</strong> <span className={styles.quiet}>{holder.channel}</span></p>
-      <ChainRow holder={holder} title={jobs ? msg('Decision record') : undefined} trail={trail} record={shownRecord(holder.trails, trail)}
+      <ChainRow holder={holder} title={jobs ? msg('Decision record') : undefined} trail={trail} record={record} since={sinceOf(record, counted)}
         moved={holder.otherTrail ? msg('The trail was moved aside since: this holder starts at 0 for the new trail') : undefined}
         pending={state.pending[rowKey(holder.id, 'trail')]} notice={state.notices[rowKey(holder.id, 'trail')]} busy={busy}
         onDownload={() => onDownload('trail')} onConfirm={onConfirm} />
-      {jobs && <ChainRow holder={holder} title={msg('Jobs runs')} trail={head} record={shownRecord(holder.jobs ?? {}, head)}
+      {jobs && <ChainRow holder={holder} title={msg('Jobs runs')} trail={head} record={jobsRecord} since={sinceOf(jobsRecord, undefined)}
         moved={holder.otherJobsChain ? msg('The chain of runs has another identity now: this holder starts at 0 for it') : undefined}
         pending={state.pending[rowKey(holder.id, 'jobs')]} notice={state.notices[rowKey(holder.id, 'jobs')]} busy={busy}
         onDownload={() => onDownload('jobs')} onConfirm={onConfirm}>
@@ -227,12 +251,14 @@ function JobsChainWords({ chain }: { chain: JobsChain }) {
  * download waiting for its confirmation, and what its last action answered.
  * Titled, and a group of its own, where the holder shows two.
  */
-function ChainRow({ holder, title, trail, record, moved, pending, notice, busy, onDownload, onConfirm, children }: {
+function ChainRow({ holder, title, trail, record, since, moved, pending, notice, busy, onDownload, onConfirm, children }: {
   holder: Holder
   title?: string
   /** The chain as it is now: null where it has no chained record, or was not read. */
   trail: HandoverTrail | null
   record?: HolderTrail
+  /** What follows the record handed over: records where a report counts them, lines otherwise. */
+  since?: Since
   /** Where Desk's record names only another identity of the chain, what to say of it. */
   moved?: string
   pending?: PendingHandover
@@ -249,7 +275,8 @@ function ChainRow({ holder, title, trail, record, moved, pending, notice, busy, 
       {record ? <>
         <p>{msg('Handed over through record {{through}} on {{date}}', { through: record.through, date: when(record.confirmedAt) })}</p>
         <CodeBlock text={record.digest} label={msg('SHA-256 of what was handed over')} />
-        {trail && record.unwitnessed !== undefined && <p>{msg('Records since: {{number}}', { number: record.unwitnessed })}</p>}
+        {trail && since && ('records' in since ? <p>{msg('Records since: {{number}}', { number: since.records })}</p>
+          : <p>{msg('Lines since: {{number}}', { number: since.lines })}</p>)}
       </> : moved ? <p>{moved}</p>
         : <p>{msg('Nothing handed over yet')}</p>}
       {trail && <div className={styles.actions}><Button disabled={busy} onClick={onDownload}>{msg('Download checkpoints')}</Button></div>}

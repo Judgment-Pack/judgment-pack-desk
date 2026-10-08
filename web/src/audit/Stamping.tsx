@@ -18,16 +18,19 @@
  * confirmed too, and keeps the stamps already in the trail.
  *
  * Under the settings: the records pending a stamp, where the runtime checked
- * the stamps with the roots; what the runtime said of the stamps it accepted
- * and the lag it measured, in its own numbers; and the last stamp run since
- * Desk started, by Desk's clock, in the runtime's words where it refused.
- * Where the runtime did not check the stamps, the page says so; and wherever
- * no stamp the runtime checked reaches the record the last run named (no
- * roots, none holding, or one below it), that record is labelled as the
- * authority's answer to Desk's request, not as a stamp the runtime checked
- * (review round 1). "Stamp now" runs one
- * stamp on request, in the desk's one turn, and the decision record is
- * checked again after it.
+ * the stamps with the roots, as its report counts them, or the lines where it
+ * does not say how many records (a line a repair names as damaged is not a
+ * record; line audit, finding 7); what the runtime said of the stamps it
+ * accepted and the lag it measured, in its own numbers; and the last stamp
+ * run since Desk started, by Desk's clock, in the runtime's words where it
+ * refused. Where the runtime did not check the stamps, the page says so; and
+ * wherever no stamp the runtime checked reaches the checkpoint the last run
+ * named in the same trail (no roots, none holding, one below it, or the
+ * stamps of another trail, which the report names by its identity), that
+ * checkpoint is labelled as the authority's answer to Desk's request, not as
+ * a stamp the runtime checked (review round 1; line audit, finding 5). "Stamp
+ * now" runs one stamp on request, in the desk's one turn, and the decision
+ * record is checked again after it.
  */
 import { useRef, useState } from 'react'
 import { formatDate, msg, systemMessage, useLocale } from '../i18n'
@@ -71,9 +74,12 @@ export function Stamping({ stamping, report, outcome, onOutcome }: {
   const { settings } = stamping
   const stamped = report?.coverage.stamped
   const named = stamping.last && (stamping.last.status === 'stamped' || stamping.last.status === 'already-stamped') ? stamping.last : undefined
-  // Whether a stamp the runtime checked reaches the record the last run
-  // named: only then is that record not labelled as the authority's answer.
-  const covered = named?.sequence !== undefined && stamped?.status === 'through' && (stamped.through ?? 0) >= named.sequence
+  // Whether a stamp the runtime checked reaches the checkpoint the last run
+  // named, in the trail the run named: only then is that checkpoint not
+  // labelled as the authority's answer. Another trail's stamps reach no
+  // checkpoint of this one, whatever their sequence.
+  const covered = named?.sequence !== undefined && report?.trail !== undefined && named.trail === report.trail
+    && stamped?.status === 'through' && (stamped.through ?? 0) >= named.sequence
   async function run() {
     setBusy(true)
     try {
@@ -119,8 +125,10 @@ export function Stamping({ stamping, report, outcome, onOutcome }: {
         {stamping.removeToken && <Button ref={remover} disabled={busy} onClick={() => setRemoving(true)}>{msg('Remove the authority')}</Button>}
       </div>}
       {stamping.running && <p role="status">{msg('A stamp run is in progress.')}</p>}
-      {stamping.pending !== undefined && <dl className={styles.facts} aria-label={msg('Pending')}>
+      {stamping.pending !== undefined ? <dl className={styles.facts} aria-label={msg('Pending')}>
         <div><dt>{msg('Records pending a stamp')}</dt><dd>{stamping.pending}</dd></div>
+      </dl> : stamping.pendingLines !== undefined && <dl className={styles.facts} aria-label={msg('Pending')}>
+        <div><dt>{msg('Lines pending a stamp')}</dt><dd>{stamping.pendingLines}</dd></div>
       </dl>}
       {report?.stamps && <Stamps report={report} />}
       {stamped?.status === 'not-checked' && (named || stamping.state === 'set') && <p>{msg('The runtime did not check the stamps.')}{stamped.detail && <> <span lang="en">{stamped.detail}</span></>}</p>}

@@ -65,9 +65,9 @@ package desk
 // (`stampScheduler`), started with its server and stopped with it. It wakes
 // once a minute, and where an authority is set and the interval has passed
 // since the last attempt, it makes one attempt: it asks the runtime where the
-// trail ends (`audit checkpoint --format json`), and only where the head has
-// moved past the last checkpoint known stamped (from the last stamp run's
-// answer, or the last `audit verify` with roots) runs
+// trail ends (`audit checkpoint --format json`), and only where the head is
+// not the last checkpoint known stamped, by trail, sequence and record digest,
+// runs
 //
 //	jpack audit stamp --config jpack.json --tsa <address> --timeout 15s --format json
 //
@@ -77,6 +77,19 @@ package desk
 // (JPS-AUDIT-STAMP-NO-AUTHORITY, -UNREACHABLE, -REFUSED, -REJECTED,
 // -INVALID) or Desk's, is shown in its words, with no path, and the next
 // interval tries again: one attempt per interval, never a retry storm.
+//
+// **The checkpoint known stamped is replaced, never only advanced** (line
+// audit, finding 5): by each stamp run's answer, and by each `audit verify`
+// with roots, which says how far the stamps it accepts reach, or that none
+// does. A head below it, or at its sequence with another record, is a trail
+// restored to an earlier prefix and written or repaired since: it is stamped
+// again. A check knows the record digest of the checkpoint it found stamped
+// only where that checkpoint is the report's head (`head`); elsewhere it
+// knows a trail and a sequence, and no head is taken for that checkpoint
+// without its digest (second review of #294). The runtime asks the authority
+// nothing for a checkpoint stamped already, so a replacement that lowers what
+// is known, or one with no digest, costs at most one `audit stamp` answering
+// `already-stamped`, never a stamp.
 //
 // **Off the decision path.** Nothing a deciding run does waits for it; while
 // Desk is not running, nothing is stamped and records stay pending. **A stop
@@ -89,11 +102,16 @@ package desk
 // The decision record's `audit verify` is given `--tsa-roots`, and
 // `--tsa-policy` and `--tsa-crls` where set (audit_record.go), so the
 // report's `coverage.stamped`, the stamps it accepted and the lag between
-// records' `at` and their first stamp are the runtime's. Records after
-// `stamped.through` are pending a stamp. Without roots the runtime says the
-// stamps were not checked, and the page shows the sequence the last stamp
-// run reported as the authority's answer to Desk's request, not as a stamp
-// checked.
+// records' `at` and their first stamp are the runtime's. The chained records
+// after `stamped.through` are pending a stamp, counted from what the report
+// says of them (`chainedAfter`), never by subtracting one line's number from
+// another's: a line a repair names as damaged is not a record (line audit,
+// finding 7). Where the report does not say, the count is of lines, and is
+// said as one. Without roots the runtime says the stamps were not checked.
+// The page shows the checkpoint the last stamp run named as the authority's
+// answer to Desk's request, not as a stamp checked, wherever the report's
+// stamps do not reach it in the same trail: no roots, no stamp, one below it,
+// or another trail's (line audit, finding 5).
 //
 // # What a stamp does not establish
 //
@@ -694,11 +712,14 @@ type auditStamping struct {
 	// they were not, PassProblem says why.
 	Passed      bool   `json:"passed,omitempty"`
 	PassProblem string `json:"passProblem,omitempty"`
-	// Pending is the records after the last one a stamp the runtime
-	// accepted covers: every record, where none does.
-	Pending *int64    `json:"pending,omitempty"`
-	Last    *stampRun `json:"last,omitempty"`
-	Running bool      `json:"running,omitempty"`
+	// Pending is the chained records after the last one a stamp the runtime
+	// accepted covers, every one where none does, where the report says how
+	// many (`chainedAfter`); PendingLines, in its place where it does not, is
+	// the lines after that record through the trail's last chained record.
+	Pending      *int64    `json:"pending,omitempty"`
+	PendingLines *int64    `json:"pendingLines,omitempty"`
+	Last         *stampRun `json:"last,omitempty"`
+	Running      bool      `json:"running,omitempty"`
 }
 
 /* The tokens ------------------------------------------------------------------ */
@@ -757,15 +778,16 @@ const (
 
 // stampRun is one stamp run's outcome: when, by Desk's clock; whether the
 // owner asked for it; and the runtime's answer (the checkpoint it named, by
-// trail and sequence, and for a stamp the time the authority states, the
-// time the checkpoint existed by and the policy, each as the runtime printed
-// it), its refusal in its words, or Desk's.
+// trail, sequence and record digest, and for a stamp the time the authority
+// states, the time the checkpoint existed by and the policy, each as the
+// runtime printed it), its refusal in its words, or Desk's.
 type stampRun struct {
 	At          int64               `json:"at"`
 	Requested   bool                `json:"requested,omitempty"`
 	Status      string              `json:"status"`
 	Trail       string              `json:"trail,omitempty"`
 	Sequence    int64               `json:"sequence,omitempty"`
+	Digest      string              `json:"digest,omitempty"`
 	StampedAt   string              `json:"stampedAt,omitempty"`
 	ExistedBy   string              `json:"existedBy,omitempty"`
 	Policy      string              `json:"policy,omitempty"`
@@ -785,8 +807,10 @@ type stampScheduler struct {
 	// lastAttempt is when the loop last made an attempt, or a run was asked
 	// for; zero before the first.
 	lastAttempt time.Time
-	// stamped is the last checkpoint known stamped: a run's answer, or a
-	// check with roots.
+	// stamped is the last checkpoint known stamped, nil where none is: a
+	// run's answer, by trail, sequence and digest, or a check with roots, by
+	// trail and sequence, and by digest where the checkpoint is the report's
+	// head, whichever came last (knowStamped).
 	stamped *checkpointHead
 	last    *stampRun
 	// said is the last problem with the settings written to Desk's log.
@@ -868,17 +892,21 @@ func (st *stampScheduler) settingsChanged() {
 	st.lastAttempt = time.Time{}
 }
 
-// noteStamped records that the trail of identity is stamped through
-// sequence, where that is past what is known.
-func (st *stampScheduler) noteStamped(identity string, sequence int64) {
-	if st == nil || identity == "" || sequence < 1 {
+// knowStamped replaces the last checkpoint known stamped with checkpoint, the
+// latest word on it, whether it is past what was known or not; nil, or one
+// with no trail or sequence, is that none is known (line audit, finding 5).
+func (st *stampScheduler) knowStamped(checkpoint *checkpointHead) {
+	if st == nil {
 		return
 	}
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	if st.stamped == nil || st.stamped.Identity != identity || st.stamped.Sequence < sequence {
-		st.stamped = &checkpointHead{Identity: identity, Sequence: sequence}
+	if checkpoint == nil || checkpoint.Identity == "" || checkpoint.Sequence < 1 {
+		st.stamped = nil
+		return
 	}
+	known := *checkpoint
+	st.stamped = &known
 }
 
 // wake is one wake of the loop: where an authority is set and its interval
@@ -923,9 +951,11 @@ func (st *stampScheduler) wake() {
 // attempt is one attempt in dir, after Desk's checks, in the turn the caller
 // holds, with the settings the caller read: the head for a scheduled attempt,
 // and the stamp, recorded as the last run. A scheduled attempt stamps only
-// where the head has moved past the last checkpoint known stamped; one the
-// owner asked for always asks the runtime, whose answer for a checkpoint
-// stamped already costs nothing.
+// where the head is not the last checkpoint known stamped: of another trail,
+// at another sequence, below it as well as past it, or at its sequence with
+// another record digest, or with none known. One the owner asked for always
+// asks the runtime, whose answer for a checkpoint stamped already costs
+// nothing.
 //
 // **The settings stamped with are the settings in force** (review round 1).
 // Immediately before the stamp, the settings are read again under
@@ -956,8 +986,9 @@ func (st *stampScheduler) attempt(dir heldDir, settings stampingSettings, reques
 		st.mu.Lock()
 		known := st.stamped
 		st.mu.Unlock()
-		if known != nil && known.Identity == head.Identity && head.Sequence <= known.Sequence {
-			// The head has not moved past the last checkpoint stamped.
+		if known != nil && known.Identity == head.Identity && head.Sequence == known.Sequence && known.Digest != "" && known.Digest == head.Digest {
+			// The head is the last checkpoint known stamped, by its record:
+			// a checkpoint known without its digest is never taken for it.
 			return stampRun{}
 		}
 	}
@@ -981,7 +1012,7 @@ func (st *stampScheduler) attempt(dir heldDir, settings stampingSettings, reques
 	run := readStamped(out, runErr)
 	run.At, run.Requested = at, requested
 	if run.Status == stampStamped || run.Status == stampAlready {
-		st.noteStamped(run.Trail, run.Sequence)
+		st.knowStamped(&checkpointHead{Identity: run.Trail, Sequence: run.Sequence, Digest: run.Digest})
 	}
 	return st.record(run)
 }
@@ -1062,7 +1093,7 @@ func readStamped(out []byte, runErr error) stampRun {
 		if !ok || got.Status == stampStamped && !stamped || got.Status == stampAlready && !none {
 			return undocumented
 		}
-		run := stampRun{Status: got.Status, Trail: checkpoint.trail, Sequence: checkpoint.sequence}
+		run := stampRun{Status: got.Status, Trail: checkpoint.trail, Sequence: checkpoint.sequence, Digest: checkpoint.digest}
 		if stamped {
 			for _, at := range []string{*got.StampedAt, *got.ExistedBy} {
 				if _, err := time.Parse(time.RFC3339Nano, at); err != nil {
@@ -1170,22 +1201,38 @@ func stampingNames(read os.FileInfo, path string) error {
 
 // stampingAfterVerify completes what the decision record says of stamping
 // once the runtime has answered: the records pending a stamp, where it
-// checked the stamps; what the scheduler last did; and, from a check with
-// roots, the last checkpoint known stamped.
+// checked the stamps, or the lines where it does not say how many records;
+// what the scheduler last did; and, from a check with roots, the last
+// checkpoint known stamped, in place of the one known before, or none where
+// no stamp covers a record.
 func (s *Server) stampingAfterVerify(view auditStamping, report *auditReport) *auditStamping {
 	if report != nil && view.Passed {
 		switch stamped := report.Coverage.Stamped; stamped.Status {
 		case "through":
-			pending := max(report.Lines-stamped.Through, 0)
-			view.Pending = &pending
-			s.stamping.noteStamped(report.Trail, stamped.Through)
+			view.Pending, view.PendingLines = countedAs(chainedAfter(report, stamped.Through))
+			// The record digest is known only where the checkpoint stamped
+			// through is the report's head; elsewhere none is kept, and the
+			// next wake asks the runtime (second review of #294).
+			known := checkpointHead{Identity: report.Trail, Sequence: stamped.Through}
+			if report.head.trail == report.Trail && report.head.sequence == stamped.Through {
+				known.Digest = report.head.digest
+			}
+			s.stamping.knowStamped(&known)
 		case "none":
-			pending := report.Lines
-			view.Pending = &pending
+			view.Pending, view.PendingLines = countedAs(chainedAfter(report, 0))
+			s.stamping.knowStamped(nil)
 		}
 	}
 	view.Last, view.Running = s.stamping.report()
 	return &view
+}
+
+// countedAs is a count as the page is given it: records, or lines.
+func countedAs(count int64, records bool) (*int64, *int64) {
+	if records {
+		return &count, nil
+	}
+	return nil, &count
 }
 
 /* The routes ------------------------------------------------------------------ */

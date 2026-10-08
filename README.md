@@ -422,9 +422,11 @@ time-stamping authority (stamping, below), it passes that authority's roots as
 `--tsa-crls`. It passes no `--require-…` flag, so the runtime checks the chain,
 the signatures against the keys it was given, the trail against the
 checkpoints it was given and the stamps against the roots it was given, and
-says what it did not check. Its sentence above the report says which: with
-keys and checkpoints you keep, with this desk's public keys, with the
-time-stamping roots you gave, or with no keys. The panel shows the runtime's status,
+says what it did not check. Its sentence above the report says which, from
+what Desk passed and nothing else: with keys and checkpoints you keep, only
+where it passed both; with checkpoints you keep and no public key; with this
+desk's public keys; with the time-stamping roots you gave; or with no keys.
+The panel shows the runtime's status,
 its coverage counts, segments, discontinuities and findings by name, and its
 sentences on what the result establishes and what it does not, in English as
 the runtime writes them, and, where a key was passed, the key in force at the
@@ -786,7 +788,11 @@ of the trail is held to what they kept with `jpack audit verify --expect`.
   refused, and says so. Otherwise it records
   nothing and says the file is stale. Where the trail was moved aside, each
   holder starts again at 0 for the new trail. The decision record is then
-  checked again, with what was handed over.
+  checked again, with what was handed over. Beside each holder, the records
+  since the last one confirmed are those the decision record's report counts,
+  where that holder's checkpoints were passed to it and the report says how
+  many; elsewhere, the lines since, said as lines: after a repair, a line it
+  names as damaged is not a record.
 - **What a held checkpoint establishes:** the records up to it are the ones
   that existed when it was handed over, against an operator who does not hold
   the holder's copy. **It does not establish** anything after it, that the
@@ -935,9 +941,17 @@ again at the next interval, once; stopping Desk never kills a stamp
 mid-write. The decision record passes the roots to `audit verify`, so the
 stamps the runtime accepted, how far they reach, the lag between each
 record's `at` and its first stamp, and the records still pending a stamp are
-the runtime's; without roots the runtime checks no stamp, and Desk labels the
-sequence its last stamp run named as the authority's answer to Desk's
-request, not as a stamp checked. Removing the authority stops the stamping
+the runtime's, counted from its report, or said as lines where the report
+does not say how many records follow (after a repair, for one); wherever the stamps the runtime accepts do not reach the
+checkpoint its last stamp run named in that same trail (without roots, with
+none holding, with one below it, or with the stamps of another trail),
+Desk labels that checkpoint as the authority's answer to Desk's request,
+not as a stamp checked. The scheduler stamps again wherever the trail's last
+checkpoint is not the one it last knew stamped, record for record, so a trail
+restored to an earlier point and written or repaired since is stamped again;
+where it knows a checkpoint stamped only by its trail and sequence, it asks
+the runtime again, which asks the authority nothing for a checkpoint stamped
+already. Removing the authority stops the stamping
 and keeps the trail's stamps as they are. In ADR-0010's words, a stamp
 establishes that "the checkpoint, and every line before it, existed by the
 authority's stated time, as far as that authority is independent of the

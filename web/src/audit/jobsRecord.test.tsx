@@ -323,13 +323,17 @@ const row = async (name: string) => within(await (await handover()).findByRole('
 
 describe('the chain of runs in the hand-over', () => {
   it('shows each holder two rows where this desk has a Runner, each with what Desk recorded of it', async () => {
-    holders = [{ holders: [{ ...auditor, trails: { [trail]: { through: 3, confirmedAt: 1791205200, digest, unwitnessed: 0 } }, jobs: { [chainId]: { through: 3, confirmedAt: 1791205200, digest: fileDigest, unwitnessed: 2 } } }],
+    holders = [{ holders: [{ ...auditor, trails: { [trail]: { through: 3, confirmedAt: 1791205200, digest, linesSince: 0 } }, jobs: { [chainId]: { through: 3, confirmedAt: 1791205200, digest: fileDigest, linesSince: 2 } } }],
       trail: { identity: trail, sequence: 3 }, jobs: { state: 'chain', chain: { identity: chainId, sequence: 5 } } }]
     showBoth()
     const desk = await row('Decision record'), runs = await row('Jobs runs')
-    expect(desk.getByText('Records since: 0')).toBeTruthy()
+    expect(desk.getByText('Lines since: 0')).toBeTruthy()
     expect(desk.getByLabelText('SHA-256 of what was handed over').textContent).toBe(digest)
-    expect(runs.getByText('Records since: 2')).toBeTruthy()
+    // The lines since a hand-over of the chain of runs, said as lines: no
+    // report beside the row says how many records follow (line audit,
+    // finding 7).
+    expect(runs.getByText('Lines since: 2')).toBeTruthy()
+    expect(runs.queryByText(/^Records since/)).toBeNull()
     expect(runs.getByLabelText('SHA-256 of what was handed over').textContent).toBe(fileDigest)
     expect(desk.getAllByRole('button', { name: 'Download checkpoints' })).toHaveLength(1)
     expect(runs.getAllByRole('button', { name: 'Download checkpoints' })).toHaveLength(1)
@@ -369,7 +373,7 @@ describe('the chain of runs in the hand-over', () => {
   })
 
   it('downloads the chain’s checkpoints as served, confirms them as the chain’s, and then checks the Jobs record again', async () => {
-    const recorded = { ...auditor, jobs: { [chainId]: { through: 5, confirmedAt: 1791205200, digest: fileDigest, unwitnessed: 0 } } }
+    const recorded = { ...auditor, jobs: { [chainId]: { through: 5, confirmedAt: 1791205200, digest: fileDigest, linesSince: 0 } } }
     holders = [{ holders: [{ ...auditor, jobs: { [chainId]: { through: 3, confirmedAt: 1791201000, digest } } }], trail: { identity: trail, sequence: 3 }, jobs: { state: 'chain', chain: { identity: chainId, sequence: 5 } } },
       { holders: [recorded], trail: { identity: trail, sequence: 3 }, jobs: { state: 'chain', chain: { identity: chainId, sequence: 5 } } }]
     download = () => jobsCheckpoints()
@@ -393,7 +397,7 @@ describe('the chain of runs in the hand-over', () => {
 
   /** One holder handed the chain through record 3, with records 4 and 5 to download and confirm. */
   function handingOverThroughFive() {
-    const recorded = { ...auditor, jobs: { [chainId]: { through: 5, confirmedAt: 1791205200, digest: fileDigest, unwitnessed: 0 } } }
+    const recorded = { ...auditor, jobs: { [chainId]: { through: 5, confirmedAt: 1791205200, digest: fileDigest, linesSince: 0 } } }
     holders = [{ holders: [{ ...auditor, jobs: { [chainId]: { through: 3, confirmedAt: 1791201000, digest } } }], trail: { identity: trail, sequence: 3 }, jobs: { state: 'chain', chain: { identity: chainId, sequence: 5 } } },
       { holders: [recorded], trail: { identity: trail, sequence: 3 }, jobs: { state: 'chain', chain: { identity: chainId, sequence: 5 } } }]
     download = () => jobsCheckpoints()
