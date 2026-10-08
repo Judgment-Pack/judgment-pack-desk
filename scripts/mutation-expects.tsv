@@ -198,6 +198,16 @@ go	audit fix: the sweep removes a key under a name no identity binds	TestAKeyFro
 go	audit fix: the unchained lines after the last chained one are counted	TestWhatFollowsARecordIsCountedFromTheReport
 go	audit fix: the upgrade makes the key with no identity written	TestAFailedSigningUpgradeLeavesNoKeyAndNoChange,TestAMovedProjectKeepsItsKeyAndItsPathTakesNothing,TestARotationOfTheStartupKeyFollowsWhatJpackJsonNames,TestAStoppedSigningUpgradeIsSweptAtTheNextStart,TestAnInheritedKeyHoldsTheStartupKeyStill,TestAnUpgradeNotPutBackLeavesTheKeyForTheNextStart,TestAnUpgradeWaitsForThisProjectsLockAndThenRefuses,TestChoosingTheSigningKeyWritesSixAndTheKeyTogether,TestNoPathOfTheStartupKeyReachesThePage,TestTheDecisionRecordReadsTheStartupKeyAfterTheUpgrade,TestTheSigningUpgradeWaitsForTheSigningFolder,TestTheStartFinishesARotationOfTheStartupKey,TestTheStartupKeyIsNamedByTheResolvedProject,TestTheUpgradeWritesTheIdentityBeforeTheKey
 go	audit fix: what the scheduler knows only advances	TestACheckWithRootsReplacesWhatTheSchedulerKnows,TestTheSchedulerStampsATrailRestoredToAnEarlierPointAgain
+go	audit r2 fix: a failed stamp run keeps the checkpoint known	TestAFailedStampRunLeavesNoCheckpointKnown
+go	audit r2 fix: a record the runtime could not be asked of is said rewritten	TestTheDecisionRecordHoldsTheLastRunToItsCheckpoint,TestTheSameCheckpointIsOneRule
+go	audit r2 fix: an earlier record is taken for the run's without asking the runtime	TestTheDecisionRecordHoldsTheLastRunToItsCheckpoint,TestTheSameCheckpointIsOneRule
+go	audit r2 fix: another trail's stamps are taken for the run's	TestTheSameCheckpointIsOneRule
+go	audit r2 fix: no stamp is taken for one that reaches the run	TestTheSameCheckpointIsOneRule
+go	audit r2 fix: stamps that reach an earlier record are taken for the run's	TestTheSameCheckpointIsOneRule
+go	audit r2 fix: the decision record says every last run checked	TestTheDecisionRecordHoldsTheLastRunToItsCheckpoint
+go	audit r2 fix: the last run is said checked with no roots passed	TestTheSameCheckpointIsOneRule
+go	audit r2 fix: the last run's checkpoint is taken by its trail and sequence alone	TestTheDecisionRecordHoldsTheLastRunToItsCheckpoint,TestTheSameCheckpointIsOneRule
+go	audit r2 fix: the same checkpoint is taken at another sequence	TestTheSameCheckpointIsOneRule
 go	audit: a configuration Desk cannot read keeps no trail	TestAProjectThatKeepsNoTrailRunsNothing
 go	audit: a discontinuity's reason is passed on with its paths	TestThePanelQuotesNoPath
 go	audit: a failed packs schema reads as an older runtime	TestAFailedSchemaIsAnErrorAndNotAnOlderRuntime,TestTheDecisionRecordIsUnavailableWhereTheReviewIs
@@ -1448,6 +1458,10 @@ web	audit fix: the lines pending a stamp are said as records	src/audit/stamping.
 web	audit fix: the lines since a hand-over are said as records	src/audit/handover.test.tsx,src/audit/jobsRecord.test.tsx
 web	audit fix: the report's count since a hand-over is not used	src/audit/handover.test.tsx
 web	audit fix: the report's lines since a hand-over are said as records	src/audit/handover.test.tsx
+web	audit r2 fix: a word that is checked and gives a reason is read	src/audit/stamping.test.tsx
+web	audit r2 fix: a word that is not checked and gives no reason is read	src/audit/stamping.test.tsx
+web	audit r2 fix: the label does not give the chassis's reason	src/audit/stamping.test.tsx
+web	audit r2 fix: the page takes the last run for checked with no word on it	src/audit/stamping.test.tsx
 web	blanking a nonEmptyString writes an empty string	src/packs/edit/writes.test.ts
 web	bytes that are not a document are handed to the readers	src/packs/edit/resilience.test.tsx
 web	case establishment runs again over a blocked expectation	src/research/run.test.ts
