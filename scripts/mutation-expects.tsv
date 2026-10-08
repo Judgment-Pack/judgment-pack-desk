@@ -928,6 +928,7 @@ go	upgrade key: a rotation is offered where jpack.json names another file	TestAR
 go	upgrade key: a rotation is reported made where jpack.json no longer names the key	TestARotationOfTheStartupKeyFollowsWhatJpackJsonNames
 go	upgrade key: a rotation's token does not bind the startup key's file	TestARotationOfTheStartupKeyFollowsWhatJpackJsonNames
 go	upgrade key: a signing folder held elsewhere is made in anyway	TestTheSigningUpgradeWaitsForTheSigningFolder
+go	upgrade key: another project's marker is the startup project's	TestAStoppedSigningUpgradeIsSweptAtTheNextStart
 go	upgrade key: jpack.json is published naming a key whose folder was replaced	TestAFailedSigningUpgradeLeavesNoKeyAndNoChange
 go	upgrade key: jpack.json names a key that was not made	TestChoosingTheSigningKeyWritesSixAndTheKeyTogether
 go	upgrade key: no jpack.json is taken for one that cannot be read	TestAStoppedSigningUpgradeIsSweptAtTheNextStart
