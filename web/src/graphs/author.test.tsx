@@ -132,3 +132,32 @@ it('gives the engine only two read-only host tools, passing exact content and re
   expect(GRAPH_SYSTEM).toContain('never write files or change configuration or its lock')
   expect(GRAPH_SYSTEM).toContain('propose no rows file or rows declaration')
 })
+
+it('refreshes page queries after a partial graph write and shows the route refusal', async () => {
+  await proposed()
+  vi.mocked(deskFetch).mockResolvedValueOnce(new Response(JSON.stringify({
+    graphWritten: true, declared: false, error: 'The graph document was written and not declared.'
+  }), { status: 409 }))
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm graph write' }))
+  expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'The graph document was written and not declared.')
+  expect(state.invalidate).toHaveBeenCalledTimes(1)
+  expect(screen.queryByText('The graph was written. Review and lock updates the reviewed set.')).toBeNull()
+})
+
+it('does not describe updating a reviewed set after a write without a lock', async () => {
+  vi.mocked(deskFetch).mockImplementation(async route => new Response(JSON.stringify(String(route).endsWith('/proposal') ? { ...offer, hasLock: false } : { graphWritten: true, declared: true })))
+  await proposed()
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm graph write' }))
+  await screen.findByText('The graph was written.')
+  expect(screen.queryByText(/Review and lock updates/)).toBeNull()
+})
+
+it('names the current graph document in the provider disclosure when editing', () => {
+  const view = render(<GraphAuthor graphId="draft" />)
+  fireEvent.click(screen.getByRole('button', { name: 'Author graph' }))
+  expect(screen.getByText(/The configured model provider receives/).textContent).toContain('current graph document')
+  view.unmount()
+  render(<GraphAuthor />)
+  fireEvent.click(screen.getByRole('button', { name: 'Author graph' }))
+  expect(screen.getByText(/The configured model provider receives/).textContent).not.toContain('current graph document')
+})

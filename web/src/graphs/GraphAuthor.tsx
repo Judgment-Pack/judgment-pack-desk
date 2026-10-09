@@ -50,7 +50,7 @@ function GraphAuthorSession({ graphId }: { graphId?: string }) {
   const [promptText, setPromptText] = useState('')
   const [offer, setOffer] = useState<GraphOffer | null>(null)
   const [error, setError] = useState('')
-  const [saved, setSaved] = useState(false)
+  const [saved, setSaved] = useState<boolean | null>(null)
   const [busy, setBusy] = useState(false)
   const lifetime = useRef(new AbortController())
   useEffect(() => { const controller = new AbortController(); lifetime.current = controller; return () => controller.abort() }, [])
@@ -70,7 +70,7 @@ function GraphAuthorSession({ graphId }: { graphId?: string }) {
   }, [proposal, graphId])
   const working = busy || run.status === 'running'
   async function act(action: () => Promise<void>) {
-    setBusy(true); setError(''); setSaved(false)
+    setBusy(true); setError(''); setSaved(null)
     try { await action() } catch (cause) { if (!lifetime.current.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause)) }
     finally { setBusy(false) }
   }
@@ -95,7 +95,7 @@ function GraphAuthorSession({ graphId }: { graphId?: string }) {
   return <section aria-label={msg('Author graph')}>
     <Button onClick={() => setOpen(!open)}>{msg('Author graph')}</Button>
     {open && <>
-      <p>{msg('The configured model provider receives your relationship, chosen packs, prompt and tool answers. The proposal remains for you to review; no rows file is written.')}</p>
+      <p>{graphId ? msg('The configured model provider receives your relationship, chosen packs, current graph document, prompt and tool answers. The proposal remains for you to review; no rows file is written.') : msg('The configured model provider receives your relationship, chosen packs, prompt and tool answers. The proposal remains for you to review; no rows file is written.')}</p>
       <fieldset disabled={working}>
         <legend>{msg('Choose packs')}</legend>
         {Object.keys(declared.packs ?? {}).map(name => <label key={name}><input type="checkbox" checked={chosen.includes(name)} onChange={event => setChosen(event.target.checked ? [...chosen, name] : chosen.filter(value => value !== name))} />{name}</label>)}
@@ -118,13 +118,16 @@ function GraphAuthorSession({ graphId }: { graphId?: string }) {
       </fieldset>}
       {offer && <GraphConfirmation offer={offer} busy={working} onConfirm={() => void act(async () => {
         const accepted = offer; setOffer(null)
-        await graphPost('write', accepted, lifetime.current.signal)
-        setSaved(true)
-        await queries.invalidateQueries()
+        try {
+          await graphPost('write', accepted, lifetime.current.signal)
+          setSaved(accepted.hasLock)
+        } finally {
+          await queries.invalidateQueries()
+        }
       })} />}
       {(error || run.failure) && <p role="alert">{shownMessage(error || run.failure || '')}</p>}
       {run.events.filter(event => event.type === 'error').map((event, index) => event.type === 'error' && <p role="alert" key={index}>{shownMessage(event.message)}</p>)}
-      {saved && <p>{msg('The graph was written. Review and lock updates the reviewed set.')}</p>}
+      {saved !== null && <p>{saved ? msg('The graph was written. Review and lock updates the reviewed set.') : msg('The graph was written.')}</p>}
     </>}
   </section>
 }

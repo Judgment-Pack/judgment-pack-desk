@@ -159,7 +159,7 @@ const runtimeAnswerLimit = 64 << 10
 // The command is built the way the relay's `jpack mcp` is (`runtimeCommandAt`):
 // the same binary, resolved the same way, and the same inherited environment.
 // What differs is that it ends. It is bounded by `runtimeCommandTimeout`, reads
-// nothing, and is read up to `runtimeAnswerLimit`.
+// no standard input through runRuntime, and is read up to `runtimeAnswerLimit`.
 //
 // A command that exits non-zero still returns what it printed, beside the
 // error: with `--format json` the runtime says why in its diagnostics.
@@ -199,7 +199,9 @@ func runRuntimeInput(ctx context.Context, bin string, dir heldDir, input []byte,
 	}
 	cmd.Env = withoutVariables(os.Environ(), drop...)
 	stdout := &cappedBuffer{limit: runtimeAnswerLimit}
-	cmd.Stdin = bytes.NewReader(input)
+	if input != nil {
+		cmd.Stdin = bytes.NewReader(input)
+	}
 	cmd.Stdout = stdout
 	cmd.Stderr = io.Discard
 	// A descendant that kept the output open cannot hold this request past

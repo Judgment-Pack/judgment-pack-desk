@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"net/http"
 	"path/filepath"
 	"regexp"
@@ -115,7 +116,7 @@ func addGraphMember(data []byte, name string, value []byte) ([]byte, error) {
 	return out, nil
 }
 
-func graphDeclaration(config []byte, request graphProposal) ([]byte, error) {
+func graphDeclaration(project string, config []byte, request graphProposal) ([]byte, error) {
 	members, err := configMembers(config)
 	if err != nil {
 		return nil, err
@@ -144,7 +145,14 @@ func graphDeclaration(config []byte, request graphProposal) ([]byte, error) {
 	if json.Unmarshal(config, &reserved) != nil {
 		return nil, errors.New("The project declarations could not be read.")
 	}
-	samePath := func(path string) bool { return path != "" && filepath.Clean(path) == filepath.Clean(request.Path) }
+	samePath := func(path string) bool {
+		if filepath.IsAbs(path) {
+			if relative, err := filepath.Rel(project, path); err == nil {
+				path = relative
+			}
+		}
+		return path != "" && strings.EqualFold(filepath.Clean(path), filepath.Clean(request.Path))
+	}
 	if samePath(runtimeConfigName) || samePath(runtimeLockName) {
 		return nil, errors.New("Choose a path for the graph document alone.")
 	}
@@ -218,20 +226,16 @@ func (s *Server) handleGraphProposal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	offer, status, body := func() (*graphWriteOffer, int, any) {
-		unlock, failure := s.lockProjectFor(r.Context(), "a graph proposal", "written")
-		if failure != nil {
-			return nil, failure.status, errorBody(withCode(failure.code, errors.New(failure.message)))
-		}
-		defer unlock()
-		s.writes.Lock()
-		defer s.writes.Unlock()
 		config := s.readProjectFile(runtimeConfigName)
 		if config.err != nil || !config.present {
 			return nil, http.StatusConflict, errorBody(withCode(CodeBadRequest, errors.New("The project's jpack.json could not be read.")))
 		}
-		next, err := graphDeclaration(config.data, request)
+		next, err := graphDeclaration(s.projectDir, config.data, request)
 		if err != nil {
 			return nil, http.StatusConflict, errorBody(withCode(CodeBadRequest, err))
+		}
+		if status, body := s.graphWritePreflight(request.Path); body != nil {
+			return nil, status, body
 		}
 		if len(next) > maxFileBytes {
 			return nil, http.StatusRequestEntityTooLarge, errorBody(withCode(CodeTooLarge, errors.New("The declaration exceeds the file writer's limit.")))
@@ -257,9 +261,11 @@ func (s *Server) handleGraphProposal(w http.ResponseWriter, r *http.Request) {
 			return nil, http.StatusInternalServerError, errorBody(err)
 		}
 		_, lockErr := s.root.Lstat(runtimeLockName)
-		offer := &graphWriteOffer{graphProposal: request, Before: string(config.data), ConfigContent: string(next), ConfigSHA256: digestOf(config.data), Findings: string(s.shownGraphAnswer(findings)), Plan: string(s.shownGraphAnswer(plan)), HasLock: lockErr == nil, Nonce: nonce}
+		offer := &graphWriteOffer{graphProposal: request, Before: string(config.data), ConfigContent: string(next), ConfigSHA256: digestOf(config.data), Findings: string(s.shownGraphAnswer(findings)), Plan: string(s.shownGraphAnswer(plan)), HasLock: !errors.Is(lockErr, fs.ErrNotExist), Nonce: nonce}
 		offer.Token = s.graphWriteToken(*offer)
+		s.writes.Lock()
 		s.graphOffer = offer
+		s.writes.Unlock()
 		return offer, http.StatusOK, nil
 	}()
 	w.Header().Set("Cache-Control", "no-store")
@@ -268,6 +274,24 @@ func (s *Server) handleGraphProposal(w http.ResponseWriter, r *http.Request) {
 	} else {
 		writeJSON(w, status, body)
 	}
+}
+
+// Reject predictable writer refusals before offering or starting either commit.
+func (s *Server) graphWritePreflight(graphPath string) (int, any) {
+	for _, name := range []string{graphPath, runtimeConfigName} {
+		if err := s.refuseSymlinkedPath(name); err != nil {
+			return statusForRefusal(err), errorBody(err)
+		}
+		info, _ := s.root.Lstat(osPath(name))
+		if reason := s.fileAccessPolicy().readOnlyReason(name, info); reason != "" {
+			return http.StatusForbidden, errorBody(withCode(CodeForbidden, errors.New(readOnlyFileMessage(reason))))
+		}
+		parent, err := s.root.Stat(filepath.Dir(osPath(name)))
+		if err != nil || !parent.IsDir() {
+			return http.StatusNotFound, codedBody(CodeDirectoryMissing, "The graph's folder must exist in the project before writing.")
+		}
+	}
+	return http.StatusOK, nil
 }
 
 func (s *Server) handleGraphWrite(w http.ResponseWriter, r *http.Request) {
@@ -305,8 +329,15 @@ func (s *Server) writeGraph(r *http.Request, request graphWriteOffer) (int, any)
 	if config.err != nil || !config.present || digestOf(config.data) != offer.ConfigSHA256 {
 		return stale()
 	}
+	if status, body := s.graphWritePreflight(offer.Path); body != nil {
+		return status, body
+	}
 	status, body := s.commitWriteLocked(offer.Path, WriteRequest{Path: offer.Path, Content: offer.Content, BaseSHA256: offer.BaseSHA256, Override: false})
 	if status != http.StatusOK && status != http.StatusCreated {
+		if refusal, ok := body.(conflict); ok {
+			refusal.Error = "The graph file changed or already exists. Review the proposal again; nothing was written."
+			body = refusal
+		}
 		return status, body
 	}
 	if offer.BaseSHA256 == "" {

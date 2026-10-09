@@ -155,7 +155,7 @@ func TestGraphRow3GuardedWriter(t *testing.T) {
 		writeProjectFile(t, s.projectDir, offer.Path, "another writer")
 		before := treeOf(t, s.projectDir)
 		status, data := graphRow3Post(t, s, "write", offer, true, "")
-		if status != 409 || !strings.Contains(string(data), `"exists"`) {
+		if status != 409 || !strings.Contains(string(data), `"exists"`) || strings.Contains(string(data), "override") || !strings.Contains(string(data), "Review the proposal again; nothing was written.") {
 			t.Fatalf("create: %d %s", status, data)
 		}
 		sameProject(t, before, treeOf(t, s.projectDir), "create conflict")
@@ -185,9 +185,11 @@ func TestGraphRow3GuardedWriter(t *testing.T) {
 		s, _ := graphRow3Desk(t, `{"configVersion":"5","packs":{},"audit":{"dir":"records"}}`)
 		proposal := graphRow3Proposal()
 		proposal.Path = "records/evaluations.jsonl"
-		offer := graphRow3Offer(t, s, proposal)
+		if err := os.Mkdir(filepath.Join(s.projectDir, "records"), 0700); err != nil {
+			t.Fatal(err)
+		}
 		before := treeOf(t, s.projectDir)
-		status, data := graphRow3Post(t, s, "write", offer, true, "")
+		status, data := graphRow3Post(t, s, "proposal", proposal, true, "")
 		if status != 403 {
 			t.Fatalf("audit: %d %s", status, data)
 		}
@@ -196,6 +198,27 @@ func TestGraphRow3GuardedWriter(t *testing.T) {
 }
 
 func TestGraphRow3Edit(t *testing.T) {
+	for _, kind := range []string{"other file", "undeclared id"} {
+		t.Run(kind, func(t *testing.T) {
+			s, _ := graphRow3Desk(t, `{"configVersion":"2","packs":{},"graphs":{"draft":{"path":"draft.graph.json"}}}`)
+			writeProjectFile(t, s.projectDir, "README.md", "{}")
+			proposal := graphRow3Proposal()
+			proposal.BaseSHA256 = digestOf([]byte("{}"))
+			if kind == "other file" {
+				proposal.Path = "README.md"
+			} else {
+				proposal.ID = "unknown"
+				proposal.Path = "README.md"
+			}
+			before := treeOf(t, s.projectDir)
+			status, data := graphRow3Post(t, s, "proposal", proposal, true, "")
+			if status != 409 {
+				t.Fatalf("edit guard: %d %s", status, data)
+			}
+			sameProject(t, before, treeOf(t, s.projectDir), kind)
+		})
+	}
+
 	for _, changed := range []bool{false, true} {
 		t.Run(map[bool]string{false: "unchanged", true: "stale"}[changed], func(t *testing.T) {
 			config := `{"configVersion":"2","packs":{},"graphs":{"draft":{"path":"draft.graph.json","rows":"existing.rows.json"}}}`
@@ -218,6 +241,9 @@ func TestGraphRow3Edit(t *testing.T) {
 			want := 200
 			if changed {
 				want = 409
+			}
+			if changed && (strings.Contains(string(data), "override") || !strings.Contains(string(data), "Review the proposal again; nothing was written.")) {
+				t.Fatalf("route wording: %s", data)
 			}
 			if status != want {
 				t.Fatalf("edit: %d %s", status, data)
@@ -407,11 +433,15 @@ func TestGraphRow3BothCommitsHoldBothLocks(t *testing.T) {
 }
 
 func TestGraphRow3ReservedPaths(t *testing.T) {
-	for _, path := range []string{"pack.json", "pack.rows.json", "other.graph.json", "graph.rows.json", runtimeConfigName, runtimeLockName} {
+	for _, path := range []string{"pack.json", "PACK.JSON", "pack.rows.json", "other.graph.json", "graph.rows.json", "abs.rows.json", runtimeConfigName, runtimeLockName} {
 		t.Run(path, func(t *testing.T) {
-			s, _ := graphRow3Desk(t, `{"configVersion":"2","packs":{"pack":{"path":"pack.json","matrix":"pack.rows.json"}},"graphs":{"other":{"path":"other.graph.json","rows":"graph.rows.json"}}}`)
+			s, _ := graphRow3Desk(t, `{"configVersion":"2","packs":{"pack":{"path":"Pack.json","matrix":"Pack.Rows.json"}},"graphs":{"other":{"path":"Other.Graph.json","rows":"graph.rows.json"}}}`)
 			proposal := graphRow3Proposal()
 			proposal.Path = path
+			if path == "abs.rows.json" {
+				config := `{"configVersion":"2","packs":{"abs":{"path":"pack.json","matrix":` + string(mustMarshal(filepath.Join(s.projectDir, path))) + `}}}`
+				writeProjectFile(t, s.projectDir, runtimeConfigName, config)
+			}
 			before := treeOf(t, s.projectDir)
 			status, data := graphRow3Post(t, s, "proposal", proposal, true, "")
 			if status != 409 {
@@ -419,5 +449,136 @@ func TestGraphRow3ReservedPaths(t *testing.T) {
 			}
 			sameProject(t, before, treeOf(t, s.projectDir), "reserved path")
 		})
+	}
+}
+
+func TestGraphRow3HasLock(t *testing.T) {
+	for _, present := range []bool{false, true} {
+		s, _ := graphRow3Desk(t, graphRow3Config)
+		if present {
+			writeProjectFile(t, s.projectDir, runtimeLockName, "{}")
+		}
+		if offer := graphRow3Offer(t, s, graphRow3Proposal()); offer.HasLock != present {
+			t.Fatalf("hasLock = %v, want %v", offer.HasLock, present)
+		}
+	}
+}
+
+func TestGraphRow3Preflight(t *testing.T) {
+	for _, stage := range []string{"proposal", "write"} {
+		for _, kind := range []string{"config readonly", "graph readonly", "missing", "symlink", "file parent"} {
+			t.Run(stage+"/"+kind, func(t *testing.T) {
+				s, _ := graphRow3Desk(t, graphRow3Config)
+				proposal := graphRow3Proposal()
+				proposal.Path = "folder/draft.graph.json"
+				if err := os.Mkdir(filepath.Join(s.projectDir, "folder"), 0700); err != nil {
+					t.Fatal(err)
+				}
+				var offer graphWriteOffer
+				if stage == "write" {
+					offer = graphRow3Offer(t, s, proposal)
+				}
+				switch kind {
+				case "config readonly":
+					if err := os.Chmod(filepath.Join(s.projectDir, runtimeConfigName), 0400); err != nil {
+						t.Fatal(err)
+					}
+				case "graph readonly":
+					writeProjectFile(t, s.projectDir, proposal.Path, "{}")
+					if err := os.Chmod(filepath.Join(s.projectDir, proposal.Path), 0400); err != nil {
+						t.Fatal(err)
+					}
+				default:
+					if err := os.Remove(filepath.Join(s.projectDir, "folder")); err != nil {
+						t.Fatal(err)
+					}
+					if kind == "symlink" {
+						if err := os.Symlink(s.projectDir, filepath.Join(s.projectDir, "folder")); err != nil {
+							t.Fatal(err)
+						}
+					}
+					if kind == "file parent" {
+						writeProjectFile(t, s.projectDir, "folder", "{}")
+					}
+				}
+				before := treeOf(t, s.projectDir)
+				commits := 0
+				previous := testHookAfterLockEntry
+				testHookAfterLockEntry = func(string) { commits++ }
+				defer func() { testHookAfterLockEntry = previous }()
+				var body any = proposal
+				if stage == "write" {
+					body = offer
+				}
+				status, data := graphRow3Post(t, s, stage, body, true, "")
+				if status < 400 || commits != 0 {
+					t.Fatalf("preflight: %d %s, commits %d", status, data, commits)
+				}
+				sameProject(t, before, treeOf(t, s.projectDir), "preflight")
+			})
+		}
+	}
+}
+
+func TestGraphRow3ProposalRunsWithoutLocks(t *testing.T) {
+	s, rig := graphRow3Desk(t, graphRow3Config)
+	script, err := os.ReadFile(rig.bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gate := "\nprintf '' > '" + rig.dir + "/'\"$3\"'.started'\nwhile [ ! -e '" + rig.dir + "/'\"$3\"'.release' ]; do sleep 0.01; done\n"
+	script = []byte(strings.Replace(string(script), "f='", gate+"f='", 1))
+	if err := os.WriteFile(rig.bin, script, 0700); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan int, 1)
+	go func() { status, _ := graphRow3Post(t, s, "proposal", graphRow3Proposal(), true, ""); done <- status }()
+	for _, command := range []string{"validate", "explain"} {
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			if _, err := os.Stat(filepath.Join(rig.dir, command+".started")); err == nil {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("runtime never started")
+			}
+			time.Sleep(time.Millisecond)
+		}
+		if s.writes.TryLock() {
+			s.writes.Unlock()
+		} else {
+			t.Error(command + " held writes")
+		}
+		release, err := s.lockProject(context.Background(), 0)
+		if err != nil {
+			t.Error(command + " held folder lock")
+		} else {
+			release()
+		}
+		if err := os.WriteFile(filepath.Join(rig.dir, command+".release"), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if status := <-done; status != 200 {
+		t.Fatal(status)
+	}
+}
+
+func TestGraphRow3RuntimeOptionalInput(t *testing.T) {
+	s, _ := graphRow3Desk(t, graphRow3Config)
+	dir, _ := s.graphRuntime()
+	bin := filepath.Join(t.TempDir(), "stdin-kind")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\nif [ -p /dev/stdin ]; then printf pipe; else printf null; fi\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, input := range [][]byte{nil, {}, []byte("graph")} {
+		got, err := runRuntimeInput(context.Background(), bin, dir, input)
+		want := "pipe"
+		if input == nil {
+			want = "null"
+		}
+		if err != nil || string(got) != want {
+			t.Fatalf("input %v: %s %v, want %s", input, got, err, want)
+		}
 	}
 }

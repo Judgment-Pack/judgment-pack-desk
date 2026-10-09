@@ -6850,9 +6850,9 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'graph row 3: the declaration write changes the shown bytes' internal/desk/graph_author.go \
     'Content: offer.ConfigContent, BaseSHA256:' \
     'Content: offer.ConfigContent + " ", BaseSHA256:'
-  mutate go 'graph row 3: the audit-named graph bypasses the read-only decision' internal/desk/files.go \
-    'if reason := s.fileAccessPolicy().readOnlyReason(clean, info); reason != "" {' \
-    'if reason := s.fileAccessPolicy().readOnlyReason(clean, info); reason != "" && clean != "records/evaluations.jsonl" {'
+  mutate go 'graph row 3: the audit-named graph bypasses the read-only decision' internal/desk/graph_author.go \
+    'if reason := s.fileAccessPolicy().readOnlyReason(name, info); reason != "" {' \
+    'if reason := s.fileAccessPolicy().readOnlyReason(name, info); reason != "" && name != "records/evaluations.jsonl" {'
   mutate go 'graph row 3: the findings need not bind the proposed bytes' internal/desk/graph_author.go \
     'if binding.GraphSHA256 != digestOf([]byte(request.Content)) {' \
     'if false && binding.GraphSHA256 != digestOf([]byte(request.Content)) {'
@@ -6905,6 +6905,61 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'graph row 3: the confirmation changes configVersion' internal/desk/graph_author.go \
     'ConfigContent: string(next),' \
     'ConfigContent: strings.Replace(string(next), `"configVersion": "2"`, `"configVersion": "5"`, 1),'
+
+  mutate go 'graph row 3: an edit may name any file' internal/desk/graph_author.go \
+    'if !ok || entry.Path != request.Path {' \
+    'if !ok || (entry.Path != request.Path && false) {'
+  mutate go 'graph row 3: an edit may name an undeclared id' internal/desk/graph_author.go \
+    'if !ok || entry.Path != request.Path {' \
+    'if ok && entry.Path != request.Path {'
+  mutate go 'graph row 3: path collisions ignore case' internal/desk/graph_author.go \
+    'strings.EqualFold(filepath.Clean(path), filepath.Clean(request.Path))' \
+    '(filepath.Clean(path) == filepath.Clean(request.Path))'
+  mutate go 'graph row 3: absolute declarations are not made relative' internal/desk/graph_author.go \
+    'if filepath.IsAbs(path) {' \
+    'if false && filepath.IsAbs(path) {'
+  mutate go 'graph row 3: an existing lock is not disclosed' internal/desk/graph_author.go \
+    'HasLock: !errors.Is(lockErr, fs.ErrNotExist)' \
+    'HasLock: false && !errors.Is(lockErr, fs.ErrNotExist)'
+  mutate go 'graph row 3: proposal runtime holds the write mutex' internal/desk/graph_author.go \
+    'findings, _, err := s.runGraphInput(r.Context(), dir, "validate", []byte(request.Content), "-")' \
+    'findings, _, err := func() (json.RawMessage, graphDiagnostics, error) { s.writes.Lock(); defer s.writes.Unlock(); return s.runGraphInput(r.Context(), dir, "validate", []byte(request.Content), "-") }()'
+  mutate go 'graph row 3: explain runtime holds the write mutex' internal/desk/graph_author.go \
+    'plan, _, err := s.runGraphInput(r.Context(), dir, "explain", []byte(request.Content), "-")' \
+    'plan, _, err := func() (json.RawMessage, graphDiagnostics, error) { s.writes.Lock(); defer s.writes.Unlock(); return s.runGraphInput(r.Context(), dir, "explain", []byte(request.Content), "-") }()'
+  mutate go 'graph row 3: proposal runtime holds the folder lock' internal/desk/graph_author.go \
+    'findings, _, err := s.runGraphInput' \
+    'unlock, failure := s.lockProjectFor(r.Context(), "a graph proposal", "written")
+        if failure != nil { return nil, failure.status, errorBody(errors.New(failure.message)) }
+        defer unlock()
+        findings, _, err := s.runGraphInput'
+  mutate go 'graph row 3: proposal skips preflight' internal/desk/graph_author.go \
+    'if status, body := s.graphWritePreflight(request.Path); body != nil {' \
+    'if status, body := s.graphWritePreflight(request.Path); false && body != nil {'
+  mutate go 'graph row 3: write skips preflight' internal/desk/graph_author.go \
+    'if status, body := s.graphWritePreflight(offer.Path); body != nil {' \
+    'if status, body := s.graphWritePreflight(offer.Path); false && body != nil {'
+  mutate go 'graph row 3: preflight skips configuration' internal/desk/graph_author.go \
+    '[]string{graphPath, runtimeConfigName}' \
+    '[]string{graphPath}'
+  mutate go 'graph row 3: preflight skips graph' internal/desk/graph_author.go \
+    '[]string{graphPath, runtimeConfigName}' \
+    '[]string{runtimeConfigName}'
+  mutate go 'graph row 3: preflight ignores read only paths' internal/desk/graph_author.go \
+    'if reason := s.fileAccessPolicy().readOnlyReason(name, info); reason != "" {' \
+    'if reason := s.fileAccessPolicy().readOnlyReason(name, info); false && reason != "" {'
+  mutate go 'graph row 3: preflight ignores symlinks' internal/desk/graph_author.go \
+    'if err := s.refuseSymlinkedPath(name); err != nil {' \
+    'if err := s.refuseSymlinkedPath(name); false && err != nil {'
+  mutate go 'graph row 3: preflight ignores missing folders' internal/desk/graph_author.go \
+    'if err != nil || !parent.IsDir() {' \
+    'if false && (err != nil || !parent.IsDir()) {'
+  mutate go 'graph row 3: first commit suggests override' internal/desk/graph_author.go \
+    'refusal.Error = "The graph file changed or already exists. Review the proposal again; nothing was written."' \
+    'refusal.Error = "Reload it, or write again with override."'
+  mutate go 'graph row 3: commands without input receive a pipe' internal/desk/runtime.go \
+    'if input != nil {' \
+    'if true {'
 
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
@@ -14967,6 +15022,16 @@ echo
 if [ -n "$only" ] && [ "$matched" -eq 0 ]; then
   echo "no row matched \"$only\" — nothing was checked" >&2
   exit 2
+  mutate web 'graph row 3: partial writes leave queries stale' web/src/graphs/GraphAuthor.tsx \
+    'await queries.invalidateQueries()' \
+    'if (false) await queries.invalidateQueries()'
+  mutate web 'graph row 3: a write without a lock describes a reviewed set' web/src/graphs/GraphAuthor.tsx \
+    'setSaved(accepted.hasLock)' \
+    'setSaved(true)'
+  mutate web 'graph row 3: edit provider disclosure omits current graph' web/src/graphs/GraphAuthor.tsx \
+    '<p>{graphId ? msg(' \
+    '<p>{false ? msg('
+
 fi
 selection_report
 all_named=$?
