@@ -520,6 +520,71 @@ func TestGraphRow3Preflight(t *testing.T) {
 	}
 }
 
+func TestGraphRow3ProposalPreflightRefusesPaths(t *testing.T) {
+	for _, kind := range []string{"in-project alias", "link outside", "missing parent"} {
+		t.Run(kind, func(t *testing.T) {
+			s, rig := graphRow3Desk(t, graphRow3Config)
+			outside := t.TempDir()
+			proposal := graphRow3Proposal()
+			var wantStatus int
+			var wantCode, wantError string
+			switch kind {
+			case "in-project alias":
+				if err := os.Mkdir(filepath.Join(s.projectDir, "graphs"), 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink("graphs", filepath.Join(s.projectDir, "alias")); err != nil {
+					t.Skipf("symlinks are unavailable: %v", err)
+				}
+				proposal.Path = "alias/draft.graph.json"
+				wantStatus, wantCode = http.StatusForbidden, CodeSymlink
+				wantError = "alias/draft.graph.json passes through a symbolic link, which this desk does not edit"
+			case "link outside":
+				if err := os.Symlink(outside, filepath.Join(s.projectDir, "outside")); err != nil {
+					t.Skipf("symlinks are unavailable: %v", err)
+				}
+				proposal.Path = "outside/draft.graph.json"
+				wantStatus, wantCode = http.StatusForbidden, CodeSymlink
+				wantError = "outside/draft.graph.json passes through a symbolic link, which this desk does not edit"
+			case "missing parent":
+				proposal.Path = "missing/draft.graph.json"
+				wantStatus, wantCode = http.StatusNotFound, CodeDirectoryMissing
+				wantError = "The graph's folder must exist in the project before writing."
+			}
+
+			before := treeOf(t, s.projectDir)
+			outsideBefore := treeOf(t, outside)
+			status, data := graphRow3Post(t, s, "proposal", proposal, true, "")
+			var refusal struct {
+				Code  string `json:"code"`
+				Error string `json:"error"`
+			}
+			if err := json.Unmarshal(data, &refusal); err != nil {
+				t.Fatalf("proposal refusal: %d %s", status, data)
+			}
+			if status != wantStatus || refusal.Code != wantCode || refusal.Error != wantError {
+				t.Fatalf("proposal refusal: %d %+v, want %d %s %q", status, refusal, wantStatus, wantCode, wantError)
+			}
+			if len(rig.asked(t)) != 0 {
+				t.Fatal("proposal preflight ran the runtime")
+			}
+			s.writes.Lock()
+			offered := s.graphOffer != nil
+			s.writes.Unlock()
+			if offered {
+				t.Fatal("a refused proposal stored an offer")
+			}
+
+			status, data = graphRow3Post(t, s, "write", graphWriteOffer{graphProposal: proposal, Token: "any"}, true, "")
+			if status != http.StatusConflict || refusalOf(data) != "The graph confirmation is spent or changed. Review the proposal again; nothing was written." {
+				t.Fatalf("write after refused proposal: %d %s", status, data)
+			}
+			sameProject(t, before, treeOf(t, s.projectDir), kind)
+			sameProject(t, outsideBefore, treeOf(t, outside), kind+" outside")
+		})
+	}
+}
+
 func TestGraphRow3ProposalRunsWithoutLocks(t *testing.T) {
 	s, rig := graphRow3Desk(t, graphRow3Config)
 	script, err := os.ReadFile(rig.bin)

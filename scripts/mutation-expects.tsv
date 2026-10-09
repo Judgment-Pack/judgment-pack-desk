@@ -466,6 +466,7 @@ go	graph row 3: first commit suggests override	TestGraphRow3Edit,TestGraphRow3Gu
 go	graph row 3: path collisions ignore case	TestGraphRow3ReservedPaths
 go	graph row 3: preflight ignores missing folders	TestGraphRow3Preflight
 go	graph row 3: preflight ignores read only paths	TestGraphRow3GuardedWriter,TestGraphRow3Preflight
+go	graph row 3: preflight ignores symlinks	TestGraphRow3ProposalPreflightRefusesPaths
 go	graph row 3: preflight skips configuration	TestGraphRow3Preflight
 go	graph row 3: preflight skips graph	TestGraphRow3GuardedWriter,TestGraphRow3Preflight
 go	graph row 3: proposal runtime holds the folder lock	TestGraphRow3ProposalRunsWithoutLocks
