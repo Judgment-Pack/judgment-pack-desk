@@ -101,6 +101,7 @@ it('says which plan the running gateway has, and that a save turning OCR on rest
   fireEvent.click(screen.getByRole('button', { name: 'Save and restart' }))
   await screen.findByText('Desk restarted its local gateway with these settings.')
   expect(configured(sent)[0]!.config).toMatchObject({ mode: 'auto', connection: 'ocr-local', timeoutSeconds: 90 })
+  expect(configured(sent)[0]).toHaveProperty('restartWarned', true)
   expect(screen.getByText('The running local gateway reads scanned pages with OCR.')).toBeTruthy()
   expect(invalidate).toHaveBeenCalledWith({ queryKey: DESK_CONFIG_QUERY_KEY })
 })
@@ -208,4 +209,42 @@ it('turns OCR on with a processor that is not available only when the owner says
   expect(configured(sent)[0]!.config).toMatchObject({ mode: 'auto', connection: 'ocr-local' })
   // Saved so, it is still said.
   await screen.findByText('On this computer is not available on this computer. With OCR on, every document read stops until its programs are installed: text PDFs and plain text too, from uploads, Drive, connected files and links.')
+})
+
+it('sends the warning decision and says apply on start only after Desk decides so', async () => {
+  const { sent } = setup({ result: settings({ mode: 'auto', connection: 'ocr-local' }), localGateway: { status: 'unavailable' } }, (_url, body) => ({ result: { ...settings(), ...(body.config as object) }, localGateway: { status: 'unavailable', appliesWhenStarted: true } }))
+  expect(screen.queryByText('The local gateway is not running. Settings saved now apply when it starts.')).toBeNull()
+  fireEvent.click(screen.getByRole('combobox', { name: 'OCR mode' })); fireEvent.click(screen.getByRole('option', { name: 'Off' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+  await screen.findByText('The local gateway is not running. Settings saved now apply when it starts.')
+  expect(configured(sent)[0]).toHaveProperty('restartWarned', false)
+})
+
+it.each(['preferences', 'processor'])('re-reads state after a restart conflict in %s and shows the fixed sentence', async kind => {
+  const { sent } = setup({ result: settings(), localGateway: running(false) })
+  mocks.fetch.mockImplementation(async (url: string, init: RequestInit) => {
+    sent.push({ url, body: String(init.body) })
+    return url.endsWith('/configure')
+      ? Response.json({ code: 'processing-restart-changed', error: 'The local gateway state changed. Review the settings and restart warning before saving again.' }, { status: 409 })
+      : Response.json({ result: settings(), localGateway: running(true) })
+  })
+  if (kind === 'preferences') {
+    fireEvent.change(screen.getByLabelText('Processing timeout (seconds)'), { target: { value: '90' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+  } else {
+    fireEvent.click(screen.getByRole('button', { name: 'Manage On this computer' }))
+    fireEvent.change(within(screen.getByRole('dialog')).getByLabelText('Name'), { target: { value: 'Renamed' } })
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Save' }))
+  }
+  await waitFor(() => expect(sent.some(s => s.url.endsWith('/status'))).toBe(true))
+  await screen.findByText('The running local gateway reads scanned pages with OCR.')
+  expect(screen.getAllByText('The local gateway state changed. Review the settings and restart warning before saving again.').length).toBeGreaterThan(0)
+})
+
+it('says a refused preview could not be shown without saying anything was saved', async () => {
+  setup({ result: settings({ connection: 'ocr-local' }), localGateway: running(false) })
+  mocks.fetch.mockImplementation(async () => Response.json({ code: 'processing-preview-unavailable', error: 'The test preview could not be shown.' }, { status: 502 }))
+  fireEvent.change(screen.getByLabelText('Test PDF file'), { target: { files: [new File(['%PDF-1.7'], 'scan.pdf', { type: 'application/pdf' })] } })
+  await screen.findByText('The test preview could not be shown.')
+  expect(screen.queryByText(/Reload the settings to see what was saved/)).toBeNull()
 })

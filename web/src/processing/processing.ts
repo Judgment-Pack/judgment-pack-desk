@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { answer, deskFetch, FileRequestError } from '../files/client'
+import { answer, deskFetch, FileRequestError, StaleWrite } from '../files/client'
 import { sourceMessage } from '../i18n/source'
 
 /**
@@ -51,6 +51,7 @@ export interface RunningGateway {
   documentProcessing?: boolean
   /** This request restarted the local gateway. */
   restarted?: boolean
+  appliesWhenStarted?: boolean
   problem?: string
 }
 
@@ -94,10 +95,15 @@ export async function processingCall<T>(method: 'status' | 'configure' | 'test',
     }))
   } catch (cause) {
     if (signal?.aborted) throw cause
+    if (cause instanceof StaleWrite && cause.code === 'processing-restart-changed') {
+      throw new ProcessingError(sourceMessage('The local gateway state changed. Review the settings and restart warning before saving again.'), cause.code)
+    }
     throw new ProcessingError(cause instanceof FileRequestError && cause.status === 413
       ? sourceMessage('This request is too large to send.')
       : cause instanceof FileRequestError && cause.status === 502
-        ? sourceMessage('The gateway’s answer could not be shown. Reload the settings to see what was saved.')
+        ? method === 'test'
+          ? sourceMessage('The test preview could not be shown.')
+          : sourceMessage('The gateway’s answer could not be shown. Reload the settings to see what was saved.')
         : sourceMessage('Document processing could not be reached. Check the local gateway, then try again.'))
   }
   const localGateway = answered.localGateway ?? { status: 'unavailable' }
@@ -134,8 +140,8 @@ export function configureRequest(base: ProcessingSettings, next: Pick<Processing
   }
 }
 
-export function saveProcessing(base: ProcessingSettings, next: Pick<ProcessingSettings, 'mode' | 'connection' | 'connections' | 'timeoutSeconds'>) {
-  return processingCall<ProcessingSettings>('configure', configureRequest(base, next))
+export function saveProcessing(base: ProcessingSettings, next: Pick<ProcessingSettings, 'mode' | 'connection' | 'connections' | 'timeoutSeconds'>, restartWarned: boolean) {
+  return processingCall<ProcessingSettings>('configure', { ...configureRequest(base, next), restartWarned })
 }
 
 /**

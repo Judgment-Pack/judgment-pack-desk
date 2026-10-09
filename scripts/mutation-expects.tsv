@@ -396,13 +396,19 @@ go	component versions: source worker read beside Runtime	TestSourceWorkerIdentit
 go	createParents is not bounded by what the listing can walk	TestCreateParentsIsBoundedByTheWalk,TestDepthBoundHoldsForExistingParentsToo,TestEveryCodeHasAStatusAndAWitness
 go	createParents is not opt-in (every write creates its parents)	TestEveryCodeHasAStatusAndAWitness,TestRefusalsCarryAStableCode,TestWriteIntoAMissingDirectorySaysSoRatherThanRefusingContainment,TestWriteWithoutCreateParentsStillRefusesAMissingDirectory
 go	createParents resolves a pathname instead of the pinned root	TestRetargetedProjectRootIsNotAdopted
+go	document processing: a case variant of the warning is relayed	TestDocumentProcessingConfigureMemberSpellings
+go	document processing: a changed restart warning is accepted	TestDocumentProcessingRestartWarningMustMatch
 go	document processing: a credential the companion answers reaches the page	TestDocumentProcessingAnswersCarryNoCredential
 go	document processing: a desk file naming another gateway is not read	TestDocumentProcessingIsNeverSentWhileAnotherGatewayIsInUse
 go	document processing: a document read is given the processing envelope under the ordinary plan	TestTheRelayCarriesAnOCRReadOnlyWhileTheGatewayRunsTheProcessingPlan,TestTheRelayGivesADocumentReadTheProcessingEnvelopeOnlyUnderThatPlan
 go	document processing: a document source is given 150 s without its flag	TestLocalPlanRefusesProcessingBeyondWhatTheGatewayGives
 go	document processing: a flag given twice is taken	TestLocalPlanRefusesProcessingBeyondWhatTheGatewayGives
+go	document processing: a gateway problem bypasses redaction	TestDocumentProcessingUnavailableProblemIsRedacted
+go	document processing: a missing restart warning is accepted	TestDocumentProcessingWarningMemberIsDeskOnly
 go	document processing: a preview page past 400 characters is shown	TestDocumentProcessingTestPreviewIsHeldToItsBounds
+go	document processing: a preview past 64 errors is shown	TestDocumentProcessingPreviewErrorBoundHasOwnRefusal
 go	document processing: a refusal is relayed in the companion's own words	TestDocumentProcessingAnswersCarryNoCredential
+go	document processing: a refused preview uses the save refusal	TestDocumentProcessingPreviewErrorBoundHasOwnRefusal
 go	document processing: a request line past the companion's bound is written	TestDocumentProcessingRequestLinesAreHeldToTheCompanionsBound
 go	document processing: a request with a query is carried	TestDocumentProcessingRefusesWithoutASessionAnUnknownOperationOrAQuery
 go	document processing: a save that leaves OCR as it is restarts the gateway	TestDocumentProcessingRestartsTheLocalGatewayWhenProcessingTurnsOnOrOff
@@ -413,6 +419,8 @@ go	document processing: a test's line bound is past the companion's	TestDocument
 go	document processing: an answer holding the save's credential is shown	TestDocumentProcessingAnswersCarryNoCredential
 go	document processing: an echo of one secret member is shown	TestDocumentProcessingRefusesAnEchoOfAServiceAccountOrAKeyPair
 go	document processing: an escaped echo of a credential is shown	TestDocumentProcessingRefusesAnEchoOfAServiceAccountOrAKeyPair
+go	document processing: an unavailable save attempts a restart	TestDocumentProcessingUnavailableSettingsRemainUsable
+go	document processing: an unavailable save omits its start decision	TestDocumentProcessingUnavailableSettingsRemainUsable
 go	document processing: any source is given the processing envelope	TestTheRelayCarriesAnOCRReadOnlyWhileTheGatewayRunsTheProcessingPlan,TestTheRelayGivesADocumentReadTheProcessingEnvelopeOnlyUnderThatPlan
 go	document processing: the connections relay reaches the document-processing companion	TestTheConnectionsRelayRefusesDocumentProcessingByName
 go	document processing: the desk's status says the other plan	TestDocumentProcessingRestartsTheLocalGatewayWhenProcessingTurnsOnOrOff
@@ -424,7 +432,9 @@ go	document processing: the processing flag is taken without the connections dir
 go	document processing: the relay decides as if the running plan had no processing	TestTheRelayCarriesAnOCRReadOnlyWhileTheGatewayRunsTheProcessingPlan
 go	document processing: the relay is not told the running plan	TestTheRelayCarriesAnOCRReadOnlyWhileTheGatewayRunsTheProcessingPlan
 go	document processing: the search flag is taken on another source	TestLocalPlanRefusesProcessingBeyondWhatTheGatewayGives
+go	document processing: the warning member reaches the companion	TestDocumentProcessingRequestLinesAreHeldToTheCompanionsBound,TestDocumentProcessingWarningMemberIsDeskOnly
 go	document processing: the worker's word on its plan is dropped	TestDocumentProcessingRestartsTheLocalGatewayWhenProcessingTurnsOnOrOff
+go	document processing: unavailable settings are refused	TestDocumentProcessingUnavailableProblemIsRedacted,TestDocumentProcessingUnavailableSettingsRemainUsable
 go	document processing: web-search is given 130 s without its flag	TestLocalPlanSearchAllowsLongerEnvelopeWithoutExtendingOtherSources
 go	excluded directories are not endpoint exclusions	TestEveryCodeHasAStatusAndAWitness,TestExcludedDirectoriesAreEndpointExclusions,TestExcludedNamesMatchWholeComponentsCaseInsensitively,TestNamedDesksKeepFilesAndArtifactsSeparate,TestTheFileAPIRefusesTheHandOver
 go	excluded names match case-sensitively	TestExcludedNamesMatchWholeComponentsCaseInsensitively,TestTheFileAPIRefusesTheHandOver
@@ -713,6 +723,9 @@ go	lexical path guard: absolute allowed	TestWireRelativePathRefusesOnItsOwn
 go	lexical path guard: backslash allowed	TestWireRelativePathRefusesOnItsOwn
 go	lexical path guard: fs.ValidPath not consulted	TestWireRelativePathRefusesOnItsOwn
 go	lexical path guard: the project itself allowed	TestWireRelativePathRefusesOnItsOwn
+go	local gateway plan: assigned flags escape the rule	TestLocalPlanBooleanFlagSpellings
+go	local gateway plan: false flags grant the envelope	TestLocalPlanBooleanFlagSpellings
+go	local gateway plan: one dash flags escape the rule	TestLocalPlanBooleanFlagSpellings
 go	named desk: no variable named is removed	TestAConfirmationRecordsExactlyWhatWasDownloaded,TestAFailedSchemaIsAnErrorAndNotAnOlderRuntime,TestAHeldFileThatCannotBeReadIsPassedOverAndNamed,TestAHeldFileThatIsNotWhatWasHandedOverIsPassedOverAndNamed,TestAKeyListThatIsNotTheSeedsPassesNoKey,TestAListOfKeysDeskCannotReadPassesNoKey,TestAListOfKeysSwappedWhileReadIsNotRead,TestANamedDeskRuntimeReadsOnlyItsOwnConfiguration,TestANewDeskIsSignedWhereTheRuntimeReads6,TestANewDeskStartsUnderReviewedLawWithDecidingRunsRecorded,TestARecordOfHandOversDeskCannotReadIsSaid,TestAReviewOfAnUnreadableProjectKeepsTheSigningKeyOnlyOnTheStartupDesk,TestARotationIsMadeOnlyWhereItCanBe,TestARotationRunsItsStepsInOrder,TestAnInheritedSigningKeyStaysWithTheStartupDesk,TestAnUpgradeConfirmationKeepsTheSigningKeyOnlyOnTheStartupDesk,TestCheckpointsAreAskedForInBatchesAndBounded,TestCheckpointsAreHandedOverAsTheRuntimePrintedThem,TestChoosingTheSigningKeyWritesSixAndTheKeyTogether,TestEachDesksRunnerIsNamedAKeyOfItsOwn,TestJobsHandOverKeepsACursorApartFromTheDeskTrails,TestJobsRecordChecksACopyOfTheChainRunnerServed,TestJobsRecordNamesAHeldFileItCannotRead,TestJobsRecordPassesEachHoldersFileOfTheChainAlone,TestTheDecisionRecordIsHeldToTheCheckpointsHandedOver,TestTheDecisionRecordIsUnavailableWhereTheReviewIs,TestTheDecisionRecordRunsAuditVerifyWithNoHeldInput,TestTheDecisionRecordSaysWhenTheRuntimeHasNoAuditCommands,TestThePanelPassesTheKeyDeskKeepsWithTheSeedsOwn,TestThePanelShowsTheRuntimesWordOnTheKey,TestThePanelsCommandsKeepTheSigningKeyOnlyOnTheStartupDesk,TestTheReviewCommandsKeepTheSigningKeyOnlyOnTheStartupDesk,TestTheReviewOnTheStartupDeskAndANamedDesk,TestTheUpgradeOnTheStartupDeskAndANamedDesk,TestWhereDeskKeepsNoKeyNoneIsPassed
 go	named desk: the relay inherits JPACK_CONFIG	TestANamedDeskRuntimeReadsOnlyItsOwnConfiguration
 go	named desk: the relay's environment is never set	TestANamedDeskRuntimeReadsOnlyItsOwnConfiguration
@@ -1711,16 +1724,21 @@ web	document processing: OCR is offered while another gateway is in use	src/admi
 web	document processing: OCR is turned on with a processor that is not available, unasked	src/processing/ProcessingSettings.test.tsx
 web	document processing: OCR provenance is taken on a static-text snapshot	src/documents/record.test.ts
 web	document processing: a blank credential is sent	src/processing/ProcessingSettings.test.tsx
+web	document processing: a conflict does not reread the state	src/processing/ProcessingSettings.test.tsx
 web	document processing: a credential is kept for a changed destination	src/processing/ProcessingSettings.test.tsx
 web	document processing: a processor that is not available is not marked in the choice	src/processing/ProcessingSettings.test.tsx
+web	document processing: a refused preview says settings were saved	src/processing/ProcessingSettings.test.tsx
 web	document processing: a save carries the status's own members	src/processing/ProcessingSettings.test.tsx
 web	document processing: a save that restarts the gateway is not said before it	src/processing/ProcessingSettings.test.tsx
 web	document processing: a test PDF past 4 MiB is sent	src/processing/ProcessingSettings.test.tsx
 web	document processing: a timeout outside 10 to 120 seconds is sent	src/processing/ProcessingSettings.test.tsx
 web	document processing: a typed credential stays on the page after a save	src/processing/ProcessingSettings.test.tsx
+web	document processing: apply on start is claimed without a decision	src/processing/ProcessingSettings.test.tsx
 web	document processing: the desk's configuration is not read again after a restart	src/processing/ProcessingSettings.test.tsx
 web	document processing: the processor dialog does not say its save restarts the gateway	src/processing/ProcessingSettings.test.tsx
 web	document processing: the running gateway's plan is not said	src/admin/DocumentProcessingSettings.test.tsx,src/processing/ProcessingSettings.test.tsx
+web	document processing: the save drops the restart warning	src/processing/ProcessingSettings.test.tsx
+web	document processing: unavailable OCR settings are hidden	src/admin/DocumentProcessingSettings.test.tsx
 web	downloads: a button for a file not held	src/audit/trailDownloads.test.tsx
 web	downloads: a file name the download does not take is accepted	src/audit/trailDownloads.test.tsx
 web	downloads: a refusal is not said	src/audit/trailDownloads.test.tsx

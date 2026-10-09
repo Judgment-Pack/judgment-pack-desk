@@ -4250,5 +4250,8 @@
   "nodes": "nodes",
   "node": "node",
   "factFeeds": "factFeeds",
-  "evidenceFeeds": "evidenceFeeds"
+  "evidenceFeeds": "evidenceFeeds",
+  "The local gateway state changed. Review the settings and restart warning before saving again.": "The local gateway state changed. Review the settings and restart warning before saving again.",
+  "The test preview could not be shown.": "The test preview could not be shown.",
+  "The local gateway is not running.": "The local gateway is not running."
 }

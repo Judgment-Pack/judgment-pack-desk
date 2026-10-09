@@ -2,9 +2,11 @@ package desk
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // processingRig is a desk whose local gateway and document-processing
@@ -35,6 +38,7 @@ func newProcessingRig(t *testing.T) *processingRig {
 	s, ts, logged := assistantServer(t)
 	dir, bundle := t.TempDir(), t.TempDir()
 	companion := `#!/bin/sh
+if [ "$1" = "--local-plan" ]; then exec /bin/cat '` + dir + `/plan'; fi
 exec /usr/bin/awk -v dir='` + dir + `' '{
 	f = dir "/lengths"; print length($0) >> f; close(f)
 	f = dir "/lines"; print $0 >> f; close(f)
@@ -148,7 +152,7 @@ func processingConfigure(mode, credential string) []byte {
 	if credential != "" {
 		member = `,"credential":"` + credential + `"`
 	}
-	return []byte(`{"ifMatch":"` + processingRigDigest + `","config":{"version":1,"mode":"` + mode + `","connection":"ocr-work","connections":[{"id":"ocr-work",` +
+	return []byte(`{"restartWarned":false,"ifMatch":"` + processingRigDigest + `","config":{"version":1,"mode":"` + mode + `","connection":"ocr-work","connections":[{"id":"ocr-work",` +
 		`"name":"Work scans","kind":"azure-document-intelligence","enabled":true,"endpoint":"https://work.cognitiveservices.azure.com"` + member + `}],"timeoutSeconds":60}}`)
 }
 
@@ -268,7 +272,14 @@ func TestDocumentProcessingRequestLinesAreHeldToTheCompanionsBound(t *testing.T)
 		envelope := len(`{"id":"rpc-` + strings.Repeat("0", 24) + `.tmp","method":"` + tt.method + `","params":}`)
 		body := func(line int) []byte {
 			frame := `{"document":{"bytes":""}}`
-			return []byte(`{"document":{"bytes":"` + strings.Repeat("A", line-envelope-len(frame)) + `"}}`)
+			if tt.method == "configure" {
+				frame = `{"ifMatch":null,"config":{"mode":"off","connections":[{"credential":"","bytes":""}]}}`
+			}
+			body := strings.Replace(frame, `"bytes":""`, `"bytes":"`+strings.Repeat("A", line-envelope-len(frame))+`"`, 1)
+			if tt.method == "configure" {
+				body = `{"restartWarned":false,` + body[1:]
+			}
+			return []byte(body)
 		}
 		if code, raw := rig.post(t, "/api/document-processing/"+tt.method, body(tt.bound)); code != http.StatusOK {
 			t.Fatalf("%s at the bound: %d %s", tt.method, code, raw)
@@ -324,7 +335,15 @@ func TestDocumentProcessingRestartsTheLocalGatewayWhenProcessingTurnsOnOrOff(t *
 		} else {
 			os.Remove(filepath.Join(rig.dir, "plan-processing"))
 		}
-		_, raw = rig.post(t, "/api/document-processing/configure", processingConfigure("off", ""))
+		mode := "off"
+		if strings.Contains(step.answer, `"mode":"auto"`) || strings.Contains(step.answer, `"error"`) {
+			mode = "auto"
+		}
+		request := processingConfigure(mode, "")
+		if step.restarted {
+			request = bytes.Replace(request, []byte(`"restartWarned":false`), []byte(`"restartWarned":true`), 1)
+		}
+		_, raw = rig.post(t, "/api/document-processing/configure", request)
 		if processing, restarted := gateway(raw); processing != step.processing || restarted != step.restarted || rig.starts() != step.starts {
 			t.Fatalf("step %d: %s, %d starts", i, raw, rig.starts())
 		}
@@ -380,7 +399,7 @@ func TestDocumentProcessingRefusesAnEchoOfAServiceAccountOrAKeyPair(t *testing.T
 		"private_key": privateKey, "client_email": "ocr@work-project.iam.gserviceaccount.com", "token_uri": "https://oauth2.googleapis.com/token"})
 	secretKey := "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
 	aws, _ := json.Marshal(map[string]string{"accessKeyId": "AKIAIOSFODNN7EXAMPLE", "secretAccessKey": secretKey})
-	save, _ := json.Marshal(map[string]any{"ifMatch": processingRigDigest, "config": map[string]any{"version": 1, "mode": "off", "connection": "", "timeoutSeconds": 60,
+	save, _ := json.Marshal(map[string]any{"restartWarned": false, "ifMatch": processingRigDigest, "config": map[string]any{"version": 1, "mode": "off", "connection": "", "timeoutSeconds": 60,
 		"connections": []map[string]any{
 			{"id": "ocr-google", "name": "Google", "kind": "google-document-ai", "enabled": true, "project": "work-project", "location": "eu", "processor": "p1", "credential": string(google)},
 			{"id": "ocr-aws", "name": "AWS", "kind": "aws-textract", "enabled": true, "region": "eu-west-1", "credential": string(aws)}}}})
@@ -392,5 +411,170 @@ func TestDocumentProcessingRefusesAnEchoOfAServiceAccountOrAKeyPair(t *testing.T
 		if code != http.StatusBadGateway || bytes.Contains(raw, []byte(echoed)) || bytes.Contains(raw, value[1:len(value)-1]) {
 			t.Fatalf("%s: %d %s", name, code, raw)
 		}
+	}
+}
+
+func TestDocumentProcessingRestartWarningMustMatch(t *testing.T) {
+	for _, warned := range []bool{false, true} {
+		rig := newProcessingRig(t)
+		mode := "auto"
+		if warned {
+			mode = "off"
+		}
+		request := processingConfigure(mode, "")
+		if warned {
+			request = bytes.Replace(request, []byte(`"restartWarned":false`), []byte(`"restartWarned":true`), 1)
+		}
+		code, raw := rig.post(t, "/api/document-processing/configure", request)
+		if code != 409 || !bytes.Contains(raw, []byte("The local gateway state changed. Review the settings and restart warning before saving again.")) || rig.sent() != "" {
+			t.Fatalf("%d %s sent %s", code, raw, rig.sent())
+		}
+		// A refusal releases all locks: status remains usable.
+		if code, _ := rig.post(t, "/api/document-processing/status", []byte(`{}`)); code != 200 {
+			t.Fatal(code)
+		}
+	}
+}
+
+func TestDocumentProcessingUnavailableSettingsRemainUsable(t *testing.T) {
+	for _, cause := range []string{"failed restart", "operator plan refused"} {
+		t.Run(cause, func(t *testing.T) {
+			rig := newProcessingRig(t)
+			rig.post(t, "/api/document-processing/status", []byte(`{}`))
+			rig.s.localGateway.restart()
+			if cause == "operator plan refused" {
+				path := filepath.Join(rig.s.localGateway.bundle, "gateway-bundle.json")
+				raw, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				raw = bytes.Replace(raw, []byte(GatewayRevision), []byte("operator-approved-build"), 1)
+				if err := os.WriteFile(path, raw, 0600); err != nil {
+					t.Fatal(err)
+				}
+				sum := sha256.Sum256(raw)
+				t.Setenv("JPACK_DESK_GATEWAY_MANIFEST_SHA256", hex.EncodeToString(sum[:]))
+				if err := os.WriteFile(filepath.Join(rig.dir, "plan"), []byte(`{"version":1,"sources":[]}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := localGatewaySourceArgs(context.Background(), rig.s.localGateway.bundle, filepath.Join(rig.s.assistant.dir, "gateway-connections")); err == nil {
+					t.Fatal("invalid plan accepted")
+				}
+			}
+			// The worker cannot announce a usable gateway after the restart.
+			if err := os.WriteFile(rig.s.localGateway.executable, []byte("#!/bin/sh\nexit 1\n"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			rig.answer(t, "configure", `"result":`+processingSettings("off", ""))
+			for _, method := range []string{"status", "configure"} {
+				body := []byte(`{}`)
+				if method == "configure" {
+					body = processingConfigure("off", "")
+				}
+				code, raw := rig.post(t, "/api/document-processing/"+method, body)
+				if code != 200 || decodeProcessing(t, raw).LocalGateway.Restarted || rig.starts() != 1 {
+					t.Fatalf("%s: %d %s", method, code, raw)
+				}
+				if method == "configure" && !bytes.Contains(raw, []byte(`"appliesWhenStarted":true`)) {
+					t.Fatal(string(raw))
+				}
+			}
+			before := rig.sent()
+			if code, _ := rig.post(t, "/api/document-processing/test", []byte(`{}`)); code != 409 || rig.sent() != before {
+				t.Fatal("unavailable test reached companion")
+			}
+		})
+	}
+}
+
+func TestDocumentProcessingPreviewErrorBoundHasOwnRefusal(t *testing.T) {
+	rig := newProcessingRig(t)
+	for _, n := range []int{0, 64, 65} {
+		errors := make([]map[string]any, n)
+		for i := range errors {
+			errors[i] = map[string]any{"code": "ocr-incomplete", "page": nil}
+		}
+		raw, _ := json.Marshal(map[string]any{"processing": map[string]any{"status": "partial", "errors": errors}, "extraction": "ocr", "pageCount": 0, "pages": []any{}})
+		rig.answer(t, "test", `"result":`+string(raw))
+		code, out := rig.post(t, "/api/document-processing/test", []byte(`{}`))
+		if n <= 64 && code != 200 {
+			t.Fatalf("%d: %d %s", n, code, out)
+		}
+		if n > 64 && (code != 502 || !bytes.Contains(out, []byte(`"code":"processing-preview-unavailable"`)) || bytes.Contains(out, []byte("saved"))) {
+			t.Fatalf("%d %s", code, out)
+		}
+	}
+}
+
+func TestDocumentProcessingWarningMemberIsDeskOnly(t *testing.T) {
+	rig := newProcessingRig(t)
+	rig.answer(t, "configure", `"result":`+processingSettings("off", ""))
+	for _, member := range []string{`null`, `"false"`, `0`} {
+		request := bytes.Replace(processingConfigure("off", ""), []byte(`"restartWarned":false`), []byte(`"restartWarned":`+member), 1)
+		if code, _ := rig.post(t, "/api/document-processing/configure", request); code != 400 {
+			t.Fatal(code)
+		}
+	}
+	request := bytes.Replace(processingConfigure("off", ""), []byte(`"restartWarned":false,`), nil, 1)
+	if code, _ := rig.post(t, "/api/document-processing/configure", request); code != 400 || rig.sent() != "" {
+		t.Fatal("missing warning was sent")
+	}
+	if code, _ := rig.post(t, "/api/document-processing/configure", processingConfigure("off", "")); code != 200 || strings.Contains(rig.sent(), "restartWarned") {
+		t.Fatal("Desk's member reached the companion")
+	}
+}
+
+func TestDocumentProcessingConfigureMemberSpellings(t *testing.T) {
+	for _, change := range []struct{ old, new string }{
+		{`"restartWarned":false`, `"RestartWarned":false`},
+		{`"config":`, `"Config":`},
+		{`"restartWarned":false`, `"restartWarned":false,"RestartWarned":false`},
+		{`"config":`, `"Config":{"mode":"auto"},"config":`},
+		{`"config":`, `"config":{"mode":"auto"},"config":`},
+		{`"restartWarned":false`, `"restartWarned":false,"restartWarned":false`},
+		{`"ifMatch":`, `"IfMatch":`},
+	} {
+		t.Run(change.new, func(t *testing.T) {
+			rig := newProcessingRig(t)
+			rig.answer(t, "configure", `"result":`+processingSettings("off", ""))
+			request := bytes.Replace(processingConfigure("off", ""), []byte(change.old), []byte(change.new), 1)
+			code, raw := rig.post(t, "/api/document-processing/configure", request)
+			if code != http.StatusBadRequest || !bytes.Contains(raw, []byte("invalid document processing request; nothing was sent")) || rig.sent() != "" {
+				t.Fatalf("%d %s sent %s", code, raw, rig.sent())
+			}
+		})
+	}
+	rig := newProcessingRig(t)
+	rig.answer(t, "configure", `"result":`+processingSettings("off", ""))
+	request := bytes.Replace(processingConfigure("off", ""), []byte(`"restartWarned":false`), []byte(`"restartWarned":false,"extra":"not relayed"`), 1)
+	code, raw := rig.post(t, "/api/document-processing/configure", request)
+	if code != http.StatusOK {
+		t.Fatalf("%d %s", code, raw)
+	}
+	var sent struct {
+		Params map[string]json.RawMessage `json:"params"`
+	}
+	if err := json.Unmarshal([]byte(rig.sent()), &sent); err != nil {
+		t.Fatal(err)
+	}
+	var original map[string]json.RawMessage
+	if err := json.Unmarshal(request, &original); err != nil {
+		t.Fatal(err)
+	}
+	if len(sent.Params) != 2 || !bytes.Equal(sent.Params["config"], original["config"]) || !bytes.Equal(sent.Params["ifMatch"], original["ifMatch"]) {
+		t.Fatalf("unexpected companion params: %s", rig.sent())
+	}
+}
+
+func TestDocumentProcessingUnavailableProblemIsRedacted(t *testing.T) {
+	rig := newProcessingRig(t)
+	g := rig.s.localGateway
+	g.mu.Lock()
+	g.problem = errors.New("could not read " + filepath.Join(rig.s.projectDir, "private-plan.json"))
+	g.retryAfter = time.Now().Add(time.Minute)
+	g.mu.Unlock()
+	code, raw := rig.post(t, "/api/document-processing/status", []byte(`{}`))
+	if code != 200 || bytes.Contains(raw, []byte(rig.s.projectDir)) || !bytes.Contains(raw, []byte("could not read")) {
+		t.Fatalf("%d %s", code, raw)
 	}
 }

@@ -14,7 +14,7 @@ import { Select } from '../ui/Select'
 import { SettingRow } from '../ui/SettingRow'
 import { TextArea } from '../ui/TextArea'
 import {
-  cloudOCR, PROCESSING_KEY, PROCESSING_TIMEOUT_BOUNDS, processingCall, processorName, restartsGateway, sameDestination, saveProcessing,
+  ProcessingError, cloudOCR, PROCESSING_KEY, PROCESSING_TIMEOUT_BOUNDS, processingCall, processorName, restartsGateway, sameDestination, saveProcessing,
   TEST_PDF_BYTES, useProcessing, type OCRConnection, type OCRKind, type ProcessingAnswer, type ProcessingSettings, type ProcessingTest, type RunningGateway
 } from './processing'
 import styles from './ProcessingSettings.module.css'
@@ -27,6 +27,12 @@ export function OCRSettings() {
   const query = useProcessing(), client = useQueryClient()
   const [notice, setNotice] = useState('')
   const read = query.data
+  const failed = async (error: Error) => {
+    if (error instanceof ProcessingError && error.word === 'processing-restart-changed') {
+      await query.refetch()
+      setNotice(error.message)
+    }
+  }
   // A save answers the settings and the running gateway; both replace what was read.
   const saved = (next: Settings) => {
     client.setQueryData(PROCESSING_KEY, next)
@@ -42,14 +48,14 @@ export function OCRSettings() {
   return <div className={styles.stack}>
     <RunningState settings={read.result} gateway={read.localGateway} />
     {notice && <p role="status" className={styles.note}>{notice}</p>}
-    <OCRPreferences read={read} onSaved={saved} />
-    <OCRProcessors read={read} onSaved={saved} />
+    <OCRPreferences read={read} onSaved={saved} onError={failed} />
+    <OCRProcessors read={read} onSaved={saved} onError={failed} />
   </div>
 }
 
 /** Which plan the running local gateway has, and whether it is these settings'. */
 function RunningState({ settings, gateway }: { settings: ProcessingSettings; gateway: RunningGateway }) {
-  if (gateway.status !== 'ready') return <div><Alert>{msg('The local gateway is not running. Settings saved now apply when it starts.')}</Alert>{gateway.problem && <p className={styles.note}>{systemMessage(gateway.problem)}</p>}</div>
+  if (gateway.status !== 'ready') return <div><Alert>{gateway.appliesWhenStarted ? msg('The local gateway is not running. Settings saved now apply when it starts.') : msg('The local gateway is not running.')}</Alert>{gateway.problem && <p className={styles.note}>{systemMessage(gateway.problem)}</p>}</div>
   const on = gateway.documentProcessing === true
   return <div className={styles.stack}>
     <p className={styles.note}>{on ? msg('The running local gateway reads scanned pages with OCR.') : msg('The running local gateway reads no scanned pages: it was started without OCR.')}</p>
@@ -65,7 +71,7 @@ function RestartWarning({ mode }: { mode: 'off' | 'auto' }) {
 
 type Preferences = { mode: 'off' | 'auto'; connection: string; timeoutSeconds: number }
 
-function OCRPreferences({ read, onSaved }: { read: Settings; onSaved: (next: Settings) => void }) {
+function OCRPreferences({ read, onSaved, onError }: { read: Settings; onSaved: (next: Settings) => void; onError: (error: Error) => Promise<void> }) {
   const settings = read.result
   // `acknowledged`: the owner ticked "Turn OCR on anyway" for this draft's
   // processor, which is not available on this computer.
@@ -73,8 +79,9 @@ function OCRPreferences({ read, onSaved }: { read: Settings; onSaved: (next: Set
   const save = useMutation({
     mutationFn: async () => {
       if (!draft) throw new Error(sourceMessage('There is nothing to save.'))
-      return saveProcessing(draft.base.result, { ...draft.base.result, mode: draft.mode, connection: draft.connection, timeoutSeconds: draft.timeoutSeconds })
+      return saveProcessing(draft.base.result, { ...draft.base.result, mode: draft.mode, connection: draft.connection, timeoutSeconds: draft.timeoutSeconds }, restartsGateway(draft.mode, draft.base.localGateway))
     },
+    onError,
     onSuccess: next => { onSaved(next); setDraft(null) }
   })
   useUnsavedChanges(!!draft)
@@ -116,7 +123,7 @@ function OCRPreferences({ read, onSaved }: { read: Settings; onSaved: (next: Set
   </div>
 }
 
-function OCRProcessors({ read, onSaved }: { read: Settings; onSaved: (next: Settings) => void }) {
+function OCRProcessors({ read, onSaved, onError }: { read: Settings; onSaved: (next: Settings) => void; onError: (error: Error) => Promise<void> }) {
   const settings = read.result
   const opener = useRef<HTMLElement | null>(null)
   const [editor, setEditor] = useState<{ base: Settings; value: OCRConnection } | null>(null)
@@ -128,9 +135,10 @@ function OCRProcessors({ read, onSaved }: { read: Settings; onSaved: (next: Sett
     mutationFn: async () => {
       if (!editor) throw new Error(sourceMessage('There is nothing to save.'))
       const list = editor.base.result.connections, known = list.some(c => c.id === editor.value.id)
-      return saveProcessing(editor.base.result, { ...editor.base.result, connections: known ? list.map(c => c.id === editor.value.id ? editor.value : c) : [...list, editor.value] })
+      return saveProcessing(editor.base.result, { ...editor.base.result, connections: known ? list.map(c => c.id === editor.value.id ? editor.value : c) : [...list, editor.value] }, restartsGateway(editor.base.result.mode, editor.base.localGateway))
     },
     // The typed credential is dropped with the editor: nothing keeps it.
+    onError,
     onSuccess: next => { onSaved(next); setEditor(null) }
   })
   const close = () => { if (!save.isPending) { if (dirty) setDiscard(true); else setEditor(null) } }
