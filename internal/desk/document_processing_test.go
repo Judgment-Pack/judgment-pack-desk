@@ -273,7 +273,7 @@ func TestDocumentProcessingRequestLinesAreHeldToTheCompanionsBound(t *testing.T)
 		body := func(line int) []byte {
 			frame := `{"document":{"bytes":""}}`
 			if tt.method == "configure" {
-				frame = `{"config":{"mode":"off"},"document":{"bytes":""}}`
+				frame = `{"ifMatch":null,"config":{"mode":"off","connections":[{"credential":"","bytes":""}]}}`
 			}
 			body := strings.Replace(frame, `"bytes":""`, `"bytes":"`+strings.Repeat("A", line-envelope-len(frame))+`"`, 1)
 			if tt.method == "configure" {
@@ -521,6 +521,48 @@ func TestDocumentProcessingWarningMemberIsDeskOnly(t *testing.T) {
 	}
 	if code, _ := rig.post(t, "/api/document-processing/configure", processingConfigure("off", "")); code != 200 || strings.Contains(rig.sent(), "restartWarned") {
 		t.Fatal("Desk's member reached the companion")
+	}
+}
+
+func TestDocumentProcessingConfigureMemberSpellings(t *testing.T) {
+	for _, change := range []struct{ old, new string }{
+		{`"restartWarned":false`, `"RestartWarned":false`},
+		{`"config":`, `"Config":`},
+		{`"restartWarned":false`, `"restartWarned":false,"RestartWarned":false`},
+		{`"config":`, `"Config":{"mode":"auto"},"config":`},
+		{`"config":`, `"config":{"mode":"auto"},"config":`},
+		{`"restartWarned":false`, `"restartWarned":false,"restartWarned":false`},
+		{`"ifMatch":`, `"IfMatch":`},
+	} {
+		t.Run(change.new, func(t *testing.T) {
+			rig := newProcessingRig(t)
+			rig.answer(t, "configure", `"result":`+processingSettings("off", ""))
+			request := bytes.Replace(processingConfigure("off", ""), []byte(change.old), []byte(change.new), 1)
+			code, raw := rig.post(t, "/api/document-processing/configure", request)
+			if code != http.StatusBadRequest || !bytes.Contains(raw, []byte("invalid document processing request; nothing was sent")) || rig.sent() != "" {
+				t.Fatalf("%d %s sent %s", code, raw, rig.sent())
+			}
+		})
+	}
+	rig := newProcessingRig(t)
+	rig.answer(t, "configure", `"result":`+processingSettings("off", ""))
+	request := bytes.Replace(processingConfigure("off", ""), []byte(`"restartWarned":false`), []byte(`"restartWarned":false,"extra":"not relayed"`), 1)
+	code, raw := rig.post(t, "/api/document-processing/configure", request)
+	if code != http.StatusOK {
+		t.Fatalf("%d %s", code, raw)
+	}
+	var sent struct {
+		Params map[string]json.RawMessage `json:"params"`
+	}
+	if err := json.Unmarshal([]byte(rig.sent()), &sent); err != nil {
+		t.Fatal(err)
+	}
+	var original map[string]json.RawMessage
+	if err := json.Unmarshal(request, &original); err != nil {
+		t.Fatal(err)
+	}
+	if len(sent.Params) != 2 || !bytes.Equal(sent.Params["config"], original["config"]) || !bytes.Equal(sent.Params["ifMatch"], original["ifMatch"]) {
+		t.Fatalf("unexpected companion params: %s", rig.sent())
 	}
 }
 

@@ -208,17 +208,38 @@ func TestLocalPlanBooleanFlagSpellings(t *testing.T) {
 		if flag == "long-search" {
 			fixture = "long-search"
 		}
-		for _, spelling := range []string{"-" + flag, "--" + flag, "--" + flag + "=true", "-" + flag + "=1", "--" + flag + "=false", "--" + flag + "=0"} {
-			raw := strings.ReplaceAll(gatewayPlan(t, fixture), "--"+flag, spelling)
+		for _, tt := range []struct {
+			args             []string
+			enabled, counted bool
+		}{
+			{[]string{"-" + flag}, true, true},
+			{[]string{"--" + flag}, true, true},
+			{[]string{"--" + flag + "=true"}, true, true},
+			{[]string{"-" + flag + "=1"}, true, true},
+			{[]string{"--" + flag + "=t"}, true, true},
+			{[]string{"--" + flag + "=T"}, true, true},
+			{[]string{"--" + flag + "=TRUE"}, true, true},
+			{[]string{"--" + flag + "=True"}, true, true},
+			{[]string{"--" + flag + "=false"}, false, true},
+			{[]string{"--" + flag + "=0"}, false, true},
+			{[]string{"--" + flag + "=tRuE"}, false, true},
+			{[]string{"--" + flag + "="}, false, true},
+			{[]string{"--" + flag, "true"}, true, true}, // true is positional.
+			{[]string{"--", "--" + flag}, true, true},   // The rule still counts flags after --.
+			{[]string{"--" + flag + "-extra"}, false, false},
+			{[]string{"--extra-" + flag}, false, false},
+		} {
+			spelling, _ := json.Marshal(tt.args)
+			members := string(spelling[1 : len(spelling)-1])
+			raw := strings.ReplaceAll(gatewayPlan(t, fixture), `"--`+flag+`"`, members)
 			_, err := decodeLocalPlan([]byte(raw), gatewayPlanFiles())
-			disabled := strings.HasSuffix(spelling, "=false") || strings.HasSuffix(spelling, "=0")
-			if (err != nil) != disabled {
+			if (err == nil) != tt.enabled {
 				t.Fatalf("%s: %v", spelling, err)
 			}
-			// Ordinary envelope: the flag alone on gmail must refuse the plan.
-			raw = strings.Replace(gatewayPlan(t, "ordinary"), `["--principal","desk-local"]`, `["--principal","desk-local","`+spelling+`"]`, 1)
-			if _, err := decodeLocalPlan([]byte(raw), gatewayPlanFiles()); err == nil {
-				t.Fatalf("forbidden %s accepted", spelling)
+			// Ordinary envelope: a counted flag on gmail must refuse the plan.
+			raw = strings.Replace(gatewayPlan(t, "ordinary"), `["--principal","desk-local"]`, `["--principal","desk-local",`+members+`]`, 1)
+			if _, err := decodeLocalPlan([]byte(raw), gatewayPlanFiles()); (err != nil) != tt.counted {
+				t.Fatalf("forbidden source %s: %v", spelling, err)
 			}
 		}
 	}

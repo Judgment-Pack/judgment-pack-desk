@@ -6656,8 +6656,11 @@ func (b *cappedBuffer) exceeded() bool {'
     'request.RestartWarned == nil ||' \
     'false ||'
   mutate go 'document processing: the warning member reaches the companion' 'internal/desk/document_processing.go' \
-    'delete(obj, "restartWarned")' \
-    '_ = obj'
+    'body, _ = json.Marshal(params)' \
+    'params["restartWarned"] = obj["restartWarned"]; body, _ = json.Marshal(params)'
+  mutate go 'document processing: a case variant of the warning is relayed' 'internal/desk/document_processing.go' \
+    'if caseVariant || seen[folded] {' \
+    'if (caseVariant || seen[folded]) && false {'
   mutate go 'document processing: a gateway problem bypasses redaction' 'internal/desk/document_processing.go' \
     'answer.LocalGateway.Problem = s.redactionFor().text(answer.LocalGateway.Problem)' \
     '_ = answer.LocalGateway.Problem'

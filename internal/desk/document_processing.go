@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 	"unicode/utf8"
 )
@@ -163,6 +164,27 @@ func (s *Server) handleDocumentProcessing(w http.ResponseWriter, r *http.Request
 		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, "invalid document processing request; nothing was sent")
 		return
 	}
+	// Refuse ambiguous member names before interpreting or relaying them.
+	_, duplicate, memberErr := topLevelMembers(body)
+	if memberErr != nil || duplicate != "" {
+		writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, "invalid document processing request; nothing was sent")
+		return
+	}
+	seen := map[string]bool{}
+	for name := range obj {
+		folded := strings.ToLower(name)
+		caseVariant := false
+		for _, own := range []string{"restartWarned", "config", "ifMatch"} {
+			if strings.EqualFold(name, own) && name != own {
+				caseVariant = true
+			}
+		}
+		if caseVariant || seen[folded] {
+			writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, "invalid document processing request; nothing was sent")
+			return
+		}
+		seen[folded] = true
+	}
 	// Only this desk's own local gateway: never a gateway the desk file names,
 	// and never a fallback to the local one while the desk file names another.
 	_, raw, err := s.readDeskFile()
@@ -185,7 +207,8 @@ func (s *Server) handleDocumentProcessing(w http.ResponseWriter, r *http.Request
 				Mode string `json:"mode"`
 			} `json:"config"`
 		}
-		if json.Unmarshal(body, &request) != nil || request.RestartWarned == nil || (request.Config.Mode != "off" && request.Config.Mode != "auto") {
+		if json.Unmarshal(obj["restartWarned"], &request.RestartWarned) != nil || request.RestartWarned == nil ||
+			json.Unmarshal(obj["config"], &request.Config) != nil || (request.Config.Mode != "off" && request.Config.Mode != "auto") {
 			writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, "invalid document processing request; nothing was sent")
 			return
 		}
@@ -195,8 +218,8 @@ func (s *Server) handleDocumentProcessing(w http.ResponseWriter, r *http.Request
 			return
 		}
 		// This member belongs to Desk, not the companion's settings contract.
-		delete(obj, "restartWarned")
-		body, _ = json.Marshal(obj)
+		params := map[string]json.RawMessage{"ifMatch": obj["ifMatch"], "config": obj["config"]}
+		body, _ = json.Marshal(params)
 	}
 	companion := s.connectionCompanion("document-processing", true)
 	if companion == nil {
