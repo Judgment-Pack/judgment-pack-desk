@@ -1,5 +1,5 @@
 /**
- * Runner's journal of job activity (Runner v0.6.0, `GET /v1/jobs/{job}/events`,
+ * Runner's journal of job activity (Runner v0.7.0, `GET /v1/jobs/{job}/events`,
  * its `docs/design/activity-journal.md`), as the Activity tab reads it (#218).
  *
  * **Runner's record, in Runner's order.** Each entry is one change of state
@@ -36,7 +36,7 @@ import { JobsRequestError, jobsAPI } from './client'
  * (`JournalEntry.kind`), at the source tag below. A Runner that adds a kind
  * fails a test until the kind is worded here.
  */
-export const JOURNAL_SOURCE = 'v0.6.0'
+export const JOURNAL_SOURCE = 'v0.7.0'
 export const JOURNAL_KINDS = [
   'trigger.configured', 'trigger.paused', 'trigger.resumed', 'trigger.key-rotated',
   'occurrence.received', 'occurrence.skipped', 'occurrence.preparing', 'occurrence.ready', 'occurrence.submitted',

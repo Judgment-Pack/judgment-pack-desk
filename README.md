@@ -378,7 +378,7 @@ of this, and Desk offers none of it with one.
 - It says nothing about rehearsals, tests or refusals, which write nothing.
   Its time is the operator's clock, and anyone who can write the project can
   change it.
-- The runtime Desk pins (0.27.1) chains each line to the one before it, over
+- The runtime Desk pins (0.28.0) chains each line to the one before it, over
   its exact bytes (runtime ADR-0047). A change then shows only against a
   checkpoint someone else held from before it. Desk's part is
   [ADR-0010](docs/adr/0010-defensible-decision-records.md). It keeps a signing
@@ -392,7 +392,7 @@ of this, and Desk offers none of it with one.
   was started on keeps it, as the owner's. Desk's log says so once at start,
   and Help & About → Gates says so on that project, neither naming the key.
   Where that project's audit trail is chained, as it is by default, the
-  runtime Desk pins (0.27.1) signs each record with the key it names, if it
+  runtime Desk pins (0.28.0) signs each record with the key it names, if it
   accepts that key.
 - The folder is private: owner-only, never committed (`.desk-private/` is in a
   new desk's `.gitignore`), not shown or editable in Desk's file editor, and in

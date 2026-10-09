@@ -1,6 +1,6 @@
 /**
  * The Activity tab reading Runner's journal of job activity (#218), from a
- * stand-in Runner that serves the journal as Runner v0.6.0 does: every kind
+ * stand-in Runner that serves the journal as Runner v0.7.0 does: every kind
  * with its recorded time, source and initiator; record rows at the place of the
  * entry that created them, and saying what they said without the journal;
  * paging through Runner's cursor, and asking again no faster than every five
@@ -16,7 +16,7 @@ import { JobsContent } from './JobsView'
 import { jobsAPI } from './client'
 import { when } from './RunRecord'
 import { at, JOB, occurrences, release, runner, runs, TRIGGER, type StandInJournal } from './__fixtures__/activity'
-import everyKind from './__fixtures__/runner-v0.6.0-journal-entries.json'
+import everyKind from './__fixtures__/runner-v0.7.0-journal-entries.json'
 
 vi.mock('./client', async original => ({ ...await original<typeof import('./client')>(), jobsAPI: vi.fn() }))
 configure({ asyncUtilTimeout: 5000 })
@@ -41,7 +41,7 @@ const events = (after: number) => `jobs/${JOB}/events?after=${after}`
 const run2 = runs.running.id, occ1 = occurrences.submitted.id
 const entry = (sequence: number, kind: string, extra: Record<string, unknown> = {}) => ({ sequence, entryVersion: '1', kind, at: at(sequence), by: { kind: 'runner' }, concerns: { job: JOB, release: release.id }, ...extra })
 
-/** Each kind of Runner v0.6.0 as the tab words it. */
+/** Each kind of Runner v0.7.0 as the tab words it. */
 const WORDS: Record<string, string> = {
   'trigger.configured': 'Trigger configured', 'trigger.paused': 'Trigger paused', 'trigger.resumed': 'Trigger resumed', 'trigger.key-rotated': 'Trigger key rotated',
   'occurrence.received': 'Occurrence received', 'occurrence.skipped': 'Occurrence skipped', 'occurrence.preparing': 'Occurrence preparing', 'occurrence.ready': 'Occurrence ready',

@@ -68,7 +68,7 @@ export const occurrences: Record<string, Occurrence> = {
 }
 
 /**
- * A job's journal as Runner v0.6.0 serves it (`GET /v1/jobs/{job}/events`):
+ * A job's journal as Runner v0.7.0 serves it (`GET /v1/jobs/{job}/events`):
  * the entries after a cursor, by sequence, at most `size` of them; `next` the
  * last one's sequence, or the cursor when there is none; `more` when another
  * page is already there. `absent` answers 404, as a Runner or a Desk that does
