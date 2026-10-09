@@ -463,7 +463,6 @@ go	graph row 3: changed configuration is not refused before the graph write	Test
 go	graph row 3: commands without input receive a pipe	TestGraphRow3RuntimeOptionalInput
 go	graph row 3: explain runtime holds the write mutex	TestGraphRow3ProposalRunsWithoutLocks
 go	graph row 3: first commit suggests override	TestGraphRow3Edit,TestGraphRow3GuardedWriter
-go	graph row 3: first commit suggests override	TestGraphRow3Edit,TestGraphRow3GuardedWriter,TestStampingWithTheRuntime
 go	graph row 3: path collisions ignore case	TestGraphRow3ReservedPaths
 go	graph row 3: preflight ignores missing folders	TestGraphRow3Preflight
 go	graph row 3: preflight ignores read only paths	TestGraphRow3GuardedWriter,TestGraphRow3Preflight
@@ -492,7 +491,6 @@ go	graph row 3: the proposal route skips its session and origin guard	TestGraphR
 go	graph row 3: the write route skips its session and origin guard	TestGraphRow3Refusals
 go	graph row 3: version one receives a graph declaration	TestGraphRow3Refusals
 go	graph row 3: write skips preflight	TestGraphRow3Preflight
-go	graph row 3: write skips preflight	TestGraphRow3Preflight,TestStampingWithTheRuntime
 go	graph row 4: additional deciding run is kept	TestGraphRow4RehearsalOnly
 go	graph row 4: another configuration allowed	TestGraphRow4RuntimeBoundsAndGuards
 go	graph row 4: answer bound widened	TestGraphRow4RuntimeBoundsAndGuards
@@ -1808,7 +1806,6 @@ web	graph row 4: rehearsal does not unmount on leaving	src/graphs/graphs.test.ts
 web	graph row 4: rehearsal limits not stated	src/graphs/rehearsal.test.tsx
 web	graph row 4: rehearsal marker not checked on page	src/graphs/rehearsal.test.tsx
 web	graph row 4: rehearsal runs on opening	src/graphs/graphs.test.tsx,src/graphs/rehearsal.test.tsx
-web	graph row 4: rehearsal runs on opening	src/graphs/rehearsal.test.tsx
 web	graph row 4: request survives leaving the page	src/graphs/rehearsal.test.tsx
 web	graph row 4: result retained after inputs change	src/graphs/rehearsal.test.tsx
 web	graph row 4: runtime bytes are reserialized	src/graphs/rehearsal.test.tsx
