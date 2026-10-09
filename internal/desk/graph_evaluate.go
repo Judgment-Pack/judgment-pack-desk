@@ -31,7 +31,7 @@ func (s *Server) handleGraphEvaluate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dir, refusal := s.graphRuntime()
-	if refusal != "" {
+	if refusal != "" { // another configuration serves this desk
 		writeJSONCoded(w, http.StatusConflict, CodeBadRequest, refusal)
 		return
 	}
@@ -46,7 +46,7 @@ func (s *Server) handleGraphEvaluate(w http.ResponseWriter, r *http.Request) {
 	}
 	answer, _, err := s.runGraphInput(r.Context(), dir, "evaluate", input, path, "--inputs", "-", "--rehearsal")
 	if err != nil {
-		s.graphRehearsalFailed(w, err)
+		s.graphRehearsalFailed(w, err) // the runtime refused or failed
 		return
 	}
 	var head struct {
