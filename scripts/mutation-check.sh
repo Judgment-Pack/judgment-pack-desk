@@ -6721,6 +6721,98 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go "document processing: an echo of one secret member is shown" "$DPH" \
     '		for _, name := range []string{"accessKeyId", "secretAccessKey", "sessionToken", "private_key", "private_key_id"} {' \
     '		for _, name := range []string{} {'
+
+  # **ADR-0011, row 1: a graph's plan, findings and labels.** The id is resolved
+  # from a fresh listing, the answer is the runtime's bytes but for a redacted
+  # string, and no path from a root reaches the page.
+  mutate go 'graph row 1: an id the listing does not have is passed to explain' internal/desk/graphs.go \
+    '	if found < 0 {
+		return "", http.StatusNotFound, "The project'\''s configuration declares no graph with that id.", nil
+	}' \
+    '	if found < 0 {
+		return id, 0, "", nil
+	}'
+  mutate go 'graph row 1: a listed path that climbs out of the project is planned' internal/desk/graphs.go \
+    '	if !graphPathInside(entry.Path) || !graphPathInside(clean) {' \
+    '	if false {'
+  mutate go 'graph row 1: a graph the runtime could not read is planned' internal/desk/graphs.go \
+    '	if entry.Detail != "" {' \
+    '	if false {'
+  mutate go 'graph row 1: an id listed twice is guessed between' internal/desk/graphs.go \
+    '		if found >= 0 {' \
+    '		if false {'
+  mutate go 'graph row 1: a name that starts with a dash reaches the runtime as a flag' internal/desk/graphs.go \
+    '	if strings.HasPrefix(clean, "-") {' \
+    '	if false {'
+  mutate go 'graph row 1: a path from the page is passed to explain' internal/desk/graphs.go \
+    '	answer, _, err := s.runGraph(r.Context(), dir, "explain", path)' \
+    '	answer, _, err := s.runGraph(r.Context(), dir, "explain", func() string {
+		if from := r.URL.Query().Get("path"); from != "" {
+			return from
+		}
+		return path
+	}())'
+  mutate go 'graph row 1: a path member is shown as the runtime printed it' internal/desk/graphs.go \
+    '		case graphPathMembers[key]:
+			shown = red.shownPathMember(text)' \
+    '		case graphPathMembers[key]:
+			shown = text'
+  mutate go 'graph row 1: a path from outside the project is cut at its first space' internal/desk/graphs.go \
+    '		return "…"
+	}
+	if r.text(p) != p {' \
+    '		return s.withoutPaths(p)
+	}
+	if r.text(p) != p {'
+  mutate go 'graph row 1: a path a member gave is cut at its first space in a sentence' internal/desk/graphs.go \
+    '			shown = red.text(text)' \
+    '			shown = red.s.withoutPaths(text)'
+  mutate go 'graph row 1: a message is redacted only where it names a path already known' internal/desk/graphs.go \
+    '		case graphMessageMembers[key] || s.namesProject(text) || namesSpan(text, red.spans):' \
+    '		case s.namesProject(text) || namesSpan(text, red.spans):'
+  mutate go 'graph row 1: a string nothing redacted is written again' internal/desk/graphs.go \
+    '		if shown == text {
+			return raw
+		}
+		return mustMarshal(shown)' \
+    '		return mustMarshal(shown)'
+  mutate go 'graph row 1: the findings are refused when the runtime exits 1' internal/desk/graphs.go \
+    '	return json.RawMessage(trimmed), head, nil' \
+    '	return json.RawMessage(trimmed), head, runErr'
+  mutate go 'graph row 1: an answer that is another command'\''s is shown' internal/desk/graphs.go \
+    'head.Command != "experimental graph "+command || ' \
+    ''
+  mutate go 'graph row 1: an answer in another output version is shown' internal/desk/graphs.go \
+    '	if head.OutputVersion != graphOutputVersion {' \
+    '	if false {'
+  mutate go 'graph row 1: the findings route answers without the launch credential' internal/desk/graphs.go \
+    'func (s *Server) handleGraphFindings(w http.ResponseWriter, r *http.Request) {
+	if !s.guard(w, r) {' \
+    'func (s *Server) handleGraphFindings(w http.ResponseWriter, r *http.Request) {
+	if false {'
+  mutate go 'graph row 1: a listed path reaches explain as written' internal/desk/graphs.go \
+    '	return clean, 0, "", nil' \
+    '	return entry.Path, 0, "", nil'
+  mutate go 'graph row 1: a pack path no member carries is cut at its first space' internal/desk/graphs.go \
+    '	for _, pack := range declared.Packs {
+		add(pack.Path)' \
+    '	for _, pack := range declared.Packs {
+		_ = pack'
+  mutate go 'graph row 1: an empty answer is shown' internal/desk/graphs.go \
+    '	if len(bytes.TrimSpace(out)) == 0 {
+		if runErr == nil {
+			runErr = fmt.Errorf("its graph %s did not answer as documented", command)
+		}
+		return nil, head, runErr
+	}' \
+    '	if out == nil {
+		return nil, head, runErr
+	}'
+  mutate go 'graph row 1: the graphs are run over another project'\''s configuration' internal/desk/graphs.go \
+    '	case named != "":
+		return dir, "This project'\''s runtime reads the configuration that JPACK_CONFIG names where Desk was started, and not this project'\''s " + runtimeConfigName + ", so Desk does not check its graphs here."' \
+    '	case named != "" && false:
+		return dir, "This project'\''s runtime reads the configuration that JPACK_CONFIG names where Desk was started, and not this project'\''s " + runtimeConfigName + ", so Desk does not check its graphs here."'
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -14635,6 +14727,41 @@ export function assistantTransport(id: string): Transport {
   mutate web "document processing: a processor that is not available is not marked in the choice" "$DPW" \
     "label: c.ready ? c.name : msg('{{name}} · not available on this computer', { name: c.name })" \
     'label: c.name'
+
+  # ADR-0011, row 1.
+  mutate web 'graph row 1: the inventory'\''s path is shown as given' web/src/routes/GraphView.tsx \
+    '{row.path && <code>{shownPath(row.path)}</code>}' \
+    '{row.path && <code>{row.path}</code>}'
+  mutate web 'graph row 1: the inventory'\''s sentence is shown as given' web/src/routes/GraphView.tsx \
+    'lang="en">{shownMessage(row.detail, known)}</p>}' \
+    'lang="en">{shownMessage(row.detail, known) && row.detail}</p>}'
+  mutate web 'graph row 1: the diagram'\''s source path is shown as given' web/src/packs/flows/FlowExplorer.tsx \
+    'shownPath(served.data.meta.path)}</p>' \
+    '(shownPath(served.data.meta.path), served.data.meta.path)}</p>'
+  mutate web 'graph row 1: a path from a root is shown' web/src/graphs/client.ts \
+    '  return ROOT.test(path) || shownMessage(path) !== path ?' \
+    '  return false ?'
+  mutate web 'graph row 1: a path a payload gave is cut at its first space in a sentence' web/src/graphs/client.ts \
+    '    out = out.split(path).join('\''…'\'')' \
+    '    void path'
+  mutate web 'graph row 1: the plan is asked for when the diagram opens' web/src/routes/GraphView.tsx \
+    '{graphId && plan && <GraphPlanView' \
+    '{graphId && <GraphPlanView'
+  mutate web 'graph row 1: findings about another revision are not told apart' web/src/graphs/GraphFindings.tsx \
+    'sha256 !== undefined && row.graphSha256 !== undefined && sha256 !== row.graphSha256' \
+    'false && sha256 !== undefined && row.graphSha256 !== undefined'
+  mutate web 'graph row 1: the runtime'\''s label sentence is not marked as its English' web/src/graphs/GraphLabels.tsx \
+    '<p className="note" lang="en">{label}</p>' \
+    '<p className="note">{label}</p>'
+  mutate web 'graph row 1: the runtime'\''s kind is not shown' web/src/graphs/GraphLabels.tsx \
+    '{kind !== undefined && <span>' \
+    '{false && <span>'
+  mutate web 'graph row 1: the summary is worded as a verdict' web/src/graphs/GraphFindings.tsx \
+    '`passed ${answer.summary.passed}, failed ${answer.summary.failed}, total ${answer.summary.total}`' \
+    '`${answer.summary.passed} of ${answer.summary.total} graphs passed their checks`'
+  mutate web 'graph row 1: a plan is asked for by a path' web/src/graphs/client.ts \
+    '`/api/graphs/plan?id=${encodeURIComponent(id)}`' \
+    '`/api/graphs/plan?path=${encodeURIComponent(id)}`'
 fi
 
 restore

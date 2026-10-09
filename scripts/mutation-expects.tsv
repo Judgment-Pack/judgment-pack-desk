@@ -428,6 +428,25 @@ go	document processing: the worker's word on its plan is dropped	TestDocumentPro
 go	document processing: web-search is given 130 s without its flag	TestLocalPlanSearchAllowsLongerEnvelopeWithoutExtendingOtherSources
 go	excluded directories are not endpoint exclusions	TestEveryCodeHasAStatusAndAWitness,TestExcludedDirectoriesAreEndpointExclusions,TestExcludedNamesMatchWholeComponentsCaseInsensitively,TestNamedDesksKeepFilesAndArtifactsSeparate,TestTheFileAPIRefusesTheHandOver
 go	excluded names match case-sensitively	TestExcludedNamesMatchWholeComponentsCaseInsensitively,TestTheFileAPIRefusesTheHandOver
+go	graph row 1: a graph the runtime could not read is planned	TestGraphRow1AGraphWhosePathEscapesTheProjectIsNotPlanned
+go	graph row 1: a listed path reaches explain as written	TestGraphRow1AListedPathIsCleanedBeforeExplain,TestGraphRow1WithThePublishedRuntimeEscapes
+go	graph row 1: a listed path that climbs out of the project is planned	TestGraphRow1AGraphWhosePathEscapesTheProjectIsNotPlanned
+go	graph row 1: a message is redacted only where it names a path already known	TestGraphRow1NoAbsolutePathReachesThePage
+go	graph row 1: a name that starts with a dash reaches the runtime as a flag	TestGraphRow1AGraphWhosePathEscapesTheProjectIsNotPlanned
+go	graph row 1: a pack path no member carries is cut at its first space	TestGraphRow1ADeclaredPackPathIsReplacedWholeInASentence
+go	graph row 1: a path a member gave is cut at its first space in a sentence	TestGraphRow1NoAbsolutePathReachesThePage
+go	graph row 1: a path from outside the project is cut at its first space	TestGraphRow1NoAbsolutePathReachesThePage
+go	graph row 1: a path from the page is passed to explain	TestGraphRow1APlanIsAskedForByTheListedPathAlone
+go	graph row 1: a path member is shown as the runtime printed it	TestGraphRow1NoAbsolutePathReachesThePage,TestGraphRow1WithThePublishedRuntime
+go	graph row 1: a string nothing redacted is written again	TestGraphRow1FindingsAreTheRuntimesBytes
+go	graph row 1: an answer in another output version is shown	TestGraphRow1AnAnswerThatIsNotTheCommandsIsRefused
+go	graph row 1: an answer that is another command's is shown	TestGraphRow1AnAnswerThatIsNotTheCommandsIsRefused
+go	graph row 1: an empty answer is shown	TestGraphRow1AnEmptyAnswerIsNotAnAnswer
+go	graph row 1: an id listed twice is guessed between	TestGraphRow1AGraphWhosePathEscapesTheProjectIsNotPlanned
+go	graph row 1: an id the listing does not have is passed to explain	TestGraphRow1AnIdThatNamesNoGraphIsRefusedBeforeExplain,TestGraphRow1WithThePublishedRuntime
+go	graph row 1: the findings are refused when the runtime exits 1	TestGraphRow1ARuntimeRefusalIsShownInTheRuntimesWords,TestGraphRow1FindingsAreTheRuntimesBytes,TestGraphRow1NoAbsolutePathReachesThePage,TestGraphRow1WithThePublishedRuntime
+go	graph row 1: the findings route answers without the launch credential	TestGraphRow1TheRoutesAreNotOpenToAnonymousReaders
+go	graph row 1: the graphs are run over another project's configuration	TestGraphRow1NothingRunsOverAnotherProjectsConfiguration
 go	hand-over: a checkpoint of another trail is served	TestALineThatIsNotTheNextCheckpointServesNothing
 go	hand-over: a checkpoint out of order is served	TestALineThatIsNotTheNextCheckpointServesNothing
 go	hand-over: a checkpoint with a member too many is read	TestALineThatIsNotTheNextCheckpointServesNothing
@@ -1663,6 +1682,17 @@ web	forgetting a buffer leaves its generation for the next render	src/packs/edit
 web	form mode is offered over a document the two readings disagree about	src/packs/edit/EditView.test.tsx
 web	gates help: says no record is signed	src/routes/HelpAbout.test.tsx
 web	gates help: the signatures paragraph is not said as written	src/routes/HelpAbout.test.tsx
+web	graph row 1: a path a payload gave is cut at its first space in a sentence	src/graphs/graphs.test.tsx
+web	graph row 1: a path from a root is shown	src/graphs/graphs.test.tsx
+web	graph row 1: a plan is asked for by a path	src/graphs/graphs.test.tsx
+web	graph row 1: findings about another revision are not told apart	src/graphs/graphs.test.tsx
+web	graph row 1: the diagram's source path is shown as given	src/graphs/graphs.test.tsx
+web	graph row 1: the inventory's path is shown as given	src/graphs/graphs.test.tsx
+web	graph row 1: the inventory's sentence is shown as given	src/graphs/graphs.test.tsx
+web	graph row 1: the plan is asked for when the diagram opens	src/graphs/graphs.test.tsx
+web	graph row 1: the runtime's kind is not shown	src/graphs/graphs.test.tsx
+web	graph row 1: the runtime's label sentence is not marked as its English	src/graphs/graphs.test.tsx
+web	graph row 1: the summary is worded as a verdict	src/graphs/graphs.test.tsx
 web	hand-over client: a download whose headers disagree is taken	src/audit/handover.test.tsx,src/audit/jobsRecord.test.tsx
 web	hand-over client: a holder is added in other words	src/audit/handover.test.tsx
 web	hand-over client: a refusal that is not JSON is not said	src/audit/handover.test.tsx
