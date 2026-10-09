@@ -234,7 +234,7 @@ export function useAssistantRun(options: {
    * `prompts/get` — `callTool` is the whole of it — and a query does not belong
    * in this hook.
    */
-  purpose?: 'test-design' | 'brief'
+  purpose?: 'test-design' | 'brief' | 'graph'
   testPrompt?: string
   /**
    * The desk's own tools for this run, executed on the page: the research
@@ -379,6 +379,7 @@ export function useAssistantRun(options: {
               prompt,
               testPrompt: testPrompt ?? '',
               purpose,
+              ...(purpose === 'graph' ? { adversarialReview: false } : {}),
               ...(purpose === 'test-design' || purpose === 'brief' ? { allowConversation: true, interactive: true, adversarialReview: false } : {}),
               tools: ready.tools,
               callTool: ready.callTool,

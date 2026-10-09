@@ -159,11 +159,20 @@ const runtimeAnswerLimit = 64 << 10
 // The command is built the way the relay's `jpack mcp` is (`runtimeCommandAt`):
 // the same binary, resolved the same way, and the same inherited environment.
 // What differs is that it ends. It is bounded by `runtimeCommandTimeout`, reads
-// nothing, and is read up to `runtimeAnswerLimit`.
+// no standard input through runRuntime, and is read up to `runtimeAnswerLimit`.
 //
 // A command that exits non-zero still returns what it printed, beside the
 // error: with `--format json` the runtime says why in its diagnostics.
 func runRuntime(ctx context.Context, bin string, dir heldDir, args ...string) ([]byte, error) {
+	return runRuntimeInput(ctx, bin, dir, nil, args...)
+}
+
+// runRuntimeInput accepts at most the file writer's bound on standard input.
+// No proposal is staged in the project, even temporarily.
+func runRuntimeInput(ctx context.Context, bin string, dir heldDir, input []byte, args ...string) ([]byte, error) {
+	if len(input) > maxFileBytes {
+		return nil, errors.New("runtime standard input exceeds the file writer's limit")
+	}
 	ctx, cancel := context.WithTimeout(ctx, runtimeCommandTimeout)
 	defer cancel()
 	cmd, err := runtimeCommandAt(ctx, bin, dir, args...)
@@ -190,6 +199,9 @@ func runRuntime(ctx context.Context, bin string, dir heldDir, args ...string) ([
 	}
 	cmd.Env = withoutVariables(os.Environ(), drop...)
 	stdout := &cappedBuffer{limit: runtimeAnswerLimit}
+	if input != nil {
+		cmd.Stdin = bytes.NewReader(input)
+	}
 	cmd.Stdout = stdout
 	cmd.Stderr = io.Discard
 	// A descendant that kept the output open cannot hold this request past

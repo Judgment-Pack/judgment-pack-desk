@@ -2254,3 +2254,11 @@ it('emits a draft artifact when a conversational reply includes indented probe e
   expect(events.find(event => event.type === 'message')?.text).toContain('"status":"evaluated"')
   expect(events.find(event => event.type === 'message')?.text).not.toContain('"proposal"')
 })
+
+it('graph authoring uses its proposal envelope and host-tool instructions', async () => {
+  const { call, seen } = scriptedCall([turn({ text: PROPOSAL_TEXT })])
+  const events = await drain(vercel.start(session(call, { purpose: 'graph', adversarialReview: false })))
+  expect(JSON.stringify(seen[0])).toContain('graph authoring assistant')
+  expect(JSON.stringify(seen[0])).toContain('graph_validate and graph_explain')
+  expect(events.some(event => event.type === 'proposal')).toBe(true)
+})

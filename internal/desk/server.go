@@ -183,7 +183,8 @@ type Server struct {
 	stamping *stampScheduler
 	// reviewKey is this desk's own key for review tokens (`reviewToken`):
 	// random per process, so a token names one desk and does not outlive it.
-	reviewKey [32]byte
+	reviewKey  [32]byte
+	graphOffer *graphWriteOffer // protected by writes; one outstanding confirmation per desk
 
 	updates    *updateService
 	builds     ComponentBuilds
@@ -472,6 +473,10 @@ func New(cfg Config) (*Server, error) {
 	s.mux.HandleFunc("PUT /api/attachments/{id}", s.handleAttachment)
 	s.mux.HandleFunc("GET /api/review", s.handleReview)
 	s.mux.HandleFunc("POST /api/review/lock", s.handleReviewLock)
+	s.mux.HandleFunc("POST /api/graphs/validate", s.handleGraphProposalCheck)
+	s.mux.HandleFunc("POST /api/graphs/explain", s.handleGraphProposalCheck)
+	s.mux.HandleFunc("POST /api/graphs/proposal", s.handleGraphProposal)
+	s.mux.HandleFunc("POST /api/graphs/write", s.handleGraphWrite)
 	s.mux.HandleFunc("GET /api/graphs/findings", s.handleGraphFindings)
 	s.mux.HandleFunc("GET /api/graphs/plan", s.handleGraphPlan)
 	s.mux.HandleFunc("GET /api/audit/verify", s.handleAuditVerify)

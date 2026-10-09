@@ -76,13 +76,13 @@ describe.each(AGENT_ENGINES)('agent engine %s', engineId => {
     expect(events.at(-1)?.type).toBe('end')
   })
 
-  it.each(['brief', 'test-design'] as const)('preserves the %s workflow and explicit language instructions', async purpose => {
+  it.each(['brief', 'test-design', 'graph'] as const)('preserves the %s workflow and explicit language instructions', async purpose => {
     let instructions = ''
     const events = await collect(session(async (request, callbacks) => {
       instructions = request.instructions
       await reply(proposal())(request, callbacks)
     }, { purpose, replyLanguage: 'fr' }))
-    expect(instructions).toContain(purpose === 'brief' ? 'one-page brief' : 'design tests')
+    expect(instructions).toContain(purpose === 'graph' ? 'graph authoring assistant' : purpose === 'brief' ? 'one-page brief' : 'design tests')
     expect(instructions.toLowerCase()).toContain('french')
     expect(events.some(event => event.type === 'proposal')).toBe(true)
   })

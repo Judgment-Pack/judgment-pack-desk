@@ -340,3 +340,21 @@ it('generates briefs without opening runtime tools or a socket', async () => {
   expect(handed?.adversarialReview).toBe(false)
   await expect(handed!.callTool('evaluate', {})).rejects.toThrow('no tool capability')
 })
+
+it('graph authoring keeps the ToolGate ceiling and adds only the two read-only host tools', async () => {
+  engine = records
+  runtime = scriptedWebSocket({})
+  vi.stubGlobal('WebSocket', runtime.WebSocket)
+  vi.stubGlobal('fetch', async () => new Response('{}'))
+  const { graphHostTools } = await import('../graphs/author')
+  const hostTools = graphHostTools()
+  const { result } = renderHook(() => useAssistantRun({ purpose: 'graph', endpoint: ENDPOINT, model: ENDPOINT.model, engine: 'vercel', thinking: 'ultra', hostTools }))
+  act(() => result.current.start('The runtime author_graph prompt.'))
+  await waitFor(() => expect(result.current.status).toBe('finished'))
+  expect(handed?.purpose).toBe('graph')
+  expect(handed?.adversarialReview).toBe(false)
+  expect(handed?.hostTools.map(tool => tool.name)).toEqual(['graph_validate', 'graph_explain'])
+  expect(handed?.tools.map(tool => tool.name).sort()).toEqual([...scenario.scenarioTools].sort())
+  await expect(handed!.callTool('write_file', {})).rejects.toThrow()
+  await expect(handed!.callTool('packs_lock', {})).rejects.toThrow()
+})

@@ -15,6 +15,7 @@ import { useMcp } from './McpProvider'
 
 /** The prompt whose method guidance the authoring surfaces link to. */
 export const AUTHOR_PACK_PROMPT = 'author_pack'
+export const AUTHOR_GRAPH_PROMPT = 'author_graph'
 
 /**
  * The runtime's repair prompt, which takes the validator's own diagnostics.

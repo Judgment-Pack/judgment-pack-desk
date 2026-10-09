@@ -16,6 +16,7 @@ import { Empty, ErrorBox, Loading, Pill, Section, statusTone } from '../componen
 import { TargetPair, describeTargetAssertion } from '../components/TargetPair'
 import { TracePanel } from '../components/TracePanel'
 import { GraphFindingsPanel } from '../graphs/GraphFindings'
+import { GraphAuthor } from '../graphs/GraphAuthor'
 import { GraphLabels } from '../graphs/GraphLabels'
 import { GraphPlanView } from '../graphs/GraphPlan'
 import { shownMessage, shownPath } from '../graphs/client'
@@ -72,6 +73,7 @@ export function GraphView() {
         <Link to={`/graphs/${encodeURIComponent(graphId)}?view=tests`} aria-current={tests ? 'page' : undefined}>{msg("Tests")}</Link>
       </nav> : undefined} />
     <PageBody width="full">
+      <GraphAuthor graphId={graphId} />
       <p className="meta"><Pill tone="quiet">{msg("Experimental")}</Pill></p>
       {!graphId && <p className="quiet">{msg("Connect packs and see how their results feed into the next decision.")}</p>}
       {!graphId && graphInventorySupported && (inventory.error

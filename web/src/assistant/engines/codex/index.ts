@@ -2,7 +2,7 @@ import { assistantLanguageInstructions } from '../../../i18n/assistantLanguage'
 import type { AssistantEvent, AgentAssistantSession, EngineSession, Engine, McpToolResult } from '../../engine'
 import type { AgentTool, AgentEvent } from '../../agent'
 import {
-  SYSTEM, CONVERSATION_SYSTEM, TEST_DESIGN_SYSTEM, BRIEF_SYSTEM,
+  SYSTEM, CONVERSATION_SYSTEM, TEST_DESIGN_SYSTEM, BRIEF_SYSTEM, GRAPH_SYSTEM,
   openRun, eventIterator, guardedCallTool, withAbort, isCancelled,
   servedSchema, textOf, streamingProse, proseOf, hasProposalFence, extractProposal
 } from '../contract'
@@ -85,7 +85,7 @@ export function runCodex(session: CodexSession): AsyncIterable<AssistantEvent> {
       if (!messages || partial.size || !final.trim()) throw new Error('Codex returned no complete final response')
       return final
     }
-    const instructions = session.purpose === 'brief' ? BRIEF_SYSTEM
+    const instructions = session.purpose === 'graph' ? GRAPH_SYSTEM : session.purpose === 'brief' ? BRIEF_SYSTEM
       : session.purpose === 'test-design' ? TEST_DESIGN_SYSTEM
       : session.allowConversation ? CONVERSATION_SYSTEM : SYSTEM
     const final = await run(session.prompt, instructions, 'author')
