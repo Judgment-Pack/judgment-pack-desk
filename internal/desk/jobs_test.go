@@ -125,6 +125,7 @@ func TestRunnerInputProfilesFile(t *testing.T) {
 	}
 }
 
+// The key is the Ed25519 base point: Runner v0.7.0 refuses a trusted receipt key that is not a curve point.
 func TestJobsV2PlannerAndProfilesThroughCompanion(t *testing.T) {
 	bin, runtime := os.Getenv("JPACK_RUNNER_TEST_BIN"), os.Getenv("JPACK_BIN")
 	if bin == "" || runtime == "" {
@@ -132,7 +133,7 @@ func TestJobsV2PlannerAndProfilesThroughCompanion(t *testing.T) {
 	}
 	config := t.TempDir()
 	os.Chmod(config, 0700)
-	profiles := `[{"id":"test","publicKey":"` + strings.Repeat("ab", 32) + `","class":"record","source":"records","authority":"test","shape":"mcp","adapter":{"name":"mcp","version":"1","digest":"sha256:` + strings.Repeat("a", 64) + `"},"endpoint":null,"tools":["lookup"]}]`
+	profiles := `[{"id":"test","publicKey":"58` + strings.Repeat("66", 31) + `","class":"record","source":"records","authority":"test","shape":"mcp","adapter":{"name":"mcp","version":"1","digest":"sha256:` + strings.Repeat("a", 64) + `"},"endpoint":null,"tools":["lookup"]}]`
 	s, ts := startDesk(t, Config{RunnerBin: bin, JpackBin: runtime, RunnerInputProfiles: []byte(profiles), ProjectDir: t.TempDir(), DeskConfigDir: config, Token: testToken})
 	defer ts.Close()
 	defer s.Close()

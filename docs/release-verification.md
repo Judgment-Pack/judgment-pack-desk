@@ -57,14 +57,14 @@ not establish native execution on another platform.
 For the currently locked Linux/amd64 Runtime, download and authenticate it:
 
 ```sh
-gh release download v0.27.1 --repo Judgment-Pack/judgment-pack-runtime \
-  --pattern judgment-pack_0.27.1_linux_amd64.tar.gz --pattern checksums.txt
+gh release download v0.28.0 --repo Judgment-Pack/judgment-pack-runtime \
+  --pattern judgment-pack_0.28.0_linux_amd64.tar.gz --pattern checksums.txt
 sha256sum --check --ignore-missing checksums.txt
-gh attestation verify judgment-pack_0.27.1_linux_amd64.tar.gz \
+gh attestation verify judgment-pack_0.28.0_linux_amd64.tar.gz \
   --repo Judgment-Pack/judgment-pack-runtime \
   --signer-workflow Judgment-Pack/judgment-pack-runtime/.github/workflows/release.yml \
-  --source-ref refs/tags/v0.27.1 \
-  --source-digest 7a2fcfe20cedba5f164246fc544c4920971d2c56 \
+  --source-ref refs/tags/v0.28.0 \
+  --source-digest 412992c31739c9ad5c04e90320524a5773d56ed8 \
   --deny-self-hosted-runners
 ```
 
