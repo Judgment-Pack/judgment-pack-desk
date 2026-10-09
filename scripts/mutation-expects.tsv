@@ -433,6 +433,7 @@ go	graph row 1: a listed path reaches explain as written	TestGraphRow1AListedPat
 go	graph row 1: a listed path that climbs out of the project is planned	TestGraphRow1AGraphWhosePathEscapesTheProjectIsNotPlanned
 go	graph row 1: a message is redacted only where it names a path already known	TestGraphRow1NoAbsolutePathReachesThePage
 go	graph row 1: a name that starts with a dash reaches the runtime as a flag	TestGraphRow1AGraphWhosePathEscapesTheProjectIsNotPlanned
+go	graph row 1: a pack path no member carries is cut at its first space	TestGraphRow1ADeclaredPackPathIsReplacedWholeInASentence
 go	graph row 1: a path a member gave is cut at its first space in a sentence	TestGraphRow1NoAbsolutePathReachesThePage
 go	graph row 1: a path from outside the project is cut at its first space	TestGraphRow1NoAbsolutePathReachesThePage
 go	graph row 1: a path from the page is passed to explain	TestGraphRow1APlanIsAskedForByTheListedPathAlone
