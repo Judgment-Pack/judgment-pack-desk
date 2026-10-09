@@ -189,7 +189,13 @@ func fixStamping(t *testing.T, only ...string) *stampWaker {
 		wired = true
 		return w.wake, func() {}
 	}
-	testHookStampWoke = func() { w.woke <- struct{}{} }
+	testHookStampWoke = func(wake <-chan time.Time) {
+		// A still-live scheduler from another desk must not acknowledge this
+		// desk's wake: its run may still hold the turn and be asking for a stamp.
+		if wake == w.wake {
+			w.woke <- struct{}{}
+		}
+	}
 	t.Cleanup(func() { stampClock, newStampWake, testHookStampWoke = wasClock, wasWake, wasWoke })
 	return w
 }
@@ -1226,7 +1232,7 @@ func TestEachStampFailureIsShownInTheRuntimesWordsAndTriedAtTheNextInterval(t *t
 		elapsed += time.Hour
 		w.at(t, elapsed)
 		if n := stampsRun(r.ran(t)); n != 1 {
-			t.Errorf("%s: the wake ran %d stamps", want.Diagnostics[0].Code, n)
+			t.Errorf("%s: the wake ran %d stamps; %s", want.Diagnostics[0].Code, n, stampingFailureState(t, r.s, r.ts, ""))
 		}
 		last := stampingOf(t, r.ts, "").Last
 		if last == nil || last.Status != stampRefused || !slices.Equal(last.Diagnostics, want.Diagnostics) || last.At != handoverNow+int64(elapsed/time.Second) {
@@ -1751,6 +1757,35 @@ func TestRootsWhosePathNamesAnotherFileAreNotPassed(t *testing.T) {
 	}
 }
 
+// stampingFailureState captures the scheduler before reading the decision record,
+// whose verification can itself update the checkpoint known stamped.
+func stampingFailureState(t *testing.T, s *Server, ts *httptest.Server, id string) string {
+	t.Helper()
+	desk := s
+	if id != "" {
+		s.desksMu.Lock()
+		desk = s.desks[id]
+		s.desksMu.Unlock()
+	}
+	st := desk.stamping
+	turnFree := st.turn.TryLock()
+	if turnFree {
+		st.turn.Unlock()
+	}
+	st.mu.Lock()
+	state := fmt.Sprintf("lastAttempt=%s running=%t turnFree=%t closed=%t generation=%d stamped=%+v said=%q", st.lastAttempt.Format(time.RFC3339Nano), st.running.Load(), turnFree, st.closed, st.generation, st.stamped, st.said)
+	st.mu.Unlock()
+	status, answer, refusal := readAudit(t, ts, id)
+	var last *stampRun
+	var pending *int64
+	if answer.Stamping != nil {
+		last, pending = answer.Stamping.Last, answer.Stamping.Pending
+	}
+	lastJSON, _ := json.Marshal(last)
+	pendingJSON, _ := json.Marshal(pending)
+	return fmt.Sprintf("Stamping.Last=%s Stamping.Pending=%s (HTTP=%d refusal=%q); scheduler: %s; clock=%s", lastJSON, pendingJSON, status, refusal, state, stampClock().Format(time.RFC3339Nano))
+}
+
 /* With the runtime ------------------------------------------------------------ */
 
 // **With the runtime and a stand-in authority: stamping, end to end.** On a
@@ -1813,7 +1848,7 @@ func TestStampingWithTheRuntime(t *testing.T) {
 	}
 	if got.status != http.StatusOK || json.Unmarshal([]byte(got.data), &run) != nil || run.Run.Status != stampStamped || run.Run.Sequence != 2 ||
 		run.Run.Policy != "1.3.6.1.4.1.99999.1" || authority.served() != 1 || strings.Contains(got.data, row.Folder) {
-		t.Fatalf("Stamp now answered %d %s, the authority served %d", got.status, got.data, authority.served())
+		t.Fatalf("Stamp now answered %d %s, the authority served %d; %s", got.status, got.data, authority.served(), stampingFailureState(t, s, ts, row.ID))
 	}
 	stampsPath := filepath.Join(row.Folder, ".desk-private", "audit", "stamps.jsonl")
 	if lines := strings.Count(readFile(t, stampsPath), "\n"); lines != 1 {
@@ -1838,14 +1873,14 @@ func TestStampingWithTheRuntime(t *testing.T) {
 	}
 	w.at(t, time.Hour)
 	if authority.served() != 2 {
-		t.Errorf("at the interval, with the head moved, the authority served %d", authority.served())
+		t.Errorf("at the interval, with the head moved, the authority served %d; %s", authority.served(), stampingFailureState(t, s, ts, row.ID))
 	}
 	if _, answer, _ = readAudit(t, ts, row.ID); answer.Report == nil || answer.Report.Coverage.Stamped != (auditCoverageState{Status: "through", Through: 3}) {
 		t.Fatalf("after the scheduler's stamp the decision record says %+v", answer.Report)
 	}
 	w.at(t, 2*time.Hour)
 	if authority.served() != 2 {
-		t.Errorf("with the head where it was, the authority served %d", authority.served())
+		t.Errorf("with the head where it was, the authority served %d; %s", authority.served(), stampingFailureState(t, s, ts, row.ID))
 	}
 
 	// An authority that never answers.

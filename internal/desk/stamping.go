@@ -284,8 +284,8 @@ var newStampWake = func(name string) (<-chan time.Time, func()) {
 	return ticker.C, ticker.Stop
 }
 
-// testHookStampWoke runs after a scheduler has acted on each wake, and is nil
-// outside tests. testHookStampRun runs inside a stamp run's turn, with the
+// testHookStampWoke identifies the wake channel after its scheduler has acted,
+// and is nil outside tests. testHookStampRun runs inside a stamp run's turn, with the
 // settings read again and held, before the runtime is asked to stamp, and is
 // nil outside tests: a test holds a run there to see a second one refused,
 // or a change of settings wait. testHookStampChecked runs in the turn after
@@ -295,7 +295,7 @@ var newStampWake = func(name string) (<-chan time.Time, func()) {
 // passes, and is nil outside tests: a test puts another file under a name
 // there.
 var (
-	testHookStampWoke    func()
+	testHookStampWoke    func(<-chan time.Time)
 	testHookStampRun     func()
 	testHookStampChecked func()
 	testHookStampingRead func()
@@ -892,7 +892,7 @@ func (s *Server) startStamping() {
 			}
 			st.wake()
 			if testHookStampWoke != nil {
-				testHookStampWoke()
+				testHookStampWoke(wake)
 			}
 		}
 	}()
