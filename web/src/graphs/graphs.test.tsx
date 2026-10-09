@@ -218,3 +218,16 @@ describe('the runtime’s labels', () => {
     expect(container.textContent).toBe('')
   })
 })
+
+
+it('offers rehearsal on the graph page, runs nothing on opening, and forgets inputs on leaving', async () => {
+  open('/graphs/onboarding')
+  fireEvent.click(await screen.findByRole('link', { name: 'Rehearsal' }))
+  const inputs = await screen.findByLabelText('Inputs by node id')
+  expect(asked().some(url => url.startsWith('/api/graphs/evaluate'))).toBe(false)
+  fireEvent.change(inputs, { target: { value: '{"private":{}}' } })
+  fireEvent.click(screen.getByRole('link', { name: 'Diagram' }))
+  expect(screen.queryByLabelText('Inputs by node id')).toBeNull()
+  fireEvent.click(screen.getByRole('link', { name: 'Rehearsal' }))
+  expect((await screen.findByLabelText('Inputs by node id') as HTMLTextAreaElement).value).toBe('{}')
+})

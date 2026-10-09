@@ -2528,3 +2528,33 @@ web	what was seen in one document is kept for the next	src/packs/useDocumentSpy.
 web	widening never gives an untouched pane its layout back	src/shell/narrowShell.test.tsx
 web	write state dropped from the card's status comparison	src/routes/AdminView.test.tsx
 web	writing a chat case is offered over established ones	src/research/run.test.ts,src/research/ui/ReviewPanel.test.tsx
+go	graph row 4: rehearsal flag omitted	TestGraphRow4RehearsalOnly
+go	graph row 4: answer need not declare rehearsal	TestGraphRow4RequiresRehearsalTrue
+go	graph row 4: inputs size not checked	TestGraphRow4InputsBoundBeforeRuntime
+go	graph row 4: non-object inputs accepted	TestGraphRow4InputsBoundBeforeRuntime
+go	graph row 4: unknown id resolves to another graph	TestGraphRow4IDAndContainment
+go	graph row 4: listed path may climb out	TestGraphRow4IDAndContainment
+go	graph row 4: redaction omitted	TestGraphRow4RedactsWithoutLogging
+go	graph row 4: redacted answers enter the log	TestGraphRow4RedactsWithoutLogging
+go	graph row 4: runtime failure enters the log	TestGraphRow4RedactsWithoutLogging
+go	graph row 4: additional deciding run is kept	TestGraphRow4RehearsalOnly
+go	graph row 4: facts are not passed on stdin	TestGraphRow4RehearsalOnly
+go	graph row 4: answer bound widened	TestGraphRow4RuntimeBoundsAndGuards
+go	graph row 4: command timeout ignores its bound	TestGraphRow4RehearsalOnly
+web	graph row 4: labels omitted	src/graphs/rehearsal.test.tsx
+web	graph row 4: rehearsal marker not checked on page	src/graphs/rehearsal.test.tsx
+web	graph row 4: facts byte bound omitted on page	src/graphs/rehearsal.test.tsx
+web	graph row 4: facts object check omitted on page	src/graphs/rehearsal.test.tsx
+web	graph row 4: id sent as path	src/graphs/rehearsal.test.tsx
+web	graph row 4: runtime bytes are reserialized	src/graphs/rehearsal.test.tsx
+web	graph row 4: result retained after inputs change	src/graphs/rehearsal.test.tsx
+web	graph row 4: request survives leaving the page	src/graphs/rehearsal.test.tsx
+web	graph row 4: rehearsal limits not stated	src/graphs/rehearsal.test.tsx
+web	graph row 4: answer joined to drawn document	src/graphs/rehearsal.test.tsx
+web	graph row 4: bundle digest called graph digest	src/graphs/rehearsal.test.tsx
+web	graph row 4: trail silence omitted	src/graphs/rehearsal.test.tsx
+web	graph row 4: rehearsal does not unmount on leaving	src/graphs/graphs.test.tsx
+go	graph row 4: citations passed	TestGraphRow4RehearsalOnly
+go	graph row 4: request guard bypassed	TestGraphRow4RuntimeBoundsAndGuards
+go	graph row 4: another configuration allowed	TestGraphRow4RuntimeBoundsAndGuards
+web	graph row 4: rehearsal runs on opening	src/graphs/rehearsal.test.tsx
