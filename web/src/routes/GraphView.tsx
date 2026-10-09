@@ -31,6 +31,7 @@ import { useGraphDocument, useGraphInventory, useGraphMatrix } from '../mcp/quer
 import { divergentPairIdentity, recordDivergentPair } from '../mcp/refetchLedger'
 import type {
   GraphInventory,
+  GraphSuite,
   GraphSuiteEntry,
   GraphSummary,
   GraphTestNode,
@@ -94,17 +95,18 @@ export function GraphView() {
             ? msg("Turn off detailed traces to view the previous untraced result.")
             : msg("Turn off detailed traces and run tests to try without them.")]} /></p>}
         {error ? <ErrorBox title={msg("Could not run graph tests")} error={error} />
-          : !data ? !isFetching && <Empty>{msg("Run tests to check saved cases and coverage. Opening this view does not run tests.")}</Empty>
+          : !data ? !isFetching && <Empty>{msg("Run tests to run the project's saved cases and read their coverage. Opening this view does not run tests.")}</Empty>
           : <>
+            <GraphLabels labels={data} />
             <p className="ids"><Pill tone={statusTone(data.status)}>{data.status}</Pill>
-              <span><Message text={"<0/> of <1/> cases passed"} slots={[data.summary.passed, data.summary.total]} /></span>
+              <SuiteSummaryMembers summary={data.summary} />
               <span className="quiet"><Message text={"Last run<0/>"} slots={[asked ? msg(" · detailed traces") : '']} /></span>
             </p>
             {(data.graphs ?? []).length === 0 ? <Empty>{msg("No graph test results were reported.")}</Empty>
-              : data.graphs!.map(entry => <GraphEntry key={entry.id} entry={entry} matrixSettled={!isFetching} />)}
-            {data.label && <p className="note">{data.label}</p>}
+              : data.graphs!.map(entry => <GraphEntry key={entry.id} entry={entry} matrixSettled={!isFetching}
+                known={knownPaths(data)} />)}
           </>}
-        <p className="quiet">{msg("Judgment Graphs use the runtime’s experimental graph format. Test results describe the supplied cases.")}</p>
+        <p className="quiet">{msg("Judgment Graphs use the runtime’s experimental graph format. A test run shows what the project’s own rows did, as the runtime reports it. It does not show that the rows are right or that coverage is complete.")}</p>
       </section>}
     </PageBody>
   </article>
@@ -224,10 +226,13 @@ function ConfiguredGraph({ row, known }: { row: GraphSummary; known: (string | u
  */
 function GraphEntry({
   entry,
+  known,
   /** False while the matrix these rows came from is being re-run. */
   matrixSettled
 }: {
   entry: GraphSuiteEntry
+  /** The paths the payload gave in its path members, for the redaction of its sentences. */
+  known: (string | undefined)[]
   matrixSettled: boolean
 }) {
   useLocale()
@@ -285,14 +290,14 @@ function GraphEntry({
         </h2>
         <Pill tone={statusTone(entry.status)}>{entry.status}</Pill>
         {entry.graphVersion && <Pill tone="quiet">v{entry.graphVersion}</Pill>}
-        <span className="quiet"><Message text={"<0/>/<1/> rows"} slots={[entry.summary.passed, entry.summary.total]} /></span>
+        <SuiteSummaryMembers summary={entry.summary} />
       </header>
       <p className="meta">
-        {entry.path && <code>{entry.path}</code>}
-        {entry.rowsPath && <code>{entry.rowsPath}</code>}
+        {entry.path && <code>{shownPath(entry.path)}</code>}
+        {entry.rowsPath && <code>{shownPath(entry.rowsPath)}</code>}
         {entry.graphId && <span><Message text={"graph id <0/>"} slots={[entry.graphId]} /></span>}
       </p>
-      {entry.detail && <p className="note note-warn">{entry.detail}</p>}
+      {entry.detail && <p className="note note-warn" lang="en">{shownMessage(entry.detail, known)}</p>}
 
       <Section title={msg("The walk")}>
         <>
@@ -361,7 +366,7 @@ function GraphEntry({
         ) : (
           <ul className="rows">
             {rows.map((candidate) => (
-              <GraphRowItem key={candidate.id} row={candidate} />
+              <GraphRowItem key={candidate.id} row={candidate} known={known} />
             ))}
           </ul>
         )}
@@ -463,7 +468,7 @@ function useDigestRefetch({
  * on a composition that blindness reaches upstream too — an escalation target
  * moved on a node three hops back changes nothing any headline can see.
  */
-function GraphRowItem({ row }: { row: GraphTestRow }) {
+function GraphRowItem({ row, known }: { row: GraphTestRow; known: (string | undefined)[] }) {
   useLocale()
   const assertion = describeTargetAssertion(row)
   return (
@@ -511,7 +516,7 @@ function GraphRowItem({ row }: { row: GraphTestRow }) {
         </ul>
       ) : null}
 
-      {row.detail && <p className="row-detail">{row.detail}</p>}
+      {row.detail && <p className="row-detail" lang="en">{shownMessage(row.detail, known)}</p>}
     </li>
   )
 }
@@ -588,4 +593,30 @@ function summarize(text: string): string {
     (reasons.length ? msg(' · reasons {{reasons}}', { reasons: reasons.join(', ') }) : '') +
     (disposition.handoff ? msg(' · handoff {{state}}', { state: disposition.handoff.state }) : '')
   )
+}
+
+/**
+ * A suite's or an entry's `summary`, as the runtime's members and nothing more
+ * (ADR-0011, sections 2 and 9): the counts are printed under their own names,
+ * and Desk adds no sentence that turns them into a result.
+ */
+function SuiteSummaryMembers({ summary }: { summary: GraphSuite['summary'] }) {
+  useLocale()
+  return <span><Message text={"summary <0/>"} slots={[<code lang="en" key="summary">{(['passed', 'mismatched', 'total'] as const).filter(key => summary[key] !== undefined).map(key => `${key} ${summary[key]}`).join(', ')}</code>]} /></span>
+}
+
+/**
+ * The paths a matrix payload names in its path members, and the folder its
+ * configuration sits in, so a sentence that names another file of the same
+ * project (a pack the rows could not load) loses the folder whole, however many
+ * spaces it holds, rather than at its first space (`shownMessage`).
+ */
+function knownPaths(suite: GraphSuite): (string | undefined)[] {
+  const config = suite.configPath
+  const cut = config === undefined ? -1 : Math.max(config.lastIndexOf('/'), config.lastIndexOf('\\'))
+  return [
+    suite.configPath,
+    config !== undefined && cut > 0 ? config.slice(0, cut) : undefined,
+    ...(suite.graphs ?? []).flatMap(entry => [entry.path, entry.rowsPath])
+  ]
 }

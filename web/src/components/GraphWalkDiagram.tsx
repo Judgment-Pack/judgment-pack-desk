@@ -515,11 +515,11 @@ function CoverageWalk({
   )
 }
 
-/** The row's verdict, said to be the row's — never painted onto the composite. */
+/** The row's status, said to be the row's — never painted onto the composite. */
 function RowVerdict({ row }: { row: GraphTestRow }) {
   useLocale()
   return (
-    <p className="note"><Message text={"Row <0/>: <1/> — that verdict covers the composite headline and every node comparison the row reported, together."} slots={[<code>{row.id}</code>, <strong>{row.status}</strong>]} /></p>
+    <p className="note"><Message text={"Row <0/>: status <1/>, the runtime’s status for the composite headline and every node comparison the row reported, together."} slots={[<code>{row.id}</code>, <strong>{row.status}</strong>]} /></p>
   )
 }
 

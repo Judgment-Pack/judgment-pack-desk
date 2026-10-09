@@ -102,9 +102,16 @@ describe('GraphWalkDiagram', () => {
     const composite = container.querySelector('.diagram-composite')
     expect(composite).not.toBeNull()
     expect(composite!.getAttribute('class')).toBe('diagram-node diagram-composite')
-    // The verdict is reported as the row's own, beside the diagram.
+    // The status is reported as the row's own, beside the diagram.
     expect(container.textContent).toContain('mismatch')
-    expect(container.textContent).toContain('covers the composite headline and every node comparison')
+    expect(container.textContent).toContain('the runtime’s status for the composite headline and every node comparison')
+  })
+
+  it('graph row 2: the row’s status is the runtime’s, and not called a verdict of the desk’s', () => {
+    const { container } = render(<GraphWalkDiagram entry={entry} row={row} />)
+    const sentence = [...container.querySelectorAll('p.note')].find(node => node.textContent?.startsWith('Row '))!
+    expect(sentence.textContent).toBe('Row r1: status mismatch, the runtime’s status for the composite headline and every node comparison the row reported, together.')
+    expect(container.textContent).not.toMatch(/verdict/i)
   })
 
   it('says a node without a comparison is unreported by the selected row, not unasserted', () => {
@@ -180,7 +187,7 @@ describe('GraphWalkDiagram, drawn from a served document', () => {
     const { container } = render(<GraphWalkDiagram entry={entry} row={row} shape={shape} />)
     const composite = container.querySelector('.diagram-composite')
     expect(composite!.getAttribute('class')).toBe('diagram-node diagram-composite')
-    expect(container.textContent).toContain('covers the composite headline and every node comparison')
+    expect(container.textContent).toContain('the runtime’s status for the composite headline and every node comparison')
   })
 
   it('colours a node only from the selected row, and says so where the row is silent', () => {

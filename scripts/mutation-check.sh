@@ -14733,8 +14733,8 @@ export function assistantTransport(id: string): Transport {
     '{row.path && <code>{shownPath(row.path)}</code>}' \
     '{row.path && <code>{row.path}</code>}'
   mutate web 'graph row 1: the inventory'\''s sentence is shown as given' web/src/routes/GraphView.tsx \
-    'lang="en">{shownMessage(row.detail, known)}</p>}' \
-    'lang="en">{shownMessage(row.detail, known) && row.detail}</p>}'
+    'note-warn" lang="en">{shownMessage(row.detail, known)}</p>}' \
+    'note-warn" lang="en">{shownMessage(row.detail, known) && row.detail}</p>}'
   mutate web 'graph row 1: the diagram'\''s source path is shown as given' web/src/packs/flows/FlowExplorer.tsx \
     'shownPath(served.data.meta.path)}</p>' \
     '(shownPath(served.data.meta.path), served.data.meta.path)}</p>'
@@ -14762,6 +14762,45 @@ export function assistantTransport(id: string): Transport {
   mutate web 'graph row 1: a plan is asked for by a path' web/src/graphs/client.ts \
     '`/api/graphs/plan?id=${encodeURIComponent(id)}`' \
     '`/api/graphs/plan?path=${encodeURIComponent(id)}`'
+  mutate web 'graph row 2: the matrix payload'\''s labels are not shown' web/src/routes/GraphView.tsx \
+    '            <GraphLabels labels={data} />' \
+    '            {null}'
+  mutate web 'graph row 2: a payload with no claim reference is shown a claim' web/src/graphs/GraphLabels.tsx \
+    '{reference !== undefined && <p><strong>' \
+    '{true && <p><strong>'
+  mutate web 'graph row 2: experimental is shown when the runtime printed none' web/src/graphs/GraphLabels.tsx \
+    '{experimental !== undefined && <span><Message text={"experimental <0/>"} slots={[<code lang="en" key="experimental">{String(experimental)}</code>]} /></span>}' \
+    '<span><Message text={"experimental <0/>"} slots={[<code lang="en" key="experimental">{String(experimental ?? false)}</code>]} /></span>'
+  mutate web 'graph row 2: the summary is worded as a count of cases passed' web/src/routes/GraphView.tsx \
+    '{(['\''passed'\'', '\''mismatched'\'', '\''total'\''] as const).filter(key => summary[key] !== undefined).map(key => `${key} ${summary[key]}`).join('\'', '\'')}' \
+    '{`${summary.passed} of ${summary.total} cases passed`}'
+  mutate web 'graph row 2: a member the runtime did not print is counted in' web/src/routes/GraphView.tsx \
+    '.filter(key => summary[key] !== undefined).map(key => `${key} ${summary[key]}`)' \
+    '.map(key => `${key} ${summary[key]}`)'
+  mutate web 'graph row 2: an entry'\''s path is shown as given' web/src/routes/GraphView.tsx \
+    '{entry.path && <code>{shownPath(entry.path)}</code>}' \
+    '{entry.path && <code>{entry.path}</code>}'
+  mutate web 'graph row 2: an entry'\''s sentence is shown as given' web/src/routes/GraphView.tsx \
+    'lang="en">{shownMessage(entry.detail, known)}</p>}' \
+    'lang="en">{entry.detail}</p>}'
+  mutate web 'graph row 2: a row'\''s sentence is shown as given' web/src/routes/GraphView.tsx \
+    '<p className="row-detail" lang="en">{shownMessage(row.detail, known)}</p>' \
+    '<p className="row-detail" lang="en">{row.detail}</p>'
+  mutate web 'graph row 2: an entry'\''s sentence is not marked as the runtime'\''s English' web/src/routes/GraphView.tsx \
+    '<p className="note note-warn" lang="en">{shownMessage(entry.detail, known)}</p>}' \
+    '<p className="note note-warn">{shownMessage(entry.detail, known)}</p>}'
+  mutate web 'graph row 2: a row'\''s sentence is not marked as the runtime'\''s English' web/src/routes/GraphView.tsx \
+    '<p className="row-detail" lang="en">' \
+    '<p className="row-detail">'
+  mutate web 'graph row 2: the project'\''s folder is not known to the redaction' web/src/routes/GraphView.tsx \
+    '    config !== undefined && cut > 0 ? config.slice(0, cut) : undefined,' \
+    '    config !== undefined && cut > 0 ? undefined : undefined,'
+  mutate web 'graph row 2: the row'\''s status is called a verdict' web/src/components/GraphWalkDiagram.tsx \
+    '"Row <0/>: status <1/>, the runtime’s status for the composite headline and every node comparison the row reported, together."' \
+    '"Row <0/>: <1/> — that verdict covers the composite headline and every node comparison the row reported, together."'
+  mutate web 'graph row 2: the closing note says the rows are right' web/src/routes/GraphView.tsx \
+    'It does not show that the rows are right or that coverage is complete.' \
+    'Every row shown is right and coverage is complete.'
 fi
 
 restore
