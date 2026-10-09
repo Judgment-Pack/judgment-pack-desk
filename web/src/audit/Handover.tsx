@@ -1,5 +1,5 @@
 /**
- * Admin → Project → Decision record → Hand-over (ADR-0010, section 2; the
+ * Admin → Workspace → Decision safeguards → Decision record → Hand-over (ADR-0010, section 2; the
  * maintainer's answer to question 4: download or copy first).
  *
  * The holders the owner added, each by a label and a channel of their own

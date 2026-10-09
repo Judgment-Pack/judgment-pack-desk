@@ -69,8 +69,8 @@ The build fetches the pinned gateway source. For an existing checkout, add
 without changing that checkout. Keep all files in `bin` together when installing.
 A bare `go build` still builds Desk, but does not package the gateway companions.
 
-On Linux and macOS, Desk starts its local gateway automatically and Admin →
-Storage & data shows **Local processing · Ready**. You can upload PDFs without
+On Linux and macOS, Desk starts its local gateway automatically and **Admin →
+Connections & access → Document processing** shows **Local processing · Ready**. You can upload PDFs without
 entering a gateway URL, generating keys, or running a separate server. An
 existing gateway configuration stays in control. The bundle also includes personal
 Google Drive, Gmail, Notion and Obsidian connection and retrieval companions.
@@ -178,7 +178,7 @@ preservation, receipt storage and platform boundaries.
 
 ## Web search connections
 
-**Admin → Storage & data → Web search** configures named Tavily and Google Cloud
+**Admin → Connections & access → Connections › Web search** configures named Tavily and Google Cloud
 Search grounding connections. Select a desk default or override it in Chat's
 Assistant settings. Auto research can search, read verified results and explore
 related website pages; Provided sources only disables new discovery. Credentials
@@ -187,7 +187,7 @@ See [setup, limits and conversation behavior](docs/web-search.md).
 
 ## Private workspace storage and recovery
 
-**Admin → Storage & data** keeps project pack settings separate from private chat
+**Admin → Workspace → Storage & backups** keeps project pack settings separate from private chat
 history and independent draft packs. Change location copies and verifies saved
 chats, drafts and their sources, keeps the original
 folder for recovery, and leaves API keys in protected settings. New installations
@@ -276,7 +276,7 @@ that they cover the pack. See "Local operational Jobs pilot" below.
   See "Named desks" below.
 - **The project Desk was started on, and a desk made before this**, are
   offered them and never put under them. A note on Packs, shown until you
-  dismiss it, and **Admin → Project → Gates**, where the offer stays, open a
+  dismiss it, and **Admin → Workspace → Decision safeguards**, where the offer stays, open a
   step that lists each change: `jpack.json` moved to configVersion `"5"` with
   `requireReviewed` and `.desk-private/audit`, every other byte kept; the line
   `.desk-private/` added at the end of `.gitignore` in a Git work tree whose
@@ -366,7 +366,7 @@ key, to show what the runtime's own check finds, to hand checkpoints to holders
 you name, and to run the stamping, all on the owner's word. Desk adds no claim
 of its own: where this section quotes a sentence, it is the runtime's or
 Runner's, or ADR-0010's, as written. **Help & About → Gates** and the panels in
-**Admin → Project** say the same in brief. A runtime older than 0.26.0 has none
+**Admin → Workspace → Decision safeguards** say the same in brief. A runtime older than 0.26.0 has none
 of this, and Desk offers none of it with one.
 
 ### What the record is
@@ -398,9 +398,9 @@ of this, and Desk offers none of it with one.
   new desk's `.gitignore`), not shown or editable in Desk's file editor, and in
   no backup. Losing the desk's folder loses its records.
 
-**The decision record, in Admin → Project** (ADR-0010, sections 4 and 6).
+**The decision record, in Admin → Workspace → Decision safeguards** (ADR-0010, sections 4 and 6).
 Beside the Gates card, Desk runs the runtime's own `jpack audit verify --config
-jpack.json --format json` in the desk's folder each time you open Project and
+jpack.json --format json` in the desk's folder each time you open Decision safeguards and
 when you ask again: never on a timer, on a reconnect, or because a project file
 changed. On a desk Desk made and keeps a key for, it first asks the runtime
 for the seed's public key, with `jpack audit key public <seed> --format json`
@@ -642,7 +642,7 @@ runtime takes a different lock, which Desk does not take.
 
 **The signing key of the project Desk was started on** (ADR-0010, section 1
 and question 2). That project is the owner's own, so Desk never names a key in
-it unasked: its upgrade offer (Admin → Project → Gates, and the note on Packs)
+it unasked: its upgrade offer (Admin → Workspace → Decision safeguards, and the note on Packs)
 lists "Sign this project's decisions" as an item of its own, never chosen for
 you, and only where the runtime reads configVersion `"6"` and Desk's custody
 can keep a key; elsewhere the item says why in one sentence (the runtime reads
@@ -959,8 +959,8 @@ of the trail is held to what they kept with `jpack audit verify --expect`.
 ### The Jobs record
 
 **The Jobs record, beside the decision record** (ADR-0010, section 4, "A
-Jobs record panel"). Where the desk has a Runner, **Admin → Project → Jobs
-record** checks the chain of runs when you ask ("Check the chain of runs"),
+Jobs record panel"). Where the desk has a Runner, **Admin → Workspace → Decision
+safeguards → Jobs record** checks the chain of runs when you ask ("Check the chain of runs"),
 and again after a hand-over of the chain is confirmed; never when it opens or
 on a timer. Desk takes a fresh private copy of the chain, as above, and runs
 `jpack audit verify --trail .desk-private/handover/jobs-chain.jsonl --format
@@ -2436,14 +2436,14 @@ name has a tooltip and truncates only when space requires it; there is no separa
 arrow button. Keyboard navigation and unsaved-change confirmation remain available.
 The default logo and favicon use the same bundled mark as
 [the JPS website](https://judgmentpack.org).
-Admin → Organization → Logo accepts SVG, PNG, JPEG, and WebP uploads, previews
+**Admin → Workspace → General → Branding** accepts SVG, PNG, JPEG, and WebP logo uploads, previews
 the settings draft, and restores the JPS mark with Reset to default. Custom
 logos are saved in `organization.mark` through the existing verified settings
 write; uploads never leave the local desk. The encoded value retains the
 65,536-byte limit. Organization names do not replace desk names in navigation.
 
 The favicon follows the current logo automatically; the browser scales the
-image for its tab. **Admin → Organization → Favicon** optionally uploads a
+image for its tab. **Admin → Workspace → General → Branding** optionally uploads a
 separate SVG, PNG, or ICO image, with a tab-size preview. Save stores that
 choice as `organization.favicon`, independently of the header logo. **Use logo**
 clears the override on Save, and later logo changes update the favicon again.
@@ -2570,7 +2570,7 @@ normalisation: a padded or otherwise re-spelled path is a second rule about
 which spellings mean the one value a page may write, and it is the re-spelling
 that would get stored.
 
-Admin's **Project** section is that rule as a shape rather than as a validation
+Admin's **General** section, under **Workspace**, is that rule as a shape rather than as a validation
 on top of one: one button, **Use this project as the default** (or **Clear the
 default** where it already is), and no field for a path. A different default is set by editing the desk-level file yourself,
 which is custody-validated and is the operator's own authority.
@@ -2718,9 +2718,9 @@ metadata stays unknown. The collapsed **Build information** section contains pub
 compiler metadata captured at startup, without compiler flags or environment values.
 
 **Neither configuration file is on that line**, and the omission is the point:
-the section that is *about* a file names it, and naming a file twice is what
-this shape exists to stop. The line is what the desk is *running*, which is the
-one thing no section is about.
+**Details › Configuration file** names the file for the open section, and naming
+a file twice is what this shape exists to stop. The line is what the desk is
+*running*, which is the one thing no section is about.
 
 **There is no overview, and its absence is the shape.** The page is a navigation
 column and a section that is open, always — the shape macOS System Settings and
@@ -2733,19 +2733,16 @@ reader asked for.
 
 | Group | Sections |
 |---|---|
-| **This project** | Project, Organization, Storage |
-| **This desk** | Assistant, Identity provider |
+| **Workspace** | General, Assistant, Research, Storage & backups, Decision safeguards |
+| **Connections & access** | Connections, Document processing, Sign-in & access |
 
-**Project is the first section, and it is about the file rather than a member of
-it.** It states the project file's **Location** and **Status** — the two rows the
-group's header used to carry — and offers the one control that is about the
-project itself: whether this desk opens it when it is launched without a
-directory. Nothing else is on it; every member of the file is a section of its
-own. Its right pane is the **whole file**, on exactly the terms every other
-pane has: the name this desk reads it at, the Location, the Digest, the Status,
-and the bytes only where the file was accepted.
+**General is the first section.** It offers the control that chooses whether this
+desk opens the project when launched without a directory. **Details ›
+Configuration file** opens the **whole project file**, on exactly the terms every
+other configuration pane has: the name this desk reads it at, the Location, the
+Digest, the Status, and the bytes only where the file was accepted.
 
-**The navigation column is two group titles and five rows, and nothing else.** No
+**The navigation column is two group titles and eight rows, and nothing else.** No
 path, no read status, no control: a path in a 13rem column is a line of prose,
 and the two places that fact belongs are the section that is about the file and
 the pane that quotes it. A row is a link to `/admin#<id>` and the fragment is
@@ -2764,7 +2761,7 @@ state it is, because two refusals naming two keys are not one status.
 **The summaries are composed nowhere else**: `the default project`, `not the
 default project` or `the desk has not said`; the organization's name or `none`;
 `filesystem · <dir>`; `none` or `<kind> · <model> · thinking <tier>`; `None` or
-the issuer. The Project row's third answer is **not** a spelling of its second:
+the issuer. The General section's Startup field's third answer is **not** a spelling of its second:
 the comparison is against the path the chassis resolved, so before
 `/api/desk-config` has answered this page does not know which of the other two
 is true, and a row that picked one would be answering for the desk. A row that
@@ -2785,21 +2782,20 @@ is its read state, so a section that only ever reported that showed nothing at
 all while it was writing, while a refusal stood against it, or while the file had
 moved underneath it — three things the section knows and the file's read state
 does not. The form publishes what its write is doing up to the card it is
-inside, on the pattern the Inspector slot already uses: the form owns the draft
+inside, on the pattern the Details slot already uses: the form owns the draft
 and the save, the `save` node is handed to the card as a prop, and neither can
 reach into the other. A write in the air says so first, then a file that moved,
 then any other refusal in whoever's words refused it; a save that **landed**
 publishes nothing, because the file was read back and the read state is the
-truth again. A member the *other* file supplied is not one This
-project speaks for: it is given no group, and states its own Location and Status
-exactly as it did before there were groups.
+truth again. A member the *other* file supplied states its own Location and
+Status exactly as it did before the task groups were introduced.
 
-**The file itself is in the right pane.** The bytes are context rather than a
-setting — nobody edits a file's text here — so Admin claims the Inspector slot
+**The file itself is in Details › Configuration file.** The bytes are context rather than a
+setting — nobody edits a file's text here — so Admin claims the Details slot
 the way the pack routes do, through `useInspectorPortal`, and releases it when
 the route leaves, which is what puts the next route's panel back. The panel names
 the file and the member (`jpack-desk.json › storage`, `desk.json › identity`, or
-the project file alone under **Project**), states the **Location** the chassis
+the project file alone under **General**), states the **Location** the chassis
 reported and the **Digest** the read carried, says the file's **Status** in the
 same closed vocabulary the sections use, and quotes the member's **own bytes** —
 never a re-serialisation of the decode, and where those bytes cannot be
@@ -5336,7 +5332,7 @@ cites. The Diagnostics’ Activity tab carries what the tools did.
 
 ### PDF and document attachments
 
-Local PDF processing starts automatically. Use **Admin → Storage & data** to
+Local PDF processing starts automatically. Use **Admin → Connections & access → Document processing** to
 change processing settings or configure an existing gateway, then
 **+ → Upload files** in chat to attach PDFs. Page previews show extraction gaps,
 partial results need consent, and every send verifies the retained original and
@@ -5819,10 +5815,9 @@ web/                 Vite + React + TypeScript SPA
                      (the "select a pack" page and the pack document),
                      evaluation, matrix, graphs, the authoring shell, the
                      Admin page and Help & About — Admin being a navigation
-                     column of two groups, one per configuration file, beside
-                     the one section that is open, of which two write the
-                     desk-level file: the Project section's default project and
-                     the Assistant form's endpoint, model and tier
+                     column grouped as Workspace and Connections & access,
+                     beside the one section that is open; Details ›
+                     Configuration file shows the file for that section
   src/components/    evaluation, coverage, row and graph-walk views, plus the
                      trace and handoff-target renderers both the pack and graph
                      surfaces share

@@ -1,5 +1,5 @@
 /**
- * Admin → Project → Decision record → Stamping (ADR-0010, section 3; the
+ * Admin → Workspace → Decision safeguards → Decision record → Stamping (ADR-0010, section 3; the
  * maintainer's answer to question 5: Desk schedules stamping once the owner
  * sets an authority, and there is none by default).
  *

@@ -1,5 +1,5 @@
 /**
- * Admin → Project → Jobs record (ADR-0010, section 4, "A Jobs record panel",
+ * Admin → Workspace → Decision safeguards → Jobs record (ADR-0010, section 4, "A Jobs record panel",
  * and section 5; issue #216).
  *
  * Beside the decision record, where this desk has a Runner: what the
