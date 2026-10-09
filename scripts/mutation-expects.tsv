@@ -396,6 +396,7 @@ go	component versions: source worker read beside Runtime	TestSourceWorkerIdentit
 go	createParents is not bounded by what the listing can walk	TestCreateParentsIsBoundedByTheWalk,TestDepthBoundHoldsForExistingParentsToo,TestEveryCodeHasAStatusAndAWitness
 go	createParents is not opt-in (every write creates its parents)	TestEveryCodeHasAStatusAndAWitness,TestRefusalsCarryAStableCode,TestWriteIntoAMissingDirectorySaysSoRatherThanRefusingContainment,TestWriteWithoutCreateParentsStillRefusesAMissingDirectory
 go	createParents resolves a pathname instead of the pinned root	TestRetargetedProjectRootIsNotAdopted
+go	document processing: a case variant of the warning is relayed	TestDocumentProcessingConfigureMemberSpellings
 go	document processing: a changed restart warning is accepted	TestDocumentProcessingRestartWarningMustMatch
 go	document processing: a credential the companion answers reaches the page	TestDocumentProcessingAnswersCarryNoCredential
 go	document processing: a desk file naming another gateway is not read	TestDocumentProcessingIsNeverSentWhileAnotherGatewayIsInUse
