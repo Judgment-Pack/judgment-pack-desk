@@ -16,8 +16,8 @@
     },
     "gateway": {
       "repository": "Judgment-Pack/judgment-pack-gateway",
-      "version": "v0.10.0",
-      "revision": "2b58c04bcfacc0434e2a0474fa1588e829288133",
+      "version": "v0.10.1",
+      "revision": "f525e31e5f24d9a369ba0c313e271f4cce7cd0da",
       "channel": "stable"
     }
   }
