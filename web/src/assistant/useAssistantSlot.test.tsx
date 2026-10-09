@@ -197,6 +197,9 @@ describe('useAssistantSlot', () => {
       'briefs/BriefPane.tsx',
       'chat/ChatPanel.tsx',
       'chat/ConfigureAssistant.tsx',
+      // The graph author pane (ADR-0011 row 3) renders an assistant of its
+      // own for the graph purpose: the same slot, read for the same reasons.
+      'graphs/GraphAuthor.tsx',
       'packs/test-workspace/TestAssistant.tsx',
       'research/useResearchRun.ts',
       'shell/DescribeIt.tsx'
