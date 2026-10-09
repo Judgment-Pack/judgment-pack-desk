@@ -6624,6 +6624,46 @@ func (b *cappedBuffer) exceeded() bool {'
   # held to the companion's bound; a save that turns OCR on or off restarts
   # the local gateway; the plan's longer envelopes are taken only as the
   # gateway gives them, and the relay's follows the running plan.
+  mutate go 'document processing: unavailable settings are refused' 'internal/desk/document_processing.go' \
+    '(status.Status != "ready" && status.Status != "unavailable")' \
+    'status.Status != "ready"'
+  mutate go 'document processing: an unavailable save attempts a restart' 'internal/desk/document_processing.go' \
+    'restart = available && (request.Config.Mode == "auto") != running' \
+    'restart = (request.Config.Mode == "auto") != running || !available'
+  mutate go 'document processing: a changed restart warning is accepted' 'internal/desk/document_processing.go' \
+    'if restart != *request.RestartWarned {' \
+    'if false && restart != *request.RestartWarned {'
+  mutate go 'document processing: a preview past 64 errors is shown' 'internal/desk/document_processing.go' \
+    'len(test.Processing.Errors) > 64' \
+    'len(test.Processing.Errors) > 65'
+  mutate go 'document processing: a refused preview uses the save refusal' 'internal/desk/document_processing.go' \
+    'if method == "test" {
+			writeJSONCoded(w, http.StatusBadGateway' \
+    'if false {
+			writeJSONCoded(w, http.StatusBadGateway'
+  mutate go 'local gateway plan: one dash flags escape the rule' 'internal/desk/local_gateway_plan.go' \
+    'name := strings.TrimPrefix(arg, "-")' \
+    'name := strings.TrimPrefix(arg, "--")
+			if strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--") { continue }'
+  mutate go 'local gateway plan: assigned flags escape the rule' 'internal/desk/local_gateway_plan.go' \
+    'name, value, assigned := strings.Cut(name, "=")' \
+    'name, value, assigned := strings.Cut(name, "=")
+			if assigned { continue }'
+  mutate go 'local gateway plan: false flags grant the envelope' 'internal/desk/local_gateway_plan.go' \
+    'if err != nil || !enabled {' \
+    'if err != nil || (enabled && false) {'
+  mutate go 'document processing: a missing restart warning is accepted' 'internal/desk/document_processing.go' \
+    'request.RestartWarned == nil ||' \
+    'false ||'
+  mutate go 'document processing: the warning member reaches the companion' 'internal/desk/document_processing.go' \
+    'delete(obj, "restartWarned")' \
+    '_ = obj'
+  mutate go 'document processing: a gateway problem bypasses redaction' 'internal/desk/document_processing.go' \
+    'answer.LocalGateway.Problem = s.redactionFor().text(answer.LocalGateway.Problem)' \
+    '_ = answer.LocalGateway.Problem'
+  mutate go 'document processing: an unavailable save omits its start decision' 'internal/desk/document_processing.go' \
+    'answer.LocalGateway.AppliesWhenStarted = true' \
+    'answer.LocalGateway.AppliesWhenStarted = false'
   DPH=internal/desk/document_processing.go
   DPC=internal/desk/connections.go
   DPL=internal/desk/local_gateway.go
@@ -6654,8 +6694,8 @@ func (b *cappedBuffer) exceeded() bool {'
     '			s.localGateway.restart()' \
     '			_ = s.localGateway'
   mutate go "document processing: a save that leaves OCR as it is restarts the gateway" "$DPH" \
-    '		if wanted := settings.Mode == "auto"; wanted != running {' \
-    '		if wanted := settings.Mode == "auto"; wanted != running || true {'
+    '		if restart {' \
+    '		if restart || true {'
   mutate go "document processing: a request line past the companion's bound is written" "$DPC" \
     '	if bound := companionRequestBound(provider, method); bound > 0 && len(line) > bound {' \
     '	if bound := companionRequestBound(provider, method); false && bound > 0 && len(line) > bound {'
@@ -14896,6 +14936,21 @@ export function assistantTransport(id: string): Transport {
   # only for its destination; status-only members are not sent; a save that
   # restarts the gateway says so first; the running plan is said; the bounds
   # are held before sending; OCR is offered only on the local gateway.
+  mutate web 'document processing: the save drops the restart warning' 'web/src/processing/processing.ts' \
+    '{ ...configureRequest(base, next), restartWarned }' \
+    '{ ...configureRequest(base, next), restartWarned: !restartWarned }'
+  mutate web 'document processing: a conflict does not reread the state' 'web/src/processing/ProcessingSettings.tsx' \
+    'await query.refetch()' \
+    'await Promise.resolve()'
+  mutate web 'document processing: apply on start is claimed without a decision' 'web/src/processing/ProcessingSettings.tsx' \
+    'gateway.appliesWhenStarted ?' \
+    'true ?'
+  mutate web 'document processing: a refused preview says settings were saved' 'web/src/processing/processing.ts' \
+    '? method === '\''test'\''' \
+    '? method === '\''status'\'''
+  mutate web 'document processing: unavailable OCR settings are hidden' 'web/src/admin/DocumentProcessingSettings.tsx' \
+    'managed && (local?.status === '\''ready'\'' || local?.status === '\''unavailable'\'') && writable' \
+    'managed && local?.status === '\''ready'\'' && writable'
   DPQ=web/src/processing/processing.ts
   DPW=web/src/processing/ProcessingSettings.tsx
   DPS=web/src/admin/DocumentProcessingSettings.tsx
@@ -14928,7 +14983,7 @@ export function assistantTransport(id: string): Transport {
     'void client.invalidateQueries({ queryKey: DESK_CONFIG_QUERY_KEY })' \
     'void DESK_CONFIG_QUERY_KEY'
   mutate web "document processing: OCR is offered while another gateway is in use" "$DPS" \
-    "{managed && local?.status === 'ready' && writable && <div className={styles.ocr}><OCRSettings /></div>}" \
+    "{managed && (local?.status === 'ready' || local?.status === 'unavailable') && writable && <div className={styles.ocr}><OCRSettings /></div>}" \
     '{writable && <div className={styles.ocr}><OCRSettings /></div>}'
   mutate web "document processing: OCR provenance is taken on a static-text snapshot" "$DPT" \
     "(source.format === 'static-text-v1' ? v.ocr === null && source.mediaType === 'text/html'" \

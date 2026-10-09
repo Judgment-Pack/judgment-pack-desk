@@ -156,10 +156,25 @@ func decodeLocalPlan(raw []byte, files map[string]string) (localPlan, error) {
 		// twice, or a longer envelope without its flag, refuses the plan whole.
 		longSearch, documentProcessing := 0, 0
 		for _, arg := range source.Args {
-			switch arg {
-			case "--long-search":
+			if !strings.HasPrefix(arg, "-") {
+				continue
+			}
+			// Go accepts one or two dashes and ParseBool spellings.
+			name := strings.TrimPrefix(arg, "-")
+			name = strings.TrimPrefix(name, "-")
+			name, value, assigned := strings.Cut(name, "=")
+			if name == "long-search" || name == "document-processing" {
+				if assigned {
+					enabled, err := strconv.ParseBool(value)
+					if err != nil || !enabled {
+						return localPlan{}, invalid
+					}
+				}
+			}
+			switch name {
+			case "long-search":
 				longSearch++
-			case "--document-processing":
+			case "document-processing":
 				documentProcessing++
 			}
 		}

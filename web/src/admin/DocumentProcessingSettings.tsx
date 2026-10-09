@@ -120,7 +120,7 @@ export function DocumentProcessingSettings() {
         action={<Button ref={pdfOpener} disabled={!writable || !gateway} aria-label={msg('Manage PDF processing')} onClick={() => open('pdf')}>{msg('Manage')}</Button>} />
       {/* Scanned pages are the local gateway's to read (gateway v0.10.0): an
           external gateway's operator sets its own processor. */}
-      {managed && local?.status === 'ready' && writable && <div className={styles.ocr}><OCRSettings /></div>}
+      {managed && (local?.status === 'ready' || local?.status === 'unavailable') && writable && <div className={styles.ocr}><OCRSettings /></div>}
       {managed && local?.status === 'unavailable' && <div><Alert>{msg('Local processing is unavailable. Check the details below or use an existing gateway.')}</Alert><Disclosure title={msg('Technical details')}><p>{systemMessage(local.problem ?? '')}</p></Disclosure></div>}
       {!writable && <Alert>{msg('Settings could not be read. Reload the page before making changes.')}</Alert>}
       <p className={styles.note}>{msg('Text files can be attached without a gateway.')}</p>

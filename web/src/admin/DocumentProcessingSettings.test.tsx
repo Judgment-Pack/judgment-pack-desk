@@ -155,3 +155,10 @@ it('offers OCR on a ready local gateway only, and says which plan it runs', asyn
   expect(screen.queryByRole('button', { name: 'Add processor' })).toBeNull()
   expect(mocks.fetch.mock.calls.some(call => String(call[0]).startsWith('/api/document-processing/'))).toBe(false)
 })
+
+it('offers OCR settings while the local gateway is unavailable', async () => {
+  mocks.fetch.mockImplementation(async () => Response.json({ result: { version: 1, mode: 'auto', connection: '', connections: [], sha256: 'sha256:' + 'a'.repeat(64), state: 'ready' }, localGateway: { status: 'unavailable' } }))
+  setup({ gateway: null }, { status: 'unavailable', problem: 'The plan was refused' })
+  await screen.findByRole('button', { name: 'Add processor' })
+  expect(screen.getByRole('combobox', { name: 'OCR mode' })).toBeTruthy()
+})

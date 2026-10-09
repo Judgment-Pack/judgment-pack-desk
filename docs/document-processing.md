@@ -81,6 +81,13 @@ earlier Desk takes; with a processor chosen, the plan gives the document sources
   reads it is carrying. The page says so before the save, and the button reads
   **Save and restart**. Any other save (a processor's name, the timeout) restarts
   nothing.
+- While the local gateway is unavailable, settings can still be read and saved,
+  including turning OCR off after a refused plan. Such a save restarts nothing;
+  Desk says when its settings will apply on the next start. Testing a PDF still
+  requires a running local gateway.
+- Each save carries whether the page warned of a restart. If Desk's decision
+  differs, it refuses the save with 409 before sending it to the companion;
+  the page reads the state again and asks the owner to review the warning.
 - Document processing says which plan the running gateway has: whether it reads
   scanned pages with OCR. Where that is not what the settings say (they were
   changed elsewhere), it says the gateway takes them when it starts again.
@@ -89,7 +96,9 @@ Desk takes a source envelope longer than 60 seconds only as the gateway's plan
 gives it: up to 150 seconds for a document source launched with
 `--document-processing`, given to all four or none, and up to 130 seconds for
 `web-search` launched with `--long-search` ([web search](web-search.md)). A plan
-with anything else is refused whole, and the local gateway does not start. While
+with anything else is refused whole, and the local gateway does not start.
+Desk recognises Go boolean flag spellings (one or two dashes and true values);
+explicit false values do not grant an envelope and are refused. While
 the running plan gives the document sources 150 seconds, Desk's research relay
 gives a document read 160 seconds overall and 155 between bytes; otherwise its
 ordinary bounds.
@@ -98,7 +107,8 @@ ordinary bounds.
 
 **Test a PDF** sends one PDF of at most 4 MiB through a saved processor and shows
 the record's status, its error codes and up to eight pages of up to 400
-characters each. Nothing is kept: the text is not saved to a chat or sent to the
+characters each. A preview carries at most 64 error codes. A refused preview says it could not
+be shown; it makes no claim about saved settings. Nothing is kept: the text is not saved to a chat or sent to the
 assistant. A PDF with a text layer does not run OCR, so it does not test a
 processor's credential; use a scanned PDF.
 

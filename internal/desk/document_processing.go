@@ -120,6 +120,7 @@ type processingGateway struct {
 	Status             string `json:"status"`
 	DocumentProcessing *bool  `json:"documentProcessing,omitempty"`
 	Restarted          bool   `json:"restarted,omitempty"`
+	AppliesWhenStarted bool   `json:"appliesWhenStarted,omitempty"`
 	Problem            string `json:"problem,omitempty"`
 }
 
@@ -170,11 +171,33 @@ func (s *Server) handleDocumentProcessing(w http.ResponseWriter, r *http.Request
 		return
 	}
 	status := s.localGatewayStatus(raw)
-	if s.localGateway == nil || status == nil || status.Status != "ready" || status.Gateway == nil {
+	if s.localGateway == nil || status == nil || (status.Status != "ready" && status.Status != "unavailable") || (method == "test" && status.Status != "ready") {
 		writeJSONCoded(w, http.StatusConflict, CodeResearchUnconfigured, "document processing is set on this desk's local gateway, which is not in use or not running; nothing was sent")
 		return
 	}
-	running := status.Gateway.documentProcessing
+	available := status.Status == "ready" && status.Gateway != nil
+	running := available && status.Gateway.documentProcessing
+	restart := false
+	if method == "configure" {
+		var request struct {
+			RestartWarned *bool `json:"restartWarned"`
+			Config        struct {
+				Mode string `json:"mode"`
+			} `json:"config"`
+		}
+		if json.Unmarshal(body, &request) != nil || request.RestartWarned == nil || (request.Config.Mode != "off" && request.Config.Mode != "auto") {
+			writeJSONCoded(w, http.StatusBadRequest, CodeBadRequest, "invalid document processing request; nothing was sent")
+			return
+		}
+		restart = available && (request.Config.Mode == "auto") != running
+		if restart != *request.RestartWarned {
+			writeJSONCoded(w, http.StatusConflict, "processing-restart-changed", "The local gateway state changed. Review the settings and restart warning before saving again.")
+			return
+		}
+		// This member belongs to Desk, not the companion's settings contract.
+		delete(obj, "restartWarned")
+		body, _ = json.Marshal(obj)
+	}
 	companion := s.connectionCompanion("document-processing", true)
 	if companion == nil {
 		writeJSONCoded(w, http.StatusServiceUnavailable, CodeBadRequest, "document processing service unavailable; nothing was sent")
@@ -198,19 +221,30 @@ func (s *Server) handleDocumentProcessing(w http.ResponseWriter, r *http.Request
 	answer, err := processingRelayed(method, out, processingSecrets(method, body))
 	if err != nil {
 		s.log.Printf("desk: document processing %s answer refused", method)
+		if method == "test" {
+			writeJSONCoded(w, http.StatusBadGateway, "processing-preview-unavailable", "The test preview could not be shown.")
+			return
+		}
 		writeJSONCoded(w, http.StatusBadGateway, CodeBadRequest, "the gateway's answer could not be shown; if this was a save, reload the settings to see what was saved")
 		return
 	}
 	restarted := false
-	if settings, ok := answer.Result.(processingStatus); ok && method == "configure" {
+	if _, ok := answer.Result.(processingStatus); ok && method == "configure" {
 		// The plan follows the settings only when the gateway starts, so a
 		// save that turns processing on or off restarts it.
-		if wanted := settings.Mode == "auto"; wanted != running {
+		if restart {
 			s.localGateway.restart()
 			restarted = true
 		}
 	}
-	answer.LocalGateway = processingGatewayNow(s.localGatewayStatus(raw), restarted)
+	if restarted {
+		status = s.localGatewayStatus(raw)
+	}
+	answer.LocalGateway = processingGatewayNow(status, restarted)
+	answer.LocalGateway.Problem = s.redactionFor().text(answer.LocalGateway.Problem)
+	if _, ok := answer.Result.(processingStatus); ok && method == "configure" && !available {
+		answer.LocalGateway.AppliesWhenStarted = true
+	}
 	s.log.Printf("desk: document processing %s answered", method)
 	writeJSON(w, http.StatusOK, answer)
 }

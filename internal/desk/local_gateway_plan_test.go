@@ -201,3 +201,25 @@ func TestLocalPlanIsAskedWithThisDesksConnectionsDirectory(t *testing.T) {
 		t.Fatal("the plan for this desk's settings was not taken", plan)
 	}
 }
+
+func TestLocalPlanBooleanFlagSpellings(t *testing.T) {
+	for _, flag := range []string{"document-processing", "long-search"} {
+		fixture := "processing"
+		if flag == "long-search" {
+			fixture = "long-search"
+		}
+		for _, spelling := range []string{"-" + flag, "--" + flag, "--" + flag + "=true", "-" + flag + "=1", "--" + flag + "=false", "--" + flag + "=0"} {
+			raw := strings.ReplaceAll(gatewayPlan(t, fixture), "--"+flag, spelling)
+			_, err := decodeLocalPlan([]byte(raw), gatewayPlanFiles())
+			disabled := strings.HasSuffix(spelling, "=false") || strings.HasSuffix(spelling, "=0")
+			if (err != nil) != disabled {
+				t.Fatalf("%s: %v", spelling, err)
+			}
+			// Ordinary envelope: the flag alone on gmail must refuse the plan.
+			raw = strings.Replace(gatewayPlan(t, "ordinary"), `["--principal","desk-local"]`, `["--principal","desk-local","`+spelling+`"]`, 1)
+			if _, err := decodeLocalPlan([]byte(raw), gatewayPlanFiles()); err == nil {
+				t.Fatalf("forbidden %s accepted", spelling)
+			}
+		}
+	}
+}
