@@ -147,6 +147,14 @@ func TestGraphRow4RedactsWithoutLogging(t *testing.T) {
 	if w.Code != 500 || strings.Contains(w.Body.String(), "SECRET-PATH") || strings.Contains(logged.String(), "SECRET") {
 		t.Fatalf("failure: %d %s; log %s", w.Code, w.Body, logged)
 	}
+	// So does a failed rehearsal run: the runtime's failure is said to the page redacted, and nothing is logged.
+	rig.answers(t, "list", listAnswer, 0)
+	rig.answers(t, "evaluate", "not JSON: SECRET-FACT at /private/SECRET-PATH/a.json", 1)
+	before := logged.Len()
+	w = rehearsalPost(s, "onboarding", `{"node":{"facts":"SECRET-FACT"}}`)
+	if w.Code != 500 || strings.Contains(w.Body.String(), "SECRET") || logged.Len() != before {
+		t.Fatalf("run failure: %d %s; log %s", w.Code, w.Body, logged)
+	}
 }
 
 func TestGraphRow4RuntimeBoundsAndGuards(t *testing.T) {

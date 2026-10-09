@@ -560,9 +560,9 @@ the runtime Desk pins, `v0.27.1`.
 | Row | What | Needs | Review | Status, 2026-10-09 |
 |---|---|---|---|---|
 | 1 | Inventory and plan, read-only: `validate`'s findings, the Plan view from `explain`, the inventory's and the document's `kind` and `experimental` | nothing | a second-reviewer round on the Go route: the id resolution, the redaction of messages and path members, the bounds | delivered in #341 |
-| 2 | Matrix rows and coverage, held to this record: `kind`, `experimental` and `conformanceClaimReference` beside the `label`; Desk's own sentences checked | nothing | a second-reviewer round on the claims shown | not started; the view it holds shipped in #1, #4, #5 and #6 |
-| 3 | Authoring through the assistant: `author_graph`, two host tools over the proposal, and the graph document and its declaration written on the owner's confirmation by a new route, `POST /api/graphs/write`, under the project's folder lock, through `commitWriteLocked`, never with `override` | 1 | a second-reviewer round on the file writes | not started |
-| 4 | Rehearsal evaluation: `graph evaluate --rehearsal` with the owner's inputs, shown with the runtime's labels, written nowhere | 1; standard input for `runRuntime` from 3, or row 4 adds it | a second-reviewer round on the claims | not started |
+| 2 | Matrix rows and coverage, held to this record: `kind`, `experimental` and `conformanceClaimReference` beside the `label`; Desk's own sentences checked | nothing | a second-reviewer round on the claims shown | delivered in #343 |
+| 3 | Authoring through the assistant: `author_graph`, two host tools over the proposal, and the graph document and its declaration written on the owner's confirmation by a new route, `POST /api/graphs/write`, under the project's folder lock, through `commitWriteLocked`, never with `override` | 1 | a second-reviewer round on the file writes | delivered in #346 |
+| 4 | Rehearsal evaluation: `graph evaluate --rehearsal` with the owner's inputs, shown with the runtime's labels, written nowhere | 1; standard input for `runRuntime` from 3, or row 4 adds it | a second-reviewer round on the claims | delivered in #350 |
 
 Not in this line:
 - a job over a graph (question 1);
