@@ -13,6 +13,8 @@ import { ExpandableText } from '../../ui/ExpandableText'
 import { CodeBlock } from '../../ui/CodeBlock'
 import { InspectionRow } from '../../ui/InspectionRow'
 import { Empty, ErrorBox, Loading } from '../../components/primitives'
+import { GraphLabels } from '../../graphs/GraphLabels'
+import { shownMessage, shownPath } from '../../graphs/client'
 import styles from './FlowExplorer.module.css'
 
 const RelationshipMap = lazy(() => import('../../components/RelationshipMap').then(module => ({ default: module.RelationshipMap })))
@@ -55,7 +57,7 @@ export function FlowExplorer({ graphId }: { graphId: string }) {
       </>}
     </dl>}
     <details><summary>{msg("Source details")}</summary>
-      <p>{served.data?.meta.path}</p>
+      <p>{served.data?.meta.path !== undefined && shownPath(served.data.meta.path)}</p>
       <CodeBlock text={JSON.stringify(node ? doc?.nodes[node.id] : doc?.edges[edge!.index], null, 2)} />
     </details>
   </section> : null)
@@ -63,11 +65,12 @@ export function FlowExplorer({ graphId }: { graphId: string }) {
   if (!graphDocumentSupported) return <Empty>{msg("This runtime cannot serve graph diagrams. The Tests tab can still run saved cases.")}</Empty>
   if (served.error) return <ErrorBox title={msg("Could not read this graph")} error={served.error} />
   if (served.isPending) return <Loading what={msg("the graph")} />
-  if (!doc || !shape) return <p className="note">{served.data?.unreadable ?? (layout && !layout.drawn ? layout.reason : msg("No readable graph document was returned."))}</p>
+  if (!doc || !shape) return <p className="note">{(served.data?.unreadable !== undefined ? shownMessage(served.data.unreadable, [served.data.meta.path]) : undefined) ?? (layout && !layout.drawn ? layout.reason : msg("No readable graph document was returned."))}</p>
 
   return <section className={styles.explorer} aria-label={msg("Graph diagram")}>
     {portal}
     <span ref={setRuler} className={styles.ruler} aria-hidden="true" />
+    {served.data && <GraphLabels labels={served.data.meta} />}
     {doc.description && <ExpandableText text={doc.description} label={msg("graph description")} />}
     {shape.nodes.length === 0 ? <Empty>{msg("This graph declares no pack nodes.")}</Empty> : <div ref={setCanvas} className={styles.canvas}>
       <Suspense fallback={<Loading what={msg("the diagram")} />}>

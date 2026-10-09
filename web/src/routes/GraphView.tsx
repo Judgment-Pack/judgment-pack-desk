@@ -15,6 +15,10 @@ import { GraphWalkDiagram } from '../components/GraphWalkDiagram'
 import { Empty, ErrorBox, Loading, Pill, Section, statusTone } from '../components/primitives'
 import { TargetPair, describeTargetAssertion } from '../components/TargetPair'
 import { TracePanel } from '../components/TracePanel'
+import { GraphFindingsPanel } from '../graphs/GraphFindings'
+import { GraphLabels } from '../graphs/GraphLabels'
+import { GraphPlanView } from '../graphs/GraphPlan'
+import { shownMessage, shownPath } from '../graphs/client'
 import { parseDisposition } from '../mcp/canonical'
 import {
   bindGraphDigests,
@@ -39,6 +43,7 @@ export function GraphView() {
   const { graphId } = useParams<{ graphId?: string }>()
   const [search, setSearch] = useSearchParams()
   const tests = search.get('view') === 'tests'
+  const plan = search.get('view') === 'plan' && graphId !== undefined
   const { status, graphInventorySupported, graphTracesSupported } = useMcp()
   const inventory = useGraphInventory()
   const [includeTraces, setIncludeTraces] = useState(false)
@@ -61,17 +66,21 @@ export function GraphView() {
         {isFetching ? msg("Running…") : graphId ? msg("Run tests") : msg("Run all graph tests")}
       </Button>}
       navigation={graphId ? <nav className={workspace.navigation} aria-label={msg("Graph sections")}>
-        <Link to={`/graphs/${encodeURIComponent(graphId)}`} aria-current={!tests ? 'page' : undefined}>{msg("Diagram")}</Link>
+        <Link to={`/graphs/${encodeURIComponent(graphId)}`} aria-current={!tests && !plan ? 'page' : undefined}>{msg("Diagram")}</Link>
+        <Link to={`/graphs/${encodeURIComponent(graphId)}?view=plan`} aria-current={plan ? 'page' : undefined}>{msg("Plan")}</Link>
         <Link to={`/graphs/${encodeURIComponent(graphId)}?view=tests`} aria-current={tests ? 'page' : undefined}>{msg("Tests")}</Link>
       </nav> : undefined} />
     <PageBody width="full">
+      <p className="meta"><Pill tone="quiet">{msg("Experimental")}</Pill></p>
       {!graphId && <p className="quiet">{msg("Connect packs and see how their results feed into the next decision.")}</p>}
       {!graphId && graphInventorySupported && (inventory.error
         ? <ErrorBox title={msg("Could not list graphs")} error={inventory.error} />
         : inventory.isPending ? <Loading what={msg("graphs")} />
-        : listing && !tests && <ConfiguredGraphs inventory={listing} />)}
+        : listing && !tests && <><GraphLabels labels={listing} /><ConfiguredGraphs inventory={listing} /></>)}
+      {!graphId && !tests && <GraphFindingsPanel />}
       {!graphId && !graphInventorySupported && <p className="note">{msg("This runtime cannot list graphs without running their tests. Choose Run all graph tests to discover their test results, or connect a newer runtime to browse their diagrams.")}</p>}
-      {graphId && !tests && <FlowExplorer key={graphId} graphId={graphId} />}
+      {graphId && !tests && !plan && <FlowExplorer key={graphId} graphId={graphId} />}
+      {graphId && plan && <GraphPlanView key={graphId} graphId={graphId} />}
       {tests && <section aria-label={msg("Graph tests")}>
         {!graphId && <ButtonLink variant="quiet" to="/graphs">{msg("Back to graphs")}</ButtonLink>}
         <h2 className="section-title">{graphId ? msg("Graph tests") : msg("All graph tests")}</h2>
@@ -119,7 +128,7 @@ function ConfiguredGraphs({ inventory, only }: { inventory: GraphInventory; only
   return (
     <Section title={msg("Judgment Graphs")} count={rows.length}>
       <>
-        {inventory.note && <p className="note">{inventory.note}</p>}
+        {inventory.note && <p className="note" lang="en">{shownMessage(inventory.note, [inventory.configPath])}</p>}
         {rows.length === 0 ? (
           <Empty>
             {only
@@ -129,7 +138,7 @@ function ConfiguredGraphs({ inventory, only }: { inventory: GraphInventory; only
         ) : (
           <ul className="cards">
             {rows.map((row) => (
-              <ConfiguredGraph key={row.id} row={row} />
+              <ConfiguredGraph key={row.id} row={row} known={[inventory.configPath, ...all.flatMap(graph => [graph.path, graph.rowsPath])]} />
             ))}
           </ul>
         )}
@@ -138,7 +147,7 @@ function ConfiguredGraphs({ inventory, only }: { inventory: GraphInventory; only
   )
 }
 
-function ConfiguredGraph({ row }: { row: GraphSummary }) {
+function ConfiguredGraph({ row, known }: { row: GraphSummary; known: (string | undefined)[] }) {
   useLocale()
   const lastRun = useLatestFlowResult(row.id)
   return (
@@ -158,8 +167,8 @@ function ConfiguredGraph({ row }: { row: GraphSummary }) {
         {lastRun ? msg("Last completed run: {{value0}}", { value0: lastRun.status }) : msg("Not tested in this session")}
       </p>
       <details className="disclosure"><summary>{msg("Technical details")}</summary><p className="meta">
-        {row.path && <code>{row.path}</code>}
-        {row.rowsPath && <code>{row.rowsPath}</code>}
+        {row.path && <code>{shownPath(row.path)}</code>}
+        {row.rowsPath && <code>{shownPath(row.rowsPath)}</code>}
         {row.graphId && <span><Message text={"graph id <0/>"} slots={[row.graphId]} /></span>}
         {row.formatVersion && <span><Message text={"format <0/>"} slots={[row.formatVersion]} /></span>}
         <span>
@@ -169,7 +178,7 @@ function ConfiguredGraph({ row }: { row: GraphSummary }) {
         </span>
       </p>
       </details>
-      {row.detail && <p className="note note-warn">{row.detail}</p>}
+      {row.detail && <p className="note note-warn" lang="en">{shownMessage(row.detail, known)}</p>}
     </li>
   )
 }
