@@ -178,6 +178,11 @@ func (s *Server) writeGraphAnswer(w http.ResponseWriter, id string, answer json.
 		// The page is told no path; the owner's own log keeps them.
 		s.log.Printf("desk: the graph answer, as the runtime said it: %s", answer)
 	}
+	s.writeShownGraphAnswer(w, id, shown)
+}
+
+// writeShownGraphAnswer sends already redacted bytes without logging them.
+func (s *Server) writeShownGraphAnswer(w http.ResponseWriter, id string, shown json.RawMessage) {
 	// **Written by hand, not marshalled.** `encoding/json` rewrites a
 	// RawMessage it embeds (it escapes "<", ">", "&" and U+2028 in it), and
 	// the runtime's bytes are to reach the page as printed.
@@ -206,7 +211,7 @@ type graphListing struct {
 	} `json:"graphs"`
 }
 
-// graphPathOf turns a configured graph id into the path to pass to `explain`.
+// graphPathOf turns a configured graph id into the path for a graph command.
 //
 // It runs `experimental graph list` afresh for this request, and takes the
 // `path` the listing reports for exactly that id. The page's text is compared
@@ -238,7 +243,7 @@ func (s *Server) graphPathOf(ctx context.Context, dir heldDir, id string) (path 
 			continue
 		}
 		if found >= 0 {
-			return "", http.StatusConflict, "The project's configuration lists more than one graph with that id, so Desk asks for no plan.", nil
+			return "", http.StatusConflict, "The project's configuration lists more than one graph with that id, so Desk does not run the command.", nil
 		}
 		found = i
 	}
@@ -255,10 +260,10 @@ func (s *Server) graphPathOf(ctx context.Context, dir heldDir, id string) (path 
 	// names it.
 	clean := filepath.Clean(entry.Path)
 	if !graphPathInside(entry.Path) || !graphPathInside(clean) {
-		return "", http.StatusConflict, "This graph is declared at a path that is not inside the project's folder, so Desk asks for no plan.", nil
+		return "", http.StatusConflict, "This graph is declared at a path that is not inside the project's folder, so Desk does not run the command.", nil
 	}
 	if entry.Detail != "" {
-		return "", http.StatusConflict, "The runtime could not read this graph's document, so Desk asks for no plan. The runtime says: " + s.redactionFor().text(entry.Detail), nil
+		return "", http.StatusConflict, "The runtime could not read this graph's document, so Desk does not run the command. The runtime says: " + s.redactionFor().text(entry.Detail), nil
 	}
 	// A name that starts with "-" is a name, not a flag.
 	if strings.HasPrefix(clean, "-") {
@@ -279,7 +284,8 @@ func graphPathInside(p string) bool {
 
 // shownGraphAnswer is the runtime's answer with no path in it that reaches
 // from a root. It returns the answer unchanged, byte for byte, where nothing
-// needed redacting.
+// needed redacting. Optional rehearsal inputs identify quoted JSON pointers
+// that must survive message redaction because they name facts, not files.
 //
 //  1. **A path member that starts from a root is replaced whole** (`path`,
 //     `rowsPath`, `graphPath`, `configPath`, at any depth): by "…", or, where
@@ -293,7 +299,7 @@ func graphPathInside(p string) bool {
 //     message passes the redaction.
 //  3. **A relative path is shown as given**, unless it holds an absolute path
 //     inside it, which is then redacted whole.
-func (s *Server) shownGraphAnswer(answer json.RawMessage) json.RawMessage {
+func (s *Server) shownGraphAnswer(answer json.RawMessage, inputs ...[]byte) json.RawMessage {
 	var spans []pathSpan
 	var collect func(value any, key string)
 	collect = func(value any, key string) {
@@ -320,6 +326,17 @@ func (s *Server) shownGraphAnswer(answer json.RawMessage) json.RawMessage {
 		collect(decoded, "")
 	}
 	red := s.redactionFor(spans...)
+	for _, input := range inputs {
+		var nodes map[string]any
+		if json.Unmarshal(input, &nodes) == nil {
+			red.pointerRoots = append(red.pointerRoots, nodes)
+			for _, node := range nodes {
+				if members, ok := node.(map[string]any); ok {
+					red.pointerRoots = append(red.pointerRoots, members["facts"], members["evidence"])
+				}
+			}
+		}
+	}
 	return s.shownGraphValue(answer, "", red)
 }
 
@@ -328,9 +345,10 @@ func (s *Server) shownGraphAnswer(answer json.RawMessage) json.RawMessage {
 // absolute path it declares makes. Read per string, the file would be read
 // hundreds of times for a large answer, and could change under it.
 type graphRedaction struct {
-	s        *Server
-	spans    []pathSpan
-	auditDir string
+	s            *Server
+	spans        []pathSpan
+	auditDir     string
+	pointerRoots []any
 }
 
 // redactionFor reads `jpack.json` once. Every absolute path it declares for a
@@ -375,7 +393,7 @@ func (s *Server) redactionFor(spans ...pathSpan) graphRedaction {
 
 // text is a sentence with no path from a root in it.
 func (r graphRedaction) text(message string) string {
-	return r.s.withoutPathsUnder(replaceSpans(message, r.spans), r.auditDir)
+	return r.rehearsalText(message)
 }
 
 // startsFromARoot reports whether p starts from the root of a file system,

@@ -6961,6 +6961,75 @@ func (b *cappedBuffer) exceeded() bool {'
     'if input != nil {' \
     'if true {'
 
+  # ADR-0011, row 4.
+  mutate go 'graph row 4: refusal reported as missing flag' internal/desk/graph_evaluate.go \
+    'refusalHead.Status != "evaluated"' \
+    'false && refusalHead.Status != "evaluated"'
+  mutate go 'graph row 4: refusal diagnostic code omitted' internal/desk/graph_evaluate.go \
+    'diagnostic.Code + ": " + diagnostic.Message' \
+    diagnostic.Message
+  mutate go 'graph row 4: input pointers redacted' internal/desk/graph_evaluate.go \
+    'if rehearsalPointerResolves(root, pointer) {' \
+    'if false && rehearsalPointerResolves(root, pointer) {'
+  mutate go 'graph row 4: refusal absolute path retained' internal/desk/graph_evaluate.go \
+    'message = r.s.withoutPathsUnder(replaceSpans(message, r.spans), r.auditDir)' \
+    'message = replaceSpans(message, r.spans)'
+  mutate go 'graph row 4: body read unbounded' internal/desk/graph_evaluate.go \
+    'io.LimitReader(r.Body, maxFileBytes+1)' \
+    r.Body
+  mutate go 'graph row 4: rehearsal flag omitted' internal/desk/graph_evaluate.go \
+    ', "--rehearsal")' \
+    ')'
+  mutate go 'graph row 4: answer need not declare rehearsal' internal/desk/graph_evaluate.go \
+    '|| !head.Rehearsal' \
+    '|| false'
+  mutate go 'graph row 4: inputs size not checked' internal/desk/graph_evaluate.go \
+    'if len(input) > maxFileBytes {' \
+    'if false {'
+  mutate go 'graph row 4: non-object inputs accepted' internal/desk/graph_evaluate.go \
+    '|| trimmed[0] != '"'"'{'"'"'' \
+    '|| false'
+  mutate go 'graph row 4: unknown id resolves to another graph' internal/desk/graph_evaluate.go \
+    'dir, id)' \
+    'dir, "onboarding")'
+  mutate go 'graph row 4: listed path may climb out' internal/desk/graphs.go \
+    'if !graphPathInside(entry.Path) || !graphPathInside(clean) {' \
+    'if false {'
+  mutate go 'graph row 4: redaction omitted' internal/desk/graph_evaluate.go \
+    'shown := s.shownGraphAnswer(answer, input)' \
+    'shown := answer'
+  mutate go 'graph row 4: redacted answers enter the log' internal/desk/graph_evaluate.go \
+    's.writeShownGraphAnswer(w, id, shown)' \
+    's.writeGraphAnswer(w, id, answer)'
+  mutate go 'graph row 4: runtime failure enters the log' internal/desk/graph_evaluate.go \
+    's.graphRehearsalFailed(w, err) // the runtime refused or failed' \
+    's.graphFailed(w, "The rehearsal could not be run", err) // the runtime refused or failed'
+  mutate go 'graph row 4: additional deciding run is kept' internal/desk/graph_evaluate.go \
+    's.writeShownGraphAnswer(w, id, shown)' \
+    '_, _, _ = s.runGraph(r.Context(), dir, "evaluate", path, "--inputs", "-")
+	s.writeShownGraphAnswer(w, id, shown)'
+  mutate go 'graph row 4: facts are not passed on stdin' internal/desk/graph_evaluate.go \
+    '"evaluate", input, path' \
+    '"evaluate", nil, path'
+  mutate go 'graph row 4: answer bound widened' internal/desk/runtime.go \
+    'const runtimeAnswerLimit = 64 << 10' \
+    'const runtimeAnswerLimit = 128 << 10'
+  mutate go 'graph row 4: command timeout ignores its bound' internal/desk/runtime.go \
+    'context.WithTimeout(ctx, runtimeCommandTimeout)' \
+    'context.WithTimeout(ctx, time.Nanosecond)'
+
+  mutate go 'graph row 4: citations passed' internal/desk/graph_evaluate.go \
+    ', "--rehearsal")' \
+    ', "--rehearsal", "--cites", "-")'
+
+  mutate go 'graph row 4: request guard bypassed' internal/desk/graph_evaluate.go \
+    'if !s.guard(w, r) {' \
+    'if false && !s.guard(w, r) {'
+
+  mutate go 'graph row 4: another configuration allowed' internal/desk/graph_evaluate.go \
+    'if refusal != "" { // another configuration serves this desk' \
+    'if false && refusal != "" { // another configuration serves this desk'
+
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
   A=web/src/routes/AuthorView.tsx
@@ -15011,6 +15080,67 @@ export function assistantTransport(id: string): Transport {
   mutate web 'graph row 3: the codex engine uses pack authoring instructions' web/src/assistant/engines/codex/index.ts \
     'session.purpose === '"'"'graph'"'"' ? GRAPH_SYSTEM' \
     'session.purpose === '"'"'graph'"'"' ? (GRAPH_SYSTEM && SYSTEM)'
+
+  # ADR-0011, row 4.
+  mutate web 'graph row 4: command not checked on page' web/src/graphs/GraphRehearsal.tsx \
+    'answer?.command !== '"'"'experimental graph evaluate'"'"' || ' \
+    ''
+  mutate web 'graph row 4: runtime members omitted' web/src/graphs/GraphRehearsal.tsx \
+    '<RehearsalMembers raw={result.raw} />' \
+    '{false && <RehearsalMembers raw={result.raw} />}'
+  mutate web 'graph row 4: absent runtime members invented' web/src/graphs/GraphRehearsal.tsx \
+    'const value = memberBytes(source, name)' \
+    'const value = memberBytes(source, name) ?? '"'"'{}'"'"''
+  mutate web 'graph row 4: member bytes reserialized' web/src/graphs/GraphRehearsal.tsx \
+    '<code lang="en">{value}</code>' \
+    '<code lang="en">{JSON.stringify(JSON.parse(value))}</code>'
+  mutate web 'graph row 4: translated refusal marked English' web/src/graphs/GraphRehearsal.tsx \
+    '<pre role="alert">' \
+    '<pre role="alert" lang="en">'
+  mutate web 'graph row 4: labels omitted' web/src/graphs/GraphRehearsal.tsx \
+    '<GraphLabels labels={result.answer} />' \
+    '{false && <GraphLabels labels={result.answer} />}'
+  mutate web 'graph row 4: rehearsal marker not checked on page' web/src/graphs/GraphRehearsal.tsx \
+    '|| answer.rehearsal !== true' \
+    '|| false'
+  mutate web 'graph row 4: facts byte bound omitted on page' web/src/graphs/GraphRehearsal.tsx \
+    'new TextEncoder().encode(inputs).length > INPUT_LIMIT' \
+    'false && new TextEncoder().encode(inputs).length > INPUT_LIMIT'
+  mutate web 'graph row 4: facts object check omitted on page' web/src/graphs/GraphRehearsal.tsx \
+    '!parsed || typeof parsed !== '"'"'object'"'"' || Array.isArray(parsed)' \
+    'false && (!parsed || typeof parsed !== '"'"'object'"'"' || Array.isArray(parsed))'
+  mutate web 'graph row 4: id sent as path' web/src/graphs/GraphRehearsal.tsx \
+    '/api/graphs/evaluate?id=' \
+    '/api/graphs/evaluate?path='
+  mutate web 'graph row 4: runtime bytes are reserialized' web/src/graphs/GraphRehearsal.tsx \
+    '<pre lang="en">{result.raw}</pre>' \
+    '<pre lang="en">{JSON.stringify(result.answer)}</pre>'
+  mutate web 'graph row 4: result retained after inputs change' web/src/graphs/GraphRehearsal.tsx \
+    'setInputs(event.target.value); setResult(undefined); setError(undefined)' \
+    'setInputs(event.target.value); setError(undefined)'
+  mutate web 'graph row 4: request survives leaving the page' web/src/graphs/GraphRehearsal.tsx \
+    'active.current?.abort()' \
+    'void active.current'
+  mutate web 'graph row 4: rehearsal limits not stated' web/src/graphs/GraphRehearsal.tsx \
+    'It does not establish a decision, a record in the trail, a reviewed set consulted, which bytes were read, or that the facts are true.' \
+    'It establishes a decision.'
+  mutate web 'graph row 4: answer joined to drawn document' web/src/graphs/GraphRehearsal.tsx \
+    'never joined to it' \
+    'joined to it'
+  mutate web 'graph row 4: bundle digest called graph digest' web/src/graphs/GraphRehearsal.tsx \
+    'artifact.bundleDigest is the runtime’s bundle’s digest, not the graph’s.' \
+    'artifact.bundleDigest is the graph’s digest.'
+  mutate web 'graph row 4: trail silence omitted' web/src/graphs/GraphRehearsal.tsx \
+    'The trail is silent about rehearsals. Desk keeps neither the inputs nor the result: they live on the page until it is left.' \
+    'Desk keeps a trail of rehearsals.'
+
+  mutate web 'graph row 4: rehearsal does not unmount on leaving' web/src/routes/GraphView.tsx \
+    '{graphId && rehearsal && <GraphRehearsal' \
+    '{graphId && <GraphRehearsal'
+
+  mutate web 'graph row 4: rehearsal runs on opening' web/src/graphs/GraphRehearsal.tsx \
+    'useEffect(() => () => { active.current?.abort() }, [])' \
+    'useEffect(() => { void run(); return () => { active.current?.abort() } }, [])'
 
 fi
 
