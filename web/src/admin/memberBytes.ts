@@ -133,3 +133,21 @@ function valueEnd(text: string, from: number): number | undefined {
   }
   return undefined
 }
+
+/** Array items by their original bytes, for quoting runtime node members. */
+export function arrayItemsBytes(text: string): string[] {
+  let at = skipSpace(text, 0)
+  if (text[at] !== '[') return []
+  const items: string[] = []
+  at = skipSpace(text, at + 1)
+  while (text[at] !== ']') {
+    const end = valueEnd(text, at)
+    if (end === undefined) return []
+    items.push(text.slice(at, end))
+    at = skipSpace(text, end)
+    if (text[at] === ']') return items
+    if (text[at] !== ',') return []
+    at = skipSpace(text, at + 1)
+  }
+  return items
+}

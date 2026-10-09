@@ -6962,6 +6962,27 @@ func (b *cappedBuffer) exceeded() bool {'
     'if true {'
 
   # ADR-0011, row 4.
+  mutate go 'graph row 4: refusal reported as missing flag' internal/desk/graph_evaluate.go \
+    'refusalHead.Status != "evaluated"' \
+    'false && refusalHead.Status != "evaluated"'
+  mutate go 'graph row 4: refusal diagnostic code omitted' internal/desk/graph_evaluate.go \
+    'diagnostic.Code + ": " + diagnostic.Message' \
+    diagnostic.Message
+  mutate go 'graph row 4: input pointers redacted' internal/desk/graph_evaluate.go \
+    'if rehearsalPointerResolves(root, pointer) {' \
+    'if false && rehearsalPointerResolves(root, pointer) {'
+  mutate go 'graph row 4: refusal absolute path retained' internal/desk/graph_evaluate.go \
+    'message = r.s.withoutPathsUnder(replaceSpans(message, r.spans), r.auditDir)' \
+    'message = replaceSpans(message, r.spans)'
+  mutate go 'graph row 4: body read unbounded' internal/desk/graph_evaluate.go \
+    'io.LimitReader(r.Body, maxFileBytes+1)' \
+    r.Body
+  mutate go 'graph row 4: race companion omits graph runtime tests' .github/workflows/ci.yml \
+    'TestJobs|TestRunnerInputProfiles|TestGraphRow1WithThePublishedRuntime|TestGraphRow3RealRuntime|TestGraphRow4PublishedRuntimeTrailUnchanged' \
+    'TestJobs|TestRunnerInputProfiles'
+  mutate go 'graph row 4: companion omits graph runtime tests' .github/workflows/ci.yml \
+    'TestNewDeskWithTheRuntime|TestReviewAndLockWithTheRuntime|TestUpgradeWithTheRuntime|TestGraphRow1WithThePublishedRuntime|TestGraphRow3RealRuntime|TestGraphRow4PublishedRuntimeTrailUnchanged' \
+    'TestNewDeskWithTheRuntime|TestReviewAndLockWithTheRuntime|TestUpgradeWithTheRuntime'
   mutate go 'graph row 4: rehearsal flag omitted' internal/desk/graph_evaluate.go \
     ', "--rehearsal")' \
     ')'
@@ -6981,7 +7002,7 @@ func (b *cappedBuffer) exceeded() bool {'
     'if !graphPathInside(entry.Path) || !graphPathInside(clean) {' \
     'if false {'
   mutate go 'graph row 4: redaction omitted' internal/desk/graph_evaluate.go \
-    'shown := s.shownGraphAnswer(answer)' \
+    'shown := s.shownGraphAnswer(answer, input)' \
     'shown := answer'
   mutate go 'graph row 4: redacted answers enter the log' internal/desk/graph_evaluate.go \
     's.writeShownGraphAnswer(w, id, shown)' \
@@ -15067,6 +15088,21 @@ export function assistantTransport(id: string): Transport {
     'session.purpose === '"'"'graph'"'"' ? (GRAPH_SYSTEM && SYSTEM)'
 
   # ADR-0011, row 4.
+  mutate web 'graph row 4: command not checked on page' web/src/graphs/GraphRehearsal.tsx \
+    'answer?.command !== '"'"'experimental graph evaluate'"'"' || ' \
+    ''
+  mutate web 'graph row 4: runtime members omitted' web/src/graphs/GraphRehearsal.tsx \
+    '<RehearsalMembers raw={result.raw} />' \
+    '{false && <RehearsalMembers raw={result.raw} />}'
+  mutate web 'graph row 4: absent runtime members invented' web/src/graphs/GraphRehearsal.tsx \
+    'const value = memberBytes(source, name)' \
+    'const value = memberBytes(source, name) ?? '"'"'{}'"'"''
+  mutate web 'graph row 4: member bytes reserialized' web/src/graphs/GraphRehearsal.tsx \
+    '<code lang="en">{value}</code>' \
+    '<code lang="en">{JSON.stringify(JSON.parse(value))}</code>'
+  mutate web 'graph row 4: translated refusal marked English' web/src/graphs/GraphRehearsal.tsx \
+    '<pre role="alert">' \
+    '<pre role="alert" lang="en">'
   mutate web 'graph row 4: labels omitted' web/src/graphs/GraphRehearsal.tsx \
     '<GraphLabels labels={result.answer} />' \
     '{false && <GraphLabels labels={result.answer} />}'
