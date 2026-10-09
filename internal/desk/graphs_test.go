@@ -592,6 +592,10 @@ func TestGraphRow1WithThePublishedRuntimeEscapes(t *testing.T) {
 	// sub/onb.graph.json is inside; <outside>/deep/../onb.graph.json is another file.
 	write(filepath.Join(project, "sub", "onb.graph.json"), read("onboarding.graph.json"))
 	write(filepath.Join(outside, "onb.graph.json"), strings.Replace(read("onboarding.graph.json"), "vendor-onboarding-flow", "outside-secret-graph", 1))
+	// A graph whose node names the pack declared outside the project: validate
+	// says where that pack could not be read, in a sentence no member carries.
+	write(filepath.Join(project, "far.graph.json"), strings.Replace(read("onboarding.graph.json"), `"vendor-onboarding"`, `"far"`, 1))
+	write(filepath.Join(outside, "SECRET-PACK", "v.pack.json"), read("vendor-onboarding-0.1.0.pack.json"))
 	if err := os.MkdirAll(filepath.Join(outside, "deep"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -607,6 +611,7 @@ func TestGraphRow1WithThePublishedRuntimeEscapes(t *testing.T) {
 		"graphs": map[string]any{
 			"dotdot":     map[string]any{"path": "sub/link/../onb.graph.json"},
 			"absmissing": map[string]any{"path": filepath.Join(outside, "SECRET-TAIL", "missing.graph.json")},
+			"usesfar":    map[string]any{"path": "far.graph.json"},
 		}}
 	data, _ := json.Marshal(config)
 	write(filepath.Join(project, "jpack.json"), string(data))
@@ -621,6 +626,9 @@ func TestGraphRow1WithThePublishedRuntimeEscapes(t *testing.T) {
 		t.Fatalf("an absolute graph path outside the project: %d %s", status, body)
 	}
 	status, body = graphGet(t, ts, "/api/graphs/findings")
+	if !strings.Contains(string(body), `"id":"usesfar"`) || !strings.Contains(string(body), "JPS-GRAPH-NODE-PACK-READ") {
+		t.Fatalf("the findings do not name the pack that could not be read, so this proves nothing: %s", body)
+	}
 	if status != 200 || strings.Contains(string(body), "SECRET") || strings.Contains(string(body), "side/") {
 		t.Fatalf("findings with absolute paths outside the project: %d %s", status, body)
 	}

@@ -429,6 +429,7 @@ go	document processing: web-search is given 130 s without its flag	TestLocalPlan
 go	excluded directories are not endpoint exclusions	TestEveryCodeHasAStatusAndAWitness,TestExcludedDirectoriesAreEndpointExclusions,TestExcludedNamesMatchWholeComponentsCaseInsensitively,TestNamedDesksKeepFilesAndArtifactsSeparate,TestTheFileAPIRefusesTheHandOver
 go	excluded names match case-sensitively	TestExcludedNamesMatchWholeComponentsCaseInsensitively,TestTheFileAPIRefusesTheHandOver
 go	graph row 1: a graph the runtime could not read is planned	TestGraphRow1AGraphWhosePathEscapesTheProjectIsNotPlanned
+go	graph row 1: a listed path reaches explain as written	TestGraphRow1AListedPathIsCleanedBeforeExplain,TestGraphRow1WithThePublishedRuntimeEscapes
 go	graph row 1: a listed path that climbs out of the project is planned	TestGraphRow1AGraphWhosePathEscapesTheProjectIsNotPlanned
 go	graph row 1: a message is redacted only where it names a path already known	TestGraphRow1NoAbsolutePathReachesThePage
 go	graph row 1: a name that starts with a dash reaches the runtime as a flag	TestGraphRow1AGraphWhosePathEscapesTheProjectIsNotPlanned
@@ -439,6 +440,7 @@ go	graph row 1: a path member is shown as the runtime printed it	TestGraphRow1No
 go	graph row 1: a string nothing redacted is written again	TestGraphRow1FindingsAreTheRuntimesBytes
 go	graph row 1: an answer in another output version is shown	TestGraphRow1AnAnswerThatIsNotTheCommandsIsRefused
 go	graph row 1: an answer that is another command's is shown	TestGraphRow1AnAnswerThatIsNotTheCommandsIsRefused
+go	graph row 1: an empty answer is shown	TestGraphRow1AnEmptyAnswerIsNotAnAnswer
 go	graph row 1: an id listed twice is guessed between	TestGraphRow1AGraphWhosePathEscapesTheProjectIsNotPlanned
 go	graph row 1: an id the listing does not have is passed to explain	TestGraphRow1AnIdThatNamesNoGraphIsRefusedBeforeExplain,TestGraphRow1WithThePublishedRuntime
 go	graph row 1: the findings are refused when the runtime exits 1	TestGraphRow1ARuntimeRefusalIsShownInTheRuntimesWords,TestGraphRow1FindingsAreTheRuntimesBytes,TestGraphRow1NoAbsolutePathReachesThePage,TestGraphRow1WithThePublishedRuntime
