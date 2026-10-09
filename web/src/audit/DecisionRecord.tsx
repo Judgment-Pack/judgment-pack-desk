@@ -1,5 +1,5 @@
 /**
- * Admin → Project → Decision record (ADR-0010, sections 4 and 6).
+ * Admin → Workspace → Decision safeguards → Decision record (ADR-0010, sections 4 and 6).
  *
  * What the runtime's own `jpack audit verify` finds in this desk's trail: the
  * status, the coverage, the segments and discontinuities, each finding by
