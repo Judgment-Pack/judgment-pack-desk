@@ -505,6 +505,7 @@ go	graph row 4: redacted answers enter the log	TestGraphRow4RedactsWithoutLoggin
 go	graph row 4: redaction omitted	TestGraphRow4RedactsWithoutLogging
 go	graph row 4: rehearsal flag omitted	TestGraphRow4RehearsalOnly
 go	graph row 4: request guard bypassed	TestGraphRow4RuntimeBoundsAndGuards
+go	graph row 4: runtime failure enters the log	TestGraphRow4RedactsWithoutLogging
 go	graph row 4: unknown id resolves to another graph	TestGraphRow4IDAndContainment
 go	hand-over: a checkpoint of another trail is served	TestALineThatIsNotTheNextCheckpointServesNothing
 go	hand-over: a checkpoint out of order is served	TestALineThatIsNotTheNextCheckpointServesNothing
