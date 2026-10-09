@@ -1693,6 +1693,19 @@ web	graph row 1: the plan is asked for when the diagram opens	src/graphs/graphs.
 web	graph row 1: the runtime's kind is not shown	src/graphs/graphs.test.tsx
 web	graph row 1: the runtime's label sentence is not marked as its English	src/graphs/graphs.test.tsx
 web	graph row 1: the summary is worded as a verdict	src/graphs/graphs.test.tsx
+web	graph row 2: a member the runtime did not print is counted in	src/routes/GraphViewRow2.test.tsx
+web	graph row 2: a payload with no claim reference is shown a claim	src/routes/GraphViewRow2.test.tsx
+web	graph row 2: a row's sentence is not marked as the runtime's English	src/routes/GraphViewRow2.test.tsx
+web	graph row 2: a row's sentence is shown as given	src/routes/GraphViewRow2.test.tsx
+web	graph row 2: an entry's path is shown as given	src/routes/GraphViewRow2.test.tsx
+web	graph row 2: an entry's sentence is not marked as the runtime's English	src/routes/GraphViewRow2.test.tsx
+web	graph row 2: an entry's sentence is shown as given	src/routes/GraphViewRow2.test.tsx
+web	graph row 2: experimental is shown when the runtime printed none	src/routes/GraphViewRow2.test.tsx
+web	graph row 2: the closing note says the rows are right	src/routes/GraphViewRow2.test.tsx
+web	graph row 2: the matrix payload's labels are not shown	src/routes/GraphViewRow2.test.tsx
+web	graph row 2: the project's folder is not known to the redaction	src/routes/GraphViewRow2.test.tsx
+web	graph row 2: the row's status is called a verdict	src/components/GraphWalkDiagram.test.tsx
+web	graph row 2: the summary is worded as a count of cases passed	src/routes/GraphViewRow2.test.tsx,src/routes/PacksWorkspace.test.tsx
 web	hand-over client: a download whose headers disagree is taken	src/audit/handover.test.tsx,src/audit/jobsRecord.test.tsx
 web	hand-over client: a holder is added in other words	src/audit/handover.test.tsx
 web	hand-over client: a refusal that is not JSON is not said	src/audit/handover.test.tsx
