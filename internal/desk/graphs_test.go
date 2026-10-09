@@ -633,3 +633,23 @@ func TestGraphRow1WithThePublishedRuntimeEscapes(t *testing.T) {
 		t.Fatalf("findings with absolute paths outside the project: %d %s", status, body)
 	}
 }
+
+// A sentence can name a pack's path that no member of the answer carries; the
+// paths jpack.json declares are replaced whole, spaces and all.
+func TestGraphRow1ADeclaredPackPathIsReplacedWholeInASentence(t *testing.T) {
+	rig := newGraphRig(t)
+	project := t.TempDir()
+	pack := filepath.Join(t.TempDir(), "Out side", "SECRET-PACK", "v.pack.json")
+	config, _ := json.Marshal(map[string]any{"configVersion": "2", "packs": map[string]any{"far": map[string]any{"path": pack}}})
+	if err := os.WriteFile(filepath.Join(project, "jpack.json"), config, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	quoted := string(mustMarshal(pack))
+	validate := `{"outputVersion":"2","command":"experimental graph validate","status":"invalid","graphs":[{"id":"g","path":"g.graph.json","status":"invalid","diagnostics":[{"code":"JPS-GRAPH-NODE-PACK-READ","message":"The node's pack could not be checked. The path \"` + quoted[1:len(quoted)-1] + `\" resolves outside the configuration's own directory."}]}]}`
+	rig.answers(t, "validate", validate, 1)
+	_, ts, _ := graphsDesk(t, project, rig.bin)
+	status, data := graphGet(t, ts, "/api/graphs/findings")
+	if status != 200 || strings.Contains(string(data), "SECRET") || strings.Contains(string(data), "Out side") || !strings.Contains(string(data), "JPS-GRAPH-NODE-PACK-READ") {
+		t.Fatalf("a declared pack path in a sentence: %d %s", status, data)
+	}
+}
