@@ -4175,7 +4175,6 @@
   "A file Desk staged while it wrote a list of public keys, a creation's marker or a rotation's journal, and never put in place: its name records no identity Desk keeps keys under, so Desk keeps it where it was staged.": "A file Desk staged while it wrote a list of public keys, a creation's marker or a rotation's journal, and never put in place: its name records no identity Desk keeps keys under, so Desk keeps it where it was staged.",
   "A file Desk staged": "A file Desk staged",
   "Kept where it was staged, not in the archive.": "Kept where it was staged, not in the archive.",
-  "<0/> of <1/> graphs passed their checks": "<0/> of <1/> graphs passed their checks",
   "Experimental": "Experimental",
   "Fed by no other step.": "Fed by no other step.",
   "From the runtime's graph explain. The plan names no digest of the document it read, so it is not tied to the diagram.": "From the runtime's graph explain. The plan names no digest of the document it read, so it is not tied to the diagram.",
@@ -4202,5 +4201,6 @@
   "the plan": "the plan",
   "version <0/>": "version <0/>",
   "when unresolved <0/>": "when unresolved <0/>",
-  "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this graph's packs, these facts, or whether acting on the disposition is correct.": "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this graph's packs, these facts, or whether acting on the disposition is correct."
+  "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this graph's packs, these facts, or whether acting on the disposition is correct.": "— a locator for the repository file that makes the claim. This payload makes none, and whatever that file claims is about the runtime, not about this graph's packs, these facts, or whether acting on the disposition is correct.",
+  "summary <0/>": "summary <0/>"
 }

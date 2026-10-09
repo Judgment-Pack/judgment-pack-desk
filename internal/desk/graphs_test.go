@@ -518,3 +518,110 @@ func TestGraphRow1NothingRunsOverAnotherProjectsConfiguration(t *testing.T) {
 		t.Fatalf("the runtime ran over another project's configuration: %q", rig.asked(t))
 	}
 }
+
+// The listing cleans a path before it reads it; explain must be given that
+// cleaned spelling, or a ".." after a symlinked folder leaves the project.
+func TestGraphRow1AListedPathIsCleanedBeforeExplain(t *testing.T) {
+	rig := newGraphRig(t)
+	rig.answers(t, "explain", explainAnswer, 0)
+	_, ts, _ := graphsDesk(t, t.TempDir(), rig.bin)
+	for listed, want := range map[string]string{
+		"sub/link/../onb.graph.json": "sub/onb.graph.json",
+		"./a//b/../c.graph.json":     "a/c.graph.json",
+		"sub/./g.graph.json":         "sub/g.graph.json",
+		"x/../-v.graph.json":         "./-v.graph.json",
+	} {
+		data, _ := json.Marshal(map[string]any{"outputVersion": "2", "command": "experimental graph list", "status": "resolved", "graphs": []any{map[string]any{"id": "g", "path": listed}}})
+		rig.answers(t, "list", string(data), 0)
+		if status, body := graphGet(t, ts, "/api/graphs/plan?id=g"); status != 200 {
+			t.Fatalf("%s: %d %s", listed, status, body)
+		}
+		asked := rig.asked(t)
+		if got := asked[len(asked)-1]; !strings.HasPrefix(got, "experimental graph explain "+want+" --config") {
+			t.Errorf("%s: asked %q, want the cleaned %q", listed, got, want)
+		}
+	}
+	for _, listed := range []string{"a/../../x.graph.json", ".."} {
+		data, _ := json.Marshal(map[string]any{"outputVersion": "2", "command": "experimental graph list", "status": "resolved", "graphs": []any{map[string]any{"id": "g", "path": listed}}})
+		rig.answers(t, "list", string(data), 0)
+		before := rig.ran(t, "explain")
+		if status, _ := graphGet(t, ts, "/api/graphs/plan?id=g"); status != http.StatusConflict || rig.ran(t, "explain") != before {
+			t.Errorf("%s was planned", listed)
+		}
+	}
+}
+
+func TestGraphRow1AnEmptyAnswerIsNotAnAnswer(t *testing.T) {
+	rig := newGraphRig(t)
+	rig.answers(t, "validate", "", 0)
+	_, ts, _ := graphsDesk(t, t.TempDir(), rig.bin)
+	status, data := graphGet(t, ts, "/api/graphs/findings")
+	if status != http.StatusInternalServerError || !strings.Contains(errorOf(t, data), "did not answer as documented") || strings.Contains(string(data), `"answer"`) {
+		t.Fatalf("an empty answer: %d %s", status, data)
+	}
+}
+
+// With the published runtime: a ".." after a symlinked folder, and absolute
+// paths outside the project in a folder named with a space.
+func TestGraphRow1WithThePublishedRuntimeEscapes(t *testing.T) {
+	bin := os.Getenv("JPACK_BIN")
+	if bin == "" || !filepath.IsAbs(bin) {
+		t.Skip("set JPACK_BIN to the published runtime")
+	}
+	project := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "Out side")
+	fixture := filepath.Join("testdata", "graphs")
+	read := func(name string) string {
+		data, err := os.ReadFile(filepath.Join(fixture, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	write := func(path, body string) {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"sanctions-screening-0.1.0.pack.json", "vendor-onboarding-0.1.0.pack.json", "onboarding.graph.json", "onboarding.rows.json"} {
+		write(filepath.Join(project, name), read(name))
+	}
+	// sub/onb.graph.json is inside; <outside>/deep/../onb.graph.json is another file.
+	write(filepath.Join(project, "sub", "onb.graph.json"), read("onboarding.graph.json"))
+	write(filepath.Join(outside, "onb.graph.json"), strings.Replace(read("onboarding.graph.json"), "vendor-onboarding-flow", "outside-secret-graph", 1))
+	if err := os.MkdirAll(filepath.Join(outside, "deep"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "deep"), filepath.Join(project, "sub", "link")); err != nil {
+		t.Skip("no symlinks here")
+	}
+	config := map[string]any{"configVersion": "2",
+		"packs": map[string]any{
+			"sanctions-screening": map[string]any{"path": "sanctions-screening-0.1.0.pack.json"},
+			"vendor-onboarding":   map[string]any{"path": "vendor-onboarding-0.1.0.pack.json"},
+			"far":                 map[string]any{"path": filepath.Join(outside, "SECRET-PACK", "v.pack.json")},
+		},
+		"graphs": map[string]any{
+			"dotdot":     map[string]any{"path": "sub/link/../onb.graph.json"},
+			"absmissing": map[string]any{"path": filepath.Join(outside, "SECRET-TAIL", "missing.graph.json")},
+		}}
+	data, _ := json.Marshal(config)
+	write(filepath.Join(project, "jpack.json"), string(data))
+	_, ts, _ := graphsDesk(t, project, bin)
+
+	status, body := graphGet(t, ts, "/api/graphs/plan?id=dotdot")
+	if strings.Contains(string(body), "outside-secret-graph") || (status == 200 && !strings.Contains(string(body), "vendor-onboarding-flow")) {
+		t.Fatalf("the plan of a file outside the project: %d %s", status, body)
+	}
+	status, body = graphGet(t, ts, "/api/graphs/plan?id=absmissing")
+	if status != http.StatusConflict || strings.Contains(string(body), "SECRET") || strings.Contains(string(body), "Out side") || strings.Contains(string(body), "side/") {
+		t.Fatalf("an absolute graph path outside the project: %d %s", status, body)
+	}
+	status, body = graphGet(t, ts, "/api/graphs/findings")
+	if status != 200 || strings.Contains(string(body), "SECRET") || strings.Contains(string(body), "side/") {
+		t.Fatalf("findings with absolute paths outside the project: %d %s", status, body)
+	}
+}

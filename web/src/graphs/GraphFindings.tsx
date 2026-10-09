@@ -52,7 +52,7 @@ function Findings({ answer, graphId, sha256 }: { answer: GraphFindings; graphId?
   return <>
     <GraphLabels labels={answer} />
     <p className="ids"><Pill tone="neutral"><span lang="en">{answer.status}</span></Pill>
-      {answer.summary && <span><Message text={"<0/> of <1/> graphs passed their checks"} slots={[answer.summary.passed, answer.summary.total]} /></span>}</p>
+      {answer.summary && <span><Message text={"summary <0/>"} slots={[<code lang="en" key="summary">{`passed ${answer.summary.passed}, failed ${answer.summary.failed}, total ${answer.summary.total}`}</code>]} /></span>}</p>
     {(answer.diagnostics ?? []).length > 0 && <ul className="findings">{answer.diagnostics!.map((diagnostic, index) => <Diagnostic key={index} diagnostic={diagnostic} known={known} />)}</ul>}
     {rows.length === 0 && graphId !== undefined && <p className="quiet">{msg("The runtime's findings do not name this graph.")}</p>}
     {answer.status === 'skipped' && all.length === 0 && <p className="quiet">{msg("The runtime skipped the check: this project declares no graph.")}</p>}

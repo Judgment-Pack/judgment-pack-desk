@@ -114,6 +114,9 @@ describe('the graphs page: labels, findings and paths', () => {
     expect(container.textContent).toContain('JPS-GRAPH-EDGE')
     expect(container.textContent).toContain('/edges/0')
     expect(asked()).toEqual(['/api/graphs/findings'])
+    // The summary is the runtime's members, in no sentence of Desk's.
+    expect(container.textContent).toContain('passed 0, failed 1, total 1')
+    expect(container.textContent).not.toMatch(/graphs passed their checks/)
     // The status is the runtime’s word, in no verdict colour of Desk’s.
     expect(container.querySelector('.pill-success')).toBeNull()
   })

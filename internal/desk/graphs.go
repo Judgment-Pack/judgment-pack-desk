@@ -85,7 +85,10 @@ func (s *Server) runGraph(ctx context.Context, dir heldDir, command string, args
 	full = append(full, "--config", runtimeConfigName, "--format", "json")
 	out, runErr := runRuntime(ctx, s.cfg.JpackBin, dir, full...)
 	var head graphDiagnostics
-	if out == nil {
+	if len(bytes.TrimSpace(out)) == 0 {
+		if runErr == nil {
+			runErr = fmt.Errorf("its graph %s did not answer as documented", command)
+		}
 		return nil, head, runErr
 	}
 	trimmed := bytes.TrimSpace(out)
@@ -239,17 +242,25 @@ func (s *Server) graphPathOf(ctx context.Context, dir heldDir, id string) (path 
 		return "", http.StatusNotFound, "The project's configuration declares no graph with that id.", nil
 	}
 	entry := listing.Graphs[found]
-	if entry.Detail != "" {
-		return "", http.StatusConflict, "The runtime could not read this graph's document, so Desk asks for no plan. The runtime says: " + s.withoutPaths(entry.Detail), nil
-	}
-	if !graphPathInside(entry.Path) {
+	// **Containment first, and on the path as the runtime's listing read it.**
+	// The listing cleans a path before it reads it, so "sub/link/../g.json"
+	// is "sub/g.json" there; `explain` opens its argument as written, and the
+	// kernel would follow the link and then "..". So the cleaned spelling is
+	// what is checked and what is passed. A path from outside the project is
+	// refused in Desk's words, never in a sentence of the runtime's that
+	// names it.
+	clean := filepath.Clean(entry.Path)
+	if !graphPathInside(entry.Path) || !graphPathInside(clean) {
 		return "", http.StatusConflict, "This graph is declared at a path that is not inside the project's folder, so Desk asks for no plan.", nil
 	}
-	// A name that starts with "-" is a name, not a flag.
-	if strings.HasPrefix(entry.Path, "-") {
-		return "./" + entry.Path, 0, "", nil
+	if entry.Detail != "" {
+		return "", http.StatusConflict, "The runtime could not read this graph's document, so Desk asks for no plan. The runtime says: " + s.redactionFor().text(entry.Detail), nil
 	}
-	return entry.Path, 0, "", nil
+	// A name that starts with "-" is a name, not a flag.
+	if strings.HasPrefix(clean, "-") {
+		return "./" + clean, 0, "", nil
+	}
+	return clean, 0, "", nil
 }
 
 // graphPathInside reports whether p, as the listing reports it, is a path
@@ -304,7 +315,63 @@ func (s *Server) shownGraphAnswer(answer json.RawMessage) json.RawMessage {
 	if json.Unmarshal(answer, &decoded) == nil {
 		collect(decoded, "")
 	}
-	return s.shownGraphValue(answer, "", spans)
+	red := s.redactionFor(spans...)
+	return s.shownGraphValue(answer, "", red)
+}
+
+// graphRedaction is what one answer is redacted with, held once for the whole
+// answer: the audit directory `jpack.json` declares and the spans that every
+// absolute path it declares makes. Read per string, the file would be read
+// hundreds of times for a large answer, and could change under it.
+type graphRedaction struct {
+	s        *Server
+	spans    []pathSpan
+	auditDir string
+}
+
+// redactionFor reads `jpack.json` once. Every absolute path it declares for a
+// pack, a graph or its rows is a span replaced whole: a sentence of the
+// runtime's can name a pack's path that no member of a graph answer carries.
+func (s *Server) redactionFor(spans ...pathSpan) graphRedaction {
+	red := graphRedaction{s: s, spans: spans}
+	config, err := s.readReviewFileWithin(runtimeConfigName, reviewTextLimit)
+	if err != nil {
+		return red
+	}
+	red.auditDir, _, _ = auditDirOf(config)
+	var declared struct {
+		Packs map[string]struct {
+			Path string `json:"path"`
+		} `json:"packs"`
+		Graphs map[string]struct {
+			Path string `json:"path"`
+			Rows string `json:"rows"`
+		} `json:"graphs"`
+	}
+	if json.Unmarshal(config, &declared) != nil {
+		return red
+	}
+	add := func(p string) {
+		if startsFromARoot(p) {
+			red.spans = append(red.spans, pathSpan{value: p, with: "…"})
+			if shown := displayedPath(p); shown != p {
+				red.spans = append(red.spans, pathSpan{value: shown, with: "…"})
+			}
+		}
+	}
+	for _, pack := range declared.Packs {
+		add(pack.Path)
+	}
+	for _, graph := range declared.Graphs {
+		add(graph.Path)
+		add(graph.Rows)
+	}
+	return red
+}
+
+// text is a sentence with no path from a root in it.
+func (r graphRedaction) text(message string) string {
+	return r.s.withoutPathsUnder(replaceSpans(message, r.spans), r.auditDir)
 }
 
 // startsFromARoot reports whether p starts from the root of a file system,
@@ -314,16 +381,17 @@ func startsFromARoot(p string) bool {
 }
 
 // shownPathMember is one path member's value, shown.
-func (s *Server) shownPathMember(p string) string {
+func (r graphRedaction) shownPathMember(p string) string {
+	s := r.s
 	if startsFromARoot(p) {
 		for _, name := range []string{s.projectDir, s.cfg.ProjectDir, displayedPath(s.projectDir), displayedPath(s.cfg.ProjectDir)} {
 			if name != "" && strings.HasPrefix(p, name+"/") {
-				return s.withoutPaths(p)
+				return r.text(p)
 			}
 		}
 		return "…"
 	}
-	if s.withoutPaths(p) != p {
+	if r.text(p) != p {
 		return "…"
 	}
 	return p
@@ -332,7 +400,7 @@ func (s *Server) shownPathMember(p string) string {
 // shownGraphValue redacts one JSON value: members are visited in the order
 // they were printed, and a value is rebuilt only where something under it
 // changed, so what did not change is the runtime's own bytes.
-func (s *Server) shownGraphValue(raw json.RawMessage, key string, spans []pathSpan) json.RawMessage {
+func (s *Server) shownGraphValue(raw json.RawMessage, key string, red graphRedaction) json.RawMessage {
 	raw = bytes.TrimSpace(raw)
 	if len(raw) == 0 {
 		return raw
@@ -346,9 +414,9 @@ func (s *Server) shownGraphValue(raw json.RawMessage, key string, spans []pathSp
 		var shown string
 		switch {
 		case graphPathMembers[key]:
-			shown = s.shownPathMember(text)
-		case graphMessageMembers[key] || s.namesProject(text) || namesSpan(text, spans):
-			shown = s.withoutPaths(replaceSpans(text, spans))
+			shown = red.shownPathMember(text)
+		case graphMessageMembers[key] || s.namesProject(text) || namesSpan(text, red.spans):
+			shown = red.text(text)
 		default:
 			return raw
 		}
@@ -363,7 +431,7 @@ func (s *Server) shownGraphValue(raw json.RawMessage, key string, spans []pathSp
 		}
 		changed := false
 		for i, item := range items {
-			if shown := s.shownGraphValue(item, key, spans); !bytes.Equal(shown, bytes.TrimSpace(item)) {
+			if shown := s.shownGraphValue(item, key, red); !bytes.Equal(shown, bytes.TrimSpace(item)) {
 				items[i], changed = shown, true
 			}
 		}
@@ -389,7 +457,7 @@ func (s *Server) shownGraphValue(raw json.RawMessage, key string, spans []pathSp
 			if decoder.Decode(&value) != nil {
 				return raw
 			}
-			shown := s.shownGraphValue(value, text, spans)
+			shown := s.shownGraphValue(value, text, red)
 			if !bytes.Equal(shown, bytes.TrimSpace(value)) {
 				changed = true
 			}

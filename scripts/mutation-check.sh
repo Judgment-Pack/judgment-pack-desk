@@ -6733,7 +6733,7 @@ func (b *cappedBuffer) exceeded() bool {'
 		return id, 0, "", nil
 	}'
   mutate go 'graph row 1: a listed path that climbs out of the project is planned' internal/desk/graphs.go \
-    '	if !graphPathInside(entry.Path) {' \
+    '	if !graphPathInside(entry.Path) || !graphPathInside(clean) {' \
     '	if false {'
   mutate go 'graph row 1: a graph the runtime could not read is planned' internal/desk/graphs.go \
     '	if entry.Detail != "" {' \
@@ -6742,7 +6742,7 @@ func (b *cappedBuffer) exceeded() bool {'
     '		if found >= 0 {' \
     '		if false {'
   mutate go 'graph row 1: a name that starts with a dash reaches the runtime as a flag' internal/desk/graphs.go \
-    '	if strings.HasPrefix(entry.Path, "-") {' \
+    '	if strings.HasPrefix(clean, "-") {' \
     '	if false {'
   mutate go 'graph row 1: a path from the page is passed to explain' internal/desk/graphs.go \
     '	answer, _, err := s.runGraph(r.Context(), dir, "explain", path)' \
@@ -6754,22 +6754,22 @@ func (b *cappedBuffer) exceeded() bool {'
 	}())'
   mutate go 'graph row 1: a path member is shown as the runtime printed it' internal/desk/graphs.go \
     '		case graphPathMembers[key]:
-			shown = s.shownPathMember(text)' \
+			shown = red.shownPathMember(text)' \
     '		case graphPathMembers[key]:
 			shown = text'
   mutate go 'graph row 1: a path from outside the project is cut at its first space' internal/desk/graphs.go \
     '		return "…"
 	}
-	if s.withoutPaths(p) != p {' \
+	if r.text(p) != p {' \
     '		return s.withoutPaths(p)
 	}
-	if s.withoutPaths(p) != p {'
+	if r.text(p) != p {'
   mutate go 'graph row 1: a path a member gave is cut at its first space in a sentence' internal/desk/graphs.go \
-    '			shown = s.withoutPaths(replaceSpans(text, spans))' \
-    '			shown = s.withoutPaths(text)'
+    '			shown = red.text(text)' \
+    '			shown = red.s.withoutPaths(text)'
   mutate go 'graph row 1: a message is redacted only where it names a path already known' internal/desk/graphs.go \
-    '		case graphMessageMembers[key] || s.namesProject(text) || namesSpan(text, spans):' \
-    '		case s.namesProject(text) || namesSpan(text, spans):'
+    '		case graphMessageMembers[key] || s.namesProject(text) || namesSpan(text, red.spans):' \
+    '		case s.namesProject(text) || namesSpan(text, red.spans):'
   mutate go 'graph row 1: a string nothing redacted is written again' internal/desk/graphs.go \
     '		if shown == text {
 			return raw
@@ -6790,6 +6790,24 @@ func (b *cappedBuffer) exceeded() bool {'
 	if !s.guard(w, r) {' \
     'func (s *Server) handleGraphFindings(w http.ResponseWriter, r *http.Request) {
 	if false {'
+  mutate go 'graph row 1: a listed path reaches explain as written' internal/desk/graphs.go \
+    '	return clean, 0, "", nil' \
+    '	return entry.Path, 0, "", nil'
+  mutate go 'graph row 1: a pack path no member carries is cut at its first space' internal/desk/graphs.go \
+    '	for _, pack := range declared.Packs {
+		add(pack.Path)' \
+    '	for _, pack := range declared.Packs {
+		_ = pack'
+  mutate go 'graph row 1: an empty answer is shown' internal/desk/graphs.go \
+    '	if len(bytes.TrimSpace(out)) == 0 {
+		if runErr == nil {
+			runErr = fmt.Errorf("its graph %s did not answer as documented", command)
+		}
+		return nil, head, runErr
+	}' \
+    '	if out == nil {
+		return nil, head, runErr
+	}'
   mutate go 'graph row 1: the graphs are run over another project'\''s configuration' internal/desk/graphs.go \
     '	case named != "":
 		return dir, "This project'\''s runtime reads the configuration that JPACK_CONFIG names where Desk was started, and not this project'\''s " + runtimeConfigName + ", so Desk does not check its graphs here."' \
@@ -14738,6 +14756,9 @@ export function assistantTransport(id: string): Transport {
   mutate web 'graph row 1: the runtime'\''s kind is not shown' web/src/graphs/GraphLabels.tsx \
     '{kind !== undefined && <span>' \
     '{false && <span>'
+  mutate web 'graph row 1: the summary is worded as a verdict' web/src/graphs/GraphFindings.tsx \
+    '`passed ${answer.summary.passed}, failed ${answer.summary.failed}, total ${answer.summary.total}`' \
+    '`${answer.summary.passed} of ${answer.summary.total} graphs passed their checks`'
   mutate web 'graph row 1: a plan is asked for by a path' web/src/graphs/client.ts \
     '`/api/graphs/plan?id=${encodeURIComponent(id)}`' \
     '`/api/graphs/plan?path=${encodeURIComponent(id)}`'
