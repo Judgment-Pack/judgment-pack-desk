@@ -51,7 +51,7 @@ import {
   SYSTEM,
   CONVERSATION_SYSTEM,
   TEST_DESIGN_SYSTEM,
-  BRIEF_SYSTEM,
+  BRIEF_SYSTEM, GRAPH_SYSTEM,
   streamingProse,
   hasProposalFence,
   eventIterator,
@@ -588,7 +588,7 @@ export function runVercel(
       // See claimPromises: the unused browser tracing path leaks on failure.
       telemetry: { isEnabled: false },
       model,
-      instructions: (session.purpose === 'brief' ? BRIEF_SYSTEM : session.purpose === 'test-design' ? TEST_DESIGN_SYSTEM : session.allowConversation ? CONVERSATION_SYSTEM : SYSTEM) + assistantLanguageInstructions(session.replyLanguage),
+      instructions: (session.purpose === 'graph' ? GRAPH_SYSTEM : session.purpose === 'brief' ? BRIEF_SYSTEM : session.purpose === 'test-design' ? TEST_DESIGN_SYSTEM : session.allowConversation ? CONVERSATION_SYSTEM : SYSTEM) + assistantLanguageInstructions(session.replyLanguage),
       tools,
       messages: [{ role: 'user', content: session.prompt }],
       stopWhen: stepCountIs(MAX_TURNS),

@@ -2471,3 +2471,43 @@ web	what was seen in one document is kept for the next	src/packs/useDocumentSpy.
 web	widening never gives an untouched pane its layout back	src/shell/narrowShell.test.tsx
 web	write state dropped from the card's status comparison	src/routes/AdminView.test.tsx
 web	writing a chat case is offered over established ones	src/research/run.test.ts,src/research/ui/ReviewPanel.test.tsx
+go	graph row 3: a confirmation is not spent	TestGraphRow3Confirmation
+go	graph row 3: a different token confirms the offer	TestGraphRow3Confirmation
+go	graph row 3: the confirmation is not bound to the shown bytes	TestGraphRow3Confirmation
+go	graph row 3: changed configuration is not refused before the graph write	TestGraphRow3Confirmation
+go	graph row 3: the folder lock is skipped	TestGraphRow3FolderLock,TestGraphRow3BothCommitsHoldBothLocks
+go	graph row 3: the folder lock ends before the commits	TestGraphRow3BothCommitsHoldBothLocks
+go	graph row 3: the commits skip the shared write mutex	TestGraphRow3BothCommitsHoldBothLocks
+go	graph row 3: the graph writer overrides a concurrent file	TestGraphRow3GuardedWriter,TestGraphRow3Edit
+go	graph row 3: the declaration writer overrides a concurrent edit	TestGraphRow3GuardedWriter
+go	graph row 3: the graph write changes the shown bytes	TestGraphRow3Confirmation
+go	graph row 3: the declaration write changes the shown bytes	TestGraphRow3Confirmation
+go	graph row 3: the audit-named graph bypasses the read-only decision	TestGraphRow3GuardedWriter
+go	graph row 3: the findings need not bind the proposed bytes	TestGraphRow3Refusals
+go	graph row 3: version one receives a graph declaration	TestGraphRow3Refusals
+go	graph row 3: a declaration carries a rows file	TestGraphRow3Confirmation
+go	graph row 3: an edit commits configuration too	TestGraphRow3Edit
+go	graph row 3: a partial write is reported as declared	TestGraphRow3GuardedWriter
+go	graph row 3: the write route skips its session and origin guard	TestGraphRow3Refusals
+go	graph row 3: the proposal route skips its session and origin guard	TestGraphRow3Refusals
+go	graph row 3: the host tools skip their session and origin guard	TestGraphRow3Refusals
+go	graph row 3: standard input does not reach the runtime	TestGraphRow3HostToolsAndStandardInput,TestGraphRow3RealRuntime
+go	graph row 3: standard input is not bounded	TestGraphRow3HostToolsAndStandardInput
+go	graph row 3: the host tool runs without the standard input argument	TestGraphRow3HostToolsAndStandardInput,TestGraphRow3RealRuntime
+web	graph row 3: authoring ignores prompt advertisement	web/src/graphs/author.test.tsx
+web	graph row 3: authoring ignores assistant readiness	web/src/graphs/author.test.tsx
+web	graph row 3: the whole declaration is not shown	web/src/graphs/author.test.tsx
+web	graph row 3: the declaration diff is not shown	web/src/graphs/author.test.tsx
+web	graph row 3: confirmation submits different declaration bytes	web/src/graphs/author.test.tsx
+web	graph row 3: an edited proposal keeps its confirmation	web/src/graphs/author.test.tsx
+web	graph row 3: findings are not marked as runtime English	web/src/graphs/author.test.tsx
+web	graph row 3: the chosen packs do not reach author_graph	web/src/graphs/author.test.tsx
+web	graph row 3: an edit shows the configuration lock sentence	web/src/graphs/author.test.tsx
+web	graph row 3: host tools submit different graph bytes	web/src/graphs/author.test.tsx
+web	graph row 3: the graph session runs the pack critic	web/src/assistant/useAssistantRun.test.tsx
+web	graph row 3: the vercel engine uses pack authoring instructions	web/src/assistant/engines/vercel/engine.test.ts
+web	graph row 3: the codex engine uses pack authoring instructions	web/src/assistant/engines/codex/codex.test.ts
+go	graph row 3: a host tool stages a proposal in the project	TestGraphRow3HostToolsAndStandardInput,TestGraphRow3RealRuntime
+go	graph row 3: a graph takes a declared pack path	TestGraphRow3ReservedPaths
+go	graph row 3: a graph takes another graphs path or rows	TestGraphRow3ReservedPaths
+go	graph row 3: the confirmation changes configVersion	TestGraphRow3Confirmation

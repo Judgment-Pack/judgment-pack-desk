@@ -163,7 +163,7 @@ export type ModelCall = (suffix: string, request: ModelRequest) => Promise<Respo
 
 export interface AssistantSession {
   /** Test design proposes reviewed cases rather than a replacement pack. */
-  purpose?: 'test-design' | 'brief'
+  purpose?: 'test-design' | 'brief' | 'graph'
   /** Reply language captured for this turn; wire keys and source quotations remain exact. */
   replyLanguage?: Language
   /** The runtime's prompt text, from `prompts/get`. */

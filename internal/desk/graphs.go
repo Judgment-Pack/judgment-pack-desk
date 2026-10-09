@@ -81,9 +81,13 @@ type graphDiagnostics struct {
 // and `explain` of a graph the runtime cannot plan exits non-zero with the
 // runtime's diagnostics.
 func (s *Server) runGraph(ctx context.Context, dir heldDir, command string, args ...string) (json.RawMessage, graphDiagnostics, error) {
+	return s.runGraphInput(ctx, dir, command, nil, args...)
+}
+
+func (s *Server) runGraphInput(ctx context.Context, dir heldDir, command string, input []byte, args ...string) (json.RawMessage, graphDiagnostics, error) {
 	full := append([]string{"experimental", "graph", command}, args...)
 	full = append(full, "--config", runtimeConfigName, "--format", "json")
-	out, runErr := runRuntime(ctx, s.cfg.JpackBin, dir, full...)
+	out, runErr := runRuntimeInput(ctx, s.cfg.JpackBin, dir, input, full...)
 	var head graphDiagnostics
 	if len(bytes.TrimSpace(out)) == 0 {
 		if runErr == nil {
