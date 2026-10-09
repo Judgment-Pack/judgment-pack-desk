@@ -5,7 +5,7 @@ import { GraphRehearsal, rehearseGraph } from './GraphRehearsal'
 
 vi.mock(import('../files/client'), async original => ({ ...(await original()), deskFetch: vi.fn() }))
 afterEach(() => { cleanup(); vi.resetAllMocks() })
-const raw = '{"id":"onboarding","answer":{"command":"experimental graph evaluate","status":"evaluated","kind":"non-normative-runtime-convention","experimental":true,"rehearsal":true,"label":"composite <runtime>  label","conformanceClaimReference":"CONFORMANCE.md","disposition":{"number":1.0,"text":"\\u0026"},"nodes":[{"disposition":{"kind":"outcome"},"feeds":[],"trace":{"steps":[]}}],"handoffs":[]}}'
+const raw = '{"id":"onboarding","answer":{"command":"experimental graph evaluate","status":"evaluated","kind":"non-normative-runtime-convention","experimental":true,"rehearsal":true,"label":"composite <runtime>  label","conformanceClaimReference":"CONFORMANCE.md","disposition":{"number":1.0,"text":"\\u0026"},"nodes":[{"disposition":{"kind":"outcome"},"factFeeds":[],"evidenceFeeds":[],"trace":{"steps":[]}}],"handoffs":[]}}'
 
 it('asks only when chosen, shows labels verbatim, and preserves all runtime bytes', async () => {
   vi.mocked(deskFetch).mockResolvedValue(new Response(raw))
@@ -71,4 +71,55 @@ it('aborts on leaving and clears a result when inputs change', async () => {
   const signal = vi.mocked(deskFetch).mock.calls[1][1]!.signal!
   unmount()
   expect(signal.aborted).toBe(true)
+})
+
+it('refuses an answer from another command', async () => {
+  vi.mocked(deskFetch).mockResolvedValueOnce(new Response(raw.replace('experimental graph evaluate', 'experimental graph explain')))
+  render(<GraphRehearsal graphId="g" />)
+  fireEvent.click(screen.getByRole('button', { name: 'Rehearse' }))
+  expect((await screen.findByRole('alert')).textContent).toBe('The runtime did not return rehearsal: true.')
+  expect(screen.queryByText('evaluated')).toBeNull()
+})
+
+it('lists runtime members verbatim under their own names', async () => {
+  const answer = '{"command":"experimental graph evaluate","status":"evaluated","rehearsal":true,"disposition":{ "number":1.0,"text":"\\u0026" },"nodes":[{"node":"screening","disposition":{"outcomeId":"clear"},"factFeeds":[ { "from":"screening","pointer":"/screening/status","injected":true,"value":"clear" } ],"evidenceFeeds":[{"from":"screening","requirement":"screening-outcome","state":"present"}],"trace":{"steps":[{"n":1e2}]}},{"node":"onboarding","disposition":{"outcomeId":"approve"}}],"handoffs":[{"target":"owner","n":9007199254740993}]}'
+  vi.mocked(deskFetch).mockResolvedValueOnce(new Response('{"answer":' + answer + '}'))
+  render(<GraphRehearsal graphId="g" />)
+  fireEvent.click(screen.getByRole('button', { name: 'Rehearse' }))
+  await screen.findByText('evaluated')
+  const items = Array.from(document.querySelectorAll('li')).filter(li => li.querySelector(':scope > code'))
+  expect(items.map(li => li.textContent)).toEqual([
+    'disposition: { "number":1.0,"text":"\\u0026" }',
+    'node: "screening"',
+    'disposition: {"outcomeId":"clear"}',
+    'factFeeds: [ { "from":"screening","pointer":"/screening/status","injected":true,"value":"clear" } ]',
+    'evidenceFeeds: [{"from":"screening","requirement":"screening-outcome","state":"present"}]',
+    'trace: {"steps":[{"n":1e2}]}',
+    'node: "onboarding"',
+    'disposition: {"outcomeId":"approve"}',
+    'handoffs: [{"target":"owner","n":9007199254740993}]',
+  ])
+  for (const item of items) expect(item.querySelector('code')?.getAttribute('lang')).toBe('en')
+  expect(document.querySelector('pre')?.textContent).toBe(answer)
+})
+
+it('does not invent absent runtime members', async () => {
+  vi.mocked(deskFetch).mockResolvedValueOnce(new Response('{"answer":{"command":"experimental graph evaluate","status":"evaluated","rehearsal":true}}'))
+  render(<GraphRehearsal graphId="g" />)
+  fireEvent.click(screen.getByRole('button', { name: 'Rehearse' }))
+  await screen.findByText('evaluated')
+  expect(document.querySelectorAll('li')).toHaveLength(0)
+  for (const name of ['disposition', 'nodes', 'node', 'factFeeds', 'evidenceFeeds', 'trace', 'handoffs']) {
+    expect(screen.queryByText(name, { exact: true })).toBeNull()
+  }
+})
+
+it('does not mark Desk refusals as English', async () => {
+  const { container } = render(<div lang="fr"><GraphRehearsal graphId="g" /></div>)
+  fireEvent.change(screen.getByLabelText('Inputs by node id'), { target: { value: '[]' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Rehearse' }))
+  const alert = await screen.findByRole('alert')
+  expect(alert.closest('[lang]')).toBe(container.firstChild)
+  expect(alert.getAttribute('lang')).toBeNull()
+  expect(deskFetch).not.toHaveBeenCalled()
 })

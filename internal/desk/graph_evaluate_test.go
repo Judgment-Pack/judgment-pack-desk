@@ -3,11 +3,13 @@ package desk
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -76,9 +78,9 @@ func TestGraphRow4RehearsalOnly(t *testing.T) {
 func TestGraphRow4RequiresRehearsalTrue(t *testing.T) {
 	s, rig, logged := rehearsalRig(t)
 	for _, marker := range []string{"", `,"rehearsal":false`, `,"rehearsal":"true"`, `,"rehearsal":null`} {
-		rig.answers(t, "evaluate", `{"outputVersion":"2","command":"experimental graph evaluate","status":"error","diagnostics":[{"node":"screening","message":"SECRET-FACT unknown flag: --rehearsal"}]`+marker+`}`, 3)
+		rig.answers(t, "evaluate", `{"outputVersion":"2","command":"experimental graph evaluate","status":"evaluated","diagnostics":[{"node":"screening","message":"SECRET-FACT unknown flag: --rehearsal"}]`+marker+`}`, 3)
 		w := rehearsalPost(s, "onboarding", "{}")
-		if w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), "screening") || !strings.Contains(w.Body.String(), "unknown flag") || strings.Contains(w.Body.String(), `"answer":`) {
+		if w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), "The runtime did not return rehearsal: true.") || !strings.Contains(w.Body.String(), "screening") || !strings.Contains(w.Body.String(), "unknown flag") || strings.Contains(w.Body.String(), `"answer":`) {
 			t.Fatalf("%d %s", w.Code, w.Body)
 		}
 	}
@@ -254,4 +256,103 @@ func TestGraphRow4PublishedRuntimeTrailUnchanged(t *testing.T) {
 		t.Fatalf("with trail: %d %s", w.Code, w.Body)
 	}
 	sameProject(t, before, treeOf(t, project), "existing trail after rehearsal")
+}
+
+type rehearsalCountingReader struct{ read int }
+
+func (r *rehearsalCountingReader) Read(p []byte) (int, error) {
+	// Finite so a broken bound fails quickly without exhausting memory.
+	if r.read >= 2*maxFileBytes {
+		return 0, io.EOF
+	}
+	n := min(len(p), 2*maxFileBytes-r.read)
+	clear(p[:n])
+	r.read += n
+	return n, nil
+}
+
+func TestGraphRow4BodyReadBound(t *testing.T) {
+	s, rig, _ := rehearsalRig(t)
+	body := &rehearsalCountingReader{}
+	r := httptest.NewRequest(http.MethodPost, "http://localhost/api/graphs/evaluate?id=onboarding", body)
+	bearer(r)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, r)
+	if w.Code != http.StatusRequestEntityTooLarge || body.read > maxFileBytes+1 {
+		t.Fatalf("body bound: status %d, read %d, maximum %d", w.Code, body.read, maxFileBytes+1)
+	}
+	if len(rig.asked(t)) != 0 {
+		t.Fatal("runtime ran on oversized body")
+	}
+}
+
+func TestGraphRow4RefusalWordsAndPointers(t *testing.T) {
+	s, rig, _ := rehearsalRig(t)
+	for _, name := range []string{"inputs-node", "comparable"} {
+		t.Run(name, func(t *testing.T) {
+			raw, err := os.ReadFile("testdata/graph-rehearsal-" + name + ".json")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var decoded struct {
+				Diagnostics []runtimeDiagnostic `json:"diagnostics"`
+			}
+			if err := json.Unmarshal(raw, &decoded); err != nil {
+				t.Fatal(err)
+			}
+			diagnostic := decoded.Diagnostics[0]
+			want := "The runtime refused the rehearsal:\n" + diagnostic.Code + ": " + diagnostic.Message
+			rig.answers(t, "evaluate", string(raw), 1)
+			w := rehearsalPost(s, "onboarding", `{"screening":{"facts":{"screening":{"matches":0}}}}`)
+			var response struct {
+				Error string `json:"error"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if w.Code != 502 || response.Error != want || strings.Contains(w.Body.String(), `"answer":`) {
+				t.Fatalf("refusal: %d %s; want %s", w.Code, w.Body, want)
+			}
+			// The same measured sentence with a real absolute path beside the pointer.
+			message, _ := json.Marshal(diagnostic.Message)
+			extended, _ := json.Marshal(diagnostic.Message + " Read /private/SECRET-PATH/facts.json")
+			raw = bytes.Replace(raw, message, extended, 1)
+			rig.answers(t, "evaluate", string(raw), 1)
+			w = rehearsalPost(s, "onboarding", `{"screening":{"facts":{"screening":{"matches":0}}}}`)
+			if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if w.Code != 502 || response.Error != want+" Read …" {
+				t.Fatalf("pointer/path: %d %s", w.Code, w.Body)
+			}
+		})
+	}
+}
+
+// Both companion selections have a runtime; the ordinary Go job does not.
+func TestGraphRow4CompanionRuntimeSelection(t *testing.T) {
+	data, err := os.ReadFile("../../.github/workflows/ci.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lists := regexp.MustCompile(`go test[^\n]*-run '([^']+)'`).FindAllStringSubmatch(string(data), -1)
+	checked := 0
+	for _, list := range lists {
+		if !strings.Contains(list[1], "TestJobs") && !strings.Contains(list[1], "TestNewDeskWithTheRuntime") {
+			continue
+		}
+		selection, err := regexp.Compile(list[1])
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range []string{"TestGraphRow1WithThePublishedRuntime", "TestGraphRow1WithThePublishedRuntimeEscapes", "TestGraphRow3RealRuntime", "TestGraphRow4PublishedRuntimeTrailUnchanged"} {
+			if !selection.MatchString(name) {
+				t.Errorf("companion selection %q omits %s", list[1], name)
+			}
+		}
+		checked++
+	}
+	if checked != 2 {
+		t.Fatalf("found %d companion selections, want 2", checked)
+	}
 }

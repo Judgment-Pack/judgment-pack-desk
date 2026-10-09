@@ -4243,5 +4243,12 @@
   "Inputs by node id": "Inputs by node id",
   "Enter a JSON object keyed by node id, each entry with optional facts and evidence members. Maximum 4 MiB.": "Enter a JSON object keyed by node id, each entry with optional facts and evidence members. Maximum 4 MiB.",
   "Rehearsing…": "Rehearsing…",
-  "Rehearse": "Rehearse"
+  "Rehearse": "Rehearse",
+  "disposition": "disposition",
+  "trace": "trace",
+  "handoffs": "handoffs",
+  "nodes": "nodes",
+  "node": "node",
+  "factFeeds": "factFeeds",
+  "evidenceFeeds": "evidenceFeeds"
 }

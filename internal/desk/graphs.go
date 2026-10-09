@@ -284,7 +284,8 @@ func graphPathInside(p string) bool {
 
 // shownGraphAnswer is the runtime's answer with no path in it that reaches
 // from a root. It returns the answer unchanged, byte for byte, where nothing
-// needed redacting.
+// needed redacting. Optional rehearsal inputs identify quoted JSON pointers
+// that must survive message redaction because they name facts, not files.
 //
 //  1. **A path member that starts from a root is replaced whole** (`path`,
 //     `rowsPath`, `graphPath`, `configPath`, at any depth): by "…", or, where
@@ -298,7 +299,7 @@ func graphPathInside(p string) bool {
 //     message passes the redaction.
 //  3. **A relative path is shown as given**, unless it holds an absolute path
 //     inside it, which is then redacted whole.
-func (s *Server) shownGraphAnswer(answer json.RawMessage) json.RawMessage {
+func (s *Server) shownGraphAnswer(answer json.RawMessage, inputs ...[]byte) json.RawMessage {
 	var spans []pathSpan
 	var collect func(value any, key string)
 	collect = func(value any, key string) {
@@ -325,6 +326,17 @@ func (s *Server) shownGraphAnswer(answer json.RawMessage) json.RawMessage {
 		collect(decoded, "")
 	}
 	red := s.redactionFor(spans...)
+	for _, input := range inputs {
+		var nodes map[string]any
+		if json.Unmarshal(input, &nodes) == nil {
+			red.pointerRoots = append(red.pointerRoots, nodes)
+			for _, node := range nodes {
+				if members, ok := node.(map[string]any); ok {
+					red.pointerRoots = append(red.pointerRoots, members["facts"], members["evidence"])
+				}
+			}
+		}
+	}
 	return s.shownGraphValue(answer, "", red)
 }
 
@@ -333,9 +345,10 @@ func (s *Server) shownGraphAnswer(answer json.RawMessage) json.RawMessage {
 // absolute path it declares makes. Read per string, the file would be read
 // hundreds of times for a large answer, and could change under it.
 type graphRedaction struct {
-	s        *Server
-	spans    []pathSpan
-	auditDir string
+	s            *Server
+	spans        []pathSpan
+	auditDir     string
+	pointerRoots []any
 }
 
 // redactionFor reads `jpack.json` once. Every absolute path it declares for a
@@ -380,7 +393,7 @@ func (s *Server) redactionFor(spans ...pathSpan) graphRedaction {
 
 // text is a sentence with no path from a root in it.
 func (r graphRedaction) text(message string) string {
-	return r.s.withoutPathsUnder(replaceSpans(message, r.spans), r.auditDir)
+	return r.rehearsalText(message)
 }
 
 // startsFromARoot reports whether p starts from the root of a file system,

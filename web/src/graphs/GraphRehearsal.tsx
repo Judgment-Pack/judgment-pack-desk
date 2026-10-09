@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { msg, useLocale } from '../i18n'
-import { memberBytes } from '../admin/memberBytes'
+import { arrayItemsBytes, memberBytes } from '../admin/memberBytes'
 import { deskFetch } from '../files/client'
 import { Button } from '../ui/Button'
 import { GraphLabels } from './GraphLabels'
@@ -61,11 +61,36 @@ export function GraphRehearsal({ graphId }: { graphId: string }) {
     </label>
     <p className="quiet">{msg('Enter a JSON object keyed by node id, each entry with optional facts and evidence members. Maximum 4 MiB.')}</p>
     <Button onClick={() => void run()} disabled={busy}>{busy ? msg('Rehearsing…') : msg('Rehearse')}</Button>
-    {error && <pre role="alert" lang="en">{error}</pre>}
+    {error && <pre role="alert">{error}</pre>}
     {result && <>
       <GraphLabels labels={result.answer} />
       <p lang="en">{result.answer.status}</p>
+      <RehearsalMembers raw={result.raw} />
       <pre lang="en">{result.raw}</pre>
     </>}
   </section>
+}
+
+// Member names and values belong to the runtime. Keep numbers, escaping,
+// whitespace and order within each value exactly as the runtime printed them.
+function RehearsalMembers({ raw }: { raw: string }) {
+  const names = { disposition: msg('disposition'), node: msg('node'), factFeeds: msg('factFeeds'), evidenceFeeds: msg('evidenceFeeds'), trace: msg('trace'), handoffs: msg('handoffs') }
+  const member = (source: string, name: 'disposition' | 'node' | 'factFeeds' | 'evidenceFeeds' | 'trace' | 'handoffs') => {
+    const value = memberBytes(source, name)
+    return value === undefined ? null : <li key={name} style={{ whiteSpace: 'pre-wrap' }}><span>{names[name]}</span>: <code lang="en">{value}</code></li>
+  }
+  const nodes = memberBytes(raw, 'nodes')
+  return <ul>
+    {member(raw, 'disposition')}
+    {nodes !== undefined && <li><span>{msg('nodes')}</span><ul>
+      {arrayItemsBytes(nodes).map((node, index) => <li key={index}><ul>
+        {member(node, 'node')}
+        {member(node, 'disposition')}
+        {member(node, 'factFeeds')}
+        {member(node, 'evidenceFeeds')}
+        {member(node, 'trace')}
+      </ul></li>)}
+    </ul></li>}
+    {member(raw, 'handoffs')}
+  </ul>
 }
