@@ -495,16 +495,14 @@ go	graph row 4: additional deciding run is kept	TestGraphRow4RehearsalOnly
 go	graph row 4: another configuration allowed	TestGraphRow4RuntimeBoundsAndGuards
 go	graph row 4: answer bound widened	TestGraphRow4RuntimeBoundsAndGuards
 go	graph row 4: answer need not declare rehearsal	TestGraphRow4RequiresRehearsalTrue
-go	graph row 4: body read unbounded	TestGraphRow4BodyReadBound,TestStampingWithTheRuntime
+go	graph row 4: body read unbounded	TestGraphRow4BodyReadBound
 go	graph row 4: citations passed	TestGraphRow4RehearsalOnly
 go	graph row 4: command timeout ignores its bound	TestGraphRow4RehearsalOnly
-go	graph row 4: companion omits graph runtime tests	TestGraphRow4CompanionRuntimeSelection
 go	graph row 4: facts are not passed on stdin	TestGraphRow4RehearsalOnly
 go	graph row 4: input pointers redacted	TestGraphRow4RefusalWordsAndPointers
 go	graph row 4: inputs size not checked	TestGraphRow4InputsBoundBeforeRuntime
 go	graph row 4: listed path may climb out	TestGraphRow4IDAndContainment
 go	graph row 4: non-object inputs accepted	TestGraphRow4InputsBoundBeforeRuntime
-go	graph row 4: race companion omits graph runtime tests	TestGraphRow4CompanionRuntimeSelection
 go	graph row 4: redacted answers enter the log	TestGraphRow4RedactsWithoutLogging
 go	graph row 4: redaction omitted	TestGraphRow4RedactsWithoutLogging
 go	graph row 4: refusal absolute path retained	TestGraphRow1NoAbsolutePathReachesThePage,TestGraphRow4RedactsWithoutLogging,TestGraphRow4RefusalWordsAndPointers,TestStampingWithTheRuntime

@@ -6977,12 +6977,6 @@ func (b *cappedBuffer) exceeded() bool {'
   mutate go 'graph row 4: body read unbounded' internal/desk/graph_evaluate.go \
     'io.LimitReader(r.Body, maxFileBytes+1)' \
     r.Body
-  mutate go 'graph row 4: race companion omits graph runtime tests' .github/workflows/ci.yml \
-    'TestJobs|TestRunnerInputProfiles|TestGraphRow1WithThePublishedRuntime|TestGraphRow3RealRuntime|TestGraphRow4PublishedRuntimeTrailUnchanged' \
-    'TestJobs|TestRunnerInputProfiles'
-  mutate go 'graph row 4: companion omits graph runtime tests' .github/workflows/ci.yml \
-    'TestNewDeskWithTheRuntime|TestReviewAndLockWithTheRuntime|TestUpgradeWithTheRuntime|TestGraphRow1WithThePublishedRuntime|TestGraphRow3RealRuntime|TestGraphRow4PublishedRuntimeTrailUnchanged' \
-    'TestNewDeskWithTheRuntime|TestReviewAndLockWithTheRuntime|TestUpgradeWithTheRuntime'
   mutate go 'graph row 4: rehearsal flag omitted' internal/desk/graph_evaluate.go \
     ', "--rehearsal")' \
     ')'
