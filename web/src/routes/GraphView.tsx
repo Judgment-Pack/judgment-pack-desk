@@ -97,7 +97,7 @@ export function GraphView() {
         {error ? <ErrorBox title={msg("Could not run graph tests")} error={error} />
           : !data ? !isFetching && <Empty>{msg("Run tests to run the project's saved cases and read their coverage. Opening this view does not run tests.")}</Empty>
           : <>
-            <GraphLabels labels={data} />
+            <GraphLabels labels={data} withPill={false} plural={!graphId} />
             <p className="ids"><Pill tone={statusTone(data.status)}>{data.status}</Pill>
               <SuiteSummaryMembers summary={data.summary} />
               <span className="quiet"><Message text={"Last run<0/>"} slots={[asked ? msg(" · detailed traces") : '']} /></span>
@@ -106,7 +106,7 @@ export function GraphView() {
               : data.graphs!.map(entry => <GraphEntry key={entry.id} entry={entry} matrixSettled={!isFetching}
                 known={knownPaths(data)} />)}
           </>}
-        <p className="quiet">{msg("Judgment Graphs use the runtime’s experimental graph format. A test run shows what the project’s own rows did, as the runtime reports it. It does not show that the rows are right or that coverage is complete.")}</p>
+        <p className="quiet">{msg("Judgment Graphs use the runtime’s experimental graph format. A test run shows what the project’s own rows did, as the runtime reports it. It does not show that the rows are right, that coverage is complete, or any authorization.")}</p>
       </section>}
     </PageBody>
   </article>
@@ -401,7 +401,7 @@ function BindingNotice({
   if (binding === 'unstated') return null
   if (binding === 'bound') {
     return (
-      <p className="note"><Message text={"<0/> The matrix run reports the same document digest<1/><2/> the runtime served beside these bytes, so the walk drawn here and the rows below are about one revision of the graph file. It binds bytes; it is not a verdict on the revision."} slots={[<strong>{msg("One revision.")}</strong>, ' ', <code>{shortDigest(runDigest)}</code>]} /></p>
+      <p className="note"><Message text={"<0/> The matrix run reports the same document digest<1/><2/> the runtime served beside these bytes, so the walk drawn here and the rows below are about one revision of the graph file. It says which bytes both answers are about, and no more."} slots={[<strong>{msg("One revision.")}</strong>, ' ', <code>{shortDigest(runDigest)}</code>]} /></p>
     )
   }
   return (
@@ -602,7 +602,7 @@ function summarize(text: string): string {
  */
 function SuiteSummaryMembers({ summary }: { summary: GraphSuite['summary'] }) {
   useLocale()
-  return <span><Message text={"summary <0/>"} slots={[<code lang="en" key="summary">{(['passed', 'mismatched', 'total'] as const).filter(key => summary[key] !== undefined).map(key => `${key} ${summary[key]}`).join(', ')}</code>]} /></span>
+  return <span><Message text={"summary <0/>"} slots={[<code lang="en" key="summary">{Object.entries(summary).map(([key, value]) => `${key} ${value}`).join(', ')}</code>]} /></span>
 }
 
 /**

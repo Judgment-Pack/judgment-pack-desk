@@ -519,7 +519,7 @@ function CoverageWalk({
 function RowVerdict({ row }: { row: GraphTestRow }) {
   useLocale()
   return (
-    <p className="note"><Message text={"Row <0/>: status <1/>, the runtime’s status for the composite headline and every node comparison the row reported, together."} slots={[<code>{row.id}</code>, <strong>{row.status}</strong>]} /></p>
+    <p className="note"><Message text={"Row <0/>: status <1/>, the runtime’s status for the composite headline, every node comparison and every hand-off target assertion the row made, together."} slots={[<code>{row.id}</code>, <strong>{row.status}</strong>]} /></p>
   )
 }
 

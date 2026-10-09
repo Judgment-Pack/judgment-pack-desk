@@ -139,7 +139,7 @@ function ProbeList({ probes, tone }: { probes: MatrixProbe[]; tone: 'missing' | 
               <code className="probe-name">{parsed.rest}</code>
               <span className={`probe-status probe-status-${probe.status}`}>{probe.status}</span>
             </div>
-            {probe.detail && <p className="probe-detail">{probe.detail}</p>}
+            {probe.detail && <p className="probe-detail" lang="en">{probe.detail}</p>}
           </li>
         )
       })}

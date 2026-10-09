@@ -23,6 +23,13 @@ describe('CoverageReport', () => {
     expect(text).toContain('/expense/amountUsd')
   })
 
+  it('graph row 2: a probe’s detail is marked as the runtime’s English', () => {
+    const { container } = render(<CoverageReport coverage={coverage} />)
+    const details = [...container.querySelectorAll('.probe-detail')]
+    expect(details).toHaveLength(3)
+    expect(details.every(node => node.getAttribute('lang') === 'en')).toBe(true)
+  })
+
   it('leads with what is missing', () => {
     const { container } = render(<CoverageReport coverage={coverage} />)
     expect(container.querySelector('.note-warn')).not.toBeNull()

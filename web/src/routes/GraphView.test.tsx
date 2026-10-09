@@ -313,7 +313,7 @@ describe('the graphs page, against a runtime that serves documents', () => {
     expect(container.textContent).toContain(`sha256 ${SERVED_DIGEST.slice(0, 12)}`)
     // The binding is provenance of the join. It is not a second verdict on the
     // run, and the runtime's own verdict is untouched beside it.
-    expect(container.textContent).toContain('not a verdict on the revision')
+    expect(container.textContent).toContain('which bytes both answers are about, and no more')
     expect(container.textContent).not.toContain('different revision')
   })
 

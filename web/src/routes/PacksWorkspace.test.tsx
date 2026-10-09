@@ -64,7 +64,7 @@ describe('Packs workspace commands', () => {
     expect(screen.getByText(/cannot list graphs without running/)).toBeTruthy()
     expect(stub.calls).toHaveLength(0)
     fireEvent.click(screen.getByRole('button', { name: 'Run all graph tests' }))
-    await screen.findByText("passed 1, mismatched 0, total 1")
+    await screen.findByText("total 1, passed 1, mismatched 0")
     expect(testCalls(stub)).toHaveLength(1)
   })
 
@@ -77,7 +77,7 @@ describe('Packs workspace commands', () => {
     fireEvent.click(screen.getByRole('link', { name: /^Tests$/ }))
     expect(testCalls(stub)).toHaveLength(0)
     fireEvent.click(screen.getByRole('button', { name: 'Run tests' }))
-    await screen.findByText("passed 1, mismatched 0, total 1")
+    await screen.findByText("total 1, passed 1, mismatched 0")
     expect(testCalls(stub)[0]?.args).toEqual({ graph_id: 'flow' })
   })
 

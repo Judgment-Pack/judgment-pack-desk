@@ -557,7 +557,7 @@ Row 3 adds `prompts/get` for `author_graph`.
 One pull request each, under Desk's review rules. Every command above is in
 the runtime Desk pins, `v0.27.1`.
 
-| Row | What | Needs | Review | Status, 2026-10-08 |
+| Row | What | Needs | Review | Status, 2026-10-09 |
 |---|---|---|---|---|
 | 1 | Inventory and plan, read-only: `validate`'s findings, the Plan view from `explain`, the inventory's and the document's `kind` and `experimental` | nothing | a second-reviewer round on the Go route: the id resolution, the redaction of messages and path members, the bounds | delivered in #341 |
 | 2 | Matrix rows and coverage, held to this record: `kind`, `experimental` and `conformanceClaimReference` beside the `label`; Desk's own sentences checked | nothing | a second-reviewer round on the claims shown | not started; the view it holds shipped in #1, #4, #5 and #6 |

@@ -97,6 +97,7 @@ export async function readGraphPlan(id: string, signal?: AbortSignal): Promise<G
 }
 
 const ROOT = /^(?:[\\/]|[A-Za-z]:[\\/])/
+const QUOTED = /"((?:\/|[A-Za-z]:[\\/])[^"]*)"/g
 const IN_MESSAGE = /(^|[\s"(=[])((?:\/|[A-Za-z]:[\\/])[^\s"'()[\]]*)/g
 
 /** A character the runtime prints as "?" in a sentence (`displayedPath` in Desk's Go). */
@@ -121,5 +122,8 @@ export function shownMessage(message: string, known: (string | undefined)[] = []
   for (const path of known.flatMap(path => path && ROOT.test(path) ? [path, displayed(path)] : []).sort((a, b) => b.length - a.length)) {
     out = out.split(path).join('…')
   }
+  // The runtime quotes the paths it prints, and prints a control character in one as "?".
+  // A quoted path from a root goes whole, whatever it holds, before the pattern cuts at a space.
+  out = out.replace(QUOTED, '"…"')
   return out.replace(IN_MESSAGE, (_, before: string) => before + '…')
 }

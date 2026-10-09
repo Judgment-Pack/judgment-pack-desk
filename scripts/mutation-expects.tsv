@@ -1682,30 +1682,37 @@ web	forgetting a buffer leaves its generation for the next render	src/packs/edit
 web	form mode is offered over a document the two readings disagree about	src/packs/edit/EditView.test.tsx
 web	gates help: says no record is signed	src/routes/HelpAbout.test.tsx
 web	gates help: the signatures paragraph is not said as written	src/routes/HelpAbout.test.tsx
-web	graph row 1: a path a payload gave is cut at its first space in a sentence	src/graphs/graphs.test.tsx
-web	graph row 1: a path from a root is shown	src/graphs/graphs.test.tsx
+web	graph row 1: a path a payload gave is cut at its first space in a sentence	src/routes/GraphViewRow2.test.tsx
+web	graph row 1: a path from a root is shown	src/graphs/graphs.test.tsx,src/routes/GraphViewRow2.test.tsx
 web	graph row 1: a plan is asked for by a path	src/graphs/graphs.test.tsx
 web	graph row 1: findings about another revision are not told apart	src/graphs/graphs.test.tsx
 web	graph row 1: the diagram's source path is shown as given	src/graphs/graphs.test.tsx
 web	graph row 1: the inventory's path is shown as given	src/graphs/graphs.test.tsx
 web	graph row 1: the inventory's sentence is shown as given	src/graphs/graphs.test.tsx
 web	graph row 1: the plan is asked for when the diagram opens	src/graphs/graphs.test.tsx
-web	graph row 1: the runtime's kind is not shown	src/graphs/graphs.test.tsx
-web	graph row 1: the runtime's label sentence is not marked as its English	src/graphs/graphs.test.tsx
+web	graph row 1: the runtime's kind is not shown	src/graphs/graphs.test.tsx,src/routes/GraphViewRow2.test.tsx
+web	graph row 1: the runtime's label sentence is not marked as its English	src/graphs/graphs.test.tsx,src/routes/GraphViewRow2.test.tsx
 web	graph row 1: the summary is worded as a verdict	src/graphs/graphs.test.tsx
-web	graph row 2: a member the runtime did not print is counted in	src/routes/GraphViewRow2.test.tsx
 web	graph row 2: a payload with no claim reference is shown a claim	src/routes/GraphViewRow2.test.tsx
+web	graph row 2: a probe's detail is not marked as the runtime's English	src/components/CoverageReport.test.tsx
+web	graph row 2: a quoted path is shown as the runtime printed it	src/routes/GraphViewRow2.test.tsx
 web	graph row 2: a row's sentence is not marked as the runtime's English	src/routes/GraphViewRow2.test.tsx
 web	graph row 2: a row's sentence is shown as given	src/routes/GraphViewRow2.test.tsx
+web	graph row 2: a summary states a result where nothing mismatched	src/routes/GraphViewRow2.test.tsx
 web	graph row 2: an entry's path is shown as given	src/routes/GraphViewRow2.test.tsx
 web	graph row 2: an entry's sentence is not marked as the runtime's English	src/routes/GraphViewRow2.test.tsx
 web	graph row 2: an entry's sentence is shown as given	src/routes/GraphViewRow2.test.tsx
 web	graph row 2: experimental is shown when the runtime printed none	src/routes/GraphViewRow2.test.tsx
+web	graph row 2: the Tests view carries a second Experimental label	src/routes/GraphViewRow2.test.tsx
+web	graph row 2: the all-graphs locator names one graph's packs	src/routes/GraphViewRow2.test.tsx
+web	graph row 2: the binding is worded as a verdict on the revision	src/routes/GraphView.test.tsx
+web	graph row 2: the closing note leaves out any authorization	src/routes/GraphViewRow2.test.tsx
 web	graph row 2: the closing note says the rows are right	src/routes/GraphViewRow2.test.tsx
 web	graph row 2: the matrix payload's labels are not shown	src/routes/GraphViewRow2.test.tsx
 web	graph row 2: the project's folder is not known to the redaction	src/routes/GraphViewRow2.test.tsx
-web	graph row 2: the row's status is called a verdict	src/components/GraphWalkDiagram.test.tsx
+web	graph row 2: the row's status is called a verdict	src/components/GraphWalkDiagram.test.tsx,src/routes/GraphViewRow2.test.tsx
 web	graph row 2: the summary is worded as a count of cases passed	src/routes/GraphViewRow2.test.tsx,src/routes/PacksWorkspace.test.tsx
+web	graph row 2: the summary lists its own members, not the runtime's	src/routes/GraphViewRow2.test.tsx,src/routes/PacksWorkspace.test.tsx
 web	hand-over client: a download whose headers disagree is taken	src/audit/handover.test.tsx,src/audit/jobsRecord.test.tsx
 web	hand-over client: a holder is added in other words	src/audit/handover.test.tsx
 web	hand-over client: a refusal that is not JSON is not said	src/audit/handover.test.tsx
