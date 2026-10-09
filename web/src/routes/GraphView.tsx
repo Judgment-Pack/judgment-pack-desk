@@ -18,6 +18,7 @@ import { TracePanel } from '../components/TracePanel'
 import { GraphFindingsPanel } from '../graphs/GraphFindings'
 import { GraphAuthor } from '../graphs/GraphAuthor'
 import { GraphLabels } from '../graphs/GraphLabels'
+import { GraphRehearsal } from '../graphs/GraphRehearsal'
 import { GraphPlanView } from '../graphs/GraphPlan'
 import { shownMessage, shownPath } from '../graphs/client'
 import { parseDisposition } from '../mcp/canonical'
@@ -45,6 +46,7 @@ export function GraphView() {
   const { graphId } = useParams<{ graphId?: string }>()
   const [search, setSearch] = useSearchParams()
   const tests = search.get('view') === 'tests'
+  const rehearsal = search.get('view') === 'rehearsal' && graphId !== undefined
   const plan = search.get('view') === 'plan' && graphId !== undefined
   const { status, graphInventorySupported, graphTracesSupported } = useMcp()
   const inventory = useGraphInventory()
@@ -68,8 +70,9 @@ export function GraphView() {
         {isFetching ? msg("Running…") : graphId ? msg("Run tests") : msg("Run all graph tests")}
       </Button>}
       navigation={graphId ? <nav className={workspace.navigation} aria-label={msg("Graph sections")}>
-        <Link to={`/graphs/${encodeURIComponent(graphId)}`} aria-current={!tests && !plan ? 'page' : undefined}>{msg("Diagram")}</Link>
+        <Link to={`/graphs/${encodeURIComponent(graphId)}`} aria-current={!tests && !plan && !rehearsal ? 'page' : undefined}>{msg("Diagram")}</Link>
         <Link to={`/graphs/${encodeURIComponent(graphId)}?view=plan`} aria-current={plan ? 'page' : undefined}>{msg("Plan")}</Link>
+        <Link to={`/graphs/${encodeURIComponent(graphId)}?view=rehearsal`} aria-current={rehearsal ? 'page' : undefined}>{msg("Rehearsal")}</Link>
         <Link to={`/graphs/${encodeURIComponent(graphId)}?view=tests`} aria-current={tests ? 'page' : undefined}>{msg("Tests")}</Link>
       </nav> : undefined} />
     <PageBody width="full">
@@ -82,7 +85,8 @@ export function GraphView() {
         : listing && !tests && <><GraphLabels labels={listing} /><ConfiguredGraphs inventory={listing} /></>)}
       {!graphId && !tests && <GraphFindingsPanel />}
       {!graphId && !graphInventorySupported && <p className="note">{msg("This runtime cannot list graphs without running their tests. Choose Run all graph tests to discover their test results, or connect a newer runtime to browse their diagrams.")}</p>}
-      {graphId && !tests && !plan && <FlowExplorer key={graphId} graphId={graphId} />}
+      {graphId && !tests && !plan && !rehearsal && <FlowExplorer key={graphId} graphId={graphId} />}
+      {graphId && rehearsal && <GraphRehearsal key={graphId} graphId={graphId} />}
       {graphId && plan && <GraphPlanView key={graphId} graphId={graphId} />}
       {tests && <section aria-label={msg("Graph tests")}>
         {!graphId && <ButtonLink variant="quiet" to="/graphs">{msg("Back to graphs")}</ButtonLink>}

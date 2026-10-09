@@ -178,6 +178,11 @@ func (s *Server) writeGraphAnswer(w http.ResponseWriter, id string, answer json.
 		// The page is told no path; the owner's own log keeps them.
 		s.log.Printf("desk: the graph answer, as the runtime said it: %s", answer)
 	}
+	s.writeShownGraphAnswer(w, id, shown)
+}
+
+// writeShownGraphAnswer sends already redacted bytes without logging them.
+func (s *Server) writeShownGraphAnswer(w http.ResponseWriter, id string, shown json.RawMessage) {
 	// **Written by hand, not marshalled.** `encoding/json` rewrites a
 	// RawMessage it embeds (it escapes "<", ">", "&" and U+2028 in it), and
 	// the runtime's bytes are to reach the page as printed.
@@ -206,7 +211,7 @@ type graphListing struct {
 	} `json:"graphs"`
 }
 
-// graphPathOf turns a configured graph id into the path to pass to `explain`.
+// graphPathOf turns a configured graph id into the path for a graph command.
 //
 // It runs `experimental graph list` afresh for this request, and takes the
 // `path` the listing reports for exactly that id. The page's text is compared
@@ -238,7 +243,7 @@ func (s *Server) graphPathOf(ctx context.Context, dir heldDir, id string) (path 
 			continue
 		}
 		if found >= 0 {
-			return "", http.StatusConflict, "The project's configuration lists more than one graph with that id, so Desk asks for no plan.", nil
+			return "", http.StatusConflict, "The project's configuration lists more than one graph with that id, so Desk does not run the command.", nil
 		}
 		found = i
 	}
@@ -255,10 +260,10 @@ func (s *Server) graphPathOf(ctx context.Context, dir heldDir, id string) (path 
 	// names it.
 	clean := filepath.Clean(entry.Path)
 	if !graphPathInside(entry.Path) || !graphPathInside(clean) {
-		return "", http.StatusConflict, "This graph is declared at a path that is not inside the project's folder, so Desk asks for no plan.", nil
+		return "", http.StatusConflict, "This graph is declared at a path that is not inside the project's folder, so Desk does not run the command.", nil
 	}
 	if entry.Detail != "" {
-		return "", http.StatusConflict, "The runtime could not read this graph's document, so Desk asks for no plan. The runtime says: " + s.redactionFor().text(entry.Detail), nil
+		return "", http.StatusConflict, "The runtime could not read this graph's document, so Desk does not run the command. The runtime says: " + s.redactionFor().text(entry.Detail), nil
 	}
 	// A name that starts with "-" is a name, not a flag.
 	if strings.HasPrefix(clean, "-") {
