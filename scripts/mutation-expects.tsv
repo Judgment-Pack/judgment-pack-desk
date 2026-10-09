@@ -1692,6 +1692,7 @@ web	graph row 1: the inventory's sentence is shown as given	src/graphs/graphs.te
 web	graph row 1: the plan is asked for when the diagram opens	src/graphs/graphs.test.tsx
 web	graph row 1: the runtime's kind is not shown	src/graphs/graphs.test.tsx
 web	graph row 1: the runtime's label sentence is not marked as its English	src/graphs/graphs.test.tsx
+web	graph row 1: the summary is worded as a verdict	src/graphs/graphs.test.tsx
 web	hand-over client: a download whose headers disagree is taken	src/audit/handover.test.tsx,src/audit/jobsRecord.test.tsx
 web	hand-over client: a holder is added in other words	src/audit/handover.test.tsx
 web	hand-over client: a refusal that is not JSON is not said	src/audit/handover.test.tsx
