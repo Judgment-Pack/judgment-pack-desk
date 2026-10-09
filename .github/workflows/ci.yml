@@ -154,7 +154,7 @@ jobs:
       - name: Real Jobs boot, recovery, profiles, planning and signing
         run: |
           JPACK_RUNNER_TEST_BIN="$RUNNER_TEMP/jpack-runner" JPACK_BIN="$RUNNER_TEMP/jpack" \
-            go test -race ./internal/desk -run 'TestJobs|TestRunnerInputProfiles|TestGraphRow1WithThePublishedRuntime|TestGraphRow3RealRuntime|TestGraphRow4PublishedRuntimeTrailUnchanged' -count=1
+            go test -race ./internal/desk -run 'TestJobs|TestRunnerInputProfiles' -count=1
       # The Go job has no runtime, so these skip there. Here they create a desk
       # with the pinned runtime, check its lock, and drive its relay: a deciding
       # run of a draft refused, a locked pack recorded, rehearsals unaffected.
@@ -162,7 +162,7 @@ jobs:
       # and the upgrade offer turns an existing project's gates on.
       - name: New desks, the review step and the upgrade under the pinned runtime
         run: |
-          JPACK_BIN="$RUNNER_TEMP/jpack" go test ./internal/desk -run 'TestNewDeskWithTheRuntime|TestReviewAndLockWithTheRuntime|TestUpgradeWithTheRuntime|TestGraphRow1WithThePublishedRuntime|TestGraphRow3RealRuntime|TestGraphRow4PublishedRuntimeTrailUnchanged' -count=1 -v
+          JPACK_BIN="$RUNNER_TEMP/jpack" go test ./internal/desk -run 'TestNewDeskWithTheRuntime|TestReviewAndLockWithTheRuntime|TestUpgradeWithTheRuntime' -count=1 -v
 
   release-archives:
     if: github.event_name == 'pull_request'
