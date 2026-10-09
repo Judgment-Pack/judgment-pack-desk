@@ -54,7 +54,7 @@ can hand checkpoints to holders by download (PR 5), repair a trail whose last li
 incomplete (PR 6) and set a time-stamping authority for Desk to stamp with (PR 7). The README
 section "A defensible decision record" says what each part establishes and does not.
 
-Gateway is pinned to `v0.10.0` and includes `adapter-render`, required by its
+Gateway is pinned to `v0.10.1` and includes `adapter-render`, required by its
 local source plan, and the two OCR workers `ocr-tesseract` and `ocr-cloud`, which
 the document processors run beside the companion
 ([document processing](document-processing.md)). Desk now asks for the plan with
