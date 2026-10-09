@@ -6987,8 +6987,8 @@ func (b *cappedBuffer) exceeded() bool {'
     's.writeShownGraphAnswer(w, id, shown)' \
     's.writeGraphAnswer(w, id, answer)'
   mutate go 'graph row 4: runtime failure enters the log' internal/desk/graph_evaluate.go \
-    's.graphRehearsalFailed(w, err)' \
-    's.graphFailed(w, "The rehearsal could not be run", err)'
+    's.graphRehearsalFailed(w, err) // the runtime refused or failed' \
+    's.graphFailed(w, "The rehearsal could not be run", err) // the runtime refused or failed'
   mutate go 'graph row 4: additional deciding run is kept' internal/desk/graph_evaluate.go \
     's.writeShownGraphAnswer(w, id, shown)' \
     '_, _, _ = s.runGraph(r.Context(), dir, "evaluate", path, "--inputs", "-")
@@ -7012,8 +7012,8 @@ func (b *cappedBuffer) exceeded() bool {'
     'if false && !s.guard(w, r) {'
 
   mutate go 'graph row 4: another configuration allowed' internal/desk/graph_evaluate.go \
-    'if refusal != "" {' \
-    'if false && refusal != "" {'
+    'if refusal != "" { // another configuration serves this desk' \
+    'if false && refusal != "" { // another configuration serves this desk'
 
 fi
 if [ "$which" = all ] || [ "$which" = web ]; then
