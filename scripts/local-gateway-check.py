@@ -189,7 +189,11 @@ def main():
             assert status['result']['mode'] == 'off' and status['result']['connections'] == [], status
             assert status['localGateway'] == {'status': 'ready', 'documentProcessing': False}, status
             def configure(base, mode, connections, connection=''):
-                return request(desk + '/api/document-processing/configure', {'ifMatch': base['result']['sha256'], 'config': {
+                # The page tells Desk whether it warned of a restart; Desk answers 409 when its own
+                # decision disagrees. This walk computes the same decision from the state it was shown.
+                gateway = base['localGateway']
+                warned = gateway['status'] == 'ready' and ((mode == 'auto') != bool(gateway.get('documentProcessing')))
+                return request(desk + '/api/document-processing/configure', {'ifMatch': base['result']['sha256'], 'restartWarned': warned, 'config': {
                     'version': 1, 'mode': mode, 'connection': connection, 'connections': connections, 'timeoutSeconds': 60}})
             azure = {'id': 'ocr-azure', 'name': 'Work scans', 'kind': 'azure-document-intelligence', 'enabled': True,
                      'endpoint': 'https://isolated-test.cognitiveservices.azure.com'}
