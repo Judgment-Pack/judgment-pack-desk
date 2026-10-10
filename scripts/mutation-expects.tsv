@@ -2413,6 +2413,8 @@ web	the provider object admits a discriminator	src/config/deskConfig.test.ts,src
 web	the provider object grows a ninth member	src/identity/enforcement.test.ts
 web	the provisional application restored (a default nobody read)	src/config/liveConfig.test.tsx,src/shell/appearanceProvider.test.tsx
 web	the provisional record is read even though it is not written	src/shell/shellState.test.tsx
+web	the rail claims a count for a listing that never answered	src/shell/LeftRail.test.tsx
+web	the rail count is invisible to a screen reader	src/shell/LeftRail.test.tsx
 web	the rail dot is one global flag again	src/shell/LeftRail.test.tsx
 web	the rail drawer stays open over the page it navigated to	src/shell/narrowShell.test.tsx
 web	the rail fetches starter templates on every route	src/shell/LeftRail.test.tsx
