@@ -681,13 +681,13 @@ whether Save and return can finish.
 
 ## Packs and Judgment Graphs
 
-The primary sidebar carries Packs, Graphs, Admin and Help & About, with Graphs
-immediately below Packs. Graphs represents Judgment Graphs and keeps the existing
+The primary sidebar carries Decisions, Jobs, Admin and Help & About. Decisions
+combines packs and graphs in the existing folder browser. Graphs retain the
 `/graphs` and `/graphs/:graphId` routes. Only the current destination is active,
 including in the collapsed rail and navigation drawer. Drawing navigation never
 fetches graph inventory or executes tests.
 
-New chat and Chat history belong in the chat header. Packs retains its folder
+New chat and Chat history belong in the chat header. Decisions retains its folder
 browser and collection controls. Saved cases and their Run tests action belong
 inside each pack; there is no collection Tests page or Run all tests action.
 The legacy `/matrix` bookmark redirects to `/packs` without executing tests;
@@ -849,11 +849,17 @@ preview and resizable pane. Use type filters and small type labels; preserve
 the same selection, hover, density, keyboard and empty/loading/error treatment
 for both. Graphs do not need a separate theme or global navigation entry.
 
-Graph composition uses the shared relationship map and a contextual inspector.
-A labelled Add pack/Connect form and List view provide an alternative to canvas
-interaction. Selection preserves the viewport. Source and runtime payloads use
-shared disclosures/code views. Edits invalidate an outstanding write offer;
-Validate is distinct from the explicit Review/Confirm write sequence.
+Graph composition uses the shared relationship map and a bottom selection editor.
+The main window's existing right pane hosts Assistant, Details and Activity;
+never nest a second chat pane inside the builder. Pack editing uses the same
+bottom editor and existing structured fields. Both dividers support keyboard
+and pointer resizing; expansion keeps the conversation and buffer mounted.
+A searchable Add pack picker, labelled Connect form and List view provide
+alternatives to canvas interaction. Selection preserves the viewport. Build,
+Tests, Settings and Source have stable places. Graph tests read saved files;
+pack draft rehearsals retain their existing runtime path. Edits invalidate an
+outstanding write offer; Check is distinct from Review & save and confirmation.
+See [the builder review](reviews/decision-builders-20261010.md).
 
 The design follows the information hierarchy of [Linear's workspace refresh](https://linear.app/now/behind-the-latest-design-refresh),
 [GoRules' graph workspace](https://docs.gorules.io/brms/build/graphs),

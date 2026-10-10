@@ -54,6 +54,5 @@ export function withShape(params: URLSearchParams, shape: EditShape): URLSearchP
   const next = new URLSearchParams(params)
   if (shape === 'json') next.set(SHAPE_PARAM, 'json')
   else next.delete(SHAPE_PARAM)
-    next.delete('editItem')
   return next
 }

@@ -2024,8 +2024,10 @@ web	one reasoning turn makes a model that always thinks	src/assistant/engines/ve
 web	one rule's pointer is read as a prefix of another's	src/packs/checks.test.ts
 web	one settled status is used for every check	src/assistant/engines/codex/codex.test.ts,src/assistant/engines/vercel/engine.test.ts,src/assistant/refutation.test.ts
 web	only the bytes make an answer stale	src/packs/edit/TryItPane.test.tsx
+web	opening pack Assistant drops the builder tab and selection	src/chat/PackAssistant.test.tsx
 web	opening the Inspector is a toggle	src/shell/shellState.test.tsx
 web	override is always sent	src/admin/projectFileWrite.test.tsx,src/routes/AuthorView.test.tsx,src/shell/CreatePackDialog.test.tsx
+web	pack draft Tests loses its main workspace	src/packs/edit/EditView.test.tsx,src/packs/edit/resilience.test.tsx
 web	pane state is not persisted	src/config/liveConfig.test.tsx,src/shell/AppShell.test.tsx,src/shell/inspectorWidth.test.tsx
 web	paths are folded by lowercasing rather than by orbit	src/packs/packPath.test.ts
 web	position dropped from .desk, so the frame clips nothing	src/ui/containingBlock.test.ts
@@ -2391,7 +2393,6 @@ web	the page's mirror admits a colon method in a middle segment	src/assistant/se
 web	the page's mirror admits a method the chassis does not	src/assistant/enforcement.test.ts,src/assistant/session.test.ts
 web	the page's mirror admits the stream pair on every kind	src/assistant/enforcement.test.ts,src/assistant/session.test.ts
 web	the page's mirror compares the pair by name rather than by bytes	src/assistant/session.test.ts
-web	the pane asks for eight pixels it does not take	src/packs/edit/resilience.test.tsx
 web	the pane is never published for measurement	src/shell/inspectorSlot.test.tsx
 web	the pane publishes no portal target	src/admin/ConnectionSettings.test.tsx,src/packs/collectionPreview.test.tsx,src/shell/AppShell.test.tsx,src/shell/inspectorSlot.test.tsx,src/shell/narrowShell.test.tsx
 web	the pane quotes a file the decoder refused	src/admin/ConfigPane.test.tsx,src/routes/AdminView.test.tsx
@@ -2493,7 +2494,6 @@ web	the vercel adapter's tool call is not bounded by the run	src/assistant/engin
 web	the vercel engine ends twice on the error path	src/assistant/engines/vercel/engine.test.ts
 web	the vh cap is the one that never applies	src/shell/shellSheet.test.ts
 web	the walker knows only two of the schema name maps	src/assistant/geminiSchema.test.ts
-web	the what-if placement measures the box it resizes	src/packs/edit/resilience.test.tsx
 web	the windowed list renders nothing when the viewport cannot be measured	src/packs/PacksPane.test.tsx,src/packs/useWindowedRows.test.tsx
 web	the wrapper forwards every header the SDK set	src/assistant/engines/vercel/engine.test.ts
 web	the write carries the wrong base digest	src/files/useFileEditing.test.ts,src/routes/AuthorView.test.tsx

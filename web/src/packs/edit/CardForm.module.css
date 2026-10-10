@@ -56,3 +56,10 @@
 .compactConditions { display:grid; gap:var(--space-1); min-width:0; }
 .compactConditions > p { font-weight:500; }
 .compactConditions > details { border-bottom:1px solid var(--border); padding-block:var(--space-1); }
+
+.form[data-wide] { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: var(--density-field) var(--density-gutter); }
+.form[data-wide] > * { grid-column: 2; min-width: 0; }
+.form[data-wide] > .when { grid-column: 1; grid-row: 1 / span 8; }
+@container (max-width: 650px) {
+  .form[data-wide] { display: flex; }
+}

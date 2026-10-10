@@ -14,3 +14,5 @@
 
 .appearanceField { display: grid; gap: var(--space-2); margin-block: var(--space-3); }
 .appearanceSwatch { display: inline-block; width: .65rem; height: .65rem; border-radius: var(--radius); margin-inline-end: var(--space-2); }
+
+.details[data-wide] { padding: 0; }

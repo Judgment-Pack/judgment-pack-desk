@@ -1,14 +1,15 @@
 import { Message } from '../../i18n/Message'
 import { msg, useLocale } from '../../i18n'
-import { useId, type ComponentProps, type RefObject } from 'react'
+import { useId, type ComponentProps, type ReactNode, type RefObject } from 'react'
 import { Button } from '../../ui/Button'
 import { PageHeader } from '../../ui/PageLayout'
 import { EditToolbar } from './EditToolbar'
 import styles from './EditToolbar.module.css'
 
 /** Persistent actions for one draft, independent of the editor's scroll position. */
-export function PackEditHeader({ title, status, saveReason, unwritten, backRef, onBack, onSave, ...toolbar }: {
+export function PackEditHeader({ title, status, saveReason, unwritten, backRef, onBack, onSave, navigation, ...toolbar }: {
   title: string
+  navigation?: ReactNode
   status: string
   saveReason?: string
   unwritten: number
@@ -34,5 +35,5 @@ export function PackEditHeader({ title, status, saveReason, unwritten, backRef, 
       </span>}
       {saveReason && saveReason !== status && <span>{saveReason}</span>}
     </div>}
-    navigation={<div className={styles.toolbar}><EditToolbar {...toolbar} /></div>} />
+    navigation={<>{navigation}<div className={styles.toolbar}><EditToolbar {...toolbar} hideShape={Boolean(navigation)} /></div></>} />
 }

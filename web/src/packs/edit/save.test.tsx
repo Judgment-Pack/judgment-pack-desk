@@ -521,7 +521,7 @@ describe('the keyboard, and the guard', () => {
     await waitFor(() => expect(screen.getByText('unsaved')).toBeTruthy())
     // The mode is a search parameter and the blocker's predicate is the
     // pathname: this is the same page.
-    fireEvent.click(screen.getByRole('radio', { name: 'Form' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
     await waitFor(() => expect(router.state.location.search).toContain('edit=1'))
     expect(asked).toEqual([])
     // A pathname change with a dirty buffer is the exit the guard exists for.

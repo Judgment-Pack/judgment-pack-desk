@@ -44,14 +44,14 @@ import styles from './CardForm.module.css'
 const ID_HINT = 'lowercase letters, digits and hyphens; starts with a letter.'
 
 /** One rule's card, as its form. */
-export function RuleForm({ at, compact = false }: { at: string; compact?: boolean }) {
+export function RuleForm({ at, compact = false, wide = false }: { at: string; compact?: boolean; wide?: boolean }) {
   useLocale()
   const { ids } = useEditing()
   return (
-    <div className={styles.form}>
+    <div className={styles.form} data-wide={wide || undefined}>
       {compact ? <Disclosure title={msg('Identifier')}><StringField pointer={`${at}/id`} label={msg("id")} hint={msg(ID_HINT)} /></Disclosure> : <StringField pointer={`${at}/id`} label={msg("id")} hint={msg(ID_HINT)} />}
       <TextField pointer={`${at}/description`} label={msg("description")} />
-      {compact ? <CompactWhen at={at}/> : <WhenField at={at} />}
+      {compact && !wide ? <CompactWhen at={at}/> : <WhenField at={at} />}
       <div className={styles.row}>
         <IdRefField pointer={`${at}/outcome`} label={msg("outcome")} ids={ids.outcomes} />
         <EnumField pointer={`${at}/onUnknown`} label={msg("on unknown")} options={ENUMS.onUnknown} />
@@ -69,14 +69,14 @@ export function RuleForm({ at, compact = false }: { at: string; compact?: boolea
 }
 
 /** One exception's card, as its form. */
-export function ExceptionForm({ at, compact = false }: { at: string; compact?: boolean }) {
+export function ExceptionForm({ at, compact = false, wide = false }: { at: string; compact?: boolean; wide?: boolean }) {
   useLocale()
   const { ids } = useEditing()
   return (
-    <div className={styles.form}>
+    <div className={styles.form} data-wide={wide || undefined}>
       {compact ? <Disclosure title={msg('Identifier')}><StringField pointer={`${at}/id`} label={msg("id")} hint={msg(ID_HINT)} /></Disclosure> : <StringField pointer={`${at}/id`} label={msg("id")} hint={msg(ID_HINT)} />}
       <TextField pointer={`${at}/description`} label={msg("description")} />
-      {compact ? <CompactWhen at={at}/> : <WhenField at={at} />}
+      {compact && !wide ? <CompactWhen at={at}/> : <WhenField at={at} />}
       <div className={styles.row}>
         <EnumField pointer={`${at}/effect`} label={msg("effect")} options={ENUMS.effect} />
         <IdRefField pointer={`${at}/targetRule`} label={msg("target rule")} ids={ids.rules} optional />
