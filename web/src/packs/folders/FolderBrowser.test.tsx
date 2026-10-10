@@ -10,7 +10,7 @@ import {applyFolderAction,defaultFolders,FOLDERS_FILE,HOME_FOLDER} from './model
 import {FOLDERS_KEY,loadFolders,saveFolderAction,assignCreatedPack} from './client'
 vi.mock('./client',async original=>({...await original<typeof import('./client')>(),loadFolders:vi.fn(),saveFolderAction:vi.fn(),assignCreatedPack:vi.fn()}))
 afterEach(()=>{cleanup();vi.restoreAllMocks();vi.clearAllMocks();vi.unstubAllGlobals();localStorage.clear()})
-function setup({width=1100,path='/packs',corrupt=false,rootPending=false,state=undefined as unknown}={}){
+function setup({width=1100,path='/packs',corrupt=false,rootPending=false,graphs=false,state=undefined as unknown}={}){
  const observers:{callback:()=>void}[]=[]
  vi.stubGlobal('ResizeObserver',class {constructor(callback:()=>void){observers.push({callback})} observe(){} disconnect(){} unobserve(){}})
  vi.spyOn(HTMLElement.prototype,'getBoundingClientRect').mockImplementation(()=>({x:0,y:0,top:0,left:0,bottom:700,right:width,width,height:700,toJSON(){}}))
@@ -19,8 +19,8 @@ function setup({width=1100,path='/packs',corrupt=false,rootPending=false,state=u
  vi.mocked(loadFolders).mockImplementation(async()=>{if(corrupt)throw new Error('Unreadable');return {document,digest:'read'}})
  vi.mocked(saveFolderAction).mockImplementation(async(before,action)=>{document=applyFolderAction(before.document,action);return {document,digest:'saved'}})
  const client=testQueryClient();if(!rootPending)client.setQueryData(['desk-files'],{root:'/project',files:[{path:FOLDERS_FILE,bytes:1,sha256:'read'}]})
- const stub=stubClient({list_packs:()=>({text:JSON.stringify({status:'valid',packs:[{id:'home-pack',packVersion:'1'},{id:'department-pack',packVersion:'1'}]})})})
- const router=createMemoryRouter([{path:'/packs',element:<McpContext.Provider value={connected({client:stub.client})}><PacksLayout/></McpContext.Provider>,children:[{path:':packId',element:<><p>Pack content</p><Editable/></>}]},{path:'/create-pack',element:<p>Create</p>}],{initialEntries:[{pathname:path,state}]})
+ const stub=stubClient({experimental_list_graphs:()=>({text:JSON.stringify({status:'valid',graphs:[{id:'flow',graphVersion:'1.0.0'}]})}),list_packs:()=>({text:JSON.stringify({status:'valid',packs:[{id:'home-pack',packVersion:'1'},{id:'department-pack',packVersion:'1'}]})})})
+ const router=createMemoryRouter([{path:'/packs',element:<McpContext.Provider value={connected({client:stub.client,graphInventorySupported:graphs})}><PacksLayout/></McpContext.Provider>,children:[{path:':packId',element:<><p>Pack content</p><Editable/></>}]},{path:'/create-pack',element:<p>Create</p>}],{initialEntries:[{pathname:path,state}]})
  render(<QueryClientProvider client={client}><RouterProvider router={router}/></QueryClientProvider>)
  return {client,router,resize:(next:number)=>{width=next;act(()=>observers.forEach(observer=>observer.callback()))}}
 }
@@ -29,9 +29,9 @@ it('defaults existing packs to home, scopes nested search, and carries destinati
  const {router}=setup()
  await screen.findByRole('link',{name:/home-pack/})
  expect(screen.queryByRole('link',{name:/department-pack/})).toBeNull()
- fireEvent.change(screen.getByRole('searchbox',{name:'Search packs'}),{target:{value:'department'}})
+ fireEvent.change(screen.getByRole('searchbox',{name:'Search decisions'}),{target:{value:'department'}})
  await screen.findByRole('link',{name:/department-pack/})
- fireEvent.change(screen.getByRole('searchbox',{name:'Search packs'}),{target:{value:''}})
+ fireEvent.change(screen.getByRole('searchbox',{name:'Search decisions'}),{target:{value:''}})
  fireEvent.click(within(screen.getByRole('navigation',{name:'Folder navigation'})).getByRole('button',{name:'Operations'}))
  expect(screen.getByRole('link',{name:'Create pack'}).getAttribute('href')).toBe('/packs/new?folder=dept')
  fireEvent.click(within(screen.getByRole('list',{name:'Subfolders'})).getByRole('button',{name:'Intake'}))
@@ -71,7 +71,7 @@ it('resizes by keyboard, remembers collapse, and restores the folder browser',as
 it('uses a closable drawer in narrow panes without changing the desktop preference',async()=>{
  setup({width:620});await screen.findByRole('link',{name:/home-pack/})
  const show=screen.getByRole('button',{name:'Expand folders'});show.focus();fireEvent.click(show)
- const drawer=screen.getByRole('dialog',{name:'Pack folders'})
+ const drawer=screen.getByRole('dialog',{name:'Decision folders'})
  fireEvent.click(within(drawer).getByRole('button',{name:'Collapse folders'}))
  await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull())
  expect(document.activeElement).toBe(show)
@@ -95,15 +95,15 @@ it('restores a direct pack link to its folder and expanded ancestors',async()=>{
  await act(async()=>{})
 })
 
-it('keeps the original All packs search scope when returning from a pack',async()=>{
+it('keeps the original All decisions search scope when returning from a pack',async()=>{
  const {router}=setup();await screen.findByRole('link',{name:/home-pack/})
- fireEvent.click(within(screen.getByRole('navigation',{name:'Folder navigation'})).getByRole('button',{name:'All packs'}))
- fireEvent.change(screen.getByRole('searchbox',{name:'Search packs'}),{target:{value:'pack'}})
+ fireEvent.click(within(screen.getByRole('navigation',{name:'Folder navigation'})).getByRole('button',{name:'All decisions'}))
+ fireEvent.change(screen.getByRole('searchbox',{name:'Search decisions'}),{target:{value:'pack'}})
  fireEvent.click(await screen.findByRole('link',{name:/department-pack/}))
  await screen.findByText('Pack content')
  await act(async()=>router.navigate(-1))
- expect(screen.getByRole('searchbox',{name:'Search packs'}).getAttribute('value')).toBe('pack')
- expect(within(screen.getByRole('navigation',{name:'Folder navigation'})).getByRole('button',{name:'All packs'}).getAttribute('aria-current')).toBe('location')
+ expect(screen.getByRole('searchbox',{name:'Search decisions'}).getAttribute('value')).toBe('pack')
+ expect(within(screen.getByRole('navigation',{name:'Folder navigation'})).getByRole('button',{name:'All decisions'}).getAttribute('aria-current')).toBe('location')
  expect(screen.getByRole('link',{name:/home-pack/})).toBeTruthy()
 })
 it('preserves a typed folder name through dock and drawer transitions',async()=>{
@@ -190,4 +190,16 @@ it('restores focus when dismissing the parent folder menu without changing locat
  await waitFor(()=>expect(screen.queryByRole('menu')).toBeNull())
  await waitFor(()=>expect(document.activeElement).toBe(trigger))
  expect(router.state.location.pathname).toBe('/packs/department-pack')
+})
+
+it('moves a graph with its own folder identity and a readable label',async()=>{
+ const {client}=setup({graphs:true})
+ fireEvent.click(await screen.findByRole('button',{name:'Move flow to folder'}))
+ expect(screen.getByRole('dialog',{name:'Move graph'})).toBeTruthy()
+ fireEvent.keyDown(screen.getByRole('combobox',{name:'Destination folder'}),{key:'Enter'})
+ fireEvent.click(await screen.findByRole('option',{name:/Operations$/}))
+ fireEvent.click(within(screen.getByRole('dialog',{name:'Move graph'})).getByRole('button',{name:'Move'}))
+ await waitFor(()=>expect(saveFolderAction).toHaveBeenCalled())
+ const doc=client.getQueryData<{document:{version:number;assignments:Record<string,string>}}>(FOLDERS_KEY)!.document
+ expect(doc.version).toBe(2);expect(doc.assignments['graph:flow']).toBe('dept');expect(doc.assignments['department-pack']).toBe('child')
 })

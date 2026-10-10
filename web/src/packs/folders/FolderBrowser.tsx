@@ -44,12 +44,12 @@ export function FolderFrame({children}:{children:ReactNode}) {
  useEffect(()=>{if(docked)state.setOverlay(false);else if(state.editing?.kind==='create'||state.editing?.kind==='rename')state.setOverlay(true)},[docked,state.editing])
  const contents=<FolderTree state={state} onClose={()=>{if(docked)collapse();else state.setOverlay(false)}}/>
  return <div className={styles.frame} ref={frame} data-folder-frame>
-  {docked&&<aside id={paneId} aria-label={msg('Pack folders')} className={styles.sidebar} style={{width:`var(--folder-preview, ${state.prefs.width}px)`}}>{contents}
+  {docked&&<aside id={paneId} aria-label={msg('Decision folders')} className={styles.sidebar} style={{width:`var(--folder-preview, ${state.prefs.width}px)`}}>{contents}
    <PaneDivider paneSide="start" label={msg('Resize folder pane')} controls={paneId} value={state.prefs.width} min={180} max={maxWidth}
     preview={{element:frame.current,property:'--folder-preview'}} onChange={width=>state.preferences({width})} onReset={()=>state.preferences({width:Math.min(220,maxWidth)})} onCollapse={collapse}/>
   </aside>}
   <div className={styles.content} data-folder-docked={docked||undefined}>{children}</div>
-  {!docked&&<Drawer.Root open={state.overlay} onOpenChange={state.setOverlay}><Drawer.Portal><Drawer.Overlay className="desk-overlay"/><Drawer.Content className={`desk-drawer desk-pane-drawer ${styles.drawer}`} aria-describedby={undefined} onCloseAutoFocus={event=>{event.preventDefault();state.drawerOpener.current?.focus()}}><VisuallyHidden.Root><Drawer.Title>{msg('Pack folders')}</Drawer.Title></VisuallyHidden.Root>{contents}</Drawer.Content></Drawer.Portal></Drawer.Root>}
+  {!docked&&<Drawer.Root open={state.overlay} onOpenChange={state.setOverlay}><Drawer.Portal><Drawer.Overlay className="desk-overlay"/><Drawer.Content className={`desk-drawer desk-pane-drawer ${styles.drawer}`} aria-describedby={undefined} onCloseAutoFocus={event=>{event.preventDefault();state.drawerOpener.current?.focus()}}><VisuallyHidden.Root><Drawer.Title>{msg('Decision folders')}</Drawer.Title></VisuallyHidden.Root>{contents}</Drawer.Content></Drawer.Portal></Drawer.Root>}
   <FolderEditor state={state} inline={false}/>
  </div>
 }
@@ -71,7 +71,7 @@ function FolderTree({state,onClose}:{state:FolderState;onClose:()=>void}) {
   <div className={`desk-pane-head ${styles.heading}`}><PaneToggle compact label={msg('Collapse folders')} expanded onClick={onClose} /><div className="desk-pane-heading"><span>{msg('Folders')}</span></div><div className={styles.headActions}><Tooltip content={msg('New workspace folder')} openOnFocus={false}><button type="button" className="desk-icon-button" aria-label={msg('New workspace folder')} disabled={!usable||busy} onClick={event=>state.edit({kind:'create',parentId:null},event.currentTarget)}><IconPlus/></button></Tooltip></div></div>
   <FolderEditor state={state} inline/>
   <nav className={styles.tree} aria-label={msg('Folder navigation')}>
-   <button type="button" className={styles.all} aria-current={state.activeFolder===ALL_PACKS?'location':undefined} onClick={()=>state.select(ALL_PACKS)}>{msg('All packs')}</button>
+   <button type="button" className={styles.all} aria-current={state.activeFolder===ALL_PACKS?'location':undefined} onClick={()=>state.select(ALL_PACKS)}>{msg('All decisions')}</button>
    <ul>{children(null).map(folder=>node(folder,0))}</ul>
   </nav>
  </>
@@ -100,7 +100,7 @@ export function FolderLocation({folderId}:{folderId?:string}={}) {
  const hidden=trail.slice(0,Math.max(0,trail.length-visibleCount))
  const visible=trail.slice(hidden.length)
  return <nav ref={nav} className={styles.breadcrumb} aria-label={msg('Folder location')}>
-  <button className={styles.pathRoot} type="button" aria-current={current===ALL_PACKS?'location':undefined} onClick={()=>state.select(ALL_PACKS)}>{msg('All packs')}</button>
+  <button className={styles.pathRoot} type="button" aria-current={current===ALL_PACKS?'location':undefined} onClick={()=>state.select(ALL_PACKS)}>{msg('All decisions')}</button>
   {hidden.length>0&&<span className={styles.pathOverflow}>
    <IconChevronRight/>
    <DropdownMenu.Root>
@@ -129,9 +129,9 @@ export function SubfolderRows({query}:{query:string}) {
  const folders=state.document.folders.filter(folder=>folder.id!==state.selected && (query ? inFolder(state.document,folder.id,state.selected,true)&&folder.name.toLocaleLowerCase().includes(query.toLocaleLowerCase().trim()) : folder.parentId===state.selected)).sort((a,b)=>a.name.localeCompare(b.name))
  return folders.length?<ul className={styles.subfolders} aria-label={msg('Subfolders')}>{folders.map(folder=><li key={folder.id}><button type="button" onClick={()=>state.select(folder.id)}><FolderIcon/><span>{folder.name}</span>{query&&<small>{folderPath(state.document,folder.id)}</small>}<IconChevronRight/></button></li>)}</ul>:null
 }
-export function MovePackButton({id}:{id:string}) {
+export function MovePackButton({id,label=id}:{id:string;label?:string}) {
  const state=usePackFolders()
- return state&&<Tooltip content={msg('Move {{name}} to folder',{name:id})}><button className="desk-icon-button" type="button" disabled={!state.query.data||state.query.isError||state.mutation.isPending} aria-label={msg('Move {{name}} to folder',{name:id})} onClick={event=>state.edit({kind:'pack',id},event.currentTarget)}><FolderIcon/></button></Tooltip>
+ return state&&<Tooltip content={msg('Move {{name}} to folder',{name:label})}><button className="desk-icon-button" type="button" disabled={!state.query.data||state.query.isError||state.mutation.isPending} aria-label={msg('Move {{name}} to folder',{name:label})} onClick={event=>state.edit({kind:'pack',id},event.currentTarget)}><FolderIcon/></button></Tooltip>
 }
 function FolderEditor({state,inline}:{state:FolderState;inline:boolean}) {
  const edit=state.editing, {name,destination,filter}=state.editorFields
@@ -141,7 +141,7 @@ function FolderEditor({state,inline}:{state:FolderState;inline:boolean}) {
  const input=useRef<HTMLInputElement>(null), selectId=useId()
  if(!edit || inline !== (edit.kind==='create'||edit.kind==='rename'))return null
  const moving=edit.kind==='move'||edit.kind==='pack'
- const title=edit.kind==='create'?msg('New folder'):edit.kind==='rename'?msg('Rename folder'):edit.kind==='pack'?msg('Move pack'):msg('Move folder')
+ const title=edit.kind==='create'?msg('New folder'):edit.kind==='rename'?msg('Rename folder'):edit.kind==='pack'?(edit.id?.startsWith('graph:')||edit.id?.startsWith('graph-draft:')?msg('Move graph'):msg('Move pack')):msg('Move folder')
  const options=state.document.folders.filter(folder=>edit.kind!=='move'||!inFolder(state.document,folder.id,edit.id!,true)).map(folder=>({value:folder.id,label:folderPath(state.document,folder.id)})).sort((a,b)=>a.label.localeCompare(b.label))
  if(edit.kind!=='pack')options.unshift({value:WORKSPACE_ROOT,label:msg('Workspace folders')})
  const visible=options.filter(option=>option.value===destination||option.label.toLocaleLowerCase().includes(filter.toLocaleLowerCase()))

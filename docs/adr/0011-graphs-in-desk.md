@@ -24,6 +24,57 @@ once as it is (configVersion `"2"`) and once moved to configVersion `"5"` with
 `requireReviewed` and an audit directory. One older answer was measured on a
 `jpack` 0.23.1 binary. No model provider was called.
 
+## Composition workspace amendment (2026-10-09)
+
+Issue [#359](https://github.com/Judgment-Pack/judgment-pack-desk/issues/359)
+adds a shared Decisions collection at `/packs` with All/Packs/Graphs filters.
+Existing pack and graph URLs remain valid. Graphs compose declared packs;
+connections carry outcome ids and/or evidence availability. Every node runs
+in the runtime's deterministic topological order. A result node selects the
+headline; aggregation policy belongs in a pack. Nesting, conditional skipping,
+pure ordering edges and scheduled graph jobs are not introduced.
+
+The composition editor uses the shared controls, relationship map, inspector
+and resizable shell. Adding and connecting packs also works through labelled
+form controls and a list. Undo/redo applies to graph document edits. Source
+JSON is secondary. Validation and the existing guarded, one-use write offer
+remain runtime operations. Merely browsing, opening a draft or asking for
+assistance never writes a project file or starts an evaluation.
+
+Main conversation mode exposes discovery/read, authoring-instructions,
+validate/explain, typed proposal and saved-graph rehearsal host tools. They
+share the chat's selected provider/model/reasoning, stop control and Work
+steps. The provider receives tool context and results. Graph proposals live
+in `graphDrafts` in private conversation storage, separate from pack candidates;
+they survive reload and require an explicit graph write review. Revisions
+bind to the graph bytes the assistant read and are refused if those changed.
+Manual **Keep draft** persists before navigating; **Ask Assistant** pre-fills
+a conversation for the person to send. It does not invoke a model itself.
+
+This extends the original section's ephemeral, dedicated graph-author session:
+retained chat drafts, tool arguments and results follow conversation retention
+and deletion. Standalone rehearsal inputs/results still last only on that
+page. Work inspection preserves runtime text, including JSON number lexemes;
+large previews are explicitly shortened. Graph matrix expected/actual values
+also retain the runtime's canonical text rather than client-side comparison.
+
+Folder document version 2 adds disjoint `graph:<configured-id>` and
+`graph-draft:<draft-id>` assignment keys. Existing pack and pack-draft keys
+remain unchanged. Version 1 reads are preserved; assigning a graph promotes
+the document to version 2. Older Desk versions cannot read the new version.
+Deleting a conversation removes its retained graph drafts, not saved graphs.
+
+Runtime [#250](https://github.com/Judgment-Pack/judgment-pack-runtime/issues/250)
+adds exact graph/configuration/per-node pack byte bindings. Desk compares all
+bindings before saying a standalone rehearsal matches the files just read.
+A changed or unavailable binding leaves the result separate from the current
+composition. Older runtimes remain usable and explicitly lack this binding.
+No unpublished component version is added to the release plan.
+
+Composition examples belong in Runtime fixtures and Desk tests. Demo is being
+deprecated and is excluded. Nested graphs remain Spec #129; durable/scheduled
+graph jobs remain Runner #61. Neither capability is implied by this UI.
+
 ## Context
 
 **What the runtime offers.** A graph is a document of the runtime's own: nodes

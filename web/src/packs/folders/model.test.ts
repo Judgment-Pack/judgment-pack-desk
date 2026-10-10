@@ -51,7 +51,7 @@ describe('project folder organization',()=>{
   expect(packFolder(doc,'constructor')).toBe(HOME_FOLDER)
   const saved=decodeFolders(JSON.parse(JSON.stringify(apply(doc,{type:'assign',packId:'constructor',folderId:'a'}))))
   expect(packFolder(saved,'constructor')).toBe('a')
-  for(const value of [{...doc,version:2},{...doc,extra:true},{...doc,assignments:{'my-pack':'missing'}},{...doc,folders:[]},{...doc,folders:[...doc.folders,doc.folders[1]]}])expect(()=>decodeFolders(value)).toThrow()
+  for(const value of [{...doc,version:3},{...doc,extra:true},{...doc,assignments:{'my-pack':'missing'}},{...doc,folders:[]},{...doc,folders:[...doc.folders,doc.folders[1]]}])expect(()=>decodeFolders(value)).toThrow()
  })
  it('searches descendants only when asked and keeps All packs independent of membership',()=>{
   const doc=apply(apply(defaultFolders(),create('a')),create('b','a'))
@@ -60,4 +60,17 @@ describe('project folder organization',()=>{
   expect(inFolder(doc,'b','all')).toBe(true)
   expect(inFolder(doc,'a','b',true)).toBe(false)
  })
+})
+
+it('keeps graph and pack assignments distinct while preserving version 1 folders', () => {
+  const original = defaultFolders()
+  const withFolder = apply(original, {type:'create',id:'graphs-folder',name:'Graph decisions',parentId:null})
+  const pack = apply(withFolder, {type:'assign',packId:'same-id',folderId:HOME_FOLDER})
+  expect(pack.version).toBe(1)
+  const graph = apply(pack, {type:'assign',packId:'graph:same-id',folderId:'graphs-folder'})
+  expect(graph.version).toBe(2)
+  expect(packFolder(graph,'same-id')).toBe(HOME_FOLDER)
+  expect(packFolder(graph,'graph:same-id')).toBe('graphs-folder')
+  expect(decodeFolders(JSON.parse(JSON.stringify(graph)))).toEqual(graph)
+  expect(original.version).toBe(1)
 })

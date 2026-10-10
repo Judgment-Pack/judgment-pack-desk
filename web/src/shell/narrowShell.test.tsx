@@ -255,7 +255,7 @@ describe('the shell at 800px, where the rail is a drawer', () => {
     renderShell()
     fireEvent.click(screen.getByRole('button', { name: 'Expand navigation' }))
     await screen.findByRole('navigation', { name: 'Project' })
-    fireEvent.click(await screen.findByRole('link', { name: /^Packs/ }))
+    fireEvent.click(await screen.findByRole('link', { name: /^Decisions/ }))
     await waitFor(() => expect(screen.queryByRole('navigation', { name: 'Project' })).toBeNull())
   })
 
@@ -270,7 +270,7 @@ describe('the shell at 800px, where the rail is a drawer', () => {
     for (const name of ['Admin', 'Help & About']) {
       expect(screen.getByRole('link', { name })).toBeTruthy()
     }
-    expect(await screen.findByRole('link', { name: /^Packs/ })).toBeTruthy()
+    expect(await screen.findByRole('link', { name: /^Decisions/ })).toBeTruthy()
   })
 
   it('exposes the navigation landmark exactly while the drawer is open, and the page beneath the rest of the time', async () => {

@@ -53,13 +53,13 @@ function packs(ids: string[]) {
   })
 }
 
-function draw(stub: ReturnType<typeof stubClient>, path = '/packs') {
+function draw(stub: ReturnType<typeof stubClient>, path = '/packs', graphInventorySupported = false) {
   const router = createMemoryRouter(
     [
       {
         path: '*',
         element: (
-          <McpContext.Provider value={connected({ client: stub.client })}>
+          <McpContext.Provider value={connected({ client: stub.client, graphInventorySupported })}>
             <PacksPane />
           </McpContext.Provider>
         )
@@ -98,13 +98,13 @@ describe('the packs pane', () => {
   it('narrows by a substring of the id', async () => {
     draw(packs(['intake-triage', 'vendor-onboarding', 'access-review']))
     await screen.findByRole('link', { name: /intake-triage/ })
-    fireEvent.change(screen.getByLabelText('Search packs'), { target: { value: 'ven' } })
+    fireEvent.change(screen.getByLabelText('Search decisions'), { target: { value: 'ven' } })
     await waitFor(() => expect(packLinks()).toHaveLength(1))
     expect(screen.getByRole('link', { name: /vendor-onboarding/ })).toBeTruthy()
 
     // A filter that matches nothing is not an empty project.
-    fireEvent.change(screen.getByLabelText('Search packs'), { target: { value: 'zzz' } })
-    await screen.findByText('No matching packs')
+    fireEvent.change(screen.getByLabelText('Search decisions'), { target: { value: 'zzz' } })
+    await screen.findByText('No matching decisions')
   })
 
   it('reorders on the sort control, and offers only orders it has data for', async () => {
@@ -113,11 +113,11 @@ describe('the packs pane', () => {
     const names = () => packLinks().map((link) => link.textContent)
     expect(names()[0]).toContain('a-pack')
 
-    fireEvent.keyDown(screen.getByLabelText('Sort packs'), { key: 'Enter' })
+    fireEvent.keyDown(screen.getByLabelText('Sort decisions'), { key: 'Enter' })
     const options = await screen.findAllByRole('menuitemradio')
     // ID ascending and descending, and nothing else: `list_packs` reports no
     // date and no size, so any other order would be the desk inventing one.
-    expect(options.map((option) => option.textContent?.replace('✓', '').trim())).toEqual(['Pack ID: A–Z', 'Pack ID: Z–A'])
+    expect(options.map((option) => option.textContent?.replace('✓', '').trim())).toEqual(['Decision ID: A–Z', 'Decision ID: Z–A'])
     fireEvent.click(options[1]!)
     await waitFor(() => expect(names()[0]).toContain('c-pack'))
   })
@@ -191,12 +191,12 @@ describe('the packs pane', () => {
     })
     draw(stub)
     await screen.findByText(/the runtime refused the listing/)
-    expect(screen.queryByText('No packs yet')).toBeNull()
+    expect(screen.queryByText('No decisions yet')).toBeNull()
   })
 
   it('says a project declares none where the listing said so', async () => {
     draw(packs([]))
-    await screen.findByText('No packs yet')
+    await screen.findByText('No decisions yet')
   })
 
   it('claims no version for a pack whose document the listing could not read', async () => {
@@ -231,7 +231,7 @@ describe('the packs pane', () => {
   it('is a named navigation, because it is a list of navigations', async () => {
     draw(packs(['a-pack']))
     await screen.findByRole('link', { name: /a-pack/ })
-    expect(screen.getByRole('navigation', { name: 'Packs' })).toBeTruthy()
+    expect(screen.getByRole('navigation', { name: 'Decisions' })).toBeTruthy()
   })
 })
 
@@ -332,4 +332,27 @@ describe('a listing that failed after it had succeeded', () => {
     )
     expect(screen.getByRole('link', { name: /pack-00/ })).toBeTruthy()
   })
+})
+
+
+it('browses packs and graphs with the same id without confusing their links or running them', async () => {
+  const stub = stubClient({
+    list_packs: () => ({text: JSON.stringify({status:'valid',packs:[{id:'same',packVersion:'1.0.0'}]})}),
+    experimental_list_graphs: () => ({text: JSON.stringify({status:'valid',graphs:[{id:'same',graphVersion:'2.0.0',path:'same.graph.json',rowsDeclared:false}]})})
+  })
+  draw(stub, '/packs', true)
+  await waitFor(() => expect(document.querySelector('a[href="/graphs/same"]')).toBeTruthy())
+  expect(document.querySelector('a[href="/packs/same"]')).toBeTruthy()
+  fireEvent.click(screen.getByRole('radio', {name:'Graphs'}))
+  expect(document.querySelector('a[href="/packs/same"]')).toBeNull()
+  expect(document.querySelector('a[href="/graphs/same"]')).toBeTruthy()
+  expect(stub.calls.map(call=>call.name).sort()).toEqual(['experimental_list_graphs','list_packs'])
+})
+it('composes only explicitly selected saved packs', async () => {
+  draw(packs(['alpha','beta']))
+  fireEvent.click(await screen.findByRole('checkbox', {name:'Select alpha for composition'}))
+  const link=screen.getByRole('link', {name:/Compose graph/})
+  expect(link.getAttribute('href')).toBe('/graphs?view=compose&pack=alpha')
+  fireEvent.click(screen.getByRole('button', {name:'Clear selection'}))
+  expect(screen.queryByRole('link', {name:/Compose graph/})).toBeNull()
 })

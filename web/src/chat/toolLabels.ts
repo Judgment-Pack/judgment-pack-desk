@@ -1,5 +1,12 @@
 import { msg } from '../i18n'
 export const TOOL_LABELS: Record<string, string> = {
+  get list_decisions() { return msg('List decisions') },
+  get read_decision() { return msg('Read decision') },
+  get get_graph_authoring_instructions() { return msg('Read graph instructions') },
+  get graph_validate() { return msg('Validate graph') },
+  get graph_explain() { return msg('Explain graph plan') },
+  get propose_graph() { return msg('Propose graph') },
+  get graph_rehearse() { return msg('Rehearse graph') },
   get get_authoring_instructions() { return msg("Read authoring instructions") },
   get get_schema() { return msg("Read pack schema") }, get list_examples() { return msg("Browse examples") }, get get_example() { return msg("Read examples") },
   get validate() { return msg("Validate pack structure") }, get experimental_evaluate() { return msg("Test a decision") },

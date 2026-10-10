@@ -1,3 +1,5 @@
+import { graphChatTools } from '../graphs/chatTools'
+import { useMcp } from '../mcp/McpProvider'
 import { useSearchConnections, useSearchPreference } from '../search/connections'
 import { sourceMessage } from '../i18n/source'
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
@@ -37,6 +39,9 @@ function ChatWorkers() {
 }
 const chatOf = (store: ChatStore, id: string) => { const snapshot = store.getSnapshot(); return [...snapshot.chats, ...snapshot.drafts].find(chat => chat.id === id) }
 function ChatWorker({ store, chat }: { store: ChatStore; chat: Chat }) {
+  const mcp = useMcp()
+  const currentClient = useRef(mcp.client)
+  currentClient.current = mcp.client
   const effective = useEffectiveConfig()
   const research = effective.config.research
   // Link reading is offered on the same terms as the composer's Add link: the
@@ -52,7 +57,7 @@ function ChatWorker({ store, chat }: { store: ChatStore; chat: Chat }) {
   const connection=searchConnections.available&&!searchConnections.isError&&searchConnections.data?.connections.find(c=>c.id===(chat.searchConnection??searchPreference.data?.value.connection)) || undefined
   const latest = useRef({ research, readable, discovery, researchEnabled, connection, mode: chat.mode })
   latest.current = { research, readable, discovery, researchEnabled, connection, mode: chat.mode }
-  const draftTools = useMemo(() => linkReading({
+  const draftTools = useMemo(() => { const links = linkReading({
     available: () => latest.current.readable,
     researchEnabled:()=>latest.current.researchEnabled,
     search:{
@@ -70,7 +75,14 @@ function ChatWorker({ store, chat }: { store: ChatStore; chat: Chat }) {
       if (current) store.update(chat.id, { documents: [...(current.documents ?? []).filter(file => file.id !== attachment.id), attachment] })
     },
     log: text => recordActivity(text, 'research')
-  }), [store, chat.id])
+  }); const graphs = graphChatTools({client: () => currentClient.current, chatId: chat.id, addDraft: draft => {
+    const current = chatOf(store, chat.id)
+    if (!current) throw new Error('This conversation is no longer available.')
+    if ((current.graphDrafts?.length ?? 0) >= 16) throw new Error('This chat has 16 graph drafts. Start a new chat to create another.')
+    store.update(chat.id, {graphDrafts: [...(current.graphDrafts ?? []), draft]})
+  }})
+  return (context: Parameters<typeof links>[0]) => [...links(context), ...graphs]
+  }, [store, chat.id])
   const binding = useResearchRun({ connectionId:chat.aiConnection, apiThinking:chat.apiThinking, model: chat.model, reasoning: chat.reasoning, mode: chat.mode, adversarialReview: chat.adversarialReview, researchPolicy:()=>!latest.current.researchEnabled
     ? 'WEB RESEARCH POLICY: Use only sources supplied in this conversation. Web search and website exploration are disabled for this conversation; do not request configuration as a workaround.'
     : `WEB RESEARCH POLICY: ${latest.current.mode === 'web-research' ? 'Research requested. For substantive research requests, use the available web tools and cite sources actually read. Ask for a source or explain a missing capability when necessary.' : 'Auto. Choose web tools when the request needs research, verification or current sources.'} ${latest.current.connection?'The configured search connection is '+latest.current.connection.provider+'.':'No web-search connection is configured. Supplied-link reading and website exploration may still be available; check your tool list.'}`, draftTools, documents: () => chatOf(store, chat.id)?.documents ?? [] })

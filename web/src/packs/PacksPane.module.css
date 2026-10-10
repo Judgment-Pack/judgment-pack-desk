@@ -20,7 +20,7 @@
 .reviewBadge { display: inline-block; margin-inline-end: var(--space-2); color: var(--ink-soft); font-size: var(--text-xs); border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); padding: 0 5px; }
 .matchCount { color: var(--ink-faint); font-size: var(--text-xs); white-space: nowrap; }
 .collection { display: flex; flex-direction: column; min-height: calc(var(--density-row) * 3 + var(--density-control)); flex: 1; padding: 0 var(--density-gutter); }
-.columns, .row { --name-width: clamp(10rem, 26cqi, 18rem); --version-width: 5rem; --preview-width: 3.75rem; }
+.columns, .row { --name-width: clamp(10rem, 26cqi, 18rem); --version-width: 5rem; --preview-width: 5.75rem; }
 .columns {
   overflow-y: hidden;
   scrollbar-gutter: stable;
@@ -81,3 +81,6 @@
 }
 
 .row > :global(.desk-icon-button) { width: 28px; height: min(var(--density-control), var(--density-row)); flex: 0 0 28px; }
+
+.selection { display: inline-flex; flex: 0 0 2rem; align-items: center; justify-content: center; }
+.selection input { accent-color: var(--accent-fill); }

@@ -1,3 +1,6 @@
+import { Disclosure } from '../ui/Disclosure'
+import { CodeBlock } from '../ui/CodeBlock'
+import styles from './GraphWorkspace.module.css'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { msg, useLocale } from '../i18n'
@@ -133,11 +136,11 @@ function GraphAuthorSession({ graphId }: { graphId?: string }) {
 }
 
 export function GraphConfirmation({ offer, busy, onConfirm }: { offer: GraphOffer; busy: boolean; onConfirm: () => void }) {
-  return <section aria-label={msg('Confirm graph write')}>
-    <h3>{msg('Graph bytes to write')}</h3><code>{offer.path}</code><pre>{offer.content}</pre>
-    <h3>{msg('Findings')}</h3><GraphLabels labels={JSON.parse(offer.findings)} /><pre lang="en">{offer.findings}</pre>
-    <h3>{msg('Plan')}</h3><GraphLabels labels={JSON.parse(offer.plan)} /><pre lang="en">{offer.plan}</pre>
-    {!offer.baseSha256 && <><h3>{msg('jpack.json before')}</h3><pre>{offer.before}</pre><h3>{msg('Whole jpack.json to write')}</h3><pre>{offer.configContent}</pre><ProposalDiffView diff={diffProposal(offer.before, JSON.parse(offer.configContent))} /></>}
+  return <section className={styles.workspace} aria-label={msg('Confirm graph write')}>
+    <h3>{msg('Graph bytes to write')}</h3><code>{offer.path}</code><Disclosure title={msg('Graph source')}><CodeBlock text={offer.content}/></Disclosure>
+    <Disclosure title={msg('Findings')}><GraphLabels labels={JSON.parse(offer.findings)} /><CodeBlock text={offer.findings} lang="en"/></Disclosure>
+    <Disclosure title={msg('Plan')}><GraphLabels labels={JSON.parse(offer.plan)} /><CodeBlock text={offer.plan} lang="en"/></Disclosure>
+    {!offer.baseSha256 && <><Disclosure title={msg('jpack.json before')}><CodeBlock text={offer.before}/></Disclosure><Disclosure title={msg('Whole jpack.json to write')}><CodeBlock text={offer.configContent}/></Disclosure><ProposalDiffView diff={diffProposal(offer.before, JSON.parse(offer.configContent))} /></>}
     {offer.hasLock && <><p>{msg('The project keeps a reviewed set. Review and lock updates it.')}</p><p>{offer.baseSha256
       ? msg('Deciding runs of this graph are refused as document-drift until the next Review and lock.')
       : msg('A change to jpack.json holds every pack: until the next lock, the runtime refuses every deciding run by decision id. Rehearsals and tests are not affected.')}</p></>}

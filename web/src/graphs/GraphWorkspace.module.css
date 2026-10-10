@@ -1,0 +1,14 @@
+.workspace, .composition, .inspector { display: flex; flex-direction: column; gap: var(--density-section); min-width: 0; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--density-block); }
+.toolbar > :first-child { margin-right: auto; }
+.metadata, .mapping { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: var(--density-field); align-items: end; }
+.canvas { height: clamp(280px, 48vh, 560px); min-width: 0; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.source { height: 360px; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.hint { font-size: var(--text-sm); color: var(--ink-soft); margin: 0; }
+.inspector { padding: var(--density-gutter); }
+.feedback { padding: var(--density-block); border: 1px solid var(--border); border-radius: var(--radius); }
+.draft { display: flex; align-items: center; justify-content: space-between; gap: var(--density-block); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--density-block); margin-block: var(--density-block); }
+
+.workspace h2, .inspector h2 { margin: 0; font-size: var(--text-heading); font-weight: 600; }
+.composition h3 { margin: 0; font-size: var(--text-body); font-weight: 600; }
+.title { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }

@@ -1811,7 +1811,7 @@ web	graph row 3: the vercel engine uses pack authoring instructions	src/assistan
 web	graph row 3: the whole declaration is not shown	src/graphs/author.test.tsx
 web	graph row 4: absent runtime members invented	src/graphs/rehearsal.test.tsx
 web	graph row 4: answer joined to drawn document	src/graphs/rehearsal.test.tsx
-web	graph row 4: bundle digest called graph digest	src/graphs/rehearsal.test.tsx
+web	graph row 4: bundle digest called graph digest	src/graphs/provenance.test.ts
 web	graph row 4: command not checked on page	src/graphs/rehearsal.test.tsx
 web	graph row 4: facts byte bound omitted on page	src/graphs/rehearsal.test.tsx
 web	graph row 4: facts object check omitted on page	src/graphs/rehearsal.test.tsx

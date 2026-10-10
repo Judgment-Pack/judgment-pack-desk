@@ -8654,11 +8654,11 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '      void top
       void bottom'
 
-  # 16. A `0` beside Packs is a claim about a project the desk knows nothing
-  # about.
+  # 16. The combined Decisions rail must not invent a count from a pack listing.
   mutate web 'the rail claims a count for a listing that never answered' web/src/shell/LeftRail.tsx \
-    '  const count = error === null && data !== undefined ? (data.packs ?? []).length + packDrafts.filter(item=>!item.finalized).length : undefined' \
-    '  const count = (data?.packs ?? []).length + packDrafts.filter(item=>!item.finalized).length'
+    '          {!icons && <span className="desk-nav-label">{msg("Decisions")}</span>}' \
+    '          {!icons && <><span className="desk-nav-label">{msg("Decisions")}</span><span className="desk-nav-count">0</span></>}'
+
 
 
   # ---------------------------------------------------------------------------
@@ -9002,10 +9002,10 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '    if (typeof value === '"'"'object'"'"' && value !== null && Object.hasOwn(value, part)) {' \
     '    if (typeof value === '"'"'object'"'"' && value !== null && part in value) {'
 
-  # The rail's count, in the place assistive technology reads it.
+  # The shared destination must remain named for assistive technology.
   mutate web 'the rail count is invisible to a screen reader' web/src/shell/LeftRail.tsx \
-    '          aria-label={count === undefined ? msg("Packs") : msg("Packs, {{value0}}", { value0: count })}' \
-    '          aria-label={msg("Packs")}'
+    '          aria-label={msg("Decisions")}' \
+    '          aria-label=""'
 
   # 8. The widened convention rule, and a module outside src/ui to break it on.
   mutate web "a module outside src/ui may spell a colour" "$CV" \
@@ -13298,7 +13298,7 @@ export function assistantTransport(id: string): Transport {
     "      await client.invalidateQueries({ queryKey: REVIEW_KEY })" \
     "      void client"
   mutate web "review: no finding beside a pack's name" web/src/packs/PacksPane.tsx \
-    "                {pack.status!=='draft' && findings.get(pack.id)?.map(" \
+    "                {pack.kind==='pack' && pack.status!=='draft' && findings.get(pack.id)?.map(" \
     "                {false && findings.get(pack.id)?.map("
 
   # **Jobs' "Review this release" (ADR-0009, question 4).** The SHA-256 of
@@ -15104,7 +15104,7 @@ export function assistantTransport(id: string): Transport {
     'if (!assistantReady(slot))' \
     'if (false && !assistantReady(slot))'
   mutate web 'graph row 3: the whole declaration is not shown' web/src/graphs/GraphAuthor.tsx \
-    '<pre>{offer.configContent}</pre>' \
+    '<CodeBlock text={offer.configContent}/>' \
     '<pre />'
   mutate web 'graph row 3: the declaration diff is not shown' web/src/graphs/GraphAuthor.tsx \
     '<ProposalDiffView diff={diffProposal(offer.before, JSON.parse(offer.configContent))} />' \
@@ -15116,8 +15116,8 @@ export function assistantTransport(id: string): Transport {
     'onChange={() => setOffer(null)}' \
     'onChange={() => {}}'
   mutate web 'graph row 3: findings are not marked as runtime English' web/src/graphs/GraphAuthor.tsx \
-    '<pre lang="en">{offer.findings}</pre>' \
-    '<pre>{offer.findings}</pre>'
+    '<CodeBlock text={offer.findings} lang="en"/>' \
+    '<CodeBlock text={offer.findings}/>'
   mutate web 'graph row 3: the chosen packs do not reach author_graph' web/src/graphs/GraphAuthor.tsx \
     'packs: '"'"'['"'"' + packs.map(pack => pack.content).join('"'"','"'"') + '"'"']'"'"'' \
     'packs: packs.length >= 0 ? '"'"'[]'"'"' : '"'"''"'"''
@@ -15180,16 +15180,16 @@ export function assistantTransport(id: string): Transport {
     'active.current?.abort()' \
     'void active.current'
   mutate web 'graph row 4: rehearsal limits not stated' web/src/graphs/GraphRehearsal.tsx \
-    'It does not establish a decision, a record in the trail, a reviewed set consulted, which bytes were read, or that the facts are true.' \
+    'Try supplied facts against this graph. Every node runs; a rehearsal creates no decision audit record and takes no external action.' \
     'It establishes a decision.'
   mutate web 'graph row 4: answer joined to drawn document' web/src/graphs/GraphRehearsal.tsx \
-    'never joined to it' \
-    'joined to it'
-  mutate web 'graph row 4: bundle digest called graph digest' web/src/graphs/GraphRehearsal.tsx \
-    'artifact.bundleDigest is the runtime’s bundle’s digest, not the graph’s.' \
-    'artifact.bundleDigest is the graph’s digest.'
+    'Results are shown separately from the current graph.' \
+    'Results validate the current graph.'
+  mutate web 'graph row 4: bundle digest called graph digest' web/src/graphs/provenance.ts \
+    'digest(value.graphSha256)' \
+    'digest(value.graphSha256 ?? (value as {artifact?: {bundleDigest?: string}}).artifact?.bundleDigest)'
   mutate web 'graph row 4: trail silence omitted' web/src/graphs/GraphRehearsal.tsx \
-    'The trail is silent about rehearsals. Desk keeps neither the inputs nor the result: they live on the page until it is left.' \
+    'Inputs and results on this page last until you leave. Rehearsals requested in chat are retained with the conversation and sent to its selected model provider.' \
     'Desk keeps a trail of rehearsals.'
 
   mutate web 'graph row 4: rehearsal does not unmount on leaving' web/src/routes/GraphView.tsx \
