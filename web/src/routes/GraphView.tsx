@@ -96,7 +96,7 @@ export function GraphView() {
   return <article className="detail" data-measure="full" data-layout="page">
     {compose ? <GraphWorkspace graphId={graphId} tests={testsPanel}/> : <>
     <PageHeader title={msg("Graphs")} context={graphId} titleHref={graphId ? "/graphs" : undefined}
-      actions={<><ButtonLink to="/packs">{msg("Decisions")}</ButtonLink>{!compose && <ButtonLink to={graphId ? `/graphs/${encodeURIComponent(graphId)}?view=compose` : "/graphs?view=compose"}>{graphId ? msg("Edit composition") : msg("Create graph")}</ButtonLink>}{!compose && <Button onClick={run} disabled={status !== 'ready' || isFetching}>
+      actions={<><ButtonLink to="/packs">{msg("Packs & graphs")}</ButtonLink>{!compose && <ButtonLink to={graphId ? `/graphs/${encodeURIComponent(graphId)}?view=compose` : "/graphs?view=compose"}>{graphId ? msg("Edit composition") : msg("Create graph")}</ButtonLink>}{!compose && <Button onClick={run} disabled={status !== 'ready' || isFetching}>
         {isFetching ? msg("Running…") : graphId ? msg("Run tests") : msg("Run all graph tests")}
       </Button>}</>}
       navigation={graphId ? <nav className={workspace.navigation} aria-label={msg("Graph sections")}>

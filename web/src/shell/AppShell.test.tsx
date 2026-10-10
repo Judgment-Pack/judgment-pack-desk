@@ -104,7 +104,7 @@ describe('the shell frame', () => {
     expect(await screen.findByRole('heading', { name: 'General', level: 2 })).toBeTruthy()
     expect(screen.getByRole('main')).toBe(main)
     fireEvent.click(screen.getByRole('link', { name: 'Back to app' }))
-    expect(await screen.findByRole('link', { name: /^Decisions/ })).toBeTruthy()
+    expect(await screen.findByRole('link', { name: /^Packs & graphs/ })).toBeTruthy()
     expect(screen.queryByRole('link', { name: 'Back to app' })).toBeNull()
   })
 
@@ -158,7 +158,7 @@ describe('the shell frame', () => {
     'ignores saved legacy pane flags on %s and exposes no global Inspector or Console', async path => {
       localStorage.setItem(shellStateKey(projectKey(ROOT)), JSON.stringify({v:2, inspector:{open:true},console:{open:true,tab:'calls'}}))
       const {container}=renderShell(<AppShell><h1>Page</h1></AppShell>, {}, path)
-      await screen.findByRole('link', {name:/Decisions/})
+      await screen.findByRole('link', {name:/Packs & graphs/})
       expect(screen.queryByRole('button',{name:'Inspector'})).toBeNull()
       expect(screen.queryByRole('button',{name:'Console'})).toBeNull()
       expect(screen.queryByRole('complementary')).toBeNull()

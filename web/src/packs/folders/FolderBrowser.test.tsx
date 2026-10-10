@@ -11,8 +11,8 @@ import {FOLDERS_KEY,loadFolders,saveFolderAction,assignCreatedPack} from './clie
 vi.mock('./client',async original=>({...await original<typeof import('./client')>(),loadFolders:vi.fn(),saveFolderAction:vi.fn(),assignCreatedPack:vi.fn()}))
 afterEach(()=>{cleanup();vi.restoreAllMocks();vi.clearAllMocks();vi.unstubAllGlobals();localStorage.clear()})
 function setup({width=1100,path='/packs',corrupt=false,rootPending=false,graphs=false,state=undefined as unknown}={}){
- const observers:{callback:()=>void}[]=[]
- vi.stubGlobal('ResizeObserver',class {constructor(callback:()=>void){observers.push({callback})} observe(){} disconnect(){} unobserve(){}})
+ const observers:{callback:(entries:ResizeObserverEntry[])=>void}[]=[]
+ vi.stubGlobal('ResizeObserver',class {constructor(callback:(entries:ResizeObserverEntry[])=>void){observers.push({callback})} observe(){} disconnect(){} unobserve(){}})
  vi.spyOn(HTMLElement.prototype,'getBoundingClientRect').mockImplementation(()=>({x:0,y:0,top:0,left:0,bottom:700,right:width,width,height:700,toJSON(){}}))
  let document=applyFolderAction(applyFolderAction(defaultFolders(),{type:'create',id:'dept',name:'Operations',parentId:HOME_FOLDER}),{type:'create',id:'child',name:'Intake',parentId:'dept'})
  document=applyFolderAction(document,{type:'assign',packId:'department-pack',folderId:'child'})
@@ -22,18 +22,21 @@ function setup({width=1100,path='/packs',corrupt=false,rootPending=false,graphs=
  const stub=stubClient({experimental_list_graphs:()=>({text:JSON.stringify({status:'valid',graphs:[{id:'flow',graphVersion:'1.0.0'}]})}),list_packs:()=>({text:JSON.stringify({status:'valid',packs:[{id:'home-pack',packVersion:'1'},{id:'department-pack',packVersion:'1'}]})})})
  const router=createMemoryRouter([{path:'/packs',element:<McpContext.Provider value={connected({client:stub.client,graphInventorySupported:graphs})}><PacksLayout/></McpContext.Provider>,children:[{path:':packId',element:<><p>Pack content</p><Editable/></>}]},{path:'/create-pack',element:<p>Create</p>}],{initialEntries:[{pathname:path,state}]})
  render(<QueryClientProvider client={client}><RouterProvider router={router}/></QueryClientProvider>)
- return {client,router,resize:(next:number)=>{width=next;act(()=>observers.forEach(observer=>observer.callback()))}}
+ return {client,router,resize:(next:number)=>{width=next;act(()=>observers.forEach(observer=>observer.callback([])))}}
 }
+async function newFolder(){fireEvent.keyDown(screen.getByRole('button',{name:'Collection options'}),{key:'Enter'});fireEvent.click(await screen.findByRole('menuitem',{name:'New folder'}))}
 function Editable(){const [value,setValue]=useState('');return <input aria-label="Unfinished edit" value={value} onChange={event=>setValue(event.target.value)}/> }
 it('defaults existing packs to home, scopes nested search, and carries destination into creation',async()=>{
  const {router}=setup()
  await screen.findByRole('link',{name:/home-pack/})
  expect(screen.queryByRole('link',{name:/department-pack/})).toBeNull()
- fireEvent.change(screen.getByRole('searchbox',{name:'Search decisions'}),{target:{value:'department'}})
+ fireEvent.change(screen.getByRole('searchbox',{name:'Search packs and graphs'}),{target:{value:'department'}})
  await screen.findByRole('link',{name:/department-pack/})
- fireEvent.change(screen.getByRole('searchbox',{name:'Search decisions'}),{target:{value:''}})
+ fireEvent.change(screen.getByRole('searchbox',{name:'Search packs and graphs'}),{target:{value:''}})
  fireEvent.click(within(screen.getByRole('navigation',{name:'Folder navigation'})).getByRole('button',{name:'Operations'}))
- expect(screen.getByRole('link',{name:'Create pack'}).getAttribute('href')).toBe('/packs/new?folder=dept')
+ fireEvent.keyDown(screen.getByRole('button',{name:'Create'}),{key:'Enter'})
+ expect((await screen.findByRole('menuitem',{name:'Create pack'})).getAttribute('href')).toBe('/packs/new?folder=dept')
+ fireEvent.keyDown(screen.getByRole('menu'),{key:'Escape'})
  fireEvent.click(within(screen.getByRole('list',{name:'Subfolders'})).getByRole('button',{name:'Intake'}))
  await screen.findByRole('link',{name:/department-pack/})
  expect(screen.queryByRole('link',{name:/home-pack/})).toBeNull()
@@ -44,11 +47,11 @@ it('defaults existing packs to home, scopes nested search, and carries destinati
  fireEvent.click(within(screen.getByRole('navigation',{name:'Folder navigation'})).getByRole('button',{name:'Operations'}))
  expect(router.state.location.pathname).toBe('/packs')
 })
-it('creates an empty folder inline and preserves it in the hierarchy',async()=>{
+it('creates an empty folder in a modal and preserves it in the hierarchy',async()=>{
  const {client}=setup()
  await screen.findByRole('link',{name:/home-pack/})
- fireEvent.click(screen.getByRole('button',{name:'New folder'}))
- expect(screen.queryByRole('dialog')).toBeNull()
+ await newFolder()
+ expect(screen.getByRole('dialog',{name:'New folder'})).toBeTruthy()
  fireEvent.change(screen.getByRole('textbox',{name:'Folder name'}),{target:{value:'Finance'}})
  fireEvent.click(screen.getByRole('button',{name:'Create folder'}))
  await waitFor(()=>expect(saveFolderAction).toHaveBeenCalledOnce())
@@ -71,7 +74,7 @@ it('resizes by keyboard, remembers collapse, and restores the folder browser',as
 it('uses a closable drawer in narrow panes without changing the desktop preference',async()=>{
  setup({width:620});await screen.findByRole('link',{name:/home-pack/})
  const show=screen.getByRole('button',{name:'Expand folders'});show.focus();fireEvent.click(show)
- const drawer=screen.getByRole('dialog',{name:'Decision folders'})
+ const drawer=screen.getByRole('dialog',{name:'Folders'})
  fireEvent.click(within(drawer).getByRole('button',{name:'Collapse folders'}))
  await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull())
  expect(document.activeElement).toBe(show)
@@ -80,7 +83,9 @@ it('uses a closable drawer in narrow panes without changing the desktop preferen
 it('shows all packs and disables mutations when folder metadata cannot be read',async()=>{
  setup({corrupt:true})
  await screen.findByText(/Folder organization is unavailable/)
- expect(screen.getByRole('button',{name:'New folder'}).hasAttribute('disabled')).toBe(true)
+ fireEvent.keyDown(screen.getByRole('button',{name:'Collection options'}),{key:'Enter'})
+ expect((await screen.findByRole('menuitem',{name:'New folder'})).getAttribute('aria-disabled')).toBe('true')
+ fireEvent.keyDown(screen.getByRole('menu'),{key:'Escape'})
  await screen.findByRole('link',{name:/department-pack/})
  expect(screen.getByRole('link',{name:/home-pack/})).toBeTruthy()
  expect(saveFolderAction).not.toHaveBeenCalled()
@@ -95,33 +100,33 @@ it('restores a direct pack link to its folder and expanded ancestors',async()=>{
  await act(async()=>{})
 })
 
-it('keeps the original All decisions search scope when returning from a pack',async()=>{
+it('keeps the original Packs & graphs search scope when returning from a pack',async()=>{
  const {router}=setup();await screen.findByRole('link',{name:/home-pack/})
- fireEvent.click(within(screen.getByRole('navigation',{name:'Folder navigation'})).getByRole('button',{name:'All decisions'}))
- fireEvent.change(screen.getByRole('searchbox',{name:'Search decisions'}),{target:{value:'pack'}})
+ fireEvent.click(within(screen.getByRole('navigation',{name:'Folder location'})).getByRole('button',{name:'Packs & graphs'}))
+ fireEvent.change(screen.getByRole('searchbox',{name:'Search packs and graphs'}),{target:{value:'pack'}})
  fireEvent.click(await screen.findByRole('link',{name:/department-pack/}))
  await screen.findByText('Pack content')
  await act(async()=>router.navigate(-1))
- expect(screen.getByRole('searchbox',{name:'Search decisions'}).getAttribute('value')).toBe('pack')
- expect(within(screen.getByRole('navigation',{name:'Folder navigation'})).getByRole('button',{name:'All decisions'}).getAttribute('aria-current')).toBe('location')
+ expect(screen.getByRole('searchbox',{name:'Search packs and graphs'}).getAttribute('value')).toBe('pack')
+ expect(within(screen.getByRole('navigation',{name:'Folder location'})).getByRole('button',{name:'Packs & graphs'}).getAttribute('aria-current')).toBe('location')
  expect(screen.getByRole('link',{name:/home-pack/})).toBeTruthy()
 })
 it('preserves a typed folder name through dock and drawer transitions',async()=>{
  const {resize}=setup();await screen.findByRole('link',{name:/home-pack/})
- fireEvent.click(screen.getByRole('button',{name:'New folder'}))
+ await newFolder()
  fireEvent.change(screen.getByRole('textbox',{name:'Folder name'}),{target:{value:'Unfinished department'}})
  resize(620)
  expect(within(screen.getByRole('dialog')).getByRole('textbox',{name:'Folder name'}).getAttribute('value')).toBe('Unfinished department')
  resize(1100)
- expect(screen.queryByRole('dialog')).toBeNull()
+ expect(screen.getByRole('dialog',{name:'New folder'})).toBeTruthy()
  expect(screen.getByRole('textbox',{name:'Folder name'}).getAttribute('value')).toBe('Unfinished department')
 })
 it('restores drawer focus after cancelling an inner folder editor',async()=>{
  setup({width:620});await screen.findByRole('link',{name:/home-pack/})
  const show=screen.getByRole('button',{name:'Expand folders'});show.focus();fireEvent.click(show)
  fireEvent.click(screen.getByRole('button',{name:'New workspace folder'}))
+ expect(screen.queryByRole('dialog',{name:'Folders'})).toBeNull()
  fireEvent.click(screen.getByRole('button',{name:'Cancel'}))
- fireEvent.click(screen.getByRole('button',{name:'Collapse folders'}))
  await waitFor(()=>expect(document.activeElement).toBe(show))
 })
 it('does not remount an open document when the project root arrives late',async()=>{
@@ -145,7 +150,7 @@ it('does not redirect a newer navigation when an assignment retry finishes',asyn
 
 it('keeps the editor base digest through background refreshes and adopts a new base only on explicit reload',async()=>{
  const {client}=setup();await screen.findByRole('link',{name:/home-pack/})
- fireEvent.click(screen.getByRole('button',{name:'New folder'}))
+ await newFolder()
  fireEvent.change(screen.getByRole('textbox',{name:'Folder name'}),{target:{value:'Unsaved folder'}})
  const before=client.getQueryData<{document:ReturnType<typeof defaultFolders>;digest:string}>(FOLDERS_KEY)!
  act(()=>client.setQueryData(FOLDERS_KEY,{...before,digest:'background-refresh'}))
@@ -194,7 +199,8 @@ it('restores focus when dismissing the parent folder menu without changing locat
 
 it('moves a graph with its own folder identity and a readable label',async()=>{
  const {client}=setup({graphs:true})
- fireEvent.click(await screen.findByRole('button',{name:'Move flow to folder'}))
+ fireEvent.keyDown(await screen.findByRole('button',{name:'Options for flow'}),{key:'Enter'})
+ fireEvent.click(await screen.findByRole('menuitem',{name:'Move to folder…'}))
  expect(screen.getByRole('dialog',{name:'Move graph'})).toBeTruthy()
  fireEvent.keyDown(screen.getByRole('combobox',{name:'Destination folder'}),{key:'Enter'})
  fireEvent.click(await screen.findByRole('option',{name:/Operations$/}))
@@ -202,4 +208,27 @@ it('moves a graph with its own folder identity and a readable label',async()=>{
  await waitFor(()=>expect(saveFolderAction).toHaveBeenCalled())
  const doc=client.getQueryData<{document:{version:number;assignments:Record<string,string>}}>(FOLDERS_KEY)!.document
  expect(doc.version).toBe(2);expect(doc.assignments['graph:flow']).toBe('dept');expect(doc.assignments['department-pack']).toBe('child')
+})
+
+it('keeps only actual folders in the left tree and returns to all items through the location bar',async()=>{
+ setup();await screen.findByRole('link',{name:/home-pack/})
+ expect(within(screen.getByRole('navigation',{name:'Folder navigation'})).queryByRole('button',{name:'Packs & graphs'})).toBeNull()
+ fireEvent.click(within(screen.getByRole('navigation',{name:'Folder location'})).getByRole('button',{name:'Packs & graphs'}))
+ expect(await screen.findByRole('link',{name:/department-pack/})).toBeTruthy()
+})
+
+it('moves selected packs and graphs together in one conflict-checked folder write',async()=>{
+ const {client}=setup({graphs:true});await screen.findByRole('link',{name:/home-pack/})
+ fireEvent.click(await screen.findByRole('checkbox',{name:'Select flow'}))
+ fireEvent.click(screen.getByRole('checkbox',{name:'Select home-pack'}))
+ fireEvent.click(screen.getByRole('button',{name:'Move to…'}))
+ const dialog=screen.getByRole('dialog',{name:'Move selected items'})
+ fireEvent.keyDown(within(dialog).getByRole('combobox',{name:'Destination folder'}),{key:'Enter'})
+ fireEvent.click(await screen.findByRole('option',{name:/Operations$/}))
+ fireEvent.click(within(dialog).getByRole('button',{name:'Move'}))
+ await waitFor(()=>expect(saveFolderAction).toHaveBeenCalledOnce())
+ expect(vi.mocked(saveFolderAction).mock.calls[0]![0].digest).toBe('read')
+ const doc=client.getQueryData<{document:{assignments:Record<string,string>}}>(FOLDERS_KEY)!.document
+ expect(doc.assignments['graph:flow']).toBe('dept');expect(doc.assignments['home-pack']).toBe('dept')
+ expect(doc.assignments['department-pack']).toBe('child')
 })

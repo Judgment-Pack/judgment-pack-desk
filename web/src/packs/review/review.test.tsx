@@ -148,6 +148,7 @@ describe('the collection', () => {
     const alpha = await screen.findByRole('link', { name: /alpha/ })
     await waitFor(() => expect(alpha.textContent).toContain('Changed since the last lock'))
     expect(screen.getByRole('link', { name: /gamma/ }).textContent).not.toContain('Changed since the last lock')
-    expect(screen.getByRole('link', { name: 'Review and lock' }).getAttribute('href')).toBe('/packs/_review')
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Collection options' }), { key: 'Enter' })
+    expect((await screen.findByRole('menuitem', { name: 'Review and lock' })).getAttribute('href')).toBe('/packs/_review')
   })
 })

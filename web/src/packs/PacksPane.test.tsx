@@ -98,13 +98,13 @@ describe('the packs pane', () => {
   it('narrows by a substring of the id', async () => {
     draw(packs(['intake-triage', 'vendor-onboarding', 'access-review']))
     await screen.findByRole('link', { name: /intake-triage/ })
-    fireEvent.change(screen.getByLabelText('Search decisions'), { target: { value: 'ven' } })
+    fireEvent.change(screen.getByLabelText('Search packs and graphs'), { target: { value: 'ven' } })
     await waitFor(() => expect(packLinks()).toHaveLength(1))
     expect(screen.getByRole('link', { name: /vendor-onboarding/ })).toBeTruthy()
 
     // A filter that matches nothing is not an empty project.
-    fireEvent.change(screen.getByLabelText('Search decisions'), { target: { value: 'zzz' } })
-    await screen.findByText('No matching decisions')
+    fireEvent.change(screen.getByLabelText('Search packs and graphs'), { target: { value: 'zzz' } })
+    await screen.findByText('No matching packs or graphs')
   })
 
   it('reorders on the sort control, and offers only orders it has data for', async () => {
@@ -113,11 +113,11 @@ describe('the packs pane', () => {
     const names = () => packLinks().map((link) => link.textContent)
     expect(names()[0]).toContain('a-pack')
 
-    fireEvent.keyDown(screen.getByLabelText('Sort decisions'), { key: 'Enter' })
+    fireEvent.keyDown(screen.getByLabelText('Sort packs and graphs'), { key: 'Enter' })
     const options = await screen.findAllByRole('menuitemradio')
     // ID ascending and descending, and nothing else: `list_packs` reports no
     // date and no size, so any other order would be the desk inventing one.
-    expect(options.map((option) => option.textContent?.replace('✓', '').trim())).toEqual(['Decision ID: A–Z', 'Decision ID: Z–A'])
+    expect(options.map((option) => option.textContent?.replace('✓', '').trim())).toEqual(['Name: A–Z', 'Name: Z–A'])
     fireEvent.click(options[1]!)
     await waitFor(() => expect(names()[0]).toContain('c-pack'))
   })
@@ -191,12 +191,12 @@ describe('the packs pane', () => {
     })
     draw(stub)
     await screen.findByText(/the runtime refused the listing/)
-    expect(screen.queryByText('No decisions yet')).toBeNull()
+    expect(screen.queryByText('No packs or graphs yet')).toBeNull()
   })
 
   it('says a project declares none where the listing said so', async () => {
     draw(packs([]), '/packs?type=pack')
-    await screen.findByText('No decisions yet')
+    await screen.findByText('No packs or graphs yet')
   })
 
   it('claims no version for a pack whose document the listing could not read', async () => {
@@ -231,7 +231,7 @@ describe('the packs pane', () => {
   it('is a named navigation, because it is a list of navigations', async () => {
     draw(packs(['a-pack']))
     await screen.findByRole('link', { name: /a-pack/ })
-    expect(screen.getByRole('navigation', { name: 'Decisions' })).toBeTruthy()
+    expect(screen.getByRole('navigation', { name: 'Packs & graphs' })).toBeTruthy()
   })
 })
 
@@ -350,7 +350,7 @@ it('browses packs and graphs with the same id without confusing their links or r
 })
 it('composes only explicitly selected saved packs', async () => {
   draw(packs(['alpha','beta']))
-  fireEvent.click(await screen.findByRole('checkbox', {name:'Select alpha for composition'}))
+  fireEvent.click(await screen.findByRole('checkbox', {name:'Select alpha'}))
   const link=screen.getByRole('link', {name:/Compose graph/})
   expect(link.getAttribute('href')).toBe('/graphs?view=compose&pack=alpha')
   fireEvent.click(screen.getByRole('button', {name:'Clear selection'}))
@@ -361,8 +361,8 @@ it('composes only explicitly selected saved packs', async () => {
 it('does not claim that an unsupported graph inventory is empty', async () => {
   const stub = packs([])
   draw(stub, '/packs?type=graph')
-  await screen.findByText('This runtime cannot list saved graphs. Connect a newer runtime to browse all decisions.')
-  expect(screen.queryByText('No decisions yet')).toBeNull()
+  await screen.findByText('This runtime cannot list saved graphs. Connect a newer runtime to browse all packs and graphs.')
+  expect(screen.queryByText('No packs or graphs yet')).toBeNull()
   expect(stub.calls.map(call => call.name)).not.toContain('experimental_list_graphs')
 })
 
@@ -393,5 +393,5 @@ it('withdraws saved graph rows after a refresh fails without claiming an empty p
   await queryClient.refetchQueries({queryKey:['experimental_list_graphs']})
   await screen.findByText(/graph inventory unavailable/)
   expect(document.querySelector('a[href="/graphs/flow"]')).toBeNull()
-  expect(screen.queryByText('No decisions yet')).toBeNull()
+  expect(screen.queryByText('No packs or graphs yet')).toBeNull()
 })
