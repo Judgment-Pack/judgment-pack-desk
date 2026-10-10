@@ -30,7 +30,7 @@ function setup(savedOpen = true) {
       { index: true, element: null },
       { path: ':packId', element: <><h1>Pack document</h1><Link to="/packs">Back to packs</Link></> }
     ] }
-  ] }], { initialEntries: ['/packs'] })
+  ] }], { initialEntries: ['/packs?type=pack'] })
   const query = testQueryClient()
   render(<QueryClientProvider client={query}><McpContext.Provider value={connected({ client: stub.client })}>
     <RouterProvider router={router} />
@@ -43,7 +43,7 @@ it('keeps preview separate from a saved document Assistant and restores each on 
   const row = await screen.findByRole('link', { name: /alpha.*A complete/ })
   expect(screen.queryByRole('complementary')).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Preview alpha' }))
-  let pane = await screen.findByRole('complementary', { name: 'Pack preview' })
+  let pane = await screen.findByRole('complementary', { name: 'Decision preview' })
   expect(within(pane).getByText('Configured')).toBeTruthy()
   expect(within(pane).getByText('Technical details').closest('details')?.open).toBe(false)
   fireEvent.click(within(pane).getByRole('link', { name: 'Open pack' }))
@@ -51,11 +51,11 @@ it('keeps preview separate from a saved document Assistant and restores each on 
   await screen.findByRole('complementary', { name: 'Assistant' })
   await waitFor(() => expect(document.querySelector('.desk')?.getAttribute('style')).toContain('--inspector-w: 600px'))
   await act(async () => { await router.navigate(-1) })
-  pane = await screen.findByRole('complementary', { name: 'Pack preview' })
+  pane = await screen.findByRole('complementary', { name: 'Decision preview' })
   expect(within(pane).getByRole('heading', { name: 'alpha' })).toBeTruthy()
   expect(document.querySelector('.desk')?.getAttribute('style')).toContain('--inspector-w: 360px')
   expect(row.closest('li')?.dataset.selected).toBe('true')
-  fireEvent.click(within(pane).getByRole('button', { name: 'Collapse pack preview' }))
+  fireEvent.click(within(pane).getByRole('button', { name: 'Collapse decision preview' }))
   await act(async () => { await router.navigate('/packs/alpha') })
   await screen.findByRole('complementary', { name: 'Assistant' })
   expect(JSON.parse(localStorage.getItem(key)!).inspector).toEqual({ open: true })
@@ -66,7 +66,7 @@ it('supports Space, arrow browsing, Escape and filtering without navigation or t
   const { router, stub } = setup(false)
   const row = await screen.findByRole('link', { name: /alpha.*A complete/ })
   row.focus(); fireEvent.keyDown(row, { key: ' ' })
-  await screen.findByRole('complementary', { name: 'Pack preview' })
+  await screen.findByRole('complementary', { name: 'Decision preview' })
   fireEvent.keyDown(row, { key: 'ArrowDown' })
   expect(document.activeElement).toBe(screen.getByRole('link', { name: /beta.*A different/ }))
   expect(within(screen.getByRole('complementary')).getByRole('heading', { name: 'beta' })).toBeTruthy()

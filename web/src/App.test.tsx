@@ -22,7 +22,7 @@ describe('the desk, connected', () => {
 
   it('keeps the pack collection available at its own URL', async () => {
     renderConnected(<App />, connected({ client: EMPTY_PROJECT.client, known: true }), { path: '/packs' })
-    await screen.findByRole('heading', { name: /^Packs/ })
+    await screen.findByRole('heading', { name: /^Decisions/ })
   })
 
   it('says the tool listing could not be read rather than impersonating an older runtime', async () => {

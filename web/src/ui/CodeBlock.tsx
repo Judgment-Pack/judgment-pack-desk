@@ -8,7 +8,7 @@ import { Tooltip } from './Tooltip'
 import { VisuallyHidden } from 'radix-ui'
 
 /** Read-only source: wrapping is presentation; Copy always uses the full text. */
-export function CodeBlock({ text, label = 'JSON' }: { text: string; label?: string }) {
+export function CodeBlock({ text, label = 'JSON', lang }: { text: string; label?: string; lang?: string }) {
   useLocale()
   const [wrap, setWrap] = useState(true)
   const [feedback, setFeedback] = useState('')
@@ -26,6 +26,6 @@ export function CodeBlock({ text, label = 'JSON' }: { text: string; label?: stri
     </div>
     {feedback === 'Copied' && <VisuallyHidden.Root role="status">{systemMessage(feedback)}</VisuallyHidden.Root>}
     {feedback && feedback !== 'Copied' && <p className={styles.feedback} role="status">{systemMessage(feedback)}</p>}
-    <pre id={id} className={styles.source} data-wrap={wrap} tabIndex={0} aria-label={label}><code>{text}</code></pre>
+    <pre id={id} className={styles.source} data-wrap={wrap} tabIndex={0} aria-label={label}><code lang={lang}>{text}</code></pre>
   </div>
 }

@@ -1,10 +1,9 @@
 import { PaneToggle } from './PaneToggle'
-import { useChats } from '../chat/ChatProvider'
 import { Message } from '../i18n/Message'
 import { msg, useLocale } from '../i18n'
 import { Tooltip } from '../ui/Tooltip'
 import { type ReactElement } from 'react'
-/** Primary navigation stays about destinations. Packs and Judgment Graphs have separate entries; tests live
+/** Primary navigation stays about destinations. Packs and graphs share Decisions; tests live
  * inside each pack or graph; project file editing is available from the project menu.
  * The shell never runs tests or fetches graph inventory to draw navigation. */
 import { Dialog, DropdownMenu, VisuallyHidden } from 'radix-ui'
@@ -18,7 +17,6 @@ import {
   IconGear,
   IconHelp,
   IconPack,
-  IconGraph,
   IconHistory
 } from './icons'
 import type { LeftRailMode } from './paneState'
@@ -117,12 +115,6 @@ function RailBody({
   return (
     <>
       <PacksGroup icons={icons} onNavigate={onNavigate} />
-      <Labelled icons={icons} label={msg("Graphs")}>
-        <NavLink className="desk-nav-item" to="/graphs" aria-label={msg("Graphs")} onClick={onNavigate}>
-          <IconGraph />
-          {!icons && <span className="desk-nav-label">{msg("Graphs")}</span>}
-        </NavLink>
-      </Labelled>
       <Labelled icons={icons} label={msg("Jobs")}>
         <NavLink className="desk-nav-item" to="/jobs" aria-label={msg("Jobs")} onClick={onNavigate}>
           <IconHistory />{!icons && <span className="desk-nav-label">{msg("Jobs")}</span>}
@@ -190,41 +182,26 @@ function Labelled({
   )
 }
 
-/**
- * The Packs destination.
- *
- * One entry, and a count beside it — **and no count at all** where the listing
- * failed or has not answered. `0` would be a claim about the project, and the
- * one thing the desk knows in that state is that it does not know. That rule
- * came here with the list it used to draw, and the failure is still shown as
- * the failure rather than as an empty project.
- *
- * The count is **in the accessible name**, not only in the markup. Every rail
- * entry carries an `aria-label`, which replaces its contents for a screen
- * reader — so a count rendered as a child of one is a number only a sighted
- * reader gets. The name says it instead.
- */
+/** One Decisions destination. The collection owns its combined count;
+ * the rail does not turn a pack-only or unavailable listing into that count. */
 function PacksGroup({ icons, onNavigate }: { icons: boolean; onNavigate?: () => void }) {
   useLocale()
-  const { data, error } = usePacks()
+  const { error } = usePacks()
   const { pathname } = useLocation()
-  const active = /^\/packs(?:\/|$)/.test(pathname)
-  const {packDrafts}=useChats()
-  const count = error === null && data !== undefined ? (data.packs ?? []).length + packDrafts.filter(item=>!item.finalized).length : undefined
+  const active = /^\/(packs|graphs|decisions)(?:\/|$)/.test(pathname)
 
   return (
     <>
-      <Labelled icons={icons} label={msg("Packs")}>
+      <Labelled icons={icons} label={msg("Decisions")}>
         <Link
           className="desk-nav-item"
           to="/packs"
           aria-current={active ? 'page' : undefined}
-          aria-label={count === undefined ? msg("Packs") : msg("Packs, {{value0}}", { value0: count })}
+          aria-label={msg("Decisions")}
           onClick={onNavigate}
         >
           <IconPack />
-          {!icons && <span className="desk-nav-label">{msg("Packs")}</span>}
-          {!icons && count !== undefined && <span className="desk-nav-count">{count}</span>}
+          {!icons && <span className="desk-nav-label">{msg("Decisions")}</span>}
         </Link>
       </Labelled>
       {!icons && error && (

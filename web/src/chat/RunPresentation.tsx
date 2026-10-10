@@ -1,3 +1,5 @@
+import { GraphStepDetails } from '../graphs/GraphStepDetails'
+import { GRAPH_TOOLS } from '../graphs/work'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { SearchStepDetails } from '../search/SearchSources'
 import { ProviderIcon, providerName } from '../search/ProviderIcon'
@@ -38,18 +40,18 @@ export function WorkSummary({ state, work, documents=[], onRead }: { state?: Run
    if(!selected || !selectedJSON || !onRead)return
    const token=++inspection.current
    const {row,document}=JSON.parse(selectedJSON) as {row:WorkItem;document?:ChatAttachment}
-   onRead(<Inspection key={token} onClose={()=>{if(inspection.current===token)setSelected(null)}}>{row.name==='read_link'?<LinkStepDetails row={row} document={document}/>:<SearchStepDetails row={row}/>}</Inspection>,selected.opener)
+   onRead(<Inspection key={token} onClose={()=>{if(inspection.current===token)setSelected(null)}}>{GRAPH_TOOLS.has(row.name)?<GraphStepDetails row={row}/>:row.name==='read_link'?<LinkStepDetails row={row} document={document}/>:<SearchStepDetails row={row}/>}</Inspection>,selected.opener)
   },[selected,selectedJSON,onRead])
   if (!rows.length && !notices.length && !critique) return null
   const failures = rows.filter(row => row.status === 'failed').length
   return <div className={styles.workGroup}>
    {(rows.length>0||notices.length>0||critique)&&<Disclosure className={styles.work} title={<span className={styles.workTitle}>{rows.length ? msg('Work · {{count}} steps', {count:rows.length}) : msg('Assistant notice')}{failures>0&&<span className={styles.workWarning}><IconException/>{msg(' · {{count}} failed',{count:failures})}</span>}</span>}>
     {rows.length > 0 && <ol>{rows.map(row => {
-     const search=row.name==='search_sources', link=row.name==='read_link', interactive=(search||link)&&!!onRead
+     const search=row.name==='search_sources', link=row.name==='read_link', graph=GRAPH_TOOLS.has(row.name), interactive=(search||link||graph)&&!!onRead
      const status=row.status === 'complete' ? msg('Done') : row.status === 'failed' ? msg('Failed') : row.status === 'interrupted' ? msg('Interrupted') : msg('Working…')
      const label=TOOL_LABELS[row.name] ?? row.name
      const contents=<><span className={styles.workIcon}>{search?<ProviderIcon provider={row.search?.provider}/>:link?<IconLink/>:row.status==='complete'?<IconCheck/>:row.status==='failed'?<IconException/>:<IconHistory/>}</span><div className={styles.workStep}><span>{label}</span>{!interactive&&row.failure&&<small>{systemMessage(searchFailureMessage(row.failure)!)}</small>}</div><span className={styles.workState}>{status}</span>{interactive&&<IconChevronRight/>}</>
-     return <li key={row.id} data-status={row.status}>{interactive?<Tooltip side="right" openOnFocus={false} content={link?msg('View link details'):row.search?.provider?msg('View {{provider}} details',{provider:providerName(row.search.provider)!}):msg('View search details')}><button type="button" className={styles.workRow} aria-label={`${label} · ${link?row.link?new URL(row.link.url).hostname:msg('Link'):providerName(row.search?.provider)??msg('Web search')} · ${status}`} aria-pressed={selected?.id===row.id} onClick={event=>setSelected({id:row.id,opener:event.currentTarget})}>{contents}</button></Tooltip>:<div className={styles.workRow}>{contents}</div>}</li>
+     return <li key={row.id} data-status={row.status}>{interactive?<Tooltip side="right" openOnFocus={false} content={graph?msg('View decision step'):link?msg('View link details'):row.search?.provider?msg('View {{provider}} details',{provider:providerName(row.search.provider)!}):msg('View search details')}><button type="button" className={styles.workRow} aria-label={`${label} · ${graph?msg('Decision'):link?row.link?new URL(row.link.url).hostname:msg('Link'):providerName(row.search?.provider)??msg('Web search')} · ${status}`} aria-pressed={selected?.id===row.id} onClick={event=>setSelected({id:row.id,opener:event.currentTarget})}>{contents}</button></Tooltip>:<div className={styles.workRow}>{contents}</div>}</li>
     })}</ol>}
     {notices.map(notice => <p key={notice}>{systemMessage(notice)}</p>)}
     {critique && <p><Message text={"Adversarial review: <0/>"} slots={[critique]} /></p>}

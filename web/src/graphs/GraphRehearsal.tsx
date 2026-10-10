@@ -1,3 +1,9 @@
+import { useQuery } from '@tanstack/react-query'
+import { Field } from '../ui/Field'
+import { TextArea } from '../ui/TextArea'
+import { Disclosure } from '../ui/Disclosure'
+import { compareGraphRevision, hasGraphProvenance, type GraphProvenance } from './provenance'
+import styles from './GraphWorkspace.module.css'
 import { useEffect, useRef, useState } from 'react'
 import { msg, useLocale } from '../i18n'
 import { arrayItemsBytes, memberBytes } from '../admin/memberBytes'
@@ -26,7 +32,7 @@ export async function rehearseGraph(id: string, inputs: string, signal?: AbortSi
   }
   // Keep the answer text: JSON.stringify would change numbers and escapes in
   // dispositions. No document is joined to this answer.
-  return { raw, answer: answer as Labels & { status: string } }
+  return { raw, answer: answer as Labels & GraphProvenance & { status: string } }
 }
 
 export function GraphRehearsal({ graphId }: { graphId: string }) {
@@ -51,19 +57,21 @@ export function GraphRehearsal({ graphId }: { graphId: string }) {
       if (!controller.signal.aborted) setBusy(false)
     }
   }
-  return <section aria-label={msg('Graph rehearsal')}>
+  return <section className={styles.workspace} aria-label={msg('Graph rehearsal')}>
     <h2>{msg('Rehearsal')}</h2>
-    <p>{msg('A rehearsal shows the runtime’s experimental answer for the facts the owner typed. It does not establish a decision, a record in the trail, a reviewed set consulted, which bytes were read, or that the facts are true.')}</p>
-    <p>{msg('Neither the plan nor a rehearsal carries a digest of the graph document, so each is shown as its own answer, beside the document, and never joined to it. artifact.bundleDigest is the runtime’s bundle’s digest, not the graph’s.')}</p>
-    <p>{msg('The trail is silent about rehearsals. Desk keeps neither the inputs nor the result: they live on the page until it is left.')}</p>
-    <label>{msg('Inputs by node id')}
-      <textarea value={inputs} disabled={busy} spellCheck={false} rows={12} onChange={event => { setInputs(event.target.value); setResult(undefined); setError(undefined) }} />
-    </label>
-    <p className="quiet">{msg('Enter a JSON object keyed by node id, each entry with optional facts and evidence members. Maximum 4 MiB.')}</p>
+    <p className={styles.hint}>{msg('Try supplied facts against this graph. Every node runs; a rehearsal creates no decision audit record and takes no external action.')}</p>
+    <Disclosure title={msg('About rehearsal')}>
+      <p>{msg('The runtime evaluates the supplied inputs. A matching byte revision does not establish that the policy or facts are correct, or that the project was reviewed.')}</p>
+      <p>{msg('Inputs and results on this page last until you leave. Rehearsals requested in chat are retained with the conversation and sent to its selected model provider.')}</p>
+    </Disclosure>
+    <Field label={msg('Inputs by node id')} hint={msg('Enter a JSON object keyed by node id, each entry with optional facts and evidence members. Maximum 4 MiB.')}>{w =>
+      <TextArea {...w} value={inputs} disabled={busy} spellCheck={false} rows={12} onChange={event => { setInputs(event.target.value); setResult(undefined); setError(undefined) }}/>
+    }</Field>
     <Button onClick={() => void run()} disabled={busy}>{busy ? msg('Rehearsing…') : msg('Rehearse')}</Button>
     {error && <pre role="alert">{error}</pre>}
     {result && <>
-      <GraphLabels labels={result.answer} />
+      {hasGraphProvenance(result.answer) ? <RevisionCheck graphId={graphId} answer={result.answer}/> : <p className={styles.hint}>{msg("This runtime did not identify all evaluated file revisions. Results are shown separately from the current graph.")}</p>}
+      <Disclosure title={msg("Runtime details")}><GraphLabels labels={result.answer} /></Disclosure>
       <p lang="en">{result.answer.status}</p>
       <RehearsalMembers raw={result.raw} />
       <pre lang="en">{result.raw}</pre>
@@ -93,4 +101,12 @@ function RehearsalMembers({ raw }: { raw: string }) {
     </ul></li>}
     {member(raw, 'handoffs')}
   </ul>
+}
+
+function RevisionCheck({graphId, answer}: {graphId: string; answer: GraphProvenance}) {
+  const check = useQuery({queryKey: ['desk-graph-revision', graphId, answer], queryFn: ({signal}) => compareGraphRevision(graphId, answer, signal), retry: false, refetchOnWindowFocus: true})
+  return <div className={`${styles.feedback} ${styles.toolbar}`} role="status">
+    <span>{check.isPending ? msg('Checking evaluated file revisions…') : check.isError ? msg('Current file revisions could not be checked.') : check.data === 'matching' ? msg('The evaluated graph, configuration and packs match the files just read.') : msg('The project has changed since this rehearsal. Run again to test the current files.')}</span>
+    <Button variant="quiet" disabled={check.isFetching} onClick={() => void check.refetch()}>{msg('Check revisions')}</Button>
+  </div>
 }

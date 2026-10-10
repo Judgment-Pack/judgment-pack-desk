@@ -1,3 +1,4 @@
+import { GraphArtifacts, GraphDraftNotice } from '../graphs/GraphArtifacts'
 import { ModelControl } from './ModelControl'
 import { chatReasoningAgent } from './reasoning'
 import { composeMessageInput } from './messageInput'
@@ -194,9 +195,10 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
     {draftAvailable && (onOpenDraft || draftVisible) && state.candidates.filter(candidate => candidate.responseId === response.id).map(candidate => <DraftReference key={candidate.revision} candidate={candidate} open={draftVisible} latest={candidate === state.candidates.at(-1)} onOpen={onOpenDraft}/>)}
   </div> : null
   const unassignedSearches=(chat.searches??[]).filter(s=>!responses.some(r=>r.searches?.some(ref=>ref.id===s.id)))
+  const graphDraftLinks = chat.graphDrafts?.length ? <Button variant="quiet" onClick={event => read(<GraphArtifacts chatId={chat.id} drafts={chat.graphDrafts!}/>, event.currentTarget)}>{msg('Graphs')} · {chat.graphDrafts.length}</Button> : null
   const conversationSources = unassignedSearches.length + unassigned.documents.length + unassigned.websites.length + unassignedResearch.length > 0
     ? <Button variant="quiet" onClick={event => read(<section><h3>{msg('Conversation sources')}</h3><SourceList chatId={chat.id} documents={unassigned.documents} websites={unassigned.websites} searches={unassignedSearches} sourceIds={unassignedResearch} binding={binding} onRead={read}/></section>, event.currentTarget)}>{msg('Sources')}</Button> : null
-  const toolbar = <ChatToolbar loading={historyLoading} sources={<>{conversationSources}{draftAvailable && orphanCandidates.length > 0 && (draftVisible ? <span className={styles.caption}>{msg('Open')}</span> : onOpenDraft && <Button variant="quiet" onClick={onOpenDraft}>{msg('Open draft')}</Button>)}</>} chat={chat} history={history} historyRef={historyButton} onHistory={() => setHistory(true)} onBack={backToChat}
+  const toolbar = <ChatToolbar loading={historyLoading} sources={<>{conversationSources}{graphDraftLinks}{draftAvailable && orphanCandidates.length > 0 && (draftVisible ? <span className={styles.caption}>{msg('Open')}</span> : onOpenDraft && <Button variant="quiet" onClick={onOpenDraft}>{msg('Open draft')}</Button>)}</>} chat={chat} history={history} historyRef={historyButton} onHistory={() => setHistory(true)} onBack={backToChat}
     onNew={() => { if (!store?.canCreate) return; const next = store.startChat(chat.pack, chat.mode, true, chat.draftId); setHistory(false); openNewChat(navigate, next, location) }} />
   return <section className={styles.chat} data-chat-id={chat.id} data-history-loading={historyLoading || undefined} data-landing={landing && empty || undefined} aria-label={msg("Assistant chat")}>
     {toolbarTarget ? createPortal(toolbar, toolbarTarget) : placement === 'main' && headerTarget === undefined ? <header className={styles.chatHeader}>{toolbar}</header> : null}
@@ -205,6 +207,7 @@ export function ChatPanel({ chat, landing = false, onOpenDraft, draftVisible = f
     <div className={styles.thread} ref={thread} onScroll={() => { const node = thread.current; if (node && node.getClientRects().length) { following.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80; setAwayFromLatest(!following.current) } }}>
       <div className={styles.threadContent} ref={threadContent}>
       {empty && (!historyLoading || landing) && <div className={styles.welcome}><h1>{chat.pack ? msg("What would you like to change?") : msg("What would you like to work on?")}</h1><p>{chat.pack ? msg("Ask about {{value0}}, test an idea, or propose a change.", { value0: chat.pack.id }) : msg("Ask a question, explore an idea, or create and improve a pack.")}</p></div>}
+      <GraphDraftNotice chatId={chat.id} drafts={chat.graphDrafts ?? []}/>
       {shownTurns.map((turn,index) => <Fragment key={turn.id ?? `${turn.at}-${index}`}>{days[index] && <div className={styles.day}>{days[index]}</div>}<article className={styles.message} data-role={turn.role} data-kind={turn.kind} data-message-id={turn.id} aria-label={turn === liveTurn ? msg("Response in progress") : undefined}>
         {turn.kind !== 'unknowns' && <MessageTime pending={turn === liveTurn} turn={turn} formatted={times[index]} onOpen={opener => read(<MessageDetails turn={turn} text={turn.kind === 'note' ? systemMessage(turn.text) : turn.text} input={turn.input} />, opener)} />}
         {turn.kind === 'unknowns' ? <OpenQuestions text={turn.text} documents={chat.documents} onRead={read}><MessageTime turn={turn} formatted={times[index]} onOpen={opener => read(<MessageDetails turn={turn} text={turn.text}/>, opener)}/></OpenQuestions>

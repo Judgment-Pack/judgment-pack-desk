@@ -841,3 +841,24 @@ explicitly unavailable, and the menu stays available to choose another target.
 Older chats with no connection identity require a choice before their next send;
 old replies are never assigned today's provider. New reply details show the actual
 bound connection and model.
+
+## Decision composition workspace
+
+Packs and graphs share one Decisions collection, its existing folders, search,
+preview and resizable pane. Use type filters and small type labels; preserve
+the same selection, hover, density, keyboard and empty/loading/error treatment
+for both. Graphs do not need a separate theme or global navigation entry.
+
+Graph composition uses the shared relationship map and a contextual inspector.
+A labelled Add pack/Connect form and List view provide an alternative to canvas
+interaction. Selection preserves the viewport. Source and runtime payloads use
+shared disclosures/code views. Edits invalidate an outstanding write offer;
+Validate is distinct from the explicit Review/Confirm write sequence.
+
+The design follows the information hierarchy of [Linear's workspace refresh](https://linear.app/now/behind-the-latest-design-refresh),
+[GoRules' graph workspace](https://docs.gorules.io/brms/build/graphs),
+[DecisionRules' flow designer](https://docs.decisionrules.io/doc/rules/flow/flow-designer),
+and [Camunda's decision requirements graphs](https://docs.camunda.io/docs/components/modeler/dmn/decision-requirements-graph/).
+These inform discoverability and inspection, not execution semantics. JPS
+retains its own tokens and runtime contract. The non-drag form follows
+[WCAG's dragging-movements guidance](https://www.w3.org/WAI/WCAG22/Understanding/dragging-movements.html).

@@ -16,12 +16,12 @@ import { Empty, ErrorBox, Loading, Pill, Section, statusTone } from '../componen
 import { TargetPair, describeTargetAssertion } from '../components/TargetPair'
 import { TracePanel } from '../components/TracePanel'
 import { GraphFindingsPanel } from '../graphs/GraphFindings'
-import { GraphAuthor } from '../graphs/GraphAuthor'
+import { CodeBlock } from '../ui/CodeBlock'
+import { GraphWorkspace } from '../graphs/GraphWorkspace'
 import { GraphLabels } from '../graphs/GraphLabels'
 import { GraphRehearsal } from '../graphs/GraphRehearsal'
 import { GraphPlanView } from '../graphs/GraphPlan'
 import { shownMessage, shownPath } from '../graphs/client'
-import { parseDisposition } from '../mcp/canonical'
 import {
   bindGraphDigests,
   deriveWalkLayout,
@@ -45,7 +45,8 @@ export function GraphView() {
   useLocale()
   const { graphId } = useParams<{ graphId?: string }>()
   const [search, setSearch] = useSearchParams()
-  const tests = search.get('view') === 'tests'
+  const compose = search.get('view') === 'compose' || search.has('draft')
+  const tests = !compose && search.get('view') === 'tests'
   const rehearsal = search.get('view') === 'rehearsal' && graphId !== undefined
   const plan = search.get('view') === 'plan' && graphId !== undefined
   const { status, graphInventorySupported, graphTracesSupported } = useMcp()
@@ -66,17 +67,18 @@ export function GraphView() {
 
   return <article className="detail" data-measure="full" data-layout="page">
     <PageHeader title={msg("Graphs")} context={graphId} titleHref={graphId ? "/graphs" : undefined}
-      actions={<Button onClick={run} disabled={status !== 'ready' || isFetching}>
+      actions={<><ButtonLink to="/packs">{msg("Decisions")}</ButtonLink>{!compose && <ButtonLink to={graphId ? `/graphs/${encodeURIComponent(graphId)}?view=compose` : "/graphs?view=compose"}>{graphId ? msg("Edit composition") : msg("Create graph")}</ButtonLink>}{!compose && <Button onClick={run} disabled={status !== 'ready' || isFetching}>
         {isFetching ? msg("Running…") : graphId ? msg("Run tests") : msg("Run all graph tests")}
-      </Button>}
+      </Button>}</>}
       navigation={graphId ? <nav className={workspace.navigation} aria-label={msg("Graph sections")}>
-        <Link to={`/graphs/${encodeURIComponent(graphId)}`} aria-current={!tests && !plan && !rehearsal ? 'page' : undefined}>{msg("Diagram")}</Link>
+        <Link to={`/graphs/${encodeURIComponent(graphId)}?view=compose`} aria-current={compose ? 'page' : undefined}>{msg("Composition")}</Link>
+        <Link to={`/graphs/${encodeURIComponent(graphId)}`} aria-current={!compose && !tests && !plan && !rehearsal ? 'page' : undefined}>{msg("Diagram")}</Link>
         <Link to={`/graphs/${encodeURIComponent(graphId)}?view=plan`} aria-current={plan ? 'page' : undefined}>{msg("Plan")}</Link>
         <Link to={`/graphs/${encodeURIComponent(graphId)}?view=rehearsal`} aria-current={rehearsal ? 'page' : undefined}>{msg("Rehearsal")}</Link>
         <Link to={`/graphs/${encodeURIComponent(graphId)}?view=tests`} aria-current={tests ? 'page' : undefined}>{msg("Tests")}</Link>
       </nav> : undefined} />
     <PageBody width="full">
-      <GraphAuthor graphId={graphId} />
+      {compose ? <GraphWorkspace graphId={graphId} /> : <>
       <p className="meta"><Pill tone="quiet">{msg("Experimental")}</Pill></p>
       {!graphId && <p className="quiet">{msg("Connect packs and see how their results feed into the next decision.")}</p>}
       {!graphId && graphInventorySupported && (inventory.error
@@ -114,6 +116,7 @@ export function GraphView() {
           </>}
         <p className="quiet">{msg("Judgment Graphs use the runtime’s experimental graph format. A test run shows what the project’s own rows did, as the runtime reports it. It does not show that the rows are right, that coverage is complete, or any authorization.")}</p>
       </section>}
+      </>}
     </PageBody>
   </article>
 }
@@ -503,8 +506,8 @@ function GraphRowItem({ row, known }: { row: GraphTestRow; known: (string | unde
           )]} /></p>
       ) : (
         <div className="row-compare">
-          <GraphSide label={msg("expected headline")} text={row.expected} differs={row.expected !== row.actual} />
-          <GraphSide label={msg("actual headline")} text={row.actual} differs={row.expected !== row.actual} />
+          <GraphSide label={msg("expected headline")} text={row.expected} />
+          <GraphSide label={msg("actual headline")} text={row.actual} />
         </div>
       )}
 
@@ -556,7 +559,7 @@ function GraphNodeItem({ node }: { node: GraphTestNode }) {
         >
           {node.status}
         </span>
-        <span className="row-members">{summarize(node.actual)}</span>
+        <code className="row-members" lang="en">{node.actual}</code>
         {assertion && <Pill tone="quiet">{assertion}</Pill>}
       </div>
 
@@ -580,25 +583,8 @@ function GraphNodeItem({ node }: { node: GraphTestNode }) {
   )
 }
 
-function GraphSide({ label, text, differs }: { label: string; text: string; differs: boolean }) {
-  useLocale()
-  return (
-    <div className={`row-side${differs ? ' row-side-differs' : ''}`}>
-      <span className="row-side-label">{label}</span>
-      <p className="row-members">{summarize(text)}</p>
-    </div>
-  )
-}
-
-function summarize(text: string): string {
-  const disposition = parseDisposition(text)
-  if (!disposition) return text || msg("(none)")
-  const reasons = disposition.reasons ?? []
-  return (
-    [disposition.kind, disposition.outcomeId].filter(Boolean).join(' ') +
-    (reasons.length ? msg(' · reasons {{reasons}}', { reasons: reasons.join(', ') }) : '') +
-    (disposition.handoff ? msg(' · handoff {{state}}', { state: disposition.handoff.state }) : '')
-  )
+function GraphSide({label, text}: {label: string; text: string}) {
+  return <div className="row-side"><CodeBlock label={label} text={text}/></div>
 }
 
 /**
