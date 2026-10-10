@@ -8654,10 +8654,10 @@ function usePacks() { useExampleListing(); return readPacks() }'
     '      void top
       void bottom'
 
-  # 16. The combined Decisions rail must not invent a count from a pack listing.
+  # 16. The combined collection rail must not invent a count from a pack listing.
   mutate web 'the rail claims a count for a listing that never answered' web/src/shell/LeftRail.tsx \
-    '          {!icons && <span className="desk-nav-label">{msg("Decisions")}</span>}' \
-    '          {!icons && <><span className="desk-nav-label">{msg("Decisions")}</span><span className="desk-nav-count">0</span></>}'
+    '          {!icons && <span className="desk-nav-label">{msg("Packs & graphs")}</span>}' \
+    '          {!icons && <><span className="desk-nav-label">{msg("Packs & graphs")}</span><span className="desk-nav-count">0</span></>}'
 
 
 
@@ -8948,7 +8948,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # that brings it in — the step between `moveFocus` and `scrollRowIntoView`,
   # which each had a test and the thing between them did not.
   mutate web "a row that is not rendered yet is never focused" "$PN" \
-    '          else setWanted({ index: next, preview })' \
+    '          else setWanted({ index: next, preview, selection })' \
     '          else void next'
   mutate web "a shorter row height leaves the scroll where it was" "$WR" \
     '  }, [node, count, rowHeight])' \
@@ -9004,7 +9004,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
 
   # The shared destination must remain named for assistive technology.
   mutate web 'the rail count is invisible to a screen reader' web/src/shell/LeftRail.tsx \
-    '          aria-label={msg("Decisions")}' \
+    '          aria-label={msg("Packs & graphs")}' \
     '          aria-label=""'
 
   # 8. The widened convention rule, and a module outside src/ui to break it on.

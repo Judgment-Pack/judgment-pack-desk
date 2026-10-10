@@ -21,7 +21,7 @@ function read(key: string | undefined): Preferences {
 function useFolderState(storageKey?: string) {
  const client=useQueryClient(), navigate=useNavigate(), location=useLocation()
  const query=useQuery({queryKey:FOLDERS_KEY,queryFn:({signal})=>loadFolders(signal),retry:false,staleTime:0,refetchOnWindowFocus:true})
- const {packDrafts,deletedDrafts}=useChats()
+ const {packDrafts,deletedDrafts,chats,ready}=useChats()
  const raw=query.data?.document ?? defaultFolders()
  const assignments={...raw.assignments}
  for(const draft of packDrafts) {
@@ -30,12 +30,13 @@ function useFolderState(storageKey?: string) {
   if(draft.finalized && !Object.hasOwn(assignments,draft.finalized.id))assignments[draft.finalized.id]=assignments[draft.id]!
  }
  for(const id of deletedDrafts)delete assignments[id]
+ if(ready){const graphDrafts=new Set(chats.flatMap(chat=>(chat.graphDrafts??[]).map(draft=>'graph-draft:'+draft.draftId)));for(const id of Object.keys(assignments))if(id.startsWith('graph-draft:')&&!graphDrafts.has(id))delete assignments[id]}
  const document={...raw,assignments}
  const [settings,setSettings]=useState(()=>({key:storageKey,value:read(storageKey)})), [message,setMessage]=useState('')
  if(settings.key!==storageKey)setSettings({key:storageKey,value:read(storageKey)})
  const prefs={...settings.value,collapsed:!settings.value.visibilityChosen&&location.pathname!=='/packs'?true:settings.value.collapsed}
  const [editorFields,setEditorFields]=useState({name:'',destination:WORKSPACE_ROOT,filter:''})
- const [editing,setEditing]=useState<{kind:'create'|'rename'|'move'|'pack'; id?:string; parentId?:string|null}|null>(null)
+ const [editing,setEditing]=useState<{kind:'create'|'rename'|'move'|'pack'|'items'; ids?:string[]; id?:string; parentId?:string|null}|null>(null)
  const [overlay,setOverlay]=useState(false)
  const formBase=useRef({name:'',destination:WORKSPACE_ROOT})
  const confirmDiscard=useConfirmDiscard()
@@ -61,9 +62,9 @@ function useFolderState(storageKey?: string) {
  },[location.pathname,location.search,query.data])
  const select=(id:string)=>{preferences({selected:id});setOverlay(false);if(location.pathname!=='/packs'||new URLSearchParams(location.search).has('folder'))navigate(`/packs?folder=${encodeURIComponent(id)}`)}
  const edit=(request:NonNullable<typeof editing>,element?:HTMLElement)=>{
-  opener.current=element??documentElement();editorBase.current=query.data?{...query.data,document}:undefined;setMessage('')
+  opener.current=(overlay?drawerOpener.current:null)??element??documentElement();setOverlay(false);editorBase.current=query.data?{...query.data,document}:undefined;setMessage('')
   const folder=document.folders.find(folder=>folder.id===request.id)
-  const fields={name:request.kind==='rename'?folder?.name??'':'',destination:request.kind==='pack'?packFolder(document,request.id!):request.kind==='move'?folder?.parentId??WORKSPACE_ROOT:request.parentId??WORKSPACE_ROOT,filter:''}
+  const fields={name:request.kind==='rename'?folder?.name??'':'',destination:request.kind==='items'?HOME_FOLDER:request.kind==='pack'?packFolder(document,request.id!):request.kind==='move'?folder?.parentId??WORKSPACE_ROOT:request.parentId??WORKSPACE_ROOT,filter:''}
   formBase.current=fields;setEditorFields(fields)
   setEditing(request)
  }

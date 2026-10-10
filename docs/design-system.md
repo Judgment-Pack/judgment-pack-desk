@@ -342,10 +342,10 @@ dialog, and narrow layouts. Source checks alone cannot establish visual quality.
 
 Use `PageHeader`'s collection variant: a single sticky 48px row with
 `PacksNavigation` on the left and the active view's action on the right. The
-Packs heading remains available to assistive technology without another visible
-row. The All packs tab carries the available inventory count; it observes the
+Packs & graphs heading remains available to assistive technology without another visible
+row. The Browse tab carries the available inventory count; it observes the
 existing cache across views without making a decorative runtime request. Search
-and `SortMenu` sit below. Sorting remains explicit about Pack ID, and filtered
+and `SortMenu` sit below. Sorting uses the displayed name, and filtered
 counts appear beside the search as “1 of 2”. Keep native Tab behavior.
 
 Rows use `--text-control` (13px), `--text-xs` metadata, and the existing 40/32px
@@ -353,7 +353,7 @@ density heights. Names, descriptions and versions align in columns; headers and
 rows reserve the same scrollbar gutter. The collection uses fixed 24/20px gutters
 and 16px on phones; selection and hover stay neutral. Container queries respond
 to actual pane width, including divider changes: descriptions move to preview
-below 44rem, versions below 28rem. A runtime refusal retains a visible warning
+below 44rem. The compact Version column remains visible for draft state. A runtime refusal retains a visible warning
 marker and an accessible explanation even when its description column is hidden.
 Do not add fields the inventory has not supplied.
 
@@ -681,13 +681,13 @@ whether Save and return can finish.
 
 ## Packs and Judgment Graphs
 
-The primary sidebar carries Decisions, Jobs, Admin and Help & About. Decisions
+The primary sidebar carries Packs & graphs, Jobs, Admin and Help & About. Packs & graphs
 combines packs and graphs in the existing folder browser. Graphs retain the
 `/graphs` and `/graphs/:graphId` routes. Only the current destination is active,
 including in the collapsed rail and navigation drawer. Drawing navigation never
 fetches graph inventory or executes tests.
 
-New chat and Chat history belong in the chat header. Decisions retains its folder
+New chat and Chat history belong in the chat header. Packs & graphs retains its folder
 browser and collection controls. Saved cases and their Run tests action belong
 inside each pack; there is no collection Tests page or Run all tests action.
 The legacy `/matrix` bookmark redirects to `/packs` without executing tests;
@@ -844,8 +844,8 @@ bound connection and model.
 
 ## Decision composition workspace
 
-Packs and graphs share one Decisions collection, its existing folders, search,
-preview and resizable pane. Use type filters and small type labels; preserve
+Packs and graphs share one Packs & graphs collection, its existing folders, search,
+preview and resizable pane. Use type filters and shared type icons; preserve
 the same selection, hover, density, keyboard and empty/loading/error treatment
 for both. Graphs do not need a separate theme or global navigation entry.
 
@@ -868,3 +868,33 @@ and [Camunda's decision requirements graphs](https://docs.camunda.io/docs/compon
 These inform discoverability and inspection, not execution semantics. JPS
 retains its own tokens and runtime contract. The non-drag form follows
 [WCAG's dragging-movements guidance](https://www.w3.org/WAI/WCAG22/Understanding/dragging-movements.html).
+
+## Packs & graphs browser actions
+
+Navigation names the authored JPS objects directly: **Packs & graphs**. The folder
+pane lists real folders only; the main location breadcrumb returns to the full
+collection. Folder creation and renaming use the shared modal dialog, preserving
+entered text through pane resizing and returning focus to the initiating control.
+
+Keep **Create** visible as the primary command, with Pack and Graph choices.
+Collection **⋯** holds New folder and Review and lock. A row keeps its Preview
+button visible; its **⋯** holds Open, Move to folder, and Delete draft when eligible.
+Folder hierarchy actions remain in each folder's existing context menu.
+
+Every row starts with a checkbox, followed by the shared cube (`IconPack`) or
+connected-node (`IconGraph`) glyph and name. Type glyphs have accessible names and
+shared tooltips. Draft occupies the Version column; saved objects show their
+actual version. There is no duplicate type badge beside the name.
+
+Select all applies to the filtered collection, including virtualized rows. Filtering
+removes hidden items from selection. Contextual actions show the selected count,
+Move to, Compose graph, Delete drafts, and Clear selection. Composition requires
+only saved packs; it never silently drops a selected draft or nests a graph.
+Deletion requires only unsaved drafts and explicit confirmation, preserves chats
+and saved files, and rechecks the entire selection before changing it. Failed saves
+remain visible and retryable. Folder moves update all assignments in one write
+against the original digest.
+
+These choices apply [Linear's selection patterns](https://linear.app/docs/select-issues)
+and [restrained action hierarchy](https://linear.app/now/behind-the-latest-design-refresh)
+to JPS's distinct pack, graph, and draft lifecycles.
