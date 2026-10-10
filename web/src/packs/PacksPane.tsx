@@ -12,6 +12,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Link } from 'react-router-dom'
 import { ROW_HEIGHT } from '../config/theme'
 import { usePacks, useGraphInventory } from '../mcp/queries'
+import { useMcp } from '../mcp/McpProvider'
 import { useAppearance } from '../shell/appearanceState'
 import { useInspectorPortal, useInspectorControls } from '../shell/InspectorSlot'
 import { useShellState } from '../shell/paneState'
@@ -46,13 +47,18 @@ export function PacksPane({ active = true }: { active?: boolean }) {
   const locale = useLocale()
   const { data, error, isPending, isSuccess, isFetching, refetch } = usePacks()
   const graphs = useGraphInventory()
+  const {graphInventorySupported, status: connectionStatus} = useMcp()
+  const graphsUnavailable = connectionStatus === 'ready' && !graphInventorySupported
   const [search, setSearch] = useSearchParams()
-  const kind = search.get('type') ?? 'all'
+  const kind = ['pack', 'graph'].includes(search.get('type') ?? '') ? search.get('type')! : 'all'
+  const includePacks = kind !== 'graph', includeGraphs = kind !== 'pack'
+  const listedGraphs = graphInventorySupported && !graphs.error ? graphs.data : undefined
   const [selectedPacks, setSelectedPacks] = useState<string[]>([])
   const {chats,packDrafts,ready:draftsReady,error:draftError,store}=useChats()
   const drafts = packDrafts.filter(item=>!item.finalized)
   const graphDrafts = chats.flatMap(chat => (chat.graphDrafts ?? []).filter(draft => !draft.saved).map(draft => ({chatId: chat.id, ...draft})))
-  const total = (data?.packs?.length ?? 0)+drafts.length+(graphs.data?.graphs?.length ?? 0)+graphDrafts.length
+  const total = (includePacks ? (data?.packs?.length ?? 0) + drafts.length : 0) + (includeGraphs ? (listedGraphs?.graphs?.length ?? 0) + graphDrafts.length : 0)
+  const inventoryReady = (!includePacks || isSuccess) && (!includeGraphs || graphInventorySupported && graphs.isSuccess && !graphs.isFetching)
   const folders = usePackFolders()
   const review = useReview()
   const findings = useMemo(() => packFindings(review?.data), [review?.data])
@@ -87,14 +93,14 @@ export function PacksPane({ active = true }: { active?: boolean }) {
   useInspectorPresentation(presentation)
   const packs = useMemo(() => {
     const needle = filter.trim().toLowerCase()
-    const rows = [...(data?.packs ?? []).map(pack=>({...pack,kind:'pack',title:pack.id,status:'finalized',href:`/packs/${encodeURIComponent(pack.id)}`})),...drafts.map(draft=>({kind:'pack',id:draft.id,title:draft.title,status:'draft',href:draftHref(draft.id),description:draftDescription(draft.checkpoint.state.candidates.at(-1)?.document),detail:undefined,packVersion:undefined})), ...(graphs.data?.graphs ?? []).map(graph => ({kind:'graph', id:'graph:'+graph.id, title:graph.id, status:'finalized', href:`/graphs/${encodeURIComponent(graph.id)}`, description:graph.description, detail:graph.detail, packVersion:graph.graphVersion})), ...graphDrafts.map(draft => ({kind:'graph', id:'graph-draft:'+draft.draftId, title:draft.id, status:'draft', href:graphDraftHref(draft.chatId,draft.draftId), description:draft.description, detail:undefined,packVersion:undefined}))]
+    const rows = [...(error ? [] : data?.packs ?? []).map(pack=>({...pack,kind:'pack',title:pack.id,status:'finalized',href:`/packs/${encodeURIComponent(pack.id)}`})),...drafts.map(draft=>({kind:'pack',id:draft.id,title:draft.title,status:'draft',href:draftHref(draft.id),description:draftDescription(draft.checkpoint.state.candidates.at(-1)?.document),detail:undefined,packVersion:undefined})), ...(listedGraphs?.graphs ?? []).map(graph => ({kind:'graph', id:'graph:'+graph.id, title:graph.id, status:'finalized', href:`/graphs/${encodeURIComponent(graph.id)}`, description:graph.description, detail:graph.detail, packVersion:graph.graphVersion})), ...graphDrafts.map(draft => ({kind:'graph', id:'graph-draft:'+draft.draftId, title:draft.id, status:'draft', href:graphDraftHref(draft.chatId,draft.draftId), description:draft.description, detail:undefined,packVersion:undefined}))]
     const matching = rows.filter(pack => (kind==='all'||pack.kind===kind) && (status==='all'||pack.status===status) && (!folders || folderScope === ALL_PACKS || inFolder(folders.document, packFolder(folders.document,pack.id), folderScope, !!needle)) && (!needle ||
       `${pack.id} ${pack.title}`.toLowerCase().includes(needle) || pack.description?.toLowerCase().includes(needle)))
     return matching.sort((left, right) => sort === 'id-desc'
       ? right.title.localeCompare(left.title) : left.title.localeCompare(right.title))
-  }, [data, packDrafts, chats, graphs.data, kind, filter, status, sort, folders?.document, folderScope])
+  }, [data, error, packDrafts, chats, listedGraphs, kind, filter, status, sort, folders?.document, folderScope])
   const window = useWindowedRows(packs.length, rowHeight)
-  const preview = isSuccess ? packs.find(pack => pack.id === previewId) : undefined
+  const preview = packs.find(pack => pack.id === previewId)
   const portal = useInspectorPortal(active
     ? preview ? preview.status==='draft' || preview.kind==='graph' ? <section className={styles.empty}><h2>{preview.title}</h2><p>{preview.kind==='graph'?msg('Graph'):msg('Pack')} · {preview.status==='draft'?msg('Draft'):msg('Saved')}</p><p>{preview.description}</p><ButtonLink to={preview.href}>{preview.status==='draft'?msg('Open draft'):msg('Open graph')}</ButtonLink></section> : <PackPreview pack={data!.packs!.find(item=>item.id===preview.id)!} /> : <PackPreviewHint />
     : null)
@@ -132,7 +138,7 @@ export function PacksPane({ active = true }: { active?: boolean }) {
 
   return <article className={styles.pane} data-layout={active ? 'page' : undefined} aria-label={msg("Decision collection")}>
     <PageHeader title={msg("Decisions")} variant="collection"
-      navigation={<PacksNavigation leading={<ShowFolders/>} count={isSuccess && !graphs.isFetching ? total : undefined} />}
+      navigation={<PacksNavigation leading={<ShowFolders/>} count={inventoryReady ? total : undefined} />}
       actions={<><NewFolderButton/>{review && <ButtonLink to="/packs/_review">{msg('Review and lock')}</ButtonLink>}<ButtonLink to="/graphs?view=compose">{msg("Create graph")}</ButtonLink><ButtonLink to={createHref} variant="primary">{msg("Create pack")}</ButtonLink></>} />
     <div className={styles.controls}><SegmentedControl label={msg('Decision type')} value={kind} onValueChange={value => {resetScroll(); setSearch(before => {const next=new URLSearchParams(before); next.set('type', value); return next})}} segments={[{value:'all',label:msg('All')},{value:'pack',label:msg('Packs')},{value:'graph',label:msg('Graphs')}]}/>
       {selectedPacks.length > 0 && <><ButtonLink to={'/graphs?view=compose&'+selectedPacks.filter(id => data?.packs?.some(p => p.id===id)).map(id => 'pack='+encodeURIComponent(id)).join('&')}>{msg('Compose graph')} · {selectedPacks.length}</ButtonLink><Button variant="quiet" onClick={()=>setSelectedPacks([])}>{msg('Clear selection')}</Button></>}
@@ -144,7 +150,7 @@ export function PacksPane({ active = true }: { active?: boolean }) {
         placeholder={msg("Search decisions…")} onChange={event => { resetScroll(); setFilter(event.target.value) }} />
       {(filter || status!=='all') && <Button variant="quiet" onClick={clearFilter}>{msg("Clear")}</Button>}
       {folders && folderScope !== ALL_PACKS && <Button variant="quiet" onClick={() => folders.select(ALL_PACKS)}>{msg("Search all decisions")}</Button>}
-      {(filter || status!=='all') && isSuccess && <span className={styles.matchCount} role="status"><Message text={"<0/> of <1/>"} slots={[packs.length, total]} /></span>}
+      {(filter || status!=='all') && inventoryReady && <span className={styles.matchCount} role="status"><Message text={"<0/> of <1/>"} slots={[packs.length, total]} /></span>}
       <div className={styles.sort}>
         <VisuallyHidden.Root asChild><label htmlFor="pack-status">{msg('Status')}</label></VisuallyHidden.Root>
         <Select id="pack-status" quiet value={status} onValueChange={value=>{resetScroll();setStatus(value)}} options={[{value:'all',label:msg('All statuses')},{value:'draft',label:msg('Draft')},{value:'finalized',label:msg('Finalized')}]}/>
@@ -152,13 +158,15 @@ export function PacksPane({ active = true }: { active?: boolean }) {
       </div>
     </div>
     <SubfolderRows query={filter}/>
-    {graphs.error && <div className={styles.message} role="alert">{msg("Could not list graphs")}: {graphs.error.message}<Button onClick={()=>void graphs.refetch()}>{msg("Retry")}</Button></div>}
+    {includeGraphs && graphs.error && <div className={styles.message} role="alert">{msg("Could not list graphs")}: {graphs.error.message}<Button onClick={()=>void graphs.refetch()}>{msg("Retry")}</Button></div>}
+    {includeGraphs && graphsUnavailable && <div className={styles.message} role="status">{msg('This runtime cannot list saved graphs. Connect a newer runtime to browse all decisions.')} <ButtonLink to="/graphs">{msg('Open graphs')}</ButtonLink></div>}
     {draftError && <div className={styles.message} role="alert">{draftError}<Button onClick={()=>draftsReady?store?.retrySave():void store?.load()}>{msg('Retry')}</Button></div>}
-    {error ? <section className={styles.empty} role="alert">
+    {includePacks && error ? <section className={styles.empty} role="alert">
       <h2>{msg("Couldn’t load packs")}</h2><p>{error.message}</p>
       <Button onClick={() => { void refetch() }} disabled={isFetching}>{isFetching ? msg("Retrying…") : msg("Retry")}</Button>
-    </section> : isPending ? <p className={styles.message} role="status">{msg("Loading packs…")}</p>
-    : packs.length === 0 && graphs.isFetching ? <p className={styles.message} role="status">{msg('Loading decisions…')}</p>
+    </section> : includePacks && isPending ? <p className={styles.message} role="status">{msg("Loading packs…")}</p>
+    : packs.length === 0 && includeGraphs && !graphsUnavailable && graphs.isPending ? <p className={styles.message} role="status">{msg('Loading decisions…')}</p>
+    : packs.length === 0 && includeGraphs && (!graphInventorySupported || graphs.error) ? null
     : packs.length === 0 ? <section className={styles.empty} role="status">
       <h2>{(filter || status!=='all') ? msg("No matching decisions") : msg("No decisions yet")}</h2>
       <p>{(filter || status!=='all') ? msg("Try another search or status.") : msg("Create a pack to define a decision and its rules.")}</p>

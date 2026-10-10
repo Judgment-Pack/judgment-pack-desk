@@ -23,7 +23,7 @@ function setup() {
   const queryClient = testQueryClient()
   const router = createMemoryRouter([{ path: '/packs', element: <PacksLayout />, children: [
     { index: true, element: <PacksIndex /> }, { path: ':packId', element: <h1>Pack document</h1> }, { path: 'drafts/:draftId', element: <h1>Draft document</h1> }
-  ] }], { initialEntries: ['/packs'] })
+  ] }], { initialEntries: ['/packs?type=pack'] })
   render(<QueryClientProvider client={queryClient}><McpContext.Provider value={connected({ client: stub.client })}>
     <InspectorSlotContext.Provider value={slot}><RouterProvider router={router} /></InspectorSlotContext.Provider>
   </McpContext.Provider></QueryClientProvider>)

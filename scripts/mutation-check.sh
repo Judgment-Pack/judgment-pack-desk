@@ -8967,7 +8967,7 @@ function usePacks() { useExampleListing(); return readPacks() }'
   # react-query keeps the last good data through a refetch error. Failed
   # refreshes must replace those stale rows with the retry state.
   mutate web "a failed refresh still displays stale packs" "$PN" \
-    '    {error ? <section' \
+    '    {includePacks && error ? <section' \
     '    {error && !data ? <section'
   mutate web "an empty version is drawn as a version" "$PN" \
     'isSpelled(pack.packVersion) ?' \

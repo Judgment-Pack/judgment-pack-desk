@@ -30,7 +30,7 @@ function setup(savedOpen = true) {
       { index: true, element: null },
       { path: ':packId', element: <><h1>Pack document</h1><Link to="/packs">Back to packs</Link></> }
     ] }
-  ] }], { initialEntries: ['/packs'] })
+  ] }], { initialEntries: ['/packs?type=pack'] })
   const query = testQueryClient()
   render(<QueryClientProvider client={query}><McpContext.Provider value={connected({ client: stub.client })}>
     <RouterProvider router={router} />

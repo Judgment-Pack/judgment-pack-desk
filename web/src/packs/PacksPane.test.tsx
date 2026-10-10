@@ -53,7 +53,7 @@ function packs(ids: string[]) {
   })
 }
 
-function draw(stub: ReturnType<typeof stubClient>, path = '/packs', graphInventorySupported = false) {
+function draw(stub: ReturnType<typeof stubClient>, path = '/packs?type=pack', graphInventorySupported = false) {
   const router = createMemoryRouter(
     [
       {
@@ -195,7 +195,7 @@ describe('the packs pane', () => {
   })
 
   it('says a project declares none where the listing said so', async () => {
-    draw(packs([]))
+    draw(packs([]), '/packs?type=pack')
     await screen.findByText('No decisions yet')
   })
 
@@ -355,4 +355,43 @@ it('composes only explicitly selected saved packs', async () => {
   expect(link.getAttribute('href')).toBe('/graphs?view=compose&pack=alpha')
   fireEvent.click(screen.getByRole('button', {name:'Clear selection'}))
   expect(screen.queryByRole('link', {name:/Compose graph/})).toBeNull()
+})
+
+
+it('does not claim that an unsupported graph inventory is empty', async () => {
+  const stub = packs([])
+  draw(stub, '/packs?type=graph')
+  await screen.findByText('This runtime cannot list saved graphs. Connect a newer runtime to browse all decisions.')
+  expect(screen.queryByText('No decisions yet')).toBeNull()
+  expect(stub.calls.map(call => call.name)).not.toContain('experimental_list_graphs')
+})
+
+it('keeps graphs usable when only the pack inventory fails', async () => {
+  const stub = stubClient({
+    list_packs: () => { throw new Error('pack inventory unavailable') },
+    experimental_list_graphs: () => ({text: JSON.stringify({status:'valid',graphs:[{id:'flow',graphVersion:'1.0.0'}]})})
+  })
+  draw(stub, '/packs?type=graph', true)
+  expect(await screen.findByRole('link', {name:/flow/})).toHaveProperty('href', expect.stringContaining('/graphs/flow'))
+  expect(screen.queryByText('pack inventory unavailable')).toBeNull()
+})
+
+it('withdraws saved graph rows after a refresh fails without claiming an empty project', async () => {
+  let fail = false
+  const stub = stubClient({
+    list_packs: () => ({text:'{"status":"valid","packs":[]}'}),
+    experimental_list_graphs: () => {
+      if (fail) throw new Error('graph inventory unavailable')
+      return {text: JSON.stringify({status:'valid',graphs:[{id:'flow',graphVersion:'1.0.0'}]})}
+    }
+  })
+  const queryClient = testQueryClient()
+  const router = createMemoryRouter([{path:'*',element:<McpContext.Provider value={connected({client:stub.client,graphInventorySupported:true})}><PacksPane/></McpContext.Provider>}], {initialEntries:['/packs?type=graph']})
+  render(<QueryClientProvider client={queryClient}><RouterProvider router={router}/></QueryClientProvider>)
+  await screen.findByRole('link',{name:/flow/})
+  fail = true
+  await queryClient.refetchQueries({queryKey:['experimental_list_graphs']})
+  await screen.findByText(/graph inventory unavailable/)
+  expect(document.querySelector('a[href="/graphs/flow"]')).toBeNull()
+  expect(screen.queryByText('No decisions yet')).toBeNull()
 })

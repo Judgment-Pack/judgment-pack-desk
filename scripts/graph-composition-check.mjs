@@ -47,6 +47,13 @@ try{
   const written=JSON.parse(await readFile(`${work}/project/browser-composition.graph.json`,'utf8'))
   assert.equal(written.id,'browser-composition');assert.equal(written.result,'vendor-onboarding');assert.deepEqual(written.edges,[{from:'sanctions-screening',to:'vendor-onboarding',fact:'/screening/status',evidence:{id:'screening-outcome',onUnresolved:'unknown'}}])
   assert.equal(JSON.parse(await readFile(`${work}/project/jpack.json`,'utf8')).graphs['browser-composition'].path,'browser-composition.graph.json')
+  const chatId=new URL(draftURL).searchParams.get('chat')
+  await page.goto(`${base}/chats/${encodeURIComponent(chatId)}`)
+  await page.getByRole('button',{name:'Graphs · 1',exact:true}).click()
+  const artifacts=page.getByRole('region',{name:'Conversation graphs',exact:true})
+  assert.equal(await artifacts.getByRole('link',{name:'Open graph',exact:true}).getAttribute('href'),'/graphs/browser-composition')
+  assert.equal(await page.getByRole('link',{name:'Review graph',exact:true}).count(),0)
+  await artifacts.getByRole('link',{name:'Open graph',exact:true}).click();await page.waitForURL(url=>url.pathname==='/graphs/browser-composition')
   await page.goto(`${base}/graphs/fan-in?view=rehearsal`)
   const rows=JSON.parse(await readFile(`${work}/project/fan-in.rows.json`,'utf8'))
   await page.getByLabel('Inputs by node id').fill(JSON.stringify(rows.cases[0].inputs));await page.getByRole('button',{name:'Rehearse',exact:true}).click()
@@ -63,6 +70,6 @@ try{
   }
   await page.goto(draftURL);await page.getByLabel('Configured graph id').waitFor()
   assert.deepEqual(errors,[])
-  console.log(JSON.stringify({passed:true,checks:['combined browsing','type filters','pack selection','form composition','undo/redo','retained draft reload','explicit exact write','rehearsal revision binding','stale result detection','light/dark','390px no page overflow'],graphRequests:calls.length}))
+  console.log(JSON.stringify({passed:true,checks:['combined browsing','type filters','pack selection','form composition','undo/redo','retained draft reload','explicit exact write','saved graph navigation from chat','rehearsal revision binding','stale result detection','light/dark','390px no page overflow'],graphRequests:calls.length}))
 } catch(error){if(page){await page.screenshot({path:'/tmp/jps-composition-failure.png',fullPage:true});console.error((await page.locator('body').innerText()).slice(0,12000))}throw error}
 finally{if(browser)await browser.close();if(server.pid&&server.exitCode===null&&server.signalCode===null){const exited=once(server,'exit');server.kill('SIGTERM');await exited}await rm(work,{recursive:true,force:true})}
